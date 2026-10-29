@@ -1,0 +1,11 @@
+{
+  // The pure core: no DOM library and no ambient types, so document, URL, crypto and chrome cannot even be typed.
+  // A core file that imported an impure layer would pull it into this program and fail on its DOM references.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": ["src/core/**/*.ts"],
+  "exclude": ["src/core/**/*.test.ts"]
+}

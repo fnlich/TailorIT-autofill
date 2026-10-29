@@ -1,0 +1,55 @@
+{
+  "name": "tailorit-autofill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TailorIT Autofill: fills job applications on Greenhouse, Lever, Ashby and Workday from a TailorIT profile. You review and submit.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.11 <25"
+  },
+  "scripts": {
+    "postinstall": "wxt prepare",
+    "dev": "wxt",
+    "build": "wxt build",
+    "build:edge": "wxt build -b edge",
+    "zip": "wxt zip",
+    "zip:edge": "wxt zip -b edge",
+    "typecheck": "wxt prepare && tsc -p tsconfig.json && tsc -p tsconfig.core.json && tsc -p tsconfig.core-tests.json && tsc -p tsconfig.tools.json",
+    "lint": "eslint .",
+    "test": "vitest run --project core --project ext",
+    "test:watch": "vitest --project core --project ext",
+    "test:dom": "vitest run --project dom",
+    "test:e2e": "node scripts/e2e.mjs",
+    "check:build": "node scripts/check-build.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "@vitest/browser-playwright": "5.0.5",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "playwright": "1.64.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0",
+    "vite": "8.3.5",
+    "vitest": "5.0.5",
+    "wxt": "0.21.4"
+  },
+  "overrides": {
+    "@wxt-dev/browser": "0.3.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

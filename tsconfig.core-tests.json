@@ -1,0 +1,10 @@
+{
+  // The core's tests: still no DOM library. Vitest's declarations bring Node types in, which is why they are kept
+  // apart from tsconfig.core.json.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": ["src/core/**/*.ts"]
+}

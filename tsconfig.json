@@ -1,0 +1,10 @@
+{
+  // The extension's own code: DOM and WXT's browser types. Tests and tools have their own programs.
+  "extends": ["./tsconfig.base.json", "./.wxt/tsconfig.json"],
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": [".wxt/wxt.d.ts", "src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "node_modules", ".output", ".output-e2e"]
+}

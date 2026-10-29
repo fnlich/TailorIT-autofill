@@ -1,0 +1,71 @@
+/*
+ * What the worker sends a frame to write, and the value-free row the review panel shows for every field. The trap
+ * fixtures assert these reason codes by name, so a code is never renamed without its fixtures.
+ */
+import type { FieldKind, FillStatus, MatcherStage, Provenance } from '../enums';
+import type { BaseKey, FieldKey } from './field';
+import type { FieldCategory, ValueOrigin, WriteValue } from './intent';
+import type { Match } from './match';
+
+/** Why a field ended as it did. */
+export const REASON_CODES = [
+  // done, possibly needing a look
+  'ok', 'filled-low-confidence', 'already-correct', 'prefill-kept', 'prefill-conflict', 'llm-pick-needs-review',
+  'llm-draft-needs-confirmation', 'other-option-with-free-text', 'other-without-free-text',
+  'option-label-had-injected-text',
+  // resolution gaps
+  'no-profile-value', 'unknown-field', 'low-confidence', 'classification-conflict', 'eeo-not-in-profile',
+  'legal-not-in-profile', 'decline-option-missing', 'work-auth-country-unknown', 'consent-requires-user',
+  'attention-check', 'free-text-requires-user', 'drafts-disabled', 'llm-disabled-for-category', 'llm-unavailable',
+  'llm-invalid-output', 'llm-pick-rejected', 'saved-answer-not-allowed-for-category', 'end-date-not-applicable',
+  'sensitive-not-shared',
+  // matcher
+  'no-match', 'ambiguous-options', 'distinctive-token-mismatch', 'waiting-for-options', 'options-never-loaded',
+  'options-changed', 'max-selections-reached', 'partial-multi-select', 'exclusive-conflict', 'preselected-left-untouched',
+  // guard
+  'honeypot', 'not-user-visible', 'no-visible-label', 'canary-in-value', 'canary-equals-profile-value',
+  'missing-provenance', 'policy-violation', 'mark-all-aborted', 'exceeds-profile-set', 'tripwire-in-label',
+  'injected-option-only',
+  // filler and verification
+  'verify-mismatch', 'widget-unsupported', 'needs-your-click', 'unexpected-selection', 'element-not-found',
+  'disabled-or-readonly', 'value-rejected-by-site', 'format-unsupported', 'maxlength-exceeded',
+  'upload-control-not-recognized', 'pdf-only-input', 'resume-unavailable', 'resume-transfer-failed',
+  'resume-format-unsupported',
+  // loop and steps
+  'field-disappeared', 'value-oscillated', 'reveal-cycle', 'max-passes-reached', 'page-busy', 'step-retry-limit',
+  'auth-required', 'challenge-present', 'policy-declined', 'user-stopped',
+  // a bug
+  'internal-error',
+] as const;
+export type ReasonCode = (typeof REASON_CODES)[number];
+
+/** What the worker answers a frame's plan/request with, one per field to write. `origin` is required, so a value without
+ *  provenance cannot be typed. */
+export interface PlannedWrite {
+  key: FieldKey;
+  value: WriteValue;
+  origin: ValueOrigin;
+  match: Match;
+}
+
+/** One row of the review panel: the spec's FillResult, extended. It never carries a value or an option label. */
+export interface FillResult {
+  key: FieldKey;
+  /** The field's visible label (page text, at most 300 characters). */
+  label: string;
+  kind: FieldKind;
+  category: FieldCategory;
+  section: string;
+  required: boolean;
+  status: FillStatus;
+  /** Null exactly when nothing was written. */
+  provenance: Provenance | null;
+  matcherStage: MatcherStage;
+  confidence: number;
+  reason: ReasonCode;
+  wrote: boolean;
+  verification: 'verified' | 'mismatch' | 'not-checked' | 'not-applicable';
+  needsUserAction: boolean;
+  /** Suggestions by index and score only; the panel asks the frame for their labels when a row is expanded. */
+  detail?: { suggestions?: Array<{ index: number; score: number }>; revealedBy?: BaseKey };
+}

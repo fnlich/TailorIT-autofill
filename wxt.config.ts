@@ -1,0 +1,44 @@
+/*
+ * The extension's build. The manifest is the narrowest that works (docs/PRIVACY.md justifies each key), and
+ * scripts/check-build.mjs fails any build that drifts from it. The e2e variant (TAILORIT_BUILD=e2e, set only by
+ * scripts/e2e.mjs) differs only in TailorIT's origin, which points at the mock, and in the compiled-in test events.
+ */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'wxt';
+import { ATS_MATCHES } from './src/shared/hosts';
+
+const E2E = process.env.TAILORIT_BUILD === 'e2e';
+/** The fallback when Chromium injects no content script into routed pages: fixtures served from 127.0.0.1 instead. */
+const FIXTURE_FALLBACK = E2E && process.env.TAILORIT_FIXTURE_ORIGIN === '1';
+const TAILORIT_ORIGIN = E2E ? 'http://localhost:3190' : 'http://localhost:3100';
+/** The public half of a key pair made once (the private half was never kept), so every local build has one id. */
+const MANIFEST_KEY = readFileSync(resolve('keys/manifest-key.txt'), 'utf8').trim();
+
+export default defineConfig({
+  srcDir: 'src',
+  outDir: E2E ? '.output-e2e' : '.output',
+  // Explicit imports only, so the lint layer rules see every dependency.
+  imports: false,
+  vite: () => ({
+    plugins: [react()],
+    define: { __E2E__: JSON.stringify(E2E), __TAILORIT_ORIGIN__: JSON.stringify(TAILORIT_ORIGIN) },
+  }),
+  manifest: ({ mode }) => ({
+    name: 'TailorIT Autofill',
+    description: 'Fills job applications from your TailorIT profile. You review and submit.',
+    key: MANIFEST_KEY,
+    // storage.local.setAccessLevel exists from 140; extensions with host permissions pass Local Network Access from 144.
+    minimum_chrome_version: '144',
+    permissions: ['storage', 'sidePanel', ...(mode === 'development' ? ['pageCapture'] : [])],
+    host_permissions: [...ATS_MATCHES, `${TAILORIT_ORIGIN}/*`],
+    externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
+    action: { default_title: 'TailorIT Autofill' },
+  }),
+  hooks: {
+    'build:manifestGenerated': (_wxt, manifest) => {
+      if (FIXTURE_FALLBACK) manifest.content_scripts?.[0]?.matches?.push('http://127.0.0.1/*');
+    },
+  },
+});

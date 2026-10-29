@@ -1,0 +1,27 @@
+{
+  // Everything else: the configs, the Node launchers (checkJs), the mock server, the e2e specs, repo-level tests and
+  // the tests of the extension's non-core code.
+  "extends": ["./tsconfig.base.json", "./.wxt/tsconfig.json"],
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    // The Node launchers are plain .mjs without JSDoc on every parameter; everything else stays strict.
+    "noImplicitAny": false
+  },
+  "include": [
+    ".wxt/wxt.d.ts",
+    "src/globals.d.ts",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "e2e/**/*.ts",
+    "e2e/**/*.mjs",
+    "scripts/**/*.mjs",
+    "scripts/**/*.ts",
+    "test/**/*.ts",
+    "*.config.ts",
+    "vitest.projects.ts"
+  ],
+  "exclude": ["src/core/**", "node_modules", ".output", ".output-e2e"]
+}
