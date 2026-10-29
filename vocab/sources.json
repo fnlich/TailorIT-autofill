@@ -1,0 +1,79 @@
+{
+  "comment": "The public sources the matcher's vocabularies are built from. scripts/vocab-fetch.mjs downloads each once into vocab/.sources/<id>/ (git-ignored) and checks every file against the sha256 recorded here; scripts/vocab-build.ts reads only those checked files and never touches the network.",
+  "sources": [
+    {
+      "id": "ipeds-hd",
+      "title": "IPEDS Institutional Characteristics, Directory information (HD2024)",
+      "publisher": "U.S. Department of Education, National Center for Education Statistics",
+      "release": "HD2024",
+      "url": "https://nces.ed.gov/ipeds/datacenter/data/HD2024.zip",
+      "archive": "zip",
+      "licence": "Public domain (a work of the U.S. federal government)",
+      "files": {
+        "HD2024.csv": "d7b20e136fd971d7dce8ad6ec9b7002f0f281f133959f2c3a6c089a5a4610fe5"
+      },
+      "archiveSha256": "d98425c123d7c0e872aec6e83960dfb501884818bf17385c340790f3d1f28345"
+    },
+    {
+      "id": "cip",
+      "title": "Classification of Instructional Programs, 2020 edition (CIP 2020)",
+      "publisher": "U.S. Department of Education, National Center for Education Statistics",
+      "release": "2020",
+      "url": "https://nces.ed.gov/ipeds/cipcode/Files/CIPCode2020.csv",
+      "archive": null,
+      "licence": "Public domain (a work of the U.S. federal government)",
+      "files": {
+        "CIPCode2020.csv": "6cf0882c1f5beb94981d0a1a72285ab5cf633759f45433fb909afbfb6d6b2657"
+      }
+    },
+    {
+      "id": "ror",
+      "title": "ROR Data, v2.15 (2026-10-20), schema v2 JSON",
+      "publisher": "Research Organization Registry, doi:10.5281/zenodo.23500708",
+      "release": "v2.15-2026-10-20",
+      "url": "https://zenodo.org/api/records/23500708/files/v2.15-2026-10-20-ror-data.zip/content",
+      "archive": "zip",
+      "licence": "CC0 1.0 (credited as a courtesy)",
+      "files": {
+        "v2.15-2026-10-20-ror-data.json": "16b2ec951d498848bf44f6a53e17fdacbcbba22b7b0d921d93a829e5d36b9930"
+      },
+      "archiveSha256": "7a7bf58d5ac18436ed98daf5da906913761d54869edf86d405e51966609dd133"
+    },
+    {
+      "id": "cldr-territories",
+      "title": "Unicode CLDR 49.0.0, English territory names",
+      "publisher": "Unicode, Inc.",
+      "release": "49.0.0",
+      "url": "https://raw.githubusercontent.com/unicode-org/cldr-json/49.0.0/cldr-json/cldr-localenames-full/main/en/territories.json",
+      "archive": null,
+      "licence": "Unicode License v3",
+      "files": {
+        "territories.json": "1326fb3bcdf8b8cf63df73ea02ea7f8bf7a8362cbb60bd12bcdb53f3ad22bf04"
+      }
+    },
+    {
+      "id": "cldr-languages",
+      "title": "Unicode CLDR 49.0.0, English language names",
+      "publisher": "Unicode, Inc.",
+      "release": "49.0.0",
+      "url": "https://raw.githubusercontent.com/unicode-org/cldr-json/49.0.0/cldr-json/cldr-localenames-full/main/en/languages.json",
+      "archive": null,
+      "licence": "Unicode License v3",
+      "files": {
+        "languages.json": "6180f817207decbc0f9cd0deb34ed0bad3256ff4d03c3c4252706285e8636b88"
+      }
+    },
+    {
+      "id": "cldr-code-mappings",
+      "title": "Unicode CLDR 49.0.0, territory code mappings (ISO 3166 alpha-3)",
+      "publisher": "Unicode, Inc.",
+      "release": "49.0.0",
+      "url": "https://raw.githubusercontent.com/unicode-org/cldr-json/49.0.0/cldr-json/cldr-core/supplemental/codeMappings.json",
+      "archive": null,
+      "licence": "Unicode License v3",
+      "files": {
+        "codeMappings.json": "e046ac4c62c07f0949cc02a55fe55d4f0a1817d7d5c9b977a77e9b8298cd46c7"
+      }
+    }
+  ]
+}
