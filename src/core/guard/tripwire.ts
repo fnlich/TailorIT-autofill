@@ -10,7 +10,7 @@
  * the real boundary is values chosen by code and validated LLM output.
  */
 import type { RawPageText, VisibleText } from '../types/text';
-import { extractCanaries, mergeCanaries } from './canary';
+import { distinctCanaries, MAX_CANARIES, MAX_CANARIES_IN_MEMORY, placedCanaries, type PlacedCanary } from './canary';
 import { detectionViews, foldForDetection, hasFormatCharacter, looseView, originalSpan } from './fold';
 import { TRIPWIRE_PATTERNS, type TripwirePatternId } from './patterns';
 
@@ -71,24 +71,36 @@ export interface PassageHit extends TripwireHit {
 /** What scanTripwires found over a page's passages. */
 export interface TripwireScan {
   hits: PassageHit[];
-  /** The canaries of every hit's window (canary.ts), deduplicated by folded form, at most MAX_CANARIES. */
+  /**
+   * The canaries to send and store (plan/request, RunState): the MAX_CANARIES of allCanaries nearest their hit. The
+   * worker's Guard scans with these.
+   */
   canaries: string[];
+  /**
+   * Every canary of every hit's window (canary.ts), deduplicated by folded form, nearest its hit first, at most
+   * MAX_CANARIES_IN_MEMORY: what the frame scans every outgoing and read-back value for, so decoys cannot push the
+   * real canary out (the review, CORE-15). Never sent or stored.
+   */
+  allCanaries: string[];
   /** Any hit at all: the panel shows "This page contains text addressed to AI tools. It was ignored." */
   notice: boolean;
 }
 
 /**
  * The tripwire over a page's passages (the raw scan's, or visible ones): every hit, the canaries of the hits' windows
- * (hidden and visible windows alike), and whether the notice shows. Any passage shape that carries its text will do.
+ * (hidden and visible windows alike), nearest their hit first and then in page order, and whether the notice shows.
+ * Any passage shape that carries its text will do.
  */
 export function scanTripwires(passages: ReadonlyArray<{ readonly text: DetectableText }>): TripwireScan {
   const hits: PassageHit[] = [];
-  const found: string[][] = [];
+  const placed: Array<PlacedCanary & { passage: number }> = [];
   passages.forEach((passage, index) => {
     const own = tripwireHits(passage.text);
     if (own.length === 0) return;
     for (const hit of own) hits.push({ ...hit, passage: index });
-    found.push(extractCanaries(passage.text, own));
+    for (const found of placedCanaries(passage.text, own)) placed.push({ ...found, passage: index });
   });
-  return { hits, canaries: mergeCanaries(...found), notice: hits.length > 0 };
+  placed.sort((a, b) => a.distance - b.distance || a.passage - b.passage || a.at - b.at);
+  const allCanaries = distinctCanaries(placed.map((found) => found.canary), MAX_CANARIES_IN_MEMORY);
+  return { hits, canaries: allCanaries.slice(0, MAX_CANARIES), allCanaries, notice: hits.length > 0 };
 }

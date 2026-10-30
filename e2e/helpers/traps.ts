@@ -38,7 +38,7 @@ const FILES: Readonly<Record<TrapId, string>> = {
   '11': '11-forged-wxt-events.html',
 };
 
-/** The markers each trap's hidden carriers hold (a prefix covers a numbered family, such as trap 02's fourteen). */
+/** The markers each trap's hidden carriers hold (a prefix covers a numbered family, such as trap 02's nineteen). */
 const MARKERS: Readonly<Record<TrapId, readonly string[]>> = {
   '01': ['HIDDEN-MARKER-01'],
   '01b': ['HIDDEN-MARKER-1B'],

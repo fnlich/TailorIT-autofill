@@ -7,20 +7,26 @@
  *
  * Two readers sit beside it, with the plan's rules:
  * - the native <option> reader: an option counts only when its select is visible, neither it nor its optgroup is
- *   hidden or display: none, its colour is clear in the select's list, and its displayed text is not empty;
- * - the placeholder reader: a placeholder counts only when the control is empty and Chromium's computed
- *   `::placeholder` style passes the opacity, font and camouflage checks (the Phase 2 smoke test showed Chromium
- *   reports that style, so the plan's fallback is not needed). heldPlaceholder is the one exception, for a control the
- *   extension itself has just written into: see its comment.
+ *   hidden or display: none, its colour is clear in the select's list, and its displayed text is not empty. An option
+ *   may hold elements (a customizable select's markup), and option.label reads all their text, shown or not: a select
+ *   with an option whose elements are not plainly drawn lists no option at all, so the field is flagged (DOM-2);
+ * - the placeholder reader: a placeholder counts only when the control is empty, Chromium's computed `::placeholder`
+ *   style passes the opacity, font and camouflage checks with the colour its glyphs are painted in (the fill colour
+ *   when set), and the control's content box, inside its padding, has room for the glyphs where its text-indent puts
+ *   them (DOM-5, S4). The Phase 2 smoke test showed Chromium reports that style, so the plan's fallback is not
+ *   needed. heldPlaceholder is the one exception, for a control the extension itself has just written into: see its
+ *   comment.
  */
 import { capCodePoints } from '../core/text/fold';
 import type { VisibleText } from '../core/types/text';
-import { isCamouflaged, optionCamouflage, textAgainstBackground } from './camouflage';
-import { fade, parseColor } from './color';
+import { inkAgainst, isCamouflaged, optionBackdrop, optionCamouflage, textAgainstBackground } from './camouflage';
+import { fade, over, parseColor } from './color';
 import { isInOwnUi } from './own-ui';
 import { flatParent, type ScanCache, styleOf, viewOf, newScanCache } from './scan-cache';
-import { MAX_OPTIONS, MIN_FONT_PX, MIN_OPACITY, TEXT_CAP_LABEL, TEXT_CAP_PASSAGE } from './thresholds';
-import { isContentHidden, isSubtreeHidden, isTextVisible, isUserVisible, opacityOf } from './visibility';
+import { MAX_OPTIONS, MIN_BOX_PX, MIN_FONT_PX, MIN_OPACITY, TEXT_CAP_LABEL, TEXT_CAP_PASSAGE } from './thresholds';
+import {
+  filterOpacity, isContentHidden, isMasked, isSubtreeHidden, isTextVisible, isUserVisible, opacityOf,
+} from './visibility';
 
 /** Elements whose subtree is never read: non-content, other documents and drawings, controls and their values. */
 const SKIPPED = new Set(['script', 'style', 'noscript', 'template', 'head', 'title', 'meta', 'link', 'iframe', 'frame',
@@ -183,7 +189,8 @@ export interface VisibleOption {
   selected: boolean;
 }
 
-/** The options of `select` a person can see, in list order; [] when the select itself is not visible. */
+/** The options of `select` a person can see, in list order; [] when the select itself is not visible, and [] when an
+ *  option it would list holds elements that are not plainly drawn (optionShowsAllItsText). */
 export function readSelectOptions(select: HTMLSelectElement, cache: ScanCache = newScanCache()): VisibleOption[] {
   if (!isUserVisible(select, cache)) return [];
   const result: VisibleOption[] = [];
@@ -193,6 +200,8 @@ export function readSelectOptions(select: HTMLSelectElement, cache: ScanCache = 
     if (option.hidden || group?.hidden) continue;
     if (styleOf(option, cache)?.display === 'none' || (group && styleOf(group, cache)?.display === 'none')) continue;
     if (optionCamouflage(option, select, cache) !== 'clear') continue;
+    // Its label would carry text a person may not see: no option of this select is trusted, so none is listed.
+    if (!optionShowsAllItsText(option, select, cache)) return [];
     const label = oneLine(option.label);
     if (label === '') continue;
     const read: VisibleOption = {
@@ -204,6 +213,71 @@ export function readSelectOptions(select: HTMLSelectElement, cache: ScanCache = 
     result.push(read);
   }
   return result;
+}
+
+/** Display values with no box of their own that could clip or move text. */
+const INLINE_DISPLAY = new Set(['inline', 'contents']);
+
+/** An element that makes a box of its own (a customizable select's option is a flex container, so the elements in
+ *  it are blockified) is plain only when that box cannot hide its text: no overflow clip, no text-indent, and no
+ *  margin pulling it away. */
+function boxKeepsItsText(style: CSSStyleDeclaration): boolean {
+  if (style.overflowX !== 'visible' || style.overflowY !== 'visible') return false;
+  if (!/^0(?:px)?$/.test(style.textIndent.trim())) return false;
+  return [style.marginTop, style.marginRight, style.marginBottom, style.marginLeft]
+    .every((margin) => /^-?[\d.]+px$/.test(margin.trim()) && parseFloat(margin) > -MIN_BOX_PX);
+}
+
+/**
+ * Whether every element inside an option is plainly drawn, so option.label (all the text inside, shown or not) is
+ * what a person reads in the list (DOM-2). An option with no element inside is plain. Otherwise each element inside
+ * it must be inline (or display: contents, or a box that cannot hide its text: boxKeepsItsText), statically placed,
+ * untransformed, unclipped and unmasked, with no filter but opacity(), no blend mode, no text of its own from ::before
+ * or ::after, a font of at least MIN_FONT_PX, an opacity (down from the option) of at least MIN_OPACITY, and its text
+ * colour clear against the list's background behind it. The hidden attribute, display: none and visibility: hidden
+ * fail too. Anything else fails closed: the list may be drawn natively, where none of these elements has a box to
+ * measure.
+ */
+function optionShowsAllItsText(option: HTMLOptionElement, select: HTMLSelectElement, cache: ScanCache): boolean {
+  const inside = Array.from(option.querySelectorAll('*'));
+  if (inside.length === 0) return true;
+  const view = viewOf(option);
+  if (view === null) return false;
+  const doc = option.ownerDocument;
+  const behindOption = optionBackdrop(option, select, cache);
+  if (behindOption === null) return false;
+  for (const el of inside) {
+    if (el.hasAttribute('hidden')) return false;
+    const style = styleOf(el, cache);
+    if (style === null || style.display === 'none' || style.visibility !== 'visible') return false;
+    if (!INLINE_DISPLAY.has(style.display) && !boxKeepsItsText(style)) return false;
+    if (style.position !== 'static' || style.transform !== 'none' || (style.clipPath !== '' && style.clipPath !== 'none')
+      || isMasked(style) || (style.mixBlendMode !== '' && style.mixBlendMode !== 'normal')) return false;
+    if (style.filter !== '' && style.filter !== 'none' && !/^(?:opacity\([^)]*\)\s*)+$/.test(style.filter.trim())) return false;
+    if (parseFloat(style.fontSize) < MIN_FONT_PX) return false;
+    for (const pseudo of ['::before', '::after'] as const) {
+      const content = view.getComputedStyle(el, pseudo).content;
+      if (content !== '' && content !== 'none' && content !== 'normal') return false;
+    }
+    // The opacity and the backgrounds from the option down to this element.
+    let opacity = 1;
+    let behind = behindOption;
+    const chain: Element[] = [];
+    for (let at: Element | null = el; at !== null && at !== option; at = at.parentElement) chain.unshift(at);
+    for (const layer of chain) {
+      const layerStyle = styleOf(layer, cache);
+      if (layerStyle === null) return false;
+      opacity *= (Number(layerStyle.opacity) || 0) * filterOpacity(layerStyle.filter);
+      const bg = parseColor(layerStyle.backgroundColor, doc);
+      if (bg === null || (layerStyle.backgroundImage !== '' && layerStyle.backgroundImage !== 'none')) return false;
+      behind = over(fade(bg, opacity), behind);
+    }
+    if (opacity < MIN_OPACITY) return false;
+    const ink = parseColor(style.webkitTextFillColor || style.color, doc);
+    if (ink === null || ink.a * opacity < MIN_OPACITY) return false;
+    if (inkAgainst(fade(ink, opacity), behind) !== 'clear') return false;
+  }
+  return true;
 }
 
 // ── The placeholder reader ───────────────────────────────────────────────────────────────────────────────────────
@@ -221,12 +295,16 @@ export function visiblePlaceholder(control: Element, cache: ScanCache = newScanC
  * visiblePlaceholder, but for what the value changes. Chromium hides a filled control's placeholder (its computed
  * `::placeholder` display is none), and here that is our own value's doing: the control was held only because its
  * placeholder showed when we wrote. Only a scan told which controls we wrote into (ScanOptions.heldPlaceholders)
- * reads it, so the field we filled keeps its label, and with it its key, for the read-back. Any other filled
- * control's placeholder is out of sight and names nothing.
+ * reads it, so the field we filled keeps its label, and with it its key, for the read-back. It counts only while the
+ * page still shows the text `seen` when we wrote (DOM-7): a page that renames a field it no longer shows a
+ * placeholder for (our first write turning "First name" into "Last name") would otherwise redirect the next write.
+ * Any other filled control's placeholder is out of sight and names nothing.
  */
-export function heldPlaceholder(control: Element, cache: ScanCache = newScanCache()): string | null {
+export function heldPlaceholder(control: Element, seen: string, cache: ScanCache = newScanCache()): string | null {
   const tag = control.localName;
-  return tag === 'input' || tag === 'textarea' ? placeholderInView(control, cache, true) : null;
+  if (tag !== 'input' && tag !== 'textarea') return null;
+  const text = placeholderInView(control, cache, true);
+  return text !== null && text === seen ? text : null;
 }
 
 /** A text-like control's placeholder when its `::placeholder` style lets a person see it; `filled`: the control holds
@@ -239,8 +317,32 @@ function placeholderInView(control: Element, cache: ScanCache, filled = false): 
   const pseudo = view.getComputedStyle(control, '::placeholder');
   if ((!filled && pseudo.display === 'none') || pseudo.visibility === 'hidden' || pseudo.visibility === 'collapse') return null;
   if (parseFloat(pseudo.fontSize) < MIN_FONT_PX) return null;
+  if (!roomForGlyphs(control, pseudo, cache)) return null;
   const opacity = (Number(pseudo.opacity) || 0) * opacityOf(control, cache);
-  const colour = parseColor(pseudo.color, control.ownerDocument);
-  if (colour === null || colour.a * opacity < MIN_OPACITY) return null;
-  return textAgainstBackground(fade(colour, opacity), control, cache) === 'clear' ? text : null;
+  const doc = control.ownerDocument;
+  // The glyphs are painted in the fill colour, which defaults to the colour; a transparent one, set on ::placeholder
+  // or inherited from the control, hides them whatever the colour says (S4).
+  const glyph = (pseudo.webkitTextFillColor ? parseColor(pseudo.webkitTextFillColor, doc) : null)
+    ?? parseColor(pseudo.color, doc);
+  if (glyph === null || glyph.a * opacity < MIN_OPACITY) return null;
+  return textAgainstBackground(fade(glyph, opacity), control, cache) === 'clear' ? text : null;
+}
+
+/**
+ * Whether a control's content box (inside its padding) has at least MIN_BOX_PX on each axis, and the placeholder's
+ * text-indent starts its glyphs inside that box, MIN_BOX_PX before its far edge. A negative indent (text-indent:
+ * -9999px), or padding wider than the box, pushes them out of sight (DOM-5, S4). A length this cannot read fails.
+ */
+function roomForGlyphs(control: Element, pseudo: CSSStyleDeclaration, cache: ScanCache): boolean {
+  const style = styleOf(control, cache);
+  if (style === null) return false;
+  const box = control as HTMLElement;
+  const width = box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const height = box.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+  if (!(width >= MIN_BOX_PX) || !(height >= MIN_BOX_PX)) return false;
+  const indentText = (pseudo.textIndent || style.textIndent || '0px').trim().split(/\s+/)[0]!;
+  const px = /^(-?[\d.]+)px$/.exec(indentText);
+  const percent = /^(-?[\d.]+)%$/.exec(indentText);
+  const indent = px ? Number(px[1]) : percent ? (Number(percent[1]) / 100) * width : indentText === '0' ? 0 : Number.NaN;
+  return Number.isFinite(indent) && indent >= 0 && indent <= width - MIN_BOX_PX;
 }

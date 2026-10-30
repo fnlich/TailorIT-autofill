@@ -86,4 +86,24 @@ describe('applicationOf', () => {
   it('knows no application on a host outside the ATS list', () => {
     expect(applicationOf(new URL('https://example.com/careers/apply'))).toBeNull();
   });
+
+  it('knows no application at a Lever or Greenhouse address its platform parser does not read (W2)', () => {
+    // A board, a page after submitting on its own, a board filtered by ?gh_jid, an upper-case /APPLY: none is a form.
+    for (const address of ['https://jobs.lever.co/acme', 'https://jobs.lever.co/acme/not-a-posting/apply',
+      `https://jobs.lever.co/acme/0B9F2D3E-1C4A-4E8B-9A7D-5F6E3C2B1A00/APPLY`, 'https://jobs.eu.lever.co/acme',
+      'https://job-boards.greenhouse.io/gitlab', 'https://boards.greenhouse.io/gitlab?gh_jid=8857185002',
+      'https://job-boards.greenhouse.io/gitlab/jobs/8857185002/confirmation-x']) {
+      expect([address, applicationOf(new URL(address))]).toEqual([address, null]);
+    }
+  });
+
+  it('keeps reading the reserved tailorit-fixture Lever board by origin and path, on both Lever hosts', () => {
+    for (const address of ['https://jobs.lever.co/tailorit-fixture/trap-01/apply',
+      'https://jobs.lever.co/tailorit-fixture/side-panel/apply', 'https://jobs.eu.lever.co/tailorit-fixture/trap-09/apply']) {
+      expect([address, applicationOf(new URL(address))?.page]).toEqual([address, 'application']);
+    }
+    // Only that board: another site's unparsed path, or the board's name in another place, is no application.
+    expect(applicationOf(new URL('https://jobs.lever.co/acme/tailorit-fixture/apply'))).toBeNull();
+    expect(applicationOf(new URL('https://jobs.lever.co/tailorit-fixturex/trap-01/apply'))).toBeNull();
+  });
 });

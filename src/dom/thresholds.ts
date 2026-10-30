@@ -21,10 +21,20 @@ export const CAMOUFLAGE_MAX_CONTRAST = 1.35;
 export const CONTROL_DRAWN_MIN_CONTRAST = 1.04;
 /** A text-shadow or text stroke counts as an outline only from this many pixels of offset, blur or width. */
 export const MIN_OUTLINE_PX = 0.5;
+/** A control's (or its wrapper's) box-shadow draws something only when its offset, blur and spread together reach
+ *  this many pixels past the box: `0 0 0 0` draws nothing, however dark its colour. */
+export const MIN_SHADOW_REACH_PX = 1;
+/** A wrapper draws a control's box only when it hugs the control and its own labels: it reaches no more than this
+ *  many pixels past them on any side (Greenhouse's outlined div.input-wrapper holds its label and its input). */
+export const WRAPPER_HUG_PX = 8;
 /** The canvas behind a page that uses a dark colour scheme while the browser prefers dark (Chromium's default). */
 export const DARK_CANVAS_RGB: readonly [number, number, number] = [0x12, 0x12, 0x12];
 /** At most this many candidate backgrounds are kept while compositing gradient stops; past it the answer is unknown. */
 export const MAX_BACKGROUND_CANDIDATES = 16;
+
+/** An aria-label counts as shown beside its control only when its words, whole and in order, hold at least this many
+ *  letters or digits: a one-letter "e" is found in any sentence. */
+export const MIN_ARIA_LABEL_CHARS = 2;
 
 /** visibleText's cap for a job description or any long passage, in code points. */
 export const TEXT_CAP_PASSAGE = 20_000;

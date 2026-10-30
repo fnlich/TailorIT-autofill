@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadFixture, removeFixtures } from './fixture.testkit';
-import { readSelectOptions, readVisibleText, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
+import {
+  heldPlaceholder, readSelectOptions, readVisibleText, visiblePlaceholder, visibleText, visibleTextWithout,
+} from './visible-text';
 
 describe('visibleText', () => {
   afterEach(() => removeFixtures(document));
@@ -86,6 +88,27 @@ describe('the native <option> reader', () => {
       ]);
     expect(readSelectOptions(fixture.doc.getElementById('hidden-select') as HTMLSelectElement)).toEqual([]);
   });
+
+  it('lists nothing from a select whose option holds text a person cannot see (DOM-2), and reads a plain one', async () => {
+    // option.label is every text node inside the option, the hidden span's too: the customizable select's picker
+    // shows "Associate", while option.label read "Associate Bachelor's Degree".
+    const fixture = await loadFixture(document, `<!doctype html><head><style>
+      .custom, .custom::picker(select) { appearance: base-select; }
+      .white { color: #fff; }</style></head><body>
+      <select id="hidden-span" class="custom"><option value="">Select...</option>
+        <option value="as">Associate<span style="display:none"> Bachelor's Degree</span></option>
+        <option value="ms">Master's Degree</option></select>
+      <select id="native-hidden-span"><option value="as">Associate<span hidden> Bachelor's Degree</span></option>
+        <option value="ms">Master's Degree</option></select>
+      <select id="white-span" class="custom"><option value="as">Associate<span class="white"> Bachelor's</span></option></select>
+      <select id="tiny-span" class="custom"><option value="as">Associate<span style="font-size:1px"> Bachelor's</span></option></select>
+      <select id="plain-children" class="custom"><option value="bs"><b>Bachelor's</b> Degree</option>
+        <option value="ms">Master's Degree</option></select></body>`);
+    const labels = (id: string) => readSelectOptions(fixture.doc.getElementById(id) as HTMLSelectElement)
+      .map((option) => option.label);
+    for (const id of ['hidden-span', 'native-hidden-span', 'white-span', 'tiny-span']) expect([id, labels(id)]).toEqual([id, []]);
+    expect(labels('plain-children')).toEqual(["Bachelor's Degree", "Master's Degree"]);
+  });
 });
 
 describe('the placeholder reader', () => {
@@ -123,5 +146,39 @@ describe('the placeholder reader', () => {
     expect(read('shown')).toBe('City name');
     expect(read('area')).toBe('Tell us more');
     for (const id of ['filled', 'transparent', 'faint', 'tiny', 'white', 'select']) expect([id, read(id)]).toEqual([id, null]);
+  });
+
+  it('counts no placeholder whose glyphs are pushed out of the box or painted transparent (DOM-5, S4)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><head><style>
+      #fill-transparent::placeholder { -webkit-text-fill-color: transparent; }
+      </style></head><body style="background:#fff">
+      <input id="indent-out" placeholder="Email address" style="text-indent:-9999px;width:240px">
+      <input id="indent-past" placeholder="Email address" style="text-indent:400px;width:240px">
+      <input id="indent-percent" placeholder="Email address" style="text-indent:150%;width:240px">
+      <input id="padded-out" placeholder="Work email" style="box-sizing:border-box;width:240px;padding-left:260px">
+      <input id="padded-flat" placeholder="Work email" style="box-sizing:border-box;height:20px;padding:10px 4px">
+      <input id="fill-transparent" placeholder="Email">
+      <input id="fill-inherited" placeholder="Email" style="-webkit-text-fill-color:transparent">
+      <input id="indented" placeholder="Search" style="text-indent:24px;width:240px">
+      <input id="fill-dark" placeholder="Email" style="-webkit-text-fill-color:#333"></body>`);
+    const read = (id: string) => visiblePlaceholder(fixture.doc.getElementById(id)!);
+    for (const id of ['indent-out', 'indent-past', 'indent-percent', 'padded-out', 'padded-flat', 'fill-transparent',
+      'fill-inherited']) {
+      expect([id, read(id)]).toEqual([id, null]);
+    }
+    expect(read('indented')).toBe('Search');
+    expect(read('fill-dark')).toBe('Email');
+  });
+
+  it('keeps a held placeholder only while the page still shows the text seen when we wrote (DOM-7)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body style="background:#fff">
+      <input id="held" placeholder="First name"></body>`);
+    const control = fixture.doc.getElementById('held') as HTMLInputElement;
+    const seen = visiblePlaceholder(control)!;
+    control.value = 'written';
+    expect(heldPlaceholder(control, seen)).toBe('First name');
+    // The page renames the field it no longer shows a placeholder for.
+    control.setAttribute('placeholder', 'Last name');
+    expect(heldPlaceholder(control, seen)).toBeNull();
   });
 });

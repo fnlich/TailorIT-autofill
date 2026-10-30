@@ -1,7 +1,9 @@
 /*
  * The reports the review panel shows. A frame's report (statuses, labels and reasons, never a value) is stored in
- * storage.session per tab and frame (`report:<tabId>:<frameId>`) and dropped when the tab closes, the frame loads
- * another document, or the frame check finds its document gone. The tab's combined report is pushed to every side
+ * storage.session per tab and frame (`report:<tabId>:<frameId>`) and dropped when the tab closes, or when the document
+ * it came from is gone (its frame loaded another one, or the frame check found it gone). A report's document is its
+ * run's: a report whose run belongs to another document of the frame stays, and one whose run is no longer known goes
+ * with any document of its frame. The tab's combined report is pushed to every side
  * panel watching that tab (the `panel` port) and, when the person chose the in-page panel, to the tab's reporting
  * frames (`report/update`), which show it. A watch starts with what is known at once, and the frame check it sets off
  * reaches the panel as one more change when it removes something.
@@ -12,7 +14,7 @@ import type { PortLike, StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { FrameReportSchema, type FrameReport } from '../shared/report';
 import { framesOfTab } from './frames';
-import type { createRateLimit } from './locks';
+import { createKeyedQueue, type createRateLimit } from './locks';
 import type { FrameRef, RunRegistry } from './runs';
 import type { SettingsStore } from './settings';
 
@@ -31,7 +33,9 @@ export interface Reports {
   put(message: ReportPut, from: FrameRef): Promise<Answer<Record<string, never>>>;
   /** The tab's reports, one per frame, by frame id. */
   ofTab(tabId: number): Promise<FrameReport[]>;
-  forgetFrame(tabId: number, frameId: number): Promise<void>;
+  /** Drops the frame's report when it came from this document (null: one Chrome gave no id), or when its run is no
+   *  longer known; a report another document of the frame sent stays. */
+  forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void>;
   forgetTab(tabId: number): Promise<void>;
   /** A side panel's `panel` port: it posts panel/watch {tabId} and receives panel/update now and on every change. */
   watch(port: PortLike): void;
@@ -54,6 +58,8 @@ export function createReports(deps: ReportsDeps): Reports {
   const { session } = deps;
   /** Each watching port and the tab it follows. */
   const watchers = new Map<PortLike, number>();
+  /** One queue per report key: a put and a document's forget never interleave. */
+  const writes = createKeyedQueue();
 
   async function ofTab(tabId: number): Promise<FrameReport[]> {
     const stored = await session.getMany(`${REPORT_PREFIX}${tabId}:`);
@@ -90,12 +96,20 @@ export function createReports(deps: ReportsDeps): Reports {
     }));
   }
 
-  async function remove(tabId: number, frameIds: number[] | 'all'): Promise<void> {
-    const stored = Object.keys(await session.getMany(`${REPORT_PREFIX}${tabId}:`));
-    const keys = frameIds === 'all' ? stored : stored.filter((key) => frameIds.some((frameId) => key === keyOf(tabId, frameId)));
-    if (keys.length === 0) return;
-    await session.remove(keys);
-    await changed(tabId);
+  /** Whether the frame's stored report goes with this document: it came from it, or it cannot say (it no longer
+   *  parses, or its run is not known). Removed under the report's own queue, so a report/put never lands between the
+   *  read and the removal. */
+  function removeIfFrom(tabId: number, frameId: number, documentId: string | null): Promise<boolean> {
+    const key = keyOf(tabId, frameId);
+    return writes.run(key, async () => {
+      const stored = await session.get(key);
+      if (stored === undefined) return false;
+      const parsed = FrameReportSchema.safeParse(stored);
+      const from = parsed.success ? await deps.runs.documentOf(parsed.data.runId) : undefined;
+      if (from !== undefined && from !== documentId) return false;
+      await session.remove([key]);
+      return true;
+    });
   }
 
   return {
@@ -108,14 +122,22 @@ export function createReports(deps: ReportsDeps): Reports {
         log('report.refused');
         return refuse('bad_message');
       }
-      await session.set({ [keyOf(from.tabId, from.frameId)]: message.report });
+      const key = keyOf(from.tabId, from.frameId);
+      await writes.run(key, () => session.set({ [key]: message.report }));
       log('report.stored', { fields: message.report.fields.length, notices: message.report.notices.length });
       await changed(from.tabId);
       return ok({});
     },
     ofTab,
-    forgetFrame: (tabId, frameId) => remove(tabId, [frameId]),
-    forgetTab: (tabId) => remove(tabId, 'all'),
+    async forgetDocument(tabId, frameId, documentId) {
+      if (await removeIfFrom(tabId, frameId, documentId)) await changed(tabId);
+    },
+    async forgetTab(tabId) {
+      const keys = Object.keys(await session.getMany(`${REPORT_PREFIX}${tabId}:`));
+      if (keys.length === 0) return;
+      await session.remove(keys);
+      await changed(tabId);
+    },
     watch(port) {
       port.onMessage((raw) => {
         const parsed = PanelPortMessageSchema.safeParse(raw);

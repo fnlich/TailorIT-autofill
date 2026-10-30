@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { installHandFakes } from '../platform/fake';
 import { startWorker } from './index';
-import { contentSender, fakeCore, pageSender, startTestWorker } from './worker.testkit';
+import { contentSender, fakeCore, fieldSpec, frameReport, LEVER_KEY, pageSender, runState, startTestWorker,
+  tokenRecord } from './worker.testkit';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -69,6 +70,48 @@ describe('the worker router', () => {
 
     const refused = await startTestWorker({ before: (fakes) => fakes.refuseAccessLevel(true) });
     expect(refused.state.storageAccess).toBe('refused');
+  });
+
+  // W6: no test held the access level pending (startTestWorker waits for the worker's start-up).
+  it('holds every content message but ping and panel/open until Chrome answers the storage access level', async () => {
+    let release: () => void = () => undefined;
+    const worker = await startTestWorker({ token: tokenRecord(), awaitStartUp: false,
+      before: (fakes) => {
+        release = fakes.holdAccessLevel();
+      } });
+    expect(worker.state.storageAccess).toBe('pending');
+    const runId = 'A'.repeat(22);
+    const messages = [
+      { v: 1, type: 'ping' },
+      { v: 1, type: 'panel/open' },
+      { v: 1, type: 'frame/hello', isTop: true, hasForm: true },
+      { v: 1, type: 'run/begin', applicationKey: LEVER_KEY, trigger: 'launcher', dryRun: false },
+      { v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], canaries: [], notices: [] },
+      { v: 1, type: 'plan/poll', runId, keys: [] },
+      { v: 1, type: 'runstate/get', applicationKey: LEVER_KEY },
+      { v: 1, type: 'runstate/put', runState: runState() },
+      { v: 1, type: 'runstate/clear', applicationKey: LEVER_KEY },
+      { v: 1, type: 'report/put', runId, report: frameReport(runId) },
+      { v: 1, type: 'policy/hit', applicationKey: LEVER_KEY, patternId: null },
+    ];
+    const answered = new Map<string, unknown>();
+    for (const message of messages) {
+      void worker.deliver(message, contentSender()).then((answer) => answered.set(message.type, answer));
+    }
+
+    await vi.waitFor(() => expect([...answered.keys()].sort()).toEqual(['panel/open', 'ping']));
+    // Long enough for any handler that did not wait to have answered (each needs a few storage reads).
+    for (let tick = 0; tick < 20; tick += 1) await new Promise((resolve) => setImmediate(resolve));
+    expect([...answered.keys()].sort()).toEqual(['panel/open', 'ping']);
+    expect(answered.get('ping')).toEqual({ ok: true, data: { pong: true } });
+    expect(worker.fakes.sidePanelCalls.map((call) => call.method)).toEqual(['open']);
+    expect(Object.keys(await fakeBrowser.storage.session.get(null)).filter((key) => key.startsWith('frames:'))).toEqual([]);
+
+    release();
+    await vi.waitFor(() => expect(answered.size).toBe(messages.length));
+    expect(worker.state.storageAccess).toBe('restricted');
+    expect(answered.get('frame/hello')).toMatchObject({ ok: true, data: { frameId: 0 } });
+    expect(answered.get('run/begin')).toMatchObject({ ok: true });
   });
 
   it('starts over the real platform, with every listener registered before anything is awaited', () => {

@@ -82,29 +82,67 @@ function shortFormInCapitals(token: string, raw: string): boolean {
   return new RegExp(String.raw`(?<![\p{L}\p{N}])${letters}(?![\p{L}\p{N}])`, 'u').test(raw);
 }
 
-/** The countries a question names, as ISO alpha-2 codes, by the country vocabulary's phrases read left to right,
- *  longest first. */
-export function countriesNamed(text: string, vocab: Vocab): string[] {
+/** Cities whose names hold a country's but that stand elsewhere, or in a country the name does not settle: Jersey City
+ *  is in New Jersey, and Panama City is in Florida as well as Panama. */
+const CITIES_NAMED_FOR_A_COUNTRY: ReadonlyArray<readonly string[]> = [['jersey', 'city'], ['panama', 'city']];
+
+/** The longest phrase of `phrases` that starts at `at` in `tokens`, as its length (0 for none) and its entity id; a
+ *  short spelling counts only in capitals in `raw`. */
+function phraseAt(phrases: ReadonlyMap<string, ReadonlyArray<{ tokens: readonly string[]; id: string; ambiguous: boolean }>>,
+  tokens: readonly string[], at: number, raw: string): { length: number; id: string | null } {
+  for (const phrase of phrases.get(tokens[at]!) ?? []) {
+    if (phrase.ambiguous || phrase.tokens.length > tokens.length - at) continue;
+    if (!phrase.tokens.every((token, offset) => tokens[at + offset] === token)) continue;
+    if (phrase.tokens.length === 1 && phrase.tokens[0]!.length <= 3 && !shortFormInCapitals(phrase.tokens[0]!, raw)) {
+      continue;
+    }
+    return { length: phrase.tokens.length, id: phrase.id };
+  }
+  return { length: 0, id: null };
+}
+
+/** The countries a question names, and whether it names a place that may or may not be a country. */
+export interface PlacesNamed {
+  /** ISO alpha-2 codes, each once. */
+  countries: string[];
+  /** A name a country shares with a region ("Georgia"): which one the question means is not said. */
+  ambiguous: boolean;
+}
+
+/**
+ * The places a question names (the review, CORE-13), read left to right, longest first: a country's phrase from the
+ * country vocabulary, unless a region's phrase or a city's name there is longer and holds it ("New Mexico", "New
+ * Jersey", "Jersey City" name no country), and a phrase a country and a region share in full ("Georgia") is ambiguous.
+ */
+export function placesNamed(text: string, vocab: Vocab): PlacesNamed {
   const tokens = normalize(text, 'country').tokens;
-  const phrases = vocab.phrases('country');
+  const countries = vocab.phrases('country');
+  const regions = vocab.phrases('region');
   const found = new Set<string>();
+  let ambiguous = false;
   let at = 0;
   while (at < tokens.length) {
-    let length = 0;
-    for (const phrase of phrases.get(tokens[at]!) ?? []) {
-      if (phrase.ambiguous || phrase.tokens.length > tokens.length - at) continue;
-      if (length > 0 && phrase.tokens.length < length) break;
-      if (!phrase.tokens.every((token, offset) => tokens[at + offset] === token)) continue;
-      if (phrase.tokens.length === 1 && phrase.tokens[0]!.length <= 3 && !shortFormInCapitals(phrase.tokens[0]!, text)) {
-        continue;
-      }
-      length = phrase.tokens.length;
-      const entity = vocab.entity(phrase.id);
+    const country = phraseAt(countries, tokens, at, text);
+    const city = CITIES_NAMED_FOR_A_COUNTRY.find((name) => name.every((token, offset) => tokens[at + offset] === token));
+    const region = Math.max(phraseAt(regions, tokens, at, text).length, city?.length ?? 0);
+    if (country.length === 0 || region > country.length) {
+      at += Math.max(region, 1);
+      continue;
+    }
+    if (region === country.length) {
+      ambiguous = true;
+    } else {
+      const entity = vocab.entity(country.id!);
       if (entity?.kind === 'country') found.add(entity.alpha2);
     }
-    at += length > 0 ? length : 1;
+    at += country.length;
   }
-  return [...found];
+  return { countries: [...found], ambiguous };
+}
+
+/** The countries a question names, as ISO alpha-2 codes (placesNamed's countries). */
+export function countriesNamed(text: string, vocab: Vocab): string[] {
+  return placesNamed(text, vocab).countries;
 }
 
 /** What a legal question's country may come from besides its own words: interpretation 1, when the owner has turned
@@ -115,11 +153,16 @@ export interface LegalContext {
 }
 
 /** The work-authorization entry for the one country a question names (its label, else its description), or, under
- *  interpretation 1, the posting's country for a question that names none; or why there is none. */
+ *  interpretation 1, the posting's country for a question that names none; or why there is none. A question that also
+ *  names a place that may or may not be a country ("Georgia") names no one country. */
 function authorizationEntry(spec: FieldSpec, profile: Profile, vocab: Vocab, legal: LegalContext):
   { index: number; fromPosting: boolean } | { reason: 'work-auth-country-unknown' | 'legal-not-in-profile' } {
-  let countries = countriesNamed(spec.label, vocab);
-  if (countries.length === 0 && spec.description !== '') countries = countriesNamed(spec.description, vocab);
+  let places = placesNamed(spec.label, vocab);
+  if (places.countries.length === 0 && !places.ambiguous && spec.description !== '') {
+    places = placesNamed(spec.description, vocab);
+  }
+  if (places.ambiguous) return { reason: 'work-auth-country-unknown' };
+  let countries = places.countries;
   const fromPosting = countries.length === 0 && legal.settings.interpretations.postingCountryForLegal
     && legal.postingCountry !== undefined;
   if (fromPosting) countries = [legal.postingCountry!];

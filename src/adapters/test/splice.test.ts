@@ -19,8 +19,8 @@ describe('spliceTraps', () => {
     const spliced = spliceTraps(html, TRAPS);
     const [start, end] = [spliced.indexOf('<form'), spliced.indexOf('</form>')];
     const markers = SPLICED_TRAPS.flatMap((trap) => markersOf(TRAPS[trap.id]!));
-    // Traps 01 (2), 01b (1), 02 (14), 03 (4) and 08 (1), and each trap's visible marker.
-    expect(markers.filter((marker) => marker.startsWith('HIDDEN'))).toHaveLength(22);
+    // Traps 01 (2), 01b (1), 02 (19), 03 (4) and 08 (1), and each trap's visible marker.
+    expect(markers.filter((marker) => marker.startsWith('HIDDEN'))).toHaveLength(27);
     expect(markers.filter((marker) => marker.startsWith('VISIBLE'))).toHaveLength(5);
     for (const marker of markers) {
       expect(spliced.indexOf(marker), marker).toBeGreaterThan(start);

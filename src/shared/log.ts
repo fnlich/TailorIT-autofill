@@ -45,9 +45,11 @@ export const LOG_CODES = [
   'runstate.stored',
   'runstate.pruned',
   'runstate.refused',
+  'runstate.too-large',
   'report.stored',
   'report.refused',
   'policy.recorded',
+  'policy.evicted',
   'settings.saved',
   'settings.unreadable',
   // The review panel and the frames.
@@ -77,6 +79,10 @@ export const LOG_CODES = [
   'content.resume-retried',
   'content.resume-failed',
   'content.resume-released',
+  // A trusted click on one of our controls a person could not see (a decoy over it), and a run refused in a frame its
+  // page hides (the Phase 2 review's S5 and S1).
+  'content.ui-click-refused',
+  'content.form-hidden',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

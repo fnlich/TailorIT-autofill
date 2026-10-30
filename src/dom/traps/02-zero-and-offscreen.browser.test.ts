@@ -5,8 +5,10 @@ import { newScanCache } from '../scan-cache';
 import { isTextVisible, isUserVisible } from '../visibility';
 import { labelTable, loadTrap, tripwireHits } from './trap.testkit';
 
+// The last five came with the Phase 2 review (DOM-1, DOM-3, DOM-6, DOM-12; S2).
 const RULES = ['font-size-0', 'font-size-3', 'zero-overflow', 'left-offscreen', 'top-offscreen', 'transform', 'clip',
-  'clip-path', 'opacity', 'visibility', 'hidden', 'aria-hidden', 'inert', 'content-visibility'] as const;
+  'clip-path', 'opacity', 'visibility', 'hidden', 'aria-hidden', 'inert', 'content-visibility', 'mask', 'backface',
+  'filter-opacity', 'closed-details', 'far-right'] as const;
 
 describe('trap 02: zero-size and off-screen text', () => {
   afterEach(() => removeFixtures(document));

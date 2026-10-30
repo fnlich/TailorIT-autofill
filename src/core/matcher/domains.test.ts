@@ -49,6 +49,17 @@ describe('stagePlan', () => {
     }
   });
 
+  // CORE-3 (Phase 2 review): a legal or sensitive answer fell through to "Other" plus free text ("Citizen" typed into
+  // a citizenship question's Other box), so the person's own words reached a box the policy never lets fill.
+  it('lets "Other" plus free text play a part only in profile, free-text and unknown, where its row allows it', () => {
+    for (const policy of POLICY_CLASSES) {
+      const open = policy === 'profile' || policy === 'free-text' || policy === 'unknown';
+      expect(stagePlan('generic', policy, true).other, policy).toBe(open);
+      expect(stagePlan('institution', policy, true).other, policy).toBe(open);
+      expect(stagePlan('country', policy, true).other, policy).toBe(false);
+    }
+  });
+
   it('asks the LLM only when the setting allows it and the row does', () => {
     expect(stagePlan('referral', 'profile', false).llm).toBe(false);
     expect(stagePlan('referral', 'profile', true).llm).toBe(true);

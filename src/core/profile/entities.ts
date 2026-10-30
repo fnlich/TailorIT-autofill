@@ -12,13 +12,14 @@ import type {
   CountryEntity, FieldEntity, InstitutionEntity, KeyHit, RegionEntity, Vocab, VocabEntity,
 } from '../vocab/types';
 
-/** Why a value was kept as the person wrote it, only partly understood, or dropped. The last five come from
+/** Why a value was kept as the person wrote it, only partly understood, or dropped. The last six come from
  *  canonicalizeProfile (canonicalize.ts): an EEO answer or another closed-list answer outside its list (left absent as
- *  a whole), a malformed date (dropped), and a language or referral source the vocabulary does not know (kept as
- *  written). */
+ *  a whole), a malformed date (dropped), a language or referral source the vocabulary does not know (kept as written),
+ *  and a phone country its calling code does not settle (left absent, so the phone's country field is flagged). */
 export const CANONICALIZE_ISSUE_CODES = ['institution-not-in-vocab', 'institution-ambiguous', 'institution-id-unknown',
   'degree-unparsed', 'field-not-in-vocab', 'field-ambiguous', 'country-unknown', 'region-unknown',
-  'eeo-value-unknown', 'value-unknown', 'date-invalid', 'language-not-in-vocab', 'referral-not-in-vocab'] as const;
+  'eeo-value-unknown', 'value-unknown', 'date-invalid', 'language-not-in-vocab', 'referral-not-in-vocab',
+  'phone-country-mismatch'] as const;
 export type CanonicalizeIssueCode = (typeof CANONICALIZE_ISSUE_CODES)[number];
 
 /** One issue: where (a profile path such as 'education[0].institution') and what. Never a value. */

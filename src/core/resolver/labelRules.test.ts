@@ -672,6 +672,85 @@ describe('unrecognised consent', () => {
   });
 });
 
+// CORE-1 (Phase 2 review): one consent verb with several objects ("agree to the privacy policy and to binding
+// arbitration") was read as privacy alone, so a privacy pre-approval ticked an arbitration agreement.
+describe('consent covers every object the box binds the person to', () => {
+  it.each<[string, FieldCategory[]]>([
+    ['I agree to the privacy policy and to binding arbitration', ['consent.other', 'consent.privacy']],
+    ['I agree to the Privacy Policy and the Arbitration Agreement', ['consent.other', 'consent.privacy']],
+    ['I agree to the privacy policy and binding arbitration', ['consent.other', 'consent.privacy']],
+    ['I agree to the privacy policy and jury waiver', ['consent.other', 'consent.privacy']],
+    ['I agree to the privacy policy and the non-compete agreement', ['consent.other', 'consent.privacy']],
+    ['I accept the terms of service, the privacy policy, and the class action waiver',
+      ['consent.other', 'consent.privacy', 'consent.terms']],
+    // Commas read as spaces, so a named binding commitment counts wherever it stands.
+    ['I agree to the privacy policy, arbitration agreement', ['consent.other', 'consent.privacy']],
+    ['Arbitration agreement and privacy policy: I agree', ['consent.other', 'consent.privacy']],
+    ['I consent to a background check and to drug testing', ['consent.other', 'consent.backgroundCheck']],
+    ['I agree to receive text messages and phone calls', ['consent.other', 'consent.sms']],
+    ['I agree to the privacy policy and that my data may be shared with partners',
+      ['consent.other', 'consent.privacy']],
+    ['I certify that my answers are true and that I will submit to a drug test', ['consent.other', 'consent.certify']],
+    ['Keep my information on file for future opportunities and enroll me in binding arbitration',
+      ['consent.other', 'consent.dataRetention']],
+  ])('%j (checkbox) is %j: nothing pre-approved covers the extra object', (label, consentKinds) => {
+    expect(labelHit(label, 'checkbox')).toMatchObject({ category: consentKinds[0], consentKinds });
+  });
+
+  it.each<[string, FieldCategory[]]>([
+    // The opposites: every object is one the kinds name, so the box keeps its kinds.
+    ['I agree to the terms and conditions and the privacy policy', ['consent.privacy', 'consent.terms']],
+    ['I agree to the Terms of Service and Privacy Policy', ['consent.privacy', 'consent.terms']],
+    ['I consent to a background check and to text messages', ['consent.sms', 'consent.backgroundCheck']],
+    ['I consent to the collection and processing of my personal data in accordance with the privacy policy',
+      ['consent.privacy']],
+    ['I certify that my answers are true and complete', ['consent.certify']],
+    ['I certify that my answers are accurate and complete to the best of my knowledge', ['consent.certify']],
+    ['I certify that the above is true and agree to the privacy policy', ['consent.certify', 'consent.privacy']],
+    ['I acknowledge that I have read and understood the privacy notice', ['consent.privacy']],
+    ['I consent to Acme retaining my CV for future opportunities', ['consent.dataRetention']],
+    ['I agree to receive marketing emails and text messages', ['consent.marketing', 'consent.sms']],
+    ['I agree to receive text messages at the phone number provided', ['consent.sms']],
+  ])('%j (checkbox) keeps %j', (label, consentKinds) => {
+    expect(labelHit(label, 'checkbox')).toMatchObject({ category: consentKinds[0], consentKinds });
+  });
+});
+
+// CORE-2 (Phase 2 review): an opt-out box ("I do not wish to receive marketing emails") was read as the consent it
+// declines, so a marketing pre-approval ticked it.
+describe('a consent box worded as an opt-out or a refusal is not the consent it names', () => {
+  it.each<[string, FieldKind]>([
+    ['I do not consent to receive text messages', 'checkbox'],
+    ['I do not wish to receive marketing emails', 'checkbox'],
+    ["I don't want to join the talent community", 'checkbox'],
+    ['Opt out of SMS', 'checkbox'],
+    ['Please opt me out of marketing emails', 'checkbox'],
+    ['Do not contact me by SMS', 'checkbox'],
+    ['Do not sell or share my personal information under the privacy policy', 'checkbox'],
+    ['Check this box if you do not want to receive our newsletter', 'checkbox'],
+    ['Tick here to opt out of job alerts', 'checkbox'],
+    ['No, I do not want marketing updates about new roles', 'checkbox'],
+    ['I decline the background check', 'checkbox'],
+    ['Would you like to opt out of marketing emails?', 'radio'],
+    ['Do you wish to unsubscribe from text messages?', 'radio'],
+  ])('%j (%s) is consent.other, which nothing ticks', (label, kind) => {
+    const hit = labelHit(label, kind);
+    expect(hit?.category).toBe('consent.other');
+    expect(hit?.consentKinds).toContain('consent.other');
+  });
+
+  it.each<[string, FieldCategory[]]>([
+    // The opposites: a box that consents, whatever it says about opting out later.
+    ['I agree to receive text messages. Reply STOP to opt out.', ['consent.sms']],
+    ['I consent to receive text messages; you can opt out at any time', ['consent.sms']],
+    ['Subscribe to our newsletter. You may unsubscribe at any time.', ['consent.marketing']],
+    ['I agree to the privacy policy. Acme will not sell your data.', ['consent.privacy']],
+    ['I would like to receive job alerts', ['consent.marketing']],
+  ])('%j (checkbox) keeps %j', (label, consentKinds) => {
+    expect(labelHit(label, 'checkbox')).toMatchObject({ category: consentKinds[0], consentKinds });
+  });
+});
+
 describe('self-identification questions', () => {
   it.each<[string, FieldKind, FieldCategory]>([
     // Wordings real surveys use, beyond §8.3's anchored ones.

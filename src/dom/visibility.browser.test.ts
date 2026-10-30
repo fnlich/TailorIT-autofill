@@ -94,13 +94,54 @@ const CASES: Array<{ id: string; html: string; visible: boolean; rule?: Visibili
   { id: 'clip-path-circle-pos',
     html: '<div style="clip-path:circle(50%);width:120px;height:120px"><span id="clip-path-circle-pos">Round</span></div>',
     visible: true },
+  // A mask of any kind hides what it covers, whatever its shape (fails closed; DOM-1, S2): mask-image, its -webkit-
+  // spelling and the mask border.
+  { id: 'mask-neg', html: '<div style="mask-image:linear-gradient(transparent,transparent)"><span id="mask-neg">Masked</span></div>',
+    visible: false, rule: 'mask' },
+  { id: 'webkit-mask-neg',
+    html: '<div style="-webkit-mask-image:linear-gradient(transparent,transparent)"><span id="webkit-mask-neg">Masked</span></div>',
+    visible: false, rule: 'mask' },
+  { id: 'mask-border-neg',
+    html: '<div style="-webkit-mask-box-image:linear-gradient(transparent,transparent)"><span id="mask-border-neg">Masked</span></div>',
+    visible: false, rule: 'mask' },
+  { id: 'mask-pos', html: '<div style="mask-image:none"><span id="mask-pos">Unmasked</span></div>', visible: true },
+  // The back face of an element turned away under a 3D transform (DOM-1, S2), against the GPU hack translateZ(0)
+  { id: 'backface-neg',
+    html: '<div style="transform:rotateY(180deg);backface-visibility:hidden"><span id="backface-neg">Turned away</span></div>',
+    visible: false, rule: 'backface' },
+  { id: 'backface-context-neg',
+    html: '<div style="transform:rotateX(180deg);transform-style:preserve-3d"><div style="backface-visibility:hidden"><span id="backface-context-neg">Turned with its parent</span></div></div>',
+    visible: false, rule: 'backface' },
+  { id: 'backface-pos',
+    html: '<div style="transform:translateZ(0);backface-visibility:hidden"><span id="backface-pos">Facing</span></div>',
+    visible: true },
+  // filter: opacity() multiplies into the opacity product (DOM-3, S2)
+  { id: 'filter-opacity-neg', html: '<div style="filter:opacity(0)"><span id="filter-opacity-neg">Filtered away</span></div>',
+    visible: false, rule: 'opacity' },
+  { id: 'filter-opacity-product-neg',
+    html: '<div style="opacity:0.2"><div style="filter:opacity(20%)"><span id="filter-opacity-product-neg">Faint</span></div></div>',
+    visible: false, rule: 'opacity' },
+  { id: 'filter-opacity-pos', html: '<div style="filter:opacity(50%)"><span id="filter-opacity-pos">Half</span></div>',
+    visible: true },
+  // A closed <details> shows its summary alone (DOM-12)
+  { id: 'details-neg', html: '<details><summary>More</summary><p><span id="details-neg">Inside</span></p></details>',
+    visible: false, rule: 'closed-details' },
+  { id: 'details-summary-pos',
+    html: '<details><summary><span id="details-summary-pos">The summary</span></summary><p>Inside</p></details>',
+    visible: true },
+  { id: 'details-open-pos', html: '<details open><summary>More</summary><p><span id="details-open-pos">Open</span></p></details>',
+    visible: true },
+  // Far to the right: reachable means the viewport's width, not the scroll width the element widens (DOM-6)
+  { id: 'right-neg', html: '<span id="right-neg" style="position:absolute;left:10000px;top:0">Far right</span>',
+    visible: false, rule: 'off-screen' },
 ];
 
 const TABLE = `<!doctype html><html><head><style>body{margin:0;font:16px/1.4 sans-serif} p,div{margin:4px 0}</style></head>
 <body>${CASES.map((c) => c.html).join('\n')}</body></html>`;
 
 const TRAP_RULES = ['font-size-0', 'font-size-3', 'zero-overflow', 'left-offscreen', 'top-offscreen', 'transform', 'clip',
-  'clip-path', 'opacity', 'visibility', 'hidden', 'aria-hidden', 'inert', 'content-visibility'];
+  'clip-path', 'opacity', 'visibility', 'hidden', 'aria-hidden', 'inert', 'content-visibility', 'mask', 'backface',
+  'filter-opacity', 'closed-details', 'far-right'];
 
 function verdicts(fixture: Fixture): Record<string, boolean> {
   const cache = newScanCache();
@@ -211,4 +252,21 @@ describe('isUserVisible', () => {
     expect(isTextVisible(textOf('shown'))).toBe(true);
     expect(isTextVisible(textOf('clipped'))).toBe(false);
   });
+
+  it('hides text sitting right inside a closed <details>, and keeps its summary, with and without checkVisibility',
+    async () => {
+      // DOM-12: the manual walk took a closed details' content for visible after a forced layout.
+      const fixture = await loadFixture(document, `<!doctype html><body>
+        <details id="closed"><summary>Show more</summary>Loose text inside</details></body>`);
+      const loose = fixture.doc.getElementById('closed')!.lastChild as Text;
+      const summary = fixture.doc.querySelector('summary')!.firstChild as Text;
+      for (const native of [true, false]) {
+        const restore = native ? () => undefined : withoutCheckVisibility(fixture.view);
+        try {
+          expect([native, isTextVisible(loose), isTextVisible(summary)]).toEqual([native, false, true]);
+        } finally {
+          restore();
+        }
+      }
+    });
 });

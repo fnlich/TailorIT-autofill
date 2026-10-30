@@ -3,13 +3,15 @@
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { paint } from './proc.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const requireAll = process.argv.includes('--all');
 const { ATS_MATCHES } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
 const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
-/** The content script, React included once the in-page panel lands, must stay under this. */
+/** The content script, React included once the in-page panel lands, must stay under this: every file the manifest's
+ *  content script lists, together. */
 const CONTENT_SCRIPT_BUDGET = 1024 * 1024;
 
 const BUILDS = [
@@ -17,8 +19,13 @@ const BUILDS = [
   { dir: '.output/edge-mv3', origin: 'http://localhost:3100', production: true },
   { dir: '.output-e2e/chrome-mv3', origin: 'http://localhost:3190', production: false },
 ];
-/** Strings that exist only in the e2e build; a production bundle containing one fails. */
-const E2E_ONLY = ['e2e:events', 'e2e/probe', 'storage-local-probe', 'localhost:3190', '127.0.0.1', 'tailorit-e2e-test-adapter'];
+/**
+ * Strings that exist only in the e2e build; a production bundle containing one fails. The e2e fallback's sender check
+ * (src/background/senders.ts) is a regular expression, which a bundle holds as written, its dots escaped: hence both
+ * spellings of 127.0.0.1.
+ */
+const E2E_ONLY = ['e2e:events', 'e2e/probe', 'storage-local-probe', 'localhost:3190', '127.0.0.1', String.raw`127\.0\.0\.1`,
+  'tailorit-e2e-test-adapter'];
 /**
  * Strings only a development build holds: the snapshot hotkeys' marker, which both command names begin with
  * (src/background/capture.ts), the capture page's pageCapture call, and the worker's address for that page. The chrome,
@@ -62,12 +69,35 @@ function checkManifest(build, manifest) {
       if (key in script) fail(build, `content script has ${key}`);
     }
   }
-  if (JSON.stringify(manifest.externally_connectable?.matches) !== JSON.stringify([`${build.origin}/*`])) {
+  // The whole object: `ids` would let other extensions connect, `accepts_tls_channel_id` adds a channel.
+  if (!isDeepStrictEqual(manifest.externally_connectable, { matches: [`${build.origin}/*`] })) {
     fail(build, 'externally_connectable is not exactly TailorIT');
   }
   if (manifest.options_ui?.open_in_tab !== true) fail(build, 'the options page does not open in a tab');
   for (const page of [manifest.options_ui?.page, manifest.side_panel?.default_path]) {
     if (!page || !existsSync(join(ROOT, build.dir, page))) fail(build, `page ${page} is missing`);
+  }
+}
+
+/** The budget over every file the manifest's content script lists, wherever the build put them; a listed file that is
+ *  not there fails, and so does a content script that lists none. */
+function checkContentScriptSize(build, dir, manifest) {
+  const listed = manifest.content_scripts?.[0]?.js;
+  if (!Array.isArray(listed) || listed.length === 0) {
+    fail(build, 'the content script lists no file');
+    return;
+  }
+  let total = 0;
+  for (const path of listed) {
+    const file = typeof path === 'string' ? join(dir, path) : null;
+    if (file === null || !existsSync(file) || !statSync(file).isFile()) {
+      fail(build, `the content script ${String(path)} is missing`);
+      continue;
+    }
+    total += statSync(file).size;
+  }
+  if (total > CONTENT_SCRIPT_BUDGET) {
+    fail(build, `the content script is ${total} bytes (${listed.join(', ')}), over the ${CONTENT_SCRIPT_BUDGET}-byte budget`);
   }
 }
 
@@ -93,10 +123,7 @@ for (const build of BUILDS) {
     for (const needle of DEV_ONLY) if (text.includes(needle)) fail(build, `${relative(dir, file)} contains the development-only "${needle}"`);
   }
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
-  const content = join(dir, 'content-scripts', 'content.js');
-  if (existsSync(content) && statSync(content).size > CONTENT_SCRIPT_BUDGET) {
-    fail(build, `the content script is ${statSync(content).size} bytes, over the ${CONTENT_SCRIPT_BUDGET}-byte budget`);
-  }
+  checkContentScriptSize(build, dir, manifest);
   checked.push({ build, sizes: all.map((file) => [relative(dir, file), statSync(file).size]) });
 }
 

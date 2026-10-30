@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CONSENT_CATEGORIES } from '../enums';
 import { goldenProfile, NOW, specOf, vocab } from '../plan/plan.testkit';
 import type { PlanSensitiveState } from '../plan/types';
 import type { FieldSpec } from '../types/field';
@@ -101,5 +102,81 @@ describe('confidence and actions (§8.6)', () => {
     const spec = specOf('Email', 'text', { autocomplete: ['tel'] });
     expect(resolve(spec, ctx())).toMatchObject({ category: 'contact.email', reason: 'classification-conflict',
       action: 'fill-and-flag' });
+  });
+});
+
+/** Every consent kind pre-approved, and a profile that is willing to relocate. */
+const everything = () => {
+  const profile = goldenProfile();
+  return ctx({ settings: { ...DEFAULT_SETTINGS, preapprovedConsent: [...CONSENT_CATEGORIES] },
+    profile: { ...profile, preferences: { ...profile.preferences, relocation: { kind: 'value', value: true } } } });
+};
+
+// CORE-1 (Phase 2 review): a box that binds the person to more than its kinds name is never ticked.
+describe('a consent box is ticked only when the pre-approved kinds cover every object it names', () => {
+  it.each([
+    'I agree to the privacy policy and to binding arbitration',
+    'I agree to the Privacy Policy and the Arbitration Agreement',
+    'I agree to the privacy policy and jury waiver',
+    'I agree to the privacy policy and the non-compete agreement',
+  ])('leaves %j to the person, whatever is pre-approved', (label) => {
+    expect(resolveField(specOf(label, 'checkbox'), everything())).toMatchObject({ shaped: null,
+      resolution: { category: 'consent.other', action: 'needs-user', reason: 'consent-requires-user' } });
+  });
+
+  it.each([
+    'I agree to the terms and conditions and the privacy policy',
+    'I consent to the collection and processing of my personal data in accordance with the privacy policy',
+    'I certify that my answers are true and complete',
+  ])('ticks %j when its kinds are pre-approved', (label) => {
+    expect(resolveField(specOf(label, 'checkbox'), everything())).toMatchObject({ shaped: { shape: 'check',
+      check: true }, resolution: { action: 'fill', origin: { provenance: 'rule', ruleId: 'consent.preapproved' } } });
+  });
+});
+
+// CORE-2 (Phase 2 review): a lone checkbox was ticked for a yes answer whatever its statement said, so "I am not
+// legally authorized" was ticked for someone who is, and an opt-out box for someone who pre-approved the consent.
+describe('a lone checkbox is ticked only for an affirmative statement that equals the person’s answer', () => {
+  it.each([
+    ['I am not legally authorized to work in the United States', 'workAuth.authorized'],
+    ['I am not at least 18 years of age', 'screening.over18'],
+    ['I am unable to relocate', 'preferences.relocation'],
+    ['I am not willing to relocate', 'preferences.relocation'],
+    ['I would relocate unless the role is remote', 'preferences.relocation'],
+  ] as const)('leaves %j to the person', (label, category) => {
+    expect(resolveField(specOf(label, 'checkbox'), everything())).toMatchObject({ shaped: null,
+      resolution: { category, action: 'needs-user', reason: 'statement-not-affirmative', intended: null } });
+  });
+
+  it.each([
+    'I do not consent to receive text messages',
+    'I do not wish to receive marketing emails',
+    'Opt out of SMS',
+    'Do not contact me by SMS',
+  ])('never ticks the opt-out %j, though its consent is pre-approved', (label) => {
+    expect(resolveField(specOf(label, 'checkbox'), everything())).toMatchObject({ shaped: null,
+      resolution: { category: 'consent.other', action: 'needs-user', reason: 'consent-requires-user' } });
+  });
+
+  it('never picks Yes on a consent radio that asks about opting out', () => {
+    expect(resolveField(specOf('Would you like to opt out of marketing emails?', 'radio', {
+      optionLabels: ['Yes', 'No'] }), everything())).toMatchObject({ shaped: null,
+      resolution: { category: 'consent.other', action: 'needs-user' } });
+  });
+
+  it.each([
+    ['I am legally authorized to work in the United States', 'workAuth.authorized'],
+    ['I am at least 18 years of age', 'screening.over18'],
+    ['I am willing to relocate', 'preferences.relocation'],
+    ['I agree to receive text messages. Reply STOP to opt out.', 'consent.sms'],
+  ] as const)('ticks the affirmative %j for a yes', (label, category) => {
+    expect(resolveField(specOf(label, 'checkbox'), everything())).toMatchObject({ shaped: { shape: 'check',
+      check: true }, resolution: { category, action: 'fill' } });
+  });
+
+  it('keeps a saved answer for the exact statement, which is the person’s own', () => {
+    const spec = specOf('I am not willing to relocate', 'checkbox');
+    expect(resolveField(spec, { ...everything(), savedAnswers: [saved(spec, { kind: 'checked', checked: true })] }))
+      .toMatchObject({ shaped: { shape: 'check', check: true }, resolution: { origin: { provenance: 'saved' } } });
   });
 });

@@ -4,7 +4,8 @@ import type { Explicit, Profile } from '../types/profile';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { ValueResult } from './candidate';
 import {
-  combinedSponsorship, consentValue, countriesNamed, eeoValue, legalValue, SENSITIVE_PART_CATEGORIES, sensitiveGate,
+  combinedSponsorship, consentValue, countriesNamed, eeoValue, legalValue, placesNamed, SENSITIVE_PART_CATEGORIES,
+  sensitiveGate,
 } from './policy';
 
 const yes: Explicit<boolean> = { kind: 'value', value: true };
@@ -31,6 +32,38 @@ describe('countriesNamed', () => {
     expect(countriesNamed('Are you authorized to work in the US or Canada?', vocab).sort()).toEqual(['CA', 'US']);
     expect(countriesNamed('Are you authorized to work for us?', vocab)).toEqual([]);
     expect(countriesNamed('Are you legally authorized to work?', vocab)).toEqual([]);
+  });
+
+  // CORE-13 (Phase 2 review): a country's name inside a region's or a city's was read as the country ("New Mexico" as
+  // Mexico, "New Jersey" and "Jersey City" as Jersey), and a name a country shares with a state ("Georgia") as the
+  // country, so a legal question could be answered from the wrong country's entry.
+  it('reads no country inside a region’s or a city’s name, and none from a name a region shares', () => {
+    for (const text of ['Are you authorized to work in New Mexico?', 'Are you legally authorized to work in New Jersey?',
+      'Can you legally work in Jersey City?']) {
+      expect(placesNamed(text, vocab), text).toEqual({ countries: [], ambiguous: false });
+    }
+    expect(placesNamed('Are you authorized to work in Georgia?', vocab)).toEqual({ countries: [], ambiguous: true });
+    expect(placesNamed('Are you authorized to work in the US or Georgia?', vocab))
+      .toEqual({ countries: ['US'], ambiguous: true });
+    // The opposites: the country itself, and a city inside it.
+    expect(countriesNamed('Are you authorized to work in Mexico?', vocab)).toEqual(['MX']);
+    expect(countriesNamed('Are you authorized to work in Mexico City?', vocab)).toEqual(['MX']);
+    expect(countriesNamed('Are you authorized to work in Jersey?', vocab)).toEqual(['JE']);
+    expect(countriesNamed('Are you authorized to work in New Zealand?', vocab)).toEqual(['NZ']);
+  });
+
+  it('never answers a question about a region from the entry of the country inside its name', () => {
+    const profile = goldenProfile();
+    const abroad: Profile = { ...profile, workAuthorization: [
+      { country: 'US', authorized: { kind: 'value', value: false } },
+      ...(['MX', 'JE', 'GE'] as const).map((country) => ({ country, authorized: yes })),
+    ] };
+    for (const label of ['Are you legally authorized to work in New Mexico?', 'Are you authorized to work in New Jersey?',
+      'Are you legally authorized to work in Jersey City?', 'Are you legally authorized to work in Georgia?']) {
+      const result = legalValue('workAuth.authorized', specOf(label, 'radio', { optionLabels: ['Yes', 'No'] }), abroad,
+        vocab, { settings: DEFAULT_SETTINGS });
+      expect(reason(result), label).toBe('work-auth-country-unknown');
+    }
   });
 });
 

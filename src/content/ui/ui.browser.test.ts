@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { isInOwnUi } from '../../dom/own-ui';
@@ -13,6 +13,12 @@ async function trustedClick(ui: PageUi, target: Element): Promise<void> {
   const box = target.getBoundingClientRect();
   await userEvent.click(ui.host, { force: true, position: { x: box.left - host.left + box.width / 2,
     y: box.top - host.top + box.height / 2 } });
+}
+
+/** Waits until the UI's own visibility watch says a person can see `el` (IntersectionObserver v2 answers within about
+ *  100 ms of a change, and a click on a control nobody could see yet does not count). */
+async function seen(ui: PageUi, el: Element): Promise<void> {
+  await vi.waitFor(() => expect(ui.visibleNow(el)).toBe(true));
 }
 
 /** A form root on the test page for the UI to anchor to. */
@@ -68,6 +74,7 @@ describe('the in-page UI', () => {
     ui.launcher.el.click();
     ui.launcher.el.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
     expect(actions).toEqual([]);
+    await seen(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual(['fill']);
   });
@@ -79,6 +86,7 @@ describe('the in-page UI', () => {
     const bubbled: string[] = [];
     const listener = (event: Event) => bubbled.push(event.type);
     document.addEventListener('click', listener);
+    await seen(ui, ui.launcher.el);
     try {
       await trustedClick(ui, ui.launcher.el);
     } finally {
@@ -99,8 +107,9 @@ describe('the in-page UI', () => {
     fill!.click();
     cancel!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(choices).toEqual([]);
+    // Clicked as soon as it shows: the choice counts once the watch has seen the button (S5).
     await trustedClick(ui, fill!);
-    expect(choices).toEqual(['accepted']);
+    await vi.waitFor(() => expect(choices).toEqual(['accepted']));
     expect(ui.shadow.querySelector('.card')!.textContent)
       .toContain('This posting says AI-assisted applications are not allowed. Filling is your decision.');
   });
@@ -179,4 +188,99 @@ describe('the in-page UI', () => {
     observer.disconnect();
     expect(changes.length + observer.takeRecords().length).toBe(0);
   });
+});
+
+describe('the in-page UI’s own controls, as a person can see them (IntersectionObserver v2)', () => {
+  afterEach(() => {
+    for (const ui of mounted.splice(0)) ui.destroy();
+    document.querySelectorAll('[data-test-root]').forEach((el) => el.remove());
+    removeFixtures(document);
+  });
+
+  /** An opaque layer of the page over `box`, as high as our host, that lets clicks through to what is under it. */
+  function decoyOver(box: DOMRect): HTMLElement {
+    const decoy = document.createElement('div');
+    decoy.dataset.testRoot = '';
+    decoy.textContent = 'Continue';
+    decoy.style.cssText = `position:fixed;left:${box.left - 20}px;top:${box.top - 20}px;width:${box.width + 40}px;`
+      + `height:${box.height + 40}px;background:#08f;color:#fff;z-index:2147483647;pointer-events:none`;
+    document.documentElement.append(decoy);
+    return decoy;
+  }
+
+  it('voids a trusted click on the launcher while a page layer is drawn over it, letting clicks through (S5)', async () => {
+    const root = formRoot();
+    const { ui, actions } = mount();
+    ui.anchorTo(root);
+    ui.setLauncher({ state: 'idle', action: 'fill' });
+    await seen(ui, ui.launcher.el);
+    const decoy = decoyOver(ui.launcher.el.getBoundingClientRect());
+    // The click reaches the launcher (the decoy takes no pointer events), but a person saw only the decoy.
+    expect(document.elementFromPoint(ui.launcher.el.getBoundingClientRect().left + 16,
+      ui.launcher.el.getBoundingClientRect().top + 16)).toBe(ui.host);
+    await vi.waitFor(() => expect(ui.visibleNow(ui.launcher.el)).toBe(false));
+    await trustedClick(ui, ui.launcher.el);
+    expect(actions).toEqual([]);
+    decoy.remove();
+    await seen(ui, ui.launcher.el);
+    await trustedClick(ui, ui.launcher.el);
+    expect(actions).toEqual(['fill']);
+  });
+
+  it('voids a trusted click on the policy card while a page layer is drawn over it (S5)', async () => {
+    const root = formRoot();
+    const { ui, choices } = mount();
+    ui.anchorTo(root);
+    ui.showPolicyCard({ fromStoredCopy: false });
+    const fill = ui.shadow.querySelector<HTMLButtonElement>('.card button.action:not(.secondary)')!;
+    await seen(ui, fill);
+    decoyOver(ui.shadow.querySelector('.card')!.getBoundingClientRect());
+    await vi.waitFor(() => expect(ui.visibleNow(fill)).toBe(false));
+    await trustedClick(ui, fill);
+    // Give a deferred choice every chance to arrive: none does.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    expect(choices).toEqual([]);
+  });
+
+  it('knows nothing of a launcher just mounted until the watch’s first word, which then sees it (S5)', async () => {
+    const root = formRoot();
+    const { ui } = mount();
+    ui.anchorTo(root);
+    // Nothing is known before the first notification, which comes at the earliest one frame after observe().
+    expect(ui.visibleNow(ui.launcher.el)).toBeNull();
+    expect(await ui.launcherShown()).toBe(true);
+  });
+
+  /** Mounts the UI in a frame nested in a page that styles the frame (and its wrapper) as given. */
+  async function framed(frameStyle: string, wrapperStyle = ''): Promise<PageUi> {
+    const inner = `<!doctype html><html><body style="margin:0"><form style="display:block;width:400px;height:200px">
+      <label for="e">Email</label><input id="e" type="email"></form></body></html>`.replace(/"/g, '&quot;');
+    const outer = await loadFixture(document, `<!doctype html><body style="margin:0"><p>Company page</p>
+      <div style="${wrapperStyle}"><iframe id="ats" style="width:600px;height:300px;border:0;${frameStyle}"
+      srcdoc="${inner}"></iframe></div></body>`, { width: 900, height: 700 });
+    const frame = outer.doc.getElementById('ats') as HTMLIFrameElement;
+    if (frame.contentDocument?.readyState !== 'complete' || frame.contentDocument.querySelector('form') === null) {
+      await new Promise((resolve) => frame.addEventListener('load', resolve, { once: true }));
+    }
+    const { ui } = mount(frame.contentDocument!);
+    ui.anchorTo(frame.contentDocument!.querySelector('form'));
+    return ui;
+  }
+
+  it('tells that a frame its page hides shows no launcher: opacity 0, off-screen, a zero-height wrapper, scaled (S1)',
+    async () => {
+      for (const [name, frameStyle, wrapperStyle] of [
+        ['opacity 0', 'opacity:0', ''],
+        ['off-screen', 'position:absolute;left:-5000px;top:0', ''],
+        ['a zero-height wrapper', '', 'height:0;overflow:hidden'],
+        ['a transparent wrapper', '', 'opacity:0.3'],
+        ['a scaled-down frame', 'transform:scale(0.5)', ''],
+      ] as const) {
+        const ui = await framed(frameStyle, wrapperStyle);
+        expect([name, await ui.launcherShown()]).toEqual([name, false]);
+        removeFixtures(document);
+      }
+      const shown = await framed('');
+      expect(await shown.launcherShown()).toBe(true);
+    });
 });

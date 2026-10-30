@@ -1,14 +1,16 @@
 /*
  * RunState, the multi-step machine's memory across reloads (Requirement C). Stored per application in storage.local
  * (`run:<applicationKey>`) and indexed per tab in storage.session (`tabrun:<tabId>`), because a run resumes only in its
- * own tab. Every entry is checked with RunStateSchema on the way in and on the way out, expires 24 hours after its
- * last update (by the worker's clock, not the page's), and at most 20 are kept, the oldest dropped first.
+ * own tab. Every entry is checked with RunStateSchema on the way in and on the way out, weighs at most
+ * MAX_RUN_STATE_BYTES, expires 24 hours after its last update (by the worker's clock, not the page's), and at most 20
+ * are kept, the oldest dropped first.
  *
  * RunState holds no field value. Its one page-derived text, the canary set, is checked here: every canary that equals
  * a profile value is dropped before storing (the core's persistableCanaries), with the profile loaded first if it is
  * not in memory; when it cannot be loaded, the canary set is stored empty. A canary is never stored unchecked.
  */
 import { RUN_STATE_TTL_MS, type RunState } from '../core/types/run';
+import { ok, refuse, type Answer } from '../messaging/envelope';
 import { RunStateSchema } from '../messaging/schemas';
 import type { StorageArea } from '../platform/types';
 import { log } from '../shared/log';
@@ -18,6 +20,15 @@ import type { ProfileResult } from './profile-cache';
 
 /** At most this many RunStates are kept. */
 export const MAX_RUN_STATES = 20;
+
+/**
+ * The most a stored RunState may weigh: its JSON, in UTF-8 bytes, as storage.local counts it against its 10 MiB quota.
+ * The worst legitimate one, at the step guard (30 steps of 25 written fields at the longest key the core builds, 100
+ * reveal edges, 32 full-length canaries, every repeatable counter, four AI tasks a step), is about 160 KiB; a real
+ * application (6 to 8 steps) stays under 60 KiB. 256 KiB leaves 60% over the first, and keeps 20 of them at 5 MiB,
+ * half the quota, so settings always fit. A put past it is refused (`too_large`) before anything is read or written.
+ */
+export const MAX_RUN_STATE_BYTES = 256 * 1024;
 const STATE_PREFIX = 'run:';
 const TAB_PREFIX = 'tabrun:';
 
@@ -31,8 +42,9 @@ const FINISHED: ReadonlySet<RunState['status']> = new Set(['done', 'stopped']);
 export interface RunStateStore {
   /** This tab's RunState for the application, or null (none, expired, or another tab's). */
   get(applicationKey: string, tabId: number): Promise<RunState | null>;
-  /** Stores a RunState for this tab, its canaries checked; answers the stored updatedAt. */
-  put(runState: RunState, tabId: number): Promise<{ updatedAt: number }>;
+  /** Stores a RunState for this tab, its canaries checked; answers the stored updatedAt, or `too_large` (nothing
+   *  stored) when its stored form would exceed MAX_RUN_STATE_BYTES. */
+  put(runState: RunState, tabId: number): Promise<Answer<{ updatedAt: number }>>;
   clear(applicationKey: string, tabId: number): Promise<void>;
   /** runs/clear: every RunState and tab index. Answers how many RunStates went. */
   clearAll(): Promise<number>;
@@ -122,15 +134,18 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
       return state;
     },
     put(runState, tabId) {
-      return queue.run('runstate', async () => {
+      return queue.run('runstate', async (): Promise<Answer<{ updatedAt: number }>> => {
         const now = deps.now();
+        const stamped = { ...runState, startedAt: Math.min(runState.startedAt, now), updatedAt: now };
+        // Weighed as it would be stored, before the canary check (which may fetch the profile) and before any write;
+        // dropping canaries only makes it lighter.
+        const bytes = new TextEncoder().encode(JSON.stringify(stamped)).length;
+        if (bytes > MAX_RUN_STATE_BYTES) {
+          log('runstate.too-large', { kib: Math.ceil(bytes / 1024) });
+          return refuse('too_large');
+        }
         const canarySet = await checkedCanaries(runState.canarySet);
-        const stored = RunStateSchema.parse({
-          ...runState,
-          canarySet,
-          startedAt: Math.min(runState.startedAt, now),
-          updatedAt: now,
-        });
+        const stored = RunStateSchema.parse({ ...stamped, canarySet });
         await local.set({ [stateKey(stored.applicationKey)]: stored });
         // A run lives in one tab: any other tab's pointer to this application goes.
         const pointers = await session.getMany(TAB_PREFIX);
@@ -141,7 +156,7 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
         await session.set({ [tabKey(tabId)]: stored.applicationKey });
         log('runstate.stored', { canaries: canarySet.length, dropped: runState.canarySet.length - canarySet.length });
         await pruneNow();
-        return { updatedAt: now };
+        return ok({ updatedAt: now });
       });
     },
     clear(applicationKey, tabId) {

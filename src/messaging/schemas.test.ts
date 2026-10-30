@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_STEPS } from '../core/types/run';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { answerSchema } from './envelope';
 import {
@@ -11,6 +12,7 @@ import {
   PageMessageSchema,
   PanelPortMessageSchema,
   PanelSentAnswerSchema,
+  RUN_STATE_RECORD_CAPS,
   RunsClearAnswerSchema,
   RunStateGetAnswerSchema,
   RunStatePutAnswerSchema,
@@ -77,6 +79,44 @@ describe('the payloads', () => {
     expect(WriteValueSchema.safeParse({ kind: 'options', indices: Array.from({ length: 301 }, (_, i) => i),
       cleanLabels: Array(301).fill('x') }).success).toBe(false);
     expect(WriteValueSchema.safeParse({ ...value, labels: ['Python', 'TypeScript'] }).success).toBe(false);
+  });
+
+  // S10: RunState's records took any number of entries (a runstate/put of 200,000 entries, over 8 MB, parsed).
+  describe("RunState's records", () => {
+    const entries = (count: number, value: (index: number) => unknown) =>
+      Object.fromEntries(Array.from({ length: count }, (_, i) => [i.toString(16).padStart(16, '0'), value(i)]));
+    const values = {
+      stepAttempts: () => 1,
+      filledFieldKeys: (i: number) => [`lever|main|field-${i}|none|0`],
+      repeatableCounters: () => ({ profile: 2, rendered: 1, addClicks: 1 }),
+      aiTasks: () => '0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00',
+    } as const;
+    const runState = {
+      version: 1, applicationKey: 'lever:0123456789abcdef', platform: 'lever', status: 'review', resumeStatus: null,
+      pauseReason: null, stepSignature: null, stepIndex: 0, stepAttempts: {}, filledFieldKeys: {}, repeatableCounters: {},
+      canarySet: [], tripwire: { triggered: false, hits: 0 }, policyDecision: null, revealEdges: [], aiTasks: {},
+      lastFill: null, startedAt: 0, updatedAt: 0,
+    };
+    const put = (records: Partial<Record<keyof typeof values, unknown>>) =>
+      ContentMessageSchema.safeParse({ v: 1, type: 'runstate/put', runState: { ...runState, ...records } }).success;
+
+    it('are capped by the core\'s step guard: as many entries as a run can make, and no more', () => {
+      expect(RUN_STATE_RECORD_CAPS).toEqual({ stepAttempts: MAX_STEPS, filledFieldKeys: MAX_STEPS,
+        repeatableCounters: MAX_STEPS * 3, aiTasks: MAX_STEPS * 8 * 3 });
+      for (const [name, value] of Object.entries(values)) {
+        const cap = RUN_STATE_RECORD_CAPS[name as keyof typeof values];
+        expect(put({ [name]: entries(cap, value) }), `${name} at its cap`).toBe(true);
+        expect(put({ [name]: entries(cap + 1, value) }), `${name} past its cap`).toBe(false);
+      }
+    });
+
+    it('refuse an endless one before reading its entries', () => {
+      const stepAttempts = entries(100_000, () => 1);
+      const aiTasks = entries(100_000, () => 'x'.repeat(64));
+      expect(put({ stepAttempts, aiTasks })).toBe(false);
+      expect(put({ stepAttempts: [] })).toBe(false);
+      expect(put({ aiTasks: null })).toBe(false);
+    });
   });
 });
 

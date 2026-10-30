@@ -5,12 +5,15 @@
  * The browser's checkVisibility (with its opacity, visibility and content-visibility options) runs first where it
  * exists, and a manual walk always runs after it. The walk is also the whole check where checkVisibility is missing
  * (older Safari), and it covers what checkVisibility never looks at: the hidden, inert and aria-hidden attributes, an
- * open modal dialog, boxes under 4 px, off-screen positions in document coordinates, clipping by overflow, `clip` and
- * `clip-path`, tiny fonts and a tiny frame. A shape it cannot measure counts as hidden: uncertain cases fail closed.
+ * open modal dialog, the content of a closed <details>, a mask of any kind, a back face turned away under a 3D
+ * transform, `filter: opacity()` (multiplied into the opacity product), boxes under 4 px, off-screen positions,
+ * clipping by overflow, `clip` and `clip-path`, tiny fonts and a tiny frame. A shape it cannot measure counts as
+ * hidden: uncertain cases fail closed. Off-screen is judged in document coordinates downwards (content below the fold
+ * still counts) but within the viewport's width across, since a box placed far to the right only widens the page's
+ * scroll area.
  *
- * Known limits (docs/ARCHITECTURE.md Risk 3): an element covered by an opaque overlay still counts as visible
- * (occlusion is not tested), and an element placed far to the right extends the page's scroll area, so it counts as
- * reachable.
+ * Known limit (docs/ARCHITECTURE.md, Risks, 3): an element covered by an opaque overlay still counts as visible
+ * (occlusion is not tested here; the in-page UI checks its own controls with IntersectionObserver v2 instead).
  */
 import { isInOwnUi } from './own-ui';
 import { flatParent, type ScanCache, styleOf, viewOf, newScanCache } from './scan-cache';
@@ -18,8 +21,8 @@ import { MIN_BOX_PX, MIN_CLIP_RADIUS_PX, MIN_FONT_PX, MIN_OPACITY } from './thre
 
 /** The rules, in the order they run; the first that fails names why an element is hidden. */
 export const VISIBILITY_RULES = ['disconnected', 'own-ui', 'frame', 'deferred', 'native-check', 'hidden-attribute',
-  'inert', 'outside-modal', 'aria-hidden', 'display-none', 'content-visibility', 'opacity', 'visibility', 'box-size',
-  'off-screen', 'overflow-clip', 'font-size', 'clip', 'clip-path'] as const;
+  'inert', 'outside-modal', 'aria-hidden', 'display-none', 'closed-details', 'mask', 'backface', 'content-visibility',
+  'opacity', 'visibility', 'box-size', 'off-screen', 'overflow-clip', 'font-size', 'clip', 'clip-path'] as const;
 export type VisibilityRule = (typeof VISIBILITY_RULES)[number];
 
 /** Why an element is or is not visible. */
@@ -117,6 +120,8 @@ function judgeText(text: Text, cache: ScanCache): VisibilityVerdict {
   }
   const facts = factsOf(parent, cache);
   if (facts.contentHiddenBy !== null) return hidden(facts.contentHiddenBy);
+  // A text node right inside a closed <details> is never its summary.
+  if (isClosedDetails(parent)) return hidden('closed-details');
   if (outsideModal(parent, cache)) return hidden('outside-modal');
   if (style.visibility === 'hidden' || style.visibility === 'collapse') return hidden('visibility');
   const box = textBox(text);
@@ -130,8 +135,8 @@ function judgeText(text: Text, cache: ScanCache): VisibilityVerdict {
 }
 
 /** True when `el` and everything inside it are hidden by a rule that no descendant can undo (the hidden, inert and
- *  aria-hidden attributes, display: none, an opacity product under 0.05, sitting outside an open modal dialog).
- *  visibleText skips such a subtree whole. */
+ *  aria-hidden attributes, display: none, a closed <details> it is not the summary of, a mask, a back face turned
+ *  away, an opacity product under 0.05, sitting outside an open modal dialog). visibleText skips such a subtree whole. */
 export function isSubtreeHidden(el: Element, cache: ScanCache = newScanCache()): boolean {
   return factsOf(el, cache).hiddenBy !== null || outsideModal(el, cache) || isInOwnUi(el);
 }
@@ -141,7 +146,7 @@ export function isContentHidden(el: Element, cache: ScanCache = newScanCache()):
   return factsOf(el, cache).contentHiddenBy !== null || outsideModal(el, cache) || isInOwnUi(el);
 }
 
-/** The product of the opacities of `el` and its flat-tree ancestors. */
+/** The product of the opacities of `el` and its flat-tree ancestors, `filter: opacity()` included. */
 export function opacityOf(el: Element, cache: ScanCache = newScanCache()): number {
   return factsOf(el, cache).opacity;
 }
@@ -153,7 +158,7 @@ interface Facts {
   hiddenBy: VisibilityRule | null;
   /** The rule that hides this element's children: hiddenBy, or content-visibility: hidden on the element itself. */
   contentHiddenBy: VisibilityRule | null;
-  /** The product of the opacities of this element and its ancestors. */
+  /** The product of the opacities of this element and its ancestors, their `filter: opacity()` included. */
   opacity: number;
   /** Inside an open modal dialog. */
   inModal: boolean;
@@ -164,8 +169,8 @@ function factsOf(el: Element, cache: ScanCache): Facts {
     const parent = flatParent(el);
     const inherited = parent === null ? null : factsOf(parent, cache);
     const style = styleOf(el, cache);
-    const opacity = (inherited?.opacity ?? 1) * opacityValue(style?.opacity);
-    const own = ownHidingRule(el, style);
+    const opacity = (inherited?.opacity ?? 1) * opacityValue(style?.opacity) * filterOpacity(style?.filter);
+    const own = ownHidingRule(el, style, parent, parent === null ? null : styleOf(parent, cache));
     const hiddenBy = inherited?.contentHiddenBy ?? own ?? (opacity < MIN_OPACITY ? 'opacity' : null);
     const contentHiddenBy = hiddenBy ?? (style?.contentVisibility === 'hidden' ? 'content-visibility' : null);
     const inModal = (inherited?.inModal ?? false) || isOpenModal(el);
@@ -173,17 +178,108 @@ function factsOf(el: Element, cache: ScanCache): Facts {
   });
 }
 
-function ownHidingRule(el: Element, style: CSSStyleDeclaration | null): VisibilityRule | null {
+function ownHidingRule(el: Element, style: CSSStyleDeclaration | null, parent: Element | null,
+  parentStyle: CSSStyleDeclaration | null): VisibilityRule | null {
   if (el.hasAttribute('hidden')) return 'hidden-attribute';
   if (el.hasAttribute('inert')) return 'inert';
   if ((el.getAttribute('aria-hidden') ?? '').trim().toLowerCase() === 'true') return 'aria-hidden';
   if (style === null || style.display === 'none') return 'display-none';
+  if (parent !== null && isClosedDetails(parent) && summaryOf(parent) !== el) return 'closed-details';
+  if (isMasked(style)) return 'mask';
+  if (backFaceHidden(style, parentStyle)) return 'backface';
   return null;
 }
 
 function opacityValue(text: string | undefined): number {
   const value = text === undefined || text === '' ? 1 : Number(text);
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
+/** The opacity a computed `filter` multiplies in: the product of its opacity() functions (1 when it has none). An
+ *  amount this cannot read counts as 0, so the element is hidden (fails closed). Chromium's checkVisibility does not
+ *  look at filters. */
+export function filterOpacity(filter: string | undefined): number {
+  if (filter === undefined || filter === '' || filter === 'none') return 1;
+  let product = 1;
+  for (const match of filter.matchAll(/(?:^|[\s)])opacity\(\s*([^)]*?)\s*\)/g)) {
+    const text = match[1]!;
+    const amount = text === '' ? 1 : text.endsWith('%') ? Number(text.slice(0, -1)) / 100 : Number(text);
+    product *= Number.isFinite(amount) ? Math.min(1, Math.max(0, amount)) : 0;
+  }
+  return product;
+}
+
+/** A closed <details> renders its summary (its first <summary> child) and nothing else. */
+function isClosedDetails(el: Element): boolean {
+  return el.localName === 'details' && !el.hasAttribute('open');
+}
+
+function summaryOf(details: Element): Element | null {
+  for (const child of Array.from(details.children)) {
+    if (child.localName === 'summary') return child;
+  }
+  return null;
+}
+
+/** A list of CSS image layers that is set ('none' alone, or once per layer, is not). */
+function imageSet(value: string | undefined): boolean {
+  return value !== undefined && value !== '' && !/^none(?:\s*,\s*none)*$/.test(value.trim());
+}
+
+/** A mask of any kind (mask-image, its -webkit- spelling, or a mask border) hides what it covers, whatever shape it
+ *  has: this code does not measure masks, so every one fails closed. */
+export function isMasked(style: CSSStyleDeclaration | null): boolean {
+  if (style === null) return false;
+  return imageSet(style.maskImage) || imageSet(style.getPropertyValue('-webkit-mask-image'))
+    || imageSet(style.getPropertyValue('-webkit-mask-box-image-source'))
+    || imageSet(style.getPropertyValue('mask-border-source'));
+}
+
+/**
+ * `backface-visibility: hidden` on an element whose back faces the viewer: its own transform turns it away (the sign
+ * Chromium tests, of the transformed normal), a 3D `rotate` or `scale` may (fails closed), or its parent keeps a 3D
+ * context (preserve-3d), whose accumulated transforms are not followed here (fails closed). A 2D transform never turns
+ * an element away, and translateZ(0), the GPU hack, does not.
+ */
+function backFaceHidden(style: CSSStyleDeclaration | null, parentStyle: CSSStyleDeclaration | null): boolean {
+  if (style === null || style.backfaceVisibility !== 'hidden') return false;
+  if (parentStyle?.transformStyle === 'preserve-3d') return true;
+  const rotate = (style.rotate ?? 'none').trim();
+  if (rotate !== '' && rotate !== 'none') {
+    const parts = rotate.split(/\s+/);
+    if (!(parts.length === 1 || (parts.length === 2 && parts[0] === 'z'))) return true;
+  }
+  const scale = (style.scale ?? 'none').trim();
+  if (scale !== '' && scale !== 'none' && scale.split(/\s+/).length > 2) return true;
+  return turnedAway(style.transform);
+}
+
+/** Whether a computed transform shows an element's back: the transformed normal's z is negative (Chromium's
+ *  Transform::IsBackFaceVisible, cofactor33 × determinant < 0). A value this cannot read counts as turned away. */
+function turnedAway(transform: string): boolean {
+  const text = transform.trim();
+  if (text === '' || text === 'none' || /^matrix\(/.test(text)) return false;
+  const match = /^matrix3d\(([^)]*)\)$/.exec(text);
+  if (match === null) return true;
+  const v = match[1]!.split(',').map((part) => Number(part.trim()));
+  if (v.length !== 16 || v.some((value) => !Number.isFinite(value))) return true;
+  // matrix3d lists the matrix column by column: m(r, c) is v[c * 4 + r].
+  const m = (r: number, c: number) => v[c * 4 + r]!;
+  const det3 = (rows: readonly number[], cols: readonly number[]) => {
+    const [r0, r1, r2] = rows as [number, number, number];
+    const [c0, c1, c2] = cols as [number, number, number];
+    return m(r0, c0) * (m(r1, c1) * m(r2, c2) - m(r1, c2) * m(r2, c1))
+      - m(r0, c1) * (m(r1, c0) * m(r2, c2) - m(r1, c2) * m(r2, c0))
+      + m(r0, c2) * (m(r1, c0) * m(r2, c1) - m(r1, c1) * m(r2, c0));
+  };
+  const cofactor22 = det3([0, 1, 3], [0, 1, 3]);
+  let determinant = 0;
+  for (let c = 0; c < 4; c += 1) {
+    const others = [0, 1, 2, 3].filter((col) => col !== c);
+    determinant += (c % 2 === 0 ? 1 : -1) * m(0, c) * det3([1, 2, 3], others);
+  }
+  if (determinant === 0) return false;
+  return cofactor22 * determinant < -1e-9;
 }
 
 function walkVerdict(el: Element, cache: ScanCache): VisibilityRule | null {
@@ -259,9 +355,12 @@ function fitsAll(box: ClientRect, clips: readonly ClientRect[]): boolean {
 }
 
 /**
- * Rule 5: at least MIN_BOX_PX of the box lies in the reachable area. For a page element that is the document from its
- * origin to its scroll size (or to the viewport on an axis whose overflow is hidden on html or body); for an element
- * fixed to the viewport, the viewport. Negative coordinates are never reachable.
+ * Rule 5: at least MIN_BOX_PX of the box lies in the reachable area. For an element fixed to the viewport, that is the
+ * viewport. For a page element it is, downwards, the document from its origin to its scroll height (or to the
+ * viewport's height when overflow-y is hidden or clip on html or body), so content below the fold still counts; and
+ * across, the viewport's width only, at the document's origin or where the page is scrolled to now. A box placed far
+ * to the right (left: 10000px) widens the page's scroll width itself, so the scroll width proves nothing (a honeypot
+ * there was filled). Negative coordinates are never reachable.
  */
 function onScreen(box: ClientRect, el: Element, cache: ScanCache): boolean {
   const view = viewOf(el)!;
@@ -270,25 +369,20 @@ function onScreen(box: ClientRect, el: Element, cache: ScanCache): boolean {
     return overlap(box.left, box.right, 0, view.innerWidth) >= MIN_BOX_PX
       && overlap(box.top, box.bottom, 0, view.innerHeight) >= MIN_BOX_PX;
   }
-  const area = cache.memo('reachable', doc, () => reachableArea(doc, view, cache));
+  const height = cache.memo('reachable-height', doc, () => reachableHeight(doc, view, cache));
   const left = box.left + view.scrollX;
   const top = box.top + view.scrollY;
-  return overlap(left, left + (box.right - box.left), 0, area.width) >= MIN_BOX_PX
-    && overlap(top, top + (box.bottom - box.top), 0, area.height) >= MIN_BOX_PX;
+  const across = overlap(left, left + (box.right - box.left), 0, view.innerWidth) >= MIN_BOX_PX
+    || overlap(box.left, box.right, 0, view.innerWidth) >= MIN_BOX_PX;
+  return across && overlap(top, top + (box.bottom - box.top), 0, height) >= MIN_BOX_PX;
 }
 
-function reachableArea(doc: Document, view: Window, cache: ScanCache): { width: number; height: number } {
+function reachableHeight(doc: Document, view: Window, cache: ScanCache): number {
   const root = doc.documentElement;
   const body = doc.body;
   const styles = [styleOf(root, cache), body ? styleOf(body, cache) : null];
-  const clipped = (axis: 'overflowX' | 'overflowY') => styles.some((style) => style !== null
-    && (style[axis] === 'hidden' || style[axis] === 'clip'));
-  const scrollWidth = Math.max(root.scrollWidth, body?.scrollWidth ?? 0, view.innerWidth);
-  const scrollHeight = Math.max(root.scrollHeight, body?.scrollHeight ?? 0, view.innerHeight);
-  return {
-    width: clipped('overflowX') ? view.innerWidth : scrollWidth,
-    height: clipped('overflowY') ? view.innerHeight : scrollHeight,
-  };
+  const clipped = styles.some((style) => style !== null && (style.overflowY === 'hidden' || style.overflowY === 'clip'));
+  return clipped ? view.innerHeight : Math.max(root.scrollHeight, body?.scrollHeight ?? 0, view.innerHeight);
 }
 
 /** True when `el` or an ancestor is `position: fixed`, so it stays put while the page scrolls. */

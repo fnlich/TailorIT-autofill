@@ -60,6 +60,8 @@ export interface HandFakes {
   accessLevels: { local: string | null; session: string | null };
   /** Make storage.local.setAccessLevel reject, as Chrome before 140 does. */
   refuseAccessLevel: (refuse: boolean) => void;
+  /** Leave storage.local.setAccessLevel unanswered until the returned release is called, as a slow start would. */
+  holdAccessLevel: () => () => void;
   sidePanelCalls: Array<{ method: 'open' | 'setPanelBehavior'; args: unknown }>;
   /** Make sidePanel.open reject, as Chrome does without a user gesture. */
   refuseSidePanel: (refuse: boolean) => void;
@@ -129,6 +131,7 @@ function portPair(name: string, sender: RawSender): { raw: unknown; peer: FakePo
 /** Puts the hand fakes on WXT's fake browser (after fakeBrowser.reset()). */
 export function installHandFakes(): HandFakes {
   let refusingAccess = false;
+  let holdingAccess: Promise<void> | null = null;
   let refusingSidePanel = false;
   const onConnect = fakeEvent<(port: unknown) => unknown>();
   const fakes: HandFakes = {
@@ -136,6 +139,16 @@ export function installHandFakes(): HandFakes {
     accessLevels: { local: null, session: null },
     refuseAccessLevel: (refuse) => {
       refusingAccess = refuse;
+    },
+    holdAccessLevel: () => {
+      let release: () => void = () => undefined;
+      holdingAccess = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        holdingAccess = null;
+        release();
+      };
     },
     sidePanelCalls: [],
     refuseSidePanel: (refuse) => {
@@ -160,6 +173,7 @@ export function installHandFakes(): HandFakes {
   runtime.getPlatformInfo = async () => ({ os: 'win', arch: 'x86-64', nacl_arch: 'x86-64' });
   const storage = browser.storage as Record<string, Record<string, unknown>>;
   storage.local!.setAccessLevel = async (options: { accessLevel: string }) => {
+    if (holdingAccess) await holdingAccess;
     if (refusingAccess) throw new Error('This StorageArea is not available for setting access level');
     fakes.accessLevels.local = options.accessLevel;
   };

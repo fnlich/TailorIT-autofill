@@ -86,8 +86,10 @@ export interface FrameSweepDeps {
   /** Runs a task under the tab's lock, the one frame/hello registers under, so a frame that registers anew is never
    *  forgotten in its place. */
   lock<T>(tabId: number, task: () => Promise<T>): Promise<T>;
-  /** Forgets a frame whose document is gone: its registry entry, its report and its runs. Called under the lock. */
-  forget(tabId: number, frameId: number): Promise<void>;
+  /** Forgets a frame whose document is gone: its registry entry, and that document's report and runs (another of the
+   *  frame's documents, one restored from the back/forward cache that said no hello, keeps its own). Called under the
+   *  lock. */
+  forget(tabId: number, frameId: number, documentId: string | null): Promise<void>;
 }
 
 /** Sweeps a tab: probes its frames (all of them, or all but `exceptFrameId`: the one that just said hello) and
@@ -127,7 +129,7 @@ export function createFrameSweep(deps: FrameSweepDeps): (tabId: number, exceptFr
         // Only the document that was asked: a frame that has since said hello from another one stays.
         const current = await frameEntry(deps.session, tabId, frame.frameId);
         if (current === null || current.documentId !== frame.documentId) return;
-        await deps.forget(tabId, frame.frameId);
+        await deps.forget(tabId, frame.frameId, frame.documentId);
         log('frame.forgotten', { frameId: frame.frameId });
       });
     }

@@ -14,7 +14,7 @@ import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_
 import { REASON_CODES } from '../core/types/fill';
 import { RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
-import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
+import { MAX_STEPS, PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { FrameReportSchema } from '../shared/report';
 import { ContentSettingsSchema, SettingsSchema } from '../shared/settings';
 import { MESSAGE_VERSION } from './envelope';
@@ -125,6 +125,26 @@ export const PlannedWriteSchema = z.strictObject({
   match: MatchSchema,
 });
 
+/**
+ * The most entries each of RunState's records may hold, from the core's runaway-wizard guard (MAX_STEPS): one per step
+ * for the step-signature records; per step, one counter per kind of repeatable section (experience, education,
+ * language); per step, one batch per pass (MAX_PASSES, 8, docs/design/core.md) for each of the three AI task kinds.
+ */
+export const RUN_STATE_RECORD_CAPS = {
+  stepAttempts: MAX_STEPS,
+  filledFieldKeys: MAX_STEPS,
+  repeatableCounters: MAX_STEPS * 3,
+  aiTasks: MAX_STEPS * 8 * 3,
+} as const;
+
+/** A record of at most `max` entries. zod's record has no cap of its own, so the count is checked first, before any
+ *  entry is parsed: an endless record costs one count, not a parse. */
+function cappedRecord<V extends z.ZodType>(key: z.ZodString, value: V, max: number) {
+  return z.custom<Record<string, unknown>>((input) =>
+    typeof input === 'object' && input !== null && !Array.isArray(input) && Object.keys(input).length <= max)
+    .pipe(z.record(key, value));
+}
+
 export const RunStateSchema = z.strictObject({
   version: z.literal(1),
   applicationKey: z.string().regex(/^[a-z]+:[a-f0-9]{16}$/),
@@ -134,14 +154,15 @@ export const RunStateSchema = z.strictObject({
   pauseReason: z.enum(PAUSE_REASONS).nullable(),
   stepSignature: z.string().regex(/^[a-f0-9]{16}$/).nullable(),
   stepIndex: Count,
-  stepAttempts: z.record(z.string().max(64), Count),
-  filledFieldKeys: z.record(z.string().max(64), z.array(Key).max(500)),
-  repeatableCounters: z.record(Text(64), z.strictObject({ profile: Count, rendered: Count, addClicks: Count })),
+  stepAttempts: cappedRecord(z.string().max(64), Count, RUN_STATE_RECORD_CAPS.stepAttempts),
+  filledFieldKeys: cappedRecord(z.string().max(64), z.array(Key).max(500), RUN_STATE_RECORD_CAPS.filledFieldKeys),
+  repeatableCounters: cappedRecord(Text(64), z.strictObject({ profile: Count, rendered: Count, addClicks: Count }),
+    RUN_STATE_RECORD_CAPS.repeatableCounters),
   canarySet: z.array(Text(120)).max(32),
   tripwire: z.strictObject({ triggered: z.boolean(), hits: Count }),
   policyDecision: z.enum(['accepted', 'declined']).nullable(),
   revealEdges: z.array(z.tuple([Key, Key])).max(500),
-  aiTasks: z.record(z.string().max(64), Id),
+  aiTasks: cappedRecord(z.string().max(64), Id, RUN_STATE_RECORD_CAPS.aiTasks),
   lastFill: z.strictObject({ flagged: Count, blocked: Count, unresolved: Count }).nullable(),
   startedAt: Count,
   updatedAt: Count,

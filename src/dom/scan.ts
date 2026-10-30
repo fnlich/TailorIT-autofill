@@ -49,12 +49,13 @@ export interface ScanOptions {
   /** The frame's id, as the worker knows it; 0 for the top frame. */
   frameId?: number;
   /**
-   * The controls the extension wrote into while their visible placeholder labelled them. A value hides a placeholder,
-   * so a field labelled only by one would lose its label, and its key, to our own write, and the read-back after the
-   * settle would not find it. In this set it keeps that label (heldPlaceholder); the pass adds a control as it writes
+   * The controls the extension wrote into while a visible placeholder showed, each with that placeholder's text. A
+   * value hides a placeholder, so a field it labelled (or made fillable, beside an aria-label) would lose its label,
+   * and its key, to our own write, and the read-back after the settle would not find it. In this map it keeps that
+   * label (heldPlaceholder), while the page still shows the same text (DOM-7); the pass adds a control as it writes
    * it, and its rescans, which reuse these options, see it. A node the page replaces is not in it.
    */
-  heldPlaceholders?: WeakSet<Element>;
+  heldPlaceholders?: WeakMap<Element, string>;
 }
 
 /** A control that may become (part of) a field. */

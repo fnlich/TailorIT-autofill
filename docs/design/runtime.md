@@ -540,7 +540,7 @@ Returns false on the first rule that fails:
    - the element's own computed `visibility` is `hidden` or `collapse`.
 4. **Box size.** No client rects, or a bounding box under 4 px in width or height. Rects include transforms, so `scale(0)` fails here.
 5. **Off-screen, in document coordinates** (rect + scrollX/Y). It fails if `right ≤ 0`, `bottom ≤ 0`, `left ≥` the reachable width, or `top ≥` the reachable height.
-   - Reachable means the root's `scrollWidth`/`scrollHeight`, unless overflow on that axis is hidden or clip on html or body; then it is the viewport size.
+   - Reachable means the root's `scrollHeight` vertically, unless overflow on that axis is hidden or clip on html or body; then it is the viewport size. Horizontally it is always the viewport's width (at the document origin or where the page is scrolled to), because an element placed far to the right widens `scrollWidth` by itself (As built, Phase 2 review DOM-6; docs/ARCHITECTURE.md Visibility).
    - Content below the fold counts as visible.
 6. **Clipping.** For every ancestor with `overflow` hidden or clip (on either axis), or `contain: paint|strict|content`, intersect the element's rect with that ancestor's client box. Under 4 px on either side fails. Scroll and auto containers don't clip, because the user can scroll them.
 7. **Font size.** Computed `font-size` under 4 px.

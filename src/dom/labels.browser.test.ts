@@ -102,6 +102,56 @@ describe('labelOfControl', () => {
     const fixture = await loadFixture(document, '<!doctype html><body><label for="x">Email <span>*</span></label><input id="x"></body>');
     expect(labelOfControl(fixture.doc.getElementById('x')!, ctx())).toMatchObject({ text: 'Email', required: true });
   });
+
+  it('takes no label whose first line is drawn white on white (S4)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><head><style>
+      #hp-label::first-line { color: #fff; }</style></head><body style="background:#fff;color:#111"><form>
+      <label for="last">Last name</label><input id="last" style="border:1px solid #333">
+      <label id="hp-label" for="hp" style="display:block">Email</label><input id="hp" style="border:1px solid #333"></form></body>`);
+    expect(labelOfControl(fixture.doc.getElementById('hp')!, ctx())).toMatchObject({ source: 'none', visible: false });
+    expect(labelOfControl(fixture.doc.getElementById('last')!, ctx())).toMatchObject({ source: 'for', text: 'Last name' });
+  });
+
+  it('counts an aria-label as visible only when its words stand whole, in order, beside the control (DOM-11)', async () => {
+    // A one-letter aria-label "e" read as visible because "e" occurs in "Please leave this box empty.".
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <div><p>Please leave this box empty.</p><input id="one-letter" type="email" aria-label="e"></div>
+      <div><p>Your email address</p><input id="whole" aria-label="Email"></div>
+      <div><p>Email</p><input id="part" aria-label="mail"></div>
+      <div><span>Phone number (mobile)</span><input id="sequence" aria-label="Phone number"></div>
+      <div><span>Number of phones</span><input id="out-of-order" aria-label="Phone number"></div>
+      <div><span>Zip</span><input id="short" aria-label="ZIP"></div>
+    </form></body>`);
+    const visible = (id: string) => labelOfControl(fixture.doc.getElementById(id)!, ctx()).visible;
+    for (const id of ['one-letter', 'part', 'out-of-order']) expect([id, visible(id)]).toEqual([id, false]);
+    for (const id of ['whole', 'sequence', 'short']) expect([id, visible(id)]).toEqual([id, true]);
+  });
+
+  it('names a field by its aria-label when a placeholder is the only visible source, the placeholder its gate (DOM-10)',
+    async () => {
+      // "e.g. Jane" is an example, not a name: the aria-label names the field, and never reaches an LLM.
+      const fixture = await loadFixture(document, `<!doctype html><head><style>
+        #unseen::placeholder { color: transparent; }</style></head><body style="background:#fff"><form>
+        <div><input id="example" aria-label="First name" placeholder="e.g. Jane"></div>
+        <div><input id="unseen" aria-label="Last name" placeholder="Smith"></div>
+        <div><input id="only-placeholder" placeholder="City"></div>
+      </form></body>`);
+      const read = (id: string, held?: WeakMap<Element, string>) => {
+        const label = labelOfControl(fixture.doc.getElementById(id)!, { ...ctx(), ...(held ? { heldPlaceholders: held } : {}) });
+        return [label.source, label.text, label.visible];
+      };
+      expect(read('example')).toEqual(['aria-label', 'First name', true]);
+      expect(read('unseen')).toEqual(['aria-label', 'Last name', false]);
+      expect(read('only-placeholder')).toEqual(['placeholder', 'City', true]);
+      // Our write hides the placeholder that was the gate: held at the text seen, it still is.
+      const example = fixture.doc.getElementById('example') as HTMLInputElement;
+      const held = new WeakMap<Element, string>([[example, 'e.g. Jane']]);
+      example.value = 'Alex';
+      expect(read('example', held)).toEqual(['aria-label', 'First name', true]);
+      expect(read('example')).toEqual(['aria-label', 'First name', false]);
+      example.setAttribute('placeholder', 'e.g. Smith');
+      expect(read('example', held)).toEqual(['aria-label', 'First name', false]);
+    });
 });
 
 describe('group labels', () => {

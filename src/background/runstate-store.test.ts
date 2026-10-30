@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { RUN_STATE_TTL_MS } from '../core/types/run';
-import { MAX_RUN_STATES } from './runstate-store';
+import type { FieldKey } from '../core/types/field';
+import { MAX_STEPS, RUN_STATE_TTL_MS, type RunState } from '../core/types/run';
+import { MAX_RUN_STATE_BYTES, MAX_RUN_STATES } from './runstate-store';
 import { contentSender, LEVER_KEY, pageSender, runState, startTestWorker, tokenRecord, type TestWorker } from './worker.testkit';
 
 const put = (worker: TestWorker, state: unknown, sender = contentSender()) =>
@@ -183,5 +184,77 @@ describe('the RunState store', () => {
     await fakeBrowser.tabs.onRemoved.trigger(7, { windowId: 1, isWindowClosing: false });
     await expect.poll(async () => fakeBrowser.storage.session.get('tabrun:7')).toEqual({});
     expect(await stored()).toHaveProperty(`run:${LEVER_KEY}`);
+  });
+});
+
+// The record caps alone left one RunState free to reach about 9 MB (30 steps × 500 keys × 600 characters), nearly all
+// of storage.local's 10 MiB quota, which settings and every other RunState share.
+describe("a RunState's size", () => {
+  const bytesOf = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+  const hex = (index: number, length = 16) => index.toString(16).padStart(length, '0');
+
+  /** A RunState whose stored form (stamped with `now`) is exactly `size` bytes: written keys padded out over steps. */
+  function sized(size: number, now: number, overrides: Partial<RunState> = {}): RunState {
+    const state = runState({ startedAt: now, updatedAt: now, ...overrides });
+    const full = Math.max(0, Math.floor((size - bytesOf(state) - 200) / 303));
+    const keys = [...Array<string>(full).fill('k'.repeat(300)), 'k'];
+    const filledFieldKeys: Record<string, FieldKey[]> = {};
+    for (let i = 0; i < keys.length; i += 500) filledFieldKeys[hex(i / 500)] = keys.slice(i, i + 500) as FieldKey[];
+    const padded = { ...state, filledFieldKeys };
+    const last = filledFieldKeys[hex(Math.floor((keys.length - 1) / 500))]!;
+    last[last.length - 1] = 'k'.repeat(1 + size - bytesOf(padded)) as FieldKey;
+    expect(bytesOf(padded)).toBe(size);
+    return padded;
+  }
+
+  it('fits the worst legitimate RunState with room to spare', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    const now = worker.clock.now;
+    // At the step guard: 25 written fields a step at the longest key the core builds (two cut slugs, a block, a
+    // hash), 100 reveal edges, every canary at full length, every repeatable counter, four AI tasks a step.
+    const key = (index: number) => `workday|${'s'.repeat(48)}~a1b2c3[9]|${'l'.repeat(48)}~d4e5f6|0123456789abcdef|${index}`;
+    const steps = Array.from({ length: MAX_STEPS }, (_, step) => hex(step));
+    const worst = runState({
+      startedAt: now,
+      updatedAt: now,
+      stepSignature: steps[0]!,
+      stepIndex: MAX_STEPS - 1,
+      stepAttempts: Object.fromEntries(steps.map((step) => [step, 2])),
+      filledFieldKeys: Object.fromEntries(steps.map((step) =>
+        [step, Array.from({ length: 25 }, (_, index) => key(index) as FieldKey)])),
+      repeatableCounters: Object.fromEntries(Array.from({ length: MAX_STEPS * 3 },
+        (_, index) => [`${hex(index)}:experience`, { profile: 9, rendered: 9, addClicks: 9 }])),
+      canarySet: Array.from({ length: 32 }, (_, index) => `${hex(index)}${'c'.repeat(104)}`),
+      revealEdges: Array.from({ length: 100 }, (_, index) => [key(index), key(index + 100)]) as RunState['revealEdges'],
+      aiTasks: Object.fromEntries(Array.from({ length: MAX_STEPS * 4 },
+        (_, index) => [hex(index, 64), `0b9f2d3e-1c4a-4e8b-9a7d-${hex(index, 12)}`])),
+      lastFill: { flagged: 25, blocked: 25, unresolved: 25 },
+    });
+    expect(bytesOf(worst)).toBeLessThan(MAX_RUN_STATE_BYTES * 0.75);
+    expect(await put(worker, worst)).toEqual({ ok: true, data: { updatedAt: now } });
+  });
+
+  it('stores one at MAX_RUN_STATE_BYTES, as it would be stored', async () => {
+    const worker = await startTestWorker();
+    const state = sized(MAX_RUN_STATE_BYTES, worker.clock.now);
+    expect(await put(worker, state)).toEqual({ ok: true, data: { updatedAt: worker.clock.now } });
+    expect((await stored())[`run:${LEVER_KEY}`]).toEqual(state);
+    expect(bytesOf((await stored())[`run:${LEVER_KEY}`])).toBe(MAX_RUN_STATE_BYTES);
+  });
+
+  it('refuses one a byte over with too_large, before the canary check, writing nothing', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    const small = runState({ startedAt: worker.clock.now, updatedAt: worker.clock.now });
+    expect(await put(worker, small)).toMatchObject({ ok: true });
+    const before = { local: await stored(), session: await fakeBrowser.storage.session.get(null) };
+    const profileReads = worker.tailorit.count('GET /api/autofill/profile');
+
+    const over = sized(MAX_RUN_STATE_BYTES + 1, worker.clock.now, { canarySet: ['the word banana'], status: 'scan-step' });
+    expect(await put(worker, over)).toEqual({ ok: false, error: 'too_large' });
+    expect(await put(worker, over, contentSender({ tab: { id: 8 } }))).toEqual({ ok: false, error: 'too_large' });
+    expect(await stored()).toEqual(before.local);
+    expect(await fakeBrowser.storage.session.get(null)).toEqual(before.session);
+    expect(worker.tailorit.count('GET /api/autofill/profile')).toBe(profileReads);
+    expect(await get(worker)).toEqual({ ok: true, data: { runState: small } });
   });
 });

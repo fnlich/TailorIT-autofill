@@ -8,7 +8,9 @@
  *    no run. A posting page with no form (applicationOf(...).page 'posting', as on Lever) is read for policy text and
  *    tells the worker the pattern ids (policy/hit); nothing else happens there.
  * 3. With a form root, the launcher is mounted on it (the in-page UI, ui/page-ui.ts), and runs start from its trusted
- *    clicks or from run/start (the side panel's Fill, to every frame with a form). One run at a time (orchestrator.ts).
+ *    clicks (counted only while a person can see it: S5) or from run/start (the side panel's Fill, to every frame with
+ *    a form). One run at a time (orchestrator.ts). In a frame inside another page a run fills only while the launcher
+ *    can be seen on that page (S1).
  * The worker's messages are answered: frame/ping {pong}; run/start; run/continue (Continue after a pause, never Fill
  * anyway: a policy card waits for the person's own decision); run/cancel (stops a run, a policy card's wait included,
  * or leaves a pause); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
@@ -23,7 +25,10 @@
  * (location.ts), and logs forged WXT events without letting them change anything (forged.ts). It ends only on the
  * platform's word that the extension is gone (isValid(), or a send that fails as context-invalidated), or when the
  * document is going away (a trusted pagehide that does not keep the page in the back/forward cache). Then the run is
- * aborted, its planned writes dropped and the UI removed.
+ * aborted, its planned writes dropped and the UI removed. A page the cache keeps only drops its run, and when the
+ * browser brings it back (a trusted pageshow with persisted set) it says frame/hello again (W1).
+ * An address that is no application (applicationOf null: a host off the list, or a Lever or Greenhouse address its
+ * parser does not read, W2) gets no launcher and no run, as a page with no form root does.
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import type { Adapter } from '../adapters/types';
@@ -79,6 +84,12 @@ function pickAdapter(doc: Document, url: URL, adapters: (url: URL) => Adapter[])
     }
   }
   return null;
+}
+
+/** Whether a pageshow is the browser bringing this document back from the back/forward cache: its own (trusted)
+ *  event, with persisted set. A page's dispatched pageshow is untrusted and changes nothing. */
+export function restoredFromCache(event: Pick<PageTransitionEvent, 'isTrusted' | 'persisted'>): boolean {
+  return event.isTrusted && event.persisted;
 }
 
 /** The address as a URL, or null. */
@@ -183,6 +194,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       limiter,
       ui: () => ui,
       frame: ensureFrame,
+      // Without its launcher (the UI failed, or the page removed it for good) a frame cannot show it is seen: it fills
+      // nothing inside another page.
+      frameShown: (signal) => (ui === null ? Promise.resolve(false) : ui.launcherShown(signal)),
       page,
       now: () => platform.now(),
       options,
@@ -273,7 +287,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       ui.anchorTo(page.root);
       ui.setLauncher({ state: 'idle', action: 'fill' });
     } catch {
-      // Without its UI the frame still fills from the side panel's Fill.
+      // Without its UI the top frame still fills from the side panel's Fill; a frame inside another page cannot show
+      // its launcher is seen there, so it fills nothing (FillRun's frame check, S1).
       ui = null;
     }
   }
@@ -349,6 +364,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       ui?.hidePolicyCard();
       ui?.setLauncher({ state: 'idle', action: 'fill' });
     }
+  }, { signal: lifetime.signal });
+  // Back from the back/forward cache: the worker forgot this document's frame while it was away (its sweep drops a
+  // frame that does not answer), so it says hello again, and the side panel's messages reach this document (W1).
+  view?.addEventListener('pageshow', (event) => {
+    if (stopped || !restoredFromCache(event)) return;
+    void hello().catch(() => undefined);
   }, { signal: lifetime.signal });
 
   resolvePage(readHref());

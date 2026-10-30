@@ -175,6 +175,51 @@ describe('canonicalizeProfile over the contract’s examples (§2.7)', () => {
   });
 });
 
+describe('the phone’s calling code and country', () => {
+  /** The golden wire with this phone number, phone country and address country. */
+  const withPhone = (number: string, country: string | null, addressCountry: string | null) => {
+    const wire = structuredClone(goldenWire().profile);
+    wire.contact.phone = { ...wire.contact.phone, number, country };
+    wire.contact.address = { ...wire.contact.address, country: addressCountry };
+    return canonical(wire);
+  };
+
+  // CORE-18 (Phase 2 review): a strict E.164 number ("+15125550147") got no calling code, so the code was written
+  // twice beside a code select and the field's pattern went unused.
+  it('reads the calling code of a number written with or without spaces', () => {
+    for (const number of ['+15125550147', '+1 512 555 0147', '+1-512-555-0147', '+1 (512) 555-0147']) {
+      expect(withPhone(number, 'US', 'US').profile.contact.phone, number).toMatchObject({ countryCallingCode: '1',
+        digits: '15125550147', country: 'US' });
+    }
+    expect(withPhone('+442079460958', null, 'GB').profile.contact.phone).toMatchObject({ countryCallingCode: '44',
+      country: 'GB' });
+    expect(withPhone('+353 1 234 5678', null, null).profile.contact.phone).toMatchObject({ countryCallingCode: '353',
+      country: 'IE' });
+    expect(withPhone('512-555-0147', null, 'US').profile.contact.phone?.countryCallingCode).toBeUndefined();
+    expect(withPhone('+999 123 456', null, null).profile.contact.phone?.countryCallingCode).toBeUndefined();
+  });
+
+  // CORE-7 (Phase 2 review): the phone's country fell back to the address's despite a calling code, so "+1 512 ..."
+  // with an address in Britain chose the United Kingdom (+44).
+  it('takes the phone’s country from its calling code, the address only without one, and none on a mismatch', () => {
+    const british = withPhone('+1 512 555 0147', null, 'GB');
+    expect(british.profile.contact.phone?.country).toBeUndefined();
+    expect(british.profile.contact.phone?.countryCallingCode).toBe('1');
+    expect(british.issues).toContainEqual({ path: 'contact.phone.country', code: 'phone-country-mismatch' });
+    expect(withPhone('+1 512 555 0147', 'GB', 'US').profile.contact.phone?.country).toBeUndefined();
+    // A code several countries share takes the one the address or the phone names.
+    expect(withPhone('+1 416 555 0147', null, 'CA').profile.contact.phone?.country).toBe('CA');
+    expect(withPhone('+1 512 555 0147', 'CA', 'US').profile.contact.phone?.country).toBe('CA');
+    // A code of one country is that country's; a shared one with nothing to choose by is none.
+    expect(withPhone('+33 1 23 45 67 89', null, null).profile.contact.phone?.country).toBe('FR');
+    expect(withPhone('+1 512 555 0147', null, null).profile.contact.phone?.country).toBeUndefined();
+    // With no calling code the phone's own country, else the address's.
+    expect(withPhone('020 7946 0958', null, 'GB').profile.contact.phone?.country).toBe('GB');
+    expect(withPhone('020 7946 0958', 'IE', 'GB').profile.contact.phone?.country).toBe('IE');
+    expect(withPhone('+1 512 555 0147', 'US', 'US').issues).toEqual([]);
+  });
+});
+
 describe('placeText', () => {
   it('writes "City, ST" in North America and "City, Region, Country" elsewhere', () => {
     expect(placeText({ city: 'Austin', region: { code: 'TX', name: 'Texas' }, country: 'US' }, vocab)).toBe('Austin, TX');

@@ -3,19 +3,21 @@
  * colour behind it ("white on white") is hidden from people as surely as display: none, so it is treated the same way.
  *
  * The background behind an element is composited from the canvas up through every ancestor's background colour and
- * gradient stops, each faded by the opacity above it. A background image, `background-clip: text`, a transparent
- * `-webkit-text-fill-color`, `mix-blend-mode`, `filter` or `backdrop-filter` make the answer 'unknown', which callers
- * treat as hidden (fail closed). A contrasting text-shadow or text stroke makes text clear. Known limit: this follows
- * DOM ancestors, not painted layers, so a positioned sibling drawn behind the text is not seen.
+ * gradient stops, each faded by the opacity above it (`filter: opacity()` included). A background image,
+ * `background-clip: text`, a transparent `-webkit-text-fill-color`, `mix-blend-mode`, `backdrop-filter`, a mask, or a
+ * filter other than opacity() make the answer 'unknown', which callers treat as hidden (fail closed). The first line
+ * and the first letter may be drawn in colours of their own (::first-line, ::first-letter, on the element or an
+ * ancestor): each must read clear too. A contrasting text-shadow or text stroke makes text clear. Known limit: this
+ * follows DOM ancestors, not painted layers, so a positioned sibling drawn behind the text is not seen.
  */
 import { contrast, fade, gradientStops, over, parseColor, type Rgba, WHITE } from './color';
 import { CONTROL_SELECTOR, kindOf } from './kinds';
 import { flatParent, type ScanCache, styleOf, viewOf, newScanCache } from './scan-cache';
 import {
-  CAMOUFLAGE_MAX_CONTRAST, CONTROL_DRAWN_MIN_CONTRAST, DARK_CANVAS_RGB, MAX_BACKGROUND_CANDIDATES, MIN_OPACITY,
-  MIN_OUTLINE_PX,
+  CAMOUFLAGE_MAX_CONTRAST, CONTROL_DRAWN_MIN_CONTRAST, DARK_CANVAS_RGB, MAX_BACKGROUND_CANDIDATES, MIN_FONT_PX,
+  MIN_OPACITY, MIN_OUTLINE_PX, MIN_SHADOW_REACH_PX, WRAPPER_HUG_PX,
 } from './thresholds';
-import { isUserVisible, opacityOf } from './visibility';
+import { isMasked, isUserVisible, opacityOf } from './visibility';
 
 /** 'unknown' means the colours behind the text cannot be worked out; it counts as hidden. */
 export type CamouflageVerdict = 'clear' | 'camouflaged' | 'unknown';
@@ -41,10 +43,67 @@ export function isCamouflaged(el: Element, cache: ScanCache = newScanCache()): C
     if (backdrop === 'unknown') return 'unknown';
     const text = fade(fill ?? color, opacity);
     const verdict = against(text, backdrop);
-    if (verdict === 'clear') return 'clear';
-    if (outlined(style, backdrop, opacity, doc)) return 'clear';
-    return verdict;
+    if (verdict !== 'clear' && !outlined(style, backdrop, opacity, doc)) return verdict;
+    return firstLineVerdict(el, backdrop, opacity, cache);
   });
+}
+
+/** How a ::first-line or ::first-letter draws text differently from its element. */
+interface PseudoText {
+  /** The glyphs' colour: the fill colour, which paints over `color`. */
+  glyph: string;
+  fontSize: string;
+  background: string;
+  backgroundImage: string;
+}
+
+const PSEUDO_TEXT = ['::first-line', '::first-letter'] as const;
+
+/**
+ * The ::first-line and ::first-letter styles of `el` and of its ancestors that draw text otherwise than the element
+ * they belong to (S4: a label whose ::first-line is white on white still named its field). An ancestor's applies to
+ * the first line of what it holds, unless a descendant sets its own colour; that case is not told apart, so it fails
+ * closed.
+ */
+function pseudoTextOf(el: Element, cache: ScanCache): readonly PseudoText[] {
+  return cache.memo('pseudo-text', el, (): readonly PseudoText[] => {
+    const parent = flatParent(el);
+    const inherited = parent === null ? [] : pseudoTextOf(parent, cache);
+    const view = viewOf(el);
+    const style = styleOf(el, cache);
+    if (view === null || style === null) return inherited;
+    const own: PseudoText[] = [];
+    for (const pseudo of PSEUDO_TEXT) {
+      const drawn = view.getComputedStyle(el, pseudo);
+      const glyph = drawn.webkitTextFillColor || drawn.color;
+      const background = drawn.backgroundColor;
+      const backgroundImage = drawn.backgroundImage;
+      const plainBackground = (background === '' || parseColor(background, el.ownerDocument)?.a === 0)
+        && (backgroundImage === '' || backgroundImage === 'none');
+      if (glyph === (style.webkitTextFillColor || style.color) && drawn.fontSize === style.fontSize && plainBackground) {
+        continue;
+      }
+      own.push({ glyph, fontSize: drawn.fontSize, background, backgroundImage });
+    }
+    return own.length === 0 ? inherited : [...inherited, ...own];
+  });
+}
+
+/** 'clear' when every first line and first letter that applies to `el`'s text reads clear against what is behind it. */
+function firstLineVerdict(el: Element, backdrop: readonly Rgba[], opacity: number, cache: ScanCache): CamouflageVerdict {
+  const doc = el.ownerDocument;
+  for (const pseudo of pseudoTextOf(el, cache)) {
+    if (parseFloat(pseudo.fontSize) < MIN_FONT_PX) return 'camouflaged';
+    if (pseudo.backgroundImage !== '' && pseudo.backgroundImage !== 'none') return 'unknown';
+    const glyph = parseColor(pseudo.glyph, doc);
+    const band = pseudo.background === '' ? null : parseColor(pseudo.background, doc);
+    if (glyph === null || (pseudo.background !== '' && band === null)) return 'unknown';
+    if (glyph.a * opacity < MIN_OPACITY) return 'camouflaged';
+    const behind = band === null || band.a === 0 ? backdrop : backdrop.map((colour) => over(fade(band, opacity), colour));
+    const verdict = against(fade(glyph, opacity), behind);
+    if (verdict !== 'clear') return verdict;
+  }
+  return 'clear';
 }
 
 /** How a text colour (already faded by its opacity) reads against `el`'s own background: used for placeholders,
@@ -56,20 +115,23 @@ export function textAgainstBackground(text: Rgba, el: Element, cache: ScanCache 
 
 /**
  * A control drawn so that it cannot be seen: no visible border on any side, a background that matches what is behind
- * it, no box shadow, no outline and no visible placeholder, and no wrapper inside its field container drawing a box
- * around it (drawnByWrapper). Such a control is never filled. Natively drawn widgets (a checkbox, a radio, a select or
- * a file button with their default appearance) always show themselves. When the colours behind cannot be worked out,
- * the control is not called camouflaged: this check only catches the clear case.
+ * it, no box shadow that reaches past its box in a colour that shows, no outline and no visible placeholder, and no
+ * wrapper hugging it inside its field container drawing a box around it (drawnByWrapper). Such a control is never
+ * filled. Natively drawn widgets (a checkbox, a radio, a select or a file button with their default appearance)
+ * always show themselves, but only where their colours can be judged: a control under an effect this cannot work out
+ * (a filter other than opacity(), a blend mode, a mask) or in front of colours it cannot work out (a background image,
+ * too many gradient stops) counts as camouflaged (fails closed: DOM-3).
  */
 export function isControlCamouflaged(control: Element, placeholderVisible: boolean,
   cache: ScanCache = newScanCache()): boolean {
   const style = styleOf(control, cache);
-  if (style === null) return false;
-  if (drawnNatively(control, style)) return false;
-  if (placeholderVisible) return false;
+  if (style === null) return true;
+  if (hasUnknownEffect(style)) return true;
   const parent = flatParent(control);
   const behind = parent === null ? [canvasOf(control.ownerDocument, cache)] : backdropOf(parent, cache);
-  if (behind === 'unknown') return false;
+  if (behind === 'unknown') return true;
+  if (drawnNatively(control, style)) return false;
+  if (placeholderVisible) return false;
   const doc = control.ownerDocument;
   const opacity = opacityOf(control, cache);
   const shows = (colour: Rgba | null) => colour !== null && colour.a * opacity >= MIN_OPACITY
@@ -83,8 +145,7 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
   const stops = gradientStops(style.backgroundImage, doc);
   if (stops === null || stops.length > 0) return false;
   if (shows(parseColor(style.backgroundColor, doc))) return false;
-  if (style.boxShadow !== '' && style.boxShadow !== 'none' && shadowColours(style.boxShadow, doc)
-    .some((shadow) => shadow.a * opacity >= MIN_OPACITY)) return false;
+  if (drawnShadows(style.boxShadow, doc).some(shows)) return false;
   if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 1
     && shows(parseColor(style.outlineColor, doc))) return false;
   return !drawnByWrapper(control, cache);
@@ -93,10 +154,12 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
 /**
  * Some forms draw a control's box on an element around it instead of on the control: Greenhouse outlines the
  * div.input-wrapper around each text input and textarea, whose own border is none
- * (fixtures/greenhouse/*.html: `.text-input-wrapper .input-wrapper { outline: 1px solid ... }`). So the control
- * counts as drawn when an ancestor inside its field container (an ancestor that holds no other field control, below
- * the form) shows a border, outline or box shadow, and that ancestor's box encloses the control's. A wrapper shared
- * with another control, or a box the control spills out of, does not count.
+ * (fixtures/greenhouse/*.html: `.text-input-wrapper .input-wrapper { outline: 1px solid ... }`), and that wrapper holds
+ * the field's label too. So the control counts as drawn when an ancestor inside its field container (an ancestor that
+ * holds no other field control, below the form) shows a border, outline or box shadow, and that ancestor's box hugs
+ * the control and its own labels: it encloses them, within WRAPPER_HUG_PX on every side. A wrapper shared with another
+ * control, a box the control spills out of, and a card around a whole section (a heading and a paragraph above a
+ * borderless input: DOM-4) do not count.
  */
 function drawnByWrapper(control: Element, cache: ScanCache): boolean {
   const inner = control.getBoundingClientRect();
@@ -105,7 +168,9 @@ function drawnByWrapper(control: Element, cache: ScanCache): boolean {
     if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') return false;
     if (holdsAnotherControl(at, control, cache)) return false;
     const style = styleOf(at, cache);
-    if (style === null || style.visibility !== 'visible' || !encloses(at.getBoundingClientRect(), inner)) continue;
+    const outer = at.getBoundingClientRect();
+    if (style === null || style.visibility !== 'visible' || !encloses(outer, inner)
+      || !hugs(outer, fieldBox(control, at, inner, cache))) continue;
     const parent = flatParent(at);
     const behind = parent === null ? [canvasOf(doc, cache)] : backdropOf(parent, cache);
     if (behind === 'unknown') continue;
@@ -120,11 +185,32 @@ function drawnByWrapper(control: Element, cache: ScanCache): boolean {
     });
     const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 1
       && shows(parseColor(style.outlineColor, doc));
-    const shadow = style.boxShadow !== '' && style.boxShadow !== 'none'
-      && shadowColours(style.boxShadow, doc).some((colour) => shows(colour));
+    const shadow = drawnShadows(style.boxShadow, doc).some(shows);
     if (edge || outline || shadow) return true;
   }
   return false;
+}
+
+/** The box of a control together with its own visible labels inside `wrapper`. */
+function fieldBox(control: Element, wrapper: Element, inner: DOMRect, cache: ScanCache):
+  { left: number; top: number; right: number; bottom: number } {
+  const box = { left: inner.left, top: inner.top, right: inner.right, bottom: inner.bottom };
+  const labels = (control as HTMLInputElement).labels;
+  for (const label of labels ? Array.from(labels) : []) {
+    if (!wrapper.contains(label) || label.contains(control) || !isUserVisible(label, cache)) continue;
+    const r = label.getBoundingClientRect();
+    box.left = Math.min(box.left, r.left);
+    box.top = Math.min(box.top, r.top);
+    box.right = Math.max(box.right, r.right);
+    box.bottom = Math.max(box.bottom, r.bottom);
+  }
+  return box;
+}
+
+/** `outer` reaches no more than WRAPPER_HUG_PX past `inner` on any side. */
+function hugs(outer: DOMRect, inner: { left: number; top: number; right: number; bottom: number }): boolean {
+  return inner.left - outer.left <= WRAPPER_HUG_PX && inner.top - outer.top <= WRAPPER_HUG_PX
+    && outer.right - inner.right <= WRAPPER_HUG_PX && outer.bottom - inner.bottom <= WRAPPER_HUG_PX;
 }
 
 /**
@@ -156,20 +242,35 @@ function encloses(outer: DOMRect, inner: DOMRect): boolean {
 export function optionCamouflage(option: HTMLOptionElement, select: HTMLSelectElement,
   cache: ScanCache = newScanCache()): CamouflageVerdict {
   const doc = select.ownerDocument;
+  const behind = optionBackdrop(option, select, cache);
+  if (behind === null) return 'unknown';
+  const style = styleOf(option, cache);
+  const text = style === null ? null : parseColor(style.color, doc);
+  if (text === null) return 'unknown';
+  if (text.a < MIN_OPACITY) return 'camouflaged';
+  return against(text, [behind]);
+}
+
+/** The opaque colour a select's list draws behind an option: the canvas, then the select's, the optgroup's and the
+ *  option's own backgrounds; null when one cannot be read. */
+export function optionBackdrop(option: HTMLOptionElement, select: HTMLSelectElement,
+  cache: ScanCache = newScanCache()): Rgba | null {
+  const doc = select.ownerDocument;
   let behind = canvasOf(doc, cache);
   const group = option.parentElement?.localName === 'optgroup' ? option.parentElement : null;
   for (const layer of [select, group, option]) {
     if (layer === null) continue;
     const style = styleOf(layer, cache);
     const bg = style === null ? null : parseColor(style.backgroundColor, doc);
-    if (bg === null) return 'unknown';
+    if (bg === null) return null;
     behind = over(bg, behind);
   }
-  const style = styleOf(option, cache);
-  const text = style === null ? null : parseColor(style.color, doc);
-  if (text === null) return 'unknown';
-  if (text.a < MIN_OPACITY) return 'camouflaged';
-  return against(text, [behind]);
+  return behind;
+}
+
+/** How a colour (already faded) reads against one opaque colour behind it, at the text threshold. */
+export function inkAgainst(ink: Rgba, behind: Rgba): CamouflageVerdict {
+  return against(ink, [behind]);
 }
 
 // ── Compositing ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -205,11 +306,40 @@ function backdropOf(el: Element, cache: ScanCache): Backdrop {
   });
 }
 
+/** An effect whose result on the colours this code cannot work out: a blend mode, a backdrop filter, a mask, text
+ *  clipped to its background, or a filter with any function but opacity() (which opacityOf multiplies in). */
 function hasUnknownEffect(style: CSSStyleDeclaration): boolean {
   const set = (value: string | undefined) => value !== undefined && value !== '' && value !== 'none'
     && value !== 'normal';
-  return set(style.mixBlendMode) || set(style.filter) || set(style.backdropFilter)
+  return set(style.mixBlendMode) || unknownFilter(style.filter) || set(style.backdropFilter) || isMasked(style)
     || /\btext\b/.test(style.backgroundClip ?? '') || /\btext\b/.test(style.getPropertyValue('-webkit-background-clip'));
+}
+
+/** A computed filter list with a function other than opacity(): blur(), brightness(), drop-shadow(), url(), ... */
+function unknownFilter(filter: string | undefined): boolean {
+  if (filter === undefined || filter === '' || filter === 'none') return false;
+  return splitFunctions(filter).some((fn) => !/^opacity\(/.test(fn));
+}
+
+/** The functions of a computed filter list, each with its arguments ("opacity(0.5)", "url(\"#f\")"). */
+function splitFunctions(value: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        parts.push(value.slice(from, i + 1).trim());
+        from = i + 1;
+      }
+    }
+  }
+  const rest = value.slice(from).trim();
+  if (rest !== '') parts.push(rest);
+  return parts.filter((part) => part !== '');
 }
 
 function dedupe(colours: Rgba[]): Rgba[] {
@@ -268,12 +398,24 @@ function outlined(style: CSSStyleDeclaration, backdrop: readonly Rgba[], opacity
   });
 }
 
-/** The colours of a computed box-shadow list. */
-function shadowColours(value: string, doc: Document): Rgba[] {
-  return splitTopLevel(value).map((shadow) => {
+/**
+ * The colours of the shadows in a computed box-shadow list that draw something: the offset, blur and spread together
+ * reach MIN_SHADOW_REACH_PX past the box (or into it, for an inset shadow). A shadow of 0 0 0 0 draws nothing, however
+ * dark (DOM-4); whether a colour shows against what is behind it is the caller's check. A shadow this cannot read
+ * draws nothing (fails closed).
+ */
+function drawnShadows(value: string, doc: Document): Rgba[] {
+  if (value === '' || value === 'none') return [];
+  return splitTopLevel(value).flatMap((shadow) => {
     const colourText = /rgba?\([^)]*\)|transparent|[a-z]+\([^)]*\)/i.exec(shadow)?.[0];
-    return colourText === undefined ? null : parseColor(colourText, doc);
-  }).filter((colour): colour is Rgba => colour !== null);
+    const colour = colourText === undefined ? null : parseColor(colourText, doc);
+    const lengths = shadow.replace(colourText ?? '', '').replace(/\binset\b/, '').trim().split(/\s+/)
+      .filter((part) => part !== '').map((part) => parseFloat(part));
+    if (colour === null || lengths.length < 2 || lengths.some((length) => !Number.isFinite(length))) return [];
+    const [x = 0, y = 0, blur = 0, spread = 0] = lengths;
+    const reach = Math.max(Math.abs(x), Math.abs(y)) + Math.max(0, blur) + spread;
+    return reach >= MIN_SHADOW_REACH_PX ? [colour] : [];
+  });
 }
 
 /** Splits a comma-separated list at commas outside parentheses. */

@@ -35,7 +35,9 @@ export const FillResultSchema = z.strictObject({
 
 /** Notices the panel shows above the rows. */
 export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attention-check', 'page-busy', 'auth', 'captcha',
-  'validation', 'needs-click', 'posting-outside-frame', 'deferred-fields', 'step-retry-limit'] as const;
+  'validation', 'needs-click', 'posting-outside-frame', 'deferred-fields', 'step-retry-limit',
+  // The Phase 2 review: policy text only hidden text holds (S6), and a form its page hides (S1).
+  'policy-hidden-text', 'form-hidden'] as const;
 
 export const FrameReportSchema = z.strictObject({
   v: z.literal(1),

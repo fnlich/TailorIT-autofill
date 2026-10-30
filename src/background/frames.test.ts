@@ -164,6 +164,44 @@ describe('frames of a page that is gone', () => {
     expect(FRAME_PROBE_TIMEOUT_MS).toBeGreaterThan(FRAME_PROBE_GRACE_MS);
   });
 
+  // W1: forgetting a frame's gone document took every run and report of that frame, the live document's included.
+  it('keeps what a document restored from the back/forward cache began when a sweep forgets the one it replaced', async () => {
+    const { worker, gone } = await tab();
+    await hello(worker, top('doc-1'));
+    await hello(worker, top('doc-2'));
+    // Back: doc-1 comes out of the back/forward cache without a hello, so the registry still holds doc-2, and it fills.
+    const runId = await reportFrom(worker, top('doc-1'));
+    gone.add('doc-2');
+    // A panel reads the tab: the check asks doc-2, which is gone, and forgets it...
+    await worker.deliver({ v: 1, type: 'panel/reports', tabId: 7 }, pageSender());
+    await afterGrace(worker, async () => expect(await registered()).toEqual([]));
+    // ...but not doc-1's report or run.
+    expect(await reported()).toEqual([0]);
+    expect(await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], canaries: [], notices: [] },
+      top('doc-1'))).toMatchObject({ ok: true });
+  });
+
+  it('forgets, at a hello from another document, only the document the frame left', async () => {
+    const { worker } = await tab();
+    await hello(worker, top('doc-1'));
+    await hello(worker, top('doc-2'));
+    await reportFrom(worker, top('doc-2'));
+    // Back to doc-1, out of the back/forward cache: it begins a run before its hello reaches the worker.
+    const runId = await beginRun(worker, {}, top('doc-1'));
+    await hello(worker, top('doc-1'));
+    expect(await registered()).toEqual(['0:doc-1']);
+    // doc-2's report went (its run was replaced by doc-1's); doc-1's run stayed.
+    expect(await reported()).toEqual([]);
+    expect(await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], canaries: [], notices: [] },
+      top('doc-1'))).toMatchObject({ ok: true });
+    const report = frameReport(runId);
+    expect(await worker.deliver({ v: 1, type: 'report/put', runId, report }, top('doc-1'))).toEqual({ ok: true, data: {} });
+    // And a hello from doc-2 again (forward) takes doc-1's report and run with it.
+    await hello(worker, top('doc-2'));
+    expect(await reported()).toEqual([]);
+    expect(await worker.deliver({ v: 1, type: 'plan/poll', runId, keys: [] }, top('doc-1'))).toEqual({ ok: false, error: 'expired' });
+  });
+
   it('lets an old embed go when a new embed says hello in a tab whose top page has no content script', async () => {
     const { worker, gone } = await tab();
     await hello(worker, embed(3, 'doc-3'));

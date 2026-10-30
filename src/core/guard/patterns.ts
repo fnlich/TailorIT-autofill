@@ -30,8 +30,10 @@ export const ADDRESSED = String.raw`(?=\s+(?:reading|processing|parsing|reviewin
 export const AN_AL = String.raw`(?<=\ban\s+)al(?=\s*(?:$|[,.;:!?)\]]|${INSTRUCTION}\b|(?:models?|assistants?|agents?|tools?|bots?)\b))`;
 
 /** The words after an AI name that make it a role, a field or a company rather than the addressee ("an AI engineer",
- *  "a bot developer"). */
-const ROLE_NEXT = String.raw`(?!\s*(?:\/\s*ml|researcher|engineer|scientist|developer|expert|enthusiast|practitioner|professional|specialist|company|startup|team|lab|product))`;
+ *  "a bot developer"), a company the AI drives ("an AI-first company", "an AI-native startup"), or a person who uses
+ *  the tool ("a Claude Code power user", "a ChatGPT Plus user"; the review, CORE-11). "An AI-powered assistant" and
+ *  "an AI user agent" are still the AI. */
+const ROLE_NEXT = String.raw`(?!\s*(?:\/\s*ml|researcher|engineer|scientist|developer|expert|enthusiast|practitioner|professional|specialist|company|startup|team|lab|product)|[-\s]+(?:first|native|powered|driven|enabled|based|centric|focused|forward|led)[-\s]+(?:compan(?:y|ies)|startups?|teams?|business(?:es)?|organi[sz]ations?|firms?|employers?|platforms?|products?|labs?|shops?|agenc(?:y|ies)|studios?|groups?|world|future|era|culture)\b|(?:[-\s]+(?:code|power|heavy|daily|regular|frequent|avid|experienced|advanced|pro|plus|enterprise))*[-\s]+users?\b(?!\s+agents?))`;
 
 /** The ways a page names an AI tool. */
 const AI = String.raw`(?:ai|a\s?i|artificial\s+intelligence|llms?|large\s+language\s+models?|language\s+models?|bots?|chat\s?bots?|gpts?|chat\s?gpt|claude|gemini|copilot|crawlers?|scrapers?|automated\s+(?:systems?|tools?|agents?|programs?)|${AI_QUALIFIER}[\s-]+(?:assistants?|agents?|models?|robots?)|(?:${SOFT_QUALIFIER}[\s-]+)?(?:assistants?|agents?|robots?)(?:(?=\s*[:,;\-–—]?\s*(?:(?:please|always|just|only)\s+)?${INSTRUCTION}\b)|${ADDRESSED})|${AN_AL})`;
@@ -51,13 +53,13 @@ const READER = String.raw`(?:you|u)(?:\s+(?:actually|really|did))?(?:\s+read\s+(
 /** The eleven tripwire patterns, each with the id a hit reports. */
 export const TRIPWIRE_PATTERNS = [
   { id: 'if-you-are-ai', re: new RegExp(String.raw`\bif\s+you\s*(?:are|'re|r)\s+(?:an?\s+|the\s+)?${AI}\b${ROLE_NEXT}`, 'i') },
-  { id: 'ignore-instructions', re: /\b(?:ignore|disregard|forget|override|bypass)\s+(?:(?:all|any|the|your|these|those)\s+)*(?:previous|prior|above|earlier|preceding|original|system|other)?\s*(?:instructions?|prompts?|rules?|directions?|guidelines?|messages?|context)\b/i },
+  { id: 'ignore-instructions', re: /\b(?:ignore|disregard|forget|override|bypass)\s+(?:(?:all|any|the|your|these|those)\s+)*(?:(?:previous|prior|above|earlier|preceding|original|system|other)\s*(?:instructions?|prompts?|rules?|directions?|guidelines?|messages?|context)|instructions?|prompts?)\b|\b(?:ignore|disregard|forget|override|bypass)\s+(?:all|your)\s+(?:(?:all|any|the|your|these|those)\s+)*(?:rules?|directions?|guidelines?|messages?|context)\b|\b(?:ignore|disregard|forget|override|bypass)\s+(?:(?:all|any|the|your|these|those)\s+)*(?:rules?|directions?|guidelines?|messages?|context)\s+(?:above|before|given|provided)\b/i },
   { id: 'as-an-ai', re: new RegExp(String.raw`\bas\s+an?\s+${AI}\b${ROLE_NEXT}`, 'i') },
   { id: 'write-to-prove', re: new RegExp(String.raw`\b(?:${WRITE}\b[^.!?\n]{0,100}?\b${PURPOSE}\s+(?:that\s+)?${READER}|(?:${WRITE}\s+(?:the\s+(?:words?|phrase|letters?)\b|["'\`\u201C\u00AB])|use\s+the\s+(?:words?|phrase)\b)[^.!?\n]{0,100}?\b${PURPOSE}\b)`, 'i') },
   { id: 'any-ai-must', re: new RegExp(String.raw`\b(?:any|all|every)\s+${AI}\s+(?:must|should|shall|need\s+to|are\s+(?:required|instructed|asked)\s+to)\b`, 'i') },
   { id: 'ai-reading-this', re: new RegExp(String.raw`\b${AI}\s+(?:reading|processing|parsing|reviewing|summari[sz]ing)\s+this\b`, 'i') },
   { id: 'note-to-ai', re: new RegExp(String.raw`\b(?:note|message|instructions?|attention|notice|reminder)\s+(?:to|for)\s+(?:the\s+|any\s+|all\s+)?${AI}\b`, 'i') },
-  { id: 'role-reset', re: /\b(?:you\s+are\s+now|from\s+now\s+on\s+you|new\s+instructions?|system\s+prompt|developer\s+mode|jailbreak|do\s+anything\s+now)\b/i },
+  { id: 'role-reset', re: /\b(?:you\s+are\s+now|from\s+now\s+on\s+you|new\s+instructions?|system\s+prompt|developer\s+mode|jailbreak(?!\s*(?:detection|prevention|protection|resistance|research|testing|tests?|attempts?|attacks?|defen[cs]es?|mitigation|classifiers?|filters?|guardrails?|benchmarks?|evaluations?|evals?|robustness|vulnerabilit(?:y|ies)|techniques?|methods?|safety)\b)|do\s+anything\s+now)\b/i },
   { id: 'prompt-markup', re: /(?:<\/?\s*(?:system|assistant|user|instructions?|untrusted|im_start|im_end)\b[^>]*>|\[\/?(?:inst|system)\]|#{2,}\s*(?:system|instructions?)\b)/i },
   { id: 'conceal-from-user', re: /\bdo\s+not\s+(?:tell|inform|show|reveal|mention\s+(?:this|it)\s+to)\s+(?:the\s+)?(?:user|applicant|candidate|human|person)\b/i },
   { id: 'hidden-instruction', re: /\b(?:hidden|secret|invisible)\s+(?:instructions?|message|text|prompt)\b/i },

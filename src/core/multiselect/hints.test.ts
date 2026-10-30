@@ -18,6 +18,33 @@ describe('parseSelectionHints (§9)', () => {
     expect(parseSelectionHints('Skills', 'Select at least 2.')).toMatchObject({ minSelections: 2 });
   });
 
+  // CORE-9 (Phase 2 review): a cap with no verb before it was missed, and a range was read as an exact count of its
+  // first number, so "Select 1-3" took one value.
+  it.each([
+    ['Which skills do you use most? (up to 3)', '', { maxSelections: 3 }],
+    ['Preferred locations (max 3)', '', { maxSelections: 3 }],
+    ['Up to 3 selections', '', { maxSelections: 3 }],
+    ['Which teams interest you? (Maximum of 2)', '', { maxSelections: 2 }],
+    ['Areas of interest', 'At most four.', { maxSelections: 4 }],
+    ['Select 1-3', '', { minSelections: 1, maxSelections: 3 }],
+    ['Choose 2 or 3 of the following', '', { minSelections: 2, maxSelections: 3 }],
+    ['Pick between 2 and 4 options', '', { minSelections: 2, maxSelections: 4 }],
+    ['Top skills (1\u{2013}3 selections)', '', { minSelections: 1, maxSelections: 3 }],
+    ['Your strongest areas (1 to 3)', '', { minSelections: 1, maxSelections: 3 }],
+  ] as const)('reads %j', (label, description, hints) => {
+    const parsed = parseSelectionHints(label, description);
+    expect(parsed).toMatchObject(hints);
+    expect(parsed.exactSelections).toBeUndefined();
+    if (!('minSelections' in hints)) expect(parsed.minSelections).toBeUndefined();
+  });
+
+  it('reads no cap in a length of time or a count of people', () => {
+    for (const label of ['Which tools have you used for up to 3 years?', 'Teams of up to 10 people you led',
+      'Select the shifts you can work (2-3 hours each)']) {
+      expect(parseSelectionHints(label, ''), label).toEqual({ selectAllThatApply: false });
+    }
+  });
+
   it('reads no count where there is none', () => {
     expect(parseSelectionHints('Select one or more', '')).toEqual({ selectAllThatApply: false });
     expect(parseSelectionHints('Which languages do you speak?', '')).toEqual({ selectAllThatApply: false });

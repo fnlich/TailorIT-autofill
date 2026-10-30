@@ -166,6 +166,66 @@ function payPeriodNamed(text: string): 'year' | 'month' | 'hour' | null {
   return null;
 }
 
+/** The currencies a dollar sign or the word "dollars" may mean. */
+const DOLLAR_CURRENCIES = ['USD', 'CAD', 'AUD', 'NZD', 'SGD', 'HKD', 'TWD', 'MXN', 'ARS', 'CLP', 'COP', 'UYU', 'JMD',
+  'TTD', 'BSD', 'BBD', 'BZD', 'BMD', 'KYD', 'XCD', 'FJD', 'NAD', 'LRD', 'GYD', 'SRD', 'BND'] as const;
+/** How pay questions name a currency, the most specific first, each with the ISO codes it may mean: a marker found is
+ *  taken out of the text, so "US$" is not read again as a bare "$". A sign's letters ("C$", "A$") and the ISO codes
+ *  count only in capitals and joined to the sign ("as a $ amount" names no Australian dollars; "CAD" is never the word
+ *  "cad"); a currency's name counts in any case. */
+const CURRENCY_MARKERS: ReadonlyArray<readonly [RegExp, readonly string[]]> = [
+  [/\bUS ?\$/g, ['USD']],
+  [/\bCA?N?\$/g, ['CAD']],
+  [/\bAU?\$/g, ['AUD']],
+  [/\bNZ\$/g, ['NZD']],
+  [/\bSG?\$/g, ['SGD']],
+  [/\bHK\$/g, ['HKD']],
+  [/\bR\$/g, ['BRL']],
+  [/\bMX\$/g, ['MXN']],
+  [/\bU\.?\s?S\.?\s+dollars?\b|\bamerican\s+dollars?\b/gi, ['USD']],
+  [/\bcanadian\s+dollars?\b/gi, ['CAD']],
+  [/\baustralian\s+dollars?\b/gi, ['AUD']],
+  [/\bnew\s+zealand\s+dollars?\b/gi, ['NZD']],
+  [/\bsingapore\s+dollars?\b/gi, ['SGD']],
+  [/\bhong\s+kong\s+dollars?\b/gi, ['HKD']],
+  [/\bbrazilian\s+reais\b/gi, ['BRL']],
+  [/\bmexican\s+pesos?\b/gi, ['MXN']],
+  [/\$|\bdollars?\b/gi, DOLLAR_CURRENCIES],
+  [/\u{00A3}|\bpounds?\s+sterling\b|\bsterling\b|\bpounds?\b/giu, ['GBP']],
+  [/\u{20AC}|\beuros?\b/giu, ['EUR']],
+  [/\u{20B9}|\brupees?\b|\blakhs?\b|\blacs?\b|\blpa\b|\bcrores?\b/giu, ['INR', 'PKR', 'LKR', 'NPR', 'BDT']],
+  [/\u{00A5}|\byen\b/giu, ['JPY', 'CNY']],
+  [/\byuan\b|\brenminbi\b|\bRMB\b/gi, ['CNY']],
+  [/\u{20A9}/gu, ['KRW']],
+  [/\u{20AA}|\bshekels?\b/giu, ['ILS']],
+  [/\u{20B1}/gu, ['PHP']],
+  [/\u{20BA}|\blira\b/giu, ['TRY']],
+  [/\u{20BD}|\broubles?\b|\brubles?\b/giu, ['RUB']],
+  [/\bz\u{0142}|\bzloty\b/giu, ['PLN']],
+  [/\bswiss\s+francs?\b/gi, ['CHF']],
+  [/\bkronor\b|\bkrona\b/gi, ['SEK', 'ISK']],
+  [/\bkroner\b|\bkrone\b/gi, ['NOK', 'DKK']],
+  [/\bpesos?\b/gi, ['MXN', 'ARS', 'CLP', 'COP', 'PHP', 'UYU', 'DOP']],
+  [/\b(?:USD|EUR|GBP|CAD|AUD|NZD|CHF|JPY|CNY|HKD|SGD|INR|SEK|NOK|DKK|ISK|PLN|CZK|HUF|RON|BGN|ILS|AED|SAR|QAR|KWD|BRL|MXN|ARS|CLP|COP|PEN|ZAR|NGN|KES|EGP|KRW|TWD|THB|MYR|IDR|PHP|VND|TRY|RUB|UAH|PKR|BDT|LKR|NPR)\b/g, []],
+];
+
+/** The currencies a pay question names, as ISO codes; empty when it names none. */
+function currenciesNamed(text: string): Set<string> {
+  const named = new Set<string>();
+  let rest = text;
+  for (const [marker, codes] of CURRENCY_MARKERS) {
+    rest = rest.replace(marker, (found) => {
+      for (const code of codes.length > 0 ? codes : [found]) named.add(code);
+      return ' ';
+    });
+  }
+  return named;
+}
+
+/** A pay question that asks in a scale other than units: thousands ("in thousands", "(k)", "$K", "e.g. 120k", "000s"),
+ *  millions, lakhs or crores. 401(k) is no scale. */
+const PAY_SCALE = /\bin\s+(?:thousands|millions|k)\b|\bthousands\b|\bmillions?\b|\blakhs?\b|\blacs?\b|\blpa\b|\bcrores?\b|\(\s*k\s*\)|[$\u{00A3}\u{20AC}\u{20B9}\u{00A5}]\s?k\b|\b(?!401k\b)\d+(?:[.,]\d+)?\s?k\b|(?:\b|')000'?s\b/iu;
+
 /** The profile's language entry a proficiency question is about: the one its label names, else its block's, else the
  *  only one. */
 function languageAsked(spec: FieldSpec, languages: Profile['languages']): number | null {
@@ -338,8 +398,13 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
         return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT,
           choice: { intended: { kind: 'decline', domain: 'generic' }, domain: 'generic' } });
       }
-      const asked = payPeriodNamed(`${spec.label} ${spec.description}`);
+      // The question's period, currency and scale must be the person's: pay is never converted (the review, CORE-8).
+      const question = `${spec.label} ${spec.description}`;
+      const asked = payPeriodNamed(question);
       if (asked !== null && asked !== salary.value.period) return none('format-unsupported');
+      const currencies = currenciesNamed(question);
+      if (currencies.size > 0 && !currencies.has(salary.value.currency)) return none('format-unsupported');
+      if (PAY_SCALE.test(question)) return none('format-unsupported');
       const { min, currency, period } = salary.value;
       return value({ origin: fromProfile('preferences.expectedSalary'), confidence: VALUE_EXPLICIT, text: String(min),
         choice: { intended: { kind: 'number', value: min, unit: `currency-${period}`, currency }, domain: 'number' } });

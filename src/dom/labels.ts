@@ -4,21 +4,27 @@
  *
  * Order. A visible source always wins over aria-label: label[for], aria-labelledby (hidden targets dropped), the
  * wrapping <label> (minus the controls inside it), the fieldset's legend, the adapter's label (written from a
- * snapshot), the visible placeholder, and only then aria-label. The spec lists aria-label third; it is read last here
- * because it is never shown, and a page could otherwise name a field one thing on screen and another to us (an
- * aria-label "Email" on a field shown as "Referrer's email"). An aria-label still drives the rules, marked not
- * visible unless the same words are visible beside the control; it never reaches an LLM. A trailing required mark
- * ('*', or Lever's heavy asterisk) or "(required)" is cut and sets `required`; "(optional)" is cut.
+ * snapshot), then the visible placeholder, and only then aria-label alone. The spec lists aria-label third; it is read
+ * after the visible sources because it is never shown, and a page could otherwise name a field one thing on screen and
+ * another to us (an aria-label "Email" on a field shown as "Referrer's email"). An aria-label still drives the rules,
+ * marked not visible unless the same words stand whole, in order, beside the control (DOM-11: a one-letter "e" is
+ * found in any sentence); it never reaches an LLM.
+ * The one exception (DOM-10, the lead's decision): when the visible placeholder is the only visible source and the
+ * control also has an aria-label, the aria-label is the label's text (labelSource 'aria-label'), because a placeholder
+ * is so often an example ("e.g. Jane", "https://") rather than a name, and the visible placeholder is what makes the
+ * field fillable (visible true). A placeholder our own write hid counts only while the page still shows the text seen
+ * at that write (heldPlaceholder, DOM-7). A trailing required mark ('*', or Lever's heavy asterisk) or "(required)" is
+ * cut and sets `required`; "(optional)" is cut.
  *
  * Groups (radios, checkbox groups) take their question from the container: its aria-labelledby, its legend, the
  * adapter's label, then its aria-label. Each member's own visible label is the option's label.
  */
 import type { LabelSource } from '../core/enums';
 import type { Adapter } from '../adapters/types';
-import { capCodePoints } from '../core/text/fold';
+import { capCodePoints, foldLetters, removeInvisibles } from '../core/text/fold';
 import { CONTROL_SELECTOR, kindOf } from './kinds';
 import type { ScanCache } from './scan-cache';
-import { TEXT_CAP_DESCRIPTION, TEXT_CAP_LABEL } from './thresholds';
+import { MIN_ARIA_LABEL_CHARS, TEXT_CAP_DESCRIPTION, TEXT_CAP_LABEL } from './thresholds';
 import { heldPlaceholder, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
 import { isUserVisible } from './visibility';
 
@@ -26,8 +32,9 @@ import { isUserVisible } from './visibility';
 export interface LabelContext {
   cache: ScanCache;
   adapter: Adapter | null;
-  /** Controls the extension wrote into while their visible placeholder labelled them (ScanOptions.heldPlaceholders). */
-  heldPlaceholders?: WeakSet<Element>;
+  /** Controls the extension wrote into while a visible placeholder showed, with that placeholder's text
+   *  (ScanOptions.heldPlaceholders). */
+  heldPlaceholders?: WeakMap<Element, string>;
 }
 
 /** A field's label as read. */
@@ -148,12 +155,19 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   if (legend) return legend;
   const byAdapter = adapterLabel(control, ctx);
   if (byAdapter) return byAdapter;
-  // A control we wrote into keeps the placeholder that labelled it then: our own write hid it, and the field, with its
-  // key, is the same one. Any other filled control's placeholder is out of sight and names nothing.
+  // A control we wrote into keeps the placeholder that showed then, while the page still shows the same text: our own
+  // write hid it, and the field, with its key, is the same one. Any other filled control's placeholder is out of sight
+  // and names nothing.
+  const held = ctx.heldPlaceholders?.get(control);
   const placeholder = visiblePlaceholder(control, ctx.cache)
-    ?? (ctx.heldPlaceholders?.has(control) ? heldPlaceholder(control, ctx.cache) : null);
-  const byPlaceholder = placeholder === null ? null : fromText(placeholder, 'placeholder', null);
-  if (byPlaceholder) return byPlaceholder;
+    ?? (held === undefined ? null : heldPlaceholder(control, held, ctx.cache));
+  if (placeholder !== null) {
+    // DOM-10: the aria-label names the field, the visible placeholder makes it fillable.
+    const named = ariaLabel(control, ctx);
+    if (named !== null) return { ...named, visible: true, required: named.required || cleanLabel(placeholder).required };
+    const byPlaceholder = fromText(placeholder, 'placeholder', null);
+    if (byPlaceholder) return byPlaceholder;
+  }
   return ariaLabel(control, ctx) ?? NONE;
 }
 
@@ -222,17 +236,31 @@ function adapterLabel(el: Element, ctx: LabelContext): ResolvedLabel | null {
 }
 
 /** An aria-label: it may drive the rules, and counts as visible only when its words are visible beside the control
- *  (in the control's field container). */
+ *  (in the control's field container): all of them, whole and in order, and at least MIN_ARIA_LABEL_CHARS letters or
+ *  digits in all (DOM-11). */
 function ariaLabel(el: Element, ctx: LabelContext): ResolvedLabel | null {
   const raw = el.getAttribute('aria-label') ?? '';
   const label = fromText(raw, 'aria-label', null, false);
   if (label === null) return null;
   const container = fieldContainer(el);
-  if (container !== null) {
-    const nearby = textOf(container, ctx).toLowerCase();
-    if (nearby.includes(label.text.toLowerCase())) label.visible = true;
-  }
+  if (container !== null && containsWords(wordsOf(textOf(container, ctx)), wordsOf(label.text))) label.visible = true;
   return label;
+}
+
+/** A text's words, folded (invisibles deleted, diacritics and case folded) and split at anything but a letter or a
+ *  digit. */
+function wordsOf(text: string): string[] {
+  return foldLetters(removeInvisibles(text)).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word !== '');
+}
+
+/** Whether `words` holds `wanted` as one run of whole words, and `wanted` has at least MIN_ARIA_LABEL_CHARS letters
+ *  or digits. */
+function containsWords(words: readonly string[], wanted: readonly string[]): boolean {
+  if (wanted.join('').length < MIN_ARIA_LABEL_CHARS) return false;
+  for (let at = 0; at + wanted.length <= words.length; at += 1) {
+    if (wanted.every((word, i) => words[at + i] === word)) return true;
+  }
+  return false;
 }
 
 /** Whether `el` is a control the scanner could make a field of (or an auth field). Buttons are not. */

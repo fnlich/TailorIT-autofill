@@ -8,8 +8,10 @@
  * - finalGuard: guardReady reads back every value in the form, ours and the person's own alike, before the run says it
  *   is ready for review. A value holding a canary that we wrote is blocked: a text is set back to what it held before
  *   our write (a write with provenance rule guard.revert, through both Guards, cleared to empty if that earlier value
- *   holds a canary too), and a choice keeps its selection, blocked, highlighted with "Remove this selection". A value
- *   the person typed, or the page prefilled, is only flagged, never overwritten. An unconfirmed draft is flagged.
+ *   holds a canary too, and read back exactly), and a choice keeps its selection, blocked, highlighted with "Remove
+ *   this selection". Both rows are settleRow's blocked row (no provenance, nothing verified), whatever the revert did.
+ *   A value the person typed, or the page prefilled, is only flagged, never overwritten. An unconfirmed draft is
+ *   flagged.
  * Read-back values stay in memory; nothing here sends or logs one.
  */
 import type { Adapter } from '../adapters/types';
@@ -66,6 +68,7 @@ function readBackTexts(field: ScannedField): string[] {
 export interface FinalGuardEnv {
   adapter: Adapter;
   root: Element;
+  /** Every canary the frame holds in memory (tripwire.allCanaries), not only the 32 that are sent (CORE-15). */
   canaries: readonly string[];
 }
 
@@ -91,7 +94,9 @@ function revert(env: FinalGuardEnv, fresh: ScanResult, written: WrittenField): b
       reason: 'ok' },
   };
   if (!guardWriteInFrame(write, toFieldSpec(verdict.target.field), env.canaries).ok) return false;
-  return fill(verdict.target, write.value, { adapter: env.adapter, root: env.root }).verification === 'verified';
+  // Read back exactly: under the field's own rule an empty phone or number never reads as equal to empty (DOM-14).
+  return fill(verdict.target, write.value, { adapter: env.adapter, root: env.root, readBack: 'exact' })
+    .verification === 'verified';
 }
 
 /** The final Guard over a fresh scan (guardReady), applied to the rows. */
@@ -119,14 +124,11 @@ export function finalGuard(env: FinalGuardEnv, fresh: ScanResult, rows: Map<Fiel
       }
       const ours = written.find((entry) => entry.key === issue.key);
       const textLike = row.kind === 'text' || row.kind === 'textarea';
-      if (ours !== undefined && textLike && revert(env, fresh, ours)) {
-        reverted.add(issue.key);
-        out.set(issue.key, settleRow(row, { kind: 'blocked', reason: issue.reason }));
-      } else {
-        // A choice is never unticked or deselected: it stays, blocked, for the person to remove.
-        if (!textLike) removeSelection.add(issue.key);
-        out.set(issue.key, { ...row, status: 'blocked', reason: issue.reason, needsUserAction: true });
-      }
+      if (ours !== undefined && textLike && revert(env, fresh, ours)) reverted.add(issue.key);
+      // A choice is never unticked or deselected: it stays, blocked, for the person to remove.
+      else if (!textLike) removeSelection.add(issue.key);
+      // Either way the row is the blocked one settleRow makes: never verified, with no provenance (DOM-14).
+      out.set(issue.key, settleRow(row, { kind: 'blocked', reason: issue.reason }));
       continue;
     }
     if (issue.reason === 'llm-draft-needs-confirmation' && row.status !== 'blocked') {

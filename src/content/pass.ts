@@ -9,7 +9,7 @@
  *    options it names still read as planned at their places, the provenance's shape, an llm-pick's option unchanged,
  *    the canary scan over this frame's canaries, the mark-all cover test (guardWriteInFrame);
  * 3. a file write first receives the resume over the `resume` port (transfer.ts), then is checked again, since the
- *    page had a moment to change;
+ *    page had a moment to change, and is dropped as user-stopped if the person pressed Cancel meanwhile;
  * 4. fill() writes with untrusted events and reads back at once;
  * 5. the planner's row is settled from what happened (settleRow).
  * A refused write leaves its field untouched, with the guard's reason: blocked for what the Guard forbids (not
@@ -29,6 +29,7 @@ import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
 import { scan, toFieldSpec } from '../dom/scan';
 import type { FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult } from '../dom/types';
+import { visiblePlaceholder } from '../dom/visible-text';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
 import { receiveResume, type ReceivedResume } from './transfer';
@@ -52,7 +53,8 @@ export interface PassEnv {
   platform: Platform;
   frameId: number;
   dryRun: boolean;
-  /** This frame's canaries (at most 32, folded): every outgoing value is scanned for them before it is written. */
+  /** Every canary this frame holds in memory (tripwire.allCanaries, at most 1024, not only the 32 plan/request
+   *  carries): every outgoing value is scanned for them before it is written (CORE-15). */
   canaries: readonly string[];
   signal: AbortSignal;
   /** Whether the platform still holds the extension, asked before every write (false tears the runtime down). */
@@ -159,7 +161,7 @@ export function plannedFieldOf(field: ScannedField): PlannedField {
 
 /** Writes one planned value: the row it ends with, and what was written. `held` is the pass's scans' heldPlaceholders. */
 async function writeOne(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite, planned: FillResult,
-  held: WeakSet<Element>): Promise<{ row: FillResult; written?: WrittenField }> {
+  held: WeakMap<Element, string>): Promise<{ row: FillResult; written?: WrittenField }> {
   const wanted = plannedFieldOf(field);
   let verdict = domGuardBeforeWrite(last, wanted);
   if (!verdict.ok) return { row: settleRow(planned, refusal(verdict.reason, GUARD_BLOCKS)) };
@@ -174,6 +176,11 @@ async function writeOne(env: PassEnv, last: ScanResult, field: ScannedField, wri
     if (env.signal.aborted || !env.valid()) {
       if (got.ok) got.resume.release();
       throw new RunAborted();
+    }
+    // The person may have pressed Cancel while the bytes were on their way (DOM-8): nothing more is written.
+    if (env.stopped()) {
+      if (got.ok) got.resume.release();
+      return { row: settleRow(planned, { kind: 'not-written', reason: 'user-stopped' }) };
     }
     if (!got.ok) return { row: settleRow(planned, { kind: 'not-written', reason: got.reason }) };
     resume = got.resume;
@@ -191,8 +198,10 @@ async function writeOne(env: PassEnv, last: ScanResult, field: ScannedField, wri
   }
 
   const target = verdict.target;
-  // Our write hides the placeholder that labels this field: the pass's rescans keep it, so the field keeps its key.
-  if (target.field.labelSource === 'placeholder' && target.field.labelVisible) held.add(target.control);
+  // Our write hides the placeholder showing now, which labels this field or makes it fillable: the pass's rescans keep
+  // it while the page still shows this text (DOM-7), so the field keeps its label and its key.
+  const shown = visiblePlaceholder(target.control);
+  if (shown !== null) held.set(target.control, shown);
   const textLike = target.field.kind === 'text' || target.field.kind === 'textarea';
   const textBefore = textLike ? (target.control as HTMLInputElement | HTMLTextAreaElement).value : null;
   const selectedBefore = selectedOf(target.field);
@@ -213,8 +222,8 @@ async function writeOne(env: PassEnv, last: ScanResult, field: ScannedField, wri
 
 /** Runs one pass over the form root. */
 export async function runPass(env: PassEnv, pass: number): Promise<PassResult> {
-  // The controls this pass writes while a visible placeholder labels them; every rescan of `scanned` reads it.
-  const held = new WeakSet<Element>();
+  // The controls this pass writes while a visible placeholder shows, with its text; every rescan of `scanned` reads it.
+  const held = new WeakMap<Element, string>();
   const scanned = scan(env.root, env.adapter, { platform: env.platform, frameId: env.frameId, heldPlaceholders: held });
   const plan = await env.plan(scanned.fields.map(toFieldSpec), pass);
   if (env.signal.aborted) throw new RunAborted();

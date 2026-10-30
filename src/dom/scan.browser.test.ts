@@ -192,13 +192,13 @@ describe('scan: labels, sections and keys', () => {
       <input id="p" name="contact_number" type="tel" placeholder="Phone">
       <input id="q" name="site" placeholder="Website"></form></body>`);
     const form = fixture.doc.querySelector('form')!;
-    const held = new WeakSet<Element>();
+    const held = new WeakMap<Element, string>();
     const first = scan(form, null, { ...OPTIONS, heldPlaceholders: held });
     const phone = byId(first.fields, 'p')!;
     expect(phone).toMatchObject({ label: 'Phone', labelSource: 'placeholder', labelVisible: true });
-    // The pass's write: the control joins the set, then the value hides its placeholder.
+    // The pass's write: the control joins the map with the text it showed, then the value hides its placeholder.
     const target = first.target(phone.key)!;
-    held.add(target.control);
+    held.set(target.control, 'Phone');
     expect(fill(target, { kind: 'text', text: '+1 512 555 0147' }, { adapter: null, root: form })).toMatchObject({ wrote: true });
     expect(first.rescan().target(phone.key)?.field).toMatchObject({ label: 'Phone', labelSource: 'placeholder', labelVisible: true });
     // A value the page put there hides that control's placeholder: it names nothing.
@@ -206,6 +206,23 @@ describe('scan: labels, sections and keys', () => {
     expect(byId(first.rescan().fields, 'q')).toMatchObject({ label: '', labelSource: 'none', labelVisible: false });
     // A scan not told about the write loses the label, and with it the key the plan and the read-back use.
     expect(scan(form, null, OPTIONS).target(phone.key)).toBeNull();
+  });
+
+  it('lets go of a held placeholder the page renamed, so a later write is never redirected to it (DOM-7)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <input id="first" name="a1" placeholder="First name"><input id="last" name="a2" placeholder="Last name"></form></body>`);
+    const form = fixture.doc.querySelector('form')!;
+    const held = new WeakMap<Element, string>();
+    const before = scan(form, null, { ...OPTIONS, heldPlaceholders: held });
+    const lastKey = byId(before.fields, 'last')!.key;
+    const first = fixture.doc.getElementById('first') as HTMLInputElement;
+    held.set(first, 'First name');
+    first.value = 'Alex';
+    // The page answers our write by renaming the field it no longer shows a placeholder for.
+    first.setAttribute('placeholder', 'Last name');
+    const after = before.rescan();
+    expect(byId(after.fields, 'first')).toMatchObject({ labelSource: 'none', labelVisible: false });
+    expect(after.target(lastKey)?.control).toBe(fixture.doc.getElementById('last'));
   });
 
   it('takes sections from the adapter, then fieldset legends, then the preceding heading', async () => {

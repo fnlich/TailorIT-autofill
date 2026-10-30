@@ -68,7 +68,7 @@ describe('the platform adapters on snapshots with the trap carriers spliced in',
     // Each hidden marker is in exactly one passage, read as hidden text (trap 03's as a comment), which the tripwire's
     // patterns match.
     const passages = (await rawScan(spliced.doc)).passages;
-    expect(HIDDEN).toHaveLength(22);
+    expect(HIDDEN).toHaveLength(27);
     for (const marker of HIDDEN) {
       const carriers = passages.filter((passage) => new RegExp(`${marker}(?![0-9A-Za-z-])`).test(passage.text));
       expect(carriers.map((passage) => passage.origin), marker).toEqual(

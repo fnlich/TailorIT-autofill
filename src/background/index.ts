@@ -22,7 +22,7 @@ import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntr
 import { createKeyedQueue, createRateLimit } from './locks';
 import { createPanelHandlers, openSidePanel } from './panel';
 import { createPlanner } from './planner';
-import { createPolicyBook } from './policy';
+import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
 import { createProfileCache, type ProfileCache } from './profile-cache';
 import { createReports, REPORT_PUT_LIMIT } from './reports';
 import { createResumeChooser } from './resume-choice';
@@ -92,9 +92,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const runs = createRunRegistry(platform, session);
   const runStates = createRunStateStore({ local, session, now, profile: () => profileCache.get(), core });
   const policy = createPolicyBook(session);
-  // Keyed `${tabId}/` (run/begin) and `${tabId}/${frameId}` (report/put), so a closed tab's counts go with one prefix.
+  // Keyed `${tabId}/` (run/begin) and `${tabId}/${frameId}` (report/put, policy/hit), so a closed tab's counts go with
+  // one prefix.
   const beginLimit = createRateLimit(RUN_BEGIN_LIMIT.count, RUN_BEGIN_LIMIT.windowMs, now);
   const reportLimit = createRateLimit(REPORT_PUT_LIMIT.count, REPORT_PUT_LIMIT.windowMs, now);
+  const policyLimit = createRateLimit(POLICY_HIT_LIMIT.count, POLICY_HIT_LIMIT.windowMs, now);
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, check: (tabId) => checkTab(tabId) });
   const chooseResume = createResumeChooser({ runs, server, profiles: profileCache });
@@ -118,9 +120,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** Settles once Chrome answered the access-level call (set below, before anything can be delivered). */
   let accessReady: Promise<void> = Promise.resolve();
 
-  /** A frame that loaded another document: what its last document reported and began is gone. */
-  async function forgetDocument(tabId: number, frameId: number): Promise<void> {
-    await Promise.all([reports.forgetFrame(tabId, frameId), runs.forgetFrame(tabId, frameId)]);
+  /** A frame's document that is gone (the frame loaded another, or the check found it gone): what that document
+   *  reported and began goes. Only that document's: a page the frame shows again from the back/forward cache, which
+   *  says no hello, keeps its run and report. */
+  async function forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void> {
+    await Promise.all([reports.forgetDocument(tabId, frameId, documentId), runs.forgetDocument(tabId, frameId, documentId)]);
   }
 
   /** One lock per tab for the frame registry: a frame registering and a sweep forgetting one never interleave. */
@@ -131,9 +135,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     tabs: platform.tabs,
     timers,
     lock: lockTab,
-    async forget(tabId, frameId) {
+    async forget(tabId, frameId, documentId) {
       await forgetFrames(session, tabId, [frameId]);
-      await forgetDocument(tabId, frameId);
+      await forgetDocument(tabId, frameId, documentId);
     },
   });
 
@@ -166,7 +170,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             entry: await registerFrame(session, { ...from, isTop: message.isTop, hasForm: message.hasForm }, now()),
           }));
           const newDocument = previous === null || previous.documentId !== entry.documentId;
-          if (previous !== null && newDocument) await forgetDocument(from.tabId, from.frameId);
+          // The document it left goes; anything this document began before its hello stays.
+          if (previous !== null && newDocument) await forgetDocument(from.tabId, from.frameId, previous.documentId);
           // A document the registry has not seen may mean others went (a top frame's new page takes its subframes).
           // The sweep asks them in the background, so the hello is answered at once.
           if (newDocument) void sweepTab(from.tabId, from.frameId).catch(() => undefined);
@@ -187,7 +192,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             log('runstate.refused');
             return refuse('bad_message');
           }
-          return ok(await runStates.put(runState, from.tabId));
+          return runStates.put(runState, from.tabId);
         },
         'runstate/clear': async (message, from) => {
           if (!fits(message.applicationKey, from)) return refuse('bad_message');
@@ -196,6 +201,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         },
         'report/put': (message, from) => reports.put(message, from),
         'policy/hit': async (message, from) => {
+          // Counted before anything else, so a page that pushes addresses is held whatever it sends.
+          const retry = policyLimit.take(`${from.tabId}/${from.frameId}`);
+          if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
           if (!fits(message.applicationKey, from)) return refuse('bad_message');
           return (await policy.record(message.applicationKey, message.patternId)) ? ok({}) : refuse('bad_message');
         },
@@ -275,6 +283,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   platform.tabs.onRemoved((tabId) => {
     beginLimit.forget(`${tabId}/`);
     reportLimit.forget(`${tabId}/`);
+    policyLimit.forget(`${tabId}/`);
     void Promise.all([
       forgetTabFrames(session, tabId),
       reports.forgetTab(tabId),

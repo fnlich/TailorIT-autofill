@@ -21,8 +21,9 @@ export function constraintsOf(el: Element, format: FieldFormat | undefined, plac
   const constraints: Constraints = {};
   const tag = el.localName;
   if (tag === 'input' || tag === 'textarea') {
+    // -1 means no maxlength; 0 is a limit too, which nothing fits (DOM-13).
     const maxLength = (el as HTMLInputElement).maxLength;
-    if (Number.isInteger(maxLength) && maxLength > 0) constraints.maxLength = maxLength;
+    if (Number.isInteger(maxLength) && maxLength >= 0) constraints.maxLength = maxLength;
   }
   let shaped = format;
   if (placeholder !== null) {

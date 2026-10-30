@@ -13,6 +13,10 @@
  *
  * The wire profile names the resume only by id, or not at all ("TailorIT's best match for each job"), so `resume` is
  * left absent here: the worker attaches the file it will upload, the lookup's suggestedResume, with attachResume.
+ *
+ * A phone number's calling code is read with the E.164 table (callingCodes.ts), with or without spaces
+ * ("+15125550147"), and its country comes from that code; the address decides only among the countries that share it,
+ * or when the number has no code (the review, CORE-7 and CORE-18).
  */
 import type { AutofillProfile, AutofillResumeChoice, AutofillSensitive, SensitiveAnswer } from '../../contract/tailorit';
 import { GENDERS, PROFICIENCIES, RACES, WORK_STATUSES, type Gender, type Race, type WorkStatus } from '../enums';
@@ -22,6 +26,7 @@ import type {
 } from '../types/profile';
 import { resolveText } from '../vocab/lookup';
 import type { LanguageEntity, ReferralEntity, Vocab } from '../vocab/types';
+import { callingCodeOf, CALLING_CODES } from './callingCodes';
 import { canonicalDegree } from './degreeParse';
 import {
   canonicalCountry, canonicalField, canonicalInstitution, canonicalRegion, type CanonicalizeIssue,
@@ -268,6 +273,24 @@ function distinct(texts: readonly string[]): string[] {
   return out;
 }
 
+/**
+ * The phone's country (the review, CORE-7). A number with a calling code is the code's country: the one the phone or
+ * the address names among the countries that share the code, else the code's only country. A country the phone names
+ * that does not use the code, or a shared code that neither the phone nor the address settles while the address names
+ * another country ("+1 ..." with an address in Britain), gives none, with an issue, so the phone's country field is
+ * left blank and flagged. A number with no code takes the phone's own country, else the address's.
+ */
+function phoneCountryOf(code: string | undefined, own: string | undefined, address: string | undefined,
+  issues: Issues): string | undefined {
+  if (code === undefined) return own ?? address;
+  const sharing = CALLING_CODES[code]!;
+  if (own !== undefined && sharing.includes(own)) return own;
+  if (own === undefined && address !== undefined && sharing.includes(address)) return address;
+  if (own === undefined && sharing.length === 1) return sharing[0];
+  if (own !== undefined || address !== undefined) issues.add('contact.phone.country', 'phone-country-mismatch');
+  return undefined;
+}
+
 /** TailorIT's two wire parts in, the canonical Profile out (§2.7). */
 export function canonicalizeProfile(profile: AutofillProfile, sensitive: AutofillSensitive | null, vocab: Vocab,
   now: Ymd): CanonicalizeResult {
@@ -281,18 +304,19 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
   const pronouns = sensitive ? explicit(sensitive.eeo.pronouns, 'identity.pronouns', issues,
     (value: string) => (tidy(value) === '' ? null : tidy(value))) : undefined;
 
+  const { address: wireAddress } = contact;
+  const addressCountry = wireAddress.country === null ? undefined
+    : issues.take(canonicalCountry(wireAddress.country, vocab, 'address.country')) || undefined;
+
   const phoneText = tidy(contact.phone.number);
-  const callingCode = /^\+(\d{1,3})(?=[\s().-])/.exec(phoneText)?.[1];
-  const phoneCountry = contact.phone.country ?? contact.address.country ?? undefined;
+  const callingCode = phoneText === '' ? undefined : callingCodeOf(phoneText);
+  const phoneCountry = phoneText === '' ? undefined
+    : phoneCountryOf(callingCode, contact.phone.country ?? undefined, addressCountry, issues);
   const phone = phoneText === '' ? undefined : {
     text: phoneText, digits: phoneText.replace(/\D/g, ''),
     ...(callingCode !== undefined ? { countryCallingCode: callingCode } : {}),
     ...(phoneCountry ? { country: phoneCountry } : {}),
   };
-
-  const { address: wireAddress } = contact;
-  const addressCountry = wireAddress.country === null ? undefined
-    : issues.take(canonicalCountry(wireAddress.country, vocab, 'address.country')) || undefined;
   const addressRegion = tidy(wireAddress.region) === '' ? undefined
     : issues.take(canonicalRegion(wireAddress.region, addressCountry, vocab, 'address.region'));
   const addressParts = {

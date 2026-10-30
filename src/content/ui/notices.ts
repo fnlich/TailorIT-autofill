@@ -3,8 +3,10 @@
  * notices in the plan's words (COPY.notices: the tripwire banner, "couldn't read this posting", "this form sits inside
  * another site's page", and the rest), and the policy card: "This posting says AI-assisted applications are not
  * allowed. Filling is your decision." with Fill anyway and Cancel. Every button takes trusted clicks only, so a page
- * can neither accept the policy for the person nor dismiss what it was told. A dismissed notice leaves the stack only;
- * the report keeps it, and the side panel mirrors every notice, because a page could draw over this one.
+ * can neither accept the policy for the person nor dismiss what it was told; the card's two also count only while a
+ * person can see them (page-ui.ts decides, from the visibility watch, with the button it is handed). A dismissed
+ * notice leaves the stack only; the report keeps it, and the side panel mirrors every notice, because a page could
+ * draw over this one.
  */
 import { COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
@@ -25,12 +27,15 @@ export interface Notices {
   showPolicyCard(options: { fromStoredCopy: boolean }): void;
   hidePolicyCard(): void;
   readonly cardShown: boolean;
+  /** The card's Cancel and Fill anyway buttons. */
+  readonly cardButtons: readonly HTMLButtonElement[];
   /** The codes shown now (for tests). */
   readonly shown: readonly NoticeCode[];
 }
 
-/** Creates the notices stack. `onPolicyChoice` is called inside a trusted click's handler. */
-export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoice) => void): Notices {
+/** Creates the notices stack. `onPolicyChoice` is called inside a trusted click's handler, with the button clicked. */
+export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoice, button: HTMLButtonElement) => void):
+  Notices {
   const el = doc.createElement('div');
   el.className = 'notices';
   el.setAttribute('role', 'region');
@@ -53,11 +58,11 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
   el.append(card);
   cancel.addEventListener('click', (event) => {
     if (!event.isTrusted) return;
-    onPolicyChoice('declined');
+    onPolicyChoice('declined', cancel);
   });
   fill.addEventListener('click', (event) => {
     if (!event.isTrusted) return;
-    onPolicyChoice('accepted');
+    onPolicyChoice('accepted', fill);
   });
 
   const dismissed = new Set<NoticeCode>();
@@ -112,6 +117,7 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
     get cardShown() {
       return !card.hidden;
     },
+    cardButtons: [cancel, fill],
     get shown() {
       return items.map((item) => item.dataset.code as NoticeCode);
     },

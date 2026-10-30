@@ -330,6 +330,9 @@ export interface TestWorkerOptions {
   tailorit?: FakeTailorIT;
   /** Runs after the fakes are installed and before the worker starts (to refuse an API, or seed storage). */
   before?(fakes: HandFakes): void | Promise<void>;
+  /** false: answer as soon as the worker's listeners are registered, without waiting for its start-up (the storage
+   *  access level, then the prune), so a test can deliver while Chrome has not answered. True by default. */
+  awaitStartUp?: boolean;
 }
 
 /** Resets the fake browser, installs the hand fakes and starts the real worker over them. */
@@ -382,7 +385,7 @@ async function launch(
     now: () => clock.now,
   };
   const state = startWorker({ platform, core, timers, origin: ORIGIN });
-  await state.ready;
+  if (options.awaitStartUp !== false) await state.ready;
   const answerOf = (event: { trigger(...args: never[]): unknown }, message: unknown, sender: RawSender) =>
     new Promise<unknown>((resolve) => {
       (event.trigger as (m: unknown, s: unknown, r: (a: unknown) => void) => unknown)(message, sender, resolve);

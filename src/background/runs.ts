@@ -3,8 +3,9 @@
  * applicationKey and mode, so plan/request, plan/poll, report/put and the resume port can check that a message comes
  * from the frame that began it. The record is value-free and kept in storage.session (`runs:<runId>`), so a run
  * survives the worker being stopped between messages; what a run looked up (its lookup answer) stays in memory only.
- * A run is gone when its tab closes, when its frame begins another run or loads another document, and when the
- * browser restarts.
+ * A run is gone when its tab closes, when its frame begins another run, when the document it was begun in is gone (its
+ * frame loaded another one, or the frame check found it gone: only that document's runs go), and when the browser
+ * restarts.
  */
 import type { AutofillLookupResponse } from '../contract/tailorit';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
@@ -38,7 +39,11 @@ export interface RunRegistry {
   setSensitive(runId: string, sensitive: RunRecord['sensitive']): Promise<void>;
   /** The run's memory-only extras. */
   memo(runId: string): RunMemo;
-  forgetFrame(tabId: number, frameId: number): Promise<void>;
+  /** The document a run was begun in (null: one Chrome gave no id), or undefined when no such run is known. */
+  documentOf(runId: string): Promise<string | null | undefined>;
+  /** Forgets the runs a frame began in one document (null: a document Chrome gave no id). The runs of the frame's
+   *  other documents stay: a page restored from the back/forward cache may be running one. */
+  forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void>;
   forgetTab(tabId: number): Promise<void>;
 }
 
@@ -60,6 +65,16 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
     }
     if (broken.length > 0) await session.remove(broken);
     return records;
+  }
+
+  /** The run's record, from memory or storage.session; null when there is no such run. */
+  async function load(runId: string): Promise<RunRecord | null> {
+    const held = known.get(runId);
+    if (held) return held;
+    const parsed = RunRecordSchema.safeParse(await session.get(keyOf(runId)));
+    const record = parsed.success && parsed.data.runId === runId ? parsed.data : null;
+    if (record !== null) known.set(runId, record);
+    return record;
   }
 
   async function remove(runIds: string[]): Promise<void> {
@@ -93,12 +108,7 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
       return record;
     },
     async find(runId, frame) {
-      let record = known.get(runId) ?? null;
-      if (record === null) {
-        const parsed = RunRecordSchema.safeParse(await session.get(keyOf(runId)));
-        record = parsed.success && parsed.data.runId === runId ? parsed.data : null;
-        if (record !== null) known.set(runId, record);
-      }
+      const record = await load(runId);
       if (record === null) return null;
       const sameFrame = record.tabId === frame.tabId && record.frameId === frame.frameId
         && record.documentId === (frame.documentId ?? null);
@@ -119,8 +129,14 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
       }
       return memo;
     },
-    async forgetFrame(tabId, frameId) {
-      await remove((await all()).filter((run) => run.tabId === tabId && run.frameId === frameId).map((run) => run.runId));
+    async documentOf(runId) {
+      const record = await load(runId);
+      return record === null ? undefined : record.documentId;
+    },
+    async forgetDocument(tabId, frameId, documentId) {
+      await remove((await all())
+        .filter((run) => run.tabId === tabId && run.frameId === frameId && run.documentId === documentId)
+        .map((run) => run.runId));
     },
     async forgetTab(tabId) {
       await remove((await all()).filter((run) => run.tabId === tabId).map((run) => run.runId));

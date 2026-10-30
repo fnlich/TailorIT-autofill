@@ -32,6 +32,21 @@ describe('resolveProfilePath', () => {
     expect(resolveProfilePath(profile, 'password')).toBeUndefined();
     expect(resolveProfilePath(profile, 'identity..firstName')).toBeUndefined();
   });
+
+  // CORE-16 (Phase 2 review): an inherited property resolved ('identity.constructor' named Object), so a forged path
+  // passed as a profile value the profile does not hold.
+  it('resolves only the profile’s own data, never an inherited property or a function', () => {
+    for (const at of ['identity.constructor', 'identity.toString', 'identity.hasOwnProperty', 'skills.length',
+      'skills.map', 'education[0].constructor', 'contact.email.length', 'identity.firstName.length',
+      'identity.valueOf', 'resume.isPrototypeOf']) {
+      expect(resolveProfilePath(profile, at), at).toBeUndefined();
+    }
+    expect(checkProvenance(writeOf({ provenance: 'profile', path: path('identity.constructor') }), text,
+      'identity.firstName', ctx)).toEqual({ ok: false, reason: 'missing-provenance' });
+    expect(checkProvenance(writeOf({ provenance: 'rule', ruleId: 'name.split', path: path('identity.toString') }),
+      text, 'identity.firstName', ctx)).toEqual({ ok: false, reason: 'missing-provenance' });
+    expect(resolveProfilePath(profile, 'skills[0]')).toBe(profile.skills[0]);
+  });
 });
 
 describe('the structural check (the content script’s, §7.6)', () => {

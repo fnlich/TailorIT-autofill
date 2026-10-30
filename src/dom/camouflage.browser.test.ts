@@ -51,6 +51,34 @@ const CASES: Array<{ id: string; html: string; verdict: CamouflageVerdict }> = [
     verdict: 'camouflaged' },
   { id: 'stroke', html: '<div style="background:#fff"><p id="stroke" style="color:#fff;-webkit-text-stroke:1px #000">Stroked</p></div>',
     verdict: 'clear' },
+  // filter: opacity() is known: it fades the text like opacity does (DOM-3); any other filter, or a mask, is unknown
+  // (DOM-1, S2)
+  { id: 'filter-opacity-only', html: '<div style="filter:opacity(0.5)"><p id="filter-opacity-only" style="color:#000">Half ink</p></div>',
+    verdict: 'clear' },
+  { id: 'filter-opacity-faded', html: '<div style="filter:opacity(0.04)"><p id="filter-opacity-faded" style="color:#000">Faded</p></div>',
+    verdict: 'camouflaged' },
+  { id: 'filter-and-opacity', html: '<div style="filter:opacity(0.5) drop-shadow(0 0 1px #000)"><p id="filter-and-opacity">Shadowed</p></div>',
+    verdict: 'unknown' },
+  { id: 'mask', html: '<div style="mask-image:linear-gradient(#000,#000)"><p id="mask">Masked</p></div>', verdict: 'unknown' },
+  // The first line and the first letter, drawn in colours of their own, on the element or an ancestor (S4)
+  { id: 'first-line-white',
+    html: '<style>#first-line-white::first-line{color:#fff}</style><p id="first-line-white" style="color:#000">White first line</p>',
+    verdict: 'camouflaged' },
+  { id: 'first-line-ancestor',
+    html: '<style>.first-line-block::first-line{color:#fff}</style><div class="first-line-block"><span id="first-line-ancestor">On its first line</span></div>',
+    verdict: 'camouflaged' },
+  { id: 'first-letter-white',
+    html: '<style>#first-letter-white::first-letter{color:#fff}</style><p id="first-letter-white" style="color:#000">Lost letter</p>',
+    verdict: 'camouflaged' },
+  { id: 'first-line-tiny',
+    html: '<style>#first-line-tiny::first-line{font-size:0}</style><p id="first-line-tiny" style="color:#000">Tiny first line</p>',
+    verdict: 'camouflaged' },
+  { id: 'first-line-on-white-box',
+    html: '<style>#first-line-on-white-box::first-line{background:#000}</style><p id="first-line-on-white-box" style="color:#000">Black on a black band</p>',
+    verdict: 'camouflaged' },
+  { id: 'first-letter-drop-cap',
+    html: '<style>#first-letter-drop-cap::first-letter{color:#c00;font-size:2em}</style><p id="first-letter-drop-cap" style="color:#000">Drop cap</p>',
+    verdict: 'clear' },
 ];
 
 describe('isCamouflaged', () => {
@@ -129,6 +157,56 @@ describe('isControlCamouflaged', () => {
       expect([id, camouflaged(id)]).toEqual([id, true]);
     }
   });
+
+  it('counts a box-shadow as drawn only when it reaches past the box in a colour that shows (DOM-4)', async () => {
+    const plain = 'border:0;background:transparent;outline:none;box-shadow:none;padding:6px;width:200px';
+    const inner = 'border-style:none;background:transparent;outline:none;box-shadow:none;width:100%;box-sizing:border-box';
+    const fixture = await loadFixture(document, `<!doctype html><body style="background:#fff"><form>
+      <input id="zero-shadow" style="${plain};box-shadow:0 0 0 0 #000">
+      <input id="white-shadow" style="${plain};box-shadow:0 0 0 2px #fff">
+      <input id="soft-shadow" style="${plain};box-shadow:0 1px 3px rgba(0,0,0,0.3)">
+      <input id="inset-line" style="${plain};box-shadow:inset 0 -1px 0 #333">
+      <div style="box-shadow:0 0 0 0 red;width:300px"><input id="zero-wrapper-shadow" style="${inner}"></div>
+      <div style="box-shadow:0 0 0 2px #fff;width:300px"><input id="white-wrapper-shadow" style="${inner}"></div>
+    </form></body>`);
+    const camouflaged = (id: string) => isControlCamouflaged(fixture.doc.getElementById(id)!, false);
+    for (const id of ['zero-shadow', 'white-shadow', 'zero-wrapper-shadow', 'white-wrapper-shadow']) {
+      expect([id, camouflaged(id)]).toEqual([id, true]);
+    }
+    for (const id of ['soft-shadow', 'inset-line']) expect([id, camouflaged(id)]).toEqual([id, false]);
+  });
+
+  it('takes a wrapper for the control\'s box only when it hugs the control and its own label (DOM-4)', async () => {
+    const plain = 'border:0;background:transparent;outline:none;box-shadow:none';
+    const fixture = await loadFixture(document, `<!doctype html><body style="background:#fff"><form>
+      <div style="border:1px solid #ccc;border-radius:8px;padding:24px;margin-top:16px;width:420px">
+        <h3 style="margin:0">About the team</h3><p>We build payments infrastructure in Austin and remote.</p>
+        <label for="in-a-card">LinkedIn profile</label><input id="in-a-card" style="${plain};width:200px"></div>
+      <div style="outline:1px solid #888;width:300px;padding:3px"><label for="hugged" style="display:block">Website</label>
+        <input id="hugged" style="${plain};width:100%;box-sizing:border-box"></div>
+    </form></body>`);
+    expect(isControlCamouflaged(fixture.doc.getElementById('in-a-card')!, false)).toBe(true);
+    expect(isControlCamouflaged(fixture.doc.getElementById('hugged')!, false)).toBe(false);
+  });
+
+  it('fails closed on what it cannot judge: a filter on the control, a blend, or colours behind it it cannot work out (DOM-3, S2)',
+    async () => {
+      const image = 'background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)';
+      const fixture = await loadFixture(document, `<!doctype html><body style="background:#fff"><form>
+        <input id="own-filter" style="border:1px solid #888;filter:blur(4px)">
+        <input id="own-filter-opacity" style="border:1px solid #888;filter:opacity(0.5)">
+        <div style="${image}"><input id="on-an-image" style="border:1px solid #888"></div>
+        <div style="${image}"><select id="select-on-an-image"><option>One</option></select></div>
+        <div style="mix-blend-mode:difference"><input id="blended" style="border:1px solid #888"></div>
+        <div style="filter:invert(1)"><input id="inverted" style="border:1px solid #888"></div>
+        <input id="plain-bordered" style="border:1px solid #888">
+      </form></body>`);
+      const camouflaged = (id: string) => isControlCamouflaged(fixture.doc.getElementById(id)!, false);
+      for (const id of ['own-filter', 'on-an-image', 'select-on-an-image', 'blended', 'inverted']) {
+        expect([id, camouflaged(id)]).toEqual([id, true]);
+      }
+      for (const id of ['own-filter-opacity', 'plain-bordered']) expect([id, camouflaged(id)]).toEqual([id, false]);
+    });
 });
 
 describe('optionCamouflage', () => {

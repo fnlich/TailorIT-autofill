@@ -20,6 +20,7 @@ import { hasTripwire } from '../guard/tripwire';
 import { intendedText } from '../matcher/intended';
 import { typeaheadQueries } from '../matcher/typeahead';
 import type { PlanSensitiveState } from '../plan/types';
+import { normalize, normalizeLabel } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import type { ReasonCode } from '../types/fill';
 import type { FieldCategory, IntendedValue } from '../types/intent';
@@ -33,7 +34,7 @@ import { none, SHAPE_OF_KIND, value, type Candidate, type Choice, type ValueResu
 import { policyClassOf } from './categories';
 import { classifyByRules, type RuleClassification } from './classifyRules';
 import { dateIso, dateText } from './format';
-import type { NeedsUserCause } from './labelRules';
+import { statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { profileValue } from './values';
@@ -239,6 +240,15 @@ function withoutValue(base: Omit<Resolution, 'action' | 'reason' | 'intended' | 
 /** Confidences are rounded to this many decimals, so float noise never moves a value across a threshold. */
 const round = (value: number) => Math.round(value * 1e6) / 1e6;
 
+/** Everything a lone checkbox's statement says, normalized: its label with the parentheticals, and its help text
+ *  when the rules read the category there. */
+function statementText(spec: FieldSpec, rules: RuleClassification | null): string {
+  const label = normalize(spec.label, 'label');
+  const words = [label.key, ...label.qualifiers.map((qualifier) => qualifier.tokens.join(' '))];
+  if (rules?.matchedOn === 'description') words.push(normalizeLabel(spec.description));
+  return words.join(' ');
+}
+
 /** The resolver's full answer for one field (§8.1). `classification` is classifyField's, when the caller has it. */
 export function resolveField(spec: FieldSpec, ctx: ResolveContext, classification = classifyField(spec)):
   ResolvedField {
@@ -294,6 +304,13 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   const { candidate } = result;
   const shaped = shapeFor(spec, candidate, ctx.vocab);
   if (shaped === null) return answer(withoutValue(base, spec, 'format-unsupported', true, false));
+  // A lone checkbox states one thing, so it is ticked from an answer only when its statement is affirmative and the
+  // tick then says exactly that answer (the review, CORE-2). A saved answer is the person's own for this very
+  // statement; consent reads its own wording (an opt-out is unrecognised consent).
+  if (shaped.shaped.shape === 'check' && candidate.origin.provenance !== 'saved' && policy !== 'consent'
+    && statementPolarity(statementText(spec, rules)) !== 'affirmative') {
+    return answer(withoutValue(base, spec, 'statement-not-affirmative', true, true));
+  }
   const confidence = round(classifyConfidence * candidate.confidence);
   const flag: ReasonCode | undefined = candidate.flag ?? (shaped.guessed ? 'filled-low-confidence' : undefined)
     ?? (rules?.reason === 'classification-conflict' ? 'classification-conflict' : undefined);

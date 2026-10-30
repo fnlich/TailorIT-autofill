@@ -3,14 +3,20 @@
  * one pass: begin, the policy gate, the raw scan and tripwire, pause detection, plan and write, settle, verify, the
  * final Guard, report. Phase 3 replaces fillStep() (one pass, then settleWrites()) with the reactive loop on the
  * core's bookkeeping, up to MAX_PASSES; Phase 5 wraps that in the step machine. The rest stays.
- * 1. run/begin {applicationKey, trigger, dryRun} answers the run id, the settings and the policy states.
+ * 1. run/begin {applicationKey, trigger, dryRun} answers the run id, the settings and the policy states. In a frame
+ *    inside another page, the run goes on only while the frame's launcher can be seen there (IntersectionObserver v2,
+ *    ui/visible.ts): otherwise it fills nothing, reports the form-hidden notice and ends stopped (S1). The top frame
+ *    is never checked: nothing outside it can hide it, and its form may simply sit below the fold.
  * 2. The policy gate, before anything is filled: a hit on the posting page, in the stored copy, or in this frame's own
  *    visible text stops the run at policy-notice, with the card shown and the report sent (so the side panel mirrors
  *    the card and its decision reaches this frame), until the person chooses Fill anyway or Cancel (trusted clicks on
  *    the card, or the side panel card's run/policyDecision to this frame; the toolbar's run/cancel also cancels, and
  *    its run/continue never fills). Cancel writes nothing. With nothing readable the
  *    couldn't-read notice shows, and a frame inside a page with none of our scripts adds posting-outside-frame.
- * 3. The raw scan and the tripwire: any hit shows the tripwire notice once; up to 32 canaries stay in memory.
+ * 3. The raw scan and the tripwire: any hit shows the tripwire notice once. Every canary, nearest its hit first (at
+ *    most 1024), stays in memory for the frame's own scans (before each write, and the final Guard), so decoys cannot
+ *    push the real one out (CORE-15); only the 32 nearest go to plan/request and RunState. The policy patterns run over
+ *    its hidden passages too: a hit only they make adds policy-hidden-text, and stops nothing.
  * 4. A sign-in, account, email-code or CAPTCHA step pauses: nothing on it is filled, and Continue starts afresh.
  * 5. One pass (pass.ts), the settle (quiet.ts), the verification and the final Guard (verify.ts).
  * 6. report/put (no values) and runstate/put (the plan's persistableCanaries, the tripwire counts, lastFill, status
@@ -33,7 +39,7 @@ import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
 import { RunAborted, runPass, type PassResult, type PlanAnswer } from './pass';
-import { frameHitsOf, policyGateOf, postingOutsideFrame, type PolicyView } from './policy';
+import { frameHitsOf, hiddenPolicyHits, policyGateOf, postingOutsideFrame, type PolicyView } from './policy';
 import { waitForQuiet, type QuietOptions } from './quiet';
 import { buildReport, buildRunState, NoticeBook, uploadRow, type ReportLimiter } from './report';
 import { highlightItems } from './targets';
@@ -82,6 +88,8 @@ export interface RunEnv {
   ui(): PageUi | null;
   /** The frame's id from frame/hello (sent again if it went unanswered), and whether it is the top frame. */
   frame(): Promise<{ frameId: number; isTop: boolean }>;
+  /** Whether a person can see this frame's launcher on its page (IntersectionObserver v2; false without a launcher). */
+  frameShown(signal: AbortSignal): Promise<boolean>;
   page: RunPage;
   now(): number;
   options: RunOptions;
@@ -303,6 +311,22 @@ export class FillRun {
       this.frameId = frame.frameId;
       await this.begin();
 
+      // 1b. A frame inside another page fills only while its launcher can be seen on that page (S1): the page around it
+      // can hide the whole frame (opacity 0, off-screen, a zero-height wrapper), which no check inside the frame sees.
+      if (!frame.isTop) {
+        const shown = await env.frameShown(this.controller.signal);
+        this.alive();
+        if (!shown) {
+          log('content.form-hidden');
+          this.notices.add('form-hidden');
+          this.status = 'stopped';
+          this.showNotices();
+          await this.report([], null);
+          this.launcher({ state: 'idle', action: 'fill' });
+          return this.end('stopped');
+        }
+      }
+
       // 2. The policy gate, before anything is filled.
       const view = env.doc.defaultView;
       if (view !== null && postingOutsideFrame(view, frame.isTop)) this.notices.add('posting-outside-frame');
@@ -339,9 +363,13 @@ export class FillRun {
       const raw = await rawScan(env.doc, { signal: this.controller.signal });
       this.alive();
       const tripwire = scanTripwires(raw.passages);
+      // The 32 nearest their hit are sent and stored; the frame's own scans read them all (CORE-15).
       const canaries = tripwire.canaries;
+      const inMemory = tripwire.allCanaries;
       this.tripwireHits = tripwire.hits.length;
       if (tripwire.notice) this.notices.add('tripwire', tripwire.hits.length);
+      // Policy text that only text a person cannot see yet holds (behind "Show more") informs; it stops nothing (S6).
+      if (!gate.blocked && hiddenPolicyHits(raw.passages).length > 0) this.notices.add('policy-hidden-text');
       this.showNotices();
 
       // 4. A step that needs the person: nothing on it is filled.
@@ -369,13 +397,14 @@ export class FillRun {
 
       // 5. Fill (Phase 3 replaces fillStep with the reactive loop).
       this.status = 'fill-step';
-      pass = await this.fillStep(canaries);
+      pass = await this.fillStep(canaries, inMemory);
       const settled = pass.written.length > 0 ? await this.settleWrites() : null;
       if (settled !== null && !settled.settled) this.notices.add('page-busy');
       const fresh = pass.scan.rescan();
       const rows = new Map(pass.rows);
       for (const written of pass.written) rows.set(written.key, verifyWritten(fresh, written));
-      const guarded = finalGuard({ adapter: page.adapter, root: page.root, canaries }, fresh, rows, pass.written);
+      const guarded = finalGuard({ adapter: page.adapter, root: page.root, canaries: inMemory }, fresh, rows,
+        pass.written);
       const after = guarded.reverted.size > 0 ? fresh.rescan() : fresh;
 
       // 6. Report.
@@ -409,8 +438,9 @@ export class FillRun {
     }
   }
 
-  /** Phase 2's fill step: one pass. Phase 3 runs passes until nothing is pending (MAX_PASSES), settling between. */
-  private fillStep(canaries: readonly string[]): Promise<PassResult> {
+  /** Phase 2's fill step: one pass. Phase 3 runs passes until nothing is pending (MAX_PASSES), settling between.
+   *  `canaries` go to plan/request; the pass scans each write for `inMemory`, all of the frame's canaries. */
+  private fillStep(canaries: readonly string[], inMemory: readonly string[]): Promise<PassResult> {
     const { env } = this;
     return runPass({
       content: env.content,
@@ -419,7 +449,7 @@ export class FillRun {
       platform: env.page.app.platform,
       frameId: this.frameId,
       dryRun: this.request.dryRun,
-      canaries,
+      canaries: inMemory,
       signal: this.controller.signal,
       valid: () => env.channel.valid(),
       stopped: () => this.stopRequested,

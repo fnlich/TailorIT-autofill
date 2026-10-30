@@ -83,17 +83,21 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'typeahead.query': (category) => policyClassOf(category) === 'profile',
 };
 
-/** The value a profile path names ('contact.email', 'education[0].institution'), or undefined. Empty strings and
- *  empty lists name nothing. */
+/** The value a profile path names ('contact.email', 'education[0].institution'), or undefined. Only the profile's own
+ *  data is read (the review, CORE-16): a name is an own property of an object that is no list, an index an own entry
+ *  of a list, so 'identity.constructor' and 'skills.length' name nothing, and neither does a function. Empty strings
+ *  and empty lists name nothing. */
 export function resolveProfilePath(profile: Profile, path: string): unknown {
   if (!isPath(path)) return undefined;
   let value: unknown = profile;
   for (const [, name, index] of path.matchAll(/([A-Za-z0-9]+)|\[(\d+)\]/g)) {
     if (value === null || typeof value !== 'object') return undefined;
-    value = name !== undefined ? (value as Record<string, unknown>)[name]
-      : Array.isArray(value) ? value[Number(index)] : undefined;
+    const key = name ?? index!;
+    if (Array.isArray(value) === (name !== undefined) || !Object.hasOwn(value, key)) return undefined;
+    value = (value as Record<string, unknown>)[key];
   }
-  if (value === '' || value === null || (Array.isArray(value) && value.length === 0)) return undefined;
+  if (value === '' || value === null || typeof value === 'function'
+    || (Array.isArray(value) && value.length === 0)) return undefined;
   return value;
 }
 

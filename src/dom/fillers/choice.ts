@@ -2,7 +2,8 @@
  * The radio and checkbox fillers (docs/design/runtime.md §6): an untrusted click() on each planned control that is
  * not checked yet, through assertNotSubmit; the click itself produces click, input and change. A hidden native
  * control that qualified by the proxy rule is clicked itself, never its label. Nothing is ever unticked: an already
- * checked box is left alone, and a box the page unticked in response is reported, not ticked back by other means.
+ * checked box is left alone, each box is read again right before its click (the page may have ticked it in answer to
+ * the last one), and a box the page unticked in response is reported, not ticked back by other means.
  *
  * A planned option is the one at the planned place that still reads as planned. A checkbox group's boxes are read
  * again right before any is clicked, with the scanner's own label reader: if any planned box now shows another clean
@@ -61,7 +62,11 @@ export function fillCheckboxGroup(target: FieldTarget, value: OptionsValue, ctx:
   if (missing.length === 0) return done(false, 'already-correct');
   if (missing.some((box) => !assertNotSubmit(box, ctx).ok)) return refused('needs-your-click');
   const checkedBefore = target.members.filter((box) => box.checked);
-  for (const box of missing) box.click();
+  for (const box of missing) {
+    // Read again right before the click: the page may have ticked this box itself in answer to our last one, and a
+    // click now would untick it (DOM-9).
+    if (!box.checked) box.click();
+  }
   if (checkedBefore.some((box) => !box.checked)) return mismatch('unexpected-selection');
   if (boxes.every((box) => box.checked)) {
     return boxesShow(boxes, value.cleanLabels, ctx) ? done(true, 'ok') : mismatch('verify-mismatch');

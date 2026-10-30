@@ -62,7 +62,7 @@ describe('scanTripwires', () => {
 
   it('has no notice and no canary on a page with no AI-directed text', () => {
     expect(scanTripwires([{ text: raw('Keep the lights on. Type "yes" if you agree.') }]))
-      .toEqual({ hits: [], canaries: [], notice: false });
+      .toEqual({ hits: [], canaries: [], allCanaries: [], notice: false });
   });
 
   it('accepts the raw scan’s passages as they are, origin and all', () => {

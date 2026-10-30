@@ -146,4 +146,30 @@ describe('the rest of the table', () => {
     expect(candidate(valueOf('salary.expected', field('Desired hourly rate'), pay))).toMatchObject({ text: '65',
       choice: { intended: { kind: 'number', value: 65, unit: 'currency-hour' } } });
   });
+
+  // CORE-8 (Phase 2 review): pay was checked for its period only, so 120000 US dollars was written into a question
+  // that asks in pounds, in euros or in thousands.
+  it('never writes pay in a currency or a unit the question does not take', () => {
+    const payIn = (currency: string): Profile => ({ ...profile, preferences: { expectedSalary: { kind: 'value',
+      value: { min: 120000, currency, period: 'year' } } } });
+    const unsupported = { ok: false, none: { reason: 'format-unsupported', flagged: true } };
+    for (const label of ['Expected annual salary (GBP)', 'Expected salary in EUR', 'Desired salary (\u{00A3})',
+      'Expected salary in \u{20AC}', 'Expected CTC (INR)', 'Expected salary (in thousands)', 'Expected salary (k)',
+      'Salary expectations ($K)', 'Expected salary, e.g. 120k', 'Expected salary in lakhs', 'Expected salary (000s)',
+      'Expected salary in Canadian dollars', 'Expected salary (C$)']) {
+      expect(valueOf('salary.expected', field(label), payIn('USD')), label).toEqual(unsupported);
+    }
+    expect(valueOf('salary.expected', field('Expected salary', 'text', { description: 'Please answer in euros.' }),
+      payIn('USD'))).toEqual(unsupported);
+    expect(valueOf('salary.expected', field('Expected salary (USD)'), payIn('CAD'))).toEqual(unsupported);
+    // The opposites: the currency the person stated, a sign several currencies share, no currency at all.
+    for (const label of ['Expected annual salary (USD)', 'Expected salary in US dollars', 'Desired salary ($)',
+      'Expected salary (US$)', 'Expected salary', 'Expected salary (USD or EUR)', 'Expected salary (excluding 401k)']) {
+      expect(candidate(valueOf('salary.expected', field(label), payIn('USD'))), label).toMatchObject({ text: '120000' });
+    }
+    expect(candidate(valueOf('salary.expected', field('Desired salary ($)'), payIn('CAD')))).toMatchObject({
+      text: '120000' });
+    expect(candidate(valueOf('salary.expected', field('Expected salary (GBP)'), payIn('GBP')))).toMatchObject({
+      text: '120000' });
+  });
 });

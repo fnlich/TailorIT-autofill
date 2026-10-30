@@ -2,7 +2,11 @@
  * The policy notice, as the content script sees it (docs/ARCHITECTURE.md "Policy notices"; docs/design/runtime.md
  * §8.2, §8.10). A posting that says AI-assisted applications are not allowed is the person's decision, but they are
  * told before anything is filled. The patterns are the core's (policyHits); the content script runs them over visible
- * text only, and sends the worker pattern ids only, never the text.
+ * text to decide, and sends the worker pattern ids only, never the text.
+ * - Text a person cannot see yet (a collapsed "Show more", a display: none block, a comment) is read too, from the
+ *   raw scan's passages (S6), but only to inform: a hit there that the visible text does not make adds the
+ *   policy-hidden-text notice and stops nothing, since hidden text is the page's to write and could otherwise stop
+ *   any fill.
  * - A posting page with no form (Lever's posting page): its visibleText is read once, and each hit is sent as
  *   policy/hit {applicationKey, patternId}, or one {patternId: null} for a clean reading. A page that shows no text at
  *   all has not been read, and says nothing.
@@ -13,6 +17,7 @@
  *   posting around it: the report says so (posting-outside-frame).
  */
 import { policyHits } from '../core/guard/policy';
+import type { RawPassage } from '../dom/raw-scan';
 import { visibleText } from '../dom/visible-text';
 import { platformOfUrl } from '../shared/hosts';
 import type { AnswerData } from './channel';
@@ -47,6 +52,19 @@ export function policyGateOf(view: PolicyView, frameHits: readonly string[]): Po
 export function frameHitsOf(doc: Document): string[] {
   const body = doc.body;
   return body === null ? [] : policyHits(visibleText(body));
+}
+
+/**
+ * The policy pattern ids that only text a person cannot see yet matches: the raw scan's passages other than its
+ * visible ones, less `visibleHits`. Only a notice comes of them, and the text goes no further.
+ */
+export function hiddenPolicyHits(passages: readonly RawPassage[], visibleHits: readonly string[] = []): string[] {
+  const found = new Set<string>();
+  for (const passage of passages) {
+    if (passage.origin === 'visible') continue;
+    for (const id of policyHits(passage.text)) found.add(id);
+  }
+  return [...found].filter((id) => !visibleHits.includes(id));
 }
 
 /** Reads a posting page with no form and tells the worker what it found: each pattern id, or one clean reading. */

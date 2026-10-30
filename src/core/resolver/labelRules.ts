@@ -400,6 +400,54 @@ const CLAUSE_FILLER = new Set(['that', 'i', 'have', 'has', 'had', 'read', 'and',
   'receipt', 'of', 'the', 'above', 'below', 'following', 'hereby', 'fully', 'carefully', 'also', 'both', 'all',
   'these', 'those', 'this', 'a', 'an', 'to', 'am', 'been', 'reviewed', 'review', 'received', 'it', 'them', 'any',
   'with', 'my', 'do', 'further', 'expressly']);
+/** Words that name no object a person agrees to: the filler, the consent verbs, and the words around a tick. */
+const NO_OBJECT: ReadonlySet<string> = new Set([...CLAUSE_FILLER, 'agree', 'agreed', 'consent', 'consented',
+  'acknowledge', 'acknowledged', 'accept', 'accepted', 'certify', 'attest', 'confirm', 'declare', 'authorize',
+  'authorise', 'give', 'grant', 'allow', 'yes', 'please', 'by', 'checking', 'ticking', 'clicking', 'selecting',
+  'box', 'here', 'hereto', 'herein', 'same', 'its', 'their', 'your', 'our']);
+
+/**
+ * Commitments no pre-approval covers, named anywhere in consent wording (the review, CORE-1): a box that also binds
+ * the person to arbitration, a jury or class-action waiver, a restrictive covenant, a drug test or a credit check is
+ * unrecognised consent, wherever the commitment stands. Normalization reads commas as spaces, so a list joined by
+ * commas alone ("the privacy policy, arbitration agreement") is caught here rather than by the coordinators below.
+ */
+const BINDING_COMMITMENT = /\barbitrat\w*|\bjury\b|\bclass\s+action\b|\bnon\s?compet\w*|\bnoncompet\w*|\bnon\s?solicit\w*|\bnonsolicit\w*|\bnon\s?disclosure\b|\bnda\b|\bconfidentiality\s+agreements?\b|\bdrug\s+(?:tests?|testing|screens?|screening)\b|\bcredit\s+(?:checks?|reports?|history)\b|\bat\s+will\b|\bwaive[ds]?\b|\bwaivers?\b|\brelease\s+(?:of\s+)?(?:all\s+|any\s+)?(?:claims|liability)\b|\bindemnif\w*|\bassign\w*\s+(?:of\s+)?(?:all\s+|my\s+)?(?:inventions|intellectual\s+property)\b/;
+
+/**
+ * Consent wording that declines or opts out rather than agrees (the review, CORE-2): "I do not consent", "I do not
+ * wish to receive", "Opt out of SMS", "Do not contact me", "Check this box if you do not want ...", "Would you like to
+ * opt out ...?". Such a box names a consent kind but is not that consent, so it is unrecognised consent, which only
+ * the person ticks. A sentence that only says opting out is possible later ("Reply STOP to opt out", "you may
+ * unsubscribe at any time") is no opt-out. normalizeLabel deletes apostrophes ("dont").
+ */
+const OPT_OUT = new RegExp([
+  String.raw`\b(?:i|you)\s+(?:(?:hereby|also|further|really|would|d)\s+)*(?:do\s+not|dont|does\s+not|doesnt|will\s+not|wont|would\s+not|wouldnt|cannot|can\s+not|cant|am\s+not|never|not)\s+(?:\w+\s+){0,2}?(?:consent|agree|accept|acknowledge|authori[sz]e|allow|permit|give|grant|wish|want|like|opt|subscribe|sign|join|certify|confirm)\b`,
+  String.raw`\b(?:i|you)\s+(?:(?:hereby|also|would|d)\s+)*(?:decline|refuse|withdraw|object|revoke|opt\s+out|unsubscribe|prefer\s+not|rather\s+not)\b`,
+  String.raw`(?:^|\b(?:please|kindly)\s+)(?:opt\s+(?:me\s+)?out|unsubscribe|remove\s+me|do\s+not|dont|never)\b`,
+  String.raw`\bopt\s+me\s+out\b|\bunsubscribe\s+me\b|\bremove\s+me\s+from\b`,
+  String.raw`\b(?:do\s+not|dont|never)\s+(?:contact|send|email|e\s?mail|text|call|message|share|sell|keep|retain|store|add|subscribe|enroll|enrol|sign)(?:\s+(?:or|and)\s+\w+)?\s+(?:me|my)\b`,
+  String.raw`\b(?:check|tick|select|mark|click)\s+(?:this\s+|the\s+|here\s+)?(?:box\s+)?(?:if\s+you\s+(?:\w+\s+){0,3}?|to\s+)(?:opt\s+out|unsubscribe|decline|withdraw|not|do\s+not|dont|never|are\s+not)\b`,
+  String.raw`^(?:no|opt\s+out)\b`,
+  String.raw`\b(?:do|would|will|can|may)\s+you\s+(?:\w+\s+){0,3}?(?:opt\s+out|unsubscribe|decline|withdraw)\b`,
+  String.raw`\b(?:do|would|will)\s+you\s+not\b`,
+  String.raw`(?<!\b(?:may|can|could|to|will\s+be\s+able\s+to)\s)\bopt\s+out\s+of\b`,
+].join('|'));
+
+/** A span a specific consent kind matched stands as this one character, so the words joined inside it ("terms and
+ *  conditions", "true and complete") join no objects. No normalized label holds it. */
+const KIND_MARK = '\u{E000}';
+/** Coordinators that always join a further object to a consent verb. */
+const ALWAYS_JOINS: ReadonlyArray<readonly string[]> = [['as', 'well', 'as'], ['along', 'with'], ['together', 'with'],
+  ['in', 'addition', 'to'], ['which', 'includes'], ['which', 'include'], ['which', 'contains'], ['including'],
+  ['plus']];
+/** Coordinators that join a further object when a kind's span stands right before them or one starts right after
+ *  them ("the privacy policy and binding arbitration", "and to binding arbitration", "and the arbitration
+ *  agreement"); otherwise they join words inside one object ("the collection and processing of my data"). */
+const JOINS_IF = new Set(['and', 'or', 'nor']);
+/** The words that start a further object after "and" or "or". */
+const OBJECT_START = new Set(['to', 'the', 'a', 'an', 'any', 'all', 'my', 'your', 'our', 'its', 'their', 'that',
+  'this', 'these', 'those', 'being', 'having', 'also']);
 
 /** How the review narrows or widens one of the design's rules. */
 interface Refinement {
@@ -547,11 +595,37 @@ function consentClauses(text: string): string[] {
   return clauses;
 }
 
-/** Whether a consent clause names a kind §8.3 knows (read as "I ...", as its rules expect). */
-const clauseHasKind = (clause: string) => {
-  const asI = clause.startsWith('i ') ? clause : `i ${clause}`;
-  return SPECIFIC_CONSENT_RULES.some((rule) => refinedMatch(rule, asI) === 'match');
-};
+/** Every specific consent kind's patterns (its rule's and its refinement's `also`), global and widened to whole
+ *  words, for marking the spans they match. */
+const KIND_SPANS: readonly RegExp[] = SPECIFIC_CONSENT_RULES.flatMap((rule) => [rule.re, REFINEMENTS[rule.id]?.also]
+  .filter((re): re is RegExp => re !== undefined)
+  .map((re) => new RegExp(String.raw`\S*(?:${re.source})\S*`, 'g')));
+
+/** The objects a consent clause joins (the review, CORE-1): its words with every specific kind's span marked, cut at
+ *  the coordinators that join a further object. */
+function clauseObjects(clause: string): string[][] {
+  const marked = KIND_SPANS.reduce((text, re) => text.replace(re, KIND_MARK), clause);
+  const words = marked.split(' ').filter((word) => word !== '');
+  const objects: string[][] = [[]];
+  for (let at = 0; at < words.length;) {
+    const always = ALWAYS_JOINS.find((joiner) => joiner.every((word, offset) => words[at + offset] === word));
+    const next = words[at + 1];
+    const joinsIf = JOINS_IF.has(words[at]!) && (words[at - 1] === KIND_MARK
+      || (next !== undefined && (next === KIND_MARK || OBJECT_START.has(next))));
+    if (always !== undefined || joinsIf) {
+      objects.push([]);
+      at += always?.length ?? 1;
+      continue;
+    }
+    objects[objects.length - 1]!.push(words[at]!);
+    at += 1;
+  }
+  return objects;
+}
+
+/** Whether a consent clause holds an object no specific kind names: one with a word of its own and no kind's span. */
+const namesUnrecognisedObject = (clause: string) => clauseObjects(clause).some((object) => !object.includes(KIND_MARK)
+  && object.some((word) => !NO_OBJECT.has(word)));
 
 interface ConsentEntry {
   rule: LabelRule;
@@ -560,8 +634,11 @@ interface ConsentEntry {
 
 /**
  * Every consent kind `text` reads as, strictest first (§8.7), equals in rule order, each with its rule: the specific
- * kinds over the whole text; unrecognised consent for each consent clause no specific kind covers ("and agree to
- * binding arbitration"), or for consent wording that names nothing; an AI attestation when consent wording names AI.
+ * kinds over the whole text; unrecognised consent for consent wording that names nothing, and whenever the text binds
+ * the person to more than its kinds name (the review, CORE-1 and CORE-2): a clause, or an object a coordinator joins
+ * ("and to binding arbitration", "and phone calls"), that no specific kind names; a binding commitment named anywhere;
+ * an opt-out or a refusal. A text with no consent verb is read as one clause when it names a kind. An AI attestation is
+ * added when consent wording names AI; its own negation ("I did not use AI") is no opt-out.
  */
 function consentEntries(text: string): ConsentEntry[] {
   const entries: ConsentEntry[] = [];
@@ -571,7 +648,13 @@ function consentEntries(text: string): ConsentEntry[] {
   for (const rule of SPECIFIC_CONSENT_RULES) {
     if (refinedMatch(rule, text) === 'match') add(rule, rule.category as FieldCategory);
   }
-  if (consentClauses(text).some((clause) => !clauseHasKind(clause))
+  // Wording that names AI is an AI attestation (below), the strictest kind, which nothing ticks: its own negation is
+  // no opt-out, and nothing it joins can make it stricter.
+  const namesAi = AI_NAMED.test(text);
+  const clauses = consentClauses(text).map((clause) => (clause.startsWith('i ') ? clause : `i ${clause}`));
+  const read = namesAi ? [] : clauses.length > 0 ? clauses : entries.length > 0 ? [text] : [];
+  if (read.some(namesUnrecognisedObject)
+    || (entries.length > 0 && !namesAi && (BINDING_COMMITMENT.test(text) || OPT_OUT.test(text)))
     || (entries.length === 0 && refinedMatch(GENERIC_CONSENT_RULE, text) === 'match')) {
     add(GENERIC_CONSENT_RULE, 'consent.other');
   }
@@ -593,6 +676,28 @@ function consentVerdict(entries: readonly ConsentEntry[], kind: FieldKind): Labe
       needsUser: 'kind-mismatch' };
   }
   return { ...hitOf(winner.rule, winner.category), consentKinds: fitting.map((entry) => entry.category) };
+}
+
+/** Words that deny a lone checkbox's statement or say it does not hold ("I am not authorized", "unable to relocate",
+ *  "with no restrictions"). normalizeLabel deletes apostrophes ("dont"). */
+const DENIES = /\b(?:not|no|never|neither|nor|none|cannot|cant|dont|doesnt|didnt|wont|wouldnt|isnt|arent|wasnt|werent|havent|hasnt|hadnt|shouldnt|couldnt|unable|unwilling|ineligible|unauthori[sz]ed|refuse[sd]?|decline[sd]?|without|opt\s+out)\b/;
+/** Words that make a statement hold only sometimes ("unless the role is remote", "except", "whether"). */
+const ONLY_SOMETIMES = /\b(?:unless|except|excepting|other\s+than|instead\s+of|rather\s+than|whether|if\s+not|or\s+not|depending|depends|provided\s+that|only\s+if)\b/;
+
+/** How a lone checkbox's statement reads: affirmative, negated, or unclear. */
+export const STATEMENT_POLARITIES = ['affirmative', 'negated', 'unclear'] as const;
+export type StatementPolarity = (typeof STATEMENT_POLARITIES)[number];
+
+/**
+ * How the statement of a lone checkbox reads (the review, CORE-2), from its normalized text: 'negated' when a word
+ * denies it or says it does not hold ("I am not legally authorized", "I am unable to relocate"), 'unclear' when it
+ * holds only sometimes ("unless", "except", "whether"), else 'affirmative'. A box is ticked from a yes or no answer
+ * only when its statement is affirmative, so ticking it says exactly the person's answer; any other goes to the
+ * person. Consent reads its own wording (consentEntries: an opt-out is unrecognised consent).
+ */
+export function statementPolarity(text: string): StatementPolarity {
+  if (DENIES.test(text)) return 'negated';
+  return ONLY_SOMETIMES.test(text) ? 'unclear' : 'affirmative';
 }
 
 /** A claim about the person's criminal record, which only they make, even inside a certification; a criminal

@@ -5,7 +5,7 @@ import trap11 from '../../fixtures/traps/11-forged-wxt-events.html?raw';
 import type { PlanOutput } from '../core/plan/types';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { createFakeWorker, testVocab, trapUrl, type FakeWorkerOptions } from './content.testkit';
-import { startContentRuntime, type ContentRuntime } from './runtime';
+import { restoredFromCache, startContentRuntime, type ContentRuntime } from './runtime';
 
 const POSTING = 'https://jobs.lever.co/tailorit-fixture/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00';
 const plain = trap11.replace(/<script>[\s\S]*<\/script>/, '');
@@ -113,6 +113,32 @@ describe('the content runtime’s start-up', () => {
     await vi.waitFor(() => expect(fake.of('policy/hit')).toHaveLength(1));
     expect(runtime.page).toBeNull();
     expect(runtime.ui!.launcher.el.getBoundingClientRect().width).toBe(0);
+  });
+
+  it('offers no launcher and runs nothing at a Lever address that is no application (W2)', async () => {
+    // A site's board: the generic adapter would find the form, but the address names no posting.
+    const { fake, runtime } = await startOn(plain, 'https://jobs.lever.co/acme');
+    expect(fake.of('frame/hello')[0]).toMatchObject({ hasForm: false });
+    expect(runtime.page).toBeNull();
+    expect(runtime.ui).toBeNull();
+    expect(runtime.fill()).toBeNull();
+    expect(await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false })).toEqual({ ok: true, data: {} });
+    expect(fake.of('run/begin')).toEqual([]);
+    expect(fake.of('policy/hit')).toEqual([]);
+  });
+
+  it('says hello again only when the browser brings the page back from the back/forward cache (W1)', async () => {
+    const { fixture, fake } = await startOn(plain, trapUrl('pageshow'));
+    expect(fake.of('frame/hello')).toHaveLength(1);
+    // A page's own pageshow is untrusted: nothing happens.
+    fixture.view.dispatchEvent(new fixture.view.PageTransitionEvent('pageshow', { persisted: true }));
+    await fixture.view.Promise.resolve();
+    expect(fake.of('frame/hello')).toHaveLength(1);
+    // The browser's restore is the one trusted pageshow with persisted set (no test can make one: the rule is read
+    // here, and the runtime's listener applies it).
+    expect(restoredFromCache({ isTrusted: true, persisted: true })).toBe(true);
+    expect(restoredFromCache({ isTrusted: true, persisted: false })).toBe(false);
+    expect(restoredFromCache({ isTrusted: false, persisted: true })).toBe(false);
   });
 
   it('ignores a forged pagehide, and leaves for good on a real one', async () => {

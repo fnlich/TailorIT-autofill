@@ -6,13 +6,23 @@
  *   host, because fixed positioning would land off-screen in an embedded form whose iframe grows to fit its content.
  * - Everything is re-measured in one animation frame, throttled, on scroll (any scroller, caught in the capture phase),
  *   on resize and when the form root changes size; positions never use a timer.
- * - The runtime decides what each control does; this file only draws and reports trusted clicks.
+ * - The runtime decides what each control does; this file only draws and reports trusted clicks, and only those a
+ *   person could have meant (S5): the launcher's and the policy card's buttons are watched with IntersectionObserver
+ *   v2 (visible.ts), and a trusted click counts only while the control it lands on is visible. A page layer drawn over
+ *   the launcher that lets clicks through (a decoy reading "Continue") makes the launcher not visible, so the click
+ *   harvested through it does nothing (logged as content.ui-click-refused). The launcher must have been seen before
+ *   the click, since Open review has to reach the worker inside it; a card button just shown is waited for (capped),
+ *   since its choice needs no user gesture.
+ * - launcherShown() is the frame's own visibility on its page (S1): a frame the page around it hides (opacity 0,
+ *   off-screen, in a zero-height wrapper) has a launcher that is not visible, which no check inside the frame can see.
  */
+import { log } from '../../shared/log';
 import { createHighlights, type HighlightItem } from './highlights';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
 import { createNotices, type NoticeCode, type PolicyChoice } from './notices';
 import { createUiHost } from './shadow';
 import type { StyleMode } from './styles';
+import { createVisibilityWatch } from './visible';
 
 /** The launcher's size, and its inset from the form root's corner. */
 export const LAUNCHER_PX = 32;
@@ -45,6 +55,11 @@ export interface PageUi {
   setHighlights(items: readonly HighlightItem[]): void;
   /** Outlines one field on request (field/focus), after the caller scrolled it into view; null removes it. */
   showFocus(elements: readonly Element[] | null): void;
+  /** Whether a person can see the launcher where it is drawn now (IntersectionObserver v2), once the watch knows; false
+   *  when it is not known within the cap, or `signal` aborts. A frame its page hides answers false (S1). */
+  launcherShown(signal?: AbortSignal): Promise<boolean>;
+  /** What the visibility watch last said of one of our controls (the launcher, a card button); null: not known yet. */
+  visibleNow(el: Element): boolean | null;
   /** Re-measures in the next animation frame. */
   refresh(): void;
   destroy(): void;
@@ -61,12 +76,30 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   highlightLayer.className = 'highlights';
   const anchor = doc.createElement('div');
   anchor.className = 'anchor';
-  const launcher = createLauncher(doc, (action) => handlers.onLauncher(action));
-  const notices = createNotices(doc, (choice) => handlers.onPolicyChoice(choice));
+  const visibility = createVisibilityWatch(view as (Window & typeof globalThis) | null);
+  const launcher = createLauncher(doc, (action) => {
+    // Open review must go out inside the click, so the launcher must already have been seen: no waiting here.
+    if (visibility.shown(launcher.el)) handlers.onLauncher(action);
+    else log('content.ui-click-refused', { launcher: true, known: visibility.known(launcher.el) });
+  });
+  const notices = createNotices(doc, (choice, button) => {
+    if (visibility.known(button)) {
+      if (visibility.shown(button)) handlers.onPolicyChoice(choice);
+      else log('content.ui-click-refused', { launcher: false, known: true });
+      return;
+    }
+    // The card has just been shown: its choice needs no user gesture, so the click waits for the watch's first word.
+    void visibility.settled(button, lifetime.signal).then((shown) => {
+      if (shown && notices.cardShown) handlers.onPolicyChoice(choice);
+      else log('content.ui-click-refused', { launcher: false, known: visibility.known(button) });
+    });
+  });
   anchor.append(launcher.el, notices.el);
   layer.append(highlightLayer, anchor);
   root.append(layer);
   const highlights = createHighlights(doc, highlightLayer);
+  visibility.observe(launcher.el);
+  for (const button of notices.cardButtons) visibility.observe(button);
 
   let anchorRoot: Element | null = null;
   let frame: number | null = null;
@@ -133,7 +166,10 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       notices.reset();
     },
     showPolicyCard(options) {
+      const wasShown = notices.cardShown;
       notices.showPolicyCard(options);
+      // What the watch knew of the hidden buttons is stale: a click waits for its fresh word.
+      if (!wasShown) for (const button of notices.cardButtons) visibility.reset(button);
       schedule();
     },
     hidePolicyCard() {
@@ -148,9 +184,12 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       highlights.showFocus(elements);
       layout();
     },
+    launcherShown: (signal) => visibility.settled(launcher.el, signal),
+    visibleNow: (el) => (visibility.known(el) ? visibility.shown(el) : null),
     refresh: schedule,
     destroy() {
       lifetime.abort();
+      visibility.disconnect();
       resizes?.disconnect();
       if (frame !== null) view?.cancelAnimationFrame(frame);
       frame = null;

@@ -41,7 +41,7 @@ import { normalizeLabel } from '../text/normalize';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../types/fill';
-import type { FieldCategory, ValueOrigin, WriteValue } from '../types/intent';
+import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../types/intent';
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
 import type { PlanInput, PlanOutput } from './types';
@@ -56,6 +56,9 @@ const codePoints = (text: string) => [...text].length;
 
 /** The weakest stage first: a set's row shows the least certain stage of its added options. */
 const STAGE_TRUST: readonly MatcherStage[] = ['llm', 'other', 'fuzzy', 'cache', 'alias', 'exact', 'not-applicable', 'none'];
+
+/** The classes whose set of values is one answer, written whole or not at all (the review, CORE-4). */
+const WHOLE_ANSWER_CLASSES: readonly PolicyClass[] = ['eeo', 'legal', 'sensitive'];
 
 /** The match flags the design always shows the person (§4.3, §4.4, §4.9, §4.12): an ignored `other` bracket only
  *  lowers the confidence. */
@@ -194,11 +197,13 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       const selected = selectedIndices(spec, prepared);
       if (selected.has(option.index)) return blank('skipped', 'already-correct');
       const freeText = match.freeText ?? shaped.choice.freeText;
-      // A checked radio is the page's own answer (a resume parse): the profile wins, flagged. A native select always
-      // shows some option, so its selection says nothing.
+      // A checked radio or a chosen combobox value is the page's own answer (a resume parse): the profile wins,
+      // flagged. A native select always shows some option, so its selection says something only when the select has
+      // a placeholder to show instead (the review, CORE-17).
+      const prefilled = selected.size > 0 && (spec.kind !== 'select' || prepared.list.some((item) => item.placeholder));
       return {
         value: { kind: 'option', index: option.index, cleanLabel: option.clean, ...(freeText ? { freeText } : {}) },
-        match, ...(spec.kind === 'radio' && selected.size > 0 ? { flag: 'prefill-conflict' as const } : {}),
+        match, ...(prefilled ? { flag: 'prefill-conflict' as const } : {}),
       };
     }
     case 'set': {
@@ -225,6 +230,12 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         limits: selectionLimits(spec.constraints, parseSelectionHints(spec.label, spec.description)) });
       if (multi.verdict === 'mark-all-aborted' || multi.verdict === 'exceeds-profile-set') {
         return blank('blocked', multi.reason);
+      }
+      // An EEO, legal or sensitive set is one answer: part of it states another (Asian alone for Asian and White), and
+      // so does a set beside an option the page chose. It is written only when every value is selected and nothing
+      // else is (the review, CORE-4).
+      if (WHOLE_ANSWER_CLASSES.includes(resolution.policy) && multi.reason !== 'ok' && multi.reason !== 'already-correct') {
+        return blank('flagged', multi.reason);
       }
       if (multi.add.length === 0) return blank(multi.reason === 'already-correct' ? 'skipped' : 'flagged', multi.reason);
       const added = multi.add.map((item) => values.find((candidate) => candidate.ref === item.ref)!.match);

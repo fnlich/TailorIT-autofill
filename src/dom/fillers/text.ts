@@ -10,8 +10,9 @@ import { sameText } from './verify';
 
 /** Writes `text` into a text input or textarea and reads it back under `rule`. */
 export function fillText(el: HTMLInputElement | HTMLTextAreaElement, text: string, rule: ReadBackRule): FillOutcome {
-  // maxLength counts UTF-16 code units, as the browser does; -1 means no limit.
-  if (el.maxLength > 0 && text.length > el.maxLength) return refused('maxlength-exceeded');
+  // maxLength counts UTF-16 code units, as the browser does; -1 means no limit, and 0 is a limit nobody can type within
+  // (DOM-13).
+  if (el.maxLength >= 0 && text.length > el.maxLength) return refused('maxlength-exceeded');
   const before = el.value;
   if (before === text) return done(false, 'already-correct');
   setValue(el, text);

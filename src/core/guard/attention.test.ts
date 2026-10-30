@@ -50,4 +50,36 @@ describe('the attention-check patterns (§7.9)', () => {
     expect(namesConsentTopic('Check this box to confirm you read the privacy policy', '')).toBe(true);
     expect(namesConsentTopic('Attention check: select PURPLE.', '')).toBe(false);
   });
+
+  // CORE-10 (Phase 2 review): ordinary questions read as attention checks, so the person lost their answer (and a
+  // pre-approved consent its tick). "Select all that apply" is never an attack (§7.7), and a proof's purpose must be
+  // about the reader: that it read this, is human or is paying attention.
+  it.each([
+    'Please select all that apply to indicate your racial/ethnic background',
+    'Select all that apply to show your areas of expertise',
+    'Select one option to indicate your veteran status',
+    'Check this box to confirm that you agree to our privacy policy',
+    'Check this box to confirm you have read the privacy notice',
+    'Tick to confirm you have read and agree to the terms',
+    'Type your full name to confirm that you have read and agree',
+    'Type your full name to confirm that you have read and understood the above',
+    'Check this box if you have read the privacy policy',
+    'Are you a human resources professional?',
+    'Are you a Human Resources Business Partner?',
+  ])('leaves %j alone', (label) => {
+    expect(attentionHits(label, ''), label).toEqual([]);
+  });
+
+  it.each<[string, AttentionPatternId]>([
+    // The opposites, which stay attention checks.
+    ['Select C to prove you read this', 'select-to-prove'],
+    ['Check this box to confirm you are human', 'select-to-prove'],
+    ['Select all of these if you are reading this', 'select-to-prove'],
+    ['Tick this box to show you are a real person', 'select-to-prove'],
+    ['To prove you have read the job description, choose Yellow', 'prove-reading'],
+    ['Are you a human?', 'human-check'],
+    ['Are you a human being or a bot?', 'human-check'],
+  ])('still flags %j as %s', (label, id) => {
+    expect(attentionHits(label, '')).toContain(id);
+  });
 });

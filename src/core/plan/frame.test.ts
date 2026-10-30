@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { canonicalizeProfile } from '../profile/canonicalize';
 import type { FieldSpec } from '../types/field';
 import { planFrame } from './frame';
-import { fieldOf, goldenProfile, goldenWire, inOrder, inputOf, planOf, settingsWith, specOf } from './plan.testkit';
+import {
+  fieldOf, goldenProfile, goldenWire, inOrder, inputOf, NOW, planOf, settingsWith, specOf, vocab,
+} from './plan.testkit';
 
 const NAME = specOf('First name', 'text');
 const LAST = specOf('Last name', 'text');
@@ -37,6 +40,32 @@ describe('planFrame: text fields', () => {
     }
     expect(fieldOf(out, EMAIL).row.confidence).toBe(0.99);
     expect(out).toMatchObject({ awaiting: [], needsSensitive: false });
+  });
+
+  // CORE-18 (Phase 2 review): a number written in strict E.164 ("+15125550147") lost its calling code, so the field's
+  // pattern went unused and the code was typed again beside the form's own code select.
+  it('lays a strict E.164 number out by the field’s pattern, and never types its code beside a code select', () => {
+    const wire = goldenWire();
+    wire.profile.contact.phone = { ...wire.profile.contact.phone, number: '+15125550147' };
+    const { profile } = canonicalizeProfile(wire.profile, wire.sensitive, vocab, NOW);
+    expect(fieldOf(planOf([PHONE], { profile }), PHONE).write?.value).toEqual({ kind: 'text', text: '(512) 555-0147' });
+    const code = specOf('Country code', 'select', { optionLabels: ['United Kingdom (+44)', 'United States (+1)'] });
+    const number = specOf('Phone number', 'text');
+    const out = planOf([code, number], { profile });
+    expect(fieldOf(out, number).write?.value).toEqual({ kind: 'text', text: '5125550147' });
+    expect(fieldOf(out, code).write?.value).toMatchObject({ kind: 'option', index: 1 });
+  });
+
+  // CORE-7 (Phase 2 review): the phone's country fell back to the address's, so "+1 512 ..." with an address in
+  // Britain chose the United Kingdom (+44) in the phone's own country picker.
+  it('leaves the phone’s country blank and flagged when its calling code and the address disagree', () => {
+    const wire = goldenWire();
+    wire.profile.contact.phone = { ...wire.profile.contact.phone, country: null };
+    wire.profile.contact.address = { ...wire.profile.contact.address, country: 'GB', region: '' };
+    const { profile } = canonicalizeProfile(wire.profile, wire.sensitive, vocab, NOW);
+    const code = specOf('Country code', 'select', { optionLabels: ['United Kingdom (+44)', 'United States (+1)'] });
+    expect(fieldOf(planOf([code], { profile }), code)).toMatchObject({ write: undefined,
+      row: { status: 'flagged', provenance: null } });
   });
 
   it('never cuts a text longer than the field takes', () => {
@@ -78,6 +107,23 @@ describe('planFrame: selects', () => {
   it('flags a list whose options have not loaded', () => {
     const lazy = specOf('Country', 'combobox', { options: 'lazy' });
     expect(fieldOf(planOf([lazy]), lazy).row).toMatchObject({ status: 'flagged', reason: 'waiting-for-options' });
+  });
+
+  // CORE-17 (Phase 2 review): a select's real choice (a resume parse's) was overwritten with no flag, though a radio's
+  // gives prefill-conflict.
+  it('flags overwriting a real choice in a select that has a placeholder, and not the select’s own default', () => {
+    const chosen = specOf('School', 'select', { optionLabels: ['Select...', 'Rice University',
+      '*Texas State University', 'University of Texas - Austin'] });
+    expect(fieldOf(planOf([chosen]), chosen)).toMatchObject({ write: { value: { kind: 'option', index: 3 } },
+      row: { status: 'flagged', reason: 'prefill-conflict' } });
+    // With no placeholder, a native select always shows some option, so its first option says nothing.
+    const shown = specOf('Country', 'select', { optionLabels: ['*Canada', 'United States of America', 'Mexico'] });
+    expect(fieldOf(planOf([shown]), shown)).toMatchObject({ write: { value: { index: 1 } },
+      row: { status: 'verified', reason: 'ok' } });
+    // The placeholder itself selected is no choice at all.
+    const blank = specOf('School', 'select', { optionLabels: ['*Select...', 'Rice University',
+      'University of Texas - Austin'] });
+    expect(fieldOf(planOf([blank]), blank).row).toMatchObject({ status: 'verified', reason: 'ok' });
   });
 });
 
@@ -143,6 +189,49 @@ describe('planFrame: EEO, legal and consent', () => {
     expect(planOf(shown, { profile: goldenProfile({ sensitive: false }), sensitiveState: 'not-loaded' }).needsSensitive)
       .toBe(true);
     expect(planOf(shown).writes).toHaveLength(2);
+  });
+
+  // CORE-3 (Phase 2 review): a legal or sensitive answer no option names fell through to "Other" plus free text.
+  it('never types a legal or sensitive answer into an "Other" box', () => {
+    const profile = goldenProfile();
+    const citizen = { ...profile, workAuthorization: [{ ...profile.workAuthorization[0]!,
+      status: { kind: 'value' as const, value: 'citizen' as const } }],
+    identity: { ...profile.identity, pronouns: { kind: 'value' as const, value: 'they/them' } } };
+    const status = specOf('What is your citizenship status in the United States?', 'select', { optionLabels: [
+      'Select...', 'Permanent resident', 'Work visa holder', 'Other (please specify)'] });
+    const pronouns = specOf('Pronouns', 'select', { optionLabels: ['Select...', 'He/him', 'She/her', 'Other'] });
+    const out = planOf([status, pronouns], { profile: citizen });
+    expect(out.writes).toEqual([]);
+    for (const spec of [status, pronouns]) {
+      expect(fieldOf(out, spec).row, spec.label).toMatchObject({ status: 'flagged', provenance: null, wrote: false });
+      expect(fieldOf(out, spec).row.matcherStage, spec.label).not.toBe('other');
+    }
+    // A profile answer still takes "Other" plus its own words where the policy is open (a school not listed).
+    const school = specOf('School', 'select', { optionLabels: ['Select...', 'Rice University', 'Other'] });
+    expect(fieldOf(planOf([school]), school)).toMatchObject({ write: { value: { kind: 'option', index: 2 } },
+      row: { matcherStage: 'other' } });
+  });
+
+  // CORE-4 (Phase 2 review): a race set on a checkbox group was written in part (Asian only; White without Middle
+  // Eastern or North African), which states a different answer than the person's.
+  it('writes an EEO set only when every value matched and the cap admits them all', () => {
+    const profile = goldenProfile();
+    const races = (value: Array<'asian' | 'white' | 'middle-eastern-north-african'>) => ({ ...profile,
+      eeo: { ...profile.eeo, race: { kind: 'value' as const, value } } });
+    const group = (labels: string[], extra = {}) => specOf('Race (select all that apply)', 'checkbox-group', {
+      section: { id: 'eeo' }, optionLabels: labels, ...extra });
+    const full = group(['Asian', 'White', 'Black or African American', 'Middle Eastern or North African']);
+    expect(fieldOf(planOf([full], { profile: races(['asian', 'white']) }), full).write?.value)
+      .toMatchObject({ kind: 'options', indices: [0, 1] });
+    const noMena = group(['Asian', 'White', 'Black or African American']);
+    expect(fieldOf(planOf([noMena], { profile: races(['white', 'middle-eastern-north-african']) }), noMena))
+      .toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'partial-multi-select', wrote: false } });
+    const capped = group(['Asian', 'White', 'Black or African American'], { constraints: { maxSelections: 1 } });
+    expect(fieldOf(planOf([capped], { profile: races(['asian', 'white']) }), capped))
+      .toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'max-selections-reached' } });
+    const pageChose = group(['Asian', 'White', '*Black or African American']);
+    expect(fieldOf(planOf([pageChose], { profile: races(['asian']) }), pageChose))
+      .toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'unexpected-selection' } });
   });
 });
 

@@ -18,7 +18,7 @@ export const REASON_CODES = [
   'legal-not-in-profile', 'decline-option-missing', 'work-auth-country-unknown', 'consent-requires-user',
   'attention-check', 'free-text-requires-user', 'drafts-disabled', 'llm-disabled-for-category', 'llm-unavailable',
   'llm-invalid-output', 'llm-pick-rejected', 'saved-answer-not-allowed-for-category', 'end-date-not-applicable',
-  'sensitive-not-shared', 'sensitive-unavailable',
+  'sensitive-not-shared', 'sensitive-unavailable', 'statement-not-affirmative',
   // matcher
   'no-match', 'ambiguous-options', 'distinctive-token-mismatch', 'waiting-for-options', 'options-never-loaded',
   'options-changed', 'max-selections-reached', 'partial-multi-select', 'exclusive-conflict', 'preselected-left-untouched',
@@ -58,7 +58,12 @@ export interface FillResult {
   section: string;
   required: boolean;
   status: FillStatus;
-  /** Null exactly when nothing was written. */
+  /**
+   * The provenance of the field's planned write: null exactly when the field has no write, planned or done. A dry run
+   * writes nothing, yet its rows keep the provenance a fill would use (with `wrote` false), so the panel shows where
+   * each value would come from; a write the frame refused or could not make (settleRow's blocked and not-written) is
+   * null again.
+   */
   provenance: Provenance | null;
   matcherStage: MatcherStage;
   confidence: number;

@@ -57,6 +57,17 @@ describe('the text filler', () => {
     expect(log.events).toEqual([]);
   });
 
+  it('takes maxlength="0" as a limit nobody can type within, never as no limit (DOM-13)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <label for="z">Phone</label><input id="z" type="tel" maxlength="0"></form></body>`);
+    const log = logEvents(fixture.doc);
+    expect(targetOf(fixture, 'z').field.constraints.maxLength).toBe(0);
+    expect(fillIn(fixture, 'z', { kind: 'text', text: '+1 512 555 0147' })).toMatchObject({ wrote: false,
+      reason: 'maxlength-exceeded', verification: 'not-checked' });
+    expect((fixture.doc.getElementById('z') as HTMLInputElement).value).toBe('');
+    expect(log.events).toEqual([]);
+  });
+
   it('verifies a value the page reformats equivalently: digits for phones, case-folded for emails', async () => {
     const fixture = await loadFixture(document, `<!doctype html><body><form>
       <label for="p">Phone</label><input id="p" type="tel"><label for="e">Email</label><input id="e" type="email">
@@ -183,6 +194,22 @@ describe('the radio and checkbox fillers', () => {
     expect(log.on('java').map((event) => event.type)).toEqual(['click', 'input', 'change']);
     expect((fixture.doc.getElementById('go') as HTMLInputElement).checked).toBe(true);
   });
+
+  it('reads each box again right before its click, so one the page ticked meanwhile is never unticked (DOM-9)',
+    async () => {
+      const fixture = await loadFixture(document, CHOICES);
+      const doc = fixture.doc;
+      // The page pairs Rust with Java: ticking one ticks the other.
+      doc.getElementById('rust')!.addEventListener('change', () => {
+        (doc.getElementById('java') as HTMLInputElement).checked = true;
+      });
+      const log = logEvents(doc);
+      expect(fillIn(fixture, 'tools', { kind: 'options', indices: [1, 2], cleanLabels: ['Rust', 'Java'] }))
+        .toMatchObject({ reason: 'ok', wrote: true, verification: 'verified' });
+      expect(['go', 'rust', 'java'].map((id) => (doc.getElementById(id) as HTMLInputElement).checked))
+        .toEqual([true, true, true]);
+      expect(log.on('java')).toEqual([]);
+    });
 
   it('refuses a whole checkbox-group write when one planned box now shows another label, ticking nothing', async () => {
     const fixture = await loadFixture(document, CHOICES);

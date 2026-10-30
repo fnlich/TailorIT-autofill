@@ -33,6 +33,8 @@ const NOTICES = {
   'posting-outside-frame': 'This form sits inside another site\'s page, which cannot be read, so that page\'s text was not checked.',
   'deferred-fields': 'Some fields were not rendered yet. Scroll to them and choose Fill again.',
   'step-retry-limit': 'This step was tried twice already, so nothing more is filled on it.',
+  'policy-hidden-text': 'Text on this page that is not shown yet says AI-assisted applications may not be allowed. Read the whole posting before you submit.',
+  'form-hidden': 'This form is hidden or out of view on its page, so nothing was filled. Scroll it into view, then choose Fill again.',
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -69,6 +71,7 @@ const REASONS = {
   'end-date-not-applicable': 'You still work here, so the end date was left empty.',
   'sensitive-not-shared': "This browser may not read your work authorization and self-identification answers. To allow it, connect the extension again from TailorIT's Settings › Autofill with that box ticked.",
   'sensitive-unavailable': 'Your work authorization and self-identification answers could not be read from TailorIT just now, so this was left for you.',
+  'statement-not-affirmative': "This box isn't worded as a plain yes, so whether to tick it was left for you.",
   // The matcher.
   'no-match': 'None of the options matched your profile.',
   'ambiguous-options': 'More than one option could match your answer, so none was chosen.',

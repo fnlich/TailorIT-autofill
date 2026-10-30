@@ -2,8 +2,9 @@
  * Which matcher stages may run for a value (docs/design/core.md §4.0, docs/ARCHITECTURE.md "Matcher"). The domain
  * table decides first: countries and regions are closed, complete lists, so they get no fuzzy matching and no LLM;
  * EEO and legal answers get neither either. Then the field's policy class: outside profile, free-text and unknown,
- * fuzzy matching and the LLM play no part (§8.2), and nothing is cached. The LLM also needs the person's tiebreak
- * setting. Stages stop at the first success.
+ * fuzzy matching, the LLM and "Other" plus free text play no part (§8.2; the review, CORE-3: a work status or pronouns
+ * typed into an Other box is an answer no option states), and nothing is cached. The LLM also needs the person's
+ * tiebreak setting. Stages stop at the first success.
  */
 import { OPEN_CLASSES } from '../resolver/categories';
 import type { PolicyClass } from '../types/intent';
@@ -64,7 +65,8 @@ export interface StagePlan extends StagePolicy {
   cache: boolean;
 }
 
-/** Whether a policy class lets fuzzy matching, the LLM tiebreak and the cache play a part (§8.2, §4.10). */
+/** Whether a policy class lets fuzzy matching, the LLM tiebreak, "Other" plus free text and the cache play a part
+ *  (§8.2, §4.10). */
 export function openClass(policy: PolicyClass): boolean {
   return OPEN_CLASSES.includes(policy);
 }
@@ -80,7 +82,7 @@ export function stagePlan(domain: MatchDomain, policy: PolicyClass, llmAllowed: 
     alias: table.alias,
     fuzzy: table.fuzzy && open,
     llm: table.llm && open && llmAllowed,
-    other: table.other,
+    other: table.other && open,
     cache: open,
   };
 }
