@@ -22,6 +22,7 @@
     "test:e2e": "node scripts/e2e.mjs",
     "check:build": "node scripts/check-build.mjs",
     "verify": "node scripts/verify.mjs",
+    "contract:pull": "node scripts/contract-pull.mjs",
     "vocab:fetch": "node scripts/vocab-fetch.mjs",
     "vocab:build": "node --import tsx scripts/vocab-build.ts"
   },

@@ -1,0 +1,256 @@
+{
+  "revision": 4,
+  "updatedAt": "2026-10-22T12:00:00.000Z",
+  "profile": {
+    "name": {
+      "first": "Elena",
+      "middle": "Marisol",
+      "last": "Ruiz",
+      "suffix": "",
+      "preferred": "Lena"
+    },
+    "contact": {
+      "email": "elena.ruiz@example.com",
+      "phone": {
+        "number": "+1 512 555 0100",
+        "country": "US",
+        "extension": ""
+      },
+      "address": {
+        "line1": "2100 Guadalupe St",
+        "line2": "Apt 4B",
+        "city": "Austin",
+        "region": "TX",
+        "postalCode": "78705",
+        "country": "US"
+      }
+    },
+    "links": {
+      "linkedin": "https://www.linkedin.com/in/elena-ruiz-example",
+      "github": "https://github.com/elena-ruiz-example",
+      "portfolio": "https://elenaruiz.example.com",
+      "website": "",
+      "other": [
+        {
+          "label": "Kaggle",
+          "url": "https://www.kaggle.com/elenaruizexample"
+        }
+      ]
+    },
+    "education": [
+      {
+        "id": "edu-ut-austin",
+        "institution": {
+          "canonicalName": "The University of Texas at Austin",
+          "aliases": [
+            "UT Austin",
+            "UT-Austin"
+          ],
+          "ids": {
+            "ipeds": "228778",
+            "ror": "00hj54h04"
+          }
+        },
+        "degree": {
+          "level": "master",
+          "type": "MS",
+          "field": "Computer Science",
+          "cip": "11.0701"
+        },
+        "minor": "",
+        "startDate": "2019-08",
+        "endDate": "2021-05",
+        "current": false,
+        "gpa": {
+          "value": 3.9,
+          "scale": 4
+        },
+        "location": {
+          "city": "Austin",
+          "region": "TX",
+          "country": "US"
+        }
+      },
+      {
+        "id": "edu-tamu",
+        "institution": {
+          "canonicalName": "Texas A&M University",
+          "aliases": [
+            "TAMU"
+          ]
+        },
+        "degree": {
+          "level": "bachelor",
+          "type": "BS",
+          "field": "Computer Engineering"
+        },
+        "minor": "Mathematics",
+        "startDate": "2015",
+        "endDate": "2019",
+        "current": false,
+        "gpa": null,
+        "location": {
+          "city": "College Station",
+          "region": "TX",
+          "country": "US"
+        }
+      }
+    ],
+    "experience": [
+      {
+        "id": "exp-lumen",
+        "company": "Lumen Analytics",
+        "title": "Senior Software Engineer",
+        "location": {
+          "city": "Austin",
+          "region": "TX",
+          "country": "US"
+        },
+        "startDate": "2021-06",
+        "endDate": null,
+        "current": true,
+        "description": "Lead the ingestion platform team of five.\nCut pipeline latency by 40% with a streaming rewrite."
+      },
+      {
+        "id": "exp-brightpath",
+        "company": "BrightPath Labs",
+        "title": "Software Engineering Intern",
+        "location": {
+          "city": "Houston",
+          "region": "TX",
+          "country": "US"
+        },
+        "startDate": "2018-05",
+        "endDate": "2018-08",
+        "current": false,
+        "description": "Built internal dashboards in React and TypeScript."
+      }
+    ],
+    "languages": [
+      {
+        "language": "English",
+        "proficiency": "native"
+      },
+      {
+        "language": "Spanish",
+        "proficiency": "full-professional"
+      },
+      {
+        "language": "Portuguese",
+        "proficiency": null
+      }
+    ],
+    "skills": [
+      "TypeScript",
+      "Python",
+      "PostgreSQL",
+      "Kubernetes",
+      "Apache Kafka"
+    ],
+    "preferences": {
+      "earliestStartDate": "2026-12-01",
+      "noticePeriodWeeks": 2,
+      "willingToRelocate": "no",
+      "workArrangements": [
+        "remote",
+        "hybrid"
+      ],
+      "travelPercent": 10,
+      "referralSource": "LinkedIn"
+    },
+    "documents": {
+      "resumeId": null
+    }
+  },
+  "sensitive": {
+    "workAuthorization": [
+      {
+        "country": "US",
+        "authorized": {
+          "state": "value",
+          "value": true
+        },
+        "sponsorshipNow": {
+          "state": "value",
+          "value": false
+        },
+        "sponsorshipFuture": {
+          "state": "value",
+          "value": false
+        },
+        "status": {
+          "state": "value",
+          "value": "citizen"
+        }
+      },
+      {
+        "country": "CA",
+        "authorized": {
+          "state": "value",
+          "value": false
+        },
+        "sponsorshipNow": {
+          "state": "value",
+          "value": true
+        },
+        "sponsorshipFuture": {
+          "state": "value",
+          "value": true
+        },
+        "status": {
+          "state": "not_provided"
+        }
+      }
+    ],
+    "eeo": {
+      "gender": {
+        "state": "value",
+        "value": {
+          "identity": "female",
+          "selfDescribed": ""
+        }
+      },
+      "hispanicOrLatino": {
+        "state": "value",
+        "value": true
+      },
+      "races": {
+        "state": "value",
+        "value": [
+          "white"
+        ]
+      },
+      "veteran": {
+        "state": "value",
+        "value": {
+          "isVeteran": false,
+          "isProtectedVeteran": false
+        }
+      },
+      "disability": {
+        "state": "declined"
+      },
+      "pronouns": {
+        "state": "value",
+        "value": "she/her"
+      }
+    },
+    "legal": {
+      "atLeast18": {
+        "state": "value",
+        "value": true
+      }
+    },
+    "compensation": {
+      "expectedSalary": {
+        "state": "value",
+        "value": {
+          "min": 150000,
+          "max": 180000,
+          "currency": "USD",
+          "period": "year"
+        }
+      }
+    }
+  }
+}

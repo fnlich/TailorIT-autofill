@@ -1,0 +1,62 @@
+{
+  "source": {
+    "resumeId": "7d9f2b14-3e6a-4f80-b2c5-91e3a7d4f650",
+    "label": "Elena Ruiz CV",
+    "kind": "uploaded"
+  },
+  "profile": {
+    "name": {
+      "first": "",
+      "middle": "",
+      "last": "",
+      "suffix": "",
+      "preferred": ""
+    },
+    "contact": {
+      "email": "elena.ruiz@example.com",
+      "phone": {
+        "number": "+1 512 555 0100",
+        "country": null,
+        "extension": ""
+      },
+      "address": {
+        "line1": "",
+        "line2": "",
+        "city": "",
+        "region": "",
+        "postalCode": "",
+        "country": null
+      }
+    },
+    "links": {
+      "linkedin": "https://www.linkedin.com/in/elena-ruiz-example",
+      "github": "",
+      "portfolio": "",
+      "website": "",
+      "other": []
+    },
+    "education": [],
+    "experience": [],
+    "languages": [],
+    "skills": [],
+    "preferences": {
+      "earliestStartDate": null,
+      "noticePeriodWeeks": null,
+      "willingToRelocate": null,
+      "workArrangements": [],
+      "travelPercent": null,
+      "referralSource": ""
+    },
+    "documents": {
+      "resumeId": null
+    }
+  },
+  "filled": [
+    "contact.email",
+    "contact.phone.number",
+    "links.linkedin"
+  ],
+  "notes": [
+    "Import this resume into the editor to fill in education and experience."
+  ]
+}

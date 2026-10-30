@@ -1,0 +1,62 @@
+{
+  "name": {
+    "first": "",
+    "middle": "",
+    "last": "",
+    "suffix": "",
+    "preferred": ""
+  },
+  "contact": {
+    "email": "",
+    "phone": {
+      "number": "",
+      "country": null,
+      "extension": ""
+    },
+    "address": {
+      "line1": "",
+      "line2": "",
+      "city": "",
+      "region": "",
+      "postalCode": "",
+      "country": null
+    }
+  },
+  "links": {
+    "linkedin": "",
+    "github": "",
+    "portfolio": "",
+    "website": "",
+    "other": []
+  },
+  "education": [],
+  "experience": [
+    {
+      "id": "exp-brightpath",
+      "company": "BrightPath Labs",
+      "title": "Software Engineering Intern",
+      "location": {
+        "city": "Houston",
+        "region": "TX",
+        "country": "US"
+      },
+      "startDate": "2018-05-14",
+      "endDate": "2018-08",
+      "current": false,
+      "description": "Built internal dashboards in React and TypeScript."
+    }
+  ],
+  "languages": [],
+  "skills": [],
+  "preferences": {
+    "earliestStartDate": null,
+    "noticePeriodWeeks": null,
+    "willingToRelocate": null,
+    "workArrangements": [],
+    "travelPercent": null,
+    "referralSource": ""
+  },
+  "documents": {
+    "resumeId": null
+  }
+}

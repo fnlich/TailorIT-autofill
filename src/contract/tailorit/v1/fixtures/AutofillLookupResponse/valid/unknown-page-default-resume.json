@@ -1,0 +1,13 @@
+{
+  "ats": null,
+  "job": null,
+  "application": null,
+  "suggestedResume": {
+    "id": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "label": "Senior Software Engineer",
+    "kind": "built",
+    "fileKind": "pdf",
+    "fileName": "Elena Ruiz Resume.pdf",
+    "reason": "default"
+  }
+}

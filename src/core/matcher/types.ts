@@ -113,8 +113,9 @@ export interface MatchContext {
   cache?: MatchCacheStore;
 }
 
-/** TailorIT's AUTOFILL_PICK_CATEGORIES, in its order. The contract test of Phase 2 checks they equal the copied
- *  contract's. Country, region and every sensitive category are absent, so the server refuses them too. */
+/** TailorIT's AUTOFILL_PICK_CATEGORIES, in its order. They arrive in the contract with the AI routes (Phase 4), and
+ *  test/contract.test.ts then checks they equal the copied list. Country, region and every sensitive category are
+ *  absent, so the server refuses them too. */
 export const PICK_CATEGORIES = ['school', 'degree', 'field_of_study', 'language', 'language_proficiency',
   'referral_source', 'generic'] as const;
 export type PickCategory = (typeof PICK_CATEGORIES)[number];

@@ -1,0 +1,52 @@
+{
+  "apiVersion": 1,
+  "revision": 0,
+  "updatedAt": null,
+  "profile": {
+    "name": {
+      "first": "",
+      "middle": "",
+      "last": "",
+      "suffix": "",
+      "preferred": ""
+    },
+    "contact": {
+      "email": "elena.ruiz@example.com",
+      "phone": {
+        "number": "",
+        "country": null,
+        "extension": ""
+      },
+      "address": {
+        "line1": "",
+        "line2": "",
+        "city": "",
+        "region": "",
+        "postalCode": "",
+        "country": null
+      }
+    },
+    "links": {
+      "linkedin": "",
+      "github": "",
+      "portfolio": "",
+      "website": "",
+      "other": []
+    },
+    "education": [],
+    "experience": [],
+    "languages": [],
+    "skills": [],
+    "preferences": {
+      "earliestStartDate": null,
+      "noticePeriodWeeks": null,
+      "willingToRelocate": null,
+      "workArrangements": [],
+      "travelPercent": null,
+      "referralSource": ""
+    },
+    "documents": {
+      "resumeId": null
+    }
+  }
+}

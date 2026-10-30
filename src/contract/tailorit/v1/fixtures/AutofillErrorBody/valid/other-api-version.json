@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "conflict",
+    "message": "This TailorIT extension speaks autofill API 2; this server speaks 1. Update the extension or TailorIT.",
+    "requestId": "r_Xk2pQ9aZ"
+  }
+}

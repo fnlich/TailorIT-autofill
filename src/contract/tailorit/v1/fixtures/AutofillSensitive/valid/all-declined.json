@@ -1,0 +1,49 @@
+{
+  "workAuthorization": [
+    {
+      "country": "GB",
+      "authorized": {
+        "state": "declined"
+      },
+      "sponsorshipNow": {
+        "state": "declined"
+      },
+      "sponsorshipFuture": {
+        "state": "declined"
+      },
+      "status": {
+        "state": "declined"
+      }
+    }
+  ],
+  "eeo": {
+    "gender": {
+      "state": "declined"
+    },
+    "hispanicOrLatino": {
+      "state": "declined"
+    },
+    "races": {
+      "state": "declined"
+    },
+    "veteran": {
+      "state": "declined"
+    },
+    "disability": {
+      "state": "declined"
+    },
+    "pronouns": {
+      "state": "declined"
+    }
+  },
+  "legal": {
+    "atLeast18": {
+      "state": "declined"
+    }
+  },
+  "compensation": {
+    "expectedSalary": {
+      "state": "declined"
+    }
+  }
+}

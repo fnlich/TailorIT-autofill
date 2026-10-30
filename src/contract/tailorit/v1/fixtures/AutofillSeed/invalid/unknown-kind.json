@@ -1,0 +1,56 @@
+{
+  "source": {
+    "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "label": "Senior Software Engineer",
+    "kind": "imported"
+  },
+  "profile": {
+    "name": {
+      "first": "",
+      "middle": "",
+      "last": "",
+      "suffix": "",
+      "preferred": ""
+    },
+    "contact": {
+      "email": "",
+      "phone": {
+        "number": "",
+        "country": null,
+        "extension": ""
+      },
+      "address": {
+        "line1": "",
+        "line2": "",
+        "city": "",
+        "region": "",
+        "postalCode": "",
+        "country": null
+      }
+    },
+    "links": {
+      "linkedin": "",
+      "github": "",
+      "portfolio": "",
+      "website": "",
+      "other": []
+    },
+    "education": [],
+    "experience": [],
+    "languages": [],
+    "skills": [],
+    "preferences": {
+      "earliestStartDate": null,
+      "noticePeriodWeeks": null,
+      "willingToRelocate": null,
+      "workArrangements": [],
+      "travelPercent": null,
+      "referralSource": ""
+    },
+    "documents": {
+      "resumeId": null
+    }
+  },
+  "filled": [],
+  "notes": []
+}

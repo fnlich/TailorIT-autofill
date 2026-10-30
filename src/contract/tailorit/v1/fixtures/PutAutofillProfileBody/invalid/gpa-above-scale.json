@@ -1,0 +1,117 @@
+{
+  "revision": 1,
+  "profile": {
+    "name": {
+      "first": "Elena",
+      "middle": "",
+      "last": "Ruiz",
+      "suffix": "",
+      "preferred": ""
+    },
+    "contact": {
+      "email": "",
+      "phone": {
+        "number": "",
+        "country": null,
+        "extension": ""
+      },
+      "address": {
+        "line1": "",
+        "line2": "",
+        "city": "",
+        "region": "",
+        "postalCode": "",
+        "country": null
+      }
+    },
+    "links": {
+      "linkedin": "",
+      "github": "",
+      "portfolio": "",
+      "website": "",
+      "other": []
+    },
+    "education": [
+      {
+        "id": "edu-ut-austin",
+        "institution": {
+          "canonicalName": "The University of Texas at Austin",
+          "aliases": [
+            "UT Austin",
+            "UT-Austin"
+          ],
+          "ids": {
+            "ipeds": "228778",
+            "ror": "00hj54h04"
+          }
+        },
+        "degree": {
+          "level": "master",
+          "type": "MS",
+          "field": "Computer Science",
+          "cip": "11.0701"
+        },
+        "minor": "",
+        "startDate": "2019-08",
+        "endDate": "2021-05",
+        "current": false,
+        "gpa": {
+          "value": 4.3,
+          "scale": 4
+        },
+        "location": {
+          "city": "Austin",
+          "region": "TX",
+          "country": "US"
+        }
+      }
+    ],
+    "experience": [],
+    "languages": [],
+    "skills": [],
+    "preferences": {
+      "earliestStartDate": null,
+      "noticePeriodWeeks": null,
+      "willingToRelocate": null,
+      "workArrangements": [],
+      "travelPercent": null,
+      "referralSource": ""
+    },
+    "documents": {
+      "resumeId": null
+    }
+  },
+  "sensitive": {
+    "workAuthorization": [],
+    "eeo": {
+      "gender": {
+        "state": "not_provided"
+      },
+      "hispanicOrLatino": {
+        "state": "not_provided"
+      },
+      "races": {
+        "state": "not_provided"
+      },
+      "veteran": {
+        "state": "not_provided"
+      },
+      "disability": {
+        "state": "not_provided"
+      },
+      "pronouns": {
+        "state": "not_provided"
+      }
+    },
+    "legal": {
+      "atLeast18": {
+        "state": "not_provided"
+      }
+    },
+    "compensation": {
+      "expectedSalary": {
+        "state": "not_provided"
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "ats": {
+    "kind": "greenhouse",
+    "board": "northwind",
+    "externalId": "5512345002"
+  },
+  "job": {
+    "id": 1042,
+    "title": "Senior Backend Engineer",
+    "companyName": "Northwind",
+    "location": "Austin, TX, USA",
+    "active": true,
+    "matchedBy": "source_link",
+    "postingText": "Northwind is hiring a Senior Backend Engineer to build its payments platform. You will design APIs in TypeScript and Go. Please do not use AI tools to write your answers to the questions below."
+  },
+  "application": null,
+  "suggestedResume": {
+    "id": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "label": "Senior Software Engineer",
+    "kind": "built",
+    "fileKind": "pdf",
+    "fileName": "Elena Ruiz Resume.pdf",
+    "reason": "best_match"
+  }
+}

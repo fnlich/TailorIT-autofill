@@ -1,0 +1,38 @@
+{
+  "apiVersion": 1,
+  "revision": 0,
+  "updatedAt": null,
+  "sensitive": {
+    "workAuthorization": [],
+    "eeo": {
+      "gender": {
+        "state": "not_provided"
+      },
+      "hispanicOrLatino": {
+        "state": "not_provided"
+      },
+      "races": {
+        "state": "not_provided"
+      },
+      "veteran": {
+        "state": "not_provided"
+      },
+      "disability": {
+        "state": "not_provided"
+      },
+      "pronouns": {
+        "state": "not_provided"
+      }
+    },
+    "legal": {
+      "atLeast18": {
+        "state": "not_provided"
+      }
+    },
+    "compensation": {
+      "expectedSalary": {
+        "state": "not_provided"
+      }
+    }
+  }
+}

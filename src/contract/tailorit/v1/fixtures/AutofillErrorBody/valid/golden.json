@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "not_signed_in",
+    "message": "This browser is no longer connected to TailorIT. Connect the extension again from Settings › Autofill.",
+    "requestId": "r_Xk2pQ9aZ"
+  }
+}

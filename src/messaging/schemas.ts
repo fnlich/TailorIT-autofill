@@ -233,7 +233,18 @@ export const FrameHelloAnswerSchema = z.strictObject({
   connected: z.boolean(),
   settings: ContentSettingsSchema,
 });
-export const RunBeginAnswerSchema = z.strictObject({ runId: Id, settings: ContentSettingsSchema });
+export const RunBeginAnswerSchema = z.strictObject({
+  runId: Id,
+  settings: ContentSettingsSchema,
+  /** What the worker knows of the posting's AI policy before the frame reads its own visible text: a policy/hit from
+   *  the posting page this browser session saw for this application ('unseen' when none was opened), and the policy
+   *  patterns run over TailorIT's stored copy from the lookup ('unavailable' when there is none). States only, never
+   *  text. A hit anywhere stops the run at policy-notice before anything is written. */
+  policy: z.strictObject({
+    postingPage: z.enum(['hit', 'clear', 'unseen']),
+    storedCopy: z.enum(['hit', 'clear', 'unavailable']),
+  }),
+});
 export const PlanAnswerSchema = z.strictObject({
   writes: z.array(PlannedWriteSchema).max(500),
   results: z.array(FrameReportSchema.shape.fields.element).max(500),

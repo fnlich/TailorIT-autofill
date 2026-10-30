@@ -1,0 +1,51 @@
+{
+  "workAuthorization": [],
+  "eeo": {
+    "gender": {
+      "state": "value",
+      "value": {
+        "identity": "self-describe",
+        "selfDescribed": "Genderqueer"
+      }
+    },
+    "hispanicOrLatino": {
+      "state": "not_provided"
+    },
+    "races": {
+      "state": "value",
+      "value": [
+        "asian",
+        "white"
+      ]
+    },
+    "veteran": {
+      "state": "value",
+      "value": {
+        "isVeteran": true,
+        "isProtectedVeteran": true
+      }
+    },
+    "disability": {
+      "state": "not_provided"
+    },
+    "pronouns": {
+      "state": "not_provided"
+    }
+  },
+  "legal": {
+    "atLeast18": {
+      "state": "not_provided"
+    }
+  },
+  "compensation": {
+    "expectedSalary": {
+      "state": "value",
+      "value": {
+        "min": 65,
+        "max": null,
+        "currency": "USD",
+        "period": "hour"
+      }
+    }
+  }
+}

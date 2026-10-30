@@ -1,0 +1,72 @@
+{
+  "name": {
+    "first": "",
+    "middle": "",
+    "last": "",
+    "suffix": "",
+    "preferred": ""
+  },
+  "contact": {
+    "email": "",
+    "phone": {
+      "number": "",
+      "country": null,
+      "extension": ""
+    },
+    "address": {
+      "line1": "",
+      "line2": "",
+      "city": "",
+      "region": "",
+      "postalCode": "",
+      "country": null
+    }
+  },
+  "links": {
+    "linkedin": "",
+    "github": "",
+    "portfolio": "",
+    "website": "",
+    "other": []
+  },
+  "education": [
+    {
+      "id": "edu-tamu",
+      "institution": {
+        "canonicalName": "Texas A&M University",
+        "aliases": [
+          "TAMU"
+        ]
+      },
+      "degree": {
+        "level": "phd",
+        "type": "BS",
+        "field": "Computer Engineering"
+      },
+      "minor": "Mathematics",
+      "startDate": "2015",
+      "endDate": "2019",
+      "current": false,
+      "gpa": null,
+      "location": {
+        "city": "College Station",
+        "region": "TX",
+        "country": "US"
+      }
+    }
+  ],
+  "experience": [],
+  "languages": [],
+  "skills": [],
+  "preferences": {
+    "earliestStartDate": null,
+    "noticePeriodWeeks": null,
+    "willingToRelocate": null,
+    "workArrangements": [],
+    "travelPercent": null,
+    "referralSource": ""
+  },
+  "documents": {
+    "resumeId": null
+  }
+}

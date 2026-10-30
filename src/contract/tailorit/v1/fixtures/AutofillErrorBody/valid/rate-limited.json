@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "The extension has asked too often. Please wait 1 minute and try again.",
+    "retryAfterSeconds": 60,
+    "requestId": "r_Xk2pQ9aZ"
+  }
+}

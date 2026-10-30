@@ -1,0 +1,36 @@
+{
+  "workAuthorization": [],
+  "eeo": {
+    "gender": {
+      "state": "not_provided"
+    },
+    "hispanicOrLatino": {
+      "state": "not_provided"
+    },
+    "races": {
+      "state": "value",
+      "value": [
+        "two-or-more-races"
+      ]
+    },
+    "veteran": {
+      "state": "not_provided"
+    },
+    "disability": {
+      "state": "not_provided"
+    },
+    "pronouns": {
+      "state": "not_provided"
+    }
+  },
+  "legal": {
+    "atLeast18": {
+      "state": "not_provided"
+    }
+  },
+  "compensation": {
+    "expectedSalary": {
+      "state": "not_provided"
+    }
+  }
+}

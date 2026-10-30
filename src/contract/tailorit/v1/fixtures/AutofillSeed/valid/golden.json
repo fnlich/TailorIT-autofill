@@ -1,0 +1,210 @@
+{
+  "source": {
+    "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "label": "Senior Software Engineer",
+    "kind": "built"
+  },
+  "profile": {
+    "name": {
+      "first": "Elena",
+      "middle": "Marisol",
+      "last": "Ruiz",
+      "suffix": "",
+      "preferred": ""
+    },
+    "contact": {
+      "email": "elena.ruiz@example.com",
+      "phone": {
+        "number": "+1 512 555 0100",
+        "country": "US",
+        "extension": ""
+      },
+      "address": {
+        "line1": "",
+        "line2": "",
+        "city": "Austin",
+        "region": "TX",
+        "postalCode": "",
+        "country": "US"
+      }
+    },
+    "links": {
+      "linkedin": "https://www.linkedin.com/in/elena-ruiz-example",
+      "github": "https://github.com/elena-ruiz-example",
+      "portfolio": "",
+      "website": "",
+      "other": []
+    },
+    "education": [
+      {
+        "id": "edu-1",
+        "institution": {
+          "canonicalName": "The University of Texas at Austin",
+          "aliases": []
+        },
+        "degree": {
+          "level": "master",
+          "type": "MS",
+          "field": "Computer Science"
+        },
+        "minor": "",
+        "startDate": "2019-08",
+        "endDate": "2021-05",
+        "current": false,
+        "gpa": {
+          "value": 3.9,
+          "scale": 4
+        },
+        "location": {
+          "city": "Austin",
+          "region": "TX",
+          "country": "US"
+        }
+      },
+      {
+        "id": "edu-2",
+        "institution": {
+          "canonicalName": "Texas A&M University",
+          "aliases": []
+        },
+        "degree": {
+          "level": "bachelor",
+          "type": "BS",
+          "field": "Computer Engineering"
+        },
+        "minor": "Mathematics",
+        "startDate": "2015",
+        "endDate": "2019",
+        "current": false,
+        "gpa": null,
+        "location": {
+          "city": "College Station",
+          "region": "TX",
+          "country": "US"
+        }
+      }
+    ],
+    "experience": [
+      {
+        "id": "exp-1",
+        "company": "Lumen Analytics",
+        "title": "Senior Software Engineer",
+        "location": {
+          "city": "Austin",
+          "region": "TX",
+          "country": "US"
+        },
+        "startDate": "2021-06",
+        "endDate": null,
+        "current": true,
+        "description": "Lead the ingestion platform team of five.\nCut pipeline latency by 40% with a streaming rewrite."
+      },
+      {
+        "id": "exp-2",
+        "company": "BrightPath Labs",
+        "title": "Software Engineering Intern",
+        "location": {
+          "city": "Houston",
+          "region": "TX",
+          "country": "US"
+        },
+        "startDate": "2018-05",
+        "endDate": "2018-08",
+        "current": false,
+        "description": "Built internal dashboards in React and TypeScript."
+      }
+    ],
+    "languages": [
+      {
+        "language": "English",
+        "proficiency": "native"
+      },
+      {
+        "language": "Spanish",
+        "proficiency": "full-professional"
+      }
+    ],
+    "skills": [
+      "TypeScript",
+      "Python",
+      "PostgreSQL",
+      "Kubernetes"
+    ],
+    "preferences": {
+      "earliestStartDate": null,
+      "noticePeriodWeeks": null,
+      "willingToRelocate": null,
+      "workArrangements": [
+        "remote",
+        "hybrid"
+      ],
+      "travelPercent": null,
+      "referralSource": ""
+    },
+    "documents": {
+      "resumeId": null
+    }
+  },
+  "filled": [
+    "name.first",
+    "name.middle",
+    "name.last",
+    "contact.email",
+    "contact.phone.number",
+    "contact.phone.country",
+    "contact.address.city",
+    "contact.address.region",
+    "contact.address.country",
+    "links.linkedin",
+    "links.github",
+    "education.0.institution.canonicalName",
+    "education.0.degree.level",
+    "education.0.degree.type",
+    "education.0.degree.field",
+    "education.0.startDate",
+    "education.0.endDate",
+    "education.0.current",
+    "education.0.gpa.value",
+    "education.0.gpa.scale",
+    "education.0.location.city",
+    "education.0.location.region",
+    "education.0.location.country",
+    "education.1.institution.canonicalName",
+    "education.1.degree.level",
+    "education.1.degree.type",
+    "education.1.degree.field",
+    "education.1.minor",
+    "education.1.startDate",
+    "education.1.endDate",
+    "education.1.current",
+    "education.1.location.city",
+    "education.1.location.region",
+    "education.1.location.country",
+    "experience.0.company",
+    "experience.0.title",
+    "experience.0.location.city",
+    "experience.0.location.region",
+    "experience.0.location.country",
+    "experience.0.startDate",
+    "experience.0.current",
+    "experience.0.description",
+    "experience.1.company",
+    "experience.1.title",
+    "experience.1.location.city",
+    "experience.1.location.region",
+    "experience.1.location.country",
+    "experience.1.startDate",
+    "experience.1.endDate",
+    "experience.1.current",
+    "experience.1.description",
+    "languages.0.language",
+    "languages.0.proficiency",
+    "languages.1.language",
+    "languages.1.proficiency",
+    "skills",
+    "preferences.workArrangements"
+  ],
+  "notes": [
+    "Check how your name was split."
+  ]
+}

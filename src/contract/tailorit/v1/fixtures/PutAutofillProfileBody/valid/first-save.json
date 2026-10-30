@@ -1,0 +1,83 @@
+{
+  "revision": 0,
+  "profile": {
+    "name": {
+      "first": "Elena",
+      "middle": "",
+      "last": "Ruiz",
+      "suffix": "",
+      "preferred": ""
+    },
+    "contact": {
+      "email": "",
+      "phone": {
+        "number": "",
+        "country": null,
+        "extension": ""
+      },
+      "address": {
+        "line1": "",
+        "line2": "",
+        "city": "",
+        "region": "",
+        "postalCode": "",
+        "country": null
+      }
+    },
+    "links": {
+      "linkedin": "",
+      "github": "",
+      "portfolio": "",
+      "website": "",
+      "other": []
+    },
+    "education": [],
+    "experience": [],
+    "languages": [],
+    "skills": [],
+    "preferences": {
+      "earliestStartDate": null,
+      "noticePeriodWeeks": null,
+      "willingToRelocate": null,
+      "workArrangements": [],
+      "travelPercent": null,
+      "referralSource": ""
+    },
+    "documents": {
+      "resumeId": null
+    }
+  },
+  "sensitive": {
+    "workAuthorization": [],
+    "eeo": {
+      "gender": {
+        "state": "not_provided"
+      },
+      "hispanicOrLatino": {
+        "state": "not_provided"
+      },
+      "races": {
+        "state": "not_provided"
+      },
+      "veteran": {
+        "state": "not_provided"
+      },
+      "disability": {
+        "state": "not_provided"
+      },
+      "pronouns": {
+        "state": "not_provided"
+      }
+    },
+    "legal": {
+      "atLeast18": {
+        "state": "not_provided"
+      }
+    },
+    "compensation": {
+      "expectedSalary": {
+        "state": "not_provided"
+      }
+    }
+  }
+}

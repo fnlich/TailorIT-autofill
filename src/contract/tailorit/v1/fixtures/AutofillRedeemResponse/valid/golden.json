@@ -1,0 +1,18 @@
+{
+  "token": "tia_MockTokenForTheMockServerOnly-NotReal000000",
+  "tokenId": "e4b7c2a9-1f3d-4e6b-8a50-c9d2f1b3a786",
+  "expiresAt": "2027-01-20T12:00:00.000Z",
+  "scopes": [
+    "profile:read",
+    "profile:sensitive",
+    "resumes:read",
+    "jobs:lookup",
+    "ai:run",
+    "answers:write"
+  ],
+  "account": {
+    "name": "Elena Ruiz",
+    "email": "elena.ruiz@example.com"
+  },
+  "apiVersion": 1
+}

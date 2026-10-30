@@ -1,0 +1,47 @@
+{
+  "name": {
+    "first": "",
+    "middle": "",
+    "last": "",
+    "suffix": "",
+    "preferred": ""
+  },
+  "contact": {
+    "email": "",
+    "phone": {
+      "number": "",
+      "country": null,
+      "extension": ""
+    },
+    "address": {
+      "line1": "",
+      "line2": "",
+      "city": "",
+      "region": "",
+      "postalCode": "",
+      "country": "us"
+    }
+  },
+  "links": {
+    "linkedin": "",
+    "github": "",
+    "portfolio": "",
+    "website": "",
+    "other": []
+  },
+  "education": [],
+  "experience": [],
+  "languages": [],
+  "skills": [],
+  "preferences": {
+    "earliestStartDate": null,
+    "noticePeriodWeeks": null,
+    "willingToRelocate": null,
+    "workArrangements": [],
+    "travelPercent": null,
+    "referralSource": ""
+  },
+  "documents": {
+    "resumeId": null
+  }
+}

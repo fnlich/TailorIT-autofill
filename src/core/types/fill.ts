@@ -18,7 +18,7 @@ export const REASON_CODES = [
   'legal-not-in-profile', 'decline-option-missing', 'work-auth-country-unknown', 'consent-requires-user',
   'attention-check', 'free-text-requires-user', 'drafts-disabled', 'llm-disabled-for-category', 'llm-unavailable',
   'llm-invalid-output', 'llm-pick-rejected', 'saved-answer-not-allowed-for-category', 'end-date-not-applicable',
-  'sensitive-not-shared',
+  'sensitive-not-shared', 'sensitive-unavailable',
   // matcher
   'no-match', 'ambiguous-options', 'distinctive-token-mismatch', 'waiting-for-options', 'options-never-loaded',
   'options-changed', 'max-selections-reached', 'partial-multi-select', 'exclusive-conflict', 'preselected-left-untouched',
