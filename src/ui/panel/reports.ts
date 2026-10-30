@@ -1,0 +1,116 @@
+/*
+ * The followed tab's reports, live. The first read is panel/reports {tabId}; then the `panel` port carries every
+ * change: the page posts panel/watch {tabId} (again whenever the tab changes) and the worker answers panel/update.
+ *
+ * A worker restart drops the port, and so does Chrome stopping an idle worker. The panel reconnects at once and
+ * watches its tab again, which wakes the worker: a frame's report only reaches a panel that is connected. If the port
+ * keeps dropping (more than RECONNECTS.count times in RECONNECTS.windowMs), the panel stops and offers a Reconnect
+ * button instead of looping. Timing comes from the injected clock: there is no timer here.
+ *
+ * Every message is parsed with the catalogue's strict schema, so an update carrying anything a report may not hold
+ * (a value, a row of the wrong shape) is dropped whole and never rendered.
+ */
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { PanelPortMessageSchema } from '../../messaging/schemas';
+import type { PagePlatform, PortLike } from '../../platform/types';
+import type { FrameReport } from '../../shared/report';
+import { request } from '../page/request';
+
+/** How the panel's link to the worker stands: 'lost' after too many drops, 'gone' once the extension is invalid. */
+export type LinkState = 'live' | 'lost' | 'gone';
+
+/** At most this many drops in this window are reconnected on their own. */
+export const RECONNECTS = { count: 5, windowMs: 10_000 } as const;
+
+const NO_REPORTS: readonly FrameReport[] = [];
+
+/** Asks the worker to follow `tabId` on `port`. A port that closed under us reconnects through its onDisconnect. */
+function watch(port: PortLike | null, tabId: number): void {
+  try {
+    port?.post({ v: 1, type: 'panel/watch', tabId });
+  } catch {
+    // Closed: the reconnect watches again.
+  }
+}
+
+/** The tab's reports as last read or pushed, the link's state, and a way to reconnect by hand. */
+export function useTabReports(platform: PagePlatform, tabId: number | null, now: () => number): {
+  reports: readonly FrameReport[];
+  link: LinkState;
+  reconnect(): void;
+} {
+  const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[] }>({ tabId: null, reports: NO_REPORTS });
+  const [link, setLink] = useState<LinkState>('live');
+  const [generation, setGeneration] = useState(0);
+  const port = useRef<PortLike | null>(null);
+  const watched = useRef<number | null>(null);
+  /** Updates the port delivered for the watched tab since it was chosen: a one-shot read older than them is dropped. */
+  const pushes = useRef(0);
+  const clock = useEffectEvent(() => now());
+
+  useEffect(() => {
+    let closed = false;
+    const drops: number[] = [];
+    const open = (rewatch: boolean) => {
+      if (closed) return;
+      let next: PortLike;
+      try {
+        if (!platform.runtime.isValid()) throw new Error('invalid');
+        next = platform.runtime.connect('panel');
+      } catch {
+        setLink('gone');
+        return;
+      }
+      port.current = next;
+      next.onMessage((raw) => {
+        if (closed || port.current !== next) return;
+        const parsed = PanelPortMessageSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.type !== 'panel/update' || parsed.data.tabId !== watched.current) return;
+        pushes.current += 1;
+        setShown({ tabId: parsed.data.tabId, reports: parsed.data.reports });
+      });
+      next.onDisconnect(() => {
+        if (closed || port.current !== next) return;
+        port.current = null;
+        const at = clock();
+        drops.push(at);
+        while (drops.length > 0 && drops[0]! <= at - RECONNECTS.windowMs) drops.shift();
+        if (drops.length > RECONNECTS.count) {
+          setLink('lost');
+          return;
+        }
+        open(true);
+      });
+      if (rewatch && watched.current !== null) watch(next, watched.current);
+    };
+    // The first port's watch comes from the tab effect below; a reconnect (by hand, or after a drop) watches again.
+    open(generation > 0);
+    return () => {
+      closed = true;
+      const current = port.current;
+      port.current = null;
+      current?.disconnect();
+    };
+  }, [platform, generation]);
+
+  useEffect(() => {
+    watched.current = tabId;
+    pushes.current = 0;
+    if (tabId === null) return undefined;
+    watch(port.current, tabId);
+    let live = true;
+    void request(platform, { v: 1, type: 'panel/reports', tabId }).then((answer) => {
+      if (!live || !answer.ok || pushes.current > 0 || watched.current !== tabId || answer.data.tabId !== tabId) return;
+      setShown({ tabId, reports: answer.data.reports });
+    });
+    return () => {
+      live = false;
+    };
+  }, [platform, tabId]);
+
+  const reconnect = useCallback(() => {
+    setLink('live');
+    setGeneration((count) => count + 1);
+  }, []);
+  return { reports: shown.tabId === tabId && tabId !== null ? shown.reports : NO_REPORTS, link, reconnect };
+}

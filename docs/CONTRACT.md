@@ -70,5 +70,40 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | `POST /api/autofill/lookup` | 200 | `AutofillLookupResponse/valid/golden.json` |
 | `GET /api/autofill/resumes` | 200 | `AutofillResumeList/valid/golden.json` |
 | `GET /api/autofill/resumes/:id/file` | 200 | the golden resume's bytes, with `X-TailorIT-File-Kind` and `X-TailorIT-Sha256` (the hex SHA-256 of exactly those bytes) |
+| `POST /api/autofill/connect` | 201 | `AutofillConnectResponse/valid/golden.json` with a freshly minted single-use code, its `expiresAt` and this repository's extension id in `extensionIds` (the stand-in connect page calls it) |
+| `GET /api/autofill/tokens`, `DELETE /api/autofill/tokens/:id`, `PUT /api/autofill/profile`, `GET /api/autofill/profile/seed` | 200, 204, 200, 200 | their schemas' `valid/golden.json`, to the stand-in Settings page only; a token gets 403, as from TailorIT |
+| `GET /settings/autofill` | 200 | the stand-in connect page, `e2e/mock-server/connect-page.html` |
 
 The worker's own tests use the same answers (`src/background/worker.testkit.ts`, `createFakeTailorIT`).
+
+### The mock as built (Phase 2)
+- **Where it lives:** `e2e/mock-server/mock.mjs` holds it (`createMock`, `startMock`); `server.mjs` runs it on 3190 at 127.0.0.1 and ::1 for `npm run test:e2e`; `test/mock-server.test.ts` runs it in-process on an ephemeral loopback port. It never listens off loopback.
+- **Its table is the contract's:** it reads the route table from `src/contract/tailorit/v1/contract.json`, and refuses to start when a route there has no answer, so a contract pull that adds a route cannot go unnoticed.
+- **Where an answer differs from the plain example:**
+  - `GET /profile` and `GET /profile/sensitive` wrap the golden profile, `fixtures/profiles/alex-rivera.profile.json` and `alex-rivera.sensitive.json`, in their envelopes' examples;
+  - the lookup's `suggestedResume`, and the resume list's item with the same id, name the golden PDF `e2e/mock-server/golden-resume.pdf` as "Alex Rivera Resume.pdf" (the golden profile's `resumeId` is null);
+  - a token's expiry is 90 days from its redeem and a code's 10 minutes from its minting, so the examples' fixed dates never lapse mid-run; `GET /session` names the scopes of the last code redeemed.
+- **Tokens, in the order TailorIT's middleware checks them:** a dead `tia_` token gets 401 (`AutofillErrorBody/valid/golden.json`); a path outside the token routes 403; a missing or other `X-TailorIT-Autofill-Api` 409 `conflict`; a session-only route or a missing scope 403. Every answer to a `tia_` bearer names the version, refusals included. `DELETE /session` revokes the token until the next redeem or reset.
+- **Everything else** is the stand-in Settings page's, which is always signed in. Redeem needs an Origin that is absent or `chrome-extension://` (else 403) and a code the mock minted, used once within its 10 minutes (else 401 `not_signed_in`).
+
+| Test-only route | What it does |
+|---|---|
+| `GET /__mock/health` | `{ok: true}` |
+| `GET /__mock/requests` | every request since the last reset: method, path, query, headers (Authorization `REDACTED`), body and status (0 while a slow answer waits, and when its client left first) |
+| `GET /__mock/resume` | the golden resume's id, name, kind, type, size and SHA-256 |
+| `POST /__mock/reset` | forgets requests, scenarios and codes, ends slow answers still waiting, and makes the golden token valid with all its scopes again |
+| `POST /__mock/scenario {name, times?, delayMs?}` | turns on a scripted answer for `times` matching requests (default: until the next reset) |
+
+| Scenario | Effect |
+|---|---|
+| `unauthorized` | every token request gets 401 `not_signed_in` |
+| `version-mismatch` | the mock speaks version 2: every token request gets 409 `conflict`, its header naming 2 |
+| `sensitive-forbidden` | `GET /profile/sensitive` gets 403 |
+| `profile-unavailable` | `GET /profile` gets 500 |
+| `lookup-slow` | `POST /lookup` answers after `delayMs` (default 30 s, past the worker's 25 s timeout) |
+| `lookup-fails` | `POST /lookup` gets 500 |
+| `lookup-posting-text` | `POST /lookup` answers `with-posting-text.json`: a stored copy that asks applicants not to use AI tools |
+| `lookup-no-resume` | `POST /lookup` answers `unknown-page.json`: no job and no resume to suggest |
+| `resume-slow` | the file answers after `delayMs` (default 8 s) |
+| `resume-fails` | the file gets 500 |
+| `resume-hash-mismatch` | the file's `X-TailorIT-Sha256` is not its bytes' digest |

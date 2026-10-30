@@ -113,6 +113,16 @@ describe('the in-memory doubles', () => {
     expect(() => a.post({})).toThrow(/disconnected/);
   });
 
+  it('deliver a message posted just before disconnect, ahead of the disconnect, as Chrome does', async () => {
+    const [worker, content] = memoryPortPair('resume');
+    const events: string[] = [];
+    content.onMessage((message) => events.push(`message:${(message as { type: string }).type}`));
+    content.onDisconnect(() => events.push('disconnect'));
+    worker.post({ v: 1, type: 'resume/error', reason: 'resume-unavailable' });
+    worker.disconnect();
+    await vi.waitFor(() => expect(events).toEqual(['message:resume/error', 'disconnect']));
+  });
+
   it('hand a content script\'s port to the worker double, or close it when there is none', async () => {
     let workerEnd: PortLike | null = null;
     const platform = createMemoryContentPlatform(async () => ({ ok: true, data: {} }), (port) => {

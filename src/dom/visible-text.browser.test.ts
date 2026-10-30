@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadFixture, removeFixtures } from './fixture.testkit';
-import { readSelectOptions, readVisibleText, visiblePlaceholder, visibleText } from './visible-text';
+import { readSelectOptions, readVisibleText, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
 
 describe('visibleText', () => {
   afterEach(() => removeFixtures(document));
@@ -34,6 +34,15 @@ describe('visibleText', () => {
     expect(result.text).toBe('Email address');
     expect(result.dropped).toBe(1);
     expect(result.segments.map((segment) => segment.text)).toEqual(['Email', 'address']);
+  });
+
+  it('leaves out the subtrees it is told to, and nothing else', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>
+      <label id="label"><div>Resume/CV</div><a id="widget" href="#top"><span>ATTACH</span> RESUME/CV</a> <span>(PDF)</span></label></body>`);
+    const label = fixture.doc.getElementById('label')!;
+    expect(visibleText(label, { singleLine: true })).toBe('Resume/CV ATTACH RESUME/CV (PDF)');
+    expect(visibleTextWithout(label, [fixture.doc.getElementById('widget')!], { singleLine: true })).toBe('Resume/CV (PDF)');
+    expect(visibleTextWithout(label, [], { singleLine: true })).toBe('Resume/CV ATTACH RESUME/CV (PDF)');
   });
 
   it('walks open shadow roots and their slots', async () => {

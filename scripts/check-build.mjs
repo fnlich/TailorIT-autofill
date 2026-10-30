@@ -18,7 +18,15 @@ const BUILDS = [
   { dir: '.output-e2e/chrome-mv3', origin: 'http://localhost:3190', production: false },
 ];
 /** Strings that exist only in the e2e build; a production bundle containing one fails. */
-const E2E_ONLY = ['e2e:events', 'e2e/probe', 'storage-local-probe', 'localhost:3190', '127.0.0.1'];
+const E2E_ONLY = ['e2e:events', 'e2e/probe', 'storage-local-probe', 'localhost:3190', '127.0.0.1', 'tailorit-e2e-test-adapter'];
+/**
+ * Strings only a development build holds: the snapshot hotkeys' marker, which both command names begin with
+ * (src/background/capture.ts), the capture page's pageCapture call, and the worker's address for that page. The chrome,
+ * edge and e2e builds are all production mode, so a bundle in any of them containing one fails.
+ */
+const DEV_ONLY = ['tailorit-dev-capture', 'saveAsMHTML', 'capture.html'];
+/** Pages only a development build has: the capture page (wxt.config.ts skips it in every other mode). */
+const DEV_ONLY_PAGES = ['capture.html'];
 
 const failures = [];
 const fail = (build, message) => failures.push(`${build.dir}: ${message}`);
@@ -80,6 +88,11 @@ for (const build of BUILDS) {
       for (const needle of E2E_ONLY) if (text.includes(needle)) fail(build, `${relative(dir, file)} contains "${needle}"`);
     }
   }
+  for (const file of all) {
+    const text = readFileSync(file, 'utf8');
+    for (const needle of DEV_ONLY) if (text.includes(needle)) fail(build, `${relative(dir, file)} contains the development-only "${needle}"`);
+  }
+  for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
   const content = join(dir, 'content-scripts', 'content.js');
   if (existsSync(content) && statSync(content).size > CONTENT_SCRIPT_BUDGET) {
     fail(build, `the content script is ${statSync(content).size} bytes, over the ${CONTENT_SCRIPT_BUDGET}-byte budget`);

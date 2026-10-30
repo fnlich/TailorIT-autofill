@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  Synthetic: a form of real React 19 controlled inputs (docs/design/runtime.md §11.e, react-controlled), built by Vite
+  in memory by the React spec and served at https://jobs.lever.co/tailorit-fixture/react-controlled/apply. React keeps
+  each controlled input's value in its own state and puts it back on every render, so a fill that bypassed React's
+  value tracking would be undone: after filling, React's state (window.__reactState, written on every render) must
+  equal the filled values, which proves the isolated-world path reaches React. The form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Frontend Engineer - React form</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    form > label { display: block; margin-top: 12px; font-weight: 600; }
+    input:not([type="radio"]):not([type="checkbox"]), select { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    fieldset { margin-top: 16px; }
+    fieldset label { display: block; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Frontend Engineer</h1>
+    <div id="root"></div>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -46,8 +46,23 @@ Never: self-identification (EEO) answers, work authorization, sponsorship, pay, 
 | `side_panel`, `options_ui` | the panel and settings pages | none | none |
 | Absent by design | `tabs`, `scripting`, `activeTab`, `cookies`, `webRequest`, `debugger`, `alarms`, `offscreen`, `downloads`, `web_accessible_resources`, a CSP override, remote code | | |
 
-Development builds alone add `pageCapture` and one keyboard command, for saving page snapshots as test fixtures; `scripts/check-build.mjs` proves both are absent from every production build.
+Development builds alone add, for saving page snapshots as test fixtures ([FIXTURES.md](FIXTURES.md)):
+- the `pageCapture` permission;
+- two keyboard commands: Alt+Shift+S saves the page in the active tab, every frame included, and Alt+Shift+D does so after 3 seconds;
+- the page that saves the snapshot. It offers the file as a link to save, so the snapshot never leaves the computer, and it lets go of it when its tab closes.
+
+`scripts/check-build.mjs` fails any build it checks (Chrome, Edge and the e2e build, all production mode) that holds the permission, a `commands` key, the capture page or the hotkeys' code.
 
 ## First-run disclosure (shown before Connect)
 
-> TailorIT Autofill fills job applications from the profile you keep in TailorIT. It reads the application page you open on Greenhouse, Lever, Ashby or Workday, fills what it is sure of, and lists the rest for you. It never submits an application for you. Your profile stays in TailorIT; the extension holds it in memory only while it fills. If you turn on its AI help, the questions on the page (never your self-identification, work authorization, pay or consent answers) go to your TailorIT, which asks Claude.
+The options page shows this above Connect whenever the extension is not connected. Its words live in `src/shared/copy.ts` (`COPY.options.connection`), and `src/shared/copy.test.ts` keeps this copy the same. It is a draft for the owner's review: it names the AI help as on, because picking from lists and working out unusual questions are on by default.
+
+> **Before you connect**
+>
+> TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.
+>
+> When you choose Fill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application's progress, never your answers.
+>
+> Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists and working out unusual questions are on unless you turn them off below. Drafting open answers is off unless you turn it on; it also gives Claude the posting's visible text and your profile to write from. Your self-identification, work authorization, sponsorship, pay and consent answers never go to the AI. The extension talks only to your TailorIT.
+>
+> Choosing Connect means you agree to this.

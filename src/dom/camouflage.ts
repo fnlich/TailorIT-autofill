@@ -9,12 +9,13 @@
  * DOM ancestors, not painted layers, so a positioned sibling drawn behind the text is not seen.
  */
 import { contrast, fade, gradientStops, over, parseColor, type Rgba, WHITE } from './color';
+import { CONTROL_SELECTOR, kindOf } from './kinds';
 import { flatParent, type ScanCache, styleOf, viewOf, newScanCache } from './scan-cache';
 import {
   CAMOUFLAGE_MAX_CONTRAST, CONTROL_DRAWN_MIN_CONTRAST, DARK_CANVAS_RGB, MAX_BACKGROUND_CANDIDATES, MIN_OPACITY,
   MIN_OUTLINE_PX,
 } from './thresholds';
-import { opacityOf } from './visibility';
+import { isUserVisible, opacityOf } from './visibility';
 
 /** 'unknown' means the colours behind the text cannot be worked out; it counts as hidden. */
 export type CamouflageVerdict = 'clear' | 'camouflaged' | 'unknown';
@@ -55,9 +56,10 @@ export function textAgainstBackground(text: Rgba, el: Element, cache: ScanCache 
 
 /**
  * A control drawn so that it cannot be seen: no visible border on any side, a background that matches what is behind
- * it, no box shadow, no outline and no visible placeholder. Such a control is never filled. Natively drawn widgets
- * (a checkbox, a radio, a select or a file button with their default appearance) always show themselves. When the
- * colours behind cannot be worked out, the control is not called camouflaged: this check only catches the clear case.
+ * it, no box shadow, no outline and no visible placeholder, and no wrapper inside its field container drawing a box
+ * around it (drawnByWrapper). Such a control is never filled. Natively drawn widgets (a checkbox, a radio, a select or
+ * a file button with their default appearance) always show themselves. When the colours behind cannot be worked out,
+ * the control is not called camouflaged: this check only catches the clear case.
  */
 export function isControlCamouflaged(control: Element, placeholderVisible: boolean,
   cache: ScanCache = newScanCache()): boolean {
@@ -85,7 +87,68 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
     .some((shadow) => shadow.a * opacity >= MIN_OPACITY)) return false;
   if (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 1
     && shows(parseColor(style.outlineColor, doc))) return false;
-  return true;
+  return !drawnByWrapper(control, cache);
+}
+
+/**
+ * Some forms draw a control's box on an element around it instead of on the control: Greenhouse outlines the
+ * div.input-wrapper around each text input and textarea, whose own border is none
+ * (fixtures/greenhouse/*.html: `.text-input-wrapper .input-wrapper { outline: 1px solid ... }`). So the control
+ * counts as drawn when an ancestor inside its field container (an ancestor that holds no other field control, below
+ * the form) shows a border, outline or box shadow, and that ancestor's box encloses the control's. A wrapper shared
+ * with another control, or a box the control spills out of, does not count.
+ */
+function drawnByWrapper(control: Element, cache: ScanCache): boolean {
+  const inner = control.getBoundingClientRect();
+  const doc = control.ownerDocument;
+  for (let at = control.parentElement; at !== null; at = at.parentElement) {
+    if (at.localName === 'form' || at.localName === 'body' || at.localName === 'html') return false;
+    if (holdsAnotherControl(at, control, cache)) return false;
+    const style = styleOf(at, cache);
+    if (style === null || style.visibility !== 'visible' || !encloses(at.getBoundingClientRect(), inner)) continue;
+    const parent = flatParent(at);
+    const behind = parent === null ? [canvasOf(doc, cache)] : backdropOf(parent, cache);
+    if (behind === 'unknown') continue;
+    const opacity = opacityOf(at, cache);
+    const shows = (colour: Rgba | null) => colour !== null && colour.a * opacity >= MIN_OPACITY
+      && against(fade(colour, opacity), behind, CONTROL_DRAWN_MIN_CONTRAST) === 'clear';
+    const edge = (['top', 'right', 'bottom', 'left'] as const).some((side) => {
+      const lineStyle = style.getPropertyValue(`border-${side}-style`);
+      return lineStyle !== 'none' && lineStyle !== 'hidden'
+        && parseFloat(style.getPropertyValue(`border-${side}-width`)) >= 1
+        && shows(parseColor(style.getPropertyValue(`border-${side}-color`), doc));
+    });
+    const outline = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 1
+      && shows(parseColor(style.outlineColor, doc));
+    const shadow = style.boxShadow !== '' && style.boxShadow !== 'none'
+      && shadowColours(style.boxShadow, doc).some((colour) => shows(colour));
+    if (edge || outline || shadow) return true;
+  }
+  return false;
+}
+
+/**
+ * True when `ancestor` holds another control a person can use: a visible field or auth control, or a hidden radio,
+ * checkbox or file input shown through a visible tied label (the proxy rule). A control nobody can see does not share
+ * the box: Greenhouse's phone input sits beside intl-tel-input's country search, hidden in its closed dropdown
+ * (fixtures/greenhouse/*.html: div.iti inside the outlined div.input-wrapper).
+ */
+function holdsAnotherControl(ancestor: Element, control: Element, cache: ScanCache): boolean {
+  return Array.from(ancestor.querySelectorAll(CONTROL_SELECTOR)).some((other) => {
+    if (other === control) return false;
+    const kind = kindOf(other);
+    if (!kind.field && !kind.auth) return false;
+    if (isUserVisible(other, cache)) return true;
+    if (!kind.field || !['radio', 'checkbox', 'file'].includes(kind.kind)) return false;
+    const labels = (other as HTMLInputElement).labels;
+    return labels !== null && Array.from(labels).some((label) => isUserVisible(label, cache));
+  });
+}
+
+/** `outer` encloses `inner`, to half a pixel. */
+function encloses(outer: DOMRect, inner: DOMRect): boolean {
+  return outer.left <= inner.left + 0.5 && outer.top <= inner.top + 0.5 && outer.right >= inner.right - 0.5
+    && outer.bottom >= inner.bottom - 0.5;
 }
 
 /** Is a native `<option>` camouflaged in the select's list? The list is drawn by the browser on the select's own

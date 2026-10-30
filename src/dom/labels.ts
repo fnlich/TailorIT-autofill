@@ -19,13 +19,15 @@ import { capCodePoints } from '../core/text/fold';
 import { CONTROL_SELECTOR, kindOf } from './kinds';
 import type { ScanCache } from './scan-cache';
 import { TEXT_CAP_DESCRIPTION, TEXT_CAP_LABEL } from './thresholds';
-import { visiblePlaceholder, visibleText } from './visible-text';
+import { heldPlaceholder, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
 import { isUserVisible } from './visibility';
 
 /** What the scanner reads labels with. */
 export interface LabelContext {
   cache: ScanCache;
   adapter: Adapter | null;
+  /** Controls the extension wrote into while their visible placeholder labelled them (ScanOptions.heldPlaceholders). */
+  heldPlaceholders?: WeakSet<Element>;
 }
 
 /** A field's label as read. */
@@ -90,17 +92,36 @@ export function tiedLabels(control: Element): { explicit: HTMLLabelElement[]; wr
   };
 }
 
-/** The joined visible text of a list of elements ('' when none of them shows any). */
-function joinedText(elements: readonly Element[], ctx: LabelContext): { text: string; first: Element | null } {
+/** The joined visible text of a list of elements ('' when none of them shows any), leaving out the text of
+ *  `excluded` elements inside them. */
+function joinedText(elements: readonly Element[], ctx: LabelContext, excluded: readonly Element[] = []):
+  { text: string; first: Element | null } {
   let first: Element | null = null;
   const parts: string[] = [];
   for (const el of elements) {
-    const text = textOf(el, ctx);
+    const inside = excluded.filter((other) => el.contains(other));
+    const text = inside.length === 0 ? textOf(el, ctx)
+      : visibleTextWithout(el, inside, { singleLine: true, cap: TEXT_CAP_DESCRIPTION, cache: ctx.cache });
     if (text === '') continue;
     first ??= el;
     parts.push(text);
   }
   return { text: parts.join(' '), first };
+}
+
+/**
+ * The visible controls of the adapter's upload widgets that sit inside these wrapping labels. A wrapping label's text
+ * leaves them out: Lever wraps its resume question in a <label> that also holds the widget's "ATTACH RESUME/CV" link
+ * (fixtures/lever/*.html), and the question is the label's own "Resume/CV" and its required mark (the heavy asterisk,
+ * the only sign Lever's resume is required). The widgets are asked of the labels' form, the root an adapter's hooks
+ * read.
+ */
+function uploadControlsIn(labels: readonly Element[], ctx: LabelContext): Element[] {
+  const first = labels[0];
+  if (first === undefined || ctx.adapter?.uploadWidgets === undefined) return [];
+  const scope = first.closest('form') ?? first.ownerDocument.body ?? first;
+  const widgets = ctx.cache.memo('upload-widgets', scope, () => ctx.adapter?.uploadWidgets?.(scope) ?? []);
+  return widgets.map((widget) => widget.control).filter((control) => labels.some((label) => label.contains(control)));
 }
 
 /** The elements an aria-labelledby or aria-describedby attribute names, in its own tree. */
@@ -120,14 +141,17 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   const labelledBy = joinedText(referenced(control, 'aria-labelledby'), ctx);
   const byLabelledBy = fromText(labelledBy.text, 'aria-labelledby', labelledBy.first);
   if (byLabelledBy) return byLabelledBy;
-  const wrap = joinedText(wrapping, ctx);
+  const wrap = joinedText(wrapping, ctx, uploadControlsIn(wrapping, ctx));
   const byWrapping = fromText(wrap.text, 'wrapping-label', wrap.first);
   if (byWrapping) return byWrapping;
   const legend = soleFieldLegend(control, ctx);
   if (legend) return legend;
   const byAdapter = adapterLabel(control, ctx);
   if (byAdapter) return byAdapter;
-  const placeholder = visiblePlaceholder(control, ctx.cache);
+  // A control we wrote into keeps the placeholder that labelled it then: our own write hid it, and the field, with its
+  // key, is the same one. Any other filled control's placeholder is out of sight and names nothing.
+  const placeholder = visiblePlaceholder(control, ctx.cache)
+    ?? (ctx.heldPlaceholders?.has(control) ? heldPlaceholder(control, ctx.cache) : null);
   const byPlaceholder = placeholder === null ? null : fromText(placeholder, 'placeholder', null);
   if (byPlaceholder) return byPlaceholder;
   return ariaLabel(control, ctx) ?? NONE;

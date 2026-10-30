@@ -1,0 +1,166 @@
+/*
+ * The review panel: the browser's side panel, and the report page (the same page opened as a tab with ?tabId=N, which
+ * pins that tab). It follows a tab (tab.ts), shows its reports live (reports.ts) and mounts the report components.
+ *
+ * - Top: the connection (auth/status), then Fill, Dry run, Continue and Cancel (panel/fill {tabId, dryRun},
+ *   panel/continue, panel/cancel), the run's status and step, and what the last button did.
+ * - The report: the notices mirrored from the page (the tripwire's exact sentence, the policy card, the couldn't-read
+ *   notice), then the rows. A run at policy-notice waits for the card: Fill anyway sends panel/continue and Cancel
+ *   sends panel/cancel, which the frame treats exactly as its own card's buttons.
+ * - Per row: Show on page (panel/focus); opening a row asks for its suggested options (panel/describe), shown only while
+ *   the row is open. Confirm draft and Save my answer arrive in Phase 6.
+ *
+ * It never shows or receives a field value: reports hold none, and describe's option labels stay in the open row.
+ */
+import { useEffect, useRef, useState } from 'react';
+import type { Answer } from '../../messaging/envelope';
+import type { PageMessage } from '../../messaging/schemas';
+import type { PagePlatform } from '../../platform/types';
+import { COPY } from '../../shared/copy';
+import { request } from '../page/request';
+import { useAuthStatus, type AuthState } from '../page/use-auth';
+import { Report } from '../report/Report';
+import { overallStatus } from '../report/model';
+import { useTabReports, type LinkState } from './reports';
+import { useFollowedTab } from './tab';
+
+export interface PanelProps {
+  platform: PagePlatform;
+  /** The tab ?tabId=N pins (pinnedTabOf); null follows the active tab of the panel's window. */
+  pinnedTabId: number | null;
+  /** The clock (ms), for the reconnect limit. */
+  now?: () => number;
+}
+
+type RunMessage = Extract<PageMessage, { type: 'panel/fill' | 'panel/continue' | 'panel/cancel' }>;
+
+/** What a button's answer means to the person. */
+function feedbackOf(message: RunMessage, answer: Answer<{ frames: number }>): string {
+  if (answer.ok) {
+    const frames = answer.data.frames;
+    if (message.type === 'panel/fill') return message.dryRun ? COPY.panel.dryRunStarted(frames) : COPY.panel.started(frames);
+    return message.type === 'panel/continue' ? COPY.panel.continued(frames) : COPY.panel.cancelled(frames);
+  }
+  if (answer.error === 'not_connected') return COPY.panel.needsConnection;
+  if (answer.error === 'rate_limited') return COPY.panel.rateLimited;
+  if (answer.error === 'unavailable') return COPY.panel.noAnswer;
+  return COPY.panel.failed;
+}
+
+export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
+  const root = useRef<HTMLElement>(null);
+  const tabId = useFollowedTab(platform, pinnedTabId);
+  const { reports, link, reconnect } = useTabReports(platform, tabId, now);
+  const auth = useAuthStatus(platform, root);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<{ tabId: number | null; text: string } | null>(null);
+  const { refresh } = auth;
+
+  // Another tab: the connection may have changed meanwhile (connected in the settings, say). The first tab needs no
+  // second read: useAuthStatus has just made one.
+  const lastTab = useRef<number | null>(null);
+  useEffect(() => {
+    if (tabId === null) return;
+    const previous = lastTab.current;
+    lastTab.current = tabId;
+    if (previous !== null && previous !== tabId) refresh();
+  }, [tabId, refresh]);
+
+  const run = async (message: RunMessage) => {
+    setBusy(true);
+    const answer = await request(platform, message);
+    setBusy(false);
+    setFeedback({ tabId: message.tabId, text: feedbackOf(message, answer) });
+    if (!answer.ok && answer.error === 'not_connected') refresh();
+  };
+
+  const status = overallStatus(reports);
+  const step = reports.find((report) => report.status === status)?.step;
+  const disabled = tabId === null || busy;
+
+  return (
+    <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}>
+      <header className="tia-panel__head">
+        <h1 className="tia-panel__title">{COPY.panelTitle}</h1>
+        <ConnectionLine auth={auth} settingsUrl={platform.runtime.getURL('/options.html')} />
+      </header>
+      <LinkProblem link={link} onReconnect={reconnect} />
+      {tabId === null ? (
+        <p className="tia-feedback">{COPY.panel.noTab}</p>
+      ) : (
+        <div className="tia-toolbar">
+          <button type="button" className="tia-button tia-button--primary" disabled={disabled}
+            onClick={() => void run({ v: 1, type: 'panel/fill', tabId, dryRun: false })}>{COPY.panel.fill}</button>
+          <button type="button" className="tia-button" disabled={disabled}
+            onClick={() => void run({ v: 1, type: 'panel/fill', tabId, dryRun: true })}>{COPY.panel.dryRun}</button>
+          <button type="button" className="tia-button" disabled={disabled}
+            onClick={() => void run({ v: 1, type: 'panel/continue', tabId })}>{COPY.panel.continue}</button>
+          <button type="button" className="tia-button" disabled={disabled}
+            onClick={() => void run({ v: 1, type: 'panel/cancel', tabId })}>{COPY.panel.cancel}</button>
+        </div>
+      )}
+      {status !== null && (
+        <p className="tia-status" data-run-status={status}>
+          {COPY.runStatuses[status]}
+          {step && ` · ${COPY.report.step(step.index, step.of)}`}
+        </p>
+      )}
+      {feedback !== null && feedback.tabId === tabId && <p className="tia-feedback" role="status">{feedback.text}</p>}
+      {tabId !== null && (
+        <Report
+          reports={reports}
+          busy={busy}
+          onPolicyDecision={(decision) =>
+            void run(decision === 'continue' ? { v: 1, type: 'panel/continue', tabId } : { v: 1, type: 'panel/cancel', tabId })}
+          onShowField={(frameId, fieldKey) => {
+            void request(platform, { v: 1, type: 'panel/focus', tabId, frameId, fieldKey }).then((answer) => {
+              if (!answer.ok) setFeedback({ tabId, text: COPY.panel.focusFailed });
+            });
+          }}
+          describeField={async (frameId, fieldKey) => {
+            const answer = await request(platform, { v: 1, type: 'panel/describe', tabId, frameId, fieldKey });
+            return answer.ok ? answer.data.options : null;
+          }}
+        />
+      )}
+    </main>
+  );
+}
+
+/** "Connected as …", or why filling cannot work, with a link to the settings. */
+function ConnectionLine({ auth, settingsUrl }: { auth: AuthState; settingsUrl: string }) {
+  const { status } = auth;
+  if (status === null) return auth.failed ? <p className="tia-connection tia-connection--problem">{COPY.panel.noAnswer}</p> : null;
+  const settings = <a href={settingsUrl} target="_blank" rel="noreferrer">{COPY.panel.openSettings}</a>;
+  const problems: string[] = [];
+  if (status.storageAccess === 'refused') problems.push(COPY.panel.storageRefused);
+  if (status.versionMismatch) problems.push(COPY.panel.versionMismatch);
+  if (status.connection !== 'connected') {
+    problems.unshift(status.connection === 'expired' ? COPY.panel.expired
+      : status.connection === 'revoked' ? COPY.panel.revoked : COPY.panel.notConnected);
+  }
+  if (problems.length > 0) {
+    return (
+      <p className="tia-connection tia-connection--problem" data-connection={status.connection}>
+        {problems.join(' ')} {settings}
+      </p>
+    );
+  }
+  return (
+    <p className="tia-connection" data-connection={status.connection}>
+      {status.account ? COPY.panel.connectedAs(status.account.name) : COPY.panel.connected}
+    </p>
+  );
+}
+
+/** Shown only when the live link is down: after too many drops (with a Reconnect button), or for good. */
+function LinkProblem({ link, onReconnect }: { link: LinkState; onReconnect: () => void }) {
+  if (link === 'live') return null;
+  if (link === 'gone') return <p className="tia-problem" role="alert">{COPY.panel.extensionGone}</p>;
+  return (
+    <p className="tia-problem" role="alert">
+      {COPY.panel.linkLost}{' '}
+      <button type="button" className="tia-button" onClick={onReconnect}>{COPY.panel.reconnect}</button>
+    </p>
+  );
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  Synthetic: an application page served with Content-Security-Policy: style-src 'none' (docs/ARCHITECTURE.md, the
+  register of unverified facts: "Styles survive a strict page CSP in the closed shadow root"). The page has no styles
+  of its own, since the policy would refuse them too; the CSP spec compares the launcher's computed style here with
+  the launcher on this same page served without the policy. Served at
+  https://jobs.lever.co/tailorit-fixture/strict-csp/apply (with the header) and
+  https://jobs.lever.co/tailorit-fixture/strict-csp-control/apply (without). The form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Security Engineer - Strict CSP</title>
+</head>
+<body>
+  <main>
+    <h1>Security Engineer</h1>
+    <form action="/__submitted" method="post">
+      <p><label for="name">Full name</label><br><input id="name" name="name" size="40"></p>
+      <p><label for="email">Email</label><br><input id="email" name="email" type="email" size="40"></p>
+      <p><button type="submit">Submit application</button></p>
+    </form>
+  </main>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!doctype html>
+<!--
+  The TailorIT mock's stand-in for Settings › Autofill › Extension (docs/design/tailorit.md §2.3), served at
+  /settings/autofill, the only address the extension's worker accepts pair/complete from. Its account is always signed
+  in. "Connect the extension" calls the mock's POST /api/autofill/connect with the sensitive box's choice; then, with a
+  state in the address, chrome.runtime available (the extension lists this origin in externally_connectable) and an
+  extension id in the answer, it sends {v: 1, type: 'pair/complete', state, code} to each id, 3 s at most each. Without
+  a state, or when the hand-off fails, it shows the code with a countdown, for the options page's code fallback.
+  For the e2e suite it records each step on <html data-pairing="..."> and the extension's replies in
+  window.__pairing (value-free: {ok, error}); the code itself is shown in #code.
+-->
+<html lang="en" data-pairing="idle">
+<head>
+  <meta charset="utf-8">
+  <title>Settings › Autofill · TailorIT (mock)</title>
+  <style>
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #1f2328; background: #fff; }
+    main { max-width: 640px; margin: 32px auto; padding: 0 16px; }
+    label { display: block; margin: 16px 0; }
+    button { font: inherit; padding: 8px 16px; }
+    #code { display: block; font: 600 24px/1.4 ui-monospace, monospace; letter-spacing: 2px; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Autofill</h1>
+    <section aria-labelledby="extension-heading">
+      <h2 id="extension-heading">Extension</h2>
+      <p>Connect TailorIT Autofill in this browser to fill job applications from your profile.</p>
+      <label><input type="checkbox" id="include-sensitive" checked> Let this browser read work authorization and self-identification answers</label>
+      <button type="button" id="connect">Connect the extension</button>
+      <p id="status" role="status"></p>
+      <div id="code-dialog" role="dialog" aria-labelledby="code-title" hidden>
+        <h3 id="code-title">Your connection code</h3>
+        <p>Type this code on the extension's settings page.</p>
+        <output id="code"></output>
+        <p id="countdown"></p>
+      </div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const params = new URLSearchParams(location.search);
+      const state = params.get('state');
+      const root = document.documentElement;
+      const button = document.getElementById('connect');
+      const sensitive = document.getElementById('include-sensitive');
+      const status = document.getElementById('status');
+      const dialog = document.getElementById('code-dialog');
+      const shown = document.getElementById('code');
+      const countdown = document.getElementById('countdown');
+      const record = { replies: [] };
+      window.__pairing = record;
+      if (params.get('connect') === '1') button.focus();
+
+      /** One hand-off attempt: the extension's reply, or null after 3 s or a failure. */
+      function offer(id, message) {
+        return new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(null), 3000);
+          try {
+            chrome.runtime.sendMessage(id, message, (reply) => {
+              clearTimeout(timer);
+              const failed = chrome.runtime.lastError;
+              resolve(failed ? null : reply ?? null);
+            });
+          } catch {
+            clearTimeout(timer);
+            resolve(null);
+          }
+        });
+      }
+
+      function showCode(code, expiresAt) {
+        shown.textContent = code;
+        dialog.hidden = false;
+        const tick = () => {
+          const left = Math.max(0, Math.round((Date.parse(expiresAt) - Date.now()) / 1000));
+          countdown.textContent = `This code expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}.`;
+          if (left === 0) clearInterval(timer);
+        };
+        const timer = setInterval(tick, 1000);
+        tick();
+        root.dataset.pairing = 'code-shown';
+      }
+
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        root.dataset.pairing = 'connecting';
+        status.textContent = 'Connecting…';
+        const answer = await fetch('/api/autofill/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ includeSensitive: sensitive.checked }),
+        });
+        if (answer.status !== 201) {
+          status.textContent = 'TailorIT could not make a connection code. Try again.';
+          root.dataset.pairing = 'failed';
+          button.disabled = false;
+          return;
+        }
+        const { code, expiresAt, extensionIds } = await answer.json();
+        if (state && extensionIds.length > 0 && globalThis.chrome?.runtime?.sendMessage) {
+          for (const id of extensionIds) {
+            const reply = await offer(id, { v: 1, type: 'pair/complete', state, code });
+            record.replies.push(reply === null ? null : { ok: reply.ok === true, error: reply.error ?? null });
+            if (reply?.ok === true) {
+              status.textContent = 'Extension connected';
+              root.dataset.pairing = 'connected';
+              return;
+            }
+          }
+        }
+        status.textContent = 'Type this code on the extension\'s settings page.';
+        showCode(code, expiresAt);
+      });
+    })();
+  </script>
+</body>
+</html>

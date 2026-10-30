@@ -4,7 +4,12 @@ No selector is ever guessed. Every adapter hook is written from a snapshot the o
 
 ## Capturing a page
 - Open the application page and type nothing. Use Chrome's **Save page as… > Webpage, Single File** (`.mhtml`) and put the file in `fixtures/_incoming/`, which git ignores: a raw snapshot may hold personal data.
-- For a state a Save dialog would close (an open dropdown, typeahead results), a **development** build's hotkey saves the live page, every frame included: **Alt+Shift+S**, or **Alt+Shift+D** after 3 seconds so you can reopen the dropdown with the mouse. It uses `pageCapture.saveAsMHTML`, which only development builds have.
+- For a state a Save dialog would close (an open dropdown, typeahead results), a **development** build's hotkeys save the live page, every frame included, through `pageCapture.saveAsMHTML`, which only development builds have:
+  - Build one with `npx wxt build --mode development` and load `.output/chrome-mv3-dev` unpacked. The production builds (`npm run build`, `npm run build:edge`) and the e2e build hold neither the hotkeys, the permission nor the capture page; `scripts/check-build.mjs` fails one that does.
+  - On the application page, press **Alt+Shift+S** to save it now, or **Alt+Shift+D** to save it in 3 seconds: press the keys, then open the dropdown again with the mouse before the time is up. If another extension has taken a key, choose another at `chrome://extensions/shortcuts`.
+  - A tab opens just after the page, behind it, so the page keeps its focus and an open dropdown stays open. It saves the page and offers a link, **Save `<host>-<yyyymmdd-hhmmss>.mhtml`** (the page's host and the local time). Choose it and put the file in `fixtures/_incoming/`. Nothing is uploaded, and closing that tab lets go of the snapshot.
+  - Not checked on a live page yet: whether pressing the keys itself closes a widget before the save. If it does, Alt+Shift+D is the way round it.
+  - The result is the same kind of `.mhtml` as **Save page as**, so the converter below takes both.
 - Workday: use a throwaway candidate account that holds only dummy data, never your own. Type the dummy data wherever a step requires it, and submit nothing.
 
 ## Converting it (`scripts/mhtml-to-fixture.mjs`)
@@ -80,7 +85,7 @@ In e2e runs every request goes through `e2e/routes.ts`: a URL in the route map i
 Eleven traps, served at `https://jobs.lever.co/tailorit-fixture/trap-NN/apply` and filled with a golden profile whose free-text values are distinctive sentinel strings. Hidden carriers hold `HIDDEN-MARKER-NN`, visible text `VISIBLE-MARKER-NN`. The full table of fixtures and assertions is in [ARCHITECTURE.md](ARCHITECTURE.md) under Testing, and the checks run after every trap (no submission, only untrusted events, no marker or canary anywhere it should not be, no profile sentinel in any report, storage or log) are listed there too.
 
 ## Synthetic fixtures (`fixtures/synthetic/`)
-`conditional-reveal` and `async-options` (Phase 3), `remote-typeahead` and `widgets` (Phase 4), `wizard-4-step` (Phase 5), and `react-controlled` (Phase 2, built into `fixtures/.generated/`). Each reproduces a behaviour a static snapshot cannot run, to the same ARIA pattern the real snapshot shows.
+`conditional-reveal` and `async-options` (Phase 3), `remote-typeahead` and `widgets` (Phase 4), `wizard-4-step` (Phase 5), and `react-controlled` (Phase 2: `fixtures/synthetic/react-controlled/`, bundled in memory by its e2e spec, so nothing is written to `fixtures/.generated/`). Each reproduces a behaviour a static snapshot cannot run, to the same ARIA pattern the real snapshot shows.
 
 ## Smoke fixtures (`fixtures/smoke/`, Phase 0)
 `form.html` (a plain application form) and `company-embed.html` (a company page embedding a Greenhouse form in an iframe), served at every ATS host pattern by `00-smoke`.

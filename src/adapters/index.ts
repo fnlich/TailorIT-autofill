@@ -6,25 +6,33 @@
  * - applicationOf(url) reads the address with the platform's pure url.ts, so a posting page and its application form
  *   share one applicationKey (RunState and the posting's policy hits are kept under it). An address on an ATS host
  *   that its parser does not read falls back to the generic rule, the page's origin and path.
- * Lever and Greenhouse adapters join PLATFORM_ADAPTERS in Phase 2, Ashby's in Phase 4 and Workday's in Phase 5.
+ * The Lever and Greenhouse adapters joined PLATFORM_ADAPTERS in Phase 2; Ashby's joins in Phase 4 and Workday's in
+ * Phase 5. In e2e builds only, the e2e-only test adapters (./test: trap 09's) come before them for their own address.
+ * A production build replaces __E2E__ with false, which leaves ./test unreferenced, so it is compiled out
+ * (scripts/check-build.mjs checks for its marker). Vitest's Node projects keep __E2E__ a global, so a test can turn
+ * the switch on with vi.stubGlobal.
  */
 import type { Platform } from '../core/enums';
 import { platformOfUrl } from '../shared/hosts';
 import { applicationKey, type ApplicationPage } from './application-key';
 import { genericAdapter } from './generic';
 import { genericCanonicalUrl } from './generic/url';
+import { greenhouseAdapter } from './greenhouse';
 import { parseGreenhouseUrl } from './greenhouse/url';
+import { leverAdapter } from './lever';
 import { parseLeverUrl } from './lever/url';
+import { e2eAdaptersFor } from './test';
 import type { Adapter } from './types';
 
 /** The platform adapters built so far. */
-const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {};
+const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = { greenhouse: greenhouseAdapter, lever: leverAdapter };
 
 /** The adapters that may handle a frame at `url`, in the order the content runtime tries their detect(). */
 export function adaptersFor(url: URL): Adapter[] {
   const platform = platformOfUrl(url.href);
   const own = platform === null ? undefined : PLATFORM_ADAPTERS[platform];
-  return own !== undefined && own.matchesUrl(url) ? [own, genericAdapter] : [genericAdapter];
+  const candidates = own !== undefined && own.matchesUrl(url) ? [own, genericAdapter] : [genericAdapter];
+  return __E2E__ ? [...e2eAdaptersFor(url), ...candidates] : candidates;
 }
 
 /** The application an address belongs to. */

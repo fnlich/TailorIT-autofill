@@ -99,6 +99,36 @@ describe('isControlCamouflaged', () => {
       expect([id, camouflaged(id)]).toEqual([id, false]);
     }
   });
+
+  it('counts a box a wrapper inside the field container draws around the control (Greenhouse), and only that', async () => {
+    const plain = 'border-style:none;background:transparent;outline:none;box-shadow:none;width:100%;box-sizing:border-box';
+    const fixture = await loadFixture(document, `<!doctype html><body style="background:#fff"><form>
+      <div class="field-wrapper"><div class="text-input-wrapper"><div class="input-wrapper"
+        style="outline:1px solid rgba(0,0,0,0.3);border-radius:5px;width:300px;padding:4px">
+        <label for="greenhouse">First Name</label><input id="greenhouse" style="${plain}"></div></div></div>
+      <div style="border-bottom:1px solid #333;width:300px"><input id="underlined" style="${plain}"></div>
+      <div style="box-shadow:0 0 0 1px #888;width:300px"><input id="shadowed-wrapper" style="${plain}"></div>
+      <div style="outline:1px solid #888;width:300px"><input id="shared-a" style="${plain}"><input id="shared-b" style="${plain}"></div>
+      <div style="outline:1px solid #888;width:300px"><input id="beside-a-box" style="${plain}">
+        <input type="checkbox" id="hidden-box" style="position:absolute;width:1px;height:1px;opacity:0"><label for="hidden-box">Text me</label></div>
+      <div style="outline:1px solid #888;width:300px"><input id="phone" type="tel" style="${plain}">
+        <div style="display:none"><input type="search" role="combobox" aria-label="Search"></div></div>
+      <div style="outline:1px solid #888;width:300px;height:4px"><input id="spills-out" style="${plain};display:block;height:30px"></div>
+      <div style="outline:1px solid #fdfdfd;width:300px"><input id="faint-wrapper" style="${plain}"></div>
+      <div style="width:300px"><input id="bare-wrapper" style="${plain}"></div>
+    </form></body>`);
+    const camouflaged = (id: string) => isControlCamouflaged(fixture.doc.getElementById(id)!, false);
+    // A control nobody can see does not share the box (Greenhouse's phone beside intl-tel-input's closed country search).
+    for (const id of ['greenhouse', 'underlined', 'shadowed-wrapper', 'phone']) {
+      expect([id, camouflaged(id)]).toEqual([id, false]);
+    }
+    // A wrapper that holds another control a person can use (a hidden box shown through its visible label included) is
+    // not this control's box; nor is one the control spills out of, one drawn in a colour that is practically the
+    // page's, or a plain div.
+    for (const id of ['shared-a', 'shared-b', 'beside-a-box', 'spills-out', 'faint-wrapper', 'bare-wrapper']) {
+      expect([id, camouflaged(id)]).toEqual([id, true]);
+    }
+  });
 });
 
 describe('optionCamouflage', () => {

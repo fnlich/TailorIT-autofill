@@ -36,6 +36,9 @@ import { createServerClient } from './server-client';
 import { createSettingsStore } from './settings';
 import { systemTimers, type Timers } from './timers';
 import { bundledVocab } from './vocab';
+import { createCaptureWorkerPlatform } from '../platform/chrome';
+import type { CaptureWorkerPlatform } from '../platform/types';
+import { registerCaptureHotkeys } from './capture';
 
 export interface WorkerState {
   /** Whether Chrome agreed to keep storage.local away from content scripts. 'refused' blocks filling, and the options
@@ -52,6 +55,8 @@ export interface WorkerOptions {
   timers?: Timers;
   /** TailorIT's origin; the build's __TAILORIT_ORIGIN__ by default. */
   origin?: string;
+  /** Development builds only: the snapshot hotkeys' commands and background tab (capture.ts). */
+  capture?: CaptureWorkerPlatform;
 }
 
 /** The real core. */
@@ -276,6 +281,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       runStates.forgetTab(tabId),
     ]).catch(() => undefined);
   });
+
+  // Development builds only: the snapshot hotkeys (capture.ts). The test is a compile-time constant, so a production
+  // bundle drops this branch, and capture.ts with it; scripts/check-build.mjs fails a build that still holds them.
+  if (import.meta.env.MODE === 'development') registerCaptureHotkeys(options.capture ?? createCaptureWorkerPlatform(), timers);
 
   // ── Start-up ────────────────────────────────────────────────────────────────────────────────────────────────────
   async function restrict(): Promise<void> {

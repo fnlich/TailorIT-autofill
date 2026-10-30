@@ -8,6 +8,8 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'wxt';
 import { ATS_MATCHES } from './src/shared/hosts';
+import { CAPTURE_PAGE, captureCommands } from './src/background/capture';
+import { CAPTURE_COPY } from './src/shared/copy';
 
 const E2E = process.env.TAILORIT_BUILD === 'e2e';
 /** The fallback when Chromium injects no content script into routed pages: fixtures served from 127.0.0.1 instead. */
@@ -35,10 +37,20 @@ export default defineConfig({
     host_permissions: [...ATS_MATCHES, `${TAILORIT_ORIGIN}/*`],
     externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
     action: { default_title: 'TailorIT Autofill' },
+    // Development builds only, like pageCapture: the snapshot hotkeys (src/background/capture.ts, docs/FIXTURES.md).
+    ...(mode === 'development'
+      ? { commands: captureCommands({ now: CAPTURE_COPY.commandNow, later: CAPTURE_COPY.commandLater }) }
+      : {}),
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {
       if (FIXTURE_FALLBACK) manifest.content_scripts?.[0]?.matches?.push('http://127.0.0.1/*');
+    },
+    // The capture page is a development tool: every other build (chrome, edge and e2e are all production mode) leaves
+    // it out, and scripts/check-build.mjs fails one that holds it.
+    'entrypoints:resolved': (wxt, entrypoints) => {
+      if (wxt.config.mode === 'development') return;
+      for (const entrypoint of entrypoints) if (entrypoint.name === CAPTURE_PAGE) entrypoint.skipped = true;
     },
   },
 });

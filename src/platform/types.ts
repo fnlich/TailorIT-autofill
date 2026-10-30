@@ -140,3 +140,29 @@ export interface PagePlatform {
   /** Calls `cb` with the tab's id whenever a tab becomes active; the returned function stops listening. */
   onActiveTabChanged(cb: (tabId: number) => void): () => void;
 }
+
+/** The tab a keyboard command was pressed in: where the capture page opens beside it. */
+export interface CaptureTarget {
+  tabId: number;
+  windowId: number;
+  /** Its position in its window's tab strip. */
+  index: number;
+}
+
+/**
+ * What the development build's snapshot hotkeys use in the worker (background/capture.ts). Production builds declare
+ * no `commands`, and index.ts creates this only behind a compile-time switch, so their bundles hold none of it.
+ */
+export interface CaptureWorkerPlatform {
+  /** Calls `cb` with each keyboard command and the tab active when it was pressed (null when the browser gave none). */
+  onCommand(cb: (command: string, target: CaptureTarget | null) => void): void;
+  /** Opens `url` in a new tab right after `target`, without moving the focus away from it. */
+  openBeside(url: string, target: CaptureTarget): Promise<void>;
+  getURL(path: string): string;
+}
+
+/** What the development build's capture page uses (src/entrypoints/capture): pageCapture, a development-only permission. */
+export interface CapturePagePlatform {
+  /** The tab's live page, every frame included, as MHTML (pageCapture.saveAsMHTML). Rejects when it cannot be saved. */
+  saveAsMHTML(tabId: number): Promise<Blob>;
+}

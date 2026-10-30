@@ -31,6 +31,23 @@ describe('cleanLabel', () => {
     expect(labelOfControl(fixture.doc.getElementById('resume')!, ctx())).toMatchObject({ source: 'wrapping-label',
       text: 'Resume/CV', required: true });
   });
+
+  it("leaves an adapter-declared upload widget's text out of the label that wraps it (Lever's resume)", async () => {
+    // fixtures/lever/*.html: the resume input sits at opacity 0 inside the visible ATTACH RESUME/CV link, all inside the
+    // question's wrapping <label>.
+    const fixture = await loadFixture(document, `<!doctype html><body><form id="application-form"><ul>
+      <li class="application-question resume"><label>
+        <div class="application-label">Resume/CV <span class="required">\u{2731}</span></div>
+        <div class="application-field"><a href="#top" class="visible-resume-upload" style="position:relative;display:inline-block;padding:8px">
+          <span class="default-label">ATTACH RESUME/CV</span>
+          <input class="invisible-resume-upload" id="resume-upload-input" name="resume" tabindex="-1" type="file"
+            style="opacity:0;position:absolute;left:0;top:0;width:100%;height:100%"></a></div></label></li></ul></form></body>`);
+    const input = fixture.doc.getElementById('resume-upload-input')!;
+    const lever = { uploadWidgets: (root: Element) => Array.from(root.querySelectorAll('a.visible-resume-upload'))
+      .map((control) => ({ control, input: control.querySelector('input[type="file"]')! })) } as unknown as Adapter;
+    expect(labelOfControl(input, ctx())).toMatchObject({ text: 'Resume/CV \u{2731} ATTACH RESUME/CV', required: false });
+    expect(labelOfControl(input, ctx(lever))).toMatchObject({ source: 'wrapping-label', text: 'Resume/CV', required: true });
+  });
 });
 
 describe('labelOfControl', () => {

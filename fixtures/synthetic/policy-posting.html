@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  Synthetic: a Lever posting page (the posting alone, no form) whose description says "Do not use AI tools to apply"
+  (docs/ARCHITECTURE.md "Policy notices", source 1; the policy spec). The content script reads its visible text and
+  records the hit for the application; the application page (policy-apply.html, served at this posting's /apply)
+  does not say it, yet must show the policy card before anything is written. Served at
+  https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a001; the link leads to /apply.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Engineer - Policy posting</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .apply { display: inline-block; margin-top: 16px; padding: 8px 16px; background: #1a5; color: #fff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Platform Engineer</h1>
+    <p>Remote · Engineering · Full-time</p>
+    <section id="description">
+      <p>You will build the platform our product teams ship on: deploys, observability and the services in between.</p>
+      <p>We read every application ourselves. Do not use AI tools to apply: write your own answers.</p>
+    </section>
+    <a class="apply" href="https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a001/apply">Apply for this job</a>
+  </main>
+</body>
+</html>

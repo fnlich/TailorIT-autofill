@@ -17,6 +17,7 @@ import type {
   StorageArea,
   WorkerPlatform,
 } from './types';
+import type { CapturePagePlatform, CaptureTarget, CaptureWorkerPlatform } from './types';
 
 type RawSender = {
   id?: string;
@@ -284,4 +285,35 @@ export async function probeStorageLocalFromContent(): Promise<'refused' | 'allow
   } catch {
     return 'refused';
   }
+}
+
+/**
+ * Development builds only: the snapshot hotkeys' commands and background tab (background/capture.ts). index.ts calls it
+ * behind a compile-time switch, so production bundles drop it with the hook.
+ */
+export function createCaptureWorkerPlatform(): CaptureWorkerPlatform {
+  return {
+    onCommand(cb) {
+      browser.commands.onCommand.addListener((command, tab) => {
+        const target: CaptureTarget | null = tab?.id === undefined ? null : { tabId: tab.id, windowId: tab.windowId, index: tab.index };
+        cb(command, target);
+      });
+    },
+    async openBeside(url, target) {
+      // Not active: the captured page keeps its focus, so an open dropdown stays open.
+      await browser.tabs.create({ url, active: false, windowId: target.windowId, index: target.index + 1, openerTabId: target.tabId });
+    },
+    getURL: (path) => browser.runtime.getURL(path as never),
+  };
+}
+
+/** Development builds only: the capture page's pageCapture call. Only the capture page, which they alone build, uses it. */
+export function createCapturePagePlatform(): CapturePagePlatform {
+  return {
+    async saveAsMHTML(tabId) {
+      const saved = await browser.pageCapture.saveAsMHTML({ tabId });
+      if (!saved) throw new Error('page-capture-empty');
+      return saved;
+    },
+  };
 }

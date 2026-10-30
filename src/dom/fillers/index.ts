@@ -41,6 +41,9 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
   if (field.kind !== 'radio' && field.kind !== 'checkbox-group' && (isDisabled(control) || isReadOnly(control))) {
     return refused('disabled-or-readonly');
   }
+  // Options that exist only once a widget is opened (a combobox, a widget the adapter declares): Phase 4's helpers fill
+  // those, never the native fillers.
+  if (field.options === 'lazy') return refused('widget-unsupported');
   const clicks = { adapter: ctx.adapter, root: ctx.root };
   switch (field.kind) {
     case 'text':

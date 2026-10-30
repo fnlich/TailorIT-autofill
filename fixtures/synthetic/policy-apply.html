@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  Synthetic: a Lever application page without the posting's text (Lever's /apply page need not repeat it), so neither
+  it nor the stored copy says anything about AI tools (the policy spec). Served at two postings' /apply:
+  - https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a001/apply, after its posting page said
+    "Do not use AI tools to apply": the policy card appears before any write;
+  - https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a002/apply, opened directly, with no posting
+    page seen and no stored copy: the couldn't-read notice appears before any write.
+  The form posts to /__submitted, which a test must never reach.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Engineer - Apply</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Platform Engineer</h1>
+    <form action="/__submitted" method="post">
+      <label for="name">Full name</label>
+      <input id="name" name="name">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email">
+      <label for="phone">Phone</label>
+      <input id="phone" name="phone" type="tel">
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

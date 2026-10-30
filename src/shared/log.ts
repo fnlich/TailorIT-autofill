@@ -63,6 +63,20 @@ export const LOG_CODES = [
   'resume.protocol-error',
   // Ports.
   'port.refused',
+  // The development build's snapshot hotkeys (background/capture.ts); production bundles never log them.
+  'capture.hotkey',
+  'capture.open-failed',
+  // The content script's runs, its in-page UI and its side of the resume transfer (src/content).
+  'content.run-renewed',
+  'content.run-failed',
+  'content.report-invalid',
+  'content.report-refused',
+  'content.runstate-refused',
+  'content.ui-reattached',
+  'content.ui-removed',
+  'content.resume-retried',
+  'content.resume-failed',
+  'content.resume-released',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

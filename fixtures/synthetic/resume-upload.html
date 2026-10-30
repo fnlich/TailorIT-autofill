@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+  Synthetic: an application with one visible file input, for the resume transfer specs (docs/ARCHITECTURE.md
+  "Resume transfer"): the worker stopped in the middle, a SHA-256 that does not match, no resume to attach. The page's
+  change listener counts changes and writes the file's name into #resume-name, and #resume-digest gets the SHA-256 of
+  the bytes the page holds, computed in the page. Served at https://jobs.lever.co/tailorit-fixture/resume-upload/apply
+  (and at resume-hash/apply and resume-none/apply, so each spec has an application of its own). The form posts to
+  /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mobile Engineer - Resume upload</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input:not([type="file"]) { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Mobile Engineer</h1>
+    <form action="/__submitted" method="post">
+      <label for="name">Full name</label>
+      <input id="name" name="name">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email">
+      <label for="resume">Resume</label>
+      <input id="resume" name="resume" type="file" accept=".pdf,application/pdf">
+      <p>Attached: <span id="resume-name"></span></p>
+      <button type="submit">Submit application</button>
+    </form>
+    <output id="resume-digest" hidden></output>
+  </main>
+  <script>
+    window.__resumeChanges = 0;
+    document.getElementById('resume').addEventListener('change', async (event) => {
+      window.__resumeChanges += 1;
+      const file = event.target.files[0];
+      document.getElementById('resume-name').textContent = file ? file.name : '';
+      if (!file) return;
+      const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      document.getElementById('resume-digest').textContent = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    });
+  </script>
+</body>
+</html>

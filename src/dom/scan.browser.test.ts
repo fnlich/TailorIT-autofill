@@ -72,6 +72,34 @@ describe('scan: kinds', () => {
       expect(log.events).toEqual([]);
     });
 
+  it('reports a control the adapter declares a widget for as that widget, lazy and never grouped, and never fills it',
+    async () => {
+      // fixtures/lever/*.html: Lever's location search is a text input the adapter declares a remote typeahead.
+      const fixture = await loadFixture(document, `<!doctype html><body><form>
+        <label>Current location <input class="location-input" id="location-input" type="text" name="location"></label>
+        <fieldset><legend>Perks</legend><label><input type="checkbox" name="perks" id="switch-a"> Remote</label>
+          <label><input type="checkbox" name="perks" id="switch-b"> Equity</label></fieldset></form></body>`);
+      const root = fixture.doc.querySelector('form')!;
+      const adapter = {
+        widgetFor: (control: Element) => (control.id === 'location-input'
+          ? { kind: 'typeahead-remote', opener: control, snapshot: 'fixtures/lever/spotify-ny.html' }
+          : control.id === 'switch-a' ? { kind: 'checkbox', opener: control, snapshot: 'a snapshot' } : null),
+      } as unknown as Adapter;
+      expect(scan(root, null, OPTIONS).fields.map((field) => [field.idAttr || field.nameAttr, field.kind]))
+        .toEqual([['location-input', 'text'], ['perks', 'checkbox-group']]);
+      const result = scan(root, adapter, OPTIONS);
+      expect(result.fields.map((field) => [field.idAttr || field.nameAttr, field.kind, field.options]))
+        .toEqual([['location-input', 'typeahead-remote', 'lazy'], ['switch-a', 'checkbox', 'lazy'],
+          ['switch-b', 'checkbox', []]]);
+      expect(result.fields[0]).toMatchObject({ label: 'Current location', optionSetHash: 'lazy', camouflaged: false });
+      const log = logEvents(fixture.doc);
+      expect(fill(result.target(result.fields[0]!.key)!, { kind: 'text', text: 'Austin, TX' }, { adapter, root }))
+        .toMatchObject({ wrote: false, reason: 'widget-unsupported' });
+      expect(fill(result.target(result.fields[1]!.key)!, { kind: 'check' }, { adapter, root }))
+        .toMatchObject({ wrote: false, reason: 'widget-unsupported' });
+      expect(log.events).toEqual([]);
+    });
+
   it('reads a display pattern from a visible placeholder mask', async () => {
     const fixture = await loadFixture(document, `<!doctype html><body><form>
       <label for="g">Graduation date</label><input id="g" placeholder="MM/YYYY">
@@ -156,6 +184,27 @@ describe('scan: labels, sections and keys', () => {
       <input id="bare" autocomplete="email" style="border:1px solid #888"></form></body>`);
     const [field] = scan(fixture.doc.querySelector('form')!, null, OPTIONS).fields;
     expect(field).toMatchObject({ label: '', labelSource: 'none', labelVisible: false, autocomplete: ['email'] });
+  });
+
+  it('keeps the placeholder label, and the key, of a field the extension wrote into, and of no other field', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <input id="p" name="contact_number" type="tel" placeholder="Phone">
+      <input id="q" name="site" placeholder="Website"></form></body>`);
+    const form = fixture.doc.querySelector('form')!;
+    const held = new WeakSet<Element>();
+    const first = scan(form, null, { ...OPTIONS, heldPlaceholders: held });
+    const phone = byId(first.fields, 'p')!;
+    expect(phone).toMatchObject({ label: 'Phone', labelSource: 'placeholder', labelVisible: true });
+    // The pass's write: the control joins the set, then the value hides its placeholder.
+    const target = first.target(phone.key)!;
+    held.add(target.control);
+    expect(fill(target, { kind: 'text', text: '+1 512 555 0147' }, { adapter: null, root: form })).toMatchObject({ wrote: true });
+    expect(first.rescan().target(phone.key)?.field).toMatchObject({ label: 'Phone', labelSource: 'placeholder', labelVisible: true });
+    // A value the page put there hides that control's placeholder: it names nothing.
+    (fixture.doc.getElementById('q') as HTMLInputElement).value = 'prefilled';
+    expect(byId(first.rescan().fields, 'q')).toMatchObject({ label: '', labelSource: 'none', labelVisible: false });
+    // A scan not told about the write loses the label, and with it the key the plan and the read-back use.
+    expect(scan(form, null, OPTIONS).target(phone.key)).toBeNull();
   });
 
   it('takes sections from the adapter, then fieldset legends, then the preceding heading', async () => {

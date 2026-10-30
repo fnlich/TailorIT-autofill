@@ -8,7 +8,9 @@
  *   included).
  * - Password and one-time-code controls are never fields; they mean the step is an auth pause.
  * - A text input with role="combobox" (react-select) is a 'combobox' with options 'lazy' and option-set hash 'lazy':
- *   ARIA widgets are filled from Phase 4, so until then the filler refuses it as widget-unsupported.
+ *   ARIA widgets are filled from Phase 4, so until then the filler refuses it as widget-unsupported. So is a control
+ *   the adapter declares a widget for (widgetFor): it is reported as the declared kind with options 'lazy', and never
+ *   grouped, so the core plans no write for it (waiting for options) and nothing types into it.
  * - Keys come from the core's keys.ts (labelSlug, optionSetHash, assignOrdinals, baseKey, fieldKey), so the worker and
  *   every frame build the same strings.
  * - A field's element is never cached across a write: ScanResult.rescan() scans afresh and target(key) finds the
@@ -46,15 +48,26 @@ export interface ScanOptions {
   platform: Platform;
   /** The frame's id, as the worker knows it; 0 for the top frame. */
   frameId?: number;
+  /**
+   * The controls the extension wrote into while their visible placeholder labelled them. A value hides a placeholder,
+   * so a field labelled only by one would lose its label, and its key, to our own write, and the read-back after the
+   * settle would not find it. In this set it keeps that label (heldPlaceholder); the pass adds a control as it writes
+   * it, and its rescans, which reuse these options, see it. A node the page replaces is not in it.
+   */
+  heldPlaceholders?: WeakSet<Element>;
 }
 
 /** A control that may become (part of) a field. */
 interface Candidate {
   el: Element;
-  kind: NativeKind;
+  /** Its native kind, or the kind of the widget the adapter declares for it. */
+  kind: NativeKind | FieldKind;
   format: FieldFormat | undefined;
   visibility: FieldVisibility;
   proxy: Proxy | null;
+  /** The adapter declared a widget for this control (widgetFor): it is its own field, of the declared kind, with
+   *  options 'lazy', and nothing fills it before Phase 4. */
+  declared: boolean;
 }
 
 /** A field before its key: one control, or a radio or checkbox group. */
@@ -85,7 +98,7 @@ interface Draft {
 /** Scans a frame's form root. */
 export function scan(root: Element, adapter: Adapter | null, options: ScanOptions): ScanResult {
   const cache = newScanCache();
-  const ctx: LabelContext = { cache, adapter };
+  const ctx: LabelContext = { cache, adapter, ...(options.heldPlaceholders ? { heldPlaceholders: options.heldPlaceholders } : {}) };
   const counters: ScanCounters = { hiddenControlsIgnored: 0, deferredFields: 0 };
   let authFields = 0;
   const candidates: Candidate[] = [];
@@ -97,20 +110,24 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       if (kind.auth && isUserVisible(el, cache)) authFields += 1;
       continue;
     }
+    // A widget the adapter declares for this control (Lever's location search on its text input) is reported as that
+    // widget, never as the native control it is built on.
+    const widget = adapter?.widgetFor?.(el) ?? null;
     const verdict = visibilityOf(el, cache);
     if (verdict.visible) {
-      candidates.push({ el, kind: kind.kind, format: kind.format, visibility: 'visible', proxy: null });
+      candidates.push({ el, kind: widget?.kind ?? kind.kind, format: widget === null ? kind.format : undefined,
+        visibility: 'visible', proxy: null, declared: widget !== null });
       continue;
     }
     if (verdict.deferred) {
       counters.deferredFields += 1;
       continue;
     }
-    if (kind.kind === 'radio' || kind.kind === 'checkbox' || kind.kind === 'file') {
+    if (widget === null && (kind.kind === 'radio' || kind.kind === 'checkbox' || kind.kind === 'file')) {
       const input = el as HTMLInputElement;
       const proxy = proxyOf(input, adapter, root, cache);
       if (proxy !== null) {
-        candidates.push({ el, kind: kind.kind, format: kind.format, proxy,
+        candidates.push({ el, kind: kind.kind, format: kind.format, proxy, declared: false,
           visibility: kind.kind === 'file' ? 'hidden-file-with-visible-control' : 'hidden-native-with-visible-label' });
         continue;
       }
@@ -228,7 +245,7 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
   };
   const nameCount = new Map<string, number>();
   for (const candidate of candidates) {
-    if (candidate.kind !== 'checkbox') continue;
+    if (candidate.kind !== 'checkbox' || candidate.declared) continue;
     const input = candidate.el as HTMLInputElement;
     if (input.name === '') continue;
     const id = `${idOf(input.form)}|${input.name}`;
@@ -236,7 +253,7 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
   }
   const boxContainers = new Map<Element, number>();
   for (const candidate of candidates) {
-    if (candidate.kind !== 'checkbox') continue;
+    if (candidate.kind !== 'checkbox' || candidate.declared) continue;
     const container = checkboxContainer(candidate.el, root);
     if (container !== null) boxContainers.set(container, (boxContainers.get(container) ?? 0) + 1);
   }
@@ -244,6 +261,11 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
     const input = candidate.el as HTMLInputElement;
     let id: string | null = null;
     let kind: FieldKind = candidate.kind;
+    if (candidate.declared) {
+      // A declared widget is never grouped: it is its own field.
+      entries.push({ kind, members: [candidate], container: null });
+      continue;
+    }
     if (candidate.kind === 'radio') {
       id = input.name !== '' ? `radio|${idOf(input.form)}|${input.name}`
         : `radio-box|${idOf(input.closest('fieldset, [role="radiogroup"]'))}`;
@@ -304,14 +326,17 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
   Draft {
   const first = entry.members[0]!;
   const control = first.el;
-  if (entry.kind === 'radio' || entry.kind === 'checkbox-group') return groupDraft(entry, ctx, sections);
+  if (!first.declared && (entry.kind === 'radio' || entry.kind === 'checkbox-group')) {
+    return groupDraft(entry, ctx, sections);
+  }
   const label = labelOfControl(control, ctx);
   const placeholder = isTextLike(control) ? visiblePlaceholder(control, cache) : null;
-  const combobox = entry.kind === 'combobox';
+  // A combobox input, or a widget the adapter declares: its options exist only once it is opened (Phase 4).
+  const combobox = entry.kind === 'combobox' || first.declared;
   let options: Option[] | 'lazy' | null = combobox ? 'lazy' : null;
   let selectable: SelectableOption[] = [];
   let selectOptions: HTMLOptionElement[] = [];
-  if (entry.kind === 'select' || entry.kind === 'multiselect') {
+  if (!combobox && (entry.kind === 'select' || entry.kind === 'multiselect')) {
     const read: VisibleOption[] = readSelectOptions(control as HTMLSelectElement, cache);
     options = read.map((option, index) => optionOf(index, option.label, option.value, option.disabled,
       option.selected, option.group));

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  framesOnTheNetwork, loadFixture, offlineFixture, remoteResources, removeFixtures,
+  framesOnTheNetwork, loadFixture, offlineFixture, remoteResources, removeFixtures, untrustedViolations,
+  type LoggedEvent,
 } from './fixture.testkit';
 
 /** The converted snapshots (fixtures/<platform>/<case>.html), which keep their frames' captured addresses. */
@@ -74,5 +75,27 @@ describe('loadFixture keeps fixtures off the network', () => {
     expect(offlineFixture(document, '<!doctype html>\n<!-- header -->\n<html><body><p>x</p></body></html>'))
       .toBe('<!DOCTYPE html>\n<!-- header -->\n<html><head></head><body><p>x</p></body></html>');
     expect(offlineFixture(document, '<p>quirks</p>')).toBe('<html><head></head><body><p>quirks</p></body></html>');
+  });
+});
+
+describe('untrustedViolations', () => {
+  const event = (type: string, trusted: boolean, target = 'skill-a'): LoggedEvent => ({ type, trusted, target });
+
+  it('allows the trusted input and change Chromium fires after our untrusted click on a box', () => {
+    expect(untrustedViolations([event('click', false), event('input', true), event('change', true)])).toEqual([]);
+  });
+
+  it('allows the trusted boundary and move events a still cursor gets when the page changes under it', () => {
+    const hovers = ['pointerover', 'pointerenter', 'pointermove', 'pointerout', 'pointerleave', 'mouseover',
+      'mouseenter', 'mousemove', 'mouseout', 'mouseleave'].map((type) => event(type, true, 'h1'));
+    expect(untrustedViolations(hovers)).toEqual([]);
+  });
+
+  it('counts every other trusted event, and a trusted input or change that follows no untrusted click', () => {
+    const trusted = ['click', 'pointerdown', 'mousedown', 'keydown', 'focus', 'focusin', 'submit']
+      .map((type) => event(type, true));
+    expect(untrustedViolations(trusted)).toEqual(trusted);
+    const stray = [event('input', true), event('click', true), event('change', true)];
+    expect(untrustedViolations(stray)).toEqual(stray);
   });
 });

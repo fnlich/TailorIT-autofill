@@ -1314,6 +1314,23 @@ jobs:
 - Alt+Shift+D captures after 3 s, so the developer can reopen a dropdown with the mouse. This delay is a dev tool, not fill logic.
 - FLAG: whether the shortcut itself closes the page's widgets.
 
+**As built (Phase 2).**
+- **The converter** differs from steps 1 to 4 above; [docs/FIXTURES.md](../FIXTURES.md) is its full description.
+  - It does not serve the parts through routes: Chromium opens the `.mhtml` itself (headless, JavaScript off, the page's CSP bypassed, every network request aborted), so Chromium's own MHTML loader resolves the parts and the frames. The MIME parts are still read in Node, for the stylesheet text and image bytes it inlines.
+  - There is no `--keep-values`: typed values, `checked` and `selected` are always dropped. An `--out` option chooses the folder written to (`fixtures/` by default).
+  - ATS frames become `<case>.frame-N.html`; every other frame is answered by one empty `<case>.third-party-frame.html`.
+  - Before anything is written, the result is reloaded as e2e serves it, and the converter refuses to write when a body element's visibility changed, a request goes unanswered, or a redacted value is left.
+- **The hotkeys** are two commands, `tailorit-dev-capture-now` (Alt+Shift+S) and `tailorit-dev-capture-later` (Alt+Shift+D). wxt.config.ts declares them only when WXT's mode is development, as it does `pageCapture`. The plan's Q14 named one `commands` entry; Alt+Shift+D needs a second.
+- **The worker's hook** is `src/background/capture.ts`.
+  - index.ts registers it synchronously at start, behind `import.meta.env.MODE === 'development'`. Vite replaces that with a constant, so a production bundle drops the branch, capture.ts and the platform's capture parts. A probe with this repo's Vite 8.3.5 and Rolldown (lib mode, iife, minified or not) confirmed it.
+  - On a command it opens `capture.html?tabId=N` with `tabs.create({active: false, windowId, index: index + 1, openerTabId})`: right after the captured tab, without taking the focus from it. Alt+Shift+D first waits `CAPTURE_DELAY_MS` (3 s) through background/timers.ts.
+- **The capture page** is `src/entrypoints/capture`, with its logic in `src/ui/capture/capture.ts`.
+  - It calls `pageCapture.saveAsMHTML({tabId})` and offers an `<a download>` link to an object URL, released at `pagehide`.
+  - The file is named `<host>-<yyyymmdd-hhmmss>.mhtml`: the host from the MHTML's own `Snapshot-Content-Location` header, the time local. Nothing is uploaded, and Chrome's error text, which may name the page's address, is never shown.
+  - wxt.config.ts's `entrypoints:resolved` hook marks the page skipped in every mode but development.
+- **check-build**, on the Chrome, Edge and e2e builds (all production mode): no `capture.html`, and no bundle holding `tailorit-dev-capture` (the marker both command names begin with), `saveAsMHTML` or `capture.html`. Its earlier checks already refuse a `commands` key and any permission but `storage` and `sidePanel`. `test/check-build.test.ts` runs the script on fixture builds.
+- **Not verified without a development build loaded by hand:** the development manifest itself (both commands and `pageCapture`); the FLAG above; and that the page's frames from other origins are all in the file, as Chrome documents.
+
 ---
 
 ## 12. Phases (extension side). After each phase: summary, test results, known gaps, needs; then STOP.

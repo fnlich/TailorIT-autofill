@@ -4,13 +4,15 @@
  * variable for the worker's Node tests. Nothing here touches a browser API.
  */
 import type { ContentPlatform, Handler, PortLike, SecretStore, Sender } from './types';
+import type { CapturePagePlatform, PagePlatform } from './types';
 
 /** A copy, as the browser's structured clone would make one for plain data. */
 const copyOf = (value: unknown): unknown => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
 
 /**
- * Two linked port ends. A message posted on one reaches the other's listeners asynchronously, as in the browser;
- * disconnecting one end fires the other's onDisconnect; posting on a closed pair throws.
+ * Two linked port ends. A message posted on one reaches the other's listeners asynchronously, as in the browser, and
+ * in order: one posted just before disconnect() still arrives, before the other end's onDisconnect fires (the worker's
+ * refusal path, resume/error then disconnect, relies on that). Posting on a closed pair throws.
  */
 export function memoryPortPair(name: string, sender?: Sender): [PortLike, PortLike] {
   let open = true;
@@ -24,8 +26,9 @@ export function memoryPortPair(name: string, sender?: Sender): [PortLike, PortLi
       post(message) {
         if (!open) throw new Error('Attempting to use a disconnected port object');
         const copy = copyOf(message);
+        // Queued before any disconnect that follows, so it is delivered first, as Chrome delivers it.
         queueMicrotask(() => {
-          if (open) for (const cb of [...listeners[other]]) cb(copy);
+          for (const cb of [...listeners[other]]) cb(copy);
         });
       },
       onMessage(cb) {
@@ -98,6 +101,90 @@ export function createMemorySecrets(): SecretStore & { readonly value: unknown }
     },
     async clear() {
       value = undefined;
+    },
+  };
+}
+
+/** A page platform for the side panel's and the options page's tests, and what the test drives and reads of it. */
+export interface MemoryPagePlatform extends PagePlatform {
+  /** Every message the page sent, in order (copies). */
+  readonly sent: unknown[];
+  /** How many times the page opened the `panel` port. */
+  readonly connects: number;
+  /** Makes `tabId` this window's active tab and tells the page, as tabs.onActivated does. */
+  activate(tabId: number | null): void;
+  /** A tab became active in another window: the page is told, and this window's active tab stays as it was. */
+  activateElsewhere(tabId: number): void;
+  /** The extension was reloaded or removed under the page: sends reject and nothing connects. */
+  invalidate(): void;
+}
+
+/**
+ * A page platform whose worker is `worker`: every send is answered by it, with a copy of the message, as the browser's
+ * messaging would. Each `panel` port the page opens is handed, as the worker's end, to `connectWorker` (or closed at
+ * once without one). The active tab is the test's to set.
+ */
+export function createMemoryPagePlatform(
+  worker: (message: unknown) => Promise<unknown>,
+  options: { connectWorker?: (port: PortLike) => void; activeTabId?: number | null } = {},
+): MemoryPagePlatform {
+  const sent: unknown[] = [];
+  const listeners = new Set<(tabId: number) => void>();
+  let active = options.activeTabId ?? null;
+  let valid = true;
+  let connects = 0;
+  return {
+    sent,
+    get connects() {
+      return connects;
+    },
+    runtime: {
+      get id() {
+        return valid ? 'memory-extension' : undefined;
+      },
+      async send(message) {
+        if (!valid) throw 'context-invalidated';
+        sent.push(copyOf(message));
+        return copyOf(await worker(copyOf(message)));
+      },
+      connect(name) {
+        if (!valid) throw new Error('Extension context invalidated.');
+        connects += 1;
+        const sender = { id: 'memory-extension', url: 'chrome-extension://memory-extension/sidepanel.html' };
+        const [page, workerEnd] = memoryPortPair(name, sender);
+        if (options.connectWorker) options.connectWorker(workerEnd);
+        else workerEnd.disconnect();
+        return page;
+      },
+      getURL: (path) => `chrome-extension://memory-extension${path.startsWith('/') ? path : `/${path}`}`,
+      isValid: () => valid,
+    },
+    activeTabId: async () => active,
+    onActiveTabChanged(cb) {
+      listeners.add(cb);
+      return () => void listeners.delete(cb);
+    },
+    activate(tabId) {
+      active = tabId;
+      if (tabId !== null) for (const cb of [...listeners]) cb(tabId);
+    },
+    activateElsewhere(tabId) {
+      for (const cb of [...listeners]) cb(tabId);
+    },
+    invalidate() {
+      valid = false;
+    },
+  };
+}
+
+/** A capture platform over `capture`: each call's tab id is recorded, and a throw is the browser refusing to save. */
+export function createMemoryCapturePlatform(capture: (tabId: number) => Blob): CapturePagePlatform & { readonly asked: number[] } {
+  const asked: number[] = [];
+  return {
+    asked,
+    async saveAsMHTML(tabId) {
+      asked.push(tabId);
+      return capture(tabId);
     },
   };
 }

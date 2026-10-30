@@ -1,0 +1,54 @@
+<!doctype html>
+<!--
+  Synthetic: questions only the profile's sensitive part answers (docs/ARCHITECTURE.md "Resolver": the sensitive part,
+  legal and EEO). The worker fetches GET /profile/sensitive the first time a plan meets one of them. With the golden
+  sensitive part: authorized in the US (Yes), no sponsorship now or in the future (No), gender declined (the decline
+  option). When TailorIT answers 403 (this browser may not read that part), all three are left blank with
+  sensitive-not-shared. Served at https://jobs.lever.co/tailorit-fixture/sensitive/apply and
+  .../sensitive-forbidden/apply. The form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Data Engineer - Work authorization</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    form > label { display: block; margin-top: 12px; font-weight: 600; }
+    input:not([type="radio"]), select { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    fieldset { margin-top: 16px; }
+    fieldset label { display: block; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Data Engineer</h1>
+    <form action="/__submitted" method="post">
+      <label for="name">Full name</label>
+      <input id="name" name="name">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email">
+      <fieldset id="authorized">
+        <legend>Are you legally authorized to work in the United States?</legend>
+        <label><input type="radio" name="authorized" value="yes"> Yes</label>
+        <label><input type="radio" name="authorized" value="no"> No</label>
+      </fieldset>
+      <fieldset id="sponsorship">
+        <legend>Will you now or in the future require sponsorship for employment visa status in the United States?</legend>
+        <label><input type="radio" name="sponsorship" value="yes"> Yes</label>
+        <label><input type="radio" name="sponsorship" value="no"> No</label>
+      </fieldset>
+      <label for="gender">Gender</label>
+      <select id="gender" name="gender">
+        <option value="">Select...</option>
+        <option value="female">Female</option>
+        <option value="male">Male</option>
+        <option value="non-binary">Non-binary</option>
+        <option value="decline">Decline to self-identify</option>
+      </select>
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

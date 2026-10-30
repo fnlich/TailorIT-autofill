@@ -68,6 +68,12 @@ export interface HandFakes {
   frameAnswers: (message: TabMessage) => unknown;
   /** Opens a port to the worker as `sender` would, and returns the test's end of it. */
   connect: (name: string, sender: RawSender) => FakePortPeer;
+  /** commands.onCommand (WXT's fake leaves it unmocked): trigger(command, tab) calls listeners as Chrome does. */
+  onCommand: ReturnType<typeof fakeEvent<(command: string, tab?: { id?: number; windowId: number; index: number }) => unknown>>;
+  /** The tab ids pageCapture.saveAsMHTML was asked for (WXT's fake leaves it unmocked). */
+  pageCaptures: number[];
+  /** What pageCapture.saveAsMHTML answers for a tab; a thrown error is the browser refusing. */
+  pageCapture: (tabId: number) => Blob;
 }
 
 /** A pair of linked port ends: the worker gets `raw` (Chrome's Port shape), the test gets the peer. */
@@ -142,6 +148,9 @@ export function installHandFakes(): HandFakes {
       onConnect.trigger(raw);
       return peer;
     },
+    onCommand: fakeEvent<(command: string, tab?: { id?: number; windowId: number; index: number }) => unknown>(),
+    pageCaptures: [],
+    pageCapture: () => new Blob(['From: <Saved by Blink>\r\n'], { type: 'multipart/related' }),
   };
   const browser = fakeBrowser as unknown as Record<string, Record<string, unknown>>;
   const runtime = browser.runtime as Record<string, unknown>;
@@ -170,6 +179,13 @@ export function installHandFakes(): HandFakes {
     const sent: TabMessage = { tabId, message, options };
     fakes.tabMessages.push(sent);
     return fakes.frameAnswers(sent);
+  };
+  browser.commands = { onCommand: fakes.onCommand, getAll: async () => [] };
+  browser.pageCapture = {
+    saveAsMHTML: async (details: { tabId: number }) => {
+      fakes.pageCaptures.push(details.tabId);
+      return fakes.pageCapture(details.tabId);
+    },
   };
   return fakes;
 }

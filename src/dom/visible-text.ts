@@ -10,7 +10,8 @@
  *   hidden or display: none, its colour is clear in the select's list, and its displayed text is not empty;
  * - the placeholder reader: a placeholder counts only when the control is empty and Chromium's computed
  *   `::placeholder` style passes the opacity, font and camouflage checks (the Phase 2 smoke test showed Chromium
- *   reports that style, so the plan's fallback is not needed).
+ *   reports that style, so the plan's fallback is not needed). heldPlaceholder is the one exception, for a control the
+ *   extension itself has just written into: see its comment.
  */
 import { capCodePoints } from '../core/text/fold';
 import type { VisibleText } from '../core/types/text';
@@ -64,6 +65,17 @@ export function visibleText(root: Node, options: VisibleTextOptions = {}): Visib
 
 /** visibleText with its segments and counts. */
 export function readVisibleText(root: Node, options: VisibleTextOptions = {}): VisibleTextResult {
+  return walk(root, options, null);
+}
+
+/** The text a person can see in `root`, leaving out what `excluded` and its subtrees show: a label's text without
+ *  the upload control it wraps (labels.ts). */
+export function visibleTextWithout(root: Node, excluded: readonly Element[], options: VisibleTextOptions = {}):
+  VisibleText {
+  return walk(root, options, excluded.length === 0 ? null : new Set(excluded)).text;
+}
+
+function walk(root: Node, options: VisibleTextOptions, excluded: ReadonlySet<Element> | null): VisibleTextResult {
   const cache = options.cache ?? newScanCache();
   const parts: string[] = [];
   const segments: VisibleSegment[] = [];
@@ -105,7 +117,7 @@ export function readVisibleText(root: Node, options: VisibleTextOptions = {}): V
     if (entry.nodeType !== 1) continue;
     const el = entry as Element;
     if (el !== start && (SKIPPED.has(el.localName) || isSubtreeHidden(el, cache))) continue;
-    if (isInOwnUi(el) || isEditable(el)) continue;
+    if (isInOwnUi(el) || isEditable(el) || excluded?.has(el)) continue;
     if (el.localName === 'br') {
       parts.push('\n');
       continue;
@@ -200,13 +212,32 @@ export function readSelectOptions(select: HTMLSelectElement, cache: ScanCache = 
 export function visiblePlaceholder(control: Element, cache: ScanCache = newScanCache()): string | null {
   const tag = control.localName;
   if (tag !== 'input' && tag !== 'textarea') return null;
-  const input = control as HTMLInputElement | HTMLTextAreaElement;
-  const text = oneLine(input.getAttribute('placeholder') ?? '');
-  if (text === '' || input.value !== '') return null;
+  if ((control as HTMLInputElement | HTMLTextAreaElement).value !== '') return null;
+  return placeholderInView(control, cache);
+}
+
+/**
+ * The placeholder that labelled a control before the extension's own write hid it: the same checks as
+ * visiblePlaceholder, but for what the value changes. Chromium hides a filled control's placeholder (its computed
+ * `::placeholder` display is none), and here that is our own value's doing: the control was held only because its
+ * placeholder showed when we wrote. Only a scan told which controls we wrote into (ScanOptions.heldPlaceholders)
+ * reads it, so the field we filled keeps its label, and with it its key, for the read-back. Any other filled
+ * control's placeholder is out of sight and names nothing.
+ */
+export function heldPlaceholder(control: Element, cache: ScanCache = newScanCache()): string | null {
+  const tag = control.localName;
+  return tag === 'input' || tag === 'textarea' ? placeholderInView(control, cache, true) : null;
+}
+
+/** A text-like control's placeholder when its `::placeholder` style lets a person see it; `filled`: the control holds
+ *  our value, which hides the placeholder (display none), so only the other checks apply. */
+function placeholderInView(control: Element, cache: ScanCache, filled = false): string | null {
+  const text = oneLine(control.getAttribute('placeholder') ?? '');
+  if (text === '') return null;
   const view = viewOf(control);
   if (view === null) return null;
   const pseudo = view.getComputedStyle(control, '::placeholder');
-  if (pseudo.display === 'none' || pseudo.visibility === 'hidden' || pseudo.visibility === 'collapse') return null;
+  if ((!filled && pseudo.display === 'none') || pseudo.visibility === 'hidden' || pseudo.visibility === 'collapse') return null;
   if (parseFloat(pseudo.fontSize) < MIN_FONT_PX) return null;
   const opacity = (Number(pseudo.opacity) || 0) * opacityOf(control, cache);
   const colour = parseColor(pseudo.color, control.ownerDocument);

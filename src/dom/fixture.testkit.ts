@@ -175,16 +175,25 @@ export function logEvents(doc: Document): EventLog {
   };
 }
 
+/** Pointer and mouse boundary and move events. Chromium fires them, trusted, by itself when the page changes under a
+ *  cursor that sits still (another test's pointer, or a person's). They are not input, and no extension can cause a
+ *  trusted one; an untrusted one we dispatched is still caught by each test's exact per-control event list. */
+const POINTER_BOUNDARY_EVENTS: ReadonlySet<string> = new Set(['pointerover', 'pointerout', 'pointerenter',
+  'pointerleave', 'pointermove', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave', 'mousemove']);
+
 /**
- * The events in a log that break the untrusted-events rule. Every event the fillers dispatch is untrusted. The one
- * exception is the browser's own: after an untrusted click() on a checkbox or radio, Chromium fires that control's
- * input and change itself, as trusted events (its activation behaviour; measured on Playwright's Chromium in Phase 2).
- * So a trusted input or change counts only when the nearest earlier event on the same target is an untrusted click,
- * or that click's own input.
+ * The events in a log that break the untrusted-events rule. Every event the fillers dispatch is untrusted. Two
+ * exceptions are the browser's own:
+ * - after an untrusted click() on a checkbox or radio, Chromium fires that control's input and change itself, as
+ *   trusted events (its activation behaviour; measured on Playwright's Chromium in Phase 2). So a trusted input or
+ *   change counts only when the nearest earlier event on the same target is an untrusted click, or that click's own
+ *   input;
+ * - trusted pointer and mouse boundary and move events (POINTER_BOUNDARY_EVENTS) never count.
  */
 export function untrustedViolations(events: readonly LoggedEvent[]): LoggedEvent[] {
   return events.filter((event, at) => {
     if (!event.trusted) return false;
+    if (POINTER_BOUNDARY_EVENTS.has(event.type)) return false;
     if (event.type !== 'input' && event.type !== 'change') return true;
     for (let i = at - 1; i >= 0; i -= 1) {
       const before = events[i]!;
