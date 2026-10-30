@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  Trap 04: honeypots. Seven controls a person cannot see or use, each marked data-honeypot:
+  (a) a "Website" input and its label in a container at left: -10000px;
+  (b) an email input with opacity 0, a 0x0 size and autocomplete="email";
+  (c) a clipped text input with a visible label[for] "Phone (alternate)": text inputs get no proxy exception;
+  (d) a display: none checkbox with no label;
+  (e) a radio and its label at top: -500px;
+  (f) a visible-size aria-hidden input named "fax" with tabindex="-1";
+  (g) a borderless input on a matching background, with no label and autocomplete="email".
+  (a) to (f) must yield no field (six hidden controls counted); (g) is a field with no visible label, never filled.
+  Only the visible Email field may be filled. Served at https://jobs.lever.co/tailorit-fixture/trap-04/apply; the
+  form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Support Engineer - Trap 04</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .field { margin-top: 12px; }
+    .field > label { display: block; font-weight: 600; }
+    .boxed { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Support Engineer</h1>
+    <p id="intro">Help our customers succeed. VISIBLE-MARKER-04</p>
+    <form action="/__submitted" method="post">
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" class="boxed">
+      </div>
+      <div class="field" id="honeypot-a" style="position: absolute; left: -10000px">
+        <label for="website">Website</label>
+        <input id="website" name="website" class="boxed" data-honeypot tabindex="-1">
+        <span>HIDDEN-MARKER-04</span>
+      </div>
+      <div class="field">
+        <input id="hp-email" name="email_confirm" autocomplete="email" data-honeypot tabindex="-1"
+          style="opacity: 0; width: 0; height: 0; padding: 0; border: 0">
+      </div>
+      <div class="field">
+        <label for="alt-phone">Phone (alternate)</label>
+        <span style="display: inline-block; width: 0; height: 0; overflow: hidden">
+          <input id="alt-phone" name="alt_phone" class="boxed" data-honeypot tabindex="-1">
+        </span>
+      </div>
+      <div class="field">
+        <input type="checkbox" id="hp-check" name="hp_check" data-honeypot style="display: none">
+      </div>
+      <div class="field" style="position: absolute; top: -500px">
+        <input type="radio" id="hp-radio" name="hp_radio" value="yes" data-honeypot>
+        <label for="hp-radio">Yes</label>
+      </div>
+      <div class="field">
+        <input id="fax" name="fax" class="boxed" aria-hidden="true" tabindex="-1" data-honeypot>
+      </div>
+      <div class="field">
+        <input id="hp-blend" autocomplete="email" data-honeypot tabindex="-1"
+          style="display: block; width: 100%; border: 0; background: transparent; outline: none; box-shadow: none; padding: 6px">
+      </div>
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

@@ -4,6 +4,8 @@ node_modules/
 .wxt/
 e2e/artifacts/
 test-results/
+# Vitest browser mode's failure screenshots.
+.vitest/
 playwright-report/
 coverage/
 *.tsbuildinfo

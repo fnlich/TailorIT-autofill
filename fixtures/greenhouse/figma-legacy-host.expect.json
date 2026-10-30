@@ -1,0 +1,243 @@
+{
+  "fixture": "greenhouse/figma-legacy-host",
+  "source": "https://job-boards.greenhouse.io/figma/jobs/5426468004",
+  "captured": "2026-10-29T22:39:03.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "note": "Requested at the legacy https://boards.greenhouse.io/figma/jobs/5426468004, which redirected here (captures-1.json).",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#first_name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#last_name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#country",
+      "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#country) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Search",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#iti-0__search-input",
+      "note": "intl-tel-input's own country search, inside div.iti__country-container, which is display: none on this page (the Country select above stands in for it)."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#phone",
+      "note": "intl-tel-input wraps it (its own country picker is display: none here)."
+    },
+    {
+      "label": "Location (City)",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#candidate-location",
+      "note": "Greenhouse's location search: a react-select whose options come from a remote search (this capture also loaded Google's API proxy frame, content.googleapis.com)."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#candidate-location) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#resume",
+      "note": "Visually hidden (1 px, clip) behind the visible Attach button; its label[for] (Attach) is visually hidden too, and the visible label is the group's div#upload-label-resume (role=group aria-labelledby). So the Greenhouse adapter's uploadWidgets() must declare the Attach button, and labelFor() the group label."
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_12497118004"
+    },
+    {
+      "label": "Other Website",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_12497119004"
+    },
+    {
+      "label": "Why do you want to join Figma?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_12497120004"
+    },
+    {
+      "label": "Pronouns",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_12497121004"
+    },
+    {
+      "label": "Additional Information",
+      "kind": "textarea",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_12497122004"
+    },
+    {
+      "label": "From where do you intend to work?",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_12497123004"
+    },
+    {
+      "label": "Preferred First Name",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_12497124004"
+    },
+    {
+      "label": "Are you authorized to work in the country for which you applied?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_12497125004",
+      "note": "A legal question that names no country: left blank and flagged while interpretation 1 is off."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_12497125004) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Have you ever worked for Figma before, as an employee or a contractor/consultant?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_12497126004"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_12497126004) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#gender"
+    },
+    {
+      "label": "Are you Hispanic/Latino?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#hispanic_ethnicity",
+      "note": "No race question is rendered in this capture."
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#veteran_status"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#g-recaptcha-response-100000",
+      "note": "reCAPTCHA's own response field, outside the form, display: none."
+    }
+  ]
+}

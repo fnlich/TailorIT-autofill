@@ -1,0 +1,179 @@
+{
+  "fixture": "lever/zoox-fostercity",
+  "source": "https://jobs.lever.co/zoox/e8a190f0-7a89-4c11-a6a0-452ff6234749/apply",
+  "captured": "2026-10-29T22:41:36.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "#resume-upload-input",
+      "note": "A file input hidden by opacity 0 inside the visible ATTACH RESUME/CV link (a.visible-resume-upload). A wrapping label never qualifies a file input, so the Lever adapter's uploadWidgets() must declare that link. Required only by the label's marker (span.required): the input has no required attribute."
+    },
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"name\"]"
+    },
+    {
+      "label": "Pronouns",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": true,
+      "options": 10,
+      "control": "input[type=\"checkbox\"][name=\"pronouns\"]",
+      "note": "Nine pronouns and Use name only share name=pronouns. The group's label is a div.application-label that no label element, legend or aria attribute ties to the boxes, so the Lever adapter's labelFor() must supply it. Each box has its own wrapping label."
+    },
+    {
+      "label": "Custom",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "#customPronounsOption",
+      "note": "No name, so it is not part of the pronouns group: the page's script uses it only to show the custom pronouns box below it."
+    },
+    {
+      "label": "Write here...",
+      "kind": "text",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#customPronounsTextField",
+      "note": "display: none until Custom is ticked (a reveal, Phase 3). Its only text is its placeholder."
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"phone\"]"
+    },
+    {
+      "label": "Current location",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "control": "#location-input",
+      "note": "Lever's structured location question: a text input whose suggestions come from Lever's location search into div.dropdown-results, with no ARIA roles in the markup. Typing alone may not satisfy it."
+    },
+    {
+      "label": "Current company",
+      "kind": "text",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"org\"]"
+    },
+    {
+      "label": "LinkedIn URL",
+      "kind": "text",
+      "required": false,
+      "section": "Links",
+      "fillable": true,
+      "control": "input[name=\"urls[LinkedIn]\"]"
+    },
+    {
+      "label": "Other website",
+      "kind": "text",
+      "required": false,
+      "section": "Links",
+      "fillable": true,
+      "control": "input[name=\"urls[Other]\"]"
+    },
+    {
+      "label": "What is your preferred first name and last name? If your legal first and last name is your preferred name, you do not need to respond.",
+      "kind": "textarea",
+      "required": false,
+      "section": "A few more questions...",
+      "fillable": true,
+      "control": "textarea[name=\"cards[c62ec44a-0482-4f8f-9630-94a6aac1e3c3][field0]\"]",
+      "note": "Lever's custom questions are labelled by a div.application-label .text above the control, which no label element ties to it, so the Lever adapter's labelFor() must supply each one."
+    },
+    {
+      "label": "Export Control and Compliance: For the sole purpose of determining export licensing requirements, please list any countries of which you are a citizen or legal permanent resident, and when you obtained such status.",
+      "kind": "textarea",
+      "required": true,
+      "section": "A few more questions...",
+      "fillable": true,
+      "control": "textarea[name=\"cards[c62ec44a-0482-4f8f-9630-94a6aac1e3c3][field1]\"]"
+    },
+    {
+      "label": "Sponsorship: Do you require sponsorship, or will you require sponsorship in the future for employment authorization in the United States?",
+      "kind": "select",
+      "required": true,
+      "section": "A few more questions...",
+      "fillable": true,
+      "options": 3,
+      "control": "select[name=\"cards[c62ec44a-0482-4f8f-9630-94a6aac1e3c3][field2]\"]",
+      "note": "Select..., Yes, No. A combined now-or-future sponsorship question."
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "A few more questions...",
+      "fillable": true,
+      "options": 8,
+      "control": "input[name=\"cards[c62ec44a-0482-4f8f-9630-94a6aac1e3c3][field3]\"]",
+      "note": "Every box carries the required attribute; the question's own marker is the one in its label."
+    },
+    {
+      "label": "If you attended an on-campus or virtual event, which did you attend?",
+      "kind": "text",
+      "required": false,
+      "section": "A few more questions...",
+      "fillable": true,
+      "control": "input[name=\"cards[c62ec44a-0482-4f8f-9630-94a6aac1e3c3][field4]\"]",
+      "note": "Placeholder: Type your response."
+    },
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": false,
+      "section": "U.S. Equal Employment Opportunity information (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 4,
+      "control": "select[name=\"eeo[gender]\"]",
+      "note": "Select ..., Male, Female, Decline to self-identify."
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": false,
+      "section": "U.S. Equal Employment Opportunity information (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 9,
+      "control": "select[name=\"eeo[race]\"]",
+      "note": "The label also holds an info button and a hidden list of definitions (ul#eeoRaceExpandableSection, display: none), neither of which is label text."
+    },
+    {
+      "label": "Veteran status",
+      "kind": "select",
+      "required": false,
+      "section": "U.S. Equal Employment Opportunity information (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 4,
+      "control": "select[name=\"eeo[veteran]\"]"
+    }
+  ]
+}

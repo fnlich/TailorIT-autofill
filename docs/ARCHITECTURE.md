@@ -127,10 +127,132 @@ ATS frame (top or embedded iframe)          extension service worker            
   | Resume bytes | the worker, then the content script | seconds |
   | Settings | `storage.local` | until changed |
   | RunState (no values) | `storage.local`, indexed per tab in `storage.session` | 24 hours after its last update; at most 20 kept |
-  | Reports (no values) | `storage.session` | until the tab closes or the browser restarts |
-  | Policy hits from a posting page (`{applicationKey, patternId}`) | `storage.session` | until the browser restarts |
+  | Reports (no values) | `storage.session` | until the tab closes, the frame loads another document or the worker finds its document gone, or the browser restarts |
+  | Registered frames (origin, platform, document id, flags; never an address) | `storage.session`, `frames:<tabId>:<frameId>` | until the tab closes, the worker finds the frame's document gone (`frame/ping`), or the browser restarts |
+  | Runs (no values): tab, frame, document id, application key, dry run, and what became of the run's one sensitive fetch | `storage.session`, `runs:<runId>` | until the tab closes, the frame begins another run or loads another document, or the browser restarts; at most 50 kept |
+  | Policy hits from a posting page: pattern ids, and whether a posting page was read and clear (`{hits, clear}`) | `storage.session`, `policy:<applicationKey>` | until the browser restarts |
+  | The pending pairing: a single-use state of 32 random bytes | `storage.session`, `pairing` | 10 minutes, or its first use |
+  | The account's name and email, from TailorIT's session | the worker's memory | until the token changes or the worker stops |
+  | Each run's lookup answer: the job, its stored posting text (read only by the policy patterns), the suggested resume | the worker's memory | until the run is replaced or forgotten, or the worker stops |
   | Accepted matches (the chosen option's normalized label) | `storage.session`, in memory, never on disk. Never unconfirmed LLM picks; never EEO, legal, consent or sensitive fields | until the browser restarts |
   | Anonymous counters | `storage.local`, only when opted in | until cleared |
+
+## Message catalogue
+Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section says who sends each message, what the worker does with it, and what it answers. Built in Phase 2 (`src/background`).
+
+**The envelope.**
+- A message is `{v: 1, type, …}`. An answer is `{ok: true, data}` or `{ok: false, error, retryAfterSeconds?}`, where `error` is one of `bad_message`, `bad_sender`, `not_connected`, `not_implemented`, `unavailable`, `rate_limited`, `too_large`, `expired`, `internal`.
+- In every channel: an unknown type, an extra field or a value past its cap is `bad_message`; a known type on the wrong channel is `bad_sender`; a handler that throws is `internal`.
+- Receivers parse answers too. Each answer's data schema is named below, and `CONTENT_ANSWER_SCHEMAS`, `PAGE_ANSWER_SCHEMAS`, `FRAME_ANSWER_SCHEMAS` and `EXTERNAL_ANSWER_SCHEMAS` map every type to it (wrap one in `answerSchema`).
+
+**Content script → worker** (`runtime.sendMessage`).
+- The sender needs this extension's id, a tab, a frame, an ATS address (`shared/hosts.ts`) and an active document.
+- Every message but `ping` and `panel/open` waits until Chrome has answered the storage access level.
+
+| Message | Payload | Answer (`data`) | Refusals |
+|---|---|---|---|
+| `ping` | none | `{pong: true}` (`PingAnswerSchema`) | none |
+| `frame/hello` | `isTop`, `hasForm` | `{frameId, connected, settings}` (`FrameHelloAnswerSchema`): `connected` is whether a token is held; `settings` holds panel placement, auto-advance and the AI switches | none |
+| `run/begin` | `applicationKey`, `trigger` (`launcher`, `panel` or `resume`), `dryRun` | `{runId, settings, policy: {postingPage, storedCopy}}` (`RunBeginAnswerSchema`), never the profile or the lookup | `not_connected`. `unavailable`: TailorIT could not be read, or Chrome refused the access level. `expired`: `resume` without this tab's unfinished RunState. `rate_limited`: 6 a minute per tab. `bad_message`: the key is not `<platform>:<hex16>` with the frame host's platform |
+| `plan/request` | `runId`, `pass`, `specs` (at most 500), `canaries` (at most 32), `notices` | `{writes, results, awaiting, persistableCanaries}` (`PlanAnswerSchema`) | `expired`: a run the worker does not know, or another frame's or document's. `not_connected`, `unavailable`, `internal` |
+| `plan/poll` | `runId`, `keys` | the same shape; in Phase 2, nothing written and nothing awaiting | `expired`: the frame re-sends `plan/request` |
+| `runstate/get` | `applicationKey` | `{runState}` (`RunStateGetAnswerSchema`): null when there is none, it expired, or another tab holds it | `bad_message` |
+| `runstate/put` | `runState` | `{updatedAt}` (`RunStatePutAnswerSchema`), the worker's own clock, which the stored entry carries | `bad_message`: a key or platform that is not the frame's |
+| `runstate/clear` | `applicationKey` | `{}` (`DoneAnswerSchema`) | `bad_message` |
+| `report/put` | `runId`, `report` (`FrameReport`) | `{}` | `expired`. `bad_message`: the report names another run or frame. `rate_limited`: 4 a second per frame |
+| `policy/hit` | `applicationKey`, `patternId` (null: the posting page was read and is clear) | `{}` | `bad_message`: an id that is not `[a-z0-9.-]{1,40}`, or a key that is not the frame's |
+| `panel/open` | none | `{}`, once the side panel opened for the sender's tab | `unavailable`: the browser refused (the toolbar button still opens it) |
+
+- **What the worker does with each:**
+  - `frame/hello` registers the frame by origin and platform, never its address. A frame that says hello from another document loses its report and its runs.
+    - A document the registry has not seen also sets off a sweep of the tab's other frames, in the background, so the hello is answered at once. When a top frame loads another page, the old page's subframes vanish without a word.
+    - The sweep sends each other frame `frame/ping` at its own `{frameId, documentId}`. It forgets a frame (its entry, report and runs) only when nothing receives there twice, `FRAME_PROBE_GRACE_MS` (1 s) apart.
+    - Any answer keeps the frame, an error answer included, and so does a listener that gives none, or no answer within `FRAME_PROBE_TIMEOUT_MS` (2 s).
+    - Arrival order never decides. A subframe of the new page may say hello, and report, before its top frame does; it answers, so it stays. A frame that says hello again from another document between the two asks is not forgotten in its place.
+    - A frame/hello from a document already registered (a single-page app's route change) sets off nothing.
+    - A panel's `panel/reports` and `panel/watch` set off the same check over all the tab's frames, one check at a time per tab. A page that holds none of our frames says no hello, for example a company page that embedded a form and was left for one without.
+    - The panel's answer and its first push are what is known at once; a report the check removes reaches the panel port as one more `panel/update`.
+    - **So a content script registers its onMessage listener before it sends `frame/hello`.**
+  - `run/begin` mints a run per document and keeps its tab, frame, document, key and mode (`storage.session`, `runs:<runId>`). A frame's next run replaces its last.
+    - It fetches `GET /profile` into memory and calls `POST /lookup {url: the frame's own address, includePostingText: true}`.
+    - `policy.storedCopy` runs the policy patterns over the lookup's `postingText` (typed `StoredPostingText`): `hit` or `clear`, or `unavailable` when there is no copy or the lookup failed.
+    - `policy.postingPage` reads the posting pages' `policy/hit` records for that key: `hit` (a hit is never cleared by a later clean reading), `clear`, or `unseen`.
+  - `plan/request` hands the core's `planFrame` the run's canonical profile, the frame's fields and canaries, the settings and the vocabulary.
+    - When the plan needs the sensitive part, the worker fetches `GET /profile/sensitive` once per run and plans again: a 403 makes the state `not-shared`, any other failure `unavailable`, and neither is retried in that run.
+    - A dry run's answer never carries a write.
+    - Every answer is checked against `PlanAnswerSchema` (its caps included) before it leaves.
+  - `runstate/put` drops every canary that equals a profile value (the core's `persistableCanaries`), fetching the profile first when it is not in memory. When it cannot, it stores an empty `canarySet`.
+    - Entries are checked on the way in and out, expire 24 h after `updatedAt`, and at most 20 are kept (the oldest go).
+    - The tab that stores an application's RunState last is the one that holds it (`tabrun:<tabId>`).
+
+**Port `resume`** (content scripts only; same sender checks).
+1. The content script posts `resume/request {runId}`.
+2. The worker answers `resume/header {name, mime, size, sha256, chunkCount}` and `resume/chunk {index: 0, data}`.
+3. After each `resume/ack {index}` it posts the next chunk; after the last ack, `resume/end`.
+4. The content script answers `resume/done {ok}`, and the worker releases the bytes and disconnects.
+
+- **Which resume:** the lookup's `suggestedResume`, otherwise the profile's `documents.resumeId` (named through `GET /resumes`). After a worker restart the run is still known, and the worker reads the lookup again from the port's own frame.
+- **Refusals,** each a `resume/error {reason}` followed by a disconnect:
+  - `resume-format-unsupported`: a legacy `.doc`, refused before any fetch, or a file TailorIT sends as `doc`;
+  - `resume-unavailable`: no such run (or another frame's, or a dry run), no resume, a failed or timed-out fetch, a file over 10 MiB, a PDF that does not start with `%PDF-`, a DOCX without the ZIP signature or without `X-TailorIT-File-Kind: docx`, or bytes whose SHA-256 is not `X-TailorIT-Sha256`;
+  - `resume-transfer-failed`: an acknowledgement out of order, an unexpected message, or the 60-second release.
+- **From the content script:** `resume/error` (for example `pdf-only-input`, after a DOCX header for an input that takes PDF only) ends the transfer, and so does disconnecting.
+- **Releasing:** the bytes go on `resume/done`, on an error or a disconnect, and at the latest 60 s after the fetch.
+
+**Worker → content script** (`tabs.sendMessage` to `{frameId, documentId}`).
+
+| Message | Sent when | The frame answers |
+|---|---|---|
+| `run/start {dryRun}` | `panel/fill`: to every registered frame of the tab that has a form | `{}` |
+| `run/continue`, `run/cancel` | `panel/continue`, `panel/cancel`: to the frames that reported | `{}` |
+| `field/focus {fieldKey}` | `panel/focus` | `{}` |
+| `field/describe {fieldKey}` | `panel/describe` | `{options: [{index, label}]}` (`FieldDescribeAnswerSchema`, at most 3): the visible labels of the row's suggested options, passed to the panel and never stored |
+| `report/update {reports}` | every report change while the in-page panel is chosen (`settings.panel: 'in-page'`): to each of the tab's frames that reported. A frame whose panel is closed ignores it | `{}` (not read) |
+| `frame/ping` | another frame of the tab said hello from a new document: is this document still there? (`frame/hello` above) | `{pong: true}` (`PingAnswerSchema`); any answer counts |
+| `draft/confirm`, `answer/read` | Phase 6 | |
+
+**Extension pages → worker** (`runtime.sendMessage`; the sender must be one of this extension's pages).
+
+| Message | Answer (`data`) | Refusals |
+|---|---|---|
+| `ping` | `{pong: true}` | none |
+| `panel/fill {tabId, dryRun}` | `{frames}` (`PanelSentAnswerSchema`): the frames that received `run/start` | `not_connected` |
+| `panel/continue {tabId}`, `panel/cancel {tabId}` | `{frames}` | none |
+| `panel/focus {tabId, frameId, fieldKey}` | `{}` | `expired`: that frame is not registered. `unavailable`: it did not answer |
+| `panel/describe {tabId, frameId, fieldKey}` | `{options}` (`FieldDescribeAnswerSchema`) | `expired`, `unavailable` (no answer, or one that fails the schema) |
+| `panel/reports {tabId}` | `{tabId, reports}` (`TabReportsAnswerSchema`): the tab's reports, one per frame, by frame id, as known when asked. It also starts the tab's frame check, whose removals reach the panel port | none |
+| `panel/confirmDraft`, `panel/saveAnswer` | none: `not_implemented` until Phase 6 | |
+| `settings/get` | `{settings}` (`SettingsAnswerSchema`): the stored settings, or the defaults when none parse | none |
+| `settings/save {settings}` | `{settings}`, as stored in `storage.local` (`settings:v1`) | `bad_message` |
+| `auth/status` | `AuthStatusSchema`: `connection` (`connected`, `not-connected`, `expired`, `revoked`), `account` (name and email, read from `GET /session` into memory), `scopes`, `expiresAt`, `storageAccess` (`pending`, `restricted`, `refused`), `versionMismatch`, `pairingExpiresAt` | none |
+| `auth/startPairing` | `{expiresAt}` (`StartPairingAnswerSchema`). The worker keeps a single-use state (32 random bytes, base64url) for 10 minutes and opens `<origin>/settings/autofill?tab=extension&connect=1&state=…`; the state is never in the answer | `unavailable`: the tab could not open |
+| `auth/redeemCode {code}` | the new `AuthStatusSchema` | `bad_message`: not a code. `expired`: TailorIT answered 401 (wrong, used or expired). `rate_limited`, `unavailable` |
+| `auth/disconnect` | the new `AuthStatusSchema`. The token is forgotten at once, then revoked on TailorIT (`DELETE /session`, best effort) | none |
+| `runs/clear` | `{cleared}` (`RunsClearAnswerSchema`): every RunState and tab index removed | none |
+
+**Port `panel`** (extension pages only): how the side panel follows a tab.
+- The page posts `panel/watch {tabId}`, and again with another id when the active tab changes. Only the latest watch counts.
+- The worker posts `panel/update {tabId, reports}` (`PanelPortMessageSchema`) at once, then on every change of that tab's reports: a `report/put`, a frame loading another document, the frame check finding a document gone (each watch starts that check), the tab closing.
+- Any other message closes the port.
+
+**External** (`runtime.onMessageExternal`): TailorIT's connect page only.
+- `pair/complete {state, code}` is answered `{}` (`ok: true`) once the code is redeemed (`POST /connect/redeem`, no cookie, no Authorization header), the token is stored and `GET /session` is read.
+- **Refusals:**
+  - `bad_sender`: an origin that is not exactly TailorIT's, an address that is not `/settings/autofill`, or a state that is not the pending one (the pending one stays);
+  - `expired`: no pairing pending, or it lapsed. The state is used once, whatever the redeem's outcome;
+  - `bad_message`;
+  - redeem's own: `expired`, `rate_limited`, `unavailable`.
+
+**Where the worker keeps things** (value-free unless stated; the token only in IndexedDB):
+- `storage.local`: `settings:v1`; `run:<applicationKey>`.
+- `storage.session`:
+  - `frames:<tabId>:<frameId>` and `report:<tabId>:<frameId>`;
+  - `tabrun:<tabId>`;
+  - `runs:<runId>`: tab, frame, document, key, mode, and the outcome of the run's one sensitive fetch;
+  - `policy:<applicationKey>`: pattern ids, and whether a clean reading was seen;
+  - `pairing`: the pending state and its expiry.
+- IndexedDB `tailorit` › `secrets` › `auth`: the token, its id, expiry and scopes. The account's name and email stay in memory.
+- Memory only: the profile and its sensitive part (dropped after 5 idle minutes, or when the token changes), each run's lookup, and the resume's bytes.
 
 ## Phases (the owner's process: after each, a summary, test results, known gaps and exactly what I need; then STOP)
 | Phase | Extension (`TailorIT-autofill`) | TailorIT (`autofill` worktree) | Needs from the owner first |

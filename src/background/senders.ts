@@ -1,7 +1,8 @@
 /*
  * Who may talk to the worker. Trust comes from what Chrome says about the sender, never from a payload: a content
  * message needs our own extension id, a tab, a frame, an ATS address and an active document; a page message must come
- * from one of our own extension pages. Anything else is refused before its payload is parsed.
+ * from one of our own extension pages; an external message must come from TailorIT's connect page, at TailorIT's exact
+ * origin. Anything else is refused before its payload is parsed.
  */
 import { MatchPattern } from 'wxt/utils/match-patterns';
 import { ATS_MATCHES } from '../shared/hosts';
@@ -30,4 +31,20 @@ export function channelOf(sender: Sender, ownId: string, ownPagesPrefix: string)
   if (typeof sender.frameId !== 'number' || !isAtsAddress(sender.url)) return null;
   if (sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return null;
   return { kind: 'content', tabId: sender.tabId, frameId: sender.frameId, documentId: sender.documentId, url: sender.url };
+}
+
+/** TailorIT's page that hands over a connect code (Settings › Autofill), at exactly TailorIT's origin. */
+export const CONNECT_PAGE_PATH = '/settings/autofill';
+
+/** Whether an external message comes from TailorIT's connect page: its origin is TailorIT's exactly (scheme, host and
+ *  port) and its address is that page. */
+export function isConnectPage(sender: Sender, origin: string): boolean {
+  if (sender.origin !== origin || !sender.url) return false;
+  let url: URL;
+  try {
+    url = new URL(sender.url);
+  } catch {
+    return false;
+  }
+  return url.origin === origin && (url.pathname === CONNECT_PAGE_PATH || url.pathname === `${CONNECT_PAGE_PATH}/`);
 }

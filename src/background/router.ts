@@ -10,7 +10,8 @@ import type { Handler, Sender } from '../platform/types';
 import { log } from '../shared/log';
 import { channelOf, type Channel } from './senders';
 
-type ContentChannel = Extract<Channel, { kind: 'content' }>;
+/** Where a content message came from: its tab, frame, document and address, as Chrome reported them. */
+export type ContentChannel = Extract<Channel, { kind: 'content' }>;
 
 export type ContentHandlers = {
   [T in ContentMessage['type']]?: (message: Extract<ContentMessage, { type: T }>, from: ContentChannel) => Promise<Answer<unknown>>;
@@ -37,6 +38,9 @@ export interface RouterOptions {
   ownPagesPrefix: string;
   content: ContentHandlers;
   page: PageHandlers;
+  /** Content messages wait for `ready` (the storage access level) before their handler runs, except the types in
+   *  `except`: panel/open must reach sidePanel.open before anything is awaited, or the click no longer counts. */
+  contentGate?: { ready(): Promise<void>; except: ReadonlySet<string> };
 }
 
 export function createRouter(options: RouterOptions): Handler {
@@ -62,7 +66,10 @@ export function createRouter(options: RouterOptions): Handler {
       if (channel.kind === 'content') {
         const msg = parsed.data as ContentMessage;
         const handler = options.content[msg.type] as ((m: ContentMessage, from: ContentChannel) => Promise<Answer<unknown>>) | undefined;
-        return handler ? await handler(msg, channel) : refuse('not_implemented');
+        if (!handler) return refuse('not_implemented');
+        const gate = options.contentGate;
+        if (gate && !gate.except.has(msg.type)) await gate.ready();
+        return await handler(msg, channel);
       }
       const msg = parsed.data as PageMessage;
       const handler = options.page[msg.type] as ((m: PageMessage) => Promise<Answer<unknown>>) | undefined;

@@ -12,8 +12,13 @@ TailorIT Autofill fills job applications from a profile the person keeps in thei
 | The resume file | the service worker, then the page's file input | seconds: released once the input is set and verified, or within 60 s |
 | Settings | `chrome.storage.local`, restricted to the extension's own contexts | until changed |
 | Run progress (RunState): keys, hashes, counters, task ids, checked canaries | `chrome.storage.local` | 24 hours after its last update; at most 20 kept. It never holds a field value |
-| Review reports: statuses, labels, reasons | `chrome.storage.session` (memory) | until the tab closes or the browser restarts. Never a value or an option label |
-| Registered frames: origin, platform, flags | `chrome.storage.session` | until the tab closes. Never a full page address |
+| Review reports: statuses, labels, reasons | `chrome.storage.session` (memory) | until the tab closes, the frame loads another page or the extension finds its page gone, or the browser restarts. Never a value or an option label |
+| Registered frames: origin, platform, document id, flags | `chrome.storage.session` | until the tab closes or the extension finds the frame's page gone. Never a full page address |
+| Runs: the tab, frame and document a fill was started in, its application key (a hash, never the address), whether it is a dry run, and whether the sensitive part could be read for it | `chrome.storage.session` | until the tab closes, the frame starts another fill or loads another page, or the browser restarts; at most 50 kept. Never a value |
+| Posting policy notices: the ids of the "do not use AI" patterns a posting page matched, and whether one was read and clear | `chrome.storage.session` | until the browser restarts. Never the posting's text |
+| A pending connection: a single-use random state, while TailorIT's Connect page is open | `chrome.storage.session` | 10 minutes, or its first use |
+| The TailorIT account's name and email, to show "Connected as …" | the service worker's memory only | until the connection changes or the worker stops |
+| What TailorIT knows of the open posting (the job, its saved posting text, the resume it suggests) | the service worker's memory only | until the fill is replaced or its tab closes, or the worker stops. The posting text is read only by the "do not use AI" check and never reaches an AI model |
 | Accepted option matches | `chrome.storage.session` | until the browser restarts. Never for unconfirmed AI picks, self-identification, legal, consent or pay questions |
 | Anonymous counters | `chrome.storage.local`, only when the person opts in | until cleared. Exactly five fields: platform, field kind, matcher stage, success or fail, whether the page addressed AI tools. No key, label, address, account or install id. Nothing is sent anywhere |
 

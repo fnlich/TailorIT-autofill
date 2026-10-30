@@ -457,7 +457,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
     otherwise: { id: 'label.other-availability', category: 'screening.other', strength: 'normal' } },
   'label.relocation': { unless: /\brelocat\w*\s+(?:assistance|package|support|benefits?|reimbursement|bonus|expenses?|costs?|stipend|allowance|help|budget|polic(?:y|ies)|services?)\b/ },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
-  'label.language': { unless: /\b(?:proficiency|fluency|level)\b/ },
+  // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
+  // "speak": "What programming languages do you know?" asks about skills.
+  'label.language': { also: /\blanguages?\s+(?:do|can)\s+you\s+speak\b/, unless: /\b(?:proficiency|fluency|level)\b/ },
   'label.proficiency': { only: LANGUAGE_PROFICIENCY },
   'label.resume': { category: (c) => (c.kind === 'file' ? 'file.resume'
     : c.kind === 'checkbox' || c.kind === 'radio' ? 'consent.other' : 'unknown') },

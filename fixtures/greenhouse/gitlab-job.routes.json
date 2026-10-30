@@ -1,0 +1,4 @@
+{
+  "https://job-boards.greenhouse.io/gitlab/jobs/8857185002": "fixtures/greenhouse/gitlab-job.html",
+  "https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1&k=6LfmcbcpAAAAAChNTbhUShzUOAMj_wY9LQIvLFX0&co=aHR0cHM6Ly9qb2ItYm9hcmRzLmdyZWVuaG91c2UuaW86NDQz&hl=en&v=NhfdZHzre16wrc2m6BxEdu7J&size=invisible&anchor-ms=20000&execute-ms=30000&cb=qmbwla845vtn": "fixtures/greenhouse/gitlab-job.third-party-frame.html"
+}

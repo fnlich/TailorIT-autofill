@@ -1,9 +1,22 @@
 /*
- * The one file over the browser's extension APIs (`browser` from wxt/browser). Browser differences, Chrome's
- * callback-style messaging and its error strings all stay here; the rest of the extension sees platform/types.ts.
+ * The one file over the browser's extension APIs (`browser` from wxt/browser), and over the web APIs the worker reaches
+ * the outside with (fetch, IndexedDB, crypto). Browser differences, Chrome's callback-style messaging and its error
+ * strings all stay here; the rest of the extension sees platform/types.ts.
  */
 import { browser } from 'wxt/browser';
-import type { ContentPlatform, Handler, PagePlatform, PortLike, Sender, SendFailure, StorageArea, WorkerPlatform } from './types';
+import type {
+  ClientInfo,
+  ContentPlatform,
+  FrameSendFailure,
+  Handler,
+  PagePlatform,
+  PortLike,
+  SecretStore,
+  Sender,
+  SendFailure,
+  StorageArea,
+  WorkerPlatform,
+} from './types';
 
 type RawSender = {
   id?: string;
@@ -38,7 +51,9 @@ function listen(event: { addListener(cb: (m: unknown, s: RawSender, r: (a: unkno
   });
 }
 
-function wrapPort(port: ReturnType<typeof browser.runtime.connect>): PortLike {
+type RawPort = ReturnType<typeof browser.runtime.connect>;
+
+function wrapPort(port: RawPort): PortLike {
   return {
     name: port.name,
     sender: port.sender ? toSender(port.sender as RawSender) : undefined,
@@ -79,6 +94,85 @@ function area(raw: RawArea): StorageArea {
   };
 }
 
+const SECRETS_DB = 'tailorit';
+const SECRETS_STORE = 'secrets';
+const SECRETS_KEY = 'auth';
+
+function openSecrets(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(SECRETS_DB, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(SECRETS_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error('indexeddb-open-failed'));
+    request.onblocked = () => reject(new Error('indexeddb-blocked'));
+  });
+}
+
+async function inSecrets<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await openSecrets();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const transaction = db.transaction(SECRETS_STORE, mode);
+      const request = run(transaction.objectStore(SECRETS_STORE));
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onerror = () => reject(transaction.error ?? new Error('indexeddb-failed'));
+      transaction.onabort = () => reject(transaction.error ?? new Error('indexeddb-aborted'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** The token's home: the extension origin's IndexedDB, which no content script can open. */
+function indexedDbSecrets(): SecretStore {
+  return {
+    get: () => inSecrets<unknown>('readonly', (store) => store.get(SECRETS_KEY)),
+    async set(value) {
+      await inSecrets('readwrite', (store) => store.put(value, SECRETS_KEY));
+    },
+    async clear() {
+      await inSecrets('readwrite', (store) => store.delete(SECRETS_KEY));
+    },
+  };
+}
+
+const OS_NAMES: Readonly<Record<string, ClientInfo['os']>> = { win: 'windows', mac: 'mac', linux: 'linux', cros: 'chromeos' };
+
+async function clientInfo(): Promise<ClientInfo> {
+  const navigatorLike = globalThis.navigator as { userAgentData?: { brands?: Array<{ brand?: string }> } } | undefined;
+  const names = (navigatorLike?.userAgentData?.brands ?? []).map((entry) => entry.brand ?? '');
+  const browserName: ClientInfo['browser'] = names.includes('Microsoft Edge')
+    ? 'edge'
+    : names.includes('Google Chrome')
+      ? 'chrome'
+      : 'other';
+  let os: ClientInfo['os'] = 'other';
+  try {
+    const info = await browser.runtime.getPlatformInfo();
+    os = OS_NAMES[info.os] ?? 'other';
+  } catch {
+    // Not known: 'other' still names the connection.
+  }
+  return { browser: browserName, os };
+}
+
+function hex(bytes: ArrayBuffer): string {
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** Chrome's sentences when nothing receives a message: no such tab, frame or document, or no listener in it
+ *  ("Could not establish connection. Receiving end does not exist."). */
+const NO_RECEIVER = /receiving end does not exist|no frame with id|no tab with id|no document with id|invalid document id/i;
+
+/** A failed tabs.sendMessage, sorted: 'gone' when nothing received it, 'unanswered' when a listener did not answer
+ *  ("The message port closed before a response was received."). */
+function frameSendFailure(error: unknown): FrameSendFailure {
+  const message = error instanceof Error ? error.message : String(error);
+  return NO_RECEIVER.test(message) ? 'gone' : 'unanswered';
+}
+
 export function createWorkerPlatform(): WorkerPlatform {
   return {
     runtime: {
@@ -91,9 +185,18 @@ export function createWorkerPlatform(): WorkerPlatform {
       onMessageExternal: (handler) => listen(browser.runtime.onMessageExternal as never, handler),
       onConnect: (cb) => browser.runtime.onConnect.addListener((port) => cb(wrapPort(port))),
       onInstalled: (cb) => browser.runtime.onInstalled.addListener(() => cb()),
+      clientInfo,
     },
     tabs: {
-      sendToFrame: (tabId, message, target) => browser.tabs.sendMessage(tabId, message, target),
+      async sendToFrame(tabId, message, target) {
+        try {
+          return await browser.tabs.sendMessage(tabId, message, target.documentId === undefined
+            ? { frameId: target.frameId }
+            : { frameId: target.frameId, documentId: target.documentId });
+        } catch (error) {
+          throw frameSendFailure(error);
+        }
+      },
       async create(url) {
         const tab = await browser.tabs.create({ url, active: true });
         return tab.id ?? null;
@@ -105,6 +208,13 @@ export function createWorkerPlatform(): WorkerPlatform {
       open: (tabId) => browser.sidePanel.open({ tabId }),
       openOnActionClick: (on) => browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: on }),
     },
+    secrets: indexedDbSecrets(),
+    // The global is read at call time, so a test can stub it.
+    fetch: (url, init) => fetch(url, init),
+    timeout: (ms) => AbortSignal.timeout(ms),
+    async sha256(bytes) {
+      return hex(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>));
+    },
     now: () => Date.now(),
     randomBytes: (count) => crypto.getRandomValues(new Uint8Array(count)),
   };
@@ -115,18 +225,20 @@ function sendFailure(error: unknown): SendFailure {
   return /context invalidated/i.test(message) ? 'context-invalidated' : 'no-receiver';
 }
 
+async function sendToWorker(message: unknown): Promise<unknown> {
+  try {
+    return await browser.runtime.sendMessage(message);
+  } catch (error) {
+    throw sendFailure(error);
+  }
+}
+
 function contentRuntime(): ContentPlatform['runtime'] {
   return {
     get id() {
       return browser.runtime?.id;
     },
-    async send(message) {
-      try {
-        return await browser.runtime.sendMessage(message);
-      } catch (error) {
-        throw sendFailure(error);
-      }
-    },
+    send: sendToWorker,
     connect: (name) => wrapPort(browser.runtime.connect({ name })),
     onMessage: (handler) => listen(browser.runtime.onMessage as never, handler),
     isValid: () => browser.runtime?.id != null,
@@ -139,10 +251,23 @@ export function createContentPlatform(): ContentPlatform {
 
 export function createPagePlatform(): PagePlatform {
   return {
-    runtime: { ...contentRuntime(), getURL: (path) => browser.runtime.getURL(path as never) },
+    runtime: {
+      get id() {
+        return browser.runtime?.id;
+      },
+      send: sendToWorker,
+      connect: (name) => wrapPort(browser.runtime.connect({ name })),
+      getURL: (path) => browser.runtime.getURL(path as never),
+      isValid: () => browser.runtime?.id != null,
+    },
     async activeTabId() {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       return tab?.id ?? null;
+    },
+    onActiveTabChanged(cb) {
+      const listener = (info: { tabId: number }) => cb(info.tabId);
+      browser.tabs.onActivated.addListener(listener);
+      return () => browser.tabs.onActivated.removeListener(listener);
     },
   };
 }

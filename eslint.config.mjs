@@ -89,6 +89,19 @@ export default tseslint.config(
     },
   },
   {
+    // The adapters' URL parsers and the application key run in the core's Vitest project, and are pure like it.
+    files: ['src/adapters/**/url.ts', 'src/adapters/application-key.ts'],
+    rules: {
+      'no-restricted-globals': ['error', ...IMPURE_GLOBALS.map((name) => ({
+        name, message: 'URL parsing is pure: it reads the address it is given, never the page, the clock or the browser.' }))],
+      '@typescript-eslint/no-restricted-imports': restrictImports([
+        { group: ['**/dom/**', '**/platform/**', '**/content/**', '**/background/**', '**/ui/**', '**/entrypoints/**',
+          '**/messaging/**', '**/shared/**', 'wxt', 'wxt/*', '@wxt-dev/*', 'react', 'react-dom', 'zod', 'node:*'],
+          message: 'URL parsing imports only the core and the application key.' },
+      ]),
+    },
+  },
+  {
     files: ['src/dom/**/*.ts'],
     ignores: ['src/dom/**/*.test.ts'],
     rules: {
@@ -113,6 +126,8 @@ export default tseslint.config(
       ]),
     },
   },
+  { files: ['src/background/timers.ts'], rules: { 'no-restricted-globals': ['error',
+    { name: 'document', message: 'The worker has no document.' }, { name: 'window', message: 'The worker has no window.' }] } },
   {
     files: ['src/content/**/*.{ts,tsx}'],
     ignores: ['src/content/ui/panel.tsx'],

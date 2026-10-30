@@ -1,0 +1,226 @@
+{
+  "fixture": "lever/spotify-ny",
+  "source": "https://jobs.lever.co/spotify/2a55d6c9-c564-443a-be3e-a3851db5a93b/apply",
+  "captured": "2026-10-29T22:38:30.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "#resume-upload-input",
+      "note": "A file input hidden by opacity 0 inside the visible ATTACH RESUME/CV link (a.visible-resume-upload). A wrapping label never qualifies a file input, so the Lever adapter's uploadWidgets() must declare that link. Required only by the label's marker (span.required): the input has no required attribute."
+    },
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"name\"]"
+    },
+    {
+      "label": "Pronouns",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": true,
+      "options": 10,
+      "control": "input[type=\"checkbox\"][name=\"pronouns\"]",
+      "note": "Nine pronouns and Use name only share name=pronouns. The group's label is a div.application-label that no label element, legend or aria attribute ties to the boxes, so the Lever adapter's labelFor() must supply it. Each box has its own wrapping label."
+    },
+    {
+      "label": "Custom",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "#customPronounsOption",
+      "note": "No name, so it is not part of the pronouns group: the page's script uses it only to show the custom pronouns box below it."
+    },
+    {
+      "label": "Write here...",
+      "kind": "text",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#customPronounsTextField",
+      "note": "display: none until Custom is ticked (a reveal, Phase 3). Its only text is its placeholder."
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"phone\"]"
+    },
+    {
+      "label": "Current location",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "control": "#location-input",
+      "note": "Lever's structured location question: a text input whose suggestions come from Lever's location search into div.dropdown-results, with no ARIA roles in the markup. Typing alone may not satisfy it."
+    },
+    {
+      "label": "Current company",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "input[name=\"org\"]"
+    },
+    {
+      "label": "LinkedIn URL",
+      "kind": "text",
+      "required": false,
+      "section": "Links",
+      "fillable": true,
+      "control": "input[name=\"urls[LinkedIn]\"]"
+    },
+    {
+      "label": "GitHub URL",
+      "kind": "text",
+      "required": false,
+      "section": "Links",
+      "fillable": true,
+      "control": "input[name=\"urls[GitHub]\"]"
+    },
+    {
+      "label": "Portfolio URL",
+      "kind": "text",
+      "required": false,
+      "section": "Links",
+      "fillable": true,
+      "control": "input[name=\"urls[Portfolio]\"]"
+    },
+    {
+      "label": "Other website",
+      "kind": "text",
+      "required": false,
+      "section": "Links",
+      "fillable": true,
+      "control": "input[name=\"urls[Other]\"]"
+    },
+    {
+      "label": "Have you ever been previously employed by Spotify?",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "Previous Spotify Employment",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"cards[92a51f92-d683-4f7b-be57-e25376f60abe][field0]\"]",
+      "note": "No, Yes - Intern, Yes - Full Time Employment, as checkboxes. Lever's custom questions are labelled by a div.application-label .text above the control, which no label element ties to it, so the Lever adapter's labelFor() must supply it."
+    },
+    {
+      "label": "What is your location?",
+      "kind": "select",
+      "required": false,
+      "section": "Demographic Survey",
+      "fillable": true,
+      "options": 251,
+      "control": "select[data-qa=\"candidate-location-select\"]",
+      "note": "No name. Choosing a country shows that country's survey below (the page's script, a reveal for Phase 3); the first option is Select...."
+    },
+    {
+      "label": "What best describes your gender?",
+      "kind": "radio",
+      "required": false,
+      "section": "Demographic Questions for Spotify",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 5,
+      "control": "input[name=\"surveysResponses[cbf1b3c9-4157-4ddd-a66e-41dae0d8badb][responses][field0]\"]",
+      "note": "In the survey for the United States (div#countrySurvey_US, class hidden: display: none until What is your location? names that country)."
+    },
+    {
+      "label": "What is your race/ethnicity?:",
+      "kind": "radio",
+      "required": false,
+      "section": "Demographic Questions for Spotify",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 8,
+      "control": "input[name=\"surveysResponses[cbf1b3c9-4157-4ddd-a66e-41dae0d8badb][responses][field1]\"]",
+      "note": "In the hidden survey for the United States."
+    },
+    {
+      "label": "Are you a veteran/have you served in the military?",
+      "kind": "radio",
+      "required": false,
+      "section": "Demographic Questions for Spotify",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 3,
+      "control": "input[name=\"surveysResponses[cbf1b3c9-4157-4ddd-a66e-41dae0d8badb][responses][field2]\"]",
+      "note": "In the hidden survey for the United States."
+    },
+    {
+      "label": "What best describes your gender?",
+      "kind": "radio",
+      "required": false,
+      "section": "Demographic Question for Spotify",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 5,
+      "control": "input[name=\"surveysResponses[380b7dba-8003-486d-b65d-28bf53a52415][responses][field0]\"]",
+      "note": "In the hidden survey for a long list of countries (div#countrySurvey_AL_DZ_AS_...)."
+    },
+    {
+      "label": "What gender do you identify with?",
+      "kind": "radio",
+      "required": false,
+      "section": "Demographic Survey for Spotify",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 3,
+      "control": "input[name=\"surveysResponses[414f4bab-5e29-4f62-ba71-2e6d2442df59][responses][field0]\"]",
+      "note": "In the hidden survey for another list of countries (div#countrySurvey_AF_AZ_BH_...)."
+    },
+    {
+      "label": "What best describes your gender?",
+      "kind": "radio",
+      "required": false,
+      "section": "Demographic Questions from Spotify",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 5,
+      "control": "input[name=\"surveysResponses[46c5c4bd-a2d2-43e8-85a4-eefa9d51dff2][responses][field0]\"]",
+      "note": "In the hidden survey for the United Kingdom (div#countrySurvey_GB)."
+    },
+    {
+      "label": "What best describes your ethnicity?",
+      "kind": "radio",
+      "required": false,
+      "section": "Demographic Questions from Spotify",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 19,
+      "control": "input[name=\"surveysResponses[46c5c4bd-a2d2-43e8-85a4-eefa9d51dff2][responses][field1]\"]",
+      "note": "In the hidden survey for the United Kingdom."
+    },
+    {
+      "label": "Spotify has my consent to contact me about future job opportunities.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Demographic Survey",
+      "fillable": true,
+      "control": "input[name=\"consent[marketing]\"]",
+      "note": "Marketing consent: never ticked unless the person pre-approved it. It sits in an untitled part of the form (div[data-qa=consent-section]) after the surveys, so the nearest visible heading above it is Demographic Survey's. The label's text comes before the box inside its wrapping label."
+    }
+  ]
+}

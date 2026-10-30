@@ -13,6 +13,56 @@ export const LOG_CODES = [
   'content.started',
   'content.context-invalidated',
   'content.forged-wxt-event',
+  // The worker's server client: statuses and timings only, never a URL, a body or a header.
+  'server.answered',
+  'server.refused',
+  'server.unreachable',
+  'server.timeout',
+  'server.bad-answer',
+  'server.version-mismatch',
+  'server.path-refused',
+  'server.too-large',
+  // Pairing and the token.
+  'auth.pairing-started',
+  'auth.pairing-refused',
+  'auth.connected',
+  'auth.redeem-failed',
+  'auth.disconnected',
+  'auth.token-dropped',
+  'auth.token-unreadable',
+  // The profile in the worker's memory.
+  'profile.loaded',
+  'profile.load-failed',
+  'profile.dropped',
+  'profile.sensitive',
+  'profile.canonicalize-failed',
+  // Runs, plans and what the worker keeps.
+  'run.begun',
+  'run.refused',
+  'run.lookup-failed',
+  'plan.answered',
+  'plan.failed',
+  'runstate.stored',
+  'runstate.pruned',
+  'runstate.refused',
+  'report.stored',
+  'report.refused',
+  'policy.recorded',
+  'settings.saved',
+  'settings.unreadable',
+  // The review panel and the frames.
+  'panel.opened',
+  'panel.open-failed',
+  'panel.sent',
+  'frame.unreachable',
+  'frame.forgotten',
+  // The resume transfer.
+  'resume.sent',
+  'resume.refused',
+  'resume.released',
+  'resume.protocol-error',
+  // Ports.
+  'port.refused',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

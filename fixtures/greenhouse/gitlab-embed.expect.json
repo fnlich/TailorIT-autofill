@@ -1,0 +1,286 @@
+{
+  "fixture": "greenhouse/gitlab-embed",
+  "source": "https://job-boards.greenhouse.io/embed/job_app?for=gitlab&token=8857185002",
+  "captured": "2026-10-29T22:39:09.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "note": "The embedded form (/embed/job_app) shows the same posting and the same form as gitlab-job, control for control.",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#first_name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#last_name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#country",
+      "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country."
+    },
+    {
+      "label": "Search",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#iti-0__search-input",
+      "note": "intl-tel-input's own country search, inside div.iti__country-container, which is display: none on this page (the Country select above stands in for it)."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#phone",
+      "note": "intl-tel-input wraps it (its own country picker is display: none here)."
+    },
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#resume",
+      "note": "Visually hidden (1 px, clip) behind the visible Attach button; its label[for] (Attach) is visually hidden too, and the visible label is the group's div#upload-label-resume (role=group aria-labelledby). So the Greenhouse adapter's uploadWidgets() must declare the Attach button, and labelFor() the group label."
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#cover_letter",
+      "note": "Visually hidden (1 px, clip) behind the visible Attach button; its label[for] (Attach) is visually hidden too, and the visible label is the group's div#upload-label-cover_letter (role=group aria-labelledby). So the Greenhouse adapter's uploadWidgets() must declare the Attach button, and labelFor() the group label."
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_38599927002"
+    },
+    {
+      "label": "What's the name you'd prefer us to use throughout the interview process?",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_38599928002"
+    },
+    {
+      "label": "Have you managed renewals, accounts, or customer contracts for a software, SaaS, or subscription-based product?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_38896359002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38896359002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "What’s the largest number of customer accounts you’ve managed at one time?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_38896360002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38896360002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Are you currently located in the United States or Canada?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_38599929002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38599929002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Will you now or in the future require sponsorship for a visa to remain in your current location?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_38599932002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38599932002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Are you subject to any employment agreements and/or post-employment restrictions with your current employer or a past employer?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_38599930002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38599930002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "It is important to us to create an accessible and inclusive interview experience. Please let us know if there are any adjustments we can make to assist you during the hiring and interview process.",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_38599931002"
+    },
+    {
+      "label": "Have you previously worked at or consulted for GitLab?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_38599933002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38599933002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "What is your current country of residence?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#question_38599934002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38599934002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#gender"
+    },
+    {
+      "label": "Are you Hispanic/Latino?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#hispanic_ethnicity",
+      "note": "No race question is rendered in this capture."
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#veteran_status"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#g-recaptcha-response-100000",
+      "note": "reCAPTCHA's own response field, outside the form, display: none."
+    }
+  ]
+}

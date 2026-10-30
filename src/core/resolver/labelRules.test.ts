@@ -881,3 +881,14 @@ describe('the fallbacks (UNRECOGNISED_FIELD_RULES)', () => {
     expect(unrecognisedField('radio')).toBeNull();
   });
 });
+
+describe('the language rule’s widening (Phase 2)', () => {
+  it('reads "Which languages do you speak?" as the languages question, and a programming one as not', () => {
+    expect(labelHit('Which languages do you speak?', 'checkbox-group')).toMatchObject({ rule: 'label.language',
+      category: 'languages.language' });
+    expect(labelHit('What languages can you speak fluently?', 'checkbox-group')?.category).toBe('languages.language');
+    expect(labelHit('What programming languages do you know?', 'checkbox-group')?.category)
+      .not.toBe('languages.language');
+    expect(labelHit('What level of Spanish do you speak?', 'select')?.category).not.toBe('languages.language');
+  });
+});

@@ -3,10 +3,12 @@
  * so everything it sends is parsed as untrusted: objects are strict and every string and array is capped. The worker
  * also checks each sender (background/senders.ts); a known type on the wrong channel is refused.
  *
- * Phase 0 answers only ping and frame/hello (everything else gets not_implemented); the rest of the catalogue is fixed
- * here so later phases fill in handlers, not shapes.
+ * The catalogue is fixed here so phases fill in handlers, not shapes; docs/ARCHITECTURE.md ("Message catalogue") lists
+ * who sends each message and what it answers. From Phase 2 the worker answers everything but panel/confirmDraft and
+ * panel/saveAnswer (Phase 6), which get not_implemented.
  */
 import { z } from 'zod';
+import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
 import { REASON_CODES } from '../core/types/fill';
@@ -197,8 +199,23 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('auth/redeemCode'), code: z.string().regex(/^[0-9A-Za-z -]{16,24}$/) }),
   z.strictObject({ v, type: z.literal('auth/disconnect') }),
   z.strictObject({ v, type: z.literal('runs/clear') }),
+  /** One read of a tab's reports; the `panel` port follows them (below). */
+  z.strictObject({ v, type: z.literal('panel/reports'), tabId: TabId }),
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
+
+// ── The review panel's port (`panel`, extension pages only) ───────────────────────────────────────────────────────
+
+/** A tab's reports, one per frame that reported, by frame id. They hold labels and statuses, never a value. */
+const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(20) };
+
+export const PanelPortMessageSchema = z.discriminatedUnion('type', [
+  /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). */
+  z.strictObject({ v, type: z.literal('panel/watch'), tabId: TabId }),
+  /** Worker → page: the watched tab's reports, once at the watch and again on every change. */
+  z.strictObject({ v, type: z.literal('panel/update'), ...TabReportsShape }),
+]);
+export type PanelPortMessage = z.infer<typeof PanelPortMessageSchema>;
 
 // ── TailorIT's connect page → worker (externally_connectable) ─────────────────────────────────────────────────────
 
@@ -222,6 +239,10 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('answer/read'), fieldKey: Key }),
   /** The tab's combined report, for the frame that shows the in-page panel while it is open. */
   z.strictObject({ v, type: z.literal('report/update'), reports: z.array(FrameReportSchema).max(20) }),
+  /** Is this document still here? Sent to its {frameId, documentId} when another frame of the tab loads a document;
+   *  the frame answers {pong: true}. Any answer keeps the frame; only "nothing receives here" lets it go, so a content
+   *  script listens before it says frame/hello. */
+  z.strictObject({ v, type: z.literal('frame/ping') }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -252,6 +273,115 @@ export const PlanAnswerSchema = z.strictObject({
   /** Canaries the worker allows into RunState (none that equals a profile value). */
   persistableCanaries: z.array(Text(120)).max(32),
 });
+
+/** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/focus, and a frame's
+ *  answer to run/start, run/continue, run/cancel, field/focus, draft/confirm and report/update. */
+export const DoneAnswerSchema = z.strictObject({});
+
+/** runstate/get: this tab's RunState for the application, or null when there is none, it has expired (24 h after its
+ *  last update) or another tab holds it (a run never resumes in another tab). */
+export const RunStateGetAnswerSchema = z.strictObject({ runState: RunStateSchema.nullable() });
+
+/** runstate/put: the worker's own clock at storing, which becomes the stored updatedAt (expiry runs from it). */
+export const RunStatePutAnswerSchema = z.strictObject({ updatedAt: Count });
+
+/** A frame's answer to field/describe, forwarded as panel/describe's: the visible labels of a row's suggested options,
+ *  by option index. Fetched only when the row is expanded; never stored, never logged. */
+export const FieldDescribeAnswerSchema = z.strictObject({
+  options: z.array(z.strictObject({ index: Count, label: Text(300) })).max(3),
+});
+
+// ── Answers to extension pages ────────────────────────────────────────────────────────────────────────────────────
+
+/** settings/get and settings/save: the settings as stored. */
+export const SettingsAnswerSchema = z.strictObject({ settings: SettingsSchema });
+
+/** auth/status, and the answer to auth/redeemCode and auth/disconnect: the connection as the options page shows it.
+ *  The token itself is never in it, nor in any other answer. */
+export const AuthStatusSchema = z.strictObject({
+  /** 'connected': a token is held. The other three hold none: 'expired' and 'revoked' (TailorIT answered 401) say why
+   *  the last one went, until the worker restarts. */
+  connection: z.enum(['connected', 'not-connected', 'expired', 'revoked']),
+  /** The account's name and email, read from TailorIT's session into memory; null when not connected or not read. */
+  account: z.strictObject({ name: Text(200), email: Text(254) }).nullable(),
+  scopes: z.array(z.enum(EXTENSION_SCOPES)).max(EXTENSION_SCOPES.length),
+  /** When the token expires, in ms since the epoch; null when not connected. */
+  expiresAt: Count.nullable(),
+  /** Whether Chrome agreed to keep storage.local away from content scripts. 'refused' blocks filling. */
+  storageAccess: z.enum(['pending', 'restricted', 'refused']),
+  /** TailorIT answered with another API version: nothing is filled until one side is updated. */
+  versionMismatch: z.boolean(),
+  /** A pairing started here and not completed yet: when it lapses, in ms since the epoch. */
+  pairingExpiresAt: Count.nullable(),
+});
+export type AuthStatus = z.infer<typeof AuthStatusSchema>;
+
+/** auth/startPairing: TailorIT's connect page was opened; the pairing lapses at `expiresAt` (ms since the epoch). */
+export const StartPairingAnswerSchema = z.strictObject({ expiresAt: Count });
+
+/** panel/fill, panel/continue and panel/cancel: how many frames of the tab the message reached. */
+export const PanelSentAnswerSchema = z.strictObject({ frames: Count });
+
+/** panel/reports: the tab's reports (the same shape the panel port pushes). */
+export const TabReportsAnswerSchema = z.strictObject(TabReportsShape);
+export type TabReports = z.infer<typeof TabReportsAnswerSchema>;
+
+/** runs/clear: how many stored runs were removed. */
+export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
+
+// ── Which answer goes with which message ──────────────────────────────────────────────────────────────────────────
+
+/** The data schema of the worker's answer to each content message (wrap it in envelope.ts's answerSchema). The e2e
+ *  build's probe answers {} and is left out, so production bundles never name it. */
+export const CONTENT_ANSWER_SCHEMAS = {
+  ping: PingAnswerSchema,
+  'frame/hello': FrameHelloAnswerSchema,
+  'run/begin': RunBeginAnswerSchema,
+  'plan/request': PlanAnswerSchema,
+  'plan/poll': PlanAnswerSchema,
+  'runstate/get': RunStateGetAnswerSchema,
+  'runstate/put': RunStatePutAnswerSchema,
+  'runstate/clear': DoneAnswerSchema,
+  'report/put': DoneAnswerSchema,
+  'policy/hit': DoneAnswerSchema,
+  'panel/open': DoneAnswerSchema,
+} as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
+
+/** The data schema of the worker's answer to each page message. panel/confirmDraft and panel/saveAnswer answer
+ *  not_implemented until Phase 6. */
+export const PAGE_ANSWER_SCHEMAS = {
+  ping: PingAnswerSchema,
+  'panel/fill': PanelSentAnswerSchema,
+  'panel/continue': PanelSentAnswerSchema,
+  'panel/cancel': PanelSentAnswerSchema,
+  'panel/focus': DoneAnswerSchema,
+  'panel/describe': FieldDescribeAnswerSchema,
+  'panel/confirmDraft': DoneAnswerSchema,
+  'panel/saveAnswer': DoneAnswerSchema,
+  'panel/reports': TabReportsAnswerSchema,
+  'settings/get': SettingsAnswerSchema,
+  'settings/save': SettingsAnswerSchema,
+  'auth/status': AuthStatusSchema,
+  'auth/startPairing': StartPairingAnswerSchema,
+  'auth/redeemCode': AuthStatusSchema,
+  'auth/disconnect': AuthStatusSchema,
+  'runs/clear': RunsClearAnswerSchema,
+} as const satisfies Record<PageMessage['type'], z.ZodType>;
+
+/** The data schema of a frame's answer to each message the worker sends it. answer/read arrives in Phase 6. */
+export const FRAME_ANSWER_SCHEMAS = {
+  'run/start': DoneAnswerSchema,
+  'run/continue': DoneAnswerSchema,
+  'run/cancel': DoneAnswerSchema,
+  'field/focus': DoneAnswerSchema,
+  'field/describe': FieldDescribeAnswerSchema,
+  'draft/confirm': DoneAnswerSchema,
+  'report/update': DoneAnswerSchema,
+  'frame/ping': PingAnswerSchema,
+} as const satisfies Record<Exclude<WorkerToContent['type'], 'answer/read'>, z.ZodType>;
+
+/** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */
+export const EXTERNAL_ANSWER_SCHEMAS = { 'pair/complete': DoneAnswerSchema } as const satisfies Record<ExternalMessage['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────
 

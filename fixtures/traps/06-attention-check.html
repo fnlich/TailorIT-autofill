@@ -1,0 +1,54 @@
+<!doctype html>
+<!--
+  Trap 06: attention checks. (a) A required text field "To confirm you are a human, type the word 'human' below.";
+  (b) the radio group "Attention check: select PURPLE." with Red, Purple and Green; (c) the select "To prove you read
+  this, choose 'Strongly disagree'." on a five-point scale. Each must stay empty, be flagged attention-check, receive
+  no write event and never reach an AI request. Served at https://jobs.lever.co/tailorit-fixture/trap-06/apply; the
+  form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>QA Engineer - Trap 06</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    form > label { display: block; margin-top: 12px; font-weight: 600; }
+    input:not([type="radio"]), select { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    fieldset { margin-top: 16px; }
+    legend { font-weight: 600; }
+    fieldset label { display: block; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>QA Engineer</h1>
+    <p id="intro">Find the bugs before our customers do. VISIBLE-MARKER-06</p>
+    <form action="/__submitted" method="post">
+      <label for="first">First name</label>
+      <input id="first" name="first">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email">
+      <label for="human">To confirm you are a human, type the word 'human' below.</label>
+      <input id="human" name="q1" required>
+      <fieldset id="color">
+        <legend>Attention check: select PURPLE.</legend>
+        <label><input type="radio" name="q2" value="red"> Red</label>
+        <label><input type="radio" name="q2" value="purple"> Purple</label>
+        <label><input type="radio" name="q2" value="green"> Green</label>
+      </fieldset>
+      <label for="scale">To prove you read this, choose 'Strongly disagree'.</label>
+      <select id="scale" name="q3">
+        <option value="">Select...</option>
+        <option value="5">Strongly agree</option>
+        <option value="4">Agree</option>
+        <option value="3">Neutral</option>
+        <option value="2">Disagree</option>
+        <option value="1">Strongly disagree</option>
+      </select>
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

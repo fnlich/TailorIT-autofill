@@ -1,62 +1,175 @@
 /*
- * Hand fakes for what WXT's fake browser only stubs (its stubs throw): external messages, storage access levels, the
- * side panel, and messages to a tab's frame. Node tests (the ext project) call installHandFakes() after
- * fakeBrowser.reset(), then drive the real platform/chrome.ts, because WxtVitest aliases wxt/browser to the fake.
+ * Hand fakes for what WXT's fake browser lacks or only stubs (its stubs throw): external messages, ports, storage
+ * access levels, the side panel, the platform info, and messages to a tab's frame. Node tests (the ext project) call
+ * installHandFakes() after fakeBrowser.reset(), then drive the real platform/chrome.ts, because WxtVitest aliases
+ * wxt/browser to the fake.
  */
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 
-type Listener = (message: unknown, sender: unknown, sendResponse: (answer: unknown) => void) => unknown;
+type Listener = (...args: never[]) => unknown;
 
-/** A minimal Chrome event: listeners in order, and a trigger that calls them all. */
-function fakeEvent() {
-  const listeners = new Set<Listener>();
+/** A minimal Chrome event: listeners in order, and a trigger that calls them all with the same arguments. */
+function fakeEvent<L extends Listener>() {
+  const listeners = new Set<L>();
   return {
-    addListener: (cb: Listener) => void listeners.add(cb),
-    removeListener: (cb: Listener) => void listeners.delete(cb),
-    hasListener: (cb: Listener) => listeners.has(cb),
-    trigger: (message: unknown, sender: unknown, sendResponse: (answer: unknown) => void) =>
-      [...listeners].map((cb) => cb(message, sender, sendResponse)),
+    addListener: (cb: L) => void listeners.add(cb),
+    removeListener: (cb: L) => void listeners.delete(cb),
+    hasListener: (cb: L) => listeners.has(cb),
+    hasListeners: () => listeners.size > 0,
+    trigger: (...args: Parameters<L>) => [...listeners].map((cb) => cb(...args)),
   };
 }
 
+type MessageListener = (message: unknown, sender: unknown, sendResponse: (answer: unknown) => void) => unknown;
+
+/** A raw sender as Chrome describes one (`chrome.runtime.MessageSender`). */
+export interface RawSender {
+  id?: string;
+  url?: string;
+  origin?: string;
+  tab?: { id: number };
+  frameId?: number;
+  documentId?: string;
+  documentLifecycle?: string;
+}
+
+/** The test's end of a port the worker accepted. */
+export interface FakePortPeer {
+  /** Every message the worker posted, in order. */
+  readonly received: unknown[];
+  /** Posts a message to the worker, delivered asynchronously as Chrome does. */
+  post(message: unknown): void;
+  /** Calls `cb` with each message the worker posts from now on. */
+  onMessage(cb: (message: unknown) => void): void;
+  /** Disconnects from the test's side: the worker's onDisconnect fires. */
+  disconnect(): void;
+  /** True once the worker disconnected its end. */
+  readonly disconnectedByWorker: boolean;
+}
+
+/** One message the worker sent to a tab's frame. */
+export interface TabMessage {
+  tabId: number;
+  message: unknown;
+  options: { frameId?: number; documentId?: string } | undefined;
+}
+
+/** The hand fakes a test drives and reads. */
 export interface HandFakes {
-  onMessageExternal: ReturnType<typeof fakeEvent>;
+  onMessageExternal: ReturnType<typeof fakeEvent<MessageListener>>;
   accessLevels: { local: string | null; session: string | null };
   /** Make storage.local.setAccessLevel reject, as Chrome before 140 does. */
   refuseAccessLevel: (refuse: boolean) => void;
   sidePanelCalls: Array<{ method: 'open' | 'setPanelBehavior'; args: unknown }>;
-  tabMessages: Array<{ tabId: number; message: unknown; options: unknown }>;
+  /** Make sidePanel.open reject, as Chrome does without a user gesture. */
+  refuseSidePanel: (refuse: boolean) => void;
+  tabMessages: TabMessage[];
+  /** What a frame answers the worker; undefined unless a test sets it. A thrown error is "no receiving end". */
+  frameAnswers: (message: TabMessage) => unknown;
+  /** Opens a port to the worker as `sender` would, and returns the test's end of it. */
+  connect: (name: string, sender: RawSender) => FakePortPeer;
 }
 
+/** A pair of linked port ends: the worker gets `raw` (Chrome's Port shape), the test gets the peer. */
+function portPair(name: string, sender: RawSender): { raw: unknown; peer: FakePortPeer } {
+  const toWorker = fakeEvent<(message: unknown) => unknown>();
+  const workerDisconnect = fakeEvent<() => unknown>();
+  const toPeer: Array<(message: unknown) => void> = [];
+  const received: unknown[] = [];
+  let open = true;
+  let disconnectedByWorker = false;
+
+  const raw = {
+    name,
+    sender,
+    postMessage(message: unknown) {
+      if (!open) throw new Error('Attempting to use a disconnected port object');
+      const copy = JSON.parse(JSON.stringify(message)) as unknown;
+      queueMicrotask(() => {
+        received.push(copy);
+        for (const cb of toPeer) cb(copy);
+      });
+    },
+    onMessage: toWorker,
+    onDisconnect: workerDisconnect,
+    disconnect() {
+      if (!open) return;
+      open = false;
+      disconnectedByWorker = true;
+    },
+  };
+  const peer: FakePortPeer = {
+    received,
+    post(message) {
+      if (!open) throw new Error('Attempting to use a disconnected port object');
+      const copy = JSON.parse(JSON.stringify(message)) as unknown;
+      queueMicrotask(() => {
+        if (open) toWorker.trigger(copy);
+      });
+    },
+    onMessage: (cb) => void toPeer.push(cb),
+    disconnect() {
+      if (!open) return;
+      open = false;
+      queueMicrotask(() => workerDisconnect.trigger());
+    },
+    get disconnectedByWorker() {
+      return disconnectedByWorker;
+    },
+  };
+  return { raw, peer };
+}
+
+/** Puts the hand fakes on WXT's fake browser (after fakeBrowser.reset()). */
 export function installHandFakes(): HandFakes {
+  let refusingAccess = false;
+  let refusingSidePanel = false;
+  const onConnect = fakeEvent<(port: unknown) => unknown>();
   const fakes: HandFakes = {
-    onMessageExternal: fakeEvent(),
+    onMessageExternal: fakeEvent<MessageListener>(),
     accessLevels: { local: null, session: null },
     refuseAccessLevel: (refuse) => {
-      refusing = refuse;
+      refusingAccess = refuse;
     },
     sidePanelCalls: [],
+    refuseSidePanel: (refuse) => {
+      refusingSidePanel = refuse;
+    },
     tabMessages: [],
+    frameAnswers: () => undefined,
+    connect(name, sender) {
+      const { raw, peer } = portPair(name, sender);
+      onConnect.trigger(raw);
+      return peer;
+    },
   };
-  let refusing = false;
   const browser = fakeBrowser as unknown as Record<string, Record<string, unknown>>;
-  (browser.runtime as Record<string, unknown>).onMessageExternal = fakes.onMessageExternal;
-  (browser.runtime as Record<string, unknown>).getManifest = () => ({ manifest_version: 3, name: 'test', version: '0.0.0' });
+  const runtime = browser.runtime as Record<string, unknown>;
+  runtime.onMessageExternal = fakes.onMessageExternal;
+  runtime.onConnect = onConnect;
+  runtime.getManifest = () => ({ manifest_version: 3, name: 'test', version: '0.0.0' });
+  runtime.getPlatformInfo = async () => ({ os: 'win', arch: 'x86-64', nacl_arch: 'x86-64' });
   const storage = browser.storage as Record<string, Record<string, unknown>>;
   storage.local!.setAccessLevel = async (options: { accessLevel: string }) => {
-    if (refusing) throw new Error('This StorageArea is not available for setting access level');
+    if (refusingAccess) throw new Error('This StorageArea is not available for setting access level');
     fakes.accessLevels.local = options.accessLevel;
   };
   storage.session!.setAccessLevel = async (options: { accessLevel: string }) => {
     fakes.accessLevels.session = options.accessLevel;
   };
   browser.sidePanel = {
-    open: async (args: unknown) => void fakes.sidePanelCalls.push({ method: 'open', args }),
+    open: (args: unknown) => {
+      fakes.sidePanelCalls.push({ method: 'open', args });
+      return refusingSidePanel
+        ? Promise.reject(new Error('`sidePanel.open()` may only be called in response to a user gesture.'))
+        : Promise.resolve();
+    },
     setPanelBehavior: async (args: unknown) => void fakes.sidePanelCalls.push({ method: 'setPanelBehavior', args }),
   };
-  (browser.tabs as Record<string, unknown>).sendMessage = async (tabId: number, message: unknown, options: unknown) => {
-    fakes.tabMessages.push({ tabId, message, options });
-    return undefined;
+  (browser.tabs as Record<string, unknown>).sendMessage = async (tabId: number, message: unknown, options: TabMessage['options']) => {
+    const sent: TabMessage = { tabId, message, options };
+    fakes.tabMessages.push(sent);
+    return fakes.frameAnswers(sent);
   };
   return fakes;
 }

@@ -1,7 +1,7 @@
 /*
  * The browser as each part of the extension may use it. platform/chrome.ts is the only file over `browser.*`; tests
- * use fake.ts (Node, over WXT's fake browser plus hand fakes) and memory.ts (browser mode). A content script gets
- * ContentPlatform, which has no storage, tabs or secrets at all.
+ * use fake.ts (Node, over WXT's fake browser plus hand fakes) and memory.ts (in-memory doubles). A content script gets
+ * ContentPlatform, which has no storage, tabs, network or secrets at all.
  */
 
 /** What Chrome says about who sent a message. The worker decides trust from this, never from a payload. */
@@ -18,6 +18,12 @@ export interface Sender {
 /** An async message handler; the wrapper answers with sendResponse and keeps the channel open. */
 export type Handler = (message: unknown, sender: Sender) => Promise<unknown>;
 
+/** The long-lived connections the extension opens: the resume transfer (content) and the review panel (pages). */
+export const PORT_NAMES = ['resume', 'panel'] as const;
+/** One of PORT_NAMES. */
+export type PortName = (typeof PORT_NAMES)[number];
+
+/** One end of a long-lived connection. */
 export interface PortLike {
   readonly name: string;
   readonly sender?: Sender;
@@ -27,6 +33,7 @@ export interface PortLike {
   disconnect(): void;
 }
 
+/** One storage area (local or session), read by key or by key prefix. */
 export interface StorageArea {
   get(key: string): Promise<unknown>;
   getMany(prefix: string): Promise<Record<string, unknown>>;
@@ -36,6 +43,33 @@ export interface StorageArea {
   restrictToTrustedContexts(): Promise<void>;
 }
 
+/**
+ * The extension origin's IndexedDB (database `tailorit`, store `secrets`, key `auth`): where the bearer token lives.
+ * A content script runs under the page's origin, so it can never open this database. Its reader (background/auth.ts)
+ * checks what comes out.
+ */
+export interface SecretStore {
+  get(): Promise<unknown>;
+  set(value: unknown): Promise<void>;
+  clear(): Promise<void>;
+}
+
+/** The browser and operating system a token is for, which name the connection in TailorIT ("Chrome on Windows"). */
+export interface ClientInfo {
+  browser: 'chrome' | 'edge' | 'other';
+  os: 'windows' | 'mac' | 'linux' | 'chromeos' | 'other';
+}
+
+/** One HTTP request, as the worker's server client makes it. */
+export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+
+/**
+ * Why a message to a frame got no answer. 'gone': nothing receives in that frame and document (the document was
+ * replaced or closed, or no listener runs in it). 'unanswered': it arrived, and its listener gave no answer.
+ */
+export type FrameSendFailure = 'gone' | 'unanswered';
+
+/** What the service worker may use. */
 export interface WorkerPlatform {
   runtime: {
     id: string;
@@ -46,14 +80,28 @@ export interface WorkerPlatform {
     onMessageExternal(handler: Handler): void;
     onConnect(cb: (port: PortLike) => void): void;
     onInstalled(cb: () => void): void;
+    /** The browser and operating system, for the redeem request. Never rejects: what it cannot tell is 'other'. */
+    clientInfo(): Promise<ClientInfo>;
   };
   tabs: {
+    /** Sends to one frame of a tab (to one document of it, with `documentId`) and resolves with its answer; rejects
+     *  with a FrameSendFailure. */
     sendToFrame(tabId: number, message: unknown, target: { frameId: number; documentId?: string }): Promise<unknown>;
+    /** Opens a tab in front; resolves with its id. */
     create(url: string): Promise<number | null>;
     onRemoved(cb: (tabId: number) => void): void;
   };
   storage: { local: StorageArea; session: StorageArea };
+  /** open() must be called before any await in the handler of the message that carries the click, or the browser no
+   *  longer counts the click as the person's gesture. */
   sidePanel: { open(tabId: number): Promise<void>; openOnActionClick(on: boolean): Promise<void> };
+  /** The token's home (extension-origin IndexedDB). */
+  secrets: SecretStore;
+  fetch: FetchLike;
+  /** A signal that aborts after `ms` (AbortSignal.timeout). */
+  timeout(ms: number): AbortSignal;
+  /** The lower-case hex SHA-256 of `bytes` (crypto.subtle). */
+  sha256(bytes: Uint8Array): Promise<string>;
   now(): number;
   randomBytes(count: number): Uint8Array;
 }
@@ -61,6 +109,7 @@ export interface WorkerPlatform {
 /** Why a message to the worker could not be delivered. */
 export type SendFailure = 'context-invalidated' | 'no-receiver';
 
+/** What a content script may use: messages and the resume port, nothing else. */
 export interface ContentPlatform {
   runtime: {
     id: string | undefined;
@@ -75,7 +124,19 @@ export interface ContentPlatform {
   now(): number;
 }
 
+/** What an extension page (the side panel, the report page, the options page) may use. */
 export interface PagePlatform {
-  runtime: ContentPlatform['runtime'] & { getURL(path: string): string };
+  runtime: {
+    id: string | undefined;
+    /** Sends to the worker. Rejects with a SendFailure when it cannot answer. */
+    send(message: unknown): Promise<unknown>;
+    /** The review panel's live connection: post `panel/watch {tabId}`, receive `panel/update` on every change. */
+    connect(name: 'panel'): PortLike;
+    getURL(path: string): string;
+    isValid(): boolean;
+  };
+  /** The active tab of the page's own window, or null. */
   activeTabId(): Promise<number | null>;
+  /** Calls `cb` with the tab's id whenever a tab becomes active; the returned function stops listening. */
+  onActiveTabChanged(cb: (tabId: number) => void): () => void;
 }

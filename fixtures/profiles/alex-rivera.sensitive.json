@@ -1,0 +1,57 @@
+{
+  "workAuthorization": [
+    {
+      "country": "US",
+      "authorized": {
+        "state": "value",
+        "value": true
+      },
+      "sponsorshipNow": {
+        "state": "value",
+        "value": false
+      },
+      "sponsorshipFuture": {
+        "state": "value",
+        "value": false
+      },
+      "status": {
+        "state": "not_provided"
+      }
+    }
+  ],
+  "eeo": {
+    "gender": {
+      "state": "declined"
+    },
+    "hispanicOrLatino": {
+      "state": "declined"
+    },
+    "races": {
+      "state": "declined"
+    },
+    "veteran": {
+      "state": "value",
+      "value": {
+        "isVeteran": false,
+        "isProtectedVeteran": false
+      }
+    },
+    "disability": {
+      "state": "declined"
+    },
+    "pronouns": {
+      "state": "not_provided"
+    }
+  },
+  "legal": {
+    "atLeast18": {
+      "state": "value",
+      "value": true
+    }
+  },
+  "compensation": {
+    "expectedSalary": {
+      "state": "not_provided"
+    }
+  }
+}

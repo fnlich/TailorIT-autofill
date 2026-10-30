@@ -2,10 +2,19 @@
  * The frames that announced themselves, per tab, in storage.session (memory only, gone when the browser restarts).
  * The panel's Fill starts every registered frame that has a form. An entry keeps the frame's origin and platform,
  * never its full address: page URLs stay out of storage.
+ *
+ * Frames come and go without a word: when a top frame loads another page, the subframes of the old one vanish. So
+ * whenever a frame says hello from a document the registry has not seen, the worker asks each of the tab's other
+ * frames, at its own {frameId, documentId}, whether that document is still there (`frame/ping`), and forgets only those
+ * in which nothing receives, twice, a grace period apart. It never goes by arrival order: a subframe of the new page
+ * can say hello, and report, before its top frame does, and it answers, so it stays. A panel that reads or starts to
+ * follow a tab asks the same of all its frames, because a page with none of our frames says no hello at all.
  */
 import type { Platform } from '../core/enums';
-import type { StorageArea } from '../platform/types';
+import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
+import { log } from '../shared/log';
+import type { Timers } from './timers';
 
 export interface FrameEntry {
   tabId: number;
@@ -45,7 +54,82 @@ export async function framesOfTab(session: StorageArea, tabId: number): Promise<
   return Object.values(await session.getMany(`frames:${tabId}:`)) as FrameEntry[];
 }
 
+/** One registered frame, or null. */
+export async function frameEntry(session: StorageArea, tabId: number, frameId: number): Promise<FrameEntry | null> {
+  return ((await session.get(keyOf(tabId, frameId))) as FrameEntry | undefined) ?? null;
+}
+
+/** Forgets some frames of a tab. */
+export async function forgetFrames(session: StorageArea, tabId: number, frameIds: readonly number[]): Promise<void> {
+  if (frameIds.length > 0) await session.remove(frameIds.map((frameId) => keyOf(tabId, frameId)));
+}
+
 /** Forgets a closed tab's frames. */
 export async function forgetTab(session: StorageArea, tabId: number): Promise<void> {
   await session.remove(Object.keys(await session.getMany(`frames:${tabId}:`)));
+}
+
+/** How long a frame in which nothing received a probe has before it is asked again, and then forgotten: its content
+ *  script may be a moment from listening. */
+export const FRAME_PROBE_GRACE_MS = 1000;
+/** How long one probe waits for an answer. A frame that neither answers nor is refused in time is kept. */
+export const FRAME_PROBE_TIMEOUT_MS = 2000;
+
+/** Where a message reaches one registered frame's own document. */
+export const frameTarget = (frame: FrameEntry) =>
+  frame.documentId === null ? { frameId: frame.frameId } : { frameId: frame.frameId, documentId: frame.documentId };
+
+export interface FrameSweepDeps {
+  session: StorageArea;
+  tabs: Pick<WorkerPlatform['tabs'], 'sendToFrame'>;
+  timers: Timers;
+  /** Runs a task under the tab's lock, the one frame/hello registers under, so a frame that registers anew is never
+   *  forgotten in its place. */
+  lock<T>(tabId: number, task: () => Promise<T>): Promise<T>;
+  /** Forgets a frame whose document is gone: its registry entry, its report and its runs. Called under the lock. */
+  forget(tabId: number, frameId: number): Promise<void>;
+}
+
+/** Sweeps a tab: probes its frames (all of them, or all but `exceptFrameId`: the one that just said hello) and
+ *  forgets those whose documents are gone. */
+export function createFrameSweep(deps: FrameSweepDeps): (tabId: number, exceptFrameId?: number) => Promise<void> {
+  /** Whether anything still receives in the frame's document. A frame that answers (an error answer included) or
+   *  whose listener gave no answer is there; so is one that has not answered when the probe gives up. */
+  function probe(tabId: number, frame: FrameEntry): Promise<'there' | 'gone'> {
+    return new Promise((resolve) => {
+      const cancel = deps.timers.after(FRAME_PROBE_TIMEOUT_MS, () => resolve('there'));
+      deps.tabs.sendToFrame(tabId, { v: 1, type: 'frame/ping' }, frameTarget(frame)).then(
+        () => {
+          cancel();
+          resolve('there');
+        },
+        (failure: unknown) => {
+          cancel();
+          resolve(failure === 'gone' ? 'gone' : 'there');
+        },
+      );
+    });
+  }
+
+  async function goneOf(tabId: number, frames: FrameEntry[]): Promise<FrameEntry[]> {
+    const answers = await Promise.all(frames.map(async (frame) => ({ frame, state: await probe(tabId, frame) })));
+    return answers.filter((answer) => answer.state === 'gone').map((answer) => answer.frame);
+  }
+
+  return async (tabId, exceptFrameId) => {
+    const others = (await framesOfTab(deps.session, tabId)).filter((frame) => frame.frameId !== exceptFrameId);
+    const silent = await goneOf(tabId, others);
+    if (silent.length === 0) return;
+    await new Promise<void>((resolve) => deps.timers.after(FRAME_PROBE_GRACE_MS, resolve));
+    const gone = await goneOf(tabId, silent);
+    for (const frame of gone) {
+      await deps.lock(tabId, async () => {
+        // Only the document that was asked: a frame that has since said hello from another one stays.
+        const current = await frameEntry(deps.session, tabId, frame.frameId);
+        if (current === null || current.documentId !== frame.documentId) return;
+        await deps.forget(tabId, frame.frameId);
+        log('frame.forgotten', { frameId: frame.frameId });
+      });
+    }
+  };
 }

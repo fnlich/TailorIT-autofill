@@ -1,0 +1,549 @@
+/*
+ * isUserVisible (docs/design/runtime.md §5.1; docs/ARCHITECTURE.md "Visibility"): could a person see this element? Only
+ * what passes ever becomes a field, a label, an option or LLM input; everything else is a honeypot or hidden text.
+ *
+ * The browser's checkVisibility (with its opacity, visibility and content-visibility options) runs first where it
+ * exists, and a manual walk always runs after it. The walk is also the whole check where checkVisibility is missing
+ * (older Safari), and it covers what checkVisibility never looks at: the hidden, inert and aria-hidden attributes, an
+ * open modal dialog, boxes under 4 px, off-screen positions in document coordinates, clipping by overflow, `clip` and
+ * `clip-path`, tiny fonts and a tiny frame. A shape it cannot measure counts as hidden: uncertain cases fail closed.
+ *
+ * Known limits (docs/ARCHITECTURE.md Risk 3): an element covered by an opaque overlay still counts as visible
+ * (occlusion is not tested), and an element placed far to the right extends the page's scroll area, so it counts as
+ * reachable.
+ */
+import { isInOwnUi } from './own-ui';
+import { flatParent, type ScanCache, styleOf, viewOf, newScanCache } from './scan-cache';
+import { MIN_BOX_PX, MIN_CLIP_RADIUS_PX, MIN_FONT_PX, MIN_OPACITY } from './thresholds';
+
+/** The rules, in the order they run; the first that fails names why an element is hidden. */
+export const VISIBILITY_RULES = ['disconnected', 'own-ui', 'frame', 'deferred', 'native-check', 'hidden-attribute',
+  'inert', 'outside-modal', 'aria-hidden', 'display-none', 'content-visibility', 'opacity', 'visibility', 'box-size',
+  'off-screen', 'overflow-clip', 'font-size', 'clip', 'clip-path'] as const;
+export type VisibilityRule = (typeof VISIBILITY_RULES)[number];
+
+/** Why an element is or is not visible. */
+export interface VisibilityVerdict {
+  visible: boolean;
+  /** The first rule that failed; null when visible. */
+  rule: VisibilityRule | null;
+  /** Hidden only because `content-visibility: auto` has not rendered it yet: counted as a deferred field, and the
+   *  notice asks the person to scroll to it. */
+  deferred: boolean;
+}
+
+/** A rectangle in client (viewport) coordinates. */
+export interface ClientRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+const NATIVE: CheckVisibilityOptions = { contentVisibilityAuto: true, opacityProperty: true, visibilityProperty: true,
+  checkOpacity: true, checkVisibilityCSS: true };
+const NATIVE_WITHOUT_AUTO: CheckVisibilityOptions = { opacityProperty: true, visibilityProperty: true,
+  checkOpacity: true, checkVisibilityCSS: true };
+
+const VISIBLE: VisibilityVerdict = { visible: true, rule: null, deferred: false };
+const hidden = (rule: VisibilityRule): VisibilityVerdict => ({ visible: false, rule, deferred: rule === 'deferred' });
+
+/** Could a person see `el`? */
+export function isUserVisible(el: Element, cache: ScanCache = newScanCache()): boolean {
+  return visibilityOf(el, cache).visible;
+}
+
+/** isUserVisible with the rule that decided. */
+export function visibilityOf(el: Element, cache: ScanCache = newScanCache()): VisibilityVerdict {
+  return cache.memo('visibility', el, () => judgeElement(el, cache));
+}
+
+function judgeElement(el: Element, cache: ScanCache): VisibilityVerdict {
+  if (!el.isConnected) return hidden('disconnected');
+  if (isInOwnUi(el)) return hidden('own-ui');
+  const view = viewOf(el);
+  const style = styleOf(el, cache);
+  if (view === null || style === null) return hidden('disconnected');
+  if (frameTooSmall(view)) return hidden('frame');
+  // 2. The browser's own check, where it exists. The method is looked up on the element each time, so a page (or a
+  // test) without it gets the manual walk alone.
+  if (typeof el.checkVisibility === 'function' && !el.checkVisibility(NATIVE)) {
+    return el.checkVisibility(NATIVE_WITHOUT_AUTO) ? hidden('deferred') : hidden('native-check');
+  }
+  // 3. The ancestor walk.
+  const walked = walkVerdict(el, cache);
+  if (walked !== null) return hidden(walked);
+  if (style.visibility === 'hidden' || style.visibility === 'collapse') return hidden('visibility');
+  // 4. The box, transforms included (so scale(0) fails here).
+  const box = boxOf(el);
+  if (box === null || box.right - box.left < MIN_BOX_PX || box.bottom - box.top < MIN_BOX_PX) return hidden('box-size');
+  // 5. Off-screen, in document coordinates: content below the fold still counts.
+  if (!onScreen(box, el, cache)) return hidden('off-screen');
+  // 6. Clipping by overflow and paint containment along the containing-block chain.
+  if (!fitsAll(box, overflowClipsOf(el, cache))) return hidden('overflow-clip');
+  // 7. Tiny text.
+  if (rendersText(el) && parseFloat(style.fontSize) < MIN_FONT_PX) return hidden('font-size');
+  // 8. clip and clip-path on the element or any ancestor.
+  const painted = paintClipFailure(box, paintClipsOf(el, cache));
+  if (painted !== null) return hidden(painted);
+  return VISIBLE;
+}
+
+/** Could a person see this text node? It is judged by its parent's walk and by its own glyph boxes (rules 4 to 8).
+ *  Camouflage is a separate check (camouflage.ts). */
+export function isTextVisible(text: Text, cache: ScanCache = newScanCache()): boolean {
+  return textVisibilityOf(text, cache).visible;
+}
+
+/** isTextVisible with the rule that decided. */
+export function textVisibilityOf(text: Text, cache: ScanCache = newScanCache()): VisibilityVerdict {
+  return cache.memo('text-visibility', text, () => judgeText(text, cache));
+}
+
+function judgeText(text: Text, cache: ScanCache): VisibilityVerdict {
+  if (!text.isConnected) return hidden('disconnected');
+  const parent = flatParent(text);
+  if (parent === null) return hidden('disconnected');
+  if (isInOwnUi(parent)) return hidden('own-ui');
+  const view = viewOf(parent);
+  const style = styleOf(parent, cache);
+  if (view === null || style === null) return hidden('disconnected');
+  if (frameTooSmall(view)) return hidden('frame');
+  // A parent with `display: contents` has no box of its own, so the browser's check is asked about the text's real
+  // container instead.
+  const boxed = style.display === 'contents' ? nearestBoxed(parent, cache) : parent;
+  if (boxed !== null && typeof boxed.checkVisibility === 'function' && !boxed.checkVisibility(NATIVE)) {
+    return boxed.checkVisibility(NATIVE_WITHOUT_AUTO) ? hidden('deferred') : hidden('native-check');
+  }
+  const facts = factsOf(parent, cache);
+  if (facts.contentHiddenBy !== null) return hidden(facts.contentHiddenBy);
+  if (outsideModal(parent, cache)) return hidden('outside-modal');
+  if (style.visibility === 'hidden' || style.visibility === 'collapse') return hidden('visibility');
+  const box = textBox(text);
+  if (box === null || box.right - box.left < MIN_BOX_PX || box.bottom - box.top < MIN_BOX_PX) return hidden('box-size');
+  if (!onScreen(box, parent, cache)) return hidden('off-screen');
+  if (!fitsAll(box, contentClipsOf(parent, cache))) return hidden('overflow-clip');
+  if (parseFloat(style.fontSize) < MIN_FONT_PX) return hidden('font-size');
+  const painted = paintClipFailure(box, paintClipsOf(parent, cache));
+  if (painted !== null) return hidden(painted);
+  return VISIBLE;
+}
+
+/** True when `el` and everything inside it are hidden by a rule that no descendant can undo (the hidden, inert and
+ *  aria-hidden attributes, display: none, an opacity product under 0.05, sitting outside an open modal dialog).
+ *  visibleText skips such a subtree whole. */
+export function isSubtreeHidden(el: Element, cache: ScanCache = newScanCache()): boolean {
+  return factsOf(el, cache).hiddenBy !== null || outsideModal(el, cache) || isInOwnUi(el);
+}
+
+/** True when the children of `el` are not rendered: isSubtreeHidden, or `content-visibility: hidden` on `el`. */
+export function isContentHidden(el: Element, cache: ScanCache = newScanCache()): boolean {
+  return factsOf(el, cache).contentHiddenBy !== null || outsideModal(el, cache) || isInOwnUi(el);
+}
+
+/** The product of the opacities of `el` and its flat-tree ancestors. */
+export function opacityOf(el: Element, cache: ScanCache = newScanCache()): number {
+  return factsOf(el, cache).opacity;
+}
+
+// ── The ancestor walk ────────────────────────────────────────────────────────────────────────────────────────────
+
+interface Facts {
+  /** A rule that hides this element and everything inside it. */
+  hiddenBy: VisibilityRule | null;
+  /** The rule that hides this element's children: hiddenBy, or content-visibility: hidden on the element itself. */
+  contentHiddenBy: VisibilityRule | null;
+  /** The product of the opacities of this element and its ancestors. */
+  opacity: number;
+  /** Inside an open modal dialog. */
+  inModal: boolean;
+}
+
+function factsOf(el: Element, cache: ScanCache): Facts {
+  return cache.memo('facts', el, (): Facts => {
+    const parent = flatParent(el);
+    const inherited = parent === null ? null : factsOf(parent, cache);
+    const style = styleOf(el, cache);
+    const opacity = (inherited?.opacity ?? 1) * opacityValue(style?.opacity);
+    const own = ownHidingRule(el, style);
+    const hiddenBy = inherited?.contentHiddenBy ?? own ?? (opacity < MIN_OPACITY ? 'opacity' : null);
+    const contentHiddenBy = hiddenBy ?? (style?.contentVisibility === 'hidden' ? 'content-visibility' : null);
+    const inModal = (inherited?.inModal ?? false) || isOpenModal(el);
+    return { hiddenBy, contentHiddenBy, opacity, inModal };
+  });
+}
+
+function ownHidingRule(el: Element, style: CSSStyleDeclaration | null): VisibilityRule | null {
+  if (el.hasAttribute('hidden')) return 'hidden-attribute';
+  if (el.hasAttribute('inert')) return 'inert';
+  if ((el.getAttribute('aria-hidden') ?? '').trim().toLowerCase() === 'true') return 'aria-hidden';
+  if (style === null || style.display === 'none') return 'display-none';
+  return null;
+}
+
+function opacityValue(text: string | undefined): number {
+  const value = text === undefined || text === '' ? 1 : Number(text);
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 1;
+}
+
+function walkVerdict(el: Element, cache: ScanCache): VisibilityRule | null {
+  const facts = factsOf(el, cache);
+  if (facts.hiddenBy !== null) return facts.hiddenBy;
+  return outsideModal(el, cache) ? 'outside-modal' : null;
+}
+
+function isOpenModal(el: Element): boolean {
+  if (el.localName !== 'dialog' || !el.hasAttribute('open')) return false;
+  try {
+    return el.matches(':modal');
+  } catch {
+    return false;
+  }
+}
+
+/** True when the document shows an open modal dialog and `el` is not inside one: everything else is inert. */
+function outsideModal(el: Element, cache: ScanCache): boolean {
+  const doc = el.ownerDocument;
+  const hasModal = cache.memo('has-modal', doc, () => {
+    try {
+      return doc.querySelector('dialog:modal') !== null;
+    } catch {
+      return false;
+    }
+  });
+  return hasModal && !factsOf(el, cache).inModal;
+}
+
+/** The nearest ancestor-or-self that generates a box (not `display: contents`). */
+function nearestBoxed(el: Element, cache: ScanCache): Element | null {
+  for (let at: Element | null = el; at !== null; at = flatParent(at)) {
+    if (styleOf(at, cache)?.display !== 'contents') return at;
+  }
+  return null;
+}
+
+function frameTooSmall(view: Window): boolean {
+  return view.innerWidth < MIN_BOX_PX || view.innerHeight < MIN_BOX_PX;
+}
+
+// ── Boxes and positions ──────────────────────────────────────────────────────────────────────────────────────────
+
+function boxOf(el: Element): ClientRect | null {
+  if (el.getClientRects().length === 0) return null;
+  const r = el.getBoundingClientRect();
+  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+}
+
+/** The union of a text node's glyph boxes, or null when it has none. */
+function textBox(text: Text): ClientRect | null {
+  const range = text.ownerDocument.createRange();
+  range.selectNodeContents(text);
+  let box: ClientRect | null = null;
+  for (const r of Array.from(range.getClientRects())) {
+    if (r.width <= 0 && r.height <= 0) continue;
+    box = box === null ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+      : { left: Math.min(box.left, r.left), top: Math.min(box.top, r.top), right: Math.max(box.right, r.right),
+        bottom: Math.max(box.bottom, r.bottom) };
+  }
+  return box;
+}
+
+function overlap(start: number, end: number, from: number, to: number): number {
+  return Math.min(end, to) - Math.max(start, from);
+}
+
+/** The box overlaps every rectangle by at least MIN_BOX_PX on both axes. */
+function fitsAll(box: ClientRect, clips: readonly ClientRect[]): boolean {
+  return clips.every((clip) => overlap(box.left, box.right, clip.left, clip.right) >= MIN_BOX_PX
+    && overlap(box.top, box.bottom, clip.top, clip.bottom) >= MIN_BOX_PX);
+}
+
+/**
+ * Rule 5: at least MIN_BOX_PX of the box lies in the reachable area. For a page element that is the document from its
+ * origin to its scroll size (or to the viewport on an axis whose overflow is hidden on html or body); for an element
+ * fixed to the viewport, the viewport. Negative coordinates are never reachable.
+ */
+function onScreen(box: ClientRect, el: Element, cache: ScanCache): boolean {
+  const view = viewOf(el)!;
+  const doc = el.ownerDocument;
+  if (fixedToViewport(el, cache)) {
+    return overlap(box.left, box.right, 0, view.innerWidth) >= MIN_BOX_PX
+      && overlap(box.top, box.bottom, 0, view.innerHeight) >= MIN_BOX_PX;
+  }
+  const area = cache.memo('reachable', doc, () => reachableArea(doc, view, cache));
+  const left = box.left + view.scrollX;
+  const top = box.top + view.scrollY;
+  return overlap(left, left + (box.right - box.left), 0, area.width) >= MIN_BOX_PX
+    && overlap(top, top + (box.bottom - box.top), 0, area.height) >= MIN_BOX_PX;
+}
+
+function reachableArea(doc: Document, view: Window, cache: ScanCache): { width: number; height: number } {
+  const root = doc.documentElement;
+  const body = doc.body;
+  const styles = [styleOf(root, cache), body ? styleOf(body, cache) : null];
+  const clipped = (axis: 'overflowX' | 'overflowY') => styles.some((style) => style !== null
+    && (style[axis] === 'hidden' || style[axis] === 'clip'));
+  const scrollWidth = Math.max(root.scrollWidth, body?.scrollWidth ?? 0, view.innerWidth);
+  const scrollHeight = Math.max(root.scrollHeight, body?.scrollHeight ?? 0, view.innerHeight);
+  return {
+    width: clipped('overflowX') ? view.innerWidth : scrollWidth,
+    height: clipped('overflowY') ? view.innerHeight : scrollHeight,
+  };
+}
+
+/** True when `el` or an ancestor is `position: fixed`, so it stays put while the page scrolls. */
+function fixedToViewport(el: Element, cache: ScanCache): boolean {
+  return cache.memo('fixed', el, (): boolean => {
+    if (styleOf(el, cache)?.position === 'fixed') return true;
+    const parent = flatParent(el);
+    return parent !== null && fixedToViewport(parent, cache);
+  });
+}
+
+/** Text-bearing elements: those with their own text, and text-like controls. The font rule applies only to them, so an
+ *  icon or a checkbox under a `font-size: 0` wrapper is judged by its box. */
+function rendersText(el: Element): boolean {
+  const tag = el.localName;
+  if (tag === 'textarea' || tag === 'select' || tag === 'button') return true;
+  if (tag === 'input') {
+    const type = (el as HTMLInputElement).type;
+    return !['checkbox', 'radio', 'file', 'hidden', 'range', 'color', 'image'].includes(type);
+  }
+  for (const child of Array.from(el.childNodes)) {
+    if (child.nodeType === 3 && (child.textContent ?? '').trim() !== '') return true;
+  }
+  return false;
+}
+
+// ── Rule 6: clipping by overflow and paint containment, along the containing-block chain ─────────────────────────
+
+/**
+ * The clip rectangles that apply to `el`'s own box. An in-flow element is clipped by what clips its parent's content;
+ * an absolutely positioned one by what clips its containing block's content, so it escapes an `overflow: hidden`
+ * ancestor below that block, as it does on screen; a fixed one by nothing but a transformed ancestor's.
+ */
+function overflowClipsOf(el: Element, cache: ScanCache): ClientRect[] {
+  return cache.memo('overflow-clips', el, (): ClientRect[] => {
+    const position = styleOf(el, cache)?.position;
+    const block = position === 'fixed' ? fixedContainingBlock(el, cache)
+      : position === 'absolute' ? absoluteContainingBlock(el, cache) : flatParent(el);
+    return block === null ? [] : contentClipsOf(block, cache);
+  });
+}
+
+/** The clip rectangles that apply to the content of `el`: its own clips plus its own overflow clip. */
+function contentClipsOf(el: Element, cache: ScanCache): ClientRect[] {
+  return cache.memo('content-clips', el, (): ClientRect[] => {
+    const inherited = overflowClipsOf(el, cache);
+    const own = ownOverflowClip(el, cache);
+    return own === null ? inherited : [...inherited, own];
+  });
+}
+
+/**
+ * The rectangle `el` clips its content to: its padding box on each axis whose overflow is hidden or clip, or both
+ * axes under paint containment. A scroll or auto axis does not clip, because the person can scroll it, unless the
+ * container is too small to scroll in (under MIN_BOX_PX). html and body are judged by rule 5 instead.
+ */
+function ownOverflowClip(el: Element, cache: ScanCache): ClientRect | null {
+  const tag = el.localName;
+  if (tag === 'html' || tag === 'body') return null;
+  const style = styleOf(el, cache);
+  if (style === null || style.display === 'inline' || style.display === 'contents') return null;
+  const paint = /\b(?:paint|strict|content)\b/.test(style.contain);
+  const clipX = paint || style.overflowX === 'hidden' || style.overflowX === 'clip';
+  const clipY = paint || style.overflowY === 'hidden' || style.overflowY === 'clip';
+  const scrollX = !clipX && (style.overflowX === 'auto' || style.overflowX === 'scroll');
+  const scrollY = !clipY && (style.overflowY === 'auto' || style.overflowY === 'scroll');
+  const onX = clipX || (scrollX && el.clientWidth < MIN_BOX_PX);
+  const onY = clipY || (scrollY && el.clientHeight < MIN_BOX_PX);
+  if (!onX && !onY) return null;
+  const box = el.getBoundingClientRect();
+  const left = box.left + el.clientLeft;
+  const top = box.top + el.clientTop;
+  return {
+    left: onX ? left : -Infinity,
+    right: onX ? left + el.clientWidth : Infinity,
+    top: onY ? top : -Infinity,
+    bottom: onY ? top + el.clientHeight : Infinity,
+  };
+}
+
+const CONTAINS_LAYOUT = /\b(?:layout|paint|strict|content)\b/;
+const WILL_CHANGE_BLOCK = /\b(?:transform|perspective|filter|translate|rotate|scale)\b/;
+
+/** Does `el` contain fixed-position descendants (a transform, filter, perspective or containment)? */
+function holdsFixed(style: CSSStyleDeclaration): boolean {
+  return style.transform !== 'none' || style.perspective !== 'none' || style.filter !== 'none'
+    || (style.backdropFilter !== undefined && style.backdropFilter !== 'none' && style.backdropFilter !== '')
+    || CONTAINS_LAYOUT.test(style.contain) || WILL_CHANGE_BLOCK.test(style.willChange)
+    || (style.translate !== undefined && style.translate !== 'none' && style.translate !== '')
+    || (style.rotate !== undefined && style.rotate !== 'none' && style.rotate !== '')
+    || (style.scale !== undefined && style.scale !== 'none' && style.scale !== '');
+}
+
+/** The containing block of an absolutely positioned element: the nearest positioned (or fixed-holding) ancestor. */
+function absoluteContainingBlock(el: Element, cache: ScanCache): Element | null {
+  return cache.memo('abs-block', el, (): Element | null => {
+    const parent = flatParent(el);
+    if (parent === null) return null;
+    const style = styleOf(parent, cache);
+    if (style !== null && (style.position !== 'static' || holdsFixed(style))) return parent;
+    return absoluteContainingBlock(parent, cache);
+  });
+}
+
+/** The containing block of a fixed element: the nearest ancestor that holds fixed descendants, else the viewport. */
+function fixedContainingBlock(el: Element, cache: ScanCache): Element | null {
+  return cache.memo('fixed-block', el, (): Element | null => {
+    const parent = flatParent(el);
+    if (parent === null) return null;
+    const style = styleOf(parent, cache);
+    if (style !== null && holdsFixed(style)) return parent;
+    return fixedContainingBlock(parent, cache);
+  });
+}
+
+// ── Rule 8: clip and clip-path, along the whole ancestor chain ───────────────────────────────────────────────────
+
+/** A region a clip or clip-path leaves, or 'unmeasurable' for a shape this code cannot measure (fails closed). */
+interface PaintClip {
+  rule: 'clip' | 'clip-path';
+  region: ClientRect | 'unmeasurable';
+}
+
+function paintClipsOf(el: Element, cache: ScanCache): PaintClip[] {
+  return cache.memo('paint-clips', el, (): PaintClip[] => {
+    const parent = flatParent(el);
+    const inherited = parent === null ? [] : paintClipsOf(parent, cache);
+    const style = styleOf(el, cache);
+    if (style === null) return inherited;
+    const own: PaintClip[] = [];
+    if ((style.position === 'absolute' || style.position === 'fixed') && style.clip !== '' && style.clip !== 'auto') {
+      own.push({ rule: 'clip', region: clipRegion(style.clip, el) });
+    }
+    if (style.clipPath !== '' && style.clipPath !== 'none') {
+      const region = clipPathRegion(style.clipPath, el);
+      if (region !== null) own.push({ rule: 'clip-path', region });
+    }
+    return own.length === 0 ? inherited : [...inherited, ...own];
+  });
+}
+
+function paintClipFailure(box: ClientRect, clips: readonly PaintClip[]): 'clip' | 'clip-path' | null {
+  for (const clip of clips) {
+    if (clip.region === 'unmeasurable' || !fitsAll(box, [clip.region])) return clip.rule;
+  }
+  return null;
+}
+
+/** `clip: rect(top, right, bottom, left)`, offsets from the element's border box, `auto` meaning that edge. */
+function clipRegion(value: string, el: Element): ClientRect | 'unmeasurable' {
+  const match = /^rect\(\s*([^,\s]+)[\s,]+([^,\s]+)[\s,]+([^,\s]+)[\s,]+([^,\s)]+)\s*\)$/i.exec(value.trim());
+  if (!match) return 'unmeasurable';
+  const box = el.getBoundingClientRect();
+  const read = (text: string | undefined, auto: number): number | null => {
+    if (text === undefined) return null;
+    if (text === 'auto') return auto;
+    const px = /^(-?[\d.]+)px$/.exec(text);
+    return px ? Number(px[1]) : text === '0' ? 0 : null;
+  };
+  const top = read(match[1], 0);
+  const right = read(match[2], box.width);
+  const bottom = read(match[3], box.height);
+  const left = read(match[4], 0);
+  if (top === null || right === null || bottom === null || left === null) return 'unmeasurable';
+  return { left: box.left + left, top: box.top + top, right: box.left + right, bottom: box.top + bottom };
+}
+
+const BOX_KEYWORDS = /^(?:border-box|padding-box|content-box|margin-box|fill-box|stroke-box|view-box)$/;
+
+/**
+ * The region a computed clip-path leaves, in client coordinates, against the element's border box: inset(), circle()
+ * and ellipse() as their bounding boxes (an empty box when a radius is under MIN_CLIP_RADIUS_PX), polygon() as the
+ * bounding box of its points. A reference box alone clips nothing (null). Anything else (path(), url(), shape(),
+ * calc() values) is 'unmeasurable', which counts as hidden.
+ */
+function clipPathRegion(value: string, el: Element): ClientRect | 'unmeasurable' | null {
+  const text = value.trim().replace(/\s+(?:border-box|padding-box|content-box|margin-box|fill-box|stroke-box|view-box)$/, '');
+  if (BOX_KEYWORDS.test(text)) return null;
+  const shape = /^(inset|circle|ellipse|polygon)\((.*)\)$/i.exec(text);
+  if (!shape) return 'unmeasurable';
+  const box = el.getBoundingClientRect();
+  const width = box.right - box.left;
+  const height = box.bottom - box.top;
+  const kind = shape[1]!.toLowerCase();
+  const args = shape[2]!.trim();
+  if (kind === 'inset') {
+    const parts = args.split(/\s+round\s+/)[0]!.trim().split(/\s+/);
+    if (parts.length === 0 || parts.length > 4) return 'unmeasurable';
+    // The margin shorthand's expansion first, then each side against its own axis.
+    const [p0 = '0', p1 = p0, p2 = p0, p3 = p1] = parts;
+    const t = length(p0, height);
+    const r = length(p1, width);
+    const b = length(p2, height);
+    const l = length(p3, width);
+    if (t === null || r === null || b === null || l === null) return 'unmeasurable';
+    return { left: box.left + l, top: box.top + t, right: box.right - r, bottom: box.bottom - b };
+  }
+  if (kind === 'polygon') {
+    const points = args.replace(/^(?:nonzero|evenodd)\s*,\s*/, '').split(',').map((pair) => pair.trim().split(/\s+/));
+    let region: ClientRect | null = null;
+    for (const point of points) {
+      if (point.length !== 2) return 'unmeasurable';
+      const x = length(point[0]!, width);
+      const y = length(point[1]!, height);
+      if (x === null || y === null) return 'unmeasurable';
+      const px = box.left + x;
+      const py = box.top + y;
+      region = region === null ? { left: px, top: py, right: px, bottom: py }
+        : { left: Math.min(region.left, px), top: Math.min(region.top, py), right: Math.max(region.right, px),
+          bottom: Math.max(region.bottom, py) };
+    }
+    return region ?? 'unmeasurable';
+  }
+  // circle() and ellipse(): radii, then an optional `at <x> <y>`.
+  const [radiiText = '', atText] = args.split(/\s+at\s+|^at\s+/);
+  const at = (atText ?? '50% 50%').trim().split(/\s+/);
+  const cx = position(at[0] ?? '50%', width, 'x');
+  const cy = position(at[1] ?? '50%', height, 'y');
+  if (cx === null || cy === null) return 'unmeasurable';
+  const sides = { closest: Math.min(cx, width - cx, cy, height - cy), farthest: Math.max(cx, width - cx, cy, height - cy) };
+  const radius = (part: string | undefined, basis: number, closest: number, farthest: number): number | null => {
+    if (part === undefined || part === '' || part === 'closest-side') return closest;
+    if (part === 'farthest-side') return farthest;
+    return length(part, basis);
+  };
+  const radii = radiiText.trim() === '' ? [] : radiiText.trim().split(/\s+/);
+  let rx: number | null;
+  let ry: number | null;
+  if (kind === 'circle') {
+    rx = radius(radii[0], Math.hypot(width, height) / Math.SQRT2, sides.closest, sides.farthest);
+    ry = rx;
+  } else {
+    rx = radius(radii[0], width, Math.min(cx, width - cx), Math.max(cx, width - cx));
+    ry = radius(radii[1], height, Math.min(cy, height - cy), Math.max(cy, height - cy));
+  }
+  if (rx === null || ry === null) return 'unmeasurable';
+  if (rx < MIN_CLIP_RADIUS_PX || ry < MIN_CLIP_RADIUS_PX) {
+    return { left: box.left + cx, top: box.top + cy, right: box.left + cx, bottom: box.top + cy };
+  }
+  return { left: box.left + cx - rx, top: box.top + cy - ry, right: box.left + cx + rx, bottom: box.top + cy + ry };
+}
+
+/** A computed length in px or a percentage of `basis`; null for anything else (calc(), em). */
+function length(text: string, basis: number): number | null {
+  if (text === '0') return 0;
+  const px = /^(-?[\d.]+)px$/.exec(text);
+  if (px) return Number(px[1]);
+  const percent = /^(-?[\d.]+)%$/.exec(text);
+  return percent ? (Number(percent[1]) / 100) * basis : null;
+}
+
+/** A position coordinate: a length, a percentage or a keyword. */
+function position(text: string, basis: number, axis: 'x' | 'y'): number | null {
+  const keyword: Record<string, number> = axis === 'x' ? { left: 0, center: 0.5, right: 1 }
+    : { top: 0, center: 0.5, bottom: 1 };
+  const share = keyword[text];
+  return share === undefined ? length(text, basis) : share * basis;
+}

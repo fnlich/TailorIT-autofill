@@ -17,6 +17,8 @@ export default defineConfig({
       },
       {
         define,
+        // Pre-bundled, so Vite does not discover React mid-run and reload the browser page under a running test.
+        optimizeDeps: { include: ['react', 'react-dom', 'react-dom/client'] },
         test: {
           name: 'dom',
           // On Windows 'localhost' can resolve to ::1 while the server listens on 127.0.0.1: name the address.

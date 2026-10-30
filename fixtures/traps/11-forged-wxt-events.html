@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  Trap 11: forged WXT events. The first time a form control receives an input event (mid-fill), the page dispatches
+  WXT's content-script-started event (contentScriptName 'content', another message id), posts the same message to the
+  window, and dispatches WXT's location-change event, all under the extension's fixed id. The run must still reach
+  review, the launcher and notices stay mounted, and the forgery is logged under its own code. The page counts what
+  it dispatched in window.__forgedEvents. Served at https://jobs.lever.co/tailorit-fixture/trap-11/apply; the form
+  posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Security Engineer - Trap 11</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Security Engineer</h1>
+    <p id="intro">Find the holes before anyone else does. VISIBLE-MARKER-11</p>
+    <form action="/__submitted" method="post" id="application">
+      <label for="first">First name</label>
+      <input id="first" name="first">
+      <label for="last">Last name</label>
+      <input id="last" name="last">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email">
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+  <script>
+    (() => {
+      const extension = 'flmloalhjldmcihejnmkndbcnhaacmng';
+      const started = `${extension}:content:wxt:content-script-started`;
+      const moved = `${extension}:content:wxt:locationchange`;
+      window.__forgedEvents = 0;
+      let forged = false;
+      document.getElementById('application').addEventListener('input', () => {
+        if (forged) return;
+        forged = true;
+        document.dispatchEvent(new CustomEvent(started, {
+          detail: { contentScriptName: 'content', messageId: 'forged-by-the-page' },
+        }));
+        window.postMessage({ type: started, contentScriptName: 'content', messageId: 'forged-by-the-page' }, '*');
+        window.dispatchEvent(new Event(moved));
+        window.__forgedEvents = 3;
+      }, true);
+    })();
+  </script>
+</body>
+</html>
