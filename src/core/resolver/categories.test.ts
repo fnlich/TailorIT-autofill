@@ -88,6 +88,12 @@ describe('CATEGORY_KINDS (§8.2)', () => {
     ['contact.email', 'checkbox', false],
     ['contact.phone', 'select', false],
     ['experience.title', 'select', false],
+    // A combobox is a fixed list (Greenhouse's Yes/No questions): an employer or a title is typed or searched for.
+    ['experience.title', 'combobox', false],
+    ['experience.currentTitle', 'combobox', false],
+    ['experience.company', 'combobox', false],
+    ['experience.currentCompany', 'combobox', false],
+    ['experience.currentCompany', 'typeahead-remote', true],
     ['experience.current', 'checkbox', true],
     ['education.school', 'typeahead-remote', true],
     ['location.current', 'typeahead-remote', true],
@@ -114,8 +120,10 @@ describe('CLASS_POLICIES (§8.2)', () => {
       llmClassified: 'never', fuzzy: 'never' }],
     ['attention', { valueFrom: [], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never',
       fuzzy: 'never' }],
+    // docs/ARCHITECTURE.md (AI › Category mapping) overrules §8.2's "draft only": a free-text category that came
+    // only from LLM classification maps to needs-user.
     ['free-text', { valueFrom: ['saved', 'llm-draft'], savedAnswers: 'company', llmTiebreak: 'not-applicable',
-      llmClassified: 'draft-only', fuzzy: 'not-applicable' }],
+      llmClassified: 'never', fuzzy: 'not-applicable' }],
     ['file', { valueFrom: ['profile'], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never',
       fuzzy: 'not-applicable' }],
     ['unknown', { valueFrom: ['saved'], savedAnswers: 'global', llmTiebreak: 'allowed',

@@ -65,8 +65,7 @@ export async function finalMatch(input: MatchInput, stub: (request: TiebreakRequ
     requests.push(request);
     return stub(request);
   });
-  const verdict = verdicts.get(outcome.tiebreak.id)!;
-  return { match: completeTiebreak(outcome.partial, verdict.picked, verdict.why), requests };
+  return { match: completeTiebreak(outcome.partial, verdicts.get(outcome.tiebreak.id)!), requests };
 }
 
 /** The match of a done outcome; throws on any other. */

@@ -20,7 +20,7 @@
     { "code": "FM", "aliases": ["Micronesia, Federated States of", "Federated States of Micronesia"] },
     { "code": "CD", "aliases": ["Congo, The Democratic Republic of the", "Democratic Republic of the Congo", "DR Congo", "Congo"] },
     { "code": "CG", "aliases": ["Republic of the Congo", "Congo, Republic of the", "Congo"] },
-    { "code": "MK", "aliases": ["Macedonia", "Republic of North Macedonia"] },
+    { "code": "MK", "aliases": ["Macedonia", "Republic of North Macedonia", "Macedonia, the Former Yugoslav Republic of", "The Former Yugoslav Republic of Macedonia"] },
     { "code": "PS", "aliases": ["Palestine, State of", "State of Palestine"] },
     { "code": "VA", "aliases": ["Holy See", "Holy See (Vatican City State)", "Vatican"] },
     { "code": "BN", "aliases": ["Brunei Darussalam"] },
@@ -42,6 +42,11 @@
     { "code": "NL", "aliases": ["Holland"] },
     { "code": "CN", "aliases": ["People's Republic of China", "PRC", "Mainland China"] },
     { "code": "IE", "aliases": ["Republic of Ireland"] },
-    { "code": "TW", "aliases": ["Taiwan, Province of China"] }
+    { "code": "TW", "aliases": ["Taiwan, Province of China"] },
+    { "code": "BQ", "aliases": ["Bonaire, Sint Eustatius and Saba", "Bonaire, Saint Eustatius and Saba"] },
+    { "code": "HK", "aliases": ["Hong Kong SAR"] },
+    { "code": "KG", "aliases": ["Kyrgyz Republic"] },
+    { "code": "SK", "aliases": ["Slovak Republic"] },
+    { "code": "LY", "aliases": ["Libyan Arab Jamahiriya"] }
   ]
 }

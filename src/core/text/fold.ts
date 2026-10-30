@@ -4,7 +4,7 @@
  * no options. The Guard's detection folding (guard/fold.ts) reuses the letter and diacritic steps.
  */
 
-/** Step 0: at most this many code points of a text are folded; the rest is dropped. */
+/** Step 0: at most this many code points of the folded text are kept; the rest is dropped. */
 export const FOLD_MAX_CODE_POINTS = 500;
 
 /** Step 1: zero-width characters, bidi controls, the byte-order mark and the soft hyphen. */
@@ -22,6 +22,10 @@ const LETTERS = /[ßẞæÆœŒøØđĐłŁþÞı]/g;
 
 /** Step 3: combining marks, deleted after the compatibility decomposition. */
 const MARKS = /\p{M}/gu;
+
+/** Before step 3: the spacing acute accent, which pages write for an apostrophe ("Bachelor\u00B4s"). The decomposition
+ *  would make it a space and a combining mark, so it becomes an apostrophe first, which step 8 then deletes. */
+const ACUTE_ACCENT = /\u00B4/g;
 
 /** Any character outside ASCII. A pure-ASCII text needs only steps 0 and 4. */
 const NON_ASCII = /[\u0080-\uFFFF]/;
@@ -48,19 +52,20 @@ export function removeInvisibles(text: string): string {
  * Steps 2 and 3: letters without a decomposition are spelt out, then the text is decomposed (NFKD) and its combining
  * marks are deleted, so "Montréal" becomes "Montreal" and full-width letters become ASCII. The letter table runs after
  * the decomposition, which gives the same result and also catches a letter that a decomposition produces ("ǿ" is "ø"
- * plus an accent). Case is left alone.
+ * plus an accent). A spacing acute accent becomes an apostrophe first. Case is left alone.
  */
 export function foldLetters(text: string): string {
-  return text.normalize('NFKD').replace(LETTERS, (letter) => LETTERS_WITHOUT_DECOMPOSITION.get(letter) ?? letter)
-    .replace(MARKS, '');
+  return text.replace(ACUTE_ACCENT, "'").normalize('NFKD')
+    .replace(LETTERS, (letter) => LETTERS_WITHOUT_DECOMPOSITION.get(letter) ?? letter).replace(MARKS, '');
 }
 
 /**
- * Steps 0 to 4: the first 500 code points, invisibles deleted, letters and diacritics folded, then lower case
- * (locale-free: a Turkish "İ" has already lost its dot in step 3).
+ * Steps 0 to 4: invisibles deleted, letters and diacritics folded, the first 500 code points of the result kept, then
+ * lower case (locale-free: a Turkish "İ" has lost its dot in step 3). The cap comes after the deletions and the
+ * decomposition, so invisibles and marks never count towards it, and a decomposition that expands ("\uFDFA" is 18
+ * letters) can never take the text past it.
  */
 export function fold(text: string): string {
-  const capped = capCodePoints(text, FOLD_MAX_CODE_POINTS);
-  if (!NON_ASCII.test(capped)) return capped.toLowerCase();
-  return foldLetters(removeInvisibles(capped)).toLowerCase();
+  if (!NON_ASCII.test(text)) return capCodePoints(text, FOLD_MAX_CODE_POINTS).toLowerCase();
+  return capCodePoints(foldLetters(removeInvisibles(text)), FOLD_MAX_CODE_POINTS).toLowerCase();
 }

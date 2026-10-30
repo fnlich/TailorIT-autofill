@@ -57,6 +57,9 @@ export interface PreparedOption {
   other: boolean;
   /** In the degree domain: what the clean label names as a degree. */
   degree?: ParsedDegree;
+  /** Another usable option has the same main key with other brackets ("Chinese (Mandarin)" beside "Chinese
+   *  (Cantonese)"): the brackets are what tell them apart, so none of them is ever redundant. */
+  bracketSiblings: boolean;
 }
 
 /** A field's options prepared once for one domain. */
@@ -71,8 +74,12 @@ export interface PreparedOptions {
 
 /** One field's value to match. */
 export interface MatchInput {
-  /** The field's key: the tiebreak item's id. */
+  /** The field's key: the tiebreak item's id, with `valueRef`. */
   key: FieldKey;
+  /** Which of the field's values this is, when one field is matched for several in a pass (a multi-select's values,
+   *  a typeahead's result lists): the tiebreak item's id then carries it and the option-set hash, so the items stay
+   *  apart. Without it, the id is the key. */
+  valueRef?: string;
   /** Part of the cache key. */
   platform: Platform;
   /** normalizeLabel(field label): part of the cache key. */
@@ -92,6 +99,9 @@ export interface MatchInput {
   /** For a degree: the entry's field of study, matched with the degree on a list of combined options ("B.S. in
    *  Computer Science", §4.9). */
   degreeField?: FieldOfStudy;
+  /** For a race question (eeo.race): the person's explicit Hispanic or Latino answer, absent when they gave none or
+   *  declined. An option whose bracket asserts one ("White (Not Hispanic or Latino)") is chosen only when it agrees. */
+  hispanicLatino?: boolean;
 }
 
 /** What the matcher reads besides the field. */
@@ -127,7 +137,7 @@ export interface TiebreakCandidate {
 
 /** One question for the LLM tiebreak (§4.6). */
 export interface TiebreakItem {
-  /** The field key; unique within a request. */
+  /** The field key, with the input's value reference (tiebreakId); unique within a pass. */
   id: string;
   category: PickCategory;
   fieldLabel: UntrustedText;
@@ -152,8 +162,14 @@ export type TiebreakFn = (request: TiebreakRequest) => Promise<unknown>;
 
 /** What a tiebreak answer means for one item, once validated. */
 export interface TiebreakVerdict {
+  /** The item it was given for: completeTiebreak refuses a verdict of another item. */
+  id: string;
+  /** The option-set hash that item was asked under. */
+  optionSetHash: OptionSetHash;
   /** The candidate index the LLM picked, or null. */
   picked: number | null;
+  /** The picked candidate's label hash, or null without a pick. */
+  labelHash: string | null;
   /** 'ok' for a valid pick; otherwise why there is none: 'no-match' (the LLM answered null), 'llm-invalid-output',
    *  'llm-pick-rejected' or 'llm-unavailable'. */
   why: ReasonCode;

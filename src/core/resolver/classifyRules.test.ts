@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldKind } from '../enums';
+import { normalizeLabel } from '../text/normalize';
 import type { BaseKey, FieldKey, FieldSpec, OptionSetHash } from '../types/field';
 import type { FieldCategory } from '../types/intent';
-import { classifyByRules, combine, type RuleClassification, type RuleVote } from './classifyRules';
+import {
+  classifyByRules, combine, ruleText, SENSITIVE_TOPIC, type RuleClassification, type RuleVote,
+} from './classifyRules';
+import { policyClassOf } from './categories';
+import { NEEDS_USER_CAUSES, type NeedsUserCause } from './labelRules';
 
 /** A field as the scanner would describe it: only what a test names differs from a plain text field in 'main'. */
 const field = (label: string, kind: FieldKind, extra: Partial<FieldSpec> = {}): FieldSpec => ({
@@ -118,8 +123,7 @@ const LABELS: Array<[string, FieldKind, FieldCategory, number, string, Partial<F
   // Pay, availability and preferences
   ['Expected salary', 'text', 'salary.expected', 0.92, 'label.salary'],
   ['What are your salary expectations?', 'textarea', 'salary.expected', 0.92, 'label.salary'],
-  ['Current salary', 'text', 'unknown', 0.92, 'label.salary'],
-  ['Previous compensation', 'text', 'unknown', 0.92, 'label.salary'],
+  // "Current salary" and "Previous compensation" are the person's: see the needs-user table below.
   ['When can you start?', 'text', 'availability.startDate', 0.92, 'label.availability'],
   ['Earliest start date', 'date', 'availability.startDate', 0.92, 'label.start-date'],
   ['Notice period', 'text', 'availability.noticePeriod', 0.97, 'label.notice'],
@@ -171,14 +175,59 @@ describe('classifyByRules: real-world labels (§8.3)', () => {
     ['Phone type', 'select'],
     // The name says phone, but a phone number cannot go in a select.
     ['Phone type', 'select', { nameAttr: 'phone_type' }],
-    ['Nationality', 'select'],
-    ['Tell us about a project you are proud of', 'textarea'],
-    ['Comments', 'textarea'],
-    // A self-identification question is chosen from options, never typed.
-    ['Gender', 'text'],
+    // An extension is not the number, whatever the attributes say.
+    ['Phone extension', 'text', { idAttr: 'phone-number--extension' }],
+    ['Extension', 'text', { idAttr: 'phoneExtension' }],
     ['', 'text'],
   ])('%j (%s) is unclassified', (label, kind, extra) => {
     expect(classifyByRules(field(label, kind, extra))).toBeNull();
+  });
+
+  it.each<[string, FieldKind, FieldCategory, string, NeedsUserCause]>([
+    // A self-identification question is chosen from options, never typed: the person answers it.
+    ['Gender', 'text', 'eeo.gender', 'label.gender', 'kind-mismatch'],
+    ['Will you require sponsorship for this position?', 'text', 'workAuth.sponsorship', 'label.sponsorship',
+      'kind-mismatch'],
+    ['Nationality', 'select', 'workAuth.status', 'label.nationality', 'nationality'],
+    ['Current salary', 'text', 'unknown', 'label.salary', 'current-pay'],
+    ['Previous compensation', 'text', 'unknown', 'label.salary', 'current-pay'],
+    ['Are you authorized to work in the US without sponsorship?', 'radio', 'workAuth.authorized',
+      'label.authorization-and-sponsorship', 'authorization-and-sponsorship'],
+  ])('%j (%s) is the person’s: %s by %s (%s)', (label, kind, asks, rule, needsUser) => {
+    const result = classifyByRules(field(label, kind));
+    expect(result).toMatchObject({ asks, rule, needsUser });
+    expect(result?.category).toBeUndefined();
+  });
+
+  it('keeps the reading’s confidence and source on a handed-over field, for the panel', () => {
+    for (const label of ['Current salary', 'Previous compensation']) {
+      expect(classifyByRules(field(label, 'text'))).toEqual({ asks: 'unknown', confidence: 0.92,
+        classifiedBy: 'label-rule', rule: 'label.salary', reason: 'ok', matchedOn: 'label', needsUser: 'current-pay' });
+    }
+  });
+
+  it('reads a sponsorship question’s parenthetical', () => {
+    expect(classifyByRules(field('Do you require visa sponsorship (now)?', 'radio'))?.category)
+      .toBe('workAuth.sponsorshipNow');
+    expect(classifyByRules(field('Do you require visa sponsorship?', 'radio'))?.category).toBe('workAuth.sponsorship');
+  });
+
+  it.each<[string, FieldCategory | null, string | null]>([
+    // Greenhouse draws every single-choice question as a combobox: a job title or an employer never sits on one.
+    ['Are you currently based in or willing to relocate to the Bay Area for this position?', 'preferences.relocation',
+      'label.relocation'],
+    ['Do you have a non-compete with your current company?', null, null],
+  ])('reads the Greenhouse combobox %j as %s', (label, category, rule) => {
+    const classification = classifyByRules(field(label, 'combobox'));
+    expect(classification === null ? null : [classification.category, classification.rule]).toEqual(
+      category === null ? null : [category, rule]);
+  });
+
+  it('gives a date in a block of a section it cannot name no category of its own', () => {
+    const block = { section: { id: 'references', block: 0 } };
+    expect(classifyByRules(field('Start date', 'date', block))).toBeNull();
+    expect(classifyByRules(field('Start date', 'date', { section: { id: 'internships', block: 0 } }))?.category)
+      .toBe('experience.startDate');
   });
 });
 
@@ -230,10 +279,30 @@ describe('classifyByRules: the three sources together (§8.1)', () => {
       field('Phone', 'text', { autocomplete: ['email'] }),
       { category: 'contact.email', confidence: 0.784, classifiedBy: 'autocomplete', rule: 'autocomplete.email',
         reason: 'classification-conflict' }],
-    ['a normal label rule loses to autocomplete even on a generic token (calibration, reported)',
+    ['a generic autocomplete token gives way to the label naming its kind more precisely, with no conflict',
       field('Company', 'text', { ...WORK, autocomplete: ['organization'] }),
-      { category: 'experience.currentCompany', confidence: 0.68, classifiedBy: 'autocomplete',
-        rule: 'autocomplete.organization', reason: 'classification-conflict' }],
+      { category: 'experience.company', confidence: 0.92, classifiedBy: 'label-rule', rule: 'label.company',
+        reason: 'ok', matchedOn: 'label' }],
+    ['a link label beats the generic url token, with no conflict',
+      field('LinkedIn', 'text', { autocomplete: ['url'] }),
+      { category: 'links.linkedin', confidence: 0.97, classifiedBy: 'label-rule', rule: 'label.linkedin',
+        reason: 'ok', matchedOn: 'label' }],
+    ['a label rule and a name that agree outvote one autocomplete token, flagged',
+      field('Phone', 'text', { nameAttr: 'phone', autocomplete: ['name'] }),
+      { category: 'contact.phone', confidence: 0.776, classifiedBy: 'name-id', rule: 'name-id.phone',
+        reason: 'classification-conflict' }],
+    ['the same with a phone id against an email token',
+      field('Mobile number', 'text', { idAttr: 'mobile', autocomplete: ['email'] }),
+      { category: 'contact.phone', confidence: 0.776, classifiedBy: 'name-id', rule: 'name-id.phone',
+        reason: 'classification-conflict' }],
+    ['a closed-class label contradicted by autocomplete is the person’s',
+      field('Citizenship', 'select', { autocomplete: ['country-name'] }),
+      { asks: 'workAuth.status', confidence: 0.736, classifiedBy: 'label-rule', rule: 'label.citizenship',
+        reason: 'classification-conflict', matchedOn: 'label', needsUser: 'source-conflict' }],
+    ['a nationality is the person’s, so a country token cannot fill it',
+      field('Nationality', 'select', { autocomplete: ['country'] }),
+      { asks: 'workAuth.status', confidence: 0.736, classifiedBy: 'label-rule', rule: 'label.nationality',
+        reason: 'classification-conflict', matchedOn: 'label', needsUser: 'nationality' }],
     ['a strong label rule beats the name',
       field('Last name', 'text', { nameAttr: 'first_name' }),
       { category: 'identity.lastName', confidence: 0.776, classifiedBy: 'label-rule', rule: 'label.last-name',
@@ -271,11 +340,31 @@ describe('classifyByRules: the three sources together (§8.1)', () => {
 });
 
 describe('classifyByRules: the description (§8.3)', () => {
-  it('is read when the label alone matches nothing', () => {
+  it('is read when the label alone matches nothing, but a legal category found only there is the person’s', () => {
     expect(classifyByRules(field('Question 4', 'radio', {
       description: 'Are you legally authorized to work in the US?' }))).toEqual({
-      category: 'workAuth.authorized', confidence: 0.97, classifiedBy: 'label-rule', rule: 'label.work-auth',
-      reason: 'ok', matchedOn: 'description' });
+      asks: 'workAuth.authorized', confidence: 0.97, classifiedBy: 'label-rule', rule: 'label.work-auth',
+      reason: 'ok', matchedOn: 'description', needsUser: 'description-only' });
+  });
+
+  it.each<[string, FieldKind, string]>([
+    // Help text names topics the question does not ask.
+    ['Do you need any accommodations?', 'radio', 'If you have a disability and need an accommodation, tell us.'],
+    ['Same as mailing address', 'checkbox', 'We process your data as our privacy policy describes.'],
+    ['Question 7', 'select', 'Do you have a disability?'],
+  ])('hands %j (%s) to the person when only its help text names a closed class', (label, kind, description) => {
+    expect(classifyByRules(field(label, kind, { description }))).toMatchObject({ matchedOn: 'description' });
+    expect(classifyByRules(field(label, kind, { description }))?.needsUser).toBeDefined();
+  });
+
+  it('adds the consent kinds of a consent box’s description', () => {
+    expect(classifyByRules(field('I agree to the Terms of Service', 'checkbox', {
+      description: 'By checking this box you also confirm that you did not use AI to write your answers.' })))
+      .toMatchObject({ category: 'consent.aiAttestation', consentKinds: ['consent.aiAttestation', 'consent.terms'],
+        matchedOn: 'label' });
+    expect(classifyByRules(field('I agree to the privacy policy', 'checkbox', {
+      description: 'By ticking this box you also agree to binding arbitration of any disputes.' })))
+      .toMatchObject({ category: 'consent.other', consentKinds: ['consent.other', 'consent.privacy'] });
   });
 
   it('is not read when the label matches', () => {
@@ -299,6 +388,73 @@ describe('classifyByRules: the unlabelled textarea (§8.3)', () => {
   it('applies only to textareas', () => {
     expect(classifyByRules(field('', 'text'))).toBeNull();
     expect(classifyByRules(field('', 'select'))).toBeNull();
+  });
+});
+
+describe('classifyByRules: what no rule classifies', () => {
+  it.each(['Tell us about a project you are proud of', 'Comments', 'Tell us about yourself',
+    'What makes you a good fit for this role?'])('a textarea labelled %j is free text, kept to one company', (label) => {
+    expect(classifyByRules(field(label, 'textarea'))).toEqual({ category: 'freeText.other', confidence: 0.75,
+      classifiedBy: 'label-rule', rule: 'label.unrecognised-textarea', reason: 'ok', matchedOn: 'label' });
+  });
+
+  it('leaves a textarea in an employment or school block to LLM classification: likely the entry’s own text', () => {
+    expect(classifyByRules(field('Role description', 'textarea', WORK))).toBeNull();
+    expect(classifyByRules(field('Activities and societies', 'textarea', SCHOOL))).toBeNull();
+    expect(classifyByRules(field('', 'textarea', WORK))?.rule).toBe('label.unlabelled-textarea');
+  });
+
+  it.each(['Same as mailing address', 'Custom'])('a lone checkbox labelled %j is unrecognised consent', (label) => {
+    expect(classifyByRules(field(label, 'checkbox'))).toEqual({ category: 'consent.other', confidence: 0.75,
+      classifiedBy: 'label-rule', rule: 'label.unrecognised-checkbox', reason: 'ok', matchedOn: 'label',
+      consentKinds: ['consent.other'] });
+  });
+
+  it.each<[string, FieldKind]>([
+    // Screened before saved answers could fill them, and before the fallbacks.
+    ['Describe your experience with compensation planning', 'textarea'],
+    ['Are you eligible to work overtime?', 'radio'],
+    ['Do you have experience with sponsorship sales?', 'radio'],
+    ['Are you subject to any employment agreements and/or post-employment restrictions with your current employer or '
+      + 'a past employer?', 'combobox'],
+    ['Do you have experience with sex education programs?', 'checkbox'],
+  ])('%j (%s) names a sensitive topic: the person’s', (label, kind) => {
+    expect(classifyByRules(field(label, kind))).toEqual({ asks: 'unknown', confidence: 0.75,
+      classifiedBy: 'label-rule', rule: 'label.sensitive-topic', reason: 'ok', matchedOn: 'label',
+      needsUser: 'sensitive-topic' });
+  });
+
+  it('screens on whole words', () => {
+    expect(SENSITIVE_TOPIC.test(normalizeLabel('What is the average deal size you manage?'))).toBe(false);
+    expect(SENSITIVE_TOPIC.test(normalizeLabel('Do you have offensive security experience?'))).toBe(false);
+    expect(SENSITIVE_TOPIC.test(normalizeLabel('What is your age?'))).toBe(true);
+  });
+});
+
+describe('classifyByRules: a field about another person', () => {
+  it.each<[string, Partial<FieldSpec>, RuleClassification['classifiedBy']]>([
+    ['Referrer email', { nameAttr: 'referrer_email' }, 'label-rule'],
+    ['Emergency contact phone', { nameAttr: 'emergency_contact_phone' }, 'label-rule'],
+    ['Referrer first name', { nameAttr: 'referrer_first_name' }, 'label-rule'],
+    ['First name', { nameAttr: 'reference1_first_name', section: { id: 'references' } }, 'label-rule'],
+    ['Email', { nameAttr: 'reference_email', section: { id: 'references' } }, 'label-rule'],
+    ['Email', { nameAttr: 'supervisor_email' }, 'name-id'],
+    ['Phone', { nameAttr: 'phone', section: { id: 'emergencyContact' } }, 'label-rule'],
+  ])('%j (%j) takes none of the applicant’s own details', (label, extra, classifiedBy) => {
+    expect(classifyByRules(field(label, 'text', extra))).toMatchObject({ category: 'screening.other',
+      rule: 'label.another-person', classifiedBy });
+  });
+
+  it('keeps the referral fields and a job’s own reference', () => {
+    expect(classifyByRules(field('Referrer name', 'text'))?.category).toBe('referral.referrerName');
+    expect(classifyByRules(field('Who referred you?', 'text', { nameAttr: 'referrer' }))?.category)
+      .toBe('referral.referrerName');
+    expect(classifyByRules(field('Referral source', 'select', { nameAttr: 'referral_source' }))?.category)
+      .toBe('referral.source');
+    expect(classifyByRules(field('Email', 'text', { nameAttr: 'job_reference_email' }))?.category)
+      .toBe('contact.email');
+    expect(classifyByRules(field('Email', 'text', { nameAttr: 'reference_number_email' }))?.category)
+      .toBe('contact.email');
   });
 });
 
@@ -336,3 +492,46 @@ describe('combine (§8.1)', () => {
     expect(combine(votes)).toMatchObject({ classifiedBy, category });
   });
 });
+
+describe('classifyByRules: a field handed to the person (needsUser)', () => {
+  /** One field per cause. */
+  const HANDED_OVER: Array<[NeedsUserCause, FieldSpec]> = [
+    ['kind-mismatch', field('Gender', 'text')],
+    ['description-only', field('Question 4', 'radio', { description: 'Are you legally authorized to work in the US?' })],
+    ['source-conflict', field('Citizenship', 'select', { autocomplete: ['country-name'] })],
+    ['sensitive-topic', field('Are you eligible to work overtime?', 'radio')],
+    ['authorization-and-sponsorship', field('Are you authorized to work in the US without sponsorship?', 'radio')],
+    ['unclear-time', field('If you are currently on an F-1 visa, will you require sponsorship?', 'radio')],
+    ['work-permit', field('Do you need a work permit to work in Germany?', 'radio')],
+    ['nationality', field('Nationality', 'select')],
+    ['age', field('What is your age?', 'text')],
+    ['current-pay', field('Current salary', 'text')],
+  ];
+
+  it('has a field for every cause', () => {
+    expect(HANDED_OVER.map(([cause]) => cause).sort()).toEqual([...NEEDS_USER_CAUSES].sort());
+  });
+
+  it.each(HANDED_OVER)('%s carries no category to fill, only what it asks', (cause, spec) => {
+    const result = classifyByRules(spec)!;
+    expect(result.needsUser).toBe(cause);
+    expect(result.category).toBeUndefined();
+    expect(result.asks).toBeDefined();
+    if (result.needsUser !== undefined) {
+      // @ts-expect-error -- a handed-over classification has no category whose policy could be looked up.
+      policyClassOf(result.category);
+    }
+  });
+});
+
+describe('classifyByRules: a closing "#"', () => {
+  it.each(['Phone#', 'Cell#', 'Mobile Phone#', 'Phone #'])('reads %j as the phone number', (label) => {
+    expect(classifyByRules(field(label, 'text'))).toMatchObject({ category: 'contact.phone', rule: 'label.phone' });
+  });
+
+  it('keeps it on a one-letter word, so "C#" is still not "C"', () => {
+    expect(ruleText('years of c# experience')).toBe('years of c# experience');
+    expect(ruleText('phone# or cell##')).toBe('phone or cell');
+  });
+});
+

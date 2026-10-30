@@ -9,7 +9,7 @@
  */
 import { TYPEAHEAD_MAX_QUERIES, TYPEAHEAD_MIN_QUERY_LENGTH, TYPEAHEAD_TOKEN_MIN_WEIGHT } from '../confidence';
 import { normalize } from '../text/normalize';
-import { STOPWORDS } from '../text/tokens';
+import { NAME_PARTICLES, STOPWORDS } from '../text/tokens';
 import type { IntendedValue } from '../types/intent';
 import { isAcronym } from '../vocab/lookup';
 import type { Vocab } from '../vocab/types';
@@ -20,15 +20,19 @@ import type { MatchDomain } from './types';
 const LEADING_THE = /^the\s+/i;
 /** Where a name splits into words, keeping each word's own spelling. */
 const WORD_BREAK = /[\s,;:/()[\]–—-]+/;
+/** The articles and particles of other languages: kept in a name's key (they tell "De La Salle" from "La Salle"), but
+ *  no word to search by ("Universidad de" finds every Spanish university). */
+const PARTICLES: ReadonlySet<string> = new Set(NAME_PARTICLES);
 
-/** The first two words of `name` that weigh at least 0.3 in the domain, as written. */
+/** The first two words of `name` that weigh at least 0.3 in the domain, as written, stopwords and particles left
+ *  out. */
 function weightyWords(name: string, domain: MatchDomain, vocab: Vocab): string {
   const context = domainContext(domain);
   const stopwords = STOPWORDS[context];
   const words: string[] = [];
   for (const word of name.split(WORD_BREAK)) {
     if (words.length === 2) break;
-    const tokens = normalize(word, context).tokens.filter((token) => !stopwords.has(token));
+    const tokens = normalize(word, context).tokens.filter((token) => !stopwords.has(token) && !PARTICLES.has(token));
     if (tokens.length === 0) continue;
     if (tokens.every((token) => tokenWeight(token, domain, vocab) >= TYPEAHEAD_TOKEN_MIN_WEIGHT)) words.push(word);
   }

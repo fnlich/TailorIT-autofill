@@ -66,6 +66,11 @@ describe('parseDegree: punctuation-sensitive codes', () => {
     expect(parseDegree('as soon as possible', vocab)).toEqual(parsed(undefined, []));
   });
 
+  it('counts towards the 500-code-point cap only what is left once invisibles are deleted', () => {
+    expect(parseDegree(`${'\u200B'.repeat(600)}B.S.`, vocab)).toEqual(parsed('bachelor', ['BS']));
+    expect(parseDegree(`${'e\u0301'.repeat(400)} M.S.`, vocab).types).toEqual(['MS']);
+  });
+
   it('lets the longest match win', () => {
     expect(parseDegree('Bachelor of Science in Nursing', vocab)).toEqual(parsed('bachelor', ['BSN']));
     expect(parseDegree('Associate of Applied Science', vocab).types).toEqual(['AAS']);

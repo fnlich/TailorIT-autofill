@@ -22,8 +22,8 @@ describe('sha256: the NIST vectors (FIPS 180-4 examples)', () => {
 describe('sha256 against node:crypto', () => {
   it.each([
     ['two-byte letters', 'Łódź, Straße, São Paulo'],
-    ['three-byte text', '中文 € ＵＴ\u3000Ａｕｓｔｉｎ'],
-    ['astral characters', '😀👩\u200D💻 𝐀'],
+    ['three-byte text', '中文 € \uFF35\uFF34\u3000\uFF21\uFF55\uFF53\uFF54\uFF49\uFF4E'],
+    ['astral characters', '😀👩\u200D💻 \u{1D400}'],
     ['a lone surrogate', 'a\uD800b'],
     ['a separator', 'no\u001fyes'],
     ['a long multi-byte text', 'é😀中'.repeat(5000)],

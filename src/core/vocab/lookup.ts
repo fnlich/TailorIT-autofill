@@ -63,3 +63,15 @@ export function surfacesOf(entity: VocabEntity, rawText?: string): Surface[] {
 export function isAcronym(text: string): boolean {
   return /^[A-Z][A-Z0-9&]{1,7}$/.test(text.trim().replace(/\./g, ''));
 }
+
+/**
+ * A short form written as one word, once dots are removed: 2 to 10 letters, digits or '&', either all capitals ("UT",
+ * "U.N.H.", "SUNYIT") or at most six characters with two capitals or more ("UMich", "UConn"). Many institutions
+ * answer to such a form, so an IPEDS or ROR alias of this shape names one institution only when a curated table
+ * says so (§5.3), and a profile that gives only one keeps the person's text.
+ */
+export function isAcronymShaped(text: string): boolean {
+  const word = text.trim().replace(/\./g, '');
+  if (!/^[A-Za-z][A-Za-z0-9&]{1,9}$/.test(word)) return false;
+  return !/[a-z]/.test(word) || (word.length <= 6 && word.replace(/[^A-Z]/g, '').length >= 2);
+}

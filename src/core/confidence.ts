@@ -1,9 +1,11 @@
 /*
  * Every threshold, tier, cap and weight the matcher and the resolver use, in one place (docs/design/core.md §4 and
  * §8.6, docs/ARCHITECTURE.md). A field's final confidence is classification × value × match: fill at FILL_AT or
- * more, fill and flag from FLAG_AT, otherwise leave it blank. These are design defaults that Phase 1 calibrates on real
- * option lists; the golden table pins the stages, so any change here is reviewed. New constants are appended, never
- * redefined elsewhere.
+ * more, fill and flag from FLAG_AT, otherwise leave it blank. These are uncalibrated design defaults. ARCHITECTURE.md
+ * (Risk 12) has Phase 1 calibrate the fuzzy weights, the 0.88 threshold, the margin and the tiers on real school,
+ * degree and discipline lists, but none of the captured forms has such a list (no education section, and no school
+ * search with its results open), so they stay as designed until snapshots with those lists arrive. The golden table
+ * pins the stages, so any change here is reviewed. New constants are appended, never redefined elsewhere.
  */
 
 // Action bands (§8.6; the spec's Requirement E).
@@ -80,6 +82,10 @@ export const MATCH_DEGREE_DOCTORATE_FALLBACK = 0.75;
 export const MATCH_CIP_TITLE = 0.95;
 /** The field option resolves to the CIP code's 2- or 4-digit parent. */
 export const MATCH_CIP_PARENT = 0.88;
+/** A proficiency matched through the crosswalk (a CEFR level or an everyday word such as "Fluent", which only
+ *  approximate a level): low enough that even the strongest classification (CLASSIFY_AGREE_CAP) leaves it below the
+ *  fill line, so it is always flagged. */
+export const MATCH_CROSSWALK = 0.85;
 /** The option alone mentions the intended entity and no conflicting one. */
 export const MATCH_MENTION = 0.93;
 /** A yes/no option chosen by its leading token. */
@@ -187,3 +193,19 @@ export const MATCH_BUDGET_OPTIONS = 5000;
 
 /** A tiebreak candidate's label is sent with at most this many code points: the scanner's own cap on option labels. */
 export const TIEBREAK_LABEL_MAX = 300;
+
+// TailorIT's caps on a pick request (docs/design/tailorit.md §6.3, AutofillPickRequestSchema). Above any of them
+// TailorIT refuses the whole request, so the extension keeps under them: an over-long alias is dropped, an over-long
+// value or id sends no item, and a pass's items are split into tasks before the text cap. zod counts code points.
+
+/** An item's intended value: at most this many code points. */
+export const TIEBREAK_INTENDED_MAX = 300;
+/** Each alias: at most this many code points. */
+export const TIEBREAK_ALIAS_MAX = 200;
+/** An item's key, the tiebreak item's id: at most this many code points. */
+export const TIEBREAK_ID_MAX = 300;
+/** A request's total text, in characters. */
+export const TIEBREAK_REQUEST_TEXT_MAX = 100_000;
+/** A task is filled to at most this share of TIEBREAK_REQUEST_TEXT_MAX, counted as the JSON of the extension's own
+ *  items (which hold more than the request TailorIT reads), so the count errs high and the margin stays. */
+export const TIEBREAK_REQUEST_TEXT_SHARE = 0.9;

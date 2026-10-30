@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEGREE_LEVELS, DEGREE_TYPES, PROFICIENCIES } from '../enums';
 import {
@@ -10,12 +11,25 @@ import { DEGREE_LEVEL_PLURALS, STOPWORDS } from '../text/tokens';
 import { VOCAB_DOMAINS, type VocabDomain } from '../types/intent';
 import { bundledVocab, loadRawVocab, readVocabFile } from './bundled.testkit';
 import { createVocab, stableStringify } from './createVocab';
-import { isAcronym, keyFor, resolveKey, resolveText, surfacesOf } from './lookup';
-import { DOMAIN_CONTEXT, VOCAB_BUDGETS, VOCAB_FILES, type VocabFile } from './types';
+import { isAcronym, isAcronymShaped, keyFor, resolveKey, resolveText, surfacesOf } from './lookup';
+import { DOMAIN_CONTEXT, VOCAB_BUDGETS, VOCAB_FILES, type InstitutionEntity, type VocabFile } from './types';
 
 const vocab = bundledVocab();
 const raw = loadRawVocab();
 const DATA_FILES = (Object.keys(VOCAB_FILES) as VocabFile[]).filter((file) => file !== 'manifest');
+
+/** vocab/reports/ambiguous-surfaces.json: why each bundled institution surface is ambiguous beyond the bundle's own
+ *  collisions, as "<id> <key>" to its space-separated reasons. */
+const AMBIGUOUS_SURFACES: ReadonlyMap<string, readonly string[]> = new Map(Object.entries((JSON.parse(readFileSync(
+  new URL('../../../vocab/reports/ambiguous-surfaces.json', import.meta.url), 'utf8')) as { surfaces: Record<string, string> })
+  .surfaces).map(([entry, reasons]) => [entry, reasons.split(' ')]));
+/** The reasons that make a surface a short form (flag 2): no entry's location settles it. */
+const SHORT_FORM_REASONS: ReadonlySet<string> = new Set(['acronym', 'shared-name', 'contained', 'bracket']);
+/** The reasons that leave a shared key to the entry's location (flag 1): a ROR record outside the subset, a campus
+ *  base name. */
+const FLAG_ONE_REASONS: ReadonlySet<string> = new Set(['outside-subset', 'campus-base']);
+
+const institutionOf = (id: string) => vocab.entity(id) as InstitutionEntity;
 
 describe('stableStringify', () => {
   it('sorts keys, drops undefined members, puts the first two levels one item per line and ends with LF', () => {
@@ -135,17 +149,37 @@ describe('invariants', () => {
     const lineage = (ids: string[]) => domain === 'field' && vocab.fields.mostSpecific(ids) !== null;
     const unmarked: string[] = [];
     const spurious: string[] = [];
+    const wrongFlag: string[] = [];
     for (const entity of vocab.entities(domain)) {
       for (const surface of entity.surfaces) {
         const ids = owners.get(surface.key)!;
         const shared = ids.length > 1 && !lineage(ids);
         const st = surface.key.split(' ').includes('st?');
+        // Beyond the bundle, the build records why (vocab/reports/ambiguous-surfaces.json): a ROR record outside the
+        // subset, a campus base name, or a short form or shared name.
+        const reasons = domain === 'institution' ? AMBIGUOUS_SURFACES.get(`${entity.id} ${surface.key}`) ?? [] : [];
         if (shared && !surface.ambiguous) unmarked.push(`${entity.id} "${surface.key}"`);
-        if (surface.ambiguous && !shared && !st) spurious.push(`${entity.id} "${surface.key}"`);
+        if (surface.ambiguous && !shared && !st && reasons.length === 0) spurious.push(`${entity.id} "${surface.key}"`);
+        if (surface.shortForm !== reasons.some((reason) => SHORT_FORM_REASONS.has(reason))) {
+          wrongFlag.push(`${entity.id} "${surface.key}"`);
+        }
       }
     }
     expect(unmarked).toEqual([]);
     expect(spurious).toEqual([]);
+    expect(wrongFlag).toEqual([]);
+  });
+
+  it('lists in ambiguous-surfaces.json only bundled institution surfaces that are ambiguous, for known reasons', () => {
+    expect(AMBIGUOUS_SURFACES.size).toBeGreaterThan(1_000);
+    const stale: string[] = [];
+    for (const [entry, reasons] of AMBIGUOUS_SURFACES) {
+      const space = entry.indexOf(' ');
+      const surface = vocab.entity(entry.slice(0, space))?.surfaces.find((candidate) => candidate.key === entry.slice(space + 1));
+      const known = reasons.every((reason) => SHORT_FORM_REASONS.has(reason) || FLAG_ONE_REASONS.has(reason));
+      if (!surface?.ambiguous || !known) stale.push(entry);
+    }
+    expect(stale).toEqual([]);
   });
 
   it('covers ISO 3166-1, the USPS and Canada Post lists, ISO 639-1 and the closed value lists', () => {
@@ -170,8 +204,8 @@ describe('invariants', () => {
   });
 });
 
-/** What a golden-table spelling must resolve to: an id, or a set of ids it is ambiguous between. */
-type Expect = string | { ambiguousWith: string[] };
+/** What a golden-table spelling must resolve to: an id, a set of ids it is ambiguous between, or (null) nothing. */
+type Expect = string | { ambiguousWith: string[] } | null;
 
 const GOLDEN: ReadonlyArray<[VocabDomain, string, Expect]> = [
   // §6.1 and §6.2, institutions: every profile value, and the options whose entity matters.
@@ -195,7 +229,8 @@ const GOLDEN: ReadonlyArray<[VocabDomain, string, Expect]> = [
   ['institution', 'Georgia Institute of Technology', 'ipeds:139755'],
   ['institution', 'Georgia Tech', 'ipeds:139755'],
   ['institution', 'Georgia State University', 'ipeds:139940'],
-  ['institution', 'University of Georgia', 'ipeds:139959'],
+  // A University of Georgia in Georgia, the country (ROR, outside the subset), has this name too.
+  ['institution', 'University of Georgia', { ambiguousWith: ['ipeds:139959'] }],
   ['institution', 'Georgia Southern University', 'ipeds:139931'],
   ['institution', 'Massachusetts Institute of Technology', 'ipeds:166683'],
   ['institution', 'MIT', 'ipeds:166683'],
@@ -218,7 +253,8 @@ const GOLDEN: ReadonlyArray<[VocabDomain, string, Expect]> = [
   ['institution', 'University of Michigan - Ann Arbor', 'ipeds:170976'],
   ['institution', 'Michigan State University', 'ipeds:171100'],
   ['institution', 'Northeastern University', { ambiguousWith: ['ipeds:167358'] }],
-  ['institution', 'Northwestern University', 'ipeds:147767'],
+  // As is a Northwestern University in the Philippines.
+  ['institution', 'Northwestern University', { ambiguousWith: ['ipeds:147767'] }],
   ['institution', 'Northern Illinois University', 'ipeds:147703'],
   ['institution', 'Boston University', 'ipeds:164988'],
   ['institution', 'Boston College', 'ipeds:164924'],
@@ -227,7 +263,9 @@ const GOLDEN: ReadonlyArray<[VocabDomain, string, Expect]> = [
   ['institution', 'Florida International University', 'ipeds:133951'],
   ['institution', 'University of Southern California', 'ipeds:123961'],
   ['institution', 'University of Arizona', 'ipeds:104179'],
-  ['institution', 'Arizona State University', 'ipeds:104151'],
+  // A bare system name (IPEDS has ASU's Campus and Digital Immersion): no campus answers to it until the owner makes
+  // it a flagship.
+  ['institution', 'Arizona State University', null],
   ['institution', 'Northern Arizona University', 'ipeds:105330'],
   ['institution', 'Penn State', 'ipeds:214777'],
   ['institution', 'University of Pennsylvania', 'ipeds:215062'],
@@ -335,7 +373,9 @@ const GOLDEN: ReadonlyArray<[VocabDomain, string, Expect]> = [
 describe('every entity the golden table (§6.1, §6.2) needs is present', () => {
   it.each(GOLDEN)('%s %j resolves', (domain, text, expected) => {
     const resolution = resolveText(vocab, domain, text);
-    if (typeof expected === 'string') {
+    if (expected === null) {
+      expect(resolution.id).toBeNull();
+    } else if (typeof expected === 'string') {
       expect(resolution.id).toBe(expected);
       expect(resolution.ambiguous).toBe(false);
     } else {
@@ -356,6 +396,19 @@ describe('every entity the golden table (§6.1, §6.2) needs is present', () => 
     expect(tier('region', 'TX')).toBe('vocab');
     expect(tier('region', 'Texas')).toBe('primary');
     expect(tier('referral', 'Employee Referral')).toBe('curated');
+  });
+
+  it('stores every flagship\'s bare name at the flagship tier, whatever a source called it before', () => {
+    expect(raw.lexicon.flagships).toHaveLength(5);
+    for (const flagship of raw.lexicon.flagships) {
+      const record = raw.institutionsUs.institutions.find((entry) => `ipeds:${entry.id}` === flagship.id)!;
+      expect(record.s.find((surface) => surface[1] === flagship.key), flagship.bare).toEqual([flagship.bare,
+        flagship.key, 'f']);
+      expect(resolveText(vocab, 'institution', flagship.bare), flagship.bare)
+        .toMatchObject({ id: flagship.id, tier: 'flagship', ambiguous: false });
+    }
+    expect(raw.lexicon.flagships.map((flagship) => flagship.bare)).toEqual(expect.arrayContaining(['University of Michigan',
+      'Texas A&M University']));
   });
 
   it('keeps out what the golden table leaves to later stages', () => {
@@ -447,6 +500,44 @@ describe('the guard lexicon (§4.5)', () => {
     expect([...vocab.factTokens(toronto)]).toEqual(expect.arrayContaining(['toronto', 'ontario', 'canada']));
   });
 
+  it('takes no word from a region\'s or country\'s other spellings that names no place', () => {
+    const states = (code: string) => vocab.entities('institution').filter((entity) =>
+      (entity as InstitutionEntity).facts.regionCode === code);
+    for (const code of ['NY', 'WA']) {
+      const holding = states(code).filter((entity) => vocab.factTokens(entity.id).has('state')).map((entity) => entity.id);
+      expect(holding, `${code} institutions whose facts hold "state"`).toEqual([]);
+    }
+    for (const entity of states('DC')) {
+      expect(['d', 'c'].filter((letter) => vocab.factTokens(entity.id).has(letter)), entity.id).toEqual([]);
+    }
+    const korean = vocab.entities('institution').filter((entity) => (entity as InstitutionEntity).facts.country === 'KR');
+    expect(korean.length).toBeGreaterThan(100);
+    expect(korean.filter((entity) => vocab.factTokens(entity.id).has('south')).map((entity) => entity.id)).toEqual([]);
+    expect(vocab.factTokens(korean[0]!.id).has('south_korea')).toBe(true);
+    expect(vocab.factTokens('ipeds:196060').has('new_york')).toBe(true);
+    expect(vocab.factTokens(resolveText(vocab, 'institution', 'Georgetown University').id!).has('washington_dc')).toBe(true);
+  });
+
+  it('derives the discipline class from CIP\'s family and series titles, without the words that name no subject', () => {
+    const discipline = vocab.guard.members('discipline');
+    for (const word of ['mechanical', 'electrical', 'civil', 'chemical', 'computer', 'biomedical', 'aerospace', 'industrial',
+      'physics', 'mathematics', 'economics', 'finance', 'accounting', 'psychology', 'biology', 'chemistry', 'engineering',
+      'nursing', 'mines', 'law']) {
+      expect(discipline.has(word), word).toBe(true);
+    }
+    for (const word of ['studies', 'general', 'other', 'services', 'programs', 'related', 'state', 'community', 'university']) {
+      expect(discipline.has(word), word).toBe(false);
+    }
+  });
+
+  it('takes its cities from every ROR candidate, IPEDS and the curated exonyms, not only the bundled records', () => {
+    const city = vocab.guard.members('city');
+    for (const name of ['madrid', 'barcelona', 'kyoto', 'osaka', 'tokyo', 'munich', 'zurich', 'basel', 'heilbronn',
+      'scarborough', 'mississauga', 'bombay', 'madras', 'bangalore', 'peking', 'dallas']) {
+      expect(city.has(name), name).toBe(true);
+    }
+  });
+
   it('lists the flagships', () => {
     expect(vocab.flagships.map((flagship) => [flagship.bare, flagship.id])).toEqual(expect.arrayContaining([
       ['University of Texas', 'ipeds:228778'], ['University of Michigan', 'ipeds:170976'],
@@ -527,7 +618,7 @@ describe('lookup.ts', () => {
 
   it('lists hits best tier first', () => {
     const hits = vocab.lookup('institution', 'ut austin');
-    expect(hits).toEqual([{ id: 'ipeds:228778', tier: 'curated', ambiguous: false }]);
+    expect(hits).toEqual([{ id: 'ipeds:228778', tier: 'curated', ambiguous: false, shortForm: false }]);
   });
 
   it('surfacesOf puts the person’s spelling first', () => {
@@ -541,6 +632,172 @@ describe('lookup.ts', () => {
   it('isAcronym', () => {
     for (const text of ['MIT', 'UCLA', 'U.C.L.A.', 'A&M', 'CS50']) expect(isAcronym(text), text).toBe(true);
     for (const text of ['UMich', 'Georgia Tech', 'M', 'TOOLONGNAME']) expect(isAcronym(text), text).toBe(false);
+  });
+
+  it('isAcronymShaped: one word, all capitals or short with two capitals', () => {
+    for (const text of ['UT', 'U.N.H.', 'SUNYIT', 'UMich', 'UConn', 'A&M']) expect(isAcronymShaped(text), text).toBe(true);
+    for (const text of ['Penn', 'Oxy', 'CalArts', 'UArizona', 'Cal Poly', 'U of M', 'M', 'Georgia Tech']) {
+      expect(isAcronymShaped(text), text).toBe(false);
+    }
+  });
+});
+
+describe('names more institutions answer to than hold them (§5.3 step 4)', () => {
+  const namesNone = (text: string) => {
+    const resolution = resolveText(vocab, 'institution', text);
+    expect(resolution.id, text).toBeNull();
+    return resolution;
+  };
+
+  it.each(['UT', 'OSU', 'UNH', 'EMU', 'LMU', 'USF', 'UCD', 'KSU', 'TTU', 'UNC', 'UW', 'GSU', 'USC', 'UC'])(
+    'the uncurated acronym %j names no institution, and no location may settle it', (text) => {
+      const resolution = namesNone(text);
+      expect(resolution.hits.every((hit) => hit.ambiguous && hit.shortForm)).toBe(true);
+    });
+
+  it('keeps the acronyms a curated table vouches for', () => {
+    for (const [text, id] of [['MIT', 'ipeds:166683'], ['UCLA', 'ipeds:110662'], ['UCSD', 'ipeds:110680'],
+      ['UCSB', 'ipeds:110705'], ['NYU', 'ipeds:193900'], ['UIUC', 'ipeds:145637'], ['UTD', 'ipeds:228787'],
+      ['WPI', 'ipeds:168421'], ['JHU', 'ipeds:162928'], ['UCF', 'ipeds:132903'], ['WUSTL', 'ipeds:179867']] as const) {
+      expect(resolveText(vocab, 'institution', text), text).toMatchObject({ id, tier: 'curated', ambiguous: false });
+    }
+  });
+
+  it.each(['U of M', 'U of D', 'U of P', 'Cal Poly', 'CMU', 'UMD', 'Texas A&M', 'TAMU', 'LSU', 'UMN',
+    'Arizona State University'])('the shared or system name %j names no institution', (text) => {
+    expect(namesNone(text).hits.every((hit) => hit.ambiguous && hit.shortForm)).toBe(true);
+  });
+
+  it('marks every holder of a shared name, curated and ROR ones included', () => {
+    const cmu = vocab.lookup('institution', 'cmu').map((hit) => hit.id);
+    expect(cmu).toEqual(expect.arrayContaining(['ipeds:211440']));
+    expect(cmu.some((id) => id.startsWith('ror:'))).toBe(true);
+    expect(vocab.lookup('institution', keyFor('U of M', 'institution'))[0]).toMatchObject({ id: 'ipeds:170976',
+      ambiguous: true, shortForm: true });
+  });
+
+  it.each(['Southern University', 'Indian Institute of Technology', 'Indian Institute of Technology (Banaras Hindu University)',
+    'National Institute of Technology', 'Cal State', 'Trinity', 'Central Florida', 'Boston', 'Hartford', 'Camden',
+    'School', 'West', 'Bethel', 'Westminster', "St. John's", "Saint Mary's", 'Royal College',
+    'University of Science and Technology', 'Miller-Motte College', 'Universal Technical Institute', 'Penn', 'Notre Dame',
+    'Purdue', 'Louisiana State University', 'U of Colorado', 'University of Colorado', 'University of Oklahoma'])(
+    'the name %j, which other institutions\' names hold whole, names none of them', (text) => {
+      expect(namesNone(text).hits.every((hit) => hit.shortForm)).toBe(true);
+    });
+
+  it('leaves a campus base name to the location only on institutions outside its campuses', () => {
+    const concordia = resolveText(vocab, 'institution', 'Concordia University');
+    expect(concordia).toMatchObject({ id: null, ambiguous: true });
+    expect(concordia.hits.map((hit) => [hit.id.slice(0, 4), hit.shortForm])).toEqual([['ror:', false]]);
+    expect(resolveText(vocab, 'institution', 'Pennsylvania State University'))
+      .toMatchObject({ id: 'ipeds:214777', tier: 'primary', ambiguous: false });
+  });
+
+  it.each(['Heidelberg University', 'Saint Louis University', 'University of Georgia', 'Northwestern University',
+    'Trinity University', 'National University', 'Sofia University'])(
+    '%j, which a ROR record outside the subset also has, is ambiguous but settled by a location', (text) => {
+      const resolution = namesNone(text);
+      expect(resolution.ambiguous).toBe(true);
+      expect(resolution.hits.some((hit) => hit.shortForm)).toBe(false);
+    });
+
+  it('splits a run-together alias list, so another school\'s name in it is shared, not owned', () => {
+    expect(resolveText(vocab, 'institution', 'Regis College').hits.map((hit) => hit.id).sort())
+      .toEqual(['ipeds:127918', 'ipeds:167598']);
+    const ipedsSurfaces = vocab.entities('institution').filter((entity) => entity.id.startsWith('ipeds:'))
+      .flatMap((entity) => entity.surfaces.filter((surface) => surface.tier === 'vocab').map((surface) => ({ entity, surface })));
+    expect(ipedsSurfaces.filter(({ surface }) => [...surface.text].length > 200)).toEqual([]);
+    expect(ipedsSurfaces.filter(({ surface }) => surface.text.split('/').length >= 3)).toEqual([]);
+    const repeats = ipedsSurfaces.filter(({ entity, surface }) => {
+      const { campus } = (entity as InstitutionEntity).facts;
+      const base = (campus ? entity.name.slice(0, entity.name.length - campus.length) : entity.name)
+        .replace(/[\s-]+$/, '').toLowerCase();
+      return base.length >= 6 && surface.text.toLowerCase().split(base).length > 2;
+    });
+    expect(repeats.map(({ entity, surface }) => `${entity.id} ${surface.text}`)).toEqual([]);
+  });
+
+  it('keeps administrative units and closed schools out of the institutions', () => {
+    for (const id of ['ipeds:428453', 'ipeds:190035', 'ipeds:164146', 'ipeds:124557', 'ipeds:192004']) {
+      expect(vocab.entity(id), id).toBeUndefined();
+    }
+    for (const text of ['Minnesota State', 'The City University of New York', 'USM', 'UCOP', 'IHL']) {
+      expect(resolveText(vocab, 'institution', text).hits.map((hit) => vocab.entity(hit.id)!.name), text)
+        .not.toEqual(expect.arrayContaining([expect.stringMatching(/System Office|Central Office|System of Maryland/)]));
+    }
+  });
+
+  it('reads a campus only where IPEDS names one', () => {
+    expect(institutionOf('ipeds:145637').facts.campus).toBeUndefined();
+    expect(institutionOf('ipeds:226471').facts.campus).toBeUndefined();
+    expect(institutionOf('ipeds:203067').facts.campus).toBeUndefined();
+    expect(institutionOf('ipeds:170976').facts.campus).toBe('Ann Arbor');
+    expect(institutionOf('ipeds:215266').facts.campus).toBe('Bradford');
+    expect(institutionOf('ipeds:214591').facts.campus).toBe('Penn State Erie-Behrend College');
+    expect(vocab.guard.classesOf('baylor')).not.toContain('campus');
+    expect(vocab.guard.classesOf('behrend')).toContain('campus');
+  });
+
+  it('drops team names and a university\'s own colleges from the aliases', () => {
+    const westminster = institutionOf('ipeds:230807').surfaces.map((surface) => surface.text);
+    expect(westminster.filter((text) => /Griffins/.test(text))).toEqual([]);
+    expect(westminster).toContain('Westminster College Salt Lake City');
+    const regis = institutionOf('ipeds:127918').surfaces.map((surface) => surface.text);
+    expect(regis.filter((text) => /College of Business|Anderson College|Rueckert-Hartman|Rangers/.test(text))).toEqual([]);
+    expect(institutionOf('ipeds:176017').surfaces.map((surface) => surface.text)).toContain('Ole Miss');
+  });
+});
+
+describe('fields of study (CIP 2020)', () => {
+  it('leaves out the non-credit families 32 to 37', () => {
+    expect(vocab.entities('field').filter((entity) => /^cip:3[2-7]/.test(entity.id))).toEqual([]);
+    expect(resolveText(vocab, 'field', 'Art').id).toBe('cip:50.0701');
+    expect(resolveText(vocab, 'field', 'Music').id).toBe('cip:50.0901');
+    expect(resolveText(vocab, 'field', 'Writing').id).toBe('cip:23.1301');
+    for (const text of ['Theater', 'Dancing', 'Reading', 'Sports and Exercise']) {
+      expect(resolveText(vocab, 'field', text).hits.filter((hit) => /^cip:3[2-7]/.test(hit.id)), text).toEqual([]);
+    }
+  });
+
+  it('reads a slash title as CIP means it, never as a lone modifier or a doubled word', () => {
+    expect(resolveText(vocab, 'field', 'Environmental Engineering').id).toBe('cip:14.1401');
+    expect(resolveText(vocab, 'field', 'Gene Therapy').id).toBe('cip:51.0914');
+    expect(resolveText(vocab, 'field', 'Cell Biology and Histology').id).toBe('cip:26.0401');
+    expect(resolveText(vocab, 'field', 'Farm Management').id).toBe('cip:01.0104');
+    expect(resolveText(vocab, 'field', 'Biology').id).toBe('cip:26.0101');
+    expect(resolveText(vocab, 'field', 'Marketing').id).toBe('cip:52.1401');
+    for (const text of ['Environmental', 'Cell', 'Gene', 'Farm', 'Fellowship Program', 'Technician']) {
+      expect(resolveText(vocab, 'field', text).hits, text).toEqual([]);
+    }
+    const doubled = vocab.entities('field').flatMap((entity) => entity.surfaces)
+      .filter((surface) => /\b(\w+) \1\b/i.test(surface.text));
+    expect(doubled.map((surface) => surface.text)).toEqual([]);
+  });
+
+  it('drops a reading sibling codes share, and lets a real title keep its words', () => {
+    expect(resolveText(vocab, 'field', 'Criminal Justice')).toMatchObject({ id: 'cip:43.01', tier: 'curated' });
+    expect(resolveText(vocab, 'field', 'Geospatial Intelligence').id).toBe('cip:43.0407');
+    expect(resolveText(vocab, 'field', 'Painting').id).toBe('cip:50.0708');
+    expect(resolveText(vocab, 'field', 'Family and Consumer Sciences').id).toBe('cip:19.0101');
+  });
+});
+
+describe('answer vocabularies', () => {
+  it('knows the decline wordings forms use', () => {
+    for (const text of ['Prefer not to state', 'I prefer not to state', 'Prefer not to self-identify',
+      'I prefer not to self-identify', 'Do not wish to self-identify', 'Decline to specify', 'Prefer not to specify',
+      'I do not wish to provide this information', "I don't want to disclose", 'I do not want to disclose', 'Not specified',
+      'Not disclosed', 'Choose not to identify', "I'd prefer not to say", 'I would prefer not to answer',
+      'Decline to identify', 'Not Declared', 'I do not wish to answer this question']) {
+      expect(vocab.answers.decline.has(keyFor(text, 'referral')), text).toBe(true);
+      expect(vocab.answers.exclusive.has(keyFor(text, 'referral')), text).toBe(true);
+    }
+  });
+
+  it('reads "Native / Bilingual" as a native speaker', () => {
+    for (const text of ['Native / Bilingual', 'Native/Bilingual']) {
+      expect(resolveText(vocab, 'proficiency', text), text).toMatchObject({ id: 'prof:native', tier: 'curated' });
+    }
   });
 });
 

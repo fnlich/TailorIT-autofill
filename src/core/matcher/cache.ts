@@ -6,23 +6,43 @@
  * checked again on every use: a hit needs exactly one usable option with that label, otherwise the entry is stale.
  * Unconfirmed LLM picks are never cached, and neither are EEO, legal, consent or sensitive fields: only the policy
  * classes profile, free-text and unknown are.
+ *
+ * The key names the value by everything its match depends on (the spec keys the cache by the intended value): a
+ * degree with its field of study, since a combined list matches both ("M.S. in Statistics" is not "M.S. in Computer
+ * Science"), and a text by its brackets too ("London (UK)" is not "London (Ontario)"). Two values that would choose
+ * different options never share an entry.
  */
 import { INJECTED_LABEL_CAP, MATCH_CACHE_ACCEPTED } from '../confidence';
 import type { MatcherStage, Platform } from '../enums';
-import { normalize } from '../text/normalize';
+import { keyWithBrackets } from '../text/normalize';
 import type { OptionSetHash } from '../types/field';
 import type { IntendedValue } from '../types/intent';
 import type { Match, MatchFlag } from '../types/match';
+import type { FieldOfStudy } from '../types/profile';
+import { keyFor } from '../vocab/lookup';
 import { openClass } from './domains';
 import { chooseable, domainContext } from './prepare';
 import type { MatchDomain, MatchInput, PreparedOptions } from './types';
 
-/** The cache key's version prefix: a change to the key's parts or the entry's label bumps it. */
-export const CACHE_KEY_VERSION = 'm1';
+/** The cache key's version prefix: a change to the key's parts or the entry's label bumps it. 'm2' added a degree's
+ *  field of study and the brackets of a text. */
+export const CACHE_KEY_VERSION = 'm2';
 /** The key's parts are joined by U+001F, which no label or hash holds. */
 const UNIT_SEPARATOR = String.fromCharCode(0x1f);
 /** An observed option-set hash: 16 hex. 'lazy' and 'none' are never cached. */
 const OBSERVED_HASH = /^[0-9a-f]{16}$/;
+/** A text's key with its bracketed words kept, as PreparedOption.fullKey keeps them. */
+function fullKeyOf(text: string, domain: MatchDomain): string {
+  return keyWithBrackets(text, domainContext(domain));
+}
+
+/** What a degree's field of study adds to its identity: its CIP code, else its normalized name; '' without one. */
+function fieldIdentity(field: FieldOfStudy | undefined): string {
+  if (field === undefined) return '';
+  if (field.cip !== undefined) return `|cip:${field.cip}`;
+  const key = keyFor(field.name, 'field');
+  return key === '' ? '' : `|n:${key}`;
+}
 
 /** One accepted match. */
 export interface MatchCacheEntry {
@@ -43,21 +63,25 @@ export interface MatchCacheStore {
 
 /**
  * What the value is, for the cache key: a vocabulary id ('ipeds:228778', 'cip:11.0701', 'iso:US', 'usps:TX'), a
- * degree ('deg:type:BS', 'deg:level:bachelor'), 'bool:true', 'decline', a number, or 'n:' and the normalized display
- * when the vocabulary does not know it. Null for a kind never cached.
+ * degree ('deg:type:BS', 'deg:level:bachelor', with '|cip:11.0701' or '|n:' and the field's key when the entry has a
+ * field of study), 'bool:true', 'decline', a number, or 'n:' and the normalized display, brackets kept, when the
+ * vocabulary does not know it. Null for a kind never cached.
  */
-export function intendedIdentity(intended: IntendedValue, domain: MatchDomain): string | null {
+export function intendedIdentity(intended: IntendedValue, domain: MatchDomain, degreeField?: FieldOfStudy):
+  string | null {
   switch (intended.kind) {
     case 'entity':
-      return intended.id ?? `n:${normalize(intended.display, domainContext(domain)).key}`;
-    case 'degree':
-      return intended.type !== null ? `deg:type:${intended.type}` : `deg:level:${intended.level}`;
+      return intended.id ?? `n:${fullKeyOf(intended.display, domain)}`;
+    case 'degree': {
+      const degree = intended.type !== null ? `deg:type:${intended.type}` : `deg:level:${intended.level}`;
+      return degree + fieldIdentity(degreeField);
+    }
     case 'boolean':
       return `bool:${intended.value}`;
     case 'decline':
       return 'decline';
     case 'text':
-      return `n:${normalize(intended.text, domainContext(domain)).key}`;
+      return `n:${fullKeyOf(intended.text, domain)}`;
     case 'number':
       return `num:${intended.unit}:${intended.value}${intended.currency ? `:${intended.currency}` : ''}`;
     default:
@@ -74,13 +98,15 @@ export interface CacheKeyParts {
   optionSetHash: OptionSetHash;
   intended: IntendedValue;
   domain: MatchDomain;
+  /** For a degree: the entry's field of study (MatchInput.degreeField). */
+  degreeField?: FieldOfStudy;
 }
 
-/** ['m1', platform, labelKey, observedOptionSetHash, intendedIdentity] joined by U+001F, or null when the hash is not
- *  an observed one or the value is never cached. */
+/** [CACHE_KEY_VERSION, platform, labelKey, observedOptionSetHash, intendedIdentity] joined by U+001F, or null when the
+ *  hash is not an observed one or the value is never cached. */
 export function cacheKey(parts: CacheKeyParts): string | null {
   if (!OBSERVED_HASH.test(parts.optionSetHash)) return null;
-  const identity = intendedIdentity(parts.intended, parts.domain);
+  const identity = intendedIdentity(parts.intended, parts.domain, parts.degreeField);
   if (identity === null) return null;
   return [CACHE_KEY_VERSION, parts.platform, parts.labelKey, parts.optionSetHash, identity].join(UNIT_SEPARATOR);
 }
@@ -88,7 +114,8 @@ export function cacheKey(parts: CacheKeyParts): string | null {
 /** The key of a match input. */
 export function cacheKeyOf(input: MatchInput): string | null {
   return cacheKey({ platform: input.platform, labelKey: input.labelKey, optionSetHash: input.optionSetHash,
-    intended: input.intended, domain: input.options.domain });
+    intended: input.intended, domain: input.options.domain,
+    ...(input.degreeField ? { degreeField: input.degreeField } : {}) });
 }
 
 /**

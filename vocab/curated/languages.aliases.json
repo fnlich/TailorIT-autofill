@@ -27,6 +27,6 @@
     { "id": "limited-working", "names": ["Limited working proficiency", "Limited working"], "crosswalk": ["B1", "Intermediate", "Conversational"] },
     { "id": "professional-working", "names": ["Professional working proficiency", "Professional working"], "crosswalk": ["B2", "Upper intermediate"] },
     { "id": "full-professional", "names": ["Full professional proficiency", "Full professional"], "crosswalk": ["C1", "C2", "Advanced", "Fluent"] },
-    { "id": "native", "names": ["Native or bilingual proficiency", "Native or bilingual", "Native", "Native speaker", "Bilingual", "Mother tongue", "First language"], "crosswalk": [] }
+    { "id": "native", "names": ["Native or bilingual proficiency", "Native or bilingual", "Native / Bilingual", "Native", "Native speaker", "Bilingual", "Mother tongue", "First language"], "crosswalk": [] }
   ]
 }

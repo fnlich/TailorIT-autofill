@@ -80,6 +80,33 @@ describe('degree matching by granularity (§4.9)', () => {
     expect(degreeHits(intent, options, vocab)).toEqual([]);
   });
 
+  it('takes no option of another field, whatever the list’s granularity', () => {
+    const bs = degree('BS');
+    const labels = ['B.S. Computer Science', 'B.S. Mathematics', "Master's", 'PhD', "Associate's"];
+    const withField = (text: string) => doneMatch(outcomeOf(inputOf(bs, labels, 'degree',
+      { degreeField: canonicalField({ text }, vocab).value }), false));
+    expect(withField('Mathematics')).toMatchObject({ stage: 'alias', optionIndex: 1, rule: 'degree-type', flags: [] });
+    expect(withField('Computer Science')).toMatchObject({ optionIndex: 0, flags: [] });
+    expect(withField('Physics')).toMatchObject({ stage: 'none', optionIndex: null });
+    const types = ['B.S. Computer Science', 'B.S.', 'M.S.', 'Ph.D.', 'B.A.'];
+    expect(doneMatch(outcomeOf(inputOf(bs, types, 'degree'), false))).toMatchObject({ optionIndex: 1 });
+  });
+
+  it('takes no level option whose bracketed types are of another class, in any order', () => {
+    expect(match('PhD', ['Doctorate (EdD)', 'Doctorate (PhD)', "Master's"])).toMatchObject({ optionIndex: 1 });
+    expect(match('MS', ["Master's (MBA)", "Master's (MS)", "Bachelor's"])).toMatchObject({ optionIndex: 1 });
+    expect(match('MBA', ["Master's (MS)", "Master's (MBA)", "Bachelor's"])).toMatchObject({ optionIndex: 1 });
+    expect(match('PhD', ['Doctorate (EdD)', "Master's"]).optionIndex).toBeNull();
+  });
+
+  it('leaves a level-only degree blank between options its bracketed types tell apart', () => {
+    for (const text of ['Doctorate', 'Doctoral degree']) {
+      expect(match(text, ['Doctorate (PhD)', 'Doctorate (EdD)', "Master's"]), text)
+        .toMatchObject({ stage: 'none', optionIndex: null });
+      expect(match(text, ['Doctorate (EdD)', 'Doctorate', 'Doctorate (PhD)']), text).toMatchObject({ optionIndex: 1 });
+    }
+  });
+
   it('leaves an unknown list to the exact stage', () => {
     expect(match('Bootcamp', ['Some college', 'Bootcamp', 'Self-taught'])).toMatchObject({ stage: 'exact',
       optionIndex: 1 });
@@ -89,6 +116,22 @@ describe('degree matching by granularity (§4.9)', () => {
 });
 
 describe('degreeConflict: what no stage, the LLM included, may choose', () => {
+  it('rules out bracketed types of another class', () => {
+    const phd: DegreeIntent = { level: 'doctorate', type: 'PhD' };
+    expect(degreeConflict(phd, parseDegree('Doctorate (EdD)', vocab), vocab)).toBe(true);
+    expect(degreeConflict(phd, parseDegree('Doctorate (PhD, MD, JD)', vocab), vocab)).toBe(false);
+    expect(degreeConflict(phd, parseDegree('Doctorate', vocab), vocab)).toBe(false);
+  });
+
+  it('rules out another field of study, and any field for an entry without one', () => {
+    const bs: DegreeIntent = { level: 'bachelor', type: 'BS' };
+    const cs = canonicalField({ text: 'Computer Science' }, vocab).value;
+    expect(degreeConflict(bs, parseDegree('B.S. in Mathematics', vocab), vocab, cs)).toBe(true);
+    expect(degreeConflict(bs, parseDegree('B.S. in Computer Science', vocab), vocab, cs)).toBe(false);
+    expect(degreeConflict(bs, parseDegree('B.S. in Computer Science', vocab), vocab)).toBe(true);
+    expect(degreeConflict(bs, parseDegree('Bachelor of Science', vocab), vocab)).toBe(false);
+  });
+
   it('rules out another level, unless the type may stand for it, and types of another class', () => {
     const bs: DegreeIntent = { level: 'bachelor', type: 'BS' };
     const jd: DegreeIntent = { level: 'professional', type: 'JD' };

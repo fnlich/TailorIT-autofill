@@ -36,6 +36,7 @@ describe('the confidence constants', () => {
     ['MATCH_DEGREE_DOCTORATE_FALLBACK', 0.75],
     ['MATCH_CIP_TITLE', 0.95],
     ['MATCH_CIP_PARENT', 0.88],
+    ['MATCH_CROSSWALK', 0.85],
     ['MATCH_MENTION', 0.93],
     ['MATCH_POLARITY_LEADING', 0.93],
     ['MATCH_POLARITY_NEGATION', 0.85],
@@ -93,6 +94,11 @@ describe('the confidence constants', () => {
     for (const value of [C.CLASSIFY_LLM, C.MATCH_LLM_PICK, C.INJECTED_LABEL_CAP, C.MATCH_OTHER, C.FUZZY_TIER_MID,
       C.FUZZY_TIER_LOW, C.MATCH_DEGREE_DOCTORATE_FALLBACK]) expect(value).toBeLessThan(C.FILL_AT);
     expect(C.FLAG_AT).toBeLessThan(C.FILL_AT);
+  });
+
+  it('keeps a crosswalk proficiency below the fill line whatever the classification', () => {
+    expect(C.MATCH_CROSSWALK * C.CLASSIFY_AGREE_CAP).toBeLessThan(C.FILL_AT);
+    expect(C.MATCH_CROSSWALK).toBeLessThan(C.ALIAS_CONFIDENCE.generated);
   });
 
   it('orders the tiers', () => {

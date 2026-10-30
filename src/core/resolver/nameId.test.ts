@@ -101,6 +101,25 @@ describe('nameIdRule', () => {
     expect(nameIdRule(nameAttr, idAttr, kind)).toBeNull();
   });
 
+  it.each<[string, string]>([
+    // A part of the phone that is not its number: the person's number never goes in.
+    ['phone_extension', ''],
+    ['', 'phoneExtension'],
+    ['', 'phone-number--extension'],
+    ['phone_ext', ''],
+    ['mobile_ext1', ''],
+    ['phone_country_code', ''],
+    ['telephoneCountry', ''],
+    ['country_code', 'phone'],
+  ])('name %j, id %j on a text field is no phone number', (nameAttr, idAttr) => {
+    expect(nameIdRule(nameAttr, idAttr, 'text')).toBeNull();
+  });
+
+  it('still reads a phone whose attributes only look like a part', () => {
+    expect(nameIdRule('phone_text_ok', '', 'text')?.category).toBe('contact.phone');
+    expect(nameIdRule('cellphone', '', 'text')?.category).toBe('contact.phone');
+  });
+
   it('tries the next pattern when the kind cannot hold the first one’s category', () => {
     expect(nameIdRule('upload_email_resume', '', 'file')).toMatchObject({ category: 'file.resume',
       rule: 'name-id.resume' });

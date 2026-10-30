@@ -4,10 +4,13 @@
  * option with nothing left is unusable. Preparation also resolves each clean label in the vocabulary, reads the
  * answer lists (placeholder, other, exclusive, decline), parses degrees in the degree domain, and indexes the tokens
  * for the fuzzy stage's prefilter. It runs once per option set, so matchOne's budget (§4.13) covers matching only.
+ * Two things are read from the list as a whole: options that share a main key and differ only in their brackets
+ * (whose brackets are then never redundant), and, in the country domain, a phone picker's dial code beside the name
+ * ("Afghanistan+93"), which is left out of what is matched.
  */
 import { cutInjected } from '../guard/injected';
 import { parseDegree } from '../profile/degreeParse';
-import { normalize, type NormContext } from '../text/normalize';
+import { keyWithBrackets, normalize, type NormContext } from '../text/normalize';
 import type { Option } from '../types/field';
 import type { VocabDomain } from '../types/intent';
 import { DOMAIN_CONTEXT, type KeyHit, type PhraseSet, type Vocab } from '../vocab/types';
@@ -48,8 +51,17 @@ export function substantive(option: PreparedOption): boolean {
   return chooseable(option) && !option.other && !option.exclusive && !option.decline;
 }
 
-/** Brackets become spaces, so their words join the main text. */
-const BRACKETS = /[()[\]]/g;
+/** A dial code before or after a country's name, as a phone country picker (intl-tel-input) shows it: "+1 United
+ *  States", "Afghanistan+93", "Canada (+1)", "Jersey +44 1534". No country's name holds a digit. */
+const LEADING_DIAL_CODE = /^\(?\+\d{1,4}(?:[\s-]\d{1,4})?\)?\s*/;
+const TRAILING_DIAL_CODE = /\s*\(?\+\d{1,4}(?:[\s-]\d{1,4})?\)?$/;
+
+/** The text of a clean label that is matched: in the country domain, without a dial code. */
+function matchedText(clean: string, domain: MatchDomain): string {
+  if (domain !== 'country') return clean;
+  const name = clean.trim().replace(LEADING_DIAL_CODE, '').replace(TRAILING_DIAL_CODE, '').trim();
+  return name === '' ? clean : name;
+}
 
 /** The ids of a list of hits, once each, in order. */
 function idsOf(hits: readonly KeyHit[]): string[] {
@@ -64,9 +76,10 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
   const list = options.map((option): PreparedOption => {
     const cut = cutInjected(option.label);
     const clean = cut.clean;
-    const norm = normalize(clean, context);
-    const fullKey = norm.qualifiers.length === 0 ? norm.key : normalize(clean.replace(BRACKETS, ' '), context).key;
-    const answerKey = context === 'answer' ? norm.key : normalize(clean, 'answer').key;
+    const text = matchedText(clean, domain);
+    const norm = normalize(text, context);
+    const fullKey = norm.qualifiers.length === 0 ? norm.key : keyWithBrackets(text, context);
+    const answerKey = context === 'answer' ? norm.key : normalize(text, 'answer').key;
     // An option that held only injected text is not a placeholder: it is unusable, as injected-option-only.
     const placeholder = !(cut.injected && clean === '') && placeholders.has(answerKey);
     let entityHits: readonly KeyHit[] = [];
@@ -104,8 +117,20 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
       decline: !unusable && decline.has(answerKey),
       other: !unusable && other.has(answerKey),
       ...(domain === 'degree' && !unusable ? { degree: parseDegree(clean, vocab) } : {}),
+      bracketSiblings: false,
     };
   });
+  // Options of one main key whose full keys differ are told apart by their brackets alone.
+  const fullKeys = new Map<string, Set<string>>();
+  for (const option of list) {
+    if (option.unusable || option.norm.key === '') continue;
+    const known = fullKeys.get(option.norm.key);
+    if (known) known.add(option.fullKey);
+    else fullKeys.set(option.norm.key, new Set([option.fullKey]));
+  }
+  for (const option of list) {
+    if (option.norm.qualifiers.length > 0) option.bracketSiblings = (fullKeys.get(option.norm.key)?.size ?? 0) > 1;
+  }
   const byToken = new Map<string, number[]>();
   list.forEach((option, position) => {
     if (option.unusable) return;

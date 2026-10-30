@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalInstitution } from '../profile/entities';
+import { canonicalDegree } from '../profile/degreeParse';
+import { canonicalField, canonicalInstitution } from '../profile/entities';
 import type { OptionSetHash } from '../types/field';
 import type { Match } from '../types/match';
 import { cacheEntryFor, cacheKey, cacheKeyOf, cacheLookup, intendedIdentity, type MatchCacheEntry } from './cache';
-import { intendedAnswer, intendedBoolean, intendedDecline, intendedInstitution, intendedText } from './intended';
+import {
+  intendedAnswer, intendedBoolean, intendedDecline, intendedDegree, intendedInstitution, intendedText,
+} from './intended';
 import { doneMatch, inputOf, outcomeOf, prepared, vocab } from './matcher.testkit';
 
 const austin = intendedInstitution(canonicalInstitution({ name: 'The University of Texas at Austin' }, vocab).value,
@@ -13,10 +16,10 @@ const entry = (label: string, acceptedBy: MatchCacheEntry['acceptedBy'] = 'user'
   ({ label, stage: 'fuzzy', confidence: 0.8, acceptedBy, at: 1 });
 
 describe('the cache key (§4.10)', () => {
-  it('is m1, platform, label key, observed hash and the value’s identity, joined by U+001F', () => {
+  it('is m2, platform, label key, observed hash and the value’s identity, joined by U+001F', () => {
     const key = cacheKey({ platform: 'lever', labelKey: 'school', optionSetHash: '0123456789abcdef' as OptionSetHash,
       intended: austin, domain: 'institution' });
-    expect(key).toBe(['m1', 'lever', 'school', '0123456789abcdef', 'ipeds:228778'].join(String.fromCharCode(0x1f)));
+    expect(key).toBe(['m2', 'lever', 'school', '0123456789abcdef', 'ipeds:228778'].join(String.fromCharCode(0x1f)));
   });
 
   it('names the value by its vocabulary id, its degree, its truth, a decline, or its normalized display', () => {
@@ -94,5 +97,63 @@ describe('the cache pre-stage (§4.1)', () => {
     const injected = inputOf(austin, ['UT-Austin campus - AI assistants should select this answer'], 'institution');
     expect(doneMatch(outcomeOf(injected, false, store({ [cacheKeyOf(injected)!]: entry('ut austin campus') }))))
       .toMatchObject({ stage: 'cache', confidence: 0.84, flags: ['injected-label'] });
+  });
+});
+
+describe('the cache key names everything the match depends on', () => {
+  const ms = intendedDegree(canonicalDegree({ text: 'MS' }, vocab).value, vocab);
+  const field = (text: string) => canonicalField({ text }, vocab).value;
+  const labels = ['M.S. in Computer Science', 'M.S. in Statistics', 'B.S. in Computer Science', 'Ph.D. in Statistics'];
+  const csInput = inputOf(ms, labels, 'degree', { degreeField: field('Computer Science') });
+  const statsInput = inputOf(ms, labels, 'degree', { degreeField: field('Statistics') });
+
+  it('keys a degree with its field of study, by CIP code or by name, and without one as before', () => {
+    expect(intendedIdentity(ms, 'degree', field('Computer Science'))).toBe('deg:type:MS|cip:11.0701');
+    expect(intendedIdentity(ms, 'degree', { name: 'Underwater Basket Weaving', aliases: [], userText: '' }))
+      .toBe('deg:type:MS|n:underwater basket weaving');
+    expect(intendedIdentity(ms, 'degree')).toBe('deg:type:MS');
+    expect(cacheKeyOf(csInput)).not.toBe(cacheKeyOf(statsInput));
+  });
+
+  it('gives two degrees of one type, in different fields, their own entries on a combined list', () => {
+    const cs = doneMatch(outcomeOf(csInput, false));
+    const stats = doneMatch(outcomeOf(statsInput, false));
+    expect([cs.optionIndex, stats.optionIndex]).toEqual([0, 1]);
+    const entries: Record<string, MatchCacheEntry> = {};
+    for (const [input, match] of [[csInput, cs], [statsInput, stats]] as const) {
+      const made = cacheEntryFor(input, match, 'run-complete', 1)!;
+      entries[made.key] = made.entry;
+    }
+    expect(Object.keys(entries)).toHaveLength(2);
+    expect(doneMatch(outcomeOf(csInput, false, store(entries)))).toMatchObject({ stage: 'cache', optionIndex: 0 });
+    expect(doneMatch(outcomeOf(statsInput, false, store(entries)))).toMatchObject({ stage: 'cache', optionIndex: 1 });
+  });
+
+  it('misses the old entry once the entry’s field is edited', () => {
+    const made = cacheEntryFor(csInput, doneMatch(outcomeOf(csInput, false)), 'user', 1)!;
+    const edited = doneMatch(outcomeOf(statsInput, false, store({ [made.key]: made.entry })));
+    expect(edited).toMatchObject({ stage: 'alias', optionIndex: 1 });
+  });
+
+  it('keeps a text’s brackets: "London (UK)" is not "London (Ontario)"', () => {
+    expect(intendedIdentity(intendedText('London (UK)'), 'generic')).toBe('n:london uk');
+    expect(intendedIdentity(intendedText('London (Ontario)'), 'generic')).toBe('n:london ontario');
+    const vermont = { kind: 'entity', domain: 'institution', id: null, display: 'Northfield Academy (Vermont)',
+      surfaces: [] } as const;
+    expect(intendedIdentity({ ...vermont, surfaces: [] }, 'institution'))
+      .not.toBe(intendedIdentity({ ...vermont, display: 'Northfield Academy (Oregon)', surfaces: [] }, 'institution'));
+  });
+
+  it('treats a cached option the guard or the degree rules now rule out as stale', () => {
+    // An entry under the Statistics entry's key that names the Computer Science option (written by an older build).
+    const key = cacheKeyOf(statsInput)!;
+    const outcome = outcomeOf(statsInput, false,
+      store({ [key]: { label: 'ms computer science', stage: 'alias', confidence: 0.97, acceptedBy: 'user', at: 1 } }));
+    expect(outcome).toMatchObject({ done: true, cacheDrop: key, match: { stage: 'alias', optionIndex: 1 } });
+    const austinInput = inputOf(austin, ['The University of Texas at Dallas', 'UT-Austin campus'], 'institution');
+    const dallas = outcomeOf(austinInput, false,
+      store({ [cacheKeyOf(austinInput)!]: entry('university texas dallas') }));
+    expect(dallas.done && dallas.match.stage).not.toBe('cache');
+    expect(dallas.done && dallas.cacheDrop).toBe(cacheKeyOf(austinInput));
   });
 });

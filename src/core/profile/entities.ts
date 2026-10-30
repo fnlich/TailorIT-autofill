@@ -5,9 +5,12 @@
  * a code, never a value. canonicalizeProfile (Phase 2) calls them for every education entry and the address, and the
  * golden tests call them directly. Degrees are in degreeParse.ts.
  */
+import type { VocabDomain } from '../types/intent';
 import type { FieldOfStudy, Institution } from '../types/profile';
-import { keyFor, resolveText } from '../vocab/lookup';
-import type { CountryEntity, FieldEntity, InstitutionEntity, RegionEntity, Vocab, VocabEntity } from '../vocab/types';
+import { keyFor, normalizeFor, resolveKey, resolveText, type KeyResolution } from '../vocab/lookup';
+import type {
+  CountryEntity, FieldEntity, InstitutionEntity, KeyHit, RegionEntity, Vocab, VocabEntity,
+} from '../vocab/types';
 
 /** Why a value was kept as the person wrote it, or only partly understood. */
 export const CANONICALIZE_ISSUE_CODES = ['institution-not-in-vocab', 'institution-ambiguous', 'institution-id-unknown',
@@ -75,13 +78,33 @@ function entityAliases(entity: VocabEntity): string[] {
   return entity.surfaces.slice(1).filter((surface) => !surface.ambiguous).map((surface) => surface.text);
 }
 
+/** Brackets become spaces, so their words join the name. */
+const BRACKETS = /[()[\]]/g;
+
+/** The keys a text is looked up by, as the matcher reads an option (prepare.ts): its brackets' words as part of the
+ *  name first ("Korea (South)" is Korea South), then without them ("University of Texas at Austin (UT Austin)"). */
+function lookupKeys(text: string, domain: VocabDomain): string[] {
+  const norm = normalizeFor(text, domain);
+  return norm.qualifiers.length === 0 ? [norm.key] : [keyFor(text.replace(BRACKETS, ' '), domain), norm.key];
+}
+
+/** What a text names in a domain: the first of its lookup keys that any entity holds. */
+function resolveName(vocab: Vocab, domain: VocabDomain, text: string): KeyResolution {
+  const keys = lookupKeys(text, domain);
+  for (const key of keys.slice(0, -1)) {
+    const whole = resolveKey(vocab, domain, key);
+    if (whole.hits.length > 0) return whole;
+  }
+  return resolveKey(vocab, domain, keys[keys.length - 1]!);
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Countries and regions
 
 /**
  * A country as ISO 3166-1 alpha-2: an alpha-2 or alpha-3 code in any case ("us", "GBR"), else the key of a name or
- * alias ("United States of America", "U.K.", "Korea, Republic of"). An unknown or ambiguous name ("Congo") is kept as
- * written, with `country-unknown`. Empty text gives '' and no issue.
+ * alias ("United States of America", "U.K.", "Korea, Republic of", "Korea (South)"). An unknown or ambiguous name
+ * ("Congo") is kept as written, with `country-unknown`. Empty text gives '' and no issue.
  */
 export function canonicalCountry(text: string, vocab: Vocab, path = 'country'): Canonical<string> {
   const trimmed = tidy(text);
@@ -89,14 +112,30 @@ export function canonicalCountry(text: string, vocab: Vocab, path = 'country'): 
   const byCode = /^[A-Za-z]{2}$/.test(trimmed) ? vocab.countries.byAlpha2(trimmed)
     : /^[A-Za-z]{3}$/.test(trimmed) ? vocab.countries.byAlpha3(trimmed) : undefined;
   if (byCode) return { value: byCode.alpha2, issues: [] };
-  const resolution = resolveText(vocab, 'country', trimmed);
+  const resolution = resolveName(vocab, 'country', trimmed);
   if (resolution.id !== null) return { value: (vocab.entity(resolution.id) as CountryEntity).alpha2, issues: [] };
   return { value: trimmed, issues: [{ path, code: 'country-unknown' }] };
 }
 
+/** The one region a text names among a country's regions (all, without a country), or null. */
+function oneRegion(text: string, countryCode: string | undefined, vocab: Vocab): RegionEntity | null {
+  for (const key of lookupKeys(text, 'region')) {
+    const hits = vocab.lookup('region', key)
+      .map((hit) => ({ hit, region: vocab.entity(hit.id) as RegionEntity }))
+      .filter(({ region }) => countryCode === undefined || region.country === countryCode);
+    if (hits.length === 0) continue;
+    return hits.length === 1 && !hits[0]!.hit.ambiguous ? hits[0]!.region : null;
+  }
+  return null;
+}
+
+/** "TX - Texas" or "Texas - TX": a name and its code around a dash. */
+const NAME_AND_CODE = /^(.+?)\s+[-\u2013\u2014]\s+(.+)$/;
+
 /**
- * A region within its country: a USPS or Canada Post code, a name or an alias ("Tex.", "Washington, D.C."), looked up
- * only among the given country's regions ("Ontario" is no region of the US). Without a country, the US and Canada
+ * A region within its country: a USPS or Canada Post code, a name or an alias ("Tex.", "Washington, D.C.", "Armed
+ * Forces (AA)"), looked up only among the given country's regions ("Ontario" is no region of the US); a name and a
+ * code around a dash ("TX - Texas") only when both name the same region. Without a country, the US and Canada
  * together. Anything else is kept as written, with `region-unknown`. Empty text gives an empty name and no issue.
  */
 export function canonicalRegion(text: string, country: string | undefined, vocab: Vocab, path = 'region'):
@@ -105,13 +144,13 @@ export function canonicalRegion(text: string, country: string | undefined, vocab
   if (trimmed === '') return { value: { name: '' }, issues: [] };
   const countryCode = country === undefined || tidy(country) === '' ? undefined
     : canonicalCountry(country, vocab, `${path}.country`).value.toUpperCase();
-  const hits = vocab.lookup('region', keyFor(trimmed, 'region'))
-    .map((hit) => ({ hit, region: vocab.entity(hit.id) as RegionEntity }))
-    .filter(({ region }) => countryCode === undefined || region.country === countryCode);
-  if (hits.length === 1 && !hits[0]!.hit.ambiguous) {
-    const { region } = hits[0]!;
-    return { value: { code: region.code, name: region.name }, issues: [] };
+  let region = oneRegion(trimmed, countryCode, vocab);
+  const pair = region === null ? NAME_AND_CODE.exec(trimmed) : null;
+  if (pair) {
+    const left = oneRegion(pair[1]!, countryCode, vocab);
+    if (left !== null && left === oneRegion(pair[2]!, countryCode, vocab)) region = left;
   }
+  if (region !== null) return { value: { code: region.code, name: region.name }, issues: [] };
   return { value: { name: trimmed }, issues: [{ path, code: 'region-unknown' }] };
 }
 
@@ -157,10 +196,18 @@ function byIds(ids: InstitutionInput['ids'], vocab: Vocab): InstitutionEntity | 
   return found?.kind === 'institution' ? found : undefined;
 }
 
+/** Whether the entry's location may choose among the institutions sharing a key: only when the key is no short form
+ *  or shared name, which more institutions answer to than hold it ("UT", "U of M", "Trinity"). */
+function locationMaySettle(hits: readonly KeyHit[]): boolean {
+  return !hits.some((hit) => hit.shortForm);
+}
+
 /**
- * The canonical institution (§2.7): by IPEDS or ROR id first; then by the key of the name, then of the person's
- * aliases, over unambiguous surfaces only; when the key is shared, by the entry's location. When none of that names
- * exactly one institution, the person's text is kept (`source: 'user'`) with `institution-not-in-vocab` or
+ * The canonical institution (§2.7): by IPEDS or ROR id first; then by the key of the name, then, when the name names
+ * no single institution, of the person's aliases, over unambiguous surfaces only; when the key is a name several
+ * institutions hold, by the entry's location. A short form or shared name ("UT", "U of M", "Trinity", an uncurated
+ * acronym) is never settled by location: more institutions answer to it than the vocabulary lists. When none of that
+ * names exactly one institution, the person's text is kept (`source: 'user'`) with `institution-not-in-vocab` or
  * `institution-ambiguous`; an id the vocabulary does not hold adds `institution-id-unknown`. The person's aliases
  * always come first among the aliases; `userText` is the name exactly as typed.
  */
@@ -175,26 +222,31 @@ export function canonicalInstitution(input: InstitutionInput, vocab: Vocab, path
   let entity = byIds(input.ids, vocab);
   if (!entity && (givenIds.ipeds || givenIds.ror)) issues.push({ path: `${path}.ids`, code: 'institution-id-unknown' });
 
-  let sharedBy: string[] = [];
+  let shared: { ids: string[]; settles: boolean } | null = null;
   if (!entity) {
-    const fromName = resolveText(vocab, 'institution', name);
+    const fromName = resolveName(vocab, 'institution', name);
     let id = fromName.id;
-    if (fromName.ambiguous) sharedBy = fromName.hits.map((hit) => hit.id);
-    if (id === null && sharedBy.length === 0) {
+    if (fromName.ambiguous) {
+      shared = { ids: fromName.hits.map((hit) => hit.id), settles: locationMaySettle(fromName.hits) };
+    }
+    if (id === null) {
       const fromAliases = new Set<string>();
       for (const alias of ownAliases) {
-        const resolution = resolveText(vocab, 'institution', alias);
+        const resolution = resolveName(vocab, 'institution', alias);
         if (resolution.id !== null) fromAliases.add(resolution.id);
       }
-      if (fromAliases.size === 1) id = [...fromAliases][0]!;
-      else if (fromAliases.size > 1) sharedBy = [...fromAliases];
+      // An alias may name the school a short form only hints at, but never one that a full name shared by others rules
+      // out ("Northeastern University" with an alias of a third school names none of them).
+      const only = fromAliases.size === 1 ? [...fromAliases][0]! : null;
+      if (only !== null && (shared === null || !shared.settles || shared.ids.includes(only))) id = only;
+      else if (fromAliases.size > 1 && shared === null) shared = { ids: [...fromAliases], settles: true };
     }
-    if (id === null && sharedBy.length > 0) id = byLocation(sharedBy, input.location, vocab);
+    if (id === null && shared?.settles) id = byLocation(shared.ids, input.location, vocab);
     if (id !== null) entity = vocab.entity(id) as InstitutionEntity;
   }
 
   if (!entity) {
-    issues.push({ path, code: sharedBy.length > 0 ? 'institution-ambiguous' : 'institution-not-in-vocab' });
+    issues.push({ path, code: shared !== null ? 'institution-ambiguous' : 'institution-not-in-vocab' });
     const location = input.location;
     const country = location?.country ? canonicalCountry(location.country, vocab, `${path}.country`) : undefined;
     const region = location?.region

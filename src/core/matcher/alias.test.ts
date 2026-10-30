@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { canonicalCountry, canonicalField, canonicalInstitution } from '../profile/entities';
 import type { IntendedValue } from '../types/intent';
 import {
-  intendedAnswer, intendedBoolean, intendedCountry, intendedDecline, intendedField, intendedInstitution,
+  intendedAnswer, intendedBoolean, intendedCountry, intendedDecline, intendedEntity, intendedField,
+  intendedInstitution,
 } from './intended';
 import { doneMatch, inputOf, outcomeOf, prepared, vocab } from './matcher.testkit';
 import { rankHits, stageHit } from './rank';
@@ -14,12 +15,55 @@ const field = (text: string): IntendedValue => intendedField(canonicalField({ te
 const match = (intended: IntendedValue, labels: string[], domain: MatchDomain, llm = false) =>
   doneMatch(outcomeOf(inputOf(intended, labels, domain), llm));
 
+describe('stage b: a proficiency through the crosswalk', () => {
+  const level = (text: string) => intendedAnswer('proficiency', text, vocab);
+  it('leaves the field blank when two rungs of the form’s scale stand for the level', () => {
+    const everyday = ['Beginner', 'Intermediate', 'Advanced', 'Fluent', 'Native speaker'];
+    expect(match(level('Full professional proficiency'), everyday, 'proficiency', true)).toMatchObject({
+      stage: 'none', optionIndex: null, reason: 'ambiguous-options' });
+    const cefr = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+    expect(match(level('Full professional proficiency'), cefr, 'proficiency', true)).toMatchObject({ stage: 'none',
+      optionIndex: null });
+    expect(match(level('Elementary proficiency'), cefr, 'proficiency', true)).toMatchObject({ stage: 'none',
+      optionIndex: null });
+  });
+
+  it('fills one rung below the fill line, whatever the classification', () => {
+    const result = match(level('Full professional proficiency'), ['Beginner', 'Intermediate', 'Advanced', 'Native'],
+      'proficiency');
+    expect(result).toMatchObject({ stage: 'alias', optionIndex: 2, rule: 'generated-alias', confidence: 0.85 });
+    expect(result.confidence * 0.99).toBeLessThan(0.85);
+    expect(match(level('Limited working proficiency'), ['A2', 'B1', 'B2'], 'proficiency')).toMatchObject({
+      optionIndex: 1, confidence: 0.85 });
+  });
+
+  it('still fills a name of the level itself', () => {
+    expect(match(level('Native or bilingual proficiency'), ['Fluent', 'Native / Bilingual'], 'proficiency'))
+      .toMatchObject({ optionIndex: 1, confidence: 0.97 });
+    expect(match(level('Full professional proficiency'), ['Advanced', 'Fluent', 'Full professional'], 'proficiency'))
+      .toMatchObject({ optionIndex: 2, confidence: 0.97 });
+  });
+});
+
+describe('stage b: a field of study', () => {
+  it('reads "Theater", "Theatre" and "Drama" as CIP 50.0501, so each finds the drama option', () => {
+    for (const text of ['Theater', 'Theatre', 'Drama', 'Theater Arts']) {
+      expect(canonicalField({ text }, vocab).value, text).toMatchObject({ cip: '50.0501' });
+      expect(match(field(text), ['Music', 'Drama and Dramatics/Theatre Arts, General', 'Dance'], 'field').optionIndex,
+        text).toBe(1);
+    }
+  });
+});
+
 describe('stage b: spellings by tier (§4.3)', () => {
   it('scores curated, vocabulary, generated and flagship spellings 0.97, 0.95, 0.92 and 0.90', () => {
     expect(match(institution('The University of Texas at Austin'), ['UT Austin'], 'institution'))
       .toMatchObject({ stage: 'alias', rule: 'curated-alias', confidence: 0.97 });
-    expect(match(institution('University of Michigan-Ann Arbor'), ['U of Michigan'], 'institution'))
+    // "U of Michigan" is a name more schools than one answer to, so only the flagship rule still reads it (0.90).
+    expect(match(institution('University of Michigan-Ann Arbor'), ['U Michigan Ann Arbor'], 'institution'))
       .toMatchObject({ stage: 'alias', rule: 'vocab-alias', confidence: 0.95 });
+    expect(match(institution('University of Michigan-Ann Arbor'), ['U of Michigan'], 'institution'))
+      .toMatchObject({ stage: 'alias', rule: 'flagship', confidence: 0.9 });
     expect(match(institution('University of California-Los Angeles'), ['UC Los Angeles'], 'institution'))
       .toMatchObject({ stage: 'alias', rule: 'generated-alias', confidence: 0.92 });
     expect(match(institution('The University of Texas at Austin'), ['University of Texas'], 'institution'))
@@ -88,6 +132,12 @@ describe('stage b: a decline (§8.7)', () => {
 });
 
 describe('stage b: EEO answers', () => {
+  it('finds the self-describe option Spotify’s survey words as "I use another term"', () => {
+    const own = intendedAnswer('eeo.gender', 'Self-describe', vocab);
+    expect(match(own, ['Man', 'Woman', 'Non-binary', 'I use another term', 'Prefer not to say'], 'eeo.gender'))
+      .toMatchObject({ stage: 'alias', optionIndex: 3, rule: 'curated-alias' });
+  });
+
   it('matches through the EEO vocabulary and the polarity rule', () => {
     const female = intendedAnswer('eeo.gender', 'Female', vocab);
     expect(match(female, ['Male', 'Woman', 'Prefer not to say'], 'eeo.gender'))
@@ -130,5 +180,41 @@ describe('rankHits (§4.3)', () => {
     const ranked = rankHits([stageHit(cut!, 'alias', 'curated-alias', 0.97, 'x'), stageHit(clean!, 'alias', 'flagship',
       0.9, 'x')]);
     expect(ranked).toMatchObject({ winner: { option: { index: 1 }, confidence: 0.9 } });
+  });
+});
+
+describe('stage b: veteran answers (§8.7)', () => {
+  const veteran = (answer: string) => intendedEntity(vocab, 'eeo.veteran', vocab.entity(`eeo.veteran:${answer}`)!);
+  const answer = (value: string, labels: string[], labelKey = 'are you a veteran have you served in the military') =>
+    doneMatch(outcomeOf(inputOf(veteran(value), labels, 'eeo.veteran', { policy: 'eeo', labelKey }), false));
+  /** Spotify's Lever survey (2026-10-29). */
+  const spotify = ['Yes', 'No', 'Prefer not to disclose'];
+
+  it('answers a question about service: yes for any veteran, no only for a non-veteran', () => {
+    expect(answer('veteran', spotify)).toMatchObject({ stage: 'alias', optionIndex: 0, rule: 'polarity' });
+    expect(answer('protected-veteran', spotify)).toMatchObject({ optionIndex: 0 });
+    expect(answer('not-veteran', spotify)).toMatchObject({ optionIndex: 1 });
+    expect(answer('not-protected-veteran', spotify)).toMatchObject({ stage: 'none', optionIndex: null });
+  });
+
+  it('answers a question about protected status: yes only for a protected veteran', () => {
+    const key = 'are you a protected veteran';
+    expect(answer('protected-veteran', spotify, key)).toMatchObject({ optionIndex: 0 });
+    expect(answer('not-protected-veteran', spotify, key)).toMatchObject({ optionIndex: 1 });
+    expect(answer('not-veteran', spotify, key)).toMatchObject({ optionIndex: 1 });
+    expect(answer('veteran', spotify, key)).toMatchObject({ stage: 'none', optionIndex: null });
+    expect(answer('veteran', ['Protected veteran', 'Not a protected veteran'], 'question'))
+      .toMatchObject({ stage: 'none', optionIndex: null });
+  });
+
+  it('never gives an explicit answer the decline option, though it mentions a veteran', () => {
+    const decline = 'I do not wish to self-identify my veteran status';
+    for (const labels of [['I identify as one or more of the classifications of protected veteran',
+      'I am not a protected veteran', decline], ['Protected veteran', 'Not a protected veteran', decline]]) {
+      const match = answer('veteran', labels, 'question');
+      expect(match.optionIndex === null ? null : labels[match.optionIndex], labels[0]).not.toBe(decline);
+    }
+    expect(doneMatch(outcomeOf(inputOf(intendedDecline('eeo.veteran'), ['Protected veteran', decline], 'eeo.veteran',
+      { policy: 'eeo' }), false))).toMatchObject({ optionIndex: 1 });
   });
 });

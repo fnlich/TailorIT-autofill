@@ -1,0 +1,16 @@
+{
+  "comment": "Short forms and system names that several institutions answer to, whoever holds them in the sources (curated tier). The build marks every surface with one of these keys ambiguous (flag 2), IPEDS, ROR and curated alike, and keeps every ROR acronym among them so the clash stays visible; no entry's location settles them, so a profile that gives only such a name keeps the person's text and the matcher compares spellings. Every 'U of' with one letter ('U of A', 'U of T') is treated the same way by the build without being listed. The bare system names (Texas A&M, LSU, UMN, Arizona State University) were curated aliases of one campus; a bare system name may map to a campus only as a flagship, on the owner's word (docs/design/core.md §4.5, §5.2), so each waits here for that decision. Review every change: listing a name turns a fill into a blank for the people it was right for.",
+  "names": [
+    { "name": "U of M", "reason": "Michigan, Minnesota, Memphis, Miami, Maine, Montana, Manitoba" },
+    { "name": "U of D", "reason": "Delaware, Dayton, Detroit Mercy, Denver" },
+    { "name": "U of P", "reason": "Pennsylvania, Portland, the Pacific, Pittsburgh" },
+    { "name": "Cal Poly", "reason": "San Luis Obispo's short name, also used for Cal Poly Pomona and Cal Poly Humboldt; the owner decides" },
+    { "name": "CMU", "reason": "Carnegie Mellon, Central Michigan, Colorado Mesa, Canadian Mennonite, China Medical" },
+    { "name": "UMD", "reason": "Maryland-College Park, Minnesota-Duluth, Massachusetts-Dartmouth" },
+    { "name": "Texas A&M", "reason": "the Texas A&M system's name: College Station, Kingsville, Corpus Christi, Commerce and more; a flagship only on the owner's word" },
+    { "name": "TAMU", "reason": "Texas A&M University and its TAMU- campuses (TAMU-CC, TAMU-Commerce, TAMU-Kingsville)" },
+    { "name": "LSU", "reason": "the LSU system: LSU A&M, LSU Shreveport, LSU Alexandria, LSU Eunice, LSU Health; a flagship only on the owner's word" },
+    { "name": "UMN", "reason": "the University of Minnesota system: Twin Cities, Duluth, Morris, Crookston, Rochester; a flagship only on the owner's word" },
+    { "name": "Arizona State University", "reason": "IPEDS splits ASU into Campus Immersion and Digital Immersion, and an ASU Online diploma reads Arizona State University; a flagship only on the owner's word" }
+  ]
+}

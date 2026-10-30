@@ -7,7 +7,7 @@ import {
   bracketsAgree, checkGuard, distinctiveWord, entityGuard, guardFamily, guardSide, type GuardVerdict,
 } from './guardTokens';
 import { intendedInstitution, intendedText } from './intended';
-import { inputOf, prepared, vocab } from './matcher.testkit';
+import { finalMatch, inputOf, prepared, vocab } from './matcher.testkit';
 import type { MatchDomain } from './types';
 
 const side = (text: string, domain: MatchDomain = 'institution') =>
@@ -111,8 +111,7 @@ describe('the guard rules, by the design’s examples (§4.5)', () => {
   });
 
   it('accepts an unresolved "st?" against saint or state, but never against a side that has both', () => {
-    const entity = (texts: string[]) => entityGuard(texts.map((text) => side(text)), texts.map((text) => side(text)),
-      new Set());
+    const entity = (texts: string[]) => entityGuard(texts.map((text) => side(text)), new Set());
     const ambiguous = side('St Hill College');
     expect(ambiguous.tokens.has('st?')).toBe(true);
     expect(checkGuard(entity(['Saint Hill College']), ambiguous)).toEqual({ pass: true });
@@ -138,5 +137,31 @@ describe('bracketsAgree', () => {
     expect(bracketsAgree(scope.guard(), side('University of Texas'), option)).toBe(false);
     expect(bracketsAgree(scope.guard(), side('University of Texas'), side('University of Texas (Austin, TX)'))).toBe(true);
     expect(bracketsAgree(scope.guard(), side('University of Texas (Austin)'), side('University of Texas'))).toBe(false);
+  });
+});
+
+describe('the guard rests on the trusted spellings only', () => {
+  it('never lets a former or system name explain a word that names another campus', async () => {
+    expect(verdict('University at Buffalo', 'SUNY Buffalo State')).toEqual({ pass: false, hard: true,
+      rule: 'presence-extra' });
+    const pick0 = (request: { items: Array<{ id: string }> }) =>
+      ({ answers: request.items.map((one) => ({ id: one.id, index: 0 })) });
+    for (const [profile, labels] of [
+      ['University at Buffalo', ['SUNY Buffalo State', 'Buffalo State College', 'SUNY Buffalo State College']],
+      ['SUNY Buffalo', ['SUNY Buffalo State']],
+      ['SUNY Albany', ['SUNY Albany State']],
+    ] as const) {
+      const intended = intendedInstitution(canonicalInstitution({ name: profile }, vocab).value, vocab);
+      const { match, requests } = await finalMatch(inputOf(intended, [...labels], 'institution'), pick0);
+      expect(match, profile).toMatchObject({ stage: 'none', optionIndex: null });
+      expect(requests, profile).toEqual([]);
+    }
+  });
+
+  it('reads head nouns from the trusted spellings: Regis College is not Regis University', () => {
+    expect(verdict('Regis University', 'Regis College')).toEqual({ pass: false, hard: true, rule: 'head-noun' });
+    expect(verdict('Massachusetts Institute of Technology', 'Massachusetts Institute of Technology (Cambridge, MA)'))
+      .toEqual({ pass: true });
+    expect(verdict('University at Buffalo', 'University at Buffalo, SUNY')).toEqual({ pass: true });
   });
 });

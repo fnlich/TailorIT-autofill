@@ -146,7 +146,9 @@ function unique<T>(items: readonly T[]): T[] {
  */
 export function parseDegree(text: string, vocab: Vocab): ParsedDegree {
   const table = patternTable(vocab);
-  const read = foldLetters(removeInvisibles(capCodePoints(text, FOLD_MAX_CODE_POINTS)));
+  // Folding's own order (§3.1): the cap counts what is left once invisibles are deleted and letters decomposed, so a
+  // run of zero-width characters cannot push the degree out of the text.
+  const read = capCodePoints(foldLetters(removeInvisibles(text)), FOLD_MAX_CODE_POINTS);
   const { main, qualifiers } = extractQualifiers(read);
   const hits = scan(main, table);
   const types = unique(hits.flatMap((hit) => (hit.type ? [hit.type] : [])));

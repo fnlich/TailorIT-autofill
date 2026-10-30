@@ -3,13 +3,15 @@
  * inside a longer label ("Job Board - LinkedIn"). It holds only when the option mentions the intended entity, no
  * other option mentions it, and the option mentions no other entity of the domain. Mentions are the vocabulary's
  * phrases (for referral sources, only their curated mention phrases), read left to right, longest first, without
- * overlaps. Bracketed words count: "X (formerly Twitter)" mentions Twitter.
+ * overlaps. Bracketed words count: "X (formerly Twitter)" mentions Twitter. Only options that are answers of their
+ * own take part: a decline, "Other" or exclusive option may mention the entity ("I do not wish to self-identify my
+ * veteran status"), but it is never the entity's answer.
  */
 import { MATCH_MENTION } from '../confidence';
 import type { VocabDomain } from '../types/intent';
 import type { Vocab } from '../vocab/types';
 import { INTENDED } from './exact';
-import { chooseable } from './prepare';
+import { substantive } from './prepare';
 import { stageHit, type StageHit } from './rank';
 import type { PreparedOption, PreparedOptions } from './types';
 
@@ -37,7 +39,7 @@ export function mentionedIds(option: PreparedOption, domain: VocabDomain, vocab:
 export function mentionHits(entityId: string, options: PreparedOptions, domain: VocabDomain, vocab: Vocab): StageHit[] {
   const mentioning: Array<{ option: PreparedOption; ids: Set<string> }> = [];
   for (const option of options.list) {
-    if (!chooseable(option)) continue;
+    if (!substantive(option)) continue;
     const ids = mentionedIds(option, domain, vocab);
     if (ids.has(entityId)) mentioning.push({ option, ids });
   }

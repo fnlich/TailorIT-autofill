@@ -28,15 +28,17 @@ export const VOCAB_FILES = {
 export type VocabFile = keyof typeof VOCAB_FILES;
 
 /**
- * Each file's size budget in bytes (§5.1, in KiB): the build exits 1 when a file is larger. fields.json's is 450 KiB,
- * not the design's 150 KB: CIP's 2,600 codes with their stored keys need about 420 KB (the 6-digit titles and keys
- * alone are over 200 KB), while every file together stays under the design's 2.2 MB total.
+ * Each file's size budget in bytes (§5.1, in KiB): the build exits 1 when a file is larger. fields.json's is 430 KiB,
+ * not the design's 150 KB, and waits for the owner's approval (core.md §5.1 still says 150 KB): CIP's codes for
+ * credit programmes (about 2,500 once the non-credit families 32-37 are left out) with their stored keys measure about
+ * 410 KiB, the 6-digit titles and keys alone over 200 KB, so the budget is that plus about 5%. Every file together
+ * stays under the design's 2.2 MB total.
  */
 export const VOCAB_BUDGETS: Readonly<Record<VocabFile, number>> = {
   manifest: 5 * 1024,
   institutionsUs: 700 * 1024,
   institutionsGlobal: 900 * 1024,
-  fields: 450 * 1024,
+  fields: 430 * 1024,
   degrees: 30 * 1024,
   countries: 60 * 1024,
   regions: 15 * 1024,
@@ -73,10 +75,13 @@ export type RawTier = (typeof RAW_TIERS)[number];
 
 /**
  * One spelling of an entity: its text, its key (`normalize(text, DOMAIN_CONTEXT[domain]).key`), its tier, and a
- * trailing 1 when the key is ambiguous: shared by another entity of the domain, or holding the unresolved "st?" token.
- * An entity's first surface is its display name.
+ * trailing flag when the key is ambiguous: 1 when another entity of the domain shares it (inside the bundle or among
+ * the ROR records the subset left out) or it holds the unresolved "st?" token, 2 when it is a short form or shared
+ * name that more institutions answer to than hold it (an uncurated acronym, "U of M", "Trinity"). An entity's first
+ * surface is its display name.
  */
-export type RawSurface = [text: string, key: string, tier: RawTier] | [text: string, key: string, tier: RawTier, ambiguous: 1];
+export type RawSurface = [text: string, key: string, tier: RawTier]
+  | [text: string, key: string, tier: RawTier, ambiguous: 1 | 2];
 
 /** A phrase of an answer list (decline, exclusive, other, placeholder, yes, no): its text and its key. */
 export type RawPhrase = [text: string, key: string];
@@ -229,7 +234,7 @@ export type EeoQuestion = (typeof EEO_QUESTIONS)[number];
 /** answers.json: the curated answer vocabularies. */
 export interface RawAnswers {
   /** "How did you hear about us": `m` holds the keys of the phrases the mention rule looks for. */
-  referral: Array<{ id: string; s: RawSurface[]; m?: string[] }>;
+  referral: Array<{ id: string; s: RawSurface[]; m?: string[]; p?: string[] }>;
   /** Per question: answer values (`derived` marks one the profile never stores, such as "Two or More Races") and the
    *  question's own decline phrases. */
   eeo: Record<EeoQuestion, { values: Array<{ id: string; s: RawSurface[]; derived?: 1 }>; decline: RawPhrase[] }>;
@@ -337,9 +342,12 @@ export interface VocabSurface {
   readonly key: string;
   /** Where the spelling comes from, which sets an alias match's confidence (§4.3). */
   readonly tier: VocabTier;
-  /** Shared by another entity of the domain, or dependent on an unresolved "st?": no exact or alias match may rest on
-   *  it. */
+  /** Shared by another entity of the domain, or dependent on an unresolved "st?", or a short form: no exact or alias
+   *  match may rest on it. */
   readonly ambiguous: boolean;
+  /** A short form or shared name more institutions answer to than the vocabulary lists (RawSurface's flag 2): an
+   *  entry's location never settles it. */
+  readonly shortForm: boolean;
 }
 
 /** What every entity has. */
@@ -465,6 +473,8 @@ export interface ReferralEntity extends EntityBase {
   readonly answerId: string;
   /** Phrases the mention rule looks for inside an option, as token lists ("Job Board - LinkedIn"). */
   readonly mentions: readonly (readonly string[])[];
+  /** The ids of the kinds of source it is one of ('ref:job-board' for Indeed): the same answer, less precisely. */
+  readonly parents: readonly string[];
 }
 
 /** One answer to an EEO question. */
@@ -500,6 +510,8 @@ export interface KeyHit {
   readonly tier: VocabTier;
   /** The key is ambiguous (VocabSurface.ambiguous). */
   readonly ambiguous: boolean;
+  /** The key is a short form or shared name (VocabSurface.shortForm). */
+  readonly shortForm: boolean;
 }
 
 /** A vocabulary phrase as a token list, for the mention rule. */
@@ -654,7 +666,9 @@ export interface Vocab {
   readonly guard: GuardLexicon;
   /**
    * An institution's facts as guard tokens: its city, region name, code and other spellings, campus, and every
-   * spelling of its country, each normalized in the institution context with members joined. Empty for any other id.
+   * spelling of its country, each normalized in the institution context with members joined. The region's and the
+   * country's spellings bring only their place words: no "state" from "New York State", no direction from "Korea,
+   * South", no single letter. Empty for any other id.
    */
   factTokens(id: string): ReadonlySet<string>;
   /** Bare system names that map to one campus. */

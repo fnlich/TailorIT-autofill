@@ -3,7 +3,8 @@ import { canonicalInstitution } from '../profile/entities';
 import type { IntendedValue } from '../types/intent';
 import { matchOne } from './cascade';
 import { intendedAnswer, intendedDecline, intendedInstitution, intendedText } from './intended';
-import { doneMatch, inputOf, outcomeOf, prepared, vocab } from './matcher.testkit';
+import { doneMatch, finalMatch, inputOf, outcomeOf, prepared, vocab } from './matcher.testkit';
+import type { TiebreakRequest } from './types';
 
 const austin: IntendedValue = intendedInstitution(canonicalInstitution({ name: 'The University of Texas at Austin' },
   vocab).value, vocab);
@@ -35,12 +36,14 @@ describe('matchOne: the cascade (§4)', () => {
   });
 
   it('hands a no-match to the LLM with every guard-passing option of a short list, and the fallback to finish', () => {
+    // "Online ad" is another referral source the vocabulary knows: a hard conflict, never offered.
     const outcome = outcomeOf(inputOf(intendedAnswer('referral', 'Employee referral', vocab),
-      ['Someone who works here told me', 'Online ad', 'Other', 'Select...'], 'referral'));
+      ['Someone who works here told me', 'A friend of mine works there', 'Online ad', 'Other', 'Select...'],
+      'referral'));
     expect(outcome.done).toBe(false);
     if (outcome.done || !('tiebreak' in outcome)) return;
     expect(outcome.tiebreak.candidates.map((candidate) => candidate.optionIndex)).toEqual([0, 1]);
-    expect(outcome.partial.fallback).toMatchObject({ stage: 'other', optionIndex: 2, freeText: 'Employee referral' });
+    expect(outcome.partial.fallback).toMatchObject({ stage: 'other', optionIndex: 3, freeText: 'Employee referral' });
   });
 
   it('with the LLM off, goes straight to Other or blank', () => {
@@ -64,5 +67,69 @@ describe('matchOne: the cascade (§4)', () => {
     const input = inputOf(austin, ['UT-Austin campus', 'Austin University'], 'institution');
     const first = JSON.stringify(matchOne(input, { vocab, llm: true }));
     expect(JSON.stringify(matchOne(input, { vocab, llm: true }))).toBe(first);
+  });
+});
+
+describe('a school known only by an acronym the vocabulary does not hold as its own', () => {
+  /** Real schools that answer to each acronym, the first the one a person most likely means. */
+  const ROWS = [
+    ['UT', ['The University of Texas at Austin', 'Utah Tech University', 'University of Utah']],
+    ['OSU', ['The Ohio State University', 'Oregon State University', 'Olabisi Onabanjo University']],
+    ['UNH', ['University of New Hampshire-Main Campus', 'University of New Haven',
+      'Southern New Hampshire University']],
+    ['EMU', ['Eastern Michigan University', 'Eastern Mennonite University', 'Emory University']],
+  ] as const;
+  const answering = (index: number) => (request: TiebreakRequest) =>
+    ({ answers: request.items.map((item) => ({ id: item.id, index })) });
+
+  it('chooses none of the schools it might stand for', async () => {
+    for (const [profile, labels] of ROWS) {
+      const intended = intendedInstitution(canonicalInstitution({ name: profile }, vocab).value, vocab);
+      expect((await finalMatch(inputOf(intended, [...labels], 'institution'))).match.optionIndex, profile).toBeNull();
+    }
+  });
+
+  /** A school's id with the person's acronym as its only spelling. */
+  const acronymOnly = (text: string, id: string): IntendedValue =>
+    ({ kind: 'entity', domain: 'institution', id, display: text, surfaces: [{ text, tier: 'raw', ambiguous: false }] });
+
+  it('never reaches a spelled-out option through the id when an unconfirmed acronym is its only spelling', async () => {
+    const ut = acronymOnly('UT', 'ipeds:230171');
+    expect(prepared(['Utah Tech University'], 'institution').list[0]!.entityIds).toEqual(['ipeds:230171']);
+    expect((await finalMatch(inputOf(ut, [...ROWS[0][1]], 'institution'))).match.optionIndex).toBeNull();
+    expect((await finalMatch(inputOf(ut, ['Utah Tech University', 'Rice University'], 'institution'))).match
+      .optionIndex).toBeNull();
+    expect(doneMatch(outcomeOf(inputOf(ut, ['UT', 'Utah Tech University'], 'institution'), false)))
+      .toMatchObject({ stage: 'exact', optionIndex: 0, rule: 'raw' });
+    // A curated acronym is the school's own: the id may carry it.
+    expect(doneMatch(outcomeOf(inputOf(acronymOnly('MIT', 'ipeds:166683'), ['Massachusetts Institute of Technology',
+      'Harvard University'], 'institution'), false))).toMatchObject({ stage: 'alias', optionIndex: 0,
+      rule: 'entity-id' });
+  });
+
+  it('still fills a school the person spelled out, or one its id names with its names', () => {
+    const spelled = intendedInstitution(canonicalInstitution({ name: 'UT',
+      aliases: ['The University of Texas at Austin'] }, vocab).value, vocab);
+    expect(doneMatch(outcomeOf(inputOf(spelled, [...ROWS[0][1]], 'institution'), false)))
+      .toMatchObject({ stage: 'exact', optionIndex: 0 });
+  });
+
+  it('never asks the LLM, so fills nothing, whatever the LLM would answer', async () => {
+    const lists = [...ROWS.map(([, labels]) => [...labels]), ['Boston University', 'Baylor University',
+      'Bucknell University'], ['Carnegie Mellon University', 'Central Michigan University']];
+    const values = [
+      ...[...ROWS.map(([profile]) => profile), 'BU', 'CMU']
+        .map((profile) => intendedInstitution(canonicalInstitution({ name: profile }, vocab).value, vocab)),
+      acronymOnly('OSU', 'ipeds:204796'), acronymOnly('UT', 'ipeds:230171'),
+    ];
+    for (const intended of values) {
+      for (const labels of lists) {
+        for (let index = 0; index < labels.length; index += 1) {
+          const { match, requests } = await finalMatch(inputOf(intended, labels, 'institution'), answering(index));
+          expect(match.optionIndex, `${JSON.stringify(intended)} ${labels.join(', ')} ${index}`).toBeNull();
+          expect(requests).toEqual([]);
+        }
+      }
+    }
   });
 });

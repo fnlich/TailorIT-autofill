@@ -6,7 +6,7 @@
         { "id": "female", "labels": ["Female", "Woman", "F"] },
         { "id": "male", "labels": ["Male", "Man", "M"] },
         { "id": "non-binary", "labels": ["Non-binary", "Nonbinary", "Non binary"] },
-        { "id": "self-describe", "labels": ["I prefer to self-describe", "Prefer to self-describe", "Self-describe", "I self-describe", "Let me self-describe"] }
+        { "id": "self-describe", "labels": ["I prefer to self-describe", "Prefer to self-describe", "Self-describe", "I self-describe", "Let me self-describe", "I use another term", "I use a different term"] }
       ],
       "decline": []
     },

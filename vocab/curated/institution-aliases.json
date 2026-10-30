@@ -1,5 +1,5 @@
 {
-  "comment": "Hand-kept aliases for institutions (curated tier, matched at 0.97). Each name is an exact IPEDS INSTNM or ROR display name, found exactly once, or the build fails. A collision with another entity's key also fails the build unless vocab/curated/ambiguous-ok.json lists it.",
+  "comment": "Hand-kept aliases for institutions (curated tier, matched at 0.97). Each name is an exact IPEDS INSTNM or ROR display name, found exactly once, or the build fails. A collision with another entity's key also fails the build unless vocab/curated/ambiguous-ok.json lists it. An alias here names one campus, so it is never a name a whole system or several institutions answer to: those are in institution-shared-names.json (CMU, UMD, TAMU, LSU, UMN, Texas A&M and Arizona State University were moved there), and a bare system name maps to a campus only as a flagship, on the owner's word. An acronym kept here is reported in vocab/reports/collisions.txt with the other institutions the full sources spell the same way.",
   "institutions": [
     { "name": "The University of Texas at Austin", "aliases": ["UT Austin", "UT-Austin", "UTexas"] },
     { "name": "The University of Texas at Dallas", "aliases": ["UT Dallas", "UTD"] },
@@ -11,22 +11,16 @@
     { "name": "University of California-San Diego", "aliases": ["UCSD", "UC San Diego"] },
     { "name": "University of California-Irvine", "aliases": ["UC Irvine"] },
     { "name": "University of California-Santa Barbara", "aliases": ["UCSB"] },
-    { "name": "Carnegie Mellon University", "aliases": ["CMU"] },
     { "name": "New York University", "aliases": ["NYU"] },
     { "name": "University of Illinois Urbana-Champaign", "aliases": ["UIUC"] },
     { "name": "University of Michigan-Ann Arbor", "aliases": ["UMich"] },
     { "name": "University of Pennsylvania", "aliases": ["UPenn"] },
-    { "name": "Texas A&M University-College Station", "aliases": ["Texas A&M", "TAMU"] },
     { "name": "Washington University in St Louis", "aliases": ["WashU", "WUSTL"] },
     { "name": "California Institute of Technology", "aliases": ["Caltech"] },
     { "name": "Virginia Polytechnic Institute and State University", "aliases": ["Virginia Tech"] },
     { "name": "Worcester Polytechnic Institute", "aliases": ["WPI"] },
     { "name": "Johns Hopkins University", "aliases": ["JHU"] },
     { "name": "Columbia University in the City of New York", "aliases": ["Columbia University"] },
-    { "name": "Arizona State University Campus Immersion", "aliases": ["Arizona State University"] },
-    { "name": "Louisiana State University and Agricultural & Mechanical College", "aliases": ["LSU"] },
-    { "name": "University of Maryland-College Park", "aliases": ["UMD"] },
-    { "name": "University of Minnesota-Twin Cities", "aliases": ["UMN"] },
     { "name": "University of Central Florida", "aliases": ["UCF"] }
   ]
 }

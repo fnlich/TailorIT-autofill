@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { NORM_CONTEXTS, type NormContext } from './normalize';
-import { DEGREE_LEVEL_PLURALS, removeStopwords, STOPWORDS, tokenize } from './tokens';
+import {
+  DEGREE_LEVEL_PLURALS, NAME_PARTICLES, PLACE_CODE_STOPWORDS, removeStopwords, STOPWORDS, tokenize,
+} from './tokens';
 
 describe('tokenize: normalization steps 7 to 12', () => {
   it.each([
@@ -21,7 +23,10 @@ describe('tokenize: normalization steps 7 to 12', () => {
     // Step 8: apostrophes.
     ["bachelor's", ['bachelors']],
     ["st. john's", ['st', 'johns']],
-    ['master’s ‘quoted’ hawaiʼi', ['masters', 'quoted', 'hawaii']],
+    ['bachelor`s', ['bachelors']],
+    ['bachelor\u00B4s bachelor\u201Bs bachelor\u02B9s', ['bachelors', 'bachelors', 'bachelors']],
+    ['hawai\u02BBi bachelor\u2032s bachelor\uFF07s', ['hawaii', 'bachelors', 'bachelors']],
+    ['master’s ‘quoted’ hawai\u02BCi', ['masters', 'quoted', 'hawaii']],
     // Steps 9 and 10: ampersands.
     ['a & m', ['a&m']],
     ['a&t', ['a&t']],
@@ -33,7 +38,25 @@ describe('tokenize: normalization steps 7 to 12', () => {
     // Step 11: punctuation and symbols.
     ['ut-austin', ['ut', 'austin']],
     ['ut – austin — tx', ['ut', 'austin', 'tx']],
-    ['c++ / c#', ['c', 'c']],
+    // Step 11: a word's closing "+" or "#", and a one-letter word's closing "-", stay in the word.
+    ['c++ / c#', ['c++', 'c#']],
+    ['f# and c', ['f#', 'and', 'c']],
+    ['notepad++', ['notepad++']],
+    ['grade a+ or a-', ['grade', 'a+', 'or', 'a-']],
+    ['a-/b+', ['a-', 'b+']],
+    ['c#.net', ['c#', 'net']],
+    // ...but not inside a word, after a digit, standing alone, or with a space before the hyphen.
+    ['java+spring', ['java', 'spring']],
+    ['10+ years', ['10', 'years']],
+    ['+1 555 0100', ['1', '555', '0100']],
+    ['#1 choice', ['1', 'choice']],
+    ['apt#5', ['apt', '5']],
+    ['c++11', ['c', '11']],
+    ['c+++x', ['c', 'x']],
+    ['option a - other', ['option', 'a', 'other']],
+    ['option a-other', ['option', 'a', 'other']],
+    ['type-a', ['type', 'a']],
+    ['pre- and post-', ['pre', 'and', 'post']],
     ['$100,000', ['100', '000']],
     ['first_name*', ['first', 'name']],
     ['why? because!', ['why', 'because']],
@@ -50,9 +73,12 @@ describe('tokenize: normalization steps 7 to 12', () => {
 describe('removeStopwords: normalization step 14', () => {
   it.each<[NormContext, string[], string[]]>([
     ['institution', ['the', 'university', 'of', 'texas', 'at', 'austin'], ['university', 'texas', 'austin']],
-    ['institution', ['universidad', 'de', 'los', 'andes'], ['universidad', 'andes']],
-    ['institution', ['universidade', 'do', 'porto'], ['universidade', 'porto']],
-    ['institution', ['ecole', 'des', 'ponts'], ['ecole', 'ponts']],
+    // The particles that begin names in other languages are part of the name: "De La Salle" is not "La Salle".
+    ['institution', ['de', 'la', 'salle', 'university'], ['de', 'la', 'salle', 'university']],
+    ['institution', ['universidad', 'de', 'los', 'andes'], ['universidad', 'de', 'los', 'andes']],
+    ['institution', ['universidade', 'do', 'porto'], ['universidade', 'do', 'porto']],
+    ['institution', ['babu', 'banarasi', 'das', 'university'], ['babu', 'banarasi', 'das', 'university']],
+    ['institution', ['the', 'university', 'of', 'da', 'nang'], ['university', 'da', 'nang']],
     ['field', ['arts', 'and', 'sciences'], ['arts', 'sciences']],
     ['field', ['science', 'in', 'engineering'], ['science', 'engineering']],
     ['degree', ['bachelor', 'of', 'science', 'in', 'nursing'], ['bachelor', 'science', 'nursing']],
@@ -77,10 +103,18 @@ describe('removeStopwords: normalization step 14', () => {
     expect(removeStopwords(tokens, context)).toEqual(tokens);
   });
 
+  it('never removes a token it is told to keep', () => {
+    expect(removeStopwords(['purdue', 'university', 'fort', 'wayne', 'in'], 'institution', new Set(['in'])))
+      .toEqual(['purdue', 'university', 'fort', 'wayne', 'in']);
+    expect(removeStopwords(['purdue', 'university', 'fort', 'wayne', 'in'], 'institution'))
+      .toEqual(['purdue', 'university', 'fort', 'wayne']);
+    expect(PLACE_CODE_STOPWORDS.every((word) => STOPWORDS.institution.has(word))).toBe(true);
+  });
+
   it('has the design’s stopword lists for every context', () => {
     expect(Object.keys(STOPWORDS).sort()).toEqual([...NORM_CONTEXTS].sort());
-    expect([...STOPWORDS.institution]).toEqual(['the', 'of', 'at', 'and', 'in', 'for', 'a', 'an', 'on', 'de', 'del',
-      'della', 'des', 'di', 'du', 'da', 'do', 'dos', 'das', 'la', 'le', 'les', 'el', 'los', 'und', 'y']);
+    expect([...STOPWORDS.institution]).toEqual(['the', 'of', 'at', 'and', 'in', 'for', 'a', 'an', 'on']);
+    expect(PLACE_CODE_STOPWORDS).toEqual(['in', 'on']);
     expect([...STOPWORDS.field]).toEqual([...STOPWORDS.institution]);
     expect([...STOPWORDS.degree]).toEqual(['the', 'of', 'in', 'and', 'a', 'an', 'degree']);
     expect([...STOPWORDS.country]).toEqual(['the', 'of', 'and']);
@@ -88,5 +122,13 @@ describe('removeStopwords: normalization step 14', () => {
     expect([...STOPWORDS.answer]).toEqual(['the']);
     expect(STOPWORDS.label.size).toBe(0);
     expect([...DEGREE_LEVEL_PLURALS.keys()]).toEqual(['associates', 'bachelors', 'masters', 'doctorates']);
+  });
+
+  it('lists the name particles it keeps, none of them a stopword in any context', () => {
+    expect(NAME_PARTICLES).toEqual(['de', 'del', 'della', 'des', 'di', 'du', 'da', 'do', 'dos', 'das', 'la', 'le', 'les',
+      'el', 'los', 'und', 'y']);
+    for (const context of NORM_CONTEXTS) {
+      expect(NAME_PARTICLES.filter((particle) => STOPWORDS[context].has(particle)), context).toEqual([]);
+    }
   });
 });

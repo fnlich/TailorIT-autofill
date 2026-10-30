@@ -4,7 +4,11 @@
  * that pairs types with fields ("B.S. in Computer Science") needs both to agree. MBA reaches Master's, and JD or MD
  * Doctorate, only as flagged fallbacks, unless the doctorate option lists the type in its brackets ("Doctorate (PhD,
  * MD, JD)"). The same rules decide which options the LLM may see: a different level or type class is a conflict no
- * stage may overrule. Options are parsed once, by prepareOptions, with parseDegree.
+ * stage may overrule, and so is a field of study other than the entry's, on any list ("B.S. Mathematics" is not a
+ * B.S. in Computer Science, and an entry without a field takes no option that names one), and so are bracketed types
+ * of another class ("Doctorate (EdD)" is no PhD). Options of one level whose bracketed types differ are variants, not
+ * duplicates: a level-only entry cannot choose between "Doctorate (PhD)" and "Doctorate (EdD)". Options are parsed
+ * once, by prepareOptions, with parseDegree.
  */
 import {
   DEGREE_COMBINED_SHARE, DEGREE_LEVELS_SHARE, DEGREE_MIXED_SHARE, DEGREE_TYPES_SHARE,
@@ -72,11 +76,34 @@ function typeFit(intent: DegreeIntent, parsed: ParsedDegree, vocab: Vocab): numb
   return parsed.types.length === 1 && parsed.types[0] === intent.type ? 3 : 2;
 }
 
-/** An option the degree rules rule out: another level (not one the type may stand for), or types none of which is
- *  in the intended type's class. No stage, the LLM included, may choose it. */
-export function degreeConflict(intent: DegreeIntent, parsed: ParsedDegree | undefined, vocab: Vocab): boolean {
+/**
+ * Whether an option's field of study is the entry's, as a conflict reads it: the same CIP code or one on its line of
+ * descent ("Computer and Information Sciences" for Computer Science), else the same key as the entry's name or its
+ * own text. False when the entry has no field.
+ */
+export function fieldAgrees(text: string, field: FieldOfStudy | undefined, vocab: Vocab): boolean {
+  if (field === undefined) return false;
+  const option = canonicalField({ text }, vocab).value;
+  if (field.cip !== undefined && option.cip !== undefined) {
+    const [a, b] = [`cip:${option.cip}`, `cip:${field.cip}`];
+    return vocab.fields.isSameOrAncestor(a, b) || vocab.fields.isSameOrAncestor(b, a);
+  }
+  const key = keyFor(option.name, 'field');
+  return key !== '' && [field.name, field.userText].some((name) => keyFor(name, 'field') === key);
+}
+
+/** An option the degree rules rule out: another level (not one the type may stand for), types or bracketed types
+ *  none of which is in the intended type's class, or a field of study that is not the entry's `field` (any field,
+ *  when the entry has none). No stage, the LLM included, may choose it. */
+export function degreeConflict(intent: DegreeIntent, parsed: ParsedDegree | undefined, vocab: Vocab,
+  field?: FieldOfStudy): boolean {
   if (!parsed) return false;
+  if (parsed.field !== undefined && !fieldAgrees(parsed.field, field, vocab)) return true;
   if (intent.type !== null && parsed.types.length > 0 && typeFit(intent, parsed, vocab) === 0) return true;
+  if (intent.type !== null && parsed.qualifierTypes.length > 0) {
+    const wanted = vocab.degrees.classOf(intent.type);
+    if (!parsed.qualifierTypes.some((type) => vocab.degrees.classOf(type) === wanted)) return true;
+  }
   if (intent.level === 'other' || parsed.level === undefined || parsed.level === 'other') return false;
   return parsed.level !== intent.level && !alsoLevels(intent, vocab).includes(parsed.level);
 }
@@ -104,18 +131,28 @@ function byType(intent: DegreeIntent, list: ReadonlyArray<PreparedOption & { deg
   });
 }
 
+/** What an option's bracketed types add to its level ("PhD" for "Doctorate (PhD)"): its variant among the options of
+ *  that level. */
+function typesVariant(parsed: ParsedDegree, vocab: Vocab): string {
+  return [...new Set(parsed.qualifierTypes.map((type) => vocab.degrees.classOf(type)))].sort().join('+');
+}
+
 /**
- * The degree rules' hits for a list (§4.9). `field` is the entry's field of study, needed for a combined list.
+ * The degree rules' hits for a list (§4.9). `field` is the entry's field of study, needed for a combined list. An
+ * option the degree rules rule out is no hit, whatever the list's granularity: a list of types may hold "B.S.
+ * Computer Science" among plain types, and a list of levels "Doctorate (EdD)".
  */
 export function degreeHits(intent: DegreeIntent, options: PreparedOptions, vocab: Vocab, field?: FieldOfStudy):
   StageHit[] {
-  const list = degreeOptions(options.list);
+  const list = degreeOptions(options.list).filter((option) => !degreeConflict(intent, option.degree, vocab, field));
   const granularity = detectDegreeGranularity(options.list);
   const ofLevel = (level: DegreeLevel) => list.filter((option) => option.degree.level === level);
-  // Matched by level, every option of the level names the same answer: duplicates, never a tie.
+  // Matched by level, every option of the level names the same answer: duplicates, never a tie, unless their
+  // bracketed types tell them apart.
   const byLevel = (level: DegreeLevel, only: boolean) => list
     .filter((option) => option.degree.level === level && (!only || levelOnly(option.degree)))
-    .map((option) => stageHit(option, 'alias', 'degree-level', MATCH_DEGREE, `level:${level}`));
+    .map((option) => ({ ...stageHit(option, 'alias', 'degree-level', MATCH_DEGREE, `level:${level}`),
+      variant: typesVariant(option.degree, vocab) }));
   switch (granularity) {
     case 'combined':
       return byType(intent, list, vocab).filter((hit) => sameField(hit.option.degree?.field, field, vocab));

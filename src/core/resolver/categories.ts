@@ -63,8 +63,9 @@ const CHOICE: readonly FieldKind[] = ['select', 'radio', 'combobox'];
 const YES_NO: readonly FieldKind[] = ['select', 'radio', 'combobox', 'checkbox'];
 /** A place or a name from a long list: typed, chosen or searched for. */
 const LOOKUP: readonly FieldKind[] = ['text', 'select', 'combobox', 'typeahead-remote'];
-/** A name typed or searched for, never chosen from a fixed list (an employer, a job title). */
-const TYPED_NAME: readonly FieldKind[] = ['text', 'combobox', 'typeahead-remote'];
+/** A name typed or searched for, never chosen from a fixed list (an employer, a job title). A combobox is a fixed list:
+ *  Greenhouse draws every single-choice question as one, Yes/No included, so a title there is never this. */
+const TYPED_NAME: readonly FieldKind[] = ['text', 'typeahead-remote'];
 /** A date: a date control, typed text, or month and year lists. */
 const DATE: readonly FieldKind[] = ['text', 'date', 'select', 'combobox'];
 /** A self-identification answer: chosen from the form's options, never typed. A lone box covers "I am a veteran". */
@@ -80,7 +81,8 @@ const ANY_ANSWER: readonly FieldKind[] = FIELD_KINDS.filter((kind) => kind !== '
  * The field kinds each category allows (§8.2). The design fixes four: `file.*` only `file`, `contact.email` only
  * `text`, `experience.current` only `checkbox`, `consent.signature` only `text`. The rest follow the same idea: a kind
  * is listed when that category's answer can really be given through it. A legal or yes/no question in a text box is
- * left out on purpose: no value could be matched into it, so it stays unclassified and the screen sends it to the user.
+ * left out on purpose: no value could be matched into it, so the label rules hand it to the person (needs-user,
+ * `kind-mismatch`) rather than let a later rule claim it.
  */
 export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]>> = {
   'identity.fullName': LINE, 'identity.firstName': LINE, 'identity.middleName': LINE, 'identity.lastName': LINE,
@@ -162,7 +164,10 @@ export interface ClassPolicy {
   fuzzy: 'per-domain' | 'generic' | 'never' | 'not-applicable';
 }
 
-/** §8.2's table, one row per class. */
+/**
+ * §8.2's table, one row per class, except one cell docs/ARCHITECTURE.md overrules: a free-text category that came only
+ * from LLM classification maps to needs-user (AI › Category mapping), so it gets no draft (§8.2 said "draft only").
+ */
 export const CLASS_POLICIES: Readonly<Record<PolicyClass, ClassPolicy>> = {
   profile: { valueFrom: ['profile', 'rule'], savedAnswers: 'global', llmTiebreak: 'per-domain',
     llmClassified: 'fill-flagged', fuzzy: 'per-domain' },
@@ -176,7 +181,7 @@ export const CLASS_POLICIES: Readonly<Record<PolicyClass, ClassPolicy>> = {
     fuzzy: 'never' },
   attention: { valueFrom: [], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never', fuzzy: 'never' },
   'free-text': { valueFrom: ['saved', 'llm-draft'], savedAnswers: 'company', llmTiebreak: 'not-applicable',
-    llmClassified: 'draft-only', fuzzy: 'not-applicable' },
+    llmClassified: 'never', fuzzy: 'not-applicable' },
   file: { valueFrom: ['profile'], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never',
     fuzzy: 'not-applicable' },
   unknown: { valueFrom: ['saved'], savedAnswers: 'global', llmTiebreak: 'allowed', llmClassified: 'not-applicable',

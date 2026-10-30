@@ -17,6 +17,14 @@ describe('canonicalCountry', () => {
     expect(canonicalCountry(text, vocab)).toEqual({ value: code, issues: [] });
   });
 
+  it.each<[string, string]>([
+    ['Macedonia, the Former Yugoslav Republic of', 'MK'], ['Bonaire, Sint Eustatius and Saba', 'BQ'],
+    ['Hong Kong SAR', 'HK'], ['Kyrgyz Republic', 'KG'], ['Slovak Republic', 'SK'], ['Libyan Arab Jamahiriya', 'LY'],
+    ['Korea (South)', 'KR'], ['Korea (North)', 'KP'],
+  ])('knows the spelling job sites print, %j, as %s', (text, code) => {
+    expect(canonicalCountry(text, vocab)).toEqual({ value: code, issues: [] });
+  });
+
   it('keeps an unknown or ambiguous name as written, with country-unknown', () => {
     expect(canonicalCountry('Atlantis', vocab, 'address.country'))
       .toEqual({ value: 'Atlantis', issues: [{ path: 'address.country', code: 'country-unknown' }] });
@@ -40,6 +48,21 @@ describe('canonicalRegion', () => {
     expect(canonicalRegion(text, country, vocab)).toEqual({ value: { code, name }, issues: [] });
   });
 
+  it.each<[string, string, string]>([
+    ['Armed Forces Africa, Canada, Europe, Middle East', 'US', 'AE'], ['Armed Forces Europe, the Middle East, and Canada', 'US', 'AE'],
+    ['Armed Forces (AA)', 'US', 'AA'], ['Military - Pacific', 'US', 'AP'], ['Virgin Islands, U.S.', 'US', 'VI'],
+    ['Micronesia, Federated States of', 'US', 'FM'], ['Commonwealth of Puerto Rico', 'US', 'PR'],
+    ['Northern Marianas', 'US', 'MP'], ['CNMI', 'US', 'MP'], ['TX - Texas', 'US', 'TX'], ['Texas - TX', 'US', 'TX'],
+    ['Province of Québec', 'CA', 'QC'],
+  ])('knows %j in %s as %s', (text, country, code) => {
+    expect(canonicalRegion(text, country, vocab).value.code).toBe(code);
+  });
+
+  it('takes a name and a code around a dash only when both name the same region', () => {
+    expect(canonicalRegion('TX - Oklahoma', 'US', vocab)).toEqual({ value: { name: 'TX - Oklahoma' },
+      issues: [{ path: 'region', code: 'region-unknown' }] });
+  });
+
   it('looks only within the given country, and keeps anything else as written', () => {
     expect(canonicalRegion('Ontario', 'US', vocab, 'address.region'))
       .toEqual({ value: { name: 'Ontario' }, issues: [{ path: 'address.region', code: 'region-unknown' }] });
@@ -58,7 +81,7 @@ describe('canonicalInstitution (§2.7)', () => {
       ['Texas A&M University', 'ipeds', '228723'], ['University of Washington', 'ipeds', '236948'],
       ['Washington University in St. Louis', 'ipeds', '179867'], ['Ohio State University', 'ipeds', '204796'],
       ['University of California, Los Angeles', 'ipeds', '110662'], ['Carnegie Mellon University', 'ipeds', '211440'],
-      ['University of Michigan', 'ipeds', '170976'], ['Northwestern University', 'ipeds', '147767'],
+      ['University of Michigan', 'ipeds', '170976'],
       ['Boston University', 'ipeds', '164988'], ['University of Miami', 'ipeds', '135726'],
       ['University of Southern California', 'ipeds', '123961'], ['University of Arizona', 'ipeds', '104179'],
       ['Penn State', 'ipeds', '214777'], ['Texas at Austin, University of', 'ipeds', '228778'],
@@ -114,6 +137,67 @@ describe('canonicalInstitution (§2.7)', () => {
     expect(canonicalInstitution({ name, location: { country: 'FR' } }, vocab).issues[0]!.code).toBe('institution-ambiguous');
   });
 
+  it('counts a ROR record outside the subset as sharing a name, so only the location settles it', () => {
+    for (const [name, location, id] of [
+      ['Heidelberg University', { region: 'OH', country: 'US' }, '203085'],
+      ['Northwestern University', { city: 'Evanston', region: 'IL' }, '147767'],
+      ['Saint Louis University', { region: 'Missouri', country: 'United States' }, '179159'],
+    ] as const) {
+      const alone = canonicalInstitution({ name }, vocab);
+      expect(alone.value.source, name).toBe('user');
+      expect(alone.issues, name).toEqual([{ path: 'institution', code: 'institution-ambiguous' }]);
+      expect(canonicalInstitution({ name, location }, vocab).value).toMatchObject({ source: 'vocab', ids: { ipeds: id } });
+    }
+    expect(canonicalInstitution({ name: 'Heidelberg University', location: { country: 'DE' } }, vocab).value.source)
+      .toBe('user');
+  });
+
+  it('keeps the text of a bare acronym or shared name, whatever the location says', () => {
+    for (const [name, location] of [['UT', { region: 'UT' }], ['UT', { region: 'TX', country: 'US' }],
+      ['OSU', { region: 'OH' }], ['UNH', { region: 'NH' }], ['U of M', { region: 'MI' }], ['CMU', { region: 'PA' }],
+      ['Cal Poly', { region: 'CA' }], ['Trinity', { city: 'Hartford', region: 'CT' }], ['UW', { region: 'WA' }],
+      ['Southern University', { country: 'BD' }], ['Indian Institute of Technology', { country: 'IN' }]] as const) {
+      const { value, issues } = canonicalInstitution({ name, location }, vocab);
+      expect(value, `${name} ${JSON.stringify(location)}`).toMatchObject({ source: 'user', canonicalName: name, ids: {} });
+      expect(issues.map((issue) => issue.code), name).toEqual([expect.stringMatching(/^institution-(?:ambiguous|not-in-vocab)$/)]);
+    }
+    expect(canonicalInstitution({ name: 'UT' }, vocab).issues).toEqual([{ path: 'institution', code: 'institution-ambiguous' }]);
+  });
+
+  it('maps no bare system name to one campus unless it is a flagship', () => {
+    for (const name of ['Arizona State University', 'Texas A&M', 'TAMU', 'LSU', 'Louisiana State University', 'UMN', 'UMD',
+      'University of Colorado', 'University of Oklahoma', 'Purdue']) {
+      expect(canonicalInstitution({ name }, vocab).value.source, name).toBe('user');
+    }
+    expect(canonicalInstitution({ name: 'Texas A&M University' }, vocab).value).toMatchObject({ source: 'vocab',
+      ids: { ipeds: '228723' } });
+  });
+
+  it('settles a campus base name only by a location outside the campuses that share it', () => {
+    expect(canonicalInstitution({ name: 'Concordia University' }, vocab).value.source).toBe('user');
+    expect(canonicalInstitution({ name: 'Concordia University', location: { city: 'Montreal', country: 'Canada' } }, vocab)
+      .value).toMatchObject({ source: 'vocab', country: 'CA', canonicalName: 'Concordia University' });
+    expect(canonicalInstitution({ name: 'Concordia University', location: { city: 'Irvine', region: 'CA' } }, vocab)
+      .value.source).toBe('user');
+  });
+
+  it('reads a bracket as part of the name first, as an option is read', () => {
+    expect(canonicalInstitution({ name: 'Indian Institute of Technology (Bombay)' }, vocab).value)
+      .toMatchObject({ source: 'vocab', canonicalName: 'Indian Institute of Technology Bombay' });
+    expect(canonicalInstitution({ name: 'University of Texas at Austin (UT Austin)' }, vocab).value.ids)
+      .toEqual({ ipeds: '228778' });
+    expect(canonicalInstitution({ name: 'Indian Institute of Technology (Banaras Hindu University)' }, vocab).value.source)
+      .toBe('user');
+  });
+
+  it('turns to the person\'s aliases when the name names no single institution', () => {
+    expect(canonicalInstitution({ name: 'UT', aliases: ['The University of Texas at Austin'] }, vocab).value.ids)
+      .toEqual({ ipeds: '228778' });
+    expect(canonicalInstitution({ name: 'Trinity', aliases: ['Trinity College Dublin'] }, vocab).value.source).toBe('vocab');
+    // A full name others share rules out an alias naming a third school.
+    expect(canonicalInstitution({ name: 'Northeastern University', aliases: ['MIT'] }, vocab).value.source).toBe('user');
+  });
+
   it('keeps an unknown institution as written, with the entry’s location', () => {
     const { value, issues } = canonicalInstitution({ name: 'Hogwarts School', aliases: ['Hogwarts', 'hogwarts school'],
       location: { city: 'Highlands', region: 'Tex.', country: 'USA' } }, vocab);
@@ -152,8 +236,18 @@ describe('canonicalField (§2.7)', () => {
       value: { name: 'Underwater Basket Weaving', aliases: [], userText: 'Underwater Basket Weaving' },
       issues: [{ path: 'education[0].degree.field', code: 'field-not-in-vocab' }],
     });
-    expect(canonicalField({ text: 'Music' }, vocab).issues).toEqual([{ path: 'field', code: 'field-ambiguous' }]);
+    expect(canonicalField({ text: 'American Literature' }, vocab).issues).toEqual([{ path: 'field', code: 'field-ambiguous' }]);
     expect(canonicalField({ text: 'Lost Art', cip: '99.9999' }, vocab).value).toMatchObject({ cip: '99.9999' });
+  });
+
+  it('never makes a leisure activity of an academic field', () => {
+    expect(canonicalField({ text: 'Music' }, vocab).value).toMatchObject({ cip: '50.0901', name: 'Music' });
+    expect(canonicalField({ text: 'Art' }, vocab).value).toMatchObject({ cip: '50.0701' });
+    expect(canonicalField({ text: 'Criminal Justice' }, vocab).value).toMatchObject({ cip: '43.01' });
+    for (const text of ['Theater', 'Dancing', 'Reading']) {
+      const { value } = canonicalField({ text }, vocab);
+      expect(value.cip?.startsWith('36'), text).not.toBe(true);
+    }
   });
 });
 

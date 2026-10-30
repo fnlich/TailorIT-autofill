@@ -65,7 +65,7 @@ const TIER_RANK: Readonly<Record<VocabTier, number>> = {
 };
 
 function toSurface(raw: RawSurface): VocabSurface {
-  return { text: raw[0], key: raw[1], tier: TIER_OF[raw[2]], ambiguous: raw[3] === 1 };
+  return { text: raw[0], key: raw[1], tier: TIER_OF[raw[2]], ambiguous: raw[3] !== undefined, shortForm: raw[3] === 2 };
 }
 
 function toSurfaces(raw: readonly RawSurface[]): VocabSurface[] {
@@ -80,10 +80,15 @@ function phraseSet(phrases: readonly RawPhrase[]): PhraseSet {
 
 /** Curated phrase lists become surfaces of one entity (the yes and no entities of the polarity domain). */
 function phraseSurfaces(phrases: readonly RawPhrase[]): VocabSurface[] {
-  return phrases.map(([text, key]) => ({ text, key, tier: 'curated', ambiguous: false }));
+  return phrases.map(([text, key]) => ({ text, key, tier: 'curated', ambiguous: false, shortForm: false }));
 }
 
 const EMPTY_TOKENS: ReadonlySet<string> = new Set();
+
+/** The guard classes that name no place: a region's or country's other spellings bring none of their words into an
+ *  institution's facts (§4.5 rule 1 lists the facts as city, region name and code, campus and country). */
+const NON_PLACE_CLASSES: ReadonlySet<GuardClass> = new Set<GuardClass>(['state', 'direction', 'tech', 'discipline',
+  'level', 'headNoun']);
 
 /** The lookup domain of each EEO question that has answer values. */
 const EEO_DOMAIN: Readonly<Partial<Record<EeoQuestion, VocabDomain>>> = {
@@ -188,6 +193,7 @@ export function createVocab(raw: RawVocab): Vocab {
         return raw.answers.referral.map((entry): ReferralEntity => ({
           kind: 'referral', id: `ref:${entry.id}`, name: entry.s[0]![0], surfaces: toSurfaces(entry.s),
           answerId: entry.id, mentions: (entry.m ?? []).map((key) => key.split(' ')),
+          parents: (entry.p ?? []).map((parent) => `ref:${parent}`),
         }));
       case 'eeo.gender':
       case 'eeo.race':
@@ -292,7 +298,8 @@ export function createVocab(raw: RawVocab): Vocab {
         let hits = index.get(surface.key);
         if (!hits) index.set(surface.key, hits = []);
         const same = hits.findIndex((hit) => hit.id === entity.id);
-        const hit: KeyHit = { id: entity.id, tier: surface.tier, ambiguous: surface.ambiguous };
+        const hit: KeyHit = { id: entity.id, tier: surface.tier, ambiguous: surface.ambiguous,
+          shortForm: surface.shortForm };
         if (same < 0) hits.push(hit);
         else if (TIER_RANK[surface.tier] < TIER_RANK[hits[same]!.tier]) hits[same] = hit;
       }
@@ -472,24 +479,41 @@ export function createVocab(raw: RawVocab): Vocab {
 
   // Facts as guard tokens, per institution, on first use.
   const factCache = new Map<string, ReadonlySet<string>>();
+  /** A word a region's or country's other spellings bring that names no place: "state" from "New York State" or
+   *  "Washington State", "south" from "Korea, South", a single letter. It would explain an option's "state". */
+  const notPlace = (token: string) => /^[a-z]$/.test(token)
+    || guard.classesOf(token).some((guardClass) => NON_PLACE_CLASSES.has(guardClass));
+  /** The region of `country`'s postal list whose spellings include `name` ("Ontario" in Canada), if any. */
+  function regionNamed(country: string, name: string | undefined): RegionEntity | undefined {
+    if (!name) return undefined;
+    const key = normalize(name, 'region').key;
+    return regions.ofCountry(country).find((one) => one.surfaces.some((surface) => surface.key === key));
+  }
   function factTokens(id: string): ReadonlySet<string> {
     const cached = factCache.get(id);
     if (cached) return cached;
     const found = entity(id);
     if (!found || found.kind !== 'institution') return EMPTY_TOKENS;
     const tokens = new Set<string>();
-    const add = (text: string | undefined) => {
-      if (text) for (const token of guard.join(normalize(text, 'institution').core)) tokens.add(token);
+    const add = (text: string | undefined, placesOnly = false) => {
+      if (!text) return;
+      for (const token of guard.join(normalize(text, 'institution').core)) {
+        if (!placesOnly || !notPlace(token)) tokens.add(token);
+      }
     };
     const { city, campus, regionCode, regionName, country } = found.facts;
     add(city);
     add(campus);
     add(regionName);
-    if (regionCode) {
-      tokens.add(regionCode.toLowerCase());
-      for (const surface of regions.byCode('US', regionCode)?.surfaces ?? []) add(surface.text);
+    // A school outside the US has its region's name only (ROR): its postal code, where the country has codes (Canada
+    // Post's "ON" for Ontario), is a fact too, so "University of Toronto, ON" agrees as "(Cambridge, MA)" does.
+    const region = regionCode ? regions.byCode('US', regionCode) : regionNamed(country, regionName);
+    const code = regionCode ?? region?.code;
+    if (code) {
+      tokens.add(code.toLowerCase());
+      for (const surface of region?.surfaces ?? []) add(surface.text, true);
     }
-    for (const surface of countries.byAlpha2(country)?.surfaces ?? []) add(surface.text);
+    for (const surface of countries.byAlpha2(country)?.surfaces ?? []) add(surface.text, true);
     factCache.set(id, tokens);
     return tokens;
   }

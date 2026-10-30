@@ -12,6 +12,15 @@ describe('typeaheadQueries (§4.11)', () => {
       .toEqual(['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'Texas Austin']);
   });
 
+  it('never searches by a particle of another language ("Universidad de")', () => {
+    expect(typeaheadQueries(institution('Universidad de Buenos Aires'), vocab)).toContain('Universidad Buenos');
+    for (const name of ['Universidad de Buenos Aires', 'Universidad de los Andes', 'De La Salle University']) {
+      const last = typeaheadQueries(institution(name), vocab).slice(1);
+      expect(last.some((query) => /^(?:\S+ )?(?:de|la|los|del)$/i.test(query) || /^de la$/i.test(query)), name)
+        .toBe(false);
+    }
+  });
+
   it('prefers a curated acronym as the alias', () => {
     expect(typeaheadQueries(institution('Massachusetts Institute of Technology'), vocab).slice(0, 2))
       .toEqual(['Massachusetts Institute of Technology', 'MIT']);

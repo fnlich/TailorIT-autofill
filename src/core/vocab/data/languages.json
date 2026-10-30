@@ -193,7 +193,7 @@
 {"id":"limited-working","s":[["Limited working proficiency","limited working proficiency","c"],["Limited working","limited working","c"],["B1","b1","g"],["Intermediate","intermediate","g"],["Conversational","conversational","g"]]},
 {"id":"professional-working","s":[["Professional working proficiency","professional working proficiency","c"],["Professional working","professional working","c"],["B2","b2","g"],["Upper intermediate","upper intermediate","g"]]},
 {"id":"full-professional","s":[["Full professional proficiency","full professional proficiency","c"],["Full professional","full professional","c"],["C1","c1","g"],["C2","c2","g"],["Advanced","advanced","g"],["Fluent","fluent","g"]]},
-{"id":"native","s":[["Native or bilingual proficiency","native or bilingual proficiency","c"],["Native or bilingual","native or bilingual","c"],["Native","native","c"],["Native speaker","native speaker","c"],["Bilingual","bilingual","c"],["Mother tongue","mother tongue","c"],["First language","first language","c"]]}
+{"id":"native","s":[["Native or bilingual proficiency","native or bilingual proficiency","c"],["Native or bilingual","native or bilingual","c"],["Native / Bilingual","native bilingual","c"],["Native","native","c"],["Native speaker","native speaker","c"],["Bilingual","bilingual","c"],["Mother tongue","mother tongue","c"],["First language","first language","c"]]}
 ],
 "release":"49.0.0"
 }

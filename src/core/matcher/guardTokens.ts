@@ -2,13 +2,15 @@
  * The distinctive-token guard (docs/design/core.md §4.5). Words that tell entities apart (a city, a state, a campus,
  * a direction, "state", "tech", a discipline, a level marker, a single letter or a number) must agree on both sides,
  * so "UT Austin" never matches "University of Texas at Dallas" and "Georgia Tech" never matches "Georgia State". The
- * rules read the intended value as a whole, its spellings together, because a bare acronym ("UTD") says nothing about
- * the campus while the full name does:
- * 1. every presence word of the option is in one of the entity's spellings or facts (city, region, campus, country);
- * 2. the option holds every presence word of one of the entity's trusted spellings (the person's own, the canonical
- *    names, the curated and generated aliases); only spellings that have presence words count, so an acronym
- *    ("UTD") cannot excuse a missing "dallas";
- * 3. an option's head noun ("university", "college") is one the entity's spellings use;
+ * rules read the intended value as a whole, its trusted spellings together (the person's own, the canonical names,
+ * the curated and generated aliases), because a bare acronym ("UTD") says nothing about the campus while the full
+ * name does. A source's loose aliases (former names, system names) never count: "State University of New York at
+ * Buffalo" must not let "state" through to "SUNY Buffalo State", another campus.
+ * 1. every presence word of the option is in one of the entity's trusted spellings or facts (city, region, campus,
+ *    country);
+ * 2. the option holds every presence word of one of the trusted spellings; only spellings that have presence words
+ *    count, so an acronym ("UTD") cannot excuse a missing "dallas";
+ * 3. an option's head noun ("university", "college") is one the trusted spellings use;
  * 4. in the form they use it: "University of X" is not "X University".
  * Rules 1, 3 and 4 are hard: no later stage, the LLM included, may choose such an option. Rule 2 alone stops fuzzy
  * matching and keeps the option from the LLM.
@@ -17,8 +19,9 @@
  * ones (a field never names a city: "Commerce" is a city and a field); countries and regions use place names and
  * directions ("West Virginia" is not Virginia); every other domain uses only the acronym-like class, as §4.5 says
  * for all domains, because the place and level classes hold ordinary words ("online", "career") that referral and
- * custom answers use freely. The degree domain adds its own type and level rules (degree.ts). USPS codes count only
- * inside brackets. Step 15 of §3.1, joining multi-word lexicon names ("ann arbor", "saint louis"), happens here,
+ * custom answers use freely. Languages add country names inside brackets ("Portuguese (Brazil)" is a variety the
+ * person did not name). The degree domain adds its own type and level rules (degree.ts). USPS codes count only inside
+ * brackets. Step 15 of §3.1, joining multi-word lexicon names ("ann arbor", "saint louis"), happens here,
  * through the vocabulary's lexicon.
  */
 import { AMBIGUOUS_ST } from '../text/abbreviations';
@@ -30,7 +33,7 @@ import { DOMAIN_CONTEXT, type GuardClass, type Vocab, type VocabEntity } from '.
 import type { MatchDomain } from './types';
 
 /** How a domain reads distinctive words. */
-export const GUARD_FAMILIES = ['institution', 'field', 'place', 'basic'] as const;
+export const GUARD_FAMILIES = ['institution', 'field', 'place', 'language', 'basic'] as const;
 export type GuardFamily = (typeof GUARD_FAMILIES)[number];
 
 /** The lexicon classes whose members are presence words, per family. The acronym-like class applies to all. */
@@ -38,12 +41,20 @@ export const PRESENCE_CLASSES: Readonly<Record<GuardFamily, readonly GuardClass[
   institution: ['city', 'region', 'country', 'campus', 'direction', 'state', 'tech', 'discipline', 'level'],
   field: ['discipline', 'tech', 'direction'],
   place: ['region', 'country', 'direction'],
+  language: [],
   basic: [],
+};
+
+/** The lexicon classes whose members are presence words inside brackets only, per family: USPS codes after a school
+ *  ("(Cambridge, MA)"), country names after a language ("(Brazil)"). */
+export const BRACKET_PRESENCE_CLASSES: Readonly<Partial<Record<GuardFamily, readonly GuardClass[]>>> = {
+  institution: ['regionCode'],
+  language: ['country'],
 };
 
 /** The guard family of a domain. */
 export function guardFamily(domain: MatchDomain): GuardFamily {
-  if (domain === 'institution' || domain === 'field') return domain;
+  if (domain === 'institution' || domain === 'field' || domain === 'language') return domain;
   return domain === 'country' || domain === 'region' ? 'place' : 'basic';
 }
 
@@ -83,7 +94,8 @@ function acronymLike(token: string, position: number, count: number, answer: boo
 function presenceClass(token: string, family: GuardFamily, inBrackets: boolean, vocab: Vocab): boolean {
   if (token === AMBIGUOUS_ST) return family === 'institution';
   if (PRESENCE_CLASSES[family].some((guardClass) => vocab.guard.has(guardClass, token))) return true;
-  return inBrackets && family === 'institution' && vocab.guard.has('regionCode', token);
+  if (!inBrackets) return false;
+  return (BRACKET_PRESENCE_CLASSES[family] ?? []).some((guardClass) => vocab.guard.has(guardClass, token));
 }
 
 /** Whether a single word is distinctive in a domain: a presence word, an acronym-like one, or an institution head
@@ -139,27 +151,26 @@ export function guardSide(norm: Normalized, domain: MatchDomain, vocab: Vocab): 
   return { tokens, presence, bracketPresence, head };
 }
 
-/** The intended value's distinctive words, over all its spellings. */
+/** The intended value's distinctive words, over its trusted spellings. */
 export interface EntityGuard {
-  /** What explains an option's presence word (rule 1): every spelling's words and the entity's facts. */
+  /** What explains an option's presence word (rule 1): the trusted spellings' words and the entity's facts. */
   readonly explains: ReadonlySet<string>;
-  /** Rule 2: the presence sets of the spellings that have any; an option must hold one of them whole. Empty when
-   *  no spelling has a presence word. */
+  /** Rule 2: the presence sets of the trusted spellings that have any; an option must hold one of them whole. Empty
+   *  when no trusted spelling has a presence word. */
   readonly required: ReadonlyArray<ReadonlySet<string>>;
-  /** Rules 3 and 4: the head nouns the spellings use, and in which forms. */
+  /** Rules 3 and 4: the head nouns the trusted spellings use, and in which forms. */
   readonly heads: ReadonlyMap<string, ReadonlySet<'pre' | 'post'>>;
 }
 
 /**
- * The guard over the intended value: `sides` are its unambiguous spellings, `required` those that rule 2 may rest on
- * (the trusted ones: the person's own, the canonical names, the curated and generated aliases), and `facts` the
- * entity's facts as guard words (Vocab.factTokens).
+ * The guard over the intended value: `trusted` are the spellings every rule rests on (the person's own, the canonical
+ * names, the curated and generated aliases, never a source's loose aliases), and `facts` the entity's facts as guard
+ * words (Vocab.factTokens).
  */
-export function entityGuard(sides: readonly GuardSide[], required: readonly GuardSide[], facts: ReadonlySet<string>):
-  EntityGuard {
+export function entityGuard(trusted: readonly GuardSide[], facts: ReadonlySet<string>): EntityGuard {
   const explains = new Set<string>(facts);
   const heads = new Map<string, Set<'pre' | 'post'>>();
-  for (const side of sides) {
+  for (const side of trusted) {
     for (const token of side.tokens) explains.add(token);
     if (side.head) {
       const forms = heads.get(side.head.noun) ?? new Set<'pre' | 'post'>();
@@ -167,7 +178,7 @@ export function entityGuard(sides: readonly GuardSide[], required: readonly Guar
       heads.set(side.head.noun, forms);
     }
   }
-  return { explains, required: required.filter((side) => side.presence.size > 0).map((side) => side.presence), heads };
+  return { explains, required: trusted.filter((side) => side.presence.size > 0).map((side) => side.presence), heads };
 }
 
 const isSaint = (token: string) => token === 'saint' || token.startsWith('saint_');
@@ -235,11 +246,11 @@ export function guardOfEntity(entity: VocabEntity, domain: MatchDomain, vocab: V
   if (!byId) ENTITY_GUARDS.set(vocab, byId = new Map());
   const known = byId.get(entity.id);
   if (known) return known;
-  const sides = entity.surfaces.filter((surface) => !surface.ambiguous)
-    .map((surface) => ({ side: guardSide(normalizeFor(surface.text, domain === 'number' ? 'generic' : domain), domain,
-      vocab), trusted: surface.tier === 'primary' || surface.tier === 'curated' || surface.tier === 'generated' }));
-  const trusted = sides.filter((entry) => entry.trusted).map(({ side }) => side);
-  const made = entityGuard(sides.map(({ side }) => side), trusted, vocab.factTokens(entity.id));
+  const trusted = entity.surfaces
+    .filter((surface) => !surface.ambiguous
+      && (surface.tier === 'primary' || surface.tier === 'curated' || surface.tier === 'generated'))
+    .map((surface) => guardSide(normalizeFor(surface.text, domain === 'number' ? 'generic' : domain), domain, vocab));
+  const made = entityGuard(trusted, vocab.factTokens(entity.id));
   byId.set(entity.id, made);
   return made;
 }

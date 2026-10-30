@@ -3,17 +3,19 @@
  * positive cases and 28 negative ones, the injected-option cases among them. golden.test.ts builds each row's
  * intended value from the profile string through the Phase 1 canonicalizers and the bundled vocabulary, matches it,
  * and asserts the expected option and stage. A row's expectation is never edited to make it pass: a row the rules as
- * written cannot produce is listed in GOLDEN_KNOWN_FAILURES with the reason, and its stage is asserted as a known
- * failure. Pure data: no imports beyond types, so it is part of the pure program.
+ * written cannot produce is listed in GOLDEN_KNOWN_FAILURES (or GOLDEN_NEGATIVE_KNOWN_FAILURES, for a negative row's
+ * note) with the reason, and asserted as a known failure. The owner's own rows, which the design does not hold, are
+ * GOLDEN_POSITIVE_ADDED. Pure data: no imports beyond types, so it is part of the pure program.
  */
 import type { MatcherStage } from '../enums';
+import type { ReasonCode } from '../types/fill';
 
 /** The table's domain column. */
 export type GoldenDomain = 'institution' | 'degree' | 'field' | 'country' | 'region' | 'referral' | 'generic' | 'polarity';
 
 /** One row of the golden table. */
 export interface GoldenCase {
-  /** P01 to P62, N01 to N28. */
+  /** P01 to P62, N01 to N28; an added row takes its design row's id and a letter (P46b). */
   id: string;
   domain: GoldenDomain;
   /** The profile value, as the person wrote it. */
@@ -147,14 +149,18 @@ export const GOLDEN_POSITIVE: readonly GoldenCase[] = [
   { id: 'P45', domain: 'country', profile: 'South Korea',
     options: ["Korea, Democratic People's Republic of", 'Korea, Republic of'], expected: 'Korea, Republic of',
     stage: 'alias', note: '' },
-  { id: 'P46', domain: 'country', profile: 'Turkey', options: ['Greece', 'Türkiye'], expected: 'Türkiye', stage: 'alias',
-    note: '' },
+  // The design has P46 and P50 at the alias stage. The data names them otherwise: CLDR 49 names TR "Türkiye", and USPS
+  // names DC "District of Columbia", so each option is the country's or region's primary spelling and matches exactly.
+  // Only the stage was changed: a default taken on 2026-10-30 under the owner's standing approval of recommended
+  // defaults, pending the owner's confirmation in the Phase 1 report. P46b and P50b keep the alias stage covered.
+  { id: 'P46', domain: 'country', profile: 'Turkey', options: ['Greece', 'Türkiye'], expected: 'Türkiye',
+    stage: 'exact', note: '' },
   { id: 'P47', domain: 'region', profile: 'Texas', options: ['OK', 'TX', 'NM'], expected: 'TX', stage: 'alias', note: '' },
   { id: 'P48', domain: 'region', profile: 'TX', options: ['Oklahoma', 'Texas'], expected: 'Texas', stage: 'exact',
     note: 'primary' },
   { id: 'P49', domain: 'region', profile: 'New York', options: ['NJ', 'NY'], expected: 'NY', stage: 'alias', note: '' },
   { id: 'P50', domain: 'region', profile: 'Washington, D.C.', options: ['Washington', 'District of Columbia'],
-    expected: 'District of Columbia', stage: 'alias', note: '' },
+    expected: 'District of Columbia', stage: 'exact', note: '' },
   { id: 'P51', domain: 'region', profile: 'Puerto Rico', options: ['PR', 'TX'], expected: 'PR', stage: 'alias', note: '' },
   { id: 'P52', domain: 'referral', profile: 'LinkedIn', options: ['Indeed', 'LinkedIn', 'Company Website', 'Other'],
     expected: 'LinkedIn', stage: 'exact', note: '' },
@@ -261,13 +267,54 @@ export const GOLDEN_NEGATIVE: readonly GoldenCase[] = [
 ];
 
 /**
- * Rows whose stage the rules as written cannot give with the vocabulary as built, each with the reason. Their
- * option is still asserted; their stage is asserted as a known failure (it.fails), so a vocabulary change that fixes
- * one is noticed.
+ * Rows added on 2026-10-30, outside the design's table, as a default taken under the owner's standing approval of
+ * recommended defaults and pending the owner's confirmation in the Phase 1 report: P46 and P50 turned around, so the
+ * alias stage keeps the country and region coverage those two rows had before their stage became exact. golden.test.ts
+ * runs them with the positive rows.
  */
-export const GOLDEN_KNOWN_FAILURES: Readonly<Record<string, string>> = {
-  P46: 'CLDR 49 names Turkey "Türkiye", so "Türkiye" is the country\'s primary spelling and matches at the exact stage; '
-    + 'the design assumed a curated alias.',
-  P50: 'USPS names DC "District of Columbia", so that is the region\'s primary spelling and matches at the exact '
-    + 'stage; the design assumed an alias.',
+export const GOLDEN_POSITIVE_ADDED: readonly GoldenCase[] = [
+  { id: 'P46b', domain: 'country', profile: 'Türkiye', options: ['Greece', 'Turkey'], expected: 'Turkey',
+    stage: 'alias', note: 'a vocabulary alias, the name many forms still use' },
+  { id: 'P50b', domain: 'region', profile: 'District of Columbia', options: ['Washington', 'Washington, D.C.'],
+    expected: 'Washington, D.C.', stage: 'alias', note: 'a curated alias' },
+];
+
+/**
+ * Positive rows whose stage the rules as written cannot give with the vocabulary as built, each with the reason. Their
+ * option is still asserted; their stage is asserted as a known failure (it.fails), so a change that fixes one is
+ * noticed. Empty since P46 and P50 took the stage the data gives them.
+ */
+export const GOLDEN_KNOWN_FAILURES: Readonly<Record<string, string>> = {};
+
+/** A negative row whose note names a path the rules as written never take. */
+export interface NegativeKnownFailure {
+  /** Why the noted path cannot be taken. */
+  reason: string;
+  /** The reason code the note names. */
+  noted: ReasonCode;
+  /** What the row does instead: its reason code and how many tiebreak tasks it sends. */
+  taken: { reason: ReasonCode; requests: number };
+}
+
+/**
+ * Negative rows whose note names a path the rules as written never take, each with the reason. The row's own
+ * expectation (no option, stage none) still holds and is asserted; golden.test.ts asserts the noted path as a known
+ * failure (it.fails) and the path the row does take, so a change to either is noticed.
+ */
+export const GOLDEN_NEGATIVE_KNOWN_FAILURES: Readonly<Record<string, NegativeKnownFailure>> = {
+  N26: {
+    reason: 'Both options carry a letter other than "d" (a presence word), so the guard rules both out as hard '
+      + 'conflicts: nothing reaches the LLM, and the row ends as N25 does. The X01 test covers a rejected injected '
+      + 'pick.',
+    noted: 'llm-pick-rejected', taken: { reason: 'distinctive-token-mismatch', requests: 0 },
+  },
+  N27: {
+    reason: '"Online ad" and "Career fair" are referral sources the vocabulary knows, other than "Employee referral", '
+      + 'so neither may be offered to the LLM. The X02 test covers an out-of-range answer.',
+    noted: 'llm-invalid-output', taken: { reason: 'no-match', requests: 0 },
+  },
+  N28: {
+    reason: 'As N27: neither option may be offered to the LLM. The X03 test covers an answer that is not an integer.',
+    noted: 'llm-invalid-output', taken: { reason: 'no-match', requests: 0 },
+  },
 };

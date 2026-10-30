@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalInstitution } from '../profile/entities';
+import { canonicalCountry, canonicalInstitution } from '../profile/entities';
 import { normalize } from '../text/normalize';
 import type { IntendedValue } from '../types/intent';
-import { intendedAnswer, intendedField, intendedInstitution, intendedText } from './intended';
-import { doneMatch, inputOf, outcomeOf, vocab } from './matcher.testkit';
+import { intendedAnswer, intendedCountry, intendedField, intendedInstitution, intendedText } from './intended';
+import { doneMatch, finalMatch, inputOf, outcomeOf, vocab } from './matcher.testkit';
 import { canonicalField } from '../profile/entities';
 import { classifyQualifier } from './qualifierClass';
-import type { MatchDomain } from './types';
+import type { MatchDomain, MatchInput } from './types';
 
 const institution = (name: string): IntendedValue =>
   intendedInstitution(canonicalInstitution({ name }, vocab).value, vocab);
@@ -102,3 +102,150 @@ describe('classifyQualifier (§3.4)', () => {
     expect(classify('Economics (Honors Track)', 'field')).toEqual(['other']);
   });
 });
+
+/** Lever's standard US race question, as captured on Zoox's application (2026-10-29). */
+const ZOOX_RACE = ['Select ...', 'Hispanic or Latino', 'White (Not Hispanic or Latino)',
+  'Black or African American (Not Hispanic or Latino)',
+  'Native Hawaiian or Other Pacific Islander (Not Hispanic or Latino)', 'Asian (Not Hispanic or Latino)',
+  'American Indian or Alaska Native (Not Hispanic or Latino)', 'Two or More Races (Not Hispanic or Latino)',
+  'Decline to self-identify'];
+/** Spotify's Lever survey (2026-10-29). */
+const SPOTIFY_RACE = ['American Indian or Alaska Native', 'Asian', 'Black or African American', 'Hispanic or Latino',
+  'Native Hawaiian or Other Pacific Islander', 'Two or More Races', 'White (Not Hispanic or Latino)',
+  'Prefer not to disclose'];
+
+describe('EEO brackets: an explicit answer only, nothing ignored (§8.7)', () => {
+  const race = (answer: string, labels: string[], extra: Partial<MatchInput> = {}) =>
+    doneMatch(outcomeOf(inputOf(intendedAnswer('eeo.race', answer, vocab), labels, 'eeo.race',
+      { policy: 'eeo', ...extra }), false));
+
+  it('chooses a race option that also says "Not Hispanic or Latino" only when the person said so', () => {
+    expect(race('White', ZOOX_RACE, { hispanicLatino: false })).toMatchObject({ stage: 'exact', optionIndex: 2,
+      confidence: 1 });
+    expect(race('Asian', ZOOX_RACE, { hispanicLatino: false })).toMatchObject({ optionIndex: 5 });
+    expect(race('White', SPOTIFY_RACE, { hispanicLatino: false })).toMatchObject({ optionIndex: 6 });
+  });
+
+  it('leaves it blank for a Hispanic person, and for one who gave or declined no Hispanic answer', () => {
+    for (const labels of [ZOOX_RACE, SPOTIFY_RACE]) {
+      expect(race('White', labels, { hispanicLatino: true })).toMatchObject({ stage: 'none', optionIndex: null });
+      expect(race('White', labels)).toMatchObject({ stage: 'none', optionIndex: null, reason: 'eeo-not-in-profile' });
+    }
+    for (const answer of ['Asian', 'Black or African American', 'American Indian or Alaska Native',
+      'Native Hawaiian or Other Pacific Islander', 'Two or More Races']) {
+      expect(race(answer, ZOOX_RACE), answer).toMatchObject({ stage: 'none', optionIndex: null });
+      expect(race(answer, ZOOX_RACE, { hispanicLatino: true }), answer).toMatchObject({ optionIndex: null });
+    }
+  });
+
+  it('still chooses a race option without such a bracket, and keeps the refused one as a suggestion', () => {
+    expect(race('Asian', SPOTIFY_RACE)).toMatchObject({ stage: 'exact', optionIndex: 1, confidence: 1 });
+    expect(race('White', SPOTIFY_RACE).suggestions.map((item) => item.index)).toContain(6);
+  });
+
+  it('never ignores any other bracket in an EEO domain', () => {
+    const female = intendedAnswer('eeo.gender', 'Female', vocab);
+    const input = inputOf(female, ['Female (cisgender)', 'Male'], 'eeo.gender', { policy: 'eeo' });
+    expect(doneMatch(outcomeOf(input, false))).toMatchObject({ stage: 'none', optionIndex: null });
+  });
+});
+
+describe('bracketed variants of one answer are not duplicates', () => {
+  const blank = { stage: 'none', optionIndex: null, rule: null };
+
+  it('leaves the field blank when only brackets tell the options apart, whatever their order', async () => {
+    const cases: Array<[IntendedValue, string[], MatchDomain]> = [
+      [intendedAnswer('language', 'English', vocab), ['English (US)', 'English (UK)', 'Spanish'], 'language'],
+      [intendedAnswer('language', 'English', vocab), ['English (UK)', 'English (US)', 'Spanish'], 'language'],
+      [intendedAnswer('language', 'Portuguese', vocab), ['Portuguese (Brazil)', 'Portuguese (Portugal)'], 'language'],
+      [intendedAnswer('language', 'Spanish', vocab), ['Spanish (Spain)', 'Spanish (Latin America)'], 'language'],
+      [intendedAnswer('language', 'Chinese', vocab), ['Chinese (Simplified)', 'Chinese (Traditional)'], 'language'],
+      [intendedAnswer('referral', 'LinkedIn', vocab), ['LinkedIn (Job Posting)', 'LinkedIn (Recruiter Message)',
+        'Indeed'], 'referral'],
+      [intendedCountry('US', 'United States', vocab), ['United States (Remote)', 'United States (On-site)', 'Canada'],
+        'country'],
+    ];
+    for (const [intended, labels, domain] of cases) {
+      const pick0 = (request: { items: Array<{ id: string }> }) =>
+        ({ answers: request.items.map((one) => ({ id: one.id, index: 0 })) });
+      const { match, requests } = await finalMatch(inputOf(intended, labels, domain), pick0);
+      expect(match, labels.join(' / ')).toMatchObject(blank);
+      expect(requests, labels.join(' / ')).toEqual([]);
+    }
+  });
+
+  it('counts a sibling whose bracket is refused as a variant too, unless a plain option is listed', async () => {
+    const chinese = intendedAnswer('language', 'Chinese', vocab);
+    const pick0 = (request: { items: Array<{ id: string }> }) =>
+      ({ answers: request.items.map((one) => ({ id: one.id, index: 0 })) });
+    const { match: tied, requests } = await finalMatch(inputOf(chinese, ['Chinese (Mandarin)', 'Chinese (Cantonese)'],
+      'language'), pick0);
+    expect(tied).toMatchObject({ ...blank, reason: 'ambiguous-options' });
+    expect(tied.suggestions.slice(0, 2).map((item) => item.index)).toEqual([0, 1]);
+    expect(requests).toEqual([]);
+    const us = intendedCountry('US', 'United States', vocab);
+    expect(match(us, ['United States (Remote)', 'United States (California)'], 'country')).toMatchObject(blank);
+    expect(match(chinese, ['Chinese (Mandarin)', 'Chinese (Cantonese)', 'Chinese'], 'language'))
+      .toMatchObject({ stage: 'exact', optionIndex: 2, confidence: 1 });
+    expect(match(chinese, ['Chinese (Mandarin)', 'Japanese'], 'language'))
+      .toMatchObject({ stage: 'exact', optionIndex: 0, confidence: 1 });
+  });
+
+  it('offers the variants as suggestions', () => {
+    const match = doneMatch(outcomeOf(inputOf(intendedAnswer('referral', 'LinkedIn', vocab),
+      ['Indeed', 'LinkedIn (Job Posting)', 'LinkedIn (Recruiter Message)'], 'referral'), true));
+    expect(match).toMatchObject({ reason: 'ambiguous-options' });
+    expect(match.suggestions.slice(0, 2).map((item) => item.index)).toEqual([1, 2]);
+  });
+
+  it('still prefers a plain option to its bracketed variants, and one variant alone', () => {
+    const us = intendedCountry(canonicalCountry('United States', vocab).value, 'United States', vocab);
+    expect(match(us, ['United States (Remote)', 'United States', 'Canada'], 'country'))
+      .toMatchObject({ stage: 'exact', optionIndex: 1, confidence: 1 });
+    expect(match(intendedAnswer('referral', 'LinkedIn', vocab), ['LinkedIn (Job Posting)', 'Indeed'], 'referral'))
+      .toMatchObject({ stage: 'exact', optionIndex: 0, rule: 'qualifier-ignored', confidence: 0.95 });
+  });
+
+  it('keeps true duplicates as one answer', () => {
+    expect(match(institution('Massachusetts Institute of Technology'), ['MIT', 'Massachusetts Institute of Technology',
+      'Harvard University'], 'institution')).toMatchObject({ optionIndex: 1, confidence: 1 });
+    expect(match(institution('UT Austin'), ['UT Austin', 'University of Texas at Austin (UT Austin)'], 'institution'))
+      .toMatchObject({ optionIndex: 0, confidence: 1 });
+  });
+
+  it('never reads a bracket as redundant when a sibling option has the same name with another bracket', () => {
+    const chinese = intendedAnswer('language', 'Chinese', vocab);
+    expect(match(chinese, ['Chinese (Mandarin)'], 'language')).toMatchObject({ stage: 'exact', confidence: 1 });
+    expect(match(chinese, ['Chinese (Mandarin)', 'Chinese (Wu)'], 'language'))
+      .toMatchObject({ stage: 'none', optionIndex: null });
+  });
+
+  it('reads a country named in a language’s brackets as a variety the person did not name', () => {
+    expect(match(intendedAnswer('language', 'Portuguese', vocab), ['Portuguese (Brazil)', 'Spanish'], 'language'))
+      .toMatchObject({ stage: 'none', optionIndex: null });
+  });
+});
+
+describe('a postal code written after the name (", IN")', () => {
+  const pick0 = (request: { items: Array<{ id: string }> }) =>
+    ({ answers: request.items.map((one) => ({ id: one.id, index: 0 })) });
+
+  it.each<[string, string[]]>([
+    ['Indiana University Bloomington', ['Indiana University Bloomington, IN', 'Indiana University Indianapolis, IN']],
+    ['Purdue University Fort Wayne', ['Purdue University Fort Wayne, IN', 'Purdue University, IN']],
+    ['University of Toronto', ['University of Toronto, ON', 'University of Waterloo, ON']],
+    ['The University of Texas at Austin', ['The University of Texas at Austin, TX', 'Texas State University, TX']],
+    ['Indiana University Bloomington', ['INDIANA UNIVERSITY BLOOMINGTON, IN', 'PURDUE UNIVERSITY, IN']],
+  ])('%j finds its own option among %j', (name, labels) => {
+    expect(match(institution(name), labels, 'institution')).toMatchObject({ stage: 'exact', optionIndex: 0,
+      confidence: 1 });
+  });
+
+  it('never takes a code that is not the school’s, not even from the LLM', async () => {
+    const { match: result, requests } = await finalMatch(inputOf(institution('The University of Texas at Austin'),
+      ['The University of Texas at Austin, CA', 'Texas State University, TX'], 'institution'), pick0);
+    expect(result).toMatchObject({ stage: 'none', optionIndex: null, reason: 'distinctive-token-mismatch' });
+    expect(requests).toEqual([]);
+  });
+});
+

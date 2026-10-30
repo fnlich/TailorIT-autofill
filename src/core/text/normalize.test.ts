@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { normalize, normalizeLabel, NORM_CONTEXTS, NORMALIZER_VERSION, type NormContext } from './normalize';
+import {
+  keyWithBrackets, normalize, normalizeLabel, NORM_CONTEXTS, NORMALIZER_VERSION, type NormContext,
+} from './normalize';
 
 describe('normalize: the result (§3.2)', () => {
-  it('is version 1, over the design’s contexts', () => {
-    expect(NORMALIZER_VERSION).toBe(1);
+  it('is version 3, over the design’s contexts', () => {
+    expect(NORMALIZER_VERSION).toBe(3);
     expect(NORM_CONTEXTS).toEqual(['institution', 'degree', 'field', 'country', 'region', 'answer', 'label',
       'address']);
   });
@@ -143,8 +145,69 @@ describe('the institution head noun (§4.5)', () => {
     ['Georgia Tech', 'institution', 'none'],
     ['UT Austin', 'institution', 'none'],
     ['University of Washington', 'label', 'none'],
+    // The head noun before "at", or first in the name, is the "University of X" form too.
+    ['University at Buffalo', 'institution', 'pre'],
+    ['The University at Albany', 'institution', 'pre'],
+    ['College at Brockport', 'institution', 'pre'],
+    ['University College London', 'institution', 'pre'],
+    ['SUNY Buffalo State University', 'institution', 'post'],
+    ['Albany State University', 'institution', 'post'],
   ])('%j (%s) is %s', (text, context, headForm) => {
     expect(normalize(text, context).headForm).toBe(headForm);
+  });
+});
+
+describe('keys that keep apart names a symbol, a particle or a place code tells apart', () => {
+  it.each<[NormContext, string, string]>([
+    ['answer', 'C++', 'C'],
+    ['answer', 'C#', 'C'],
+    ['answer', 'C++', 'C#'],
+    ['answer', 'F#', 'F'],
+    ['answer', 'A+', 'A'],
+    ['answer', 'A-', 'A'],
+    ['answer', 'A+', 'A-'],
+    ['label', 'Years of C++ experience', 'Years of C experience'],
+    ['label', 'Years of C# experience', 'Years of C++ experience'],
+    ['institution', 'De La Salle University', 'La Salle University'],
+    ['institution', 'Cal State LA', 'Cal State'],
+    ['institution', 'DA-IICT', 'IICT'],
+    ['institution', 'Southeastern LA University', 'Southeastern University'],
+    ['institution', 'West LA College', 'West College'],
+    ['institution', 'Babu Banarasi Das University', 'Babu Banarasi University'],
+    ['institution', 'Western University, London ON', 'Western University, London'],
+  ])('%s: %j and %j keep different keys', (context, a, b) => {
+    expect(normalize(a, context).key).not.toBe(normalize(b, context).key);
+  });
+
+  it('reads an institution’s trailing ", IN" as a bracketed place, out of the key but in the full key', () => {
+    for (const text of ['Purdue University Fort Wayne, IN', 'PURDUE UNIVERSITY FORT WAYNE, IN',
+      'Purdue University Fort Wayne - IN']) {
+      const norm = normalize(text, 'institution');
+      expect(norm.key, text).toBe('purdue university fort wayne');
+      expect(norm.qualifiers, text).toEqual([{ text: 'in', tokens: ['in'] }]);
+      expect(keyWithBrackets(text, 'institution'), text).toBe('purdue university fort wayne in');
+    }
+    expect(keyWithBrackets('University of Toronto, ON', 'institution')).toBe('university toronto on');
+    expect(keyWithBrackets('Purdue University Fort Wayne', 'institution')).toBe('purdue university fort wayne');
+    // Lower case is a word, and a code that is not last, or not after a comma or dash, is no trailing place.
+    expect(normalize('College of Arts, in Paris', 'institution').qualifiers).toEqual([]);
+    expect(normalize('University of NJ', 'institution').qualifiers).toEqual([]);
+    expect(normalize('Purdue University Fort Wayne, IN', 'answer').qualifiers).toEqual([]);
+  });
+
+  it('keeps a place code only when it is written in capitals among lower-case letters', () => {
+    expect(normalize('Western University, London ON', 'institution').core).toContain('on');
+    expect(normalize('WESTERN UNIVERSITY, LONDON ON', 'institution').core).not.toContain('on');
+    expect(normalize('Washington University In St. Louis', 'institution').key)
+      .toBe(normalize('Washington University in St. Louis', 'institution').key);
+    expect(normalize('Purdue University Fort Wayne, IN', 'answer').core).toContain('in');
+  });
+
+  it.each([
+    'Bachelor`s', 'Bachelor\u00B4s', 'Bachelor\u2018s', 'Bachelor\u2019s', 'Bachelor\u201Bs', 'Bachelor\u02B9s',
+    'Bachelor\u02BBs', 'Bachelor\u02BCs', 'Bachelor\u2032s', 'Bachelor\uFF07s',
+  ])('reads the mark in %j as the apostrophe of "Bachelor\'s"', (text) => {
+    expect(normalize(text, 'degree').key).toBe(normalize("Bachelor's", 'degree').key);
   });
 });
 

@@ -9,6 +9,10 @@
     "I prefer not to respond", "I choose not to disclose", "Choose not to disclose", "I choose not to answer",
     "Choose not to answer", "I choose not to self-identify", "I'd rather not say", "I would rather not say", "Rather not say",
     "I wish not to answer", "I do not wish to disclose", "I don't wish to disclose", "Do not wish to disclose",
-    "Do not wish to answer"
+    "Do not wish to answer", "I do not wish to answer this question", "Prefer not to state", "I prefer not to state",
+    "Prefer not to self-identify", "I prefer not to self-identify", "Do not wish to self-identify", "Decline to specify",
+    "Prefer not to specify", "Decline to identify", "Choose not to identify", "I do not wish to provide this information",
+    "I don't want to disclose", "I do not want to disclose", "I'd prefer not to say", "I would prefer not to answer",
+    "Not specified", "Not disclosed", "Not declared"
   ]
 }

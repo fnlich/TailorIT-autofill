@@ -12,7 +12,7 @@ describe('utf8Encode', () => {
     ['a lone low surrogate', 'a\uDC00b'],
     ['a surrogate pair reversed', '\uDC00\uD800'],
     ['a high surrogate at the end', 'abc\uD83D'],
-    ['mixed', 'Łódź — São Paulo 😀 ＵＴ'],
+    ['mixed', 'Łódź — São Paulo 😀 \uFF35\uFF34'],
   ])('gives the same bytes as TextEncoder for %s', (_name, text) => {
     expect([...utf8Encode(text)]).toEqual([...new TextEncoder().encode(text)]);
     expect([...utf8Encode(text)]).toEqual([...Buffer.from(text, 'utf8')]);
