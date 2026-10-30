@@ -1,7 +1,7 @@
 import '../../shared/zod-setup';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { COPY } from '../../ui/copy';
+import { COPY } from '../../shared/copy';
 
 function Options() {
   return (

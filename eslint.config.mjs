@@ -133,7 +133,9 @@ export default tseslint.config(
     ignores: ['src/content/ui/panel.tsx'],
     rules: {
       '@typescript-eslint/no-restricted-imports': restrictImports([
-        { group: ['react', 'react-dom', 'react/*', 'react-dom/*', '**/ui/**'], message: 'Only content/ui/panel.tsx may import React and the report.' },
+        // src/ui as seen from src/content (../ui) and from src/content/ui (../../ui); the content's own ./ui is allowed.
+        { group: ['react', 'react-dom', 'react/*', 'react-dom/*', '../ui', '../ui/**', '../../ui', '../../ui/**'],
+          message: 'Only content/ui/panel.tsx may import React and the report.' },
         { group: ['wxt/browser', '@wxt-dev/browser'], message: 'Only src/platform touches the browser APIs.' },
       ]),
     },

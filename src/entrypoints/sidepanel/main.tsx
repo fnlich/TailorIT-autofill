@@ -1,7 +1,7 @@
 import '../../shared/zod-setup';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { COPY } from '../../ui/copy';
+import { COPY } from '../../shared/copy';
 
 /** The review panel. Opened as a normal tab with ?tabId=N, it pins that tab (which is how tests drive it). */
 function Panel() {

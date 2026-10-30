@@ -299,8 +299,8 @@ src/
   messaging/       envelope, schemas (the whole catalogue, zod, strict, capped), channels, ports
   platform/        types, chrome.ts (the only file that touches browser.*), fake.ts, memory.ts
   shared/          zod-setup (jitless; every entrypoint's first import), hosts (the one ATS list), log (codes and numbers only),
-                   settings, report
-  ui/              report/ (presentational React: props in, callbacks out; one TS-string stylesheet), panel/, options/, copy.ts
+                   settings, report, copy (every sentence a person sees: the in-page UI, the panel and the options page share it)
+  ui/              report/ (presentational React: props in, callbacks out; one TS-string stylesheet), panel/, options/
   entrypoints/     background.ts  content.ts  sidepanel/  options/  capture/ (dev builds only)
 fixtures/          smoke/  traps/01..11  synthetic/{conditional-reveal,async-options,remote-typeahead,wizard-4-step,react-controlled,widgets}
                    lever/  greenhouse/  ashby/  workday/  (<case>.html + <case>.expect.json)   _incoming/ (raw .mhtml, git-ignored)
@@ -314,7 +314,7 @@ test/              repo-level tests: the SPEC.md hash, every entrypoint's first 
 - **zod** is imported at run time only by `src/contract/**`, `src/messaging/**` and `src/shared/**`.
 - **Import rules** (tsconfig and ESLint):
   - `core` imports nothing outside itself, apart from `import type` from `src/contract/tailorit`.
-  - `dom` imports only `core` types; `adapters` import `dom` and `core`.
+  - `dom` imports `core` (its pure helpers, such as the key builders, `cutInjected` and `normalize`, as well as its types) and nothing else; `adapters` import `dom` and `core`.
   - `content` wires `dom`, `adapters`, `core` and the content platform. `content/ui/panel.tsx` alone may import `src/ui/report` and React; nothing else in `content` imports React.
   - `background` imports `core`, `messaging` and the worker platform, never `dom`. `ui` uses messaging only.
   - Only `platform/chrome.ts` touches `browser.*`.
@@ -910,7 +910,7 @@ export interface Profile {
 - **Trap fixtures 1-11** are the first regression suite (Phase 2) and stay green from then on.
   - Each is served at `https://jobs.lever.co/tailorit-fixture/trap-NN/apply`, filled with a golden profile whose free-text values are distinctive sentinel strings.
   - Hidden carriers hold `HIDDEN-MARKER-NN`, visible text `VISIBLE-MARKER-NN`.
-  - Each field has an exact label, and its category, `classifiedBy: 'label-rule'` and reason are asserted, so a field left unknown fails its trap.
+  - Each field has an exact label, and its category, `classifiedBy: 'label-rule'` and reason are asserted, so a field left unknown fails its trap. `classifiedBy` is not in a report row (FillResult), so the core's trap test (`src/core/plan/traps.test.ts`) asserts it over the same fields, and the end-to-end suite asserts category and reason.
 
   | # | Fixture | Asserted |
   |---|---|---|
@@ -1093,6 +1093,6 @@ Each fact the design relied on without proof gets a smoke check and a fallback. 
 | WXT's fake browser lacks some APIs | `ext` tests | **Confirmed**: `onMessageExternal`, both `setAccessLevel`s, the side panel and `getManifest` are stubs that throw; `sendMessage` sends an empty sender. Hand fakes in `src/platform/fake.ts`; router tests use `onMessage.trigger` with explicit senders | in place |
 | `sidePanel.open` keeps the user gesture when called from a content script's message, also right after a worker stop | Phase 2 | open | the toolbar button |
 | Styles survive a strict page CSP in the closed shadow root | Phase 2 (a fixture served with `style-src 'none'`) | open | a `<style>` element |
-| Chromium reports a placeholder's computed `::placeholder` style | Phase 2 | open | placeholders never make a control fillable on their own |
+| Chromium reports a placeholder's computed `::placeholder` style | Phase 2, dom browser tests | **Holds**: transparent reads as `rgba(0, 0, 0, 0)`, and opacity and font size are reported | not needed |
 | Greenhouse EU hosts and Workday `/apply` path shapes are real | Phase 2 and Phase 5, from the owner's samples | open | not in the host list until confirmed |
 | Edge behaves as Chrome | manual check each phase (load `.output/edge-mv3` unpacked) | open | none: no automated Edge harness exists |
