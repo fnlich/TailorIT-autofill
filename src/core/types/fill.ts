@@ -34,6 +34,8 @@ export const REASON_CODES = [
   // loop and steps
   'field-disappeared', 'value-oscillated', 'reveal-cycle', 'max-passes-reached', 'page-busy', 'step-retry-limit',
   'auth-required', 'challenge-present', 'policy-declined', 'user-stopped',
+  // the reactive loop (Phase 3): a list whose options kept changing
+  'options-oscillated',
   // a bug
   'internal-error',
 ] as const;

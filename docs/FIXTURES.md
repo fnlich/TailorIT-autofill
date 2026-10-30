@@ -60,6 +60,13 @@ Each case has a `<case>.expect.json`, written by hand from the page itself and n
 
 A file input hidden behind a visible upload button is `fillable: true`: the spec allows it once the adapter declares the widget, and the note names the hook.
 
+**States (synthetic pages that react, Phase 3).** A page whose own script reveals, removes or reloads fields also lists, in `states`, what it holds after given answers. `fields` above is the page as it loads; each state is reached from a fresh load and has:
+- `name`, and `variant`: the value of a `data-variant` attribute put on `<html>` before the page loads (the async-options page's variants), or `null`;
+- `steps`, in order, each acting on the page as a filler would, with untrusted events: `{ "choose": selector, "value": v }` sets a select's value and dispatches `input` and `change` (bubbling); `{ "click": selector }` calls `click()` on a radio or checkbox;
+- `until`: a CSS selector the page must match before the scan (a list that loads late), or `null` when the page reacts at once;
+- `fields`: every control in the page then, as above. A control the state removed is not listed; one it hid is listed as `not-user-visible`.
+`fixture`, `source` and `fields` keep the shape the adapters' expectations testkit reads (`src/adapters/test/expectations.testkit.ts`), so a state is compared by passing its `fields` in their place. `captured` says the page was never captured.
+
 ## The Lever and Greenhouse fixtures (Phase 2)
 Converted from the owner's captures in `fixtures/_incoming/phase2/` and `fixtures/_incoming/phase2-zoox/` (git-ignored; the `captures*.json` beside them record each requested and final URL). Dates are the captures' own, in UTC. Sizes are the main HTML file's; the stylesheets are most of it.
 
@@ -86,6 +93,24 @@ Eleven traps, served at `https://jobs.lever.co/tailorit-fixture/trap-NN/apply` a
 
 ## Synthetic fixtures (`fixtures/synthetic/`)
 `conditional-reveal` and `async-options` (Phase 3), `remote-typeahead` and `widgets` (Phase 4), `wizard-4-step` (Phase 5), and `react-controlled` (Phase 2: `fixtures/synthetic/react-controlled/`, bundled in memory by its e2e spec, so nothing is written to `fixtures/.generated/`). Each reproduces a behaviour a static snapshot cannot run, to the same ARIA pattern the real snapshot shows.
+
+A synthetic page may run its own script, as the form it stands for does, but that script only reacts to its controls' own change events: it never dispatches an event, focuses, clicks or submits, so every event on a form control is still the extension's. Each page's header comment says exactly what it does and what the golden profile makes of it; its `index.expect.json` lists its fields as it loads and in each state (Expectations, above).
+
+**`conditional-reveal/` (Phase 3)**, served at `https://jobs.lever.co/tailorit-fixture/conditional-reveal/apply`, filled by `e2e/specs/25-conditional-reveal.spec.ts`:
+- Phone: the page clears it 120 ms after every change (the field the page resets); `window.__phoneResets` counts the resets.
+- Country, chosen as Canada when the page loads and placed after the fields it changes: it swaps the State/Province list's options (Canada, the United States, Mexico), and for the United States it removes Postal code and puts a new ZIP code box in its place (the question another removes).
+- "Are you legally authorized to work in the United States?": either answer reveals the two sponsorship questions (now, and in the future), No also the visa-type question, Yes also a security-clearance question.
+- "How did you hear about us?": Other puts a new "Please specify" box after it; another answer takes it out.
+
+**`async-options/` (Phase 3)**, filled by `e2e/specs/26-async-options.spec.ts`. Choosing a country replaces State's options with "Loading...", sets `aria-busy` on State and on its field container (which holds no other control) and shows an indeterminate progress bar inside it: the list's own busy signs, which settle() counts only up to `OPTIONS_CAP_MS`. `window.__optionsRequestedAt` and `__optionsSettledAt` are the page's clock when the request started and when it answered. The variant comes from the address, `https://jobs.lever.co/tailorit-fixture/async-options-<variant>/apply`:
+
+| Variant | After a country is chosen |
+|---|---|
+| `fast`, `slow` | the states arrive after 400 ms, or 1200 ms (the plan's range) |
+| `never` | the request never answers: "Loading..." and the list's busy signs stay |
+| `failed` | after 600 ms the busy signs clear and State keeps its placeholder only (its option-set hash unchanged) |
+| `page-busy` | the states arrive after 800 ms, but `aria-busy` on the form and a progress bar outside any one list's field stay: the whole page is busy |
+| any other address | the states arrive after 800 ms |
 
 ## Smoke fixtures (`fixtures/smoke/`, Phase 0)
 `form.html` (a plain application form) and `company-embed.html` (a company page embedding a Greenhouse form in an iframe), served at every ATS host pattern by `00-smoke`.

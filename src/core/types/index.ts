@@ -2,6 +2,7 @@
 export * from './field';
 export * from './fill';
 export * from './intent';
+export * from './loop';
 export * from './match';
 export * from './profile';
 export * from './run';

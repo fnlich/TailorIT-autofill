@@ -2312,90 +2312,123 @@ When several statuses apply the stronger wins (`strongerStatus`, `STATUS_PRECEDE
 
 **What the plan does not carry yet** (its contract, `plan/types.ts`, is fixed for Phase 2): the posting's country (interpretation 1), the company (saved free-text answers), and the stale cache entries `matchOne` names (`cacheDrop`), which the worker would delete.
 
-**Phase 3** (the reactive loop):
+**Phase 3** (the reactive loop), as built in `loop/bookkeeping.ts` and `loop/rows.ts`. The content script runs the loop; the core keeps its books, decides what each pass plans and when the loop ends, and never sees a value. `ValueMac` (`types/loop.ts`) is the one type that crosses layers: the content script hashes each value it reads with HMAC-SHA-256 under a key of random bytes it makes per run and holds in memory only (section 1.4), and the core only compares two hashes. `LoopState` holds hashes, so it lives in the content script's memory; only `revealEdgesOf(state)` is stored (RunState).
 
 ```ts
-export const MAX_PASSES = 8;
-export const MAX_VALUE_FLIPS = 2;          // more than this means oscillating
-export const MAX_OPTION_CHANGES = 3;
-export const OPTION_WAIT_PASSES = 2;
+export const MAX_PASSES = 8;              // passes that plan and write; the scan after the last one only observes
+export const MAX_VALUE_FLIPS = 2;         // more than this: oscillating, value-oscillated
+export const MAX_OPTION_CHANGES = 3;      // more than this: oscillating, options-oscillated
+export const OPTION_WAIT_PASSES = 2;      // scans a list waits for its options, unplanned
+export const MAX_RETRIES = 1;             // a write the page moved out from under us is planned again once
+export const MAX_REAPPEARANCES = 2;       // more than this: oscillating, reveal-cycle
+export const MAX_REVEAL_EDGES = 100;      // RunState.revealEdges, this run's first (the RunState store's worst case)
+export const RETRY_REASONS: ReadonlySet<ReasonCode>;   // element-not-found, options-changed
 // settle()'s timings are DOM constants in dom/thresholds.ts, not core constants; no fixed sleeps.
 
 export type TrackedStatus = 'pending' | 'awaiting-llm' | 'waiting-options' | 'resolved' | 'unresolvable'
-  | 'disappeared' | 'oscillating';
+  | 'disappeared' | 'oscillating';                       // 'oscillating' is final: never planned or written again
+export type PendingCause = 'new' | 'reappeared' | 'options-changed' | 'value-changed' | 'retry';
+export type LoopEnd = 'nothing-pending' | 'max-passes' | 'stalled' | 'cut';
+/** What the loop reads of a field: a FieldSpec without its current value or its options. */
+export type LoopField = Pick<FieldSpec, 'key' | 'baseKey' | 'kind' | 'label' | 'section' | 'required' | 'optionSetHash'
+  | 'domOrder'>;
 export interface TrackedField {
-  baseKey: BaseKey;
-  key: FieldKey;
-  optionSetHash: OptionSetHash;
-  firstSeenPass: number;
-  lastSeenPass: number;
-  status: TrackedStatus;
-  reason: ReasonCode | null;
-  /** Hash of the last observed value under the per-run key (section 1.4); in memory only, never persisted. */
-  valueMac: string | null;
-  flips: number;
-  optionChanges: number;
-  waitedPasses: number;
-  revealedBy: BaseKey | null;
+  baseKey: BaseKey; key: FieldKey; optionSetHash: OptionSetHash; kind: FieldKind; label: string; section: string;
+  required: boolean; domOrder: number; present: boolean; firstSeenPass: number; lastSeenPass: number;
+  status: TrackedStatus; cause: PendingCause | null; reason: ReasonCode | null;
+  row: FillResult | null;                                // the latest row recorded (value-free)
+  wrote: boolean; valueMac: ValueMac | null;             // since it last appeared or its options last changed
+  flips: number; optionChanges: number; waitedScans: number; retries: number; appearances: number;
+  revealedBy: BaseKey | null; revealCertain: boolean;
+  followUp: boolean;                                     // its write chose an option with free text
 }
+export interface RevealEdge { parent: BaseKey; child: BaseKey; certain: boolean; kind: 'revealed' | 'options' }
 export interface LoopState {
-  stepSignature: string;
-  pass: number;
+  pass: number;                                          // the latest scan's index, -1 before the first
   fields: ReadonlyMap<BaseKey, TrackedField>;
-  edges: ReadonlyArray<{ parent: BaseKey; child: BaseKey; certain: boolean }>;
-  /** Stage 'other' follow-ups waiting for a revealed text box. */
-  expectations: ReadonlyMap<BaseKey, { freeText: string; origin: ValueOrigin }>;
+  edges: readonly RevealEdge[];                          // this run's
+  priorEdges: ReadonlyArray<readonly [BaseKey, BaseKey]>;   // RunState.revealEdges: order passes, stop nothing
+  writers: readonly BaseKey[];                           // written since the latest scan
+  signature: string | null; stalled: boolean;
 }
 export type LoopEvent =
-  | { type: 'field-appeared'; baseKey: BaseKey; revealedBy: BaseKey | null }
-  | { type: 'field-disappeared'; baseKey: BaseKey }                      // drop its answer and report
-  | { type: 'options-changed'; baseKey: BaseKey; from: OptionSetHash; to: OptionSetHash }   // invalidate matches, re-match
-  | { type: 'oscillating'; baseKey: BaseKey } | { type: 'reveal-cycle'; keys: BaseKey[] }
-  | { type: 'options-never-loaded'; baseKey: BaseKey } | { type: 'follow-up-found'; parent: BaseKey; child: BaseKey };
+  | { type: 'field-appeared'; key: FieldKey; baseKey: BaseKey; revealedBy: BaseKey | null; certain: boolean; again: boolean }
+  | { type: 'field-disappeared'; key: FieldKey; baseKey: BaseKey; wrote: boolean }      // drop what was recorded
+  | { type: 'options-changed'; baseKey: BaseKey; from: FieldKey; to: FieldKey }          // the old match is void
+  | { type: 'value-changed'; key: FieldKey; baseKey: BaseKey; flips: number }
+  | { type: 'oscillating'; key: FieldKey; baseKey: BaseKey; reason: 'value-oscillated' | 'options-oscillated' }
+  | { type: 'reveal-cycle'; keys: BaseKey[] }
+  | { type: 'options-never-loaded'; key: FieldKey; baseKey: BaseKey }
+  | { type: 'follow-up-found'; parent: FieldKey; child: FieldKey; certain: boolean };
+export interface LoopVerdict { done: boolean; end: LoopEnd | null;
+  unresolved: Array<{ key: FieldKey; baseKey: BaseKey; reason: ReasonCode }> }
 
-export function createLoop(stepSignature: string): LoopState;
-/** One scan's results folded in. `writers` = fields written since the last scan, in order; `attribution` = the DOM
- *  layer's exact "this mutation followed that write" pairs when it has them. */
-export function observeScan(state: LoopState, specs: FieldSpec[], input: { pass: number; writers: BaseKey[];
-  attribution?: ReadonlyMap<BaseKey, BaseKey>; valueMacs: ReadonlyMap<BaseKey, string> }): { state: LoopState; pending: FieldKey[]; events: LoopEvent[] };
-export function recordWrite(state: LoopState, baseKey: BaseKey, outcome: { valueMac: string; verified: boolean; reason: ReasonCode }): LoopState;
-export function orderPending(state: LoopState, pending: FieldKey[], domOrder: ReadonlyMap<FieldKey, number>): FieldKey[];
-export function loopVerdict(state: LoopState): { done: boolean; unresolved: Array<{ key: FieldKey; reason: ReasonCode }> };
+export function createLoop(prior?: { revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]> }): LoopState;
+export function observeScan(state: LoopState, scanned: readonly LoopField[], input?: {
+  valueMacs?: ReadonlyMap<BaseKey, ValueMac>; attribution?: ReadonlyMap<BaseKey, BaseKey> }):
+  { state: LoopState; pending: FieldKey[]; waiting: FieldKey[]; events: LoopEvent[]; verdict: LoopVerdict };
+export function recordWrite(state: LoopState, key: FieldKey, write: { valueMac: ValueMac; followUp?: boolean }): LoopState;
+export function recordRows(state: LoopState, rows: Iterable<FillResult>, options?: { awaiting?: Iterable<FieldKey> }): LoopState;
+export function recordOptionsWait(state: LoopState, key: FieldKey, verdict: 'ready' | 'never-loaded' | 'aborted'): LoopState;
+export function loopVerdict(state: LoopState, options?: { cut?: ReasonCode }): LoopVerdict;
+export function orderPending(state: LoopState, keys: readonly FieldKey[]): FieldKey[];
+export function revealEdgesOf(state: LoopState): Array<[BaseKey, BaseKey]>;
+export function childrenOf(state: LoopState, parent: BaseKey): BaseKey[];
+export function baseKeyOf(key: FieldKey): BaseKey;
+export function isStopped(field: TrackedField): boolean;
+export function isFollowUpLabel(label: string): boolean;
+// rows.ts
+export function loopRows(state: LoopState, verdict: LoopVerdict): FillResult[];
+export function disappearedRow(row: FillResult): FillResult;
+export function unresolvedRow(row: FillResult, reason: ReasonCode, key?: FieldKey): FillResult;
+export function unplannedRow(field: TrackedField, reason: ReasonCode): FillResult;
 ```
 
-Rules inside `observeScan`:
-- **Identity is the `baseKey`, never a node.**
-- **New field.**
-  - A new baseKey is tracked as `pending`.
-  - Its `revealedBy` is the attributed writer when the DOM layer supplied one (`certain: true`). Otherwise there is one uncertain edge from each writer of the previous pass.
-  - If the parent has an expectation and the new field's label matches the follow-up pattern (or it is the only text field the parent revealed), emit `follow-up-found` and plan its write from the expectation.
-- **Options changed.** A known baseKey with a different `optionSetHash`:
-  - emit `options-changed`, drop the in-memory match, and set the field back to `pending`;
-  - increment `optionChanges`; above `MAX_OPTION_CHANGES` it becomes `oscillating`.
-- **Options not loaded.**
-  - A select or radio with no usable options is `waiting-options` and is not pending.
-  - After `OPTION_WAIT_PASSES` it becomes `unresolvable` with `options-never-loaded`.
-  - This implements "wait until options are populated before matching".
-- **Disappeared.** A tracked field missing from the scan becomes `disappeared`; its planned or recorded answer is dropped and reported.
-- **Value flips.** `valueMac` differs from the last observation after our first write: `flips++`. Above `MAX_VALUE_FLIPS` the field becomes `oscillating`: it is never touched again and is flagged `value-oscillated`.
-- **Cycles.** A cycle in the edges (A reveals B and B reveals A) marks the fields on it `reveal-cycle`, and they are flagged.
-- **Order of `pending`.** DOM order, with fields known to be parents first on ties.
-- **Persistence.** Edges are persisted into `RunState.revealEdges` (keys only), so after a reload the next passes are ordered the same way.
+Rules inside `observeScan`, `recordWrite` and `recordRows`:
+- **Identity is the `baseKey`, never a node.** A row is recorded under its field key; one under a key the field no longer has (its options changed since) is stale and ignored. `baseKeyOf` reads the base key out of a field key.
+- **Pending.** Every field of the first scan, in DOM order. A row resolves its field (`recordRows`), and a resolved field is planned again only when:
+  - its options change (below);
+  - a value we wrote changes (a flip, below the limit);
+  - it comes back after disappearing (its next write is a first one again);
+  - once (`MAX_RETRIES`), when its row says the write could not happen because the page moved it under us (`element-not-found`, `options-changed`) and the next scan finds it as it was.
 
-The orchestrator owns the loop. Everything marked "core" below is pure:
+  A value-changed field planned again and found in place (`already-correct`) keeps the row of the write that put it there.
+- **New field.** Tracked as `pending`. A field that appears after a pass's writes gets one parent: the writer the DOM layer attributes it to (`attribution`), else the nearest writer before it in DOM order, else the nearest after it. The edge is `certain` when the DOM attributed it or the pass had that one writer. Fields of the first scan get no parent and no event.
+- **Options changed.** A known baseKey with a different `optionSetHash`: `options-changed`, the field back to `pending`, matched anew as a new question (a value lost with the old options is no flip, and the next write is a first one), and an `options` edge from the writer, as for a new field. Above `MAX_OPTION_CHANGES` it is `oscillating`, `options-oscillated`.
+- **Options not loaded.** The core reads no options: a row whose reason is `waiting-for-options` (the planner found no usable option) makes the list `waiting-options`, unplanned, listed in `waiting` so the content script awaits it (`awaitOptions`). It keeps the loop going; after `OPTION_WAIT_PASSES` scans without a change, or at once when `recordOptionsWait` says `never-loaded`, it is `unresolvable`, `options-never-loaded`. It is planned again if its options still change later.
+- **Disappeared.** A tracked field missing from the scan becomes `disappeared`: its recorded write and value hash are dropped, `field-disappeared` says whether we had written it, and its row becomes `field-disappeared` (`loopRows`). A field never planned is dropped silently.
+- **Value flips.** Every change of a written field's hash after our first write is a flip, whether the page made it or our own rewrite did (`recordWrite`). So a page that resets a field after each write makes one flip, our second write a second, its second reset a third: more than `MAX_VALUE_FLIPS`, and the field is `oscillating`, flagged `value-oscillated`, never written again (two writes, two resets). A page that resets once is written again and ends verified; a page that reformats our value (a phone's punctuation) costs one more plan and keeps our row. A value we never wrote is never counted.
+- **Cycles.** A strongly connected set of certain edges (A reveals B, B reveals A) stops its fields (`reveal-cycle`); a guessed edge never stops a field. A field that comes back more than `MAX_REAPPEARANCES` times is stopped the same way.
+- **Follow-ups.** A choice written with free text (an option write whose value carries `freeText`: Other, an EEO self-describe option) is recorded with `followUp`. At the next scan the text box its write revealed is named by `follow-up-found`: the one whose label asks to specify, describe or explain (`isFollowUpLabel`), else the only one. The content script types the free text, which it holds in its planned write, into it; the core never holds it (the planned `expectations` map, which held the text in the core, was dropped). With several such choices in one pass, only a certain edge names a box. The box is still pending, so the worker gives it its row.
+- **Order.** `pending` is in DOM order, as the planner takes it. `orderPending` orders a pass's writes: DOM order, except that a field another of them is known to reveal or change (this run's edges and earlier runs') comes after it; a cycle is broken at its first field in DOM order.
+- **The end** (`loopVerdict`, also in every observation): nothing pending, waiting or awaiting the LLM (`nothing-pending`); the scan after `MAX_PASSES` planned passes (`max-passes`); or a stalled page: the same keys as the scan before, no write between, and nothing new to plan (`stalled`, never while the LLM is awaited). `cut` ends it at once with the content script's reason (`page-busy` at the settle cap, `user-stopped`) for what is pending or waiting, since a busy page says nothing yet of a list's options; before a cut at the settle cap, one more scan gives what the busy page revealed or changed meanwhile its `page-busy` rows. Otherwise it leaves, in DOM order: pending fields as `max-passes-reached` (or `internal-error` on a stalled page: they were handed out and no row came back), waiting lists as `options-never-loaded`, unresolvable and stopped fields with their own reasons.
+- **Rows** (`loopRows`): the fields present at the last scan in DOM order, then those that went. A field that went: one we wrote is settled as a write that did not read back (`filled`, flagged stays flagged; a hidden field may still hold our value), one we did not is `skipped`. A field left unresolved is flagged with the verdict's reason under the key it has now (a blocked row keeps its status and reason). A field never planned (it appeared at the last scan) gets a flagged row of its own, category `unknown`. A revealed field names its parent (`detail.revealedBy`).
+- **Persistence.** `revealEdgesOf` gives this run's edges, then earlier runs' not found again, keys only, at most `MAX_REVEAL_EDGES`, for `RunState.revealEdges`; `createLoop({ revealEdges })` takes them back after a reload, for ordering only. `childrenOf` names a writer's known dependants: the lists among them are the ones worth awaiting after its write.
+
+**Departures from the planned sketch** (the Phase 3 build, 2026-10-30):
+- `createLoop` takes the stored edges rather than a step signature (that is Phase 5's).
+- `observeScan` counts the passes itself and takes the writers from `recordWrite`; `recordWrite` takes a field key and the read-back hash, and the rows carry the status (`recordRows`).
+- One parent per field, rather than an uncertain edge from every writer of the pass, which on a first pass of twenty writes said nothing; cycles are judged on certain edges only.
+- `options-oscillated` is a new reason; the follow-up's free text stays in the content script.
+- `recordRows`, `recordOptionsWait`, the retry, the stall rule and `rows.ts` are additions.
+
+The content script owns the loop. Everything marked "core" below is pure:
 
 ```
-for pass in 0..MAX_PASSES-1:
-  specs = scan(root)                                   // DOM
-  {state, pending, events} = observeScan(...)          // core
-  if pending is empty and nothing is awaiting the LLM: break
-  for key in orderPending(...):                        // core
-    resolution = resolve(spec, profile, ctx)           // core
-    outcome = matchOne(...)                            // core; ties are queued into one tiebreak batch per pass
-    write = planWrite(...); verdict = guardWrite(...)  // core
-    if verdict ok: fill + read back (DOM), then recordWrite (core)
-  await settle()                                       // DOM: mutation-quiet ~250 ms (SETTLE_QUIET_MS, dom/thresholds.ts) and no aria-busy or spinner
-afterwards: loopVerdict -> unresolved fields reported (`max-passes-reached` if passes ran out)
+loop = createLoop({ revealEdges: runState.revealEdges })                 // core
+for (;;):
+  specs = scan(root)                                                      // DOM
+  {state, pending, waiting, events, verdict} = observeScan(loop, specs, {valueMacs})   // core; hashes from the content script
+  drop the written fields the events name (field-disappeared, options-changed)
+  if verdict.done: break
+  plan/request(pending's specs)                                           // worker: resolve, match, guardWrite
+  for key in orderPending(state, the writes' keys):                       // core
+    DOM guard, guardWriteInFrame, fill and read back (DOM), then recordWrite(key, {valueMac, followUp})   // core
+  follow-up-found: the parent's free text into the child, through the same checks
+  settle(); awaitOptions for `waiting`, and for the lists childrenOf(writer) names       // DOM
+  verify the written fields; recordRows(rows, {awaiting})                 // core
+  at the settle cap: one more scan and observeScan, then loopVerdict(state, {cut: 'page-busy'}), and stop
+afterwards: loopRows(state, verdict) -> the final Guard -> the report; revealEdgesOf(state) -> RunState
 ```
 
 ### 10.2 Multi-step state machine (Requirement C, `steps/machine.ts`)

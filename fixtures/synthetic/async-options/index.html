@@ -1,0 +1,178 @@
+<!doctype html>
+<!--
+  Synthetic: a dependent option list that loads asynchronously (docs/SPEC.md Requirement D: "Dependent option lists
+  load asynchronously. Wait until options are populated before matching"; docs/design/runtime.md §7.1 and §11.e).
+  Plain markup with a small page script that reacts to the Country select's own change event. The script dispatches no
+  event and never focuses, clicks or submits anything. The form posts to /__submitted. Its DOM-level expectations are
+  index.expect.json, beside it.
+
+  When the page loads, State holds only its placeholder ("Select a state"). Choosing a country starts a request:
+  - State's options become a single "Loading..." option, aria-busy="true" is set on State and on div#state-field, and
+    an indeterminate progress bar (role="progressbar", no aria-valuenow) shows inside div#state-field. That div holds
+    State and no other control, so these signs are the list's own: settle() counts them as busy only up to
+    OPTIONS_CAP_MS (src/dom/settle.ts), and awaitOptions() flags the list after that;
+  - when the request answers, State gets the country's list (its placeholder first) and every busy sign is cleared.
+  A newer choice of country replaces a request still running. window.__optionsRequestedAt and __optionsSettledAt are the
+  page's Date.now() when the last request started and when it answered or failed (null until then); __optionsRequests
+  counts the requests.
+
+  The variant comes from the address it is served at, https://jobs.lever.co/tailorit-fixture/<variant>/apply (the
+  reserved fixture board, read by the generic adapter), or from a data-variant attribute on <html> where there is no
+  such address (a DOM test's srcdoc frame):
+  - async-options-fast (data-variant="fast"): the options arrive after 400 ms;
+  - async-options-slow (data-variant="slow"): after 1200 ms;
+  - async-options-never (data-variant="never"): the options never load. The request never answers, so "Loading...",
+    aria-busy and the progress bar inside div#state-field stay for good;
+  - async-options-failed (data-variant="failed"): the options never load either. After 600 ms the request fails: the
+    busy signs clear, State is left with its placeholder only (its option-set hash the one it had), and the page says
+    it could not load the states;
+  - async-options-page-busy (data-variant="page-busy"): the states arrive after 800 ms, but the same change also puts
+    aria-busy="true" on the form and shows a progress bar at its top ("Checking your address"), outside any one
+    list's field, and those never clear: the whole page stays busy;
+  - any other address, or none: the options arrive after 800 ms.
+
+  With the golden "Alex Rivera" profile (fixtures/profiles: Austin, TX, US): United States is chosen; once its states
+  have loaded, Texas is chosen from them. In the never and failed variants State stays blank (options-never-loaded)
+  and the page is not busy; in the page-busy variant settle() reaches its cap (the page-busy notice).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Field Technician - Application</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    h2 { margin: 28px 0 4px; font-size: 20px; }
+    form label { display: block; margin-top: 12px; font-weight: 600; }
+    input, select { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    .spinner { display: inline-block; width: 16px; height: 16px; margin-top: 6px; border: 3px solid #ccc;
+      border-top-color: #2266cc; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    .spinner[hidden], .checking[hidden] { display: none; }
+    .checking { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status { margin: 4px 0 0; color: #a40000; }
+    button { margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Field Technician</h1>
+    <p>Install and maintain our sensors on customer sites.</p>
+    <form id="application" action="/__submitted" method="post">
+      <div id="page-progress" class="checking" role="progressbar" aria-label="Checking your address" hidden>
+        <span class="spinner"></span> Checking your address
+      </div>
+      <h2>Contact</h2>
+      <label for="name">Full name</label>
+      <input id="name" name="name" required>
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required>
+
+      <h2>Location</h2>
+      <label for="country">Country</label>
+      <select id="country" name="country" required>
+        <option value="">Select a country</option>
+        <option value="CA">Canada</option>
+        <option value="MX">Mexico</option>
+        <option value="US">United States</option>
+      </select>
+      <div id="state-field">
+        <label for="state">State</label>
+        <select id="state" name="state">
+          <option value="">Select a state</option>
+        </select>
+        <span id="state-progress" class="spinner" role="progressbar" aria-label="Loading states" hidden></span>
+        <p id="state-status" class="status"></p>
+      </div>
+
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const byId = (id) => document.getElementById(id);
+      const VARIANTS = ['fast', 'slow', 'never', 'failed', 'page-busy'];
+      const fromAddress = /^\/tailorit-fixture\/async-options-([a-z-]+)\//.exec(location.pathname)?.[1];
+      const named = fromAddress ?? document.documentElement.dataset.variant;
+      const variant = VARIANTS.includes(named) ? named : 'default';
+      // How long the request takes to answer (the never variant's never does).
+      const DELAY_MS = { fast: 400, default: 800, slow: 1200, failed: 600, 'page-busy': 800 };
+
+      const LISTS = {
+        CA: [['AB', 'Alberta'], ['BC', 'British Columbia'], ['MB', 'Manitoba'], ['NB', 'New Brunswick'],
+          ['NL', 'Newfoundland and Labrador'], ['NS', 'Nova Scotia'], ['ON', 'Ontario'], ['PE', 'Prince Edward Island'],
+          ['QC', 'Quebec'], ['SK', 'Saskatchewan']],
+        MX: [['BC', 'Baja California'], ['CH', 'Chihuahua'], ['JA', 'Jalisco'], ['NL', 'Nuevo Leon'], ['OA', 'Oaxaca'],
+          ['SO', 'Sonora'], ['VE', 'Veracruz'], ['YU', 'Yucatan']],
+        US: [['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'], ['CA', 'California'],
+          ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'], ['DC', 'District of Columbia'],
+          ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'], ['ID', 'Idaho'], ['IL', 'Illinois'], ['IN', 'Indiana'],
+          ['IA', 'Iowa'], ['KS', 'Kansas'], ['KY', 'Kentucky'], ['LA', 'Louisiana'], ['ME', 'Maine'], ['MD', 'Maryland'],
+          ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'], ['MS', 'Mississippi'], ['MO', 'Missouri'],
+          ['MT', 'Montana'], ['NE', 'Nebraska'], ['NV', 'Nevada'], ['NH', 'New Hampshire'], ['NJ', 'New Jersey'],
+          ['NM', 'New Mexico'], ['NY', 'New York'], ['NC', 'North Carolina'], ['ND', 'North Dakota'], ['OH', 'Ohio'],
+          ['OK', 'Oklahoma'], ['OR', 'Oregon'], ['PA', 'Pennsylvania'], ['RI', 'Rhode Island'],
+          ['SC', 'South Carolina'], ['SD', 'South Dakota'], ['TN', 'Tennessee'], ['TX', 'Texas'], ['UT', 'Utah'],
+          ['VT', 'Vermont'], ['VA', 'Virginia'], ['WA', 'Washington'], ['WV', 'West Virginia'], ['WI', 'Wisconsin'],
+          ['WY', 'Wyoming']],
+      };
+
+      const form = byId('application');
+      const pageProgress = byId('page-progress');
+      const country = byId('country');
+      const state = byId('state');
+      const field = byId('state-field');
+      const progress = byId('state-progress');
+      const status = byId('state-status');
+      const optionOf = (value, text) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        return option;
+      };
+      const busy = (on) => {
+        for (const el of [field, state]) {
+          if (on) el.setAttribute('aria-busy', 'true');
+          else el.removeAttribute('aria-busy');
+        }
+        progress.hidden = !on;
+      };
+
+      window.__optionsRequests = 0;
+      window.__optionsRequestedAt = null;
+      window.__optionsSettledAt = null;
+      let request = 0;
+      country.addEventListener('change', () => {
+        request += 1;
+        const mine = request;
+        window.__optionsRequests += 1;
+        window.__optionsRequestedAt = Date.now();
+        window.__optionsSettledAt = null;
+        status.textContent = '';
+        if (country.value === '') {
+          busy(false);
+          state.replaceChildren(optionOf('', 'Select a state'));
+          return;
+        }
+        busy(true);
+        state.replaceChildren(optionOf('', 'Loading...'));
+        if (variant === 'page-busy') {
+          // The whole form, from now on.
+          form.setAttribute('aria-busy', 'true');
+          pageProgress.hidden = false;
+        }
+        if (variant === 'never') return;
+        setTimeout(() => {
+          if (mine !== request) return;
+          busy(false);
+          const list = variant === 'failed' ? [] : LISTS[country.value];
+          state.replaceChildren(optionOf('', 'Select a state'), ...list.map(([value, text]) => optionOf(value, text)));
+          if (variant === 'failed') status.textContent = 'We could not load the states. Please try again later.';
+          window.__optionsSettledAt = Date.now();
+        }, DELAY_MS[variant]);
+      });
+    })();
+  </script>
+</body>
+</html>

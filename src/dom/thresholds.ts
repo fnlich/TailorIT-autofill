@@ -69,12 +69,18 @@ export const RAW_SCAN_SLICE_MS = 8;
 /** An attribute value the raw scan reads is cut to this many code points. */
 export const RAW_ATTRIBUTE_CAP = 2_000;
 
-/** settle(): the quiet window with no mutation and no busy sign. */
+/** settle(): the quiet window with no mutation and no busy sign; a busy sign seen at its end starts another. */
 export const SETTLE_QUIET_MS = 250;
 /** settle(): past this the pass stops with the "page busy" notice. An adapter may raise it. */
 export const SETTLE_CAP_MS = 8_000;
+/** An adapter's raised settle cap (quirks.settleCapMs) is held at this at most: a page busy for longer is the person's
+ *  to wait for, with Continue. It also keeps every cap far below the browser timer's 2^31 - 1 ms limit, past which a
+ *  timer fires at once. */
+export const SETTLE_CAP_MAX_MS = 30_000;
 /** A dependent option list waits at most this long for real options. */
 export const OPTIONS_CAP_MS = 5_000;
+/** awaitOptions(): real options count as arrived once the list has had no mutation for this long. */
+export const OPTIONS_QUIET_MS = 250;
 /** After an auto-advance click, the step transition waits at most this long. */
 export const TRANSITION_CAP_MS = 20_000;
 /** The URL poll, where the Navigation API is missing. */

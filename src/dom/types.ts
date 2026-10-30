@@ -3,9 +3,10 @@
  * from each element's ownerDocument and defaultView, never page globals, so it is correct inside any frame.
  *
  * Phase 2 added the scan's result (fields, counters, and re-finding a field by key), the filler's outcome, which maps
- * onto the review row's own fields, and the DOM half of the pre-write Guard's verdict.
+ * onto the review row's own fields, and the DOM half of the pre-write Guard's verdict. Phase 3 added what settle()
+ * counts as busy, and the state and answer of a dependent option list (awaitOptions).
  */
-import type { BaseKey, FieldDescriptor, FieldKey, ReasonCode, SectionRef } from '../core/types';
+import type { BaseKey, FieldDescriptor, FieldKey, OptionSetHash, ReasonCode, SectionRef } from '../core/types';
 
 /** How a visually hidden native control qualified to be filled (the proxy rule): through its tied visible label, or
  *  through an element the adapter declared. Highlights point at this element, not the hidden input. */
@@ -30,6 +31,50 @@ export interface ScanCounters {
 
 /** settle() ends on a DOM condition or its cap, never a fixed sleep. */
 export type SettleResult = { settled: true; ms: number } | { settled: false; reason: 'page-still-busy' | 'aborted' };
+
+/**
+ * What keeps a page from settling (docs/design/runtime.md §7), each only while a person can see it:
+ * - aria-busy: an element with aria-busy="true" in the form root, or the root or one of its ancestors with it;
+ * - progressbar: an indeterminate progress bar (a role="progressbar" with no aria-valuenow, or a <progress> with no
+ *   value);
+ * - adapter: the adapter's isBusy (a platform's own spinner, from its snapshots);
+ * - options-loading: an option list still loading: a select with an option whose text is a loading phrase
+ *   ("Loading...", "Please wait"), or an aria-busy or progress bar inside the field container of one select. It
+ *   counts only up to OPTIONS_CAP_MS: past that the list is awaitOptions' to flag, not a busy page.
+ */
+export const BUSY_SIGNS = ['aria-busy', 'progressbar', 'adapter', 'options-loading'] as const;
+export type BusySign = (typeof BUSY_SIGNS)[number];
+
+/**
+ * Why a dependent option list is not ready (docs/design/runtime.md §7.1), in the order they are checked:
+ * - gone: the list is no longer in the page;
+ * - hidden: no person can see it;
+ * - busy: it, or something in its field container, shows aria-busy or an indeterminate progress bar;
+ * - loading: one of its options is a loading phrase;
+ * - placeholders: it has no real option, only placeholders ("Select a state") or none at all;
+ * - unchanged: its real options still have the option-set hash they had before its parent changed.
+ */
+export const OPTIONS_WAITING = ['gone', 'hidden', 'busy', 'loading', 'placeholders', 'unchanged'] as const;
+export type OptionsWaiting = (typeof OPTIONS_WAITING)[number];
+
+/** A dependent list's state right now: ready with the option-set hash of its real options (the hash the scanner gives
+ *  the field), or what it is still waiting for. Value-free: it names a reason, never an option. */
+export type OptionsState = { ready: true; optionSetHash: OptionSetHash } | { ready: false; waiting: OptionsWaiting };
+
+/**
+ * What awaitOptions answers. Every answer ends on a DOM condition or OPTIONS_CAP_MS, never a fixed sleep.
+ * - ready: real options arrived, their hash differs from the one given, and the list has been quiet for
+ *   OPTIONS_QUIET_MS; `optionSetHash` is the hash the next scan gives the field, `ms` how long it took;
+ * - never-loaded: the cap passed first; the field is flagged options-never-loaded, and `waiting` says what it was
+ *   still waiting for;
+ * - gone: the list left the page and was not found again by the cap; the next scan rows it (field-disappeared);
+ * - aborted: the run's signal aborted.
+ */
+export type AwaitOptionsResult =
+  | { status: 'ready'; optionSetHash: OptionSetHash; ms: number }
+  | { status: 'never-loaded'; reason: 'options-never-loaded'; waiting: OptionsWaiting }
+  | { status: 'gone' }
+  | { status: 'aborted' };
 
 /** A field's live elements in one scan, for the guard and the fillers to act on at once. Never kept across a write:
  *  the page may replace them (React does), so the next write re-finds them by key. */

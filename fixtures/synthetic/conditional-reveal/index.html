@@ -1,0 +1,243 @@
+<!doctype html>
+<!--
+  Synthetic: conditional fields (docs/SPEC.md Requirement D; docs/ARCHITECTURE.md "Testing" › "Synthetic fixtures";
+  docs/design/runtime.md §11.e). Plain markup with a small page script that reacts to each control's own change event,
+  as a real form does. The script dispatches no event and never focuses, clicks or submits anything: the only events
+  on the form are the extension's (and Chromium's own after an untrusted click on a radio).
+  Served at https://jobs.lever.co/tailorit-fixture/conditional-reveal/apply (the reserved fixture board, read by the
+  generic adapter). The form posts to /__submitted. Its DOM-level expectations are index.expect.json, beside it.
+
+  What the page does:
+  - Phone: a buggy script clears the box 120 ms after every change and shows "Please enter your phone number again."
+    It resets whatever is written, as often as it is written; window.__phoneResets counts the resets.
+  - Country (Canada is chosen when the page loads, with no placeholder) swaps the State/Province list: Canada's
+    provinces, the United States' states (with the District of Columbia) or Mexico's states. Only the options are
+    replaced: the select, its label and its place stay.
+  - Country also removes a question: for the United States the "Postal code" box is taken out of the page and a new
+    "ZIP code" box is put in its place; for Canada or Mexico it is the other way round. Both are built afresh, so a
+    value typed into the old one is gone.
+  - "Are you legally authorized to work in the United States?" reveals its follow-ups once answered:
+    - either answer shows the two sponsorship questions (now, and in the future): a person authorized today may need
+      sponsorship later;
+    - No also shows "What visa type do you hold?" (docs/SPEC.md: "authorized to work?" = No reveals "visa type");
+    - Yes also shows "Do you hold an active U.S. security clearance?".
+    They are in the page from the start, hidden with the hidden attribute.
+  - "How did you hear about us?": Other puts a "Please specify" box right after the select, built afresh each time;
+    any other answer takes it out again.
+
+  With the golden "Alex Rivera" profile (fixtures/profiles), whose sensitive part says authorized in the US, no
+  sponsorship now or in the future, no clearance and no visa type, and whose referral source, LinkedIn, is not one of
+  the options: Postal code is written and then removed by the Country write; the state list swaps to the United
+  States' and Texas is chosen from it; ZIP code appears and gets 78701; Yes reveals the sponsorship questions (No,
+  from the explicit values) and the clearance question (blank and flagged); the visa question is never revealed;
+  Other reveals "Please specify", which gets LinkedIn; Phone is reset after every write.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Engineer - Application</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    h2 { margin: 28px 0 4px; font-size: 20px; }
+    form label { display: block; margin-top: 12px; font-weight: 600; }
+    input:not([type="radio"]), select { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    fieldset { margin-top: 16px; }
+    fieldset label { font-weight: 400; margin-top: 4px; }
+    .hint { margin: 4px 0 0; color: #a40000; }
+    button { margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Platform Engineer</h1>
+    <p>Join the team that runs our build and deploy platform.</p>
+    <form id="application" action="/__submitted" method="post">
+      <h2>Contact</h2>
+      <label for="name">Full name</label>
+      <input id="name" name="name" required>
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required>
+      <label for="phone">Phone</label>
+      <input id="phone" name="phone" type="tel">
+      <p id="phone-hint" class="hint" hidden></p>
+
+      <h2>Address</h2>
+      <label for="city">City</label>
+      <input id="city" name="city">
+      <div id="region-field">
+        <label for="region">State/Province</label>
+        <select id="region" name="region">
+          <option value="">Select...</option>
+          <option value="AB">Alberta</option>
+          <option value="BC">British Columbia</option>
+          <option value="MB">Manitoba</option>
+          <option value="NB">New Brunswick</option>
+          <option value="NL">Newfoundland and Labrador</option>
+          <option value="NS">Nova Scotia</option>
+          <option value="ON">Ontario</option>
+          <option value="PE">Prince Edward Island</option>
+          <option value="QC">Quebec</option>
+          <option value="SK">Saskatchewan</option>
+        </select>
+      </div>
+      <div id="postal-field">
+        <label for="postal">Postal code</label>
+        <input id="postal" name="postal">
+      </div>
+      <label for="country">Country</label>
+      <select id="country" name="country" required>
+        <option value="CA" selected>Canada</option>
+        <option value="MX">Mexico</option>
+        <option value="US">United States</option>
+      </select>
+
+      <h2>Work authorization</h2>
+      <fieldset id="authorized">
+        <legend>Are you legally authorized to work in the United States?</legend>
+        <label><input type="radio" id="authorized-yes" name="authorized" value="yes" required> Yes</label>
+        <label><input type="radio" id="authorized-no" name="authorized" value="no" required> No</label>
+      </fieldset>
+      <div id="sponsorship-questions" hidden>
+        <label for="sponsorship-now">Do you currently require visa sponsorship to work in the United States?</label>
+        <select id="sponsorship-now" name="sponsorship_now">
+          <option value="">Select...</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+        <label for="sponsorship-future">Will you require visa sponsorship to work in the United States in the future?</label>
+        <select id="sponsorship-future" name="sponsorship_future">
+          <option value="">Select...</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div id="clearance-question" hidden>
+        <label for="clearance">Do you hold an active U.S. security clearance?</label>
+        <select id="clearance" name="clearance">
+          <option value="">Select...</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div id="visa-question" hidden>
+        <label for="visa-type">What visa type do you hold?</label>
+        <select id="visa-type" name="visa_type">
+          <option value="">Select...</option>
+          <option value="h-1b">H-1B</option>
+          <option value="l-1">L-1</option>
+          <option value="o-1">O-1</option>
+          <option value="tn">TN</option>
+          <option value="f-1-opt">F-1 OPT</option>
+          <option value="j-1">J-1</option>
+        </select>
+      </div>
+
+      <h2>A few questions</h2>
+      <label for="source">How did you hear about us?</label>
+      <select id="source" name="source">
+        <option value="">Select...</option>
+        <option value="indeed">Indeed</option>
+        <option value="glassdoor">Glassdoor</option>
+        <option value="company-website">Company website</option>
+        <option value="employee-referral">Employee referral</option>
+        <option value="other">Other</option>
+      </select>
+
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const byId = (id) => document.getElementById(id);
+
+      // Phone: cleared 120 ms after every change, whatever was written.
+      window.__phoneResets = 0;
+      const phone = byId('phone');
+      const hint = byId('phone-hint');
+      phone.addEventListener('change', () => {
+        setTimeout(() => {
+          phone.value = '';
+          window.__phoneResets += 1;
+          hint.textContent = 'Please enter your phone number again.';
+          hint.hidden = false;
+        }, 120);
+      });
+
+      // Country: the State/Province list, and Postal code or ZIP code.
+      const region = byId('region');
+      const country = byId('country');
+      const REGIONS = {
+        // Canada's list is the page's own markup, read once.
+        CA: { placeholder: 'Select...', options: Array.from(region.options).slice(1).map((option) => [option.value, option.text]) },
+        US: { placeholder: 'Select a state', options: [
+          ['AL', 'Alabama'], ['AK', 'Alaska'], ['AZ', 'Arizona'], ['AR', 'Arkansas'], ['CA', 'California'],
+          ['CO', 'Colorado'], ['CT', 'Connecticut'], ['DE', 'Delaware'], ['DC', 'District of Columbia'],
+          ['FL', 'Florida'], ['GA', 'Georgia'], ['HI', 'Hawaii'], ['ID', 'Idaho'], ['IL', 'Illinois'], ['IN', 'Indiana'],
+          ['IA', 'Iowa'], ['KS', 'Kansas'], ['KY', 'Kentucky'], ['LA', 'Louisiana'], ['ME', 'Maine'], ['MD', 'Maryland'],
+          ['MA', 'Massachusetts'], ['MI', 'Michigan'], ['MN', 'Minnesota'], ['MS', 'Mississippi'], ['MO', 'Missouri'],
+          ['MT', 'Montana'], ['NE', 'Nebraska'], ['NV', 'Nevada'], ['NH', 'New Hampshire'], ['NJ', 'New Jersey'],
+          ['NM', 'New Mexico'], ['NY', 'New York'], ['NC', 'North Carolina'], ['ND', 'North Dakota'], ['OH', 'Ohio'],
+          ['OK', 'Oklahoma'], ['OR', 'Oregon'], ['PA', 'Pennsylvania'], ['RI', 'Rhode Island'],
+          ['SC', 'South Carolina'], ['SD', 'South Dakota'], ['TN', 'Tennessee'], ['TX', 'Texas'], ['UT', 'Utah'],
+          ['VT', 'Vermont'], ['VA', 'Virginia'], ['WA', 'Washington'], ['WV', 'West Virginia'], ['WI', 'Wisconsin'],
+          ['WY', 'Wyoming']] },
+        MX: { placeholder: 'Select a state', options: [
+          ['BC', 'Baja California'], ['CH', 'Chihuahua'], ['JA', 'Jalisco'], ['NL', 'Nuevo Leon'], ['OA', 'Oaxaca'],
+          ['SO', 'Sonora'], ['VE', 'Veracruz'], ['YU', 'Yucatan']] },
+      };
+      const optionOf = (value, text) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        return option;
+      };
+      const textField = (id, name, text) => {
+        const field = document.createElement('div');
+        field.id = `${id}-field`;
+        const label = document.createElement('label');
+        label.htmlFor = id;
+        label.textContent = text;
+        const input = document.createElement('input');
+        input.id = id;
+        input.name = name;
+        field.append(label, input);
+        return field;
+      };
+      country.addEventListener('change', () => {
+        const list = REGIONS[country.value];
+        region.replaceChildren(optionOf('', list.placeholder), ...list.options.map(([value, text]) => optionOf(value, text)));
+        const wanted = country.value === 'US' ? ['zip', 'postal_code', 'ZIP code'] : ['postal', 'postal', 'Postal code'];
+        const present = byId('zip-field') ?? byId('postal-field');
+        if (present !== null && present.id === `${wanted[0]}-field`) return;
+        const next = textField(...wanted);
+        if (present !== null) present.replaceWith(next);
+        else byId('region-field').after(next);
+      });
+
+      // The authorization question's follow-ups.
+      const authorized = Array.from(document.querySelectorAll('input[name="authorized"]'));
+      for (const radio of authorized) {
+        radio.addEventListener('change', () => {
+          const answer = authorized.find((box) => box.checked)?.value ?? null;
+          byId('sponsorship-questions').hidden = answer === null;
+          byId('clearance-question').hidden = answer !== 'yes';
+          byId('visa-question').hidden = answer !== 'no';
+        });
+      }
+
+      // "Other" and its "Please specify" box.
+      const source = byId('source');
+      source.addEventListener('change', () => {
+        const box = byId('source-other-field');
+        if (source.value === 'other') {
+          if (box === null) source.after(textField('source-other', 'source_other', 'Please specify'));
+        } else if (box !== null) {
+          box.remove();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

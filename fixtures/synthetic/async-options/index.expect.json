@@ -1,0 +1,139 @@
+{
+  "fixture": "synthetic/async-options",
+  "source": "https://jobs.lever.co/tailorit-fixture/async-options/apply",
+  "captured": "never: a synthetic page, written by hand on 2026-10-30",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means, and what the states, their variants and their steps are",
+  "note": "The same page is served at async-options-fast, -slow, -never, -failed and -page-busy as well (index.html's header): the variant changes only what happens after a country is chosen, so every variant loads as these fields.",
+  "fields": [
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Location",
+      "fillable": true,
+      "options": 4,
+      "control": "#country",
+      "note": "Select a country (a placeholder), Canada, Mexico and United States."
+    },
+    {
+      "label": "State",
+      "kind": "select",
+      "required": false,
+      "section": "Location",
+      "fillable": true,
+      "options": 1,
+      "control": "#state",
+      "note": "Only its placeholder, Select a state, until a country is chosen and its states have loaded."
+    }
+  ],
+  "states": [
+    {
+      "name": "loading",
+      "variant": "never",
+      "steps": [
+        { "choose": "#country", "value": "US" }
+      ],
+      "until": null,
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Country", "kind": "select", "required": true, "section": "Location", "fillable": true, "options": 4, "control": "#country" },
+        {
+          "label": "State",
+          "kind": "select",
+          "required": false,
+          "section": "Location",
+          "fillable": true,
+          "options": 1,
+          "control": "#state",
+          "note": "One option, Loading..., which is no placeholder; aria-busy=\"true\" on the select and on div#state-field, and span#state-progress (role=progressbar, no aria-valuenow) shown inside it: the list's own busy signs. Every variant looks so right after the change; the never one stays so."
+        }
+      ]
+    },
+    {
+      "name": "loaded",
+      "variant": "fast",
+      "steps": [
+        { "choose": "#country", "value": "US" }
+      ],
+      "until": "#state option[value=\"TX\"]",
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Country", "kind": "select", "required": true, "section": "Location", "fillable": true, "options": 4, "control": "#country" },
+        {
+          "label": "State",
+          "kind": "select",
+          "required": false,
+          "section": "Location",
+          "fillable": true,
+          "options": 52,
+          "control": "#state",
+          "note": "Select a state, the fifty states and the District of Columbia; no busy sign left."
+        }
+      ]
+    },
+    {
+      "name": "request failed",
+      "variant": "failed",
+      "steps": [
+        { "choose": "#country", "value": "US" }
+      ],
+      "until": "#state-status:not(:empty)",
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Country", "kind": "select", "required": true, "section": "Location", "fillable": true, "options": 4, "control": "#country" },
+        {
+          "label": "State",
+          "kind": "select",
+          "required": false,
+          "section": "Location",
+          "fillable": true,
+          "options": 1,
+          "control": "#state",
+          "note": "Its placeholder only, as before the change, so its option-set hash is the one it had; no busy sign left, and p#state-status says the states could not be loaded."
+        }
+      ]
+    },
+    {
+      "name": "loaded on a busy page",
+      "variant": "page-busy",
+      "steps": [
+        { "choose": "#country", "value": "US" }
+      ],
+      "until": "#state option[value=\"TX\"]",
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Country", "kind": "select", "required": true, "section": "Location", "fillable": true, "options": 4, "control": "#country" },
+        {
+          "label": "State",
+          "kind": "select",
+          "required": false,
+          "section": "Location",
+          "fillable": true,
+          "options": 52,
+          "control": "#state",
+          "note": "Loaded, its own busy signs cleared; the form keeps aria-busy=\"true\" and div#page-progress (role=progressbar, no aria-valuenow, outside any one list's field) stays shown: a page-wide busy sign."
+        }
+      ]
+    }
+  ]
+}

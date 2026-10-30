@@ -121,6 +121,7 @@ const REASONS = {
   'challenge-present': 'The page asks you to prove you are human, so filling paused for you.',
   'policy-declined': 'You chose not to fill this posting.',
   'user-stopped': 'You stopped the fill.',
+  'options-oscillated': "The list's options kept changing, so filling stopped here.",
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;

@@ -1,0 +1,409 @@
+{
+  "fixture": "synthetic/conditional-reveal",
+  "source": "https://jobs.lever.co/tailorit-fixture/conditional-reveal/apply",
+  "captured": "never: a synthetic page, written by hand on 2026-10-30",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means, and what the states and their steps are",
+  "fields": [
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#phone",
+      "note": "The page clears it 120 ms after every change and shows \"Please enter your phone number again.\" below it (p#phone-hint, tied to nothing): the field the page resets."
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Address",
+      "fillable": true,
+      "control": "#city"
+    },
+    {
+      "label": "State/Province",
+      "kind": "select",
+      "required": false,
+      "section": "Address",
+      "fillable": true,
+      "options": 11,
+      "control": "#region",
+      "note": "Select... and Canada's ten provinces, since Canada is the country chosen when the page loads. The Country select swaps these options; the select itself stays."
+    },
+    {
+      "label": "Postal code",
+      "kind": "text",
+      "required": false,
+      "section": "Address",
+      "fillable": true,
+      "control": "#postal",
+      "note": "Taken out of the page when the country becomes the United States, and a new ZIP code box put in its place: the question another removes."
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Address",
+      "fillable": true,
+      "options": 3,
+      "control": "#country",
+      "note": "No placeholder: Canada is chosen when the page loads. It comes after the fields it changes, as in many international address forms."
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "radio",
+      "required": true,
+      "section": "Work authorization",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"authorized\"]",
+      "note": "Labelled by its fieldset's legend; Yes and No each have a wrapping label. Its fieldset is skipped as a section, since its legend is the group's own label."
+    },
+    {
+      "label": "Do you currently require visa sponsorship to work in the United States?",
+      "kind": "select",
+      "required": false,
+      "section": "Work authorization",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 3,
+      "control": "#sponsorship-now",
+      "note": "In div#sponsorship-questions, hidden until the authorization question is answered (either answer)."
+    },
+    {
+      "label": "Will you require visa sponsorship to work in the United States in the future?",
+      "kind": "select",
+      "required": false,
+      "section": "Work authorization",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 3,
+      "control": "#sponsorship-future",
+      "note": "In div#sponsorship-questions, hidden until the authorization question is answered (either answer)."
+    },
+    {
+      "label": "Do you hold an active U.S. security clearance?",
+      "kind": "select",
+      "required": false,
+      "section": "Work authorization",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 3,
+      "control": "#clearance",
+      "note": "In div#clearance-question, hidden until the authorization question is answered Yes."
+    },
+    {
+      "label": "What visa type do you hold?",
+      "kind": "select",
+      "required": false,
+      "section": "Work authorization",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 7,
+      "control": "#visa-type",
+      "note": "In div#visa-question, hidden until the authorization question is answered No."
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "required": false,
+      "section": "A few questions",
+      "fillable": true,
+      "options": 6,
+      "control": "#source",
+      "note": "Other puts a new \"Please specify\" box (div#source-other-field, input#source-other) right after the select; any other answer takes it out."
+    }
+  ],
+  "states": [
+    {
+      "name": "the golden profile's answers",
+      "variant": null,
+      "steps": [
+        { "choose": "#country", "value": "US" },
+        { "click": "#authorized-yes" },
+        { "choose": "#source", "value": "other" }
+      ],
+      "until": null,
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Phone", "kind": "text", "required": false, "section": "Contact", "fillable": true, "control": "#phone" },
+        { "label": "City", "kind": "text", "required": false, "section": "Address", "fillable": true, "control": "#city" },
+        {
+          "label": "State/Province",
+          "kind": "select",
+          "required": false,
+          "section": "Address",
+          "fillable": true,
+          "options": 52,
+          "control": "#region",
+          "note": "Select a state, the fifty states and the District of Columbia: the same select, its options swapped."
+        },
+        {
+          "label": "ZIP code",
+          "kind": "text",
+          "required": false,
+          "section": "Address",
+          "fillable": true,
+          "control": "#zip",
+          "note": "A new box (div#zip-field) where Postal code was, which is no longer in the page."
+        },
+        { "label": "Country", "kind": "select", "required": true, "section": "Address", "fillable": true, "options": 3, "control": "#country" },
+        {
+          "label": "Are you legally authorized to work in the United States?",
+          "kind": "radio",
+          "required": true,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 2,
+          "control": "input[name=\"authorized\"]"
+        },
+        {
+          "label": "Do you currently require visa sponsorship to work in the United States?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 3,
+          "control": "#sponsorship-now"
+        },
+        {
+          "label": "Will you require visa sponsorship to work in the United States in the future?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 3,
+          "control": "#sponsorship-future"
+        },
+        {
+          "label": "Do you hold an active U.S. security clearance?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 3,
+          "control": "#clearance"
+        },
+        {
+          "label": "What visa type do you hold?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "options": 7,
+          "control": "#visa-type",
+          "note": "Still hidden: only No reveals it."
+        },
+        { "label": "How did you hear about us?", "kind": "select", "required": false, "section": "A few questions", "fillable": true, "options": 6, "control": "#source" },
+        {
+          "label": "Please specify",
+          "kind": "text",
+          "required": false,
+          "section": "A few questions",
+          "fillable": true,
+          "control": "#source-other",
+          "note": "Put in by Other, right after the select."
+        }
+      ]
+    },
+    {
+      "name": "the other answers",
+      "variant": null,
+      "steps": [
+        { "choose": "#country", "value": "MX" },
+        { "click": "#authorized-no" },
+        { "choose": "#source", "value": "indeed" }
+      ],
+      "until": null,
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Phone", "kind": "text", "required": false, "section": "Contact", "fillable": true, "control": "#phone" },
+        { "label": "City", "kind": "text", "required": false, "section": "Address", "fillable": true, "control": "#city" },
+        {
+          "label": "State/Province",
+          "kind": "select",
+          "required": false,
+          "section": "Address",
+          "fillable": true,
+          "options": 9,
+          "control": "#region",
+          "note": "Select a state and eight of Mexico's states."
+        },
+        {
+          "label": "Postal code",
+          "kind": "text",
+          "required": false,
+          "section": "Address",
+          "fillable": true,
+          "control": "#postal",
+          "note": "The page's own box, kept: Mexico uses postal codes too."
+        },
+        { "label": "Country", "kind": "select", "required": true, "section": "Address", "fillable": true, "options": 3, "control": "#country" },
+        {
+          "label": "Are you legally authorized to work in the United States?",
+          "kind": "radio",
+          "required": true,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 2,
+          "control": "input[name=\"authorized\"]"
+        },
+        {
+          "label": "Do you currently require visa sponsorship to work in the United States?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 3,
+          "control": "#sponsorship-now"
+        },
+        {
+          "label": "Will you require visa sponsorship to work in the United States in the future?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 3,
+          "control": "#sponsorship-future"
+        },
+        {
+          "label": "Do you hold an active U.S. security clearance?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "options": 3,
+          "control": "#clearance",
+          "note": "Still hidden: only Yes reveals it."
+        },
+        {
+          "label": "What visa type do you hold?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 7,
+          "control": "#visa-type"
+        },
+        { "label": "How did you hear about us?", "kind": "select", "required": false, "section": "A few questions", "fillable": true, "options": 6, "control": "#source" }
+      ]
+    },
+    {
+      "name": "answers taken back",
+      "variant": null,
+      "steps": [
+        { "choose": "#country", "value": "US" },
+        { "click": "#authorized-yes" },
+        { "choose": "#source", "value": "other" },
+        { "choose": "#country", "value": "CA" },
+        { "click": "#authorized-no" },
+        { "choose": "#source", "value": "glassdoor" }
+      ],
+      "until": null,
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Phone", "kind": "text", "required": false, "section": "Contact", "fillable": true, "control": "#phone" },
+        { "label": "City", "kind": "text", "required": false, "section": "Address", "fillable": true, "control": "#city" },
+        {
+          "label": "State/Province",
+          "kind": "select",
+          "required": false,
+          "section": "Address",
+          "fillable": true,
+          "options": 11,
+          "control": "#region",
+          "note": "Canada's list again, rebuilt by the script."
+        },
+        {
+          "label": "Postal code",
+          "kind": "text",
+          "required": false,
+          "section": "Address",
+          "fillable": true,
+          "control": "#postal",
+          "note": "A new box where ZIP code was: the page's own Postal code box is gone, and so is ZIP code."
+        },
+        { "label": "Country", "kind": "select", "required": true, "section": "Address", "fillable": true, "options": 3, "control": "#country" },
+        {
+          "label": "Are you legally authorized to work in the United States?",
+          "kind": "radio",
+          "required": true,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 2,
+          "control": "input[name=\"authorized\"]"
+        },
+        {
+          "label": "Do you currently require visa sponsorship to work in the United States?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 3,
+          "control": "#sponsorship-now"
+        },
+        {
+          "label": "Will you require visa sponsorship to work in the United States in the future?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 3,
+          "control": "#sponsorship-future"
+        },
+        {
+          "label": "Do you hold an active U.S. security clearance?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "options": 3,
+          "control": "#clearance",
+          "note": "Hidden again: the answer is now No."
+        },
+        {
+          "label": "What visa type do you hold?",
+          "kind": "select",
+          "required": false,
+          "section": "Work authorization",
+          "fillable": true,
+          "options": 7,
+          "control": "#visa-type"
+        },
+        {
+          "label": "How did you hear about us?",
+          "kind": "select",
+          "required": false,
+          "section": "A few questions",
+          "fillable": true,
+          "options": 6,
+          "control": "#source",
+          "note": "Glassdoor took the Please specify box out again."
+        }
+      ]
+    }
+  ]
+}
