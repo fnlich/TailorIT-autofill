@@ -1,0 +1,12 @@
+{
+  "comment": "Placeholder options: never matched, never counted in an option-set hash. Keys drop punctuation, so '-- Select --' is 'select'; an option whose key is empty is a placeholder too.",
+  "phrases": [
+    "", "Select", "Select one", "Select an option", "Select an answer", "Select your answer", "Select one option",
+    "Please select", "Please select one", "Please select an option", "Please select an answer", "Choose", "Choose one",
+    "Choose an option", "Choose an answer", "Please choose", "Please choose one", "Please choose an option", "Pick one",
+    "Pick an option", "Make a selection", "Please make a selection", "Start typing", "Start typing to search",
+    "Type to search", "Search", "Select a country", "Select country", "Select a state", "Select state",
+    "Select a school", "Select school", "Select a degree", "Select degree", "Select a language", "Select language",
+    "No selection", "Nothing selected", "None selected"
+  ]
+}

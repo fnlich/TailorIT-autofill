@@ -60,7 +60,8 @@ export default tseslint.config(
   { files: ['src/platform/**'], rules: { '@typescript-eslint/no-restricted-imports': 'off' } },
   {
     files: ['src/core/**/*.ts'],
-    ignores: ['src/core/**/*.test.ts'],
+    // *.testkit.ts: Node-side helpers for the core's tests (they load the bundled vocabularies from disk).
+    ignores: ['src/core/**/*.test.ts', 'src/core/**/*.testkit.ts'],
     // No disable comments in the core: purity is not negotiable file by file.
     linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: 'error' },
     rules: {

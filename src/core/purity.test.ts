@@ -9,7 +9,7 @@ function coreModules(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return coreModules(path);
-    return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [path] : [];
+    return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') && !entry.name.endsWith('.testkit.ts') ? [path] : [];
   });
 }
 

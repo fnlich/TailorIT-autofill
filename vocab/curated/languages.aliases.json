@@ -1,0 +1,32 @@
+{
+  "comment": "Languages are ISO 639-1's two-letter codes with CLDR's English names (primary) and CLDR's variant and regional names (vocab tier), plus extraCodes, the few longer codes job sites list on their own. These are the hand-kept aliases (curated tier). Proficiency: 'names' are the ILR scale's names, which TailorIT's five values follow (curated tier); 'crosswalk' holds CEFR levels and everyday words that only approximate a level, stored at the generated tier so a match through them is filled and flagged.",
+  "extraCodes": ["yue", "fil", "ase"],
+  "languages": [
+    { "code": "zh", "aliases": ["Mandarin", "Standard Chinese", "Putonghua"] },
+    { "code": "fa", "aliases": ["Farsi"] },
+    { "code": "bn", "aliases": ["Bengali"] },
+    { "code": "es", "aliases": ["Castilian"] },
+    { "code": "pa", "aliases": ["Panjabi"] },
+    { "code": "si", "aliases": ["Sinhalese"] },
+    { "code": "or", "aliases": ["Oriya"] },
+    { "code": "ny", "aliases": ["Chichewa"] },
+    { "code": "km", "aliases": ["Cambodian"] },
+    { "code": "ms", "aliases": ["Bahasa Melayu", "Bahasa Malaysia"] },
+    { "code": "id", "aliases": ["Bahasa Indonesia"] },
+    { "code": "sw", "aliases": ["Kiswahili"] },
+    { "code": "el", "aliases": ["Modern Greek"] },
+    { "code": "gd", "aliases": ["Scots Gaelic"] },
+    { "code": "ga", "aliases": ["Irish Gaelic"] },
+    { "code": "ht", "aliases": ["Haitian"] },
+    { "code": "sl", "aliases": ["Slovene"] },
+    { "code": "ase", "aliases": ["ASL"] },
+    { "code": "fil", "aliases": ["Pilipino"] }
+  ],
+  "proficiency": [
+    { "id": "elementary", "names": ["Elementary proficiency", "Elementary"], "crosswalk": ["A1", "A2", "Beginner", "Basic", "Novice"] },
+    { "id": "limited-working", "names": ["Limited working proficiency", "Limited working"], "crosswalk": ["B1", "Intermediate", "Conversational"] },
+    { "id": "professional-working", "names": ["Professional working proficiency", "Professional working"], "crosswalk": ["B2", "Upper intermediate"] },
+    { "id": "full-professional", "names": ["Full professional proficiency", "Full professional"], "crosswalk": ["C1", "C2", "Advanced", "Fluent"] },
+    { "id": "native", "names": ["Native or bilingual proficiency", "Native or bilingual", "Native", "Native speaker", "Bilingual", "Mother tongue", "First language"], "crosswalk": [] }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "comment": "Self-identification answers, worded as the EEO-1 report, the VEVRAA protected-veteran form and form CC-305 word them (US government works, public domain), plus the variants job sites use. Value ids are the profile's lists (GENDERS, RACES in src/core/enums.ts; yes and no; the veteran classifications). 'derived' marks a value the profile never stores: 'Two or More Races' and a race list's 'Hispanic or Latino' are chosen only by interpretation 2, which is off until the owner turns it on. 'decline' holds a question's own decline wording; the generic phrases in decline.json apply to every question. Sexual orientation and transgender identity have decline phrases only, because the profile holds no answer for them yet.",
+  "questions": {
+    "gender": {
+      "values": [
+        { "id": "female", "labels": ["Female", "Woman", "F"] },
+        { "id": "male", "labels": ["Male", "Man", "M"] },
+        { "id": "non-binary", "labels": ["Non-binary", "Nonbinary", "Non binary"] },
+        { "id": "self-describe", "labels": ["I prefer to self-describe", "Prefer to self-describe", "Self-describe", "I self-describe", "Let me self-describe"] }
+      ],
+      "decline": []
+    },
+    "race": {
+      "values": [
+        { "id": "american-indian-alaska-native", "labels": ["American Indian or Alaska Native", "American Indian or Alaskan Native", "American Indian/Alaska Native", "Native American or Alaska Native", "Native American", "American Indian"] },
+        { "id": "asian", "labels": ["Asian", "Asian American"] },
+        { "id": "black-african-american", "labels": ["Black or African American", "Black/African American", "African American", "Black"] },
+        { "id": "middle-eastern-north-african", "labels": ["Middle Eastern or North African", "Middle Eastern/North African", "MENA", "Middle Eastern"] },
+        { "id": "native-hawaiian-pacific-islander", "labels": ["Native Hawaiian or Other Pacific Islander", "Native Hawaiian or Pacific Islander", "Native Hawaiian/Other Pacific Islander", "Pacific Islander", "Native Hawaiian"] },
+        { "id": "white", "labels": ["White", "Caucasian", "White/Caucasian"] },
+        { "id": "two-or-more-races", "derived": true, "labels": ["Two or More Races", "Two or more", "Multiracial", "Multiple races", "Mixed race", "Biracial"] },
+        { "id": "hispanic-latino", "derived": true, "labels": ["Hispanic or Latino", "Hispanic/Latino", "Hispanic or Latinx", "Hispanic", "Latino", "Latina", "Latinx", "Latine"] }
+      ],
+      "decline": []
+    },
+    "hispanicLatino": {
+      "values": [
+        { "id": "yes", "labels": ["Yes", "Hispanic or Latino", "Hispanic/Latino", "Hispanic or Latinx", "Yes, I am Hispanic or Latino", "Hispanic", "Latino"] },
+        { "id": "no", "labels": ["No", "Not Hispanic or Latino", "Not Hispanic/Latino", "Non-Hispanic", "Non-Hispanic or Latino", "No, I am not Hispanic or Latino"] }
+      ],
+      "decline": []
+    },
+    "veteran": {
+      "values": [
+        { "id": "protected-veteran", "labels": ["I identify as one or more of the classifications of protected veteran", "I identify as one or more of the classifications of protected veterans", "I identify as one or more of the classifications of protected veteran listed above", "I am a protected veteran", "Protected veteran", "Yes, I am a protected veteran"] },
+        { "id": "not-protected-veteran", "labels": ["I am not a protected veteran", "Not a protected veteran", "No, I am not a protected veteran"] },
+        { "id": "veteran", "labels": ["I am a veteran", "Veteran", "Yes, I am a veteran"] },
+        { "id": "not-veteran", "labels": ["I am not a veteran", "Not a veteran", "No, I am not a veteran", "No military service"] }
+      ],
+      "decline": ["I do not wish to self-identify my veteran status"]
+    },
+    "disability": {
+      "values": [
+        { "id": "yes", "labels": ["Yes, I have a disability (or previously had a disability)", "Yes, I have a disability, or have had one in the past", "Yes, I have a disability or have a history/record of having a disability", "Yes, I have a disability"] },
+        { "id": "no", "labels": ["No, I do not have a disability and have not had one in the past", "No, I don't have a disability and have not had one in the past", "No, I don't have a disability, or a history/record of having a disability", "No, I do not have a disability", "No, I don't have a disability"] }
+      ],
+      "decline": []
+    },
+    "sexualOrientation": {
+      "values": [],
+      "decline": ["I prefer not to disclose my sexual orientation", "I do not wish to disclose my sexual orientation"]
+    },
+    "transgender": {
+      "values": [],
+      "decline": ["I prefer not to disclose whether I am transgender"]
+    }
+  }
+}

@@ -30,7 +30,9 @@ for (const source of manifest.sources) {
     continue;
   }
   const bytes = Buffer.from(await response.arrayBuffer());
-  const downloaded = join(dir, source.archive ? `download.${source.archive}` : Object.keys(source.files)[0]);
+  // A source without an archive is a single file, saved under its own name.
+  const [singleFile = 'download'] = Object.keys(source.files);
+  const downloaded = join(dir, source.archive ? `download.${source.archive}` : singleFile);
   writeFileSync(downloaded, bytes);
   if (source.archive) {
     const archiveHash = sha256(downloaded);

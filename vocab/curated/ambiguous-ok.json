@@ -1,0 +1,6 @@
+{
+  "comment": "Acknowledged collisions: a curated or flagship surface whose key another entity of the domain also has. The build fails on any such collision not listed here, and on any entry here that no longer collides, so a collision is always deliberate and never silent. A listed key is still ambiguous: it resolves to none of its entities.",
+  "collisions": [
+    { "domain": "country", "key": "congo", "reason": "Both Congos are called Congo; the person's text is kept and the matcher compares spellings." }
+  ]
+}

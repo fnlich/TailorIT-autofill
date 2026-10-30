@@ -1,0 +1,32 @@
+{
+  "comment": "Hand-kept aliases for institutions (curated tier, matched at 0.97). Each name is an exact IPEDS INSTNM or ROR display name, found exactly once, or the build fails. A collision with another entity's key also fails the build unless vocab/curated/ambiguous-ok.json lists it.",
+  "institutions": [
+    { "name": "The University of Texas at Austin", "aliases": ["UT Austin", "UT-Austin", "UTexas"] },
+    { "name": "The University of Texas at Dallas", "aliases": ["UT Dallas", "UTD"] },
+    { "name": "The University of Texas at Arlington", "aliases": ["UT Arlington"] },
+    { "name": "Georgia Institute of Technology-Main Campus", "aliases": ["Georgia Tech"] },
+    { "name": "Massachusetts Institute of Technology", "aliases": ["MIT"] },
+    { "name": "University of California-Los Angeles", "aliases": ["UCLA"] },
+    { "name": "University of California-Berkeley", "aliases": ["UC Berkeley"] },
+    { "name": "University of California-San Diego", "aliases": ["UCSD", "UC San Diego"] },
+    { "name": "University of California-Irvine", "aliases": ["UC Irvine"] },
+    { "name": "University of California-Santa Barbara", "aliases": ["UCSB"] },
+    { "name": "Carnegie Mellon University", "aliases": ["CMU"] },
+    { "name": "New York University", "aliases": ["NYU"] },
+    { "name": "University of Illinois Urbana-Champaign", "aliases": ["UIUC"] },
+    { "name": "University of Michigan-Ann Arbor", "aliases": ["UMich"] },
+    { "name": "University of Pennsylvania", "aliases": ["UPenn"] },
+    { "name": "Texas A&M University-College Station", "aliases": ["Texas A&M", "TAMU"] },
+    { "name": "Washington University in St Louis", "aliases": ["WashU", "WUSTL"] },
+    { "name": "California Institute of Technology", "aliases": ["Caltech"] },
+    { "name": "Virginia Polytechnic Institute and State University", "aliases": ["Virginia Tech"] },
+    { "name": "Worcester Polytechnic Institute", "aliases": ["WPI"] },
+    { "name": "Johns Hopkins University", "aliases": ["JHU"] },
+    { "name": "Columbia University in the City of New York", "aliases": ["Columbia University"] },
+    { "name": "Arizona State University Campus Immersion", "aliases": ["Arizona State University"] },
+    { "name": "Louisiana State University and Agricultural & Mechanical College", "aliases": ["LSU"] },
+    { "name": "University of Maryland-College Park", "aliases": ["UMD"] },
+    { "name": "University of Minnesota-Twin Cities", "aliases": ["UMN"] },
+    { "name": "University of Central Florida", "aliases": ["UCF"] }
+  ]
+}

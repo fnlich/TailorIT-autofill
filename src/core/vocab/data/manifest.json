@@ -1,0 +1,22 @@
+{
+"files":{
+"answers.json":{"budget":61440,"bytes":17801,"count":51,"sha256":"f93b3db629cbc13a90b1b787d7215732eee137bf1d02101232ac88e7f19af890"},
+"countries.json":{"budget":61440,"bytes":19169,"count":249,"sha256":"f2066aed3f5bbcaeaf5789e97dbc5dad66603e9cbde963a8bd430e7344518e5e"},
+"degrees.json":{"budget":30720,"bytes":8699,"count":57,"sha256":"7e6a13f2be779581278f1436ddfb846e6a6a15a7d1a357223855637ce8009bcf"},
+"fields.json":{"budget":460800,"bytes":423106,"count":2648,"sha256":"95cccabd27232e6ee461aa5092aaa5fa28eb4545ed93be5b1e468ea73edf11e0"},
+"institutions-global.json":{"budget":921600,"bytes":907342,"count":4565,"sha256":"e2e1c9fc3c60ec4b30523e3dd0243093c6b55b0e3972e6d7df839a4dc3e158eb"},
+"institutions-us.json":{"budget":716800,"bytes":632580,"count":4054,"sha256":"8c3f26900cf859751761d09b2e72f8ab5a40b5ffdc827944e886305a6510f31c"},
+"languages.json":{"budget":25600,"bytes":12138,"count":192,"sha256":"b1a243f1338e27da178dbbe597cb911f5f6fd944ab1d5ac592982158d06d2aff"},
+"lexicon.json":{"budget":256000,"bytes":89997,"count":3833,"sha256":"86e7ffdef7838577062175394fc1cfe3e4e4a0d91a4583037e08709b81a0e5a5"},
+"regions.json":{"budget":15360,"bytes":8631,"count":75,"sha256":"9e8a14da2ff7e5f7ee04e873bdf6ed9e05cf73395ed1c0d95260546b15e1b144"}
+},
+"normalizerVersion":1,
+"sources":{
+"cip":{"files":{"CIPCode2020.csv":"6cf0882c1f5beb94981d0a1a72285ab5cf633759f45433fb909afbfb6d6b2657"},"licence":"Public domain (a work of the U.S. federal government)","release":"2020"},
+"cldr-code-mappings":{"files":{"codeMappings.json":"e046ac4c62c07f0949cc02a55fe55d4f0a1817d7d5c9b977a77e9b8298cd46c7"},"licence":"Unicode License v3","release":"49.0.0"},
+"cldr-languages":{"files":{"languages.json":"6180f817207decbc0f9cd0deb34ed0bad3256ff4d03c3c4252706285e8636b88"},"licence":"Unicode License v3","release":"49.0.0"},
+"cldr-territories":{"files":{"territories.json":"1326fb3bcdf8b8cf63df73ea02ea7f8bf7a8362cbb60bd12bcdb53f3ad22bf04"},"licence":"Unicode License v3","release":"49.0.0"},
+"ipeds-hd":{"files":{"HD2024.csv":"d7b20e136fd971d7dce8ad6ec9b7002f0f281f133959f2c3a6c089a5a4610fe5"},"licence":"Public domain (a work of the U.S. federal government)","release":"HD2024"},
+"ror":{"files":{"v2.15-2026-10-20-ror-data.json":"16b2ec951d498848bf44f6a53e17fdacbcbba22b7b0d921d93a829e5d36b9930"},"licence":"CC0 1.0 (credited as a courtesy)","release":"v2.15-2026-10-20"}
+}
+}

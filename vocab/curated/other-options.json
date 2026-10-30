@@ -1,0 +1,10 @@
+{
+  "comment": "'Other' options: stage e chooses one, when it is the only one, and types the intended value into the box it reveals (docs/design/core.md §4.7). Keys drop parentheticals, so 'Other (please specify)' is 'other'.",
+  "phrases": [
+    "Other", "Others", "Other - please specify", "Other, please specify", "Other please specify", "Other - specify",
+    "Other (not listed)", "Not listed", "Not listed above", "Not on the list", "Not in the list", "Something else",
+    "Other source", "Other option", "My school is not listed", "My school isn't listed", "School not listed",
+    "I don't see my school", "I do not see my school", "Other school", "Other degree", "Other field", "Other language",
+    "My degree is not listed", "My major is not listed"
+  ]
+}

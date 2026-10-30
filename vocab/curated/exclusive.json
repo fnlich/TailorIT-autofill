@@ -1,0 +1,7 @@
+{
+  "comment": "Options that exclude every other choice in a multi-select (Requirement B): one is added only alone, and only when the profile asks for exactly it. Every decline phrase in decline.json is exclusive too; the build adds them.",
+  "phrases": [
+    "None of the above", "None of these", "None", "None apply", "None of the options", "None of the options apply",
+    "Not applicable", "N/A", "NA", "Does not apply", "I do not have any of these", "I don't have any of these"
+  ]
+}

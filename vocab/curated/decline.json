@@ -1,0 +1,14 @@
+{
+  "comment": "Decline options for any question, EEO and legal included: an explicit decline in the profile maps to the form's unique option among these (docs/design/core.md §8.7). Every decline phrase is also exclusive in a multi-select. EEO-1 and VEVRAA say \"I don't wish to answer\", CC-305 says \"I do not want to answer\".",
+  "phrases": [
+    "I don't wish to answer", "I do not wish to answer", "I do not want to answer", "I don't want to answer",
+    "Decline to self-identify", "Decline to self identify", "I decline to self-identify", "I decline to self identify",
+    "I do not wish to self-identify", "I don't wish to self-identify", "Decline to answer", "I decline to answer",
+    "Decline to state", "Decline to disclose", "Decline", "Prefer not to say", "I prefer not to say", "Prefer not to answer",
+    "I prefer not to answer", "Prefer not to disclose", "I prefer not to disclose", "Prefer not to respond",
+    "I prefer not to respond", "I choose not to disclose", "Choose not to disclose", "I choose not to answer",
+    "Choose not to answer", "I choose not to self-identify", "I'd rather not say", "I would rather not say", "Rather not say",
+    "I wish not to answer", "I do not wish to disclose", "I don't wish to disclose", "Do not wish to disclose",
+    "Do not wish to answer"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "comment": "Yes and no answers, matched by key (the answer context: apostrophes dropped, so \"don't\" is \"dont\"). 'negators' are the words, already normalized, that make an option a negated one for the polarity rule's 'exactly one positive and one negated option' (docs/design/core.md §4.3).",
+  "yes": ["Yes", "Y", "True", "Yes, I am", "Yes, I do", "Yes, I have", "Yes, I will", "Yes, I can", "I am", "I do", "I have", "I will", "I can"],
+  "no": ["No", "N", "False", "No, I am not", "No, I do not", "No, I don't", "No, I have not", "No, I haven't", "No, I will not", "No, I won't", "No, I cannot", "No, I can't", "I am not", "I do not", "I don't", "I have not", "I haven't", "I will not", "I won't", "I cannot", "I can't"],
+  "negators": ["not", "no", "never", "dont", "doesnt", "didnt", "wont", "cannot", "cant", "havent", "hasnt", "hadnt", "isnt", "arent", "wasnt", "werent", "wouldnt", "shouldnt", "couldnt", "neither", "nor", "none", "without"]
+}

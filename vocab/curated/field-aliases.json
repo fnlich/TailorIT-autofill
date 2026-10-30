@@ -1,0 +1,22 @@
+{
+  "comment": "Hand-kept aliases for CIP 2020 codes (curated tier). The build fails when a code is not in the vocabulary, or when an alias collides with an unrelated code unless vocab/curated/ambiguous-ok.json lists it. Abbreviations the field normalizer already expands (Comp, Sci, Mech, Econ, Math, Psych, and CS, EE, ECE, IT, PoliSci as whole values) need no alias.",
+  "fields": [
+    { "cip": "11.0701", "aliases": ["CS", "Comp Sci", "CompSci", "Computer Sciences"] },
+    { "cip": "11.0101", "aliases": ["Computer and Information Science"] },
+    { "cip": "14.0901", "aliases": ["CompE", "Computer Eng"] },
+    { "cip": "14.0903", "aliases": ["Software Engineering"] },
+    { "cip": "14.1001", "aliases": ["Electrical Engineering", "EE", "Electronics Engineering"] },
+    { "cip": "14.4701", "aliases": ["ECE"] },
+    { "cip": "14.1901", "aliases": ["MechE"] },
+    { "cip": "14.0801", "aliases": ["CivE"] },
+    { "cip": "14.0701", "aliases": ["ChemE"] },
+    { "cip": "14.0501", "aliases": ["Biomedical Engineering", "Bioengineering", "BME"] },
+    { "cip": "14.0201", "aliases": ["Aerospace Engineering", "Aeronautical Engineering"] },
+    { "cip": "30.2501", "aliases": ["CogSci", "Cog Sci"] },
+    { "cip": "45.1001", "aliases": ["Political Science", "Government"] },
+    { "cip": "52.0201", "aliases": ["Business Administration", "Business Management"] },
+    { "cip": "52.0601", "aliases": ["Business Economics", "Managerial Economics"] },
+    { "cip": "52.1201", "aliases": ["MIS"] },
+    { "cip": "51.3801", "aliases": ["Nursing"] }
+  ]
+}

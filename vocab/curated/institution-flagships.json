@@ -1,0 +1,10 @@
+{
+  "comment": "Bare system names that mean one campus (flagship tier, matched at 0.90, so always flagged). They are the only way a bare system name maps to a campus (docs/design/core.md §4.5, §5.2). Each name is an exact IPEDS INSTNM, found exactly once. Curated judgement: review every change.",
+  "flagships": [
+    { "bare": "University of Texas", "name": "The University of Texas at Austin" },
+    { "bare": "University of Michigan", "name": "University of Michigan-Ann Arbor" },
+    { "bare": "University of Washington", "name": "University of Washington-Seattle Campus" },
+    { "bare": "Penn State", "name": "Pennsylvania State University-Main Campus" },
+    { "bare": "Texas A&M University", "name": "Texas A&M University-College Station" }
+  ]
+}

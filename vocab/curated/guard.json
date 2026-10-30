@@ -1,0 +1,11 @@
+{
+  "comment": "The fixed classes of the distinctive-token guard (docs/design/core.md §4.5), written as the institution normalizer leaves them ('tech' is already 'technology'). Cities, regions, countries and campuses are derived by the build from IPEDS, ROR, CLDR and regions.json; campusPhrases adds multi-word campus names, cities adds any city the sources miss, and campusIgnore lists the words of IPEDS campus suffixes that say nothing about a campus ('Adult Degree Programs', 'System Office').",
+  "direction": ["north", "northern", "northeast", "northeastern", "northwest", "northwestern", "south", "southern", "southeast", "southeastern", "southwest", "southwestern", "east", "eastern", "west", "western", "central", "mid", "middle"],
+  "state": ["state"],
+  "tech": ["technology", "polytechnic"],
+  "discipline": ["medical", "medicine", "health", "law", "nursing", "pharmacy", "dental", "art", "arts", "design", "music", "engineering", "mines", "agricultural", "agriculture", "theological", "maritime", "business", "science", "sciences"],
+  "level": ["community", "junior", "technical", "career", "vocational"],
+  "campusPhrases": ["Twin Cities", "Health Science Center", "Health Sciences Center", "Medical Center", "Medical Branch", "Downtown", "Upstate", "Online", "Global Campus", "World Campus"],
+  "cities": [],
+  "campusIgnore": ["campus", "campuses", "office", "offices", "system", "systems", "administration", "administrative", "program", "programs", "degree", "degrees", "adult", "center", "centre", "centers", "centro", "division", "branch", "site", "location", "extension", "extended", "continuing", "undergraduate", "department", "board", "chancellor", "chancellors", "region", "religion", "trades", "worldwide", "greater", "flex", "non", "universitario", "assembly", "god", "inc", "llc", "corporation", "district"]
+}

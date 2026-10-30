@@ -1,0 +1,15 @@
+{
+  "comment": "Generated aliases from system naming patterns (generated tier, matched at 0.92). {X} is the rest of an IPEDS INSTNM; a leading 'The ' is optional on both sides, the first pattern that matches wins, and an {X} of 'Main Campus' gives nothing. Every alias goes through the collision check like any other.",
+  "patterns": [
+    { "from": "The University of Texas at {X}", "to": ["UT {X}"] },
+    { "from": "University of California-{X}", "to": ["UC {X}"] },
+    { "from": "California State University-{X}", "to": ["Cal State {X}", "CSU {X}"] },
+    { "from": "University of North Carolina at {X}", "to": ["UNC {X}"] },
+    { "from": "State University of New York at {X}", "to": ["SUNY {X}"] },
+    { "from": "University of Massachusetts-{X}", "to": ["UMass {X}"] },
+    { "from": "University of Wisconsin-{X}", "to": ["UW-{X}"] },
+    { "from": "University of Tennessee-{X}", "to": ["UT {X}"] },
+    { "from": "Pennsylvania State University-Penn State {X}", "to": ["Penn State {X}"] },
+    { "from": "Pennsylvania State University-{X}", "to": ["Penn State {X}"] }
+  ]
+}
