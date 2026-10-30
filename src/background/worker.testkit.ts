@@ -441,6 +441,7 @@ export function fieldSpec(index: number, overrides: Partial<FieldSpec> = {}): Fi
     kind: 'text',
     label: `Field ${index}`,
     labelSource: 'for',
+    labelVisible: true,
     description: '',
     required: false,
     options: [],

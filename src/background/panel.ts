@@ -1,11 +1,16 @@
 /*
  * What the review panel asks of a tab's frames. panel/fill starts every registered frame of the tab that has a form;
- * continue and cancel reach the frames that reported; focus and describe go to the one frame that holds the field.
- * describe's option labels pass straight through to the panel: never stored, never logged. panel/open, sent from a
- * content script's trusted launcher click, opens the side panel for that tab (see openSidePanel).
+ * the toolbar's continue and cancel reach the frames that reported; focus and describe go to the one frame that holds
+ * the field. describe's option labels pass straight through to the panel: never stored, never logged. panel/open, sent
+ * from a content script's trusted launcher click, opens the side panel for that tab (see openSidePanel).
+ *
+ * The policy card's decision has its own message, addressed to one frame: panel/policyDecision becomes
+ * run/policyDecision for that frame only, and only while its report says its run waits at policy-notice. Continue
+ * never stands in for Fill anyway: with one frame at the policy card and another at a CAPTCHA pause, the toolbar's
+ * Continue resumes the pause and leaves the card waiting for the person's own decision.
  */
-import { ok, refuse, type Answer } from '../messaging/envelope';
-import { FieldDescribeAnswerSchema, type PageMessage } from '../messaging/schemas';
+import { answerSchema, ok, refuse, type Answer } from '../messaging/envelope';
+import { DoneAnswerSchema, FieldDescribeAnswerSchema, type PageMessage } from '../messaging/schemas';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { framesOfTab, type FrameEntry } from './frames';
@@ -85,6 +90,29 @@ export function createPanelHandlers(deps: PanelDeps) {
     },
     async cancel(message: Of<'panel/cancel'>): Promise<Answer<{ frames: number }>> {
       return ok({ frames: await sendTo(message.tabId, await reportingFrames(message.tabId), { v: 1, type: 'run/cancel' }) });
+    },
+    /** The side panel's policy card: the decision for the one named frame, while its report waits at policy-notice.
+     *  `expired`: that frame is not registered, its run is not at the card, or the frame says nothing waits there.
+     *  `unavailable`: it did not answer, or its answer fails the schema. */
+    async policyDecision(message: Of<'panel/policyDecision'>): Promise<Answer<Record<string, never>>> {
+      const frame = await frameOf(message.tabId, message.frameId);
+      if (frame === null) return refuse('expired');
+      const waiting = (await deps.reports.ofTab(message.tabId))
+        .some((report) => report.frameId === message.frameId && report.status === 'policy-notice');
+      if (!waiting) return refuse('expired');
+      let answer: unknown;
+      try {
+        answer = await platform.tabs.sendToFrame(message.tabId,
+          { v: 1, type: 'run/policyDecision', decision: message.decision }, targetOf(frame));
+      } catch {
+        log('frame.unreachable');
+        return refuse('unavailable');
+      }
+      const parsed = answerSchema(DoneAnswerSchema).safeParse(answer);
+      if (!parsed.success) return refuse('unavailable');
+      log('panel.sent', { frames: parsed.data.ok ? 1 : 0 });
+      if (parsed.data.ok) return ok({});
+      return refuse(parsed.data.error === 'expired' ? 'expired' : 'unavailable');
     },
     async focus(message: Of<'panel/focus'>): Promise<Answer<Record<string, never>>> {
       const frame = await frameOf(message.tabId, message.frameId);

@@ -6,8 +6,9 @@
  * 1. run/begin {applicationKey, trigger, dryRun} answers the run id, the settings and the policy states.
  * 2. The policy gate, before anything is filled: a hit on the posting page, in the stored copy, or in this frame's own
  *    visible text stops the run at policy-notice, with the card shown and the report sent (so the side panel mirrors
- *    the card and its Continue and Cancel reach this frame), until the person chooses Fill anyway or Cancel (trusted
- *    clicks on the card, or run/continue and run/cancel). Cancel writes nothing. With nothing readable the
+ *    the card and its decision reaches this frame), until the person chooses Fill anyway or Cancel (trusted clicks on
+ *    the card, or the side panel card's run/policyDecision to this frame; the toolbar's run/cancel also cancels, and
+ *    its run/continue never fills). Cancel writes nothing. With nothing readable the
  *    couldn't-read notice shows, and a frame inside a page with none of our scripts adds posting-outside-frame.
  * 3. The raw scan and the tripwire: any hit shows the tripwire notice once; up to 32 canaries stay in memory.
  * 4. A sign-in, account, email-code or CAPTCHA step pauses: nothing on it is filled, and Continue starts afresh.
@@ -135,12 +136,12 @@ export class FillRun {
     return this.choose !== null;
   }
 
-  /** Fill anyway (the card, or run/continue): answers whether the run was waiting for it. */
+  /** Fill anyway (the card, or run/policyDecision 'fill'): answers whether the run was waiting for it. */
   accept(): boolean {
     return this.answer('accepted');
   }
 
-  /** Cancel at the card (or run/cancel): answers whether the run was waiting for it. */
+  /** Cancel at the card (or run/policyDecision 'cancel', or run/cancel): answers whether the run was waiting for it. */
   decline(): boolean {
     return this.answer('declined');
   }

@@ -156,13 +156,12 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     const key = fieldKey({ ...parts, optionSetHash });
     const field: ScannedField = {
       key, baseKey: baseKey(parts), platform: options.platform, section: draft.section, kind: draft.kind,
-      label: draft.label.text, labelSource: draft.label.source, description: draft.description,
-      required: draft.required, options: draft.options ?? [], optionSetHash, constraints: draft.constraints,
-      autocomplete: draft.autocomplete, nameAttr: draft.nameAttr, idAttr: draft.idAttr, ordinal: ordinals[i]!,
-      domOrder: i, visibility: draft.visibility, disabled: draft.disabled, readOnly: draft.readOnly,
-      current: currentValueOf(draft.kind, draft.control, draft.selectable),
-      el: { key, frameId }, proxy: draft.proxy?.kind ?? null, labelVisible: draft.label.visible,
-      camouflaged: draft.camouflaged,
+      label: draft.label.text, labelSource: draft.label.source, labelVisible: draft.label.visible,
+      description: draft.description, required: draft.required, options: draft.options ?? [], optionSetHash,
+      constraints: draft.constraints, autocomplete: draft.autocomplete, nameAttr: draft.nameAttr, idAttr: draft.idAttr,
+      ordinal: ordinals[i]!, domOrder: i, visibility: draft.visibility, disabled: draft.disabled,
+      readOnly: draft.readOnly, current: currentValueOf(draft.kind, draft.control, draft.selectable),
+      el: { key, frameId }, proxy: draft.proxy?.kind ?? null, camouflaged: draft.camouflaged,
     };
     targets.set(key, { field, control: draft.control, members: draft.members, options: draft.selectOptions,
       proxy: draft.proxy?.el ?? null });
@@ -189,12 +188,15 @@ export function findField(root: Element, adapter: Adapter | null, options: ScanO
   return scan(root, adapter, options).target(key);
 }
 
-/** The field's FieldSpec as the worker receives it: the DOM-only parts (the handle, the proxy and the flags) left
- *  out, so it passes the strict plan/request schema. */
+/** The field's FieldSpec as the worker receives it: the DOM-only parts (the handle, the proxy and the camouflage flag)
+ *  left out, so it passes the strict plan/request schema. Whether a visible source names the field (labelVisible)
+ *  goes with it: the worker plans no write for a field the frame would refuse as no-visible-label, and never fetches
+ *  the sensitive part for one. */
 export function toFieldSpec(field: ScannedField): FieldSpec {
   return {
     key: field.key, baseKey: field.baseKey, platform: field.platform, section: field.section, kind: field.kind,
-    label: field.label, labelSource: field.labelSource, description: field.description, required: field.required,
+    label: field.label, labelSource: field.labelSource, labelVisible: field.labelVisible,
+    description: field.description, required: field.required,
     options: field.options, optionSetHash: field.optionSetHash, constraints: field.constraints,
     autocomplete: field.autocomplete, nameAttr: field.nameAttr, idAttr: field.idAttr, ordinal: field.ordinal,
     domOrder: field.domOrder, visibility: field.visibility, disabled: field.disabled, readOnly: field.readOnly,

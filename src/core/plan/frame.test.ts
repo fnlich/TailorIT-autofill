@@ -119,6 +119,31 @@ describe('planFrame: EEO, legal and consent', () => {
     expect(fieldOf(planOf([GENDER], { sensitiveState: 'unavailable' }), GENDER).row)
       .toMatchObject({ status: 'flagged', reason: 'sensitive-unavailable' });
   });
+
+  it('never asks for the sensitive part, nor writes, for EEO fields named only by an aria-label nobody sees', () => {
+    // A <select aria-label="Gender"> and a veteran select with no visible question: the frame would refuse both as
+    // no-visible-label, so the worker must not fetch GET /profile/sensitive for them, nor send the person's answers.
+    const hidden = { labelSource: 'aria-label' as const, labelVisible: false, section: { id: 'eeo' } };
+    const specs = [
+      specOf('Gender', 'select', { ...hidden, optionLabels: ['Select...', 'Male', 'Female', 'Non-binary',
+        'Decline to self-identify'] }),
+      specOf('Are you a protected veteran?', 'select', { ...hidden, optionLabels: ['Select...',
+        'I am a protected veteran', 'I am not a protected veteran', 'I don\'t wish to answer'] }),
+    ];
+    const asks = planOf(specs, { profile: goldenProfile({ sensitive: false }), sensitiveState: 'not-loaded' });
+    expect(asks.needsSensitive).toBe(false);
+    expect(asks.writes).toEqual([]);
+    const loaded = planOf(specs);
+    expect(loaded.writes).toEqual([]);
+    expect(loaded.results.map((row) => ({ status: row.status, reason: row.reason, provenance: row.provenance,
+      wrote: row.wrote, needsUserAction: row.needsUserAction }))).toEqual(Array(2).fill({ status: 'flagged',
+      reason: 'no-visible-label', provenance: null, wrote: false, needsUserAction: true }));
+    // The same selects with their questions on screen are planned and do ask for the sensitive part.
+    const shown = specs.map((spec) => ({ ...spec, labelVisible: true }));
+    expect(planOf(shown, { profile: goldenProfile({ sensitive: false }), sensitiveState: 'not-loaded' }).needsSensitive)
+      .toBe(true);
+    expect(planOf(shown).writes).toHaveLength(2);
+  });
 });
 
 describe('planFrame: the Guard', () => {
@@ -129,6 +154,10 @@ describe('planFrame: the Guard', () => {
     const unlabelled = { ...specOf('', 'text', { autocomplete: ['email'] }) };
     expect(fieldOf(planOf([unlabelled]), unlabelled)).toMatchObject({ write: undefined,
       row: { status: 'skipped', reason: 'no-visible-label', needsUserAction: false } });
+    // One an aria-label names, whose words nobody sees, is a question: flagged for the person, never written.
+    const ariaOnly = specOf('Email', 'text', { autocomplete: ['email'], labelSource: 'aria-label', labelVisible: false });
+    expect(fieldOf(planOf([ariaOnly]), ariaOnly)).toMatchObject({ write: undefined,
+      row: { status: 'flagged', reason: 'no-visible-label', category: 'contact.email', needsUserAction: true } });
   });
 
   it('flags an attention check and blocks a field whose own label is addressed to AI tools', () => {
@@ -170,8 +199,9 @@ describe('planFrame: the Guard', () => {
       optionLabels: ['TypeScript', 'Go', 'PostgreSQL', 'Rust', 'Kubernetes', 'None of the above'] });
     const out = planOf([all, apply]);
     expect(fieldOf(out, all)).toMatchObject({ write: undefined, row: { status: 'blocked', reason: 'mark-all-aborted' } });
-    expect(fieldOf(out, apply)).toMatchObject({ write: { value: { kind: 'options', indices: [0, 2, 4] },
-      origin: { path: 'skills' } }, row: { status: 'flagged', provenance: 'profile' } });
+    expect(fieldOf(out, apply)).toMatchObject({ write: { value: { kind: 'options', indices: [0, 2, 4],
+      cleanLabels: ['TypeScript', 'PostgreSQL', 'Kubernetes'] }, origin: { path: 'skills' } },
+      row: { status: 'flagged', provenance: 'profile' } });
   });
 });
 

@@ -115,6 +115,7 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     'panel/fill': () => ok({ frames: script.frames }),
     'panel/continue': () => ok({ frames: script.frames }),
     'panel/cancel': () => ok({ frames: script.frames }),
+    'panel/policyDecision': () => ok({}),
     'panel/focus': () => ok({}),
     'panel/describe': () => ok({ options: [] }),
     'settings/get': () => ok({ settings: script.settings }),

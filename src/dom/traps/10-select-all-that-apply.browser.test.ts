@@ -30,7 +30,8 @@ describe('trap 10: a legitimate "select all that apply"', () => {
     const trap = await loadTrap(document, html);
     const log = logEvents(trap.doc);
     const group = trap.field(ALL_THAT_APPLY);
-    expect(fill(trap.result.target(group.key)!, { kind: 'options', indices: [0, 2, 4] }, { adapter: null, root: trap.root }))
+    expect(fill(trap.result.target(group.key)!, { kind: 'options', indices: [0, 2, 4],
+      cleanLabels: ['TypeScript', 'PostgreSQL', 'Kubernetes'] }, { adapter: null, root: trap.root }))
       .toEqual({ wrote: true, verification: 'verified', reason: 'ok', needsUserAction: false });
     const boxes = Array.from(trap.doc.querySelectorAll<HTMLInputElement>('input[name="skills"]'));
     expect(boxes.filter((box) => box.checked).map((box) => box.value)).toEqual(['typescript', 'postgresql', 'kubernetes']);
@@ -44,7 +45,8 @@ describe('trap 10: a legitimate "select all that apply"', () => {
     const trap = await loadTrap(document, html);
     const log = logEvents(trap.doc);
     const strongest = trap.field(STRONGEST);
-    expect(fill(trap.result.target(strongest.key)!, { kind: 'options', indices: [3, 2] }, { adapter: null, root: trap.root }))
+    expect(fill(trap.result.target(strongest.key)!, { kind: 'options', indices: [3, 2],
+      cleanLabels: ['TypeScript', 'PostgreSQL'] }, { adapter: null, root: trap.root }))
       .toMatchObject({ verification: 'verified', wrote: true });
     const select = trap.doc.getElementById('strongest') as HTMLSelectElement;
     expect(Array.from(select.selectedOptions).map((option) => option.text)).toEqual(['PostgreSQL', 'TypeScript']);

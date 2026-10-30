@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../adapters/types';
 import { FIELD_KINDS } from '../core/enums';
+import { FieldSpecSchema } from '../messaging/schemas';
 import { fill } from './fillers';
 import { loadFixture, logEvents, removeFixtures } from './fixture.testkit';
 import { countVisibleControls, findField, scan, toFieldSpec } from './scan';
@@ -283,8 +284,28 @@ describe('scan: re-finding and handing over', () => {
     const [field] = scan(fixture.doc.querySelector('form')!, null, { platform: 'greenhouse', frameId: 3 }).fields;
     expect(field!.el).toEqual({ key: field!.key, frameId: 3 });
     expect(Object.keys(toFieldSpec(field!)).sort()).toEqual(['autocomplete', 'baseKey', 'constraints', 'current',
-      'description', 'disabled', 'domOrder', 'idAttr', 'key', 'kind', 'label', 'labelSource', 'nameAttr', 'optionSetHash',
-      'options', 'ordinal', 'platform', 'readOnly', 'required', 'section', 'visibility']);
+      'description', 'disabled', 'domOrder', 'idAttr', 'key', 'kind', 'label', 'labelSource', 'labelVisible', 'nameAttr',
+      'optionSetHash', 'options', 'ordinal', 'platform', 'readOnly', 'required', 'section', 'visibility']);
+  });
+
+  it('tells the worker whether a visible source names each field, so it plans nothing the frame would refuse', async () => {
+    // A select named only by an aria-label, with no visible question; one whose aria-label words are on screen; one
+    // with a label[for]; and one with no label at all.
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <div><select id="gender" aria-label="Gender"><option>Male</option><option>Female</option></select></div>
+      <div><span>Veteran status</span><select id="veteran" aria-label="Veteran status"><option>Yes</option>
+        <option>No</option></select></div>
+      <label for="email">Email</label><input id="email">
+      <input id="bare" style="border:1px solid #888"></form></body>`);
+    const fields = scan(fixture.doc.querySelector('form')!, null, OPTIONS).fields;
+    const specs = fields.map(toFieldSpec);
+    expect(specs.map((spec) => [spec.idAttr, spec.labelSource, spec.labelVisible])).toEqual([
+      ['gender', 'aria-label', false], ['veteran', 'aria-label', true], ['email', 'for', true], ['bare', 'none', false],
+    ]);
+    // The strict plan/request schema takes it, and refuses a spec without it.
+    expect(FieldSpecSchema.safeParse(specs[0]).success).toBe(true);
+    const { labelVisible: _dropped, ...without } = specs[0]!;
+    expect(FieldSpecSchema.safeParse(without).success).toBe(false);
   });
 
   it('reports at most 500 fields, the most one plan/request carries', async () => {

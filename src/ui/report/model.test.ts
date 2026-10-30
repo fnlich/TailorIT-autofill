@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FrameReport } from '../../shared/report';
-import { awaitsPolicyDecision, combinedNotices, overallStatus, percent, sectionsOf, type ReportRow } from './model';
+import { combinedNotices, framesAtPolicyCard, overallStatus, percent, sectionsOf, type ReportRow } from './model';
 
 function row(key: string, section: string): ReportRow {
   return { key, label: key, kind: 'text', category: 'unknown', section, required: false, status: 'skipped', provenance: null,
@@ -35,8 +35,10 @@ describe('the report model', () => {
     expect(overallStatus([report(0, { status: 'review' }), report(2, { status: 'fill-step' })])).toBe('fill-step');
     expect(overallStatus([report(0, { status: 'handoff', pauseReason: 'captcha' }), report(2, { status: 'policy-notice' })]))
       .toBe('policy-notice');
-    expect(awaitsPolicyDecision([report(0), report(2, { status: 'policy-notice' })])).toBe(true);
-    expect(awaitsPolicyDecision([report(0)])).toBe(false);
+    // Each frame that waits at the policy card, by frame id: a CAPTCHA pause beside one is not one of them.
+    expect(framesAtPolicyCard([report(3, { status: 'policy-notice' }), report(0, { status: 'handoff', pauseReason: 'captcha' }),
+      report(2, { status: 'policy-notice' })]).map((each) => each.frameId)).toEqual([2, 3]);
+    expect(framesAtPolicyCard([report(0)])).toEqual([]);
   });
 
   it('shows a confidence as a whole percent, inside 0 to 100', () => {

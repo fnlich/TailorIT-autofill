@@ -84,7 +84,7 @@ describe('the review panel', () => {
     ]);
   });
 
-  it("sends Show on page and a row's describe for that row, and the policy card's buttons as Continue and Cancel", async () => {
+  it("sends Show on page and a row's describe for that row, and the policy card's buttons as its frame's decision", async () => {
     const worker = createFakeWorker();
     worker.on('panel/describe', () => ({ ok: true, data: { options: [{ index: 1, label: 'Bachelor of Science' }] } }));
     worker.script.reports.set(5, [frameReport(2, { status: 'policy-notice', notices: [{ code: 'policy' }], fields: [
@@ -95,16 +95,55 @@ describe('the review panel', () => {
     await click(button(root, COPY.report.showOnPage));
     await click(button(root, COPY.report.showSuggestions(1)));
     expect(root.textContent).toContain('Bachelor of Science (80%)');
-    await click(button(root, COPY.policyFillAnyway));
-    await click(button(root, COPY.policyCancel));
+    const card = root.querySelector('[data-notice="policy"]')!;
+    await click(button(card, COPY.policyFillAnyway));
+    expect(root.textContent).toContain(COPY.panel.started(1));
+    await click(button(card, COPY.policyCancel));
+    expect(root.textContent).toContain(COPY.panel.cancelled(1));
     expect(actions(worker)).toEqual([
       { v: 1, type: 'panel/focus', tabId: 5, frameId: 2, fieldKey: 'degree' },
       { v: 1, type: 'panel/describe', tabId: 5, frameId: 2, fieldKey: 'degree' },
-      { v: 1, type: 'panel/continue', tabId: 5 },
-      { v: 1, type: 'panel/cancel', tabId: 5 },
+      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 2, decision: 'fill' },
+      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 2, decision: 'cancel' },
     ]);
     await click(button(root, COPY.report.hideSuggestions));
     expect(root.textContent).not.toContain('Bachelor of Science');
+  });
+
+  it('keeps the toolbar’s Continue for pauses: a frame at the policy card gets only its own card’s decision', async () => {
+    // Frame 0 waits at a CAPTCHA pause, frame 3 at the policy card.
+    const worker = createFakeWorker();
+    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'captcha', notices: [{ code: 'captcha' }] }),
+      frameReport(3, { status: 'policy-notice', notices: [{ code: 'policy' }] })]);
+    const root = await open(worker, 5);
+    const cards = [...root.querySelectorAll<HTMLElement>('[data-notice="policy"]')];
+    expect(cards.map((card) => card.dataset.policyFrame)).toEqual(['3']);
+    await click(button(root.querySelector('.tia-toolbar')!, COPY.panel.continue));
+    await click(button(cards[0]!, COPY.policyFillAnyway));
+    expect(actions(worker)).toEqual([
+      { v: 1, type: 'panel/continue', tabId: 5 },
+      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 3, decision: 'fill' },
+    ]);
+    // A frame that no longer waits says so.
+    worker.on('panel/policyDecision', () => ({ ok: false, error: 'expired' }));
+    await click(button(cards[0]!, COPY.policyCancel));
+    expect(root.textContent).toContain(COPY.panel.continued(0));
+  });
+
+  it('gives each frame waiting at the policy card a card of its own, naming it, whose buttons decide for it alone', async () => {
+    const worker = createFakeWorker();
+    worker.script.reports.set(5, [frameReport(4, { status: 'policy-notice', platform: 'greenhouse', adapter: 'greenhouse' }),
+      frameReport(0, { status: 'policy-notice' })]);
+    const root = await open(worker, 5);
+    const cards = [...root.querySelectorAll<HTMLElement>('[data-notice="policy"]')];
+    expect(cards.map((card) => card.dataset.policyFrame)).toEqual(['0', '4']);
+    expect(cards[1]!.textContent).toContain(COPY.report.frame(COPY.platforms.greenhouse, true));
+    await click(button(cards[1]!, COPY.policyCancel));
+    await click(button(cards[0]!, COPY.policyFillAnyway));
+    expect(actions(worker)).toEqual([
+      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 4, decision: 'cancel' },
+      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 0, decision: 'fill' },
+    ]);
   });
 
   it('says why a button did nothing, and reads the connection again when it was not connected', async () => {

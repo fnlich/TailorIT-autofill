@@ -3,7 +3,8 @@
  * storage. The side panel mounts it now; Phase 6's in-page panel will mount the same components in a closed shadow
  * root, so nothing here touches the global document: the stylesheet is adopted into the root the report is mounted in.
  *
- * Layout: the notices on top (the policy card among them while a run waits for that decision), then one block per
+ * Layout: the notices on top (a policy card among them for each frame whose run waits for that decision; its buttons
+ * decide for that frame alone, so another frame's pause or card is never answered by them), then one block per
  * frame, its rows by section. A row shows the label, status, provenance, matcher stage, confidence and a reason
  * sentence (COPY), and carries data-field-key, data-status and data-provenance for tests.
  *
@@ -14,7 +15,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
-import { awaitsPolicyDecision, combinedNotices, percent, sectionsOf, type ReportRow } from './model';
+import { combinedNotices, framesAtPolicyCard, percent, sectionsOf, type ReportRow } from './model';
 import { adoptReportStyles } from './styles';
 
 /** The visible label of one suggested option, by its index among the field's options. */
@@ -23,6 +24,9 @@ export interface SuggestionLabel {
   label: string;
 }
 
+/** The person's choice at a policy card: 'fill' is Fill anyway, 'cancel' is Cancel. */
+export type PolicyCardDecision = 'fill' | 'cancel';
+
 /** What a report's buttons ask the container to do. Each is optional: without it, its buttons are not drawn. */
 export interface ReportActions {
   /** "Show on page" (the side panel sends panel/focus). */
@@ -30,8 +34,9 @@ export interface ReportActions {
   /** The labels of a row's suggested options, asked for when the row opens (the side panel sends panel/describe).
    *  Null when the page could not say. */
   describeField?(frameId: number, fieldKey: string): Promise<readonly SuggestionLabel[] | null>;
-  /** The policy card's buttons: Fill anyway is 'continue', Cancel is 'cancel'. */
-  onPolicyDecision?(decision: 'continue' | 'cancel'): void;
+  /** A policy card's buttons, for the frame whose run waits at it: Fill anyway is 'fill', Cancel is 'cancel' (the side
+   *  panel sends panel/policyDecision for that frame). */
+  onPolicyDecision?(frameId: number, decision: PolicyCardDecision): void;
   /** While true, the policy card's buttons wait (a decision is on its way). */
   busy?: boolean;
 }
@@ -60,30 +65,35 @@ export function Report({ reports, ...actions }: ReportProps) {
   );
 }
 
-/** Every frame's notices once each; the policy card leads while a run waits for the person's decision. */
+/** Every frame's notices once each; the policy cards lead, one per frame whose run waits for the person's decision.
+ *  When several wait, each card names its frame. */
 function Notices({ reports, onPolicyDecision, busy }: {
   reports: readonly FrameReport[];
   onPolicyDecision: ReportActions['onPolicyDecision'];
   busy: boolean;
 }) {
-  const waiting = awaitsPolicyDecision(reports);
-  const codes = combinedNotices(reports).filter((code) => !(waiting && code === 'policy'));
-  if (!waiting && codes.length === 0) return null;
+  const waiting = framesAtPolicyCard(reports);
+  const codes = combinedNotices(reports).filter((code) => !(waiting.length > 0 && code === 'policy'));
+  if (waiting.length === 0 && codes.length === 0) return null;
   return (
     <div className="tia-notices">
-      {waiting && (
-        <div className="tia-notice tia-notice--policy" data-notice="policy" role="alert">
+      {waiting.map((report) => (
+        <div key={report.frameId} className="tia-notice tia-notice--policy" data-notice="policy"
+          data-policy-frame={report.frameId} role="alert">
           <p className="tia-notice__text">{COPY.notices.policy}</p>
+          {waiting.length > 1 && (
+            <p className="tia-notice__text">{COPY.report.frame(COPY.platforms[report.platform], report.frameId !== 0)}</p>
+          )}
           {onPolicyDecision && (
             <div className="tia-notice__actions">
               <button type="button" className="tia-button tia-button--primary" disabled={busy}
-                onClick={() => onPolicyDecision('continue')}>{COPY.policyFillAnyway}</button>
+                onClick={() => onPolicyDecision(report.frameId, 'fill')}>{COPY.policyFillAnyway}</button>
               <button type="button" className="tia-button" disabled={busy}
-                onClick={() => onPolicyDecision('cancel')}>{COPY.policyCancel}</button>
+                onClick={() => onPolicyDecision(report.frameId, 'cancel')}>{COPY.policyCancel}</button>
             </div>
           )}
         </div>
-      )}
+      ))}
       {codes.map((code) => (
         <p key={code} className={`tia-notice tia-notice--${code}`} data-notice={code}
           role={code === 'tripwire' || code === 'policy' ? 'alert' : undefined}>

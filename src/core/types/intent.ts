@@ -101,11 +101,14 @@ export type IntendedValue =
   | { kind: 'set'; items: Array<{ value: IntendedValue; priority: number }> }
   | { kind: 'file'; file: 'resume' | 'cover-letter' };
 
-/** What the filler writes. Indices point into the field's visible options as scanned. */
+/** What the filler writes. Indices point into the field's visible options as scanned; each choice also carries the
+ *  clean label (injected text cut) of the option it means, so a list the page re-ordered or re-labelled since the plan
+ *  is refused as options-changed instead of choosing whatever now sits at that place. */
 export type WriteValue =
   | { kind: 'text'; text: string }
   | { kind: 'option'; index: number; cleanLabel: string; freeText?: string }
-  | { kind: 'options'; indices: number[] }
+  /** cleanLabels[i] is the clean label of the option at indices[i]: the same length and order. */
+  | { kind: 'options'; indices: number[]; cleanLabels: string[] }
   /** Typeahead queries, typed one at a time; each is itself a guarded write. */
   | { kind: 'query'; queries: string[] }
   | { kind: 'check' }

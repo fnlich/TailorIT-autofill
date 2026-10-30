@@ -11,13 +11,11 @@ import type { BaseKey, FieldDescriptor, FieldKey, ReasonCode, SectionRef } from 
  *  through an element the adapter declared. Highlights point at this element, not the hidden input. */
 export type ProxyKind = 'label' | 'adapter';
 
-/** A scanned field as the content script holds it: the descriptor plus where its highlight goes. */
+/** A scanned field as the content script holds it: the descriptor plus where its highlight goes. Whether a visible
+ *  source names it (labelVisible) is the FieldSpec's own, so the worker plans nothing for a field the frame would
+ *  refuse as no-visible-label. */
 export interface ScannedField extends FieldDescriptor {
   proxy: ProxyKind | null;
-  /** The label was read from text a person can see. False for 'none', and for an aria-label whose words are not
-   *  visible beside the control: such a label may drive the rules but never reaches an LLM, and the field is never
-   *  filled. FieldSpec has no such flag, so the label source alone tells the worker ('aria-label' is never visible). */
-  labelVisible: boolean;
   /** A text-like control drawn so it cannot be seen (no border, a background matching the page, no shadow, outline or
    *  visible placeholder). It is reported, but the DOM guard refuses to write it. */
   camouflaged: boolean;

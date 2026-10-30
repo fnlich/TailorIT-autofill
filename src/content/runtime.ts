@@ -9,10 +9,13 @@
  *    tells the worker the pattern ids (policy/hit); nothing else happens there.
  * 3. With a form root, the launcher is mounted on it (the in-page UI, ui/page-ui.ts), and runs start from its trusted
  *    clicks or from run/start (the side panel's Fill, to every frame with a form). One run at a time (orchestrator.ts).
- * The worker's messages are answered: frame/ping {pong}; run/start, run/continue and run/cancel (the policy card's
- * choices, and Continue after a pause); field/focus (scroll the field or its proxy into view and outline it, at the
- * person's request); field/describe (the visible labels of a row's suggested options, from a fresh scan, never kept);
- * draft/confirm and answer/read not_implemented until Phase 6; report/update ignored until the in-page panel exists.
+ * The worker's messages are answered: frame/ping {pong}; run/start; run/continue (Continue after a pause, never Fill
+ * anyway: a policy card waits for the person's own decision); run/cancel (stops a run, a policy card's wait included,
+ * or leaves a pause); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
+ * answered `expired` when no run here waits at the card); field/focus (scroll the field or its proxy into view and
+ * outline it, at the person's request); field/describe (the visible labels of a row's suggested options, from a fresh
+ * scan, never kept); draft/confirm and answer/read not_implemented until Phase 6; report/update ignored until the
+ * in-page panel exists. The in-page card's own buttons decide locally, on trusted clicks.
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -28,7 +31,7 @@ import type { FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import { scan } from '../dom/scan';
 import { ok, refuse } from '../messaging/envelope';
-import { WorkerToContentSchema } from '../messaging/schemas';
+import { WorkerToContentSchema, type PolicyDecision } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
 import { log } from '../shared/log';
@@ -139,6 +142,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'run/cancel':
         cancelRun();
         return ok({});
+      case 'run/policyDecision':
+        return decidePolicy(msg.decision) ? ok({}) : refuse('expired');
       case 'field/focus':
         focusField(msg.fieldKey as FieldKey);
         return ok({});
@@ -191,14 +196,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     return run;
   }
 
-  /** run/continue, or the launcher's Continue: Fill anyway at the policy card, or a fresh run after a pause. */
+  /** run/continue, or the launcher's Continue: a fresh run after a pause. It never answers the policy card: Continue
+   *  goes to every frame that reported, and one waiting at the card must not fill as if Fill anyway was chosen. */
   function continueRun(trigger: RunRequest['trigger']): void {
     if (current === null) return;
-    if (current.atPolicyCard) {
-      current.accept();
-      return;
-    }
     if (current.ended === 'paused') startRun({ trigger, dryRun: false });
+  }
+
+  /** run/policyDecision: the side panel's policy card, for this frame. Answers whether a run here waited at the card. */
+  function decidePolicy(decision: PolicyDecision): boolean {
+    if (current === null || !current.atPolicyCard) return false;
+    return decision === 'fill' ? current.accept() : current.decline();
   }
 
   /** run/cancel: Cancel at the policy card, stop a run that writes, or leave a pause. */

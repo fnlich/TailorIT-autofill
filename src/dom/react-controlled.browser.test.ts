@@ -98,10 +98,10 @@ describe('the fillers against a real React 19 controlled form', () => {
       ['Email', { kind: 'text', text: 'alex.rivera.f7q2@example.com' }],
       ['Additional information', { kind: 'text', text: 'Happy to share more.' }],
       ['Degree', { kind: 'option', index: 1, cleanLabel: "Bachelor's Degree" }],
-      ['Skills', { kind: 'options', indices: [0, 1] }],
+      ['Skills', { kind: 'options', indices: [0, 1], cleanLabels: ['TypeScript', 'PostgreSQL'] }],
       ['Are you willing to relocate?', { kind: 'option', index: 0, cleanLabel: 'Yes' }],
       ['I agree to the privacy policy', { kind: 'check' }],
-      ['Which tools do you use?', { kind: 'options', indices: [0, 1] }],
+      ['Which tools do you use?', { kind: 'options', indices: [0, 1], cleanLabels: ['Go', 'Rust'] }],
       ['Available start date', { kind: 'date', iso: '2026-12-01' }],
     ];
     for (const [label, value] of plan) {

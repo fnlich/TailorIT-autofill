@@ -18,9 +18,10 @@ export function combinedNotices(reports: readonly FrameReport[]): NoticeCode[] {
   return NOTICE_CODES.filter((code) => seen.has(code));
 }
 
-/** Whether a frame's run has stopped before filling for the person's decision on the posting's AI policy. */
-export function awaitsPolicyDecision(reports: readonly FrameReport[]): boolean {
-  return reports.some((report) => report.status === 'policy-notice');
+/** The frames whose run has stopped before filling for the person's decision on the posting's AI policy, by frame id:
+ *  each gets a policy card of its own, whose decision is for it alone. */
+export function framesAtPolicyCard(reports: readonly FrameReport[]): FrameReport[] {
+  return reports.filter((report) => report.status === 'policy-notice').sort((a, b) => a.frameId - b.frameId);
 }
 
 /** One frame's rows by section, sections in the order they first appear, rows in the order reported. */

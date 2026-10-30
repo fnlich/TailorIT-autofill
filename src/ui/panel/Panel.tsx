@@ -5,8 +5,9 @@
  * - Top: the connection (auth/status), then Fill, Dry run, Continue and Cancel (panel/fill {tabId, dryRun},
  *   panel/continue, panel/cancel), the run's status and step, and what the last button did.
  * - The report: the notices mirrored from the page (the tripwire's exact sentence, the policy card, the couldn't-read
- *   notice), then the rows. A run at policy-notice waits for the card: Fill anyway sends panel/continue and Cancel
- *   sends panel/cancel, which the frame treats exactly as its own card's buttons.
+ *   notice), then the rows. A run at policy-notice waits for its card: Fill anyway and Cancel send
+ *   panel/policyDecision {tabId, frameId, decision} for the frame whose report is at policy-notice, which that frame
+ *   treats exactly as its own card's buttons. The toolbar's Continue only resumes pauses: it never fills past a card.
  * - Per row: Show on page (panel/focus); opening a row asks for its suggested options (panel/describe), shown only while
  *   the row is open. Confirm draft and Save my answer arrive in Phase 6.
  *
@@ -33,6 +34,15 @@ export interface PanelProps {
 }
 
 type RunMessage = Extract<PageMessage, { type: 'panel/fill' | 'panel/continue' | 'panel/cancel' }>;
+type DecisionMessage = Extract<PageMessage, { type: 'panel/policyDecision' }>;
+
+/** What a refusal means to the person. */
+function refusalOf(error: Exclude<Answer<unknown>, { ok: true }>['error']): string {
+  if (error === 'not_connected') return COPY.panel.needsConnection;
+  if (error === 'rate_limited') return COPY.panel.rateLimited;
+  if (error === 'unavailable') return COPY.panel.noAnswer;
+  return COPY.panel.failed;
+}
 
 /** What a button's answer means to the person. */
 function feedbackOf(message: RunMessage, answer: Answer<{ frames: number }>): string {
@@ -41,10 +51,13 @@ function feedbackOf(message: RunMessage, answer: Answer<{ frames: number }>): st
     if (message.type === 'panel/fill') return message.dryRun ? COPY.panel.dryRunStarted(frames) : COPY.panel.started(frames);
     return message.type === 'panel/continue' ? COPY.panel.continued(frames) : COPY.panel.cancelled(frames);
   }
-  if (answer.error === 'not_connected') return COPY.panel.needsConnection;
-  if (answer.error === 'rate_limited') return COPY.panel.rateLimited;
-  if (answer.error === 'unavailable') return COPY.panel.noAnswer;
-  return COPY.panel.failed;
+  return refusalOf(answer.error);
+}
+
+/** What a policy card's answer means: that one form fills or stops, or it no longer waits for the decision. */
+function decisionFeedbackOf(message: DecisionMessage, answer: Answer<unknown>): string {
+  if (answer.ok) return message.decision === 'fill' ? COPY.panel.started(1) : COPY.panel.cancelled(1);
+  return answer.error === 'expired' ? COPY.panel.continued(0) : refusalOf(answer.error);
 }
 
 export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
@@ -72,6 +85,14 @@ export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
     setBusy(false);
     setFeedback({ tabId: message.tabId, text: feedbackOf(message, answer) });
     if (!answer.ok && answer.error === 'not_connected') refresh();
+  };
+
+  /** A policy card's decision, for the one frame whose run waits at it. */
+  const decide = async (message: DecisionMessage) => {
+    setBusy(true);
+    const answer = await request(platform, message);
+    setBusy(false);
+    setFeedback({ tabId: message.tabId, text: decisionFeedbackOf(message, answer) });
   };
 
   const status = overallStatus(reports);
@@ -110,8 +131,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
         <Report
           reports={reports}
           busy={busy}
-          onPolicyDecision={(decision) =>
-            void run(decision === 'continue' ? { v: 1, type: 'panel/continue', tabId } : { v: 1, type: 'panel/cancel', tabId })}
+          onPolicyDecision={(frameId, decision) =>
+            void decide({ v: 1, type: 'panel/policyDecision', tabId, frameId, decision })}
           onShowField={(frameId, fieldKey) => {
             void request(platform, { v: 1, type: 'panel/focus', tabId, frameId, fieldKey }).then((answer) => {
               if (!answer.ok) setFeedback({ tabId, text: COPY.panel.focusFailed });

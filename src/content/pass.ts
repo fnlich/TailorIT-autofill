@@ -6,8 +6,8 @@
  * 1. the DOM half of the Guard re-finds the field by key in a fresh scan (never a cached node) and checks it may be
  *    written now (domGuardBeforeWrite);
  * 2. the core's frame-side Guard checks the write against the field as it is now: honeypot, the value fits, the
- *    provenance's shape, an llm-pick's option unchanged, the canary scan over this frame's canaries, the mark-all cover
- *    test (guardWriteInFrame);
+ *    options it names still read as planned at their places, the provenance's shape, an llm-pick's option unchanged,
+ *    the canary scan over this frame's canaries, the mark-all cover test (guardWriteInFrame);
  * 3. a file write first receives the resume over the `resume` port (transfer.ts), then is checked again, since the
  *    page had a moment to change;
  * 4. fill() writes with untrusted events and reads back at once;
@@ -101,6 +101,14 @@ const GUARD_BLOCKS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['not-user-vis
   'internal-error']);
 /** Filler refusals that mean the write was not allowed; the rest mean it could not be done. */
 const FILL_BLOCKS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['not-user-visible', 'internal-error']);
+/** The frame-side core Guard's refusals that mean the write could not be done: the options it names moved or changed
+ *  since the plan, as the DOM guard and the fillers say it too. Every other refusal of it blocks. */
+const FRAME_GUARD_FLAGS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['options-changed']);
+
+/** A refusal of the frame-side core Guard, as settleRow takes it. */
+function frameGuardRefusal(reason: ReasonCode): FillOutcome {
+  return FRAME_GUARD_FLAGS.has(reason) ? { kind: 'not-written', reason } : { kind: 'blocked', reason };
+}
 /** Mismatch reasons a row keeps instead of settleRow's verify-mismatch. */
 const MISMATCH_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'unexpected-selection',
   'value-rejected-by-site', 'disabled-or-readonly']);
@@ -156,7 +164,7 @@ async function writeOne(env: PassEnv, last: ScanResult, field: ScannedField, wri
   let verdict = domGuardBeforeWrite(last, wanted);
   if (!verdict.ok) return { row: settleRow(planned, refusal(verdict.reason, GUARD_BLOCKS)) };
   let check = guardWriteInFrame(write, toFieldSpec(verdict.target.field), env.canaries);
-  if (!check.ok) return { row: settleRow(planned, { kind: 'blocked', reason: check.reason }) };
+  if (!check.ok) return { row: settleRow(planned, frameGuardRefusal(check.reason)) };
 
   let resume: ReceivedResume | null = null;
   if (write.value.kind === 'file') {
@@ -178,7 +186,7 @@ async function writeOne(env: PassEnv, last: ScanResult, field: ScannedField, wri
     check = guardWriteInFrame(write, toFieldSpec(verdict.target.field), env.canaries);
     if (!check.ok) {
       resume.release();
-      return { row: settleRow(planned, { kind: 'blocked', reason: check.reason }) };
+      return { row: settleRow(planned, frameGuardRefusal(check.reason)) };
     }
   }
 

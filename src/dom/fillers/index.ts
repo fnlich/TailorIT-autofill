@@ -6,8 +6,9 @@
  * (verify.ts) decide verified for the report.
  *
  * Each kind takes its own value: text and textarea a text, select and radio an option, multiselect and checkbox-group
- * options, a lone checkbox a check, date a date and file the resume. Any other pairing is a planner bug
- * (internal-error); ARIA widgets come in Phase 4 (widget-unsupported).
+ * options, a lone checkbox a check, date a date and file the resume. Any other pairing, or an options value without
+ * one clean label per index, is a planner bug (internal-error); ARIA widgets come in Phase 4 (widget-unsupported). A
+ * choice whose option no longer reads as planned is refused as options-changed, with nothing written.
  */
 import type { Adapter } from '../../adapters/types';
 import type { WriteValue } from '../../core/types/intent';
@@ -44,6 +45,7 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
   // Options that exist only once a widget is opened (a combobox, a widget the adapter declares): Phase 4's helpers fill
   // those, never the native fillers.
   if (field.options === 'lazy') return refused('widget-unsupported');
+  if (value.kind === 'options' && value.cleanLabels.length !== value.indices.length) return refused('internal-error');
   const clicks = { adapter: ctx.adapter, root: ctx.root };
   switch (field.kind) {
     case 'text':
@@ -54,13 +56,13 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
     case 'select':
       return value.kind === 'option' ? fillSelect(target, value.index, value.cleanLabel) : refused('internal-error');
     case 'multiselect':
-      return value.kind === 'options' ? fillMultiSelect(target, value.indices) : refused('internal-error');
+      return value.kind === 'options' ? fillMultiSelect(target, value) : refused('internal-error');
     case 'radio':
       return value.kind === 'option' ? fillRadio(target, value.index, value.cleanLabel, clicks) : refused('internal-error');
     case 'checkbox':
       return value.kind === 'check' ? fillCheckbox(target, clicks) : refused('internal-error');
     case 'checkbox-group':
-      return value.kind === 'options' ? fillCheckboxGroup(target, value.indices, clicks) : refused('internal-error');
+      return value.kind === 'options' ? fillCheckboxGroup(target, value, clicks) : refused('internal-error');
     case 'date':
       return value.kind === 'date' ? fillDate(control as HTMLInputElement, value.iso) : refused('internal-error');
     case 'file':

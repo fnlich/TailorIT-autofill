@@ -262,6 +262,33 @@ describe('a whole pass over the trap fixtures, planned from the golden profile',
     expect(ran.report.notices.map((notice) => notice.code)).not.toContain('attention-check');
   });
 
+  it('trap 10, re-ordered while plan/request is out: nothing is ticked or selected, and both rows say options-changed',
+    async () => {
+      // The page renders both lists in reverse after the scan: same labels, so the same keys, but other options at
+      // the planned places (index 4 of the group is now Rust, index 3 of the select Kubernetes).
+      const page: { doc: Document | null } = { doc: null };
+      const started = await start(trap10, '10-reordered', { worker: { onMessage: (message) => {
+        if (message.type !== 'plan/request' || page.doc === null) return;
+        const fieldset = page.doc.getElementById('skills')!;
+        for (const label of Array.from(fieldset.querySelectorAll('label')).reverse()) fieldset.append(label);
+        const select = page.doc.getElementById('strongest') as HTMLSelectElement;
+        for (const option of Array.from(select.options).reverse()) select.append(option);
+      } } });
+      page.doc = started.fixture.doc;
+      const ran = ranOf(started, await started.runtime.fill());
+      expectInvariants(ran, VALUE_SENTINELS);
+      // Only the page's own pre-checked PostgreSQL: no box was clicked, no option selected.
+      expect(ran.checked('skills')).toEqual(['postgresql']);
+      expect(ran.events.events.filter((event) => event.type === 'click')).toEqual([]);
+      const strongest = ran.fixture.doc.getElementById('strongest') as HTMLSelectElement;
+      expect(strongest.selectedOptions).toHaveLength(0);
+      for (const label of ['Which of these skills do you use? (select all that apply)',
+        'Which of these skills are your strongest? (choose up to 2)']) {
+        expect(ran.row(label), label).toMatchObject({ status: 'flagged', reason: 'options-changed', wrote: false,
+          provenance: null, needsUserAction: true });
+      }
+    });
+
   it('trap 11: reaches review through the forged WXT events, logs them, and keeps its UI', async () => {
     const ran = await fillTrap(trap11, '11', { worker: { id: 'flmloalhjldmcihejnmkndbcnhaacmng' } });
     expectInvariants(ran);
@@ -339,7 +366,15 @@ describe('the policy gate, before anything is filled', () => {
     // A click from the page's own script on the card is not the person's: nothing happens.
     started.runtime.ui!.shadow.querySelector<HTMLButtonElement>('.card button.action:not(.secondary)')!.click();
     expect(started.runtime.run!.atPolicyCard).toBe(true);
+    // The toolbar's Continue (meant for a pause, maybe another frame's) is not Fill anyway: the card still waits.
     expect(await started.worker.platform.deliver({ v: 1, type: 'run/continue' })).toEqual({ ok: true, data: {} });
+    expect(started.runtime.run!.atPolicyCard).toBe(true);
+    expect(started.runtime.ui!.notices.cardShown).toBe(true);
+    expect(started.worker.of('plan/request')).toEqual([]);
+    expect(started.worker.of('run/begin')).toHaveLength(1);
+    // The side panel card's Fill anyway, addressed to this frame, is.
+    expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
+      .toEqual({ ok: true, data: {} });
     const ran = ranOf(started, await running);
     expectInvariants(ran);
     expect(ran.row('First name')).toMatchObject({ status: 'verified' });
@@ -350,7 +385,7 @@ describe('the policy gate, before anything is filled', () => {
 
   it('reports policy-notice, with the policy notice, before it waits, so the side panel’s choice can reach it',
     async () => {
-      // The worker forwards panel/continue and panel/cancel only to frames that have reported.
+      // The worker sends the side panel card's decision only to a frame whose report is at policy-notice.
       const waitingAtReport: Array<boolean | undefined> = [];
       const started = await start(plain, 'policy-report', { worker: {
         policy: { postingPage: 'hit', storedCopy: 'unavailable' },
@@ -364,11 +399,33 @@ describe('the policy gate, before anything is filled', () => {
       expect(started.worker.reports[0]).toMatchObject({ status: 'policy-notice', fields: [],
         notices: [{ code: 'policy' }] });
       expect(started.worker.of('plan/request')).toEqual([]);
-      // The side panel's Cancel, as the worker forwards it.
-      expect(await started.worker.platform.deliver({ v: 1, type: 'run/cancel' })).toEqual({ ok: true, data: {} });
+      // The side panel card's Cancel, as the worker sends it to this frame.
+      expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'cancel' }))
+        .toEqual({ ok: true, data: {} });
       expect(await running).toBe('stopped');
       expect(started.events.events).toEqual([]);
+      expect(started.worker.runStates.at(-1)).toMatchObject({ status: 'stopped', policyDecision: 'declined' });
+      // Once nothing waits at the card, a decision is answered expired and changes nothing.
+      expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
+        .toEqual({ ok: false, error: 'expired' });
+      expect(started.worker.of('run/begin')).toHaveLength(1);
+      expect(started.worker.of('plan/request')).toEqual([]);
     });
+
+  it('answers a decision with expired when no run waits at the card: a paused run is not started by it', async () => {
+    const page = plain.replace('<button type="submit">', '<label for="pw">Password</label><input id="pw" type="password">'
+      + '<button type="submit">');
+    const started = await start(page, 'policy-paused');
+    expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
+      .toEqual({ ok: false, error: 'expired' });
+    expect(await started.runtime.fill()).toBe('paused');
+    expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
+      .toEqual({ ok: false, error: 'expired' });
+    expect(started.worker.of('run/begin')).toHaveLength(1);
+    // Continue is what resumes a pause.
+    await started.worker.platform.deliver({ v: 1, type: 'run/continue' });
+    await vi.waitFor(() => expect(started.worker.of('run/begin')).toHaveLength(2));
+  });
 
   it('writes nothing after Cancel', async () => {
     const started = await start(plain, 'policy-b', { worker: { policy: { postingPage: 'clear', storedCopy: 'hit' } } });

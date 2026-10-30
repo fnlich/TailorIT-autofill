@@ -6,6 +6,8 @@ import {
   ContentMessageSchema,
   DoneAnswerSchema,
   FieldDescribeAnswerSchema,
+  FRAME_ANSWER_SCHEMAS,
+  PAGE_ANSWER_SCHEMAS,
   PageMessageSchema,
   PanelPortMessageSchema,
   PanelSentAnswerSchema,
@@ -15,6 +17,8 @@ import {
   SettingsAnswerSchema,
   StartPairingAnswerSchema,
   TabReportsAnswerSchema,
+  WorkerToContentSchema,
+  WriteValueSchema,
 } from './schemas';
 
 const STATUS = {
@@ -41,6 +45,38 @@ describe('the page channel\'s additions', () => {
     expect(PanelPortMessageSchema.safeParse({ v: 1, type: 'panel/update', tabId: 3, reports: [] }).success).toBe(true);
     expect(PanelPortMessageSchema.safeParse({ v: 1, type: 'panel/update', tabId: 3, reports: Array(21).fill(null) }).success).toBe(false);
     expect(PanelPortMessageSchema.safeParse({ v: 1, type: 'panel/watch' }).success).toBe(false);
+  });
+
+  it('carries the policy card\'s decision for one frame, apart from the toolbar\'s Continue', () => {
+    const decision = { v: 1, type: 'panel/policyDecision', tabId: 7, frameId: 4, decision: 'fill' };
+    expect(PageMessageSchema.safeParse(decision).success).toBe(true);
+    expect(PageMessageSchema.safeParse({ ...decision, decision: 'cancel' }).success).toBe(true);
+    expect(PageMessageSchema.safeParse({ ...decision, decision: 'continue' }).success).toBe(false);
+    const { frameId: _frame, ...unaddressed } = decision;
+    expect(PageMessageSchema.safeParse(unaddressed).success).toBe(false);
+    expect(PageMessageSchema.safeParse({ ...decision, fieldKey: 'k' }).success).toBe(false);
+    expect(PageMessageSchema.safeParse({ v: 1, type: 'panel/continue', tabId: 7, decision: 'fill' }).success).toBe(false);
+    // The worker's message to the frame, and only on that channel.
+    expect(WorkerToContentSchema.safeParse({ v: 1, type: 'run/policyDecision', decision: 'fill' }).success).toBe(true);
+    expect(WorkerToContentSchema.safeParse({ v: 1, type: 'run/policyDecision', decision: 'accepted' }).success).toBe(false);
+    expect(WorkerToContentSchema.safeParse({ v: 1, type: 'run/policyDecision' }).success).toBe(false);
+    expect(ContentMessageSchema.safeParse(decision).success).toBe(false);
+    expect(PAGE_ANSWER_SCHEMAS['panel/policyDecision']).toBe(DoneAnswerSchema);
+    expect(FRAME_ANSWER_SCHEMAS['run/policyDecision']).toBe(DoneAnswerSchema);
+  });
+});
+
+describe('the payloads', () => {
+  it('make an options write name each option by its clean label, one per index, capped', () => {
+    const value = { kind: 'options', indices: [2, 4], cleanLabels: ['Python', 'TypeScript'] };
+    expect(WriteValueSchema.safeParse(value).success).toBe(true);
+    expect(WriteValueSchema.safeParse({ kind: 'options', indices: [2, 4] }).success).toBe(false);
+    expect(WriteValueSchema.safeParse({ ...value, cleanLabels: ['Python'] }).success).toBe(false);
+    expect(WriteValueSchema.safeParse({ ...value, cleanLabels: ['Python', 'TypeScript', 'Go'] }).success).toBe(false);
+    expect(WriteValueSchema.safeParse({ ...value, cleanLabels: ['Python', 'x'.repeat(301)] }).success).toBe(false);
+    expect(WriteValueSchema.safeParse({ kind: 'options', indices: Array.from({ length: 301 }, (_, i) => i),
+      cleanLabels: Array(301).fill('x') }).success).toBe(false);
+    expect(WriteValueSchema.safeParse({ ...value, labels: ['Python', 'TypeScript'] }).success).toBe(false);
   });
 });
 

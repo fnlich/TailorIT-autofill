@@ -64,12 +64,13 @@ describe('the report', () => {
   });
 
   it('puts the notices on top, once each, and the policy card with its buttons while a run waits for it', async () => {
-    const decisions: string[] = [];
+    const decisions: Array<[number, string]> = [];
     const reports = [
       frameReport(0, { notices: [{ code: 'validation' }, { code: 'tripwire', count: 2 }] }),
       frameReport(2, { status: 'policy-notice', notices: [{ code: 'tripwire' }, { code: 'policy' }, { code: 'policy-unreadable' }] }),
     ];
-    const root = await mount(<Report reports={reports} onPolicyDecision={(decision) => decisions.push(decision)} />);
+    const root = await mount(<Report reports={reports}
+      onPolicyDecision={(frameId, decision) => decisions.push([frameId, decision])} />);
     const notices = [...root.querySelectorAll<HTMLElement>('[data-notice]')];
     expect(notices.map((notice) => notice.dataset.notice)).toEqual(['policy', 'tripwire', 'policy-unreadable', 'validation']);
     expect(notices.map((notice) => notice.querySelector('p')?.textContent ?? notice.textContent)).toEqual([COPY.notices.policy,
@@ -78,9 +79,10 @@ describe('the report', () => {
     const firstFrame = root.querySelector('[data-frame-id]')!;
     expect(notices.every((notice) => notice.compareDocumentPosition(firstFrame) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 
+    // The card's buttons decide for the frame that waits at it (frame 2), never for frame 0.
     await click(button(root, COPY.policyFillAnyway));
     await click(button(root, COPY.policyCancel));
-    expect(decisions).toEqual(['continue', 'cancel']);
+    expect(decisions).toEqual([[2, 'fill'], [2, 'cancel']]);
   });
 
   it('shows the policy notice without buttons where no one can decide, and no card once nothing waits', async () => {

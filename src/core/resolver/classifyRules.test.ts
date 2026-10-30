@@ -12,7 +12,8 @@ import { NEEDS_USER_CAUSES, type NeedsUserCause } from './labelRules';
 /** A field as the scanner would describe it: only what a test names differs from a plain text field in 'main'. */
 const field = (label: string, kind: FieldKind, extra: Partial<FieldSpec> = {}): FieldSpec => ({
   key: 'lever|main|field|none|0' as FieldKey, baseKey: 'lever|main|field|0' as BaseKey, platform: 'lever',
-  section: { id: 'main' }, kind, label, labelSource: label === '' ? 'none' : 'for', description: '', required: false,
+  section: { id: 'main' }, kind, label, labelSource: label === '' ? 'none' : 'for', labelVisible: label !== '',
+  description: '', required: false,
   options: [], optionSetHash: 'none' as OptionSetHash, constraints: {}, autocomplete: [], nameAttr: '', idAttr: '',
   ordinal: 0, domOrder: 0, visibility: 'visible', disabled: false, readOnly: false, current: { kind: 'empty' },
   ...extra,

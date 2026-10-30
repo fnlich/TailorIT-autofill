@@ -65,6 +65,8 @@ export const FieldSpecSchema = z.strictObject({
   kind: z.enum(FIELD_KINDS),
   label: Text(300),
   labelSource: z.enum(LABEL_SOURCES),
+  /** A visible source names the field: one that is false is never written and never asks for the sensitive part. */
+  labelVisible: z.boolean(),
   description: Text(2000),
   required: z.boolean(),
   options: z.union([z.array(OptionSchema).max(5000), z.literal('lazy')]),
@@ -84,7 +86,10 @@ export const FieldSpecSchema = z.strictObject({
 export const WriteValueSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('text'), text: Text(20_000) }),
   z.strictObject({ kind: z.literal('option'), index: Count, cleanLabel: Text(300), freeText: Text(1000).optional() }),
-  z.strictObject({ kind: z.literal('options'), indices: z.array(Count).max(300) }),
+  /** Each index with the clean label of the option it means, in the same order: the frame refuses the write when an
+   *  option there now reads otherwise. */
+  z.strictObject({ kind: z.literal('options'), indices: z.array(Count).max(300), cleanLabels: z.array(Text(300)).max(300) })
+    .refine((value) => value.cleanLabels.length === value.indices.length),
   z.strictObject({ kind: z.literal('query'), queries: z.array(Text(300)).max(4) }),
   z.strictObject({ kind: z.literal('check') }),
   z.strictObject({ kind: z.literal('file'), ref: z.literal('resume') }),
@@ -183,11 +188,20 @@ export type ContentMessage = z.infer<typeof ContentMessageSchema>;
 const TabId = Count;
 const FrameRef = { tabId: TabId, frameId: Count, fieldKey: Key };
 
+/** The person's choice at a policy card: 'fill' is Fill anyway, 'cancel' is Cancel. */
+export const POLICY_DECISIONS = ['fill', 'cancel'] as const;
+export type PolicyDecision = (typeof POLICY_DECISIONS)[number];
+
 export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('ping') }),
   z.strictObject({ v, type: z.literal('panel/fill'), tabId: TabId, dryRun: z.boolean() }),
+  /** The toolbar's Continue and Cancel, for every frame that reported. Continue only resumes a pause; it never
+   *  answers a policy card. */
   z.strictObject({ v, type: z.literal('panel/continue'), tabId: TabId }),
   z.strictObject({ v, type: z.literal('panel/cancel'), tabId: TabId }),
+  /** The side panel's policy card: the decision for the one frame whose run waits at policy-notice. */
+  z.strictObject({ v, type: z.literal('panel/policyDecision'), tabId: TabId, frameId: Count,
+    decision: z.enum(POLICY_DECISIONS) }),
   z.strictObject({ v, type: z.literal('panel/focus'), ...FrameRef }),
   z.strictObject({ v, type: z.literal('panel/describe'), ...FrameRef }),
   z.strictObject({ v, type: z.literal('panel/confirmDraft'), ...FrameRef }),
@@ -229,8 +243,11 @@ export type ExternalMessage = z.infer<typeof ExternalMessageSchema>;
 
 export const WorkerToContentSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('run/start'), dryRun: z.boolean() }),
+  /** Continue after a pause; it never answers the policy card (run/policyDecision does). */
   z.strictObject({ v, type: z.literal('run/continue') }),
   z.strictObject({ v, type: z.literal('run/cancel') }),
+  /** The person's choice at the side panel's policy card, sent to this frame alone. */
+  z.strictObject({ v, type: z.literal('run/policyDecision'), decision: z.enum(POLICY_DECISIONS) }),
   z.strictObject({ v, type: z.literal('field/focus'), fieldKey: Key }),
   /** The labels of a row's suggested options, fetched only when the row is expanded, never stored. */
   z.strictObject({ v, type: z.literal('field/describe'), fieldKey: Key }),
@@ -274,8 +291,10 @@ export const PlanAnswerSchema = z.strictObject({
   persistableCanaries: z.array(Text(120)).max(32),
 });
 
-/** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/focus, and a frame's
- *  answer to run/start, run/continue, run/cancel, field/focus, draft/confirm and report/update. */
+/** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/focus,
+ *  panel/policyDecision, and a frame's answer to run/start, run/continue, run/cancel, run/policyDecision, field/focus,
+ *  draft/confirm and report/update. A frame answers run/policyDecision {} once the decision settled its policy card,
+ *  and `expired` when no run there waits at one. */
 export const DoneAnswerSchema = z.strictObject({});
 
 /** runstate/get: this tab's RunState for the application, or null when there is none, it has expired (24 h after its
@@ -354,6 +373,7 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/fill': PanelSentAnswerSchema,
   'panel/continue': PanelSentAnswerSchema,
   'panel/cancel': PanelSentAnswerSchema,
+  'panel/policyDecision': DoneAnswerSchema,
   'panel/focus': DoneAnswerSchema,
   'panel/describe': FieldDescribeAnswerSchema,
   'panel/confirmDraft': DoneAnswerSchema,
@@ -373,6 +393,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   'run/start': DoneAnswerSchema,
   'run/continue': DoneAnswerSchema,
   'run/cancel': DoneAnswerSchema,
+  'run/policyDecision': DoneAnswerSchema,
   'field/focus': DoneAnswerSchema,
   'field/describe': FieldDescribeAnswerSchema,
   'draft/confirm': DoneAnswerSchema,

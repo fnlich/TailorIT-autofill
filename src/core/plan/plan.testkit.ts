@@ -58,8 +58,9 @@ const OPTION_KINDS: readonly FieldKind[] = ['select', 'radio', 'checkbox-group',
 /** What a test may set on a spec besides the label and kind; `optionLabels` builds the options. */
 export type SpecExtra = Partial<FieldSpec> & { optionLabels?: readonly string[] };
 
-/** A field as the scanner would describe it: a visible field in 'main' on Lever, labelled by `for`, with its keys and
- *  option-set hash built by the core's own key functions. */
+/** A field as the scanner would describe it: a visible field in 'main' on Lever, labelled by `for` (by nothing when the
+ *  label is ''), with its keys and option-set hash built by the core's own key functions. Its label is visible unless
+ *  it has none; a test that names the field by an aria-label nobody sees passes labelVisible: false. */
 export function specOf(label: string, kind: FieldKind, extra: SpecExtra = {}): FieldSpec {
   const { optionLabels, ...rest } = extra;
   const options: Option[] | 'lazy' = rest.options ?? (optionLabels ? optionsOf(optionLabels) : []);
@@ -68,6 +69,7 @@ export function specOf(label: string, kind: FieldKind, extra: SpecExtra = {}): F
   const nameAttr = rest.nameAttr ?? '';
   const idAttr = rest.idAttr ?? '';
   const ordinal = rest.ordinal ?? 0;
+  const labelSource = rest.labelSource ?? (label === '' ? 'none' : 'for');
   const hash: OptionSetHash = options === 'lazy' ? 'lazy' as OptionSetHash
     : OPTION_KINDS.includes(kind) ? optionSetHash(options.map((option) => cutInjected(option.label).clean)
       .filter((clean) => clean !== '')) : OPTION_SET_NONE;
@@ -75,7 +77,7 @@ export function specOf(label: string, kind: FieldKind, extra: SpecExtra = {}): F
   return {
     key: fieldKey({ platform, section, labelSlug: slug, ordinal, optionSetHash: hash }),
     baseKey: baseKey({ platform, section, labelSlug: slug, ordinal }),
-    platform, section, kind, label, labelSource: label === '' ? 'none' : 'for', description: '', required: false,
+    platform, section, kind, label, labelSource, labelVisible: labelSource !== 'none', description: '', required: false,
     options, optionSetHash: hash, constraints: {}, autocomplete: [], nameAttr, idAttr, ordinal, domOrder: 0,
     visibility: 'visible', disabled: false, readOnly: false, current: { kind: 'empty' },
     ...rest,

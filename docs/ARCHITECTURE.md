@@ -87,7 +87,8 @@ ATS frame (top or embedded iframe)          extension service worker            
     - `panel/open`, from the launcher's trusted click;
     - the `resume` port.
   - **Worker to content:**
-    - start, continue and cancel;
+    - start, continue (after a pause) and cancel;
+    - a policy card's decision, to the one frame that waits at it;
     - focus a field, confirm a draft;
     - `field/describe`: the labels of a row's suggested options, fetched only when the row is expanded, never stored;
     - `report/update`: the tab's combined report, sent to the frame that shows the in-page panel while it is open;
@@ -204,7 +205,8 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
 | Message | Sent when | The frame answers |
 |---|---|---|
 | `run/start {dryRun}` | `panel/fill`: to every registered frame of the tab that has a form | `{}` |
-| `run/continue`, `run/cancel` | `panel/continue`, `panel/cancel`: to the frames that reported | `{}` |
+| `run/continue`, `run/cancel` | `panel/continue`, `panel/cancel`: to the frames that reported. `run/continue` resumes a pause only and never answers a policy card; `run/cancel` stops a run, a policy card's wait included, or leaves a pause | `{}` |
+| `run/policyDecision {decision}` (`fill` or `cancel`) | `panel/policyDecision`: to that one frame, while its report is at `policy-notice` | `{}` once the decision settled its policy card (`fill` is Fill anyway, `cancel` is Cancel); `expired` when no run there waits at the card (`DoneAnswerSchema`) |
 | `field/focus {fieldKey}` | `panel/focus` | `{}` |
 | `field/describe {fieldKey}` | `panel/describe` | `{options: [{index, label}]}` (`FieldDescribeAnswerSchema`, at most 3): the visible labels of the row's suggested options, passed to the panel and never stored |
 | `report/update {reports}` | every report change while the in-page panel is chosen (`settings.panel: 'in-page'`): to each of the tab's frames that reported. A frame whose panel is closed ignores it | `{}` (not read) |
@@ -217,7 +219,8 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
 |---|---|---|
 | `ping` | `{pong: true}` | none |
 | `panel/fill {tabId, dryRun}` | `{frames}` (`PanelSentAnswerSchema`): the frames that received `run/start` | `not_connected` |
-| `panel/continue {tabId}`, `panel/cancel {tabId}` | `{frames}` | none |
+| `panel/continue {tabId}`, `panel/cancel {tabId}` | `{frames}`: the toolbar's Continue (pauses only) and Cancel | none |
+| `panel/policyDecision {tabId, frameId, decision}` (`fill` or `cancel`) | `{}` (`DoneAnswerSchema`), once that frame's policy card took the decision | `expired`: that frame is not registered, its report is not at `policy-notice`, or the frame answers that no run there waits at the card. `unavailable`: it did not answer, or its answer fails the schema |
 | `panel/focus {tabId, frameId, fieldKey}` | `{}` | `expired`: that frame is not registered. `unavailable`: it did not answer |
 | `panel/describe {tabId, frameId, fieldKey}` | `{options}` (`FieldDescribeAnswerSchema`) | `expired`, `unavailable` (no answer, or one that fails the schema) |
 | `panel/reports {tabId}` | `{tabId, reports}` (`TabReportsAnswerSchema`): the tab's reports, one per frame, by frame id, as known when asked. It also starts the tab's frame check, whose removals reach the panel port | none |
@@ -230,10 +233,11 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
 | `auth/disconnect` | the new `AuthStatusSchema`. The token is forgotten at once, then revoked on TailorIT (`DELETE /session`, best effort) | none |
 | `runs/clear` | `{cleared}` (`RunsClearAnswerSchema`): every RunState and tab index removed | none |
 
-- **The policy card in the side panel** (agreed with the content runtime): while a frame's run is at `policy-notice`, the panel's Fill anyway sends `panel/continue {tabId}` and its Cancel sends `panel/cancel {tabId}`.
-  - The worker forwards them as `run/continue` and `run/cancel`, and the frame treats them exactly as its own card's buttons: `run/continue` is Fill anyway, `run/cancel` is Cancel.
-  - The worker forwards only to frames that have reported, so a frame stopped at `policy-notice` sends its report (status `policy-notice`, notice `policy`) before it waits.
-  - The page's own card takes trusted clicks only; the panel's buttons are the panel's, on the extension's own page.
+- **The policy card in the side panel** (agreed with the content runtime): each frame whose run is at `policy-notice` gets a card of its own, and its Fill anyway and Cancel send `panel/policyDecision {tabId, frameId, decision: 'fill' | 'cancel'}` for that frame.
+  - The worker sends it on as `run/policyDecision {decision}` to that one frame, and only while the frame's report is at `policy-notice`. The frame treats it exactly as its own card's buttons: `fill` is Fill anyway, `cancel` is Cancel.
+  - So a frame stopped at `policy-notice` sends its report (status `policy-notice`, notice `policy`) before it waits.
+  - The toolbar's Continue (`panel/continue`, then `run/continue` to every frame that reported) resumes pauses only: with one frame at the policy card and another at a CAPTCHA pause, it resumes the pause and the card keeps waiting for the person's own decision. The toolbar's Cancel still stops every reporting frame's run, a card's wait included, which writes nothing.
+  - The page's own card takes trusted clicks only and decides locally; the panel's buttons are the panel's, on the extension's own page.
 
 **Port `panel`** (extension pages only): how the side panel follows a tab.
 - The page posts `panel/watch {tabId}`, and again with another id when the active tab changes. Only the latest watch counts.
@@ -373,7 +377,9 @@ export interface FieldSpec {
   key: FieldKey; baseKey: BaseKey;
   platform: Platform;             // the platform of the frame's host (shared/hosts.ts), even when the generic adapter handles the page
   section: { id: string; block?: number };
-  kind: FieldKind; label: string; labelSource: LabelSource; description: string; required: boolean;
+  kind: FieldKind; label: string; labelSource: LabelSource;
+  labelVisible: boolean;          // a visible source names it; false for 'none' and an aria-label nobody sees: never written (no-visible-label), never asks for the sensitive part
+  description: string; required: boolean;
   options: Option[] | 'lazy'; optionSetHash: OptionSetHash; constraints: Constraints;
   autocomplete: string[]; nameAttr: string; idAttr: string;
   ordinal: number;                // earlier fields in DOM order with the same platform, section id and label slug; the hash never affects it
@@ -394,7 +400,8 @@ export type ValueOrigin =
   | { provenance: 'llm-pick'; taskId: string; pickedCandidate: number; labelHash: string }  // SHA-256 of the option text as sent
   | { provenance: 'llm-draft'; taskId: string; confirmedByUser: boolean };
 export type WriteValue = { kind: 'text'; text: string } | { kind: 'option'; index: number; cleanLabel: string; freeText?: string }
-  | { kind: 'options'; indices: number[] } | { kind: 'query'; queries: string[] } | { kind: 'check' }
+  | { kind: 'options'; indices: number[]; cleanLabels: string[] }   // cleanLabels[i] names the option at indices[i]
+  | { kind: 'query'; queries: string[] } | { kind: 'check' }
   | { kind: 'file'; ref: 'resume' } | { kind: 'date'; iso: string };
 export interface Match { stage: MatcherStage; optionIndex: number | null; rule: MatchRule | null; confidence: number;
   score?: number; margin?: number; freeText?: string /* for "Other, please specify"; in memory only */;
@@ -488,6 +495,7 @@ export interface Profile {
 - **Guard** (pure checks in `src/core/guard`, DOM checks in `src/dom`; full patterns in `docs/design/core.md`):
   - **What may be written, and when.**
     - `guardWrite` runs before every write, in this order: honeypot, provenance, category policy, canary scan, mark-all. The first failure blocks the field with its reason.
+    - **A choice names its options twice,** by place and by clean label (`cleanLabel`, `cleanLabels`). The option-set hash is over the sorted labels, so a list the page re-orders keeps its key: `guardWrite` and `guardWriteInFrame` refuse an options write whose labels are not the field's at those indices (`options-changed`), and the fillers read each planned option's label again right before acting and refuse the whole write when one differs. The read-back checks the selected set by label as well as by place.
     - `guardReady` runs before the panel says "ready for your review": a canary scan over every read-back value (the user's own typing included, which is flagged, never overwritten), every draft confirmed, blocked fields listed. Nothing is ever submitted.
   - **Visibility.**
     - The only text an LLM ever sees comes from `visibleText` (the spec's visibility, camouflage and skip rules).
@@ -517,6 +525,7 @@ export interface Profile {
     - A hit stops the run before filling, and nothing is filled until the user chooses.
     - The stored copy is a `StoredPostingText`: the policy checker accepts it beside `VisibleText`, every LLM builder refuses it, and a notice it raises says it came from TailorIT's saved copy.
   - **Honeypots.** A field must be visible, or be a hidden native radio or checkbox with a visible label, or a hidden file input with a visible control. Anything else is blocked.
+    - A field no visible source names (`FieldSpec.labelVisible` false: no label, or an `aria-label` whose words are not beside the control) gets no write from the planner and never makes it ask for the sensitive part. Its row has the frame guard's reason, `no-visible-label`: skipped with no label at all, flagged when an aria-label names a question.
 - **Resolver** (pure, `src/core/resolver`):
   - **Order.**
     1. Attention and tripwire-in-label checks come first.
@@ -616,7 +625,7 @@ export interface Profile {
   - **A placeholder** counts as visible only when the control is empty and `getComputedStyle(el, '::placeholder')` passes the opacity, 4 px font and camouflage checks against the control's background. If a Phase 2 smoke check shows Chromium cannot report that style, placeholder-only labels are treated like `aria-label`: they may drive rules, but never make a control fillable on their own and never reach an LLM.
 - **Scanner:**
   - **Labels** come only from the spec's sources, in its order. A trailing "*" or "(required)" sets `required`.
-    - A label known only from `aria-label` may drive the rules, but never reaches the LLM.
+    - A label known only from `aria-label` may drive the rules, but never reaches the LLM. The field is written only when the label's words are visible beside the control; `FieldSpec.labelVisible` carries that to the worker, so the planner plans nothing the frame would refuse.
     - A control with no visible label, visible placeholder or adapter label is never filled, even if its autocomplete or name would resolve it. This is stricter than the spec; it catches visible honeypots marked `autocomplete="email"`.
   - **Hidden natives follow the proxy rule:**
     - A radio or checkbox qualifies through a visible, clear `label for=` or wrapping label, or an adapter proxy.
@@ -678,9 +687,9 @@ export interface Profile {
   - **Dry run:** the same path with the fillers replaced by a recorder. Rows show the status the fill would produce, with `wrote: false` and `verification: 'not-checked'`; the report's mode is `dry-run`. Nothing is written.
   - **As built (Phase 2):** `src/content`. One pass per run: `runtime.ts` (start-up, the worker's messages, the page), `orchestrator.ts` (one run), `pass.ts` (scan, plan, write), `verify.ts` (after the settle, and the final Guard), `transfer.ts` (the resume port), `report.ts`, `policy.ts`, `quiet.ts`, `location.ts`, `forged.ts`.
     - **Start-up:** the onMessage listener first, then `frame/hello {isTop, hasForm}`. `hasForm` means an adapter found a form root: the first of `adaptersFor(url)` whose `detect()` finds one, on a page `applicationOf(url)` calls `application`. A `posting` page is read once for policy text (`policy/hit` per pattern id, or one `{patternId: null}`; a page with no visible text says nothing), and gets no launcher. A `confirmation` page gets nothing.
-    - **A frame's answers:** `frame/ping` `{pong: true}`; `run/start {dryRun}` starts a run when none is running (trigger `panel`); `run/continue` is Fill anyway at the policy card, or a fresh run after a pause; `run/cancel` is Cancel at the card, stops a run before its next write (the rest `user-stopped`, status `stopped`), or leaves a pause; `field/focus` scrolls the field or its proxy into view and outlines it, with no event on the field; `field/describe` reads the row's suggested options' visible labels from a fresh scan; `draft/confirm` and `answer/read` are `not_implemented`; `report/update` is answered `{}` and ignored. Only this extension's own messages from no tab are taken (`bad_sender` otherwise), parsed by `WorkerToContentSchema` (`bad_message`).
-    - **A run:** `run/begin`; the policy gate (a hit on the posting page, in the stored copy or in the frame's own `visibleText` stops at `policy-notice`: the card shows, the report goes out so the side panel mirrors it and its Continue and Cancel reach the frame, and nothing is planned until the person chooses; with the posting page unseen, no stored copy and no hit here, `policy-unreadable`; a frame whose top origin is off the ATS list adds `posting-outside-frame`); the raw scan and `scanTripwires` (the canaries stay in memory); `detectPause` (sign-in or account: `auth-needed`; an email code, an entry choice or a CAPTCHA: `handoff`; nothing is planned, Continue starts afresh); one pass; the settle; `verifyAfterSettle` on each written key (and `verifyOptionsWrite` for a multi-select); `guardReady`; `report/put`; `runstate/put` (status `review`, the plan's `persistableCanaries`, the tripwire counts, `lastFill`; none for a dry run).
-    - **Each write:** `domGuardBeforeWrite` (a fresh scan), `guardWriteInFrame`, for a file the resume port (then both checks again), `fill`, `settleRow`. Refusals for not visible, no visible label, the extension's own UI, a canary, provenance or mark-all are `blocked`; gone, options changed, disabled, an auth field on the step, or the site ignoring our events are `flagged`. A field that already held the value when the write came is `skipped`, `already-correct`, as the planner rows it.
+    - **A frame's answers:** `frame/ping` `{pong: true}`; `run/start {dryRun}` starts a run when none is running (trigger `panel`); `run/continue` is a fresh run after a pause, and never Fill anyway; `run/policyDecision {decision}` is the side panel card's Fill anyway (`fill`) or Cancel (`cancel`) for a run waiting at the card, answered `expired` when none waits; `run/cancel` is Cancel at the card, stops a run before its next write (the rest `user-stopped`, status `stopped`), or leaves a pause; `field/focus` scrolls the field or its proxy into view and outlines it, with no event on the field; `field/describe` reads the row's suggested options' visible labels from a fresh scan; `draft/confirm` and `answer/read` are `not_implemented`; `report/update` is answered `{}` and ignored. Only this extension's own messages from no tab are taken (`bad_sender` otherwise), parsed by `WorkerToContentSchema` (`bad_message`).
+    - **A run:** `run/begin`; the policy gate (a hit on the posting page, in the stored copy or in the frame's own `visibleText` stops at `policy-notice`: the card shows, the report goes out so the side panel mirrors it and its card's decision (`run/policyDecision`) reaches this frame, and nothing is planned until the person chooses; with the posting page unseen, no stored copy and no hit here, `policy-unreadable`; a frame whose top origin is off the ATS list adds `posting-outside-frame`); the raw scan and `scanTripwires` (the canaries stay in memory); `detectPause` (sign-in or account: `auth-needed`; an email code, an entry choice or a CAPTCHA: `handoff`; nothing is planned, Continue starts afresh); one pass; the settle; `verifyAfterSettle` on each written key (and `verifyOptionsWrite` for a multi-select); `guardReady`; `report/put`; `runstate/put` (status `review`, the plan's `persistableCanaries`, the tripwire counts, `lastFill`; none for a dry run).
+    - **Each write:** `domGuardBeforeWrite` (a fresh scan), `guardWriteInFrame`, for a file the resume port (then both checks again), `fill`, `settleRow`. Refusals for not visible, no visible label, the extension's own UI, a canary, provenance or mark-all are `blocked`; gone, options changed (from the DOM guard, `guardWriteInFrame` or a filler), disabled, an auth field on the step, or the site ignoring our events are `flagged`. A field that already held the value when the write came is `skipped`, `already-correct`, as the planner rows it.
     - **Phase 2's settle** (`quiet.ts`, replaced by `dom/settle.ts` in Phase 3, which keeps its `SettleResult`): one animation frame (or the first quiet window, in a tab that runs none), then `SETTLE_QUIET_MS` with no mutation on the form root (the extension's own UI does not count), capped at `SETTLE_CAP_MS` from the start; at the cap the run adds `page-busy` and still verifies. It checks no busy signs and waits for no option list. It runs only when something was written, and the page is then scanned once more.
     - **Where Phase 3 plugs in:** `FillRun.fillStep()` (one pass) becomes the reactive loop over the core's bookkeeping, and `FillRun.settleWrites()` calls `settle()`; the begin, gate, raw scan, pause, final Guard and report stay. Phase 4's waiting fields go through the same `call()` as `plan/poll`; Phase 5's step machine wraps the fill step.
     - **Expired:** an `expired` answer to `run/begin`, `plan/request` or `report/put` begins the run again once (a report is rebuilt under the new run id); a second one ends the run in the launcher's error state.
@@ -728,12 +737,12 @@ export interface Profile {
     - **The panel's data:** `panel/reports {tabId}` first, then `panel/watch {tabId}` on the `panel` port. A one-shot answer that arrives after a pushed update is dropped as older.
     - **Reconnecting:** when the port drops (a worker restart, or Chrome stopping the idle worker), the panel connects again at once and watches its tab again, which wakes the worker; a frame's report reaches only a connected panel. So an open panel wakes the worker each time Chrome stops it. After more than 5 drops in 10 s it stops and shows a Reconnect button. Timing comes from an injected clock: there is no timer.
     - **The panel's contents:** the connection line (`auth/status`, read again when the tab changes, when the page becomes visible or takes the focus, and after a `not_connected`); Fill, Dry run, Continue and Cancel; the most urgent run status with its step; what the last button did; then the report. `step.index` counts from 0: index 0 of 6 reads "Step 1 of 6".
-    - **The report's layout:** the notices first, each code once across frames, in `NOTICE_CODES` order. While a run waits at `policy-notice`, the policy card leads them, with its buttons when the container passes `onPolicyDecision`. Then each frame by frame id ("Lever form", or "Greenhouse form, embedded in this page"), with its status, step, pause sentence, dry-run note and the hidden fields it left alone, and its rows by section. Opening a row asks for its suggestions' labels, which live only in that open row's state.
+    - **The report's layout:** the notices first, each code once across frames, in `NOTICE_CODES` order. Each frame whose run waits at `policy-notice` gets a policy card leading them (named by its frame when several wait), with its buttons when the container passes `onPolicyDecision(frameId, decision)`; the side panel sends them as `panel/policyDecision` for that frame. Then each frame by frame id ("Lever form", or "Greenhouse form, embedded in this page"), with its status, step, pause sentence, dry-run note and the hidden fields it left alone, and its rows by section. Opening a row asks for its suggestions' labels, which live only in that open row's state.
     - **Styles:** two TS strings. The report's (`src/ui/report/styles.ts`) is adopted into whatever root the report is mounted in: the document, or a shadow root. The pages' layout (`src/ui/page/styles.ts`) shares its colour tokens and buttons.
     - **The options page:** every change is one `settings/save` of the whole settings. The change shows while it is on its way, with every control held still; then the page shows the settings the answer carries, or the old ones with "Not saved". The pairing countdown repaints on animation frames, which the browser runs only while the page is visible: no timer. The anonymous counters and the offer to save answers arrive in Phase 6; until then each save sends their stored values back unchanged.
     - **Test hooks:**
       - each row: `data-field-key`, `data-status`, and `data-provenance` (`none` when nothing was written);
-      - each frame: `data-frame-id`; each notice: `data-notice`; a run status: `data-run-status`;
+      - each frame: `data-frame-id`; each notice: `data-notice`; each policy card: also `data-policy-frame`, the frame it decides for; a run status: `data-run-status`;
       - the panel's root: `data-tab-id`; its connection line: `data-connection`;
       - each options input: `data-setting` (`autoAdvance`, `panel.side`, `panel.in-page`, `consent.<category>`, `llm.tiebreak`, `llm.classify`, `llm.drafts`, `interpretations.<name>`);
       - the disclosure: `data-disclosure`; the pairing line: `data-pairing` (`waiting` or `lapsed`).

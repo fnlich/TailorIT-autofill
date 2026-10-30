@@ -11,8 +11,13 @@
  * - What the field already holds is read first. A value equal to the plan is left alone (already-correct); a page's
  *   own value in a structured field is overwritten and flagged (prefill-conflict), and in a box of prose kept and
  *   flagged (prefill-kept); a box the plan would not tick is never unticked (unexpected-selection).
+ * - A field no visible label names gets no write: with no label at all it is skipped (it may be no question at all),
+ *   and one named only by a label nobody sees (an aria-label whose words are not beside it) is flagged, both with the
+ *   frame guard's reason, no-visible-label.
  * - While the sensitive part is not loaded, a field that needs it makes the whole answer needsSensitive, with nothing
- *   else in it: the worker fetches the part once and plans again.
+ *   else in it: the worker fetches the part once and plans again. Only a field that could be written asks: never a
+ *   honeypot, a disabled control or a field no visible label names.
+ * - An options write carries each chosen option's clean label beside its index, from the prepared options.
  * - The canaries scanned for are the frame's and any its fields' own labels carry; only the frame's that equal no
  *   profile value may be kept in RunState (persistableCanaries).
  */
@@ -69,6 +74,14 @@ function rowWithout(spec: FieldSpec, category: FieldCategory, status: FillResult
     needsUserAction: status === 'flagged' || status === 'blocked',
     ...(suggestions.length > 0 ? { detail: { suggestions } } : {}),
   };
+}
+
+/** The status of a field the Guard keeps from being written: a honeypot is blocked; a field with no label at all is
+ *  skipped, since it may be no question at all; one named only by a label nobody sees is flagged, since it names a
+ *  question the person may want to answer. */
+function refusedStatus(spec: FieldSpec, reason: ReasonCode): FillResult['status'] {
+  if (reason !== 'no-visible-label') return 'blocked';
+  return spec.labelSource === 'none' ? 'skipped' : 'flagged';
 }
 
 /** The row of a resolution that writes nothing. */
@@ -222,7 +235,9 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       const match: Match = { ...noMatch('ok'), stage: weakest.stage, rule: weakest.rule, confidence, flags,
         reason: added.find((candidate) => candidate.reason !== 'ok')?.reason ?? 'ok' };
       const exclusive = new Set(options.list.filter((option) => option.exclusive).map((option) => option.index));
-      return { value: { kind: 'options', indices: multi.add.map((item) => item.index) }, match,
+      const cleanOf = (index: number) => options.list.find((option) => option.index === index)!.clean;
+      return { value: { kind: 'options', indices: multi.add.map((item) => item.index),
+        cleanLabels: multi.add.map((item) => cleanOf(item.index)) }, match,
         ...(multi.reason !== 'ok' ? { flag: multi.reason } : {}),
         multi: { profileSetSize: shaped.set.length, kept: multi.keep.length, exclusive } };
     }
@@ -242,8 +257,7 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   const { resolution, shaped } = resolved;
   const honeypot = checkHoneypot(spec);
   if (!honeypot.ok) {
-    return { row: rowWithout(spec, resolution.category, honeypot.reason === 'honeypot' ? 'blocked' : 'skipped',
-      honeypot.reason, 0) };
+    return { row: rowWithout(spec, resolution.category, refusedStatus(spec, honeypot.reason), honeypot.reason, 0) };
   }
   if (spec.disabled || spec.readOnly) {
     return { row: rowWithout(spec, resolution.category, 'skipped', 'disabled-or-readonly', resolution.confidence) };
@@ -265,8 +279,7 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   const verdict = guardWrite(write, { spec, category: resolution.category,
     ...(planned.multi ? { multi: planned.multi } : {}) }, ctx.guard);
   if (!verdict.ok) {
-    const status = verdict.reason === 'no-visible-label' ? 'skipped' : 'blocked';
-    return { row: rowWithout(spec, resolution.category, status, verdict.reason, confidence) };
+    return { row: rowWithout(spec, resolution.category, refusedStatus(spec, verdict.reason), verdict.reason, confidence) };
   }
   const status: FillResult['status'] = action === 'fill' ? 'verified' : 'flagged';
   const reason: ReasonCode = flag ?? (action === 'fill-and-flag' ? 'filled-low-confidence' : 'ok');
@@ -305,7 +318,8 @@ export function planFrame(input: PlanInput): PlanOutput {
     profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
   }, classifications[at]!));
-  // Only a field that could be written asks for the sensitive part: never a honeypot or a disabled control.
+  // Only a field that could be written asks for the sensitive part: never a honeypot, a disabled control or a field no
+  // visible label names (checkHoneypot).
   const writable = (spec: FieldSpec) => checkHoneypot(spec).ok && !spec.disabled && !spec.readOnly;
   if (input.sensitiveState === 'not-loaded' && resolved.some((field, at) => field.needsSensitive && writable(specs[at]!))) {
     return { writes: [], results: [], awaiting: [], needsSensitive: true, persistableCanaries: kept };

@@ -70,7 +70,9 @@ describe('every answer parses with the schema its receiver uses', () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
     const runId = await beginRun(worker);
-    await worker.deliver({ v: 1, type: 'report/put', runId, report: frameReport(runId) }, contentSender());
+    // The frame's run waits at the policy card, so the card's decision has somewhere to go.
+    await worker.deliver({ v: 1, type: 'report/put', runId, report: frameReport(runId, 0, { status: 'policy-notice' }) },
+      contentSender());
     worker.fakes.frameAnswers = ({ message }) => ((message as { type: string }).type === 'field/describe'
       ? { ok: true, data: { options: [{ index: 0, label: 'Yes' }] } }
       : { ok: true, data: {} });
@@ -80,6 +82,7 @@ describe('every answer parses with the schema its receiver uses', () => {
       { type: 'panel/fill', tabId: 7, dryRun: true },
       { type: 'panel/continue', tabId: 7 },
       { type: 'panel/cancel', tabId: 7 },
+      { type: 'panel/policyDecision', tabId: 7, frameId: 0, decision: 'fill' },
       { type: 'panel/focus', tabId: 7, frameId: 0, fieldKey: key },
       { type: 'panel/describe', tabId: 7, frameId: 0, fieldKey: key },
       { type: 'panel/reports', tabId: 7 },

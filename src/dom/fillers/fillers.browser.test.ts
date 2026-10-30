@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { WriteValue } from '../../core/types/intent';
+import { guardWriteInFrame } from '../../core/guard/write';
+import type { PlannedWrite } from '../../core/types/fill';
+import type { ProfilePath, WriteValue } from '../../core/types/intent';
 import {
   loadFixture, logEvents, removeFixtures, untrustedViolations, type Fixture, type LoggedEvent,
 } from '../fixture.testkit';
-import { scan } from '../scan';
+import { domGuardBeforeWrite } from '../guard';
+import { scan, toFieldSpec } from '../scan';
 import type { FieldTarget } from '../types';
 import { ALLOWED_EVENTS, DOCX_MIME, fill, sameText, verifyAfterSettle } from './index';
 
@@ -114,11 +117,27 @@ describe('the select fillers', () => {
   it('adds the missing options of a multiple select, never deselects, with one input and one change', async () => {
     const fixture = await loadFixture(document, SELECT);
     const log = logEvents(fixture.doc);
-    expect(fillIn(fixture, 'm', { kind: 'options', indices: [0, 1] })).toMatchObject({ reason: 'ok', wrote: true });
+    expect(fillIn(fixture, 'm', { kind: 'options', indices: [0, 1], cleanLabels: ['Go', 'Rust'] }))
+      .toMatchObject({ reason: 'ok', wrote: true });
     const select = fixture.doc.getElementById('m') as HTMLSelectElement;
     expect(Array.from(select.selectedOptions).map((option) => option.text)).toEqual(['Go', 'Rust']);
     expect(log.on('m').map((event) => event.type)).toEqual(['input', 'change']);
-    expect(fillIn(fixture, 'm', { kind: 'options', indices: [1] })).toMatchObject({ reason: 'already-correct' });
+    expect(fillIn(fixture, 'm', { kind: 'options', indices: [1], cleanLabels: ['Rust'] }))
+      .toMatchObject({ reason: 'already-correct' });
+  });
+
+  it('refuses a whole multiple-select write when one planned option now reads otherwise, selecting nothing', async () => {
+    const fixture = await loadFixture(document, SELECT);
+    const log = logEvents(fixture.doc);
+    // Index 0 is still Go, but index 2 is Java, not the planned TypeScript.
+    expect(fillIn(fixture, 'm', { kind: 'options', indices: [0, 2], cleanLabels: ['Go', 'TypeScript'] }))
+      .toEqual({ wrote: false, verification: 'not-checked', reason: 'options-changed', needsUserAction: false });
+    const select = fixture.doc.getElementById('m') as HTMLSelectElement;
+    expect(Array.from(select.selectedOptions).map((option) => option.text)).toEqual(['Rust']);
+    expect(log.events).toEqual([]);
+    // Labels without one per index are a planner bug.
+    expect(fillIn(fixture, 'm', { kind: 'options', indices: [0, 2], cleanLabels: ['Go'] }))
+      .toMatchObject({ wrote: false, reason: 'internal-error' });
   });
 });
 
@@ -157,11 +176,29 @@ describe('the radio and checkbox fillers', () => {
   it('clicks only the planned boxes that are not ticked yet', async () => {
     const fixture = await loadFixture(document, CHOICES);
     const log = logEvents(fixture.doc);
-    expect(fillIn(fixture, 'tools', { kind: 'options', indices: [0, 2] })).toMatchObject({ reason: 'ok', wrote: true });
+    expect(fillIn(fixture, 'tools', { kind: 'options', indices: [0, 2], cleanLabels: ['Go', 'Java'] }))
+      .toMatchObject({ reason: 'ok', wrote: true });
     expect(log.on('go')).toEqual([]);
     expect(log.on('rust')).toEqual([]);
     expect(log.on('java').map((event) => event.type)).toEqual(['click', 'input', 'change']);
     expect((fixture.doc.getElementById('go') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('refuses a whole checkbox-group write when one planned box now shows another label, ticking nothing', async () => {
+    const fixture = await loadFixture(document, CHOICES);
+    const target = targetOf(fixture, 'tools');
+    const log = logEvents(fixture.doc);
+    // The page re-labels the boxes after our scan (React reusing its inputs for a re-ordered list): the box at index 2
+    // now reads Go.
+    const labels = Array.from(fixture.doc.querySelectorAll('fieldset')[1]!.querySelectorAll('label'));
+    const texts = labels.map((label) => label.lastChild!.textContent);
+    labels.forEach((label, at) => { label.lastChild!.textContent = texts[texts.length - 1 - at]!; });
+    expect(fill(target, { kind: 'options', indices: [1, 2], cleanLabels: ['Rust', 'Java'] },
+      { adapter: null, root: fixture.doc.querySelector('form') }))
+      .toEqual({ wrote: false, verification: 'not-checked', reason: 'options-changed', needsUserAction: false });
+    expect(['go', 'rust', 'java'].map((id) => (fixture.doc.getElementById(id) as HTMLInputElement).checked))
+      .toEqual([true, false, false]);
+    expect(log.events).toEqual([]);
   });
 
   it('flags a box the page refuses to tick as needs-your-click, and does not retry', async () => {
@@ -299,5 +336,95 @@ describe('fill', () => {
     fixture.doc.getElementById('t')!.remove();
     expect(verifyAfterSettle(first.rescan(), key, value)).toEqual({ verification: 'not-checked',
       reason: 'element-not-found' });
+  });
+});
+
+describe('a list the page re-orders between the plan and the write', () => {
+  afterEach(() => removeFixtures(document));
+
+  const SKILLS = ['Go', 'Java', 'Python', 'Rust', 'TypeScript'];
+  const PAGE = `<!doctype html><body><form>
+    <fieldset id="skills"><legend>Which of these skills do you use?</legend>
+    ${SKILLS.map((skill) => `<label><input type="checkbox" name="skills" value="${skill}"> ${skill}</label>`).join('\n')}
+    </fieldset>
+    <label for="multi">Strongest skills</label>
+    <select id="multi" multiple>${SKILLS.map((skill) => `<option>${skill}</option>`).join('')}</select>
+    </form></body>`;
+  const PLANNED = ['Python', 'TypeScript'];
+
+  /** The plan, made from the scan before the page changes: the profile's Python and TypeScript. */
+  function planOver(fixture: Fixture, kind: 'checkbox-group' | 'multiselect') {
+    const root = fixture.doc.querySelector('form')!;
+    const planned = scan(root, null, OPTIONS);
+    const field = planned.fields.find((candidate) => candidate.kind === kind)!;
+    const options = field.options === 'lazy' ? [] : field.options;
+    const indices = PLANNED.map((label) => options.find((option) => option.label === label)!.index);
+    const write: PlannedWrite = { key: field.key, value: { kind: 'options', indices, cleanLabels: [...PLANNED] },
+      origin: { provenance: 'profile', path: 'skills' as ProfilePath },
+      match: { stage: 'exact', optionIndex: null, rule: null, confidence: 1, flags: [], suggestions: [], reason: 'ok' } };
+    return { root, planned, field, write };
+  }
+
+  /** What the content script does right before the write: the DOM guard's fresh scan, then the frame's core Guard. */
+  function beforeWrite(plan: ReturnType<typeof planOver>) {
+    const verdict = domGuardBeforeWrite(plan.planned, { key: plan.field.key, baseKey: plan.field.baseKey,
+      label: plan.field.label, kind: plan.field.kind });
+    if (!verdict.ok) throw new Error(`the DOM guard refused: ${verdict.reason}`);
+    return { target: verdict.target, guard: guardWriteInFrame(plan.write, toFieldSpec(verdict.target.field), []) };
+  }
+
+  it('ticks nothing in a reversed checkbox group: same key, but the Guard and the filler say options-changed', async () => {
+    const fixture = await loadFixture(document, PAGE);
+    const plan = planOver(fixture, 'checkbox-group');
+    const fieldset = fixture.doc.getElementById('skills')!;
+    for (const label of Array.from(fieldset.querySelectorAll('label')).reverse()) fieldset.append(label);
+    const log = logEvents(fixture.doc);
+    const { target, guard } = beforeWrite(plan);
+    // The option-set hash is over the sorted labels: the reversed list keeps the key, so only the labels tell.
+    expect(target.field.key).toBe(plan.field.key);
+    expect(guard).toEqual({ ok: false, reason: 'options-changed' });
+    // The filler refuses on its own as well, whoever calls it.
+    expect(fill(target, plan.write.value, { adapter: null, root: plan.root }))
+      .toEqual({ wrote: false, verification: 'not-checked', reason: 'options-changed', needsUserAction: false });
+    expect(Array.from(fixture.doc.querySelectorAll<HTMLInputElement>('input[type=checkbox]')).filter((box) => box.checked))
+      .toEqual([]);
+    expect(log.events).toEqual([]);
+  });
+
+  it('selects nothing in a reversed multiple select, for the same reasons', async () => {
+    const fixture = await loadFixture(document, PAGE);
+    const plan = planOver(fixture, 'multiselect');
+    const select = fixture.doc.getElementById('multi') as HTMLSelectElement;
+    for (const option of Array.from(select.options).reverse()) select.append(option);
+    const log = logEvents(fixture.doc);
+    const { target, guard } = beforeWrite(plan);
+    expect(target.field.key).toBe(plan.field.key);
+    expect(guard).toEqual({ ok: false, reason: 'options-changed' });
+    expect(fill(target, plan.write.value, { adapter: null, root: plan.root }))
+      .toEqual({ wrote: false, verification: 'not-checked', reason: 'options-changed', needsUserAction: false });
+    expect(select.selectedOptions).toHaveLength(0);
+    expect(log.events).toEqual([]);
+  });
+
+  it('writes the planned options when the list is unchanged, and verifies them by label as well as by place', async () => {
+    const fixture = await loadFixture(document, PAGE);
+    for (const kind of ['checkbox-group', 'multiselect'] as const) {
+      const plan = planOver(fixture, kind);
+      const { target, guard } = beforeWrite(plan);
+      expect(guard, kind).toEqual({ ok: true });
+      expect(fill(target, plan.write.value, { adapter: null, root: plan.root }), kind)
+        .toMatchObject({ wrote: true, verification: 'verified', reason: 'ok' });
+      expect(verifyAfterSettle(plan.planned.rescan(), plan.field.key, plan.write.value), kind)
+        .toEqual({ verification: 'verified', reason: 'ok' });
+    }
+    // The page then re-renders the group in reverse, keeping each input's checked state by place (React reusing its
+    // inputs): places 2 and 4 are still ticked, but now read Python and Go. By place alone that would verify.
+    const plan = planOver(fixture, 'checkbox-group');
+    const labels = Array.from(fixture.doc.getElementById('skills')!.querySelectorAll('label'));
+    labels.forEach((label, at) => { label.lastChild!.textContent = ` ${SKILLS[SKILLS.length - 1 - at]!}`; });
+    const fresh = plan.planned.rescan();
+    expect(fresh.target(plan.field.key)?.members.map((box) => box.checked)).toEqual([false, false, true, false, true]);
+    expect(verifyAfterSettle(fresh, plan.field.key, { kind: 'options', indices: [2, 4], cleanLabels: PLANNED }))
+      .toEqual({ verification: 'mismatch', reason: 'verify-mismatch' });
   });
 });

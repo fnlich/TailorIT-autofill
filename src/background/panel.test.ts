@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { beginRun, contentSender, frameReport, pageSender, sentToFrames, startTestWorker, tokenRecord, type TestWorker } from './worker.testkit';
+import { beginRun, contentSender, frameReport, NO_RECEIVER, pageSender, sentToFrames, startTestWorker, tokenRecord,
+  type TestWorker } from './worker.testkit';
 
 const FORM_FRAME = contentSender({ frameId: 4, documentId: 'doc-4', url: 'https://job-boards.greenhouse.io/embed/job_app?for=acme&token=1' });
 const PLAIN_FRAME = contentSender({ frameId: 5, documentId: 'doc-5', url: 'https://jobs.lever.co/acme' });
@@ -55,6 +56,56 @@ describe('the panel\'s messages', () => {
     expect(sentToFrames(worker).map((sent) => sent.message)).toEqual([{ v: 1, type: 'run/continue' }, { v: 1, type: 'run/cancel' }]);
     expect(sentToFrames(worker).every((sent) => sent.options?.frameId === 0)).toBe(true);
     expect(await page(worker, { type: 'panel/cancel', tabId: 8 })).toEqual({ ok: true, data: { frames: 0 } });
+  });
+
+  it('panel/policyDecision reaches only the named frame, and only while its run waits at the policy card', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await tabWithFrames(worker);
+    // Frame 0 waits at a CAPTCHA pause, frame 4 at the policy card: both have reported.
+    const top = await beginRun(worker);
+    await worker.deliver({ v: 1, type: 'report/put', runId: top, report: frameReport(top, 0,
+      { status: 'handoff', pauseReason: 'captcha' }) }, contentSender());
+    const embedded = await beginRun(worker, { applicationKey: 'greenhouse:0123456789abcdef' }, FORM_FRAME);
+    await worker.deliver({ v: 1, type: 'report/put', runId: embedded, report: frameReport(embedded, 4,
+      { status: 'policy-notice', platform: 'greenhouse', adapter: 'greenhouse' }) }, FORM_FRAME);
+    // The frame answers {} once the decision settled its card.
+    worker.fakes.frameAnswers = () => ({ ok: true, data: {} });
+    expect(await page(worker, { type: 'panel/policyDecision', tabId: 7, frameId: 4, decision: 'fill' }))
+      .toEqual({ ok: true, data: {} });
+    expect(sentToFrames(worker)).toEqual([{ tabId: 7, message: { v: 1, type: 'run/policyDecision', decision: 'fill' },
+      options: { frameId: 4, documentId: 'doc-4' } }]);
+    // The toolbar's Continue still reaches both reporting frames, as run/continue, never as a decision.
+    expect(await page(worker, { type: 'panel/continue', tabId: 7 })).toEqual({ ok: true, data: { frames: 2 } });
+    expect(sentToFrames(worker).slice(1).map((sent) => ({ frameId: sent.options?.frameId, message: sent.message }))
+      .sort((a, b) => (a.frameId ?? 0) - (b.frameId ?? 0)))
+      .toEqual([{ frameId: 0, message: { v: 1, type: 'run/continue' } }, { frameId: 4, message: { v: 1, type: 'run/continue' } }]);
+  });
+
+  it('panel/policyDecision is refused for a frame not at the card, unknown, gone quiet or no longer waiting', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await tabWithFrames(worker);
+    const top = await beginRun(worker);
+    await worker.deliver({ v: 1, type: 'report/put', runId: top, report: frameReport(top, 0,
+      { status: 'handoff', pauseReason: 'captcha' }) }, contentSender());
+    const decide = (frameId: number) => page(worker, { type: 'panel/policyDecision', tabId: 7, frameId, decision: 'cancel' });
+    // At a pause, not at the card; registered but never reported; not registered at all.
+    expect(await decide(0)).toEqual({ ok: false, error: 'expired' });
+    expect(await decide(4)).toEqual({ ok: false, error: 'expired' });
+    expect(await decide(9)).toEqual({ ok: false, error: 'expired' });
+    expect(sentToFrames(worker)).toEqual([]);
+    await worker.deliver({ v: 1, type: 'report/put', runId: top, report: frameReport(top, 0, { status: 'policy-notice' }) },
+      contentSender());
+    // The frame says no run there waits any more; then nothing receives there; then it answers off the schema.
+    worker.fakes.frameAnswers = () => ({ ok: false, error: 'expired' });
+    expect(await decide(0)).toEqual({ ok: false, error: 'expired' });
+    worker.fakes.frameAnswers = () => {
+      throw new Error(NO_RECEIVER);
+    };
+    expect(await decide(0)).toEqual({ ok: false, error: 'unavailable' });
+    worker.fakes.frameAnswers = () => ({ ok: true, data: { filled: true } });
+    expect(await decide(0)).toEqual({ ok: false, error: 'unavailable' });
+    expect(sentToFrames(worker).map((sent) => sent.message)).toEqual(Array(3).fill({ v: 1, type: 'run/policyDecision',
+      decision: 'cancel' }));
   });
 
   it('panel/focus goes to the frame that holds the field', async () => {

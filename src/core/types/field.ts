@@ -70,6 +70,10 @@ export interface FieldSpec {
   kind: FieldKind;
   label: string;
   labelSource: LabelSource;
+  /** A visible source names this field. False for 'none', and for an aria-label whose words are not visible beside the
+   *  control: such a label may drive the rules, but the field is never written (no-visible-label), never asks for the
+   *  sensitive part, and its label never reaches an LLM. */
+  labelVisible: boolean;
   /** Visible help text (aria-describedby or an adjacent hint); '' when none. */
   description: string;
   required: boolean;

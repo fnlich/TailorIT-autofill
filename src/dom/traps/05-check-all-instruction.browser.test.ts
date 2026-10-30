@@ -40,7 +40,8 @@ describe('trap 05: a visible "check every box" instruction', () => {
     const trap = await loadTrap(document, html);
     const log = logEvents(trap.doc);
     const skills = trap.field('Which of these skills have you used?');
-    expect(fill(trap.result.target(skills.key)!, { kind: 'options', indices: [0, 1] }, { adapter: null, root: trap.root }))
+    expect(fill(trap.result.target(skills.key)!, { kind: 'options', indices: [0, 1],
+      cleanLabels: ['TypeScript', 'Kubernetes'] }, { adapter: null, root: trap.root }))
       .toMatchObject({ verification: 'verified', reason: 'ok' });
     const boxes = Array.from(trap.doc.querySelectorAll<HTMLInputElement>('input[name="skills_a"]'));
     expect(boxes.map((box) => box.checked)).toEqual([true, true, false, false, false, false]);

@@ -3,6 +3,8 @@
  * pass's settle in a fresh scan. A value counts as verified when it reads back equivalent: digits for phones,
  * case-folded for emails, as a number for amounts, with collapsed white space for other text, the option's identity
  * (its place among the visible options and its clean label) for choices, and the file's name and size for uploads.
+ * A multi-option write is read back the same way: every planned place selected and still carrying its planned clean
+ * label, so a list re-ordered or re-labelled under our write never verifies.
  * A page that reformats a value equivalently still verifies; one that rejects it (an empty value, aria-invalid) does not.
  */
 import { qualifiedLabel } from '../../core/text/keys';
@@ -85,9 +87,14 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
       if (field.kind === 'radio') return target.members[value.index]?.checked ?? false;
       return target.options[value.index]?.selected ?? false;
     }
-    case 'options':
-      return value.indices.every((index) => (field.kind === 'checkbox-group'
-        ? target.members[index]?.checked : target.options[index]?.selected) ?? false);
+    case 'options': {
+      const options = field.options === 'lazy' ? [] : field.options;
+      return value.indices.length === value.cleanLabels.length && value.indices.every((index, at) => {
+        const option = options[index];
+        if (option === undefined || !sameOptionLabel(option.label, value.cleanLabels[at]!)) return false;
+        return (field.kind === 'checkbox-group' ? target.members[index]?.checked : target.options[index]?.selected) ?? false;
+      });
+    }
     case 'file': {
       const held = (control as HTMLInputElement).files?.[0];
       return held !== undefined && file !== undefined && held.name === file.name && held.size === file.size;

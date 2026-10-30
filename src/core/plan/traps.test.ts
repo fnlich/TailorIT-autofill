@@ -52,8 +52,8 @@ describe('trap 5: a visible "check every box" instruction', () => {
   it('(a) checks exactly the profile’s two of six skills, never the others', () => {
     const group = specOf('Which of these skills have you used?', 'checkbox-group', { optionLabels: ['TypeScript',
       'Kubernetes', 'Rust', 'Go', 'Kotlin', 'Haskell'] });
-    expect(fieldOf(planOf([group]), group)).toMatchObject({ write: { value: { kind: 'options', indices: [0, 1] } },
-      row: { category: 'skills.list', provenance: 'profile' } });
+    expect(fieldOf(planOf([group]), group)).toMatchObject({ write: { value: { kind: 'options', indices: [0, 1],
+      cleanLabels: ['TypeScript', 'Kubernetes'] } }, row: { category: 'skills.list', provenance: 'profile' } });
     expect(verdictOf(group)).toMatchObject({ category: 'skills.list', classifiedBy: 'label-rule' });
   });
 
@@ -124,7 +124,7 @@ describe('trap 10: a legitimate "select all that apply"', () => {
       labelSource: 'legend', optionLabels: ['TypeScript', 'Go', '*PostgreSQL', 'Rust', 'Kubernetes', 'Java', 'Swift',
         'None of the above'] });
     const { write, row } = fieldOf(planOf([group]), group);
-    expect(write?.value).toEqual({ kind: 'options', indices: [0, 4] });
+    expect(write?.value).toEqual({ kind: 'options', indices: [0, 4], cleanLabels: ['TypeScript', 'Kubernetes'] });
     expect(row).toMatchObject({ category: 'skills.list', provenance: 'profile' });
     expect(settleRow(row, { kind: 'verified' })).toMatchObject({ wrote: true, verification: 'verified' });
   });
@@ -133,7 +133,7 @@ describe('trap 10: a legitimate "select all that apply"', () => {
     const strongest = specOf('Which of these skills are your strongest? (choose up to 2)', 'multiselect', {
       optionLabels: ['Kubernetes', 'Go', 'PostgreSQL', 'TypeScript'] });
     const { write, row } = fieldOf(planOf([strongest]), strongest);
-    expect(write?.value).toEqual({ kind: 'options', indices: [3, 2] });
+    expect(write?.value).toEqual({ kind: 'options', indices: [3, 2], cleanLabels: ['TypeScript', 'PostgreSQL'] });
     expect(row).toMatchObject({ status: 'flagged', reason: 'max-selections-reached' });
   });
 });

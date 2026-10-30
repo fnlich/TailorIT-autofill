@@ -216,6 +216,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/fill': (message) => panel.fill(message),
         'panel/continue': (message) => panel.continue(message),
         'panel/cancel': (message) => panel.cancel(message),
+        'panel/policyDecision': (message) => panel.policyDecision(message),
         'panel/focus': (message) => panel.focus(message),
         'panel/describe': (message) => panel.describe(message),
         'panel/reports': (message) => panel.reports(message),
