@@ -98,6 +98,9 @@ export const WIDGET_SCROLL_CAP_MS = 400;
 export const MAX_WIDGET_OPTIONS = 1_000;
 /** A virtualized list is scrolled at most this many times while it is read. */
 export const MAX_WIDGET_SCROLLS = 200;
+/** A widget's list is read for at most this long in all (each view waits up to WIDGET_SCROLL_CAP_MS, so a hostile list
+ *  could hold a read of MAX_WIDGET_SCROLLS views for 80 s): a read this stops is partial (the Phase 4 review, R9). */
+export const WIDGET_READ_CAP_MS = 10_000;
 /** A remote typeahead: one query's results arrive within this, or the query found nothing. */
 export const TYPEAHEAD_QUERY_CAP_MS = 3_000;
 /** After an auto-advance click, the step transition waits at most this long. */

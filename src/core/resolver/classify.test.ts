@@ -1,11 +1,130 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CLASSIFY_LLM } from '../confidence';
 import { inOrder, planOf, settingsWith, specOf, vocab } from '../plan/plan.testkit';
 import { FIELD_CATEGORIES, type FieldCategory } from '../types/intent';
 import {
-  classifyItemOf, judgeClassification, mapServerCategory, namesSensitiveTopic, screenForClassify, SERVER_CATEGORY_MAP,
-  type ClassifyVerdict, type ServerCategory,
+  classifyItemOf, judgeClassification, mapServerCategory, namesSensitivePickValue, namesSensitiveTopic,
+  screenForClassify, SHARED_SENSITIVE_TERMS, SERVER_CATEGORY_MAP, type ClassifyVerdict, type ServerCategory,
 } from './classify';
+
+/** The phrase fixture TailorIT's tests hold the same copy of (apps/api/test/fixtures/sensitive-phrases.json): 21 that
+ *  must be screened and 23 that must not, each a question's text or a pick's value of the category named. */
+interface Phrase { text: string; as: 'question' | 'school' | 'degree' | 'field_of_study'; screened: boolean }
+const PHRASES = JSON.parse(readFileSync(new URL('./sensitive-phrases.fixture.json', import.meta.url), 'utf8')) as Phrase[];
+
+describe('the sensitive terms TailorIT screens with too (the Phase 4 review, T-F1)', () => {
+  it('pins the shared list, in the lead’s order: each term alone is screened', () => {
+    expect(SHARED_SENSITIVE_TERMS).toEqual([
+      'hourly rate', 'rate of pay', 'CTC', 'current CTC', 'expected CTC', 'base salary', 'annual base', 'bonus', 'equity',
+      'compensation expectations',
+      'Aboriginal', 'Torres Strait Islander', 'Indigenous', 'First Nations', 'visible minority', 'LGBTQ', 'LGBTQ+',
+      'LGBTQIA', 'sexual orientation',
+      'substantially limits', 'major life activity', 'major life activities',
+      'year of birth', 'birth year', 'born',
+      'H-1B', 'H1B', 'OPT', 'CPT', 'TN', 'export control', 'U.S. person', 'clearance',
+      'guilty', 'offence', 'offense',
+      'passport number', 'National Insurance', 'NI number',
+      'acknowledge', 'certify', 'accept the terms',
+    ]);
+    for (const term of SHARED_SENSITIVE_TERMS) {
+      expect(namesSensitiveTopic(term), term).toBe(true);
+      expect(namesSensitiveTopic(`Please answer: ${term.toUpperCase()}?`), term).toBe(true);
+    }
+  });
+
+  it('matches the short acronyms in capitals only, and orientation as the EEO phrase only (the lead, 2026-10-30)', () => {
+    for (const caught of ['Are you on OPT?', 'CPT authorization', 'Do you hold a TN?', 'TN visa status', 'H1B status',
+      'NI No.', 'NI number', 'Your sexual orientation', 'Gender identity and orientation', 'Orientation (LGBTQ+)',
+      // Cyrillic capitals that look like O, P and T, and full-width ones.
+      'Are you on \u041E\u0420\u0422?', 'Are you on \uFF2F\uFF30\uFF34?']) {
+      expect(namesSensitiveTopic(caught), caught).toBe(true);
+    }
+    for (const passed of ['Opt in to SMS updates', 'Are you on opt?', 'Nashville, TN', 'Memphis, TN 38103', 'h1b',
+      'Team orientation preference', 'New hire orientation date', 'Your orientation', 'Signing up?']) {
+      expect(namesSensitiveTopic(passed), passed).toBe(false);
+    }
+  });
+
+  it('screens the 21 phrases the shared fixture holds and lets its other 23 through', () => {
+    expect(PHRASES).toHaveLength(44);
+    expect(PHRASES.filter((phrase) => phrase.screened)).toHaveLength(21);
+    for (const phrase of PHRASES) {
+      if (phrase.as === 'question') {
+        expect(namesSensitiveTopic(phrase.text), phrase.text).toBe(phrase.screened);
+        expect(screenForClassify(specOf(phrase.text, 'text'), vocab), phrase.text).toBe(phrase.screened ? 'sensitive' : null);
+      } else {
+        expect(namesSensitivePickValue(phrase.text, phrase.as), phrase.text).toBe(phrase.screened);
+      }
+    }
+  });
+
+  it('reads combining marks, look-alike letters and spaced-out letters as the words they spell', () => {
+    for (const disguised of ['G\u0332e\u0332n\u0332d\u0332e\u0332r\u0332 identity', 'G\u0435nder identity',
+      'G e n d e r identity', 'Are you a U S person?', 'Your p a s s p o r t number', 'H\u20111B status']) {
+      expect(namesSensitiveTopic(disguised), disguised).toBe(true);
+    }
+  });
+});
+
+describe('a pick’s value, screened by its category (the Phase 4 review, T-F4)', () => {
+  it('screens a school, a degree or a field of study only for a sum, never by its topic words', () => {
+    for (const [text, category] of [['United States Military Academy', 'school'], ['Gender Studies', 'field_of_study'],
+      ['Religious Studies', 'field_of_study'], ['Master of Science in Military Science', 'degree']] as const) {
+      expect(namesSensitivePickValue(text, category), text).toBe(false);
+    }
+    expect(namesSensitivePickValue('$120,000', 'school')).toBe(true);
+    expect(namesSensitivePickValue('95k USD', 'field_of_study')).toBe(true);
+  });
+
+  it('screens every other category’s value by its topic words and for a sum, as before', () => {
+    for (const category of ['generic', 'referral_source', 'language', 'language_proficiency'] as const) {
+      expect(namesSensitivePickValue('Gender Studies', category), category).toBe(true);
+      expect(namesSensitivePickValue('Protected veteran', category), category).toBe(true);
+      expect(namesSensitivePickValue('$120,000', category), category).toBe(true);
+      expect(namesSensitivePickValue('LinkedIn', category), category).toBe(false);
+    }
+  });
+});
+
+describe('an EEO question with no listed word and no decline option (the Phase 4 review, R4)', () => {
+  it('is held back by its options: EEO answers as the vocabulary words them', () => {
+    const gender = specOf('How do you identify?', 'radio', { optionLabels: ['Man', 'Woman', 'Non-binary'] });
+    const race = specOf('Which best describes you?', 'select', { optionLabels: ['Asian', 'White',
+      'Black or African American'] });
+    for (const spec of [gender, race]) {
+      expect(screenForClassify(spec, vocab), spec.label).toBe('sensitive');
+      const plan = planOf([spec]);
+      expect(plan.awaiting, spec.label).toEqual([]);
+      expect(plan.results[0], spec.label).toMatchObject({ status: 'flagged', reason: 'llm-disabled-for-category' });
+    }
+  });
+
+  it('is held back by its section’s words or its hint', () => {
+    const bySection = specOf('Please select one', 'radio', { optionLabels: ['Yes', 'No'],
+      section: { id: 'voluntary-self-identification' } });
+    const byHint = { ...specOf('Please select one', 'radio', { optionLabels: ['Yes', 'No'] }),
+      description: 'Do you identify as LGBTQ+?' };
+    for (const spec of [bySection, byHint]) {
+      expect(screenForClassify(spec, vocab)).toBe('sensitive');
+      expect(planOf([spec]).awaiting).toEqual([]);
+    }
+  });
+
+  it('is held back by the words that define a disability, with no "disab" in them', () => {
+    const spec = specOf('Do you have a condition that substantially limits a major life activity?', 'radio',
+      { optionLabels: ['Yes', 'No'] });
+    expect(screenForClassify(spec, vocab)).toBe('sensitive');
+    const plan = planOf([spec]);
+    expect(plan.awaiting).toEqual([]);
+    expect(plan.results[0]).toMatchObject({ status: 'flagged', reason: 'llm-disabled-for-category' });
+  });
+
+  it('still lets a plain Yes or No question through: yes and no answer far more than EEO questions', () => {
+    const spec = specOf('Are you willing to travel?', 'radio', { optionLabels: ['Yes', 'No'] });
+    expect(screenForClassify(spec, vocab)).toBeNull();
+  });
+});
 
 const NEEDS_USER: readonly ServerCategory[] = ['sensitive_eeo', 'sensitive_legal', 'sensitive_compensation', 'consent',
   'attention_check', 'free_text_question'];

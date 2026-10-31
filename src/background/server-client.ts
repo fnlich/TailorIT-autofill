@@ -1,6 +1,7 @@
 /*
- * The worker's only way to TailorIT. It calls nothing but `<origin>/api/autofill/*` and GET or DELETE on
- * `<origin>/api/ai/tasks/<uuid>`, each with no cookie (credentials 'omit'), no redirect, no cache and a 25-second
+ * The worker's only way to TailorIT. It calls nothing but `<origin>/api/autofill/*` and GET on
+ * `<origin>/api/ai/tasks/<uuid>` (never a DELETE: TailorIT gives callers that ask the same one task, and prunes it
+ * itself; the Phase 4 review, T-F2), each with no cookie (credentials 'omit'), no redirect, no cache and a 25-second
  * timeout (Chrome may stop a worker whose fetch waits 30 s). Every request carries the API version header; versions
  * differ only when an answer's header says so, never because of a status. Every answer is parsed with the contract's
  * schema, so drift fails here, loudly, as 'bad-answer'. It logs statuses and timings only: never a URL, a header or a
@@ -95,10 +96,9 @@ export interface ServerClient {
   aiPick(body: AutofillPickRequest): Promise<ServerResult<AiSubmitted<AutofillPickTask>>>;
   /** POST /ai/classify (Phase 4), as aiPick. */
   aiClassify(body: AutofillClassifyRequest): Promise<ServerResult<AiSubmitted<AutofillClassifyTask>>>;
-  /** GET /api/ai/tasks/:id: the task as it is now. An id that is not a task id is refused before any request. */
+  /** GET /api/ai/tasks/:id: the task as it is now. An id that is not a task id is refused before any request. No
+   *  task is ever cancelled from here: another caller may share it. */
   aiTask(id: string): Promise<ServerResult<AutofillTaskView>>;
-  /** DELETE /api/ai/tasks/:id: cancels the task (one already finished stays as it was). */
-  aiCancel(id: string): Promise<ServerResult<AutofillTaskView>>;
 }
 
 /** What the server client needs. */
@@ -123,11 +123,12 @@ const AI_TASK_PATH = /^\/api\/ai\/tasks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 /** What a resume id may be to become part of a path. */
 const RESUME_ID = /^[a-z0-9-]{1,64}$/;
 
-/** Whether the worker may make this request at all: the autofill routes, and polling or cancelling an AI task. */
+/** Whether the worker may make this request at all: the autofill routes, and polling an AI task (never cancelling
+ *  one). */
 export function isAllowedRequest(method: string, path: string): boolean {
   if (path.includes('//')) return false;
   if (AUTOFILL_PATH.test(path)) return (METHODS as readonly string[]).includes(method);
-  if (AI_TASK_PATH.test(path)) return method === 'GET' || method === 'DELETE';
+  if (AI_TASK_PATH.test(path)) return method === 'GET';
   return false;
 }
 
@@ -319,13 +320,13 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     return raw.ok ? { ok: true, value: raw.value as AiSubmitted<T> } : raw;
   }
 
-  /** GET or DELETE on one task, its id checked before it becomes part of a path. */
-  async function task(method: 'GET' | 'DELETE', id: string): Promise<ServerResult<AutofillTaskView>> {
+  /** GET on one task, its id checked before it becomes part of a path. */
+  async function task(id: string): Promise<ServerResult<AutofillTaskView>> {
     if (!AutofillTaskIdSchema.safeParse(id).success) {
       log('server.path-refused');
       return failure('refused-path');
     }
-    return json({ method, path: `/api/ai/tasks/${id}`, token: 'current' }, AutofillTaskViewSchema);
+    return json({ method: 'GET', path: `/api/ai/tasks/${id}`, token: 'current' }, AutofillTaskViewSchema);
   }
 
   return {
@@ -363,7 +364,6 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     },
     aiPick: (body) => submit('/api/autofill/ai/pick', body, AutofillPickTaskSchema),
     aiClassify: (body) => submit('/api/autofill/ai/classify', body, AutofillClassifyTaskSchema),
-    aiTask: (id) => task('GET', id),
-    aiCancel: (id) => task('DELETE', id),
+    aiTask: (id) => task(id),
   };
 }

@@ -11,6 +11,10 @@
  * 3. the results go to the worker, which matches them (hooks.match: the cascade, as for any list); a result is chosen
  *    only in the fill band, so an injected one (its clean part at 0.84 at most, always flagged) never is;
  * 4. the chosen result is clicked through assertNotSubmit, the list closed, and the widget's shown value read back.
+ *    The text box holds our own query, so what it shows counts as the page's choice only when the page answered the
+ *    click itself (the Phase 4 review, R3): it changed the box's value, marked the result aria-selected, named it as
+ *    the box's aria-activedescendant, or closed its list. Without any of these the page ignored the click: the box gets
+ *    back what it held and the field is needs-your-click.
  * When no query finds a result to choose, the text box gets back what it held before our first query (the text
  * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason. A page
  * that does not react at all to the first query (no mutation until the cap) ignores untrusted input: the search stops
@@ -23,6 +27,7 @@ import { assertNotSubmit } from '../fillers/not-submit';
 import { sameOptionLabel } from '../fillers/verify';
 import { TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
 import type { FieldTarget, WidgetOptionRead } from '../types';
+import { isChosen } from './aria';
 import { afterAction, awaitList, closeList, openListOf, type WidgetContext } from './interact';
 import { chosenLabels, hashOfRead, readList, revealOption, shownOptions } from './options';
 
@@ -31,8 +36,9 @@ export interface TypeaheadHooks {
   /** Right before a query is typed: the field found again on a fresh scan and the Guard's verdict on typing it. */
   guard(query: string): Promise<{ ok: true; target: FieldTarget } | { ok: false; reason: ReasonCode; blocked: boolean }>;
   /** The worker's match of one query's results: the result to choose (only in the fill band, and already passed by the
-   *  frame's Guard), or why none is chosen (`blocked`: the Guard refused the one the worker chose). */
-  match(results: readonly WidgetOptionRead[], target: FieldTarget):
+   *  frame's Guard), or why none is chosen (`blocked`: the Guard refused the one the worker chose). `complete` is false
+   *  when a cap cut the results' read short: they are matched as a partial list. */
+  match(results: readonly WidgetOptionRead[], target: FieldTarget, complete: boolean):
     Promise<{ choose: { index: number; cleanLabel: string } } | { choose: null; reason: ReasonCode; blocked: boolean }>;
 }
 
@@ -55,6 +61,20 @@ export interface TypeaheadResult {
 function typeQuery(input: HTMLInputElement | HTMLTextAreaElement, query: string): void {
   setValue(input, query);
   fireInput(input, 'text');
+}
+
+/** A box's text as compared: white space collapsed, any case. */
+const tidy = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** Whether the page answered our click on a result itself: it changed the box's value from the query we typed, marked
+ *  the result chosen or as the box's active descendant, or closed its list. The query we typed is never a choice. */
+function pageChose(widget: NonNullable<FieldTarget['widget']>, option: Element, typed: string, closed: boolean): boolean {
+  const box = widget.input;
+  if (box !== null && tidy(box.value) !== tidy(typed)) return true;
+  if (option.isConnected && isChosen(option)) return true;
+  const id = option.id;
+  if (id !== '' && [box, widget.element].some((part) => part?.getAttribute('aria-activedescendant') === id)) return true;
+  return closed;
 }
 
 /** Puts back what the text box held before our first query, with the text filler's events, if it holds another text. */
@@ -112,7 +132,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     const read = await readList(listbox, { signal: ctx.signal });
     const results: WidgetOptionRead[] = read.options.map((option) => ({ label: option.label, disabled: option.disabled }));
     if (results.length === 0) continue;
-    const verdict = await hooks.match(results, current);
+    const verdict = await hooks.match(results, current, read.complete);
     if (verdict.choose === null) {
       if (verdict.blocked) return giveUp(verdict.reason, true);
       reason = verdict.reason;
@@ -126,8 +146,11 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     const option = await revealOption(listbox, picked, { signal: ctx.signal });
     if (option === null) return giveUp('options-changed');
     if (!assertNotSubmit(option.el, ctx).ok) return giveUp('needs-your-click');
+    const typedNow = box.value;
     (option.el as HTMLElement).click();
     await afterAction(widget, ctx);
+    const closed = openListOf(widget) === null;
+    if (!pageChose(widget, option.el, typedNow, closed)) return giveUp('needs-your-click');
     await closeList(widget, ctx, { activated: false });
     const shows = chosenLabels(widget, results.map((result) => result.label))
       .some((label) => sameOptionLabel(label, choice.cleanLabel));

@@ -7,7 +7,8 @@
  *    testkit's untrustedViolations(), which this reuses: after the extension's untrusted click() on a checkbox or radio,
  *    Chromium fires that control's input and change itself, as trusted events; and the browser's own pointer and mouse
  *    boundary and move events (over, out, enter, leave, move), which it fires when the page changes under a cursor
- *    that sits still and no extension can cause.
+ *    that sits still and no extension can cause. A trusted scroll counts too, except on a listbox (the spies mark it
+ *    scrollTopSet): the widget helpers set a list's scrollTop to read it, and nothing else (the Phase 4 review, R8).
  * 3. The extension's own (untrusted) events are only the fillers' (input, change, focusout, blur, click, and any
  *    single activation event an adapter declares), and none is a click on a control assertNotSubmit refuses.
  * 4. No hidden marker or canary in a request to TailorIT, a report, RunState (its checked canarySet aside, which holds

@@ -14,21 +14,21 @@
  * the text filler's input, change, focusout and blur, and a list's own scrollTop set as a property. Never keys,
  * pointer moves or hovers.
  */
-import type { WriteValue } from '../../core/types/intent';
+import type { ValueOrigin, WriteValue } from '../../core/types/intent';
 import { refused } from '../fillers/outcome';
 import { isUsableOption } from '../option-hash';
 import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS } from '../thresholds';
 import type { FieldTarget, FillOutcome, WidgetReading, WidgetTarget } from '../types';
 import { filtersAsTyped, isMultiselectable, referencesList, roleOf } from './aria';
-import { addOptions, chooseOption, pressMember, type WidgetFillContext } from './fill';
+import { addOptions, chooseOption, keepReading, pressMember, type WidgetFillContext } from './fill';
 import { awaitList, closeList, openList } from './interact';
-import { readList } from './options';
+import { readList, type ListRead } from './options';
 
 export { ariaWidgetKind, editableOf, isWidgetPart, listOf, membersOf, WIDGET_ROOT_SELECTOR } from './aria';
-export { remember, type WidgetFillContext } from './fill';
+export { keepReading, remember, type WidgetFillContext } from './fill';
 export { widgetHolds } from './hold';
 export { afterAction, closeList, openList, type WidgetContext } from './interact';
-export { chosenLabels, hashOfRead, memberLabel, readList, shownOptions, widgetCurrentValue } from './options';
+export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
 export { searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
 
 /** Whether standard ARIA tells where a widget's list is, or its members' state: the helpers act on nothing else. */
@@ -39,16 +39,18 @@ export function isActionable(widget: WidgetTarget): boolean {
   return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input);
 }
 
-/** Writes one planned value into a widget (fill.ts); a query is searchTypeahead's. */
-export async function fillWidget(target: FieldTarget, value: WriteValue, ctx: WidgetFillContext): Promise<FillOutcome> {
+/** Writes one planned value into a widget (fill.ts); a query is searchTypeahead's. `origin` is the write's: an
+ *  llm-pick is checked once more on what the widget shows right before its click (the Phase 4 review, R1). */
+export async function fillWidget(target: FieldTarget, value: WriteValue, ctx: WidgetFillContext, origin?: ValueOrigin):
+  Promise<FillOutcome> {
   const widget = target.widget;
   if (widget === undefined || !isActionable(widget)) return refused('widget-unsupported');
   if (target.field.disabled || target.field.readOnly) return refused('disabled-or-readonly');
   switch (widget.kind) {
     case 'radio':
-      return value.kind === 'option' ? pressMember(target, value, ctx) : refused('internal-error');
+      return value.kind === 'option' ? pressMember(target, value, ctx, origin) : refused('internal-error');
     case 'combobox':
-      return value.kind === 'option' ? chooseOption(target, value, ctx) : refused('internal-error');
+      return value.kind === 'option' ? chooseOption(target, value, ctx, origin) : refused('internal-error');
     case 'multiselect':
       return value.kind === 'options' ? addOptions(target, value, ctx) : refused('internal-error');
     default:
@@ -72,6 +74,9 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
     ctx.readings?.set(target.field.baseKey, reading);
     return { status: 'read', reading };
   };
+  const keepOptions = (read: ListRead, multiselectable: boolean): WidgetReadResult => ({ status: 'read',
+    reading: keepReading(ctx.readings, target.field.baseKey, widget, read.options.map((option) => ({ label: option.label,
+      disabled: option.disabled })), multiselectable, read.complete) });
   // A text box that filters what it suggests, and shows nothing before something is typed, is a remote search.
   const searches = widget.input !== null && (widget.kind === 'typeahead-remote' || filtersAsTyped(widget.element, widget.input));
   const opened = await openList(widget, ctx);
@@ -86,10 +91,7 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
   const multiselectable = isMultiselectable(opened.listbox);
   await closeList(widget, ctx, opened);
   if (ctx.signal?.aborted) return { status: 'aborted' };
-  if (read !== null && read.options.some((option) => isUsableOption(option.label))) {
-    return keep({ kind: 'options', multiselectable,
-      options: read.options.map((option) => ({ label: option.label, disabled: option.disabled })) });
-  }
+  if (read !== null && read.options.some((option) => isUsableOption(option.label))) return keepOptions(read, multiselectable);
   if (searches) return keep({ kind: 'remote' });
   return { status: 'unread', reason: 'options-never-loaded' };
 }

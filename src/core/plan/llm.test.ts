@@ -117,3 +117,21 @@ describe('planFrame with the LLM tiebreak', () => {
     expect(planOf(specs, { dryRun: true, ai: answered(item, 0) }).writes).toEqual([]);
   });
 });
+
+describe('a tiebreak whose pick could never be written (the Phase 4 review, R6)', () => {
+  it('is never asked for a field only the LLM classified: 0.70 × 0.75 is below the flag band', () => {
+    const spec = specOf('Pick the one that applies', 'select', { optionLabels: ['Select...', 'LinkedIn job post',
+      'LinkedIn recruiter message', 'Indeed'] });
+    expect(planOf([spec]).ask?.classify.map((item) => item.key)).toEqual([spec.key]);
+    const classifications = new Map([[spec.key, { key: spec.key, category: 'referral_source' as const, why: 'ok' as const }]]);
+    const out = planOf([spec], { ai: { verdicts: new Map(), classifications } });
+    // No question goes to the LLM: its answer would land at 0.525, which leaves the field blank anyway.
+    expect(out.awaiting).toEqual([]);
+    expect(out.ask).toBeUndefined();
+    expect(fieldOf(out, spec)).toMatchObject({ write: undefined, row: { status: 'flagged', provenance: null } });
+  });
+
+  it('is still asked when the field’s own classification leaves room for the pick in the flag band', () => {
+    expect(planOf([SOURCE]).ask?.tiebreaks.map((item) => item.id)).toEqual([SOURCE.key]);
+  });
+});

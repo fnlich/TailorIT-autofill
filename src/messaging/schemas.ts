@@ -70,6 +70,8 @@ export const FieldSpecSchema = z.strictObject({
   description: Text(2000),
   required: z.boolean(),
   options: z.union([z.array(OptionSchema).max(5000), z.literal('lazy')]),
+  /** A widget's list read only in part: the planner matches it exactly or not at all. */
+  optionsPartial: z.literal(true).optional(),
   optionSetHash: Hash,
   constraints: ConstraintsSchema,
   autocomplete: z.array(Text(60)).max(10),

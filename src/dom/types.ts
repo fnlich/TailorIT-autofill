@@ -127,12 +127,13 @@ export interface WidgetOptionRead {
 /**
  * What opening a lazy widget read (Phase 4), kept for the run by its field's base key, so every later scan of the run
  * gives the field these options (and the key their hash) while the list itself is closed:
- * - options: the options its list showed (read whole, a virtualized list scrolled through), and whether the list takes
- *   several;
+ * - options: the options its list showed (read whole, a virtualized list scrolled through), whether the list takes
+ *   several, and whether the read reached the list's end (`complete` false: a cap stopped it, and the field is planned
+ *   as a partial list, FieldSpec.optionsPartial);
  * - remote: it showed none until something is typed, so it is a remote search (typeahead-remote).
  */
 export type WidgetReading =
-  | { kind: 'options'; options: readonly WidgetOptionRead[]; multiselectable: boolean }
+  | { kind: 'options'; options: readonly WidgetOptionRead[]; multiselectable: boolean; complete: boolean }
   | { kind: 'remote' };
 
 /** A hidden file input that did not qualify, beside a visible upload control: it gets a flagged row with reason
@@ -165,7 +166,8 @@ export interface ScanResult {
 export const FILL_OUTCOME_REASONS = ['ok', 'already-correct', 'verify-mismatch', 'needs-your-click',
   'unexpected-selection', 'element-not-found', 'disabled-or-readonly', 'not-user-visible', 'maxlength-exceeded',
   'pdf-only-input', 'resume-format-unsupported', 'resume-unavailable', 'format-unsupported', 'value-rejected-by-site',
-  'options-changed', 'widget-unsupported', 'max-selections-reached', 'internal-error'] as const satisfies readonly ReasonCode[];
+  'options-changed', 'widget-unsupported', 'max-selections-reached', 'llm-pick-rejected', 'internal-error',
+] as const satisfies readonly ReasonCode[];
 export type FillOutcomeReason = (typeof FILL_OUTCOME_REASONS)[number];
 
 /**

@@ -78,6 +78,10 @@ export interface FieldSpec {
   description: string;
   required: boolean;
   options: Option[] | 'lazy';
+  /** Set only when a widget's list was read in part (a cap stopped the read before its end, the Phase 4 review, R9):
+   *  an answer may lie past what was read, so the planner chooses only an exact or alias match there, always flagged
+   *  (options-incomplete), and never a loose, Other or LLM one. */
+  optionsPartial?: true;
   optionSetHash: OptionSetHash;
   constraints: Constraints;
   /** autocomplete tokens, lower case, with section-, shipping and billing prefixes removed. */

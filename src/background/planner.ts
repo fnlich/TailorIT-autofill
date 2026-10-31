@@ -62,8 +62,8 @@ export interface PlannerDeps {
 const profileRefusal = (failure: 'not-connected' | 'unavailable' | 'internal') =>
   refuse(failure === 'not-connected' ? 'not_connected' : failure === 'internal' ? 'internal' : 'unavailable');
 
-/** A plan, or the refusal the frame gets instead. */
-type Planned = { output: PlanOutput } | { refusal: Answer<never> };
+/** A plan and the profile's revision it read, or the refusal the frame gets instead. */
+type Planned = { output: PlanOutput; revision: number } | { refusal: Answer<never> };
 
 /** A plan's parts as the answer carries them, gathered over the plans of one message. */
 interface Gathered {
@@ -125,7 +125,7 @@ export function createPlanner(deps: PlannerDeps) {
         output = plan(state, loaded);
       }
       if (output.needsSensitive) throw new Error('the plan still needs the sensitive part');
-      return { output };
+      return { output, revision: loaded.value.revision };
     } catch {
       log('plan.failed', { fields: planKeys.length });
       return { refusal: refuse('internal') };
@@ -136,7 +136,7 @@ export function createPlanner(deps: PlannerDeps) {
    * A plan's awaiting keys handed to the run's questions, and those whose answers are in at once (an item never sent)
    * planned again, at most MAX_REPLANS times: the keys planned again take their new rows and writes.
    */
-  async function withAnswers(run: RunRecord, url: string, context: AskContext, output: PlanOutput):
+  async function withAnswers(run: RunRecord, url: string, context: AskContext, output: PlanOutput, read: number):
     Promise<{ gathered: Gathered } | { refusal: Answer<never> }> {
     const ai = aiOf(run);
     const { llm } = await deps.settings.get();
@@ -145,8 +145,9 @@ export function createPlanner(deps: PlannerDeps) {
     let awaiting = [...output.awaiting];
     let asking: readonly FieldKey[] = output.awaiting;
     let ask: PlanAsk | undefined = output.ask;
+    let revision = read;
     for (let round = 0; ; round += 1) {
-      if (asking.length > 0 && ask !== undefined) ai.ask(ask, asking, context, llm);
+      if (asking.length > 0 && ask !== undefined) ai.ask(ask, asking, context, llm, revision);
       const ready = awaiting.filter((key) => ai.state(key) === 'done');
       if (ready.length === 0 || round === MAX_REPLANS) break;
       ai.settle(ready);
@@ -159,6 +160,7 @@ export function createPlanner(deps: PlannerDeps) {
       awaiting = [...awaiting.filter((key) => !done.has(key)), ...again.output.awaiting];
       asking = again.output.awaiting;
       ask = again.output.ask;
+      revision = again.revision;
     }
     // Writes in DOM order, as planFrame gives them.
     const order = new Map(context.specs.map((spec) => [spec.key, spec.domOrder] as const));
@@ -197,7 +199,7 @@ export function createPlanner(deps: PlannerDeps) {
       const planKeys = message.planKeys as unknown as FieldKey[];
       const planned = await planOnce(run, from.url, context, planKeys);
       if ('refusal' in planned) return planned.refusal;
-      const answered = await withAnswers(run, from.url, context, planned.output);
+      const answered = await withAnswers(run, from.url, context, planned.output, planned.revision);
       if ('refusal' in answered) return answered.refusal;
       return answerOf(run, answered.gathered, planned.output.persistableCanaries, planKeys.length);
     },
@@ -225,7 +227,7 @@ export function createPlanner(deps: PlannerDeps) {
         ai.settle(ready);
         const planned = await planOnce(run, from.url, context, ready);
         if ('refusal' in planned) return planned.refusal;
-        const answered = await withAnswers(run, from.url, context, planned.output);
+        const answered = await withAnswers(run, from.url, context, planned.output, planned.revision);
         if ('refusal' in answered) return answered.refusal;
         gathered.writes.push(...answered.gathered.writes);
         gathered.results.push(...answered.gathered.results);

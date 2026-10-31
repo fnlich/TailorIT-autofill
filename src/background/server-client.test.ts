@@ -40,7 +40,8 @@ describe('the server client', () => {
       ['DELETE', '/api/autofill/session', true],
       ['GET', '/api/autofill/resumes/c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13/file', true],
       ['GET', '/api/ai/tasks/0f8e2d1c-3b4a-4c5d-9e6f-7a8b9c0d1e2f', true],
-      ['DELETE', '/api/ai/tasks/0f8e2d1c-3b4a-4c5d-9e6f-7a8b9c0d1e2f', true],
+      // Never a cancel: TailorIT shares one task between callers that ask the same (the Phase 4 review, T-F2).
+      ['DELETE', '/api/ai/tasks/0f8e2d1c-3b4a-4c5d-9e6f-7a8b9c0d1e2f', false],
       ['POST', '/api/ai/tasks/0f8e2d1c-3b4a-4c5d-9e6f-7a8b9c0d1e2f', false],
       ['GET', '/api/ai/tasks/not-a-task', false],
       ['GET', '/api/applications', false],
@@ -297,13 +298,12 @@ describe('the AI routes (Phase 4)', () => {
     expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'bad-answer' });
   });
 
-  it('polls and cancels a task by its id, and refuses an id that is not one before any request', async () => {
+  it('polls a task by its id, never cancels one, and refuses an id that is not one before any request', async () => {
     const { server, tailorit } = client();
     const running = (await import('../contract/tailorit/v1/fixtures/AutofillPickTask/valid/running.json')).default;
     tailorit.reply(`GET /api/ai/tasks/${TASK_ID}`, { json: running }, { once: true });
     expect(await server.aiTask(TASK_ID)).toEqual({ ok: true, value: running });
-    tailorit.reply(`DELETE /api/ai/tasks/${TASK_ID}`, { json: { ...running, status: 'cancelled' } }, { once: true });
-    expect(await server.aiCancel(TASK_ID)).toMatchObject({ ok: true, value: { status: 'cancelled' } });
+    expect('aiCancel' in server).toBe(false);
     const before = tailorit.requests.length;
     for (const id of ['../profile', 'ABC', TASK_ID.toUpperCase(), '']) {
       expect(await server.aiTask(id)).toMatchObject({ ok: false, failure: 'refused-path' });

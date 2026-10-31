@@ -3,10 +3,13 @@
  * "AI" › "Category mapping"). It runs only for a field nothing classified (no autocomplete token, name or id pattern,
  * label rule or saved answer) and only while settings.llm.classify is on. The LLM has no authority: it answers one of
  * TailorIT's categories or null, and the code decides what that means.
- * - Screening, before a field enters a batch (screenForClassify): its label, description and option labels against
- *   the sensitive terms (TailorIT's SENSITIVE_LABEL list, plus work permit, eligib*, visa, citizen*, consent, agree,
- *   authori[sz]e and share my/your data or information), and its options against the EEO decline vocabulary. A hit
- *   makes the field needs-user, and it is never sent.
+ * - Screening, before a field enters a batch (screenForClassify): its label, description, section's words and option
+ *   labels against the sensitive terms (TailorIT's SENSITIVE_LABEL list, plus work permit, eligib*, visa, citizen*,
+ *   consent, agree, authori[sz]e and share my/your data or information, plus the Phase 4 review's shared terms), and its
+ *   options against the EEO answers and the EEO decline vocabulary. A hit makes the field needs-user, and it is never
+ *   sent.
+ * - A pick's value is screened by its category (namesSensitivePickValue): a school, a degree or a field of study only
+ *   for a sum of money, any other also by the sensitive terms.
  * - What goes out is visible text only (classifyItemOf): the label, never one known only from aria-label; the
  *   description; the section's slug; the first 20 usable options' clean labels, injected text cut. Each passes
  *   asUntrusted. Fields nothing could be learnt from (a file, a field with no label the LLM may see) are not sent.
@@ -22,10 +25,10 @@
 import type { AutofillFieldCategory } from '../../contract/tailorit';
 import { CLASSIFY_MAX_OPTIONS, CLASSIFY_TEXT_MAX } from '../confidence';
 import type { FieldKind, Platform } from '../enums';
-import { detectionViews } from '../guard/fold';
+import { CONFUSABLES, detectionViews } from '../guard/fold';
 import { llmMaySeeLabel } from '../guard/honeypot';
 import { cutInjected } from '../guard/injected';
-import { cutAtWord } from '../text/fold';
+import { cutAtWord, foldLetters, removeInvisibles } from '../text/fold';
 import { normalize } from '../text/normalize';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldKey, FieldSpec, SectionRef } from '../types/field';
@@ -116,40 +119,121 @@ const NEEDS_USER_REASONS: Readonly<Partial<Record<ServerCategory, ReasonCode>>> 
 // ── Screening ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The terms the Phase 4 review added to both TailorIT's SENSITIVE_LABEL and SENSITIVE_TERMS below (T-F1), as the lead
+ * listed them, in that order: each alone names a sensitive topic. classify.test.ts pins this list, and TailorIT's tests
+ * pin the same; the shared phrase fixture (sensitive-phrases.fixture.json, copied into TailorIT's tests) shows drift.
+ */
+export const SHARED_SENSITIVE_TERMS: readonly string[] = [
+  // Pay.
+  'hourly rate', 'rate of pay', 'CTC', 'current CTC', 'expected CTC', 'base salary', 'annual base', 'bonus', 'equity',
+  'compensation expectations',
+  // Self-identification (EEO). "orientation" is the EEO phrase only (the lead's word, 2026-10-30): never "Team
+  // orientation".
+  'Aboriginal', 'Torres Strait Islander', 'Indigenous', 'First Nations', 'visible minority', 'LGBTQ', 'LGBTQ+',
+  'LGBTQIA', 'sexual orientation',
+  // Disability, as the ADA defines it, with no "disab" word (the lead's word, 2026-10-30; the review's R4).
+  'substantially limits', 'major life activity', 'major life activities',
+  // Age.
+  'year of birth', 'birth year', 'born',
+  // Work authorization.
+  'H-1B', 'H1B', 'OPT', 'CPT', 'TN', 'export control', 'U.S. person', 'clearance',
+  // Criminal history.
+  'guilty', 'offence', 'offense',
+  // Identity numbers.
+  'passport number', 'National Insurance', 'NI number',
+  // Consent.
+  'acknowledge', 'certify', 'accept the terms',
+];
+
+/**
  * The sensitive-question terms: TailorIT's SENSITIVE_LABEL (apps/api/src/features/autofill/ai/screen.ts, as its design
- * lists it in docs/design/tailorit.md §3.5) plus the plan's additions. Matched over every detection view of the text
- * (guard/fold.ts), so a look-alike letter or a joiner cannot split a word. The extension screens at least as widely as
+ * lists it in docs/design/tailorit.md §3.5) plus the plan's additions and the Phase 4 review's (SHARED_SENSITIVE_TERMS,
+ * on both sides). Matched over every detection view of the text (guard/fold.ts), and over each view with its spaced-out
+ * letters closed up ("G e n d e r"), so a look-alike letter, a combining mark, a joiner or a space cannot split a word.
+ * The short acronyms are SENSITIVE_ACRONYMS', matched in capitals only. The extension screens at least as widely as
  * TailorIT, which screens every item again.
  */
 export const SENSITIVE_TERMS: readonly RegExp[] = [
-  // Work authorization (the plan's: work permit, eligib*, visa, citizen*, authori[sz]e).
+  // Work authorization (the plan's: work permit, eligib*, visa, citizen*, authori[sz]e; the review's: export control,
+  // U.S. person, clearance; H-1B, OPT, CPT and TN are SENSITIVE_ACRONYMS').
   /\bauthori[sz]/, /\bsponsor/, /\bvisas?\b/, /\bcitizen/, /\bnationalit(?:y|ies)\b/, /\b(?:in)?eligib/,
-  /\bwork\s*permits?\b/, /\bright\s+to\s+work\b/, /\bimmigra/, /\bgreen\s+card\b/, /\bclearance\b/,
-  // Self-identification (EEO).
+  /\bwork\s*permits?\b/, /\bright\s+to\s+work\b/, /\blegally\s+(?:able|allowed|permitted|entitled)\b/, /\bimmigra/,
+  /\bgreen\s+card\b/, /\bclearances?\b/, /\bexport\s+control/, /\bu\s*\.?\s*s\s*\.?\s+persons?\b/,
+  // Self-identification (EEO; the review's: Aboriginal, Torres Strait Islander, Indigenous, First Nations, visible
+  // minority, LGBTQ and its longer forms, and orientation as the EEO phrase only: "sexual orientation", or orientation
+  // within a few words of gender, LGBTQ or identity; "Team orientation" is none).
   /\bgender/, /\bsex(?:es|ual\w*)?\b/, /\btrans(?:gender|sexual)/, /\bpronouns?\b/, /\brac(?:e|es|ial)\b/, /\bethnic/,
   /\bhispanic/, /\blatin[aeox]s?\b/, /\bveterans?\b/, /\bmilitary\b/, /\bdisab/, /\breligio/, /\bmarital\b/,
-  /\bself[\s-]*identif/, /\beeoc?\b/, /\bequal\s+(?:employment\s+)?opportunit/, /\borientation\b/,
-  // Age.
+  /\bself[\s-]*identif/, /\beeoc?\b/, /\bequal\s+(?:employment\s+)?opportunit/, /\baboriginal/,
+  /\btorres\s+strait/, /\bindigenous\b/, /\bfirst\s+nations?\b/, /\bvisible\s+minorit/, /\blgbt/,
+  /\bsexual\s+orientation\b/, /\b(?:identit|gender|lgbt)\w*\W+(?:\w+\W+){0,3}orientation\b/,
+  /\borientation\W+(?:\w+\W+){0,3}(?:identit|gender|lgbt)/,
+  // Disability as the ADA defines it, with no "disab" word ("a condition that substantially limits a major life
+  // activity": the review's R4).
+  /\bsubstantially\s+limit(?:s|ed|ing)?\b/, /\bmajor\s+life\s+activit(?:y|ies)\b/,
+  // Age (the review's: year of birth, birth year, born).
   /\bages?\b/, /\bdate\s+of\s+birth\b/, /\bbirth\s*(?:date|day)\b/, /\bdob\b/, /\bhow\s+old\b/,
   /\b(?:at\s+least|over|under|older\s+than|younger\s+than)\s+(?:the\s+age\s+of\s+)?(?:16|18|19|21)\b/,
-  /\b(?:16|18|19|21)\s*(?:years?|yrs?)\s+(?:of\s+age|old|or\s+(?:older|over))\b/,
-  // Pay.
-  /\bsalar(?:y|ies)\b/, /\bcompensation\b/, /\bpay\b/, /\bwages?\b/, /\bremuneration\b/,
-  // Consent and agreement (the plan's: consent, agree, share my/your data or information).
+  /\b(?:16|18|19|21)\s*(?:years?|yrs?)\s+(?:of\s+age|old|or\s+(?:older|over))\b/, /\byears?\s+of\s+birth\b/,
+  /\bbirth\s*years?\b/, /\bborn\b/,
+  // Pay (the review's: hourly rate, rate of pay, CTC, base salary, annual base, bonus, equity, compensation
+  // expectations).
+  /\bsalar(?:y|ies)\b/, /\bcompensation\b/, /\bpay\b/, /\bwages?\b/, /\bremuneration\b/, /\bhourly\s+rates?\b/,
+  /\brates?\s+of\s+pay\b/, /\bctc\b/, /\bannual\s+base\b/, /\bbonus(?:es)?\b/, /\bequity\b/,
+  // Consent and agreement (the plan's: consent, agree, share my/your data or information; the review's: acknowledge,
+  // certify, accept the terms).
   /\bconsent/, /\b(?:dis)?agree/, /\bprivacy\b/,
   /\bshare\s+(?:my|your)\s+(?:personal\s+)?(?:data|information|info|details)\b/, /\bbackground\s+(?:check|screening)s?\b/,
-  // Criminal history.
-  /\bcriminal/, /\bconvict/, /\bfelon/, /\bmisdemeano/, /\barrest/,
-  // Identity numbers.
-  /\bsocial\s+security\b/, /\bssn\b/,
+  /\backnowledg/, /\bcertif(?:y|ies|ied|ying)\b/, /\baccept(?:s|ed|ing)?\s+(?:all\s+)?(?:the\s+|these\s+|our\s+)?terms\b/,
+  // Criminal history (the review's: guilty, offence, offense).
+  /\bcriminal/, /\bconvict/, /\bfelon/, /\bmisdemeano/, /\barrest/, /\bguilty\b/, /\boffen[cs]es?\b/,
+  // Identity numbers (the review's: passport number, National Insurance; NI number is SENSITIVE_ACRONYMS').
+  /\bsocial\s+security\b/, /\bssn\b/, /\bpassport\s*(?:numbers?|no\b|#)/, /\bnational\s+insurance\b/,
 ];
 
-/** Whether page text names a sensitive topic, read in every detection view, in any case. */
+/**
+ * The short acronyms (the lead's word, 2026-10-30), matched case-sensitively, in capitals only, over the text as written
+ * and its case-keeping fold (caseKept): OPT, CPT, TN and H-1B (H1B) for work authorization, NI for the National
+ * Insurance number. In any case they would catch "Opt in to SMS updates"; TN right after a comma is a state written
+ * after a city ("Nashville, TN"), not the visa.
+ */
+export const SENSITIVE_ACRONYMS: readonly RegExp[] = [
+  /\bOPT\b/, /\bCPT\b/, /(?<!,\s*)\bTN\b/, /\bH\s*[-\u2010-\u2015]?\s*1\s*[-\u2010-\u2015]?\s*B\b/,
+  /\bNI\s*(?:[Nn][Uu][Mm][Bb][Ee][Rr][Ss]?\b|[Nn][Oo]\b|#)/,
+];
+
+/** The text with its case kept: invisible characters deleted, a look-alike letter read as its Latin letter (a capital
+ *  as a capital), then decomposed with its combining marks deleted, so "OPT" in Cyrillic or full-width capitals reads
+ *  "OPT". */
+function caseKept(text: string): string {
+  let out = '';
+  for (const cp of removeInvisibles(text)) {
+    const latin = CONFUSABLES.get(cp);
+    out += latin === undefined ? cp : cp !== cp.toLowerCase() ? latin.toUpperCase() : latin;
+  }
+  return foldLetters(out);
+}
+
+/** Three or more single letters with one space or joiner between each ("g e n d e r", "p.a.s.s"), closed up. */
+const SPACED_LETTERS = /(?<![\p{L}\p{N}])\p{L}(?:[ \-_.\u00B7]\p{L}(?![\p{L}\p{N}])){2,}/gu;
+
+/** A view with its spaced-out letters closed up: a page can spell a word one letter at a time. */
+function closedUp(view: string): string {
+  return view.replace(SPACED_LETTERS, (run) => run.replace(/[ \-_.\u00B7]/g, ''));
+}
+
+/** Whether page text names a sensitive topic: the terms read in every detection view, in any case, and the acronyms
+ *  in capitals, as written and in the case-keeping fold, spaced-out letters closed up in each. */
 export function namesSensitiveTopic(text: string): boolean {
   if (text.trim() === '') return false;
+  const kept = caseKept(text);
+  for (const view of new Set([text, kept, closedUp(text), closedUp(kept)])) {
+    if (SENSITIVE_ACRONYMS.some((term) => term.test(view))) return true;
+  }
   return detectionViews(text).some((view) => {
     const lower = view.toLowerCase();
-    return SENSITIVE_TERMS.some((term) => term.test(lower));
+    const closed = closedUp(lower);
+    return SENSITIVE_TERMS.some((term) => term.test(lower) || (closed !== lower && term.test(closed)));
   });
 }
 
@@ -159,14 +243,29 @@ const MONEY: readonly RegExp[] = [
   /\b\d[\d,.]*\s*(?:per|an?|\/)\s*(?:year|yr|month|mo|hour|hr|annum)\b/,
 ];
 
-/** Whether a value from the profile (a tiebreak's intended value or an alias) is one no LLM may see: a sensitive topic
- *  or a sum of money (TailorIT's isSensitiveValue). The core never builds such an item; the worker checks again. */
-export function namesSensitiveValue(text: string): boolean {
-  if (namesSensitiveTopic(text)) return true;
+/** Whether text names a sum of money, read in every detection view. */
+export function namesSum(text: string): boolean {
   return detectionViews(text).some((view) => {
     const lower = view.toLowerCase();
     return MONEY.some((money) => money.test(lower));
   });
+}
+
+/** Whether a value from the profile (a tiebreak's intended value or an alias) is one no LLM may see: a sensitive topic
+ *  or a sum of money (TailorIT's isSensitiveValue). The core never builds such an item; the worker checks again. */
+export function namesSensitiveValue(text: string): boolean {
+  return namesSensitiveTopic(text) || namesSum(text);
+}
+
+/** The pick categories whose values are names of schools, degrees and fields of study: "United States Military
+ *  Academy" and "Gender Studies" are ordinary answers, so their topic words withhold nothing (the review, T-F4). */
+const NAMED_BY_TOPIC_WORDS: ReadonlySet<string> = new Set(['school', 'degree', 'field_of_study']);
+
+/** Whether a pick's value or alias of this category is one no LLM may see: for a school, a degree or a field of study
+ *  only a sum of money (TailorIT then compares it with the person's sensitive answers), for any other category a
+ *  sensitive topic or a sum (namesSensitiveValue). */
+export function namesSensitivePickValue(text: string, category: string): boolean {
+  return NAMED_BY_TOPIC_WORDS.has(category) ? namesSum(text) : namesSensitiveValue(text);
 }
 
 /** The option labels a field shows, clean (injected text cut) and non-empty; none for a lazy list. */
@@ -188,12 +287,37 @@ export function offersDecline(spec: Pick<FieldSpec, 'options'>, vocab: Vocab): b
   return cleanOptions(spec).some((label) => isDeclinePhrase(label, vocab));
 }
 
-/** Why a field may not enter a classify batch, or null when it may: a sensitive topic in its label, description or
- *  options ('sensitive'), or a decline option among its options ('decline'). Such a field is needs-user. */
-export function screenForClassify(spec: Pick<FieldSpec, 'label' | 'description' | 'options'>, vocab: Vocab):
+/** The answer keys of every EEO answer the vocabulary knows ("Woman", "Non-binary", "Asian", "White", "Black or
+ *  African American"), but yes and no, which answer far more than EEO questions. One set per vocabulary. */
+const EEO_ANSWER_KEYS = new WeakMap<Vocab, ReadonlySet<string>>();
+
+function eeoAnswerKeys(vocab: Vocab): ReadonlySet<string> {
+  let keys = EEO_ANSWER_KEYS.get(vocab);
+  if (keys === undefined) {
+    const { yes, no } = vocab.answers.polarity;
+    keys = new Set(EEO_QUESTIONS.flatMap((question) => vocab.answers.eeo[question].values)
+      .flatMap((value) => value.surfaces.map((surface) => surface.key))
+      .filter((key) => key !== '' && !yes.has(key) && !no.has(key)));
+    EEO_ANSWER_KEYS.set(vocab, keys);
+  }
+  return keys;
+}
+
+/** Whether an option's clean label is one of the EEO answers the vocabulary knows (its answer-context key). */
+function isEeoAnswer(label: string, vocab: Vocab): boolean {
+  const key = normalize(label, 'answer').key;
+  return key !== '' && eeoAnswerKeys(vocab).has(key);
+}
+
+/** Why a field may not enter a classify batch, or null when it may: a sensitive topic in its label, description,
+ *  section's words or options, or an option that is an EEO answer ("How do you identify?" with Man, Woman and
+ *  Non-binary: the review, R4) ('sensitive'); or a decline option among its options ('decline'). Such a field is
+ *  needs-user. */
+export function screenForClassify(spec: Pick<FieldSpec, 'label' | 'description' | 'section' | 'options'>, vocab: Vocab):
   'sensitive' | 'decline' | null {
   const options = cleanOptions(spec);
-  if ([spec.label, spec.description, ...options].some(namesSensitiveTopic)) return 'sensitive';
+  if ([spec.label, spec.description, sectionWords(spec.section), ...options].some(namesSensitiveTopic)) return 'sensitive';
+  if (options.some((label) => isEeoAnswer(label, vocab))) return 'sensitive';
   return options.some((label) => isDeclinePhrase(label, vocab)) ? 'decline' : null;
 }
 

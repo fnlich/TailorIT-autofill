@@ -11,7 +11,8 @@
  *   always flagged), a verdict completes its match (completeTiebreak). A valid pick is written as an llm-pick naming
  *   its task, the candidate and the hash of the option's clean text as sent, at 0.75 at most, always flagged; the frame
  *   checks that text before it writes (llmPickStillValid). A set's values and a typeahead's results never go to the
- *   LLM.
+ *   LLM, and neither does a tie whose pick could not reach the flag band (a field only the LLM classified, at 0.70).
+ *   A list the widget read only in part (optionsPartial) never goes to the LLM either.
  * - The request carries the frame's whole scan and the keys this pass plans (planKeys; every spec without them). Only
  *   those are resolved, written and rowed, and only they can ask for the sensitive part; every spec is read for what
  *   the planner sees across the frame, so a phone planned again alone still knows the code select beside it (the
@@ -36,7 +37,7 @@
  * - The canaries scanned for are the frame's and any its fields' own labels carry; only the frame's that equal no
  *   profile value may be kept in RunState (persistableCanaries).
  */
-import { TIEBREAK_LABEL_MAX } from '../confidence';
+import { FLAG_AT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
 import type { MatcherStage } from '../enums';
 import { extractCanaries, persistableCanaries, profileIndex } from '../guard/canary';
 import { checkHoneypot, llmMaySeeLabel } from '../guard/honeypot';
@@ -77,6 +78,11 @@ const STAGE_TRUST: readonly MatcherStage[] = ['llm', 'other', 'fuzzy', 'cache', 
 
 /** The classes whose set of values is one answer, written whole or not at all (the review, CORE-4). */
 const WHOLE_ANSWER_CLASSES: readonly PolicyClass[] = ['eeo', 'legal', 'sensitive'];
+
+/** The stages that may choose from a list read only in part (FieldSpec.optionsPartial, the Phase 4 review, R9): the
+ *  value itself or one of its known spellings. A loose (fuzzy), Other or LLM choice could pass over the right answer
+ *  past what was read. */
+const PARTIAL_LIST_STAGES: ReadonlySet<MatcherStage> = new Set<MatcherStage>(['exact', 'alias', 'cache']);
 
 /** The match flags the design always shows the person (§4.3, §4.4, §4.9, §4.12): an ignored `other` bracket only
  *  lowers the confidence. */
@@ -178,6 +184,13 @@ function matchInputOf(spec: FieldSpec, resolution: Resolution, choice: Choice, o
   };
 }
 
+/** Whether a valid pick could be written at all: the field's own confidence times a pick's (0.75) reaches the flag
+ *  band. A field only the LLM classified (0.70) never does, so its tie is never asked about: the answer could only
+ *  leave it blank (the Phase 4 review, R6). */
+function pickCouldFill(resolution: Resolution): boolean {
+  return round(resolution.confidence * MATCH_LLM_PICK) >= FLAG_AT;
+}
+
 /** One value's match, the LLM off: a field the LLM would be asked about falls back to Other or blank. A set's values
  *  and a typeahead's results never go to the LLM (a pick's provenance names one option, and a search chooses only in
  *  the fill band, which a pick never reaches). */
@@ -219,8 +232,10 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
   const prepared = prepareOptions(spec.options, choice.domain, ctx.input.vocab);
   const input = matchInputOf(spec, resolution, choice, prepared);
+  const partial = spec.optionsPartial === true;
   let matched: Matched;
-  if (llm) {
+  // A list read only in part never goes to the LLM.
+  if (llm && !partial) {
     matched = matchChoice(input, ctx);
   } else {
     const plain = matchValue(input, ctx);
@@ -233,6 +248,9 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
       : 'ambiguous-options', { ...matched.fallback, stage: 'none', optionIndex: null }) };
   }
   const { match, origin } = matched;
+  if (partial && (match.stage === 'none' || !PARTIAL_LIST_STAGES.has(match.stage))) {
+    return blank('flagged', 'options-incomplete');
+  }
   if (match.stage === 'none' || match.optionIndex === null) return blank('flagged', match.reason, match);
   const option = prepared.list.find((candidate) => candidate.index === match.optionIndex)!;
   const selected = selectedIndices(spec, prepared);
@@ -244,7 +262,8 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   const prefilled = selected.size > 0 && (spec.kind !== 'select' || prepared.list.some((item) => item.placeholder));
   return {
     value: { kind: 'option', index: option.index, cleanLabel: option.clean, ...(freeText ? { freeText } : {}) },
-    match, ...(prefilled ? { flag: 'prefill-conflict' as const } : {}), ...(origin ? { origin } : {}),
+    match, ...(prefilled ? { flag: 'prefill-conflict' as const } : partial ? { flag: 'options-incomplete' as const } : {}),
+    ...(origin ? { origin } : {}),
   };
 }
 
@@ -304,7 +323,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       return { ...search, flag: 'prefill-conflict' };
     }
     case 'choice':
-      return planChoice(spec, resolution, shaped.choice, ctx, blank, true);
+      return planChoice(spec, resolution, shaped.choice, ctx, blank, pickCouldFill(resolution));
     case 'set': {
       if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
       const preparedBy = new Map<string, PreparedOptions>();
@@ -318,10 +337,13 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         return prepared;
       };
       const values: MultiSelectValue[] = [];
+      const partial = spec.optionsPartial === true;
       for (const [order, choice] of shaped.set.entries()) {
         const ref = `v${order}`;
-        const match = matchValue(matchInputOf(spec, resolution, choice, prepare(choice), ref), ctx);
-        if (match === 'waiting') return blank('flagged', 'waiting-for-options');
+        const found = matchValue(matchInputOf(spec, resolution, choice, prepare(choice), ref), ctx);
+        if (found === 'waiting') return blank('flagged', 'waiting-for-options');
+        // A list read only in part takes a value's exact or alias match only.
+        const match = partial && !PARTIAL_LIST_STAGES.has(found.stage) ? noMatch('options-incomplete') : found;
         values.push({ ref, priority: order, order, match });
       }
       const options = prepare(shaped.set[0]!);
@@ -348,7 +370,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       const cleanOf = (index: number) => options.list.find((option) => option.index === index)!.clean;
       return { value: { kind: 'options', indices: multi.add.map((item) => item.index),
         cleanLabels: multi.add.map((item) => cleanOf(item.index)) }, match,
-        ...(multi.reason !== 'ok' ? { flag: multi.reason } : {}),
+        ...(multi.reason !== 'ok' ? { flag: multi.reason } : partial ? { flag: 'options-incomplete' as const } : {}),
         multi: { profileSetSize: shaped.set.length, kept: multi.keep.length, exclusive } };
     }
   }

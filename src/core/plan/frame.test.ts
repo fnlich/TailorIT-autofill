@@ -399,3 +399,43 @@ describe('planFrame: the answer', () => {
     }
   });
 });
+
+describe('a widget list read only in part (the Phase 4 review, R9)', () => {
+  const partial = { optionsPartial: true as const };
+
+  it('chooses an exact or alias match there, always flagged options-incomplete', () => {
+    const spec = specOf('Country', 'combobox', { optionLabels: ['Canada', 'United States', 'Mexico'], ...partial });
+    const whole = fieldOf(planOf([{ ...spec, optionsPartial: undefined }]), spec);
+    expect(whole.write?.match.stage).toMatch(/^(?:exact|alias)$/);
+    const { write, row } = fieldOf(planOf([spec]), spec);
+    expect(write).toMatchObject({ value: { kind: 'option', index: 1 } });
+    expect(row).toMatchObject({ status: 'flagged', reason: 'options-incomplete', needsUserAction: true });
+  });
+
+  it('chooses no loose match there: the answer may lie past what was read', () => {
+    // The matcher's golden case P19: a misspelt Carnegie Mellon is a fuzzy match.
+    const wire = goldenWire();
+    const cmu = { ...wire.profile, education: wire.profile.education.map((entry) => ({ ...entry,
+      institution: { canonicalName: 'Carnegie Mellon University', aliases: [] } })) };
+    const profile = canonicalizeProfile(cmu, wire.sensitive, vocab, NOW).profile;
+    const spec = specOf('School', 'combobox', { optionLabels: ['Carnegie Melon University',
+      'Case Western Reserve University'], ...partial });
+    const whole = fieldOf(planOf([{ ...spec, optionsPartial: undefined }], { profile }), spec);
+    expect(whole.write?.match.stage).toBe('fuzzy');
+    const { write, row } = fieldOf(planOf([spec], { profile }), spec);
+    expect(write).toBeUndefined();
+    expect(row).toMatchObject({ status: 'flagged', reason: 'options-incomplete', provenance: null });
+  });
+
+  it('asks the LLM nothing about it, and writes no Other', () => {
+    const tie = specOf('How did you hear about us?', 'combobox', { optionLabels: ['LinkedIn job post',
+      'LinkedIn recruiter message', 'Indeed'], ...partial });
+    expect(planOf([{ ...tie, optionsPartial: undefined }]).awaiting).toEqual([tie.key]);
+    const out = planOf([tie]);
+    expect(out.awaiting).toEqual([]);
+    expect(out.ask).toBeUndefined();
+    expect(fieldOf(out, tie)).toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'options-incomplete' } });
+    const other = specOf('School', 'combobox', { optionLabels: ['Rice University', 'Other'], ...partial });
+    expect(fieldOf(planOf([other]), other)).toMatchObject({ write: undefined, row: { reason: 'options-incomplete' } });
+  });
+});

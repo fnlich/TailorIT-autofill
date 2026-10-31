@@ -95,6 +95,7 @@ export const LOG_CODES = [
   'ai.busy',
   'ai.failed',
   'ai.timed-out',
+  'ai.cancelled',
   'ai.withheld',
   'content.ai-waited',
 ] as const;

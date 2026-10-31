@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  framesOnTheNetwork, loadFixture, offlineFixture, remoteResources, removeFixtures, untrustedViolations,
+  framesOnTheNetwork, loadFixture, logEvents, offlineFixture, remoteResources, removeFixtures, untrustedViolations,
   type LoggedEvent,
 } from './fixture.testkit';
 
@@ -97,5 +97,50 @@ describe('untrustedViolations', () => {
     expect(untrustedViolations(trusted)).toEqual(trusted);
     const stray = [event('input', true), event('click', true), event('change', true)];
     expect(untrustedViolations(stray)).toEqual(stray);
+  });
+
+  // The Phase 4 review, R8: only the browser's scroll after a scrollTop set as a property is set aside.
+  const SCROLLING = `<!doctype html><body><form id="f">
+    <div id="box" style="height:80px;overflow:auto"><div style="height:600px"></div>
+    <label for="t">Name</label><input id="t" name="t"></div>
+    <ul id="list" role="listbox" style="height:80px;overflow:auto;margin:0"><li style="height:600px">One</li></ul>
+    </form></body>`;
+  const frames = (view: Window) => new Promise((resolve) => view.requestAnimationFrame(() =>
+    view.requestAnimationFrame(resolve)));
+
+  it('counts a trusted scroll that no scrollTop set caused (a scrollIntoView on a form box)', async () => {
+    const fixture = await loadFixture(document, SCROLLING);
+    const log = logEvents(fixture.doc);
+    fixture.doc.getElementById('t')!.scrollIntoView();
+    await frames(fixture.view);
+    const scrolls = log.events.filter((logged) => logged.type === 'scroll');
+    expect(scrolls.length).toBeGreaterThan(0);
+    expect(scrolls.every((logged) => logged.trusted)).toBe(true);
+    expect(untrustedViolations(log.events)).toEqual(scrolls);
+    log.stop();
+    removeFixtures(document);
+  });
+
+  it('sets aside the browser’s scroll on an element whose scrollTop the code set, and only there', async () => {
+    const fixture = await loadFixture(document, SCROLLING);
+    const original = Object.getOwnPropertyDescriptor(fixture.view.Element.prototype, 'scrollTop')!.set;
+    const log = logEvents(fixture.doc);
+    fixture.doc.getElementById('list')!.scrollTop = 200;
+    await frames(fixture.view);
+    expect(log.on('list').map((logged) => [logged.type, logged.trusted])).toEqual([['scroll', true]]);
+    expect(untrustedViolations(log.events)).toEqual([]);
+    // The box beside it, scrolled another way, still counts.
+    fixture.doc.getElementById('box')!.scrollBy(0, 100);
+    await frames(fixture.view);
+    expect(untrustedViolations(log.events).map((logged) => logged.target)).toEqual(['box']);
+    // Once the log stops, the realm's own scrollTop is back.
+    log.stop();
+    expect(Object.getOwnPropertyDescriptor(fixture.view.Element.prototype, 'scrollTop')!.set).toBe(original);
+    removeFixtures(document);
+  });
+
+  it('sets aside a scroll marked as one the code caused (the e2e spies mark a listbox’s), and no other', () => {
+    expect(untrustedViolations([{ ...event('scroll', true, 'lb'), scrollTopSet: true }])).toEqual([]);
+    expect(untrustedViolations([event('scroll', true, 'lb')])).toHaveLength(1);
   });
 });

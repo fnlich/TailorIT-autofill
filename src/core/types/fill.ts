@@ -41,6 +41,8 @@ export const REASON_CODES = [
   'changed-by-you', 'policy-notice', 'form-hidden',
   // the LLM steps (Phase 4): a field whose category only the LLM's classification gave, filled and flagged
   'llm-classified-needs-review',
+  // the Phase 4 review (R9): a widget's list read only in part, so its answer may lie past what was read
+  'options-incomplete',
   // a bug
   'internal-error',
 ] as const;

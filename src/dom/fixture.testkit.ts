@@ -148,9 +148,13 @@ export interface LoggedEvent {
   trusted: boolean;
   /** The target's id, else its name, else its tag. */
   target: string;
+  /** A scroll on an element whose scrollTop the code under test set as a property (the widget helpers read a list that
+   *  way): logEvents records each such set. The e2e spies, which cannot see a set made in the extension's world, mark
+   *  a scroll on a listbox so, the one element the helpers scroll. */
+  scrollTopSet?: true;
 }
 
-/** Records the events of a fixture's document in the capture phase. */
+/** Records the events of a fixture's document in the capture phase, and the elements whose scrollTop was set. */
 export interface EventLog {
   readonly events: LoggedEvent[];
   /** The events whose target has this id (or name). */
@@ -158,20 +162,39 @@ export interface EventLog {
   stop(): void;
 }
 
-/** Starts an event log on a fixture's document. */
+/**
+ * Starts an event log on a fixture's document. It also wraps the fixture realm's scrollTop setter, so every element
+ * whose scrollTop the code under test sets is known; the browser's scroll event on such an element is marked
+ * scrollTopSet. stop() puts the realm's own setter back.
+ */
 export function logEvents(doc: Document): EventLog {
   const events: LoggedEvent[] = [];
+  const scrolledByCode = new WeakSet<Element>();
+  const view = doc.defaultView as (Window & typeof globalThis) | null;
+  const proto = view?.Element.prototype;
+  const own = proto === undefined ? undefined : Object.getOwnPropertyDescriptor(proto, 'scrollTop');
+  if (proto !== undefined && own?.set !== undefined) {
+    const set = own.set;
+    Object.defineProperty(proto, 'scrollTop', { ...own, set(this: Element, value: number) {
+      scrolledByCode.add(this);
+      set.call(this, value);
+    } });
+  }
   const record = (event: Event) => {
     const target = event.target as Element | null;
-    const name = target === null || target.nodeType !== 1 ? 'document'
-      : target.id || target.getAttribute('name') || target.localName;
-    events.push({ type: event.type, trusted: event.isTrusted, target: name });
+    const element = target !== null && target.nodeType === 1 ? target : null;
+    const name = element === null ? 'document' : element.id || element.getAttribute('name') || element.localName;
+    events.push({ type: event.type, trusted: event.isTrusted, target: name,
+      ...(event.type === 'scroll' && element !== null && scrolledByCode.has(element) ? { scrollTopSet: true as const } : {}) });
   };
   for (const type of LOGGED_EVENTS) doc.addEventListener(type, record, true);
   return {
     events,
     on: (target) => events.filter((event) => event.target === target),
-    stop: () => LOGGED_EVENTS.forEach((type) => doc.removeEventListener(type, record, true)),
+    stop: () => {
+      LOGGED_EVENTS.forEach((type) => doc.removeEventListener(type, record, true));
+      if (proto !== undefined && own !== undefined) Object.defineProperty(proto, 'scrollTop', own);
+    },
   };
 }
 
@@ -189,14 +212,16 @@ const POINTER_BOUNDARY_EVENTS: ReadonlySet<string> = new Set(['pointerover', 'po
  *   change counts only when the nearest earlier event on the same target is an untrusted click, or that click's own
  *   input;
  * - trusted pointer and mouse boundary and move events (POINTER_BOUNDARY_EVENTS) never count;
- * - a trusted scroll never counts: Chromium fires it, trusted, on an element whose scrollTop changed, which the widget
- *   helpers set as a property to read a virtualized list (Phase 4, measured in src/dom/widgets' tests). It is no
- *   input, and it does not bubble; a wheel or a key that scrolls would be its own logged event, and fails.
+ * - a trusted scroll counts unless it is marked scrollTopSet: Chromium fires it, trusted, on an element whose scrollTop
+ *   changed, which the widget helpers set as a property to read a virtualized list (Phase 4, measured in
+ *   src/dom/widgets' tests). Any other trusted scroll (a scrollIntoView, a focus that scrolls a box) is one the code
+ *   under test caused some other way, and fails (the Phase 4 review, R8).
  */
 export function untrustedViolations(events: readonly LoggedEvent[]): LoggedEvent[] {
   return events.filter((event, at) => {
     if (!event.trusted) return false;
-    if (POINTER_BOUNDARY_EVENTS.has(event.type) || event.type === 'scroll') return false;
+    if (POINTER_BOUNDARY_EVENTS.has(event.type)) return false;
+    if (event.type === 'scroll') return event.scrollTopSet !== true;
     if (event.type !== 'input' && event.type !== 'change') return true;
     for (let i = at - 1; i >= 0; i -= 1) {
       const before = events[i]!;

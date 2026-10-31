@@ -26,6 +26,10 @@ export interface SpyEvent {
   words: string;
   /** It is, or is inside, an element marked data-honeypot. */
   honeypot: boolean;
+  /** A scroll on a listbox: the one element whose scrollTop the widget helpers set (to read a virtualized list). The
+   *  helpers set it from the extension's own world, which a page spy cannot watch, so the listbox stands for it
+   *  (the DOM testkit's logEvents records the sets themselves: the Phase 4 review, R8). */
+  scrollTopSet?: true;
   /** Date.now() in the page. */
   at: number;
 }
@@ -100,8 +104,10 @@ function spy({ types }: { types: readonly string[] }): void {
       if (target === null || typeof (target as { closest?: unknown }).closest !== 'function') return;
       const honeypot = target.closest('[data-honeypot]') !== null;
       if (!honeypot && target.closest('form, input, select, textarea, button') === null) return;
+      const listbox = ((target.getAttribute('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '') === 'listbox';
       record.events.push({ type, trusted: event.isTrusted, target: target.id || target.getAttribute('name') || target.localName,
-        control: describe(target), submits: submits(target), words: words(target), honeypot, at: Date.now() });
+        control: describe(target), submits: submits(target), words: words(target), honeypot, at: Date.now(),
+        ...(type === 'scroll' && listbox ? { scrollTopSet: true as const } : {}) });
     }, true);
   }
 

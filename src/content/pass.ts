@@ -12,7 +12,9 @@
  * 4. fill() writes with untrusted events and reads back at once; what the field then holds (readBack, values.ts) is
  *    what the loop hashes for its flip count. An ARIA widget is written by the widget helpers instead (Phase 4,
  *    dom/widgets): its option chosen, its missing options added, its member pressed, or, for a remote typeahead, each
- *    query a guarded write of its own and each result list matched by the worker (searchField);
+ *    query a guarded write of its own and each result list matched by the worker (searchField). A widget's options in
+ *    the scan may be the run's kept reading of a closed list, so the write's origin goes to the widget filler, which
+ *    checks an llm-pick again on what the list shows right before its click (the Phase 4 review, R1);
  * 5. the planner's row is settled from what happened (settleRow).
  * A refused write leaves its field untouched, with the guard's reason: blocked for what the Guard forbids (not
  * visible, no visible label, a canary, its provenance, its own UI), flagged for what could not be done (gone, options
@@ -127,8 +129,10 @@ export interface WriteResult {
 /** DOM-guard refusals that mean the Guard forbids the write; the rest mean it could not be done. */
 const GUARD_BLOCKS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['not-user-visible', 'no-visible-label',
   'internal-error']);
-/** Filler refusals that mean the write was not allowed; the rest mean it could not be done. */
-const FILL_BLOCKS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['not-user-visible', 'internal-error']);
+/** Filler refusals that mean the write was not allowed; the rest mean it could not be done. A widget filler refuses an
+ *  llm-pick whose option no longer reads as the LLM saw it, as the frame-side Guard does (the Phase 4 review, R1). */
+const FILL_BLOCKS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['not-user-visible', 'internal-error',
+  'llm-pick-rejected']);
 /** The frame-side core Guard's refusals that mean the write could not be done: the options it names moved or changed
  *  since the plan, as the DOM guard and the fillers say it too. Every other refusal of it blocks. */
 const FRAME_GUARD_FLAGS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['options-changed']);
@@ -276,7 +280,7 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
   if (widgets === undefined) return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
   const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
-  const outcome = await fillWidget(target, write.value, ctx);
+  const outcome = await fillWidget(target, write.value, ctx, write.origin);
   if (env.signal.aborted || !env.valid()) throw new RunAborted();
   const row = rowAfterFill(planned, outcome);
   if (!outcome.wrote) return { row };
@@ -285,12 +289,14 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
 }
 
 /** A typeahead's results as the worker matches them: the field's spec with the results as its options (their hash its
- *  observed one), and nothing chosen yet (the box holds our query, which is no answer). */
-function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[]): FieldSpec {
+ *  observed one), partial when their read was cut short, and nothing chosen yet (the box holds our query, which is no
+ *  answer). */
+function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[], complete: boolean): FieldSpec {
   const options = results.map((result, index) => ({ index, label: capCodePoints(result.label, TEXT_CAP_LABEL),
     disabled: result.disabled, selected: false }));
-  return { ...toFieldSpec(field), options, optionSetHash: hashOfOptions(options.map((option) => option.label)),
-    current: { kind: 'empty' } };
+  const { optionsPartial: _, ...spec } = toFieldSpec(field);
+  return { ...spec, options, optionSetHash: hashOfOptions(options.map((option) => option.label)),
+    current: { kind: 'empty' }, ...(complete ? {} : { optionsPartial: true as const }) };
 }
 
 /**
@@ -318,8 +324,8 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
       if (!check.ok) return { ok: false, reason: check.reason, blocked: !FRAME_GUARD_FLAGS.has(check.reason) };
       return { ok: true, target: again.target };
     },
-    match: async (results, now) => {
-      const spec = resultsSpec(now.field, results);
+    match: async (results, now, complete) => {
+      const spec = resultsSpec(now.field, results, complete);
       const answer = await widgets.plan([spec], [spec.key]);
       if (env.signal.aborted || !env.valid()) throw new RunAborted();
       // The answer's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).

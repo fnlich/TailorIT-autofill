@@ -53,7 +53,8 @@ import {
   ariaWidgetKind, editableOf, isChosen, isMultiselectable, isUnavailable, isWidgetPart, listOf, membersOf, roleOf,
   WIDGET_ROOT_SELECTOR,
 } from './widgets/aria';
-import { chosenLabels, memberLabel, scrolls, shownOptions } from './widgets/options';
+import { keepReading } from './widgets/fill';
+import { chosenLabels, memberLabel, readShownList, scrolls } from './widgets/options';
 
 /** What a scan needs besides the root and the adapter. */
 export interface ScanOptions {
@@ -117,6 +118,8 @@ interface Draft {
   autocomplete: string[];
   /** An ARIA or declared widget's parts. */
   widget: WidgetTarget | null;
+  /** A widget's options were read only in part: a cap stopped the read before the list's end. */
+  optionsPartial?: true;
 }
 
 /** Scans a frame's form root. */
@@ -208,6 +211,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       key, baseKey: base, platform: options.platform, section: draft.section, kind: draft.kind,
       label: draft.label.text, labelSource: draft.label.source, labelVisible: draft.label.visible,
       description: draft.description, required: draft.required, options: draft.options ?? [], optionSetHash,
+      ...(draft.optionsPartial ? { optionsPartial: true as const } : {}),
       constraints: draft.constraints, autocomplete: draft.autocomplete, nameAttr: draft.nameAttr, idAttr: draft.idAttr,
       ordinal: ordinals[i]!, domOrder: i, visibility: draft.visibility, disabled: draft.disabled,
       readOnly: draft.readOnly, current,
@@ -250,7 +254,7 @@ export function toFieldSpec(field: ScannedField): FieldSpec {
     options: field.options, optionSetHash: field.optionSetHash, constraints: field.constraints,
     autocomplete: field.autocomplete, nameAttr: field.nameAttr, idAttr: field.idAttr, ordinal: field.ordinal,
     domOrder: field.domOrder, visibility: field.visibility, disabled: field.disabled, readOnly: field.readOnly,
-    current: field.current,
+    current: field.current, ...(field.optionsPartial ? { optionsPartial: true as const } : {}),
   };
 }
 
@@ -445,6 +449,7 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
   let label = groupLike ? labelOfGroup([], el, ctx) : labelOfControl(el, ctx);
   if (label.source === 'none' && widget.input !== null && widget.input !== el) label = labelOfControl(widget.input, ctx);
   let options: Option[] | 'lazy' = 'lazy';
+  let partial = false;
   let members = widget.members;
   if (groupLike) {
     // A member that shows no label is no option.
@@ -453,11 +458,15 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     options = shown.map((item, index) => optionOf(index, item.text, '', isUnavailable(item.member),
       isChosen(item.member)));
   } else if (widget.kind !== 'typeahead-remote' && widget.kind !== 'checkbox') {
-    // A list shown whole is read as it is; one that scrolls (perhaps drawn a part at a time) waits to be read whole.
+    // A list shown whole is read as it is, exactly as a whole read takes it (readShownList: the Phase 4 review, R2);
+    // one that scrolls (perhaps drawn a part at a time) waits to be read whole.
     const list = listOf(el, widget.input);
     if (list !== null && isUserVisible(list, cache) && !scrolls(list)) {
-      const shown = shownOptions(list, cache);
-      if (shown.length > 0) options = shown.map((option, index) => optionOf(index, option.label, '', option.disabled, false));
+      const shown = readShownList(list, cache);
+      if (shown.options.length > 0) {
+        options = shown.options.map((option, index) => optionOf(index, option.label, '', option.disabled, false));
+        partial = !shown.complete;
+      }
     }
   }
   const required = label.required || isRequired(el) || (widget.input !== null && isRequired(widget.input));
@@ -473,11 +482,14 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     autocomplete: widget.input === null ? [] : autocompleteTokens(widget.input).slice(0, MAX_AUTOCOMPLETE_TOKENS)
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
     widget: members === widget.members ? widget : { ...widget, members },
+    ...(partial ? { optionsPartial: true as const } : {}),
   };
 }
 
 /** A widget's draft with what the run read of it (ScanOptions.widgetReadings): a list's options while it is closed,
- *  a remote search as a typeahead with no options. A list this scan read whole is kept as the field's reading. */
+ *  a remote search as a typeahead with no options. A list this scan read whole is kept as the field's reading, with
+ *  any option of the earlier reading it no longer shows but the widget shows chosen kept in place (keepReading). A
+ *  reading a cap stopped makes the field's options partial. */
 function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetReading> | undefined): Draft {
   const widget = draft.widget!;
   if (widget.kind === 'radio' || widget.kind === 'checkbox') return draft;
@@ -487,15 +499,19 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
     if (widget.kind !== 'combobox' && widget.kind !== 'typeahead-remote') return draft;
     return { ...draft, kind: 'typeahead-remote', options: [], widget: { ...widget, kind: 'typeahead-remote' } };
   }
+  const read = (kept: WidgetReading & { kind: 'options' }, kind: WidgetKind): Draft => {
+    const { optionsPartial: _, ...rest } = draft;
+    return { ...rest, kind, options: kept.options.map((option, index) => optionOf(index, option.label, '',
+      option.disabled, false)), widget: kind === widget.kind ? widget : { ...widget, kind },
+      ...(kept.complete ? {} : { optionsPartial: true as const }) };
+  };
   if (Array.isArray(draft.options)) {
-    readings?.set(base, { kind: 'options', multiselectable: isMultiselectable(listOf(widget.element, widget.input)),
-      options: draft.options.map((option) => ({ label: option.label, disabled: option.disabled })) });
-    return draft;
+    const kept = keepReading(readings, base, widget, draft.options.map((option) => ({ label: option.label,
+      disabled: option.disabled })), isMultiselectable(listOf(widget.element, widget.input)), draft.optionsPartial !== true);
+    return read(kept as WidgetReading & { kind: 'options' }, widget.kind);
   }
   if (reading === undefined) return draft;
-  const kind: WidgetKind = widget.kind === 'combobox' && reading.multiselectable ? 'multiselect' : widget.kind;
-  return { ...draft, kind, options: reading.options.map((option, index) => optionOf(index, option.label, '',
-    option.disabled, false)), widget: kind === widget.kind ? widget : { ...widget, kind } };
+  return read(reading, widget.kind === 'combobox' && reading.multiselectable ? 'multiselect' : widget.kind);
 }
 
 /** What a widget field holds now (widgets/options.ts), its options marked chosen accordingly. */
