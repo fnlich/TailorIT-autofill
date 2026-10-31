@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { installHandFakes } from '../platform/fake';
 import { startWorker } from './index';
+import { createRouter } from './router';
 import { contentSender, fakeCore, fieldSpec, frameReport, LEVER_KEY, pageSender, runState, startTestWorker,
   tokenRecord } from './worker.testkit';
 
@@ -41,9 +42,12 @@ describe('the worker router', () => {
       .toEqual({ ok: false, error: 'bad_sender' });
   });
 
-  it('answers not_implemented for a known message whose handler arrives in a later phase', async () => {
-    const worker = await startTestWorker();
-    const answer = await worker.deliver({ v: 1, type: 'panel/saveAnswer', tabId: 7, frameId: 0, fieldKey: 'k' }, pageSender());
+  it('answers not_implemented for a known message it has no handler for', async () => {
+    // Since Phase 6 the worker handles every message: a router made without a handler says so.
+    const sender = pageSender();
+    const router = createRouter({ ownId: sender.id!, ownPagesPrefix: sender.url!.replace(/sidepanel\.html$/, ''),
+      content: {}, page: {} });
+    const answer = await router({ v: 1, type: 'panel/saveAnswer', tabId: 7, frameId: 0, fieldKey: 'k' }, sender);
     expect(answer).toEqual({ ok: false, error: 'not_implemented' });
   });
 

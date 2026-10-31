@@ -31,14 +31,20 @@
  * current run reads auto-advance from them, C-S2); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
  * answered `expired` when no run here waits at the card); field/focus (scroll the field or its proxy into view and
  * outline it, at the person's request); field/describe (the visible labels of a row's suggested options, from a fresh
- * scan, never kept); draft/confirm and answer/read not_implemented until Phase 6's wave 2; report/update (the tab's
- * combined report, for the in-page panel). The in-page card's own buttons decide locally, on trusted clicks.
+ * scan, never kept); draft/confirm (Phase 6: the run's waiting draft of that field is the person's now; `expired` when
+ * none waits); answer/read (Phase 6: the field's answer as it holds it now, for Save my answer, straight to the worker
+ * and never kept; `expired` when the field is gone); report/update (the tab's combined report, for the in-page panel).
+ * The in-page card's own buttons decide locally, on trusted clicks.
+ * The person's trusted input reaches the current run as it comes (TouchLog.subscribe), so a resting run marks what they
+ * edited (Phase 6).
  * The in-page panel (Phase 6, ui/panel.tsx): with settings.panel 'in-page' (frame/hello's answer, then each
  * settings/changed), the launcher's Open review opens it in this frame and tells the worker (panel/shown {open: true}),
  * which then sends this frame alone the tab's report (report/update) while it is open; its Close button, or the person
  * choosing the side panel, closes it (panel/shown {open: false}). A frame too small for it (an embedded one under
  * ui/page-ui.ts PANEL_MIN_VIEWPORT) opens the side panel instead, as the side panel placement does. Its Show on page
- * and closest options act on this frame's own fields, as field/focus and field/describe do.
+ * and closest options act on this frame's own fields, as field/focus and field/describe do; its Confirm draft confirms
+ * the run's draft here, and its Save my answer asks the worker (answer/save), which reads the answer back with
+ * answer/read and sends it to TailorIT (Phase 6, wave 2). Each says what came of it.
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -63,6 +69,7 @@ import { ok, refuse } from '../messaging/envelope';
 import { WorkerToContentSchema, type PolicyDecision } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
+import { COPY } from '../shared/copy';
 import { log } from '../shared/log';
 import { createChannel, Invalidated } from './channel';
 import { watchWxtEvents } from './forged';
@@ -155,8 +162,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   const channel = createChannel(platform, () => teardown('invalidated'));
   const limiter = createReportLimiter();
-  /** The person's trusted input on this document, for its whole life (touches.ts). */
+  /** The person's trusted input on this document, for its whole life (touches.ts); the current run hears it as it
+   *  comes, so a resting run marks what the person edited (Phase 6). */
   const touches = new TouchLog(doc, lifetime.signal);
+  touches.subscribe((type, path) => current?.personInput(type, path));
 
   function teardown(reason: 'invalidated' | 'leaving'): void {
     if (stopped) return;
@@ -200,8 +209,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'field/describe':
         return ok(describeField(msg.fieldKey as FieldKey));
       case 'draft/confirm':
-      case 'answer/read':
-        return refuse('not_implemented');
+        return current?.confirmDraft(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
+      case 'answer/read': {
+        const read = stopped || page === null ? null : current?.readAnswer(msg.fieldKey as FieldKey) ?? null;
+        return read === null ? refuse('expired') : ok(read);
+      }
       case 'report/update':
         // The worker sends it only to the frame whose panel/shown said open; a closed panel keeps nothing.
         if (ui?.panel?.open === true) ui.updatePanel(msg.reports);
@@ -236,6 +248,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     }
     if (placement === 'in-page') log('content.panel-collapsed');
     channel.fire({ v: 1, type: 'panel/open' });
+  }
+
+  /** The in-page panel's Save my answer: the worker reads the answer back (answer/read) and sends it to TailorIT.
+   *  Answers what came of it, in the panel's words. */
+  async function saveFromPanel(key: FieldKey): Promise<string> {
+    try {
+      const answer = await channel.request({ v: 1, type: 'answer/save', fieldKey: key });
+      return answer.ok ? COPY.panel.saveOutcomes[answer.data.outcome] : COPY.panel.saveFailed;
+    } catch {
+      return COPY.panel.saveFailed;
+    }
   }
 
   /** Closes the in-page panel, and tells the worker to stop sending it reports. */
@@ -404,6 +427,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           frameId: () => frameId,
           showField: (key) => focusField(key as FieldKey),
           describeField: async (key) => describeField(key as FieldKey).options,
+          // Phase 6, wave 2: this frame's draft, confirmed here; its answer, saved through the worker.
+          confirmDraft: async (key) => (current?.confirmDraft(key as FieldKey) === true ? COPY.panel.draftConfirmed
+            : COPY.panel.confirmFailed),
+          saveAnswer: async (key) => saveFromPanel(key as FieldKey),
           closed: () => closePanel(),
         },
       });

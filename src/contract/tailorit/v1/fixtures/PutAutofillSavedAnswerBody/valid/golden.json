@@ -1,0 +1,15 @@
+{
+  "questionKey": "how did you hear about this job",
+  "optionSetHash": "9f2c4e6a8b0d1357",
+  "scope": "",
+  "fieldKind": "select",
+  "questionLabel": "How did you hear about this job?",
+  "platform": "lever",
+  "answer": {
+    "kind": "options",
+    "labels": [
+      "Company website"
+    ]
+  },
+  "category": "referral_source"
+}

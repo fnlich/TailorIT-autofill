@@ -78,13 +78,23 @@ describe('every answer parses with the schema its receiver uses', () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
     const runId = await beginRun(worker);
-    // The frame's run waits at the policy card, so the card's decision has somewhere to go.
-    await worker.deliver({ v: 1, type: 'report/put', runId, report: frameReport(runId, 0, { status: 'policy-notice' }) },
-      contentSender());
-    worker.fakes.frameAnswers = ({ message }) => ((message as { type: string }).type === 'field/describe'
-      ? { ok: true, data: { options: [{ index: 0, label: 'Yes' }] } }
-      : { ok: true, data: {} });
+    // The frame's run waits at the policy card, so the card's decision has somewhere to go; its report holds a draft
+    // that waits and a row the person fixed (Phase 6), for Confirm draft and Save my answer.
     const key = fieldSpec(1).key;
+    const base = frameReport(runId, 0).fields[0]!;
+    const draft = { ...base, key: 'lever|main|why|none|0', kind: 'textarea' as const, category: 'freeText.whyCompany' as const,
+      status: 'flagged' as const, provenance: 'llm-draft' as const, reason: 'llm-draft-needs-confirmation' as const,
+      needsUserAction: true };
+    const fixed = { ...base, key: 'lever|main|office|none|0', label: 'Which office?', status: 'flagged' as const,
+      reason: 'unknown-field' as const, needsUserAction: true, detail: { userEdited: true as const } };
+    await worker.deliver({ v: 1, type: 'report/put', runId, report: frameReport(runId, 0, { status: 'policy-notice',
+      fields: [base, draft, fixed] }) }, contentSender());
+    worker.fakes.frameAnswers = ({ message }) => {
+      const type = (message as { type: string }).type;
+      if (type === 'field/describe') return { ok: true, data: { options: [{ index: 0, label: 'Yes' }] } };
+      if (type === 'answer/read') return { ok: true, data: { optionSetHash: 'none', answer: { kind: 'text', text: 'Lisbon' } } };
+      return { ok: true, data: {} };
+    };
     const messages: Array<Record<string, unknown>> = [
       { type: 'ping' },
       { type: 'panel/fill', tabId: 7, dryRun: true },
@@ -93,6 +103,8 @@ describe('every answer parses with the schema its receiver uses', () => {
       { type: 'panel/policyDecision', tabId: 7, frameId: 0, decision: 'fill' },
       { type: 'panel/focus', tabId: 7, frameId: 0, fieldKey: key },
       { type: 'panel/describe', tabId: 7, frameId: 0, fieldKey: key },
+      { type: 'panel/confirmDraft', tabId: 7, frameId: 0, fieldKey: draft.key },
+      { type: 'panel/saveAnswer', tabId: 7, frameId: 0, fieldKey: fixed.key },
       { type: 'panel/reports', tabId: 7 },
       { type: 'settings/get' },
       { type: 'settings/save', settings: DEFAULT_SETTINGS },

@@ -17,7 +17,9 @@
  *    single activation event an adapter declares), and none is a click on a control assertNotSubmit refuses.
  * 4. No hidden marker or canary in a request to TailorIT, a report, RunState (its checked canarySet aside, which holds
  *    canaries by design), storage, a console message, or a form control's final value; canaries of 8 or more
- *    characters are also looked for with spaces and punctuation removed, as the Guard does.
+ *    characters are also looked for with spaces and punctuation removed, as the Guard does. A draft request (Phase 6)
+ *    sets aside its `canaries`, which carry the page's canaries by the contract's design (TailorIT refuses a draft
+ *    holding one); its job text and questions are still searched.
  * 5. No free-text value of the golden profile, case-insensitively, anywhere but a report row's label: reports (each
  *    row's label set aside), RunState, storage (its stored reports' labels set aside), console messages and requests to
  *    TailorIT, in full. Among them the free text a follow-up box takes (the referral source, a self-description: the
@@ -29,7 +31,9 @@
  *    section and label slug hashed (L-S3). An AI request (Phase 4) sets aside, by the contract's design, the page text
  *    it quotes (an item's label, hint, section and options: hidden markers and canaries are still looked for there, and
  *    the AI spec checks those bodies field by field), a pick's intended value and aliases (the one place profile text
- *    goes to TailorIT's AI), and an item key that is a report row's (proven built from its page label).
+ *    goes to TailorIT's AI), and an item key that is a report row's (proven built from its page label); a draft request
+ *    (Phase 6) its questions and job text (page text; markers and canaries are still looked for there) and the
+ *    lookup's company and job title.
  * 6. Every filled or verified row has a provenance.
  * 7. The run never reaches done.
  * 8. No request went anywhere the routes do not answer.
@@ -123,6 +127,17 @@ function withoutLabels(report: unknown): unknown {
   };
 }
 
+/** A request's body as the marker and canary search reads it: a draft request's `canaries` aside (point 4). */
+function markerBody(request: MockRequest): string {
+  if (request.method !== 'POST' || request.path !== '/api/autofill/ai/draft') return request.body;
+  try {
+    const { canaries: _canaries, ...body } = JSON.parse(request.body) as Record<string, unknown>;
+    return JSON.stringify(body);
+  } catch {
+    return request.body;
+  }
+}
+
 /** The AI routes' page-text fields (each item's) and the pick's profile-text fields. */
 const AI_PAGE_TEXT = ['label', 'hint', 'section', 'options'];
 const AI_PROFILE_TEXT = ['intendedValue', 'aliases'];
@@ -133,9 +148,21 @@ const AI_PROFILE_TEXT = ['intendedValue', 'aliases'];
  * as a profile value says it: trap 5's "TypeScript"; the marker test proves them visible text) and the pick's intended
  * value and aliases (the one place profile text goes to TailorIT's AI, by design), and an item's key when it is one of
  * the reports' row keys (proven built from the page's own label and section). What is left (categories, hashes,
- * kinds, a key no row has) is searched. Any other body is read whole.
+ * kinds, a key no row has) is searched. A draft request (Phase 6) sets aside its page text too (each question, and the
+ * job text: the page's visible text outside the form, which the marker test proves visible), the lookup's company and
+ * job title (TailorIT's own words), and a question's key when it is a row's. Any other body is read whole.
  */
 function sentinelBody(request: MockRequest, rowKeys: ReadonlySet<string>): string {
+  if (request.method === 'POST' && request.path === '/api/autofill/ai/draft') {
+    try {
+      const { jobText: _job, company: _company, jobTitle: _title, questions, ...rest } = JSON.parse(request.body) as
+        { jobText?: unknown; company?: unknown; jobTitle?: unknown; questions?: Array<Record<string, unknown>> };
+      return JSON.stringify({ ...rest, questions: (questions ?? []).map(({ question: _question, key, ...question }) =>
+        ({ ...question, ...(rowKeys.has(String(key)) ? {} : { key }) })) });
+    } catch {
+      return request.body;
+    }
+  }
   if (request.method !== 'POST' || !/^\/api\/autofill\/ai\/(?:pick|classify)$/.test(request.path)) return request.body;
   try {
     const body = JSON.parse(request.body) as { items?: Array<Record<string, unknown>> };
@@ -202,7 +229,7 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   const requests = await mock.requests();
   const values = await controlValues(run.page);
   const consoleText = run.console.map((entry) => entry.text).join('\n');
-  const requestText = requests.map((request) => `${request.path}${request.query} ${request.body}`).join('\n');
+  const requestText = requests.map((request) => `${request.path}${request.query} ${markerBody(request)}`).join('\n');
   const places: Record<string, string> = {
     'a request to TailorIT': requestText,
     'a report': JSON.stringify(reports),

@@ -15,6 +15,10 @@ import {
   AUTOFILL_CONTRACT_SCHEMAS,
   AUTOFILL_FIELD_KINDS,
   AUTOFILL_ROUTES,
+  AUTOFILL_DRAFT_REASONS,
+  AUTOFILL_SAVED_ANSWER_FIELD_KINDS,
+  AUTOFILL_SAVED_ANSWER_LIMITS,
+  AUTOFILL_UNSAVED_CATEGORIES,
   DEGREE_LEVELS as CONTRACT_DEGREE_LEVELS,
   GENDER_IDENTITIES,
   LANGUAGE_PROFICIENCIES,
@@ -23,9 +27,12 @@ import {
   cutAtWord as contractCutAtWord,
 } from '../src/contract/tailorit';
 import {
-  CLASSIFY_MAX_ITEMS, CLASSIFY_MAX_OPTIONS, CLASSIFY_TEXT_MAX, TIEBREAK_ALIAS_MAX, TIEBREAK_ID_MAX, TIEBREAK_INTENDED_MAX,
-  TIEBREAK_LABEL_MAX, TIEBREAK_MAX_ALIASES, TIEBREAK_MAX_CANDIDATES, TIEBREAK_MAX_ITEMS, TIEBREAK_REQUEST_TEXT_MAX,
+  CLASSIFY_MAX_ITEMS, CLASSIFY_MAX_OPTIONS, CLASSIFY_TEXT_MAX, DRAFT_DEFAULT_LENGTH, DRAFT_MAX_LENGTH, DRAFT_MAX_QUESTIONS,
+  DRAFT_MIN_LENGTH, DRAFT_QUESTION_MAX, TIEBREAK_ALIAS_MAX, TIEBREAK_ID_MAX, TIEBREAK_INTENDED_MAX, TIEBREAK_LABEL_MAX,
+  TIEBREAK_MAX_ALIASES, TIEBREAK_MAX_CANDIDATES, TIEBREAK_MAX_ITEMS, TIEBREAK_REQUEST_TEXT_MAX,
 } from '../src/core/confidence';
+import { REASON_CODES } from '../src/core/types/fill';
+import { MAX_POSTING_TEXT } from '../src/messaging/schemas';
 import { PICK_CATEGORIES } from '../src/core/matcher/types';
 import { SERVER_CATEGORY_MAP } from '../src/core/resolver/classify';
 import { cutAtWord } from '../src/core/text/fold';
@@ -175,6 +182,31 @@ describe('the value lists the two sides share', () => {
     expect(TIEBREAK_LABEL_MAX).toBeLessThanOrEqual(pick.label);
     expect([CLASSIFY_MAX_ITEMS, CLASSIFY_MAX_OPTIONS, CLASSIFY_TEXT_MAX]).toEqual([classify.items, classify.options,
       classify.text]);
+  });
+
+  // Phase 6: drafts and saved answers.
+  it('give the core TailorIT’s draft caps, and the extension a reason for every draft reason', async () => {
+    const { draft } = AUTOFILL_AI_LIMITS;
+    expect([DRAFT_MAX_QUESTIONS, DRAFT_MIN_LENGTH, DRAFT_MAX_LENGTH, DRAFT_DEFAULT_LENGTH, DRAFT_QUESTION_MAX,
+      MAX_POSTING_TEXT]).toEqual([draft.questions, draft.minLength, draft.maxLength, draft.defaultLength, draft.question,
+      draft.jobText]);
+    // Each of TailorIT's reasons for no draft becomes a reason the report can say (ai-tasks.ts draftVerdicts).
+    const { draftVerdicts } = await import('../src/background/ai-tasks');
+    const key = 'lever|main|why|none|0' as never;
+    for (const reason of AUTOFILL_DRAFT_REASONS) {
+      const text = reason === 'drafted' || reason === 'trimmed' ? 'A draft.' : null;
+      const verdict = draftVerdicts([{ key, question: 'Why?' as never, maxLength: null }],
+        { drafts: [{ key, text, reason }] }, 't').get(key)!;
+      if (text === null) expect(REASON_CODES, reason).toContain((verdict as { why: string }).why);
+      else expect(verdict, reason).toMatchObject({ text: 'A draft.' });
+    }
+  });
+
+  it('save answers only for kinds the core fills, and never for a category the core keeps from saved answers', () => {
+    expect([...AUTOFILL_SAVED_ANSWER_FIELD_KINDS]).toEqual(FIELD_KINDS.filter((kind) => kind !== 'file'));
+    // The unsaved categories are the ones the core hands to the person: never classified into a fillable category.
+    for (const category of AUTOFILL_UNSAVED_CATEGORIES) expect(SERVER_CATEGORY_MAP[category], category).toBe('needs-user');
+    expect(AUTOFILL_SAVED_ANSWER_LIMITS).toMatchObject({ text: 5000, labels: 50, label: 300, questionKey: 300 });
   });
 
   it('cut text after a word as TailorIT does: the core’s cutAtWord is the contract’s', () => {

@@ -134,6 +134,8 @@ export function createFakeTailorIT(): FakeTailorIT {
     'GET /api/autofill/profile/sensitive': { json: sensitiveGolden },
     'POST /api/autofill/lookup': { json: lookupGolden },
     'GET /api/autofill/resumes': { json: resumesGolden },
+    // Phase 6: no saved answer until a test scripts some.
+    'GET /api/autofill/answers': { json: { items: [], total: 0, limit: 500 } },
   };
   const pdf = fakePdf();
 
@@ -204,7 +206,7 @@ export function createFakeTailorIT(): FakeTailorIT {
 export const TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
 
 /** A task view, as TailorIT's AiTaskView shows one. */
-export function taskView(kind: 'autofill_pick' | 'autofill_classify', status: 'queued' | 'running' | 'succeeded'
+export function taskView(kind: 'autofill_pick' | 'autofill_classify' | 'autofill_draft', status: 'queued' | 'running' | 'succeeded'
   | 'failed' | 'cancelled', result: unknown = null, id = TASK_ID): Record<string, unknown> {
   const finished = status !== 'queued' && status !== 'running';
   return { id, kind, status, result: status === 'succeeded' ? result : null,
@@ -218,14 +220,32 @@ export function itemsOf(request: RecordedRequest): Array<Record<string, unknown>
   return (JSON.parse(request.body ?? '{}') as { items?: Array<Record<string, unknown>> }).items ?? [];
 }
 
-/** The fake TailorIT's AI answers when a test scripts none: every pick no_match, every classification unknown, at
- *  once (200); a task id it never handed out is not found. */
+/** The fake TailorIT's AI answers when a test scripts none: every pick no_match, every classification unknown, every
+ *  draft DRAFT_TEXT, at once (200); a task id it never handed out is not found. And (Phase 6) a saved answer PUT is kept
+ *  as sent. */
 const AI_DEFAULTS: Record<string, (request: RecordedRequest) => Reply> = {
   'POST /api/autofill/ai/pick': (request) => ({ json: taskView('autofill_pick', 'succeeded', { picks: itemsOf(request)
     .map((item) => ({ key: item.key, optionSetHash: item.optionSetHash, index: null, reason: 'no_match' })) }) }),
   'POST /api/autofill/ai/classify': (request) => ({ json: taskView('autofill_classify', 'succeeded', { items: itemsOf(request)
     .map((item) => ({ key: item.key, category: null, reason: 'unknown' })) }) }),
+  // Phase 6: a saved answer as TailorIT keeps it (its category dropped).
+  'PUT /api/autofill/answers': (request) => {
+    const { category: _category, ...body } = JSON.parse(request.body ?? '{}') as Record<string, unknown>;
+    return { json: { id: '8c1e5b3a-2d7f-4a9e-b6c4-0f3d8e2a7b15', ...body, createdAt: '2026-10-30T12:00:00.000Z',
+      updatedAt: '2026-10-30T12:00:00.000Z' } };
+  },
+  // Phase 6: every question drafted with DRAFT_TEXT.
+  'POST /api/autofill/ai/draft': (request) => ({ json: taskView('autofill_draft', 'succeeded', { drafts: questionsOf(request)
+    .map((question) => ({ key: question.key, text: DRAFT_TEXT, reason: 'drafted' })) }) }),
 };
+
+/** The fake TailorIT's draft when a test scripts none (Phase 6). */
+export const DRAFT_TEXT = 'I have built ordering platforms for four years, and I would like to bring that here.';
+
+/** The questions a recorded draft request asked (Phase 6). */
+export function questionsOf(request: RecordedRequest): Array<Record<string, unknown>> {
+  return (JSON.parse(request.body ?? '{}') as { questions?: Array<Record<string, unknown>> }).questions ?? [];
+}
 
 // ── The fake core ─────────────────────────────────────────────────────────────────────────────────────────────────
 

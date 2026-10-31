@@ -126,3 +126,27 @@ describe('the anonymous counters', () => {
     expect(everywhere).not.toContain('matcherStage');
   });
 });
+
+describe('the anonymous counters and Phase 6 rows', () => {
+  it('count a saved answer as any written field, and an AI draft only once the person confirmed or edited it', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await optIn(worker, true);
+    const runId = await beginRun(worker);
+    const saved = written('lever|main|office|none|0', { provenance: 'saved', category: 'unknown' });
+    const draft = written('lever|main|why|none|0', { kind: 'textarea', category: 'freeText.whyCompany', status: 'flagged',
+      provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', needsUserAction: true });
+    await put(worker, runId, { fields: [saved, draft] });
+    expect(await counts(worker)).toEqual([
+      { platform: 'lever', fieldKind: 'text', matcherStage: 'not-applicable', outcome: 'success', tripwireTriggered: false, count: 1 },
+    ]);
+    // Confirmed: a success, counted once, as the report that says so arrives.
+    const confirmed = { ...draft, status: 'verified' as const, reason: 'ok' as const, needsUserAction: false };
+    await put(worker, runId, { fields: [saved, confirmed] });
+    await put(worker, runId, { fields: [saved, confirmed] });
+    expect(await counts(worker)).toEqual(expect.arrayContaining([
+      { platform: 'lever', fieldKind: 'textarea', matcherStage: 'not-applicable', outcome: 'success', tripwireTriggered: false,
+        count: 1 },
+    ]));
+    expect(await counts(worker)).toHaveLength(2);
+  });
+});

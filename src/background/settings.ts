@@ -1,9 +1,9 @@
 /*
  * The person's settings, in storage.local under `settings:v1`, checked with SettingsSchema on the way in and out. A
  * stored value that no longer parses gives the cautious defaults. Content scripts get only the part they need (panel
- * placement, auto-advance, the AI switches) with frame/hello and run/begin, and again with settings/changed whenever
- * the person saves them (pushSettings: every registered frame with a form, so a run in progress reads auto-advance as
- * it is now: the Phase 5 review, C-S2); they never read storage.
+ * placement, auto-advance, the AI switches, the offer to save answers) with frame/hello and run/begin, and again with
+ * settings/changed whenever the person saves them (pushSettings: every registered frame with a form, so a run in
+ * progress reads auto-advance as it is now: the Phase 5 review, C-S2); they never read storage.
  */
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
@@ -22,7 +22,8 @@ export interface SettingsStore {
 
 /** What a content script may know of the settings. */
 export function contentSettingsOf(settings: Settings): ContentSettings {
-  return { panel: settings.panel, autoAdvance: settings.autoAdvance, llm: { ...settings.llm } };
+  return { panel: settings.panel, autoAdvance: settings.autoAdvance, llm: { ...settings.llm },
+    offerToSaveAnswers: settings.offerToSaveAnswers };
 }
 
 /** The store over storage.local, read once and kept in memory. */

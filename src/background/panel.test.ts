@@ -139,11 +139,12 @@ describe('the panel\'s messages', () => {
     expect(await page(worker, { type: 'panel/describe', tabId: 7, frameId: 0, fieldKey: KEY })).toEqual({ ok: false, error: 'unavailable' });
   });
 
-  it('panel/confirmDraft and panel/saveAnswer wait for Phase 6', async () => {
+  it('panel/confirmDraft and panel/saveAnswer answer expired, sending nothing, for a row no report offers them on', async () => {
+    // Phase 6, wave 2 wires them (row-actions.test.ts): a frame with no report has no draft and no answer to save.
     const worker = await startTestWorker({ token: tokenRecord() });
     await tabWithFrames(worker);
     for (const type of ['panel/confirmDraft', 'panel/saveAnswer']) {
-      expect(await page(worker, { type, tabId: 7, frameId: 0, fieldKey: KEY })).toEqual({ ok: false, error: 'not_implemented' });
+      expect(await page(worker, { type, tabId: 7, frameId: 0, fieldKey: KEY })).toEqual({ ok: false, error: 'expired' });
     }
     expect(sentToFrames(worker)).toEqual([]);
   });

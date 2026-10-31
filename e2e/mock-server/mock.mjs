@@ -21,6 +21,10 @@
  *   when a scenario makes it slow; GET and DELETE /api/ai/tasks/:id poll and cancel it, and the contract's golden task
  *   is always there. A pick's normal answer is the fake CLI's: the option whose folded text equals the intended value or
  *   an alias, else null; a classification's is a small keyword table. Scenarios script the hostile answers.
+ * - Phase 6: POST /ai/draft makes a draft task the same way, the fake CLI's clean draft (CLEAN_DRAFT) for each
+ *   question unless a scenario scripts a canary, AI talk, a foreign link, a draft past its cap or a trimmed one. GET,
+ *   PUT and DELETE /answers keep saved answers in the mock's state until the reset (none at first), with TailorIT's
+ *   refusals in brief: a file, a misfit, a company scope on a non-text answer, a category or question it never keeps.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -148,8 +152,20 @@ export const MOCK_SCENARIOS = Object.freeze({
   'ai-busy': 'An AI route answers 409 ai_busy.',
   'ai-timeout': 'An AI route answers 202 {taskId}, and its task never finishes: past the 120 s cap the extension keeps.',
   'ai-unavailable': 'An AI route answers 503 ai_unavailable.',
+  // Phase 6: drafts. Without one, every question gets the fake CLI's clean draft (CLEAN_DRAFT), reason drafted.
+  'ai-draft-canary': 'POST /ai/draft answers every question with a draft holding the word in value (default '
+    + '"pineapple"), reason drafted: a canary TailorIT missed, which the extension must catch itself.',
+  'ai-draft-ai-talk': 'POST /ai/draft answers every question null, ai_reference: the draft spoke of being an AI.',
+  'ai-draft-url': 'POST /ai/draft answers every question null, contact: the draft named a link that is not the person\'s.',
+  'ai-draft-too-long': 'POST /ai/draft answers every question with a draft one character past its maxLength (or past '
+    + 'the 3000 default), reason drafted: the extension\'s own cap must refuse it.',
+  'ai-draft-trimmed': 'POST /ai/draft answers every question with the clean draft, reason trimmed.',
+  // Phase 6: saved answers. Without these, GET lists what PUT saved since the last reset (none at first).
+  'answers-unavailable': 'GET /answers gets 500.',
+  'answers-refused': 'PUT /answers gets 400 validation_failed, as TailorIT refuses a question it never keeps.',
 });
 /** @typedef {keyof typeof MOCK_SCENARIOS} ScenarioName */
+/** @typedef {'autofill_pick' | 'autofill_classify' | 'autofill_draft'} AiKind */
 
 /** Text as the fake CLI compares it: no accents, lower case, letters and digits only. @param {unknown} text */
 const foldText = (text) => String(text).normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
@@ -166,6 +182,27 @@ const CLASSIFY_KEYWORDS = [
   [/\bgithub\b/, 'github'],
   [/\bportfolio\b/, 'portfolio'],
 ];
+
+/** The fake CLI's draft for a free-text question: clean, first person, no link, no contact detail, no canary. */
+export const CLEAN_DRAFT = 'I have spent four years building the kind of product this team makes, and I would like to '
+  + 'bring that experience to the work described in this posting.';
+
+/** A draft's cap when its question names no maxLength (the contract's AUTOFILL_AI_LIMITS.draft.defaultLength). */
+const DRAFT_DEFAULT_LENGTH = 3000;
+
+/** The categories TailorIT never saves an answer for (the contract's AUTOFILL_UNSAVED_CATEGORIES). */
+const UNSAVED_CATEGORIES = new Set(['sensitive_eeo', 'sensitive_legal', 'sensitive_compensation', 'consent',
+  'attention_check']);
+
+/** A stand-in for TailorIT's screen of a saved answer's question: words that name a sensitive topic or an attention
+ *  check. TailorIT's own list is longer; this is enough for the mock to refuse what the e2e suite could send. */
+const UNSAVED_QUESTION = /\b(?:gender|race|ethnic\w*|hispanic|latin[oax]|veteran|disab\w*|sexual|transgender|pronouns?|sponsor\w*|visa|authori[sz]\w*|citizen\w*|salary|compensation|pay|wage|consent|agree|criminal|convicted|birth|age|attention|prove you)\b/i;
+
+/** The kinds a saved answer may be for: every kind but a file (the contract's AUTOFILL_SAVED_ANSWER_FIELD_KINDS). */
+const SAVED_ANSWER_KINDS = new Set(['text', 'textarea', 'select', 'radio', 'checkbox', 'checkbox-group', 'combobox',
+  'multiselect', 'typeahead-remote', 'date']);
+/** How many answers an account keeps (AUTOFILL_SAVED_ANSWER_LIMITS.perAccount). */
+const SAVED_ANSWER_LIMIT = 500;
 
 /** How long a slow scenario waits when the test names no delay. @type {Partial<Record<ScenarioName, number>>} */
 const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000, 'ai-slow': 4_000 };
@@ -281,9 +318,12 @@ export function createMock() {
     /** @type {Map<string, { scopes: string[]; expiresAt: number; used: boolean }>} */
     codes: new Map(),
     /** The AI tasks the AI routes made, by id: finished at readyAt (never when null), or cancelled.
-     *  @type {Map<string, { id: string; kind: 'autofill_pick' | 'autofill_classify'; createdAt: number;
+     *  @type {Map<string, { id: string; kind: AiKind; createdAt: number;
      *    readyAt: number | null; cancelledAt: number | null; result: unknown }>} */
     tasks: new Map(),
+    /** The saved answers PUT /answers kept (Phase 6), by id, in the order they were first saved.
+     *  @type {Map<string, Record<string, unknown>>} */
+    answers: new Map(),
     /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes. */
     token: { value: GOLDEN_TOKEN, scopes: [...ALL_SCOPES], revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
   });
@@ -382,6 +422,30 @@ export function createMock() {
     };
   }
 
+  /** A draft task's result for these questions (Phase 6): a scenario's, or the fake CLI's clean draft, within each
+   *  question's cap. @param {Array<Record<string, any>>} questions */
+  function draftResult(questions) {
+    const canary = take('ai-draft-canary');
+    const aiTalk = take('ai-draft-ai-talk');
+    const url = take('ai-draft-url');
+    const tooLong = take('ai-draft-too-long');
+    const trimmed = take('ai-draft-trimmed');
+    return {
+      drafts: questions.map((question) => {
+        const key = question.key;
+        const cap = typeof question.maxLength === 'number' ? question.maxLength : DRAFT_DEFAULT_LENGTH;
+        if (canary !== null) {
+          const word = typeof canary.value === 'string' && canary.value !== '' ? canary.value : 'pineapple';
+          return { key, text: `Your mission speaks to me, like ${word} to pizza.`, reason: 'drafted' };
+        }
+        if (aiTalk !== null) return { key, text: null, reason: 'ai_reference' };
+        if (url !== null) return { key, text: null, reason: 'contact' };
+        if (tooLong !== null) return { key, text: `${CLEAN_DRAFT} `.repeat(Math.ceil((cap + 1) / CLEAN_DRAFT.length) + 1).slice(0, cap + 1), reason: 'drafted' };
+        return { key, text: CLEAN_DRAFT.slice(0, cap), reason: trimmed !== null ? 'trimmed' : 'drafted' };
+      }),
+    };
+  }
+
   /** A task as AiTaskView shows it now. @param {{ id: string; kind: string; createdAt: number; readyAt: number | null;
    *  cancelledAt: number | null; result: unknown }} task */
   function viewOf(task) {
@@ -398,11 +462,18 @@ export function createMock() {
    * POST /ai/pick and /ai/classify: a task made from the body, answered finished (200), or 202 {taskId} when a
    * scenario makes it slow or endless; ai-busy and ai-unavailable refuse it. A pick of a category TailorIT does not
    * take (country, region) is 400, as TailorIT's.
-   * @param {'autofill_pick' | 'autofill_classify'} kind @param {Record<string, unknown>} json @returns {Answer}
+   * POST /ai/draft (Phase 6) takes one to three questions, each a maxLength of 50 or more, or none.
+   * @param {AiKind} kind @param {Record<string, unknown>} json @returns {Answer}
    */
   function aiAnswer(kind, json) {
-    const items = Array.isArray(json.items) ? /** @type {Array<Record<string, any>>} */ (json.items) : [];
-    if (items.length === 0 || items.length > 20) return invalid('items: 1 to 20 items');
+    const field = kind === 'autofill_draft' ? json.questions : json.items;
+    const items = Array.isArray(field) ? /** @type {Array<Record<string, any>>} */ (field) : [];
+    if (kind === 'autofill_draft') {
+      if (items.length === 0 || items.length > 3) return invalid('questions: 1 to 3 questions');
+      if (items.some((item) => item.maxLength !== null && !(Number.isInteger(item.maxLength) && item.maxLength >= 50
+        && item.maxLength <= 5000))) return invalid('questions.maxLength: 50 to 5000, or null');
+      if (typeof json.jobText !== 'string' || !Array.isArray(json.canaries ?? [])) return invalid('jobText: Required');
+    } else if (items.length === 0 || items.length > 20) return invalid('items: 1 to 20 items');
     if (kind === 'autofill_pick' && items.some((item) => !PICK_CATEGORIES.includes(item.category))) {
       return invalid('items.category: Not a pick category');
     }
@@ -413,9 +484,66 @@ export function createMock() {
     const now = Date.now();
     const task = { id: randomUUID(), kind, createdAt: now, cancelledAt: null,
       readyAt: endless !== null ? null : slow !== null ? now + slow.delayMs : now,
-      result: kind === 'autofill_pick' ? pickResult(items) : classifyResult(items) };
+      result: kind === 'autofill_pick' ? pickResult(items) : kind === 'autofill_classify' ? classifyResult(items)
+        : draftResult(items) };
     state.tasks.set(task.id, task);
     return slow !== null || endless !== null ? jsonAnswer(202, { taskId: task.id }) : jsonAnswer(200, viewOf(task));
+  }
+
+  // ── Saved answers (Phase 6) ─────────────────────────────────────────────────────────────────────────────────────
+
+  /** GET /answers: what PUT saved since the reset, the latest saved first. @returns {Answer} */
+  function answerList() {
+    if (take('answers-unavailable') !== null) return serverError();
+    const items = [...state.answers.values()].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    return jsonAnswer(200, { items, total: items.length, limit: SAVED_ANSWER_LIMIT });
+  }
+
+  /**
+   * PUT /answers: TailorIT's refusals in brief (a file, an answer that does not fit its kind, a company scope on an
+   * answer that is not a text, a category or a question it never keeps: 400; a new key past 500: 409), then the answer
+   * saved under its key (question key, option set and scope), replacing the one there, `category` dropped.
+   * @param {Record<string, any>} json @returns {Answer}
+   */
+  function saveAnswer(json) {
+    if (take('answers-refused') !== null) return invalid('This question is one TailorIT never keeps an answer for.');
+    const { questionKey, optionSetHash, scope, fieldKind, questionLabel, platform, answer, category } = json;
+    if (typeof questionKey !== 'string' || questionKey.trim() !== questionKey || questionKey === '') {
+      return invalid('questionKey: One line, with no space at either end');
+    }
+    if (typeof optionSetHash !== 'string' || !/^(?:|[0-9a-f]{16})$/.test(optionSetHash)) return invalid('optionSetHash: Invalid');
+    if (typeof scope !== 'string' || (scope !== '' && !/^(?:greenhouse|lever|ashby|workday):\S{1,200}$/.test(scope))) {
+      return invalid('scope: Use <platform>:<board>');
+    }
+    if (!SAVED_ANSWER_KINDS.has(fieldKind)) return invalid('fieldKind: A file cannot be a saved answer');
+    if (typeof questionLabel !== 'string' || questionLabel === '') return invalid('questionLabel: Required');
+    const value = typeof answer === 'object' && answer !== null ? answer : {};
+    const labels = Array.isArray(value.labels) ? value.labels : [];
+    const fits = (value.kind === 'text' && typeof value.text === 'string' && value.text.trim() !== ''
+        && ['text', 'textarea', 'date'].includes(fieldKind))
+      || (value.kind === 'options' && labels.length > 0
+        && labels.every((/** @type {unknown} */ label) => typeof label === 'string' && label !== '')
+        && (['checkbox-group', 'multiselect'].includes(fieldKind)
+          || (['select', 'radio', 'combobox', 'typeahead-remote'].includes(fieldKind) && labels.length === 1)))
+      || (value.kind === 'checked' && typeof value.checked === 'boolean' && fieldKind === 'checkbox');
+    if (!fits) return invalid('answer: This answer does not fit the field');
+    if (scope !== '' && value.kind !== 'text') return invalid('scope: Only a written answer is kept for one company');
+    if (category !== undefined && category !== null && UNSAVED_CATEGORIES.has(String(category))) {
+      return invalid('category: This kind of question is never saved');
+    }
+    if (UNSAVED_QUESTION.test(questionLabel) || UNSAVED_QUESTION.test(questionKey)) {
+      return invalid('questionLabel: This question is one TailorIT never keeps an answer for.');
+    }
+    const existing = [...state.answers.values()].find((saved) => saved.questionKey === questionKey
+      && saved.optionSetHash === optionSetHash && saved.scope === scope);
+    if (existing === undefined && state.answers.size >= SAVED_ANSWER_LIMIT) {
+      return refusal(409, 'conflict', 'You have saved the most answers TailorIT keeps.');
+    }
+    const now = iso(Date.now());
+    const saved = { id: String(existing?.id ?? randomUUID()), questionKey, optionSetHash, scope, fieldKind, questionLabel,
+      platform: platform ?? null, answer: value, createdAt: existing?.createdAt ?? now, updatedAt: now };
+    state.answers.set(saved.id, saved);
+    return jsonAnswer(200, saved);
   }
 
   /** GET or DELETE /api/ai/tasks/:id: a task the mock made, or the contract's golden one; else 404.
@@ -491,6 +619,10 @@ export function createMock() {
     'GET /api/autofill/resumes': () => jsonAnswer(200, resumeList()),
     'POST /api/autofill/ai/pick': ({ json }) => aiAnswer('autofill_pick', json),
     'POST /api/autofill/ai/classify': ({ json }) => aiAnswer('autofill_classify', json),
+    'POST /api/autofill/ai/draft': ({ json }) => aiAnswer('autofill_draft', json),
+    'GET /api/autofill/answers': () => answerList(),
+    'PUT /api/autofill/answers': ({ json }) => saveAnswer(json),
+    'DELETE /api/autofill/answers/:id': ({ params }) => (state.answers.delete(params[0] ?? '') ? { status: 204 } : notFound()),
     'GET /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', false),
     'DELETE /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', true),
     'GET /api/autofill/resumes/:id/file': ({ params }) => {

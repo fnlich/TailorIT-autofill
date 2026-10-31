@@ -1,0 +1,13 @@
+{
+  "questionKey": "i have a portfolio i can share",
+  "optionSetHash": "",
+  "scope": "greenhouse:northwind",
+  "fieldKind": "checkbox",
+  "questionLabel": "I have a portfolio I can share",
+  "platform": "greenhouse",
+  "answer": {
+    "kind": "checked",
+    "checked": true
+  },
+  "category": null
+}

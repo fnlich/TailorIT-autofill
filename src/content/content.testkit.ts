@@ -12,8 +12,11 @@ import type { AutofillProfile, AutofillSensitive } from '../contract/tailorit';
 import { DOCX_MIME } from '../dom/fillers';
 import { planFrame } from '../core/plan/frame';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
+import type { DraftItem, DraftVerdict } from '../core/plan/drafts';
 import type { AnsweredVerdict, PlanOutput } from '../core/plan/types';
 import type { ClassifyItem, ClassifyVerdict } from '../core/resolver/classify';
+import type { CompanyScope } from '../core/resolver/saved';
+import type { SavedAnswer } from '../core/types/saved';
 import type { RepeatableRequest } from '../core/steps/blocks';
 import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize';
 import type { FieldKey, FieldSpec } from '../core/types/field';
@@ -269,8 +272,16 @@ export interface FakeWorkerOptions {
   ai?: {
     pick?(item: TiebreakItem): { picked: number | null; why: TiebreakVerdict['why'] };
     classify?(item: ClassifyItem): ClassifyVerdict;
+    /** Phase 6: a draft for a question (by default FAKE_DRAFT, from FAKE_TASK_ID). */
+    draft?(item: DraftItem): DraftVerdict;
   };
+  /** Phase 6: the person's saved answers the plans read, and the company the form belongs to. */
+  savedAnswers?: SavedAnswer[];
+  company?: CompanyScope;
 }
+
+/** The fake worker's draft for a free-text question, when a test scripts none (Phase 6). */
+export const FAKE_DRAFT = 'I have built ordering platforms for four years, and I would like to bring that here.';
 
 /** The task id the fake worker's LLM answers name. */
 export const FAKE_TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
@@ -286,8 +297,9 @@ interface AskContext {
 interface FakeRunAi {
   verdicts: Map<string, AnsweredVerdict>;
   classifications: Map<string, ClassifyVerdict>;
+  drafts: Map<string, DraftVerdict>;
   /** The answers the next plan/poll brings, by key. */
-  coming: Map<FieldKey, { verdict?: AnsweredVerdict; classification?: ClassifyVerdict }>;
+  coming: Map<FieldKey, { verdict?: AnsweredVerdict; classification?: ClassifyVerdict; draft?: DraftVerdict }>;
   waiting: Map<FieldKey, AskContext>;
 }
 
@@ -316,7 +328,8 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   let nextRun = 1;
   let transfers = 0;
   const settings = { panel: options.settings?.panel ?? 'side', autoAdvance: options.settings?.autoAdvance ?? false,
-    llm: { tiebreak: true, classify: true, drafts: false } };
+    llm: { tiebreak: true, classify: true, drafts: options.settings?.llm.drafts ?? false },
+    offerToSaveAnswers: options.settings?.offerToSaveAnswers ?? DEFAULT_SETTINGS.offerToSaveAnswers };
 
   const scripted = (type: string): unknown => {
     const queue = options.script?.[type as ContentMessage['type']];
@@ -326,9 +339,10 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   /** One plan over a scan, with the run's LLM answers; what it asks is answered by the next plan/poll. */
   function planFor(run: { dryRun: boolean; ai: FakeRunAi }, context: AskContext, planKeys: FieldKey[]): PlanOutput {
     let plan = planFrame({ specs: [...context.specs], planKeys, canaries: [...context.canaries],
-      profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
+      profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded', savedAnswers: options.savedAnswers ?? [],
+      ...(options.company === undefined ? {} : { company: options.company }),
       settings: options.settings ?? DEFAULT_SETTINGS, vocab: testVocab(), dryRun: run.dryRun, now: NOW,
-      ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications },
+      ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications, drafts: run.ai.drafts },
       ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }) });
     if (options.editPlan) plan = options.editPlan(plan, context.specs);
     for (const item of plan.ask?.tiebreaks ?? []) {
@@ -340,6 +354,10 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
     for (const item of plan.ask?.classify ?? []) {
       run.ai.coming.set(item.key, { classification: options.ai?.classify?.(item)
         ?? { key: item.key, category: null, why: 'unknown-field' } });
+    }
+    for (const item of plan.ask?.drafts ?? []) {
+      run.ai.coming.set(item.key, { draft: options.ai?.draft?.(item)
+        ?? { key: item.key, text: FAKE_DRAFT, taskId: FAKE_TASK_ID } });
     }
     for (const key of plan.awaiting) run.ai.waiting.set(key, context);
     return plan;
@@ -358,7 +376,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (options.connected === false) return { ok: false, error: 'not_connected' };
         const runId = `run-${nextRun++}`;
         runs.set(runId, { dryRun: message.dryRun === true, ai: { verdicts: new Map(), classifications: new Map(),
-          coming: new Map(), waiting: new Map() } });
+          drafts: new Map(), coming: new Map(), waiting: new Map() } });
         return { ok: true, data: { runId, settings,
           policy: options.policy ?? { postingPage: 'unseen', storedCopy: 'clear' } } };
       }
@@ -392,6 +410,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
           run.ai.coming.delete(key);
           if (coming.verdict) run.ai.verdicts.set(coming.verdict.verdict.id, coming.verdict);
           if (coming.classification) run.ai.classifications.set(key, coming.classification);
+          if (coming.draft) run.ai.drafts.set(key, coming.draft);
           const context = run.ai.waiting.get(key)!;
           run.ai.waiting.delete(key);
           byContext.set(context, [...(byContext.get(context) ?? []), key]);
@@ -422,6 +441,8 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       case 'panel/shown':
       case 'runstate/clear':
         return { ok: true, data: {} };
+      case 'answer/save':
+        return { ok: true, data: { outcome: 'saved' } };
       case 'ping':
         return { ok: true, data: { pong: true } };
       default:

@@ -71,10 +71,11 @@ describe('the content runtime’s start-up', () => {
     expect(await fake.platform.deliverFrom(ping, { id: 'memory-extension', tabId: 7 }))
       .toEqual({ ok: false, error: 'bad_sender' });
     expect(await fake.platform.deliver({ v: 1, type: 'frame/ping', extra: true })).toEqual({ ok: false, error: 'bad_message' });
+    // Phase 6: no run here, so no draft waits and no field answers.
     expect(await fake.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: 'k' }))
-      .toEqual({ ok: false, error: 'not_implemented' });
+      .toEqual({ ok: false, error: 'expired' });
     expect(await fake.platform.deliver({ v: 1, type: 'answer/read', fieldKey: 'k' }))
-      .toEqual({ ok: false, error: 'not_implemented' });
+      .toEqual({ ok: false, error: 'expired' });
     expect(await fake.platform.deliver({ v: 1, type: 'report/update', reports: [] })).toEqual({ ok: true, data: {} });
   });
 
@@ -311,7 +312,7 @@ describe('the in-page panel', () => {
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(runtime.ui!.panel?.open).toBe(true);
     await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
-      llm: DEFAULT_SETTINGS.llm } });
+      llm: DEFAULT_SETTINGS.llm, offerToSaveAnswers: true } });
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }, { v: 1, type: 'panel/shown', open: false }]);
     await clickInUi(runtime, runtime.ui!.launcher.el);

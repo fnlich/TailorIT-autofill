@@ -40,14 +40,21 @@
  *   (steps/blocks.ts: a block the site prefilled is matched to the entry it holds, the rest in order), and the resolver
  *   fills the block from that entry, not from the one its place names. The answer gives the frame the section's entry
  *   count, each block's entry and its current-job flag, for its Add clicks and "I currently work here".
+ * - Phase 6: the person's saved answers apply by their exact key (resolver/saved.ts), a free-text one only for the
+ *   company PlanInput.company names. With settings.llm.drafts on (never in a dry run), a free-text question no saved
+ *   answer fills waits for a draft (drafts.ts: `ask.drafts`); the run's draft, once in (`ai.drafts`), is written as an
+ *   llm-draft through guardWrite, always flagged, and a discarded or over-long one leaves the field flagged with its
+ *   reason. The writes' matches the accepted-match cache may take once accepted are `cacheCandidates`, and the cache
+ *   entries a match found stale `cacheDrops`: both for the worker, never for the frame.
  */
-import { FLAG_AT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
+import { FLAG_AT, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
 import type { MatcherStage } from '../enums';
 import { extractCanaries, persistableCanaries, profileIndex } from '../guard/canary';
 import { checkHoneypot, llmMaySeeLabel } from '../guard/honeypot';
 import { cutInjected } from '../guard/injected';
 import { tripwireHits } from '../guard/tripwire';
 import { guardWrite, type GuardContext, type WriteSubject } from '../guard/write';
+import { cacheEntryFor } from '../matcher/cache';
 import { noMatch, matchOne } from '../matcher/cascade';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { prepareOptions } from '../matcher/prepare';
@@ -68,7 +75,8 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../types/fill';
 import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../types/intent';
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
-import type { PlanInput, PlanOutput } from './types';
+import { draftItemOf, draftRefusal, type DraftItem, type DraftVerdict } from './drafts';
+import type { CacheCandidate, PlanInput, PlanOutput } from './types';
 
 /** The match of a write with no options to choose from (text, a box, a date, a file, queries). */
 const NOT_APPLICABLE: Match = { stage: 'not-applicable', optionIndex: null, rule: null, confidence: 1, flags: [],
@@ -140,10 +148,12 @@ function selectedIndices(spec: FieldSpec, prepared: PreparedOptions): Set<number
     || (option.clean !== '' && labels.has(option.clean.trim().toLowerCase())))).map((option) => option.index));
 }
 
-/** What the planner knows of the run, for one field. */
+/** What the planner knows of the run, for one field, and what it gathers across the frame. */
 interface FieldPlanContext {
   input: PlanInput;
   guard: GuardContext;
+  /** Cache entries a match found stale (matchOne's cacheDrop), for the worker to delete. */
+  drops: Set<string>;
 }
 
 /** A field's write before the Guard: its value, its match, a reason it must be flagged for, if any, and the origin
@@ -154,6 +164,8 @@ interface Planned {
   flag?: ReasonCode;
   multi?: WriteSubject['multi'];
   origin?: ValueOrigin;
+  /** The matches the worker may cache once the write is accepted (Phase 6). */
+  cache?: CacheCandidate[];
 }
 
 /** A field that waits for the LLM's tiebreak: its question, and the row that stands until the answer comes. */
@@ -202,6 +214,7 @@ function pickCouldFill(resolution: Resolution): boolean {
 function matchValue(input: MatchInput, ctx: FieldPlanContext): Match | 'waiting' {
   const outcome = matchOne(input, { vocab: ctx.input.vocab, llm: false, ...(ctx.input.cache ? { cache: ctx.input.cache }
     : {}) });
+  if ('cacheDrop' in outcome && outcome.cacheDrop !== undefined) ctx.drops.add(outcome.cacheDrop);
   if (outcome.done) return outcome.match;
   return 'waiting' in outcome ? 'waiting' : outcome.partial.fallback;
 }
@@ -216,6 +229,7 @@ function matchChoice(input: MatchInput, ctx: FieldPlanContext): Matched {
   const llm = ctx.input.settings.llm.tiebreak;
   const outcome = matchOne(input, { vocab: ctx.input.vocab, llm, ...(ctx.input.cache ? { cache: ctx.input.cache }
     : {}) });
+  if ('cacheDrop' in outcome && outcome.cacheDrop !== undefined) ctx.drops.add(outcome.cacheDrop);
   if (outcome.done) return { kind: 'match', match: outcome.match };
   if ('waiting' in outcome) return { kind: 'waiting' };
   const answered = ctx.input.ai?.verdicts.get(outcome.tiebreak.id);
@@ -229,6 +243,15 @@ function matchChoice(input: MatchInput, ctx: FieldPlanContext): Matched {
 
 /** A row with nothing written, for the field being planned. */
 type Blank = (status: FillResult['status'], reason: ReasonCode, match?: Match) => FillResult;
+
+/** The cache entry a match would give once accepted, as a candidate for this field (cacheEntryFor: never an LLM pick
+ *  the person did not confirm, an Other choice, or a field outside the open classes). */
+function candidateOf(spec: FieldSpec, input: MatchInput, match: Match): CacheCandidate[] {
+  const found = cacheEntryFor(input, match, 'run-complete', 0);
+  if (found === null) return [];
+  const { label, stage, confidence } = found.entry;
+  return [{ fieldKey: spec.key, cacheKey: found.key, entry: { label, stage, confidence } }];
+}
 
 /** One answer chosen among a field's options (a select, a radio group, a combobox, a typeahead's results), or the row
  *  it gets instead. With `llm`, a tie may go to the LLM tiebreak: the field then waits for it (Asked). */
@@ -265,10 +288,11 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   // flagged. A native select always shows some option, so its selection says something only when the select has
   // a placeholder to show instead (the review, CORE-17).
   const prefilled = selected.size > 0 && (spec.kind !== 'select' || prepared.list.some((item) => item.placeholder));
+  const cache = candidateOf(spec, input, match);
   return {
     value: { kind: 'option', index: option.index, cleanLabel: option.clean, ...(freeText ? { freeText } : {}) },
     match, ...(prefilled ? { flag: 'prefill-conflict' as const } : partial ? { flag: 'options-incomplete' as const } : {}),
-    ...(origin ? { origin } : {}),
+    ...(origin ? { origin } : {}), ...(cache.length > 0 ? { cache } : {}),
   };
 }
 
@@ -342,10 +366,13 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         return prepared;
       };
       const values: MultiSelectValue[] = [];
+      const inputs = new Map<string, MatchInput>();
       const partial = spec.optionsPartial === true;
       for (const [order, choice] of shaped.set.entries()) {
         const ref = `v${order}`;
-        const found = matchValue(matchInputOf(spec, resolution, choice, prepare(choice), ref), ctx);
+        const valueInput = matchInputOf(spec, resolution, choice, prepare(choice), ref);
+        inputs.set(ref, valueInput);
+        const found = matchValue(valueInput, ctx);
         if (found === 'waiting') return blank('flagged', 'waiting-for-options');
         // A list read only in part takes a value's exact or alias match only.
         const match = partial && !PARTIAL_LIST_STAGES.has(found.stage) ? noMatch('options-incomplete') : found;
@@ -373,10 +400,13 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         reason: added.find((candidate) => candidate.reason !== 'ok')?.reason ?? 'ok' };
       const exclusive = new Set(options.list.filter((option) => option.exclusive).map((option) => option.index));
       const cleanOf = (index: number) => options.list.find((option) => option.index === index)!.clean;
+      const cache = multi.add.flatMap((item) => candidateOf(spec, inputs.get(item.ref)!,
+        values.find((candidate) => candidate.ref === item.ref)!.match));
       return { value: { kind: 'options', indices: multi.add.map((item) => item.index),
         cleanLabels: multi.add.map((item) => cleanOf(item.index)) }, match,
         ...(multi.reason !== 'ok' ? { flag: multi.reason } : partial ? { flag: 'options-incomplete' as const } : {}),
-        multi: { profileSetSize: shaped.set.length, kept: multi.keep.length, exclusive } };
+        multi: { profileSetSize: shaped.set.length, kept: multi.keep.length, exclusive },
+        ...(cache.length > 0 ? { cache } : {}) };
     }
   }
 }
@@ -388,9 +418,43 @@ function originOf(resolution: Resolution, value: WriteValue): ValueOrigin {
   return origin;
 }
 
+/** A field planned: its write, if any, its row, the tiebreak it waits on, and the matches it may cache. */
+interface FieldPlan {
+  write?: PlannedWrite;
+  row: FillResult;
+  asked?: TiebreakItem;
+  cache?: CacheCandidate[];
+}
+
+/**
+ * A free-text field with its draft (drafts.ts): the draft written as an llm-draft through guardWrite (its canary scan
+ * included), always flagged for the person's confirmation; or, for a draft TailorIT discarded or one past the field's
+ * cap, a flagged row with the reason, and nothing written. A Guard refusal blocks it, as any write's.
+ */
+function planDraft(spec: FieldSpec, resolution: Resolution, verdict: DraftVerdict, ctx: FieldPlanContext): FieldPlan {
+  const { category } = resolution;
+  if (verdict.text === null) return { row: rowWithout(spec, category, 'flagged', verdict.why, 0) };
+  const refusal = draftRefusal(spec, verdict.text);
+  if (refusal !== null) return { row: rowWithout(spec, category, 'flagged', refusal, 0) };
+  const write: PlannedWrite = { key: spec.key, value: { kind: 'text', text: verdict.text },
+    origin: { provenance: 'llm-draft', taskId: verdict.taskId, confirmedByUser: false }, match: NOT_APPLICABLE };
+  const guarded = guardWrite(write, { spec, category }, ctx.guard);
+  if (!guarded.ok) {
+    return { row: rowWithout(spec, category, refusedStatus(spec, guarded.reason), guarded.reason, LLM_DRAFT) };
+  }
+  return {
+    write,
+    row: {
+      key: spec.key, label: spec.label, kind: spec.kind, category, section: sectionKey(spec.section),
+      required: spec.required, status: 'flagged', provenance: 'llm-draft', matcherStage: 'not-applicable',
+      confidence: LLM_DRAFT, reason: 'llm-draft-needs-confirmation', wrote: false, verification: 'not-checked',
+      needsUserAction: true,
+    },
+  };
+}
+
 /** One field's write, if any, its row, and the tiebreak it waits on, if any. */
-function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanContext):
-  { write?: PlannedWrite; row: FillResult; asked?: TiebreakItem } {
+function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanContext): FieldPlan {
   const { resolution, shaped } = resolved;
   const honeypot = checkHoneypot(spec);
   if (!honeypot.ok) {
@@ -429,6 +493,7 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   const reason: ReasonCode = flag ?? (action === 'fill-and-flag' ? 'filled-low-confidence' : 'ok');
   return {
     write,
+    ...(planned.cache !== undefined ? { cache: planned.cache } : {}),
     row: {
       key: spec.key, label: spec.label, kind: spec.kind, category: resolution.category, section: sectionKey(spec.section),
       required: spec.required, status, provenance: write.origin.provenance, matcherStage: planned.match.stage,
@@ -471,6 +536,7 @@ export function planFrame(input: PlanInput): PlanOutput {
   const resolveWith = (spec: FieldSpec, classification: FieldClassification) => resolveField(spec, {
     profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
+    ...(input.company !== undefined ? { company: input.company } : {}),
     ...(repeatables.length > 0 ? { blockEntries } : {}),
   }, classification);
   // Only a field that could be written asks for the sensitive part or the LLM: never a honeypot, a disabled control or
@@ -499,14 +565,32 @@ export function planFrame(input: PlanInput): PlanOutput {
   // The canaries any label of the frame carries, the context's too: more to scan for is never less safe.
   const guard: GuardContext = { canaries: [...input.canaries, ...input.specs.flatMap(labelCanaries)], profile,
     profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers };
-  const planned = specs.map((spec, at) => ({ spec, ...planField(spec, resolved[at]!, { input, guard }) }));
+  const ctx: FieldPlanContext = { input, guard, drops: new Set() };
+  // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
+  // the run's draft when there is one, and is asked for otherwise.
+  const drafting = input.settings.llm.drafts && !input.dryRun;
+  const drafts: DraftItem[] = [];
+  const planned = specs.map((spec, at) => {
+    const field = resolved[at]!;
+    const item = drafting ? draftItemOf(spec, chosen[at]!.classification, field.resolution, writable(spec)) : null;
+    if (item !== null) {
+      const verdict = input.ai?.drafts?.get(spec.key);
+      if (verdict !== undefined) return { spec, ...planDraft(spec, field.resolution, verdict, ctx) };
+      drafts.push(item);
+    }
+    return { spec, ...planField(spec, field, ctx) };
+  });
   const writes = planned.filter((field) => field.write !== undefined)
     .sort((a, b) => a.spec.domOrder - b.spec.domOrder).map((field) => field.write!);
   const tiebreaks = planned.flatMap((field) => field.asked === undefined ? [] : [field.asked]);
-  const asking = new Set<string>([...classify.map((item) => item.key), ...planned
+  const asking = new Set<string>([...classify.map((item) => item.key), ...drafts.map((item) => item.key), ...planned
     .filter((field) => field.asked !== undefined).map((field) => field.spec.key)]);
   const awaiting = specs.filter((spec) => asking.has(spec.key)).map((spec) => spec.key);
+  const cacheCandidates = input.dryRun ? [] : planned.flatMap((field) => (field.write === undefined ? []
+    : field.cache ?? []));
   return { writes: input.dryRun ? [] : writes, results: planned.map((field) => field.row), awaiting,
-    ...(awaiting.length > 0 ? { ask: { tiebreaks, classify } } : {}), needsSensitive: false, persistableCanaries: kept,
-    ...sections };
+    ...(awaiting.length > 0 ? { ask: { tiebreaks, classify, ...(drafts.length > 0 ? { drafts } : {}) } } : {}),
+    needsSensitive: false, persistableCanaries: kept, ...sections,
+    ...(cacheCandidates.length > 0 ? { cacheCandidates } : {}),
+    ...(ctx.drops.size > 0 ? { cacheDrops: [...ctx.drops] } : {}) };
 }

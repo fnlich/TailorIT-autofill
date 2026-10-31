@@ -12,10 +12,12 @@
  *   panel mirrors every notice, because a page could draw over this one.
  * - Every click in it must be the person's: a capture listener on the panel stops any untrusted click before React
  *   hears it. Confirm draft and Save my answer (Phase 6 wave 2 passes them) also need the panel to have been seen
- *   (IntersectionObserver v2, visible.ts) when the click came, as the launcher's own clicks do.
+ *   (IntersectionObserver v2, visible.ts) when the click came, as the launcher's own clicks do; the panel then says
+ *   what came of each, under its title.
  * - It renders synchronously (flushSync), so what it shows is what it was last given. It never shows or receives a
  *   value: reports hold none, and the suggested options' labels live in the open row's state only.
  */
+import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { COPY } from '../../shared/copy';
@@ -29,10 +31,12 @@ export interface PanelActions {
   showField(fieldKey: string): void;
   /** The visible labels of the row's suggested options, from a fresh scan (null: the page could not say). */
   describeField(fieldKey: string): Promise<readonly SuggestionLabel[] | null>;
-  /** Confirm draft (Phase 6 wave 2). Called only for a click the person made while the panel could be seen. */
-  confirmDraft?(fieldKey: string): void;
-  /** Save my answer (Phase 6 wave 2). Called only for a click the person made while the panel could be seen. */
-  saveAnswer?(fieldKey: string): void;
+  /** Confirm draft (Phase 6 wave 2): answers what came of it, in the panel's words. Called only for a click the person
+   *  made while the panel could be seen. */
+  confirmDraft?(fieldKey: string): Promise<string>;
+  /** Save my answer (Phase 6 wave 2): answers what came of it, in the panel's words. Called only for a click the person
+   *  made while the panel could be seen. */
+  saveAnswer?(fieldKey: string): Promise<string>;
   /** The person closed the panel. */
   closed(): void;
 }
@@ -67,11 +71,22 @@ function PanelView({ reports, frameId, actions, seenAtClick }: {
   actions: PanelActions;
   seenAtClick: () => boolean;
 }) {
-  /** A consequential action: only for a click made while the panel could be seen. */
-  const seenOnly = (act: ((fieldKey: string) => void) | undefined) => (act === undefined ? undefined
+  /** What the last action did, in the panel's words, and whether a request is on its way. */
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  /** A consequential action: only for a click made while the panel could be seen; its outcome is said under the
+   *  title. */
+  const seenOnly = (act: ((fieldKey: string) => Promise<string>) | undefined) => (act === undefined ? undefined
     : (_frameId: number, fieldKey: string) => {
-      if (seenAtClick()) act(fieldKey);
-      else log('content.ui-click-refused', { launcher: false, panel: true });
+      if (!seenAtClick()) {
+        log('content.ui-click-refused', { launcher: false, panel: true });
+        return;
+      }
+      setBusy(true);
+      void act(fieldKey).then((said) => {
+        setBusy(false);
+        setFeedback(said);
+      });
     });
   return (
     <>
@@ -79,6 +94,7 @@ function PanelView({ reports, frameId, actions, seenAtClick }: {
         <div>
           <h2 className="panel__title">{COPY.panelTitle}</h2>
           {reports !== null && <RunStatusLine reports={reports} className="tia-run-status" />}
+          {feedback !== null && <p className="tia-feedback" role="status" data-panel-feedback="">{feedback}</p>}
         </div>
         <button type="button" className="panel__close" aria-label={COPY.inPage.close} title={COPY.inPage.close}
           onClick={() => actions.closed()} />
@@ -94,6 +110,7 @@ function PanelView({ reports, frameId, actions, seenAtClick }: {
             describeField={(_frameId, fieldKey) => actions.describeField(fieldKey)}
             onConfirmDraft={seenOnly(actions.confirmDraft)}
             onSaveAnswer={seenOnly(actions.saveAnswer)}
+            busy={busy}
           />
         )}
       </div>

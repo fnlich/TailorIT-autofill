@@ -10,4 +10,5 @@ export * from './profile';
 export * from './connect';
 export * from './lookup';
 export * from './ai';
+export * from './answers';
 export * from './registry';

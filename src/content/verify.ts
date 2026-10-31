@@ -13,7 +13,7 @@
  *   holds a canary too, and read back exactly), and a choice keeps its selection, blocked, highlighted with "Remove
  *   this selection". Both rows are settleRow's blocked row (no provenance, nothing verified), whatever the revert did.
  *   A value the person typed, or the page prefilled, is only flagged, never overwritten. An unconfirmed draft is
- *   flagged.
+ *   flagged; one the person confirmed (Phase 6: FinalGuardEnv.confirmedDrafts) reads back as confirmed.
  * Read-back values stay in memory; nothing here sends or logs one.
  */
 import type { Adapter } from '../adapters/types';
@@ -83,6 +83,8 @@ export interface FinalGuardEnv {
   root: Element;
   /** Every canary the frame holds in memory (tripwire.allCanaries), not only the 32 that are sent (CORE-15). */
   canaries: readonly string[];
+  /** The drafts the person confirmed, by their key now (Phase 6): guardReady reads them as confirmed. */
+  confirmedDrafts?: ReadonlySet<FieldKey>;
 }
 
 /** The final Guard's result: the rows it changed, and the selections the person is asked to remove. */
@@ -122,7 +124,10 @@ export function finalGuard(env: FinalGuardEnv, fresh: ScanResult, rows: Map<Fiel
   for (const field of fresh.fields) {
     const row = out.get(field.key);
     const provenance = row !== undefined && row.wrote ? row.provenance : null;
-    for (const text of readBackTexts(field)) readBack.push({ key: field.key, provenance, text });
+    const confirmed = provenance === 'llm-draft' && env.confirmedDrafts?.has(field.key) === true;
+    for (const text of readBackTexts(field)) {
+      readBack.push({ key: field.key, provenance, text, ...(confirmed ? { draftConfirmed: true } : {}) });
+    }
   }
   const { issues } = guardReady(readBack, [...out.values()], { canaries: env.canaries });
   for (const issue of issues) {

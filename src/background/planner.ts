@@ -25,6 +25,16 @@
  * fills the block from it; the answer carries each section's entry count, block entries and current-job flags, never a
  * fingerprint. A request that carries an assignment (the frame's, from an earlier answer) is planned with it, and the
  * fields that wait for the LLM are planned again with the entries their blocks were given.
+ *
+ * Phase 6 (wave 2):
+ * - Saved answers: every plan reads the person's saved answers the profile cache holds (GET /answers, read with the
+ *   profile, memory only), and the company the frame's address names (saved-answers.ts companyOfUrl), so a free-text
+ *   answer applies only on its own company's forms. The run's memo keeps that company for Save my answer.
+ * - Drafts: a plan that asks for drafts sends them with the posting text the frame read (plan/request's postingText;
+ *   '' without it, as for a form embedded in another page), the lookup's company and job title, and the resume the run
+ *   attaches (resume-choice.ts), with the request's canaries.
+ * - The accepted-match cache (match-cache.ts): every plan reads it, its stale entries are dropped, and the writes'
+ *   candidates go to the accept book, which stores them once the field was unchanged at the run's done.
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
@@ -37,7 +47,9 @@ import { log } from '../shared/log';
 import type { RunRecord } from '../shared/stored';
 import { createRunAi, type AiTasks, type AskContext, type RunAi } from './ai-tasks';
 import { ymdOf, type CoreFunctions } from './core';
+import type { AcceptBook, MatchCache } from './match-cache';
 import type { ProfileCache } from './profile-cache';
+import { companyOfUrl } from './saved-answers';
 import type { ResumeChooser } from './resume-choice';
 import type { FrameRef, RunRegistry } from './runs';
 import type { RunStateStore } from './runstate-store';
@@ -63,6 +75,10 @@ export interface PlannerDeps {
   ai: AiTasks;
   /** Each run's AI task ids: RunState.aiTasks (runstate-store.ts). */
   aiTaskIds: Pick<RunStateStore, 'aiTasks'>;
+  /** The accepted-match cache (Phase 6): read at every plan, its stale entries dropped. Absent: plans run without one. */
+  cache?: Pick<MatchCache, 'ready' | 'get' | 'drop'>;
+  /** Which writes' matches the cache may take once accepted (Phase 6). */
+  accepts?: Pick<AcceptBook, 'planned'>;
   now(): number;
 }
 
@@ -109,15 +125,21 @@ export function createPlanner(deps: PlannerDeps) {
       ? await deps.chooseResume(run.runId, url) : null;
     const ai = aiOf(run);
     const settings = await deps.settings.get();
+    await deps.cache?.ready();
+    // The company the frame's address names: a free-text saved answer applies only to its own (Phase 6).
+    const company = companyOfUrl(url);
+    deps.runs.memo(run.runId).company = company;
     const plan = (state: PlanSensitiveState, profile: typeof loaded & { ok: true }) => deps.core.planFrame({
       specs: context.specs,
       planKeys,
       canaries: context.canaries,
       profile: deps.core.attachResume(profile.value.profile, resume),
       sensitiveState: state,
-      savedAnswers: [],
+      savedAnswers: profile.value.savedAnswers,
+      ...(company === null ? {} : { company }),
       settings,
       vocab: deps.core.vocab(),
+      ...(deps.cache === undefined ? {} : { cache: deps.cache }),
       dryRun: run.dryRun,
       now: ymdOf(deps.now()),
       ai: ai.answers,
@@ -141,6 +163,10 @@ export function createPlanner(deps: PlannerDeps) {
         output = plan(state, loaded);
       }
       if (output.needsSensitive) throw new Error('the plan still needs the sensitive part');
+      if (output.cacheDrops !== undefined) await deps.cache?.drop(output.cacheDrops);
+      if (output.cacheCandidates !== undefined && !run.dryRun) {
+        deps.accepts?.planned(run.applicationKey, output.cacheCandidates);
+      }
       return { output, revision: loaded.value.revision };
     } catch {
       log('plan.failed', { fields: planKeys.length });
@@ -149,13 +175,26 @@ export function createPlanner(deps: PlannerDeps) {
   }
 
   /**
+   * The context a plan's drafts are asked with (Phase 6): the posting text the frame read ('' without it), the
+   * lookup's company and job title, and the resume the run attaches. Made once per context.
+   */
+  async function withDraftContext(run: RunRecord, url: string, context: AskContext): Promise<AskContext> {
+    if (context.draft !== undefined) return context;
+    const resume = await deps.chooseResume(run.runId, url);
+    const job = deps.runs.memo(run.runId).lookup?.job ?? null;
+    return { ...context, draft: { jobText: context.postingText ?? '', company: job?.companyName ?? '',
+      jobTitle: job?.title ?? '', resumeId: resume?.id ?? null } };
+  }
+
+  /**
    * A plan's awaiting keys handed to the run's questions, and those whose answers are in at once (an item never sent)
    * planned again, at most MAX_REPLANS times: the keys planned again take their new rows and writes.
    */
-  async function withAnswers(run: RunRecord, url: string, context: AskContext, output: PlanOutput, read: number):
+  async function withAnswers(run: RunRecord, url: string, asked: AskContext, output: PlanOutput, read: number):
     Promise<{ gathered: Gathered } | { refusal: Answer<never> }> {
     const ai = aiOf(run);
     const { llm } = await deps.settings.get();
+    let context = asked;
     const rows = new Map(output.results.map((row) => [row.key, row] as const));
     const writes = new Map(output.writes.map((write) => [write.key, write] as const));
     let awaiting = [...output.awaiting];
@@ -163,6 +202,9 @@ export function createPlanner(deps: PlannerDeps) {
     let ask: PlanAsk | undefined = output.ask;
     let revision = read;
     for (let round = 0; ; round += 1) {
+      if (asking.length > 0 && ask !== undefined && (ask.drafts?.length ?? 0) > 0 && llm.drafts) {
+        context = await withDraftContext(run, url, context);
+      }
       if (asking.length > 0 && ask !== undefined) ai.ask(ask, asking, context, llm, revision);
       const ready = awaiting.filter((key) => ai.state(key) === 'done');
       if (ready.length === 0 || round === MAX_REPLANS) break;
@@ -213,7 +255,8 @@ export function createPlanner(deps: PlannerDeps) {
       if (run === null) return refuse('expired');
       // The schema's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
       const asked: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries,
-        ...(message.repeatables === undefined ? {} : { repeatables: message.repeatables }) };
+        ...(message.repeatables === undefined ? {} : { repeatables: message.repeatables }),
+        ...(message.postingText === undefined ? {} : { postingText: message.postingText }) };
       const planKeys = message.planKeys as unknown as FieldKey[];
       const planned = await planOnce(run, from.url, asked, planKeys);
       if ('refusal' in planned) return planned.refusal;

@@ -119,21 +119,26 @@ describe('the review panel', () => {
         needsUserAction: true, wrote: false, detail: { userEdited: true } }),
     ] })]);
     const root = await open(worker, 5);
-    // Until wave 2 the worker answers both not_implemented: the panel says they did not work.
+    // A refusal: the panel says they did not work.
     await click(button(root, COPY.report.confirmDraft));
     expect(root.textContent).toContain(COPY.panel.confirmFailed);
     await click(button(root, COPY.report.saveAnswer));
     expect(root.textContent).toContain(COPY.panel.saveFailed);
     worker.on('panel/confirmDraft', () => ({ ok: true, data: {} }));
-    worker.on('panel/saveAnswer', () => ({ ok: true, data: {} }));
+    worker.on('panel/saveAnswer', () => ({ ok: true, data: { outcome: 'saved' } }));
     await click(button(root, COPY.report.confirmDraft));
     expect(root.textContent).toContain(COPY.panel.draftConfirmed);
     await click(button(root, COPY.report.saveAnswer));
     expect(root.textContent).toContain(COPY.panel.answerSaved);
+    // Phase 6, wave 2: an answer TailorIT would not keep says why.
+    worker.on('panel/saveAnswer', () => ({ ok: true, data: { outcome: 'sensitive' } }));
+    await click(button(root, COPY.report.saveAnswer));
+    expect(root.textContent).toContain(COPY.panel.saveOutcomes.sensitive);
     expect(actions(worker)).toEqual([
       { v: 1, type: 'panel/confirmDraft', tabId: 5, frameId: 3, fieldKey: 'why' },
       { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
       { v: 1, type: 'panel/confirmDraft', tabId: 5, frameId: 3, fieldKey: 'why' },
+      { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
       { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
     ]);
   });

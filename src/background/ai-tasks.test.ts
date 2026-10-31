@@ -209,7 +209,7 @@ describe('translation: classify', () => {
 // ── The task client ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** What the task client may call: never a DELETE (the server client has none for a task). */
-type AiServer = Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiTask'>;
+type AiServer = Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiTask'>;
 
 /** A scripted AI server: the answers for each call, in order (the last repeats), and what was called. It answers a
  *  cancel too, which the task client must never ask for, so one would show among the calls. */
@@ -223,6 +223,7 @@ function fakeServer(script: { pick?: Array<ServerResult<unknown>>; task?: Array<
   const server: AiServer & { aiCancel(id: string): Promise<unknown> } = {
     aiPick: () => next(script.pick, 'pick'),
     aiClassify: () => next(undefined, 'classify'),
+    aiDraft: () => next(undefined, 'draft'),
     aiTask: (id) => next(script.task, `task ${id}`),
     aiCancel: (id) => next([{ ok: true, value: taskView('autofill_pick', 'cancelled') }], `cancel ${id}`),
   };

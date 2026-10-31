@@ -214,3 +214,18 @@ export const TIEBREAK_REQUEST_TEXT_SHARE = 0.9;
 
 /** A classify item's label, hint, section and each option: at most this many code points, cut after a whole word. */
 export const CLASSIFY_TEXT_MAX = 200;
+
+// Drafts (Phase 6; docs/ARCHITECTURE.md "Free text", AUTOFILL_AI_LIMITS.draft in the contract).
+
+/** A draft's confidence: below the fill line, so a draft is always flagged until the person confirms or edits it. */
+export const LLM_DRAFT = 0.7;
+/** At most this many questions in one draft task. */
+export const DRAFT_MAX_QUESTIONS = 3;
+/** A field whose maxLength is under this gets no draft. */
+export const DRAFT_MIN_LENGTH = 50;
+/** A draft is never longer than this, and a field's maxLength is sent as at most this. */
+export const DRAFT_MAX_LENGTH = 5000;
+/** The cap TailorIT keeps a draft to when its field names no maxLength. */
+export const DRAFT_DEFAULT_LENGTH = 3000;
+/** A draft question (the field's visible label) is sent with at most this many code points. */
+export const DRAFT_QUESTION_MAX = 1000;

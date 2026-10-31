@@ -18,9 +18,11 @@ import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { createAuth, createTokenKeeper } from './auth';
 import { createAiTasks } from './ai-tasks';
+import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, registerFrame } from './frames';
 import { createKeyedQueue, createRateLimit } from './locks';
+import { createAcceptBook, createMatchCache } from './match-cache';
 import { createPanelHandlers, openSidePanel } from './panel';
 import { createPlanner } from './planner';
 import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
@@ -108,10 +110,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const chooseResume = createResumeChooser({ runs, server, profiles: profileCache });
   // The LLM steps' tasks on TailorIT (Phase 4), shared by every run; each run keeps its own questions (ai-tasks.ts).
   const aiTasks = createAiTasks({ server, timers, now });
+  // The accepted-match cache (Phase 6): storage.session, in memory; a match goes in once the field was unchanged at the
+  // run's done (match-cache.ts).
+  const matchCache = createMatchCache(session);
+  const accepts = createAcceptBook(matchCache);
   const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
-    aiTaskIds: runStates, now });
+    aiTaskIds: runStates, cache: matchCache, accepts, now });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes) });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId) });
+  // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
+  const answers = createAnswerHandlers({ platform, reports, runs, server, settings, connected: () => auth.connected() });
   const beginDeps = {
     storageAccess: () => state.storageAccess,
     connected: () => auth.connected(),
@@ -201,14 +209,24 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             log('runstate.refused');
             return refuse('bad_message');
           }
-          return runStates.put(runState, from.tabId);
+          const stored = await runStates.put(runState, from.tabId);
+          // The application reached done (its confirmation page): the matches its fields still held are accepted.
+          if (stored.ok && runState.status === 'done') await accepts.done(runState.applicationKey, now()).catch(() => 0);
+          return stored;
         },
         'runstate/clear': async (message, from) => {
           if (!fits(message.applicationKey, from)) return refuse('bad_message');
           await runStates.clear(message.applicationKey, from.tabId);
+          accepts.forget(message.applicationKey);
           return ok({});
         },
-        'report/put': (message, from) => reports.put(message, from),
+        'report/put': async (message, from) => {
+          const answer = await reports.put(message, from);
+          // Which of the application's written fields still hold our value, for the accepted-match cache.
+          const run = answer.ok ? await runs.find(message.runId, from) : null;
+          if (run !== null) accepts.reported(run.applicationKey, message.report);
+          return answer;
+        },
         'policy/hit': async (message, from) => {
           // Counted before anything else, so a page that pushes addresses is held whatever it sends.
           const retry = policyLimit.take(`${from.tabId}/${from.frameId}`);
@@ -220,6 +238,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/open': (_message, from) => openSidePanel(platform, from.tabId),
         // The in-page panel opened or closed in this frame (Phase 6): report/update goes to it alone while it is open.
         'panel/shown': (message, from) => reports.panelShown(from, message.open),
+        // The in-page panel's Save my answer (Phase 6, wave 2), for the sending frame's own field.
+        'answer/save': (message, from) => answers.saveOwn(message.fieldKey, from),
         ...(__E2E__
           ? {
               'e2e/probe': async (message: { storageLocal: 'refused' | 'allowed' }) => {
@@ -239,7 +259,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/focus': (message) => panel.focus(message),
         'panel/describe': (message) => panel.describe(message),
         'panel/reports': (message) => panel.reports(message),
-        // panel/confirmDraft and panel/saveAnswer arrive in Phase 6: the router answers not_implemented.
+        'panel/confirmDraft': (message) => answers.confirmDraft(message),
+        'panel/saveAnswer': (message) => answers.saveAnswer(message),
         'settings/get': async () => ok({ settings: await settings.get() }),
         'settings/save': async (message) => {
           const saved = await settings.save(message.settings);

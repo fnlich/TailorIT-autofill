@@ -20,7 +20,8 @@ const begin = (worker: TestWorker, overrides: Record<string, unknown> = {}, send
   worker.deliver({ v: 1, type: 'run/begin', applicationKey: LEVER_KEY, trigger: 'launcher', dryRun: false, ...overrides }, sender);
 const policyHit = (worker: TestWorker, patternId: string | null, applicationKey = LEVER_KEY, sender = contentSender()) =>
   worker.deliver({ v: 1, type: 'policy/hit', applicationKey, patternId }, sender);
-const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, autoAdvance: DEFAULT_SETTINGS.autoAdvance, llm: DEFAULT_SETTINGS.llm };
+const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, autoAdvance: DEFAULT_SETTINGS.autoAdvance, llm: DEFAULT_SETTINGS.llm,
+  offerToSaveAnswers: DEFAULT_SETTINGS.offerToSaveAnswers };
 const withPosting = (postingText: string) => ({ json: { ...goldens.lookup, job: { ...goldens.lookup.job, postingText } } });
 
 describe('run/begin', () => {
@@ -36,7 +37,8 @@ describe('run/begin', () => {
       },
     });
     const routes = worker.tailorit.requests.map((request) => `${request.method} ${request.path}`).sort();
-    expect(routes).toEqual(['GET /api/autofill/profile', 'POST /api/autofill/lookup']);
+    // The saved answers are read with the profile (Phase 6).
+    expect(routes).toEqual(['GET /api/autofill/answers', 'GET /api/autofill/profile', 'POST /api/autofill/lookup']);
     const lookup = worker.tailorit.requests.find((request) => request.path === '/api/autofill/lookup')!;
     expect(JSON.parse(lookup.body!)).toEqual({ url: LEVER_URL, includePostingText: true });
   });

@@ -36,6 +36,8 @@ export const LOG_CODES = [
   'profile.dropped',
   'profile.sensitive',
   'profile.canonicalize-failed',
+  // Phase 6: the saved answers could not be read with the profile (its status only); the run plans with none.
+  'profile.answers-failed',
   // Runs, plans and what the worker keeps.
   'run.begun',
   'run.refused',
@@ -120,6 +122,15 @@ export const LOG_CODES = [
   'content.panel-collapsed',
   'telemetry.counted',
   'telemetry.cleared',
+  // Phase 6, wave 2: the accepted-match cache (entry counts only, never a key or a label), Save my answer and
+  // Confirm draft (outcomes as flags, never the question or the answer), and the person's own edit of a field the run
+  // left (the row's status only).
+  'cache.accepted',
+  'cache.dropped',
+  'answer.saved',
+  'answer.refused',
+  'draft.confirmed',
+  'content.person-edited',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

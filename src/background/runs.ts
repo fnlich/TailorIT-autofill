@@ -8,6 +8,7 @@
  * restarts.
  */
 import type { AutofillLookupResponse } from '../contract/tailorit';
+import type { CompanyScope } from '../core/resolver/saved';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { RUN_PREFIX, RunRecordSchema, type RunRecord } from '../shared/stored';
 import { toBase64Url } from './bytes';
@@ -26,11 +27,15 @@ export interface FrameRef {
 
 /** What a run keeps in memory only. `lookup` is undefined until run/begin's lookup ran, null when it failed;
  *  `resume` is undefined until the run chose the resume it attaches (resume-choice.ts), null when it has none; `ai`
- *  is the run's LLM questions and answers (Phase 4, ai-tasks.ts), stopped when the run goes. */
+ *  is the run's LLM questions and answers (Phase 4, ai-tasks.ts), stopped when the run goes; `company` the company its
+ *  frame's address names (Phase 6). */
 export interface RunMemo {
   lookup?: AutofillLookupResponse | null;
   resume?: ResumeChoice | null;
   ai?: RunAi;
+  /** The company the run's frame address names (Phase 6, set at each plan; null: none), for a free-text answer the
+   *  person saves. */
+  company?: CompanyScope | null;
 }
 
 /** The runs the worker knows, by id. */

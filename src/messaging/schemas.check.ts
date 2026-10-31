@@ -45,7 +45,7 @@ export type PlanAnswerRepeatablesMatch = Assert<Same<Unbrand<NonNullable<PlanOut
 /** settings/changed carries the part of the core's Settings a frame may know, and nothing more (the Phase 5 review,
  *  C-S2): the worker's contentSettingsOf. */
 type SettingsChanged = Extract<z.infer<typeof WorkerToContentSchema>, { type: 'settings/changed' }>;
-export type SettingsChangedMatches = Assert<Same<Unbrand<Pick<Settings, 'panel' | 'autoAdvance' | 'llm'>>,
+export type SettingsChangedMatches = Assert<Same<Unbrand<Pick<Settings, 'panel' | 'autoAdvance' | 'llm' | 'offerToSaveAnswers'>>,
   Unbrand<SettingsChanged['settings']>>>;
 /** The anonymous counters hold the core's five fields and a count, nothing more (Phase 6). */
 export type TelemetryCountMatches = Assert<Same<TelemetryCount, z.infer<typeof TelemetryCountSchema>>>;

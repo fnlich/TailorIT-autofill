@@ -1,0 +1,15 @@
+{
+  "id": "5a7c9e1b-3d5f-4b8a-9c2e-6f0a4d8b2e93",
+  "questionKey": "i have a portfolio i can share",
+  "optionSetHash": "",
+  "scope": "",
+  "fieldKind": "checkbox",
+  "questionLabel": "I have a portfolio I can share",
+  "platform": null,
+  "answer": {
+    "kind": "checked",
+    "checked": true
+  },
+  "createdAt": "2026-10-20T08:00:00.000Z",
+  "updatedAt": "2026-10-20T08:00:00.000Z"
+}

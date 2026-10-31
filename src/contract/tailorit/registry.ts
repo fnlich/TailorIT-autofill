@@ -12,6 +12,7 @@ import {
   AutofillTaskAcceptedSchema,
   AutofillTaskViewSchema,
 } from './ai';
+import { AutofillSavedAnswerListSchema, AutofillSavedAnswerSchema, PutAutofillSavedAnswerBodySchema } from './answers';
 import { AutofillErrorBodySchema } from './common';
 import {
   AutofillConnectBodySchema,
@@ -71,6 +72,9 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillDraftTask: AutofillDraftTaskSchema,
   AutofillTaskAccepted: AutofillTaskAcceptedSchema,
   AutofillTaskView: AutofillTaskViewSchema,
+  AutofillSavedAnswer: AutofillSavedAnswerSchema,
+  AutofillSavedAnswerList: AutofillSavedAnswerListSchema,
+  PutAutofillSavedAnswerBody: PutAutofillSavedAnswerBodySchema,
 } satisfies Record<string, z.ZodType>;
 export type AutofillContractName = keyof typeof AUTOFILL_CONTRACT_SCHEMAS;
 
@@ -85,7 +89,7 @@ export type AutofillRouteCaller = (typeof AUTOFILL_ROUTE_CALLERS)[number];
 
 export interface AutofillRoute {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  /** The whole path; ':id' is a path parameter (a task's UUID on /api/ai/tasks/:id). */
+  /** The whole path; ':id' is a path parameter: a UUID (an AI task's, a connection's or a saved answer's). */
   path: string;
   caller: AutofillRouteCaller;
   /** The scope a token needs here; null where no token comes, and on /session, which any live token may call. */
@@ -108,8 +112,9 @@ export interface AutofillRoute {
  * to a token request carries the X-TailorIT-Autofill-Api header; a refusal's body is an AutofillErrorBody (409
  * `conflict` for another API version, 401 for a dead token, 403 for a missing scope, 429 when rate-limited). The AI
  * routes refuse with AUTOFILL_AI_REFUSALS too; their tasks are polled and cancelled on /api/ai/tasks/:id, the one path
- * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). POST
- * /api/autofill/ai/draft joins in Phase 6.
+ * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). The
+ * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS. The extension reads the saved answers (GET
+ * /api/autofill/answers, with profile:read) together with GET /api/autofill/profile, once per run.
  */
 export const AUTOFILL_ROUTES = [
   {
@@ -263,6 +268,16 @@ export const AUTOFILL_ROUTES = [
     accepted: 'AutofillTaskAccepted',
   },
   {
+    method: 'POST',
+    path: '/api/autofill/ai/draft',
+    caller: 'either',
+    scope: 'ai:run',
+    request: 'AutofillDraftRequest',
+    status: 200,
+    response: 'AutofillDraftTask',
+    accepted: 'AutofillTaskAccepted',
+  },
+  {
     method: 'GET',
     path: '/api/ai/tasks/:id',
     caller: 'either',
@@ -280,6 +295,36 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: 'AutofillTaskView',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/answers',
+    caller: 'either',
+    scope: 'profile:read',
+    request: null,
+    status: 200,
+    response: 'AutofillSavedAnswerList',
+    accepted: null,
+  },
+  {
+    method: 'PUT',
+    path: '/api/autofill/answers',
+    caller: 'either',
+    scope: 'answers:write',
+    request: 'PutAutofillSavedAnswerBody',
+    status: 200,
+    response: 'AutofillSavedAnswer',
+    accepted: null,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/autofill/answers/:id',
+    caller: 'either',
+    scope: 'answers:write',
+    request: null,
+    status: 204,
+    response: null,
     accepted: null,
   },
 ] as const satisfies readonly AutofillRoute[];

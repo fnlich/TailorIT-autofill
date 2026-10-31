@@ -4,9 +4,10 @@
  * it is (PlanAnswerSchema in messaging/schemas.ts). So a frame receives values for its own fields only, never the
  * profile.
  */
-import type { MatchCacheStore } from '../matcher/cache';
+import type { MatchCacheEntry, MatchCacheStore } from '../matcher/cache';
 import type { TiebreakItem, TiebreakVerdict } from '../matcher/types';
 import type { ClassifyItem, ClassifyVerdict } from '../resolver/classify';
+import type { CompanyScope } from '../resolver/saved';
 import type { RepeatableAnswer, RepeatableRequest } from '../steps/blocks';
 import type { FieldKey, FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite } from '../types/fill';
@@ -14,6 +15,7 @@ import type { Profile, SensitiveState, Ymd } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
 import type { Settings } from '../types/settings';
 import type { Vocab } from '../vocab/types';
+import type { DraftItem, DraftVerdict } from './drafts';
 
 /** canonicalizeProfile's state, plus 'unavailable': the worker tried to fetch the sensitive part and failed for a reason
  *  other than a 403 (a timeout, a 5xx). Fields that need it are then left blank and flagged sensitive-unavailable. */
@@ -30,8 +32,11 @@ export interface PlanInput {
   canaries: readonly string[];
   profile: Profile;
   sensitiveState: PlanSensitiveState;
-  /** The person's saved answers (Phase 6); empty until then. */
+  /** The person's saved answers (Phase 6): GET /answers, fetched with the profile, in the worker's memory only. */
   savedAnswers: readonly SavedAnswer[];
+  /** The company the form belongs to (its platform and board, from the frame's address), for answers saved for one
+   *  company: free text only. Absent when the address names none: then no company's answer applies. */
+  company?: CompanyScope;
   settings: Settings;
   vocab: Vocab;
   /** The worker's accepted-match cache, read only. */
@@ -59,6 +64,8 @@ export interface PlanAi {
   verdicts: ReadonlyMap<string, AnsweredVerdict>;
   /** Classifications by field key. */
   classifications: ReadonlyMap<string, ClassifyVerdict>;
+  /** Drafts by field key (Phase 6, drafts.ts): a text, or why there is none. */
+  drafts?: ReadonlyMap<string, DraftVerdict>;
 }
 
 /** The questions a plan needs the LLM for (Phase 4): each awaiting key has exactly one. */
@@ -67,6 +74,17 @@ export interface PlanAsk {
   tiebreaks: TiebreakItem[];
   /** Fields nothing classified, screened and with something to classify (settings.llm.classify on). */
   classify: ClassifyItem[];
+  /** Free-text questions to draft an answer for (Phase 6, settings.llm.drafts on; drafts.ts). */
+  drafts?: DraftItem[];
+}
+
+/** A match the planner would cache once accepted (core/matcher/cache.ts cacheEntryFor): the field it was written to,
+ *  the cache key and the entry. The worker keeps it in memory and stores it only when the field was unchanged at the
+ *  run's done (acceptedBy 'run-complete'); never an unconfirmed LLM pick, an EEO, legal, consent or sensitive field. */
+export interface CacheCandidate {
+  fieldKey: FieldKey;
+  cacheKey: string;
+  entry: Omit<MatchCacheEntry, 'acceptedBy' | 'at'>;
 }
 
 export interface PlanOutput {
@@ -89,4 +107,10 @@ export interface PlanOutput {
   /** One per requested repeatable section (PlanInput.repeatables): the profile's entry count, each block's entry and
    *  whether it is a current job. Indices, counts and flags only. Absent when none was requested. */
   repeatables?: RepeatableAnswer[];
+  /** The writes' matches the worker may cache once accepted (Phase 6); absent when there are none. Never sent to the
+   *  frame. */
+  cacheCandidates?: CacheCandidate[];
+  /** Cache keys whose entries no longer fit the options (matchOne's cacheDrop): the worker deletes them. Absent when
+   *  there are none. Never sent to the frame. */
+  cacheDrops?: string[];
 }

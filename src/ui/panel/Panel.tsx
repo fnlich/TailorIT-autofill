@@ -11,14 +11,14 @@
  *   treats exactly as its own card's buttons. The toolbar's Continue only resumes pauses: it never fills past a card.
  * - Per row: Show on page (panel/focus); opening a row asks for its suggested options (panel/describe), shown only while
  *   the row is open; Confirm draft on an AI draft that waits (panel/confirmDraft {tabId, frameId, fieldKey}); Save my
- *   answer on a flagged row the person fixed (panel/saveAnswer {tabId, frameId, fieldKey}). The worker answers those
- *   two not_implemented until Phase 6's wave 2 wires them, and the panel says they did not work.
+ *   answer on a flagged row the person fixed (panel/saveAnswer {tabId, frameId, fieldKey}); the panel says what came of
+ *   each, and for an answer not saved, why (Phase 6, wave 2).
  *
  * It never shows or receives a field value: reports hold none, and describe's option labels stay in the open row.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { Answer } from '../../messaging/envelope';
-import type { PageMessage } from '../../messaging/schemas';
+import type { PageMessage, SaveAnswerOutcome } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { request } from '../page/request';
@@ -98,14 +98,17 @@ export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
     setFeedback({ tabId: message.tabId, text: decisionFeedbackOf(message, answer) });
   };
 
-  /** A row's Confirm draft or Save my answer, for that frame's field. */
+  /** A row's Confirm draft or Save my answer, for that frame's field: what came of it, and for an answer not saved,
+   *  why (Phase 6, wave 2). */
   const act = async (message: RowMessage) => {
     setBusy(true);
     const answer = await request(platform, message);
     setBusy(false);
-    const confirm = message.type === 'panel/confirmDraft';
-    setFeedback({ tabId: message.tabId, text: answer.ok ? (confirm ? COPY.panel.draftConfirmed : COPY.panel.answerSaved)
-      : (confirm ? COPY.panel.confirmFailed : COPY.panel.saveFailed) });
+    let text: string;
+    if (message.type === 'panel/confirmDraft') text = answer.ok ? COPY.panel.draftConfirmed : COPY.panel.confirmFailed;
+    else if (answer.ok) text = COPY.panel.saveOutcomes[(answer.data as { outcome: SaveAnswerOutcome }).outcome];
+    else text = answer.error === 'not_connected' ? COPY.panel.needsConnection : COPY.panel.saveFailed;
+    setFeedback({ tabId: message.tabId, text });
   };
 
   const disabled = tabId === null || busy;

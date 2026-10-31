@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  Synthetic: an application with a required question no rule knows, for the saved-answer spec (Phase 6; SPEC
+  Requirement F). The golden profile fills the name and email; "Which of our offices would you visit first?" is left
+  blank and flagged (unknown-field, required), which the person then answers by hand and saves; the next fill of the
+  same form answers it from the saved answer (provenance saved). It has no script. Served at
+  https://jobs.lever.co/tailorit-fixture/saved-answers/apply (and at saved-answers-again/apply, a second application
+  asking the same question). The form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Solutions Engineer - Saved answers</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Solutions Engineer</h1>
+    <p>Work with our customers to design their integrations. VISIBLE-MARKER-SA</p>
+    <form action="/__submitted" method="post">
+      <label for="first">First name</label>
+      <input id="first" name="first">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email">
+      <label for="office">Which of our offices would you visit first?</label>
+      <input id="office" name="office" required>
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

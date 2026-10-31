@@ -14,10 +14,13 @@ import {
   AUTOFILL_ROUTES,
   AutofillClassifyTaskSchema,
   AutofillConnectResponseSchema,
+  AutofillDraftTaskSchema,
   AutofillErrorBodySchema,
   AutofillLookupResponseSchema,
   AutofillPickTaskSchema,
   AutofillRedeemResponseSchema,
+  AutofillSavedAnswerListSchema,
+  AutofillSavedAnswerSchema,
   AutofillSessionSchema,
   AutofillTaskAcceptedSchema,
   AutofillTaskViewSchema,
@@ -25,6 +28,7 @@ import {
   normalizeConnectCode,
 } from '../src/contract/tailorit';
 import {
+  CLEAN_DRAFT,
   CONTRACT_ROUTES,
   EXTENSION_ID,
   GOLDEN_RESUME,
@@ -102,8 +106,16 @@ describe('the routes', () => {
   it.each(extensionRoutes.map((route) => [`${route.method} ${route.path}`, route] as const))(
     '%s answers the extension its contract status and schema, naming version 1',
     async (_, route) => {
-      const response = await call(pathOf(route), { method: route.method, headers: asToken(),
-        json: route.method === 'POST' && route.request !== null ? example(route.request) : undefined });
+      // A saved answer is deleted by its id: the one a PUT of the golden body gives it (Phase 6).
+      let path = pathOf(route);
+      if (route.path === '/api/autofill/answers/:id') {
+        const put = await call('/api/autofill/answers', { method: 'PUT', headers: asToken(),
+          json: example('PutAutofillSavedAnswerBody') });
+        path = `/api/autofill/answers/${AutofillSavedAnswerSchema.parse(await put.json()).id}`;
+      }
+      const sendsBody = (route.method === 'POST' || route.method === 'PUT') && route.request !== null;
+      const response = await call(path, { method: route.method, headers: asToken(),
+        json: sendsBody ? example(route.request!) : undefined });
       expect(response.status).toBe(route.status);
       expect(response.headers.get(API)).toBe('1');
       expect(response.headers.get('cache-control')).toBe('no-store');
@@ -459,6 +471,96 @@ describe('the AI routes (Phase 4)', () => {
     const [logged] = await (await call('/__mock/requests')).json() as Array<{ body: string; headers: Record<string, string> }>;
     expect(JSON.parse(logged!.body)).toEqual(PICK_BODY);
     expect(logged!.headers.authorization).toBe('REDACTED');
+  });
+});
+
+describe('drafts (Phase 6)', () => {
+  const DRAFT_BODY = { questions: [
+    { key: 'lever|main|why-this-company|none|0', question: 'Why this company?', maxLength: null },
+    { key: 'lever|main|anything-else|none|0', question: 'Anything else?', maxLength: 60 },
+  ], jobText: 'Help developers get the most out of our APIs. VISIBLE-MARKER-08', company: 'Northwind', jobTitle: 'Advocate',
+  resumeId: null, canaries: ['pineapple'] };
+  const draft = () => call('/api/autofill/ai/draft', { method: 'POST', headers: asToken(), json: DRAFT_BODY });
+  const draftsOf = async (response: Response) => AutofillDraftTaskSchema.parse(await response.json()).result?.drafts;
+
+  it("answers the fake CLI's clean draft at once, cut to each question's cap", async () => {
+    const response = await draft();
+    expect(response.status).toBe(200);
+    expect(await draftsOf(response)).toEqual([
+      { key: DRAFT_BODY.questions[0]!.key, text: CLEAN_DRAFT, reason: 'drafted' },
+      { key: DRAFT_BODY.questions[1]!.key, text: CLEAN_DRAFT.slice(0, 60), reason: 'drafted' },
+    ]);
+  });
+
+  it('scripts the hostile drafts: a canary it missed, AI talk, a foreign link, one past its cap, a trimmed one', async () => {
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-draft-canary', times: 1 } });
+    expect((await draftsOf(await draft()))?.[0]).toMatchObject({ reason: 'drafted', text: expect.stringContaining('pineapple') });
+    for (const [name, reason] of [['ai-draft-ai-talk', 'ai_reference'], ['ai-draft-url', 'contact']] as const) {
+      await scenario(name, { times: 1 });
+      expect((await draftsOf(await draft()))?.map((entry) => [entry.text, entry.reason]), name)
+        .toEqual([[null, reason], [null, reason]]);
+    }
+    await scenario('ai-draft-too-long', { times: 1 });
+    expect((await draftsOf(await draft()))?.map((entry) => entry.text?.length)).toEqual([3001, 61]);
+    await scenario('ai-draft-trimmed', { times: 1 });
+    expect((await draftsOf(await draft()))?.[0]).toMatchObject({ text: CLEAN_DRAFT, reason: 'trimmed' });
+  });
+
+  it('refuses more than three questions or a maxLength under 50, as TailorIT does', async () => {
+    for (const questions of [[...DRAFT_BODY.questions, ...DRAFT_BODY.questions], [{ ...DRAFT_BODY.questions[0], maxLength: 49 }]]) {
+      const response = await call('/api/autofill/ai/draft', { method: 'POST', headers: asToken(), json: { ...DRAFT_BODY, questions } });
+      expect([response.status, await errorCode(response)]).toEqual([400, 'validation_failed']);
+    }
+  });
+
+  it('logs the draft request whole, its job text and canaries included', async () => {
+    await draft();
+    const [logged] = await (await call('/__mock/requests')).json() as Array<{ body: string }>;
+    expect(JSON.parse(logged!.body)).toEqual(DRAFT_BODY);
+  });
+});
+
+describe('saved answers (Phase 6)', () => {
+  const put = (json: unknown) => call('/api/autofill/answers', { method: 'PUT', headers: asToken(), json });
+  const list = async () => AutofillSavedAnswerListSchema.parse(await (await call('/api/autofill/answers',
+    { headers: asToken() })).json());
+  const GOLDEN_BODY = example('PutAutofillSavedAnswerBody') as Record<string, unknown>;
+
+  it('starts empty, keeps what PUT saved under its key (category dropped), and forgets it at the reset', async () => {
+    expect(await list()).toEqual({ items: [], total: 0, limit: 500 });
+    const first = AutofillSavedAnswerSchema.parse(await (await put(GOLDEN_BODY)).json());
+    expect(first).not.toHaveProperty('category');
+    const again = AutofillSavedAnswerSchema.parse(await (await put({ ...GOLDEN_BODY, answer: { kind: 'options',
+      labels: ['A friend'] } })).json());
+    expect(again.id).toBe(first.id);
+    expect((await list()).items.map((item) => item.answer)).toEqual([{ kind: 'options', labels: ['A friend'] }]);
+    expect((await call(`/api/autofill/answers/${first.id}`, { method: 'DELETE', headers: asToken() })).status).toBe(204);
+    expect((await call(`/api/autofill/answers/${first.id}`, { method: 'DELETE', headers: asToken() })).status).toBe(404);
+    await put(GOLDEN_BODY);
+    mock.reset();
+    expect((await list()).items).toEqual([]);
+  });
+
+  it('refuses what TailorIT never keeps: a file, a misfit, a company scope on options, a sensitive category or question', async () => {
+    const bodies = [
+      { ...GOLDEN_BODY, fieldKind: 'file' },
+      { ...GOLDEN_BODY, fieldKind: 'checkbox' },
+      { ...GOLDEN_BODY, scope: 'lever:northwind' },
+      { ...GOLDEN_BODY, category: 'sensitive_eeo' },
+      { ...GOLDEN_BODY, questionLabel: 'What is your gender?', questionKey: 'what is your gender' },
+    ];
+    for (const [at, body] of bodies.entries()) {
+      const response = await put(body);
+      expect([at, response.status, await errorCode(response)]).toEqual([at, 400, 'validation_failed']);
+    }
+    expect((await list()).items).toEqual([]);
+  });
+
+  it('answers-refused and answers-unavailable refuse PUT and GET', async () => {
+    await scenario('answers-refused', { times: 1 });
+    expect((await put(GOLDEN_BODY)).status).toBe(400);
+    await scenario('answers-unavailable', { times: 1 });
+    expect((await call('/api/autofill/answers', { headers: asToken() })).status).toBe(500);
   });
 });
 

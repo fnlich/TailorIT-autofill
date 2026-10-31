@@ -2,12 +2,16 @@
  * The profile in the worker's memory, the only place it lives. run/begin fetches GET /profile; the sensitive part
  * (work authorization, EEO, age, pronouns, pay) is fetched only when a plan needs it. Both are canonicalized with the
  * core's canonicalizeProfile over the bundled vocabulary, and both are dropped after 5 idle minutes, when the token
- * changes, and when the worker stops. Saved answers (Phase 6) would join them here; until then they are empty.
+ * changes, and when the worker stops. The person's saved answers (Phase 6) are read with the profile (GET /answers,
+ * beside GET /profile), mapped for the core and screened again (saved-answers.ts), and dropped with it: memory only. A
+ * failed read of them plans with none (the profile still fills), and is counted, never logged with a value.
  */
 import type { AutofillProfileEnvelope, AutofillSensitiveEnvelope } from '../contract/tailorit';
 import type { Profile, SensitiveState } from '../core/types/profile';
+import type { SavedAnswer } from '../core/types/saved';
 import { log } from '../shared/log';
 import { ymdOf, type CoreFunctions } from './core';
+import { savedAnswersOf } from './saved-answers';
 import type { ServerClient } from './server-client';
 import type { Timers } from './timers';
 
@@ -22,6 +26,8 @@ export interface LoadedProfile {
   revision: number;
   /** The resume the profile names (TailorIT's documents.resumeId); null lets TailorIT choose per job. */
   resumeId: string | null;
+  /** The person's saved answers (Phase 6), as the core reads them; none when they could not be read. */
+  savedAnswers: readonly SavedAnswer[];
 }
 
 /** 'not-connected': no token, or TailorIT refused it. 'unavailable': TailorIT could not be read. 'internal': a bug. */
@@ -55,6 +61,7 @@ interface Held {
   envelope: AutofillProfileEnvelope;
   sensitive: AutofillSensitiveEnvelope | null;
   notShared: boolean;
+  answers: readonly SavedAnswer[];
   loaded: LoadedProfile;
 }
 
@@ -83,8 +90,8 @@ export function createProfileCache(deps: ProfileCacheDeps): ProfileCache {
   }
 
   /** Canonical form of the wire parts; null when the core failed (a bug, reported as 'internal'). */
-  function canonical(envelope: AutofillProfileEnvelope, sensitive: AutofillSensitiveEnvelope | null, notShared: boolean):
-    LoadedProfile | null {
+  function canonical(envelope: AutofillProfileEnvelope, sensitive: AutofillSensitiveEnvelope | null, notShared: boolean,
+    answers: readonly SavedAnswer[]): LoadedProfile | null {
     try {
       const result = deps.core.canonicalizeProfile(envelope.profile, sensitive?.sensitive ?? null, deps.core.vocab(),
         ymdOf(deps.now()));
@@ -93,6 +100,7 @@ export function createProfileCache(deps: ProfileCacheDeps): ProfileCache {
         sensitiveState: notShared ? 'not-shared' : result.sensitiveState,
         revision: envelope.revision,
         resumeId: envelope.profile.documents.resumeId,
+        savedAnswers: answers,
       };
     } catch {
       log('profile.canonicalize-failed');
@@ -104,7 +112,7 @@ export function createProfileCache(deps: ProfileCacheDeps): ProfileCache {
     // A fetch is a use: what is held cannot lapse while TailorIT answers.
     if (held !== null) touch();
     const started = generation;
-    const answer = await deps.server.profile();
+    const [answer, saved] = await Promise.all([deps.server.profile(), deps.server.answers()]);
     if (!answer.ok) {
       log('profile.load-failed', { status: answer.status ?? 0 });
       const gone = answer.failure === 'not-connected' || answer.failure === 'unauthorized';
@@ -115,11 +123,13 @@ export function createProfileCache(deps: ProfileCacheDeps): ProfileCache {
     // A sensitive part from another revision is stale: it goes, and is fetched again when a plan needs it.
     const sensitive = held?.sensitive && held.sensitive.revision === envelope.revision ? held.sensitive : null;
     const notShared = held?.notShared ?? false;
-    const loaded = canonical(envelope, sensitive, notShared);
+    const answers = saved.ok ? savedAnswersOf(saved.value.items) : [];
+    if (!saved.ok) log('profile.answers-failed', { status: saved.status ?? 0 });
+    const loaded = canonical(envelope, sensitive, notShared, answers);
     if (loaded === null) return { ok: false, failure: 'internal' };
-    held = { envelope, sensitive, notShared, loaded };
+    held = { envelope, sensitive, notShared, answers, loaded };
     touch();
-    log('profile.loaded', { revision: envelope.revision, sensitive: sensitive !== null });
+    log('profile.loaded', { revision: envelope.revision, sensitive: sensitive !== null, answers: answers.length });
     return { ok: true, value: loaded };
   }
 
@@ -148,14 +158,14 @@ export function createProfileCache(deps: ProfileCacheDeps): ProfileCache {
           log('profile.sensitive', { loaded: false, status: answer.status ?? 0 });
           return 'unavailable';
         }
-        const loaded = canonical(held.envelope, null, true);
+        const loaded = canonical(held.envelope, null, true, held.answers);
         if (loaded === null) return 'unavailable';
         held = { ...held, sensitive: null, notShared: true, loaded };
         touch();
         log('profile.sensitive', { loaded: false, status: 403 });
         return 'not-shared';
       }
-      const loaded = canonical(held.envelope, answer.value, false);
+      const loaded = canonical(held.envelope, answer.value, false, held.answers);
       if (loaded === null) return 'unavailable';
       held = { ...held, sensitive: answer.value, notShared: false, loaded };
       touch();

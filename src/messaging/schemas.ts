@@ -4,8 +4,8 @@
  * also checks each sender (background/senders.ts); a known type on the wrong channel is refused.
  *
  * The catalogue is fixed here so phases fill in handlers, not shapes; docs/ARCHITECTURE.md ("Message catalogue") lists
- * who sends each message and what it answers. From Phase 2 the worker answers everything but panel/confirmDraft and
- * panel/saveAnswer (Phase 6, wave 2), which get not_implemented.
+ * who sends each message and what it answers. Phase 6 (wave 2) wired the last of them: panel/confirmDraft and
+ * draft/confirm, panel/saveAnswer, answer/save and answer/read.
  */
 import { z } from 'zod';
 import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
@@ -25,6 +25,10 @@ const Key = z.string().min(1).max(600);
 const Id = z.string().min(1).max(64);
 const Hash = z.string().regex(/^(?:[a-f0-9]{16,64}|none|lazy)$/);
 const Count = z.number().int().nonnegative();
+
+/** The longest posting text plan/request carries (Phase 6): TailorIT's cap on a draft's job text
+ *  (AUTOFILL_AI_LIMITS.draft.jobText, in code points, as zod counts them), which the frame's visibleText cap keeps. */
+export const MAX_POSTING_TEXT = 20_000;
 
 // ── Payloads ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -205,7 +209,10 @@ const contentMessages = [
    *  LC-2); the repeatable sections the step shows (`repeatables`, Phase 5, each kind once). */
   z.strictObject({ v, type: z.literal('plan/request'), runId: Id, pass: Count, specs: z.array(FieldSpecSchema).max(500),
     planKeys: z.array(Key).max(500), canaries: z.array(Text(120)).max(32), notices: z.array(NoticeHit).max(10),
-    repeatables: z.array(RepeatableRequestSchema).max(REPEATABLE_KINDS.length).optional() })
+    repeatables: z.array(RepeatableRequestSchema).max(REPEATABLE_KINDS.length).optional(),
+    /** Phase 6: the posting as the frame shows it (its visible text outside the form root), sent by the top frame
+     *  while drafts are on: a draft's job text. Page text, never stored. */
+    postingText: Text(MAX_POSTING_TEXT).optional() })
     .refine((message) => {
       const keys = new Set(message.specs.map((spec) => spec.key));
       return message.planKeys.every((key) => keys.has(key));
@@ -225,6 +232,10 @@ const contentMessages = [
   /** Phase 6: the in-page panel opened (`open` true) or closed in this frame, on the person's trusted click. While it
    *  is open, this frame alone receives report/update. */
   z.strictObject({ v, type: z.literal('panel/shown'), open: z.boolean() }),
+  /** Phase 6, wave 2: the in-page panel's Save my answer, on the person's trusted click, for one of this frame's own
+   *  fields. The worker treats it as the side panel's panel/saveAnswer for the sending frame: it reads the answer back
+   *  with answer/read and sends it straight to TailorIT. */
+  z.strictObject({ v, type: z.literal('answer/save'), fieldKey: Key }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -306,6 +317,7 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('field/focus'), fieldKey: Key }),
   /** The labels of a row's suggested options, fetched only when the row is expanded, never stored. */
   z.strictObject({ v, type: z.literal('field/describe'), fieldKey: Key }),
+  /** Confirm an AI draft (the side panel's Confirm draft): the frame marks it confirmed, the person's own. */
   z.strictObject({ v, type: z.literal('draft/confirm'), fieldKey: Key }),
   /** Read an answer the person asked to save; the worker sends it straight to TailorIT and never stores it. */
   z.strictObject({ v, type: z.literal('answer/read'), fieldKey: Key }),
@@ -352,10 +364,41 @@ export const PlanAnswerSchema = z.strictObject({
 });
 
 /** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/shown, panel/focus,
- *  panel/policyDecision, and a frame's answer to run/start, run/continue, run/cancel, run/policyDecision, field/focus,
- *  draft/confirm, report/update and settings/changed. A frame answers run/policyDecision {} once the decision settled
- *  its policy card, and `expired` when no run there waits at one. */
+ *  panel/policyDecision, panel/confirmDraft, and a frame's answer to run/start, run/continue, run/cancel,
+ *  run/policyDecision, field/focus, draft/confirm, report/update and settings/changed. A frame answers
+ *  run/policyDecision {} once the decision settled its policy card, and `expired` when no run there waits at one; it
+ *  answers draft/confirm `expired` when no draft of that field waits for the person. */
 export const DoneAnswerSchema = z.strictObject({});
+
+/**
+ * What came of a Save my answer (Phase 6, wave 2): panel/saveAnswer's and answer/save's answer. 'saved': TailorIT keeps
+ * it. Otherwise why it was not saved, which the panel says: 'sensitive' (a self-identification, legal, pay, consent or
+ * attention-check question, which TailorIT never keeps: its 400, or the extension's own screen), 'limit' (the account
+ * keeps 500: TailorIT's 409), 'unsupported' (a file, a list whose options were never read, an empty answer, or a kind
+ * of field saved answers never fill), 'company-unknown' (a free-text answer is kept for one company, and this form's
+ * address names none), 'canary' (the answer holds words hidden page text asked AI tools to write), 'not-allowed' (this
+ * connection may not save answers: TailorIT's 403).
+ */
+export const SAVE_ANSWER_OUTCOMES = ['saved', 'sensitive', 'limit', 'unsupported', 'company-unknown', 'canary',
+  'not-allowed'] as const;
+export type SaveAnswerOutcome = (typeof SAVE_ANSWER_OUTCOMES)[number];
+export const SaveAnswerAnswerSchema = z.strictObject({ outcome: z.enum(SAVE_ANSWER_OUTCOMES) });
+
+/** A saved answer's value as the frame reads it back (TailorIT's AutofillSavedAnswerValue, within its caps): the
+ *  chosen options' clean labels, never their positions; a text; or a lone box's state. */
+export const SavedAnswerValueSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('text'), text: z.string().min(1).max(5000) }),
+  z.strictObject({ kind: z.literal('options'), labels: z.array(z.string().min(1).max(300)).min(1).max(50) }),
+  z.strictObject({ kind: z.literal('checked'), checked: z.boolean() }),
+]);
+
+/** A frame's answer to answer/read: the field's answer as it holds it now and the option-set hash it shows, or why it
+ *  cannot be saved ('unsupported': nothing to save, or a kind saved answers never fill; 'canary': it holds a word
+ *  hidden page text asked AI tools to write). Passed straight to TailorIT: never stored, never logged. */
+export const AnswerReadAnswerSchema = z.union([
+  z.strictObject({ optionSetHash: z.string().regex(/^(?:[a-f0-9]{16}|none)$/), answer: SavedAnswerValueSchema }),
+  z.strictObject({ refused: z.enum(['unsupported', 'canary']) }),
+]);
 
 /** runstate/get: this tab's RunState for the application, or null when there is none, it has expired (24 h after its
  *  last update) or another tab holds it (a run never resumes in another tab). */
@@ -441,10 +484,10 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'policy/hit': DoneAnswerSchema,
   'panel/open': DoneAnswerSchema,
   'panel/shown': DoneAnswerSchema,
+  'answer/save': SaveAnswerAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
-/** The data schema of the worker's answer to each page message. panel/confirmDraft and panel/saveAnswer answer
- *  not_implemented until Phase 6. */
+/** The data schema of the worker's answer to each page message. */
 export const PAGE_ANSWER_SCHEMAS = {
   ping: PingAnswerSchema,
   'panel/fill': PanelSentAnswerSchema,
@@ -454,7 +497,7 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/focus': DoneAnswerSchema,
   'panel/describe': FieldDescribeAnswerSchema,
   'panel/confirmDraft': DoneAnswerSchema,
-  'panel/saveAnswer': DoneAnswerSchema,
+  'panel/saveAnswer': SaveAnswerAnswerSchema,
   'panel/reports': TabReportsAnswerSchema,
   'settings/get': SettingsAnswerSchema,
   'settings/save': SettingsAnswerSchema,
@@ -467,7 +510,7 @@ export const PAGE_ANSWER_SCHEMAS = {
   'telemetry/clear': TelemetryAnswerSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
-/** The data schema of a frame's answer to each message the worker sends it. answer/read arrives in Phase 6. */
+/** The data schema of a frame's answer to each message the worker sends it. */
 export const FRAME_ANSWER_SCHEMAS = {
   'run/start': DoneAnswerSchema,
   'run/continue': DoneAnswerSchema,
@@ -476,10 +519,11 @@ export const FRAME_ANSWER_SCHEMAS = {
   'field/focus': DoneAnswerSchema,
   'field/describe': FieldDescribeAnswerSchema,
   'draft/confirm': DoneAnswerSchema,
+  'answer/read': AnswerReadAnswerSchema,
   'report/update': DoneAnswerSchema,
   'settings/changed': DoneAnswerSchema,
   'frame/ping': PingAnswerSchema,
-} as const satisfies Record<Exclude<WorkerToContent['type'], 'answer/read'>, z.ZodType>;
+} as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */
 export const EXTERNAL_ANSWER_SCHEMAS = { 'pair/complete': DoneAnswerSchema } as const satisfies Record<ExternalMessage['type'], z.ZodType>;

@@ -4,6 +4,7 @@ import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFOR
 import { TELEMETRY_FIELDS } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
+import { SAVE_ANSWER_OUTCOMES } from '../messaging/schemas';
 import { CAPTURE_COPY, COPY } from './copy';
 import { NOTICE_CODES } from './report';
 
@@ -65,6 +66,12 @@ describe('the copy', () => {
     expect(Object.keys(COPY.platforms).sort()).toEqual([...PLATFORMS].sort());
     expect(Object.keys(COPY.options.consent.categories)).toEqual([...CONSENT_CATEGORIES]);
     for (const category of CONSENT_CATEGORIES) expect(COPY.options.consent.categories[category].help, category).toMatch(SENTENCE);
+  });
+
+  it('says what came of every Save my answer, and why one was not saved (Phase 6)', () => {
+    expect(Object.keys(COPY.panel.saveOutcomes).sort()).toEqual([...SAVE_ANSWER_OUTCOMES].sort());
+    for (const outcome of SAVE_ANSWER_OUTCOMES) expect(COPY.panel.saveOutcomes[outcome], outcome).toMatch(SENTENCE);
+    expect(COPY.panel.saveOutcomes.saved).toBe(COPY.panel.answerSaved);
   });
 
   it('counts in words that fit the count', () => {

@@ -15,12 +15,15 @@ import {
   AUTOFILL_FILE_SHA256_HEADER,
   AUTOFILL_RESUME_MAX_BYTES,
   AutofillClassifyTaskSchema,
+  AutofillDraftTaskSchema,
   AutofillErrorBodySchema,
   AutofillLookupResponseSchema,
   AutofillPickTaskSchema,
   AutofillProfileEnvelopeSchema,
   AutofillRedeemResponseSchema,
   AutofillResumeListSchema,
+  AutofillSavedAnswerListSchema,
+  AutofillSavedAnswerSchema,
   AutofillSensitiveEnvelopeSchema,
   AutofillSessionSchema,
   AutofillTaskAcceptedSchema,
@@ -28,6 +31,8 @@ import {
   AutofillTaskViewSchema,
   type AutofillClassifyRequest,
   type AutofillClassifyTask,
+  type AutofillDraftRequest,
+  type AutofillDraftTask,
   type AutofillLookupRequest,
   type AutofillPickRequest,
   type AutofillPickTask,
@@ -37,7 +42,10 @@ import {
   type AutofillRedeemBody,
   type AutofillRedeemResponse,
   type AutofillResumeList,
+  type AutofillSavedAnswer,
+  type AutofillSavedAnswerList,
   type AutofillSensitiveEnvelope,
+  type PutAutofillSavedAnswerBody,
   type AutofillSession,
 } from '../contract/tailorit';
 import type { WorkerPlatform } from '../platform/types';
@@ -96,6 +104,13 @@ export interface ServerClient {
   aiPick(body: AutofillPickRequest): Promise<ServerResult<AiSubmitted<AutofillPickTask>>>;
   /** POST /ai/classify (Phase 4), as aiPick. */
   aiClassify(body: AutofillClassifyRequest): Promise<ServerResult<AiSubmitted<AutofillClassifyTask>>>;
+  /** POST /ai/draft (Phase 6), as aiPick. */
+  aiDraft(body: AutofillDraftRequest): Promise<ServerResult<AiSubmitted<AutofillDraftTask>>>;
+  /** GET /answers (Phase 6): the account's saved answers, read with the profile. */
+  answers(): Promise<ServerResult<AutofillSavedAnswerList>>;
+  /** PUT /answers (Phase 6): saves one answer the person asked to save, as TailorIT then keeps it. A refusal's 400
+   *  (a question TailorIT never keeps) is bad-request, its 409 (the account's limit) conflict. */
+  putAnswer(body: PutAutofillSavedAnswerBody): Promise<ServerResult<AutofillSavedAnswer>>;
   /** GET /api/ai/tasks/:id: the task as it is now. An id that is not a task id is refused before any request. No
    *  task is ever cancelled from here: another caller may share it. */
   aiTask(id: string): Promise<ServerResult<AutofillTaskView>>;
@@ -364,6 +379,10 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     },
     aiPick: (body) => submit('/api/autofill/ai/pick', body, AutofillPickTaskSchema),
     aiClassify: (body) => submit('/api/autofill/ai/classify', body, AutofillClassifyTaskSchema),
+    aiDraft: (body) => submit('/api/autofill/ai/draft', body, AutofillDraftTaskSchema),
+    answers: () => json({ method: 'GET', path: '/api/autofill/answers', token: 'current' }, AutofillSavedAnswerListSchema),
+    putAnswer: (body) =>
+      json({ method: 'PUT', path: '/api/autofill/answers', token: 'current', json: body }, AutofillSavedAnswerSchema),
     aiTask: (id) => task(id),
   };
 }

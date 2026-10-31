@@ -34,18 +34,30 @@
  * besides. Every call goes through the server client: its paths, credentials 'omit', the version header and
  * AbortSignal.timeout(25 s).
  *
+ * Drafts (Phase 6, settings.llm.drafts on; core/plan/drafts.ts): a pass's free-text questions go as TailorIT's draft
+ * requests, at most DRAFT_MAX_QUESTIONS a task, each with the posting's visible text as the frame read it (jobText,
+ * '' for a form embedded in another page, and never TailorIT's stored copy), the lookup's company and job title, the
+ * run's canaries and the resume the run attaches. A question naming a sensitive topic is never sent
+ * (llm-disabled-for-category). What comes back is the core's DraftVerdict: drafted and trimmed are a text; every other
+ * reason is why there is none (empty, too_long, canary, ai_reference, wrapper and contact as the draft-* or
+ * canary-in-value reasons; invalid llm-invalid-output; sensitive llm-disabled-for-category), and a question answered
+ * twice or not at all, or a text where none belongs, is llm-invalid-output. A draft's text stays in the run's memory
+ * until the frame has it.
+ *
  * A run's questions (createRunAi): one task in flight per run, batches in the order they were asked, the answers kept
  * for the run only (memory). Nothing here logs an item, a label or an answer: counts and statuses only.
  */
 import {
   AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AutofillClassifyItem,
-  type AutofillClassifyRequest, type AutofillClassifyResult, type AutofillPickItem, type AutofillPickRequest,
-  type AutofillPickResult, type AutofillTaskView,
+  type AutofillClassifyRequest, type AutofillClassifyResult, type AutofillDraftReason, type AutofillDraftRequest,
+  type AutofillDraftResult, type AutofillPickItem, type AutofillPickRequest, type AutofillPickResult,
+  type AutofillTaskView,
 } from '../contract/tailorit';
-import { TIEBREAK_REQUEST_TEXT_SHARE } from '../core/confidence';
+import { DRAFT_MAX_QUESTIONS, TIEBREAK_REQUEST_TEXT_SHARE } from '../core/confidence';
 import type { Platform } from '../core/enums';
 import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
+import type { DraftDiscard, DraftItem, DraftVerdict } from '../core/plan/drafts';
 import type { AnsweredVerdict, PlanAi, PlanAsk } from '../core/plan/types';
 import type { RepeatableRequest } from '../core/steps/blocks';
 import {
@@ -61,8 +73,8 @@ import type { Timers } from './timers';
 /** A batch's task is given up this long after it was first submitted (docs/ARCHITECTURE.md: the 120 s cap). */
 export const AI_TASK_CAP_MS = 120_000;
 
-/** The kinds of task the worker submits in Phase 4 (drafts come in Phase 6). */
-export const AI_KINDS = ['pick', 'classify'] as const;
+/** The kinds of task the worker submits: picks and classifications (Phase 4), drafts (Phase 6). */
+export const AI_KINDS = ['pick', 'classify', 'draft'] as const;
 export type AiKind = (typeof AI_KINDS)[number];
 
 /** A classify request is filled to at most this many characters of text (TailorIT refuses above 100,000). */
@@ -115,7 +127,12 @@ export interface ClassifyBatch {
   body: AutofillClassifyRequest;
   items: ClassifyItem[];
 }
-export type AiBatch = PickBatch | ClassifyBatch;
+export interface DraftBatch {
+  kind: 'draft';
+  body: AutofillDraftRequest;
+  items: DraftItem[];
+}
+export type AiBatch = PickBatch | ClassifyBatch | DraftBatch;
 
 /** A pass's tiebreak items as pick batches (the core's tiebreakRequests: at most 20 items, under the text cap), and
  *  the verdicts of those never sent. `revision` is the profile's the values came from. */
@@ -188,6 +205,88 @@ export function classifyBatches(items: readonly ClassifyItem[]): { batches: Clas
   return { batches, withheld };
 }
 
+// ── Drafts (Phase 6) ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/** What every draft request of a pass carries besides its questions and the run's canaries: the posting's visible text
+ *  as the frame read it ('' for a form embedded in another page), the lookup's company and job title ('' without a
+ *  job), and the resume the run attaches (null: TailorIT chooses). */
+export interface DraftContext {
+  jobText: string;
+  company: string;
+  jobTitle: string;
+  resumeId: string | null;
+}
+
+/** TailorIT's reasons for no draft, as the core's (module header). */
+const DRAFT_DISCARDS: Readonly<Record<Exclude<AutofillDraftReason, 'drafted' | 'trimmed'>, DraftDiscard>> = {
+  empty: 'draft-empty',
+  too_long: 'draft-too-long',
+  canary: 'canary-in-value',
+  ai_reference: 'draft-ai-reference',
+  wrapper: 'draft-wrapper',
+  contact: 'draft-contact',
+  invalid: 'llm-invalid-output',
+  sensitive: 'llm-disabled-for-category',
+};
+
+/** A pass's draft questions as draft batches (at most DRAFT_MAX_QUESTIONS each, every string within TailorIT's caps,
+ *  cut after a whole word), and the verdicts of those never sent: a question naming a sensitive topic, or a key past
+ *  TailorIT's cap. */
+export function draftBatches(items: readonly DraftItem[], context: DraftContext, canaries: readonly string[]):
+  { batches: DraftBatch[]; withheld: DraftVerdict[] } {
+  const limits = AUTOFILL_AI_LIMITS.draft;
+  const withheld: DraftVerdict[] = [];
+  const sendable: DraftItem[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.key)) continue;
+    seen.add(item.key);
+    if (namesSensitiveTopic(item.question)) withheld.push({ key: item.key, text: null, why: 'llm-disabled-for-category' });
+    else if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') {
+      withheld.push({ key: item.key, text: null, why: 'llm-invalid-output' });
+    } else sendable.push(item);
+  }
+  const sent = canaries.filter((canary) => codePoints(canary) >= 2 && codePoints(canary) <= limits.canary)
+    .slice(0, limits.canaries);
+  const batches: DraftBatch[] = [];
+  for (let at = 0; at < sendable.length; at += DRAFT_MAX_QUESTIONS) {
+    const chunk = sendable.slice(at, at + DRAFT_MAX_QUESTIONS);
+    batches.push({ kind: 'draft', items: chunk, body: {
+      questions: chunk.map((item) => ({ key: item.key, question: cutAtWord(item.question, limits.question),
+        maxLength: item.maxLength })),
+      jobText: cutAtWord(context.jobText, limits.jobText),
+      company: cutAtWord(context.company, limits.company),
+      jobTitle: cutAtWord(context.jobTitle, limits.jobTitle),
+      resumeId: context.resumeId,
+      canaries: sent,
+    } });
+  }
+  return { batches, withheld };
+}
+
+/** The verdicts of a draft task's result for the questions it was asked (module header). */
+export function draftVerdicts(items: readonly DraftItem[], result: AutofillDraftResult, taskId: string):
+  Map<string, DraftVerdict> {
+  const byKey = new Map<string, AutofillDraftResult['drafts']>();
+  for (const draft of result.drafts) byKey.set(draft.key, [...(byKey.get(draft.key) ?? []), draft]);
+  const verdicts = new Map<string, DraftVerdict>();
+  for (const item of items) {
+    const drafts = byKey.get(item.key) ?? [];
+    const draft = drafts[0];
+    let verdict: DraftVerdict;
+    if (drafts.length !== 1 || draft === undefined) verdict = { key: item.key, text: null, why: 'llm-invalid-output' };
+    else if (draft.reason === 'drafted' || draft.reason === 'trimmed') {
+      verdict = draft.text === null || draft.text.trim() === '' ? { key: item.key, text: null, why: 'llm-invalid-output' }
+        : { key: item.key, text: draft.text, taskId };
+    } else {
+      verdict = { key: item.key, text: null,
+        why: draft.text === null ? DRAFT_DISCARDS[draft.reason] : 'llm-invalid-output' };
+    }
+    verdicts.set(item.key, verdict);
+  }
+  return verdicts;
+}
+
 /**
  * What a batch's name is the hash of: a classify body whole (page text only); a pick body without its profile text
  * (each item's key, category, option-set hash and options), with the profile's revision instead, so a stored name
@@ -195,7 +294,8 @@ export function classifyBatches(items: readonly ClassifyItem[]): { batches: Clas
  * and a profile edited since asks again.
  */
 export function batchIdentity(batch: AiBatch): string {
-  if (batch.kind === 'classify') return JSON.stringify(batch.body);
+  // A draft body holds page text, TailorIT's own company and title, a resume id and the page's canaries: no profile.
+  if (batch.kind === 'classify' || batch.kind === 'draft') return JSON.stringify(batch.body);
   return JSON.stringify({ revision: batch.revision, items: batch.body.items.map((item) => ({ key: item.key,
     category: item.category, optionSetHash: item.optionSetHash, options: item.options })) });
 }
@@ -263,9 +363,12 @@ export function classifyVerdicts(items: readonly ClassifyItem[], result: Autofil
 
 /** Every item of a batch given up: what its fields get. */
 function failedVerdicts(batch: AiBatch, why: 'llm-unavailable' | 'llm-invalid-output'):
-  { picks: TiebreakVerdict[]; classes: ClassifyVerdict[] } {
-  return batch.kind === 'pick' ? { picks: batch.items.map((item) => verdictOf(item, why)), classes: [] }
-    : { picks: [], classes: batch.items.map((item) => ({ key: item.key, category: null, why })) };
+  { picks: TiebreakVerdict[]; classes: ClassifyVerdict[]; drafts: DraftVerdict[] } {
+  if (batch.kind === 'pick') return { picks: batch.items.map((item) => verdictOf(item, why)), classes: [], drafts: [] };
+  if (batch.kind === 'draft') {
+    return { picks: [], classes: [], drafts: batch.items.map((item) => ({ key: item.key, text: null, why })) };
+  }
+  return { picks: [], classes: batch.items.map((item) => ({ key: item.key, category: null, why })), drafts: [] };
 }
 
 // ── Submitting and polling ────────────────────────────────────────────────────────────────────────────────────────
@@ -279,13 +382,13 @@ export interface AiTaskIds {
 
 /** How a batch's task ended: its result, or why there is none. */
 export type TaskOutcome =
-  | { ok: true; taskId: string; result: AutofillPickResult | AutofillClassifyResult }
+  | { ok: true; taskId: string; result: AutofillPickResult | AutofillClassifyResult | AutofillDraftResult }
   | { ok: false; why: 'llm-unavailable' | 'llm-invalid-output'; timedOut?: boolean };
 
 /** What the task client needs. Never a cancel: a task TailorIT deduplicated may be another caller's too, and TailorIT
  *  prunes every task within its hour (the review, T-F2). */
 export interface AiTasksDeps {
-  server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiTask'>;
+  server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiTask'>;
   timers: Timers;
   now(): number;
 }
@@ -293,7 +396,7 @@ export interface AiTasksDeps {
 /** Failures worth another poll: the next one may answer. */
 const TRANSIENT: ReadonlySet<string> = new Set(['timeout', 'unreachable', 'server-error', 'rate-limited']);
 
-const TASK_KIND = { pick: 'autofill_pick', classify: 'autofill_classify' } as const;
+const TASK_KIND = { pick: 'autofill_pick', classify: 'autofill_classify', draft: 'autofill_draft' } as const;
 
 /** The task client: runs one batch's task to its end. */
 export interface AiTasks {
@@ -327,7 +430,8 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
   }
 
   async function submit(batch: AiBatch): Promise<ServerResult<{ done: true; task: AutofillTaskView } | { done: false; taskId: string }>> {
-    return batch.kind === 'pick' ? deps.server.aiPick(batch.body) : deps.server.aiClassify(batch.body);
+    if (batch.kind === 'pick') return deps.server.aiPick(batch.body);
+    return batch.kind === 'draft' ? deps.server.aiDraft(batch.body) : deps.server.aiClassify(batch.body);
   }
 
   async function execute(batch: AiBatch, ids: AiTaskIds, active: () => boolean, self: Promise<unknown>): Promise<TaskOutcome> {
@@ -467,6 +571,11 @@ export interface AskContext {
   specs: readonly FieldSpec[];
   canaries: readonly string[];
   repeatables?: readonly RepeatableRequest[];
+  /** The posting's visible text the frame sent with the request (Phase 6, drafts on, the top frame only). */
+  postingText?: string;
+  /** What a draft request carries besides its questions (Phase 6), made from postingText and the run's lookup when a
+   *  plan first asks for a draft; absent: no draft is sent. */
+  draft?: DraftContext;
 }
 
 /** One run's LLM questions and answers, in the worker's memory for the run only. */
@@ -497,6 +606,7 @@ const fieldKeyOf = (item: { id: string }): string => item.id.split('#')[0]!;
 export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
   const verdicts = new Map<string, AnsweredVerdict>();
   const classifications = new Map<string, ClassifyVerdict>();
+  const drafts = new Map<string, DraftVerdict>();
   /** The batch each waiting key is answered by (null: answered at once), and the scan it was asked from. */
   const waiting = new Map<FieldKey, { batch: string | null; context: AskContext }>();
   /** Batches by hash, and whether each has ended. */
@@ -509,11 +619,16 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
       const failed = failedVerdicts(batch, outcome.why);
       for (const verdict of failed.picks) verdicts.set(verdict.id, { verdict, taskId: '' });
       for (const verdict of failed.classes) classifications.set(verdict.key, verdict);
+      for (const verdict of failed.drafts) drafts.set(verdict.key, verdict);
       return;
     }
     if (batch.kind === 'pick') {
       for (const [id, verdict] of pickVerdicts(batch.items, outcome.result as AutofillPickResult)) {
         verdicts.set(id, { verdict, taskId: outcome.taskId });
+      }
+    } else if (batch.kind === 'draft') {
+      for (const [key, verdict] of draftVerdicts(batch.items, outcome.result as AutofillDraftResult, outcome.taskId)) {
+        drafts.set(key, verdict);
       }
     } else {
       for (const [key, verdict] of classifyVerdicts(batch.items, outcome.result as AutofillClassifyResult)) {
@@ -537,7 +652,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
   }
 
   return {
-    answers: { verdicts, classifications },
+    answers: { verdicts, classifications, drafts },
     ask(ask, awaiting, context, llm, revision) {
       const owner = new Map<string, string | null>();
       const picks = llm.tiebreak ? pickBatches(ask.tiebreaks, revision)
@@ -553,12 +668,22 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
         classifications.set(verdict.key, verdict);
         owner.set(verdict.key, null);
       }
-      if (picks.withheld.length + classes.withheld.length > 0) {
-        log('ai.withheld', { items: picks.withheld.length + classes.withheld.length });
+      // Drafts (Phase 6): only with the setting on and a context to send them with.
+      const asked = ask.drafts ?? [];
+      const written = llm.drafts && context.draft !== undefined
+        ? draftBatches(asked, context.draft, context.canaries)
+        : { batches: [], withheld: asked.map((item): DraftVerdict => ({ key: item.key, text: null, why: 'drafts-disabled' })) };
+      for (const verdict of written.withheld) {
+        drafts.set(verdict.key, verdict);
+        owner.set(verdict.key, null);
       }
-      for (const batch of [...classes.batches, ...picks.batches]) {
+      const withheld = picks.withheld.length + classes.withheld.length + written.withheld.length;
+      if (withheld > 0) log('ai.withheld', { items: withheld });
+      for (const batch of [...classes.batches, ...picks.batches, ...written.batches]) {
         const hash = enqueue(batch);
-        for (const item of batch.items) owner.set(batch.kind === 'pick' ? fieldKeyOf(item as TiebreakItem) : (item as ClassifyItem).key, hash);
+        for (const item of batch.items) {
+          owner.set(batch.kind === 'pick' ? fieldKeyOf(item as TiebreakItem) : (item as ClassifyItem | DraftItem).key, hash);
+        }
       }
       for (const key of awaiting) waiting.set(key, { batch: owner.get(key) ?? null, context });
     },

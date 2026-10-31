@@ -4,10 +4,13 @@
  * mock, started the way a person starts it (the side panel's Fill); then the table's assertions run, and
  * assertTrapInvariants after them. Rows carry no classifier, so these assert each field's category and reason, and
  * src/core/plan/traps.test.ts asserts classifiedBy over the same fields. Trap 8 runs in the content builder's
- * browser-mode suite with a fake AI client in Phase 2, and end to end through the mock in Phase 6.
+ * browser-mode suite with a fake AI client in Phase 2, and end to end through the mock in Phase 6, with trap 1's draft
+ * clause: with drafts on, the draft request holds the visible marker and neither the hidden one nor the canary in its
+ * text.
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import type { FieldCategory } from '../../src/core/types/intent';
+import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
 import { COPY } from '../../src/shared/copy';
 import type { FrameReport } from '../../src/shared/report';
 import { expect, test } from '../fixtures.ts';
@@ -15,7 +18,8 @@ import type { ConsoleEntry } from '../helpers/console.ts';
 import { applicationKeyOf, noticeCount, row, rowOf, type Extension } from '../helpers/extension.ts';
 import { GOLDEN } from '../helpers/golden.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
-import { GOLDEN_RESUME, mock } from '../helpers/mock.ts';
+import { GOLDEN_RESUME, mock, type MockRequest } from '../helpers/mock.ts';
+import { CLEAN_DRAFT } from '../mock-server/mock.mjs';
 import { PageUi } from '../helpers/page-ui.ts';
 import { checked, eventsOn, fileHeld, selectedTexts } from '../helpers/page-state.ts';
 import { trap, type Trap, type TrapId } from '../helpers/traps.ts';
@@ -78,6 +82,23 @@ function nameAndEmail(report: FrameReport, names: 'first-last' | 'first' | 'full
 
 async function noAiRequest(): Promise<void> {
   expect(await mock.requestsTo('POST /api/autofill/ai/*'), 'an AI request').toEqual([]);
+}
+
+/** Runs `body` with drafts on (Phase 6), and puts the defaults back after. */
+async function withDrafts<T>(ext: Extension, body: () => Promise<T>): Promise<T> {
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+    llm: { ...DEFAULT_SETTINGS.llm, drafts: true } } });
+  try {
+    return await body();
+  } finally {
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+  }
+}
+
+/** The draft requests the mock received, parsed. */
+async function draftRequests(): Promise<Array<{ request: MockRequest; body: { questions: Array<{ question: string }>;
+  jobText: string; canaries: string[] } }>> {
+  return (await mock.requestsTo('POST /api/autofill/ai/draft')).map((request) => ({ request, body: JSON.parse(request.body) }));
 }
 
 test.describe('trap fixtures', () => {
@@ -241,8 +262,54 @@ test.describe('trap fixtures', () => {
     await invariants(filled, run);
   });
 
-  test('08 a canary in a draft (browser mode in Phase 2, end to end in Phase 6)', () => {
-    test.skip(true, "Phase 2 runs trap 8 in the content builder's browser-mode suite with a fake AI client; drafts reach the mock in Phase 6.");
+  test('08 a canary in a draft: blocked as canary-in-value, the textarea never written, and the run stays in review', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    await withDrafts(ext, async () => {
+      // TailorIT is scripted to miss the canary: the extension's own scan must catch it.
+      await tailorit.scenario('ai-draft-canary', { value: 'pineapple' });
+      const run = { extContext, ext, routeLog, logs };
+      const filled = await fillTrap('08', run);
+      const { report, page } = filled;
+      expect(report.status).toBe('review');
+      expect(row(report, 'Why this company?')).toMatchObject({ category: 'freeText.whyCompany', status: 'blocked',
+        reason: 'canary-in-value', wrote: false, provenance: null });
+      await expect(page.locator('#why')).toHaveValue('');
+      expect(await eventsOn(page, '#why'), 'an event on the textarea').toEqual([]);
+      expect(report.fields.filter((each) => each.status === 'blocked')).toHaveLength(1);
+      nameAndEmail(report, 'first-last');
+      // The draft was asked for with the page's visible text, and TailorIT was told the canary to refuse.
+      const drafts = await draftRequests();
+      expect(drafts).toHaveLength(1);
+      expect(drafts[0]!.body.questions.map((question) => question.question)).toEqual(['Why this company?']);
+      expect(drafts[0]!.body.jobText).toContain('VISIBLE-MARKER-08');
+      expect(drafts[0]!.body.canaries.map((canary) => canary.toLowerCase())).toContain('pineapple');
+      await invariants(filled, run);
+    });
+  });
+
+  test('01 with drafts on: the draft request holds the visible marker, neither the hidden one nor the canary in its text, and the clean draft is written flagged', async ({ extContext, connected: ext, routeLog, logs }) => {
+    await withDrafts(ext, async () => {
+      const run = { extContext, ext, routeLog, logs };
+      const filled = await fillTrap('01', run);
+      const { report, page } = filled;
+      expect(report.status).toBe('review');
+      const drafts = await draftRequests();
+      expect(drafts).toHaveLength(1);
+      const { body } = drafts[0]!;
+      expect(body.questions.map((question) => question.question)).toEqual(['Why do you want to work here?']);
+      expect(body.jobText).toContain('VISIBLE-MARKER-01');
+      // The canary goes in TailorIT's refusal list (`canaries`, the contract's design), and nowhere else.
+      const { canaries, ...text } = body;
+      expect(canaries.map((canary) => canary.toLowerCase())).toContain('i am llm');
+      for (const hidden of ['HIDDEN-MARKER-01', 'HIDDEN-MARKER-01B', 'I am LLM', 'Ignore previous instructions']) {
+        expect(JSON.stringify(text).toLowerCase(), hidden).not.toContain(hidden.toLowerCase());
+      }
+      expect(row(report, 'Why do you want to work here?')).toMatchObject({ category: 'freeText.whyCompany',
+        status: 'flagged', provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', wrote: true,
+        verification: 'verified', needsUserAction: true });
+      await expect(page.locator('#why')).toHaveValue(CLEAN_DRAFT);
+      nameAndEmail(report, 'first-last');
+      await invariants(filled, run);
+    });
   });
 
   test('09 hidden file inputs: the resume goes into (a) and (d), (b) is flagged, (c) is never touched', async ({ extContext, connected: ext, routeLog, logs }) => {

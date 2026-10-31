@@ -57,11 +57,28 @@
  * the launcher's error state. plan/poll (Phase 4) never renews. The run ends for invalidation only on the platform's
  * word (channel.ts). Nothing here sends, stores or logs a value: RunState holds keys, hashes, counters and checked
  * canaries; rows hold labels and statuses.
+ *
+ * Phase 6 (wave 2): drafts, the person's fixes, and their answers.
+ * - With drafts on (settings.llm.drafts), the top frame's plan/request carries the posting as the person sees it: the
+ *   document's visible text outside the form root (postingText). An embedded frame sends none.
+ * - A draft (an llm-draft write, guarded like any write, highlighted dashed) waits for the person: confirmDraft (the
+ *   side panel's draft/confirm, or the in-page panel's Confirm draft) makes its row verified, the person's choice;
+ *   their own edit makes the text theirs (changed-by-you). Either way guardReady and the step's validation no longer
+ *   count it as unconfirmed, on this attempt and on the step's later ones.
+ * - The person's trusted edit of a field the run left flagged (touches.ts editedSince during the fill; personInput at
+ *   rest) sets the row's detail.userEdited, while settings.offerToSaveAnswers is on, and the report goes out again: the
+ *   review then offers Save my answer. Their edit at rest of a value we wrote makes it theirs (changed-by-you), as the
+ *   next pass would. readAnswer reads a field's answer for answer/read (option labels, a text, a checked state),
+ *   refusing one that holds a canary; it is passed to the worker and never kept here.
  */
 import type { Adapter } from '../adapters/types';
 import type { ApplicationRef } from '../adapters';
-import { mergeCanaries } from '../core/guard/canary';
+import type { z } from 'zod';
+import { canariesIn, mergeCanaries } from '../core/guard/canary';
+import { cutInjected } from '../core/guard/injected';
 import { scanTripwires } from '../core/guard/tripwire';
+import { baseKeyOf } from '../core/loop/bookkeeping';
+import { unresolvedRow } from '../core/loop/rows';
 import type { RepeatableAnswer } from '../core/steps/blocks';
 import {
   createRunState, MAX_IDLE_TRANSITIONS, reduceRun, repeatableCounterKey, TRANSITION_CAP_MS, type ReviewCause,
@@ -74,11 +91,15 @@ import type { RepeatableKind, RunState, RunStatus } from '../core/types/run';
 import { clickIfAllowed } from '../dom/fillers';
 import { captchaElements, detectPause, unsolvedCaptchas, type PauseSignal } from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
+import { isUsableOption } from '../dom/option-hash';
 import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
-import type { ScanResult, WidgetReading } from '../dom/types';
+import { monotonicNow } from '../dom/time';
+import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
+import { visibleTextWithout } from '../dom/visible-text';
 import { isUserVisible } from '../dom/visibility';
 import type { ErrorCode } from '../messaging/envelope';
+import { MAX_POSTING_TEXT, type AnswerReadAnswerSchema } from '../messaging/schemas';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import type { ContentSettings } from '../shared/settings';
@@ -92,7 +113,7 @@ import {
   type ReportLimiter,
 } from './report';
 import { highlightItems } from './targets';
-import type { TouchLog } from './touches';
+import type { TouchLog, TouchType } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
 import type { HighlightItem } from './ui/highlights';
@@ -225,6 +246,44 @@ type LoopCut = { kind: 'hidden' } | { kind: 'policy' } | { kind: 'pause'; signal
 /** A passage's identity: a new one is one the run has not read. */
 const passageId = (passage: RawPassage) => `${passage.origin}\u{0}${passage.text}`;
 
+/** answer/read's answer: a field's answer and its option-set hash, or why it cannot be saved (Phase 6). */
+export type AnswerRead = z.infer<typeof AnswerReadAnswerSchema>;
+
+/** The kinds that take one option, and those that take several (a saved answer's shape, resolver/saved.ts). */
+const ONE_OPTION_KINDS: ReadonlySet<string> = new Set(['select', 'radio', 'combobox']);
+const SET_KINDS: ReadonlySet<string> = new Set(['checkbox-group', 'multiselect']);
+/** TailorIT's caps on a saved answer (AUTOFILL_SAVED_ANSWER_LIMITS): a text, and its options' labels. */
+const SAVED_TEXT_MAX = 5000;
+const SAVED_LABEL_MAX = 300;
+const SAVED_LABELS_MAX = 50;
+
+/** The elements that are a field's own: its control, its group's members, its proxy. */
+function ownElements(target: FieldTarget): Element[] {
+  return [target.control, ...target.members, ...(target.proxy === null ? [] : [target.proxy])];
+}
+
+/** Whether a field holds an answer at all (not empty, not only its placeholder). */
+function holdsAnswer(field: ScannedField): boolean {
+  const { current } = field;
+  switch (current.kind) {
+    case 'text':
+      return current.text.trim() !== '';
+    case 'checked':
+      return true;
+    case 'selected':
+      return current.labels.some((label) => label.trim() !== '');
+    case 'files':
+      return current.count > 0;
+    default:
+      return false;
+  }
+}
+
+/** A draft the person confirmed: their choice, verified (Phase 6). */
+function confirmedDraftRow(row: FillResult): FillResult {
+  return { ...row, status: 'verified', reason: 'ok', needsUserAction: false };
+}
+
 /** One run. start() runs it until it first comes to rest; accept(), decline() and stop() are the person's choices. */
 export class FillRun {
   /** Where the run rests (or how it ended); null while it works. */
@@ -308,6 +367,18 @@ export class FillRun {
   /** settings/changed pushes so far, and the last one's auto-advance (C-S2). */
   private pushes = 0;
   private pushedAutoAdvance = false;
+  /** Phase 6: whether the person's fixes are marked for Save my answer (settings.offerToSaveAnswers), and whether
+   *  drafts are on (settings.llm.drafts): run/begin's, then each settings/changed. */
+  private offerToSave = false;
+  private drafts = false;
+  /** The fields the person edited after the run left them flagged (their rows say userEdited), by base key. */
+  private readonly edited = new Set<BaseKey>();
+  /** The drafts the person confirmed or made their own, by base key: never unconfirmed again in this run. */
+  private readonly confirmedDrafts = new Set<BaseKey>();
+  /** Each row's field elements at the step's last fill, for the person's edits at rest. */
+  private owners = new WeakMap<Element, FieldKey>();
+  /** When the step's fill began (monotonicNow): an edit after it may mark a flagged row userEdited. */
+  private fillStartedAt = 0;
 
   constructor(private readonly env: RunEnv, readonly request: RunRequest) {
     this.root = env.page.root;
@@ -374,6 +445,156 @@ export class FillRun {
     this.pushes += 1;
     this.pushedAutoAdvance = settings.autoAdvance;
     this.autoAdvance = settings.autoAdvance;
+    this.drafts = settings.llm.drafts;
+    const offered = this.offerToSave;
+    this.offerToSave = settings.offerToSaveAnswers;
+    // Turned off: no row offers Save my answer any more.
+    if (offered && !this.offerToSave && this.rows.some((row) => row.detail?.userEdited === true)) {
+      this.rows = this.rows.map((row) => {
+        if (row.detail?.userEdited !== true) return row;
+        const { userEdited: _userEdited, ...detail } = row.detail;
+        const { detail: _detail, ...rest } = row;
+        return Object.keys(detail).length === 0 ? rest : { ...rest, detail };
+      });
+      this.rowsChanged();
+    }
+  }
+
+  /** Confirm draft (the side panel's draft/confirm, or the in-page panel's): the draft of this field, written and
+   *  waiting for the person, is theirs now. Answers whether one waited. */
+  confirmDraft(key: FieldKey): boolean {
+    if (this.ended === null) return false;
+    const row = this.rows.find((candidate) => candidate.key === key);
+    if (row === undefined || row.provenance !== 'llm-draft' || !row.wrote || !row.needsUserAction
+      || row.status !== 'flagged' || row.reason !== 'llm-draft-needs-confirmation') return false;
+    this.confirmedDrafts.add(baseKeyOf(key));
+    log('draft.confirmed');
+    this.replaceRow(confirmedDraftRow(row));
+    return true;
+  }
+
+  /**
+   * The person's trusted input on the page while the run rests (touches.ts): an edit (input) of a field the run left
+   * makes a draft or a value we wrote theirs (changed-by-you), and marks a field the run left flagged as edited by them
+   * (detail.userEdited, while the setting is on), and the report goes out again. Elements only; no value is read.
+   */
+  personInput(type: TouchType, path: readonly Element[]): void {
+    if (type !== 'input' || this.ended === null || this.request.dryRun || this.rows.length === 0) return;
+    let key: FieldKey | undefined;
+    for (const el of path) {
+      key = this.owners.get(el);
+      if (key !== undefined) break;
+    }
+    const row = key === undefined ? undefined : this.rows.find((candidate) => candidate.key === key);
+    if (row === undefined || row.status === 'blocked') return;
+    const flagged = row.status === 'flagged';
+    let next = row;
+    if (row.wrote) {
+      // Our value, or our draft, which the person changed: theirs now.
+      if (row.provenance === 'llm-draft') this.confirmedDrafts.add(baseKeyOf(row.key));
+      next = unresolvedRow(row, 'changed-by-you');
+    }
+    // Only a field the run left flagged: a value of ours the person changed is theirs, but no fix of a flagged field.
+    if (flagged && row.reason !== 'changed-by-you' && this.offerToSave && row.kind !== 'file'
+      && row.detail?.userEdited !== true) {
+      this.edited.add(baseKeyOf(row.key));
+      next = { ...next, detail: { ...next.detail, userEdited: true } };
+    }
+    if (next === row) return;
+    log('content.person-edited', { flagged, wrote: row.wrote });
+    this.replaceRow(next);
+  }
+
+  /**
+   * answer/read (Phase 6): the answer a field holds now, as Save my answer sends it to TailorIT: its options' clean
+   * labels (never their places), its text, or its box's state, with its observed option-set hash. Null when the field
+   * is not on the page; refused when there is nothing to save, a list whose options were never read, or a value holding
+   * a canary. Memory only: never kept, never logged.
+   */
+  readAnswer(key: FieldKey): AnswerRead | null {
+    const fresh = this.scanNow();
+    const field = fresh.fields.find((candidate) => candidate.key === key)
+      ?? fresh.fields.find((candidate) => candidate.baseKey === baseKeyOf(key));
+    if (field === undefined) return null;
+    const unsupported: AnswerRead = { refused: 'unsupported' };
+    let answer: Extract<AnswerRead, { answer: unknown }>['answer'];
+    if (field.kind === 'text' || field.kind === 'textarea') {
+      const text = field.current.kind === 'text' ? field.current.text : '';
+      if (text.trim() === '' || [...text].length > SAVED_TEXT_MAX) return unsupported;
+      answer = { kind: 'text', text };
+    } else if (field.kind === 'checkbox') {
+      if (field.current.kind !== 'checked') return unsupported;
+      answer = { kind: 'checked', checked: field.current.checked };
+    } else if (ONE_OPTION_KINDS.has(field.kind) || SET_KINDS.has(field.kind)) {
+      if (field.optionSetHash === 'lazy' || field.options === 'lazy') return unsupported;
+      const shown = field.options.filter((option) => option.selected).map((option) => option.label);
+      const raw = shown.length > 0 ? shown : field.current.kind === 'selected' ? field.current.labels : [];
+      const labels = [...new Set(raw.map((label) => cutInjected(label).clean.trim())
+        .filter((label) => label !== '' && isUsableOption(label)))];
+      const fits = ONE_OPTION_KINDS.has(field.kind) ? labels.length === 1 : labels.length > 0;
+      if (!fits || labels.length > SAVED_LABELS_MAX || labels.some((label) => [...label].length > SAVED_LABEL_MAX)) {
+        return unsupported;
+      }
+      answer = { kind: 'options', labels };
+    } else {
+      return unsupported;
+    }
+    const texts = answer.kind === 'text' ? [answer.text] : answer.kind === 'options' ? answer.labels : [];
+    if (canariesIn(texts, this.inMemory).length > 0) return { refused: 'canary' };
+    return { optionSetHash: field.optionSetHash === 'none' ? 'none' : field.optionSetHash, answer };
+  }
+
+  /** One row changed at rest: the rows, its highlight, the launcher's count, and the report again. */
+  private replaceRow(next: FillResult): void {
+    this.rows = this.rows.map((row) => (row.key === next.key ? next : row));
+    const status = next.status;
+    this.fieldHighlights = status === 'skipped' ? this.fieldHighlights.filter((item) => item.key !== next.key)
+      : this.fieldHighlights.map((item) => (item.key !== next.key ? item : {
+        ...item, status, draft: next.provenance === 'llm-draft',
+        draftConfirmed: next.provenance === 'llm-draft' && !next.needsUserAction,
+      }));
+    this.drawHighlights();
+    this.rowsChanged();
+  }
+
+  /** The rows changed while the run rests: the runtime's copy, the launcher's count, and the report. */
+  private rowsChanged(): void {
+    this.env.onRows(this.rows);
+    if (this.ended === 'review' || this.ended === 'waiting') {
+      this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
+    }
+    if (this.ended === null || this.id === null) return;
+    void this.report().catch(() => undefined);
+  }
+
+  /**
+   * The step's rows as the person left them (Phase 6): a draft they confirmed, or made theirs, stays so; a field the
+   * run left flagged that they edited during the fill (an input, paste or drop on its own elements after the fill began
+   * and after our last write to it), or before at rest, says userEdited while the setting is on. Also notes each row's
+   * field elements, for the person's edits at rest.
+   */
+  private markedRows(rows: readonly FillResult[], fresh: ScanResult, lastWriteAt: ReadonlyMap<BaseKey, number>):
+    FillResult[] {
+    const owners = new WeakMap<Element, FieldKey>();
+    const marked = rows.map((row) => {
+      const target = fresh.target(row.key);
+      const own = target === null ? [] : ownElements(target);
+      for (const el of own) owners.set(el, row.key);
+      const baseKey = baseKeyOf(row.key);
+      let next = row;
+      if (row.provenance === 'llm-draft' && this.confirmedDrafts.has(baseKey) && row.status === 'flagged'
+        && row.reason === 'llm-draft-needs-confirmation') next = confirmedDraftRow(row);
+      if (next.status !== 'flagged' || !this.offerToSave || next.kind === 'file' || this.request.dryRun) return next;
+      const since = Math.max(this.fillStartedAt, lastWriteAt.get(baseKey) ?? Number.NEGATIVE_INFINITY);
+      // A value of ours the person changed during the fill (changed-by-you) is theirs, but no fix of a flagged field.
+      const editedNow = next.reason !== 'changed-by-you' && target !== null && holdsAnswer(target.field)
+        && own.some((el) => this.env.touches.editedSince(el, since));
+      if (editedNow) this.edited.add(baseKey);
+      if (!this.edited.has(baseKey)) return next;
+      return { ...next, detail: { ...next.detail, userEdited: true as const } };
+    });
+    this.owners = owners;
+    return marked;
   }
 
   /** What the run that continues this one in its document carries over (RunCarry). `continued`: the person's trusted
@@ -464,6 +685,10 @@ export class FillRun {
       this.policy ??= answer.data.policy;
       // A settings/changed that arrived meanwhile may be newer than the answer: both must say on.
       this.autoAdvance = answer.data.settings.autoAdvance && (this.pushes === pushes || this.pushedAutoAdvance);
+      if (this.pushes === pushes) {
+        this.offerToSave = answer.data.settings.offerToSaveAnswers;
+        this.drafts = answer.data.settings.llm.drafts;
+      }
       return;
     }
     if (answer.error === 'expired') return this.renew();
@@ -506,12 +731,22 @@ export class FillRun {
     const canaries = [...this.sent];
     const repeatables = this.sections.map((section) => ({ kind: section.kind,
       entries: kept ? this.answers.get(section.kind)?.entries ?? null : null }));
+    // Drafts on (Phase 6): the posting as the person sees it, from the top frame only, for a draft's job text.
+    const postingText = this.drafts && this.isTop && planKeys.length > 0 ? this.postingText() : '';
     const answer = await this.call<'plan/request'>((runId) => ({ v: 1, type: 'plan/request', runId, pass, specs,
-      planKeys, canaries, notices, ...(repeatables.length > 0 ? { repeatables } : {}) }));
+      planKeys, canaries, notices, ...(repeatables.length > 0 ? { repeatables } : {}),
+      ...(postingText === '' ? {} : { postingText }) }));
     if ('failed' in answer) throw new RunFailure(answer.failed);
     for (const canary of answer.persistableCanaries) this.checked.add(canary);
     if (!kept) for (const section of answer.repeatables ?? []) this.answers.set(section.kind, section);
     return answer;
+  }
+
+  /** The posting as the person sees it (Phase 6): the document's visible text outside the form root, within TailorIT's
+   *  cap on a draft's job text. Page text: sent with plan/request, never kept. */
+  private postingText(): string {
+    const body = this.env.doc.body;
+    return body === null ? '' : visibleTextWithout(body, [this.root], { cap: MAX_POSTING_TEXT }).trim();
   }
 
   /**
@@ -873,6 +1108,7 @@ export class FillRun {
     if (paused !== null) return pauseEventOf(paused);
     if (this.stopRequested) return { type: 'USER_STOPPED' };
     this.loopCut = null;
+    this.fillStartedAt = monotonicNow();
     this.rows = [];
     this.fieldHighlights = [];
     this.buttonHighlights = [];
@@ -909,7 +1145,10 @@ export class FillRun {
     const last = loop.scan;
     let rows = new Map(loop.rows.map((row) => [row.key, row]));
     for (const section of this.sections) rows = currentJobRows(rows, last, section, this.answers.get(section.kind));
-    const guarded = finalGuard({ adapter, root: this.root, canaries: this.inMemory }, last, rows, loop.written);
+    // The drafts the person confirmed earlier in the run read back as confirmed (Phase 6).
+    const confirmedDrafts = new Set([...rows.keys()].filter((key) => this.confirmedDrafts.has(baseKeyOf(key))));
+    const guarded = finalGuard({ adapter, root: this.root, canaries: this.inMemory, confirmedDrafts }, last, rows,
+      loop.written);
     const after = guarded.reverted.size > 0 ? last.rescan() : last;
 
     // 3. The rows, notices and highlights.
@@ -921,7 +1160,9 @@ export class FillRun {
       log('content.form-hidden');
       this.notices.add('form-hidden');
     }
-    const all = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
+    // The person's confirmations and edits during the fill stand on the rows (Phase 6).
+    const all = this.markedRows([...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)], after,
+      loop.carry.lastWriteAt);
     this.noticesFromRows(all, last);
     this.counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
       deferredFields: last.counters.deferredFields };
@@ -929,8 +1170,9 @@ export class FillRun {
     this.settledStep = !busy;
     env.onRows(all);
     // A dry run wrote nothing, so only what would need the person is outlined.
+    const marked = new Map(all.filter((row) => guarded.rows.has(row.key)).map((row) => [row.key, row] as const));
     const outlined = this.request.dryRun
-      ? new Map([...guarded.rows].filter(([, row]) => row.needsUserAction)) : guarded.rows;
+      ? new Map([...marked].filter(([, row]) => row.needsUserAction)) : marked;
     this.fieldHighlights = highlightItems(after, outlined, guarded.removeSelection);
     this.drawHighlights();
     this.showNotices();
@@ -1007,7 +1249,8 @@ export class FillRun {
     const nextVisible = next !== null && isUserVisible(next, cache) && (next as HTMLButtonElement).disabled !== true;
     this.lastErrors = errors.length;
     return { type: 'VALIDATED', errors: errors.length, fixable: this.fixable(errors), step: { finality, nextVisible,
-      settled: this.settledStep, unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft').length,
+      settled: this.settledStep,
+      unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft' && row.needsUserAction).length,
       captchaUnsolved: unsolvedCaptchas(env.doc, root, cache) > 0 } };
   }
 

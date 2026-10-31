@@ -23,7 +23,7 @@ const ADAPTER: Adapter = e2eAdaptersFor(new URL(WIZARD_URL))[0]!;
 const AUTO = { settings: { ...DEFAULT_SETTINGS, autoAdvance: true } } satisfies FakeWorkerOptions;
 /** The worker's settings/changed push after the person saved auto-advance off in the options page. */
 const SETTING_OFF = { v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
-  llm: { tiebreak: true, classify: true, drafts: false } } } as const;
+  llm: { tiebreak: true, classify: true, drafts: false }, offerToSaveAnswers: true } } as const;
 
 let logs: MockInstance;
 beforeAll(() => {
@@ -91,10 +91,14 @@ async function personClick(fixture: Fixture, el: Element): Promise<void> {
   await userEvent.click(fixture.frame, { position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
 }
 
-/** The person types over a field's whole value (their own trusted key presses). */
-async function personTypes(fixture: Fixture, id: string, keys: string): Promise<void> {
+/** The person types over a field's whole value (their own trusted key presses). The field is one the run wrote and
+ *  the run rests: their edit makes it theirs, and the report says so at once (Phase 6, wave 2), before the test goes
+ *  on. */
+async function personTypes(fixture: Fixture, id: string, keys: string, worker: FakeWorker): Promise<void> {
+  const before = worker.reports.length;
   await personClick(fixture, byId(fixture, id));
   await userEvent.keyboard(`{Control>}a{/Control}${keys}`);
+  await vi.waitFor(() => expect(worker.reports.length).toBeGreaterThan(before), { timeout: 5000, interval: 25 });
 }
 
 /** The wizard with `script` run when step 1's phone (its last field) changes: what the page shows after our last write. */
@@ -218,7 +222,7 @@ describe('C-S3: a later attempt on a step never writes over what the person type
     expect(await loaded.runtime.fill()).toBe('waiting');
     const signature = lastState(worker).stepSignature!;
     expect(byId(loaded.fixture, 'name').value).toBe(goldenProfile().identity.fullName);
-    await personTypes(loaded.fixture, 'name', 'Jordan Person');
+    await personTypes(loaded.fixture, 'name', 'Jordan Person', worker);
     const reports = worker.reports.length;
     await personClick(loaded.fixture, byId(loaded.fixture, 'next-details'));
     await restsAgain(worker, reports);
@@ -234,7 +238,7 @@ describe('C-S3: a later attempt on a step never writes over what the person type
     const worker = createFakeWorker();
     const loaded = await load(worker);
     expect(await loaded.runtime.fill()).toBe('waiting');
-    await personTypes(loaded.fixture, 'name', 'Jordan Person');
+    await personTypes(loaded.fixture, 'name', 'Jordan Person', worker);
     let reports = worker.reports.length;
     byId<HTMLButtonElement>(loaded.fixture, 'next-details').click();
     await restsAgain(worker, reports);
@@ -260,7 +264,7 @@ describe('C-S3: a later attempt on a step never writes over what the person type
     const worker = createFakeWorker();
     const loaded = await load(worker, page);
     expect(await loaded.runtime.fill()).toBe('waiting');
-    await personTypes(loaded.fixture, 'name', 'Jordan Person');
+    await personTypes(loaded.fixture, 'name', 'Jordan Person', worker);
     const reports = worker.reports.length;
     byId<HTMLButtonElement>(loaded.fixture, 'next-details').click();
     await vi.waitFor(() => expect(wizard(loaded.fixture).shown).toEqual([1, 2, 1]), { timeout: 15_000 });
@@ -282,7 +286,7 @@ describe('C-S3: a later attempt on a step never writes over what the person type
     const loaded = await load(worker, page);
     expect(await loaded.runtime.fill()).toBe('waiting');
     const signature = lastState(worker).stepSignature!;
-    await personTypes(loaded.fixture, 'phone', '{Backspace}');
+    await personTypes(loaded.fixture, 'phone', '{Backspace}', worker);
     expect(byId(loaded.fixture, 'phone').value).toBe('');
     await personClick(loaded.fixture, byId(loaded.fixture, 'next-details'));
     await vi.waitFor(() => expect(lastState(worker).status).toBe('review'), { timeout: 15_000 });

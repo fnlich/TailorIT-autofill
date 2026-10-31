@@ -5,7 +5,7 @@ import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, 
 
 const OPTIONS = pageSender('options.html');
 const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, autoAdvance: true, preapprovedConsent: ['privacy' as const],
-  llm: { tiebreak: false, classify: true, drafts: true } };
+  llm: { tiebreak: false, classify: true, drafts: true }, offerToSaveAnswers: false };
 
 describe('settings', () => {
   it('answers the cautious defaults until something is saved', async () => {
@@ -57,7 +57,8 @@ describe('settings', () => {
       .toEqual({ ok: true, data: { settings: CHOSEN } });
     const pushed = sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')
       .sort((a, b) => a.tabId - b.tabId);
-    const message = { v: 1, type: 'settings/changed', settings: { panel: 'in-page', autoAdvance: true, llm: CHOSEN.llm } };
+    const message = { v: 1, type: 'settings/changed', settings: { panel: 'in-page', autoAdvance: true, llm: CHOSEN.llm,
+      offerToSaveAnswers: false } };
     expect(pushed).toEqual([
       { tabId: 7, message, options: { frameId: 0, documentId: 'doc-1' } },
       { tabId: 8, message, options: { frameId: 3, documentId: 'doc-3' } },
@@ -77,7 +78,8 @@ describe('settings', () => {
     const offline = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': CHOSEN }) });
     expect(await offline.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender())).toEqual({
       ok: true,
-      data: { frameId: 0, connected: false, settings: { panel: 'in-page', autoAdvance: true, llm: CHOSEN.llm } },
+      data: { frameId: 0, connected: false, settings: { panel: 'in-page', autoAdvance: true, llm: CHOSEN.llm,
+        offerToSaveAnswers: false } },
     });
     const connected = await startTestWorker({ token: tokenRecord() });
     expect(await connected.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: false }, contentSender({ frameId: 2 })))

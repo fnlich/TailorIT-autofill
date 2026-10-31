@@ -11,6 +11,7 @@
 import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
 import type { ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunStatus } from '../core/types/run';
+import type { SaveAnswerOutcome } from '../messaging/schemas';
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -135,6 +136,12 @@ const REASONS = {
   'changed-by-you': 'You changed this after it was filled, so it was left as you set it.',
   'policy-notice': 'This posting says AI-assisted applications are not allowed, so filling stopped here until you choose.',
   'form-hidden': 'The page hid this form while it was being filled, so filling stopped here.',
+  // Drafts (Phase 6): a draft that was not written, and why. Drafts for the owner's review.
+  'draft-empty': 'Your resume and profile had nothing to draft this answer from, so it was left for you.',
+  'draft-too-long': 'The AI draft was longer than this field allows, so it was not written. Answer it yourself.',
+  'draft-ai-reference': 'The AI draft spoke of being an AI, so it was not written. Answer it yourself.',
+  'draft-wrapper': 'The AI draft held text from its own instructions, so it was not written. Answer it yourself.',
+  'draft-contact': 'The AI draft named a link, email or phone number that is not yours, so it was not written.',
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;
@@ -284,6 +291,16 @@ const PANEL = {
   confirmFailed: 'The draft could not be confirmed. Is the form still open?',
   answerSaved: 'Your answer was saved in TailorIT.',
   saveFailed: 'Your answer could not be saved. Try again.',
+  /** Phase 6, wave 2: what came of Save my answer, by its outcome. Drafts for the owner's review. */
+  saveOutcomes: {
+    saved: 'Your answer was saved in TailorIT.',
+    sensitive: "This answer wasn't saved: TailorIT never keeps answers to self-identification, work authorization, pay, consent or attention-check questions.",
+    limit: "This answer wasn't saved: you have saved as many answers as TailorIT keeps. Remove some in TailorIT's Settings › Autofill › Saved answers.",
+    unsupported: "This answer can't be saved: it is empty, or this kind of question takes no saved answer.",
+    'company-unknown': "This answer wasn't saved: it would be kept for this company only, and this form's address doesn't say which company it is.",
+    canary: "This answer wasn't saved: it holds words that hidden page text asked AI tools to write.",
+    'not-allowed': "This answer wasn't saved: this browser's connection may not save answers. Connect it again from TailorIT's Settings › Autofill.",
+  } satisfies Record<SaveAnswerOutcome, string>,
 } as const;
 
 /** The in-page review panel (src/content/ui/panel.tsx): the same report, in the page's closed root. */

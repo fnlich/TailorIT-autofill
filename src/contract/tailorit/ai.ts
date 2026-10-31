@@ -3,14 +3,15 @@ import { AUTOFILL_FIELD_KINDS, InstantSchema } from './common';
 import { ATS_KINDS } from './lookup';
 
 // The AI steps the extension asks TailorIT for, run as tasks on its Claude queue: the tiebreak between options it
-// could not choose between (POST /api/autofill/ai/pick), what an unusual question asks (POST …/ai/classify) and, from
-// Phase 6, a draft for a free-text question (POST …/ai/draft). Claude has no authority over a form: a pick answers an
-// option's index or null, a classification a category from a closed list or null, a draft capped text the person must
-// confirm. TailorIT checks every answer before it stores it, and the extension checks it again against the form as it
-// is then. Page text travels only in the fields named for it (labels, options, hints, sections, questions, job text),
-// which TailorIT quotes to Claude as data, never as instructions; profile text only in a pick's intended value and its
-// aliases. Nothing sensitive is sent: the extension screens a question before it asks, and TailorIT answers one that
-// still looks sensitive null (reason `sensitive`) without asking Claude.
+// could not choose between (POST /api/autofill/ai/pick), what an unusual question asks (POST …/ai/classify) and a
+// draft for a free-text question (POST …/ai/draft). Claude has no authority over a form: a pick answers an option's
+// index or null, a classification a category from a closed list or null, a draft capped text the person must confirm.
+// TailorIT checks every answer before it stores it, and the extension checks it again against the form as it is then.
+// Page text travels only in the fields named for it (labels, options, hints, sections, questions, job text, a draft's
+// company and job title), which TailorIT quotes to Claude as data, never as instructions; profile text only in a
+// pick's intended value and its aliases (a draft's facts TailorIT reads itself). Nothing sensitive is sent: the
+// extension screens a question before it asks, and TailorIT answers one that still looks sensitive null (reason
+// `sensitive`) without asking Claude.
 //
 // A route waits up to AUTOFILL_AI_WAIT_MS for its task and answers 200 with the finished task, else 202 {taskId}; the
 // extension then polls GET /api/ai/tasks/:id every AUTOFILL_AI_POLL_MS (DELETE on the same path cancels it). The same
@@ -18,8 +19,7 @@ import { ATS_KINDS } from './lookup';
 // of the task's input), never a second one; a finished task is read again by its id, within
 // AUTOFILL_TASK_RETENTION_MS, rather than asked again. A token sees only these kinds' tasks: any other id answers 404.
 
-/** The task kinds the extension creates. All three are reserved at once, so ai_tasks is rebuilt once; drafts' route
- *  and handler come in Phase 6. */
+/** The task kinds the extension creates. All three were reserved at once, so ai_tasks was rebuilt once. */
 export const AUTOFILL_TASK_KINDS = ['autofill_pick', 'autofill_classify', 'autofill_draft'] as const;
 export type AutofillTaskKind = (typeof AUTOFILL_TASK_KINDS)[number];
 
@@ -347,7 +347,7 @@ export const AutofillClassifyResultSchema = z.object({
 });
 export type AutofillClassifyResult = z.infer<typeof AutofillClassifyResultSchema>;
 
-/** One free-text question to draft an answer for (Phase 6). */
+/** One free-text question to draft an answer for. */
 export const AutofillDraftQuestionSchema = z.object({
   key: ItemKeySchema,
   /** The question as the form shows it: page text. */
@@ -357,7 +357,12 @@ export const AutofillDraftQuestionSchema = z.object({
 });
 export type AutofillDraftQuestion = z.infer<typeof AutofillDraftQuestionSchema>;
 
-/** POST /api/autofill/ai/draft (scope ai:run; Phase 6): at most three questions of one form. */
+/**
+ * POST /api/autofill/ai/draft (scope ai:run): at most three questions of one form. TailorIT writes each draft from the
+ * person's resume and autofill profile, which it reads itself (never the sensitive part, and no contact details), and
+ * from the job text; a question that looks sensitive is answered `sensitive` without asking. 404 `not_found` when
+ * `resumeId` is not one of the account's resumes.
+ */
 export const AutofillDraftRequestSchema = z
   .object({
     questions: z.array(AutofillDraftQuestionSchema).min(1).max(AUTOFILL_AI_LIMITS.draft.questions),
@@ -380,8 +385,14 @@ export type AutofillDraftRequest = z.infer<typeof AutofillDraftRequestSchema>;
 
 /**
  * Why a draft is what it is. `drafted`: within its cap. `trimmed`: cut at the last sentence end within the cap.
- * `empty`: the resume had nothing to say. `too_long`: over the cap with no sentence end to cut at. `canary`: it held a
- * canary. `ai_reference`: it spoke of being an AI. `sensitive`: TailorIT did not ask. Only the first two carry text.
+ * `empty`: the resume and the profile had nothing to say. `too_long`: over the cap with no sentence end to cut at.
+ * `canary`: the answer held one of the page's canaries. `ai_reference`: it spoke of being an AI. `wrapper`: the draft
+ * held the prompt's `<untrusted>` wrapper, the JSON sentinels or the fake CLI's scenario tag. `contact`: it named a
+ * link, an email address or a phone number that is not the person's own (in the autofill profile). `invalid`: its
+ * answer was not a text, or the answer as a whole was not trusted (it did not name each question exactly once).
+ * `sensitive`: TailorIT did not ask, because the question looked sensitive or like an attention check. Only `drafted`
+ * and `trimmed` carry text. A canary or talk of being an AI anywhere in Claude's reply, prose outside the JSON
+ * included, discards every draft of the task with that reason.
  */
 export const AUTOFILL_DRAFT_REASONS = [
   'drafted',
@@ -390,6 +401,9 @@ export const AUTOFILL_DRAFT_REASONS = [
   'too_long',
   'canary',
   'ai_reference',
+  'wrapper',
+  'contact',
+  'invalid',
   'sensitive',
 ] as const;
 export type AutofillDraftReason = (typeof AUTOFILL_DRAFT_REASONS)[number];
@@ -434,7 +448,7 @@ export type AutofillPickTask = z.infer<typeof AutofillPickTaskSchema>;
 /** POST …/ai/classify's 200 answer. */
 export const AutofillClassifyTaskSchema = taskOf('autofill_classify', AutofillClassifyResultSchema);
 export type AutofillClassifyTask = z.infer<typeof AutofillClassifyTaskSchema>;
-/** POST …/ai/draft's 200 answer (Phase 6). */
+/** POST …/ai/draft's 200 answer. */
 export const AutofillDraftTaskSchema = taskOf('autofill_draft', AutofillDraftResultSchema);
 export type AutofillDraftTask = z.infer<typeof AutofillDraftTaskSchema>;
 

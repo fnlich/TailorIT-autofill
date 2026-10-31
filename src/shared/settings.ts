@@ -19,6 +19,8 @@ export const SettingsSchema = z.strictObject({
   interpretations: z.strictObject({ postingCountryForLegal: z.boolean(), twoOrMoreRaces: z.boolean() }),
 }) satisfies z.ZodType<Settings>;
 
-/** What a content script needs to know of the settings for a run. */
-export const ContentSettingsSchema = SettingsSchema.pick({ panel: true, autoAdvance: true, llm: true });
+/** What a content script needs to know of the settings for a run: panel placement, auto-advance, the AI switches, and
+ *  whether to offer saving a fixed answer (Phase 6: off means no row is marked for the offer). */
+export const ContentSettingsSchema = SettingsSchema.pick({ panel: true, autoAdvance: true, llm: true,
+  offerToSaveAnswers: true });
 export type ContentSettings = z.infer<typeof ContentSettingsSchema>;

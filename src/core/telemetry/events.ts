@@ -6,6 +6,9 @@
  *   spread from a row, so nothing a row carries besides them (its key, label, section, reason) can ride along.
  * - Outcome: a written field (filled, verified) is a success; one left for the person (flagged, blocked) a fail. A
  *   skipped field (no profile answer, a hidden one, a honeypot) was never attempted and counts as neither.
+ * - An AI draft that waits for the person's confirmation (Phase 6) is not counted yet: its outcome is the person's to
+ *   give. Once confirmed it is a success (verified), once they edited it a fail (changed-by-you); a saved answer counts
+ *   as any written field, by its status.
  * - The counts are one entry per combination of the five, so at most MAX_TELEMETRY_COUNTS entries exist.
  */
 import { FIELD_KINDS, MATCHER_STAGES, PLATFORMS, type FillStatus, type Platform } from '../enums';
@@ -34,17 +37,23 @@ export function outcomeOf(status: FillStatus): TelemetryEvent['outcome'] | null 
   }
 }
 
-/** One event per row that was attempted (outcomeOf not null), with the frame's platform and whether its page
- *  addressed AI tools. Nothing of a row but its kind, matcher stage and status is read. */
+/** Whether a row's outcome is known yet: every row but an AI draft that waits for the person's confirmation. */
+export function outcomeKnown(row: Pick<FillResult, 'provenance' | 'needsUserAction'>): boolean {
+  return !(row.provenance === 'llm-draft' && row.needsUserAction);
+}
+
+/** One event per row that was attempted (outcomeOf not null) and whose outcome is known (outcomeKnown), with the
+ *  frame's platform and whether its page addressed AI tools. Nothing of a row but its kind, matcher stage, status,
+ *  provenance and whether it needs the person is read; only the first three reach the event. */
 export function telemetryEventsOf(input: {
   platform: Platform;
   tripwireTriggered: boolean;
-  rows: ReadonlyArray<Pick<FillResult, 'kind' | 'matcherStage' | 'status'>>;
+  rows: ReadonlyArray<Pick<FillResult, 'kind' | 'matcherStage' | 'status' | 'provenance' | 'needsUserAction'>>;
 }): TelemetryEvent[] {
   const events: TelemetryEvent[] = [];
   for (const row of input.rows) {
     const outcome = outcomeOf(row.status);
-    if (outcome === null) continue;
+    if (outcome === null || !outcomeKnown(row)) continue;
     events.push({ platform: input.platform, fieldKind: row.kind, matcherStage: row.matcherStage, outcome,
       tripwireTriggered: input.tripwireTriggered });
   }

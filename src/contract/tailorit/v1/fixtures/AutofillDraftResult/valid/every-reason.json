@@ -1,0 +1,19 @@
+{
+  "drafts": [
+    {
+      "key": "greenhouse|main|why-northwind|none|0",
+      "text": null,
+      "reason": "wrapper"
+    },
+    {
+      "key": "greenhouse|main|anything-else|none|0",
+      "text": null,
+      "reason": "contact"
+    },
+    {
+      "key": "greenhouse|main|tell-us-about-a-project|none|0",
+      "text": null,
+      "reason": "invalid"
+    }
+  ]
+}

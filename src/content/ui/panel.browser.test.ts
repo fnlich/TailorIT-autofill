@@ -59,7 +59,10 @@ function mount(doc: Document = document, frameId = 2, options: { confirm?: boole
         calls.described.push(key);
         return [{ index: 1, label: 'Bachelor of Science' }];
       },
-      ...(options.confirm ? { confirmDraft: (key: string) => calls.confirmed.push(key) } : {}),
+      ...(options.confirm ? { confirmDraft: async (key: string) => {
+        calls.confirmed.push(key);
+        return COPY.panel.draftConfirmed;
+      } } : {}),
       closed: () => {
         calls.closed += 1;
       },
@@ -151,6 +154,8 @@ describe('the in-page panel', () => {
     await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
     await trustedClick(ui, confirm());
     expect(calls.confirmed).toEqual(['why']);
+    // Phase 6, wave 2: the panel says what came of it, under its title.
+    await vi.waitFor(() => expect(panel.querySelector('[data-panel-feedback]')?.textContent).toBe(COPY.panel.draftConfirmed));
 
     // A page layer drawn over the panel that lets clicks through: the person saw the layer, not our button.
     const decoy = document.createElement('div');

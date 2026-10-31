@@ -2,13 +2,14 @@
   "apiVersion": 1,
   "zod": "4.6.7",
   "files": {
-    "ai.ts": "df7ea13f00a232a3939406256a00cfe5d1cb73f192362d976922e7ae8f18a99f",
+    "ai.ts": "945b2a807ab3e962a5b522fa3cb137e91a25ef0446626ddff9250bf2ac667322",
+    "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "92eee1fd65c7f7e79026ab88299a8d71e39b524ed30add9eb19a44dac38fc156",
     "connect.ts": "4c4da225a06a368e458253fbe961100d5087c16be85daa6469ad51a5b1c0c645",
-    "index.ts": "eafd8bf833f7ea9b7139ec79e57c5f99ef472617e2794e36ff75901cd28fc8ca",
+    "index.ts": "5d30457b067f37f1c8ceb104ae269edb079ed90d98d91586f9efcc6c13eb8937",
     "lookup.ts": "a5dac1363488e309d485e8038592c66f3dd548ac32c9197c209378ad6bfa8f8a",
     "profile.ts": "646005a2a2346d4d75a6e70cf65b99b5bb143ec319c31e81e2fe68adc5bc0304",
-    "registry.ts": "8edabe425a5ae1c56380dd68c64adfd305ca6b0d6729ca0d35e0bc9a5d975532",
+    "registry.ts": "8217a4e731d2809103e05b6bfede7ddae33f6a176b25a48adf7abbfd7cc1905d",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
     "version.ts": "bbe0bdc979576627c7ce14431efa53c2d36cd93ad77922ac8100bd0711e402fc"
   },
@@ -46,6 +47,7 @@
     "AutofillDraftRequest/valid/golden.json": "d5316170d715aa0dbc31557e1920afdcd74458066af1e27ba3aeed57ab8cf3b6",
     "AutofillDraftResult/invalid/text-over-5000.json": "abea5f35347e80fa5e612188bfb0567ad6a7c0ebbd30c7153767b9586be8aa75",
     "AutofillDraftResult/invalid/unknown-reason.json": "976929bec00a9f8bb87d56db90208e9b5d80eac3ac7113eda48a167a76203a2f",
+    "AutofillDraftResult/valid/every-reason.json": "058caaf682d3d7c57535996f9ff8102b0fae2259eb3afc3d213ec072bfbdadb2",
     "AutofillDraftResult/valid/golden.json": "d14d96c0f4bf746cb2f613c422e556df984df880977285e6757da6217a5fc326",
     "AutofillDraftResult/valid/refused.json": "a94bd57bd2665304eff63f5db89874ae35f07b73315d07d01ac71e206c165784",
     "AutofillDraftTask/invalid/numeric-text.json": "f3cf9c8347fba36ba1c81b959dfacf3bc8210484494445b5291181de2b282292",
@@ -121,6 +123,23 @@
     "AutofillResumeList/invalid/unknown-file-kind.json": "837aa7db5027680296c9f5a5ebdfab381a4b1df6497043cd575790676aa9114e",
     "AutofillResumeList/valid/golden.json": "4ac733a1f445e870dc1856a05e0eb30a35da5087681866905ab4d174bdd66393",
     "AutofillResumeList/valid/none.json": "ad13fbd1e9c76a3beae2d83d0bca99a43a150efdf5daddb4a29d00c8ffd8e615",
+    "AutofillSavedAnswer/invalid/blank-text.json": "0faffb7620b6a84076d1966f387f8530cda80b11c6cf245ed7b3b57285ea8fb2",
+    "AutofillSavedAnswer/invalid/company-scope-for-options.json": "eb6c59f3c227060d993f3705afa2199767d392a79fc4a2e05ea15164ddd4207d",
+    "AutofillSavedAnswer/invalid/file-kind.json": "510c175710c5956dced5f25598c64ddf35f5f6465277c0584c632cef9e041d1a",
+    "AutofillSavedAnswer/invalid/hash-not-hex.json": "b946e34628d331e0bbcd21801147b1352e5c2f38990b20dfb606ec505b039c4d",
+    "AutofillSavedAnswer/invalid/key-with-a-line-break.json": "9287a340a654fc462097e8a264caa3831f6969694eb98b9d82d820285c7a10f7",
+    "AutofillSavedAnswer/invalid/option-index-not-label.json": "36563958e0a4c4655f516d426de55297d457dd003c9d058c9062f9988776634a",
+    "AutofillSavedAnswer/invalid/scope-of-another-platform.json": "9c53fafc37e53b228c6c70ef87d6f40b7dab7f1358e9cc961ff329b6be5424d1",
+    "AutofillSavedAnswer/invalid/text-for-a-checkbox.json": "e7693e88bb2b772f26a119a7120dfcd554e3d9d36e6d3f9f21fe0b66150007e4",
+    "AutofillSavedAnswer/invalid/two-options-for-a-select.json": "b0998903a11d5c546dc791cce65a8460d48567b03b2169fc23c8a5ce90bf1fd0",
+    "AutofillSavedAnswer/invalid/unknown-scope-platform.json": "41a72ff003e5fe71302775b0a70960b405660b70b96f8eec94728a4b9194b698",
+    "AutofillSavedAnswer/valid/checked.json": "0370a67115de0ebd7914f80ac82e24ea47465e5191a897514040aef2f1aebfc2",
+    "AutofillSavedAnswer/valid/golden.json": "4f3153db1bb8cefb3d7770ea4d7a230da7d64c726bd2905b163bdd02a444239f",
+    "AutofillSavedAnswer/valid/one-option.json": "d40b455c9a05aed4995931feb43239d1f9a7f1fa1b88378183f72174d21be2bd",
+    "AutofillSavedAnswer/valid/several-options.json": "f730cee0bed596558cb9343902f01a6bec2815eb8567dc239c98dc575886e3be",
+    "AutofillSavedAnswerList/invalid/no-limit.json": "70687c8fa319500122348b82c7c442f45cb27c5e4c1791a0fae18d46acc50f05",
+    "AutofillSavedAnswerList/valid/golden.json": "aa0f54d0092800debebe05785e8f62de197aff860307226e5d4edae300d02273",
+    "AutofillSavedAnswerList/valid/none.json": "f1e22f5bb5ae16059b570708a67538574fbdec3c2b457bd267041023fd3a13b3",
     "AutofillSeed/invalid/unknown-kind.json": "17586670b9000e090345d45c645f6c634872bbfabdebda854b9deea860a7a0e5",
     "AutofillSeed/valid/golden.json": "40c000cc8d7879a67edf8f9c66ec96868cfee1a892362d6f441ce2e1949b7691",
     "AutofillSeed/valid/no-resume.json": "e2f0306345ca9e9b190c21566a494781c035a2d95603b9e2818c3fc589754c66",
@@ -170,7 +189,15 @@
     "PutAutofillProfileBody/valid/golden.json": "d41d64cbcda4a6a1a4c45a358007a45a030c14066b1b147c8164171071584fa8",
     "PutAutofillProfileBody/valid/year-and-month.json": "7f1ed281bd26bbcd2a53927ec1844524fc2f63deef4ee712b4ed069cc0908b1d",
     "PutAutofillProfileResponse/invalid/never-saved.json": "9535de822ea124de069bc1bcb553a9e5ab36dd718d714f3654bbc3f700da7a17",
-    "PutAutofillProfileResponse/valid/golden.json": "71b2f2859d041b39aa563c4f8b5065ec5855271029bebe2e076afe7b5d219b4f"
+    "PutAutofillProfileResponse/valid/golden.json": "71b2f2859d041b39aa563c4f8b5065ec5855271029bebe2e076afe7b5d219b4f",
+    "PutAutofillSavedAnswerBody/invalid/company-scope-for-a-checkbox.json": "e9be042840ef79730e2915febc4aafe7e068a90e03ddc6a9a92ce744f87041e9",
+    "PutAutofillSavedAnswerBody/invalid/file.json": "09d3c562a0cb8eb5d9a8af156ed7bd78625cae6e7e2026b1dc754b9a2dc14515",
+    "PutAutofillSavedAnswerBody/invalid/no-answer.json": "c564711c4708e0a25f077aa095cbcb799555c793194ec3949b0419354511670c",
+    "PutAutofillSavedAnswerBody/invalid/option-index-not-label.json": "a70440ad42180224b058bf320e06765be88679a1ec4fb3f051bd732896aaaa2c",
+    "PutAutofillSavedAnswerBody/invalid/unknown-category.json": "3f1d9024bbe7ffa3200eae2c782523f1896a99d6750f6b67af5b7a613162a2b8",
+    "PutAutofillSavedAnswerBody/valid/checked.json": "67793f9fea60295925c32e36e7f76f33a2034ffeaf184de22c8dbdd362106d91",
+    "PutAutofillSavedAnswerBody/valid/free-text-for-one-company.json": "456a1c3b40019c4d09d914dbaa7368576ecc542e4dfed897e5b9ebffa03e81e6",
+    "PutAutofillSavedAnswerBody/valid/golden.json": "ad732ff2b3743e6e3266e5df799258b73e8a3050f06a56adaa2aa10c18fd6811"
   },
   "schemas": {
     "AutofillErrorBody": {
@@ -8036,6 +8063,9 @@
                   "too_long",
                   "canary",
                   "ai_reference",
+                  "wrapper",
+                  "contact",
+                  "invalid",
                   "sensitive"
                 ]
               }
@@ -8112,6 +8142,9 @@
                           "too_long",
                           "canary",
                           "ai_reference",
+                          "wrapper",
+                          "contact",
+                          "invalid",
                           "sensitive"
                         ]
                       }
@@ -8612,6 +8645,9 @@
                               "too_long",
                               "canary",
                               "ai_reference",
+                              "wrapper",
+                              "contact",
+                              "invalid",
                               "sensitive"
                             ]
                           }
@@ -8701,6 +8737,564 @@
           "additionalProperties": false
         }
       ]
+    },
+    "AutofillSavedAnswer": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "questionKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^\\s\\p{Cc}](?:[^\\p{Cc}]*[^\\s\\p{Cc}])?$"
+        },
+        "optionSetHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": ""
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            }
+          ]
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": ""
+            },
+            {
+              "type": "string",
+              "maxLength": 250,
+              "pattern": "^(?:greenhouse|lever|ashby|workday):\\S{1,200}$"
+            }
+          ]
+        },
+        "fieldKind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "textarea",
+            "select",
+            "radio",
+            "checkbox",
+            "checkbox-group",
+            "combobox",
+            "multiselect",
+            "typeahead-remote",
+            "date"
+          ]
+        },
+        "questionLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "greenhouse",
+                "lever",
+                "ashby",
+                "workday"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "text"
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 5000
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "options"
+                },
+                "labels": {
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "labels"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "checked"
+                },
+                "checked": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "kind",
+                "checked"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+      },
+      "required": [
+        "id",
+        "questionKey",
+        "optionSetHash",
+        "scope",
+        "fieldKind",
+        "questionLabel",
+        "platform",
+        "answer",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillSavedAnswerList": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "items": {
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "questionKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300,
+                "pattern": "^[^\\s\\p{Cc}](?:[^\\p{Cc}]*[^\\s\\p{Cc}])?$"
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": ""
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  }
+                ]
+              },
+              "scope": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": ""
+                  },
+                  {
+                    "type": "string",
+                    "maxLength": 250,
+                    "pattern": "^(?:greenhouse|lever|ashby|workday):\\S{1,200}$"
+                  }
+                ]
+              },
+              "fieldKind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "radio",
+                  "checkbox",
+                  "checkbox-group",
+                  "combobox",
+                  "multiselect",
+                  "typeahead-remote",
+                  "date"
+                ]
+              },
+              "questionLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "platform": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "greenhouse",
+                      "lever",
+                      "ashby",
+                      "workday"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answer": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 5000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "options"
+                      },
+                      "labels": {
+                        "minItems": 1,
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 300
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "labels"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "checked"
+                      },
+                      "checked": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "checked"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              }
+            },
+            "required": [
+              "id",
+              "questionKey",
+              "optionSetHash",
+              "scope",
+              "fieldKind",
+              "questionLabel",
+              "platform",
+              "answer",
+              "createdAt",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "limit": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "items",
+        "total",
+        "limit"
+      ],
+      "additionalProperties": false
+    },
+    "PutAutofillSavedAnswerBody": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "questionKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^\\s\\p{Cc}](?:[^\\p{Cc}]*[^\\s\\p{Cc}])?$"
+        },
+        "optionSetHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": ""
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            }
+          ]
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": ""
+            },
+            {
+              "type": "string",
+              "maxLength": 250,
+              "pattern": "^(?:greenhouse|lever|ashby|workday):\\S{1,200}$"
+            }
+          ]
+        },
+        "fieldKind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "textarea",
+            "select",
+            "radio",
+            "checkbox",
+            "checkbox-group",
+            "combobox",
+            "multiselect",
+            "typeahead-remote",
+            "date"
+          ]
+        },
+        "questionLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "greenhouse",
+                "lever",
+                "ashby",
+                "workday"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answer": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "text"
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 5000
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "options"
+                },
+                "labels": {
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                }
+              },
+              "required": [
+                "kind",
+                "labels"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "checked"
+                },
+                "checked": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "kind",
+                "checked"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "category": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "first_name",
+                "middle_name",
+                "last_name",
+                "full_name",
+                "preferred_name",
+                "email",
+                "phone",
+                "phone_country_code",
+                "address_line1",
+                "address_line2",
+                "city",
+                "region",
+                "postal_code",
+                "country",
+                "location",
+                "linkedin",
+                "github",
+                "portfolio",
+                "website",
+                "current_employer",
+                "current_title",
+                "employer",
+                "job_title",
+                "role_description",
+                "years_experience",
+                "school",
+                "degree",
+                "field_of_study",
+                "graduation_date",
+                "gpa",
+                "language",
+                "language_proficiency",
+                "skills",
+                "start_date",
+                "end_date",
+                "notice_period",
+                "relocation",
+                "work_arrangement",
+                "referral_source",
+                "resume_upload",
+                "cover_letter_upload",
+                "sensitive_eeo",
+                "sensitive_legal",
+                "sensitive_compensation",
+                "consent",
+                "attention_check",
+                "free_text_question"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "questionKey",
+        "optionSetHash",
+        "scope",
+        "fieldKind",
+        "questionLabel",
+        "platform",
+        "answer",
+        "category"
+      ],
+      "additionalProperties": false
     }
   },
   "routes": [
@@ -8855,6 +9449,16 @@
       "accepted": "AutofillTaskAccepted"
     },
     {
+      "method": "POST",
+      "path": "/api/autofill/ai/draft",
+      "caller": "either",
+      "scope": "ai:run",
+      "request": "AutofillDraftRequest",
+      "status": 200,
+      "response": "AutofillDraftTask",
+      "accepted": "AutofillTaskAccepted"
+    },
+    {
       "method": "GET",
       "path": "/api/ai/tasks/:id",
       "caller": "either",
@@ -8872,6 +9476,36 @@
       "request": null,
       "status": 200,
       "response": "AutofillTaskView",
+      "accepted": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/autofill/answers",
+      "caller": "either",
+      "scope": "profile:read",
+      "request": null,
+      "status": 200,
+      "response": "AutofillSavedAnswerList",
+      "accepted": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/autofill/answers",
+      "caller": "either",
+      "scope": "answers:write",
+      "request": "PutAutofillSavedAnswerBody",
+      "status": 200,
+      "response": "AutofillSavedAnswer",
+      "accepted": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/autofill/answers/:id",
+      "caller": "either",
+      "scope": "answers:write",
+      "request": null,
+      "status": 204,
+      "response": null,
       "accepted": null
     }
   ]

@@ -43,6 +43,10 @@ export const REASON_CODES = [
   'llm-classified-needs-review',
   // the Phase 4 review (R9): a widget's list read only in part, so its answer may lie past what was read
   'options-incomplete',
+  // drafts (Phase 6): a draft TailorIT discarded, or one past the field's cap, is never written: the resume had nothing
+  // to say; it was longer than the field allows; it spoke of being an AI; it held the prompt's wrapper or sentinels; it
+  // named a link, an email or a phone number that is not the person's
+  'draft-empty', 'draft-too-long', 'draft-ai-reference', 'draft-wrapper', 'draft-contact',
   // a bug
   'internal-error',
 ] as const;
