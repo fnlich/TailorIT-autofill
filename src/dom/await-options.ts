@@ -5,7 +5,8 @@
  * been quiet for OPTIONS_QUIET_MS; at OPTIONS_CAP_MS it answers never-loaded, and the field is flagged
  * options-never-loaded. It applies to a pending list that:
  * - has no options, or only placeholders;
- * - has an option whose text is a loading phrase (settle.ts's LOADING_OPTION_PHRASES);
+ * - has an option whose text is a loading phrase (the core's one list, core/text/loading.ts, through settle.ts's
+ *   isLoadingOptionLabel; such a row is never a usable option, so it counts in no option-set hash);
  * - carries aria-busy, or shows an indeterminate progress bar, itself or in its field container;
  * - or still has the hash it had before its parent changed (known from the reveal edges, or because its options
  *   changed during the last settle).

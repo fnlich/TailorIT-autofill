@@ -31,6 +31,9 @@
   States' and Texas is chosen from it; ZIP code appears and gets 78701; Yes reveals the sponsorship questions (No,
   from the explicit values) and the clearance question (blank and flagged); the visa question is never revealed;
   Other reveals "Please specify", which gets LinkedIn; Phone is reset after every write.
+  The e2e spec's No case serves this page at .../conditional-reveal-no/apply with the mock's sensitive-not-authorized
+  part (US authorized: false, the rest golden): No reveals the sponsorship questions (No again) and the visa question
+  (blank and flagged, since neither part states a visa type), and the clearance question stays hidden.
 -->
 <html lang="en">
 <head>

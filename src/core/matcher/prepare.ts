@@ -3,13 +3,15 @@
  * (guard/injected.ts): from then on only the clean part is normalized, hashed, matched or sent to an LLM, and an
  * option with nothing left is unusable. Preparation also resolves each clean label in the vocabulary, reads the
  * answer lists (placeholder, other, exclusive, decline), parses degrees in the degree domain, and indexes the tokens
- * for the fuzzy stage's prefilter. It runs once per option set, so matchOne's budget (§4.13) covers matching only.
- * Two things are read from the list as a whole: options that share a main key and differ only in their brackets
- * (whose brackets are then never redundant), and, in the country domain, a phone picker's dial code beside the name
- * ("Afghanistan+93"), which is left out of what is matched.
+ * for the fuzzy stage's prefilter. A loading row ("Loading...", "Please wait": text/loading.ts) counts as a
+ * placeholder, as the scanner's option-set hash counts it (dom/option-hash.ts). It runs once per option set, so
+ * matchOne's budget (§4.13) covers matching only. Two things are read from the list as a whole: options that share a
+ * main key and differ only in their brackets (whose brackets are then never redundant), and, in the country domain, a
+ * phone picker's dial code beside the name ("Afghanistan+93"), which is left out of what is matched.
  */
 import { cutInjected } from '../guard/injected';
 import { parseDegree } from '../profile/degreeParse';
+import { isLoadingRow } from '../text/loading';
 import { keyWithBrackets, normalize, type NormContext } from '../text/normalize';
 import type { Option } from '../types/field';
 import type { VocabDomain } from '../types/intent';
@@ -80,8 +82,10 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
     const norm = normalize(text, context);
     const fullKey = norm.qualifiers.length === 0 ? norm.key : keyWithBrackets(text, context);
     const answerKey = context === 'answer' ? norm.key : normalize(text, 'answer').key;
-    // An option that held only injected text is not a placeholder: it is unusable, as injected-option-only.
-    const placeholder = !(cut.injected && clean === '') && placeholders.has(answerKey);
+    // An option that held only injected text is not a placeholder: it is unusable, as injected-option-only. A loading
+    // row ("Loading...") is one: a list that shows nothing else waits for its options (matchOne), never a no-match.
+    const placeholder = !(cut.injected && clean === '')
+      && (placeholders.has(answerKey) || isLoadingRow(text, answerKey));
     let entityHits: readonly KeyHit[] = [];
     if (vocabDomain(domain) && clean !== '') {
       const whole = fullKey === norm.key ? [] : vocab.lookup(domain, fullKey);

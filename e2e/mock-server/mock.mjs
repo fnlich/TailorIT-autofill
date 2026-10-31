@@ -117,6 +117,9 @@ export const MOCK_SCENARIOS = Object.freeze({
   unauthorized: 'Every token request gets 401 not_signed_in: TailorIT no longer knows the token.',
   'version-mismatch': 'The mock speaks API version 2: every token request gets 409 conflict, its header naming 2.',
   'sensitive-forbidden': 'GET /profile/sensitive gets 403: this connection may not read the sensitive part.',
+  'sensitive-not-authorized': 'GET /profile/sensitive answers the golden part with US authorized: false (the rest as '
+    + 'golden), and both profile routes name the next revision, so a worker drops a sensitive part it held and fetches '
+    + 'this one. It holds until the next reset (times does not apply).',
   'profile-unavailable': 'GET /profile gets 500.',
   'lookup-slow': "POST /lookup answers after delayMs (default 30 s, past the worker's 25 s timeout).",
   'lookup-fails': 'POST /lookup gets 500.',
@@ -256,14 +259,29 @@ export function createMock() {
     return found;
   }
 
+  /** Whether a scenario is on, without using up a request (a scenario that holds until the reset).
+   *  @param {ScenarioName} name */
+  const isOn = (name) => state.scenarios.some((scenario) => scenario.name === name);
+
   const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
 
+  /** The revision an envelope carries: the contract example's, or the next one under sensitive-not-authorized, so
+   *  that both profile routes agree. @param {{ revision: number }} envelope */
+  const revisionOf = (envelope) => (isOn('sensitive-not-authorized') ? envelope.revision + 1 : envelope.revision);
+
   function profileEnvelope() {
-    return { ...example('AutofillProfileEnvelope'), profile: readJson(PROFILE_FILE) };
+    const envelope = example('AutofillProfileEnvelope');
+    return { ...envelope, revision: revisionOf(envelope), profile: readJson(PROFILE_FILE) };
   }
 
   function sensitiveEnvelope() {
-    return { ...example('AutofillSensitiveEnvelope'), sensitive: readJson(SENSITIVE_FILE) };
+    const envelope = example('AutofillSensitiveEnvelope');
+    const sensitive = readJson(SENSITIVE_FILE);
+    if (isOn('sensitive-not-authorized')) {
+      sensitive.workAuthorization = sensitive.workAuthorization.map((/** @type {{ country: string }} */ entry) =>
+        (entry.country === 'US' ? { ...entry, authorized: { state: 'value', value: false } } : entry));
+    }
+    return { ...envelope, revision: revisionOf(envelope), sensitive };
   }
 
   /** A lookup answer with its suggested resume pointing at the golden PDF. @param {string} name */

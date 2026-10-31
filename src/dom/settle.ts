@@ -19,7 +19,7 @@
  * The quiet-window machinery (quietWait) and the busy checks are shared with awaitOptions (await-options.ts).
  */
 import type { Adapter } from '../adapters/types';
-import { normalize } from '../core/text/normalize';
+import { isLoadingText } from '../core/text/loading';
 import { CONTROL_SELECTOR, kindOf } from './kinds';
 import { cleanOptionLabel } from './option-hash';
 import { isInOwnUi } from './own-ui';
@@ -191,27 +191,11 @@ function isFieldControl(el: Element): boolean {
 
 // ── Loading phrases ──────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Option texts that mean a list is still loading when they are the whole text ("Please wait..."). */
-export const LOADING_OPTION_PHRASES = ['Loading', 'Fetching', 'Retrieving', 'Searching', 'Updating', 'Please wait',
-  'One moment', 'One moment please', 'Just a moment'] as const;
-/** Words that mean a list is still loading when an option's text starts with them ("Loading states...",
- *  "Fetching cities"). */
-export const LOADING_OPTION_LEADS = ['Loading', 'Fetching', 'Retrieving', 'Searching'] as const;
-
-/** Both lists as answer keys: compared through the core's normalizer, as the placeholders are (option-hash.ts), so
- *  case, punctuation and an ellipsis make no difference. */
-const LOADING_KEYS: ReadonlySet<string> = new Set(LOADING_OPTION_PHRASES.map((phrase) => answerKey(phrase)));
-const LOADING_LEAD_KEYS: readonly string[] = LOADING_OPTION_LEADS.map((lead) => `${answerKey(lead)} `);
-
-function answerKey(text: string): string {
-  return normalize(text, 'answer').key;
-}
-
-/** True when an option's label says its list is still loading ("Loading...", "Please wait", "Fetching cities"). The
- *  injected text is cut first, as for every option label. */
+/** True when an option's label says its list is still loading ("Loading...", "Please wait", "Fetching cities..."). The
+ *  injected text is cut first, as for every option label, and the phrases are the core's one list
+ *  (core/text/loading.ts), which the scanner's hash and the matcher read too: such a row is never a usable option. */
 export function isLoadingOptionLabel(label: string): boolean {
-  const key = answerKey(cleanOptionLabel(label));
-  return LOADING_KEYS.has(key) || LOADING_LEAD_KEYS.some((lead) => key.startsWith(lead));
+  return isLoadingText(cleanOptionLabel(label));
 }
 
 /** A visible select one of whose visible options is a loading phrase. */

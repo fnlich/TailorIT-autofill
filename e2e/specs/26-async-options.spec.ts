@@ -98,8 +98,10 @@ async function neverLoaded(filled: Filled): Promise<void> {
   const flagged = [...filled.versions, filled.report]
     .find((version) => rowOf(version, 'State')?.reason === 'options-never-loaded');
   expect(flagged, 'a report version with the state flagged').toBeDefined();
-  expect(flagged!.updatedAt - await requestedAt(filled.page), 'flagged within the cap plus 1 s')
-    .toBeLessThanOrEqual(OPTIONS_CAP_MS + 1_000);
+  const elapsed = flagged!.updatedAt - await requestedAt(filled.page);
+  // Kept in the test's annotations, so a run shows how close it came to the bound.
+  test.info().annotations.push({ type: 'flagged after (ms)', description: String(elapsed) });
+  expect(elapsed, 'flagged within the cap plus 1 s').toBeLessThanOrEqual(OPTIONS_CAP_MS + 1_000);
 }
 
 test.describe('a dependent list whose options load asynchronously', () => {

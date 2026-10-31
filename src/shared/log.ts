@@ -83,6 +83,10 @@ export const LOG_CODES = [
   // page hides (the Phase 2 review's S5 and S1).
   'content.ui-click-refused',
   'content.form-hidden',
+  // The reactive loop (Phase 3): how it ended (the pass count and the end, as flags), and which busy signs (by name
+  // only, never page text) kept a page busy at a settle's cap.
+  'content.loop-ended',
+  'content.page-busy',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

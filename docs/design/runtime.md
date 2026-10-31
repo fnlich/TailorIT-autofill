@@ -1198,26 +1198,34 @@ There are eleven traps, plus 1b and 3b. They are the first regression suite (Pha
 
 ### 11.e Synthetic fixtures
 
-**`conditional-reveal` (Phase 3)**
+**`conditional-reveal` (Phase 3)** (`fixtures/synthetic/conditional-reveal/`, `e2e/specs/25-conditional-reveal.spec.ts`)
 - **Fixture:**
-  - "Are you legally authorized to work in the US?" (No reveals a sponsorship select and a visa-type select);
-  - a "How did you hear about us?" select whose "Other" reveals "Please specify";
-  - country → state options that swap;
-  - a field the page resets twice;
-  - Q1 removes Q2 once answered.
-- **Assertions:**
+  - "Are you legally authorized to work in the United States?": either answer reveals two sponsorship selects (now, and in the future); No also reveals a visa-type select, and Yes a security-clearance select. The golden profile answers Yes; the mock's `sensitive-not-authorized` scenario (US `authorized: false`, the rest golden, at the next revision so the worker fetches it afresh) answers No;
+  - a "How did you hear about us?" select whose "Other" reveals "Please specify" (the golden referral source, LinkedIn, is not among its options);
+  - a Country select (Canada when the page loads, placed after the fields it changes) whose choice swaps the State/Province list's options;
+  - Phone, which the page clears after every write;
+  - Q1 removes Q2 once answered: the Country write removes Postal code, written just before, and puts a new ZIP code box in its place.
+- **Assertions (Yes):**
   - authorization is filled from the explicit profile value;
-  - revealed fields are filled on the next pass, with `revealedBy` set to the parent;
+  - revealed fields are filled on the next pass, with `revealedBy` set to the parent and the edges in RunState: the sponsorship answers from their explicit values; the clearance question, which nothing answers, blank and flagged; the visa question stays hidden and untouched;
   - at most 4 passes;
-  - "Other" plus the text box are filled (matcher stage e);
+  - "Other" plus the text box are filled (matcher stage e): the box gets exactly the profile's source, once;
   - the state matches after the swap;
-  - the reset field is flagged after more than 2 flips and then left alone;
-  - the removed field's answer is dropped and reported;
+  - the reset field is flagged `value-oscillated` after more than 2 flips (reset, our rewrite, reset) and then left alone;
+  - the removed field's answer is dropped and reported (`field-disappeared`), and ZIP code names Country as its parent, which only the DOM layer's attribution gives (the nearest writer before it is City);
   - no `page-busy`.
+- **Assertions (No):** No from the explicit value; the sponsorship answers again from their explicit values; the visa-type question, which neither part answers, blank and flagged `legal-not-in-profile`; the clearance question stays hidden and untouched; the sensitive part fetched once.
 
-**`async-options` (Phase 3)**
-- **Fixture:** state options arrive 400–1200 ms after the country is chosen, with a "Loading..." option, `aria-busy` and a progressbar. One variant never loads.
-- **Assertions:** the state is verified and settle reports settled. The never-loading variant is flagged `options-never-loaded` within the cap plus 1 s, and the run still completes.
+**`async-options` (Phase 3)** (`fixtures/synthetic/async-options/`, `e2e/specs/26-async-options.spec.ts`)
+- **Fixture:** choosing a country replaces the state list with a "Loading..." option, sets `aria-busy` on the list and on its field container (which holds no other control) and shows a progress bar inside it: the list's own busy signs, which `settle()` counts only up to `OPTIONS_CAP_MS`. The variant is in the address (`async-options-<variant>`):
+  - `fast` and `slow`: the states arrive after 400 ms and after 1200 ms;
+  - `never`: the request never answers, and the list's busy signs stay;
+  - `failed`: after 600 ms the signs clear and only the placeholder is left, its option-set hash unchanged;
+  - `page-busy`: the states arrive after 800 ms, but `aria-busy` on the form and a progress bar outside any one list's field stay.
+- **Assertions:**
+  - `fast`, `slow`: the state is verified, written once and only after the states arrived, in a later pass than the Country write, and settle reports settled (no `page-busy`);
+  - `never`, `failed`: the state is flagged `options-never-loaded` within the cap plus 1 s of the Country write, nothing is written to it, there is no `page-busy`, and the run still completes;
+  - `page-busy`: `settle()` reaches its cap after the Country write, the run pauses with the `page-busy` notice, and the state is left unwritten and flagged `page-busy`.
 
 **`remote-typeahead` (Phase 4)**
 - **Fixture:** an ARIA 1.2 combobox with an in-page fake server (latency and a query log).

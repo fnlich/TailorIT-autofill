@@ -17,8 +17,12 @@
  *   MAX_VALUE_FLIPS (reset, rewrite, reset), flagged value-oscillated, and leaves the page's blank alone;
  * - at most 4 passes, and no page-busy notice;
  * - then assertTrapInvariants.
- * It waits for Phase 3's wave 2: the content runtime's loop on the core's bookkeeping (src/core/loop) and the DOM's
- * settle() (src/dom/settle.ts). Phase 2's single pass fills only what shows when the page loads.
+ * And the No branch, with the mock's sensitive-not-authorized part (US authorized: false, the rest golden, at the next
+ * revision, so the worker fetches it afresh): No, from that explicit value, reveals the sponsorship questions (No again)
+ * and the visa-type question, which neither part answers, so it stays blank and flagged; the clearance question only
+ * Yes reveals stays hidden and untouched.
+ * The loop is the content runtime's (src/content/loop.ts) on the core's bookkeeping (src/core/loop) and the DOM's
+ * settle() (src/dom/settle.ts).
  */
 import { MAX_VALUE_FLIPS } from '../../src/core/loop/bookkeeping';
 import { expect, test } from '../fixtures.ts';
@@ -27,7 +31,7 @@ import { GOLDEN, GOLDEN_PROFILE } from '../helpers/golden.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { mock } from '../helpers/mock.ts';
 import { checked, eventsOn, selectedTexts } from '../helpers/page-state.ts';
-import { baseKeyOfRow, pageCounter, REVEAL, syntheticLabels, writesOn } from '../helpers/reactive.ts';
+import { baseKeyOfRow, fixtureAddress, pageCounter, REVEAL, syntheticLabels, writesOn } from '../helpers/reactive.ts';
 
 const AUTHORIZED = 'Are you legally authorized to work in the United States?';
 const SPONSOR_NOW = 'Do you currently require visa sponsorship to work in the United States?';
@@ -79,8 +83,10 @@ test.describe('conditional fields', () => {
       expect(rowOf(report, VISA)).toBeUndefined();
       await expect(page.locator('#visa-type')).toBeHidden();
       expect(await eventsOn(page, '#visa-type')).toEqual([]);
-      // The sensitive part was fetched once, for the question shown at load, and answered the revealed ones too.
-      expect(await mock.requestsTo('GET /api/autofill/profile/sensitive')).toHaveLength(1);
+      // The sensitive part was fetched at most once, for the question shown at load, and answered the revealed ones
+      // too. Not once in every run: the worker keeps a part it read for the same token and revision, so after an
+      // earlier test in this browser it fetches none.
+      expect((await mock.requestsTo('GET /api/autofill/profile/sensitive')).length).toBeLessThanOrEqual(1);
     });
 
     const source = row(report, SOURCE);
@@ -144,5 +150,48 @@ test.describe('conditional fields', () => {
 
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(REVEAL.url) });
+  });
+
+  test('a person not authorized in the US: No reveals the sponsorship and visa-type questions', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    await tailorit.scenario('sensitive-not-authorized');
+    const url = fixtureAddress('conditional-reveal-no');
+    routeLog.serve({ [url]: REVEAL.file });
+    const page = await extContext.newPage();
+    await page.goto(url);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(report.status).toBe('review');
+
+    // No, from the explicit value the sensitive part now holds.
+    const authorized = row(report, AUTHORIZED);
+    expect(authorized).toMatchObject({ category: 'workAuth.authorized', status: 'verified', provenance: 'profile' });
+    expect(await checked(page, 'authorized')).toEqual(['no']);
+    // Fetched once, at the new revision: nothing of the golden part the worker may have held was used.
+    expect(await mock.requestsTo('GET /api/autofill/profile/sensitive')).toHaveLength(1);
+    // The sponsorship questions, revealed by either answer: still the explicit no, now and in the future.
+    for (const [label, category, control] of [[SPONSOR_NOW, 'workAuth.sponsorshipNow', '#sponsorship-now'],
+      [SPONSOR_FUTURE, 'workAuth.sponsorshipFuture', '#sponsorship-future']] as const) {
+      expect(row(report, label), label).toMatchObject({ category, status: 'verified', provenance: 'profile', wrote: true });
+      expect(row(report, label).detail?.revealedBy, `${label} names its parent`).toBe(baseKeyOfRow(authorized));
+      await expect(page.locator(control), label).toHaveValue('no');
+    }
+    // The visa type, which only No reveals: neither part of the profile states one, so blank and flagged.
+    expect(row(report, VISA)).toMatchObject({ category: 'workAuth.visaType', status: 'flagged', reason: 'legal-not-in-profile',
+      wrote: false, provenance: null });
+    expect(row(report, VISA).detail?.revealedBy).toBe(baseKeyOfRow(authorized));
+    await expect(page.locator('#visa-type')).toHaveValue('');
+    expect(await eventsOn(page, '#visa-type')).toEqual([]);
+    // The clearance question only Yes reveals: hidden, with no row and no event.
+    expect(rowOf(report, CLEARANCE)).toBeUndefined();
+    await expect(page.locator('#clearance')).toBeHidden();
+    expect(await eventsOn(page, '#clearance')).toEqual([]);
+    const edges = (await ext.runState(applicationKeyOf(url)!))?.revealEdges ?? [];
+    for (const child of [SPONSOR_NOW, SPONSOR_FUTURE, VISA]) {
+      expect(edges, `No revealed ${child}`).toContainEqual([baseKeyOfRow(authorized), baseKeyOfRow(row(report, child))]);
+    }
+    expect(noticeCount(report, 'page-busy')).toBe(0);
+
+    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
+      applicationKey: applicationKeyOf(url) });
   });
 });

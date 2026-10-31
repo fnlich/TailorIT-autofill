@@ -5,14 +5,17 @@
  *   option label), the notices and the counters. It is checked against the strict FrameReportSchema before it leaves.
  *   report/put goes out at most REPORT_PUTS_PER_SECOND times a second per frame: a put that would pass the limit waits
  *   for its slot, with dom/time.ts's deadline as the only timer.
- * - RunState holds keys, counts and the plan's persistableCanaries (the canaries the worker allows, never one that
- *   equals a profile value), never a field value. The worker stamps its own updatedAt.
+ * - RunState holds keys, counts, the reactive loop's reveal edges (base keys, at most MAX_REVEAL_EDGES) and the plan's
+ *   persistableCanaries (the canaries the worker allows, never one that equals a profile value), never a field value.
+ *   The worker stamps its own updatedAt.
  * A hidden file input beside a visible upload control that did not qualify gets a flagged row of its own here
  * (upload-control-not-recognized); it is never written, focused or sent an event.
  */
 import type { AdapterId } from '../adapters/types';
 import type { Platform } from '../core/enums';
+import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
 import { sectionKey } from '../core/text/keys';
+import type { BaseKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { PauseReason, RunState, RunStatus } from '../core/types/run';
 import { deadline, monotonicNow } from '../dom/time';
@@ -120,11 +123,13 @@ export interface RunStateInput {
   tripwire: { triggered: boolean; hits: number };
   policyDecision: RunState['policyDecision'];
   rows: readonly FillResult[] | null;
+  /** The reactive loop's parent and child edges (revealEdgesOf); none for a run that filled nothing. */
+  revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
   startedAt: number;
   now: number;
 }
 
-/** A RunState for a single-step run (Phase 2: no step signature, no reveal edges, no AI tasks). */
+/** A RunState for a single-step run (no step signature and no AI tasks before Phases 4 and 5). */
 export function buildRunState(input: RunStateInput): RunState {
   const handoff = input.status === 'handoff';
   return {
@@ -142,7 +147,7 @@ export function buildRunState(input: RunStateInput): RunState {
     canarySet: [...input.canarySet].slice(0, 32),
     tripwire: { triggered: input.tripwire.triggered, hits: Math.max(0, input.tripwire.hits) },
     policyDecision: input.policyDecision,
-    revealEdges: [],
+    revealEdges: (input.revealEdges ?? []).slice(0, MAX_REVEAL_EDGES).map(([parent, child]) => [parent, child]),
     aiTasks: {},
     lastFill: input.rows === null ? null : lastFillOf(input.rows),
     startedAt: Math.max(0, Math.floor(input.startedAt)),

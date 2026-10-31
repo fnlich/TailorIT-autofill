@@ -25,7 +25,7 @@ async function startOn(html: string, href: string | (() => string), worker: Fake
   const fixture = await loadFixture(document, html);
   const fake = createFakeWorker(worker);
   const runtime = await startContentRuntime(fake.platform, fixture.doc, {
-    href: typeof href === 'string' ? () => href : href, isTop: true, quiet: { quietMs: 60 } });
+    href: typeof href === 'string' ? () => href : href, isTop: true, settle: { quietMs: 60 } });
   runtimes.push(runtime);
   return { fixture, fake, runtime };
 }
@@ -210,7 +210,7 @@ describe('the launcher in the page', () => {
       if (message.type === 'panel/open') opened.push(inClick);
     } });
     const runtime = await startContentRuntime(fake.platform, document, { href: () => trapUrl('launcher'), isTop: true,
-      quiet: { quietMs: 60 } });
+      settle: { quietMs: 60 } });
     runtimes.push(runtime);
     expect(await runtime.fill()).toBe('review');
     expect(input.value).toBe('alex.rivera.f7q2@example.com');

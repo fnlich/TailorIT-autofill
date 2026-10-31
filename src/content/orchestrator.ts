@@ -1,8 +1,8 @@
 /*
- * A run in one frame (docs/design/runtime.md §8.2, §8.3, §8.8; docs/ARCHITECTURE.md "Orchestrator"). Phase 2's run is
- * one pass: begin, the policy gate, the raw scan and tripwire, pause detection, plan and write, settle, verify, the
- * final Guard, report. Phase 3 replaces fillStep() (one pass, then settleWrites()) with the reactive loop on the
- * core's bookkeeping, up to MAX_PASSES; Phase 5 wraps that in the step machine. The rest stays.
+ * A run in one frame (docs/design/runtime.md §8.2, §8.3, §8.8; docs/ARCHITECTURE.md "Orchestrator"): begin, the
+ * policy gate, the raw scan and tripwire, pause detection, the fill step, the final Guard, report. The fill step is the
+ * reactive loop (loop.ts) on the core's bookkeeping, at most MAX_PASSES passes of scan, plan, write and settle; Phase 5
+ * wraps it in the step machine.
  * 1. run/begin {applicationKey, trigger, dryRun} answers the run id, the settings and the policy states. In a frame
  *    inside another page, the run goes on only while the frame's launcher can be seen there (IntersectionObserver v2,
  *    ui/visible.ts): otherwise it fills nothing, reports the form-hidden notice and ends stopped (S1). The top frame
@@ -18,9 +18,11 @@
  *    push the real one out (CORE-15); only the 32 nearest go to plan/request and RunState. The policy patterns run over
  *    its hidden passages too: a hit only they make adds policy-hidden-text, and stops nothing.
  * 4. A sign-in, account, email-code or CAPTCHA step pauses: nothing on it is filled, and Continue starts afresh.
- * 5. One pass (pass.ts), the settle (quiet.ts), the verification and the final Guard (verify.ts).
- * 6. report/put (no values) and runstate/put (the plan's persistableCanaries, the tripwire counts, lastFill, status
- *    review); the highlights and the launcher's "Review N".
+ * 5. The reactive loop (loop.ts: each pass's writes through pass.ts, settled and verified), then the final Guard
+ *    (verify.ts) over the loop's rows and its latest scan. A page still busy at a settle's cap pauses the run (handoff,
+ *    page-busy, the page-busy notice): what is left is flagged page-busy, and Continue starts a fresh run.
+ * 6. report/put (no values; counters.passes the loop's) and runstate/put (the plan's persistableCanaries, the tripwire
+ *    counts, lastFill, the loop's reveal edges, status review); the highlights and the launcher's "Review N".
  * An 'expired' answer to run/begin, plan/request or report/put begins the run again, once (the same call() will carry
  * plan/poll when Phase 4's fields wait for the LLM; before then nothing ever awaits); a second one ends the run in the
  * launcher's error state. The run ends for invalidation only on the platform's word (channel.ts).
@@ -28,25 +30,25 @@
 import type { Adapter } from '../adapters/types';
 import type { ApplicationRef } from '../adapters';
 import { scanTripwires } from '../core/guard/tripwire';
-import type { FieldSpec } from '../core/types/field';
+import type { BaseKey, FieldSpec } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { PauseReason, RunState, RunStatus } from '../core/types/run';
 import { detectPause, type PauseSignal } from '../dom/pause-detect';
 import { rawScan } from '../dom/raw-scan';
-import type { ScanResult, SettleResult } from '../dom/types';
+import type { ScanResult } from '../dom/types';
 import type { ErrorCode } from '../messaging/envelope';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
-import { RunAborted, runPass, type PassResult, type PlanAnswer } from './pass';
+import { runLoop, type LoopResult, type OptionsTimings, type SettleTimings } from './loop';
+import { RunAborted, type PlanAnswer } from './pass';
 import { frameHitsOf, hiddenPolicyHits, policyGateOf, postingOutsideFrame, type PolicyView } from './policy';
-import { waitForQuiet, type QuietOptions } from './quiet';
-import { buildReport, buildRunState, NoticeBook, uploadRow, type ReportLimiter } from './report';
+import { buildReport, buildRunState, NoticeBook, uploadRow, type ReportHeader, type ReportLimiter } from './report';
 import { highlightItems } from './targets';
 import type { LauncherView } from './ui/launcher';
 import type { PolicyChoice } from './ui/notices';
 import type { PageUi } from './ui/page-ui';
-import { finalGuard, verifyWritten } from './verify';
+import { finalGuard } from './verify';
 
 /** Why a run could not go on: a refusal from the worker, or a second 'expired'. */
 export class RunFailure extends Error {
@@ -75,7 +77,10 @@ export interface RunPage {
 
 /** Overrides of the run's waits, for tests. */
 export interface RunOptions {
-  quiet?: Omit<QuietOptions, 'signal'>;
+  /** settle()'s windows and caps. */
+  settle?: SettleTimings;
+  /** awaitOptions()' window and cap. */
+  awaitOptions?: OptionsTimings;
   resume?: { idleMs?: number; releaseAfterMs?: number };
 }
 
@@ -96,6 +101,9 @@ export interface RunEnv {
   /** The run's rows, once it has them: field/describe reads their suggestions. */
   onRows(rows: readonly FillResult[]): void;
 }
+
+/** A report's counters before anything was scanned for the fill. */
+const NO_COUNTERS: ReportHeader['counters'] = { passes: 0, hiddenControlsIgnored: 0, deferredFields: 0 };
 
 /** What a pause sets: the run's status, its reason, and the notice. */
 function pauseOf(signal: PauseSignal): { status: RunStatus; reason: PauseReason | null; notice: 'auth' | 'captcha' } {
@@ -119,6 +127,8 @@ export class FillRun {
   /** How it ended, once it has. */
   ended: RunEnd | null = null;
   private readonly controller = new AbortController();
+  /** Aborted when the person stops the run: a wait for a list's options ends at once. */
+  private readonly stopping = new AbortController();
   private readonly notices = new NoticeBook();
   private choose: ((choice: PolicyChoice) => void) | null = null;
   private stopRequested = false;
@@ -158,6 +168,7 @@ export class FillRun {
   stop(): void {
     if (this.decline()) return;
     this.stopRequested = true;
+    this.stopping.abort();
   }
 
   /** Ends the run at once: its planned writes are dropped (invalidation, the document leaving, a new document). */
@@ -242,9 +253,7 @@ export class FillRun {
   }
 
   /** report/put: the run's rows and notices, never a value. A refusal other than a second 'expired' is logged. */
-  private async report(rows: readonly FillResult[], scan: ScanResult | null): Promise<void> {
-    const counters = { passes: scan === null ? 0 : 1, hiddenControlsIgnored: scan?.counters.hiddenControlsIgnored ?? 0,
-      deferredFields: scan?.counters.deferredFields ?? 0 };
+  private async report(rows: readonly FillResult[], counters: ReportHeader['counters'] = NO_COUNTERS): Promise<void> {
     const { page } = this.env;
     const answer = await this.call<'report/put'>((runId) => {
       const report = buildReport({ runId, frameId: this.frameId, platform: page.app.platform, adapter: page.adapter.id,
@@ -256,15 +265,15 @@ export class FillRun {
     if ('failed' in answer) log('content.report-refused');
   }
 
-  /** runstate/put: keys, counts and the canaries the worker allows; never a value. Not for a dry run. */
-  private async putRunState(canarySet: readonly string[], rows: readonly FillResult[] | null, startedAt: number):
-    Promise<void> {
+  /** runstate/put: keys, counts, reveal edges and the canaries the worker allows; never a value. Not for a dry run. */
+  private async putRunState(canarySet: readonly string[], rows: readonly FillResult[] | null, startedAt: number,
+    revealEdges: ReadonlyArray<readonly [BaseKey, BaseKey]> = []): Promise<void> {
     if (this.request.dryRun) return;
     const { page } = this.env;
     const runState = buildRunState({ applicationKey: page.app.applicationKey, platform: page.app.platform,
       status: this.status, pauseReason: this.pauseReason, canarySet,
       tripwire: { triggered: this.tripwireHits > 0, hits: this.tripwireHits }, policyDecision: this.policyDecision, rows,
-      startedAt, now: this.env.now() });
+      revealEdges, startedAt, now: this.env.now() });
     const answer = await this.env.channel.request({ v: 1, type: 'runstate/put', runState });
     this.alive();
     if (!answer.ok) log('content.runstate-refused');
@@ -304,7 +313,6 @@ export class FillRun {
     ui?.showFocus(null);
     this.showNotices();
     this.launcher({ state: 'running', action: null });
-    let pass: PassResult | null = null;
     try {
       const frame = await env.frame();
       this.alive();
@@ -321,7 +329,7 @@ export class FillRun {
           this.notices.add('form-hidden');
           this.status = 'stopped';
           this.showNotices();
-          await this.report([], null);
+          await this.report([]);
           this.launcher({ state: 'idle', action: 'fill' });
           return this.end('stopped');
         }
@@ -340,14 +348,14 @@ export class FillRun {
         const waiting = this.waitForChoice();
         // Handled here as well: if the report fails or the run is aborted first, nothing waits on it.
         waiting.catch(() => undefined);
-        await this.report([], null);
+        await this.report([]);
         const choice = await waiting;
         this.alive();
         ui?.hidePolicyCard();
         if (choice === 'declined') {
           this.policyDecision = 'declined';
           this.status = 'stopped';
-          await this.report([], null);
+          await this.report([]);
           await this.putRunState([], null, startedAt);
           this.launcher({ state: 'idle', action: 'fill' });
           return this.end('stopped');
@@ -380,7 +388,7 @@ export class FillRun {
         this.pauseReason = pause.reason;
         this.notices.add(pause.notice);
         this.showNotices();
-        await this.report([], null);
+        await this.report([]);
         await this.putRunState(canaries, null, startedAt);
         this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause' });
         return this.end('paused');
@@ -389,40 +397,42 @@ export class FillRun {
       // The person stopped the run before anything was planned: nothing is.
       if (this.stopRequested) {
         this.status = 'stopped';
-        await this.report([], null);
+        await this.report([]);
         await this.putRunState(canaries, null, startedAt);
         this.launcher({ state: 'idle', action: 'fill' });
         return this.end('stopped');
       }
 
-      // 5. Fill (Phase 3 replaces fillStep with the reactive loop).
+      // 5. The fill step: the reactive loop, then the final Guard over its rows and its latest scan.
       this.status = 'fill-step';
-      pass = await this.fillStep(canaries, inMemory);
-      const settled = pass.written.length > 0 ? await this.settleWrites() : null;
-      if (settled !== null && !settled.settled) this.notices.add('page-busy');
-      const fresh = pass.scan.rescan();
-      const rows = new Map(pass.rows);
-      for (const written of pass.written) rows.set(written.key, verifyWritten(fresh, written));
-      const guarded = finalGuard({ adapter: page.adapter, root: page.root, canaries: inMemory }, fresh, rows,
-        pass.written);
-      const after = guarded.reverted.size > 0 ? fresh.rescan() : fresh;
+      const loop = await this.fillStep(canaries, inMemory);
+      const last = loop.scan;
+      const guarded = finalGuard({ adapter: page.adapter, root: page.root, canaries: inMemory }, last,
+        new Map(loop.rows.map((row) => [row.key, row])), loop.written);
+      const after = guarded.reverted.size > 0 ? last.rescan() : last;
 
-      // 6. Report.
-      const all = [...guarded.rows.values(), ...pass.scan.unrecognisedUploads.map(uploadRow)];
-      this.noticesFromRows(all, pass.scan);
-      this.status = this.stopRequested ? 'stopped' : 'review';
+      // 6. Report. A page still busy at a settle's cap pauses the run: Continue starts afresh.
+      const busy = loop.busy !== null;
+      if (busy) this.notices.add('page-busy');
+      const all = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
+      this.noticesFromRows(all, last);
+      const end: RunEnd = this.stopRequested ? 'stopped' : busy ? 'paused' : 'review';
+      this.status = end === 'stopped' ? 'stopped' : end === 'paused' ? 'handoff' : 'review';
+      this.pauseReason = end === 'paused' ? 'page-busy' : null;
       this.showNotices();
       env.onRows(all);
       // A dry run wrote nothing, so only what would need the person is outlined.
       const outlined = this.request.dryRun
         ? new Map([...guarded.rows].filter(([, row]) => row.needsUserAction)) : guarded.rows;
       env.ui()?.setHighlights(highlightItems(after, outlined, guarded.removeSelection));
-      await this.report(all, pass.scan);
-      await this.putRunState(pass.persistableCanaries, all, startedAt);
+      await this.report(all, { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
+        deferredFields: last.counters.deferredFields });
+      await this.putRunState(loop.persistableCanaries, all, startedAt, loop.revealEdges);
       const count = all.filter((row) => row.needsUserAction).length;
-      this.launcher(this.stopRequested ? { state: 'idle', action: 'fill' }
-        : { state: 'review', action: 'open-review', count });
-      return this.end(this.stopRequested ? 'stopped' : 'review');
+      this.launcher(end === 'stopped' ? { state: 'idle', action: 'fill' }
+        : end === 'paused' ? { state: 'needs-you', action: 'continue', reason: 'pause' }
+          : { state: 'review', action: 'open-review', count });
+      return this.end(end);
     } catch (failure) {
       if (failure instanceof Invalidated || failure instanceof RunAborted || this.controller.signal.aborted) {
         return this.end('aborted');
@@ -434,15 +444,14 @@ export class FillRun {
       return this.end('error');
     } finally {
       this.choose = null;
-      for (const written of pass?.written ?? []) written.resume?.release();
     }
   }
 
-  /** Phase 2's fill step: one pass. Phase 3 runs passes until nothing is pending (MAX_PASSES), settling between.
-   *  `canaries` go to plan/request; the pass scans each write for `inMemory`, all of the frame's canaries. */
-  private fillStep(canaries: readonly string[], inMemory: readonly string[]): Promise<PassResult> {
+  /** The fill step: the reactive loop (loop.ts). `canaries` go to plan/request; each write is scanned for `inMemory`,
+   *  all of the frame's canaries. */
+  private fillStep(canaries: readonly string[], inMemory: readonly string[]): Promise<LoopResult> {
     const { env } = this;
-    return runPass({
+    return runLoop({
       content: env.content,
       adapter: env.page.adapter,
       root: env.page.root,
@@ -453,17 +462,13 @@ export class FillRun {
       signal: this.controller.signal,
       valid: () => env.channel.valid(),
       stopped: () => this.stopRequested,
+      stopSignal: this.stopping.signal,
       plan: (specs, pass) => this.plan(specs, pass, canaries),
       runId: () => this.runId,
       ...(env.options.resume ? { resume: env.options.resume } : {}),
-    }, 0);
-  }
-
-  /** Phase 2's settle after the writes (quiet.ts); Phase 3 calls dom/settle.ts's settle() here instead. */
-  private async settleWrites(): Promise<SettleResult> {
-    const result = await waitForQuiet(this.env.page.root, { ...this.env.options.quiet, signal: this.controller.signal });
-    this.alive();
-    return result;
+      ...(env.options.settle ? { settle: env.options.settle } : {}),
+      ...(env.options.awaitOptions ? { options: env.options.awaitOptions } : {}),
+    });
   }
 
   /** The notices the rows and the scan raise: attention checks, controls that need the person's click, fields not

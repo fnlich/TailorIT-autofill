@@ -77,7 +77,7 @@ async function start(html: string, id: string, options: RunOptions = {}) {
   const honeypots = watchHoneypots(fixture.doc);
   const worker = createFakeWorker(options.worker);
   const runtime = await startContentRuntime(worker.platform, fixture.doc, {
-    href: () => options.href ?? trapUrl(id), isTop: true, quiet: { quietMs: 60 },
+    href: () => options.href ?? trapUrl(id), isTop: true, settle: { quietMs: 60 },
     ...(options.adapter ? { adapters: () => [options.adapter!] } : {}),
   });
   runtimes.push(runtime);
@@ -502,7 +502,7 @@ describe('the policy gate, before anything is filled', () => {
     const fixture = await loadFixture(document, plain);
     const worker = createFakeWorker();
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => trapUrl('policy-f'),
-      quiet: { quietMs: 60 } });
+      settle: { quietMs: 60 } });
     runtimes.push(runtime);
     expect(await runtime.fill()).toBe('review');
     expect(worker.of('frame/hello')[0]).toMatchObject({ isTop: false, hasForm: true });
@@ -761,7 +761,7 @@ describe('a form in a frame its page hides (S1)', () => {
     const events = logEvents(inner);
     const worker = createFakeWorker();
     const runtime = await startContentRuntime(worker.platform, inner, { href: () => trapUrl('hidden-frame'), isTop: false,
-      quiet: { quietMs: 60 } });
+      settle: { quietMs: 60 } });
     runtimes.push(runtime);
     return { inner, events, worker, runtime };
   }

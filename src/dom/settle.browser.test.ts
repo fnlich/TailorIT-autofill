@@ -318,7 +318,8 @@ describe('busySigns', () => {
 describe('isLoadingOptionLabel', () => {
   it.each([
     ['Loading...', true], ['Loading\u{2026}', true], ['LOADING', true], ['Please wait', true], ['One moment please', true],
-    ['Loading states...', true], ['Fetching cities', true], ['Searching...', true],
+    ['Loading states...', true], ['Fetching cities...', true], ['Searching...', true],
+    ['Fetching cities', false], ['Searching for a new role', false], ['Loading dock supervisor', false],
     ['Texas', false], ['Lodging', false], ['Load balancer', false], ['Searchlight', false], ['Select a state', false],
     ['', false],
   ])('%s: %s', (label, expected) => {
