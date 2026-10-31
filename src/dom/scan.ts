@@ -7,20 +7,26 @@
  *   labelSource 'none', so the planner can skip it as no-visible-label (a visible honeypot marked autocomplete="email"
  *   included).
  * - Password and one-time-code controls are never fields; they mean the step is an auth pause.
- * - A text input with role="combobox" (react-select) is a 'combobox' with options 'lazy' and option-set hash 'lazy':
- *   ARIA widgets are filled from Phase 4, so until then the filler refuses it as widget-unsupported. So is a control
- *   the adapter declares a widget for (widgetFor): it is reported as the declared kind with options 'lazy', and never
- *   grouped, so the core plans no write for it (waiting for options) and nothing types into it.
+ * - ARIA widgets (Phase 4, widgets/aria.ts: standard ARIA only): a combobox (a text input with role="combobox", as
+ *   react-select draws one, or any other element with that role), a multiselect (a combobox whose list takes several,
+ *   or a listbox of its own with aria-multiselectable), a radio group of role="radio" members, and a Yes/No group of
+ *   toggle buttons (aria-pressed). So is a control the adapter declares a widget for (widgetFor), as the declared
+ *   kind. A widget is never grouped and gets its labels by the same visible-label rules. Its options are 'lazy'
+ *   (option-set hash 'lazy') until it is opened, unless its list is already shown whole; once the run has opened it
+ *   (the loop's waiting path), ScanOptions.widgetReadings gives the field what it read, by base key, and the key
+ *   carries their hash; a combobox read as a remote search is a 'typeahead-remote' with no options (hash 'none'). A
+ *   group's options are its members. A native control inside a widget's list, or the text box inside an ARIA 1.1
+ *   combobox, is part of the widget and never a field of its own. Only the widget helpers (widgets/) write a widget.
  * - Keys come from the core's keys.ts (labelSlug, optionSetHash, assignOrdinals, baseKey, fieldKey), so the worker and
  *   every frame build the same strings.
  * - A field's element is never cached across a write: ScanResult.rescan() scans afresh and target(key) finds the
  *   field's live elements in that scan.
  */
-import type { Adapter } from '../adapters/types';
+import type { Adapter, WidgetDecl } from '../adapters/types';
 import type { FieldFormat, FieldKind, FieldVisibility, Platform } from '../core/enums';
 import { assignOrdinals, baseKey, fieldKey, labelSlug, OPTION_SET_LAZY, OPTION_SET_NONE } from '../core/text/keys';
 import { capCodePoints } from '../core/text/fold';
-import type { Constraints, FieldKey, FieldSpec, Option, SectionRef } from '../core/types/field';
+import type { BaseKey, Constraints, CurrentValue, FieldKey, FieldSpec, Option, SectionRef } from '../core/types/field';
 import { isControlCamouflaged } from './camouflage';
 import { constraintsOf } from './constraints';
 import {
@@ -37,10 +43,17 @@ import { sectionFinder } from './sections';
 import {
   MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN, TEXT_CAP_LABEL,
 } from './thresholds';
-import type { FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload } from './types';
+import type {
+  FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload, WidgetKind, WidgetReading, WidgetTarget,
+} from './types';
 import { currentValueOf, type SelectableOption } from './values';
 import { readSelectOptions, visiblePlaceholder, visibleText, type VisibleOption } from './visible-text';
 import { visibilityOf, isUserVisible } from './visibility';
+import {
+  ariaWidgetKind, editableOf, isChosen, isMultiselectable, isUnavailable, isWidgetPart, listOf, membersOf, roleOf,
+  WIDGET_ROOT_SELECTOR,
+} from './widgets/aria';
+import { chosenLabels, memberLabel, scrolls, shownOptions } from './widgets/options';
 
 /** What a scan needs besides the root and the adapter. */
 export interface ScanOptions {
@@ -56,6 +69,13 @@ export interface ScanOptions {
    * it, and its rescans, which reuse these options, see it. A node the page replaces is not in it.
    */
   heldPlaceholders?: WeakMap<Element, string>;
+  /**
+   * What the run has read of its lazy widgets, by their fields' base keys (Phase 4): the loop's waiting path opens a
+   * widget the planner needs the options of and keeps what it showed here, and a scan that sees a widget's list shown
+   * whole keeps that too. A widget with a reading is given its options (and the key their hash) while its list is
+   * closed.
+   */
+  widgetReadings?: Map<BaseKey, WidgetReading>;
 }
 
 /** A control that may become (part of) a field. */
@@ -66,9 +86,10 @@ interface Candidate {
   format: FieldFormat | undefined;
   visibility: FieldVisibility;
   proxy: Proxy | null;
-  /** The adapter declared a widget for this control (widgetFor): it is its own field, of the declared kind, with
-   *  options 'lazy', and nothing fills it before Phase 4. */
+  /** The adapter declared a widget for this control (widgetFor): it is its own field, of the declared kind. */
   declared: boolean;
+  /** An ARIA widget's parts, or the declared widget's: it is its own field, never grouped. */
+  widget: WidgetTarget | null;
 }
 
 /** A field before its key: one control, or a radio or checkbox group. */
@@ -94,6 +115,8 @@ interface Draft {
   nameAttr: string;
   idAttr: string;
   autocomplete: string[];
+  /** An ARIA or declared widget's parts. */
+  widget: WidgetTarget | null;
 }
 
 /** Scans a frame's form root. */
@@ -105,19 +128,40 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const candidates: Candidate[] = [];
   const unrecognised: Array<{ input: HTMLInputElement; control: Element }> = [];
 
-  for (const el of collectControls(root)) {
-    const kind = kindOf(el);
-    if (!kind.field) {
+  const found = collectFields(root);
+  // Every combobox's list, so a listbox that is one is not taken for a field of its own.
+  const lists = new Set(found.filter((el) => roleOf(el) === 'combobox').map((el) => listOf(el))
+    .filter((list): list is Element => list !== null));
+  for (const el of found) {
+    const native = el.matches(CONTROL_SELECTOR);
+    // A native control inside a widget's list, or an ARIA 1.1 combobox's text box, is that widget's.
+    if (native && isWidgetPart(el)) continue;
+    const kind = native ? kindOf(el) : { field: false as const, auth: false };
+    if (native && !kind.field) {
       if (kind.auth && isUserVisible(el, cache)) authFields += 1;
       continue;
     }
     // A widget the adapter declares for this control (Lever's location search on its text input) is reported as that
-    // widget, never as the native control it is built on.
-    const widget = adapter?.widgetFor?.(el) ?? null;
+    // widget, never as the native control it is built on; else an ARIA widget, by its role (widgets/aria.ts).
+    const declared = adapter?.widgetFor?.(el) ?? null;
+    const aria = declared !== null ? null : !native || (kind.field && kind.kind === 'combobox')
+      ? ariaWidgetKind(el, lists) : null;
+    if (!native && declared === null && aria === null) continue;
+    const widget = declared !== null ? anatomyOf(el, declared.kind as WidgetKind, declared)
+      : aria !== null ? anatomyOf(el, aria, null) : null;
     const verdict = visibilityOf(el, cache);
+    if (!native) {
+      // An ARIA widget a person cannot see is no field, and no native control to count.
+      if (verdict.visible && widget !== null) {
+        candidates.push({ el, kind: widget.kind, format: undefined, visibility: 'visible', proxy: null,
+          declared: declared !== null, widget });
+      } else if (verdict.deferred) counters.deferredFields += 1;
+      continue;
+    }
+    if (!kind.field) continue;
     if (verdict.visible) {
       candidates.push({ el, kind: widget?.kind ?? kind.kind, format: widget === null ? kind.format : undefined,
-        visibility: 'visible', proxy: null, declared: widget !== null });
+        visibility: 'visible', proxy: null, declared: declared !== null, widget });
       continue;
     }
     if (verdict.deferred) {
@@ -128,7 +172,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       const input = el as HTMLInputElement;
       const proxy = proxyOf(input, adapter, root, cache);
       if (proxy !== null) {
-        candidates.push({ el, kind: kind.kind, format: kind.format, proxy, declared: false,
+        candidates.push({ el, kind: kind.kind, format: kind.format, proxy, declared: false, widget: null,
           visibility: kind.kind === 'file' ? 'hidden-file-with-visible-control' : 'hidden-native-with-visible-label' });
         continue;
       }
@@ -150,22 +194,27 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const ordinals = assignOrdinals(kept.map((draft, i) => ({ platform: options.platform, section: draft.section,
     labelSlug: slugs[i]! })));
   const targets = new Map<FieldKey, FieldTarget>();
-  const fields = kept.map((draft, i): ScannedField => {
+  const fields = kept.map((scanned, i): ScannedField => {
+    const parts = { platform: options.platform, section: scanned.section, labelSlug: slugs[i]!, ordinal: ordinals[i]! };
+    const base = baseKey(parts);
+    const draft = scanned.widget === null ? scanned : withReading(scanned, base, options.widgetReadings);
     const optionSetHash = draft.options === null ? OPTION_SET_NONE : draft.options === 'lazy' ? OPTION_SET_LAZY
-      : hashOfOptions(draft.options.map((option) => option.label));
-    const parts = { platform: options.platform, section: draft.section, labelSlug: slugs[i]!, ordinal: ordinals[i]! };
+      : draft.kind === 'typeahead-remote' && draft.options.length === 0 ? OPTION_SET_NONE
+        : hashOfOptions(draft.options.map((option) => option.label));
     const key = fieldKey({ ...parts, optionSetHash });
+    const current: CurrentValue = draft.widget !== null ? widgetCurrent(draft, cache)
+      : currentValueOf(draft.kind, draft.control, draft.selectable);
     const field: ScannedField = {
-      key, baseKey: baseKey(parts), platform: options.platform, section: draft.section, kind: draft.kind,
+      key, baseKey: base, platform: options.platform, section: draft.section, kind: draft.kind,
       label: draft.label.text, labelSource: draft.label.source, labelVisible: draft.label.visible,
       description: draft.description, required: draft.required, options: draft.options ?? [], optionSetHash,
       constraints: draft.constraints, autocomplete: draft.autocomplete, nameAttr: draft.nameAttr, idAttr: draft.idAttr,
       ordinal: ordinals[i]!, domOrder: i, visibility: draft.visibility, disabled: draft.disabled,
-      readOnly: draft.readOnly, current: currentValueOf(draft.kind, draft.control, draft.selectable),
+      readOnly: draft.readOnly, current,
       el: { key, frameId }, proxy: draft.proxy?.kind ?? null, camouflaged: draft.camouflaged,
     };
     targets.set(key, { field, control: draft.control, members: draft.members, options: draft.selectOptions,
-      proxy: draft.proxy?.el ?? null });
+      proxy: draft.proxy?.el ?? null, ...(draft.widget !== null ? { widget: draft.widget } : {}) });
     return field;
   });
 
@@ -212,19 +261,30 @@ export function countVisibleControls(root: Element, cache: ScanCache = newScanCa
 
 // ── Collecting and grouping ──────────────────────────────────────────────────────────────────────────────────────
 
-/** Every native control under `root` in document order, open shadow roots included, the extension's UI excluded. */
-function collectControls(root: Element): Element[] {
+/** Every element under `root` matching `selector`, in document order, open shadow roots included, the extension's UI
+ *  excluded. */
+function collect(root: Element, selector: string): Element[] {
   const found: Element[] = [];
   const visit = (scope: Element | ShadowRoot) => {
     for (const el of Array.from(scope.querySelectorAll('*'))) {
-      if (el.matches(CONTROL_SELECTOR)) found.push(el);
+      if (el.matches(selector)) found.push(el);
       if (el.shadowRoot) visit(el.shadowRoot);
     }
   };
-  if (root.matches(CONTROL_SELECTOR)) found.push(root);
+  if (root.matches(selector)) found.push(root);
   if (root.shadowRoot) visit(root.shadowRoot);
   visit(root);
   return found.filter((el) => !isInOwnUi(el));
+}
+
+/** Every native control under `root`. */
+function collectControls(root: Element): Element[] {
+  return collect(root, CONTROL_SELECTOR);
+}
+
+/** Every native control and every element that may be an ARIA widget's (widgets/aria.ts), in document order. */
+function collectFields(root: Element): Element[] {
+  return collect(root, `${CONTROL_SELECTOR}, ${WIDGET_ROOT_SELECTOR}`);
 }
 
 interface Entry {
@@ -248,7 +308,7 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
   };
   const nameCount = new Map<string, number>();
   for (const candidate of candidates) {
-    if (candidate.kind !== 'checkbox' || candidate.declared) continue;
+    if (candidate.kind !== 'checkbox' || candidate.widget !== null) continue;
     const input = candidate.el as HTMLInputElement;
     if (input.name === '') continue;
     const id = `${idOf(input.form)}|${input.name}`;
@@ -256,7 +316,7 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
   }
   const boxContainers = new Map<Element, number>();
   for (const candidate of candidates) {
-    if (candidate.kind !== 'checkbox' || candidate.declared) continue;
+    if (candidate.kind !== 'checkbox' || candidate.widget !== null) continue;
     const container = checkboxContainer(candidate.el, root);
     if (container !== null) boxContainers.set(container, (boxContainers.get(container) ?? 0) + 1);
   }
@@ -264,8 +324,8 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
     const input = candidate.el as HTMLInputElement;
     let id: string | null = null;
     let kind: FieldKind = candidate.kind;
-    if (candidate.declared) {
-      // A declared widget is never grouped: it is its own field.
+    if (candidate.widget !== null) {
+      // A widget, declared or ARIA, is never grouped: it is its own field.
       entries.push({ kind, members: [candidate], container: null });
       continue;
     }
@@ -329,17 +389,16 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
   Draft {
   const first = entry.members[0]!;
   const control = first.el;
-  if (!first.declared && (entry.kind === 'radio' || entry.kind === 'checkbox-group')) {
+  if (first.widget !== null) return widgetDraft(first, first.widget, ctx, cache, sections);
+  if (entry.kind === 'radio' || entry.kind === 'checkbox-group') {
     return groupDraft(entry, ctx, sections);
   }
   const label = labelOfControl(control, ctx);
   const placeholder = isTextLike(control) ? visiblePlaceholder(control, cache) : null;
-  // A combobox input, or a widget the adapter declares: its options exist only once it is opened (Phase 4).
-  const combobox = entry.kind === 'combobox' || first.declared;
-  let options: Option[] | 'lazy' | null = combobox ? 'lazy' : null;
+  let options: Option[] | 'lazy' | null = null;
   let selectable: SelectableOption[] = [];
   let selectOptions: HTMLOptionElement[] = [];
-  if (!combobox && (entry.kind === 'select' || entry.kind === 'multiselect')) {
+  if (entry.kind === 'select' || entry.kind === 'multiselect') {
     const read: VisibleOption[] = readSelectOptions(control as HTMLSelectElement, cache);
     options = read.map((option, index) => optionOf(index, option.label, option.value, option.disabled,
       option.selected, option.group));
@@ -351,17 +410,102 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
     kind: entry.kind, control, members: [], selectOptions, container: null, label, options, selectable,
     section: sections.sectionOf(control, label.element),
     description: descriptionOf(control, ctx),
-    constraints: entry.kind === 'select' || entry.kind === 'multiselect' || combobox ? {}
+    constraints: entry.kind === 'select' || entry.kind === 'multiselect' ? {}
       : constraintsOf(control, format, placeholder),
     visibility: first.visibility, proxy: first.proxy,
     required: label.required || isRequired(control),
     disabled: isDisabled(control), readOnly: isReadOnly(control),
-    // A combobox's input is drawn borderless inside the widget's own box, so it is not judged on its own.
-    camouflaged: !combobox && first.visibility === 'visible' && isControlCamouflaged(control, placeholder !== null, cache),
+    camouflaged: first.visibility === 'visible' && isControlCamouflaged(control, placeholder !== null, cache),
     nameAttr: attribute(control, 'name'), idAttr: attribute(control, 'id'),
     autocomplete: autocompleteTokens(control).slice(0, MAX_AUTOCOMPLETE_TOKENS)
       .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
+    widget: null,
   };
+}
+
+// ── Widgets (Phase 4) ────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A widget's parts as this scan finds them: by ARIA, or as the adapter declared them. */
+function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): WidgetTarget {
+  const group = kind === 'radio' && declared === null;
+  return {
+    kind, element: el, input: group ? null : editableOf(el),
+    opener: group || roleOf(el) === 'listbox' ? null : declared?.opener ?? (el as HTMLElement),
+    members: group ? membersOf(el) : [], activation: declared?.activation ?? [], declared: declared !== null,
+  };
+}
+
+/** A widget as a field: its label by the same visible-label rules (a group's from its container), its options a
+ *  group's members, or its list's when it is shown whole now (else 'lazy' until it is read), and its constraints none
+ *  but required. */
+function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, cache: ScanCache,
+  sections: ReturnType<typeof sectionFinder>): Draft {
+  const el = widget.element;
+  const groupLike = widget.kind === 'radio' && widget.members.length > 0;
+  let label = groupLike ? labelOfGroup([], el, ctx) : labelOfControl(el, ctx);
+  if (label.source === 'none' && widget.input !== null && widget.input !== el) label = labelOfControl(widget.input, ctx);
+  let options: Option[] | 'lazy' = 'lazy';
+  let members = widget.members;
+  if (groupLike) {
+    // A member that shows no label is no option.
+    const shown = widget.members.map((member) => ({ member, text: memberLabel(member) })).filter((item) => item.text !== '');
+    members = shown.map((item) => item.member);
+    options = shown.map((item, index) => optionOf(index, item.text, '', isUnavailable(item.member),
+      isChosen(item.member)));
+  } else if (widget.kind !== 'typeahead-remote' && widget.kind !== 'checkbox') {
+    // A list shown whole is read as it is; one that scrolls (perhaps drawn a part at a time) waits to be read whole.
+    const list = listOf(el, widget.input);
+    if (list !== null && isUserVisible(list, cache) && !scrolls(list)) {
+      const shown = shownOptions(list, cache);
+      if (shown.length > 0) options = shown.map((option, index) => optionOf(index, option.label, '', option.disabled, false));
+    }
+  }
+  const required = label.required || isRequired(el) || (widget.input !== null && isRequired(widget.input));
+  return {
+    kind: widget.kind, control: el, members: [], selectOptions: [], container: null, label, options, selectable: [],
+    section: sections.sectionOf(el, label.element), description: descriptionOf(el, ctx), constraints: {},
+    visibility: first.visibility, proxy: null, required,
+    disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (widget.input !== null && isDisabled(widget.input)),
+    readOnly: isReadOnly(el) || (widget.input !== null && isReadOnly(widget.input)),
+    // A widget's text box is drawn inside the widget's own box, so it is not judged on its own.
+    camouflaged: false,
+    nameAttr: attribute(widget.input ?? el, 'name'), idAttr: attribute(el, 'id'),
+    autocomplete: widget.input === null ? [] : autocompleteTokens(widget.input).slice(0, MAX_AUTOCOMPLETE_TOKENS)
+      .map((token) => capCodePoints(token, TEXT_CAP_AUTOCOMPLETE_TOKEN)),
+    widget: members === widget.members ? widget : { ...widget, members },
+  };
+}
+
+/** A widget's draft with what the run read of it (ScanOptions.widgetReadings): a list's options while it is closed,
+ *  a remote search as a typeahead with no options. A list this scan read whole is kept as the field's reading. */
+function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetReading> | undefined): Draft {
+  const widget = draft.widget!;
+  if (widget.kind === 'radio' || widget.kind === 'checkbox') return draft;
+  const reading = readings?.get(base);
+  if (reading?.kind === 'remote') {
+    // A search's results, shown while it types, are no options of the field.
+    if (widget.kind !== 'combobox' && widget.kind !== 'typeahead-remote') return draft;
+    return { ...draft, kind: 'typeahead-remote', options: [], widget: { ...widget, kind: 'typeahead-remote' } };
+  }
+  if (Array.isArray(draft.options)) {
+    readings?.set(base, { kind: 'options', multiselectable: isMultiselectable(listOf(widget.element, widget.input)),
+      options: draft.options.map((option) => ({ label: option.label, disabled: option.disabled })) });
+    return draft;
+  }
+  if (reading === undefined) return draft;
+  const kind: WidgetKind = widget.kind === 'combobox' && reading.multiselectable ? 'multiselect' : widget.kind;
+  return { ...draft, kind, options: reading.options.map((option, index) => optionOf(index, option.label, '',
+    option.disabled, false)), widget: kind === widget.kind ? widget : { ...widget, kind } };
+}
+
+/** What a widget field holds now (widgets/options.ts), its options marked chosen accordingly. */
+function widgetCurrent(draft: Draft, cache: ScanCache): CurrentValue {
+  const known = Array.isArray(draft.options) ? draft.options.map((option) => option.label) : [];
+  const chosen = chosenLabels(draft.widget!, known, cache);
+  if (Array.isArray(draft.options)) {
+    for (const option of draft.options) option.selected = chosen.some((label) => label === option.label);
+  }
+  return chosen.length === 0 ? { kind: 'empty' } : { kind: 'selected', labels: chosen };
 }
 
 /** A radio or checkbox group: the question from its container, an option per member that shows a label. */
@@ -393,7 +537,7 @@ function groupDraft(entry: Entry, ctx: LabelContext, sections: ReturnType<typeof
     visibility: hiddenMember ? 'hidden-native-with-visible-label' : 'visible',
     proxy,
     required: label.required || all.some(isRequired) || (entry.container !== null && isRequired(entry.container)),
-    disabled: all.every(isDisabled), readOnly: false, camouflaged: false,
+    disabled: all.every(isDisabled), readOnly: false, camouflaged: false, widget: null,
     nameAttr: attribute(first, 'name'), idAttr: attribute(entry.container ?? first, 'id'),
     autocomplete: [],
   };

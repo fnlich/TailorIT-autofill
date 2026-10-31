@@ -20,7 +20,10 @@
  *   the page puts back in its place is the same one.
  * - Waiting: a list the planner found with no usable options (waiting-for-options) is not planned again until its
  *   options change. It waits at most OPTION_WAIT_PASSES scans, or until the DOM's awaitOptions says they never loaded:
- *   then it is options-never-loaded (recovering if its options still arrive).
+ *   then it is options-never-loaded (recovering if its options still arrive). A lazy widget (option-set hash 'lazy')
+ *   waits the same way until the frame opens it and reads its options (Phase 4): that first read changes its key to
+ *   the hash of what it read, and is planned again like any change of options, except that no writer is its parent
+ *   and it counts as no change of options (MAX_OPTION_CHANGES).
  * - Disappeared: a field that was planned or written and is missing from a scan. Its recorded write is dropped, and
  *   its row becomes field-disappeared (rows.ts). A field never planned is dropped silently.
  * - Reveal edges: a field that appears after a pass's writes, or whose options change after them, gets one parent: the
@@ -46,7 +49,7 @@
  */
 import type { FieldKind } from '../enums';
 import { settleRow } from '../plan/settle';
-import { sectionKey } from '../text/keys';
+import { OPTION_SET_LAZY, sectionKey } from '../text/keys';
 import { keyWithBrackets } from '../text/normalize';
 import { sha256Hex } from '../text/sha256';
 import type { BaseKey, FieldKey, FieldSpec, OptionSetHash } from '../types/field';
@@ -431,8 +434,11 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
       continue;
     }
     if (spec.optionSetHash !== old.optionSetHash) {
-      edgeFor(spec.baseKey, spec.domOrder, 'options');
-      const optionChanges = old.optionChanges + 1;
+      // A lazy widget read for the first time (the frame opened it: Phase 4) shows options it always had: no writer
+      // changed them, so it gets no edge and the read is no change of options.
+      const firstRead = old.optionSetHash === OPTION_SET_LAZY;
+      if (!firstRead) edgeFor(spec.baseKey, spec.domOrder, 'options');
+      const optionChanges = firstRead ? old.optionChanges : old.optionChanges + 1;
       // Matched anew, as a new question: a value lost with the old options is no flip, and the next write is a first.
       const changedOptions = { ...old, ...now, optionChanges, wrote: false, valueMac: null, followUp: false, retries: 0,
         waitedScans: 0 };

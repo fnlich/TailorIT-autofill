@@ -743,6 +743,30 @@ export interface Profile {
       - **Option lists** (LC-8, L-S5): a list held back only while busy or loading waits for that sign to clear (`prevHash` null), not for new options. The lists awaited in a pass share one refind scan while the form root has not mutated since it was made (and within one options window), at most `MAX_REFIND_SCANS` (24) a pass; past that a replaced list is left to the next scan. Loading rows: a lead with an ellipsis anywhere after it ("Loading... please wait", LC-7), and whole phrases compared with their brackets' words kept ("Searching (Actively)" is an answer, LC-12).
       - **Cancel during a pass's settle** (LC-11): what the pass revealed is observed before the cut, so it has its `user-stopped` row.
       - **RunState.revealEdges** (L-S3): each key's section and label slug replaced by the first 16 hex of its SHA-256 (`storedBaseKey`); earlier runs' edges are compared in that form. Reports keep the page's labels, by design.
+  - **As built (Phase 4, widgets):** `src/dom/widgets` holds the helpers, and `pass.ts` and `loop.ts` call them. The generic adapter declares nothing.
+    - **Kinds, from standard ARIA only** (`aria.ts`):
+      - `role="combobox"`: an input, or an element wrapping one. Its list is the one its `aria-controls` (else `aria-owns`) names;
+      - a multiselect: a combobox whose list has `aria-multiselectable`, or a listbox of its own that has it;
+      - a `role="radiogroup"` of `role="radio"` elements;
+      - a `fieldset` or `role="group"` of two or more buttons that all carry `aria-pressed`.
+      Labels follow the usual visible-label rules; a group's comes from its container. Options are `'lazy'` (hash `'lazy'`) until read, unless the list is already shown whole. A native control inside a widget's list, or the text box of an ARIA 1.1 combobox, belongs to the widget.
+    - **The waiting path:** a lazy widget whose row waits for options is opened, read whole and closed, and what it showed is kept by base key for the run (`ScanOptions.widgetReadings`).
+      - Opening is one activation: `click()` through `assertNotSubmit`, or the one `mousedown` or `focus` the adapter declared.
+      - A list that scrolls is read by setting its own `scrollTop`, a property, never a wheel or key event. Options are deduplicated by `aria-posinset`, else by label, and capped.
+      - Closing is `focusout` and `blur`, then one more click on a select-only combobox that a click opened.
+      - The next scan's key carries the hash of what was read. The books take that first read from `'lazy'` as no change of options and give it no edge.
+      - An editable combobox that filters as typed (`aria-autocomplete` list or both) and shows nothing when opened is a remote search: `typeahead-remote`, hash `'none'`.
+      - A widget that ignores the activation is flagged `needs-your-click`. A dry run opens nothing.
+    - **Writes** (`fill.ts`):
+      - a combobox's option is read again at its place before its click (`options-changed` otherwise) and read back from what the widget shows;
+      - a multiselect gets only its missing options, one click each. A chosen option or a chip is never clicked, and a set that would pass the question's cap is refused whole (`max-selections-reached`);
+      - a group's member is clicked, and its `aria-checked` or `aria-pressed` read back. A typeless button inside a form is refused by `assertNotSubmit`, so the field is flagged `needs-your-click`.
+    - **Remote typeahead** (`typeahead.ts`, and `searchField` in `pass.ts`):
+      - At most four queries, in `typeaheadQueries`' order, one at a time. Each is its own guarded write: the DOM guard, then `guardWriteInFrame` on that one query.
+      - A query is typed with the setter and one `input` event, never a key. No `change`, `focusout` or `blur` is sent while it searches.
+      - The results are awaited (the list's own busy signs cleared, then a quiet window, capped at `TYPEAHEAD_QUERY_CAP_MS`) and sent to the worker as the field with its results as its options. `planFrame` chooses one only in the fill band, so an injected label's clean part (0.84 at most, always flagged) never is. The choice passes `guardWriteInFrame` before its click.
+      - If nothing is chosen, the box gets back what it held, and the field is flagged with the last reason (`no-match`). A page that does not react at all to the first query is flagged `needs-your-click`, and the search stops there.
+    - **Events:** the fillers' list only. A trusted `scroll` on a list whose `scrollTop` was set is the browser's own event, and `untrustedViolations` sets it aside.
 - **Adapters:** one interface (`src/adapters/types.ts`).
   - **It covers:** detection and form root, sections, labels and proxies, upload widgets, widgets, busy hints, step signature, Next and Submit (Submit identified, never clicked), final-step recognition, errors, repeatable sections, prefill reading, auth state, and the canonical application URL from which the `applicationKey` is hashed.
   - **When each one arrives:** Phase 0 ships only the interface. The generic adapter (standard semantics only, final step always "unknown") and the Lever and Greenhouse adapters and URL parsers come in Phase 2, Ashby's in Phase 4, Workday's in Phase 5. Each is written from the owner's snapshots and sample URLs, and every DOM hook names the snapshot it came from.

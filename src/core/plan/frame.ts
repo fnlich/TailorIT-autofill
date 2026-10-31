@@ -22,6 +22,9 @@
  *   else in it: the worker fetches the part once and plans again. Only a field that could be written asks: never a
  *   honeypot, a disabled control or a field no visible label names.
  * - An options write carries each chosen option's clean label beside its index, from the prepared options.
+ * - A remote typeahead (Phase 4) gets its queries; once the frame has typed one and read what it showed, it sends the
+ *   field again with those results as its options, and one of them is chosen only in the fill band (§4.11). A
+ *   typeahead that already shows the school is left alone; one showing another answer is searched, flagged.
  * - The canaries scanned for are the frame's and any its fields' own labels carry; only the frame's that equal no
  *   profile value may be kept in RunState (persistableCanaries).
  */
@@ -157,10 +160,36 @@ function matchValue(input: MatchInput, ctx: FieldPlanContext): Match | 'waiting'
   return 'waiting' in outcome ? 'waiting' : outcome.partial.fallback;
 }
 
+/** A row with nothing written, for the field being planned. */
+type Blank = (status: FillResult['status'], reason: ReasonCode, match?: Match) => FillResult;
+
+/** One answer chosen among a field's options (a select, a radio group, a combobox, a typeahead's results), or the row
+ *  it gets instead. */
+function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext, blank: Blank):
+  Planned | FillResult {
+  if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
+  const prepared = prepareOptions(spec.options, choice.domain, ctx.input.vocab);
+  const match = matchValue(matchInputOf(spec, resolution, choice, prepared), ctx);
+  if (match === 'waiting') return blank('flagged', 'waiting-for-options');
+  if (match.stage === 'none' || match.optionIndex === null) return blank('flagged', match.reason, match);
+  const option = prepared.list.find((candidate) => candidate.index === match.optionIndex)!;
+  const selected = selectedIndices(spec, prepared);
+  if (selected.has(option.index)) return blank('skipped', 'already-correct');
+  const freeText = match.freeText ?? choice.freeText;
+  // A checked radio or a chosen combobox value is the page's own answer (a resume parse): the profile wins,
+  // flagged. A native select always shows some option, so its selection says something only when the select has
+  // a placeholder to show instead (the review, CORE-17).
+  const prefilled = selected.size > 0 && (spec.kind !== 'select' || prepared.list.some((item) => item.placeholder));
+  return {
+    value: { kind: 'option', index: option.index, cleanLabel: option.clean, ...(freeText ? { freeText } : {}) },
+    match, ...(prefilled ? { flag: 'prefill-conflict' as const } : {}),
+  };
+}
+
 /** The planned write of a field, or the row it gets instead. */
 function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: FieldPlanContext): Planned | FillResult {
   const { category } = resolution;
-  const blank = (status: FillResult['status'], reason: ReasonCode, match?: Match) =>
+  const blank: Blank = (status, reason, match) =>
     rowWithout(spec, category, status, reason, resolution.confidence * (match?.confidence ?? 1), match);
   const current = spec.current;
   switch (shaped.shape) {
@@ -189,27 +218,28 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       if (checked) return blank('skipped', 'already-correct');
       return { value: { kind: 'check' }, match: NOT_APPLICABLE };
     }
-    case 'search':
-      return { value: { kind: 'query', queries: shaped.queries }, match: NOT_APPLICABLE };
-    case 'choice': {
-      if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
-      const prepared = prepareOptions(spec.options, shaped.choice.domain, ctx.input.vocab);
+    case 'search': {
+      // The results one of its queries showed, which the frame read (Phase 4, §4.11): matched as a choice. Only a match
+      // in the fill band chooses one (planField); anything less leaves them unchosen, and the frame types its next
+      // query.
+      if (spec.options !== 'lazy' && spec.options.length > 0) return planChoice(spec, resolution, shaped.choice, ctx, blank);
+      const search: Planned = { value: { kind: 'query', queries: shaped.queries }, match: NOT_APPLICABLE };
+      const shown = current.kind === 'text' ? [current.text] : current.kind === 'selected' ? current.labels : [];
+      if (shown.length === 0 || shown.every((text) => text.trim() === '')) return search;
+      // What the widget shows already: our earlier choice, or the page's own answer, which the profile replaces,
+      // flagged.
+      const prepared = prepareOptions(shown.map((label, index) => ({ index, label, disabled: false, selected: false })),
+        shaped.choice.domain, ctx.input.vocab);
       const match = matchValue(matchInputOf(spec, resolution, shaped.choice, prepared), ctx);
-      if (match === 'waiting') return blank('flagged', 'waiting-for-options');
-      if (match.stage === 'none' || match.optionIndex === null) return blank('flagged', match.reason, match);
-      const option = prepared.list.find((candidate) => candidate.index === match.optionIndex)!;
-      const selected = selectedIndices(spec, prepared);
-      if (selected.has(option.index)) return blank('skipped', 'already-correct');
-      const freeText = match.freeText ?? shaped.choice.freeText;
-      // A checked radio or a chosen combobox value is the page's own answer (a resume parse): the profile wins,
-      // flagged. A native select always shows some option, so its selection says something only when the select has
-      // a placeholder to show instead (the review, CORE-17).
-      const prefilled = selected.size > 0 && (spec.kind !== 'select' || prepared.list.some((item) => item.placeholder));
-      return {
-        value: { kind: 'option', index: option.index, cleanLabel: option.clean, ...(freeText ? { freeText } : {}) },
-        match, ...(prefilled ? { flag: 'prefill-conflict' as const } : {}),
-      };
+      const confidence = resolution.confidence * (match === 'waiting' ? 0 : match.confidence);
+      if (match !== 'waiting' && match.optionIndex !== null
+        && actionFor(confidence, match.flags.some((item) => FORCING_FLAGS.has(item))) === 'fill') {
+        return blank('skipped', 'already-correct');
+      }
+      return { ...search, flag: 'prefill-conflict' };
     }
+    case 'choice':
+      return planChoice(spec, resolution, shaped.choice, ctx, blank);
     case 'set': {
       if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
       const preparedBy = new Map<string, PreparedOptions>();
@@ -288,6 +318,12 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   const action = actionFor(confidence, flag !== undefined || planned.match.flags.some((item) => FORCING_FLAGS.has(item)));
   if (action === 'leave-blank') {
     return { row: rowWithout(spec, resolution.category, 'flagged', 'low-confidence', confidence, planned.match) };
+  }
+  // A remote typeahead chooses one of its results only in the fill band (§4.11: the first result that reaches it ends
+  // the search). A weaker match, or one always flagged (an injected label's clean part), is left unchosen with its
+  // reason, and the frame types its next query: blank beats wrong.
+  if (spec.kind === 'typeahead-remote' && planned.value.kind === 'option' && action !== 'fill') {
+    return { row: rowWithout(spec, resolution.category, 'flagged', flag ?? 'low-confidence', confidence, planned.match) };
   }
   const write: PlannedWrite = { key: spec.key, value: planned.value, origin: originOf(resolution, planned.value),
     match: planned.match };

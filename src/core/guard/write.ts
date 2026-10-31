@@ -32,10 +32,11 @@ import {
   checkCategoryPolicy, checkProvenance, checkProvenanceShape, llmPickStillValid, type GuardVerdict,
 } from './provenance';
 
-/** The kinds each write value fits. */
+/** The kinds each write value fits. A remote typeahead takes an option too: the result it chose, among the results
+ *  its query showed (Phase 4). */
 const VALUE_KINDS: Readonly<Record<WriteValue['kind'], readonly FieldKind[]>> = {
   text: ['text', 'textarea'],
-  option: ['select', 'radio', 'combobox'],
+  option: ['select', 'radio', 'combobox', 'typeahead-remote'],
   options: ['checkbox-group', 'multiselect'],
   query: ['typeahead-remote', 'combobox'],
   check: ['checkbox'],

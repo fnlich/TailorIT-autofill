@@ -43,13 +43,17 @@ export function domGuardBeforeWrite(last: ScanResult, planned: PlannedField): Do
   }
   const { field, control } = target;
   if (field.kind !== planned.kind || field.label !== planned.label) return { ok: false, reason: 'element-not-found' };
-  const elements: Element[] = [control, ...target.members];
+  const elements: Element[] = [control, ...target.members, ...(target.widget?.members ?? [])];
   if (elements.some(isInOwnUi)) return { ok: false, reason: 'internal-error' };
-  if (elements.some((el) => kindOf(el).field === false)) return { ok: false, reason: 'auth-required' };
+  // A native control that is no field now is an auth field (or the page changed its type); a widget's element is no
+  // native control, so only its text box is asked.
+  const natives = target.widget === undefined ? elements : target.widget.input === null ? [] : [target.widget.input];
+  if (natives.some((el) => kindOf(el).field === false)) return { ok: false, reason: 'auth-required' };
   if (field.labelSource === 'none' || !field.labelVisible) return { ok: false, reason: 'no-visible-label' };
   if (field.camouflaged) return { ok: false, reason: 'not-user-visible' };
-  const disabled = field.kind === 'radio' || field.kind === 'checkbox-group' ? field.disabled
-    : isDisabled(control) || isReadOnly(control);
+  const disabled = target.widget !== undefined ? field.disabled || field.readOnly
+    : field.kind === 'radio' || field.kind === 'checkbox-group' ? field.disabled
+      : isDisabled(control) || isReadOnly(control);
   if (disabled) return { ok: false, reason: 'disabled-or-readonly' };
   return { ok: true, target };
 }

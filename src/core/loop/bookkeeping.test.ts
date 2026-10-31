@@ -257,6 +257,30 @@ describe('lists waiting for their options', () => {
     expect(observeScan(books, [country, loaded]).pending).toEqual([loaded.key]);
   });
 
+  it('read for the first time (a lazy widget the frame opened, Phase 4): planned again, with no parent and no change counted', () => {
+    const scanned = field('Country of residence', 'combobox', { domOrder: 1 });
+    const parts = scanned.key.split('|');
+    parts[3] = 'lazy';
+    const lazy: LoopField = { ...scanned, optionSetHash: 'lazy' as LoopField['optionSetHash'],
+      key: parts.join('|') as LoopField['key'] };
+    let books = settled([country, lazy], { 'Country of residence': unwrittenRow(lazy, 'waiting-for-options') });
+    books = written(books, country, 'United States');
+    expect(books.fields.get(lazy.baseKey)?.status).toBe('waiting-options');
+    const read = withOptions(lazy, ['Canada', 'United States']);
+    const seen = observeScan(books, [country, read]);
+    expect(types(seen.events)).toEqual(['options-changed']);
+    expect(seen.pending).toEqual([read.key]);
+    expect(seen.state.fields.get(lazy.baseKey)).toMatchObject({ status: 'pending', cause: 'options-changed',
+      optionChanges: 0 });
+    // The country written in the same pass is no parent of what the widget always held.
+    expect(seen.state.edges).toEqual([]);
+    // A later change of what it shows is a change, with its edge.
+    const again = written(recordRows(seen.state, [rowOf(read)]), country, 'Canada');
+    const changed = observeScan(again, [country, withOptions(read, ['Alberta'])]);
+    expect(changed.state.fields.get(lazy.baseKey)).toMatchObject({ optionChanges: 1 });
+    expect(changed.state.edges).toHaveLength(1);
+  });
+
   it('take no other answer of the wait, and no wait for a list that is not waiting', () => {
     const books = waitingBooks();
     expect(recordOptionsWait(books, empty.key, 'ready')).toBe(books);

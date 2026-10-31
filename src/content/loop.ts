@@ -24,9 +24,12 @@
  *    (LC-10). After the pass's last write one more scan sees what that write revealed at once;
  * 6. settle() (dom/settle.ts), then each written field is verified on a fresh scan (verify.ts) and its resume, if any,
  *    released;
- * 7. recordRows for every planned key. Then the lists still waiting for options, the ones held back (until their busy
- *    or loading sign clears: LC-8), and the lists a writer of this pass is known to change (childrenOf, its options
- *    edges) are awaited (awaitOptions), each counted from its parent's write, else the pass's last write: ready means
+ * 7. recordRows for every planned key. Then the waiting path (Phase 4): each lazy widget whose row waits for options
+ *    is opened, read whole and closed (dom/widgets' readWidget), and what it showed is kept as its reading by base key,
+ *    which every later scan of the run reads (ScanOptions.widgetReadings), so the next pass plans it with real options;
+ *    one that ignores our activation is flagged needs-your-click (a dry run opens nothing). Then the lists still
+ *    waiting for options, the ones held back (until their busy or loading sign clears: LC-8), and the lists a writer
+ *    of this pass is known to change (childrenOf, its options edges) are awaited (awaitOptions), each counted from its parent's write, else the pass's last write: ready means
  *    the next scan sees the options, never-loaded flags options-never-loaded, gone is left to the next scan; Cancel ends
  *    the waits at once, and so does the run's end. A list the page replaces is found again by one shared scan while the
  *    page has not changed since it was made, and a pass makes at most MAX_REFIND_SCANS of them (L-S5).
@@ -53,11 +56,14 @@ import { scan, toFieldSpec } from '../dom/scan';
 import { busySigns, settle, type SettleOptions } from '../dom/settle';
 import { OPTIONS_QUIET_MS } from '../dom/thresholds';
 import { monotonicNow } from '../dom/time';
-import { BUSY_SIGNS, type BusySign, type ScannedField, type ScanResult, type SettleResult } from '../dom/types';
+import {
+  BUSY_SIGNS, type BusySign, type ScannedField, type ScanResult, type SettleResult, type WidgetReading,
+} from '../dom/types';
+import { readWidget } from '../dom/widgets';
 import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
-import { RunAborted, writeField, type PassEnv, type PlanAnswer, type WrittenField } from './pass';
+import { RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WrittenField } from './pass';
 import type { ReceivedResume } from './transfer';
 import { createValueHasher, type ValueHasher } from './values';
 import { verifyWritten } from './verify';
@@ -85,6 +91,8 @@ export interface LoopEnv extends PassEnv {
   recheck?(): Promise<ReasonCode | null>;
   /** Aborted when the person stops the run (stopped() turns true): a wait for a list's options ends at once. */
   stopSignal?: AbortSignal;
+  /** Where the run keeps what it read of its lazy widgets (Phase 4); a map of the loop's own without it. */
+  widgetReadings?: Map<BaseKey, WidgetReading>;
   settle?: SettleTimings;
   options?: OptionsTimings;
 }
@@ -162,6 +170,8 @@ class ReactiveLoop {
   private state: LoopState = createLoop();
   /** The run's heldPlaceholders: every scan of the run reads them. */
   private readonly held = new WeakMap<Element, string>();
+  /** What the run has read of its lazy widgets, by base key (Phase 4): every scan of the run reads them. */
+  private readonly readings: Map<BaseKey, WidgetReading>;
   private readonly attribution = new Attribution();
   /** What was written, by base key: kept when the field goes or its options change, and ours again only while its row
    *  says it wrote (a re-plan that found our value in place). */
@@ -191,7 +201,9 @@ class ReactiveLoop {
   private passes = 0;
   private cutBy: ReasonCode | null = null;
 
-  constructor(private readonly env: LoopEnv, private readonly hasher: ValueHasher) {}
+  constructor(private readonly env: LoopEnv, private readonly hasher: ValueHasher) {
+    this.readings = env.widgetReadings ?? new Map();
+  }
 
   private readonly onTouch = (event: Event): void => {
     if (!event.isTrusted) return;
@@ -242,7 +254,7 @@ class ReactiveLoop {
   private scanNow(): ScanResult {
     const { env } = this;
     return this.seen(scan(env.root, env.adapter, { platform: env.platform, frameId: env.frameId,
-      heldPlaceholders: this.held }));
+      heldPlaceholders: this.held, widgetReadings: this.readings }));
   }
 
   private seen(result: ScanResult): ScanResult {
@@ -380,7 +392,7 @@ class ReactiveLoop {
         continue;
       }
       const result = await writeField(env, current, fields.get(write.key)!, write, planned, this.held,
-        keep === undefined ? {} : { keep });
+        { ...(keep === undefined ? {} : { keep }), widgets: this.widgetWrites() });
       rows.set(write.key, result.row);
       if (result.written === undefined || result.readBack === undefined) continue;
       done.push(result.written);
@@ -410,8 +422,10 @@ class ReactiveLoop {
       return { kind: 'busy', scan: fresh };
     }
     if (env.stopped()) return { kind: 'stopped', scan: fresh };
+    const read = await this.readWidgets(fresh);
+    if (env.stopped()) return { kind: 'stopped', scan: read ? this.scanNow() : fresh };
     const waited = await this.awaitLists(fresh, holding, writtenAt);
-    return { kind: 'next', scan: waited ? this.scanNow() : fresh };
+    return { kind: 'next', scan: waited || read ? this.scanNow() : fresh };
   }
 
   /** The pass's writes in its order: the worker's, except that a box named for a choice's free text takes that text
@@ -471,6 +485,49 @@ class ReactiveLoop {
     // Taken after the fill: the trusted input and change Chromium fires during our click on a box are ours, not the
     // person's.
     this.lastWriteAt.set(baseKey, monotonicNow());
+  }
+
+  // ── Widgets (Phase 4) ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /** What a widget's write needs: the run's readings, and plan/request for a typeahead's results, at this pass. */
+  private widgetWrites(): WidgetWriteEnv {
+    return { readings: this.readings, plan: (specs, planKeys) => this.env.plan(specs, planKeys, this.state.pass) };
+  }
+
+  /**
+   * The waiting path: each lazy widget the planner needs the options of (a row waiting-for-options) is opened, read
+   * whole and closed, in DOM order, and what it showed is kept as its reading, so the next scan gives the field real
+   * options (a first read is no change of options to the books) and the next pass plans it. One read as a remote search
+   * is planned as one. One that ignores our activation is flagged needs-your-click, one that shows no list
+   * widget-unsupported, and one whose list stays empty options-never-loaded. Cancel ends it between widgets. Answers
+   * whether any widget was read (then the next pass scans again).
+   */
+  private async readWidgets(fresh: ScanResult): Promise<boolean> {
+    const { env } = this;
+    const waiting = [...this.state.fields.values()].filter((tracked) => tracked.present
+      && tracked.status === 'waiting-options').sort((a, b) => a.domOrder - b.domOrder);
+    let read = false;
+    const rows: FillResult[] = [];
+    for (const tracked of waiting) {
+      if (env.stopped()) break;
+      const target = fresh.target(tracked.key);
+      if (target === null || target.widget === undefined || target.field.options !== 'lazy') continue;
+      const result = await readWidget(target, { adapter: env.adapter, root: env.root, signal: env.signal,
+        readings: this.readings });
+      this.alive();
+      if (result.status === 'aborted') break;
+      if (result.status === 'read') {
+        read = true;
+        continue;
+      }
+      if (result.reason === 'options-never-loaded') {
+        this.state = recordOptionsWait(this.state, tracked.key, 'never-loaded');
+      } else if (tracked.row !== null) {
+        rows.push(settleRow(tracked.row, { kind: 'not-written', reason: result.reason }));
+      }
+    }
+    if (rows.length > 0) this.state = recordRows(this.state, rows);
+    return read;
   }
 
   // ── Option lists ──────────────────────────────────────────────────────────────────────────────────────────────────

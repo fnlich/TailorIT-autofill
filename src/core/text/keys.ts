@@ -12,8 +12,9 @@ import { sha256Hex } from './sha256';
 
 /** The option-set hash of a kind without options (text, textarea, a lone checkbox, date, file). */
 export const OPTION_SET_NONE = 'none' as OptionSetHash;
-/** The option-set hash of a widget whose options exist only once it is opened. It stays in the key after opening, so
- *  opening a widget never changes its key; the observed hash is recorded beside it. */
+/** The option-set hash of a widget whose options exist only once it is opened. Once the frame has read it (Phase 4),
+ *  the key carries the hash of what it read, and the reactive loop's books take that first read as no change of
+ *  options (loop/bookkeeping.ts). */
 export const OPTION_SET_LAZY = 'lazy' as OptionSetHash;
 
 /** A label slug is cut to this many characters. */

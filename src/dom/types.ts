@@ -4,7 +4,8 @@
  *
  * Phase 2 added the scan's result (fields, counters, and re-finding a field by key), the filler's outcome, which maps
  * onto the review row's own fields, and the DOM half of the pre-write Guard's verdict. Phase 3 added what settle()
- * counts as busy, and the state and answer of a dependent option list (awaitOptions).
+ * counts as busy, and the state and answer of a dependent option list (awaitOptions). Phase 4 added the ARIA widgets
+ * the scanner recognises (WidgetTarget) and what opening one read (WidgetReading).
  */
 import type { BaseKey, FieldDescriptor, FieldKey, OptionSetHash, ReasonCode, SectionRef } from '../core/types';
 
@@ -88,7 +89,51 @@ export interface FieldTarget {
   readonly options: readonly HTMLOptionElement[];
   /** Where the highlight goes for a hidden control: its label or the adapter's widget. */
   readonly proxy: Element | null;
+  /** An ARIA widget's parts (Phase 4), which only the widget helpers act on; absent for a native control. */
+  readonly widget?: WidgetTarget;
 }
+
+/** The widget kinds a scan can report (Phase 4), as their fields' kinds: the first four from standard ARIA, and a
+ *  'checkbox' only as an adapter declares one (WidgetDecl), which no helper fills yet (widget-unsupported). */
+export const WIDGET_KINDS = ['combobox', 'typeahead-remote', 'multiselect', 'radio', 'checkbox'] as const;
+export type WidgetKind = (typeof WIDGET_KINDS)[number];
+
+/**
+ * An ARIA widget as one scan found it (Phase 4, docs/design/runtime.md §5.6): standard ARIA only, or what the adapter
+ * declared (widgetFor). Its elements are live and never kept across a write: the next write finds them again by key.
+ */
+export interface WidgetTarget {
+  kind: WidgetKind;
+  /** The element with the widget's role: the combobox, the listbox, the radiogroup or the group of toggle buttons. */
+  readonly element: Element;
+  /** The text box a person types into: an input combobox, or the one inside an ARIA 1.1 combobox; null otherwise. */
+  readonly input: HTMLInputElement | HTMLTextAreaElement | null;
+  /** What opens its list: the adapter's declared opener, else the combobox itself; null for a listbox or a group. */
+  readonly opener: HTMLElement | null;
+  /** A group's option elements in option order (buttons or role=radio): members[i] is field.options[i]. */
+  readonly members: readonly HTMLElement[];
+  /** The single activation event the adapter declared for opening it, instead of click(); [] for none. */
+  readonly activation: readonly ('mousedown' | 'focus')[];
+  /** The adapter declared it, from a snapshot. */
+  readonly declared: boolean;
+}
+
+/** One option of a widget's list as it was read: its visible label and whether it can be chosen. */
+export interface WidgetOptionRead {
+  label: string;
+  disabled: boolean;
+}
+
+/**
+ * What opening a lazy widget read (Phase 4), kept for the run by its field's base key, so every later scan of the run
+ * gives the field these options (and the key their hash) while the list itself is closed:
+ * - options: the options its list showed (read whole, a virtualized list scrolled through), and whether the list takes
+ *   several;
+ * - remote: it showed none until something is typed, so it is a remote search (typeahead-remote).
+ */
+export type WidgetReading =
+  | { kind: 'options'; options: readonly WidgetOptionRead[]; multiselectable: boolean }
+  | { kind: 'remote' };
 
 /** A hidden file input that did not qualify, beside a visible upload control: it gets a flagged row with reason
  *  upload-control-not-recognized, and is never written, focused or sent an event. */
@@ -120,7 +165,7 @@ export interface ScanResult {
 export const FILL_OUTCOME_REASONS = ['ok', 'already-correct', 'verify-mismatch', 'needs-your-click',
   'unexpected-selection', 'element-not-found', 'disabled-or-readonly', 'not-user-visible', 'maxlength-exceeded',
   'pdf-only-input', 'resume-format-unsupported', 'resume-unavailable', 'format-unsupported', 'value-rejected-by-site',
-  'options-changed', 'widget-unsupported', 'internal-error'] as const satisfies readonly ReasonCode[];
+  'options-changed', 'widget-unsupported', 'max-selections-reached', 'internal-error'] as const satisfies readonly ReasonCode[];
 export type FillOutcomeReason = (typeof FILL_OUTCOME_REASONS)[number];
 
 /**

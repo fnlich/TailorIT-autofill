@@ -357,6 +357,7 @@ optionSetHash = 'none'  for kinds without options
 - **Clean labels.** Labels have injected text cut first (section 7.8). Placeholders and unusable options are excluded, so a trap cannot change identity.
 - **Sorted.** Forms that shuffle options keep one hash.
 - **Lazy widgets.** Once a lazy widget is opened, the bookkeeping records the real hash as `observedOptionSetHash`. The cache and saved answers use that observed hash.
+  - **As built (Phase 4):** there is no separate observed hash. After the frame has read a widget, its key carries the hash of what was read, so the cache and saved answers see the observed hash through the key. The bookkeeping takes that first change from `'lazy'` as no change of options: no writer is its parent, and it counts toward no `MAX_OPTION_CHANGES`. A widget read as a remote search keeps no options, so its hash is `'none'`.
 - **What keys contain.** Keys hold only page text (question labels) and hashes, never answers.
 
 ### 2.4 Provenance origins and intended values (`core/types/intent.ts`)

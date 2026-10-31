@@ -1,0 +1,61 @@
+{
+  "fixture": "synthetic/remote-typeahead",
+  "source": "https://jobs.lever.co/tailorit-fixture/remote-typeahead/apply",
+  "captured": "never: a synthetic page, written by hand on 2026-10-30",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means, and what the states, their variants and their steps are",
+  "note": "The same page is served at remote-typeahead-none and remote-typeahead-injected as well (index.html's header): the variant changes only what the fake server answers, so every variant loads as these fields. School is an ARIA 1.2 combobox: 'widget-phase-4' in the expectations testkit's terms, filled by the widget helpers (src/dom/widgets) once a first activation shows it is a search.",
+  "fields": [
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "School",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#school",
+      "note": "A text input with role=combobox, aria-autocomplete=list and aria-controls; its list is empty and hidden until a query is typed."
+    }
+  ],
+  "states": [
+    {
+      "name": "clicked",
+      "variant": "none",
+      "steps": [
+        { "click": "#school" }
+      ],
+      "until": null,
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        {
+          "label": "School",
+          "kind": "combobox",
+          "required": false,
+          "section": "Education",
+          "fillable": false,
+          "reason": "widget-phase-4",
+          "options": "lazy",
+          "control": "#school",
+          "note": "A click on the empty input opens nothing: a remote search shows results only once something is typed."
+        }
+      ]
+    }
+  ]
+}

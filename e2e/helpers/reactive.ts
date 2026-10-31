@@ -1,8 +1,9 @@
 /*
- * What the reactive loop's specs read besides the Phase 2 helpers (docs/design/runtime.md §11.e): where the
- * conditional-reveal and async-options fixtures are served, their labels (read from their own hand-written
- * expectations, every state's, so a report may show any field a reveal brings), a row's parent by base key, the
- * extension's writes on one control, and the page scripts' own counters. Nothing here writes to a page.
+ * What the reactive loop's specs read besides the Phase 2 helpers (docs/design/runtime.md §11.e): where the synthetic
+ * fixtures are served (conditional-reveal and async-options, Phase 3; widgets and remote-typeahead, Phase 4), their
+ * labels (read from their own hand-written expectations, every state's, so a report may show any field a reveal
+ * brings), a row's parent by base key, the extension's writes on one control, and the page scripts' own counters and
+ * logs. Nothing here writes to a page.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -53,4 +54,25 @@ export async function pageCounter(page: Page, name: string): Promise<number | nu
     const value = (window as unknown as Record<string, unknown>)[key];
     return typeof value === 'number' ? value : null;
   }, name);
+}
+
+/** The widgets page (Phase 4), and where it is served. */
+export const WIDGETS = { file: 'fixtures/synthetic/widgets/index.html', url: fixtureAddress('widgets'),
+  expectations: 'fixtures/synthetic/widgets/index.expect.json' } as const;
+
+/** The remote-typeahead page's variants (its header says what its fake server answers in each), each served at its own
+ *  address so each has an application of its own. */
+export const TYPEAHEAD_VARIANTS = ['default', 'none', 'injected'] as const;
+export type TypeaheadVariant = (typeof TYPEAHEAD_VARIANTS)[number];
+
+/** The remote-typeahead page, and the address of each variant. */
+export const TYPEAHEAD = { file: 'fixtures/synthetic/remote-typeahead/index.html',
+  expectations: 'fixtures/synthetic/remote-typeahead/index.expect.json',
+  url: (variant: TypeaheadVariant) => fixtureAddress(variant === 'default' ? 'remote-typeahead'
+    : `remote-typeahead-${variant}`) } as const;
+
+/** A value the page script keeps on window, read as JSON (the fixtures' headers name them). */
+export async function pageValue<T>(page: Page, name: string): Promise<T> {
+  return page.evaluate((key) => JSON.parse(JSON.stringify((window as unknown as Record<string, unknown>)[key] ?? null)),
+    name) as Promise<T>;
 }

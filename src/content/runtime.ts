@@ -36,6 +36,7 @@ import type { Adapter } from '../adapters/types';
 import type { FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import { scan } from '../dom/scan';
+import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
 import { WorkerToContentSchema, type PolicyDecision } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
@@ -238,10 +239,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (current.ended === 'paused') ui?.setLauncher({ state: 'idle', action: 'fill' });
   }
 
+  /** A fresh scan of the page, with what the last run read of its widgets (their keys carry the read options' hash). */
+  function scanPage(on: RunPage): ScanResult {
+    return scan(on.root, on.adapter, { platform: on.app.platform, frameId: frameId ?? 0,
+      ...(current === null ? {} : { widgetReadings: current.widgetReadings }) });
+  }
+
   /** field/focus: the field, or its proxy, scrolled into view and outlined (the person asked). */
   function focusField(key: FieldKey): void {
     if (stopped || page === null) return;
-    const target = scan(page.root, page.adapter, { platform: page.app.platform, frameId: frameId ?? 0 }).target(key);
+    const target = scanPage(page).target(key);
     if (target === null) return;
     const elements = elementsOf(target);
     elements[0]?.scrollIntoView({ block: 'center', inline: 'nearest' });
@@ -252,8 +259,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function describeField(key: FieldKey): { options: Array<{ index: number; label: string }> } {
     const indices = (lastRows.get(key)?.detail?.suggestions ?? []).map((suggestion) => suggestion.index).slice(0, 3);
     if (stopped || page === null || indices.length === 0) return { options: [] };
-    const field = scan(page.root, page.adapter, { platform: page.app.platform, frameId: frameId ?? 0 }).fields
-      .find((candidate) => candidate.key === key);
+    const field = scanPage(page).fields.find((candidate) => candidate.key === key);
     if (field === undefined || field.options === 'lazy') return { options: [] };
     const options = field.options;
     return { options: indices.flatMap((index) => {

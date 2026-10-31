@@ -37,6 +37,11 @@ describe('guardWrite (§7.12)', () => {
     const school = specOf('School', 'select', { optionLabels: ['A', 'B'] });
     expect(valueFitsField({ kind: 'option', index: 1, cleanLabel: 'B' }, school)).toBe(true);
     expect(valueFitsField({ kind: 'option', index: 5, cleanLabel: 'B' }, school)).toBe(false);
+    // A remote typeahead takes the result it chose among the results its query showed (Phase 4), and its queries.
+    const search = specOf('School', 'typeahead-remote', { optionLabels: ['A', 'B'] });
+    expect(valueFitsField({ kind: 'option', index: 1, cleanLabel: 'B' }, search)).toBe(true);
+    expect(valueFitsField({ kind: 'query', queries: ['A'] }, search)).toBe(true);
+    expect(valueFitsField({ kind: 'options', indices: [1], cleanLabels: ['B'] }, search)).toBe(false);
     const group = specOf('Skills', 'checkbox-group', { optionLabels: ['A', 'B'] });
     expect(valueFitsField({ kind: 'options', indices: [0, 1], cleanLabels: ['A', 'B'] }, group)).toBe(true);
     expect(valueFitsField({ kind: 'options', indices: [0, 0], cleanLabels: ['A', 'A'] }, group)).toBe(false);

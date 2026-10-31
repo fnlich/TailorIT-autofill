@@ -10,8 +10,10 @@
  *   its heading.
  * - Upload groups (Resume/CV, Cover Letter): the file input and its label[for] ("Attach") are visually hidden. The
  *   visible Attach button beside them is the input's upload widget, and the group's div#upload-label-* its label.
- * - Widgets: the react-select inputs carry role="combobox", so the scanner reports them as lazy comboboxes, which are
- *   not filled before Phase 4. No widget is declared here yet.
+ * - Widgets: the react-select inputs carry role="combobox", so the scanner reports them as lazy ARIA comboboxes, which
+ *   the widget helpers (Phase 4) open with one click(). react-select opens on a mousedown, which an adapter must
+ *   declare from a snapshot taken with a dropdown open; none is declared here yet, so on a live page they end flagged
+ *   (or, where the question takes a search, are searched by typing).
  * - Submit: the button in .application--submit, identified so it is never clicked. The form is a single step, so a
  *   page showing the form and its Submit is the final step.
  * - Errors: the standard aria-invalid="true", which every control in the snapshots carries (as "false"). No snapshot

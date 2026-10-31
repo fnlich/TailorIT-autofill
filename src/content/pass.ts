@@ -10,7 +10,9 @@
  * 3. a file write first receives the resume over the `resume` port (transfer.ts), then is checked again, since the
  *    page had a moment to change, and is dropped as user-stopped if the person pressed Cancel meanwhile;
  * 4. fill() writes with untrusted events and reads back at once; what the field then holds (readBack, values.ts) is
- *    what the loop hashes for its flip count;
+ *    what the loop hashes for its flip count. An ARIA widget is written by the widget helpers instead (Phase 4,
+ *    dom/widgets): its option chosen, its missing options added, its member pressed, or, for a remote typeahead, each
+ *    query a guarded write of its own and each result list matched by the worker (searchField);
  * 5. the planner's row is settled from what happened (settleRow).
  * A refused write leaves its field untouched, with the guard's reason: blocked for what the Guard forbids (not
  * visible, no visible label, a canary, its provenance, its own UI), flagged for what could not be done (gone, options
@@ -22,14 +24,22 @@ import type { Adapter } from '../adapters/types';
 import type { Platform } from '../core/enums';
 import { guardWriteInFrame } from '../core/guard/write';
 import { settleRow, type FillOutcome } from '../core/plan/settle';
-import type { CurrentValue, FieldKey } from '../core/types/field';
+import { capCodePoints } from '../core/text/fold';
+import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { FieldCategory, ValueOrigin, WriteValue } from '../core/types/intent';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
+import { hashOfOptions } from '../dom/option-hash';
 import { toFieldSpec } from '../dom/scan';
-import type { FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult } from '../dom/types';
+import { TEXT_CAP_LABEL } from '../dom/thresholds';
+import type {
+  FieldTarget, FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult, WidgetOptionRead, WidgetReading,
+} from '../dom/types';
 import { visiblePlaceholder } from '../dom/visible-text';
+import {
+  fillWidget, isActionable, searchTypeahead, type TypeaheadHooks, type WidgetFillContext,
+} from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
 import { receiveResume, type ReceivedResume } from './transfer';
@@ -88,11 +98,22 @@ export interface WrittenField {
   readBackVerified: boolean;
 }
 
+/** What a widget's write needs from its loop (Phase 4). */
+export interface WidgetWriteEnv {
+  /** The run's widget readings, by base key (ScanOptions.widgetReadings): a fresh read of a list replaces its field's. */
+  readings: Map<BaseKey, WidgetReading>;
+  /** plan/request for one field, with the whole pass's index: a remote typeahead's results go to the worker, which
+   *  matches them. */
+  plan(specs: FieldSpec[], planKeys: FieldKey[]): Promise<PlanAnswer>;
+}
+
 /** What else a write may need. */
 export interface WriteOptions {
   /** A follow-up's box row as the worker planned it: when the DOM guard's fresh scan finds the box holding text other
    *  than the free text (typed meanwhile), nothing is written and this row stands (the Phase 3 review, L-S7). */
   keep?: FillResult;
+  /** A widget's write (Phase 4): without it a widget is widget-unsupported. */
+  widgets?: WidgetWriteEnv;
 }
 
 /** What one write did: the row it ends with and, when the field changed, what was written and what the field held
@@ -214,6 +235,7 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   }
 
   const target = verdict.target;
+  if (target.widget !== undefined) return writeWidget(env, last, field, write, planned, target, options.widgets);
   // Our write hides the placeholder showing now, which labels this field or makes it fillable: the run's rescans keep
   // it while the page still shows this text (DOM-7), so the field keeps its label and its key.
   const shown = visiblePlaceholder(target.control);
@@ -236,4 +258,92 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
       readBackVerified: outcome.verification === 'verified' },
     readBack: readBack(target),
   };
+}
+
+// ── Widgets (Phase 4) ────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A written widget, as the verification after the settle and the final Guard need it. Memory only. */
+function writtenWidget(field: PlannedField, write: PlannedWrite, planned: FillResult, before: ScannedField,
+  verified: boolean): WrittenField {
+  return { key: write.key, field, value: write.value, origin: write.origin, planned, rule: undefined, file: null,
+    resume: null, textBefore: null, selectedBefore: selectedOf(before), readBackVerified: verified };
+}
+
+/** One write into an ARIA widget, through the widget helpers (dom/widgets): a combobox's option, a multiselect's
+ *  missing options, a group's member, or a remote typeahead's queries. The Guards have passed it already. */
+async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
+  planned: FillResult, target: FieldTarget, widgets: WidgetWriteEnv | undefined): Promise<WriteResult> {
+  if (widgets === undefined) return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
+  const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings };
+  if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
+  const outcome = await fillWidget(target, write.value, ctx);
+  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  const row = rowAfterFill(planned, outcome);
+  if (!outcome.wrote) return { row };
+  return { row, written: writtenWidget(plannedFieldOf(field), write, planned, target.field,
+    outcome.verification === 'verified'), readBack: readBack(target) };
+}
+
+/** A typeahead's results as the worker matches them: the field's spec with the results as its options (their hash its
+ *  observed one), and nothing chosen yet (the box holds our query, which is no answer). */
+function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[]): FieldSpec {
+  const options = results.map((result, index) => ({ index, label: capCodePoints(result.label, TEXT_CAP_LABEL),
+    disabled: result.disabled, selected: false }));
+  return { ...toFieldSpec(field), options, optionSetHash: hashOfOptions(options.map((option) => option.label)),
+    current: { kind: 'empty' } };
+}
+
+/**
+ * A remote typeahead's search (dom/widgets' searchTypeahead): each query a guarded write of its own (the DOM guard on a
+ * fresh scan, then guardWriteInFrame on that one query, provenance profile and transform typeahead.query), and each
+ * result list matched by the worker (plan/request for this field alone, its results as its options), whose choice
+ * passes guardWriteInFrame before it is clicked. The row is the worker's for the chosen result, or the planned one
+ * flagged (blocked when a Guard refused) with why nothing was chosen.
+ */
+async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
+  planned: FillResult, target: FieldTarget, widgets: WidgetWriteEnv, ctx: WidgetFillContext): Promise<WriteResult> {
+  if (write.value.kind !== 'query' || !isActionable(target.widget!)) {
+    return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
+  }
+  const wanted = plannedFieldOf(field);
+  let chosen: { row: FillResult; write: PlannedWrite } | null = null;
+  const hooks: TypeaheadHooks = {
+    guard: async (query) => {
+      if (env.signal.aborted || !env.valid()) throw new RunAborted();
+      if (env.stopped()) return { ok: false, reason: 'user-stopped', blocked: false };
+      const again = domGuardBeforeWrite(last, wanted);
+      if (!again.ok) return { ok: false, reason: again.reason, blocked: GUARD_BLOCKS.has(again.reason) };
+      const one: PlannedWrite = { ...write, value: { kind: 'query', queries: [query] } };
+      const check = guardWriteInFrame(one, toFieldSpec(again.target.field), env.canaries);
+      if (!check.ok) return { ok: false, reason: check.reason, blocked: !FRAME_GUARD_FLAGS.has(check.reason) };
+      return { ok: true, target: again.target };
+    },
+    match: async (results, now) => {
+      const spec = resultsSpec(now.field, results);
+      const answer = await widgets.plan([spec], [spec.key]);
+      if (env.signal.aborted || !env.valid()) throw new RunAborted();
+      // The answer's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
+      const row = (answer.results as unknown as FillResult[]).find((candidate) => candidate.key === spec.key);
+      const pick = (answer.writes as unknown as PlannedWrite[]).find((candidate) => candidate.key === spec.key);
+      if (row === undefined || pick === undefined || pick.value.kind !== 'option') {
+        return { choose: null, reason: row?.reason ?? 'no-match', blocked: row?.status === 'blocked' };
+      }
+      const check = guardWriteInFrame(pick, spec, env.canaries);
+      if (!check.ok) return { choose: null, reason: check.reason, blocked: !FRAME_GUARD_FLAGS.has(check.reason) };
+      chosen = { row, write: pick };
+      return { choose: { index: pick.value.index, cleanLabel: pick.value.cleanLabel } };
+    },
+  };
+  const result = await searchTypeahead(target, write.value.queries, ctx, hooks);
+  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  const picked = chosen as { row: FillResult; write: PlannedWrite } | null;
+  if (result.chosen === null || picked === null) {
+    return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }
+      : { kind: 'not-written', reason: result.reason }) };
+  }
+  const base = { ...picked.row, key: write.key };
+  const row = result.verified ? settleRow(base, { kind: 'verified' }) : mismatchRow(base, 'verify-mismatch');
+  const now = last.rescan().target(write.key) ?? target;
+  return { row, written: writtenWidget(wanted, { ...picked.write, key: write.key }, base, target.field, result.verified),
+    readBack: readBack(now) };
 }

@@ -6,7 +6,8 @@
  *   run's memory only: it is never sent, stored or logged, so nothing outside the run can link or reverse a hash.
  * - Both readings go through one canonical form of the field's CurrentValue (canonicalValue): the scanner's own
  *   `current`, or readBack's, which builds the same CurrentValue from the live elements of the target just written
- *   (dom/values.ts's currentValueOf, over the same visible option labels). An option label is cut to the scanner's
+ *   (dom/values.ts's currentValueOf, over the same visible option labels; a widget's through dom/widgets'
+ *   widgetCurrentValue, as the scanner reads it). An option label is cut to the scanner's
  *   300 code points and a selection is sorted, so the two readings of one value always hash alike.
  * Values and hashes stay in memory: nothing here sends or logs either.
  */
@@ -16,6 +17,7 @@ import type { ValueMac } from '../core/types/loop';
 import { TEXT_CAP_LABEL } from '../dom/thresholds';
 import type { FieldTarget, ScannedField } from '../dom/types';
 import { currentValueOf, type SelectableOption } from '../dom/values';
+import { widgetCurrentValue } from '../dom/widgets';
 
 /** Separates the parts of a canonical value: no label or text can hold it unnoticed, and none is ever shown. */
 const PART = '\u{0}';
@@ -41,6 +43,8 @@ export function canonicalValue(current: CurrentValue): string {
 export function readBack(target: FieldTarget): CurrentValue {
   const { field, control } = target;
   const labels = field.options === 'lazy' ? [] : field.options.map((option) => option.label);
+  // A widget, as the scanner reads one: the labels it shows chosen.
+  if (target.widget !== undefined) return widgetCurrentValue(target.widget, labels);
   let selectable: SelectableOption[] = [];
   if (target.options.length > 0) {
     selectable = target.options.map((option, at) => ({ label: labels[at] ?? '', selected: option.selected }));

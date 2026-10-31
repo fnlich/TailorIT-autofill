@@ -11,8 +11,9 @@
  *   control, and every group of boxes (Pronouns, the custom checkbox and radio questions), is named by the question's
  *   div.application-label, which no label element, legend or aria attribute ties to it.
  * - Upload: the resume input sits at opacity 0 inside the visible ATTACH RESUME/CV link, which is its upload widget.
- * - Widgets: "Current location" is Lever's own location search, a remote typeahead (Phase 4). It is declared as one,
- *   with no activation events, so that it is never typed into as plain text; nothing here fills a widget.
+ * - Widgets: "Current location" is Lever's own location search, a remote typeahead. It is declared as one, with no
+ *   activation events, so that it is never typed into as plain text. Its results are no ARIA listbox the snapshots
+ *   show, so the widget helpers (Phase 4) leave it widget-unsupported and type nothing into it.
  * - Submit: button#btn-submit, identified so it is never clicked. The form is a single step, so a page showing the
  *   form and its Submit is the final step.
  * - Errors: Lever's p.error-message when shown, plus the standard aria-invalid="true".

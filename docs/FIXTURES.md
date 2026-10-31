@@ -112,5 +112,22 @@ A synthetic page may run its own script, as the form it stands for does, but tha
 | `page-busy` | the states arrive after 800 ms, but `aria-busy` on the form and a progress bar outside any one list's field stay: the whole page is busy |
 | any other address | the states arrive after 800 ms |
 
+**`widgets/` (Phase 4)**, served at `https://jobs.lever.co/tailorit-fixture/widgets/apply`, filled by `e2e/specs/27-widgets.spec.ts`. Each widget is drawn to a standard ARIA pattern, and the page script reacts only to the clicks, input and focusout its own widgets receive:
+- "Are you legally authorized to work in the United States?": a `role="group"` of two typeless `<button>`s with `aria-pressed`, inside the form. A typeless button in a form is a submit button, so `assertNotSubmit` refuses its click: the field ends flagged `needs-your-click`, with no event on either button;
+- "Will you now or in the future require sponsorship...": a `role="radiogroup"` of `<button type="button" role="radio">`s with `aria-checked`;
+- "Which of these skills have you used?": a react-select-style chips multiselect, a text input with `role="combobox"` over a listbox with `aria-multiselectable`. TypeScript is chosen when the page loads, a click on a chosen option removes it, and the list closes after each pick;
+- "Country": a select-only combobox over a virtualized list of 249 countries, each row carrying `aria-posinset`, with only the rows in view drawn, redrawn on the list's own scroll event;
+- "Degree": a combobox whose click handler ignores untrusted clicks.
+
+`window.__widgetClicks`, `__chipsRemoved` and `__countryRenders` count what the page saw.
+
+**`remote-typeahead/` (Phase 4)**, filled by `e2e/specs/28-remote-typeahead.spec.ts`. An ARIA 1.2 combobox (an input with `role="combobox"`, `aria-autocomplete="list"` and `aria-controls`) over an in-page fake server. Each query takes 300 ms, during which `aria-busy` is set on the field's box. `window.__queries` logs every query with the times it was typed and answered, and `__resultClicks` records the results clicked. A click on the empty input opens nothing. The variant comes from the address, `https://jobs.lever.co/tailorit-fixture/remote-typeahead[-<variant>]/apply`:
+
+| Variant | The fake server |
+|---|---|
+| none named | "The University of Texas at Austin" finds nothing; "University of Texas at Austin" finds Dallas, Austin and Arlington (Dallas first); anything else finds the schools holding each of its words |
+| `none` | every query finds nothing |
+| `injected` | the only Austin in the second query's results carries injected text; "UT Austin" finds the clean one |
+
 ## Smoke fixtures (`fixtures/smoke/`, Phase 0)
 `form.html` (a plain application form) and `company-embed.html` (a company page embedding a Greenhouse form in an iframe), served at every ATS host pattern by `00-smoke`.

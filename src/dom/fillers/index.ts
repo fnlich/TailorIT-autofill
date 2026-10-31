@@ -7,8 +7,9 @@
  *
  * Each kind takes its own value: text and textarea a text, select and radio an option, multiselect and checkbox-group
  * options, a lone checkbox a check, date a date and file the resume. Any other pairing, or an options value without
- * one clean label per index, is a planner bug (internal-error); ARIA widgets come in Phase 4 (widget-unsupported). A
- * choice whose option no longer reads as planned is refused as options-changed, with nothing written.
+ * one clean label per index, is a planner bug (internal-error); an ARIA widget is the widget helpers' (dom/widgets),
+ * so fill() refuses it (widget-unsupported). A choice whose option no longer reads as planned is refused as
+ * options-changed, with nothing written.
  */
 import type { Adapter } from '../../adapters/types';
 import type { WriteValue } from '../../core/types/intent';
@@ -42,9 +43,9 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
   if (field.kind !== 'radio' && field.kind !== 'checkbox-group' && (isDisabled(control) || isReadOnly(control))) {
     return refused('disabled-or-readonly');
   }
-  // Options that exist only once a widget is opened (a combobox, a widget the adapter declares): Phase 4's helpers fill
-  // those, never the native fillers.
-  if (field.options === 'lazy') return refused('widget-unsupported');
+  // An ARIA widget, or one the adapter declares, and options that exist only once a widget is opened: the widget
+  // helpers (dom/widgets) fill those, asynchronously, never the native fillers.
+  if (target.widget !== undefined || field.options === 'lazy') return refused('widget-unsupported');
   if (value.kind === 'options' && value.cleanLabels.length !== value.indices.length) return refused('internal-error');
   const clicks = { adapter: ctx.adapter, root: ctx.root };
   switch (field.kind) {

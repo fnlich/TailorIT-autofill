@@ -45,7 +45,7 @@ import type { FillResult, ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunState, RunStatus } from '../core/types/run';
 import { detectPause, type PauseSignal } from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
-import type { ScanResult } from '../dom/types';
+import type { ScanResult, WidgetReading } from '../dom/types';
 import type { ErrorCode } from '../messaging/envelope';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
@@ -176,6 +176,9 @@ export class FillRun {
   private sentUnplanned = false;
   /** The raw passages read so far, and those with a tripwire hit: a later check reads only what is new. */
   private readonly passagesSeen = new Set<string>();
+  /** What this run read of its lazy widgets, by base key (Phase 4): the loop's scans read it, and so do field/focus
+   *  and field/describe once the run has rows. Option labels only (page text), in memory. */
+  readonly widgetReadings = new Map<BaseKey, WidgetReading>();
   private hitPassages: RawPassage[] = [];
   /** What cut the loop before a later pass. */
   private loopCut: LoopCut | null = null;
@@ -617,6 +620,7 @@ export class FillRun {
       stopSignal: this.stopping.signal,
       plan: (specs, planKeys, pass) => this.plan(specs, planKeys, pass),
       recheck: () => this.recheck(),
+      widgetReadings: this.widgetReadings,
       runId: () => this.runId,
       ...(env.options.resume ? { resume: env.options.resume } : {}),
       ...(env.options.settle ? { settle: env.options.settle } : {}),

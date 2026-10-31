@@ -4,7 +4,8 @@
  * case-folded for emails, as a number for amounts, with collapsed white space for other text, the option's identity
  * (its place among the visible options and its clean label) for choices, and the file's name and size for uploads.
  * A multi-option write is read back the same way: every planned place selected and still carrying its planned clean
- * label, so a list re-ordered or re-labelled under our write never verifies.
+ * label, so a list re-ordered or re-labelled under our write never verifies. An ARIA widget is read back by what it
+ * shows chosen (widgets/hold.ts).
  * A page that reformats a value equivalently still verifies; one that rejects it (an empty value, aria-invalid) does not.
  */
 import { qualifiedLabel } from '../../core/text/keys';
@@ -13,6 +14,7 @@ import type { WriteValue } from '../../core/types/intent';
 import { isDisabled, isReadOnly } from '../kinds';
 import { cleanOptionLabel } from '../option-hash';
 import type { FieldTarget, FillOutcome, ReadBackRule, ScannedField, ScanResult } from '../types';
+import { widgetHolds } from '../widgets/hold';
 import { dateValueFor } from './date';
 
 /** The read-back rule a field's own type gives: digits for tel, case-folded for email, numeric for number. */
@@ -72,6 +74,8 @@ export function sameOptionLabel(label: string, cleanLabel: string): boolean {
 export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule, file?: { name: string; size: number }):
   boolean {
   const { field, control } = target;
+  // A widget shows what it holds in its own way (its value, chips, pressed members): the widget helpers read it.
+  if (target.widget !== undefined) return widgetHolds(target, value);
   switch (value.kind) {
     case 'text':
       return sameText((control as HTMLInputElement).value, value.text, rule);

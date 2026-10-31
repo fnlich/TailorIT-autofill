@@ -1,10 +1,10 @@
 /*
- * What kind of field a native control is (docs/design/runtime.md §5.6). Phase 2 covers native controls only; ARIA
- * widgets (role=combobox, listbox, radiogroup, checkbox, switch) come in Phase 4 with their adapters. A text input
- * that is itself a combobox (role="combobox", as Greenhouse's react-select inputs are) is reported as a 'combobox'
- * whose options are 'lazy', never as text: typing into it would not choose anything, so until Phase 4 its writes are
- * refused as widget-unsupported. Radios and checkboxes are grouped by the scanner, which decides between 'checkbox'
- * and 'checkbox-group'.
+ * What kind of field a native control is (docs/design/runtime.md §5.6). ARIA widgets (role=combobox, a listbox, a
+ * radiogroup, a group of toggle buttons) are widgets/aria.ts's (Phase 4). A text input that is itself a combobox
+ * (role="combobox", as Greenhouse's react-select inputs are) is a 'combobox' here, never text: typing into it chooses
+ * nothing by itself, so the scanner hands it to the widget helpers (src/dom/widgets), which open, read and choose
+ * from its list. Radios and checkboxes are grouped by the scanner, which decides between 'checkbox' and
+ * 'checkbox-group'.
  *
  * A password field or a one-time-code field is never a field: it means the step is a sign-in, an account creation or
  * an email code, and nothing on such a step is filled, not even the email (pause-detect.ts).

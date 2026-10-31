@@ -1,7 +1,7 @@
 /*
- * The Phase 3 synthetic fixtures' states as the scanner reads them (docs/FIXTURES.md "States"). Each page loads into a
- * srcdoc frame at the snapshot size, its variant (if the state names one) put on <html> as data-variant before it
- * loads. Each state is reached from a fresh load: its steps act on the page as a filler would, with untrusted events
+ * The synthetic fixtures' states as the scanner reads them (docs/FIXTURES.md "States"): Phase 3's pages, and Phase 4's
+ * widgets and remote-typeahead. Each page loads into a srcdoc frame at the snapshot size, its variant (if the state
+ * names one) put on <html> as data-variant before it loads. Each state is reached from a fresh load: its steps act on the page as a filler would, with untrusted events
  * (a select's value set, then input and change dispatched, bubbling; a radio's click()), so the page's own script
  * reacts; a state with an `until` selector waits for the page to match it (a MutationObserver, capped, never a fixed
  * delay). The registry's adapters for the fixture's address then find the form root, as the content runtime does (the
@@ -17,6 +17,10 @@ import asyncExpect from '../../fixtures/synthetic/async-options/index.expect.jso
 import asyncHtml from '../../fixtures/synthetic/async-options/index.html?raw';
 import conditionalExpect from '../../fixtures/synthetic/conditional-reveal/index.expect.json';
 import conditionalHtml from '../../fixtures/synthetic/conditional-reveal/index.html?raw';
+import typeaheadExpect from '../../fixtures/synthetic/remote-typeahead/index.expect.json';
+import typeaheadHtml from '../../fixtures/synthetic/remote-typeahead/index.html?raw';
+import widgetsExpect from '../../fixtures/synthetic/widgets/index.expect.json';
+import widgetsHtml from '../../fixtures/synthetic/widgets/index.html?raw';
 import { adaptersFor } from '../adapters';
 import { compareWithExpectation, type Expectation, readExpectation, SNAPSHOT_VIEWPORT }
   from '../adapters/test/expectations.testkit';
@@ -89,6 +93,8 @@ function readSynthetic(html: string, json: unknown): Synthetic {
 const PAGES = {
   'conditional-reveal': readSynthetic(conditionalHtml, conditionalExpect),
   'async-options': readSynthetic(asyncHtml, asyncExpect),
+  widgets: readSynthetic(widgetsHtml, widgetsExpect),
+  'remote-typeahead': readSynthetic(typeaheadHtml, typeaheadExpect),
 } as const;
 
 /** The page with `variant` put on its <html> as data-variant, before it loads; the page as it is for none. */

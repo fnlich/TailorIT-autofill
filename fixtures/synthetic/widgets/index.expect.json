@@ -1,0 +1,132 @@
+{
+  "fixture": "synthetic/widgets",
+  "source": "https://jobs.lever.co/tailorit-fixture/widgets/apply",
+  "captured": "never: a synthetic page, written by hand on 2026-10-30",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means, and what the states and their steps are",
+  "note": "Every widget is drawn to a standard ARIA pattern (index.html's header). 'fillable' is the expectations testkit's: a field of a kind the native fillers name, with a visible label; the comboboxes are 'widget-phase-4', filled by the widget helpers (src/dom/widgets), and the Yes/No group of typeless buttons is a fillable radio field whose clicks assertNotSubmit refuses.",
+  "fields": [
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Contact",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "radio",
+      "required": false,
+      "section": "Work authorization",
+      "fillable": true,
+      "options": 2,
+      "control": "#authorized",
+      "note": "A role=group named by aria-labelledby, of two typeless <button>s (Yes, No) with aria-pressed: inside the form each is a submit button, so assertNotSubmit refuses its click."
+    },
+    {
+      "label": "Will you now or in the future require sponsorship for employment visa status in the United States?",
+      "kind": "radio",
+      "required": false,
+      "section": "Work authorization",
+      "fillable": true,
+      "options": 2,
+      "control": "#sponsorship",
+      "note": "A role=radiogroup of two <button type=\"button\" role=\"radio\">s with aria-checked."
+    },
+    {
+      "label": "Which of these skills have you used?",
+      "kind": "multiselect",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#skills-input",
+      "note": "A text input with role=combobox whose list (aria-controls, aria-multiselectable) is hidden until it is opened; TypeScript shows as a chip."
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": false,
+      "section": "Location",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#country",
+      "note": "A select-only combobox (a div with role=combobox) over a virtualized listbox of 249 countries, hidden until it is opened."
+    },
+    {
+      "label": "Degree",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "#degree",
+      "note": "A select-only combobox whose click handler ignores untrusted clicks: only a person can open it."
+    }
+  ],
+  "states": [
+    {
+      "name": "skills opened",
+      "variant": null,
+      "steps": [
+        { "click": "#skills-input" }
+      ],
+      "until": null,
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Are you legally authorized to work in the United States?", "kind": "radio", "required": false, "section": "Work authorization", "fillable": true, "options": 2, "control": "#authorized" },
+        { "label": "Will you now or in the future require sponsorship for employment visa status in the United States?", "kind": "radio", "required": false, "section": "Work authorization", "fillable": true, "options": 2, "control": "#sponsorship" },
+        {
+          "label": "Which of these skills have you used?",
+          "kind": "multiselect",
+          "required": false,
+          "section": "Skills",
+          "fillable": true,
+          "options": 8,
+          "control": "#skills-input",
+          "note": "The list is shown whole once opened, so its eight options are read as they are."
+        },
+        { "label": "Country", "kind": "combobox", "required": false, "section": "Location", "fillable": false, "reason": "widget-phase-4", "options": "lazy", "control": "#country" },
+        { "label": "Degree", "kind": "combobox", "required": false, "section": "Education", "fillable": false, "reason": "widget-phase-4", "options": "lazy", "control": "#degree" }
+      ]
+    },
+    {
+      "name": "country opened",
+      "variant": null,
+      "steps": [
+        { "click": "#country" }
+      ],
+      "until": null,
+      "fields": [
+        { "label": "Full name", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#name" },
+        { "label": "Email", "kind": "text", "required": true, "section": "Contact", "fillable": true, "control": "#email" },
+        { "label": "Are you legally authorized to work in the United States?", "kind": "radio", "required": false, "section": "Work authorization", "fillable": true, "options": 2, "control": "#authorized" },
+        { "label": "Will you now or in the future require sponsorship for employment visa status in the United States?", "kind": "radio", "required": false, "section": "Work authorization", "fillable": true, "options": 2, "control": "#sponsorship" },
+        { "label": "Which of these skills have you used?", "kind": "multiselect", "required": false, "section": "Skills", "fillable": true, "options": "lazy", "control": "#skills-input" },
+        {
+          "label": "Country",
+          "kind": "combobox",
+          "required": false,
+          "section": "Location",
+          "fillable": false,
+          "reason": "widget-phase-4",
+          "options": "lazy",
+          "control": "#country",
+          "note": "Open, but its list scrolls (only the rows in view are drawn), so it stays lazy until the widget helper reads it whole."
+        },
+        { "label": "Degree", "kind": "combobox", "required": false, "section": "Education", "fillable": false, "reason": "widget-phase-4", "options": "lazy", "control": "#degree" }
+      ]
+    }
+  ]
+}

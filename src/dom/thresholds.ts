@@ -81,6 +81,25 @@ export const SETTLE_CAP_MAX_MS = 30_000;
 export const OPTIONS_CAP_MS = 5_000;
 /** awaitOptions(): real options count as arrived once the list has had no mutation for this long. */
 export const OPTIONS_QUIET_MS = 250;
+/** A widget (Phase 4): after one activation, a click on an option or a close, the page has this long without a mutation
+ *  before the widget is read again. */
+export const WIDGET_QUIET_MS = 150;
+/** A widget's wait after one activation, click or close ends here at the latest. */
+export const WIDGET_CAP_MS = 2_000;
+/** A widget's list just opened that shows no option, no busy sign and no change for this long is empty. */
+export const WIDGET_EMPTY_AFTER_MS = 1_000;
+/** A virtualized list, after its scrollTop is set: the page has this long without a mutation to draw its rows. */
+export const WIDGET_SCROLL_QUIET_MS = 40;
+/** A list that does not change after its scrollTop was set (it is drawn whole) is read after this long. */
+export const WIDGET_SCROLL_SETTLE_MS = 120;
+/** A virtualized list's wait after one scroll ends here at the latest. */
+export const WIDGET_SCROLL_CAP_MS = 400;
+/** A widget's options read at most: a longer list is read this far. */
+export const MAX_WIDGET_OPTIONS = 1_000;
+/** A virtualized list is scrolled at most this many times while it is read. */
+export const MAX_WIDGET_SCROLLS = 200;
+/** A remote typeahead: one query's results arrive within this, or the query found nothing. */
+export const TYPEAHEAD_QUERY_CAP_MS = 3_000;
 /** After an auto-advance click, the step transition waits at most this long. */
 export const TRANSITION_CAP_MS = 20_000;
 /** The URL poll, where the Navigation API is missing. */

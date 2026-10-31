@@ -1,0 +1,310 @@
+<!doctype html>
+<!--
+  Synthetic: ARIA widgets inside an application form (docs/design/runtime.md §5.6, §6 and §11.e; docs/FIXTURES.md
+  "Synthetic fixtures"), each drawn to a standard ARIA pattern, with a small page script that reacts to the events a
+  person's (or the extension's) activation causes: click, input and focusout on the widget's own elements. The script
+  dispatches no event and never focuses, scrolls, clicks or submits anything; it calls preventDefault on the clicks of
+  the Yes/No buttons, which are typeless buttons inside the form, as the form they stand for would. The form posts to
+  /__submitted. Its DOM-level expectations are index.expect.json, beside it.
+
+  The widgets:
+  - "Are you legally authorized to work in the United States?": a group (role="group", named by aria-labelledby) of two
+    typeless <button>s, Yes and No, each showing its state with aria-pressed. Inside the form a typeless button is a
+    submit button, so assertNotSubmit refuses its click: the field is flagged needs-your-click and nothing is clicked;
+  - "Will you now or in the future require sponsorship for employment visa status in the United States?": a radio group
+    (role="radiogroup") of two <button type="button" role="radio">s with aria-checked; a click checks the one clicked;
+  - "Which of these skills have you used?": a react-select-style chips multiselect. A text input (role="combobox",
+    aria-autocomplete="list", aria-controls) over a listbox with aria-multiselectable="true", hidden until a click on
+    the input opens it; each chosen option shows as a chip beside the input (its label and a "Remove" button) and stays
+    in the list with aria-selected="true". A click on an option toggles it (so a click on a chosen one removes it) and
+    closes the list, as react-select does; a focusout on the input closes it too. TypeScript is chosen when the page
+    loads (a chip the extension must keep);
+  - "Country": a select-only combobox (a div with role="combobox") over a long virtualized listbox: 249 countries, of
+    which only the rows in view (and two on either side) are drawn, each with aria-posinset and aria-setsize, redrawn
+    on the list's own scroll event. A click on the combobox toggles the list, a click on an option chooses it (the
+    combobox shows its label) and closes the list, and a focusout on the combobox closes it;
+  - "Degree": a select-only combobox that ignores untrusted clicks: its click handler returns at once unless the event
+    isTrusted, so only a person can open it. The extension's untrusted click opens nothing, and the field is flagged
+    needs-your-click.
+  window.__widgetClicks counts the clicks each widget part received (by id), trusted or not; __chipsRemoved the chips
+  a click took away; __countryRenders how often the virtualized list drew its rows.
+
+  With the golden "Alex Rivera" profile (fixtures/profiles, with its sensitive part): Yes for authorization (refused,
+  needs-your-click), No for sponsorship, TypeScript kept and PostgreSQL and Kubernetes added to the skills, United
+  States chosen as the country (row 238 of 249, so the list is scrolled to read it), and the degree left for the
+  person.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Engineer - Application</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px 400px; }
+    h2 { margin: 28px 0 4px; font-size: 20px; }
+    form label, .q { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    .toggles button { margin-right: 8px; padding: 6px 18px; border: 1px solid #555; background: #f4f4f4; color: #222; }
+    .toggles button[aria-pressed="true"], .toggles button[aria-checked="true"] { background: #2266cc; color: #fff; }
+    .control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px; border: 1px solid #888; }
+    .control input { flex: 1; min-width: 120px; width: auto; border: 0; }
+    .chip { display: inline-flex; gap: 4px; align-items: center; padding: 2px 8px; background: #e3ecfa; color: #123; }
+    .chip button { border: 0; background: transparent; color: #123; padding: 0 2px; }
+    [role="listbox"] { margin: 4px 0 0; padding: 0; list-style: none; border: 1px solid #888; background: #fff; }
+    [role="listbox"][hidden] { display: none; }
+    [role="option"] { padding: 4px 8px; color: #222; }
+    [role="option"][aria-selected="true"] { background: #e3ecfa; }
+    .select-only [role="combobox"] { padding: 6px; border: 1px solid #888; background: #fff; color: #222; }
+    #country-listbox { position: relative; height: 256px; overflow-y: auto; }
+    #country-listbox .sizer { position: relative; }
+    #country-listbox [role="option"] { position: absolute; left: 0; right: 0; height: 32px; box-sizing: border-box;
+      padding: 4px 8px; }
+    button[type="submit"] { margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Platform Engineer</h1>
+    <p>Build the services that run our platform.</p>
+    <form id="application" action="/__submitted" method="post">
+      <h2>Contact</h2>
+      <label for="name">Full name</label>
+      <input id="name" name="name" required>
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required>
+
+      <h2>Work authorization</h2>
+      <p id="authorized-label" class="q">Are you legally authorized to work in the United States?</p>
+      <div id="authorized" class="toggles" role="group" aria-labelledby="authorized-label">
+        <button id="authorized-yes" aria-pressed="false">Yes</button>
+        <button id="authorized-no" aria-pressed="false">No</button>
+      </div>
+      <p id="sponsorship-label" class="q">Will you now or in the future require sponsorship for employment visa status in
+        the United States?</p>
+      <div id="sponsorship" class="toggles" role="radiogroup" aria-labelledby="sponsorship-label">
+        <button type="button" id="sponsorship-yes" role="radio" aria-checked="false">Yes</button>
+        <button type="button" id="sponsorship-no" role="radio" aria-checked="false">No</button>
+      </div>
+
+      <h2>Skills</h2>
+      <div id="skills-field">
+        <label id="skills-label" for="skills-input">Which of these skills have you used?</label>
+        <div id="skills-control" class="control">
+          <input id="skills-input" role="combobox" aria-autocomplete="list" aria-expanded="false"
+            aria-controls="skills-listbox" autocomplete="off">
+        </div>
+        <ul id="skills-listbox" role="listbox" aria-multiselectable="true" aria-labelledby="skills-label" hidden>
+          <li id="skill-typescript" role="option" aria-selected="true">TypeScript</li>
+          <li id="skill-postgresql" role="option" aria-selected="false">PostgreSQL</li>
+          <li id="skill-kubernetes" role="option" aria-selected="false">Kubernetes</li>
+          <li id="skill-go" role="option" aria-selected="false">Go</li>
+          <li id="skill-rust" role="option" aria-selected="false">Rust</li>
+          <li id="skill-python" role="option" aria-selected="false">Python</li>
+          <li id="skill-java" role="option" aria-selected="false">Java</li>
+          <li id="skill-swift" role="option" aria-selected="false">Swift</li>
+        </ul>
+      </div>
+
+      <h2>Location</h2>
+      <div id="country-field" class="select-only">
+        <span id="country-label" class="q">Country</span>
+        <div id="country" role="combobox" tabindex="0" aria-labelledby="country-label" aria-haspopup="listbox"
+          aria-expanded="false" aria-controls="country-listbox">Select a country</div>
+        <div id="country-listbox" role="listbox" aria-labelledby="country-label" hidden>
+          <div class="sizer" role="presentation"></div>
+        </div>
+      </div>
+
+      <h2>Education</h2>
+      <div id="degree-field" class="select-only">
+        <span id="degree-label" class="q">Degree</span>
+        <div id="degree" role="combobox" tabindex="0" aria-labelledby="degree-label" aria-haspopup="listbox"
+          aria-expanded="false" aria-controls="degree-listbox">Select a degree</div>
+        <ul id="degree-listbox" role="listbox" aria-labelledby="degree-label" hidden>
+          <li id="degree-high-school" role="option" aria-selected="false">High school</li>
+          <li id="degree-associate" role="option" aria-selected="false">Associate's</li>
+          <li id="degree-bachelor" role="option" aria-selected="false">Bachelor's</li>
+          <li id="degree-master" role="option" aria-selected="false">Master's</li>
+          <li id="degree-doctorate" role="option" aria-selected="false">Doctorate</li>
+        </ul>
+      </div>
+
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const byId = (id) => document.getElementById(id);
+      window.__widgetClicks = {};
+      window.__chipsRemoved = 0;
+      window.__countryRenders = 0;
+      const counted = (el) => {
+        el.addEventListener('click', () => {
+          window.__widgetClicks[el.id] = (window.__widgetClicks[el.id] ?? 0) + 1;
+        });
+      };
+
+      // Yes/No: typeless buttons inside the form. The page keeps their clicks from submitting the form.
+      for (const button of byId('authorized').querySelectorAll('button')) {
+        counted(button);
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          for (const other of byId('authorized').querySelectorAll('button')) {
+            other.setAttribute('aria-pressed', String(other === button));
+          }
+        });
+      }
+
+      // The radio group of buttons.
+      for (const radio of byId('sponsorship').querySelectorAll('[role="radio"]')) {
+        counted(radio);
+        radio.addEventListener('click', () => {
+          for (const other of byId('sponsorship').querySelectorAll('[role="radio"]')) {
+            other.setAttribute('aria-checked', String(other === radio));
+          }
+        });
+      }
+
+      // The chips multiselect.
+      const skillsInput = byId('skills-input');
+      const skillsList = byId('skills-listbox');
+      const skillsControl = byId('skills-control');
+      const showSkills = (open) => {
+        skillsList.hidden = !open;
+        skillsInput.setAttribute('aria-expanded', String(open));
+      };
+      const drawChips = () => {
+        for (const chip of skillsControl.querySelectorAll('.chip')) chip.remove();
+        for (const option of skillsList.querySelectorAll('[role="option"][aria-selected="true"]')) {
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          const label = document.createElement('span');
+          label.textContent = option.textContent;
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.id = `remove-${option.id}`;
+          remove.setAttribute('aria-label', `Remove ${option.textContent}`);
+          remove.textContent = 'x';
+          counted(remove);
+          remove.addEventListener('click', () => {
+            option.setAttribute('aria-selected', 'false');
+            window.__chipsRemoved += 1;
+            drawChips();
+          });
+          chip.append(label, remove);
+          skillsControl.insertBefore(chip, skillsInput);
+        }
+      };
+      counted(skillsInput);
+      skillsInput.addEventListener('click', () => showSkills(skillsList.hidden));
+      skillsInput.addEventListener('focusout', () => showSkills(false));
+      for (const option of skillsList.querySelectorAll('[role="option"]')) {
+        counted(option);
+        option.addEventListener('click', () => {
+          option.setAttribute('aria-selected', String(option.getAttribute('aria-selected') !== 'true'));
+          drawChips();
+          showSkills(false);
+        });
+      }
+      drawChips();
+
+      // The virtualized country list.
+      const COUNTRIES = [
+        "Afghanistan", "Aland Islands", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", "Anguilla",
+        "Antarctica", "Antigua & Barbuda", "Argentina", "Armenia", "Aruba", "Australia", "Austria", "Azerbaijan",
+        "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bermuda",
+        "Bhutan", "Bolivia", "Bosnia & Herzegovina", "Botswana", "Bouvet Island", "Brazil",
+        "British Indian Ocean Territory", "British Virgin Islands", "Brunei", "Bulgaria", "Burkina Faso",
+        "Burundi", "Cambodia", "Cameroon", "Canada", "Cape Verde", "Caribbean Netherlands", "Cayman Islands",
+        "Central African Republic", "Chad", "Chile", "China", "Christmas Island", "Cocos (Keeling) Islands",
+        "Colombia", "Comoros", "Congo - Brazzaville", "Congo - Kinshasa", "Cook Islands", "Costa Rica",
+        "Cote d'Ivoire", "Croatia", "Cuba", "Curacao", "Cyprus", "Czechia", "Denmark", "Djibouti", "Dominica",
+        "Dominican Republic", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia",
+        "Eswatini", "Ethiopia", "Falkland Islands", "Faroe Islands", "Fiji", "Finland", "France", "French Guiana",
+        "French Polynesia", "French Southern and Antarctic Lands", "Gabon", "Gambia", "Georgia", "Germany",
+        "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guernsey",
+        "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Heard Island & McDonald Islands", "Honduras",
+        "Hong Kong SAR China", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland",
+        "Isle of Man", "Israel", "Italy", "Jamaica", "Japan", "Jersey", "Jordan", "Kazakhstan", "Kenya",
+        "Kiribati", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya",
+        "Liechtenstein", "Lithuania", "Luxembourg", "Macao SAR China", "Madagascar", "Malawi", "Malaysia",
+        "Maldives", "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte",
+        "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Montserrat", "Morocco",
+        "Mozambique", "Myanmar (Burma)", "Namibia", "Nauru", "Nepal", "Netherlands", "New Caledonia",
+        "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Norfolk Island", "North Korea", "North Macedonia",
+        "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", "Palestinian Territories", "Panama",
+        "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Pitcairn Islands", "Poland", "Portugal",
+        "Puerto Rico", "Qatar", "Reunion", "Romania", "Russia", "Rwanda", "Samoa", "San Marino",
+        "Sao Tome & Principe", "Saudi Arabia", "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore",
+        "Sint Maarten", "Slovakia", "Slovenia", "Solomon Islands", "Somalia", "South Africa",
+        "South Georgia & South Sandwich Islands", "South Korea", "South Sudan", "Spain", "Sri Lanka",
+        "St. Barthelemy", "St. Helena, Ascension & Tristan da Cunha", "St. Kitts & Nevis", "St. Lucia",
+        "St. Martin", "St. Pierre & Miquelon", "St. Vincent & Grenadines", "Sudan", "Suriname",
+        "Svalbard & Jan Mayen", "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand",
+        "Timor-Leste", "Togo", "Tokelau", "Tonga", "Trinidad & Tobago", "Tunisia", "Turkiye", "Turkmenistan",
+        "Turks & Caicos Islands", "Tuvalu", "U.S. Outlying Islands", "U.S. Virgin Islands", "Uganda", "Ukraine",
+        "United Arab Emirates", "United Kingdom", "United States", "Uruguay", "Uzbekistan", "Vanuatu",
+        "Vatican City", "Venezuela", "Vietnam", "Wallis & Futuna", "Western Sahara", "Yemen", "Zambia", "Zimbabwe"
+      ];
+      const ROW = 32;
+      const BUFFER = 2;
+      const country = byId('country');
+      const countryList = byId('country-listbox');
+      const sizer = countryList.querySelector('.sizer');
+      sizer.style.height = `${COUNTRIES.length * ROW}px`;
+      let chosenCountry = null;
+      const drawCountries = () => {
+        window.__countryRenders += 1;
+        const first = Math.max(0, Math.floor(countryList.scrollTop / ROW) - BUFFER);
+        const last = Math.min(COUNTRIES.length - 1, Math.ceil((countryList.scrollTop + countryList.clientHeight) / ROW) + BUFFER);
+        const rows = [];
+        for (let at = first; at <= last; at += 1) {
+          const row = document.createElement('div');
+          row.id = `country-option-${at}`;
+          row.setAttribute('role', 'option');
+          row.setAttribute('aria-posinset', String(at + 1));
+          row.setAttribute('aria-setsize', String(COUNTRIES.length));
+          row.setAttribute('aria-selected', String(COUNTRIES[at] === chosenCountry));
+          row.style.top = `${at * ROW}px`;
+          row.textContent = COUNTRIES[at];
+          row.addEventListener('click', () => {
+            window.__widgetClicks[row.id] = (window.__widgetClicks[row.id] ?? 0) + 1;
+            chosenCountry = COUNTRIES[at];
+            country.textContent = chosenCountry;
+            showCountries(false);
+          });
+          rows.push(row);
+        }
+        sizer.replaceChildren(...rows);
+      };
+      const showCountries = (open) => {
+        countryList.hidden = !open;
+        country.setAttribute('aria-expanded', String(open));
+        if (open) drawCountries();
+      };
+      counted(country);
+      country.addEventListener('click', () => showCountries(countryList.hidden));
+      country.addEventListener('focusout', () => showCountries(false));
+      countryList.addEventListener('scroll', drawCountries);
+
+      // The combobox that only a person can open.
+      const degree = byId('degree');
+      const degreeList = byId('degree-listbox');
+      counted(degree);
+      degree.addEventListener('click', (event) => {
+        if (!event.isTrusted) return;
+        degreeList.hidden = !degreeList.hidden;
+        degree.setAttribute('aria-expanded', String(!degreeList.hidden));
+      });
+      for (const option of degreeList.querySelectorAll('[role="option"]')) {
+        option.addEventListener('click', () => {
+          degree.textContent = option.textContent;
+          degreeList.hidden = true;
+          degree.setAttribute('aria-expanded', 'false');
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
