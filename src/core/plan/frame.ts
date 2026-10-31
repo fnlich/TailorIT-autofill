@@ -36,6 +36,10 @@
  *   typeahead that already shows the school is left alone; one showing another answer is searched, flagged.
  * - The canaries scanned for are the frame's and any its fields' own labels carry; only the frame's that equal no
  *   profile value may be kept in RunState (persistableCanaries).
+ * - Repeatable sections (Phase 5): for each section the request names, each block gets its profile entry first
+ *   (steps/blocks.ts: a block the site prefilled is matched to the entry it holds, the rest in order), and the resolver
+ *   fills the block from that entry, not from the one its place names. The answer gives the frame the section's entry
+ *   count, each block's entry and its current-job flag, for its Add clicks and "I currently work here".
  */
 import { FLAG_AT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
 import type { MatcherStage } from '../enums';
@@ -55,6 +59,7 @@ import { classifiable, classifyItemOf, judgeClassification, SCREENED, screenForC
   '../resolver/classify';
 import { actionFor, classifyField, resolveField, type FieldClassification, type ResolvedField, type Shaped } from
   '../resolver/resolve';
+import { planRepeatables } from '../steps/blocks';
 import { sectionKey } from '../text/keys';
 import { normalizeLabel } from '../text/normalize';
 import { asUntrusted } from '../text/untrusted';
@@ -450,6 +455,10 @@ function categoryOf(classification: FieldClassification): FieldCategory | null {
 export function planFrame(input: PlanInput): PlanOutput {
   const { profile } = input;
   const kept = persistableCanaries(input.canaries, profile);
+  // Each requested section's blocks get their entries (a prefilled block its own) before anything is resolved.
+  const repeatables = planRepeatables(input.repeatables ?? [], input.specs, profile, input.vocab);
+  const blockEntries = Object.fromEntries(repeatables.map((answer) => [answer.kind, answer.entries]));
+  const sections = repeatables.length > 0 ? { repeatables } : {};
   // Every spec is read across the frame; only the planned ones are resolved, written and rowed.
   const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
   const classified = input.specs.map((spec) => ({ spec, classification: classifyField(spec) }));
@@ -462,6 +471,7 @@ export function planFrame(input: PlanInput): PlanOutput {
   const resolveWith = (spec: FieldSpec, classification: FieldClassification) => resolveField(spec, {
     profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
+    ...(repeatables.length > 0 ? { blockEntries } : {}),
   }, classification);
   // Only a field that could be written asks for the sensitive part or the LLM: never a honeypot, a disabled control or
   // a field no visible label names (checkHoneypot).
@@ -483,7 +493,8 @@ export function planFrame(input: PlanInput): PlanOutput {
     return first;
   });
   if (input.sensitiveState === 'not-loaded' && resolved.some((field, at) => field.needsSensitive && writable(specs[at]!))) {
-    return { writes: [], results: [], awaiting: [], needsSensitive: true, persistableCanaries: kept };
+    return { writes: [], results: [], awaiting: [], needsSensitive: true, persistableCanaries: kept,
+      ...sections };
   }
   // The canaries any label of the frame carries, the context's too: more to scan for is never less safe.
   const guard: GuardContext = { canaries: [...input.canaries, ...input.specs.flatMap(labelCanaries)], profile,
@@ -496,5 +507,6 @@ export function planFrame(input: PlanInput): PlanOutput {
     .filter((field) => field.asked !== undefined).map((field) => field.spec.key)]);
   const awaiting = specs.filter((spec) => asking.has(spec.key)).map((spec) => spec.key);
   return { writes: input.dryRun ? [] : writes, results: planned.map((field) => field.row), awaiting,
-    ...(awaiting.length > 0 ? { ask: { tiebreaks, classify } } : {}), needsSensitive: false, persistableCanaries: kept };
+    ...(awaiting.length > 0 ? { ask: { tiebreaks, classify } } : {}), needsSensitive: false, persistableCanaries: kept,
+    ...sections };
 }

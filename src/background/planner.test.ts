@@ -6,6 +6,7 @@ import type { ProfilePath } from '../core/types/intent';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { PROFILE_IDLE_MS } from './profile-cache';
 import {
+  askingCore,
   beginRun,
   contentSender,
   fieldSpec,
@@ -232,6 +233,72 @@ describe('plan/request', () => {
     expect(await planRequest(worker, runId, { specs: Array.from({ length: 501 }, (_, index) => fieldSpec(index)) }))
       .toEqual({ ok: false, error: 'bad_message' });
     expect(await planRequest(worker, runId, { canaries: Array(33).fill('canary') })).toEqual({ ok: false, error: 'bad_message' });
+  });
+});
+
+describe('repeatable sections: the block→entry map (Phase 5)', () => {
+  /** Two experience blocks' Company fields. */
+  const block = (index: number) => fieldSpec(10 + index, { section: { id: 'experience', block: index },
+    key: `lever|experience[${index}]|company|none|0` as FieldSpec['key'],
+    baseKey: `lever|experience[${index}]|company|0` as FieldSpec['baseKey'], label: 'Company' });
+  const answered = { kind: 'experience' as const, profile: 2, entries: [1, 0], current: [false, true] };
+  /** A planner that answers the sections it was asked, the second block filled from the first entry. */
+  const sectionPlanner = (input: PlanInput) => planOutput({ results: input.specs.map(skippedRow),
+    ...(input.repeatables === undefined ? {} : { repeatables: input.repeatables.map(() => answered) }) });
+
+  it('hands the core the sections the frame names, and answers each block\'s entry, counts and flags only', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), core: { planFrame: sectionPlanner } });
+    const runId = await beginRun(worker);
+    const specs = [block(0), block(1)];
+    const answer = await planRequest(worker, runId, { specs, planKeys: [],
+      repeatables: [{ kind: 'experience', entries: null }, { kind: 'education', entries: null }] });
+    expect(answer).toMatchObject({ ok: true, data: { writes: [], repeatables: [answered, answered] } });
+    expect(worker.core.calls.planFrame[0]!.repeatables).toEqual([{ kind: 'experience', entries: null },
+      { kind: 'education', entries: null }]);
+    // A frame that names none gets none: each block is filled from the entry its place names, as before Phase 5.
+    expect(await planRequest(worker, runId, { specs })).not.toHaveProperty('data.repeatables');
+    expect(worker.core.calls.planFrame[1]!.repeatables).toBeUndefined();
+  });
+
+  it('plans with the frame\'s own assignment when it sends one (a request with only some of its fields)', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), core: { planFrame: sectionPlanner } });
+    const runId = await beginRun(worker);
+    await planRequest(worker, runId, { specs: [block(1)], repeatables: [{ kind: 'experience', entries: [1, 0] }] });
+    expect(worker.core.calls.planFrame[0]!.repeatables).toEqual([{ kind: 'experience', entries: [1, 0] }]);
+  });
+
+  it('refuses a section named twice, an unknown kind, and an assignment past its cap', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), core: { planFrame: sectionPlanner } });
+    const runId = await beginRun(worker);
+    for (const repeatables of [[{ kind: 'experience', entries: null }, { kind: 'experience', entries: [0] }],
+      [{ kind: 'skills', entries: null }], [{ kind: 'experience', entries: Array(101).fill(0) }],
+      [{ kind: 'experience', entries: [-1] }], [{ kind: 'experience' }]]) {
+      expect(await planRequest(worker, runId, { repeatables }), JSON.stringify(repeatables).slice(0, 60))
+        .toEqual({ ok: false, error: 'bad_message' });
+    }
+    expect(worker.core.calls.planFrame).toEqual([]);
+  });
+
+  it('plans a field the LLM answered with the entries its block was given when it was asked', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), core: {
+      planFrame: (input) => {
+        const output = askingCore().planFrame(input);
+        return { ...output, ...(input.repeatables === undefined ? {} : { repeatables: [answered] }) };
+      },
+    } });
+    const runId = await beginRun(worker);
+    const asked = fieldSpec(1, { section: { id: 'experience', block: 1 }, options: [
+      { index: 0, label: 'LinkedIn', disabled: false, selected: false },
+      { index: 1, label: 'Referral', disabled: false, selected: false }], optionSetHash: 'a'.repeat(16) as FieldSpec['optionSetHash'] });
+    const first = await planRequest(worker, runId, { specs: [block(0), asked], planKeys: [asked.key],
+      repeatables: [{ kind: 'experience', entries: null }] }) as { ok: true; data: { awaiting: string[] } };
+    expect(first.data.awaiting).toEqual([asked.key]);
+    await expect.poll(async () => {
+      await worker.deliver({ v: 1, type: 'plan/poll', runId, keys: [asked.key] }, contentSender());
+      return worker.core.calls.planFrame.length;
+    }).toBeGreaterThan(1);
+    // Planned again with the entries the first plan gave each block, never with null (assigned afresh).
+    expect(worker.core.calls.planFrame.at(-1)!.repeatables).toEqual([{ kind: 'experience', entries: [1, 0] }]);
   });
 });
 

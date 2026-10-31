@@ -2611,6 +2611,24 @@ export function planCurrentJob(input: CurrentJobInput): CurrentJobPlan;
 
 **What wave 2 wires:** the content script runs the machine around the reactive loop (`createRunState` or `runstate/get` with `resumeMode`, the effects in order, `runstate/put` on `persist`); the worker's half of the repeatable plan (fingerprints and assignments from `plan/request`'s specs), and the resolver's entry for a block (it reads `section.block` as the profile's index, which an assignment by fingerprint can change).
 
+**As built (wave 2, 2026-10-31):** the worker's half is `steps/blocks.ts`, run by `planFrame` itself for the sections `PlanInput.repeatables` names (so the real worker and the content tests' fake one plan alike):
+```ts
+// types/run.ts (addition)
+export const MAX_REPEATABLE_BLOCKS = 100;   // plan/request's and its answer's cap on one section's blocks
+// steps/blocks.ts
+export interface RepeatableRequest { kind: RepeatableKind; entries: readonly (number | null)[] | null }   // null: assign
+export interface RepeatableAnswer { kind: RepeatableKind; profile: number; entries: (number | null)[]; current: boolean[] }
+export function planBlocks(request, specs, profile, vocab): RepeatableAnswer;
+export function planRepeatables(requests, specs, profile, vocab): RepeatableAnswer[];   // each kind once, known kinds only
+// resolver/values.ts
+export type BlockEntries = Readonly<Partial<Record<RepeatableKind, readonly (number | null)[]>>>;   // ValueContext.blockEntries
+// plan/types.ts: PlanInput.repeatables?: readonly RepeatableRequest[]; PlanOutput.repeatables?: RepeatableAnswer[]
+```
+- A block's fingerprint reads its fields' rule categories (`classifyField`) and current values; an education block's degree level is parsed from its degree field (`parseDegree`). Blocks are the indices the specs name, from 0 to the highest; one the scan does not show is empty.
+- A request's own `entries` are kept, each checked against the profile's count (a whole index below it, else null), capped at `MAX_REPEATABLE_BLOCKS`.
+- The resolver fills a block of an assigned section from its entry (`blockEntries[kind][block]`; null, or a block past the assignment, gets no entry, so `no-profile-value`), and a section with no assignment from its block's place, as before. Languages too (`languages.language`, and a proficiency question's block).
+- The answer holds the entry count, each block's entry and whether it is a current job: no fingerprint, no value. `PlanOutput.repeatables` is absent when no section was named.
+
 ---
 
 ## 11. Risks and open questions specific to the core

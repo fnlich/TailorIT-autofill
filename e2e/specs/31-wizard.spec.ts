@@ -28,8 +28,11 @@
  *   'review' on the final step and after step-retry-limit; stepSignature the current step's; stepAttempts by
  *   signature; stepIndex one more per new step; repeatableCounters keyed `${signature}:${kind}`;
  * - the report mirrors RunState's status, and its rows carry the block in their section ('experience[1]');
- * - a refused Add is a flagged needs-your-click row labelled by the button's text ("Add education") in its section,
- *   with the needs-click notice; the third visit's report carries the step-retry-limit notice.
+ * - a refused Add is no row (an Add button is no field: FIELD_KINDS has no kind for it), but the needs-click notice,
+ *   and it counts among the step's flagged items in RunState.lastFill, so auto-advance never presses past it (wave 2's
+ *   revision); the third visit's report carries the step-retry-limit notice;
+ * - RunState.filledFieldKeys hold stored keys (section and label slug hashed), never a raw key: nothing here reads
+ *   them but their step signatures.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures.ts';
@@ -112,10 +115,10 @@ async function expectEducationFlagged(page: Page, report: FrameReport): Promise<
   expect(await eventsOn(page, ADD.education)).toEqual([]);
   expect(await wizardRecord(page)).toMatchObject({ added: { education: 0 }, ignored: { education: 0 } });
   await expect(page.locator('#education-blocks > *')).toHaveCount(0);
-  expect(report.fields.filter((candidate) => candidate.reason === 'needs-your-click')).toEqual([
-    expect.objectContaining({ label: ADD_EDUCATION_LABEL, section: 'education', status: 'flagged', wrote: false,
-      provenance: null, needsUserAction: true }),
-  ]);
+  // An Add button is no field (FillResult.kind is one of FIELD_KINDS, which has none for a button), so it gets no
+  // row: the needs-click notice carries it (wave 2's decision), counted with the step's flagged fields in lastFill.
+  expect(report.fields.filter((candidate) => candidate.reason === 'needs-your-click')).toEqual([]);
+  expect(report.fields.map((candidate) => candidate.label)).not.toContain(ADD_EDUCATION_LABEL);
   expect(noticeCount(report, 'needs-click')).toBe(1);
 
   expect(row(report, SHIFT)).toMatchObject({ category: 'unknown', status: 'flagged', reason: 'unknown-field', required: true,

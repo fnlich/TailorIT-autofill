@@ -31,6 +31,8 @@ export type StepFinality = (typeof STEP_FINALITIES)[number];
 /** The repeatable sections an adapter declares (adapters/types.ts repeatables): one counter each per step. */
 export const REPEATABLE_KINDS = ['experience', 'education', 'language'] as const;
 export type RepeatableKind = (typeof REPEATABLE_KINDS)[number];
+/** At most this many blocks of one repeatable section are planned (plan/request's and its answer's cap, Phase 5). */
+export const MAX_REPEATABLE_BLOCKS = 100;
 
 /**
  * Persisted per application under `run:${applicationKey}`. The run id is minted per document at run/begin and never

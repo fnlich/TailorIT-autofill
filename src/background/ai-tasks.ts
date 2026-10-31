@@ -47,6 +47,7 @@ import type { Platform } from '../core/enums';
 import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
 import type { AnsweredVerdict, PlanAi, PlanAsk } from '../core/plan/types';
+import type { RepeatableRequest } from '../core/steps/blocks';
 import {
   namesSensitivePickValue, namesSensitiveTopic, type ClassifyItem, type ClassifyVerdict,
 } from '../core/resolver/classify';
@@ -460,10 +461,12 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
 /** Where a waiting field stands. */
 export type AwaitState = 'done' | 'waiting' | 'unknown';
 
-/** What a waiting key was asked from: the request's scan and canaries, which it is planned again with once answered. */
+/** What a waiting key was asked from: the request's scan and canaries, which it is planned again with once answered,
+ *  and its repeatable sections with the entries their blocks were given (Phase 5), so it is filled from the same one. */
 export interface AskContext {
   specs: readonly FieldSpec[];
   canaries: readonly string[];
+  repeatables?: readonly RepeatableRequest[];
 }
 
 /** One run's LLM questions and answers, in the worker's memory for the run only. */

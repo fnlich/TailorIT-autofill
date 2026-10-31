@@ -19,9 +19,16 @@
  * that names no key the run knows answers expired: the frame plans those fields again with plan/request, and the batch
  * is read again by its task id (RunState.aiTasks) or reattached by TailorIT's dedupe key. An item never sent, and an
  * answer already in, are planned again within the same message.
+ *
+ * Repeatable sections (Phase 5): plan/request names the sections the frame's adapter shows on its step, and planFrame
+ * gives each block its profile entry (core/steps/blocks.ts: a block the site prefilled keeps the entry it holds) and
+ * fills the block from it; the answer carries each section's entry count, block entries and current-job flags, never a
+ * fingerprint. A request that carries an assignment (the frame's, from an earlier answer) is planned with it, and the
+ * fields that wait for the LLM are planned again with the entries their blocks were given.
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
+import type { RepeatableAnswer } from '../core/steps/blocks';
 import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite } from '../core/types/fill';
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -70,6 +77,14 @@ interface Gathered {
   writes: PlannedWrite[];
   results: FillResult[];
   awaiting: FieldKey[];
+  repeatables?: RepeatableAnswer[];
+}
+
+/** The context a plan's waiting keys are planned again with: its sections with the entries the plan gave their
+ *  blocks (Phase 5), so a field the LLM answers is filled from the same entry. */
+function withEntries(context: AskContext, output: PlanOutput): AskContext {
+  if (output.repeatables === undefined) return context;
+  return { ...context, repeatables: output.repeatables.map((answer) => ({ kind: answer.kind, entries: answer.entries })) };
 }
 
 /** The plan/request and plan/poll handlers. */
@@ -106,6 +121,7 @@ export function createPlanner(deps: PlannerDeps) {
       dryRun: run.dryRun,
       now: ymdOf(deps.now()),
       ai: ai.answers,
+      ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }),
     });
     try {
       const memory = loaded.value.sensitiveState;
@@ -180,6 +196,7 @@ export function createPlanner(deps: PlannerDeps) {
       results: gathered.results,
       awaiting: gathered.awaiting,
       persistableCanaries,
+      ...(gathered.repeatables === undefined ? {} : { repeatables: gathered.repeatables }),
     });
     if (!answer.success) {
       log('plan.failed', { fields, shape: true });
@@ -195,13 +212,17 @@ export function createPlanner(deps: PlannerDeps) {
       const run = await deps.runs.find(message.runId, from);
       if (run === null) return refuse('expired');
       // The schema's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
-      const context: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries };
+      const asked: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries,
+        ...(message.repeatables === undefined ? {} : { repeatables: message.repeatables }) };
       const planKeys = message.planKeys as unknown as FieldKey[];
-      const planned = await planOnce(run, from.url, context, planKeys);
+      const planned = await planOnce(run, from.url, asked, planKeys);
       if ('refusal' in planned) return planned.refusal;
+      const context = withEntries(asked, planned.output);
       const answered = await withAnswers(run, from.url, context, planned.output, planned.revision);
       if ('refusal' in answered) return answered.refusal;
-      return answerOf(run, answered.gathered, planned.output.persistableCanaries, planKeys.length);
+      const { repeatables } = planned.output;
+      return answerOf(run, { ...answered.gathered, ...(repeatables === undefined ? {} : { repeatables }) },
+        planned.output.persistableCanaries, planKeys.length);
     },
 
     /**

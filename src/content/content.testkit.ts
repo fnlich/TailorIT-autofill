@@ -4,7 +4,8 @@
  * does, planning with the real core: planFrame over the golden "Alex Rivera" profile (canonicalized with its sensitive
  * part and the golden resume attached) and the bundled vocabulary. It serves the resume port with a resume given as
  * bytes, and records every message, report, RunState and port message it sees, so a test can check that none carries a
- * value. A testkit, not a test: nothing in the extension imports it, and it loads the vocabulary (about 2 MB) for the
+ * value. It keeps the latest RunState put for each application and answers runstate/get with it, as the worker's store
+ * does for one tab, so a test can load the page again (a fresh runtime on the same worker) and see the run resume. A testkit, not a test: nothing in the extension imports it, and it loads the vocabulary (about 2 MB) for the
  * tests only; the content script never does.
  */
 import type { AutofillProfile, AutofillSensitive } from '../contract/tailorit';
@@ -13,6 +14,7 @@ import { planFrame } from '../core/plan/frame';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
 import type { AnsweredVerdict, PlanOutput } from '../core/plan/types';
 import type { ClassifyItem, ClassifyVerdict } from '../core/resolver/classify';
+import type { RepeatableRequest } from '../core/steps/blocks';
 import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize';
 import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { Profile, Ymd } from '../core/types/profile';
@@ -104,9 +106,14 @@ export function withoutPageLabels(report: FrameReport): unknown {
       ? { revealedBy: slugless(row.detail.revealedBy) } : {}) } } : {}) })) };
 }
 
-/** The sentinels `text` holds, case-insensitively. */
+/** A run of 16 or more lower-case hex characters: a hash (an option-set hash, a step signature, a stored field key's
+ *  hashed section or label slug), never a value. */
+const HASH_RUN = /[0-9a-f]{16,}/g;
+
+/** The sentinels `text` holds, case-insensitively. Hashes are set aside first: RunState's step signatures and stored
+ *  field keys (Phase 5) are SHA-256 hex, which holds a digit sentinel ("4417") by chance. */
 export function sentinelsIn(text: string, sentinels: readonly string[] = VALUE_SENTINELS): string[] {
-  const folded = text.toLowerCase();
+  const folded = text.toLowerCase().replace(HASH_RUN, '<hash>');
   return sentinels.filter((sentinel) => folded.includes(sentinel));
 }
 
@@ -254,7 +261,8 @@ export interface FakeWorkerOptions {
   profile?: Profile;
   /** The platform's extension id. */
   id?: string;
-  /** The settings it plans with (the defaults: tiebreak and classification on). */
+  /** The settings it plans with (the defaults: tiebreak and classification on); their autoAdvance is also what run/begin
+   *  answers (off by default). */
   settings?: Settings;
   /** The LLM's answers (Phase 4), which the next plan/poll brings: by default no tiebreak picks anything and no
    *  classification names a category. `picked` is a candidate's position, as the worker hands it to the core. */
@@ -271,6 +279,7 @@ export const FAKE_TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
 interface AskContext {
   specs: readonly FieldSpec[];
   canaries: readonly string[];
+  repeatables?: readonly RepeatableRequest[];
 }
 
 /** A run's LLM questions, as the fake worker keeps them. */
@@ -302,9 +311,12 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const runStates: RunState[] = [];
   const portLog: FakeWorker['portLog'] = [];
   const runs = new Map<string, { dryRun: boolean; ai: FakeRunAi }>();
+  /** The latest RunState put for each application (one tab's store). */
+  const stored = new Map<string, RunState>();
   let nextRun = 1;
   let transfers = 0;
-  const settings = { panel: 'side' as const, autoAdvance: false, llm: { tiebreak: true, classify: true, drafts: false } };
+  const settings = { panel: 'side' as const, autoAdvance: options.settings?.autoAdvance ?? false,
+    llm: { tiebreak: true, classify: true, drafts: false } };
 
   const scripted = (type: string): unknown => {
     const queue = options.script?.[type as ContentMessage['type']];
@@ -316,7 +328,8 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
     let plan = planFrame({ specs: [...context.specs], planKeys, canaries: [...context.canaries],
       profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
       settings: options.settings ?? DEFAULT_SETTINGS, vocab: testVocab(), dryRun: run.dryRun, now: NOW,
-      ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications } });
+      ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications },
+      ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }) });
     if (options.editPlan) plan = options.editPlan(plan, context.specs);
     for (const item of plan.ask?.tiebreaks ?? []) {
       const { picked, why } = options.ai?.pick?.(item) ?? { picked: null, why: 'no-match' as const };
@@ -354,10 +367,13 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (run === undefined) return { ok: false, error: 'expired' };
         const specs = message.specs as FieldSpec[];
         const planKeys = message.planKeys as FieldKey[] | undefined;
-        const context = { specs, canaries: message.canaries as string[] };
+        const asked = message.repeatables as RepeatableRequest[] | undefined;
+        const context: AskContext = { specs, canaries: message.canaries as string[], ...(asked ? { repeatables: asked } : {}) };
         const plan = planFor(run, context, planKeys ?? specs.map((spec) => spec.key));
+        // Fields that wait for the LLM are planned again with the entries their blocks were given (as the worker does).
+        if (plan.repeatables) context.repeatables = plan.repeatables.map((answer) => ({ kind: answer.kind, entries: answer.entries }));
         return { ok: true, data: { writes: run.dryRun ? [] : plan.writes, results: plan.results, awaiting: plan.awaiting,
-          persistableCanaries: plan.persistableCanaries } };
+          persistableCanaries: plan.persistableCanaries, ...(plan.repeatables ? { repeatables: plan.repeatables } : {}) } };
       }
       case 'plan/poll': {
         const run = runs.get(message.runId as string);
@@ -393,11 +409,14 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (!runs.has(message.runId as string)) return { ok: false, error: 'expired' };
         reports.push(message.report as FrameReport);
         return { ok: true, data: {} };
-      case 'runstate/put':
-        runStates.push(message.runState as RunState);
-        return { ok: true, data: { updatedAt: 0 } };
+      case 'runstate/put': {
+        const runState = message.runState as RunState;
+        runStates.push(runState);
+        stored.set(runState.applicationKey, runState);
+        return { ok: true, data: { updatedAt: runState.updatedAt } };
+      }
       case 'runstate/get':
-        return { ok: true, data: { runState: null } };
+        return { ok: true, data: { runState: stored.get(message.applicationKey as string) ?? null } };
       case 'policy/hit':
       case 'panel/open':
       case 'runstate/clear':

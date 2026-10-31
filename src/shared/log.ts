@@ -98,6 +98,12 @@ export const LOG_CODES = [
   'ai.cancelled',
   'ai.withheld',
   'content.ai-waited',
+  // The step machine (Phase 5): the one click on Next (pressed, or refused by assertNotSubmit), a run gone to review on
+  // an error, and how a reload found this tab's RunState (the resume mode, as flags).
+  'content.next-pressed',
+  'content.next-refused',
+  'content.step-review-error',
+  'content.run-resumed',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

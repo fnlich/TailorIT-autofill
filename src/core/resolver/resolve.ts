@@ -39,7 +39,7 @@ import { dateIso, dateText } from './format';
 import { statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
-import { profileValue } from './values';
+import { profileValue, type BlockEntries } from './values';
 
 /** What the resolver reads besides the field. */
 export interface ResolveContext {
@@ -55,6 +55,8 @@ export interface ResolveContext {
   separatePhoneCountry?: boolean;
   /** The posting's country (ISO alpha-2), for interpretation 1; absent when unknown, as in every plan request so far. */
   postingCountry?: string;
+  /** The profile entry each block of an assigned repeatable section is filled from (steps/blocks.ts, Phase 5). */
+  blockEntries?: BlockEntries;
 }
 
 /** What decided a field's category, before any value: a tripwire in its label, an attention check, the rules, the
@@ -228,7 +230,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
     case 'unknown':
       return none('unknown-field', false);
     default:
-      return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false });
+      return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false,
+        ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}) });
   }
 }
 
@@ -278,7 +281,7 @@ function answerFromLlm(spec: FieldSpec, ctx: ResolveContext, llm: LlmClassificat
     return answer(withoutValue(base, spec, 'llm-disabled-for-category', true, true));
   }
   const result = profileValue(category, { spec, profile: ctx.profile, vocab: ctx.vocab, now: ctx.now,
-    separatePhoneCountry: ctx.separatePhoneCountry ?? false });
+    separatePhoneCountry: ctx.separatePhoneCountry ?? false, ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}) });
   if (!result.ok) {
     const { reason, flagged, needsUser } = result.none;
     return answer(withoutValue(base, spec, reason, flagged, needsUser === true));

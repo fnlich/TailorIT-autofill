@@ -7,6 +7,7 @@
 import type { MatchCacheStore } from '../matcher/cache';
 import type { TiebreakItem, TiebreakVerdict } from '../matcher/types';
 import type { ClassifyItem, ClassifyVerdict } from '../resolver/classify';
+import type { RepeatableAnswer, RepeatableRequest } from '../steps/blocks';
 import type { FieldKey, FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite } from '../types/fill';
 import type { Profile, SensitiveState, Ymd } from '../types/profile';
@@ -40,6 +41,10 @@ export interface PlanInput {
   now: Ymd;
   /** What the LLM has answered in this run (Phase 4); absent: nothing yet. The worker keeps it for the run only. */
   ai?: PlanAi;
+  /** The repeatable sections the frame's adapter shows on this step (Phase 5, steps/blocks.ts): each block's entry is
+   *  assigned (or the frame's assignment kept) and the resolver fills the block from it. Absent: none, and a block's
+   *  fields use the entry its place names. */
+  repeatables?: readonly RepeatableRequest[];
 }
 
 /** A tiebreak verdict, with the TailorIT task that gave it: an llm-pick write names that task. */
@@ -81,4 +86,7 @@ export interface PlanOutput {
   needsSensitive: boolean;
   /** The canaries the worker may keep in RunState: none that equals a profile value. */
   persistableCanaries: string[];
+  /** One per requested repeatable section (PlanInput.repeatables): the profile's entry count, each block's entry and
+   *  whether it is a current job. Indices, counts and flags only. Absent when none was requested. */
+  repeatables?: RepeatableAnswer[];
 }

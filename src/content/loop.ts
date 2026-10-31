@@ -55,6 +55,7 @@ import {
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
 import { settleRow } from '../core/plan/settle';
+import { reconcilePrefill, type PrefillIntent } from '../core/steps/prefill';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec, OptionSetHash } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import { awaitOptions, isOptionList, optionsState, type AwaitOptionsOptions } from '../dom/await-options';
@@ -70,6 +71,7 @@ import { readWidget } from '../dom/widgets';
 import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
+import { boxBeforeEndDate } from './repeatables';
 import { RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WrittenField } from './pass';
 import type { ReceivedResume } from './transfer';
 import { createValueHasher, type ValueHasher } from './values';
@@ -102,6 +104,9 @@ export interface LoopEnv extends PassEnv {
   /** Sends plan/request with the whole scan's specs and the keys to plan (the run renews itself once on 'expired'),
    *  and answers the plan. */
   plan(specs: FieldSpec[], planKeys: FieldKey[], pass: number): Promise<PlanAnswer>;
+  /** plan/request for some of the frame's fields only (a typeahead's results, Phase 4): the run sends its step's
+   *  block→entry assignment with it (Phase 5). plan() without it. */
+  planSome?(specs: FieldSpec[], planKeys: FieldKey[], pass: number): Promise<PlanAnswer>;
   /** Sends plan/poll for fields that wait for the LLM (Phase 4): the answer holds the rows and writes of those whose
    *  answers are in and names those still waited for; 'expired' when the worker knows none of them; 'failed' when it
    *  could not answer. Without it nothing is polled, and a waiting field ends as the loop leaves it. */
@@ -444,7 +449,14 @@ class ReactiveLoop {
         rows.set(write.key, settleRow(planned, { kind: 'not-written', reason: 'user-stopped' }));
         continue;
       }
-      const result = await writeField(env, current, fields.get(write.key)!, write, planned, this.held,
+      const field = fields.get(write.key)!;
+      // What the page put in a field before our first write (a resume parse, browser autofill) is reconciled.
+      const prefill = keep === undefined ? this.prefillOf(field, write, planned) : null;
+      if (prefill !== null && !prefill.write) {
+        rows.set(write.key, prefill.row);
+        continue;
+      }
+      const result = await writeField(env, current, field, write, prefill?.row ?? planned, this.held,
         { ...(keep === undefined ? {} : { keep }), widgets: this.widgetWrites() });
       rows.set(write.key, result.row);
       if (result.written === undefined || result.readBack === undefined) continue;
@@ -504,7 +516,34 @@ class ReactiveLoop {
       const write = planned.get(key);
       if (write !== undefined) queue.push({ write, planned: row });
     }
-    return queue;
+    // A block's "I currently work here" is ticked before its end date (planCurrentJob's order, Phase 5).
+    return boxBeforeEndDate(queue);
+  }
+
+  /**
+   * A text or date write over what the page put in the field before our first write on the step (Phase 5;
+   * core/steps/prefill.ts reconcilePrefill): the profile's value replaces a structured answer, flagged
+   * prefill-conflict; prose (a textarea, a free-text question, a job's description) is kept, flagged prefill-kept; the
+   * same answer written another way (a date by its numbers, a phone by its digits) is kept, already-correct. Choices,
+   * boxes, sets and uploads are reconciled by the planner itself (core/plan/frame.ts), and so is any field we wrote.
+   * Null: nothing to reconcile.
+   */
+  private prefillOf(field: ScannedField, write: PlannedWrite, planned: FillResult): { write: boolean; row: FillResult }
+    | null {
+    if (this.written.has(field.baseKey) || field.current.kind !== 'text' || field.current.text.trim() === '') return null;
+    const intent: PrefillIntent | null = write.value.kind === 'text' ? { kind: 'text', text: write.value.text }
+      : write.value.kind === 'date' ? { kind: 'date', iso: write.value.iso } : null;
+    if (intent === null) return null;
+    const decision = reconcilePrefill({ category: planned.category, kind: field.kind }, field.current, intent);
+    if (decision.action === 'keep') {
+      return { write: false, row: { ...planned, status: decision.flagged ? 'flagged' : 'skipped', reason: decision.reason,
+        provenance: null, wrote: false, verification: 'not-applicable', needsUserAction: decision.flagged } };
+    }
+    if (decision.action === 'overwrite') {
+      return { write: true, row: { ...planned, status: planned.status === 'blocked' ? 'blocked' : 'flagged',
+        reason: decision.reason, needsUserAction: true } };
+    }
+    return null;
   }
 
   /** The choices whose box this pass's scan named: each keeps "your answer typed in" only when its box took the free
@@ -547,7 +586,8 @@ class ReactiveLoop {
 
   /** What a widget's write needs: the run's readings, and plan/request for a typeahead's results, at this pass. */
   private widgetWrites(): WidgetWriteEnv {
-    return { readings: this.readings, plan: (specs, planKeys) => this.env.plan(specs, planKeys, this.state.pass) };
+    const plan = this.env.planSome ?? this.env.plan;
+    return { readings: this.readings, plan: (specs, planKeys) => plan(specs, planKeys, this.state.pass) };
   }
 
   /**

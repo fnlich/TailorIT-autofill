@@ -5,6 +5,9 @@
  * entries, a start date from a notice period) 0.85.
  * - Education and work fields use the entry of their block in a repeatable section, else the most recent entry (the
  *   profile lists them most recent first); the current-employer fields use the current entry, else the most recent.
+ *   A block's entry is the one the plan assigned it (ValueContext.blockEntries, steps/blocks.ts: a block the site
+ *   prefilled with an entry is filled from that entry), else the block's place; a block the plan assigned no entry
+ *   gets none (Phase 5).
  * - "I currently work here" is ticked only for a current entry; such an entry's end date is not filled.
  * - Several values (skills, languages, races, work arrangements) are a set for a list that takes several, joined for a
  *   text box, and for a list that takes one answer only when there is exactly one.
@@ -23,9 +26,14 @@ import { normalize } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import type { FieldCategory, ProfilePath, RuleId, ValueOrigin } from '../types/intent';
 import type { EducationEntry, ExperienceEntry, Profile, YearMonth, Ymd } from '../types/profile';
+import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
+
+/** The profile entry each block of a repeatable section is filled from, by block index (null: no entry), for the
+ *  sections the plan assigned (steps/blocks.ts). */
+export type BlockEntries = Readonly<Partial<Record<RepeatableKind, readonly (number | null)[]>>>;
 
 /** What the value table reads besides the profile. */
 export interface ValueContext {
@@ -35,6 +43,8 @@ export interface ValueContext {
   now: Ymd;
   /** The form has its own control for the phone's country code in this field's section. */
   separatePhoneCountry: boolean;
+  /** The entry each assigned block is filled from; a section absent here uses each block's place. */
+  blockEntries?: BlockEntries;
 }
 
 const path = (text: string) => text as ProfilePath;
@@ -65,11 +75,22 @@ function manyValues(choices: readonly Choice[], texts: readonly string[], at: st
     ...(single ? { choice: single } : {}) });
 }
 
+/** The entry a block of `kind` is filled from: the plan's assignment when the section has one (null: none, also for
+ *  a block past it), else the block's place; null when the profile has no such entry. */
+function blockEntry(spec: FieldSpec, block: number, kind: RepeatableKind, count: number,
+  blockEntries: BlockEntries | undefined): number | null {
+  const assigned = spec.section.id === kind ? blockEntries?.[kind] : undefined;
+  if (assigned === undefined) return block < count ? block : null;
+  const entry = assigned[block];
+  return entry === undefined || entry === null || entry >= count ? null : entry;
+}
+
 /** The index of the entry a field is about: its block's in a repeatable section, else the first `preferred` one,
  *  else the most recent (index 0); null when there is no such entry. */
-function entryIndex<T>(spec: FieldSpec, entries: readonly T[], preferred?: (entry: T) => boolean): number | null {
+function entryIndex<T>(spec: FieldSpec, entries: readonly T[], kind: RepeatableKind,
+  blockEntries: BlockEntries | undefined, preferred?: (entry: T) => boolean): number | null {
   const block = spec.section.block;
-  if (block !== undefined) return block < entries.length ? block : null;
+  if (block !== undefined) return blockEntry(spec, block, kind, entries.length, blockEntries);
   if (entries.length === 0) return null;
   if (preferred) {
     const at = entries.findIndex(preferred);
@@ -228,7 +249,8 @@ const PAY_SCALE = /\bin\s+(?:thousands|millions|k)\b|\bthousands\b|\bmillions?\b
 
 /** The profile's language entry a proficiency question is about: the one its label names, else its block's, else the
  *  only one. */
-function languageAsked(spec: FieldSpec, languages: Profile['languages']): number | null {
+function languageAsked(spec: FieldSpec, languages: Profile['languages'], blockEntries: BlockEntries | undefined):
+  number | null {
   const words = ` ${normalize(`${spec.label} ${spec.description}`, 'answer').key} `;
   const named = languages.flatMap((language, index) => {
     const key = normalize(language.name, 'answer').key;
@@ -237,7 +259,7 @@ function languageAsked(spec: FieldSpec, languages: Profile['languages']): number
   if (named.length === 1) return named[0]!;
   if (named.length > 1) return null;
   const block = spec.section.block;
-  if (block !== undefined) return block < languages.length ? block : null;
+  if (block !== undefined) return blockEntry(spec, block, 'language', languages.length, blockEntries);
   return languages.length === 1 ? 0 : null;
 }
 
@@ -371,16 +393,17 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       const languages = profile.languages;
       const block = spec.section.block;
       if (block !== undefined) {
-        const language = languages[block];
+        const entry = blockEntry(spec, block, 'language', languages.length, ctx.blockEntries);
+        const language = entry === null ? undefined : languages[entry];
         return language === undefined ? none('no-profile-value', false)
-          : value({ origin: fromProfile(`languages[${block}]`), confidence: VALUE_EXPLICIT, text: language.name,
+          : value({ origin: fromProfile(`languages[${entry}]`), confidence: VALUE_EXPLICIT, text: language.name,
             choice: languageChoice(language, vocab) });
       }
       return manyValues(languages.map((language) => languageChoice(language, vocab)),
         languages.map((language) => language.name), 'languages', spec);
     }
     case 'languages.proficiency': {
-      const index = languageAsked(spec, profile.languages);
+      const index = languageAsked(spec, profile.languages, ctx.blockEntries);
       const proficiency = index === null ? undefined : profile.languages[index]!.proficiency;
       if (index === null || proficiency === undefined) return none('no-profile-value', false);
       const entity = vocab.entity(`prof:${proficiency}`);
@@ -473,7 +496,7 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
 /** The value of an education field: its entry's school, degree, field, minor, dates or GPA. */
 function educationValue(category: FieldCategory, ctx: ValueContext): ValueResult {
   const { spec, profile, vocab } = ctx;
-  const index = entryIndex(spec, profile.education);
+  const index = entryIndex(spec, profile.education, 'education', ctx.blockEntries);
   if (index === null) return none('no-profile-value', false);
   const entry = profile.education[index]!;
   const at = `education[${index}]`;
@@ -512,7 +535,8 @@ function educationValue(category: FieldCategory, ctx: ValueContext): ValueResult
 function experienceValue(category: FieldCategory, ctx: ValueContext): ValueResult {
   const { spec, profile } = ctx;
   const current = category === 'experience.currentCompany' || category === 'experience.currentTitle';
-  const index = entryIndex(spec, profile.experience, current ? (entry) => entry.current : undefined);
+  const index = entryIndex(spec, profile.experience, 'experience', ctx.blockEntries,
+    current ? (entry) => entry.current : undefined);
   if (index === null) return none('no-profile-value', false);
   const entry = profile.experience[index]!;
   const at = `experience[${index}]`;

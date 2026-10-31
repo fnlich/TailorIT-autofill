@@ -12,9 +12,18 @@
  *    a form). One run at a time (orchestrator.ts). In a frame inside another page a run fills only while the launcher
  *    can be seen on that page (S1). Fill anyway at a policy card that a later pass of a run showed ends that run and
  *    starts a fresh one, whose gate takes the decision (fillAgain, the Phase 3 review's L-S2).
+ * 4. The multi-step machine (Phase 5): with a form root, this tab's RunState for the application is read (runstate/get)
+ *    and resumeMode decides. 'auto' (the same tab, within RESUME_AUTO_MS, not at review): a run starts by itself on
+ *    the step it was on (trigger 'resume', RESUMED by the load), its attempts counted, so the step after two attempts
+ *    goes to review with step-retry-limit and writes nothing. 'continue' (paused, at review, or older): a run reports
+ *    what the RunState shows and the launcher offers Continue. 'none': nothing. On the platform's confirmation page
+ *    the RunState of the application is marked done (SUBMITTED): the person submitted.
+ * A run rests at review, at a pause or while it waits for the person's Next (orchestrator.ts); a run that rests and
+ * watches the step is replaced by the next Fill. Fill always starts a fresh RunState; Continue starts the next run from
+ * the last one's (CONTINUE after a pause, RESUMED by the person after an offer).
  * The worker's messages are answered: frame/ping {pong}; run/start; run/continue (Continue after a pause, never Fill
  * anyway: a policy card waits for the person's own decision); run/cancel (stops a run, a policy card's wait included,
- * or leaves a pause); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
+ * a run that waits for the next step, or leaves a pause); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
  * answered `expired` when no run here waits at the card); field/focus (scroll the field or its proxy into view and
  * outline it, at the person's request); field/describe (the visible labels of a row's suggested options, from a fresh
  * scan, never kept); draft/confirm and answer/read not_implemented until Phase 6; report/update ignored until the
@@ -33,8 +42,10 @@
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import type { Adapter } from '../adapters/types';
+import { reduceRun, resumeMode, type RunEvent } from '../core/steps/machine';
 import type { FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
+import type { RunState } from '../core/types/run';
 import { scan } from '../dom/scan';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
@@ -92,6 +103,12 @@ function pickAdapter(doc: Document, url: URL, adapters: (url: URL) => Adapter[])
  *  event, with persisted set. A page's dispatched pageshow is untrusted and changes nothing. */
 export function restoredFromCache(event: Pick<PageTransitionEvent, 'isTrusted' | 'persisted'>): boolean {
   return event.isTrusted && event.persisted;
+}
+
+/** What resumes a run the person continues: CONTINUE from a pause, RESUMED by the person from an offer. */
+function continueEventOf(state: RunState): RunEvent {
+  return state.status === 'auth-needed' || state.status === 'handoff' ? { type: 'CONTINUE' }
+    : { type: 'RESUMED', by: 'person', sameTab: true };
 }
 
 /** The address as a URL, or null. */
@@ -189,6 +206,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function startRun(request: RunRequest): FillRun | null {
     if (stopped || page === null || !channel.valid()) return null;
     if (current !== null && current.ended === null) return null;
+    // A run that rests and watches the step (review, or the person's Next) gives way to the new one.
+    if (current?.watching === true) current.abort();
     const run = new FillRun({
       doc,
       content: platform,
@@ -219,8 +238,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** run/continue, or the launcher's Continue: a fresh run after a pause. It never answers the policy card: Continue
    *  goes to every frame that reported, and one waiting at the card must not fill as if Fill anyway was chosen. */
   function continueRun(trigger: RunRequest['trigger']): void {
-    if (current === null) return;
-    if (current.ended === 'paused') startRun({ trigger, dryRun: false });
+    if (current === null || current.ended !== 'paused') return;
+    const state = current.runState;
+    startRun(state === null ? { trigger, dryRun: false } : { trigger, dryRun: false, from: { state, event: continueEventOf(state) } });
   }
 
   /** run/policyDecision: the side panel's policy card, for this frame. Answers whether a run here waited at the card. */
@@ -232,7 +252,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** run/cancel: Cancel at the policy card, stop a run that writes, or leave a pause. */
   function cancelRun(): void {
     if (current === null) return;
-    if (current.ended === null) {
+    if (current.ended === null || current.watching) {
       current.stop();
       return;
     }
@@ -266,6 +286,36 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       const option = options.find((candidate) => candidate.index === index);
       return option === undefined ? [] : [{ index, label: option.label }];
     }) };
+  }
+
+  // ── RunState after a reload (Phase 5) ───────────────────────────────────────────────────────────────────────────
+
+  /** This tab's RunState for the application, or null (none, expired, another tab's, or the worker refused). */
+  async function storedRunState(applicationKey: string): Promise<RunState | null> {
+    const answer = await channel.request({ v: 1, type: 'runstate/get', applicationKey });
+    // The schema's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
+    return answer.ok ? answer.data.runState as unknown as RunState | null : null;
+  }
+
+  /** At start-up: a run resumes by itself, or reports and offers Continue, as resumeMode says (module header, 4). */
+  async function resumeStored(): Promise<void> {
+    if (page === null || app === null) return;
+    const state = await storedRunState(app.applicationKey);
+    if (state === null || stopped || current !== null) return;
+    const mode = resumeMode(state, { now: platform.now(), sameTab: true });
+    log('content.run-resumed', { auto: mode === 'auto', offered: mode === 'continue' });
+    if (mode === 'none') return;
+    startRun({ trigger: 'resume', dryRun: false, from: { state, event: { type: 'RESUMED', by: 'load', sameTab: true } } });
+  }
+
+  /** The platform's page after submitting: the application's RunState is done (the person submitted). */
+  async function markSubmitted(): Promise<void> {
+    if (app?.page !== 'confirmation') return;
+    const state = await storedRunState(app.applicationKey);
+    if (state === null) return;
+    const next = reduceRun(state, { type: 'SUBMITTED' }, { autoAdvance: false, now: platform.now() });
+    if (next.state === state) return;
+    await channel.request({ v: 1, type: 'runstate/put', runState: next.state });
   }
 
   // ── The page: which application, adapter and form root ──────────────────────────────────────────────────────────
@@ -370,7 +420,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       return;
     }
     // The page may come back from the back/forward cache: the run is dropped, the launcher offers Fill again.
-    if (current !== null && current.ended === null) {
+    if (current !== null && (current.ended === null || current.watching)) {
       current.abort();
       ui?.hidePolicyCard();
       ui?.setLauncher({ state: 'idle', action: 'fill' });
@@ -394,6 +444,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       mountUi();
       await readPosting();
       if (view !== null) watchLocation(view, readHref, onAddress, lifetime.signal);
+      await resumeStored();
+      await markSubmitted();
     }
   } catch (failure) {
     if (!(failure instanceof Invalidated)) throw failure;

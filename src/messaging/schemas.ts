@@ -14,7 +14,7 @@ import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_
 import { REASON_CODES } from '../core/types/fill';
 import { RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
-import { MAX_STEPS, PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
+import { MAX_REPEATABLE_BLOCKS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from '../core/types/run';
 import { FrameReportSchema } from '../shared/report';
 import { ContentSettingsSchema, SettingsSchema } from '../shared/settings';
 import { MESSAGE_VERSION } from './envelope';
@@ -172,6 +172,22 @@ export const RunStateSchema = z.strictObject({
 
 const NoticeHit = z.strictObject({ kind: z.enum(['tripwire', 'policy', 'attention-check']), count: Count });
 
+/** A repeatable section the frame's adapter shows on the step (Phase 5): its kind, and each block's profile entry when
+ *  the frame holds an assignment from an earlier answer (null: the worker assigns them from the specs). */
+export const RepeatableRequestSchema = z.strictObject({
+  kind: z.enum(REPEATABLE_KINDS),
+  entries: z.array(Count.nullable()).max(MAX_REPEATABLE_BLOCKS).nullable(),
+});
+
+/** What the frame learns of a section it named: the profile's entry count, each block's entry (null: none) and
+ *  whether that entry is a current job. Counts, indices and flags only. */
+export const RepeatableAnswerSchema = z.strictObject({
+  kind: z.enum(REPEATABLE_KINDS),
+  profile: Count,
+  entries: z.array(Count.nullable()).max(MAX_REPEATABLE_BLOCKS),
+  current: z.array(z.boolean()).max(MAX_REPEATABLE_BLOCKS),
+});
+
 // ── Content script → worker (one-shot messages) ───────────────────────────────────────────────────────────────────
 
 const v = z.literal(MESSAGE_VERSION);
@@ -185,13 +201,16 @@ const contentMessages = [
     trigger: z.enum(['launcher', 'panel', 'resume']), dryRun: z.boolean() }),
   /** The frame's whole scan (`specs`, context for planning across the frame), the keys this pass plans (`planKeys`,
    *  each one a spec's key: the worker answers them only), and the page's canaries and notices (the Phase 3 review,
-   *  LC-2). */
+   *  LC-2); the repeatable sections the step shows (`repeatables`, Phase 5, each kind once). */
   z.strictObject({ v, type: z.literal('plan/request'), runId: Id, pass: Count, specs: z.array(FieldSpecSchema).max(500),
-    planKeys: z.array(Key).max(500), canaries: z.array(Text(120)).max(32), notices: z.array(NoticeHit).max(10) })
+    planKeys: z.array(Key).max(500), canaries: z.array(Text(120)).max(32), notices: z.array(NoticeHit).max(10),
+    repeatables: z.array(RepeatableRequestSchema).max(REPEATABLE_KINDS.length).optional() })
     .refine((message) => {
       const keys = new Set(message.specs.map((spec) => spec.key));
       return message.planKeys.every((key) => keys.has(key));
-    }, { message: 'planKeys name keys that are not among specs', path: ['planKeys'] }),
+    }, { message: 'planKeys name keys that are not among specs', path: ['planKeys'] })
+    .refine((message) => new Set((message.repeatables ?? []).map((section) => section.kind)).size
+      === (message.repeatables ?? []).length, { message: 'a repeatable kind named twice', path: ['repeatables'] }),
   /** Writes for fields that were waiting for the LLM. */
   z.strictObject({ v, type: z.literal('plan/poll'), runId: Id, keys: z.array(Key).max(500) }),
   z.strictObject({ v, type: z.literal('runstate/get'), applicationKey: z.string().max(80) }),
@@ -318,6 +337,8 @@ export const PlanAnswerSchema = z.strictObject({
   awaiting: z.array(Key).max(500),
   /** Canaries the worker allows into RunState (none that equals a profile value). */
   persistableCanaries: z.array(Text(120)).max(32),
+  /** One per section plan/request named (Phase 5); absent when it named none. */
+  repeatables: z.array(RepeatableAnswerSchema).max(REPEATABLE_KINDS.length).optional(),
 });
 
 /** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/focus,
