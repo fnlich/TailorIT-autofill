@@ -81,7 +81,7 @@ describe('the worker keeps the profile to itself', () => {
       contentSender())) as { ok: true; data: { runId: string } };
     const { runId } = begun.data;
     const plan = (await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)],
-      canaries: ['Austin', 'I am LLM'], notices: [] }, contentSender())) as { ok: true; data: { writes: Array<{ value: unknown }> } };
+      planKeys: [fieldSpec(1).key], canaries: ['Austin', 'I am LLM'], notices: [] }, contentSender())) as { ok: true; data: { writes: Array<{ value: unknown }> } };
     // The frame's own write is the one place a profile value goes.
     expect(plan.data.writes[0]!.value).toEqual({ kind: 'text', text: goldens.profile.profile.name.first });
     await worker.deliver({ v: 1, type: 'runstate/put', runState: runState({ canarySet: ['Austin', 'I am LLM'] }) }, contentSender());

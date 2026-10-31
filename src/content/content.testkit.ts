@@ -12,7 +12,7 @@ import { DOCX_MIME } from '../dom/fillers';
 import { planFrame } from '../core/plan/frame';
 import type { PlanOutput } from '../core/plan/types';
 import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize';
-import type { FieldSpec } from '../core/types/field';
+import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { Profile, Ymd } from '../core/types/profile';
 import type { RunState } from '../core/types/run';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
@@ -64,6 +64,16 @@ export function goldenProfile(): Profile {
   return golden;
 }
 
+/** The golden profile with a self-described gender in the person's own `words`, for the EEO self-describe follow-up
+ *  (the golden part declines to say). */
+export function selfDescribedProfile(words: string): Profile {
+  const sensitive = sensitiveJson as unknown as AutofillSensitive;
+  const described = { ...sensitive, eeo: { ...sensitive.eeo, gender: { state: 'value' as const,
+    value: { identity: 'self-describe' as const, selfDescribed: words } } } } as AutofillSensitive;
+  return attachResume(canonicalizeProfile(profileJson as unknown as AutofillProfile, described, testVocab(), NOW).profile,
+    GOLDEN_RESUME, 48_213);
+}
+
 /**
  * The golden profile's free-text values, which must never appear in a report, a RunState, a log or a policy hit
  * (docs/ARCHITECTURE.md, assertTrapInvariants). The skills (TypeScript, PostgreSQL, Kubernetes) and the city (Austin)
@@ -72,6 +82,25 @@ export function goldenProfile(): Profile {
 export const VALUE_SENTINELS = ['alex', 'rivera', 'f7q2', '512 555 0147', '5125550147', '4417', 'quillfeather',
   'marrowgate', '78701', 'senior software engineer', 'university of texas'] as const;
 export const PAGE_TEXT_SENTINELS = ['typescript', 'postgresql', 'kubernetes', 'austin'] as const;
+
+/** The golden profile's free text a follow-up box takes: its referral source (it declines to self-describe, so it has
+ *  no self-description). Page text on some pages (a "LinkedIn" option, a "LinkedIn profile" label), so it is looked
+ *  for where no page text goes, and in reports with each row's label and label slug set aside (withoutPageLabels). */
+export const FREE_TEXT_SENTINELS = ['linkedin'] as const;
+
+/** A report with what is page text set aside: each row's label, and the label slug in its key and in its parent's;
+ *  and its category, a closed enum that names the question, never its answer ("links.linkedin"). */
+export function withoutPageLabels(report: FrameReport): unknown {
+  const slugless = (key: string) => {
+    const parts = key.split('|');
+    if (parts.length === 4 || parts.length === 5) parts[2] = '<label>';
+    return parts.join('|');
+  };
+  return { ...report, fields: report.fields.map(({ label: _label, category: _category, ...row }) => ({ ...row,
+    key: slugless(row.key),
+    ...(row.detail ? { detail: { ...row.detail, ...(row.detail.revealedBy !== undefined
+      ? { revealedBy: slugless(row.detail.revealedBy) } : {}) } } : {}) })) };
+}
 
 /** The sentinels `text` holds, case-insensitively. */
 export function sentinelsIn(text: string, sentinels: readonly string[] = VALUE_SENTINELS): string[] {
@@ -219,6 +248,8 @@ export interface FakeWorkerOptions {
   connected?: boolean;
   /** Called when a message arrives, before it is answered. */
   onMessage?(message: { type: string }): void;
+  /** The profile it plans with (the golden one by default). */
+  profile?: Profile;
   /** The platform's extension id. */
   id?: string;
 }
@@ -272,7 +303,9 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         const run = runs.get(message.runId as string);
         if (run === undefined) return { ok: false, error: 'expired' };
         const specs = message.specs as FieldSpec[];
-        let plan = planFrame({ specs, canaries: message.canaries as string[], profile: goldenProfile(),
+        const planKeys = message.planKeys as FieldKey[] | undefined;
+        let plan = planFrame({ specs, ...(planKeys === undefined ? {} : { planKeys }), canaries: message.canaries as string[],
+          profile: options.profile ?? goldenProfile(),
           sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: run.dryRun,
           now: NOW });
         if (options.editPlan) plan = options.editPlan(plan, specs);

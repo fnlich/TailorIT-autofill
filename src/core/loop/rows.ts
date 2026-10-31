@@ -7,8 +7,11 @@
  *   verification after the settle rows a written field that is gone; one we did not write is skipped, with nothing to
  *   do;
  * - a field left unresolved: flagged with the loop's reason (max-passes-reached, options-never-loaded,
- *   value-oscillated, options-oscillated, reveal-cycle, page-busy, user-stopped), under the key the field has now. A
- *   blocked row keeps its status and reason: the Guard's word stands;
+ *   value-oscillated, options-oscillated, reveal-cycle, page-busy, user-stopped, and a pause, a policy notice or a
+ *   hidden frame that cut the loop), under the key the field has now. A blocked row keeps its status and reason: the
+ *   Guard's word stands;
+ * - a field the person changed after our write (changed-by-you): flagged, and nothing of ours stands in it, so it has
+ *   no provenance and wrote nothing (the final Guard then treats its value as the person's, never as ours);
  * - a field the loop never planned (it appeared at the last scan): a flagged row of its own, category unknown, since
  *   nothing classified it;
  * - a field another's write revealed names that writer (detail.revealedBy).
@@ -36,6 +39,11 @@ export function disappearedRow(row: FillResult): FillResult {
  *  row was made). */
 export function unresolvedRow(row: FillResult, reason: ReasonCode, key: FillResult['key'] = row.key): FillResult {
   if (row.status === 'blocked') return { ...row, key };
+  if (reason === 'changed-by-you') {
+    // The value there is the person's: nothing of ours stands in it.
+    return { ...row, key, status: 'flagged', reason, provenance: null, wrote: false, verification: 'not-applicable',
+      needsUserAction: true };
+  }
   return { ...row, key, status: 'flagged', reason, needsUserAction: true,
     verification: row.wrote ? 'not-checked' : row.verification };
 }
@@ -73,9 +81,10 @@ export function loopRows(state: LoopState, verdict: LoopVerdict): FillResult[] {
       rows.push(withRevealer(field.row === null ? unplannedRow(field, reason)
         : unresolvedRow(field.row, reason, field.key), field));
     } else if (field.row !== null) {
+      // A stopped field that went keeps its own reason; a frozen one still holding our value went like any other.
       const row = field.present ? field.row
-        : field.status === 'disappeared' ? disappearedRow(field.row)
-          : unresolvedRow(field.row, field.reason ?? 'internal-error');
+        : field.status === 'disappeared' || field.reason === null ? disappearedRow(field.row)
+          : unresolvedRow(field.row, field.reason);
       rows.push(withRevealer(row, field));
     }
   }

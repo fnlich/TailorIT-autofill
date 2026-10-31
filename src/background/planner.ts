@@ -1,15 +1,17 @@
 /*
  * plan/request and plan/poll: the worker runs the core's planFrame over one pass of a frame's fields with the
- * canonical profile it holds, and answers that frame's planned writes and value-free rows. So a frame receives values
- * for its own fields only, never the profile. When the plan needs the sensitive part and it is not in memory, the
- * worker fetches it once per run and plans again; a 403 makes it 'not-shared' and any other failure 'unavailable', and
- * the core leaves those fields blank and flagged. A pass with a file field first attaches the run's resume
- * (resume-choice.ts), the one the resume port then sends. A dry run's answer never carries a write. Every answer is
+ * canonical profile it holds, and answers that frame's planned writes and value-free rows. The request carries the
+ * frame's whole scan as context and the keys this pass plans (planKeys, each a spec's key: the schema checks it); the
+ * worker plans and answers those only (the Phase 3 review, LC-2). So a frame receives values for its own fields only,
+ * never the profile. When the plan needs the sensitive part and it is not in memory, the worker fetches it once per
+ * run and plans again; a 403 makes it 'not-shared' and any other failure 'unavailable', and the core leaves those
+ * fields blank and flagged. A pass that plans a file field first attaches the run's resume (resume-choice.ts), the one
+ * the resume port then sends. A dry run's answer never carries a write. Every answer is
  * checked against PlanAnswerSchema (its caps included) before it leaves.
  */
 import type { z } from 'zod';
 import type { PlanOutput, PlanSensitiveState } from '../core/plan/types';
-import type { FieldSpec } from '../core/types/field';
+import type { FieldKey, FieldSpec } from '../core/types/field';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import { PlanAnswerSchema, type ContentMessage } from '../messaging/schemas';
 import { log } from '../shared/log';
@@ -52,6 +54,7 @@ export function createPlanner(deps: PlannerDeps) {
     return deps.core.planFrame({
       // The schema's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
       specs: message.specs as unknown as FieldSpec[],
+      planKeys: message.planKeys as unknown as FieldKey[],
       canaries: message.canaries,
       profile: deps.core.attachResume(loaded.profile, resume),
       sensitiveState,
@@ -69,8 +72,10 @@ export function createPlanner(deps: PlannerDeps) {
       if (run === null) return refuse('expired');
       let loaded = await deps.profiles.get();
       if (!loaded.ok) return profileRefusal(loaded.failure);
-      // Only a pass with a file field needs the resume; without one the profile carries none.
-      const resume = message.specs.some((spec) => spec.kind === 'file') ? await deps.chooseResume(run.runId, from.url) : null;
+      // Only a pass that plans a file field needs the resume; without one the profile carries none.
+      const planned = new Set(message.planKeys);
+      const resume = message.specs.some((spec) => spec.kind === 'file' && planned.has(spec.key))
+        ? await deps.chooseResume(run.runId, from.url) : null;
 
       let output: PlanOutput;
       try {
@@ -90,7 +95,7 @@ export function createPlanner(deps: PlannerDeps) {
         }
         if (output.needsSensitive) throw new Error('the plan still needs the sensitive part');
       } catch {
-        log('plan.failed', { fields: message.specs.length });
+        log('plan.failed', { fields: message.planKeys.length });
         return refuse('internal');
       }
 
@@ -102,10 +107,10 @@ export function createPlanner(deps: PlannerDeps) {
         persistableCanaries: output.persistableCanaries,
       });
       if (!answer.success) {
-        log('plan.failed', { fields: message.specs.length, shape: true });
+        log('plan.failed', { fields: message.planKeys.length, shape: true });
         return refuse('internal');
       }
-      log('plan.answered', { fields: message.specs.length, writes: answer.data.writes.length, dryRun: run.dryRun });
+      log('plan.answered', { fields: message.planKeys.length, writes: answer.data.writes.length, dryRun: run.dryRun });
       return ok(answer.data);
     },
 

@@ -15,10 +15,13 @@
  *    characters are also looked for with spaces and punctuation removed, as the Guard does.
  * 5. No free-text value of the golden profile, case-insensitively, anywhere but a report row's label: reports (each
  *    row's label set aside), RunState, storage (its stored reports' labels set aside), console messages and requests to
- *    TailorIT, in full. A row's label is page text, and a page may show a profile value as one (trap 5's checkbox
+ *    TailorIT, in full. Among them the free text a follow-up box takes (the referral source, a self-description: the
+ *    Phase 3 review, L-S6). A row's label is page text, and a page may show a profile value as one (trap 5's checkbox
  *    labelled "TypeScript"), so the labels are proven to be the page's instead: each is one of the labels the fixture
  *    defines, and each row's key is built from its own label and section (the key carries the label's slug, which is
- *    set aside with the label).
+ *    set aside with the label, as is the slug in the key of the field that revealed it, detail.revealedBy, and the
+ *    row's category, a closed enum such as links.linkedin). RunState sets nothing aside: its reveal edges carry each
+ *    section and label slug hashed (L-S3).
  * 6. Every filled or verified row has a provenance.
  * 7. The run never reaches done.
  * 8. No request went anywhere the routes do not answer.
@@ -85,16 +88,27 @@ export function keyFault(report: FrameReport, row: Row): string | null {
   return /^\d+$/.test(ordinal) ? null : `ordinal ${ordinal}`;
 }
 
-/** A report with what is page text set aside: each row's label, and the label's slug in its key. */
+/** A key with its label slug set aside: a field key's or a base key's. */
+function slugAside(key: string): string {
+  const parts = key.split('|');
+  if (parts.length === 5 || parts.length === 4) parts[2] = '<label>';
+  return parts.join('|');
+}
+
+/** A report with what is page text set aside: each row's label, the label's slug in its key, and the slug in the key
+ *  of the field that revealed it; and each row's category, a closed enum that names the question, never its answer
+ *  ("links.linkedin" holds the referral source's word). */
 function withoutLabels(report: unknown): unknown {
   const value = report as Partial<FrameReport> | null;
   if (value === null || typeof value !== 'object' || !Array.isArray(value.fields)) return report;
   return {
     ...value,
-    fields: value.fields.map(({ label: _label, ...row }) => {
-      const parts = row.key.split('|');
-      return { ...row, key: parts.length === 5 ? [parts[0], parts[1], '<label>', parts[3], parts[4]].join('|') : row.key };
-    }),
+    fields: value.fields.map(({ label: _label, category: _category, ...row }) => ({
+      ...row,
+      key: slugAside(row.key),
+      ...(row.detail === undefined ? {} : { detail: { ...row.detail,
+        ...(row.detail.revealedBy === undefined ? {} : { revealedBy: slugAside(row.detail.revealedBy) }) } }),
+    })),
   };
 }
 

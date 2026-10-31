@@ -181,9 +181,15 @@ const contentMessages = [
   /** Answers a run id and the content settings; never the profile. */
   z.strictObject({ v, type: z.literal('run/begin'), applicationKey: z.string().max(80),
     trigger: z.enum(['launcher', 'panel', 'resume']), dryRun: z.boolean() }),
-  /** This pass's fields and the page's canaries and notices. */
+  /** The frame's whole scan (`specs`, context for planning across the frame), the keys this pass plans (`planKeys`,
+   *  each one a spec's key: the worker answers them only), and the page's canaries and notices (the Phase 3 review,
+   *  LC-2). */
   z.strictObject({ v, type: z.literal('plan/request'), runId: Id, pass: Count, specs: z.array(FieldSpecSchema).max(500),
-    canaries: z.array(Text(120)).max(32), notices: z.array(NoticeHit).max(10) }),
+    planKeys: z.array(Key).max(500), canaries: z.array(Text(120)).max(32), notices: z.array(NoticeHit).max(10) })
+    .refine((message) => {
+      const keys = new Set(message.specs.map((spec) => spec.key));
+      return message.planKeys.every((key) => keys.has(key));
+    }, { message: 'planKeys name keys that are not among specs', path: ['planKeys'] }),
   /** Writes for fields that were waiting for the LLM. */
   z.strictObject({ v, type: z.literal('plan/poll'), runId: Id, keys: z.array(Key).max(500) }),
   z.strictObject({ v, type: z.literal('runstate/get'), applicationKey: z.string().max(80) }),

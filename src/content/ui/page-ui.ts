@@ -56,8 +56,11 @@ export interface PageUi {
   /** Outlines one field on request (field/focus), after the caller scrolled it into view; null removes it. */
   showFocus(elements: readonly Element[] | null): void;
   /** Whether a person can see the launcher where it is drawn now (IntersectionObserver v2), once the watch knows; false
-   *  when it is not known within the cap, or `signal` aborts. A frame its page hides answers false (S1). */
-  launcherShown(signal?: AbortSignal): Promise<boolean>;
+   *  when it is not known within the cap, or `signal` aborts. A frame its page hides answers false (S1). `fresh`: what
+   *  the watch knew is forgotten first, so the answer is a notification that comes after this call (the check before
+   *  a later pass, L-S4: the page may have hidden the frame a moment ago, and Chromium tells of a change only at its
+   *  next notification). */
+  launcherShown(signal?: AbortSignal, fresh?: boolean): Promise<boolean>;
   /** What the visibility watch last said of one of our controls (the launcher, a card button); null: not known yet. */
   visibleNow(el: Element): boolean | null;
   /** Re-measures in the next animation frame. */
@@ -184,7 +187,10 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       highlights.showFocus(elements);
       layout();
     },
-    launcherShown: (signal) => visibility.settled(launcher.el, signal),
+    launcherShown(signal, fresh = false) {
+      if (fresh) visibility.reset(launcher.el);
+      return visibility.settled(launcher.el, signal);
+    },
     visibleNow: (el) => (visibility.known(el) ? visibility.shown(el) : null),
     refresh: schedule,
     destroy() {

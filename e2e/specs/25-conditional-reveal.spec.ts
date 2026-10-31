@@ -6,7 +6,7 @@
  * - the authorization question is answered from its explicit value (Yes), which reveals the sponsorship questions,
  *   answered from their explicit values (No), and the clearance question, which the profile cannot answer, so it stays
  *   blank and flagged; the visa question only No reveals stays hidden and untouched. Each revealed row names its
- *   parent (detail.revealedBy), and RunState keeps the edges;
+ *   parent (detail.revealedBy), and RunState keeps the edges, each section and label slug hashed;
  * - "Other" is chosen for a referral source the list lacks, and the "Please specify" box it reveals holds exactly the
  *   profile's own source, written once: it is typed only because that value exists;
  * - the Country write swaps the State/Province list, and Texas is chosen from the United States' list;
@@ -24,7 +24,8 @@
  * The loop is the content runtime's (src/content/loop.ts) on the core's bookkeeping (src/core/loop) and the DOM's
  * settle() (src/dom/settle.ts).
  */
-import { MAX_VALUE_FLIPS } from '../../src/core/loop/bookkeeping';
+import { MAX_VALUE_FLIPS, storedBaseKey } from '../../src/core/loop/bookkeeping';
+import type { BaseKey } from '../../src/core/types/field';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf, noticeCount, row, rowOf } from '../helpers/extension.ts';
 import { GOLDEN, GOLDEN_PROFILE } from '../helpers/golden.ts';
@@ -44,6 +45,9 @@ const SPECIFY = 'Please specify';
 const LABELS = syntheticLabels(REVEAL.expectations);
 /** The plan's bound for this page (docs/design/runtime.md §11.e). */
 const MAX_PASSES_HERE = 4;
+/** A row's base key as RunState.revealEdges stores it: its section and label slug hashed (the Phase 3 review,
+ *  L-S3). */
+const stored = (field: Parameters<typeof baseKeyOfRow>[0]) => storedBaseKey(baseKeyOfRow(field) as BaseKey);
 
 test.describe('conditional fields', () => {
   test('revealed, swapped, removed and reset fields, filled or flagged from the golden profile', async ({ extContext, connected: ext, routeLog, logs }) => {
@@ -144,7 +148,7 @@ test.describe('conditional fields', () => {
       const edges = (await ext.runState(applicationKey!))?.revealEdges ?? [];
       for (const [parent, child] of [[authorized, SPONSOR_NOW], [authorized, SPONSOR_FUTURE], [authorized, CLEARANCE],
         [source, SPECIFY], [country, 'ZIP code']] as const) {
-        expect(edges, `${parent.label} revealed ${child}`).toContainEqual([baseKeyOfRow(parent), baseKeyOfRow(row(report, child))]);
+        expect(edges, `${parent.label} revealed ${child}`).toContainEqual([stored(parent), stored(row(report, child))]);
       }
     });
 
@@ -187,7 +191,7 @@ test.describe('conditional fields', () => {
     expect(await eventsOn(page, '#clearance')).toEqual([]);
     const edges = (await ext.runState(applicationKeyOf(url)!))?.revealEdges ?? [];
     for (const child of [SPONSOR_NOW, SPONSOR_FUTURE, VISA]) {
-      expect(edges, `No revealed ${child}`).toContainEqual([baseKeyOfRow(authorized), baseKeyOfRow(row(report, child))]);
+      expect(edges, `No revealed ${child}`).toContainEqual([stored(authorized), stored(row(report, child))]);
     }
     expect(noticeCount(report, 'page-busy')).toBe(0);
 

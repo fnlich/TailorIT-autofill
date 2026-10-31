@@ -2,7 +2,8 @@
  * One planned write (docs/design/runtime.md §8.3; docs/ARCHITECTURE.md "Orchestrator"). The reactive loop (loop.ts)
  * scans, plans and orders a pass's writes, and hands each one here, in that order:
  * 1. the DOM half of the Guard re-finds the field by key in a fresh scan (never a cached node) and checks it may be
- *    written now (domGuardBeforeWrite);
+ *    written now (domGuardBeforeWrite); a follow-up box that holds other text on that scan keeps it (WriteOptions.keep,
+ *    the Phase 3 review, L-S7);
  * 2. the core's frame-side Guard checks the write against the field as it is now: honeypot, the value fits, the
  *    options it names still read as planned at their places, the provenance's shape, an llm-pick's option unchanged,
  *    the canary scan over this frame's canaries, the mark-all cover test (guardWriteInFrame);
@@ -83,6 +84,15 @@ export interface WrittenField {
   textBefore: string | null;
   /** The options a multi-select had selected before our write. */
   selectedBefore: number[];
+  /** The fill's own read-back, right after the write, found what was written. */
+  readBackVerified: boolean;
+}
+
+/** What else a write may need. */
+export interface WriteOptions {
+  /** A follow-up's box row as the worker planned it: when the DOM guard's fresh scan finds the box holding text other
+   *  than the free text (typed meanwhile), nothing is written and this row stands (the Phase 3 review, L-S7). */
+  keep?: FillResult;
 }
 
 /** What one write did: the row it ends with and, when the field changed, what was written and what the field held
@@ -160,10 +170,17 @@ export function plannedFieldOf(field: ScannedField): PlannedField {
  * heldPlaceholders, which every scan of the run reads.
  */
 export async function writeField(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
-  planned: FillResult, held: WeakMap<Element, string>): Promise<WriteResult> {
+  planned: FillResult, held: WeakMap<Element, string>, options: WriteOptions = {}): Promise<WriteResult> {
   const wanted = plannedFieldOf(field);
   let verdict = domGuardBeforeWrite(last, wanted);
   if (!verdict.ok) return { row: settleRow(planned, refusal(verdict.reason, GUARD_BLOCKS)) };
+  // A follow-up box the person (or the page) typed into since the pass's scan keeps that text: compared on the DOM
+  // guard's fresh scan, right before the write.
+  const now = verdict.target.field.current;
+  if (options.keep !== undefined && write.value.kind === 'text' && now.kind === 'text' && now.text !== ''
+    && now.text !== write.value.text) {
+    return { row: options.keep };
+  }
   let check = guardWriteInFrame(write, toFieldSpec(verdict.target.field), env.canaries);
   if (!check.ok) return { row: settleRow(planned, frameGuardRefusal(check.reason)) };
 
@@ -215,7 +232,8 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   return {
     row,
     written: { key: write.key, field: wanted, value: write.value, origin: write.origin, planned, rule,
-      file: file === undefined ? null : { name: file.name, size: file.size }, resume, textBefore, selectedBefore },
+      file: file === undefined ? null : { name: file.name, size: file.size }, resume, textBefore, selectedBefore,
+      readBackVerified: outcome.verification === 'verified' },
     readBack: readBack(target),
   };
 }

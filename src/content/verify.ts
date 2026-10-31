@@ -4,7 +4,9 @@
  *   for phones, case-folded email, the option's identity, the file's name and size, no aria-invalid). A multi-select's
  *   selection must also be exactly what it held before plus what we added (verifyOptionsWrite): a missing option is
  *   verify-mismatch, one the site added is unexpected-selection, and nothing is ever unticked. A field that is gone is
- *   field-disappeared.
+ *   field-disappeared; a list whose options changed during the settle is found by its base key (LC-9). A file input that read back our file at the fill and is empty now was emptied by its upload
+ *   widget, which took the file: verified, and never written again (the Phase 3 review, LC-3; a widget's text chips
+ *   that clear themselves are Phase 4's).
  * - finalGuard: guardReady reads back every value in the form, ours and the person's own alike, before the run says it
  *   is ready for review. A value holding a canary that we wrote is blocked: a text is set back to what it held before
  *   our write (a write with provenance rule guard.revert, through both Guards, cleared to empty if that earlier value
@@ -33,11 +35,22 @@ const CANARY_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['canary-in-
 
 /** A written field's row after the settle, from a fresh scan. */
 export function verifyWritten(fresh: ScanResult, written: WrittenField): FillResult {
+  if (written.value.kind === 'file' && written.readBackVerified) {
+    // Upload widgets empty their input once they have the file: the upload taken, not a mismatch (LC-3).
+    const now = fresh.target(written.key)?.field.current;
+    if (now !== undefined && (now.kind === 'empty' || (now.kind === 'files' && now.count === 0))) {
+      return settleRow(written.planned, { kind: 'verified' });
+    }
+  }
   const options = { ...(written.rule ? { rule: written.rule } : {}), ...(written.file ? { file: written.file } : {}) };
-  const verdict = verifyAfterSettle(fresh, written.key, written.value, options);
+  // A list whose options changed during the settle has a new key: it is the same field by its base key, and the
+  // read-back checks the chosen option's place and label (LC-9).
+  const key = fresh.target(written.key) !== null ? written.key
+    : fresh.fields.find((field) => field.baseKey === written.field.baseKey)?.key ?? written.key;
+  const verdict = verifyAfterSettle(fresh, key, written.value, options);
   if (verdict.verification === 'verified') {
     if (written.value.kind === 'options') {
-      const after = selectedOf(fresh.target(written.key)?.field);
+      const after = selectedOf(fresh.target(key)?.field);
       const check = verifyOptionsWrite(written.selectedBefore, written.value.indices, after);
       if (!check.ok) return mismatchRow(written.planned, check.reason);
     }

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { BaseKey } from '../types/field';
 import type { ValueMac } from '../types/loop';
 import {
-  baseKeyOf, childrenOf, createLoop, isFollowUpLabel, loopVerdict, MAX_OPTION_CHANGES, MAX_PASSES, MAX_REAPPEARANCES,
-  MAX_REVEAL_EDGES, MAX_VALUE_FLIPS, observeScan, OPTION_WAIT_PASSES, orderPending, recordOptionsWait, recordRows,
-  recordWrite, revealEdgesOf, type LoopEvent, type LoopField, type LoopState,
+  baseKeyOf, childrenOf, createLoop, isFollowUpLabel, isStopped, loopVerdict, MAX_OPTION_CHANGES, MAX_PASSES,
+  MAX_REAPPEARANCES, MAX_REVEAL_EDGES, MAX_VALUE_FLIPS, mayWrite, observeScan, OPTION_WAIT_PASSES, orderPending,
+  recordOptionsWait, recordRows, recordWrite, revealEdgesOf, storedBaseKey, type LoopEvent, type LoopField,
+  type LoopState,
 } from './bookkeeping';
 import { field, fullSpec, inOrder, mac, rowOf, unwrittenRow, withOptions } from './loop.testkit';
+import { loopRows } from './rows';
 
 /** The first scan of `fields`, every one of them planned and resolved by a row (verified unless given). */
 function settled(fields: LoopField[], rows: Partial<Record<string, ReturnType<typeof rowOf>>> = {}): LoopState {
@@ -170,7 +172,7 @@ describe('options that change', () => {
     expect(seen.state.fields.get(state.baseKey)).toMatchObject({ key: usStates.key, status: 'pending',
       cause: 'options-changed', optionChanges: 1 });
     // The edge records the dependency, for ordering later passes.
-    expect(seen.state.edges).toEqual([{ parent: country.baseKey, child: state.baseKey, certain: true,
+    expect(seen.state.edges).toEqual([{ parent: country.baseKey, child: state.baseKey, certain: false,
       kind: 'options' }]);
   });
 
@@ -269,17 +271,21 @@ describe('reveal edges', () => {
   const sponsor = field('Will you require sponsorship?', 'select', { options: ['Yes', 'No'] });
   const visa = field('Visa type', 'select', { options: ['H-1B', 'Other'] });
 
-  it('name the one writer of the last pass as a certain parent', () => {
+  it('name the one writer of the last pass as the parent, a guess unless the DOM attributed it (LC-1)', () => {
     let books = settled(inOrder(auth));
     books = written(books, auth, 'No');
     const seen = observeScan(books, inOrder(auth, sponsor, visa));
     expect(seen.events).toEqual([
-      { type: 'field-appeared', key: sponsor.key, baseKey: sponsor.baseKey, revealedBy: auth.baseKey, certain: true,
+      { type: 'field-appeared', key: sponsor.key, baseKey: sponsor.baseKey, revealedBy: auth.baseKey, certain: false,
         again: false },
-      { type: 'field-appeared', key: visa.key, baseKey: visa.baseKey, revealedBy: auth.baseKey, certain: true,
+      { type: 'field-appeared', key: visa.key, baseKey: visa.baseKey, revealedBy: auth.baseKey, certain: false,
         again: false }]);
-    expect(revealEdgesOf(seen.state)).toEqual([[auth.baseKey, sponsor.baseKey], [auth.baseKey, visa.baseKey]]);
+    expect(revealEdgesOf(seen.state)).toEqual([[storedBaseKey(auth.baseKey), storedBaseKey(sponsor.baseKey)],
+      [storedBaseKey(auth.baseKey), storedBaseKey(visa.baseKey)]]);
     expect(childrenOf(seen.state, auth.baseKey)).toEqual([sponsor.baseKey, visa.baseKey]);
+    const attributed = observeScan(books, inOrder(auth, sponsor), { attribution: new Map([[sponsor.baseKey,
+      auth.baseKey]]) });
+    expect(attributed.state.fields.get(sponsor.baseKey)).toMatchObject({ revealedBy: auth.baseKey, revealCertain: true });
   });
 
   it('guess the nearest writer before the new field when several wrote, and say it is a guess', () => {
@@ -316,42 +322,44 @@ describe('reveal edges', () => {
     const country = field('Country', 'select', { options: ['United States'] });
     // An earlier run learned that the country changes the state list; here the state comes first on the page.
     const fields = inOrder(state, name, country);
-    const books = observeScan(createLoop({ revealEdges: [[country.baseKey, state.baseKey]] }), fields).state;
+    const stored = (from: LoopField, to: LoopField) => [storedBaseKey(from.baseKey), storedBaseKey(to.baseKey)] as const;
+    const books = observeScan(createLoop({ revealEdges: [stored(country, state)] }), fields).state;
     expect(orderPending(books, fields.map((spec) => spec.key))).toEqual([name.key, country.key, state.key]);
     // A cycle among them is broken at its first field in DOM order.
-    const cyclic = observeScan(createLoop({ revealEdges: [[country.baseKey, state.baseKey],
-      [state.baseKey, country.baseKey]] }), fields).state;
+    const cyclic = observeScan(createLoop({ revealEdges: [stored(country, state), stored(state, country)] }), fields)
+      .state;
     expect(orderPending(cyclic, fields.map((spec) => spec.key))).toEqual([name.key, state.key, country.key]);
   });
 
   it(`keep this run's edges first, then earlier runs' not found again, at most ${MAX_REVEAL_EDGES}`, () => {
     const prior = Array.from({ length: MAX_REVEAL_EDGES + 5 },
       (_, index) => [`p|${index}` as BaseKey, `c|${index}` as BaseKey] as const);
-    const start = createLoop({ revealEdges: [[auth.baseKey, sponsor.baseKey], ...prior] });
+    const start = createLoop({ revealEdges: [[storedBaseKey(auth.baseKey), storedBaseKey(sponsor.baseKey)], ...prior] });
     expect(start.priorEdges).toHaveLength(MAX_REVEAL_EDGES);
     let books = recordRows(observeScan(start, inOrder(auth)).state, [unwrittenRow(auth, 'no-profile-value')]);
     books = written(books, auth, 'No');
     const seen = observeScan(books, inOrder(auth, sponsor, visa)).state;
     const edges = revealEdgesOf(seen);
-    expect(edges.slice(0, 3)).toEqual([[auth.baseKey, sponsor.baseKey], [auth.baseKey, visa.baseKey],
-      ['p|0', 'c|0']]);
+    expect(edges.slice(0, 3)).toEqual([[storedBaseKey(auth.baseKey), storedBaseKey(sponsor.baseKey)],
+      [storedBaseKey(auth.baseKey), storedBaseKey(visa.baseKey)], ['p|0', 'c|0']]);
     expect(edges).toHaveLength(MAX_REVEAL_EDGES);
   });
 
   it('stop the fields on a cycle of certain edges, and never on a guessed one', () => {
     const fields = inOrder(auth, sponsor);
+    const by = (child: LoopField, parent: LoopField) => ({ attribution: new Map([[child.baseKey, parent.baseKey]]) });
     let books = settled([fields[0]!]);
     books = written(books, fields[0]!, 'No');
-    books = observeScan(books, fields).state;                 // auth reveals sponsor (certain)
+    books = observeScan(books, fields, by(fields[1]!, fields[0]!)).state;   // auth reveals sponsor (the DOM saw it)
     books = written(books, fields[1]!, 'Yes');
-    books = observeScan(books, [fields[1]!]).state;          // sponsor's answer hides auth...
+    books = observeScan(books, [fields[1]!]).state;                         // sponsor's answer hides auth...
     books = written(books, fields[1]!, 'Yes');
-    const seen = observeScan(books, fields);                  // ...and brings it back: sponsor reveals auth
+    const seen = observeScan(books, fields, by(fields[0]!, fields[1]!));    // ...and brings it back
     expect(seen.events).toContainEqual({ type: 'reveal-cycle', keys: [auth.baseKey, sponsor.baseKey] });
     expect(seen.pending).toEqual([]);
     expect(seen.state.fields.get(auth.baseKey)).toMatchObject({ status: 'oscillating', reason: 'reveal-cycle' });
 
-    // The same shape with two writers each time is only guessed, and stops nothing.
+    // The same shape the DOM did not attribute is only guessed, and stops nothing.
     let guessed = settled(inOrder(name, auth));
     guessed = written(written(guessed, name, 'Alex'), auth, 'No');
     guessed = observeScan(guessed, inOrder(name, auth, sponsor)).state;
@@ -434,34 +442,41 @@ describe('follow-ups', () => {
   const notes = field('Anything else?', 'textarea');
   const phone = field('Phone', 'text');
 
+  /** The DOM's attribution of these boxes to the source's write. */
+  const bySource = (...boxes: LoopField[]) => ({ attribution: new Map(boxes.map((box) => [box.baseKey,
+    source.baseKey])) });
+
   it('name the box an Other choice revealed, for its free text', () => {
     let books = settled([source]);
     books = written(books, source, 'Other', true);
-    const seen = observeScan(books, inOrder(source, specify));
+    const seen = observeScan(books, inOrder(source, specify), bySource(specify));
     expect(seen.events).toContainEqual({ type: 'follow-up-found', parent: source.key, child: specify.key,
       certain: true });
     // The box is still planned: the planner gives it its row.
     expect(seen.pending).toEqual([specify.key]);
   });
 
-  it('prefer the box that asks to specify, else the only box, else none', () => {
+  it('name the one box that asks to specify, and never an only box that does not ask (LC-1)', () => {
     const found = (boxes: LoopField[]) => {
       const books = written(settled([source]), source, 'Other', true);
-      return observeScan(books, inOrder(source, ...boxes)).events.filter((event) => event.type === 'follow-up-found');
+      return observeScan(books, inOrder(source, ...boxes), bySource(...boxes)).events
+        .filter((event) => event.type === 'follow-up-found');
     };
     expect(found([notes, specify])).toEqual([{ type: 'follow-up-found', parent: source.key, child: specify.key,
       certain: true }]);
-    expect(found([phone])).toEqual([{ type: 'follow-up-found', parent: source.key, child: phone.key, certain: true }]);
+    expect(found([phone])).toEqual([]);
     expect(found([phone, notes])).toEqual([]);
     expect(found([specify, field('If other, please describe', 'text')])).toEqual([]);
   });
 
   it('name nothing for a choice written without free text, or at a later scan', () => {
     const plain = written(settled([source]), source, 'LinkedIn');
-    expect(types(observeScan(plain, inOrder(source, specify)).events)).not.toContain('follow-up-found');
+    expect(types(observeScan(plain, inOrder(source, specify), bySource(specify)).events))
+      .not.toContain('follow-up-found');
     let books = written(settled([source]), source, 'Other', true);
     books = observeScan(books, [source]).state;
-    expect(types(observeScan(books, inOrder(source, specify)).events)).not.toContain('follow-up-found');
+    expect(types(observeScan(books, inOrder(source, specify), bySource(specify)).events))
+      .not.toContain('follow-up-found');
   });
 
   it('name a box only on a certain edge when several Other choices wrote in one pass', () => {
@@ -571,5 +586,140 @@ describe('keys', () => {
       block: 2 }, ordinal: 3 }), field('x'.repeat(80), 'text')]) {
       expect(baseKeyOf(spec.key)).toBe(spec.baseKey);
     }
+  });
+});
+
+describe('the Phase 3 review', () => {
+  const source = field('How did you hear about us?', 'select', { options: ['Indeed', 'Other'] });
+  const specify = field('Please specify', 'text');
+  const name = field('Full name', 'text');
+
+  it('names a box for free text only on an edge the DOM attributed, never on one writer alone (LC-1, L-S1)', () => {
+    const books = written(settled([source]), source, 'Other', true);
+    // A box that shows during the settle (or was revealed earlier) is only guessed to be this write's.
+    const guessed = observeScan(books, inOrder(source, specify));
+    expect(types(guessed.events)).not.toContain('follow-up-found');
+    expect(guessed.state.fields.get(specify.baseKey)).toMatchObject({ revealedBy: source.baseKey, revealCertain: false });
+    const attributed = observeScan(books, inOrder(source, specify),
+      { attribution: new Map([[specify.baseKey, source.baseKey]]) });
+    expect(attributed.events).toContainEqual({ type: 'follow-up-found', parent: source.key, child: specify.key,
+      certain: true });
+  });
+
+  it('names no box whose label does not ask to specify, describe or explain: no "only box" (LC-1, L-S1)', () => {
+    for (const label of ['What visa type do you hold?', 'Expected salary', 'Pronouns',
+      'Type your full name as your electronic signature', 'Phone']) {
+      const box = field(label, 'text');
+      const books = written(settled([source]), source, 'Other', true);
+      const seen = observeScan(books, inOrder(source, box), { attribution: new Map([[box.baseKey, source.baseKey]]) });
+      expect(types(seen.events), label).not.toContain('follow-up-found');
+    }
+  });
+
+  it("stores reveal edges with each section and label slug hashed, and reads earlier runs' edges in that form (L-S3)",
+    () => {
+    const echo = field('Preferred name if not Alex Rivera', 'text');
+    let books = written(settled([name]), name, 'Alex Rivera');
+    books = observeScan(books, inOrder(name, echo), { attribution: new Map([[echo.baseKey, name.baseKey]]) }).state;
+    const edges = revealEdgesOf(books);
+    expect(edges).toEqual([[storedBaseKey(name.baseKey), storedBaseKey(echo.baseKey)]]);
+    expect(JSON.stringify(edges).toLowerCase()).not.toContain('rivera');
+    expect(storedBaseKey(echo.baseKey)).toMatch(/^lever\|[a-f0-9]{16}\|[a-f0-9]{16}\|0$/);
+    // A section heading is page text too, and may echo a value just the same: hashed as well.
+    const titled = field('City', 'text', { section: { id: 'details-for-alex-rivera', block: 1 } });
+    expect(storedBaseKey(titled.baseKey)).toMatch(/^lever\|[a-f0-9]{16}\|[a-f0-9]{16}\|0$/);
+    expect(storedBaseKey(titled.baseKey)).not.toContain('rivera');
+    expect(storedBaseKey(titled.baseKey)).not.toBe(storedBaseKey(field('City', 'text').baseKey));
+    // An earlier run's stored edges order this run's pass and name the lists worth awaiting, in their stored form.
+    const country = field('Country', 'select', { options: ['United States'] });
+    const state = field('State', 'select', { options: ['Texas'] });
+    const fields = inOrder(state, country);
+    const stored = [storedBaseKey(country.baseKey), storedBaseKey(state.baseKey)] as const;
+    const prior = observeScan(createLoop({ revealEdges: [stored] }), fields).state;
+    expect(orderPending(prior, fields.map((spec) => spec.key))).toEqual([country.key, state.key]);
+    expect(childrenOf(prior, country.baseKey)).toEqual([state.baseKey]);
+    expect(revealEdgesOf(prior)).toEqual([stored]);
+  });
+
+  it('never plans a file field again once written: an emptied input is the upload taken, not a flip (LC-3)', () => {
+    const resume = field('Resume', 'file');
+    const other = field('City', 'text');
+    let books = written(settled(inOrder(other, resume)), resume, 'files 1');
+    const emptied = observeScan(books, inOrder(other, resume), { valueMacs: new Map([[resume.baseKey, mac('files 0')]]),
+      cleared: new Set([resume.baseKey]) });
+    expect(emptied.pending).toEqual([]);
+    expect(types(emptied.events)).toEqual([]);
+    expect(emptied.state.fields.get(resume.baseKey)).toMatchObject({ status: 'resolved', flips: 0,
+      row: { status: 'verified', wrote: true } });
+    // Nor when the page takes the input out and puts a new one in its place.
+    books = observeScan(emptied.state, inOrder(other)).state;
+    const back = observeScan(books, inOrder(other, resume));
+    expect(back.pending).toEqual([]);
+    expect(back.state.fields.get(resume.baseKey)).toMatchObject({ status: 'resolved', present: true,
+      row: { status: 'verified', wrote: true } });
+  });
+
+  it('freezes a written field the person changed, and rows it as theirs, never ours (LC-4)', () => {
+    const books = written(settled([name]), name, 'Alex Rivera');
+    const seen = observeScan(books, [name], { valueMacs: new Map([[name.baseKey, mac('Alexander Rivera')]]),
+      touched: new Set([name.baseKey]) });
+    expect(seen.pending).toEqual([]);
+    expect(seen.state.fields.get(name.baseKey)).toMatchObject({ status: 'frozen', reason: 'changed-by-you' });
+    expect(isStopped(seen.state.fields.get(name.baseKey)!)).toBe(true);
+    // Never planned again, whatever the page does next, and its row is the person's: nothing of ours stands.
+    const later = observeScan(seen.state, [name], { valueMacs: new Map([[name.baseKey, mac('')]]),
+      cleared: new Set([name.baseKey]) });
+    expect(later.pending).toEqual([]);
+    expect(loopRows(later.state, later.verdict)).toEqual([expect.objectContaining({ key: name.key, status: 'flagged',
+      reason: 'changed-by-you', provenance: null, wrote: false, needsUserAction: true })]);
+    // Touched with its value still ours: frozen, and our row stands.
+    const calm = observeScan(books, [name], { valueMacs: new Map([[name.baseKey, mac('Alex Rivera')]]),
+      touched: new Set([name.baseKey]) });
+    expect(calm.state.fields.get(name.baseKey)).toMatchObject({ status: 'frozen', reason: null });
+    expect(loopRows(calm.state, calm.verdict)).toEqual([expect.objectContaining({ status: 'verified', wrote: true })]);
+    // A change the person makes later still comes to theirs.
+    const afterwards = observeScan(calm.state, [name], { valueMacs: new Map([[name.baseKey, mac('A. Rivera')]]) });
+    expect(afterwards.state.fields.get(name.baseKey)).toMatchObject({ status: 'frozen', reason: 'changed-by-you' });
+  });
+
+  it('rewrites a value only after the page resets it to empty or its placeholder (LC-4)', () => {
+    const books = written(settled([name]), name, 'Alex Rivera');
+    const reset = observeScan(books, [name], { valueMacs: new Map([[name.baseKey, mac('')]]),
+      cleared: new Set([name.baseKey]) });
+    expect(reset.state.fields.get(name.baseKey)).toMatchObject({ status: 'pending', cause: 'value-changed' });
+    expect(mayWrite(reset.state, name.key)).toBe(true);
+    // Another value the page put there: planned again for its row only, never written.
+    const replaced = observeScan(books, [name], { valueMacs: new Map([[name.baseKey, mac('Alexander Rivera')]]) });
+    expect(replaced.state.fields.get(name.baseKey)).toMatchObject({ status: 'pending', cause: 'replaced' });
+    expect(mayWrite(replaced.state, name.key)).toBe(false);
+    const planned = rowOf(name, { wrote: false, verification: 'not-checked', reason: 'prefill-conflict',
+      status: 'flagged' });
+    expect(recordRows(replaced.state, [planned]).fields.get(name.baseKey)?.row).toMatchObject({ status: 'filled',
+      reason: 'verify-mismatch', wrote: true, verification: 'mismatch', needsUserAction: true, provenance: 'profile' });
+    // Found in place after all (a reformatted phone): our row stands.
+    const same = rowOf(name, { status: 'skipped', reason: 'already-correct', wrote: false, provenance: null,
+      verification: 'not-applicable' });
+    expect(recordRows(replaced.state, [same]).fields.get(name.baseKey)?.row).toMatchObject({ status: 'verified',
+      wrote: true });
+  });
+
+  it('keeps our row when a list we wrote changes its options, or comes back, still holding our answer (LC-9)', () => {
+    const country = field('Country', 'select', { options: ['Canada', 'United States'] });
+    const grown = withOptions(country, ['Canada', 'Mexico', 'United States']);
+    const fields = inOrder(name, country);
+    const books = written(settled(fields), fields[1]!, 'United States');
+    const changed = observeScan(books, inOrder(name, grown));
+    expect(changed.pending).toEqual([grown.key]);
+    const found = rowOf(grown, { status: 'skipped', reason: 'already-correct', wrote: false, provenance: null,
+      verification: 'not-applicable' });
+    expect(recordRows(changed.state, [found]).fields.get(country.baseKey)?.row).toMatchObject({ key: grown.key,
+      status: 'verified', wrote: true, provenance: 'profile' });
+    // Gone and back, with our answer still in it.
+    const gone = observeScan(books, inOrder(name)).state;
+    const back = observeScan(gone, fields);
+    expect(back.pending).toEqual([country.key]);
+    expect(recordRows(back.state, [rowOf(country, { status: 'skipped', reason: 'already-correct', wrote: false,
+      provenance: null, verification: 'not-applicable' })]).fields.get(country.baseKey)?.row)
+      .toMatchObject({ status: 'verified', wrote: true });
   });
 });

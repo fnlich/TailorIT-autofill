@@ -10,7 +10,8 @@
  * 3. With a form root, the launcher is mounted on it (the in-page UI, ui/page-ui.ts), and runs start from its trusted
  *    clicks (counted only while a person can see it: S5) or from run/start (the side panel's Fill, to every frame with
  *    a form). One run at a time (orchestrator.ts). In a frame inside another page a run fills only while the launcher
- *    can be seen on that page (S1).
+ *    can be seen on that page (S1). Fill anyway at a policy card that a later pass of a run showed ends that run and
+ *    starts a fresh one, whose gate takes the decision (fillAgain, the Phase 3 review's L-S2).
  * The worker's messages are answered: frame/ping {pong}; run/start; run/continue (Continue after a pause, never Fill
  * anyway: a policy card waits for the person's own decision); run/cancel (stops a run, a policy card's wait included,
  * or leaves a pause); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
@@ -196,12 +197,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       frame: ensureFrame,
       // Without its launcher (the UI failed, or the page removed it for good) a frame cannot show it is seen: it fills
       // nothing inside another page.
-      frameShown: (signal) => (ui === null ? Promise.resolve(false) : ui.launcherShown(signal)),
+      frameShown: (signal, fresh) => (ui === null ? Promise.resolve(false) : ui.launcherShown(signal, fresh)),
       page,
       now: () => platform.now(),
       options,
       onRows(rows) {
         lastRows = new Map(rows.map((row) => [row.key, row]));
+      },
+      // Fill anyway at a policy card a later pass showed: a fresh run, on this run's own ended state (L-S2).
+      fillAgain(next) {
+        if (current === run) startRun(next);
       },
     }, request);
     current = run;

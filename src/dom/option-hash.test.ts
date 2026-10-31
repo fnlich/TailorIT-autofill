@@ -55,11 +55,19 @@ describe('the option-set hash leaves out what a trap or a prompt adds', () => {
     }
     expect(hashOfOptions(['Select a state', 'Texas', 'Ohio'])).not.toBe(before);
     expect(hashOfOptions(['Loading more...', 'Texas', 'Ohio'])).toBe(hashOfOptions(['Texas', 'Ohio']));
-    // A lead without a closing ellipsis is a real answer.
+    // A lead without an ellipsis after it is a real answer.
     for (const answer of ['Lodging', 'Searching for a new role', 'Updating my skills', 'Loading dock supervisor',
       'Fetching cities']) {
       expect(hashOfOptions([answer]), answer).not.toBe(before);
     }
+  });
+  it('reads a loading row by its ellipsis after the lead, and a phrase with its brackets\u{2019} words (LC-7, LC-12)', () => {
+    expect(hashOfOptions(['Select a state', 'Loading... please wait'])).toBe(hashOfOptions(['Select a state']));
+    expect(isUsableOption('Loading\u{2026} please wait')).toBe(false);
+    // An answer whose brackets add words is no loading phrase: its list is matched, not held back every pass.
+    expect(isUsableOption('Searching (Actively)')).toBe(true);
+    expect(hashOfOptions(['Searching (Actively)'])).not.toBe(hashOfOptions([]));
+    expect(isUsableOption('(Loading...)')).toBe(false);
   });
   it('reads a loading row a list shows selected as no selection, as it reads a placeholder', () => {
     const select = {} as Element;

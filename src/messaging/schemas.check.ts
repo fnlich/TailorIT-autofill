@@ -4,9 +4,10 @@
  * and the worker brands them after parsing. This file has no runtime code.
  */
 import type { z } from 'zod';
+import type { PlanInput } from '../core/plan/types';
 import type { FieldSpec, FillResult, PlannedWrite, RunState } from '../core/types';
 import type { FillResultSchema } from '../shared/report';
-import type { FieldSpecSchema, PlannedWriteSchema, RunStateSchema } from './schemas';
+import type { ContentMessageSchema, FieldSpecSchema, PlannedWriteSchema, RunStateSchema } from './schemas';
 
 type Unbrand<T> = T extends string
   ? string
@@ -21,7 +22,13 @@ type Unbrand<T> = T extends string
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 type Assert<T extends true> = T;
 
+/** plan/request as the schema parses it. */
+type PlanRequest = Extract<z.infer<typeof ContentMessageSchema>, { type: 'plan/request' }>;
+
 export type FieldSpecMatches = Assert<Same<Unbrand<FieldSpec>, Unbrand<z.infer<typeof FieldSpecSchema>>>>;
 export type PlannedWriteMatches = Assert<Same<Unbrand<PlannedWrite>, Unbrand<z.infer<typeof PlannedWriteSchema>>>>;
 export type RunStateMatches = Assert<Same<Unbrand<RunState>, Unbrand<z.infer<typeof RunStateSchema>>>>;
 export type FillResultMatches = Assert<Same<Unbrand<FillResult>, Unbrand<z.infer<typeof FillResultSchema>>>>;
+/** plan/request's specs and planKeys are the core's PlanInput's (the Phase 3 review, LC-2). */
+export type PlanSpecsMatch = Assert<Same<Unbrand<PlanInput['specs']>, Unbrand<PlanRequest['specs']>>>;
+export type PlanKeysMatch = Assert<Same<Unbrand<NonNullable<PlanInput['planKeys']>>, Unbrand<PlanRequest['planKeys']>>>;

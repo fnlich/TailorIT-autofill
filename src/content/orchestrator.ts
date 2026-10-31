@@ -21,8 +21,18 @@
  * 5. The reactive loop (loop.ts: each pass's writes through pass.ts, settled and verified), then the final Guard
  *    (verify.ts) over the loop's rows and its latest scan. A page still busy at a settle's cap pauses the run (handoff,
  *    page-busy, the page-busy notice): what is left is flagged page-busy, and Continue starts a fresh run.
- * 6. report/put (no values; counters.passes the loop's) and runstate/put (the plan's persistableCanaries, the tripwire
- *    counts, lastFill, the loop's reveal edges, status review); the highlights and the launcher's "Review N".
+ *    Before every pass after the first, what the earlier passes revealed is checked as the page was at the start (the
+ *    Phase 3 review, L-S2 and L-S4, decided by the lead): in a frame inside another page, the frame must still be seen
+ *    (otherwise the loop is cut with form-hidden: the run ends stopped, with the form-hidden notice); the raw scan's new
+ *    passages go through the tripwire (the notice once, their canaries merged into the frame's own, the 32 nearest
+ *    recomputed for plan/request and RunState); the policy patterns run over the visible text (a hit cuts the loop at
+ *    policy-notice and shows the card: Fill anyway starts a fresh run, whose gate sees the hit and takes that decision;
+ *    Cancel ends the run stopped, policy-declined); and detectPause (a pause cuts the loop: the run pauses, with its
+ *    notice, as at the start).
+ * 6. report/put (no values; counters.passes the loop's) and runstate/put (the plan's persistableCanaries, or the 32
+ *    nearest when a check found new canaries since the last plan, which the worker's store filters as it always does;
+ *    the tripwire counts, lastFill, the loop's reveal edges, status review); the highlights and the launcher's
+ *    "Review N".
  * An 'expired' answer to run/begin, plan/request or report/put begins the run again, once (the same call() will carry
  * plan/poll when Phase 4's fields wait for the LLM; before then nothing ever awaits); a second one ends the run in the
  * launcher's error state. The run ends for invalidation only on the platform's word (channel.ts).
@@ -30,11 +40,11 @@
 import type { Adapter } from '../adapters/types';
 import type { ApplicationRef } from '../adapters';
 import { scanTripwires } from '../core/guard/tripwire';
-import type { BaseKey, FieldSpec } from '../core/types/field';
-import type { FillResult } from '../core/types/fill';
+import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
+import type { FillResult, ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunState, RunStatus } from '../core/types/run';
 import { detectPause, type PauseSignal } from '../dom/pause-detect';
-import { rawScan } from '../dom/raw-scan';
+import { rawScan, type RawPassage } from '../dom/raw-scan';
 import type { ScanResult } from '../dom/types';
 import type { ErrorCode } from '../messaging/envelope';
 import type { ContentPlatform } from '../platform/types';
@@ -66,6 +76,9 @@ export type RunEnd = (typeof RUN_ENDS)[number];
 export interface RunRequest {
   trigger: 'launcher' | 'panel';
   dryRun: boolean;
+  /** The person chose Fill anyway at the policy card a run ago, on this page (the card a later pass's hit showed):
+   *  this run's gate takes that decision instead of asking again. Set by the runtime only. */
+  policyAccepted?: boolean;
 }
 
 /** The page a run fills: its application, adapter and form root, as they were when it started. */
@@ -93,13 +106,16 @@ export interface RunEnv {
   ui(): PageUi | null;
   /** The frame's id from frame/hello (sent again if it went unanswered), and whether it is the top frame. */
   frame(): Promise<{ frameId: number; isTop: boolean }>;
-  /** Whether a person can see this frame's launcher on its page (IntersectionObserver v2; false without a launcher). */
-  frameShown(signal: AbortSignal): Promise<boolean>;
+  /** Whether a person can see this frame's launcher on its page (IntersectionObserver v2; false without a launcher).
+   *  `fresh`: from a notification after this call, not what was known before. */
+  frameShown(signal: AbortSignal, fresh?: boolean): Promise<boolean>;
   page: RunPage;
   now(): number;
   options: RunOptions;
   /** The run's rows, once it has them: field/describe reads their suggestions. */
   onRows(rows: readonly FillResult[]): void;
+  /** Starts a fresh run once this one has ended (Fill anyway at a policy card a later pass showed). */
+  fillAgain(request: RunRequest): void;
 }
 
 /** A report's counters before anything was scanned for the fill. */
@@ -119,6 +135,17 @@ function pauseOf(signal: PauseSignal): { status: RunStatus; reason: PauseReason 
       return { status: 'handoff', reason: 'captcha', notice: 'captcha' };
   }
 }
+
+/** The reason a pause found before a later pass gives what the loop leaves. */
+function pauseCutOf(signal: PauseSignal): ReasonCode {
+  return signal.kind === 'captcha' ? 'challenge-present' : 'auth-required';
+}
+
+/** What cut the loop before a later pass: the frame hidden, a policy statement, or a pause. */
+type LoopCut = { kind: 'hidden' } | { kind: 'policy' } | { kind: 'pause'; signal: PauseSignal };
+
+/** A passage's identity: a new one is one the run has not read. */
+const passageId = (passage: RawPassage) => `${passage.origin}\u{0}${passage.text}`;
 
 /** One run. start() runs it once; accept(), decline() and stop() are the person's choices while it runs. */
 export class FillRun {
@@ -140,6 +167,18 @@ export class FillRun {
   private policyDecision: RunState['policyDecision'] = null;
   private tripwireHits = 0;
   private started: Promise<RunEnd> | null = null;
+  private isTop = true;
+  /** Every canary this frame holds in memory (at most 1024, nearest their hit first): every write is scanned for them. */
+  private inMemory: readonly string[] = [];
+  /** The 32 nearest, for plan/request and RunState. */
+  private sent: readonly string[] = [];
+  /** A check found canaries no plan/request has carried yet. */
+  private sentUnplanned = false;
+  /** The raw passages read so far, and those with a tripwire hit: a later check reads only what is new. */
+  private readonly passagesSeen = new Set<string>();
+  private hitPassages: RawPassage[] = [];
+  /** What cut the loop before a later pass. */
+  private loopCut: LoopCut | null = null;
 
   constructor(private readonly env: RunEnv, readonly request: RunRequest) {}
 
@@ -241,13 +280,16 @@ export class FillRun {
     }
   }
 
-  private async plan(specs: FieldSpec[], pass: number, canaries: readonly string[]): Promise<PlanAnswer> {
+  /** plan/request: the whole scan as context, planKeys to plan (LC-2), the 32 nearest canaries and the notices. */
+  private async plan(specs: FieldSpec[], planKeys: FieldKey[], pass: number): Promise<PlanAnswer> {
     const notices = [
       ...(this.notices.has('tripwire') ? [{ kind: 'tripwire' as const, count: this.tripwireHits }] : []),
       ...(this.policyDecision === 'accepted' ? [{ kind: 'policy' as const, count: 1 }] : []),
     ];
+    const canaries = [...this.sent];
+    this.sentUnplanned = false;
     const answer = await this.call<'plan/request'>((runId) => ({ v: 1, type: 'plan/request', runId, pass, specs,
-      canaries: [...canaries], notices }));
+      planKeys, canaries, notices }));
     if ('failed' in answer) throw new RunFailure(answer.failed);
     return answer;
   }
@@ -277,6 +319,61 @@ export class FillRun {
     const answer = await this.env.channel.request({ v: 1, type: 'runstate/put', runState });
     this.alive();
     if (!answer.ok) log('content.runstate-refused');
+  }
+
+  // ── What the page shows ─────────────────────────────────────────────────────────────────────────────────────────
+
+  /** Reads raw passages into the tripwire: those not read before go through scanTripwires with the passages that hit
+   *  before, so the notice is raised once, every canary is merged into the frame's own, and the 32 nearest are
+   *  recomputed. Answers the new passages. */
+  private absorbPassages(passages: readonly RawPassage[]): RawPassage[] {
+    const fresh = passages.filter((passage) => !this.passagesSeen.has(passageId(passage)));
+    for (const passage of fresh) this.passagesSeen.add(passageId(passage));
+    if (fresh.length === 0) return fresh;
+    const read = [...this.hitPassages, ...fresh];
+    const tripwire = scanTripwires(read);
+    if (!tripwire.notice) return fresh;
+    const hit = new Set(tripwire.hits.map((found) => found.passage));
+    this.hitPassages = read.filter((_, at) => hit.has(at));
+    if (tripwire.canaries.join('\u{0}') !== this.sent.join('\u{0}')) this.sentUnplanned = true;
+    this.inMemory = tripwire.allCanaries;
+    this.sent = tripwire.canaries;
+    this.tripwireHits = tripwire.hits.length;
+    this.notices.add('tripwire', tripwire.hits.length);
+    return fresh;
+  }
+
+  /** The checks before a pass after the first (L-S2, L-S4): null to go on, or the reason that cuts the loop. */
+  private async recheck(): Promise<ReasonCode | null> {
+    const { env } = this;
+    const { page } = env;
+    if (!this.isTop) {
+      // A fresh reading: what the watch knew may be from before the page hid the frame.
+      const shown = await env.frameShown(this.controller.signal, true);
+      this.alive();
+      if (!shown) {
+        this.loopCut = { kind: 'hidden' };
+        return 'form-hidden';
+      }
+    }
+    const raw = await rawScan(env.doc, { signal: this.controller.signal });
+    this.alive();
+    const fresh = this.absorbPassages(raw.passages);
+    if (this.policyDecision !== 'accepted') {
+      if (frameHitsOf(env.doc).length > 0) {
+        this.loopCut = { kind: 'policy' };
+        this.showNotices();
+        return 'policy-notice';
+      }
+      if (hiddenPolicyHits(fresh).length > 0) this.notices.add('policy-hidden-text');
+    }
+    this.showNotices();
+    const paused = detectPause(env.doc, page.root, page.adapter);
+    if (paused !== null) {
+      this.loopCut = { kind: 'pause', signal: paused };
+      return pauseCutOf(paused);
+    }
+    return null;
   }
 
   // ── The run ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -317,6 +414,7 @@ export class FillRun {
       const frame = await env.frame();
       this.alive();
       this.frameId = frame.frameId;
+      this.isTop = frame.isTop;
       await this.begin();
 
       // 1b. A frame inside another page fills only while its launcher can be seen on that page (S1): the page around it
@@ -339,7 +437,11 @@ export class FillRun {
       const view = env.doc.defaultView;
       if (view !== null && postingOutsideFrame(view, frame.isTop)) this.notices.add('posting-outside-frame');
       const gate = policyGateOf(this.policy ?? { postingPage: 'unseen', storedCopy: 'unavailable' }, frameHitsOf(env.doc));
-      if (gate.blocked) {
+      if (gate.blocked && this.request.policyAccepted === true) {
+        // The person chose Fill anyway at this page's card, which a later pass of the run before showed.
+        this.notices.add('policy');
+        this.policyDecision = 'accepted';
+      } else if (gate.blocked) {
         this.notices.add('policy');
         this.status = 'policy-notice';
         this.showNotices();
@@ -370,12 +472,8 @@ export class FillRun {
       // 3. The raw scan and the tripwire: page text addressed to AI tools, wherever it is hidden.
       const raw = await rawScan(env.doc, { signal: this.controller.signal });
       this.alive();
-      const tripwire = scanTripwires(raw.passages);
       // The 32 nearest their hit are sent and stored; the frame's own scans read them all (CORE-15).
-      const canaries = tripwire.canaries;
-      const inMemory = tripwire.allCanaries;
-      this.tripwireHits = tripwire.hits.length;
-      if (tripwire.notice) this.notices.add('tripwire', tripwire.hits.length);
+      this.absorbPassages(raw.passages);
       // Policy text that only text a person cannot see yet holds (behind "Show more") informs; it stops nothing (S6).
       if (!gate.blocked && hiddenPolicyHits(raw.passages).length > 0) this.notices.add('policy-hidden-text');
       this.showNotices();
@@ -389,7 +487,7 @@ export class FillRun {
         this.notices.add(pause.notice);
         this.showNotices();
         await this.report([]);
-        await this.putRunState(canaries, null, startedAt);
+        await this.putRunState(this.sent, null, startedAt);
         this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause' });
         return this.end('paused');
       }
@@ -398,36 +496,52 @@ export class FillRun {
       if (this.stopRequested) {
         this.status = 'stopped';
         await this.report([]);
-        await this.putRunState(canaries, null, startedAt);
+        await this.putRunState(this.sent, null, startedAt);
         this.launcher({ state: 'idle', action: 'fill' });
         return this.end('stopped');
       }
 
       // 5. The fill step: the reactive loop, then the final Guard over its rows and its latest scan.
       this.status = 'fill-step';
-      const loop = await this.fillStep(canaries, inMemory);
+      const loop = await this.fillStep();
       const last = loop.scan;
-      const guarded = finalGuard({ adapter: page.adapter, root: page.root, canaries: inMemory }, last,
+      const guarded = finalGuard({ adapter: page.adapter, root: page.root, canaries: this.inMemory }, last,
         new Map(loop.rows.map((row) => [row.key, row])), loop.written);
       const after = guarded.reverted.size > 0 ? last.rescan() : last;
 
-      // 6. Report. A page still busy at a settle's cap pauses the run: Continue starts afresh.
+      // 6. Report. A page still busy at a settle's cap pauses the run: Continue starts afresh. So does a pause a later
+      // pass found; a frame its page hid mid-fill ends stopped; a policy statement shows the card.
       const busy = loop.busy !== null;
       if (busy) this.notices.add('page-busy');
+      const cut = this.loopCut;
+      if (cut?.kind === 'hidden') {
+        log('content.form-hidden');
+        this.notices.add('form-hidden');
+      }
+      if (cut?.kind === 'pause') this.notices.add(pauseOf(cut.signal).notice);
       const all = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
       this.noticesFromRows(all, last);
-      const end: RunEnd = this.stopRequested ? 'stopped' : busy ? 'paused' : 'review';
-      this.status = end === 'stopped' ? 'stopped' : end === 'paused' ? 'handoff' : 'review';
-      this.pauseReason = end === 'paused' ? 'page-busy' : null;
-      this.showNotices();
+      const counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
+        deferredFields: last.counters.deferredFields };
+      // The canaries a later check found since the last plan are stored too (the worker's store filters them).
+      const persisted = this.sentUnplanned ? this.sent : loop.persistableCanaries;
       env.onRows(all);
       // A dry run wrote nothing, so only what would need the person is outlined.
       const outlined = this.request.dryRun
         ? new Map([...guarded.rows].filter(([, row]) => row.needsUserAction)) : guarded.rows;
       env.ui()?.setHighlights(highlightItems(after, outlined, guarded.removeSelection));
-      await this.report(all, { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
-        deferredFields: last.counters.deferredFields });
-      await this.putRunState(loop.persistableCanaries, all, startedAt, loop.revealEdges);
+      if (cut?.kind === 'policy' && !this.stopRequested) {
+        return await this.waitAtPolicyCard(all, counters, persisted, startedAt, loop.revealEdges);
+      }
+      const end: RunEnd = this.stopRequested || cut?.kind === 'hidden' || cut?.kind === 'policy' ? 'stopped'
+        : busy || cut?.kind === 'pause' ? 'paused' : 'review';
+      const pause = cut?.kind === 'pause' && !this.stopRequested ? pauseOf(cut.signal) : null;
+      this.status = end === 'stopped' ? 'stopped' : pause !== null ? pause.status : end === 'paused' ? 'handoff'
+        : 'review';
+      this.pauseReason = pause !== null ? pause.reason : end === 'paused' ? 'page-busy' : null;
+      this.showNotices();
+      await this.report(all, counters);
+      await this.putRunState(persisted, all, startedAt, loop.revealEdges);
       const count = all.filter((row) => row.needsUserAction).length;
       this.launcher(end === 'stopped' ? { state: 'idle', action: 'fill' }
         : end === 'paused' ? { state: 'needs-you', action: 'continue', reason: 'pause' }
@@ -447,10 +561,46 @@ export class FillRun {
     }
   }
 
-  /** The fill step: the reactive loop (loop.ts). `canaries` go to plan/request; each write is scanned for `inMemory`,
-   *  all of the frame's canaries. */
-  private fillStep(canaries: readonly string[], inMemory: readonly string[]): Promise<LoopResult> {
+  /** The policy card a later pass's hit showed (L-S2): the run waits there, its rows reported. Cancel ends it stopped
+   *  (policy-declined); Fill anyway ends it and starts a fresh run, whose gate takes that decision. */
+  private async waitAtPolicyCard(rows: readonly FillResult[], counters: ReportHeader['counters'],
+    persisted: readonly string[], startedAt: number, revealEdges: ReadonlyArray<readonly [BaseKey, BaseKey]>):
+    Promise<RunEnd> {
+    const ui = this.env.ui();
+    this.notices.add('policy');
+    this.status = 'policy-notice';
+    this.showNotices();
+    ui?.showPolicyCard({ fromStoredCopy: false });
+    this.launcher({ state: 'needs-you', action: 'open-review', reason: 'policy' });
+    const waiting = this.waitForChoice();
+    // Handled here as well: if the report fails or the run is aborted first, nothing waits on it.
+    waiting.catch(() => undefined);
+    await this.report(rows, counters);
+    const choice = await waiting;
+    this.alive();
+    ui?.hidePolicyCard();
+    if (choice === 'declined') {
+      this.policyDecision = 'declined';
+      this.status = 'stopped';
+      const declined = rows.map((row) => (row.reason === 'policy-notice' ? { ...row, reason: 'policy-declined' as const }
+        : row));
+      this.env.onRows(declined);
+      await this.report(declined, counters);
+      await this.putRunState(persisted, declined, startedAt, revealEdges);
+      this.launcher({ state: 'idle', action: 'fill' });
+      return this.end('stopped');
+    }
+    this.policyDecision = 'accepted';
+    const ended = this.end('stopped');
+    this.env.fillAgain({ ...this.request, policyAccepted: true });
+    return ended;
+  }
+
+  /** The fill step: the reactive loop (loop.ts). plan/request carries the 32 nearest canaries; each write is scanned
+   *  for all of the frame's (both as the checks before each later pass leave them). */
+  private fillStep(): Promise<LoopResult> {
     const { env } = this;
+    const inMemory = () => this.inMemory;
     return runLoop({
       content: env.content,
       adapter: env.page.adapter,
@@ -458,12 +608,15 @@ export class FillRun {
       platform: env.page.app.platform,
       frameId: this.frameId,
       dryRun: this.request.dryRun,
-      canaries: inMemory,
+      get canaries() {
+        return inMemory();
+      },
       signal: this.controller.signal,
       valid: () => env.channel.valid(),
       stopped: () => this.stopRequested,
       stopSignal: this.stopping.signal,
-      plan: (specs, pass) => this.plan(specs, pass, canaries),
+      plan: (specs, planKeys, pass) => this.plan(specs, planKeys, pass),
+      recheck: () => this.recheck(),
       runId: () => this.runId,
       ...(env.options.resume ? { resume: env.options.resume } : {}),
       ...(env.options.settle ? { settle: env.options.settle } : {}),

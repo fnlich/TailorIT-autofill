@@ -122,6 +122,9 @@ const REASONS = {
   'policy-declined': 'You chose not to fill this posting.',
   'user-stopped': 'You stopped the fill.',
   'options-oscillated': "The list's options kept changing, so filling stopped here.",
+  'changed-by-you': 'You changed this after it was filled, so it was left as you set it.',
+  'policy-notice': 'This posting says AI-assisted applications are not allowed, so filling stopped here until you choose.',
+  'form-hidden': 'The page hid this form while it was being filled, so filling stopped here.',
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;

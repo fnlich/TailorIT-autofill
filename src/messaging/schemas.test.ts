@@ -33,6 +33,25 @@ const STATUS = {
   pairingExpiresAt: null,
 } as const;
 
+describe('plan/request (LC-2)', () => {
+  const spec = (index: number) => ({ key: `lever|main|field-${index}|none|0`, baseKey: `lever|main|field-${index}|0`,
+    platform: 'lever', section: { id: 'main' }, kind: 'text', label: `Field ${index}`, labelSource: 'for',
+    labelVisible: true, description: '', required: false, options: [], optionSetHash: 'none', constraints: {},
+    autocomplete: [], nameAttr: '', idAttr: '', ordinal: 0, domOrder: index, visibility: 'visible', disabled: false,
+    readOnly: false, current: { kind: 'empty' } });
+  const request = (planKeys: string[]) => ({ v: 1, type: 'plan/request', runId: 'run-1', pass: 1,
+    specs: [spec(1), spec(2)], planKeys, canaries: [], notices: [] });
+
+  it('carries the whole scan and the keys to plan, each one a spec\'s', () => {
+    expect(ContentMessageSchema.safeParse(request([spec(2).key])).success).toBe(true);
+    expect(ContentMessageSchema.safeParse(request([])).success).toBe(true);
+    expect(ContentMessageSchema.safeParse(request([spec(1).key, 'lever|main|field-9|none|0'])).success).toBe(false);
+    const { planKeys: _keys, ...without } = request([spec(1).key]);
+    expect(ContentMessageSchema.safeParse(without).success).toBe(false);
+    expect(ContentMessageSchema.safeParse(request(Array(501).fill(spec(1).key))).success).toBe(false);
+  });
+});
+
 describe('the page channel\'s additions', () => {
   it('reads a tab\'s reports with panel/reports, and nothing else rides along', () => {
     expect(PageMessageSchema.safeParse({ v: 1, type: 'panel/reports', tabId: 7 }).success).toBe(true);

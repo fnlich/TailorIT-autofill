@@ -4,6 +4,10 @@
  * the value onto the field's options (matchOne, with the LLM off in Phase 2), plan the write in the shape the field's
  * kind takes, pass it through guardWrite, and give the field a row. The answer holds the values for this frame's own
  * fields only, never the profile.
+ * - The request carries the frame's whole scan and the keys this pass plans (planKeys; every spec without them). Only
+ *   those are resolved, written and rowed, and only they can ask for the sensitive part; every spec is read for what
+ *   the planner sees across the frame, so a phone planned again alone still knows the code select beside it (the
+ *   Phase 3 review, LC-2).
  * - Rows never carry a value or an option label. A field with a write gets the row its fill produces when the value
  *   reads back as planned (wrote false, verification 'not-checked'); the content script settles it after the fill
  *   (settle.ts). A dry run returns the rows and no write.
@@ -317,25 +321,32 @@ function categoryOf(classification: FieldClassification): FieldCategory | null {
   return classification.by === 'rules' ? classification.rules.category ?? null : null;
 }
 
-/** One plan/request (types.ts): every field resolved, matched, planned and guarded, each with a value-free row. */
+/** One plan/request (types.ts): every field of planKeys (every spec without them) resolved, matched, planned and
+ *  guarded, each with a value-free row; the other specs are read for context only (the Phase 3 review, LC-2). */
 export function planFrame(input: PlanInput): PlanOutput {
-  const { specs, profile } = input;
+  const { profile } = input;
   const kept = persistableCanaries(input.canaries, profile);
-  const classifications = specs.map((spec) => classifyField(spec));
+  // Every spec is read across the frame; only the planned ones are resolved, written and rowed.
+  const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
+  const classified = input.specs.map((spec) => ({ spec, classification: classifyField(spec) }));
   // A phone number is written without its country code when the section has its own control for the code.
-  const phoneCountrySections = new Set(specs.filter((_, at) => categoryOf(classifications[at]!) === 'contact.phoneCountry')
-    .map((spec) => sectionKey(spec.section)));
-  const resolved = specs.map((spec, at) => resolveField(spec, {
+  const phoneCountrySections = new Set(classified
+    .filter((field) => categoryOf(field.classification) === 'contact.phoneCountry')
+    .map((field) => sectionKey(field.spec.section)));
+  const chosen = classified.filter((field) => wanted === null || wanted.has(field.spec.key));
+  const specs = chosen.map((field) => field.spec);
+  const resolved = chosen.map(({ spec, classification }) => resolveField(spec, {
     profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
-  }, classifications[at]!));
+  }, classification));
   // Only a field that could be written asks for the sensitive part: never a honeypot, a disabled control or a field no
   // visible label names (checkHoneypot).
   const writable = (spec: FieldSpec) => checkHoneypot(spec).ok && !spec.disabled && !spec.readOnly;
   if (input.sensitiveState === 'not-loaded' && resolved.some((field, at) => field.needsSensitive && writable(specs[at]!))) {
     return { writes: [], results: [], awaiting: [], needsSensitive: true, persistableCanaries: kept };
   }
-  const guard: GuardContext = { canaries: [...input.canaries, ...specs.flatMap(labelCanaries)], profile,
+  // The canaries any label of the frame carries, the context's too: more to scan for is never less safe.
+  const guard: GuardContext = { canaries: [...input.canaries, ...input.specs.flatMap(labelCanaries)], profile,
     profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers };
   const planned = specs.map((spec, at) => ({ spec, ...planField(spec, resolved[at]!, { input, guard }) }));
   const writes = planned.filter((field) => field.write !== undefined)

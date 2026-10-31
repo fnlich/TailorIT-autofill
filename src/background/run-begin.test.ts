@@ -199,8 +199,8 @@ describe('run/begin', () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     const first = await beginRun(worker);
     const second = await beginRun(worker);
-    const plan = (runId: string) => worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], canaries: [],
-      notices: [] }, contentSender());
+    const plan = (runId: string) => worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)],
+      planKeys: [fieldSpec(1).key], canaries: [], notices: [] }, contentSender());
     expect(await plan(first)).toEqual({ ok: false, error: 'expired' });
     expect(await plan(second)).toMatchObject({ ok: true });
   });

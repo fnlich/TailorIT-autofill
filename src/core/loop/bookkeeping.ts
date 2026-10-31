@@ -6,9 +6,18 @@
  * scan's fields (without their current values), each write's keyed value hash (ValueMac) and each pass's settled rows.
  * - Pending: the fields to plan, in DOM order. A field is resolved once it has a row, and is planned again only when
  *   its options change (the same base key with a new option-set hash: its match is dropped and it is matched again,
- *   neither gone nor new), when its value changes after our write (a flip, below the flip limit), when it comes back
- *   after disappearing, or once (MAX_RETRIES) when its write could not happen because the page moved it under us
- *   (element-not-found, options-changed) and the next scan finds it as it was.
+ *   neither gone nor new), when its value changes after our write (below), when it comes back after disappearing, or
+ *   once (MAX_RETRIES) when its write could not happen because the page moved it under us (element-not-found,
+ *   options-changed) and the next scan finds it as it was. When a re-plan finds our value in place (already-correct),
+ *   the row of our write stays, whatever its options or its comings and goings did meanwhile (the Phase 3 review,
+ *   LC-9).
+ * - Our value changed (the Phase 3 review, LC-3 and LC-4). A field the person touched after our write (a trusted
+ *   input, keydown, paste or drop: ScanInput.touched) is frozen: never planned or written again, and once its value is
+ *   no longer ours its row is the person's (changed-by-you). Otherwise a value is written again only after the page
+ *   reset it to empty or its placeholder (ScanInput.cleared); another value the page put there is planned again for
+ *   its row only and never written (mayWrite): a mismatch, unless the planner finds our value in place (a reformatted
+ *   phone). A file field is never written again: an input emptied after our upload is the upload taken, and an input
+ *   the page puts back in its place is the same one.
  * - Waiting: a list the planner found with no usable options (waiting-for-options) is not planned again until its
  *   options change. It waits at most OPTION_WAIT_PASSES scans, or until the DOM's awaitOptions says they never loaded:
  *   then it is options-never-loaded (recovering if its options still arrive).
@@ -16,27 +25,30 @@
  *   its row becomes field-disappeared (rows.ts). A field never planned is dropped silently.
  * - Reveal edges: a field that appears after a pass's writes, or whose options change after them, gets one parent: the
  *   writer the DOM layer attributes it to, else the nearest writer before it in DOM order, else the nearest after it.
- *   An edge is certain when the DOM attributed it or the pass had that one writer. Edges order later passes (parents
- *   first) and go to RunState.revealEdges (keys only, at most MAX_REVEAL_EDGES). A cycle of certain edges stops its
- *   fields (reveal-cycle); a guessed edge never stops a field.
+ *   An edge is certain only when the DOM attributed it: a pass's one writer is a guess too, since what shows during the
+ *   settle may be anyone's (the Phase 3 review, LC-1). Edges order later passes (parents first) and go to
+ *   RunState.revealEdges (keys only, each section and label slug hashed: storedBaseKey; at most MAX_REVEAL_EDGES).
+ *   A cycle of certain edges stops its fields (reveal-cycle); a guessed edge never stops a field.
  * - Flips: every change of a written field's value hash after our first write, the page's or our own rewrite, is a
  *   flip. So a page that resets a field after our write makes one flip, our second write another, and its second reset
  *   the third: more than MAX_VALUE_FLIPS, and the field is stopped and flagged (value-oscillated), never written again.
  *   A list whose options change more than MAX_OPTION_CHANGES times is stopped too (options-oscillated), and so is a
  *   field that comes back more than MAX_REAPPEARANCES times (reveal-cycle).
  * - Follow-ups: a choice written with free text (an Other option, or an EEO self-describe option: recordWrite's
- *   followUp) names, at the next scan, the text box its write revealed: the one whose label asks to specify, describe
- *   or explain, or else the only one. The content script types the free text, which it holds in its planned write,
- *   there; the core never holds it. With several such choices in one pass only a certain edge names a box: blank beats
- *   wrong.
+ *   followUp) names, at the next scan, the text box its write revealed: only on an edge the DOM attributed, and only
+ *   the one box whose label asks to specify, describe or explain (or names "other"); there is no "only box" fallback
+ *   (the Phase 3 review, LC-1 and L-S1). The content script types the free text, which it holds in its planned write,
+ *   there, after its own checks of the box (src/content/follow-up.ts); the core never holds it. Blank beats wrong.
  * - The end: nothing pending, waiting or awaiting the LLM; or the scan after MAX_PASSES planned passes; or the same
  *   scan twice in a row with no write between and nothing new to plan (stalled). loopVerdict lists what is left, each
  *   with its reason.
  * LoopState holds value hashes, so it lives in the content script's memory only; revealEdgesOf is what may be stored.
  */
 import type { FieldKind } from '../enums';
+import { settleRow } from '../plan/settle';
 import { sectionKey } from '../text/keys';
 import { keyWithBrackets } from '../text/normalize';
+import { sha256Hex } from '../text/sha256';
 import type { BaseKey, FieldKey, FieldSpec, OptionSetHash } from '../types/field';
 import type { FillResult, ReasonCode } from '../types/fill';
 import type { ValueMac } from '../types/loop';
@@ -56,17 +68,19 @@ export const MAX_REAPPEARANCES = 2;
 /** RunState.revealEdges keeps at most this many edges, this run's first (the RunState store's worst case holds 100). */
 export const MAX_REVEAL_EDGES = 100;
 
-/** A tracked field's state. 'oscillating' is final: such a field is never planned or written again. */
+/** A tracked field's state. 'oscillating' and 'frozen' are final: such a field is never planned or written again.
+ *  'frozen': the person touched it after our write. */
 export const TRACKED_STATUSES = ['pending', 'awaiting-llm', 'waiting-options', 'resolved', 'unresolvable',
-  'disappeared', 'oscillating'] as const;
+  'disappeared', 'oscillating', 'frozen'] as const;
 export type TrackedStatus = (typeof TRACKED_STATUSES)[number];
 
-/** Why a field is pending. */
-export const PENDING_CAUSES = ['new', 'reappeared', 'options-changed', 'value-changed', 'retry'] as const;
+/** Why a field is pending. 'value-changed': the page reset our value (it is written again); 'replaced': the page put
+ *  another value in place of ours (planned for its row only, never written). */
+export const PENDING_CAUSES = ['new', 'reappeared', 'options-changed', 'value-changed', 'replaced', 'retry'] as const;
 export type PendingCause = (typeof PENDING_CAUSES)[number];
 
 /** How the loop ended: nothing left to do, the passes ran out, the page stopped changing, or the content script cut it
- *  short (the settle cap, the person's Cancel). */
+ *  short (the settle cap, the person's Cancel, a pause, a policy notice, a hidden frame). */
 export const LOOP_ENDS = ['nothing-pending', 'max-passes', 'stalled', 'cut'] as const;
 export type LoopEnd = (typeof LOOP_ENDS)[number];
 
@@ -104,10 +118,13 @@ export interface TrackedField {
   status: TrackedStatus;
   /** Why it is pending; null otherwise. */
   cause: PendingCause | null;
-  /** Why it is unresolvable, oscillating or disappeared, or its row's reason once resolved. */
+  /** Why it is unresolvable, oscillating, frozen or disappeared, or its row's reason once resolved. */
   reason: ReasonCode | null;
   /** The latest row recorded for it (value-free). */
   row: FillResult | null;
+  /** The latest row of a write of ours to it (wrote true), kept when its options change or it goes and comes back:
+   *  a re-plan that finds our value in place keeps it. */
+  ourRow: FillResult | null;
   /** We wrote it since it last appeared or its options last changed. */
   wrote: boolean;
   /** The latest hash of its value after our first write. */
@@ -130,7 +147,7 @@ export interface TrackedField {
 export interface RevealEdge {
   parent: BaseKey;
   child: BaseKey;
-  /** The DOM layer attributed it, or the pass had this one writer. */
+  /** The DOM layer attributed it. */
   certain: boolean;
   kind: 'revealed' | 'options';
 }
@@ -142,7 +159,8 @@ export interface LoopState {
   fields: ReadonlyMap<BaseKey, TrackedField>;
   /** This run's edges, in the order they were found. */
   edges: readonly RevealEdge[];
-  /** Earlier runs' edges (RunState.revealEdges): they order passes, and never stop a field. */
+  /** Earlier runs' edges (RunState.revealEdges, in their stored form: storedBaseKey): they order passes, and never
+   *  stop a field. */
   priorEdges: ReadonlyArray<readonly [BaseKey, BaseKey]>;
   /** The fields written since the latest scan, in write order. */
   writers: readonly BaseKey[];
@@ -167,15 +185,19 @@ export type LoopEvent =
   | { type: 'oscillating'; key: FieldKey; baseKey: BaseKey; reason: 'value-oscillated' | 'options-oscillated' }
   | { type: 'reveal-cycle'; keys: BaseKey[] }
   | { type: 'options-never-loaded'; key: FieldKey; baseKey: BaseKey }
-  /** Type the free text of `parent`'s choice (Other, self-describe) into `child`. */
+  /** Type the free text of `parent`'s choice (Other, self-describe) into `child`. Always on a certain edge. */
   | { type: 'follow-up-found'; parent: FieldKey; child: FieldKey; certain: boolean };
 
-/** What a scan adds besides its fields. */
+/** What a scan adds besides its fields. Value-free: hashes and keys only. */
 export interface ScanInput {
   /** The keyed hash of each field's value now, by base key: at least every field we wrote. In memory only. */
   valueMacs?: ReadonlyMap<BaseKey, ValueMac>;
   /** The DOM layer's exact "this field followed that write" pairs, child to parent, when it has them. */
   attribution?: ReadonlyMap<BaseKey, BaseKey>;
+  /** The written fields the person touched since our latest write to them: a trusted input, keydown, paste or drop. */
+  touched?: ReadonlySet<BaseKey>;
+  /** The written fields that now hold nothing, or only their placeholder: a reset, after which a write is allowed. */
+  cleared?: ReadonlySet<BaseKey>;
 }
 
 /** Whether the loop is over, and what it leaves unresolved. */
@@ -204,9 +226,29 @@ export function baseKeyOf(key: FieldKey): BaseKey {
   return (parts.length === 5 ? [parts[0], parts[1], parts[2], parts[4]].join('|') : key) as BaseKey;
 }
 
+/**
+ * A base key as RunState.revealEdges stores it: its section (a heading slug) and its label slug, both page text that
+ * may echo a value the page shows back ("Preferred name if not Alex Rivera"), each replaced by the first 16 hex of its
+ * SHA-256 (the Phase 3 review, L-S3). A key of another shape is hashed whole. Earlier runs' edges are compared in this
+ * form.
+ */
+export function storedBaseKey(baseKey: BaseKey): BaseKey {
+  const parts = baseKey.split('|');
+  if (parts.length !== 4) return sha256Hex(baseKey).slice(0, 16) as BaseKey;
+  return [parts[0], sha256Hex(parts[1]!).slice(0, 16), sha256Hex(parts[2]!).slice(0, 16), parts[3]].join('|') as
+    BaseKey;
+}
+
 /** A field the loop will never plan or write again. */
 export function isStopped(field: TrackedField): boolean {
-  return field.status === 'oscillating';
+  return field.status === 'oscillating' || field.status === 'frozen';
+}
+
+/** Whether a pass may write this field now: not stopped, and not a value the page replaced (planned for its row
+ *  only). */
+export function mayWrite(state: LoopState, key: FieldKey): boolean {
+  const field = state.fields.get(baseKeyOf(key));
+  return field !== undefined && field.key === key && !isStopped(field) && field.cause !== 'replaced';
 }
 
 /** A text box that asks for a choice's free text, by its label's words. */
@@ -214,7 +256,7 @@ export function isFollowUpLabel(label: string): boolean {
   return FOLLOW_UP_LABEL.test(keyWithBrackets(label, 'label'));
 }
 
-/** A loop with no scan yet. `revealEdges` are earlier runs' (RunState.revealEdges), for ordering. */
+/** A loop with no scan yet. `revealEdges` are earlier runs' (RunState.revealEdges, stored form), for ordering. */
 export function createLoop(prior: { revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]> } = {}): LoopState {
   return { pass: -1, fields: new Map(), edges: [], priorEdges: (prior.revealEdges ?? []).slice(0, MAX_REVEAL_EDGES),
     writers: [], signature: null, stalled: false };
@@ -232,7 +274,7 @@ function placed(spec: LoopField, pass: number): Pick<TrackedField, 'key' | 'opti
 type ParentOf = (child: BaseKey, domOrder: number) => { parent: BaseKey; certain: boolean } | null;
 
 /** The DOM layer's attribution, else the nearest present writer before the child in DOM order, else after it, else
- *  the last writer. Certain when attributed, or when the pass had this one writer. */
+ *  the last writer. Certain only when attributed. */
 function parentFinder(writers: readonly BaseKey[], seen: ReadonlyMap<BaseKey, LoopField>,
   attribution: ReadonlyMap<BaseKey, BaseKey> | undefined): ParentOf {
   const placedWriters = writers.flatMap((writer) => {
@@ -253,7 +295,7 @@ function parentFinder(writers: readonly BaseKey[], seen: ReadonlyMap<BaseKey, Lo
       }
     }
     const parent = best?.writer ?? [...writers].reverse().find((writer) => writer !== child) ?? null;
-    return parent === null ? null : { parent, certain: writers.length === 1 };
+    return parent === null ? null : { parent, certain: false };
   };
 }
 
@@ -307,11 +349,19 @@ function presentWith(fields: ReadonlyMap<BaseKey, TrackedField>, status: Tracked
     .sort((a, b) => a.domOrder - b.domOrder);
 }
 
+/** A file field we uploaded to: never written again, even when the page puts a new input in its place, so a resume is
+ *  never sent twice (LC-3). */
+function fileTaken(field: TrackedField): boolean {
+  return field.kind === 'file' && field.ourRow !== null && field.ourRow.wrote;
+}
+
 /** Folds one scan in: new, returning, changed and missing fields, flips, reveal edges, cycles and follow-ups. `scanned`
  *  is the scan's fields (FieldSpecs will do); the first scan is pass 0. */
 export function observeScan(state: LoopState, scanned: readonly LoopField[], input: ScanInput = {}): ScanObservation {
   const pass = state.pass + 1;
   const macs = input.valueMacs ?? new Map<BaseKey, ValueMac>();
+  const touched = input.touched ?? new Set<BaseKey>();
+  const cleared = input.cleared ?? new Set<BaseKey>();
   const fields = new Map(state.fields);
   const events: LoopEvent[] = [];
   const seen = new Map<BaseKey, LoopField>();
@@ -332,12 +382,20 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
     if (old === undefined) {
       const parent = edgeFor(spec.baseKey, spec.domOrder, 'revealed');
       fields.set(spec.baseKey, { baseKey: spec.baseKey, ...now, firstSeenPass: pass, status: 'pending', cause: 'new',
-        reason: null, row: null, wrote: false, valueMac: null, flips: 0, optionChanges: 0, waitedScans: 0, retries: 0,
-        appearances: 1, revealedBy: parent?.parent ?? null, revealCertain: parent?.certain ?? false, followUp: false });
+        reason: null, row: null, ourRow: null, wrote: false, valueMac: null, flips: 0, optionChanges: 0,
+        waitedScans: 0, retries: 0, appearances: 1, revealedBy: parent?.parent ?? null,
+        revealCertain: parent?.certain ?? false, followUp: false });
       if (pass > 0) {
         events.push({ type: 'field-appeared', key: spec.key, baseKey: spec.baseKey, revealedBy: parent?.parent ?? null,
           certain: parent?.certain ?? false, again: false });
       }
+      continue;
+    }
+    const mac = macs.get(spec.baseKey);
+    const changed = old.wrote && old.valueMac !== null && mac !== undefined && mac !== old.valueMac;
+    if (old.status === 'frozen') {
+      // The person's: never planned or written again. Once its value is no longer ours, the row is theirs.
+      fields.set(spec.baseKey, { ...old, ...now, ...(changed ? { valueMac: mac, reason: 'changed-by-you' as const } : {}) });
       continue;
     }
     if (isStopped(old)) {
@@ -345,6 +403,12 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
       continue;
     }
     if (!old.present) {
+      if (fileTaken(old)) {
+        // The upload widget put a new input where ours was: the upload stands, and nothing is sent twice (LC-3).
+        fields.set(spec.baseKey, { ...old, ...now, appearances: old.appearances + 1, status: 'resolved', cause: null,
+          reason: old.ourRow!.reason, row: old.ourRow, wrote: false, valueMac: null, followUp: false });
+        continue;
+      }
       const parent = edgeFor(spec.baseKey, spec.domOrder, 'revealed');
       const appearances = old.appearances + 1;
       const back = { ...old, ...now, appearances, wrote: false, valueMac: null, followUp: false, retries: 0,
@@ -359,32 +423,43 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
       }
       continue;
     }
+    if (old.wrote && touched.has(spec.baseKey)) {
+      // The person touched what we wrote: frozen, theirs once its value or its options are no longer ours (LC-4).
+      const theirs = changed || spec.optionSetHash !== old.optionSetHash;
+      fields.set(spec.baseKey, { ...old, ...now, status: 'frozen', cause: null, reason: theirs ? 'changed-by-you' : null,
+        valueMac: mac ?? old.valueMac, followUp: false });
+      continue;
+    }
     if (spec.optionSetHash !== old.optionSetHash) {
       edgeFor(spec.baseKey, spec.domOrder, 'options');
       const optionChanges = old.optionChanges + 1;
       // Matched anew, as a new question: a value lost with the old options is no flip, and the next write is a first.
-      const changed = { ...old, ...now, optionChanges, wrote: false, valueMac: null, followUp: false, retries: 0,
+      const changedOptions = { ...old, ...now, optionChanges, wrote: false, valueMac: null, followUp: false, retries: 0,
         waitedScans: 0 };
       if (optionChanges > MAX_OPTION_CHANGES) {
-        fields.set(spec.baseKey, { ...changed, status: 'oscillating', cause: null, reason: 'options-oscillated' });
+        fields.set(spec.baseKey, { ...changedOptions, status: 'oscillating', cause: null, reason: 'options-oscillated' });
         events.push({ type: 'oscillating', key: spec.key, baseKey: spec.baseKey, reason: 'options-oscillated' });
       } else {
-        fields.set(spec.baseKey, { ...changed, status: 'pending', cause: 'options-changed', reason: null });
+        fields.set(spec.baseKey, { ...changedOptions, status: 'pending', cause: 'options-changed', reason: null });
         events.push({ type: 'options-changed', baseKey: spec.baseKey, from: old.key, to: spec.key });
       }
       continue;
     }
     let field: TrackedField = { ...old, ...now };
-    const mac = macs.get(spec.baseKey);
     if (old.wrote && mac !== undefined && old.valueMac === null) field = { ...field, valueMac: mac };
-    if (old.wrote && mac !== undefined && old.valueMac !== null && mac !== old.valueMac) {
+    if (changed && old.kind === 'file') {
+      // An upload widget empties its input once it has the file: the upload taken, not a flip (LC-3).
+      field = { ...field, valueMac: mac! };
+    } else if (changed) {
       const flips = old.flips + 1;
-      field = { ...field, valueMac: mac, flips };
+      field = { ...field, valueMac: mac!, flips };
       if (flips > MAX_VALUE_FLIPS) {
         field = { ...field, status: 'oscillating', cause: null, reason: 'value-oscillated' };
         events.push({ type: 'oscillating', key: spec.key, baseKey: spec.baseKey, reason: 'value-oscillated' });
       } else {
-        field = { ...field, status: 'pending', cause: 'value-changed', reason: null };
+        // Written again only after the page reset it; another value in its place is planned for its row only.
+        field = { ...field, status: 'pending', cause: cleared.has(spec.baseKey) ? 'value-changed' : 'replaced',
+          reason: null };
         events.push({ type: 'value-changed', key: spec.key, baseKey: spec.baseKey, flips });
       }
     } else if (field.status === 'waiting-options') {
@@ -435,19 +510,19 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
       keys: stopping.sort((a, b) => fields.get(a)!.domOrder - fields.get(b)!.domOrder) });
   }
 
-  // Follow-ups: the box a choice's write revealed takes its free text.
+  // Follow-ups: the box a choice's write revealed takes its free text, named only on an attributed edge and only when
+  // its label asks for it (LC-1, L-S1).
   const askers = [...state.fields.values()].filter((field) => field.followUp && fields.get(field.baseKey)?.present);
   for (const asker of askers) {
-    const boxes = added.filter((edge) => edge.kind === 'revealed' && edge.parent === asker.baseKey).flatMap((edge) => {
-      const child = fields.get(edge.child);
-      return child !== undefined && child.present && child.status === 'pending' && TEXT_KINDS.has(child.kind)
-        ? [{ child, certain: edge.certain }] : [];
-    });
-    const asking = boxes.filter((box) => isFollowUpLabel(box.child.label));
-    const chosen = asking.length === 1 ? asking[0]! : asking.length === 0 && boxes.length === 1 ? boxes[0]! : null;
-    if (chosen === null || (!chosen.certain && askers.length > 1)) continue;
-    events.push({ type: 'follow-up-found', parent: fields.get(asker.baseKey)!.key, child: chosen.child.key,
-      certain: chosen.certain });
+    const asking = added.filter((edge) => edge.kind === 'revealed' && edge.certain && edge.parent === asker.baseKey)
+      .flatMap((edge) => {
+        const child = fields.get(edge.child);
+        return child !== undefined && child.present && child.status === 'pending' && TEXT_KINDS.has(child.kind)
+          && isFollowUpLabel(child.label) ? [child] : [];
+      });
+    if (asking.length !== 1) continue;
+    events.push({ type: 'follow-up-found', parent: fields.get(asker.baseKey)!.key, child: asking[0]!.key,
+      certain: true });
   }
   // A choice's box shows at the scan after its write, or not at all.
   for (const [baseKey, field] of state.fields) {
@@ -487,7 +562,8 @@ export function recordWrite(state: LoopState, key: FieldKey, write: { valueMac: 
  * Records a pass's rows (planned, filled, verified), by key. A row resolves its field, except waiting-for-options
  * (waiting) and a key in `awaiting` (the LLM's, Phase 4). A row under a key the field no longer has (its options
  * changed since) is stale and ignored. When a value we wrote is planned again and found in place (already-correct),
- * the row of the write that put it there stays.
+ * the row of our write stays, under the key the field has now (LC-9); a value the page replaced, planned for its row
+ * only, otherwise ends as our write that no longer reads back (a mismatch, LC-4).
  */
 export function recordRows(state: LoopState, rows: Iterable<FillResult>, options: { awaiting?: Iterable<FieldKey> } = {}):
   LoopState {
@@ -497,17 +573,23 @@ export function recordRows(state: LoopState, rows: Iterable<FillResult>, options
     const baseKey = baseKeyOf(row.key);
     const field = fields.get(baseKey);
     if (field === undefined || field.key !== row.key) continue;
-    const ours = field.wrote && field.row?.wrote === true && row.status === 'skipped' && row.reason === 'already-correct';
-    const kept = ours ? field.row! : row;
+    const ourRow = field.ourRow;
+    const ours = ourRow !== null && row.status === 'skipped' && row.reason === 'already-correct';
+    const kept = ours ? { ...ourRow, key: row.key }
+      : field.cause === 'replaced' ? { ...settleRow(ourRow ?? row, { kind: 'mismatch' }), key: row.key }
+        : row;
+    // Our value, found in place after its options changed or it came back, is ours again: its changes count.
+    const adopted = ours && !field.wrote ? { wrote: true, valueMac: null } : {};
+    const books = { ...field, ...adopted, row: kept, ourRow: kept.wrote ? kept : ourRow };
     if (isStopped(field) || field.status === 'disappeared') {
-      fields.set(baseKey, { ...field, row: kept });
+      fields.set(baseKey, { ...field, row: kept, ourRow: books.ourRow });
     } else if (awaiting.has(row.key)) {
-      fields.set(baseKey, { ...field, row: kept, status: 'awaiting-llm', cause: null, reason: kept.reason });
+      fields.set(baseKey, { ...books, status: 'awaiting-llm', cause: null, reason: kept.reason });
     } else if (kept.reason === 'waiting-for-options') {
-      fields.set(baseKey, { ...field, row: kept, status: 'waiting-options', cause: null, reason: kept.reason,
+      fields.set(baseKey, { ...books, status: 'waiting-options', cause: null, reason: kept.reason,
         waitedScans: field.status === 'waiting-options' ? field.waitedScans : 0 });
     } else {
-      fields.set(baseKey, { ...field, row: kept, status: 'resolved', cause: null, reason: kept.reason });
+      fields.set(baseKey, { ...books, status: 'resolved', cause: null, reason: kept.reason });
     }
   }
   return { ...state, fields };
@@ -528,11 +610,12 @@ export function recordOptionsWait(state: LoopState, key: FieldKey, verdict: 'rea
 /**
  * Whether the loop is over: nothing pending, waiting or awaiting; the scan after MAX_PASSES planned passes; or a
  * stalled page (not while the LLM is awaited). `cut` ends it now with that reason for what is pending or waiting
- * (page-busy at the settle cap, user-stopped): a busy page says nothing yet of a list's options. What is left
- * otherwise: pending fields as max-passes-reached, or internal-error on a stalled page (they were handed out to plan
- * and no row came back), waiting lists as options-never-loaded, unresolvable and stopped fields with their own reasons.
- * Before a cut at the settle cap, one more scan (observeScan) gives the fields the busy page revealed or changed
- * meanwhile their page-busy rows.
+ * (page-busy at the settle cap, user-stopped, a pause, a policy notice, a hidden frame): a busy page says nothing yet
+ * of a list's options. What is left otherwise: pending fields as max-passes-reached, or internal-error on a stalled
+ * page (they were handed out to plan and no row came back), waiting lists as options-never-loaded, unresolvable and
+ * stopped fields with their own reasons (a frozen field only once its value is the person's). Before a cut at the
+ * settle cap, one more scan (observeScan) gives the fields the busy page revealed or changed meanwhile their
+ * page-busy rows.
  */
 export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}): LoopVerdict {
   const pending = presentWith(state.fields, 'pending');
@@ -553,6 +636,7 @@ export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}
         return options.cut ?? 'options-never-loaded';
       case 'unresolvable':
       case 'oscillating':
+      case 'frozen':
         return field.reason;
       default:
         return null;
@@ -566,6 +650,17 @@ export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}
   return { done: true, end, unresolved };
 }
 
+/** Earlier runs' edges between these fields, in this run's base keys: stored edges are matched by storedBaseKey. */
+function priorPairs(state: LoopState, among: Iterable<BaseKey>): Array<readonly [BaseKey, BaseKey]> {
+  if (state.priorEdges.length === 0) return [];
+  const byStored = new Map([...among].map((baseKey) => [storedBaseKey(baseKey), baseKey] as const));
+  return state.priorEdges.flatMap(([parent, child]) => {
+    const from = byStored.get(parent);
+    const to = byStored.get(child);
+    return from === undefined || to === undefined ? [] : [[from, to] as const];
+  });
+}
+
 /**
  * The order to write a pass's fields in: DOM order, except that a field another of them is known to reveal or
  * change (this run's edges and earlier runs') comes after it. A cycle is broken at its first field in DOM order.
@@ -575,7 +670,7 @@ export function orderPending(state: LoopState, keys: readonly FieldKey[]): Field
   const byBase = new Map(keys.map((key) => [baseKeyOf(key), key]));
   const parents = new Map<BaseKey, Set<BaseKey>>();
   const pairs: Array<readonly [BaseKey, BaseKey]> = [...state.edges.map((edge) => [edge.parent, edge.child] as const),
-    ...state.priorEdges];
+    ...priorPairs(state, byBase.keys())];
   for (const [parent, child] of pairs) {
     if (parent === child || !byBase.has(parent) || !byBase.has(child)) continue;
     parents.set(child, (parents.get(child) ?? new Set<BaseKey>()).add(parent));
@@ -592,13 +687,13 @@ export function orderPending(state: LoopState, keys: readonly FieldKey[]): Field
   return out;
 }
 
-/** This run's edges, then earlier runs' not found again, as RunState.revealEdges keeps them: unique, keys only, at
- *  most MAX_REVEAL_EDGES. */
+/** This run's edges, then earlier runs' not found again, as RunState.revealEdges keeps them: unique, keys only with
+ *  their sections and label slugs hashed (storedBaseKey), at most MAX_REVEAL_EDGES. */
 export function revealEdgesOf(state: LoopState): Array<[BaseKey, BaseKey]> {
   const seen = new Set<string>();
   const out: Array<[BaseKey, BaseKey]> = [];
-  const pairs: Array<readonly [BaseKey, BaseKey]> = [...state.edges.map((edge) => [edge.parent, edge.child] as const),
-    ...state.priorEdges];
+  const pairs: Array<readonly [BaseKey, BaseKey]> = [...state.edges.filter((edge) => edge.parent !== edge.child)
+    .map((edge) => [storedBaseKey(edge.parent), storedBaseKey(edge.child)] as const), ...state.priorEdges];
   for (const [parent, child] of pairs) {
     const id = `${parent}\u001f${child}`;
     if (parent === child || seen.has(id)) continue;
@@ -613,6 +708,6 @@ export function revealEdgesOf(state: LoopState): Array<[BaseKey, BaseKey]> {
  *  among them are the ones worth awaiting (awaitOptions). */
 export function childrenOf(state: LoopState, parent: BaseKey): BaseKey[] {
   const pairs: Array<readonly [BaseKey, BaseKey]> = [...state.edges.map((edge) => [edge.parent, edge.child] as const),
-    ...state.priorEdges];
+    ...priorPairs(state, state.fields.keys())];
   return [...new Set(pairs.filter(([from, to]) => from === parent && to !== parent).map(([, child]) => child))];
 }

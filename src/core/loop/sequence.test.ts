@@ -16,8 +16,8 @@ import type { BaseKey, FieldKey } from '../types/field';
 import type { FillResult, ReasonCode } from '../types/fill';
 import type { ValueMac } from '../types/loop';
 import {
-  createLoop, observeScan, orderPending, recordRows, recordWrite, revealEdgesOf, type LoopEvent, type LoopField,
-  type LoopState, type LoopVerdict,
+  createLoop, observeScan, orderPending, recordRows, recordWrite, revealEdgesOf, storedBaseKey, type LoopEvent,
+  type LoopField, type LoopState, type LoopVerdict,
 } from './bookkeeping';
 import { field, inOrder, mac, rowOf, unwrittenRow } from './loop.testkit';
 import { loopRows } from './rows';
@@ -116,9 +116,15 @@ function run(page: ScriptedPage): { passes: Pass[]; verdict: LoopVerdict; state:
   const passes: Pass[] = [];
   const written: string[] = [];
   const freeText = new Map<FieldKey, string>();
+  // The DOM's attribution, as the content script's scans between writes find it: what a write's change listener
+  // revealed or swapped at once belongs to that write.
+  let attribution = new Map<BaseKey, BaseKey>();
   for (;;) {
     const scan = page.scan();
-    const seen = observeScan(loop, scan, { valueMacs: page.macs(scan) });
+    // A value the page emptied is a reset: the loop may write it again.
+    const cleared = new Set(scan.filter((spec) => page.find(spec.label)!.value === '').map((spec) => spec.baseKey));
+    const seen = observeScan(loop, scan, { valueMacs: page.macs(scan), attribution, cleared });
+    attribution = new Map();
     loop = seen.state;
     const labelOf = (key: FieldKey) => scan.find((spec) => spec.key === key)?.label ?? key;
     const pass: Pass = { pending: seen.pending.map(labelOf), events: seen.events, writes: [] };
@@ -152,7 +158,14 @@ function run(page: ScriptedPage): { passes: Pass[]; verdict: LoopVerdict; state:
         rows.set(key, unwrittenRow(spec, 'element-not-found'));
         continue;
       }
+      const before = new Map(page.scan().map((shown) => [shown.baseKey, shown.key]));
       page.write(spec.label, write.value);
+      for (const shown of page.scan()) {
+        if (before.get(shown.baseKey) === shown.key || shown.baseKey === spec.baseKey || attribution.has(shown.baseKey)) {
+          continue;
+        }
+        attribution.set(shown.baseKey, spec.baseKey);
+      }
       pass.writes.push(spec.label);
       written.push(spec.label);
       if (write.freeText !== undefined) freeText.set(key, write.freeText);
@@ -191,15 +204,15 @@ describe('the reactive loop over a scripted conditional reveal', () => {
     expect(passes[1]!.writes).toEqual([SPONSOR, VISA, SPECIFY, STATE, PREFERRED]);
     const appeared = passes[1]!.events.flatMap((event) => event.type === 'field-appeared' ? [event] : []);
     expect(appeared.map((event) => [event.baseKey, event.revealedBy, event.certain])).toEqual([
-      [keyOf(SPONSOR).baseKey, keyOf(AUTH).baseKey, false],
-      [keyOf(VISA).baseKey, keyOf(AUTH).baseKey, false],
-      [keyOf(SPECIFY).baseKey, keyOf(SOURCE).baseKey, false],
+      [keyOf(SPONSOR).baseKey, keyOf(AUTH).baseKey, true],
+      [keyOf(VISA).baseKey, keyOf(AUTH).baseKey, true],
+      [keyOf(SPECIFY).baseKey, keyOf(SOURCE).baseKey, true],
     ]);
   });
 
   it('types the Other choice’s free text into the box it revealed', () => {
     expect(passes[1]!.events).toContainEqual({ type: 'follow-up-found', parent: keyOf(SOURCE).key,
-      child: keyOf(SPECIFY).key, certain: false });
+      child: keyOf(SPECIFY).key, certain: true });
     expect(page.find(SPECIFY)!.value).toBe('Hacker News');
   });
 
@@ -243,11 +256,9 @@ describe('the reactive loop over a scripted conditional reveal', () => {
     ]);
     expect(rows.find((row) => row.label === STATE)?.key).toBe(keyOf(STATE).key);
     expect(JSON.stringify(rows)).not.toMatch(/Hacker News|Texas|Alex|Sam Lee|H-1B/);
-    expect(revealEdgesOf(state)).toEqual([
-      [keyOf(AUTH).baseKey, keyOf(SPONSOR).baseKey],
-      [keyOf(AUTH).baseKey, keyOf(VISA).baseKey],
-      [keyOf(SOURCE).baseKey, keyOf(SPECIFY).baseKey],
-      [keyOf(COUNTRY).baseKey, keyOf(STATE).baseKey],
-    ]);
+    const stored = (parent: string, child: string) => [storedBaseKey(keyOf(parent).baseKey),
+      storedBaseKey(keyOf(child).baseKey)];
+    expect(revealEdgesOf(state)).toEqual([stored(AUTH, SPONSOR), stored(AUTH, VISA), stored(SOURCE, SPECIFY),
+      stored(COUNTRY, STATE)]);
   });
 });

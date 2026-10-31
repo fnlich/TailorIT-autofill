@@ -23,6 +23,26 @@ describe('loading rows', () => {
     expect(isLoadingText(text)).toBe(false);
   });
 
+  it('takes a lead with an ellipsis anywhere after it, not only at the end (LC-7)', () => {
+    for (const text of ['Loading... please wait', 'Loading\u{2026} please wait', 'Fetching... one moment',
+      'Searching\u{2026} (this may take a while)', 'Retrieving states... Please wait']) {
+      expect(isLoadingText(text), text).toBe(true);
+    }
+    for (const text of ['... Loading dock supervisor', 'Searching for a new role', 'Load... balancer']) {
+      expect(isLoadingText(text), text).toBe(false);
+    }
+  });
+
+  it('compares whole phrases with the words of their brackets kept (LC-12)', () => {
+    for (const text of ['Searching (Actively)', 'Updating (my skills)', 'Searching [open to offers]']) {
+      expect(isLoadingText(text), text).toBe(false);
+      expect(isLoadingRow(text, normalize(text, 'answer').key), text).toBe(false);
+    }
+    for (const text of ['(Loading...)', '[Loading]', '(Please wait)', 'Loading (...)']) {
+      expect(isLoadingText(text), text).toBe(true);
+    }
+  });
+
   it('reads a whole phrase by its key, and a lead only with a closing ellipsis on the label itself', () => {
     // Normalization drops the ellipsis, so isLoadingRow reads it from the label beside the caller's key.
     expect(normalize('Loading states...', 'answer').key).toBe(normalize('Loading states', 'answer').key);

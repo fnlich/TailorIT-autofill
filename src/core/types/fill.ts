@@ -36,6 +36,9 @@ export const REASON_CODES = [
   'auth-required', 'challenge-present', 'policy-declined', 'user-stopped',
   // the reactive loop (Phase 3): a list whose options kept changing
   'options-oscillated',
+  // the Phase 3 review: a value the person changed after our write (LC-4); the loop cut at a policy notice or by a
+  // frame its page hid mid-fill (L-S2, L-S4)
+  'changed-by-you', 'policy-notice', 'form-hidden',
   // a bug
   'internal-error',
 ] as const;

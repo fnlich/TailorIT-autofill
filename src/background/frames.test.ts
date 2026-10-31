@@ -91,7 +91,8 @@ describe('frames of a page that is gone', () => {
     expect(asked).toEqual(Array(asked.length).fill({ tabId: 7, message: { v: 1, type: 'frame/ping' },
       options: { frameId: 3, documentId: 'doc-3' } }));
     // Its run went with it.
-    expect(await worker.deliver({ v: 1, type: 'plan/request', runId: embedRun, pass: 0, specs: [fieldSpec(1)], canaries: [], notices: [] },
+    expect(await worker.deliver({ v: 1, type: 'plan/request', runId: embedRun, pass: 0, specs: [fieldSpec(1)], planKeys: [fieldSpec(1).key],
+      canaries: [], notices: [] },
       embed(3, 'doc-3'))).toEqual({ ok: false, error: 'expired' });
     // The side panel was told.
     await vi.waitFor(() => expect((panel.received.at(-1) as { reports: unknown[] }).reports).toEqual([]));
@@ -177,7 +178,8 @@ describe('frames of a page that is gone', () => {
     await afterGrace(worker, async () => expect(await registered()).toEqual([]));
     // ...but not doc-1's report or run.
     expect(await reported()).toEqual([0]);
-    expect(await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], canaries: [], notices: [] },
+    expect(await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], planKeys: [fieldSpec(1).key],
+      canaries: [], notices: [] },
       top('doc-1'))).toMatchObject({ ok: true });
   });
 
@@ -192,7 +194,8 @@ describe('frames of a page that is gone', () => {
     expect(await registered()).toEqual(['0:doc-1']);
     // doc-2's report went (its run was replaced by doc-1's); doc-1's run stayed.
     expect(await reported()).toEqual([]);
-    expect(await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], canaries: [], notices: [] },
+    expect(await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], planKeys: [fieldSpec(1).key],
+      canaries: [], notices: [] },
       top('doc-1'))).toMatchObject({ ok: true });
     const report = frameReport(runId);
     expect(await worker.deliver({ v: 1, type: 'report/put', runId, report }, top('doc-1'))).toEqual({ ok: true, data: {} });

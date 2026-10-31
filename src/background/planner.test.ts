@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlanInput } from '../core/plan/types';
+import type { FieldSpec } from '../core/types/field';
 import type { PlannedWrite } from '../core/types/fill';
 import type { ProfilePath } from '../core/types/intent';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
@@ -37,9 +38,13 @@ const writingPlanner = (input: PlanInput) => planOutput({ writes: [writeFor(inpu
 const sensitivePlanner = (input: PlanInput) =>
   input.sensitiveState === 'not-loaded' ? planOutput({ needsSensitive: true }) : planOutput({ results: input.specs.map(skippedRow) });
 
-const planRequest = (worker: TestWorker, runId: string, extra: Record<string, unknown> = {}, sender = contentSender()) =>
-  worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1), fieldSpec(2)], canaries: ['I am LLM'], notices: [],
-    ...extra }, sender);
+/** plan/request over `extra.specs` (two text fields by default), planning every one of them unless `extra` names
+ *  planKeys. */
+const planRequest = (worker: TestWorker, runId: string, extra: Record<string, unknown> = {}, sender = contentSender()) => {
+  const specs = (extra.specs as FieldSpec[] | undefined) ?? [fieldSpec(1), fieldSpec(2)];
+  return worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs, planKeys: specs.map((spec) => spec.key),
+    canaries: ['I am LLM'], notices: [], ...extra }, sender);
+};
 
 describe('plan/request', () => {
   it('plans the frame\'s fields with the canonical profile, and answers its writes and rows', async () => {
@@ -67,6 +72,19 @@ describe('plan/request', () => {
     // The profile was fetched once, at run/begin.
     expect(worker.tailorit.count(PROFILE)).toBe(1);
   });
+
+  it('hands the core the whole scan and the keys to plan, and refuses a key that is not among the specs (LC-2)',
+    async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      const runId = await beginRun(worker);
+      expect(await planRequest(worker, runId, { planKeys: [fieldSpec(2).key] })).toMatchObject({ ok: true });
+      const input = worker.core.calls.planFrame[0]!;
+      expect(input.specs).toEqual([fieldSpec(1), fieldSpec(2)]);
+      expect(input.planKeys).toEqual([fieldSpec(2).key]);
+      expect(await planRequest(worker, runId, { planKeys: [fieldSpec(9).key] }))
+        .toEqual({ ok: false, error: 'bad_message' });
+      expect(worker.core.calls.planFrame).toHaveLength(1);
+    });
 
   it('plans with the settings as saved', async () => {
     const worker = await startTestWorker({ token: tokenRecord() });
@@ -229,6 +247,16 @@ describe('the resume a plan attaches', () => {
     expect(await planRequest(worker, runId, { specs: [fieldSpec(1), fileSpec()] })).toMatchObject({ ok: true });
     expect(worker.core.calls.planFrame[0]!.profile.resume)
       .toEqual({ id: suggested.id, fileName: suggested.fileName, mime: 'application/pdf', sizeBytes: 0 });
+  });
+
+  it('is none for a pass that only carries a file field as context, not planning it (LC-2)', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    const runId = await beginRun(worker);
+    const lookups = worker.tailorit.count(LOOKUP);
+    expect(await planRequest(worker, runId, { specs: [fieldSpec(1), fileSpec()], planKeys: [fieldSpec(1).key] }))
+      .toMatchObject({ ok: true });
+    expect(worker.core.calls.planFrame[0]!.profile.resume).toBeUndefined();
+    expect(worker.tailorit.count(LOOKUP)).toBe(lookups);
   });
 
   it('is none for a pass without one, and TailorIT is asked nothing more', async () => {

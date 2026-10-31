@@ -56,6 +56,27 @@ describe('planFrame: text fields', () => {
     expect(fieldOf(out, code).write?.value).toMatchObject({ kind: 'option', index: 1 });
   });
 
+  // LC-2 (Phase 3 review): a later pass planned only its pending fields, so a phone planned again alone lost the code
+  // select beside it and was typed with its code.
+  it('plans only planKeys, reading every spec for context: a phone planned alone keeps the code select (LC-2)', () => {
+    const code = specOf('Country code', 'select', { optionLabels: ['United Kingdom (+44)', 'United States (+1)'] });
+    const number = specOf('Phone number', 'text');
+    const name = specOf('Full name', 'text');
+    const specs = inOrder([name, code, number]);
+    const out = planOf(specs, { planKeys: [specs[2]!.key] });
+    expect(out.results.map((row) => row.key)).toEqual([specs[2]!.key]);
+    expect(out.writes.map((write) => write.key)).toEqual([specs[2]!.key]);
+    expect(out.writes[0]!.value).toEqual({ kind: 'text', text: '512 555 0147' });
+    // Without the context the code is typed again: what the frame's later passes did before.
+    expect(fieldOf(planOf([number]), number).write?.value).toEqual({ kind: 'text', text: '+1 512 555 0147' });
+    // Context alone asks for nothing: no row, no write, no sensitive part for a field it does not plan.
+    const gender = { ...GENDER, domOrder: 9 };
+    const context = planOf([...specs, gender], { planKeys: [specs[0]!.key], profile: goldenProfile({ sensitive: false }),
+      sensitiveState: 'not-loaded' });
+    expect(context).toMatchObject({ needsSensitive: false, results: [{ key: specs[0]!.key }] });
+    expect(planOf(specs, { planKeys: [] })).toMatchObject({ writes: [], results: [] });
+  });
+
   // CORE-7 (Phase 2 review): the phone's country fell back to the address's, so "+1 512 ..." with an address in
   // Britain chose the United Kingdom (+44) in the phone's own country picker.
   it('leaves the phone’s country blank and flagged when its calling code and the address disagree', () => {
