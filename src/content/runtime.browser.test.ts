@@ -3,6 +3,7 @@ import { userEvent } from 'vitest/browser';
 import trap07 from '../../fixtures/traps/07-option-injection.html?raw';
 import trap11 from '../../fixtures/traps/11-forged-wxt-events.html?raw';
 import type { PlanOutput } from '../core/plan/types';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { createFakeWorker, testVocab, trapUrl, type FakeWorkerOptions } from './content.testkit';
 import { restoredFromCache, startContentRuntime, type ContentRuntime } from './runtime';
@@ -229,5 +230,108 @@ describe('the launcher in the page', () => {
     const box = ui.launcher.el.getBoundingClientRect();
     await userEvent.click(ui.host, { force: true, position: { x: box.left - host.left + 16, y: box.top - host.top + 16 } });
     expect(opened).toEqual([true]);
+  });
+});
+
+describe('the in-page panel', () => {
+  /** A form on the test page itself, so the launcher's trusted click can reach it. */
+  function pageForm(doc: Document = document): HTMLInputElement {
+    const form = doc.createElement('form');
+    form.dataset.testRoot = '';
+    form.style.cssText = 'display:block;width:320px;margin:20px';
+    const label = doc.createElement('label');
+    label.htmlFor = 'panel-test-email';
+    label.textContent = 'Email';
+    const input = doc.createElement('input');
+    input.id = 'panel-test-email';
+    input.type = 'email';
+    form.append(label, input);
+    doc.body.append(form);
+    return input;
+  }
+
+  async function clickInUi(runtime: ContentRuntime, target: Element): Promise<void> {
+    const ui = runtime.ui!;
+    const host = ui.host.getBoundingClientRect();
+    const box = target.getBoundingClientRect();
+    await userEvent.click(ui.host, { force: true, position: { x: box.left - host.left + box.width / 2,
+      y: box.top - host.top + box.height / 2 } });
+  }
+
+  async function startInPage(doc: Document, isTop: boolean) {
+    const fake = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, panel: 'in-page' } });
+    const runtime = await startContentRuntime(fake.platform, doc, { href: () => trapUrl('in-page'), isTop,
+      settle: { quietMs: 60 } });
+    runtimes.push(runtime);
+    return { fake, runtime };
+  }
+
+  const panelOf = (runtime: ContentRuntime) => runtime.ui!.shadow.querySelector<HTMLElement>('[data-panel="in-page"]')!;
+  const report = (frameId: number, key: string) => ({ v: 1, runId: `run-${frameId}`, frameId, platform: 'lever',
+    adapter: 'generic', mode: 'fill', status: 'review', pauseReason: null, notices: [],
+    counters: { passes: 1, hiddenControlsIgnored: 0, deferredFields: 0 }, updatedAt: 1, fields: [{ key, label: 'Email',
+      kind: 'text', category: 'contact.email', section: 'main', required: false, status: 'verified', provenance: 'profile',
+      matcherStage: 'not-applicable', confidence: 1, reason: 'ok', wrote: true, verification: 'verified',
+      needsUserAction: false }] });
+
+  it('opens from the launcher where the person chose it, tells the worker, shows report/update, and closes', async () => {
+    pageForm();
+    const { fake, runtime } = await startInPage(document, true);
+    expect(await runtime.fill()).toBe('review');
+    expect(runtime.ui!.launcher.view.action).toBe('open-review');
+    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
+    await clickInUi(runtime, runtime.ui!.launcher.el);
+    expect(runtime.ui!.panel?.open).toBe(true);
+    expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }]);
+    expect(fake.of('panel/open')).toEqual([]);
+
+    expect(await fake.platform.deliver({ v: 1, type: 'report/update', reports: [report(0, 'lever|main|email|none|0'),
+      report(3, 'greenhouse|main|email|none|0')] })).toEqual({ ok: true, data: {} });
+    const panel = panelOf(runtime);
+    expect([...panel.querySelectorAll<HTMLElement>('li[data-field-key]')].map((each) => each.dataset.fieldKey))
+      .toEqual(['lever|main|email|none|0', 'greenhouse|main|email|none|0']);
+    // A report/update that does not parse (it carries a value) is refused whole, and the panel keeps what it showed.
+    expect(await fake.platform.deliver({ v: 1, type: 'report/update', reports: [{ ...report(0, 'k'), value: 'Alex' }] }))
+      .toEqual({ ok: false, error: 'bad_message' });
+    expect(panel.querySelectorAll('li[data-field-key]')).toHaveLength(2);
+
+    await clickInUi(runtime, panel.querySelector('button.panel__close')!);
+    expect(runtime.ui!.panel?.open).toBe(false);
+    expect(fake.of('panel/shown').at(-1)).toEqual({ v: 1, type: 'panel/shown', open: false });
+    // Closed, it takes no more reports.
+    await fake.platform.deliver({ v: 1, type: 'report/update', reports: [] });
+    expect(runtime.ui!.panel?.reports).toHaveLength(2);
+  });
+
+  it('closes when the person chooses the side panel, which Open review then opens', async () => {
+    pageForm();
+    const { fake, runtime } = await startInPage(document, true);
+    expect(await runtime.fill()).toBe('review');
+    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
+    await clickInUi(runtime, runtime.ui!.launcher.el);
+    expect(runtime.ui!.panel?.open).toBe(true);
+    await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
+      llm: DEFAULT_SETTINGS.llm } });
+    expect(runtime.ui!.panel?.open).toBe(false);
+    expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }, { v: 1, type: 'panel/shown', open: false }]);
+    await clickInUi(runtime, runtime.ui!.launcher.el);
+    expect(fake.of('panel/open')).toHaveLength(1);
+    expect(runtime.ui!.panel?.open).toBe(false);
+  });
+
+  it('opens the side panel instead in a small embedded frame', async () => {
+    const fixture = await loadFixture(document, '<!doctype html><body style="margin:0"></body>', { width: 380, height: 300 });
+    pageForm(fixture.doc);
+    const { fake, runtime } = await startInPage(fixture.doc, false);
+    expect(await runtime.fill()).toBe('review');
+    expect(runtime.ui!.panelFits()).toBe(false);
+    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
+    const frameBox = fixture.frame.getBoundingClientRect();
+    const box = runtime.ui!.launcher.el.getBoundingClientRect();
+    await userEvent.click(fixture.frame, { force: true, position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
+    expect(frameBox.width).toBe(380);
+    expect(fake.of('panel/open')).toHaveLength(1);
+    expect(fake.of('panel/shown')).toEqual([]);
+    expect(runtime.ui!.panel?.open).toBe(false);
   });
 });

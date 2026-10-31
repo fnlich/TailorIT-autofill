@@ -80,6 +80,10 @@ export interface FillResult {
   wrote: boolean;
   verification: 'verified' | 'mismatch' | 'not-checked' | 'not-applicable';
   needsUserAction: boolean;
-  /** Suggestions by index and score only; the panel asks the frame for their labels when a row is expanded. */
-  detail?: { suggestions?: Array<{ index: number; score: number }>; revealedBy?: BaseKey };
+  /**
+   * Suggestions by index and score only; the panel asks the frame for their labels when a row is expanded.
+   * `userEdited`: the person changed this field with their own (trusted) input after the run left it flagged, so the
+   * review may offer "Save my answer" (Requirement F; the content runtime sets it, Phase 6 wave 2). Never a value.
+   */
+  detail?: { suggestions?: Array<{ index: number; score: number }>; revealedBy?: BaseKey; userEdited?: true };
 }

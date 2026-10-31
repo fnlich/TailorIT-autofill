@@ -51,7 +51,9 @@ describe('the report', () => {
       expect(school.textContent).toContain(text);
     }
     expect(rowsOf(root)[1]!.textContent).toContain(COPY.report.noSource);
-    expect(rowsOf(root)[3]!.querySelector('[aria-label="Required"]')).not.toBeNull();
+    // The star is drawn for the eye; the word is there for a screen reader.
+    expect(rowsOf(root)[3]!.querySelector('.tia-row__required')?.getAttribute('aria-hidden')).toBe('true');
+    expect(rowsOf(root)[3]!.querySelector('.tia-visually-hidden')?.textContent).toBe(` (${COPY.report.required})`);
   });
 
   it('draws no value, whatever else a row object carries', async () => {

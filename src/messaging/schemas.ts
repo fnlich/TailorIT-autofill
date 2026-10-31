@@ -5,12 +5,13 @@
  *
  * The catalogue is fixed here so phases fill in handlers, not shapes; docs/ARCHITECTURE.md ("Message catalogue") lists
  * who sends each message and what it answers. From Phase 2 the worker answers everything but panel/confirmDraft and
- * panel/saveAnswer (Phase 6), which get not_implemented.
+ * panel/saveAnswer (Phase 6, wave 2), which get not_implemented.
  */
 import { z } from 'zod';
 import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
+import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
@@ -221,6 +222,9 @@ const contentMessages = [
   z.strictObject({ v, type: z.literal('policy/hit'), applicationKey: z.string().max(80), patternId: Text(40).nullable() }),
   /** Sent from the launcher's trusted click. */
   z.strictObject({ v, type: z.literal('panel/open') }),
+  /** Phase 6: the in-page panel opened (`open` true) or closed in this frame, on the person's trusted click. While it
+   *  is open, this frame alone receives report/update. */
+  z.strictObject({ v, type: z.literal('panel/shown'), open: z.boolean() }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -261,6 +265,9 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('auth/redeemCode'), code: z.string().regex(/^[0-9A-Za-z -]{16,24}$/) }),
   z.strictObject({ v, type: z.literal('auth/disconnect') }),
   z.strictObject({ v, type: z.literal('runs/clear') }),
+  /** Phase 6: the anonymous counters, read and cleared by the options page. */
+  z.strictObject({ v, type: z.literal('telemetry/get') }),
+  z.strictObject({ v, type: z.literal('telemetry/clear') }),
   /** One read of a tab's reports; the `panel` port follows them (below). */
   z.strictObject({ v, type: z.literal('panel/reports'), tabId: TabId }),
 ]);
@@ -344,7 +351,7 @@ export const PlanAnswerSchema = z.strictObject({
   repeatables: z.array(RepeatableAnswerSchema).max(REPEATABLE_KINDS.length).optional(),
 });
 
-/** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/focus,
+/** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/shown, panel/focus,
  *  panel/policyDecision, and a frame's answer to run/start, run/continue, run/cancel, run/policyDecision, field/focus,
  *  draft/confirm, report/update and settings/changed. A frame answers run/policyDecision {} once the decision settled
  *  its policy card, and `expired` when no run there waits at one. */
@@ -401,6 +408,22 @@ export type TabReports = z.infer<typeof TabReportsAnswerSchema>;
 /** runs/clear: how many stored runs were removed. */
 export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
 
+/** One anonymous count: the spec's five fields (closed lists and a boolean) and how many times they were counted.
+ *  Nothing else: no key, label, address, account, time or version (core/telemetry/events.ts). */
+export const TelemetryCountSchema = z.strictObject({
+  platform: z.enum(PLATFORMS),
+  fieldKind: z.enum(FIELD_KINDS),
+  matcherStage: z.enum(MATCHER_STAGES),
+  outcome: z.enum(TELEMETRY_OUTCOMES),
+  tripwireTriggered: z.boolean(),
+  count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+
+/** telemetry/get and telemetry/clear: the counts as storage.local holds them (none after a clear, or before the
+ *  person opted in), one per combination of the five fields. */
+export const TelemetryAnswerSchema = z.strictObject({ counts: z.array(TelemetryCountSchema).max(MAX_TELEMETRY_COUNTS) });
+export type TelemetryAnswer = z.infer<typeof TelemetryAnswerSchema>;
+
 // ── Which answer goes with which message ──────────────────────────────────────────────────────────────────────────
 
 /** The data schema of the worker's answer to each content message (wrap it in envelope.ts's answerSchema). The e2e
@@ -417,6 +440,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'report/put': DoneAnswerSchema,
   'policy/hit': DoneAnswerSchema,
   'panel/open': DoneAnswerSchema,
+  'panel/shown': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. panel/confirmDraft and panel/saveAnswer answer
@@ -439,6 +463,8 @@ export const PAGE_ANSWER_SCHEMAS = {
   'auth/redeemCode': AuthStatusSchema,
   'auth/disconnect': AuthStatusSchema,
   'runs/clear': RunsClearAnswerSchema,
+  'telemetry/get': TelemetryAnswerSchema,
+  'telemetry/clear': TelemetryAnswerSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. answer/read arrives in Phase 6. */

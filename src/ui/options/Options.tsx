@@ -6,19 +6,24 @@
  * - Connection: the first-run disclosure, always above Connect while not connected; Connect (auth/startPairing) and
  *   the pairing's countdown; the typed code (auth/redeemCode); "Connected as …" and Disconnect (auth/disconnect);
  *   expired, revoked, a version mismatch and refused storage access, each said in plain words.
- * - Review panel: the side panel (the default) or the in-page panel, which arrives in Phase 6 (the setting is kept).
+ * - Review panel: the side panel (the default) or the in-page panel (src/content/ui/panel.tsx), which opens from the
+ *   launcher; a frame too small for it opens the side panel instead.
  * - Filling: auto-advance, off; the final Submit is never pressed.
  * - Consent boxes: the core's closed list of categories, all off; certify carries a warning. Nothing outside the list
  *   can be pre-approved, so AI attestations and unrecognised consent never appear.
  * - AI help: pick (on), classify (on), drafts (off), with the plan's sentence on what never goes to the AI.
  * - Interpretations: both off, each saying what it does and that the field stays flagged.
+ * - Your fixes: the offer to save an answer after the person fixed a flagged field (Requirement F), on by default.
+ * - Anonymous counters (Phase 6): the opt-in, off, listing the five fields counted and nothing else; the counts kept in
+ *   this browser (telemetry/get), exported as a JSON file through an <a download> link (the page builds it from what it
+ *   read: nothing is sent), and cleared (telemetry/clear).
  * - Saved runs: Clear (runs/clear), showing how many went.
- * Left out until Phase 6: the anonymous counters and the offer to save answers; every save sends their stored values
- * back unchanged.
  */
-import { useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatConnectCode, normalizeConnectCode } from '../../contract/tailorit/connect';
 import { CONSENT_CATEGORIES } from '../../core/enums';
+import { TELEMETRY_FIELDS } from '../../core/telemetry/events';
+import type { TelemetryCount } from '../../core/types/telemetry';
 import type { Settings } from '../../core/types/settings';
 import type { ErrorCode } from '../../messaging/envelope';
 import type { PagePlatform } from '../../platform/types';
@@ -47,6 +52,7 @@ export function Options({ platform, now = Date.now, frames = animationFrames }: 
       <h1 className="tia-options__title">{COPY.optionsTitle}</h1>
       <Connection platform={platform} auth={auth} now={now} frames={frames} />
       <SettingsCards settings={settings} />
+      <Counters platform={platform} settings={settings} />
       <SavedRuns platform={platform} />
       {settings.note !== null && <p className="tia-save-note" role="status">{settings.note}</p>}
     </main>
@@ -242,7 +248,7 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
               onChoose={() => set({ panel: placement })} />
           ))}
         </fieldset>
-        <p className="tia-help">{TEXT.panel.inPageLater}</p>
+        <p className="tia-help">{TEXT.panel.inPageHelp}</p>
       </Card>
 
       <Card title={TEXT.filling.heading} name="filling">
@@ -276,6 +282,11 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
         <p className="tia-note" data-ai-never="">{TEXT.ai.never}</p>
       </Card>
 
+      <Card title={TEXT.answers.heading} name="answers">
+        <Toggle setting="offerToSaveAnswers" name={TEXT.answers.offer} help={TEXT.answers.offerHelp}
+          checked={shown.offerToSaveAnswers} disabled={saving} onChange={(offerToSaveAnswers) => set({ offerToSaveAnswers })} />
+      </Card>
+
       <Card title={TEXT.interpretations.heading} name="interpretations">
         <p className="tia-help">{TEXT.interpretations.intro}</p>
         <Toggle setting="interpretations.postingCountryForLegal" name={TEXT.interpretations.postingCountryForLegal}
@@ -303,6 +314,114 @@ function PlacementChoice({ placement, checked, disabled, onChoose }: {
         disabled={disabled} onChange={() => onChoose()} />
       <label htmlFor={id} className="tia-field__name">{placement === 'side' ? TEXT.panel.side : TEXT.panel.inPage}</label>
     </div>
+  );
+}
+
+// ── Anonymous counters ────────────────────────────────────────────────────────────────────────────────────────────
+
+const COUNTERS = TEXT.telemetry;
+
+/** The counts as a JSON file the person can save: the five fields' names and each count. Built from what the page
+ *  read, as a data: address for the <a download> link; nothing leaves the browser. */
+export function countersFile(counts: readonly TelemetryCount[]): string {
+  const json = JSON.stringify({ fields: TELEMETRY_FIELDS, counts }, null, 2);
+  return `data:application/json;charset=utf-8,${encodeURIComponent(json)}`;
+}
+
+/** The opt-in (a setting, saved with the others), what it counts, the counts kept here, Export and Clear. */
+function Counters({ platform, settings }: { platform: PagePlatform; settings: SettingsState }) {
+  const { shown, saving, save } = settings;
+  const [counts, setCounts] = useState<readonly TelemetryCount[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const optIn = shown?.telemetry.optIn ?? false;
+  const listId = useId();
+  const captionId = useId();
+
+  // Read again whenever the opt-in changes: turning it on starts from what is kept; off keeps the counts until cleared.
+  useEffect(() => {
+    let live = true;
+    void request(platform, { v: 1, type: 'telemetry/get' }).then((answer) => {
+      if (!live) return;
+      if (answer.ok) {
+        setCounts(answer.data.counts);
+        setFailed(false);
+      } else {
+        setFailed(true);
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [platform, optIn]);
+
+  const clear = async () => {
+    setWorking(true);
+    setNote(null);
+    const answer = await request(platform, { v: 1, type: 'telemetry/clear' });
+    setWorking(false);
+    if (answer.ok) {
+      setCounts(answer.data.counts);
+      setNote({ text: COUNTERS.cleared, error: false });
+    } else {
+      setNote({ text: COUNTERS.clearFailed, error: true });
+    }
+  };
+
+  return (
+    <Card title={COUNTERS.heading} name="telemetry">
+      <p className="tia-help">{COUNTERS.intro}</p>
+      {shown !== null && (
+        <Toggle setting="telemetry.optIn" name={COUNTERS.optIn} checked={optIn} disabled={saving}
+          onChange={(checked) => save({ ...shown, telemetry: { optIn: checked } })}>
+          <p className="tia-help" id={listId}>{COUNTERS.optInHelp}</p>
+          <ul className="tia-list" aria-labelledby={listId} data-telemetry-fields="">
+            {TELEMETRY_FIELDS.map((field) => <li key={field} data-field={field}>{COUNTERS.fields[field]}</li>)}
+          </ul>
+          <p className="tia-help">{COUNTERS.never}</p>
+        </Toggle>
+      )}
+      {counts === null ? (
+        <p className={failed ? 'tia-error' : 'tia-note'}>{failed ? COUNTERS.unreadable : COUNTERS.loading}</p>
+      ) : counts.length === 0 ? (
+        <p className="tia-note" data-telemetry="empty">{COUNTERS.empty}</p>
+      ) : (
+        <div className="tia-table-wrap">
+          <table className="tia-table" data-telemetry="counts">
+            <caption id={captionId}>{COUNTERS.caption}</caption>
+            <thead>
+              <tr>
+                {([...TELEMETRY_FIELDS, 'count'] as const).map((column) => (
+                  <th key={column} scope="col">{COUNTERS.columns[column]}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {counts.map((count) => (
+                <tr key={`${count.platform}|${count.fieldKind}|${count.matcherStage}|${count.outcome}|${count.tripwireTriggered}`}>
+                  <td>{COPY.platforms[count.platform]}</td>
+                  <td>{COPY.fieldKinds[count.fieldKind]}</td>
+                  <td>{COPY.stages[count.matcherStage]}</td>
+                  <td>{COUNTERS.outcomes[count.outcome]}</td>
+                  <td>{count.tripwireTriggered ? COUNTERS.yes : COUNTERS.no}</td>
+                  <td className="tia-table__count">{count.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {counts !== null && counts.length > 0 && (
+        <div className="tia-row-of-buttons">
+          <a className="tia-button" href={countersFile(counts)} download={COUNTERS.exportName} data-telemetry-export="">
+            {COUNTERS.export}
+          </a>
+          <button type="button" className="tia-button" disabled={working} onClick={() => void clear()}>{COUNTERS.clear}</button>
+        </div>
+      )}
+      {note !== null && <p className={note.error ? 'tia-error' : 'tia-note'} role={note.error ? 'alert' : 'status'}>{note.text}</p>}
+    </Card>
   );
 }
 

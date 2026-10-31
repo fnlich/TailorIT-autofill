@@ -7,9 +7,11 @@ import type { z } from 'zod';
 import type { PlanInput, PlanOutput } from '../core/plan/types';
 import type { FieldSpec, FillResult, PlannedWrite, RunState } from '../core/types';
 import type { Settings } from '../core/types/settings';
+import type { TelemetryCount } from '../core/types/telemetry';
 import type { FillResultSchema } from '../shared/report';
 import type {
-  ContentMessageSchema, FieldSpecSchema, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema, WorkerToContentSchema,
+  ContentMessageSchema, FieldSpecSchema, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema, TelemetryCountSchema,
+  WorkerToContentSchema,
 } from './schemas';
 
 type Unbrand<T> = T extends string
@@ -45,3 +47,9 @@ export type PlanAnswerRepeatablesMatch = Assert<Same<Unbrand<NonNullable<PlanOut
 type SettingsChanged = Extract<z.infer<typeof WorkerToContentSchema>, { type: 'settings/changed' }>;
 export type SettingsChangedMatches = Assert<Same<Unbrand<Pick<Settings, 'panel' | 'autoAdvance' | 'llm'>>,
   Unbrand<SettingsChanged['settings']>>>;
+/** The anonymous counters hold the core's five fields and a count, nothing more (Phase 6). */
+export type TelemetryCountMatches = Assert<Same<TelemetryCount, z.infer<typeof TelemetryCountSchema>>>;
+/** panel/shown carries whether the in-page panel is open in the sending frame, and nothing more (Phase 6): the worker
+ *  sends report/update to that frame alone. */
+type PanelShown = Extract<z.infer<typeof ContentMessageSchema>, { type: 'panel/shown' }>;
+export type PanelShownMatches = Assert<Same<PanelShown, { v: 1; type: 'panel/shown'; open: boolean }>>;

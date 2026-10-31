@@ -20,7 +20,7 @@ import type { PauseReason, RunState, RunStatus } from '../core/types/run';
 import { deadline, monotonicNow } from '../dom/time';
 import type { UnrecognisedUpload } from '../dom/types';
 import { log } from '../shared/log';
-import { FrameReportSchema, type FrameReport } from '../shared/report';
+import { FrameReportSchema, MAX_STEP_PROGRESS, type FrameReport } from '../shared/report';
 
 /** report/put's limit per frame (the worker refuses more). */
 export const REPORT_PUTS_PER_SECOND = 4;
@@ -81,9 +81,22 @@ export interface ReportHeader {
   notices: NoticeBook;
   counters: { passes: number; hiddenControlsIgnored: number; deferredFields: number };
   /** The step the multi-step machine is on (RunState.stepIndex), for an adapter that tells steps apart; none for one
-   *  that cannot (the generic adapter). */
-  step?: { index: number };
+   *  that cannot (the generic adapter). `progress`: the adapter's progress line ("Step 2 of 4"), visible page text. */
+  step?: { index: number; progress?: string | undefined };
   now: number;
+}
+
+/** A progress line as a report carries it: whitespace collapsed, at most MAX_STEP_PROGRESS characters, none when
+ *  empty. */
+export function progressLine(text: string | undefined): string | undefined {
+  const line = (text ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_STEP_PROGRESS).trim();
+  return line === '' ? undefined : line;
+}
+
+/** The report's step: its index, and the progress line when there is one. */
+function stepOf(step: NonNullable<ReportHeader['step']>): NonNullable<FrameReport['step']> {
+  const progress = progressLine(step.progress);
+  return { index: Math.max(0, Math.floor(step.index)), ...(progress === undefined ? {} : { progress }) };
 }
 
 /** A FrameReport, or null when it would not pass the strict schema (a bug: it is logged, never sent). */
@@ -97,7 +110,7 @@ export function buildReport(header: ReportHeader, rows: readonly FillResult[]): 
     mode: header.dryRun ? 'dry-run' as const : 'fill' as const,
     status: header.status,
     pauseReason: header.status === 'handoff' ? header.pauseReason : null,
-    ...(header.step === undefined ? {} : { step: { index: Math.max(0, Math.floor(header.step.index)) } }),
+    ...(header.step === undefined ? {} : { step: stepOf(header.step) }),
     fields: rows.slice(0, MAX_REPORT_ROWS),
     notices: header.notices.forReport(),
     counters: header.counters,

@@ -1,0 +1,62 @@
+/*
+ * The optional accessibility check (Phase 6; docs/design/runtime.md §12): @axe-core/playwright 4.13.0 over the report
+ * page after a trap run and over the options page with the anonymous counters showing, neither with a serious or
+ * critical violation. Along the way it checks the counters end to end: opted in, a fill counts its fields with the
+ * five fields and nothing else, and Clear empties them. The settings and the counts go back to their defaults
+ * afterwards: the extension's context outlives this test.
+ */
+import AxeBuilder from '@axe-core/playwright';
+import type { Page } from '@playwright/test';
+import { TELEMETRY_FIELDS } from '../../src/core/telemetry/events';
+import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import type { TelemetryAnswer } from '../../src/messaging/schemas';
+import { COPY } from '../../src/shared/copy';
+import { expect, test } from '../fixtures.ts';
+import { trap } from '../helpers/traps.ts';
+
+/** The violations a person relying on assistive technology would be stopped by. */
+async function seriousViolations(page: Page): Promise<Array<{ id: string; impact: string; targets: string[] }>> {
+  const results = await new AxeBuilder({ page }).analyze();
+  return results.violations
+    .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
+    .map((violation) => ({ id: violation.id, impact: violation.impact ?? '',
+      targets: violation.nodes.map((node) => node.target.join(' ')) }));
+}
+
+test('the report page and the options page have no serious or critical accessibility violation', async ({ extContext, connected: ext, routeLog }) => {
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, telemetry: { optIn: true } } });
+  try {
+    await ext.data({ v: 1, type: 'telemetry/clear' });
+    const served = trap('06');
+    routeLog.serve({ [served.url]: served.file });
+    const page = await extContext.newPage();
+    await page.goto(served.url);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(report.fields.length).toBeGreaterThan(0);
+
+    const panel = await ext.reportPage(tabId);
+    await panel.bringToFront();
+    await expect(panel.locator('li[data-field-key]')).toHaveCount(report.fields.length);
+    expect(await seriousViolations(panel), 'the report page').toEqual([]);
+
+    // The fill was counted: exactly the five fields and a count per entry.
+    const { counts } = await ext.data<TelemetryAnswer>({ v: 1, type: 'telemetry/get' });
+    expect(counts.length).toBeGreaterThan(0);
+    for (const count of counts) expect(Object.keys(count).sort()).toEqual([...TELEMETRY_FIELDS, 'count'].sort());
+    expect(counts.every((count) => count.platform === 'lever')).toBe(true);
+
+    const options = await extContext.newPage();
+    await options.goto(ext.url('options.html'));
+    await expect(options.locator('[data-telemetry="counts"]')).toBeVisible();
+    await expect(options.locator('a[data-telemetry-export]')).toHaveAttribute('download', COPY.options.telemetry.exportName);
+    expect(await seriousViolations(options), 'the options page').toEqual([]);
+
+    await options.getByRole('button', { name: COPY.options.telemetry.clear, exact: true }).click();
+    await expect(options.locator('[data-telemetry="empty"]')).toBeVisible();
+    expect((await ext.data<TelemetryAnswer>({ v: 1, type: 'telemetry/get' })).counts).toEqual([]);
+  } finally {
+    await ext.data({ v: 1, type: 'telemetry/clear' }).catch(() => undefined);
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+  }
+});

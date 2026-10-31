@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createReportLimiter, REPORT_PUTS_PER_SECOND } from './report';
+import { MAX_STEP_PROGRESS } from '../shared/report';
+import { buildReport, createReportLimiter, NoticeBook, progressLine, REPORT_PUTS_PER_SECOND, type ReportHeader } from './report';
 
 // DOM-15: the limiter worked, but nothing tested it.
 describe('the report/put limiter', () => {
@@ -44,5 +45,22 @@ describe('the report/put limiter', () => {
     expect(next).toBe(false);
     await vi.advanceTimersByTimeAsync(20);
     expect(next).toBe(true);
+  });
+});
+
+describe('the report’s step (Phase 6)', () => {
+  const header = (step?: { index: number; progress?: string }): ReportHeader => ({ runId: 'run-1', frameId: 0,
+    platform: 'workday', adapter: 'workday', dryRun: false, status: 'review', pauseReason: null, notices: new NoticeBook(),
+    counters: { passes: 1, hiddenControlsIgnored: 0, deferredFields: 0 }, now: 1, ...(step === undefined ? {} : { step }) });
+
+  it('carries the adapter’s progress line as the page shows it: whitespace collapsed, capped, none when empty', () => {
+    expect(progressLine('  Step 2\n of   4 ')).toBe('Step 2 of 4');
+    expect(progressLine('')).toBeUndefined();
+    expect(progressLine('   ')).toBeUndefined();
+    expect(progressLine(undefined)).toBeUndefined();
+    expect(progressLine('x'.repeat(MAX_STEP_PROGRESS + 40))).toHaveLength(MAX_STEP_PROGRESS);
+    expect(buildReport(header({ index: 1, progress: ' Step 2 of 4 ' }), [])?.step).toEqual({ index: 1, progress: 'Step 2 of 4' });
+    expect(buildReport(header({ index: 1, progress: ' ' }), [])?.step).toEqual({ index: 1 });
+    expect(buildReport(header(), [])).not.toHaveProperty('step');
   });
 });

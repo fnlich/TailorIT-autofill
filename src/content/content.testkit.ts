@@ -315,7 +315,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const stored = new Map<string, RunState>();
   let nextRun = 1;
   let transfers = 0;
-  const settings = { panel: 'side' as const, autoAdvance: options.settings?.autoAdvance ?? false,
+  const settings = { panel: options.settings?.panel ?? 'side', autoAdvance: options.settings?.autoAdvance ?? false,
     llm: { tiebreak: true, classify: true, drafts: false } };
 
   const scripted = (type: string): unknown => {
@@ -419,6 +419,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         return { ok: true, data: { runState: stored.get(message.applicationKey as string) ?? null } };
       case 'policy/hit':
       case 'panel/open':
+      case 'panel/shown':
       case 'runstate/clear':
         return { ok: true, data: {} };
       case 'ping':

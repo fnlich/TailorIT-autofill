@@ -6,6 +6,8 @@ import { MAX_HIGHLIGHTS, type HighlightItem } from './highlights';
 import type { LauncherAction } from './launcher';
 import type { PolicyChoice } from './notices';
 import { mountPageUi, type PageUi } from './page-ui';
+import { COPY } from '../../shared/copy';
+import { STATUS_COLOURS } from '../../shared/palette';
 
 /** A trusted click (Playwright's input) at an element of the closed root, aimed through the host's box. */
 async function trustedClick(ui: PageUi, target: Element): Promise<void> {
@@ -187,6 +189,46 @@ describe('the in-page UI', () => {
     expect(ui.focusShown).toBe(true);
     observer.disconnect();
     expect(changes.length + observer.takeRecords().length).toBe(0);
+  });
+
+  it('gives each status one colour and one chip, the report’s own, and dashes AI drafts', async () => {
+    const fixture = await loadFixture(document, '<!doctype html><body><form></form></body>');
+    const form = fixture.doc.querySelector('form')!;
+    const input = (id: string) => {
+      const el = fixture.doc.createElement('input');
+      el.id = id;
+      form.append(el);
+      return el;
+    };
+    const { ui } = mount(fixture.doc);
+    ui.anchorTo(form);
+    ui.setHighlights([
+      { key: 'v', status: 'verified', draft: false, elements: [input('v')] },
+      { key: 'f', status: 'filled', draft: false, elements: [input('f')] },
+      { key: 'g', status: 'flagged', draft: false, elements: [input('g')] },
+      { key: 'b', status: 'blocked', draft: false, elements: [input('b')] },
+      { key: 'd', status: 'flagged', draft: true, elements: [input('d')] },
+      { key: 'c', status: 'filled', draft: true, draftConfirmed: true, elements: [input('c')] },
+    ]);
+    await new Promise((resolve) => fixture.view.requestAnimationFrame(resolve));
+    const drawn = Array.from(ui.shadow.querySelectorAll<HTMLElement>('.hl:not(.focus)'));
+    const rgb = (hex: string) => `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
+    const seen = drawn.map((el) => {
+      const style = fixture.view.getComputedStyle(el);
+      const chip = el.querySelector<HTMLElement>('.chip')!;
+      return [el.dataset.status, style.borderTopColor, style.borderTopStyle, chip.textContent,
+        fixture.view.getComputedStyle(chip).backgroundColor];
+    });
+    expect(seen).toEqual([
+      ['blocked', rgb(STATUS_COLOURS.blocked.fg), 'solid', COPY.chips.blocked, rgb(STATUS_COLOURS.blocked.fg)],
+      ['flagged', rgb(STATUS_COLOURS.flagged.fg), 'solid', COPY.chips.flagged, rgb(STATUS_COLOURS.flagged.fg)],
+      ['flagged', rgb(STATUS_COLOURS.flagged.fg), 'dashed', COPY.draftChip, rgb(STATUS_COLOURS.flagged.fg)],
+      ['filled', rgb(STATUS_COLOURS.filled.fg), 'solid', COPY.chips.filled, rgb(STATUS_COLOURS.filled.fg)],
+      ['filled', rgb(STATUS_COLOURS.filled.fg), 'dashed', COPY.chips.filled, rgb(STATUS_COLOURS.filled.fg)],
+      ['verified', rgb(STATUS_COLOURS.verified.fg), 'solid', COPY.chips.verified, rgb(STATUS_COLOURS.verified.fg)],
+    ]);
+    // The outlines repeat the report; assistive technology reads the report.
+    expect(ui.shadow.querySelector('.highlights')?.getAttribute('aria-hidden')).toBe('true');
   });
 });
 

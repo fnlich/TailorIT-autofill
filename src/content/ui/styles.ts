@@ -8,8 +8,20 @@
  * style-src does not govern.
  *
  * Every rule is scoped by the shadow root, and the host resets inheritance (all: initial), so no page style reaches in
- * and none of these reaches out. Colours: one per status, with a chip; drafts are dashed.
+ * and none of these reaches out. Colours: one per status, with a chip, from src/shared/palette.ts (the report's own),
+ * so a status reads the same on the page and in the panel; drafts are dashed. The in-page review panel's frame is here
+ * too; the report inside it adds the report's own stylesheet to the same root (src/content/ui/panel.tsx).
  */
+import { ACCENT, STATUS_COLOURS } from '../../shared/palette';
+
+/** The statuses a highlight is drawn for (skipped fields get none). */
+const HIGHLIGHTED = ['verified', 'filled', 'flagged', 'blocked'] as const;
+
+/** One colour per status: the outline, and the chip that names it. */
+const STATUS_RULES = HIGHLIGHTED.map((status) => [
+  `.hl[data-status="${status}"] { border-color: ${STATUS_COLOURS[status].fg}; }`,
+  `.hl[data-status="${status}"] .chip { background: ${STATUS_COLOURS[status].fg}; }`,
+].join('\n')).join('\n');
 
 /** The stylesheet's text. */
 export const UI_CSS = `
@@ -55,18 +67,25 @@ button.dismiss::before { content: "\\00d7"; }
 button.action:focus-visible, button.dismiss:focus-visible { outline: 2px solid #8c84ff; outline-offset: 1px; }
 .highlights { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
 .hl { position: absolute; box-sizing: border-box; border: 2px solid; border-radius: 4px; pointer-events: none; }
-.hl[data-status="verified"] { border-color: #1a7f37; }
-.hl[data-status="filled"] { border-color: #0969da; }
-.hl[data-status="flagged"] { border-color: #b35c00; }
-.hl[data-status="blocked"] { border-color: #c62828; }
-.hl[data-draft="true"] { border-style: dashed; }
-.hl.focus { border-color: #4b3fd8; box-shadow: 0 0 0 4px rgba(75, 63, 216, 0.45); }
+.hl.focus { border-color: ${ACCENT}; box-shadow: 0 0 0 4px rgba(75, 63, 216, 0.45); }
 .chip { position: absolute; top: -9px; left: 4px; padding: 0 5px; border-radius: 3px; color: #ffffff;
   font: 600 10px/16px system-ui, -apple-system, "Segoe UI", sans-serif; white-space: nowrap; pointer-events: none; }
-.hl[data-status="verified"] .chip { background: #1a7f37; }
-.hl[data-status="filled"] .chip { background: #0969da; }
-.hl[data-status="flagged"] .chip { background: #b35c00; }
-.hl[data-status="blocked"] .chip { background: #c62828; }
+${STATUS_RULES}
+.hl[data-draft="true"] { border-style: dashed; }
+.notices.with-panel .notice { display: none; }
+.panel { pointer-events: auto; box-sizing: border-box; display: flex; flex-direction: column; width: 380px;
+  max-width: calc(100vw - 16px); max-height: 70vh; margin: 0; background: var(--tia-bg); color: var(--tia-fg);
+  border: 1px solid var(--tia-line); border-top: 4px solid ${ACCENT}; border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); text-align: left; }
+.panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--tia-line); }
+.panel__title { margin: 0; font-size: 15px; font-weight: 700; }
+.panel__body { overflow: auto; padding: 10px 12px 12px; overscroll-behavior: contain; }
+.panel__loading { margin: 0; color: var(--tia-muted); }
+button.panel__close { flex: 0 0 auto; width: 24px; height: 24px; margin: 0; padding: 0; border: 0; border-radius: 4px;
+  background: transparent; color: var(--tia-muted); cursor: pointer; font: 600 16px/24px system-ui, sans-serif; }
+button.panel__close::before { content: "\\00d7"; }
+button.panel__close:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 1px; }
 `;
 
 /** How the stylesheet reached the shadow root. */

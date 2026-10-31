@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import type { FakePortPeer } from '../platform/fake';
-import { REPORT_PUT_LIMIT } from './reports';
-import { beginRun, contentSender, frameReport, pageSender, sentToFrames, startTestWorker, tokenRecord, type TestWorker } from './worker.testkit';
+import { PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT } from './reports';
+import {
+  beginRun, contentSender, frameReport, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent, type TestWorker,
+} from './worker.testkit';
 
 const EMBED = contentSender({ frameId: 3, documentId: 'doc-3', url: 'https://job-boards.greenhouse.io/embed/job_app?for=acme&token=123' });
 
@@ -121,26 +123,91 @@ describe('reports', () => {
     });
   });
 
-  it('pushes the combined report to the reporting frames when the in-page panel is chosen', async () => {
-    const worker = await startTestWorker({ token: tokenRecord() });
-    await hello(worker);
-    const runId = await beginRun(worker);
-    await putReport(worker, runId, frameReport(runId));
-    expect(sentToFrames(worker)).toEqual([]);
+  describe('the in-page panel (panel/shown)', () => {
+    const inPage = (worker: TestWorker) =>
+      worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'in-page' } }, pageSender('options.html'));
+    const shown = (worker: TestWorker, open: boolean, sender = contentSender()) =>
+      worker.deliver({ v: 1, type: 'panel/shown', open }, sender);
+    const reportUpdates = (worker: TestWorker) => sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'report/update');
 
-    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'in-page' } }, pageSender('options.html'));
-    await putReport(worker, runId, frameReport(runId, 0, { status: 'done' }));
-    // The save itself tells the frame its new settings (settings/changed, the Phase 5 review's C-S2); then the report.
-    expect(sentToFrames(worker)).toEqual([{
-      tabId: 7,
-      message: { v: 1, type: 'settings/changed', settings: { panel: 'in-page', autoAdvance: false,
-        llm: DEFAULT_SETTINGS.llm } },
-      options: { frameId: 0, documentId: 'doc-1' },
-    }, {
-      tabId: 7,
-      message: { v: 1, type: 'report/update', reports: [frameReport(runId, 0, { status: 'done' })] },
-      options: { frameId: 0, documentId: 'doc-1' },
-    }]);
+    it('sends the tab\'s combined report to the one frame that shows the panel, at once and on every change', async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      await hello(worker);
+      await hello(worker, EMBED);
+      await inPage(worker);
+      const topRun = await beginRun(worker);
+      const embedRun = await beginRun(worker, { applicationKey: 'greenhouse:0123456789abcdef' }, EMBED);
+      await putReport(worker, topRun, frameReport(topRun));
+      // Both frames reported, and neither shows the panel: no frame hears the other's labels.
+      await putReport(worker, embedRun, frameReport(embedRun, 3, { platform: 'greenhouse', adapter: 'greenhouse' }), EMBED);
+      expect(reportUpdates(worker)).toEqual([]);
+
+      expect(await shown(worker, true, EMBED)).toEqual({ ok: true, data: {} });
+      const both = [frameReport(topRun), frameReport(embedRun, 3, { platform: 'greenhouse', adapter: 'greenhouse' })];
+      expect(reportUpdates(worker)).toEqual([{ tabId: 7, message: { v: 1, type: 'report/update', reports: both },
+        options: { frameId: 3, documentId: 'doc-3' } }]);
+
+      await putReport(worker, topRun, frameReport(topRun, 0, { status: 'done' }));
+      expect(reportUpdates(worker)).toHaveLength(2);
+      expect(reportUpdates(worker).map((sent) => sent.options)).toEqual([{ frameId: 3, documentId: 'doc-3' },
+        { frameId: 3, documentId: 'doc-3' }]);
+
+      // Closed: nothing more goes to it. Another frame's close changes nothing.
+      expect(await shown(worker, false, contentSender())).toEqual({ ok: true, data: {} });
+      await putReport(worker, topRun, frameReport(topRun, 0, { status: 'stopped' }));
+      expect(reportUpdates(worker)).toHaveLength(3);
+      expect(await shown(worker, false, EMBED)).toEqual({ ok: true, data: {} });
+      await putReport(worker, embedRun, frameReport(embedRun, 3, { platform: 'greenhouse', adapter: 'greenhouse', status: 'done' }), EMBED);
+      expect(reportUpdates(worker)).toHaveLength(3);
+    });
+
+    it('sends nothing while the person chose the side panel, and only to the frame that opened it last', async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      await hello(worker);
+      await hello(worker, EMBED);
+      const runId = await beginRun(worker);
+      await shown(worker, true);
+      await putReport(worker, runId, frameReport(runId));
+      expect(reportUpdates(worker)).toEqual([]);
+
+      await inPage(worker);
+      await shown(worker, true, EMBED);
+      await putReport(worker, runId, frameReport(runId, 0, { status: 'done' }));
+      expect(reportUpdates(worker).map((sent) => sent.options?.frameId)).toEqual([3, 3]);
+    });
+
+    it('forgets the frame once its document is gone, or its tab closes', async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      await hello(worker);
+      await hello(worker, EMBED);
+      await inPage(worker);
+      const runId = await beginRun(worker);
+      await shown(worker, true, EMBED);
+      expect(await fakeBrowser.storage.session.get('panel-frame:7')).toEqual({ 'panel-frame:7': { frameId: 3, documentId: 'doc-3' } });
+      // The embedded frame loads another document: its panel went with the old one.
+      await hello(worker, { ...EMBED, documentId: 'doc-4' });
+      await vi.waitFor(async () => expect(await fakeBrowser.storage.session.get(null)).not.toHaveProperty('panel-frame:7'));
+      const before = reportUpdates(worker).length;
+      await putReport(worker, runId, frameReport(runId));
+      expect(reportUpdates(worker)).toHaveLength(before);
+
+      await shown(worker, true);
+      await fakeBrowser.tabs.onRemoved.trigger(7, { windowId: 1, isWindowClosing: false });
+      await vi.waitFor(async () => expect(await fakeBrowser.storage.session.get(null)).not.toHaveProperty('panel-frame:7'));
+    });
+
+    it('is a content message only, strict, and limited per frame', async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      await hello(worker);
+      expect(await worker.deliver({ v: 1, type: 'panel/shown', open: true }, pageSender())).toEqual({ ok: false, error: 'bad_sender' });
+      expect(await worker.deliver({ v: 1, type: 'panel/shown', open: 'yes' }, contentSender())).toEqual({ ok: false, error: 'bad_message' });
+      expect(await worker.deliver({ v: 1, type: 'panel/shown', open: true, frameId: 3 }, contentSender()))
+        .toEqual({ ok: false, error: 'bad_message' });
+      for (let index = 0; index < PANEL_SHOWN_LIMIT.count; index += 1) {
+        expect(await shown(worker, index % 2 === 0)).toEqual({ ok: true, data: {} });
+      }
+      expect(await shown(worker, true)).toMatchObject({ ok: false, error: 'rate_limited' });
+    });
   });
 
   it('drops a tab\'s reports when it closes, and a frame\'s when it loads another document', async () => {

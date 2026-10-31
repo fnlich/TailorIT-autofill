@@ -109,9 +109,72 @@ describe('the options page', () => {
     expect(root.textContent).toContain(TEXT.consent.never);
     expect(root.querySelector('[data-ai-never]')?.textContent).toBe(TEXT.ai.never);
     expect(root.textContent).toContain(TEXT.filling.autoAdvanceHelp);
-    expect(root.textContent).toContain(TEXT.panel.inPageLater);
-    // Phase 6's settings are not on the page yet.
-    expect(root.querySelector('input[data-setting^="telemetry"], input[data-setting="offerToSaveAnswers"]')).toBeNull();
+    expect(root.textContent).toContain(TEXT.panel.inPageHelp);
+  });
+
+  it('offers to save the person’s fixes, on by default, and saves the change', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    expect(setting(root, 'offerToSaveAnswers').checked).toBe(true);
+    expect(root.textContent).toContain(TEXT.answers.offerHelp);
+    await click(setting(root, 'offerToSaveAnswers'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, offerToSaveAnswers: false });
+  });
+
+  describe('the anonymous counters', () => {
+    const counted = [
+      { platform: 'lever', fieldKind: 'text', matcherStage: 'not-applicable', outcome: 'success', tripwireTriggered: false, count: 12 },
+      { platform: 'greenhouse', fieldKind: 'select', matcherStage: 'fuzzy', outcome: 'fail', tripwireTriggered: true, count: 3 },
+    ] as const;
+
+    it('are off by default, and the opt-in lists the five fields counted and nothing more', async () => {
+      const worker = createFakeWorker();
+      const root = await open(worker);
+      expect(setting(root, 'telemetry.optIn').checked).toBe(false);
+      const fields = [...root.querySelectorAll<HTMLElement>('[data-telemetry-fields] li')];
+      expect(fields.map((item) => item.dataset.field)).toEqual(['platform', 'fieldKind', 'matcherStage', 'outcome',
+        'tripwireTriggered']);
+      expect(fields.map((item) => item.textContent)).toEqual(Object.values(TEXT.telemetry.fields));
+      expect(root.textContent).toContain(TEXT.telemetry.never);
+      expect(root.querySelector('[data-telemetry="empty"]')?.textContent).toBe(TEXT.telemetry.empty);
+      expect(root.querySelector('[data-telemetry-export]')).toBeNull();
+
+      await click(setting(root, 'telemetry.optIn'));
+      expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, telemetry: { optIn: true } });
+      // The counts are read again once the opt-in changed.
+      expect(worker.sentOfType('telemetry/get').length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('show the counts kept in this browser, export them as a JSON file, and clear them', async () => {
+      const worker = createFakeWorker();
+      worker.script.settings = { ...DEFAULT_SETTINGS, telemetry: { optIn: true } };
+      worker.script.counts = counted.map((count) => ({ ...count }));
+      const root = await open(worker);
+      const table = root.querySelector('[data-telemetry="counts"]')!;
+      expect([...table.querySelectorAll('th')].map((cell) => cell.textContent)).toEqual(Object.values(TEXT.telemetry.columns));
+      expect([...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((cell) => cell.textContent)))
+        .toEqual([
+          ['Lever', COPY.fieldKinds.text, COPY.stages['not-applicable'], TEXT.telemetry.outcomes.success, TEXT.telemetry.no, '12'],
+          ['Greenhouse', COPY.fieldKinds.select, COPY.stages.fuzzy, TEXT.telemetry.outcomes.fail, TEXT.telemetry.yes, '3'],
+        ]);
+
+      const link = root.querySelector<HTMLAnchorElement>('a[data-telemetry-export]')!;
+      expect(link.getAttribute('download')).toBe(TEXT.telemetry.exportName);
+      expect(link.textContent).toBe(TEXT.telemetry.export);
+      const prefix = 'data:application/json;charset=utf-8,';
+      expect(link.href.startsWith(prefix)).toBe(true);
+      const file = JSON.parse(decodeURIComponent(link.href.slice(prefix.length))) as { fields: string[]; counts: object[] };
+      expect(file).toEqual({ fields: ['platform', 'fieldKind', 'matcherStage', 'outcome', 'tripwireTriggered'], counts: counted });
+      for (const entry of file.counts) {
+        expect(Object.keys(entry).sort()).toEqual(['count', 'fieldKind', 'matcherStage', 'outcome', 'platform', 'tripwireTriggered']);
+      }
+
+      await click(button(root, TEXT.telemetry.clear));
+      expect(worker.sentOfType('telemetry/clear')).toHaveLength(1);
+      expect(root.querySelector('[data-telemetry="counts"]')).toBeNull();
+      expect(root.textContent).toContain(TEXT.telemetry.cleared);
+      expect(root.querySelector('[data-telemetry="empty"]')).not.toBeNull();
+    });
   });
 
   it('shows the first-run disclosure before Connect, and Connect opens TailorIT with its countdown', async () => {

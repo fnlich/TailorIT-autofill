@@ -10,6 +10,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
+import type { TelemetryCount } from '../core/types/telemetry';
 import type { AuthStatus } from '../messaging/schemas';
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
@@ -82,6 +83,8 @@ export interface WorkerScript {
   reports: Map<number, FrameReport[]>;
   /** How many frames panel/fill, panel/continue and panel/cancel reach. */
   frames: number;
+  /** The anonymous counts telemetry/get answers (telemetry/clear empties them). */
+  counts: TelemetryCount[];
 }
 
 export interface FakeWorker {
@@ -102,7 +105,8 @@ export interface FakeWorker {
 /** A worker double over the memory page platform. With `answerWatches`, each panel/watch is answered at once, as the
  *  real worker does, with the tab's reports. */
 export function createFakeWorker(options: { activeTabId?: number | null; answerWatches?: boolean } = {}): FakeWorker {
-  const script: WorkerScript = { auth: authStatus(), settings: structuredClone(DEFAULT_SETTINGS), reports: new Map(), frames: 1 };
+  const script: WorkerScript = { auth: authStatus(), settings: structuredClone(DEFAULT_SETTINGS), reports: new Map(), frames: 1,
+    counts: [] };
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
   const ports: PortLike[] = [];
   const posted: unknown[] = [];
@@ -124,6 +128,11 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       return ok({ settings: script.settings });
     },
     'runs/clear': () => ok({ cleared: 0 }),
+    'telemetry/get': () => ok({ counts: script.counts }),
+    'telemetry/clear': () => {
+      script.counts = [];
+      return ok({ counts: [] });
+    },
   };
   const platform = createMemoryPagePlatform(
     async (message) => {

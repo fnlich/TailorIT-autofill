@@ -246,7 +246,7 @@ describe('C-S3: a later attempt on a step never writes over what the person type
     expect(byId(loaded.fixture, 'name').value).toBe('Jordan Person');
     // C-S8: a step seen again keeps its place.
     expect(lastState(worker).stepIndex).toBe(0);
-    expect(lastReport(worker).step).toEqual({ index: 0 });
+    expect(lastReport(worker).step).toEqual({ index: 0, progress: 'Step 1 of 4' });
     expect(row(lastReport(worker), 'Full name')).toMatchObject({ status: 'flagged', reason: 'changed-by-you' });
     expect(row(lastReport(worker), 'Email')).toMatchObject({ status: 'verified', wrote: true });
   });

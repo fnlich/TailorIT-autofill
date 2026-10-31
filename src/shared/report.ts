@@ -29,6 +29,8 @@ export const FillResultSchema = z.strictObject({
     .strictObject({
       suggestions: z.array(z.strictObject({ index: z.number().int().nonnegative(), score: z.number() })).max(3).optional(),
       revealedBy: Key.optional(),
+      /** The person changed the field with their own input after the run left it flagged (Requirement F). */
+      userEdited: z.literal(true).optional(),
     })
     .optional(),
 });
@@ -42,7 +44,13 @@ export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attenti
   'final-unknown', 'max-steps',
   // The Phase 5 review (X-S8): a form its page hid just before auto-advance would have pressed Next; and (X-S4,
   // tightened) a step whose CAPTCHA is not known solved, whose Next is left to the person.
-  'next-hidden', 'captcha-next'] as const;
+  'next-hidden', 'captcha-next',
+  // Phase 6: the policy notice came only from TailorIT's saved copy of the posting. The page's card says so under its
+  // sentence, and the report says it under the panel's, so the two read the same.
+  'policy-stored-copy'] as const;
+
+/** A step's progress line as the adapter reads it from the page ("Step 2 of 4"), at most this long. */
+export const MAX_STEP_PROGRESS = 120;
 
 export const FrameReportSchema = z.strictObject({
   v: z.literal(1),
@@ -53,7 +61,10 @@ export const FrameReportSchema = z.strictObject({
   mode: z.enum(['fill', 'dry-run']),
   status: z.enum(RUN_STATUSES),
   pauseReason: z.enum(PAUSE_REASONS).nullable(),
-  step: z.strictObject({ index: z.number().int().nonnegative(), of: z.number().int().positive().optional() }).optional(),
+  /** The step the multi-step machine is on: its index (RunState.stepIndex, from 0), and the adapter's progress line
+   *  when the page shows one (visible page text, like a label). The panel shows the progress line where there is one. */
+  step: z.strictObject({ index: z.number().int().nonnegative(), of: z.number().int().positive().optional(),
+    progress: z.string().min(1).max(MAX_STEP_PROGRESS).optional() }).optional(),
   fields: z.array(FillResultSchema).max(500),
   notices: z.array(z.strictObject({ code: z.enum(NOTICE_CODES), count: z.number().int().positive().optional() })).max(20),
   counters: z.strictObject({

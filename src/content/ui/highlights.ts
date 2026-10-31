@@ -1,6 +1,8 @@
 /*
  * Highlights (docs/design/runtime.md §10.1): outlines drawn in the closed shadow root over the fields' rectangles, one
- * colour and chip per status (verified, filled, flagged, blocked; skipped fields get none), dashed for AI drafts. They
+ * colour and chip per status (verified, filled, flagged, blocked; skipped fields get none; the colours are the
+ * report's, src/shared/palette.ts), dashed for AI drafts, whose chip asks for the person's confirmation until it is
+ * given. They
  * take no pointer events, and the page's own DOM is never annotated: no attribute, class or style is ever set on a page
  * element. A hidden radio or file input is outlined on its proxy (its visible label or the adapter's widget), which the
  * caller passes as the field's elements. At most MAX_HIGHLIGHTS are drawn, the ones that need the person first.
@@ -22,6 +24,8 @@ export interface HighlightItem {
   status: HighlightStatus;
   /** An AI draft: dashed. */
   draft: boolean;
+  /** An AI draft the person already edited or confirmed: still dashed, with its status's chip. */
+  draftConfirmed?: boolean;
   /** A selection the final check refused, which the person removes. */
   removeSelection?: boolean;
   /** The visible elements the outline covers (their union). Disconnected ones are left out when drawing. */
@@ -89,7 +93,7 @@ export function createHighlights(doc: Document, layer: HTMLElement): Highlights 
       const chip = doc.createElement('span');
       chip.className = 'chip';
       chip.textContent = item.removeSelection ? COPY.removeSelection
-        : item.draft ? COPY.draftChip : COPY.chips[item.status];
+        : item.draft && item.draftConfirmed !== true ? COPY.draftChip : COPY.chips[item.status];
       el.append(chip);
       el.hidden = true;
       layer.insertBefore(el, focusEl);

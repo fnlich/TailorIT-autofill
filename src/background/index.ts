@@ -25,7 +25,7 @@ import { createPanelHandlers, openSidePanel } from './panel';
 import { createPlanner } from './planner';
 import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
 import { createProfileCache, type ProfileCache } from './profile-cache';
-import { createReports, REPORT_PUT_LIMIT } from './reports';
+import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT } from './reports';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
 import { createRouter, type ContentChannel } from './router';
@@ -35,6 +35,7 @@ import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage } from './senders';
 import { createServerClient } from './server-client';
 import { createSettingsStore, pushSettings } from './settings';
+import { createTelemetry } from './telemetry';
 import { systemTimers, type Timers } from './timers';
 import { bundledVocab } from './vocab';
 import { createCaptureWorkerPlatform } from '../platform/chrome';
@@ -98,8 +99,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const beginLimit = createRateLimit(RUN_BEGIN_LIMIT.count, RUN_BEGIN_LIMIT.windowMs, now);
   const reportLimit = createRateLimit(REPORT_PUT_LIMIT.count, REPORT_PUT_LIMIT.windowMs, now);
   const policyLimit = createRateLimit(POLICY_HIT_LIMIT.count, POLICY_HIT_LIMIT.windowMs, now);
+  const shownLimit = createRateLimit(PANEL_SHOWN_LIMIT.count, PANEL_SHOWN_LIMIT.windowMs, now);
+  // The anonymous counters (Phase 6): storage.local, only while the person opted in; nothing is ever sent.
+  const telemetry = createTelemetry({ local, settings });
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
-  const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, check: (tabId) => checkTab(tabId) });
+  const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, shownLimit, telemetry,
+    check: (tabId) => checkTab(tabId) });
   const chooseResume = createResumeChooser({ runs, server, profiles: profileCache });
   // The LLM steps' tasks on TailorIT (Phase 4), shared by every run; each run keeps its own questions (ai-tasks.ts).
   const aiTasks = createAiTasks({ server, timers, now });
@@ -213,6 +218,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         },
         // No await before sidePanel.open: the launcher's click must still count as the person's gesture.
         'panel/open': (_message, from) => openSidePanel(platform, from.tabId),
+        // The in-page panel opened or closed in this frame (Phase 6): report/update goes to it alone while it is open.
+        'panel/shown': (message, from) => reports.panelShown(from, message.open),
         ...(__E2E__
           ? {
               'e2e/probe': async (message: { storageLocal: 'refused' | 'allowed' }) => {
@@ -245,6 +252,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'auth/redeemCode': (message) => auth.redeemCode(message.code),
         'auth/disconnect': () => auth.disconnect(),
         'runs/clear': async () => ok({ cleared: await runStates.clearAll() }),
+        'telemetry/get': async () => ok({ counts: await telemetry.read() }),
+        'telemetry/clear': async () => {
+          await telemetry.clear();
+          return ok({ counts: [] });
+        },
       },
     }),
   );
@@ -293,6 +305,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     beginLimit.forget(`${tabId}/`);
     reportLimit.forget(`${tabId}/`);
     policyLimit.forget(`${tabId}/`);
+    shownLimit.forget(`${tabId}/`);
     void Promise.all([
       forgetTabFrames(session, tabId),
       reports.forgetTab(tabId),

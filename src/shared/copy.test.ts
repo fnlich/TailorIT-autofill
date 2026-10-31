@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CONSENT_CATEGORIES, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
+import { CONSENT_CATEGORIES, FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
+import { TELEMETRY_FIELDS } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { PAUSE_REASONS, RUN_STATUSES } from '../core/types/run';
 import { CAPTURE_COPY, COPY } from './copy';
@@ -39,6 +40,14 @@ describe('the copy', () => {
       + 'look like them are not sent to it.');
     expect([COPY.policyFillAnyway, COPY.policyCancel]).toEqual(['Fill anyway', 'Cancel']);
     expect(COPY.removeSelection).toBe('Remove this selection');
+    // Phase 6: the page's card and the panel's say the same line when only TailorIT's saved copy held the statement.
+    expect(COPY.policyFromStoredCopy).toBe(COPY.notices['policy-stored-copy']);
+  });
+
+  it('names every field kind, and on the options page each of the five counted fields and nothing more', () => {
+    expect(Object.keys(COPY.fieldKinds).sort()).toEqual([...FIELD_KINDS].sort());
+    expect(Object.keys(COPY.options.telemetry.fields)).toEqual([...TELEMETRY_FIELDS]);
+    expect(Object.keys(COPY.options.telemetry.columns)).toEqual([...TELEMETRY_FIELDS, 'count']);
   });
 
   it("names the in-page highlights' chips for every status that gets one", () => {

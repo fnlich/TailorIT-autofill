@@ -70,9 +70,12 @@ describe('the worker keeps the profile to itself', () => {
     worker.tailorit.reply(`GET /api/autofill/resumes/${goldens.lookup.suggestedResume.id}/file`, await fileReply(pdf));
     const options = pageSender('options.html');
 
-    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...(await settingsOf(worker)), panel: 'in-page' } }, options);
+    // The in-page panel and the anonymous counters on (Phase 6): neither may carry a value either.
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...(await settingsOf(worker)), panel: 'in-page',
+      telemetry: { optIn: true } } }, options);
     expect(await worker.deliver({ v: 1, type: 'auth/redeemCode', code: 'K7QM-2XRD-9VHT-PA3C' }, options)).toMatchObject({ ok: true });
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
+    await worker.deliver({ v: 1, type: 'panel/shown', open: true }, contentSender());
     const panel = worker.connect('panel', pageSender());
     panel.post({ v: 1, type: 'panel/watch', tabId: 7 });
     await worker.deliver({ v: 1, type: 'policy/hit', applicationKey: LEVER_KEY, patternId: 'no-ai-tools' }, contentSender());
@@ -85,7 +88,11 @@ describe('the worker keeps the profile to itself', () => {
     // The frame's own write is the one place a profile value goes.
     expect(plan.data.writes[0]!.value).toEqual({ kind: 'text', text: goldens.profile.profile.name.first });
     await worker.deliver({ v: 1, type: 'runstate/put', runState: runState({ canarySet: ['Austin', 'I am LLM'] }) }, contentSender());
-    await worker.deliver({ v: 1, type: 'report/put', runId, report: frameReport(runId) }, contentSender());
+    // A written row, so the counters count it.
+    const written = { ...frameReport(runId).fields[0]!, status: 'verified' as const, provenance: 'profile' as const,
+      reason: 'ok' as const, wrote: true, verification: 'verified' as const };
+    await worker.deliver({ v: 1, type: 'report/put', runId, report: frameReport(runId, 0, { fields: [written] }) },
+      contentSender());
 
     const port = worker.connect('resume', contentSender());
     port.post({ v: 1, type: 'resume/request', runId });
@@ -110,6 +117,7 @@ describe('the worker keeps the profile to itself', () => {
     // The checks really ran: the RunState, the report and its push are all there.
     expect(kept).toContain('I am LLM');
     expect(worker.fakes.tabMessages.some((sent) => (sent.message as { type: string }).type === 'report/update')).toBe(true);
+    expect(kept).toContain('telemetry:v1');
   });
 });
 

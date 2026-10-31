@@ -112,6 +112,14 @@ export const LOG_CODES = [
   'content.next-withheld',
   'content.watch-ended',
   'content.pause-cancelled',
+  // Phase 6: the in-page panel shown or closed in a frame (the worker's record of it, as flags), its report/update, the
+  // panel's open refused in a frame too small for it (the side panel opened instead), and the anonymous counters
+  // (event counts only, never what was counted).
+  'panel.shown',
+  'panel.updated',
+  'content.panel-collapsed',
+  'telemetry.counted',
+  'telemetry.cleared',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

@@ -31,8 +31,14 @@
  * current run reads auto-advance from them, C-S2); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
  * answered `expired` when no run here waits at the card); field/focus (scroll the field or its proxy into view and
  * outline it, at the person's request); field/describe (the visible labels of a row's suggested options, from a fresh
- * scan, never kept); draft/confirm and answer/read not_implemented until Phase 6; report/update ignored until the
- * in-page panel exists. The in-page card's own buttons decide locally, on trusted clicks.
+ * scan, never kept); draft/confirm and answer/read not_implemented until Phase 6's wave 2; report/update (the tab's
+ * combined report, for the in-page panel). The in-page card's own buttons decide locally, on trusted clicks.
+ * The in-page panel (Phase 6, ui/panel.tsx): with settings.panel 'in-page' (frame/hello's answer, then each
+ * settings/changed), the launcher's Open review opens it in this frame and tells the worker (panel/shown {open: true}),
+ * which then sends this frame alone the tab's report (report/update) while it is open; its Close button, or the person
+ * choosing the side panel, closes it (panel/shown {open: false}). A frame too small for it (an embedded one under
+ * ui/page-ui.ts PANEL_MIN_VIEWPORT) opens the side panel instead, as the side panel placement does. Its Show on page
+ * and closest options act on this frame's own fields, as field/focus and field/describe do.
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -143,6 +149,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let frameId: number | null = null;
   /** The hasForm the worker was last told. */
   let told: boolean | null = null;
+  /** Where the person wants the review: frame/hello's settings, then each settings/changed. */
+  let placement: 'side' | 'in-page' = 'side';
   let lastRows = new Map<FieldKey, FillResult>();
 
   const channel = createChannel(platform, () => teardown('invalidated'));
@@ -182,6 +190,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         return ok({});
       case 'settings/changed':
         current?.settingsChanged(msg.settings);
+        placementChanged(msg.settings.panel);
         return ok({});
       case 'run/policyDecision':
         return decidePolicy(msg.decision) ? ok({}) : refuse('expired');
@@ -194,6 +203,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'answer/read':
         return refuse('not_implemented');
       case 'report/update':
+        // The worker sends it only to the frame whose panel/shown said open; a closed panel keeps nothing.
+        if (ui?.panel?.open === true) ui.updatePanel(msg.reports);
         return ok({});
     }
   });
@@ -205,6 +216,33 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (!answer.ok) return;
     told = hasForm;
     frameId = answer.data.frameId;
+    placementChanged(answer.data.settings.panel);
+  }
+
+  // ── The in-page panel (Phase 6) ─────────────────────────────────────────────────────────────────────────────────
+
+  /** The person's choice of panel: choosing the side panel closes this frame's in-page one. */
+  function placementChanged(next: 'side' | 'in-page'): void {
+    placement = next;
+    if (next === 'side' && ui?.panel?.open === true) closePanel();
+  }
+
+  /** Open review from the launcher's click: the in-page panel where the person chose it and the frame has room for it,
+   *  else the side panel, which must be asked for inside the click (nothing awaited before it). */
+  function openReview(): void {
+    if (placement === 'in-page' && ui !== null && ui.openPanel()) {
+      channel.fire({ v: 1, type: 'panel/shown', open: true });
+      return;
+    }
+    if (placement === 'in-page') log('content.panel-collapsed');
+    channel.fire({ v: 1, type: 'panel/open' });
+  }
+
+  /** Closes the in-page panel, and tells the worker to stop sending it reports. */
+  function closePanel(): void {
+    if (ui?.panel?.open !== true) return;
+    ui.closePanel();
+    if (channel.valid()) channel.fire({ v: 1, type: 'panel/shown', open: false });
   }
 
   /** The frame's id, saying hello again first if the first one went unanswered. */
@@ -354,13 +392,19 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         onLauncher(action) {
           if (!channel.valid()) return;
           // Open review goes out at once, inside the click: the browser then still counts it as the person's gesture.
-          if (action === 'open-review') channel.fire({ v: 1, type: 'panel/open' });
+          if (action === 'open-review') openReview();
           else if (action === 'continue') continueRun('launcher');
           else startRun({ trigger: 'launcher', dryRun: false });
         },
         onPolicyChoice(choice) {
           if (choice === 'accepted') current?.accept();
           else current?.decline();
+        },
+        panel: {
+          frameId: () => frameId,
+          showField: (key) => focusField(key as FieldKey),
+          describeField: async (key) => describeField(key as FieldKey).options,
+          closed: () => closePanel(),
         },
       });
       ui.anchorTo(page.root);

@@ -95,8 +95,15 @@ test.describe('policy notices', () => {
     const waiting = await ext.settled(tabId);
     expect(waiting.status).toBe('policy-notice');
     expect(noticeCount(waiting, 'policy')).toBe(1);
+    expect(noticeCount(waiting, 'policy-stored-copy')).toBe(1);
     const ui = await PageUi.of(page);
     expect(await ui.policyCardShown()).toBe(true);
+    // The page's card and the panel's say the same words, the stored-copy line included (Phase 6).
+    const cardLines = (await ui.elements('[role="alertdialog"] p')).filter((line) => line.shown).map((line) => line.text);
+    expect(cardLines).toEqual([COPY.notices.policy, COPY.policyFromStoredCopy]);
+    const panel = await ext.reportPage(tabId);
+    await expect(panel.locator('[data-notice="policy"] p')).toHaveText([COPY.notices.policy, COPY.policyFromStoredCopy]);
+    await page.bringToFront();
     await ui.clickButton(COPY.policyCancel);
     const stopped = await ext.settled(tabId, { until: (report) => report.status !== 'policy-notice' });
     expect(stopped.status).toBe('stopped');

@@ -1,7 +1,10 @@
 /*
  * The in-page UI, put together (docs/design/runtime.md §10.1): the host and its closed shadow root (shadow.ts), the one
- * stylesheet (styles.ts), the launcher, the notices and the policy card, and the highlights, all vanilla DOM. The
- * in-page review panel (content/ui/panel.tsx, the only React in the content script) arrives in Phase 6.
+ * stylesheet (styles.ts), the launcher, the notices and the policy card, and the highlights, all vanilla DOM; and the
+ * in-page review panel (panel.tsx, the only React in the content script), under the notices in the anchor's column,
+ * so it never covers the launcher or the card. While it is open the notice stack hides its plain notices (the panel
+ * shows them all); the card stays, since only it has the decision's buttons in the page. In a small embedded frame
+ * (panelFits false) the panel does not open: the runtime opens the side panel instead.
  * - The launcher and the notices sit at the form root's top-right corner in document coordinates, measured against the
  *   host, because fixed positioning would land off-screen in an embedded form whose iframe grows to fit its content.
  * - Everything is re-measured in one animation frame, throttled, on scroll (any scroller, caught in the capture phase),
@@ -17,9 +20,11 @@
  *   off-screen, in a zero-height wrapper) has a launcher that is not visible, which no check inside the frame can see.
  */
 import { log } from '../../shared/log';
+import type { FrameReport } from '../../shared/report';
 import { createHighlights, type HighlightItem } from './highlights';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
 import { createNotices, type NoticeCode, type PolicyChoice } from './notices';
+import { createInPagePanel, type InPagePanel, type PanelActions } from './panel';
 import { createUiHost } from './shadow';
 import type { StyleMode } from './styles';
 import { createVisibilityWatch } from './visible';
@@ -28,10 +33,16 @@ import { createVisibilityWatch } from './visible';
 export const LAUNCHER_PX = 32;
 const INSET_PX = 8;
 
+/** An embedded frame smaller than this (its own viewport, in CSS pixels) is too small for the in-page panel: the
+ *  launcher's Open review opens the side panel instead. The top frame always has room. */
+export const PANEL_MIN_VIEWPORT = { width: 420, height: 360 } as const;
+
 /** What the person's trusted clicks ask for. */
 export interface PageUiHandlers {
   onLauncher(action: LauncherAction): void;
   onPolicyChoice(choice: PolicyChoice): void;
+  /** The in-page panel's actions, for this frame's own fields, and this frame's id (none: no panel is made). */
+  panel?: PanelActions & { frameId(): number | null };
 }
 
 /** The mounted in-page UI. */
@@ -55,6 +66,15 @@ export interface PageUi {
   setHighlights(items: readonly HighlightItem[]): void;
   /** Outlines one field on request (field/focus), after the caller scrolled it into view; null removes it. */
   showFocus(elements: readonly Element[] | null): void;
+  /** The in-page panel (null when the handlers gave it no actions). */
+  readonly panel: InPagePanel | null;
+  /** Whether this frame has room for the in-page panel: the top frame always, an embedded one at PANEL_MIN_VIEWPORT. */
+  panelFits(): boolean;
+  /** Opens the in-page panel; false, and nothing opens, when the frame has no room for it or there is no panel. */
+  openPanel(): boolean;
+  closePanel(): void;
+  /** The tab's combined report (report/update), for the panel. */
+  updatePanel(reports: readonly FrameReport[]): void;
   /** Whether a person can see the launcher where it is drawn now (IntersectionObserver v2), once the watch knows; false
    *  when it is not known within the cap, or `signal` aborts. A frame its page hides answers false (S1). `fresh`: what
    *  the watch knew is forgotten first, so the answer is a notification that comes after this call (the check before
@@ -98,11 +118,30 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     });
   });
   anchor.append(launcher.el, notices.el);
+  // The outlines repeat what the report says; assistive technology reads the report, not them.
+  highlightLayer.setAttribute('aria-hidden', 'true');
   layer.append(highlightLayer, anchor);
   root.append(layer);
   const highlights = createHighlights(doc, highlightLayer);
   visibility.observe(launcher.el);
   for (const button of notices.cardButtons) visibility.observe(button);
+  const panelHandlers = handlers.panel;
+  const panel = panelHandlers === undefined ? null : createInPagePanel(doc, root, {
+    actions: panelHandlers,
+    frameId: () => panelHandlers.frameId(),
+    visibility,
+  });
+  if (panel !== null) anchor.append(panel.el);
+
+  const panelFits = () => {
+    if (view === null) return false;
+    if (view.top === view) return true;
+    return view.innerWidth >= PANEL_MIN_VIEWPORT.width && view.innerHeight >= PANEL_MIN_VIEWPORT.height;
+  };
+  const panelShown = (open: boolean) => {
+    notices.el.classList.toggle('with-panel', open);
+    schedule();
+  };
 
   let anchorRoot: Element | null = null;
   let frame: number | null = null;
@@ -187,6 +226,22 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       highlights.showFocus(elements);
       layout();
     },
+    panel,
+    panelFits,
+    openPanel() {
+      if (panel === null || !panelFits()) return false;
+      panel.show();
+      panelShown(true);
+      return true;
+    },
+    closePanel() {
+      if (panel === null) return;
+      panel.hide();
+      panelShown(false);
+    },
+    updatePanel(reports) {
+      panel?.update(reports);
+    },
     launcherShown(signal, fresh = false) {
       if (fresh) visibility.reset(launcher.el);
       return visibility.settled(launcher.el, signal);
@@ -195,6 +250,7 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     refresh: schedule,
     destroy() {
       lifetime.abort();
+      panel?.destroy();
       visibility.disconnect();
       resizes?.disconnect();
       if (frame !== null) view?.cancelAnimationFrame(frame);

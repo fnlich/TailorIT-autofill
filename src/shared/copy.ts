@@ -8,7 +8,7 @@
  * - Count sentences are small functions of the count. No sentence ever holds a field value: the report has none.
  * - The development build's capture tool has its own export, CAPTURE_COPY, so no production bundle carries its words.
  */
-import type { ConsentCategory, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
+import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
 import type { ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunStatus } from '../core/types/run';
 import type { FrameReport } from './report';
@@ -41,6 +41,8 @@ const NOTICES = {
   // The Phase 5 review (X-S8): a draft for the owner's review.
   'next-hidden': "This form went out of view on its page, so I didn't press Next. Scroll it into view, then press Next yourself or choose Continue.",
   'captcha-next': "This step still shows a check that you are human, so I won't press Next. Complete it, then press Next yourself.",
+  // Phase 6: said under the policy sentence, in the page's card and the panel's alike.
+  'policy-stored-copy': "This was found in TailorIT's saved copy of the posting.",
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -193,6 +195,21 @@ const PAUSE_REASONS = {
   'needs-click': 'The page needs your own click to go on. Make it, then choose Continue.',
 } as const satisfies Record<PauseReason, string>;
 
+/** The kinds of field, as the options page's counters name them. */
+const FIELD_KIND_NAMES = {
+  text: 'Text',
+  textarea: 'Text box',
+  select: 'List',
+  radio: 'Choice',
+  checkbox: 'Checkbox',
+  'checkbox-group': 'Checkboxes',
+  combobox: 'Dropdown',
+  multiselect: 'Multiple choice list',
+  'typeahead-remote': 'Search box',
+  date: 'Date',
+  file: 'File upload',
+} as const satisfies Record<FieldKind, string>;
+
 const PLATFORM_NAMES = {
   greenhouse: 'Greenhouse',
   lever: 'Lever',
@@ -208,7 +225,7 @@ const CHIPS = {
   blocked: 'Blocked',
 } as const satisfies Record<Exclude<FillStatus, 'skipped'>, string>;
 
-/** The report's own words (src/ui/report), shared by the side panel and, later, the in-page panel. */
+/** The report's own words (src/ui/report), shared by the side panel and the in-page panel. */
 const REPORT = {
   noLabel: '(no visible label)',
   required: 'Required',
@@ -218,6 +235,11 @@ const REPORT = {
   match: 'Match',
   confidence: 'Confidence',
   showOnPage: 'Show on page',
+  /** Phase 6: an AI draft waits for the person (wave 2 wires what it does). */
+  confirmDraft: 'Confirm draft',
+  draftMark: 'AI draft',
+  /** Phase 6: offered only after the person fixed a flagged field themselves (Requirement F; wave 2 wires the save). */
+  saveAnswer: 'Save my answer',
   showSuggestions: (count: number) => (count === 1 ? 'Show the closest option' : `Show the ${count} closest options`),
   hideSuggestions: 'Hide the options',
   suggestionsHeading: 'Closest options on the page',
@@ -257,6 +279,18 @@ const PANEL = {
   linkLost: 'The panel lost its link to the extension, so it is not updating.',
   reconnect: 'Reconnect',
   extensionGone: 'The extension was updated or removed. Close this panel and open it again.',
+  // Phase 6: the rows' Confirm draft and Save my answer.
+  draftConfirmed: 'Draft confirmed.',
+  confirmFailed: 'The draft could not be confirmed. Is the form still open?',
+  answerSaved: 'Your answer was saved in TailorIT.',
+  saveFailed: 'Your answer could not be saved. Try again.',
+} as const;
+
+/** The in-page review panel (src/content/ui/panel.tsx): the same report, in the page's closed root. */
+const IN_PAGE = {
+  region: 'TailorIT Autofill review',
+  close: 'Close the review',
+  loading: 'Loading the review…',
 } as const;
 
 /** What the person pre-approves on the options page: one entry per consent category, the core's closed list. */
@@ -317,7 +351,7 @@ const OPTIONS = {
     intro: 'Where the list of filled and flagged fields appears.',
     side: "The browser's side panel",
     inPage: 'A panel on the application page',
-    inPageLater: 'The panel on the page arrives in a later version. Until then the side panel shows the review, whichever you choose.',
+    inPageHelp: "The panel on the page opens from the launcher beside the form. On a form inside another site's page that is too small for it, the side panel opens instead.",
   },
   filling: {
     heading: 'Filling',
@@ -350,6 +384,38 @@ const OPTIONS = {
     twoOrMoreRaces: 'Answer "Two or More Races"',
     twoOrMoreRacesHelp: 'When you gave several races and the question takes one answer. The field stays flagged for you to check.',
   },
+  answers: {
+    heading: 'Your fixes',
+    offer: 'Offer to save my fixes',
+    offerHelp: 'When you fill or fix a flagged field yourself, the review offers to save your answer in TailorIT, so the same question is answered for you next time. Self-identification, work authorization, sponsorship, pay and consent answers are never saved.',
+  },
+  telemetry: {
+    heading: 'Anonymous counters',
+    intro: 'Counts of how well filling works, kept only in this browser. They are never sent anywhere.',
+    optIn: 'Keep anonymous counters',
+    optInHelp: 'Each field the extension fills, or leaves for you, adds one to a count of these five things, and nothing else:',
+    fields: {
+      platform: 'the site: Greenhouse, Lever, Ashby or Workday;',
+      fieldKind: 'the kind of field: a text box, a list, a checkbox and so on;',
+      matcherStage: 'how its answer was matched: exactly, by a known alias, by a close match and so on;',
+      outcome: 'whether it was filled or left for you;',
+      tripwireTriggered: 'whether the page held text addressed to AI tools.',
+    },
+    never: 'No question, answer, address, account, time or version is counted.',
+    caption: 'Counts so far',
+    columns: { platform: 'Site', fieldKind: 'Field kind', matcherStage: 'Match', outcome: 'Outcome', tripwireTriggered: 'Text for AI tools', count: 'Count' },
+    outcomes: { success: 'Filled', fail: 'Left for you' },
+    yes: 'Yes',
+    no: 'No',
+    empty: 'Nothing has been counted.',
+    loading: 'Reading the counters…',
+    unreadable: 'The counters could not be read. Close this tab and open the settings again.',
+    export: 'Export as JSON',
+    exportName: 'tailorit-autofill-counters.json',
+    clear: 'Clear the counters',
+    cleared: 'The counters were cleared.',
+    clearFailed: 'The counters could not be cleared. Try again.',
+  },
   data: {
     heading: 'Saved runs',
     intro: 'So that an application with several steps can continue after a reload, the extension keeps notes on each run for 24 hours: steps, field keys and counts, never your answers.',
@@ -370,8 +436,8 @@ export const COPY = {
   /** The policy card's two buttons (in the page and in the side panel). */
   policyFillAnyway: 'Fill anyway',
   policyCancel: 'Cancel',
-  /** Under the page's policy card when only TailorIT's saved copy of the posting said it. */
-  policyFromStoredCopy: "This was found in TailorIT's saved copy of the posting.",
+  /** Under the policy sentence when only TailorIT's saved copy of the posting said it (the page's card and the panel's). */
+  policyFromStoredCopy: NOTICES['policy-stored-copy'],
   // The in-page UI (src/content/ui): the launcher's name in each state (its tooltip and accessible name), a notice's
   // dismiss button, and the highlights' chips. Drafts from the content runtime, for the owner's review.
   launcherFill: 'Fill this application with TailorIT',
@@ -395,8 +461,10 @@ export const COPY = {
   runStatuses: RUN_STATUSES,
   pauseReasons: PAUSE_REASONS,
   platforms: PLATFORM_NAMES,
+  fieldKinds: FIELD_KIND_NAMES,
   report: REPORT,
   panel: PANEL,
+  inPage: IN_PAGE,
   options: OPTIONS,
 } as const;
 

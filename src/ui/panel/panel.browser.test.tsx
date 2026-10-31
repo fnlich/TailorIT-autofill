@@ -110,6 +110,34 @@ describe('the review panel', () => {
     expect(root.textContent).not.toContain('Bachelor of Science');
   });
 
+  it('sends Confirm draft and Save my answer for that row’s frame and key, and says what came of each', async () => {
+    const worker = createFakeWorker();
+    worker.script.reports.set(5, [frameReport(3, { platform: 'greenhouse', adapter: 'greenhouse', fields: [
+      row('why', { kind: 'textarea', category: 'freeText.whyCompany', status: 'flagged', provenance: 'llm-draft',
+        reason: 'llm-draft-needs-confirmation', needsUserAction: true }),
+      row('notice', { category: 'screening.other', status: 'flagged', provenance: null, reason: 'unknown-field',
+        needsUserAction: true, wrote: false, detail: { userEdited: true } }),
+    ] })]);
+    const root = await open(worker, 5);
+    // Until wave 2 the worker answers both not_implemented: the panel says they did not work.
+    await click(button(root, COPY.report.confirmDraft));
+    expect(root.textContent).toContain(COPY.panel.confirmFailed);
+    await click(button(root, COPY.report.saveAnswer));
+    expect(root.textContent).toContain(COPY.panel.saveFailed);
+    worker.on('panel/confirmDraft', () => ({ ok: true, data: {} }));
+    worker.on('panel/saveAnswer', () => ({ ok: true, data: {} }));
+    await click(button(root, COPY.report.confirmDraft));
+    expect(root.textContent).toContain(COPY.panel.draftConfirmed);
+    await click(button(root, COPY.report.saveAnswer));
+    expect(root.textContent).toContain(COPY.panel.answerSaved);
+    expect(actions(worker)).toEqual([
+      { v: 1, type: 'panel/confirmDraft', tabId: 5, frameId: 3, fieldKey: 'why' },
+      { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
+      { v: 1, type: 'panel/confirmDraft', tabId: 5, frameId: 3, fieldKey: 'why' },
+      { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
+    ]);
+  });
+
   it('keeps the toolbar’s Continue for pauses: a frame at the policy card gets only its own card’s decision', async () => {
     // Frame 0 waits at a CAPTCHA pause, frame 3 at the policy card.
     const worker = createFakeWorker();

@@ -3,13 +3,16 @@
  * pins that tab). It follows a tab (tab.ts), shows its reports live (reports.ts) and mounts the report components.
  *
  * - Top: the connection (auth/status), then Fill, Dry run, Continue and Cancel (panel/fill {tabId, dryRun},
- *   panel/continue, panel/cancel), the run's status and step, and what the last button did.
+ *   panel/continue, panel/cancel), the run's status and step (the adapter's progress line where the report has one),
+ *   and what the last button did.
  * - The report: the notices mirrored from the page (the tripwire's exact sentence, the policy card, the couldn't-read
  *   notice), then the rows. A run at policy-notice waits for its card: Fill anyway and Cancel send
  *   panel/policyDecision {tabId, frameId, decision} for the frame whose report is at policy-notice, which that frame
  *   treats exactly as its own card's buttons. The toolbar's Continue only resumes pauses: it never fills past a card.
  * - Per row: Show on page (panel/focus); opening a row asks for its suggested options (panel/describe), shown only while
- *   the row is open. Confirm draft and Save my answer arrive in Phase 6.
+ *   the row is open; Confirm draft on an AI draft that waits (panel/confirmDraft {tabId, frameId, fieldKey}); Save my
+ *   answer on a flagged row the person fixed (panel/saveAnswer {tabId, frameId, fieldKey}). The worker answers those
+ *   two not_implemented until Phase 6's wave 2 wires them, and the panel says they did not work.
  *
  * It never shows or receives a field value: reports hold none, and describe's option labels stay in the open row.
  */
@@ -20,8 +23,7 @@ import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { request } from '../page/request';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
-import { Report } from '../report/Report';
-import { overallStatus } from '../report/model';
+import { Report, RunStatusLine } from '../report/Report';
 import { useTabReports, type LinkState } from './reports';
 import { useFollowedTab } from './tab';
 
@@ -35,6 +37,7 @@ export interface PanelProps {
 
 type RunMessage = Extract<PageMessage, { type: 'panel/fill' | 'panel/continue' | 'panel/cancel' }>;
 type DecisionMessage = Extract<PageMessage, { type: 'panel/policyDecision' }>;
+type RowMessage = Extract<PageMessage, { type: 'panel/confirmDraft' | 'panel/saveAnswer' }>;
 
 /** What a refusal means to the person. */
 function refusalOf(error: Exclude<Answer<unknown>, { ok: true }>['error']): string {
@@ -95,8 +98,16 @@ export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
     setFeedback({ tabId: message.tabId, text: decisionFeedbackOf(message, answer) });
   };
 
-  const status = overallStatus(reports);
-  const step = reports.find((report) => report.status === status)?.step;
+  /** A row's Confirm draft or Save my answer, for that frame's field. */
+  const act = async (message: RowMessage) => {
+    setBusy(true);
+    const answer = await request(platform, message);
+    setBusy(false);
+    const confirm = message.type === 'panel/confirmDraft';
+    setFeedback({ tabId: message.tabId, text: answer.ok ? (confirm ? COPY.panel.draftConfirmed : COPY.panel.answerSaved)
+      : (confirm ? COPY.panel.confirmFailed : COPY.panel.saveFailed) });
+  };
+
   const disabled = tabId === null || busy;
 
   return (
@@ -120,12 +131,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
             onClick={() => void run({ v: 1, type: 'panel/cancel', tabId })}>{COPY.panel.cancel}</button>
         </div>
       )}
-      {status !== null && (
-        <p className="tia-status" data-run-status={status}>
-          {COPY.runStatuses[status]}
-          {step && ` · ${COPY.report.step(step.index, step.of)}`}
-        </p>
-      )}
+      <RunStatusLine reports={reports} />
       {feedback !== null && feedback.tabId === tabId && <p className="tia-feedback" role="status">{feedback.text}</p>}
       {tabId !== null && (
         <Report
@@ -142,6 +148,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now }: PanelProps) {
             const answer = await request(platform, { v: 1, type: 'panel/describe', tabId, frameId, fieldKey });
             return answer.ok ? answer.data.options : null;
           }}
+          onConfirmDraft={(frameId, fieldKey) => void act({ v: 1, type: 'panel/confirmDraft', tabId, frameId, fieldKey })}
+          onSaveAnswer={(frameId, fieldKey) => void act({ v: 1, type: 'panel/saveAnswer', tabId, frameId, fieldKey })}
         />
       )}
     </main>

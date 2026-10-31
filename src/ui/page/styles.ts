@@ -49,6 +49,13 @@ body { margin: 0; }
   border-radius: 6px; font-size: 13px; background: var(--tia-card);
 }
 .tia-capture { max-width: 640px; margin: 0 auto; padding: 24px 20px; }
+.tia-page a.tia-button { display: inline-block; color: var(--tia-fg); text-decoration: none; }
+.tia-list { margin: 4px 0 6px; padding-left: 20px; font-size: 13px; color: var(--tia-muted); }
+.tia-table-wrap { max-width: 100%; overflow-x: auto; margin: 10px 0 0; }
+.tia-table { border-collapse: collapse; font-size: 13px; }
+.tia-table caption { text-align: left; font-weight: 600; margin: 0 0 4px; }
+.tia-table th, .tia-table td { padding: 3px 10px 3px 0; border-bottom: 1px solid var(--tia-line); text-align: left; }
+.tia-table__count { text-align: right; font-variant-numeric: tabular-nums; }
 `;
 
 /** Applies the report's stylesheet and the pages' layout to an extension page's document. */

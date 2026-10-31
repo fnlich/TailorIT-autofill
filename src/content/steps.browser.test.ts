@@ -138,7 +138,8 @@ describe('auto-advance off: each step filled, then the person moves on', () => {
       expect(state.stepIndex).toBe(0);
       expect(state.stepAttempts).toEqual({ [state.stepSignature!]: 1 });
       expect(state.filledFieldKeys[state.stepSignature!]).toHaveLength(3);
-      expect(lastReport(worker).step).toEqual({ index: 0 });
+      // The adapter's progress line rides with the step (Phase 6), as the page shows it.
+      expect(lastReport(worker).step).toEqual({ index: 0, progress: 'Step 1 of 4' });
       for (const label of ['Full name', 'Email', 'Phone']) {
         expect(rowIn(lastReport(worker), 'your-details', label)).toMatchObject({ status: 'verified', wrote: true });
       }

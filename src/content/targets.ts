@@ -25,8 +25,9 @@ export function highlightItems(fresh: ScanResult, rows: ReadonlyMap<FieldKey, Fi
     if (row.status === 'skipped') continue;
     const target = fresh.target(key);
     if (target === null) continue;
-    items.push({ key, status: row.status, draft: row.provenance === 'llm-draft', removeSelection: removeSelection.has(key),
-      elements: elementsOf(target) });
+    const draft = row.provenance === 'llm-draft';
+    items.push({ key, status: row.status, draft, ...(draft && !row.needsUserAction ? { draftConfirmed: true } : {}),
+      removeSelection: removeSelection.has(key), elements: elementsOf(target) });
   }
   return items;
 }

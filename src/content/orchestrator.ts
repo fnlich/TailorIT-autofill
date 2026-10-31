@@ -284,6 +284,10 @@ export class FillRun {
   private lastErrors = 0;
   /** The policy card at the first scan said only TailorIT's stored copy carried the statement. */
   private fromStoredCopy = false;
+  /** The step's progress line as the adapter read it at the last scan ("Step 2 of 4"), for the report; null: none. */
+  private stepProgress: string | null = null;
+  /** The progress line the latest signature read. */
+  private progressRead: string | null = null;
   /** The run handed over: it ended so that a fresh one could start (Fill anyway after a later pass's hit). */
   private halted = false;
   private offered = false;
@@ -416,10 +420,10 @@ export class FillRun {
     if (!this.controller.signal.aborted) this.env.ui()?.setLauncher(view);
   }
 
-  /** The notices the stack shows: the report's, but the policy notice, which the card is. */
+  /** The notices the stack shows: the report's, but the policy notice and its stored-copy line, which the card is. */
   private showNotices(): void {
     if (this.controller.signal.aborted) return;
-    this.env.ui()?.setNotices(this.notices.codes().filter((code) => code !== 'policy'));
+    this.env.ui()?.setNotices(this.notices.codes().filter((code) => code !== 'policy' && code !== 'policy-stored-copy'));
   }
 
   private drawHighlights(): void {
@@ -531,7 +535,8 @@ export class FillRun {
       const report = buildReport({ runId, frameId: this.frameId, platform: page.app.platform, adapter: page.adapter.id,
         dryRun: this.request.dryRun, status: this.status, pauseReason: this.machine?.pauseReason ?? null,
         notices: this.notices, counters: this.counters, now: this.env.now(),
-        ...(this.stepped && this.machine !== null ? { step: { index: this.machine.stepIndex } } : {}) }, rows);
+        ...(this.stepped && this.machine !== null
+          ? { step: { index: this.machine.stepIndex, progress: this.stepProgress ?? undefined } } : {}) }, rows);
       if (report === null) throw new RunFailure('internal');
       return { v: 1, type: 'report/put', runId, report };
     }, () => this.env.limiter.turn(this.controller.signal));
@@ -649,6 +654,7 @@ export class FillRun {
     } catch {
       parts = undefined;
     }
+    this.progressRead = parts?.progress ?? null;
     return stepSignature(parts ?? { anchors: [] });
   }
 
@@ -834,6 +840,8 @@ export class FillRun {
       if (!gate.blocked && gate.unreadable) this.notices.add('policy-unreadable');
     }
     if (policyHits > 0) this.notices.add('policy');
+    // The card says when only TailorIT's saved copy held the statement, and so does the panel's (Phase 6).
+    if (policyHits > 0 && first && this.fromStoredCopy) this.notices.add('policy-stored-copy');
     this.showNotices();
     const raw = await rawScan(env.doc, { signal: this.controller.signal });
     this.alive();
@@ -850,7 +858,9 @@ export class FillRun {
     }
     const hits = Math.max(0, this.tripwireHits - this.hitsCounted);
     this.hitsCounted = this.tripwireHits;
-    return { type: 'SCANNED', signature: this.signatureNow(), policyHits, tripwireHits: hits, canaries: this.sent };
+    const signature = this.signatureNow();
+    this.stepProgress = this.progressRead;
+    return { type: 'SCANNED', signature, policyHits, tripwireHits: hits, canaries: this.sent };
   }
 
   /** fill-step: the repeatable sections, the reactive loop and the final Guard (module header, 5). */

@@ -164,6 +164,7 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
 | `report/put` | `runId`, `report` (`FrameReport`) | `{}` | `expired`. `bad_message`: the report names another run or frame. `rate_limited`: 4 a second per frame |
 | `policy/hit` | `applicationKey`, `patternId` (null: the posting page was read and is clear) | `{}` | `rate_limited`: 10 in 10 s per frame, counted before anything else. `bad_message`: an id that is not `[a-z0-9.-]{1,40}`, or a key that is not the frame's |
 | `panel/open` | none | `{}`, once the side panel opened for the sender's tab | `unavailable`: the browser refused (the toolbar button still opens it) |
+| `panel/shown` (Phase 6) | `open`: the in-page panel opened (`true`) or closed (`false`) in this frame, on the person's trusted click | `{}` (`DoneAnswerSchema`). Open: the worker keeps the frame as the tab's panel frame (`panel-frame:<tabId>`: its frame id and document) and, with the in-page panel chosen, sends it the tab's reports at once (`report/update`). Closed: the record goes when it is this frame's | `rate_limited`: `PANEL_SHOWN_LIMIT` (10 in 10 s) per frame. `bad_message`: anything but `open` |
 
 - **What the worker does with each:**
   - `frame/hello` registers the frame by origin and platform, never its address. A frame that says hello from another document loses the report and runs of the document it left; what the new document began before its hello stays.
@@ -218,10 +219,10 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
 | `run/policyDecision {decision}` (`fill` or `cancel`) | `panel/policyDecision`: to that one frame, while its report is at `policy-notice` | `{}` once the decision settled its policy card (`fill` is Fill anyway, `cancel` is Cancel); `expired` when no run there waits at the card (`DoneAnswerSchema`) |
 | `field/focus {fieldKey}` | `panel/focus` | `{}` |
 | `field/describe {fieldKey}` | `panel/describe` | `{options: [{index, label}]}` (`FieldDescribeAnswerSchema`, at most 3): the visible labels of the row's suggested options, passed to the panel and never stored |
-| `report/update {reports}` | every report change while the in-page panel is chosen (`settings.panel: 'in-page'`): to each of the tab's frames that reported. A frame whose panel is closed ignores it | `{}` (not read) |
+| `report/update {reports}` | Phase 6: at the frame's `panel/shown {open: true}` and on every change of the tab's reports, while the in-page panel is chosen (`settings.panel: 'in-page'`): to the tab's panel frame alone, and only while its document is the registered one (the record goes with that document, the tab, or the frame's `panel/shown {open: false}`). Before Phase 6 every frame that reported received it, so one ATS frame saw the labels another frame of the tab reported; now only the frame the person opened the panel in does. A frame whose panel is closed keeps nothing of it | `{}` (not read) |
 | `settings/changed {settings}` (`ContentSettingsSchema`: panel placement, auto-advance, the AI switches, as `frame/hello` gives them) | `settings/save` stored new settings: to every registered frame, of every tab, that has a form (the Phase 5 review, C-S2). A frame that cannot be reached is skipped; its next run reads them at `run/begin` | `{}` (`DoneAnswerSchema`). The frame's run reads auto-advance from it from now on |
 | `frame/ping` | another frame of the tab said hello from a new document: is this document still there? (`frame/hello` above) | `{pong: true}` (`PingAnswerSchema`); any answer counts |
-| `draft/confirm`, `answer/read` | Phase 6 | |
+| `draft/confirm`, `answer/read` | Phase 6, wave 2 | |
 
 **Extension pages → worker** (`runtime.sendMessage`; the sender must be one of this extension's pages).
 
@@ -234,7 +235,7 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
 | `panel/focus {tabId, frameId, fieldKey}` | `{}` | `expired`: that frame is not registered. `unavailable`: it did not answer |
 | `panel/describe {tabId, frameId, fieldKey}` | `{options}` (`FieldDescribeAnswerSchema`) | `expired`, `unavailable` (no answer, or one that fails the schema) |
 | `panel/reports {tabId}` | `{tabId, reports}` (`TabReportsAnswerSchema`): the tab's reports, one per frame, by frame id, as known when asked. It also starts the tab's frame check, whose removals reach the panel port | none |
-| `panel/confirmDraft`, `panel/saveAnswer` | none: `not_implemented` until Phase 6 | |
+| `panel/confirmDraft {tabId, frameId, fieldKey}`, `panel/saveAnswer {tabId, frameId, fieldKey}` | none yet: `not_implemented` until Phase 6's wave 2. The side panel sends them from a row's Confirm draft and Save my answer, and says when they did not work | |
 | `settings/get` | `{settings}` (`SettingsAnswerSchema`): the stored settings, or the defaults when none parse | none |
 | `settings/save {settings}` | `{settings}`, as stored in `storage.local` (`settings:v1`), once `settings/changed` went to the frames with a form | `bad_message` |
 | `auth/status` | `AuthStatusSchema`: `connection` (`connected`, `not-connected`, `expired`, `revoked`), `account` (name and email, read from `GET /session` into memory), `scopes`, `expiresAt`, `storageAccess` (`pending`, `restricted`, `refused`), `versionMismatch`, `pairingExpiresAt` | none |
@@ -242,6 +243,8 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
 | `auth/redeemCode {code}` | the new `AuthStatusSchema` | `bad_message`: not a code. `expired`: TailorIT answered 401 (wrong, used or expired). `rate_limited`, `unavailable` |
 | `auth/disconnect` | the new `AuthStatusSchema`. The token is forgotten at once, then revoked on TailorIT (`DELETE /session`, best effort) | none |
 | `runs/clear` | `{cleared}` (`RunsClearAnswerSchema`): every RunState and tab index removed | none |
+| `telemetry/get` (Phase 6) | `{counts}` (`TelemetryAnswerSchema`): the anonymous counts in `storage.local`, one per combination of the five fields, each `{platform, fieldKind, matcherStage, outcome, tripwireTriggered, count}` and nothing else; none before the person opted in | none |
+| `telemetry/clear` (Phase 6) | `{counts: []}` (`TelemetryAnswerSchema`), once every count is removed | none |
 
 - **The policy card in the side panel** (agreed with the content runtime): each frame whose run is at `policy-notice` gets a card of its own, and its Fill anyway and Cancel send `panel/policyDecision {tabId, frameId, decision: 'fill' | 'cancel'}` for that frame.
   - The worker sends it on as `run/policyDecision {decision}` to that one frame, and only while the frame's report is at `policy-notice`. The frame treats it exactly as its own card's buttons: `fill` is Fill anyway, `cancel` is Cancel.
@@ -263,7 +266,7 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
   - redeem's own: `expired`, `rate_limited`, `unavailable`.
 
 **Where the worker keeps things** (value-free unless stated; the token only in IndexedDB):
-- `storage.local`: `settings:v1`; `run:<applicationKey>`.
+- `storage.local`: `settings:v1`; `run:<applicationKey>`; `telemetry:v1` (Phase 6, only once the person opted in): `{counts}`, the anonymous counts.
 - `storage.session`:
   - `frames:<tabId>:<frameId>` and `report:<tabId>:<frameId>`;
   - `tabrun:<tabId>`;
@@ -271,6 +274,7 @@ Every shape is a strict zod schema in `src/messaging/schemas.ts`; this section s
   - `policy:<applicationKey>`: pattern ids, and whether a clean reading was seen; at most 200;
   - `policy-order`: the application keys that hold a policy record, least recently used first;
   - `pairing`: the pending state and its expiry;
+  - `panel-frame:<tabId>` (Phase 6): the frame that shows the tab's in-page panel, `{frameId, documentId}`;
   - `aitasks` (Phase 4): the AI tasks' ids by application and batch name (ids and hashes only; a pick batch's name hashes no profile text, its profile revision instead: the Phase 4 review, R7), each for TailorIT's hour, at most 720; folded into the application's `RunState.aiTasks` at every `runstate/put`, which `storage.local` keeps for RunState's 24 hours.
 - IndexedDB `tailorit` › `secrets` › `auth`: the token, its id, expiry and scopes. The account's name and email stay in memory.
 - Memory only: the profile and its sensitive part (dropped after 5 idle minutes, or when the token changes), each run's lookup, and the resume's bytes.
@@ -865,6 +869,25 @@ export interface Profile {
       - each options input: `data-setting` (`autoAdvance`, `panel.side`, `panel.in-page`, `consent.<category>`, `llm.tiebreak`, `llm.classify`, `llm.drafts`, `interpretations.<name>`);
       - the disclosure: `data-disclosure`; the pairing line: `data-pairing` (`waiting` or `lapsed`).
     - **The capture page** (development builds only) is `src/entrypoints/capture`, with its logic in `src/ui/capture`. [docs/design/runtime.md](design/runtime.md) §11.g describes it as built.
+  - **As built (Phase 6, wave 1: the review UI):** what follows holds over the Phase 2 notes where they differ.
+    - **The report** (`src/ui/report`):
+      - each frame's head shows its run status and step, the step as the adapter's progress line where the report has one (`FrameReport.step.progress`: the adapter's `stepSignature().progress`, visible page text, whitespace collapsed, at most `MAX_STEP_PROGRESS` (120) characters, read at the step's scan), else "Step N"; `RunStatusLine` shows the most urgent run's status and step the same way above the report, in the side panel and the in-page panel;
+      - row actions, each drawn only when the container passes its callback: Show on page; the closest options; **Confirm draft** (`onConfirmDraft(frameId, fieldKey)`) on an `llm-draft` row that still needs the person; **Save my answer** (`onSaveAnswer(frameId, fieldKey)`) only on a row the run left `flagged` whose `detail.userEdited` is true (the person changed the field with their own input; the content runtime sets it, wave 2), never on a file, nor on a class whose saved answers are `never` (sensitive, legal, EEO, consent, attention). `actionsFrameId` limits the actions to one frame's rows (the in-page panel's own). `busy` holds them while a request is on its way;
+      - an AI draft's row is dashed and marked "AI draft" (`data-draft="true"`); a required field's star is drawn for the eye with "Required" for a screen reader;
+      - **the policy notice reads the same in the page and the panel**: when only TailorIT's saved copy of the posting held the statement, the report carries the notice `policy-stored-copy` beside `policy` (the orchestrator adds it at the first scan), and the panel's card, like the page's, says `COPY.policyFromStoredCopy` under its sentence; it is never a notice of its own. The tripwire banner is `COPY.notices.tripwire` in both;
+      - the side panel sends Confirm draft and Save my answer as `panel/confirmDraft` and `panel/saveAnswer {tabId, frameId, fieldKey}`, and says what came of each (`COPY.panel.draftConfirmed`, `confirmFailed`, `answerSaved`, `saveFailed`).
+    - **The in-page panel** (`src/content/ui/panel.tsx`, the one React file in `content`; `createInPagePanel`):
+      - the same report components, mounted lazily in the page UI's closed root (React's `createRoot` at the first open, `flushSync` renders, so it shows exactly what it was last given), which adopts `REPORT_CSS` beside the page UI's own sheet; its frame (`.panel`, in `UI_CSS`) uses the report's colour tokens;
+      - it sits in the anchor's column under the launcher and the notices, so it never covers the launcher or the policy card (their clicks count only while seen); 380 px wide, at most 70% of the viewport high, scrolling inside;
+      - it opens from the launcher's Open review when `settings.panel` is `'in-page'` (the content runtime reads it from `frame/hello` and each `settings/changed`; choosing the side panel closes it) and the frame has room for it (`panelFits`: the top frame always, an embedded frame from `PANEL_MIN_VIEWPORT`, 420 × 360 CSS px); otherwise Open review opens the side panel as before (`content.panel-collapsed`). Opening sends `panel/shown {open: true}`; its Close button (`aria-label` `COPY.inPage.close`) sends `panel/shown {open: false}`;
+      - until the worker's `report/update` arrives it says `COPY.inPage.loading`; a closed panel keeps no report; a `report/update` that does not parse is refused whole (`bad_message`) and the panel keeps what it showed;
+      - its row actions are this frame's alone (`actionsFrameId`): Show on page and the closest options run the runtime's own `field/focus` and `field/describe` paths; other frames' rows are shown without actions. It never draws the policy card's buttons: the page's own card has them;
+      - **trusted clicks only**: a capture listener on the panel stops every untrusted click before React hears it. Confirm draft and Save my answer (wave 2 passes `confirmDraft` and `saveAnswer`) also need the panel seen at the click (IntersectionObserver v2 on the panel, as the launcher's clicks do), else `content.ui-click-refused`;
+      - while it is open the notice stack hides its plain notices (`.notices.with-panel`), which the panel shows; the card stays.
+    - **Highlights:** the status colours are `src/shared/palette.ts`'s (`STATUS_COLOURS`), the report's own, so a status reads the same on the page and in the panel; one colour and chip per status; drafts dashed, their chip `COPY.draftChip` until the draft is confirmed (`draftConfirmed`), then the status's chip; the highlight layer is `aria-hidden`, since the report says the same.
+    - **The options page:** "Your fixes", the offer to save answers (`data-setting="offerToSaveAnswers"`, on by default); "Anonymous counters" (below: Telemetry), with its opt-in (`data-setting="telemetry.optIn"`, off) listing the five fields counted (`data-telemetry-fields`), the counts kept in this browser as a table (`data-telemetry="counts"`, or `"empty"`), Export (`a[download]` with a `data:application/json` address built from what the page read: `{fields, counts}`; `data-telemetry-export`) and Clear (`telemetry/clear`). The panel placement's note now says when the side panel opens instead.
+    - **Test hooks** added: a row's `data-draft`; a row button's `data-action` (`show-field`, `suggestions`, `confirm-draft`, `save-answer`); the policy notice's `data-notice-source="stored-copy"`; the in-page panel's `data-panel="in-page"`.
+    - **The accessibility check:** `e2e/specs/95-accessibility.spec.ts` runs `@axe-core/playwright` over the report page after a trap run and over the options page with counts showing: no serious or critical violation.
 
 ## TailorIT's side (branch `autofill`, in its worktree; the full design, with DDL and route table, becomes `docs/design/tailorit.md`)
 - **Contract** (`packages/shared/src/autofill/`, imported as `@tailorit/shared/autofill`, not in the root barrel):
@@ -933,6 +956,12 @@ export interface Profile {
   - They store option labels (never indices), text, or a checked state. A file answer is refused with 400.
   - EEO, legal, pay, consent and attention-check questions are refused: those live only in the profile.
 - **Telemetry:** anonymous counters (platform, field kind, matcher stage, outcome, tripwire yes or no), kept in the extension, off by default, shown and exportable on its options page. No server telemetry: on a single-user install a server row could never be anonymous.
+  - **As built (Phase 6, wave 1):** `src/core/telemetry/events.ts` (pure) and `src/background/telemetry.ts`.
+    - **An event** (`TelemetryEvent`, `src/core/types/telemetry.ts`) has exactly the five fields, `platform`, `fieldKind`, `matcherStage`, `outcome` (`success` | `fail`) and `tripwireTriggered`; `telemetryEventsOf` builds each field by field from a row's kind, matcher stage and status, the frame's platform and whether its report holds the tripwire notice, so nothing else a row carries can ride along. `isTelemetryEvent` refuses an object with any other key or a value outside its closed list.
+    - **Outcome:** filled and verified are a success, flagged and blocked a fail; a skipped field was never attempted and is not counted.
+    - **Where they come from:** each `report/put` while `settings.telemetry.optIn` is on; a dry run counts nothing; a row is counted once per run (a report that replaces its frame's earlier one for the same run counts only the keys that one did not hold).
+    - **Where they are kept:** `storage.local` `telemetry:v1`, `{counts}`: one entry per combination of the five (`addEvents`; at most `MAX_TELEMETRY_COUNTS`, 1,408), each the five fields and a `count`, rebuilt from its five fields on every read, so a stored entry with anything more is dropped. Opting out stops the counting and keeps what was counted until the person clears it. Nothing is ever sent: only the options page reads them (`telemetry/get`), exports them as a file of its own making and clears them (`telemetry/clear`).
+    - **Departures from docs/design/core.md §2.10:** the event has no `v` field (the brief's "exactly five fields"), and the counts are not kept per day: a day beside each count would be a sixth field.
 - **Migrations:**
   - New tables go in a new range, 08xx: `0801_extension_tokens` (with the connect codes and their scopes), `0802_autofill_profiles`, and `0803_autofill_saved_answers`. 0803's `field_kind` check lists `checkbox` but not `file`.
   - The `ai_tasks` rebuild for the new kinds is `0004`, in the range of the area it changes (DEVELOPMENT.md's rule). All three kinds are reserved at once; its shape is chosen at the Phase 3 stop (Risk 11).
