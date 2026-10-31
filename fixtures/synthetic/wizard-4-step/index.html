@@ -1,0 +1,295 @@
+<!doctype html>
+<!--
+  Synthetic: a 4-step application wizard (docs/SPEC.md Requirement C; docs/ARCHITECTURE.md "Testing" › "Synthetic
+  fixtures"; docs/design/runtime.md §8.4 to §8.6 and §8.9), drawn as a single-page wizard: one form, four step sections
+  of which one is shown at a time, a "Step N of 4" progress line, a Next button on every step but the last, and the
+  final Submit on the last. Plain markup with a small page script, which reacts only to clicks on the wizard's own
+  buttons, to the "I currently work here" boxes' change events and to the browser's own Back and Forward (popstate). It
+  dispatches no event and never focuses, scrolls, clicks or submits anything: every event on a form control is the
+  extension's or the person's.
+  Served at https://jobs.lever.co/tailorit-fixture/wizard-4-step/apply, and at .../wizard-4-step-<case>/apply (one
+  application per e2e case), on the reserved fixture board. The generic adapter knows no steps, so in e2e builds the
+  e2e-only test adapter (src/adapters/test/wizard.ts) handles these addresses: the step signature, Next, Submit, the
+  final step and the repeatable sections, each read from the markup below. The form posts to /__submitted. Its
+  DOM-level expectations are index.expect.json, beside it.
+
+  The steps (each a section.step with data-step and data-step-id; the others carry the hidden attribute):
+  1. "Your details" (details): Full name, Email, Phone.
+  2. "Experience" (experience): one position block shown (Company, Job title, Start date, End date, then "I currently
+     work here", placed after the end date), and "Add another position", a <button type="button"> that adds one more
+     block on every click, trusted or not, built afresh from a template. Ticking a block's "I currently work here"
+     disables its End date and clears it; unticking enables it again.
+  3. "Education" (education): no school block, and "Add education", a typeless <button> inside the form. A typeless
+     button in a form is a submit button, so assertNotSubmit refuses its click and the extension never makes one. The
+     page also ignores an untrusted click on it, and cancels every click on it, so it never submits: a person's click
+     adds a school block (School, Degree, Field of study, Start date, End date). Then, under "Additional questions",
+     "Which shift pattern would you prefer?": a required select that no part of a profile answers.
+  4. "Review" (review): no field; how many answers each earlier step holds (counts only, never a value), Back, and the
+     final Submit, <button type="submit" id="submit">Submit application</button>.
+  Next (<button type="button" data-action="next">Next</button>) shows the next step and puts it in the address as
+  #step-N with history.pushState (the first step has no fragment); Back (type="button") shows the one before. On load
+  the page shows the step its address names, so a reload stays on its step. Nothing checks the answers before Next: a
+  step with a blank required field still moves on, as the extension's review, not the page, is under test. The form
+  has autocomplete="off", so the browser restores no value after a reload: every load starts blank.
+
+  window.__wizard keeps what the page saw: `step`, the step shown; `shown`, every step shown, in order (the one shown
+  at load first); `next`, each Next click as {step, trusted}; `back`, each Back click the same way; `added`, the blocks
+  each Add added ({experience, education}); `ignored`, the untrusted clicks "Add education" ignored.
+
+  With the golden "Alex Rivera" profile (fixtures/profiles): step 1's three fields are written and verified. On step 2
+  one click on "Add another position" (two positions in the profile, one block shown); the first block gets the current
+  job (Quillfeather Labs, Senior Software Engineer, from 2021-06; "I currently work here" ticked, so its End date is
+  disabled and left blank) and the second the earlier one (Marrowgate Systems, Software Engineer, 2019-07 to 2021-05;
+  the box left unticked). On step 3 "Add education" is refused, flagged needs-your-click (the profile's school is the
+  person's to add), and the shift question is left blank and flagged. Step 4 is the final step: nothing is pressed
+  there, and Submit never is.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Engineer - Application</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px 200px; }
+    h2 { margin: 20px 0 4px; font-size: 20px; }
+    h3 { margin: 24px 0 4px; font-size: 17px; }
+    .progress { margin: 0; font-weight: 600; }
+    .steps { display: flex; gap: 16px; margin: 4px 0 0; padding: 0; list-style: none; color: #555; }
+    .steps [aria-current="step"] { color: #222; font-weight: 600; text-decoration: underline; }
+    form label { display: block; margin-top: 12px; font-weight: 600; }
+    form label.check { font-weight: 400; }
+    input:not([type="checkbox"]), select { display: block; width: 100%; box-sizing: border-box; padding: 6px;
+      border: 1px solid #888; background: #fff; color: #222; }
+    input:disabled { background: #eee; color: #555; }
+    .block { margin-top: 16px; padding: 8px 12px 12px; border: 1px solid #bbb; }
+    .block-title { margin: 0; font-weight: 600; }
+    .actions { display: flex; gap: 12px; margin-top: 24px; }
+    .actions button, .add { padding: 6px 18px; border: 1px solid #555; background: #f4f4f4; color: #222; }
+    .add { margin-top: 12px; }
+    .actions button[data-action="next"], .actions button[type="submit"] { background: #2266cc; color: #fff; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Platform Engineer</h1>
+    <p>Build the services that run our ledger platform.</p>
+    <form id="application" class="wizard" action="/__submitted" method="post" autocomplete="off">
+      <p id="progress" class="progress">Step 1 of 4</p>
+      <ol id="steps" class="steps" aria-label="Application steps">
+        <li data-step="1" aria-current="step">Your details</li>
+        <li data-step="2">Experience</li>
+        <li data-step="3">Education</li>
+        <li data-step="4">Review</li>
+      </ol>
+
+      <section class="step" data-step="1" data-step-id="details">
+        <h2>Your details</h2>
+        <label for="name">Full name</label>
+        <input id="name" name="name" required>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required>
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" type="tel">
+        <div class="actions">
+          <button type="button" id="next-details" data-action="next">Next</button>
+        </div>
+      </section>
+
+      <section class="step" data-step="2" data-step-id="experience" hidden>
+        <h2>Experience</h2>
+        <div id="experience-blocks" data-repeatable="experience">
+          <div class="block" id="experience-0" data-block="0">
+            <p class="block-title">Position 1</p>
+            <label for="company-0">Company</label>
+            <input id="company-0" name="experience[0][company]" required>
+            <label for="title-0">Job title</label>
+            <input id="title-0" name="experience[0][title]" required>
+            <label for="start-0">Start date</label>
+            <input id="start-0" name="experience[0][start]" type="month" required data-start>
+            <label for="end-0">End date</label>
+            <input id="end-0" name="experience[0][end]" type="month" data-end>
+            <label class="check"><input type="checkbox" id="current-0" name="experience[0][current]" data-current> I currently work here</label>
+          </div>
+        </div>
+        <button type="button" id="add-experience" class="add" data-add="experience">Add another position</button>
+        <div class="actions">
+          <button type="button" id="back-experience" data-action="back">Back</button>
+          <button type="button" id="next-experience" data-action="next">Next</button>
+        </div>
+      </section>
+
+      <section class="step" data-step="3" data-step-id="education" hidden>
+        <h2>Education</h2>
+        <div id="education-blocks" data-repeatable="education"></div>
+        <button id="add-education" class="add" data-add="education">Add education</button>
+        <h3>Additional questions</h3>
+        <label for="shift">Which shift pattern would you prefer?</label>
+        <select id="shift" name="shift" required>
+          <option value="">Select...</option>
+          <option value="early">Early (7am to 3pm)</option>
+          <option value="standard">Standard (9am to 5pm)</option>
+          <option value="late">Late (1pm to 9pm)</option>
+        </select>
+        <div class="actions">
+          <button type="button" id="back-education" data-action="back">Back</button>
+          <button type="button" id="next-education" data-action="next">Next</button>
+        </div>
+      </section>
+
+      <section class="step" data-step="4" data-step-id="review" hidden>
+        <h2>Review</h2>
+        <p>Check your answers, then send your application with the button below.</p>
+        <ul id="summary"></ul>
+        <div class="actions">
+          <button type="button" id="back-review" data-action="back">Back</button>
+          <button type="submit" id="submit">Submit application</button>
+        </div>
+      </section>
+    </form>
+
+    <template id="experience-template">
+      <div class="block" data-block="">
+        <p class="block-title"></p>
+        <label data-for="company">Company</label>
+        <input data-name="company" required>
+        <label data-for="title">Job title</label>
+        <input data-name="title" required>
+        <label data-for="start">Start date</label>
+        <input data-name="start" type="month" required data-start>
+        <label data-for="end">End date</label>
+        <input data-name="end" type="month" data-end>
+        <label class="check"><input type="checkbox" data-name="current" data-current> I currently work here</label>
+      </div>
+    </template>
+    <template id="education-template">
+      <div class="block" data-block="">
+        <p class="block-title"></p>
+        <label data-for="school">School</label>
+        <input data-name="school" required>
+        <label data-for="degree">Degree</label>
+        <select data-name="degree" required>
+          <option value="">Select...</option>
+          <option value="high-school">High school</option>
+          <option value="associate">Associate's</option>
+          <option value="bachelor">Bachelor's</option>
+          <option value="master">Master's</option>
+          <option value="doctorate">Doctorate</option>
+        </select>
+        <label data-for="field">Field of study</label>
+        <input data-name="field">
+        <label data-for="start">Start date</label>
+        <input data-name="start" type="month" data-start>
+        <label data-for="end">End date</label>
+        <input data-name="end" type="month" data-end>
+      </div>
+    </template>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const byId = (id) => document.getElementById(id);
+      const form = byId('application');
+      const steps = Array.from(form.querySelectorAll('section.step'));
+      const LAST = steps.length;
+      const wizard = { step: 0, shown: [], next: [], back: [], added: { experience: 0, education: 0 },
+        ignored: { education: 0 } };
+      window.__wizard = wizard;
+
+      // The step an address names: #step-2 to #step-4, else the first.
+      const stepOf = (hash) => {
+        const match = /^#step-([1-9])$/.exec(hash);
+        const step = match === null ? 1 : Number(match[1]);
+        return step <= LAST ? step : 1;
+      };
+
+      // The review's counts: how many of each earlier step's boxes and lists hold an answer. Counts only.
+      const drawSummary = () => {
+        const items = steps.slice(0, -1).map((section) => {
+          const controls = Array.from(section.querySelectorAll('input:not([type="checkbox"]), select'));
+          const answered = controls.filter((control) => control.value !== '').length;
+          const item = document.createElement('li');
+          item.textContent = `${section.querySelector('h2').textContent}: ${answered} of ${controls.length} answered`;
+          return item;
+        });
+        byId('summary').replaceChildren(...items);
+      };
+
+      const show = (step) => {
+        for (const section of steps) section.hidden = Number(section.dataset.step) !== step;
+        byId('progress').textContent = `Step ${step} of ${LAST}`;
+        for (const item of byId('steps').children) {
+          if (Number(item.dataset.step) === step) item.setAttribute('aria-current', 'step');
+          else item.removeAttribute('aria-current');
+        }
+        if (step === LAST) drawSummary();
+        wizard.step = step;
+        wizard.shown.push(step);
+      };
+
+      // Moves to a step and records it in the address (the first step's address has no fragment).
+      const go = (step) => {
+        const base = location.href.replace(/#.*$/, '');
+        history.pushState(null, '', step === 1 ? base : `${base}#step-${step}`);
+        show(step);
+      };
+
+      for (const button of form.querySelectorAll('button[data-action="next"]')) {
+        button.addEventListener('click', (event) => {
+          wizard.next.push({ step: wizard.step, trusted: event.isTrusted });
+          if (wizard.step < LAST) go(wizard.step + 1);
+        });
+      }
+      for (const button of form.querySelectorAll('button[data-action="back"]')) {
+        button.addEventListener('click', (event) => {
+          wizard.back.push({ step: wizard.step, trusted: event.isTrusted });
+          if (wizard.step > 1) go(wizard.step - 1);
+        });
+      }
+      window.addEventListener('popstate', () => show(stepOf(location.hash)));
+
+      // "I currently work here": the block's End date is disabled (and cleared) while the box is ticked.
+      const wireCurrent = (block) => {
+        const box = block.querySelector('input[data-current]');
+        const end = block.querySelector('input[data-end]');
+        box.addEventListener('change', () => {
+          end.disabled = box.checked;
+          if (box.checked) end.value = '';
+        });
+      };
+
+      // A block built afresh from its template: ids `${name}-${index}`, names `${kind}[${index}][${name}]`.
+      const addBlock = (kind, title) => {
+        const container = byId(`${kind}-blocks`);
+        const index = container.querySelectorAll(':scope > .block').length;
+        const block = byId(`${kind}-template`).content.firstElementChild.cloneNode(true);
+        block.id = `${kind}-${index}`;
+        block.dataset.block = String(index);
+        block.querySelector('.block-title').textContent = `${title} ${index + 1}`;
+        for (const label of block.querySelectorAll('label[data-for]')) label.htmlFor = `${label.dataset.for}-${index}`;
+        for (const control of block.querySelectorAll('[data-name]')) {
+          control.id = `${control.dataset.name}-${index}`;
+          control.name = `${kind}[${index}][${control.dataset.name}]`;
+        }
+        container.append(block);
+        wizard.added[kind] += 1;
+        return block;
+      };
+
+      wireCurrent(byId('experience-0'));
+      byId('add-experience').addEventListener('click', () => wireCurrent(addBlock('experience', 'Position')));
+
+      // A typeless button inside the form: every click is cancelled, so it never submits; only a person's adds a school.
+      byId('add-education').addEventListener('click', (event) => {
+        event.preventDefault();
+        if (!event.isTrusted) {
+          wizard.ignored.education += 1;
+          return;
+        }
+        if (wizard.step === 3) addBlock('education', 'School');
+      });
+
+      show(stepOf(location.hash));
+    })();
+  </script>
+</body>
+</html>

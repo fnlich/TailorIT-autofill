@@ -2442,89 +2442,174 @@ afterwards: loopRows(state, verdict) -> the final Guard -> the report; revealEdg
 
 ### 10.2 Multi-step state machine (Requirement C, `steps/machine.ts`)
 
+**As built (Phase 5, wave 1, 2026-10-30)** in `steps/signature.ts`, `steps/machine.ts`, `steps/repeatable.ts` and `steps/prefill.ts`, with additions to `types/run.ts` (`RESUME_AUTO_MS`, `STEP_FINALITIES`, `REPEATABLE_KINDS`, `RepeatableCounter`). The content script runs `reduceRun` and does all the DOM work (wave 2 wires it); the core decides, holds no value and never waits. `RunState`'s shape is unchanged, so `RunStateSchema` and `schemas.check.ts` stand: everything the machine reads beyond RunState comes in on its events and `ctx`.
+
 ```ts
-export const MAX_STEP_ATTEMPTS = 2;   // "never loop on the same step more than twice"
-export const MAX_STEPS = 30;          // a runaway-wizard guard
+// types/run.ts (additions)
+export const RESUME_AUTO_MS = 30 * 60 * 1000;          // a reload resumes by itself only this soon after updatedAt
+export const STEP_FINALITIES = ['final', 'not-final', 'unknown'] as const;   // the adapter's isFinalStep
+export const REPEATABLE_KINDS = ['experience', 'education', 'language'] as const;
+export type RepeatableCounter = RunState['repeatableCounters'][string];   // { profile, rendered, addClicks }
 
-/** The DOM layer gathers the parts; the core hashes them. */
-export function stepSignature(parts: { heading: string; progress: string; urlPath: string; urlHash: string;
-  anchors: string[] }): string;       // hex16(sha256(stable JSON of the normalized, sorted parts))
+// steps/signature.ts
+export const STEP_SIGNATURE_VERSION = 1;
+export const MAX_SIGNATURE_ANCHORS = 64;
+export interface StepSignatureParts { heading?: string; progress?: string; urlPart?: string; anchors: readonly string[] }
+export function stepSignature(parts: StepSignatureParts): string;   // hex16(sha256(stable JSON of the folded parts))
+export function isStepSignature(text: string): boolean;             // /^[a-f0-9]{16}$/, RunStateSchema's form
 
+// steps/machine.ts
+export { MAX_STEP_ATTEMPTS, MAX_STEPS } from '../types/run';        // 2, 30
+export const TRANSITION_CAP_MS = 20_000;
+export const MAX_FILLED_KEYS_PER_STEP = 50;
+export type AuthWall = 'sign-in' | 'create-account';
+export interface StepFacts { finality: StepFinality; nextVisible: boolean; settled: boolean; unconfirmedDrafts: number }
 export type RunEvent =
-  | { type: 'DETECTED'; platform: Platform; applicationKey: string; authWall: 'login' | 'signup' | 'email-verification' | null }
-  | { type: 'NOT_AN_APPLICATION' } | { type: 'AUTH_CLEARED' }
-  | { type: 'PAUSE'; reason: PauseReason } | { type: 'CONTINUE' }     // CONTINUE: the user's trusted Continue click
-  | { type: 'STEP_SCANNED'; signature: string; final: boolean; notices: number; tripwireHits: number; canaries: string[] }
+  | { type: 'DETECTED' } | { type: 'NOT_AN_APPLICATION' }
+  | { type: 'AUTH'; wall: AuthWall } | { type: 'PAUSE'; reason: PauseReason } | { type: 'CONTINUE' }
+  | { type: 'SCANNED'; signature: string; policyHits: number; tripwireHits: number; canaries: readonly string[] }
   | { type: 'POLICY_ACCEPTED' } | { type: 'POLICY_DECLINED' }
-  | { type: 'FILL_DONE'; filledKeys: FieldKey[]; flagged: number; blocked: number; unresolved: number }
-  | { type: 'VALIDATED'; errors: number; fixable: number }
-  | { type: 'NEXT_PRESSED'; by: 'extension' | 'user' }
-  | { type: 'STEP_CHANGED'; signature: string } | { type: 'STEP_UNCHANGED' }
-  | { type: 'SUBMITTED' } | { type: 'RESUMED' } | { type: 'USER_STOP' } | { type: 'ERROR'; reason: ReasonCode };
-
+  | { type: 'FILLED'; filledKeys: readonly FieldKey[]; flagged: number; blocked: number; unresolved: number }
+  | { type: 'VALIDATED'; errors: number; fixable: number; step: StepFacts }
+  | { type: 'ADVANCED'; by: 'extension' | 'person' }
+  | { type: 'TRANSITIONED'; signature: string } | { type: 'STEP_UNCHANGED' } | { type: 'TIMED_OUT'; signature: string }
+  | { type: 'SUBMITTED' } | { type: 'RESUMED'; by: 'load' | 'person'; sameTab: boolean }
+  | { type: 'REPEATABLE'; kind: RepeatableKind; counter: RepeatableCounter }
+  | { type: 'USER_STOPPED' } | { type: 'ERROR'; reason: ReasonCode };
+export const STEP_NOTICES = ['tripwire', 'policy', 'auth', 'captcha', 'page-busy', 'needs-click', 'validation',
+  'step-retry-limit', 'final-unknown', 'max-steps'] as const;      // each one of NOTICE_CODES
+export const REVIEW_CAUSES = ['final-step', 'final-unknown', 'step-retry-limit', 'max-steps', 'validation-errors',
+  'error'] as const;
 export type RunEffect =
-  | { type: 'scan' } | { type: 'fill-step' } | { type: 'validate' } | { type: 'press-next' }
-  | { type: 'highlight-next' } | { type: 'highlight-submit' } | { type: 'await-transition'; from: string }
-  | { type: 'pause'; reason: 'auth' | 'handoff' | 'policy' }
-  | { type: 'notify'; notice: 'tripwire' | 'policy' | 'retry-limit' | 'auth' | 'handoff' | 'error' }   // 'handoff' is worded by pauseReason
-  | { type: 'show-review'; reason: ReasonCode } | { type: 'persist' };
-
-export function reduceRun(state: RunState, event: RunEvent, ctx: { autoAdvance: boolean; now: number }):
-  { state: RunState; effects: RunEffect[] };
+  | { type: 'persist' } | { type: 'report' } | { type: 'scan' } | { type: 'fill-step'; attempt: number; fix: boolean }
+  | { type: 'validate' } | { type: 'press-next' } | { type: 'highlight-next' } | { type: 'highlight-submit' }
+  | { type: 'await-transition'; from: string; capMs: number | null }   // null: no timer, the person clicks
+  | { type: 'pause'; kind: 'auth' | 'handoff' | 'policy' } | { type: 'notify'; notice: StepNotice }
+  | { type: 'show-review'; cause: ReviewCause; reason: ReasonCode | null } | { type: 'offer-continue' };
+export interface RunContext { autoAdvance: boolean; now: number; transitionCapMs?: number }
+export const ADVANCE_REFUSALS = ['setting-off', 'final', 'final-unknown', 'no-next', 'errors', 'not-filled',
+  'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'not-settled', 'attempts'] as const;
+export function createRunState(input: { applicationKey: string; platform: Platform; now: number }): RunState;
+export function reduceRun(state: RunState, event: RunEvent, ctx: RunContext): { state: RunState; effects: RunEffect[] };
+export function autoAdvanceVerdict(state: RunState, check: { errors: number; step: StepFacts },
+  ctx: Pick<RunContext, 'autoAdvance'>): { advance: true } | { advance: false; refusal: AdvanceRefusal };
+export function resumeMode(state: RunState | null, input: { now: number; sameTab: boolean }): 'auto' | 'continue' | 'none';
+export function storedFieldKey(key: FieldKey): FieldKey;   // section and label slug each hex16(SHA-256), as storedBaseKey
+export function repeatableCounterKey(signature: string, kind: RepeatableKind): string;   // `${signature}:${kind}`
+export function noticeOfPause(reason: PauseReason): StepNotice;
 ```
 
-`reduceRun` runs in the content script. Every transition also emits `persist` and sets `updatedAt = ctx.now`; the content script stores RunState through the worker (`runstate/*`), which applies the storage rules (section 7.4 for canaries). Events that do not apply to the current status are ignored. The reducer is pure, so every row is one unit test.
+**The reducer's rules.** Every event the status takes sets `updatedAt = ctx.now` and answers `persist` first (so a reload finds the decision before anything is done), then `report` when the status, the pause or the step changed (and always on `RESUMED`); `REPEATABLE` is stored without a report. An event the status does not take is ignored: the same state object, no effects. Done and stopped take nothing. The final Submit is never pressed: no row leads from a final or unknown step to `press-next`.
 
-| From | Event | Condition | To | Effects |
+| From | Event | Condition | To | Effects (after persist and report) |
 |---|---|---|---|---|
-| detect | DETECTED | `authWall` | auth-needed | pause('auth'), notify('auth') |
-| detect | DETECTED | no wall | scan-step | scan |
+| detect | DETECTED | — | scan-step | scan |
 | detect | NOT_AN_APPLICATION | — | stopped | — |
-| auth-needed | AUTH_CLEARED | — | detect | scan |
-| any active status | PAUSE {reason} | — | handoff (`resumeStatus` = the current status, `pauseReason` = reason) | pause('handoff'), notify('handoff') |
-| handoff | CONTINUE | — | scan-step | `pauseReason` cleared; scan |
-| scan-step | STEP_SCANNED | `stepAttempts[sig] >= MAX_STEP_ATTEMPTS` (counted across reloads) | review | notify('retry-limit'), show-review('step-retry-limit'); nothing on the step is written |
-| scan-step | STEP_SCANNED | `notices > 0` and `policyDecision === null` | policy-notice | pause('policy'), notify('policy') |
-| scan-step | STEP_SCANNED | `stepIndex >= MAX_STEPS` | review | show-review('step-retry-limit') |
-| scan-step | STEP_SCANNED | otherwise | fill-step | `stepAttempts[sig]++`; canaries merged into `canarySet` (capped; the worker drops colliding ones when it stores RunState, section 7.4); notify('tripwire') when hits > 0; fill-step |
-| policy-notice | POLICY_ACCEPTED | — | fill-step | `stepAttempts[sig]++`, fill-step |
-| policy-notice | POLICY_DECLINED | — | stopped | — |
-| fill-step | FILL_DONE | — | validate | `filledFieldKeys[sig]` ∪= keys; `lastFill` set; validate |
-| validate | VALIDATED | errors 0, not final, autoAdvance, `lastFill` has 0 flagged, 0 blocked, 0 unresolved, and `stepAttempts[sig] < MAX_STEP_ATTEMPTS` | advance | press-next |
-| validate | VALIDATED | errors 0, not final, otherwise | wait-transition | highlight-next, await-transition(sig) |
-| validate | VALIDATED | errors 0, final | review | highlight-submit, show-review('ok'); **never** press-next |
-| validate | VALIDATED | errors > 0, fixable > 0, `stepAttempts[sig] < MAX_STEP_ATTEMPTS` | fill-step | `stepAttempts[sig]++`, fill-step (fix pass) |
-| validate | VALIDATED | errors > 0, otherwise | review | notify('retry-limit'), show-review('step-retry-limit') |
-| advance | NEXT_PRESSED | — | wait-transition | await-transition(sig) |
-| wait-transition, review | STEP_CHANGED | new signature | scan-step | `stepIndex++`, `stepSignature` set, scan |
-| wait-transition | STEP_UNCHANGED | — | validate | validate (an attempt on the same step: the next VALIDATED with errors counts against `MAX_STEP_ATTEMPTS`) |
-| wait-transition, review | SUBMITTED | — | done | — (the user submitted) |
-| any | USER_STOP | — | stopped | — |
-| any | ERROR | — | review | show-review(reason) |
-| any | RESUMED | status done or stopped | unchanged | — |
-| any | RESUMED | auth-needed, handoff or policy-notice | unchanged | pause again (the user must act) |
-| any | RESUMED | otherwise | scan-step | scan (`filledFieldKeys` is a hint: fields are re-verified, never skipped blindly) |
+| a working status (detect, scan-step, fill-step, validate, advance, wait-transition), or handoff | AUTH | — | auth-needed (`resumeStatus` where it came from; a handoff's own) | pause(auth), notify(auth) |
+| a working status | PAUSE {reason} | — | handoff (`resumeStatus` the status, `pauseReason` the reason) | pause(handoff), notify(by the reason: captcha and bot-check `captcha`, email-code and entry-choice `auth`, `page-busy`, `needs-click`) |
+| handoff | PAUSE {reason} | another reason | handoff, the newer reason, `resumeStatus` kept | pause(handoff), notify |
+| handoff, auth-needed | CONTINUE | — | scan-step, pause cleared | scan |
+| scan-step | SCANNED | `stepAttempts[sig] >= MAX_STEP_ATTEMPTS` (counted across reloads) | review | notify(step-retry-limit), show-review(step-retry-limit); nothing on the step is filled or counted |
+| scan-step | SCANNED | the step would pass `MAX_STEPS` (its index, or a 31st signature) | review | notify(max-steps), show-review(max-steps) |
+| scan-step | SCANNED | `policyHits > 0`, `policyDecision === null` | policy-notice | pause(policy), notify(policy) |
+| scan-step | SCANNED | otherwise | fill-step, `stepAttempts[sig]++` | fill-step {attempt, fix: false} |
+| scan-step | SCANNED | a malformed signature | review | show-review(error, internal-error) |
+| policy-notice | POLICY_ACCEPTED | — | fill-step, `policyDecision` accepted, `stepAttempts[sig]++` | fill-step |
+| policy-notice | POLICY_DECLINED | — | stopped, `policyDecision` declined | — |
+| fill-step | REPEATABLE {kind, counter} | — | fill-step, `repeatableCounters[sig:kind]` = counter | (persist only) |
+| fill-step | FILLED | — | validate; `filledFieldKeys[sig]` ∪= `storedFieldKey(keys)` (first 50); `lastFill` the counts | validate |
+| validate | VALIDATED | errors > 0, fixable > 0, `stepAttempts[sig] < MAX_STEP_ATTEMPTS` | fill-step, `stepAttempts[sig]++` | fill-step {fix: true} |
+| validate | VALIDATED | errors > 0, fixable > 0, attempts used | review | notify(validation), notify(step-retry-limit), show-review(step-retry-limit) |
+| validate | VALIDATED | errors > 0, nothing fixable | review | notify(validation), show-review(validation-errors) |
+| validate | VALIDATED | no error, final | review | highlight-submit, show-review(final-step) |
+| validate | VALIDATED | no error, finality unknown | review | highlight-next, highlight-submit, notify(final-unknown) with auto-advance on, show-review(final-unknown) |
+| validate | VALIDATED | no error, not final, `autoAdvanceVerdict` advances | advance | press-next |
+| validate | VALIDATED | no error, not final, otherwise | wait-transition | highlight-next, await-transition {from: sig, capMs: null} |
+| validate, advance | ADVANCED {by: person} | — | wait-transition | await-transition {capMs: null} |
+| advance | ADVANCED {by: extension} | — | wait-transition | await-transition {capMs: ctx.transitionCapMs ?? TRANSITION_CAP_MS} |
+| fill-step, validate, advance, wait-transition, review | TRANSITIONED {sig} | sig differs from the step's | scan-step | scan (the scan counts the new step: `stepIndex++`) |
+| wait-transition | STEP_UNCHANGED | — | validate | validate |
+| wait-transition | TIMED_OUT {sig} | the step's signature | handoff, needs-click | pause(handoff), notify(needs-click) |
+| wait-transition | TIMED_OUT {sig} | another signature | handoff, page-busy | pause(handoff), notify(page-busy) |
+| any but done, stopped | SUBMITTED | — | done | — |
+| any but done, stopped | USER_STOPPED | — | stopped | — |
+| any but done, stopped | ERROR {reason} | — | review | show-review(error, reason) |
+| any | RESUMED | another tab, or expired (`updatedAt + RUN_STATE_TTL_MS <= now`) | unchanged | — |
+| policy-notice | RESUMED | — | unchanged (nothing stored) | report, pause(policy), notify(policy) |
+| auth-needed, handoff | RESUMED {by: load} | — | unchanged (nothing stored) | report, pause, notify: the person must act |
+| auth-needed, handoff | RESUMED {by: person} | — | scan-step, pause cleared | scan |
+| review | RESUMED {by: load} | — | unchanged (nothing stored): review is the person's turn, never filled again by itself | report, offer-continue |
+| any other | RESUMED {by: load} | more than `RESUME_AUTO_MS` since `updatedAt` | unchanged (nothing stored) | report, offer-continue |
+| any other | RESUMED | by the load within `RESUME_AUTO_MS`, or by the person | scan-step | scan (`filledFieldKeys` is a hint: fields are verified again, never skipped) |
 
-**Rules the table guarantees:**
-- The final Submit is never pressed: `final` never leads to `press-next`, whatever `autoAdvance` says.
-- Auto-advance never moves past a step with flagged, blocked or unresolved fields. This is stricter than the spec, so the user sees every flag; see the open questions.
-- Login, signup, email verification and every pause (CAPTCHA, email code, bot check, Workday's entry choice, a busy page, a click the site needs) always hand control to the user.
-- A step already attempted twice, counted across reloads, goes to review with `step-retry-limit` when it is scanned again, and auto-advance needs fewer than two attempts.
+**SCANNED, every row:** a signature other than the step's is a new step (`stepIndex++`); `stepSignature` is set; the canaries are merged nearest first (`mergeCanaries`, at most 32, none past 120 characters; the worker drops colliding ones when it stores RunState, section 7.4); the tripwire's hits count once per step, at its first scan, and any hit asks for notify(tripwire).
 
-**Pure helpers in `steps/`** (Phase 5):
-- `planRepeatable(profileCount, blocks: Array<{ index; fingerprint: string | null; empty: boolean }>)`:
-  - assigns profile entries to rendered blocks by a keyed-hash fingerprint under the per-run key (company+title+start, or school+degree), so blocks the site prefilled from the resume are reused, never duplicated;
-  - returns `addCount`;
-  - extra blocks are reported, never deleted;
-  - `addClicks` is capped at the profile count plus 1.
-- `reconcilePrefill(category, current, intended)`:
+**`autoAdvanceVerdict`**, in order: the setting on; the step declared `not-final` (`final`, then `final-unknown`, refuse); Next visible; no error; the step filled (`lastFill` not null) with nothing flagged, blocked or unresolved; no unconfirmed draft; settled; fewer than `MAX_STEP_ATTEMPTS` attempts. `startFill` clears `lastFill` for a new attempt, so it always describes the step being validated.
 
-| Situation | Result |
+**`resumeMode`:** none for no RunState, another tab, an expired or a finished one (done, stopped); continue for a paused one (auth-needed, handoff, policy-notice), one at review (the coordinator's ruling, 2026-10-30: a final, unknown or limited step is never filled again by itself on a reload), or one more than `RESUME_AUTO_MS` old; auto otherwise. The content script decides with it, and `reduceRun`'s `RESUMED` applies the same rules again.
+
+**Repeatable sections** (`steps/repeatable.ts`):
+```ts
+export interface EntryPrint { ids: readonly string[]; detail: string | null }   // a profile entry's name hashes, detail
+export interface BlockPrint { id: string; detail: string | null }               // a prefilled block's
+export interface RepeatableBlock { index: number; print: BlockPrint | null; empty: boolean }
+export interface EntryAssignment { entry: number; block: number | null; by: 'fingerprint' | 'order' | null; prefilled: boolean }
+export interface RepeatableMatch { assignments: EntryAssignment[]; missing: number; extra: number[] }
+export const ADD_STOPS = ['complete', 'add-ignored', 'no-add-button', 'add-cap'] as const;
+export interface AddPlan { add: boolean; counter: RepeatableCounter; stop: AddStop | null; reason: ReasonCode | null }
+export interface RepeatablePlan extends RepeatableMatch, AddPlan { kind: RepeatableKind }
+export function companyKey(name: string): string;     // folded, "The" and trailing legal forms ("Inc.", "LLC") dropped
+export function yearOf(text: string): number | null;  // the one year a page's date names
+export function experiencePrint(entry: Pick<ExperienceEntry, 'company' | 'startDate'>): EntryPrint;   // company; start year
+export function educationPrint(entry: { institution: { canonicalName; userText; aliases }; degree: { level } }): EntryPrint;
+export function languagePrint(entry: { name: string }): EntryPrint;
+export interface BlockField { category: FieldCategory; current: CurrentValue }
+export function blockPrint(kind: RepeatableKind, fields: readonly BlockField[],
+  options?: { degreeLevel?: DegreeLevel | null }): BlockPrint | null;
+export function isBlockEmpty(fields: readonly Pick<BlockField, 'current'>[]): boolean;
+export function assignEntries(entries: readonly EntryPrint[], blocks: readonly RepeatableBlock[]): RepeatableMatch;
+export function planAdd(input: { profile: number; rendered: number; prior: RepeatableCounter | null;
+  afterClick: boolean; addButton: boolean }): AddPlan;
+export function planRepeatable(input: { kind; entries; blocks; prior; afterClick; addButton }): RepeatablePlan;
+export interface CurrentJobInput { current: boolean; box: 'absent' | 'checked' | 'unchecked';
+  endDate: 'absent' | 'empty' | 'filled' | 'disabled'; endDateRequired: boolean }
+export interface LeaveRow { status: 'skipped' | 'flagged'; reason: ReasonCode }
+export interface CurrentJobPlan { tick: boolean; box: LeaveRow | null; endDate: 'write' | 'pending' | LeaveRow | null }
+export function planCurrentJob(input: CurrentJobInput): CurrentJobPlan;
+```
+- **Assignment:** a prefilled block is matched to the entry it names, first where both know the detail and it agrees (two jobs at one company told apart by their start years), then where either lacks it; every other entry takes the next block left in page order, its prefill reconciled field by field (`prefill.ts`, the profile wins, flagged), never a new block beside it; entries left over are `missing`; blocks no entry takes are `extra`, reported, never deleted or cleared.
+- **Adds:** one at a time, settling after each; the counter (`REPEATABLE`) is stored before each click with the click counted, so the clicks on a step never pass the profile's count, across reloads too; a click that added no block (`afterClick`, rendered not above the counter's) stops the adding (`add-ignored`); entries left without a block are `needs-your-click`.
+- **"I currently work here":** for a current job the box is ticked first, and the end date is `pending` until the scan after the tick has settled; a current job's end date is never written (`end-date-not-applicable`: skipped when disabled or optional, flagged when required and enabled; `prefill-conflict` when the page holds one); a past job's box is never ticked, and one the page ticked is never unticked (`unexpected-selection`).
+- **Fingerprints** are hex16 hashes of the normalized names (`companyKey`; `keyWithBrackets` in the institution and answer contexts), built where the profile and the page's prefilled values are both in memory (the worker: `plan/request` carries each field's `current`). They are never stored, sent or logged; the plans hold indices and counts.
+
+**Resume-parse prefill** (`steps/prefill.ts`): `reconcilePrefill(field: { category; kind }, current: CurrentValue, intended: PrefillIntent): { action: 'fill' | 'keep' | 'overwrite' | 'add'; reason; flagged }`, with `PrefillIntent` text, date, check, choice, choices or file, and `isStructured(field)` (all but a textarea, a free-text question and a job's description).
+
+| What the field holds | Decision |
 |---|---|
-| the field is empty | `fill` |
-| it already equals the profile | `keep` (`already-correct`) |
-| a structured field differs | `overwrite` and flag (`prefill-conflict`), so the profile wins for structured fields |
-| unstructured text differs | `keep` and flag |
+| nothing | `fill` |
+| the profile's answer (a phone by its digits, a date by its numbers, the rest without case or extra spaces) | `keep`, `already-correct` |
+| something else, structured (a single choice always is) | `overwrite`, flagged `prefill-conflict`: the profile wins |
+| something else, prose | `keep`, flagged `prefill-kept` |
+| an upload | `keep`, flagged `prefill-kept` |
+| a ticked box the profile would not tick | `keep`, flagged `unexpected-selection`: never unticked |
+| part of a set's answers | `add` the missing ones only, so nothing is chosen twice |
+| a set's answer the profile does not give | `add` (or `keep`), flagged `unexpected-selection`: never deselected |
+
+**Departures from the planned sketch:**
+- **Event names** follow the wave's brief: `SCANNED`, `FILLED`, `ADVANCED`, `TRANSITIONED`, `USER_STOPPED`, and `AUTH` for a sign-in wall at any working status (the sketch's `DETECTED.authWall`); `TIMED_OUT {signature}` is new, so the needs-click and page-busy decision at the transition cap is the core's; `REPEATABLE` is new, so the Add counters reach RunState through the reducer.
+- **`AUTH_CLEARED` is gone:** only the person's trusted Continue (`CONTINUE`, or `RESUMED` by the person) leaves a pause, as ARCHITECTURE.md says ("a trusted Continue resumes the run"); a reload at a pause shows it again.
+- **The step's finality, Next's visibility, the settle and unconfirmed drafts arrive on `VALIDATED`** (`StepFacts`), not `SCANNED`: RunState has no field for them, and they are read closest to the click. `SCANNED.notices` is `policyHits`.
+- **A step change is counted in one place**, `SCANNED` (`stepIndex++` for another signature), so a step reached while the run was not watching (after a reload or a Continue) counts too; `TRANSITIONED` only scans again.
+- **A run at review is not refilled on a reload** (the sketch's "otherwise, scan-step" took review too): `resumeMode` answers continue and `RESUMED` by the load offers Continue. `max-steps` has its own notice.
+- **Validation errors left after the fix** are `validation-errors` with the `validation` notice when nothing was fixable; `step-retry-limit` (with both notices) only when a fix was possible but the attempts are used.
+- **`SUBMITTED`** is taken in every unfinished status (a confirmation page may load in any new document), and `TRANSITIONED` also from fill-step, validate and advance (the person's Next mid-fill).
+- **`filledFieldKeys`** are stored as `storedFieldKey` (section and label slug hashed, as the reveal edges since the Phase 3 review, L-S3), at most 50 a step to keep RunState inside the store's byte budget.
+- **`planRepeatable`** takes fingerprints with a detail, splits into `assignEntries` (needs values: the worker) and `planAdd` (counts only: the content script), and caps the clicks at the profile's count rather than the count plus one: a click that adds no block already stops the adding. The experience fingerprint is company and start year, not company, title and start: titles are spelt too many ways to tell entries apart.
+- **`reconcilePrefill`** takes the field's category and kind and an intent rather than a bare category and value, and adds checks, sets and uploads to the table.
+
+**Notices** (src/shared/report.ts `NOTICE_CODES`, additions): `final-unknown` ("I can't tell whether this is the last step, so I won't press anything.", the plan's words) and `max-steps` ("This application has more steps than I can follow, so I stopped here. Please finish it yourself.").
+
+**What wave 2 wires:** the content script runs the machine around the reactive loop (`createRunState` or `runstate/get` with `resumeMode`, the effects in order, `runstate/put` on `persist`); the worker's half of the repeatable plan (fingerprints and assignments from `plan/request`'s specs), and the resolver's entry for a block (it reads `section.block` as the profile's index, which an assignment by fingerprint can change).
 
 ---
 

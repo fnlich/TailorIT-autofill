@@ -53,7 +53,8 @@ Each case has a `<case>.expect.json`, written by hand from the page itself and n
 - `section`: the text of the nearest visible heading above the control, the one just above the form included (Greenhouse's "Apply for this job"); inside a hidden part, that part's own heading; `""` outside the form.
 - `fillable`, and `reason` when it is false:
   - `widget-phase-4`: a script-driven custom widget (Phase 4);
-  - `not-user-visible`: hidden by the page and tied to no visible control, so the scanner never makes it a field (a widget's required shim, a reveal that has not happened, a CAPTCHA's response field).
+  - `not-user-visible`: hidden by the page and tied to no visible control, so the scanner never makes it a field (a widget's required shim, a reveal that has not happened, a CAPTCHA's response field);
+  - `disabled-or-readonly` (Phase 5): a field the page shows but has disabled or made read-only, which the fillers never write (the wizard's End date while "I currently work here" is ticked).
 - `control`: a CSS selector for the control, or for every input of a group.
 - `options`, for choice kinds: the number of radios or checkboxes in the group, or of `<option>` elements in a select (a "Select..." placeholder included), or `"lazy"` for a widget whose options exist only once it is opened.
 - `note`, where the reading needed explaining: which adapter hook a control needs (a group label no element ties, an upload widget), how a hidden control is revealed.
@@ -62,10 +63,12 @@ A file input hidden behind a visible upload button is `fillable: true`: the spec
 
 **States (synthetic pages that react, Phase 3).** A page whose own script reveals, removes or reloads fields also lists, in `states`, what it holds after given answers. `fields` above is the page as it loads; each state is reached from a fresh load and has:
 - `name`, and `variant`: the value of a `data-variant` attribute put on `<html>` before the page loads (the async-options page's variants), or `null`;
-- `steps`, in order, each acting on the page as a filler would, with untrusted events: `{ "choose": selector, "value": v }` sets a select's value and dispatches `input` and `change` (bubbling); `{ "click": selector }` calls `click()` on a radio or checkbox;
+- `steps`, in order, each acting on the page as a filler would, with untrusted events: `{ "choose": selector, "value": v }` sets a select's value and dispatches `input` and `change` (bubbling); `{ "click": selector }` calls `click()` on a radio, a checkbox or a button (the wizard's Next and Add buttons);
 - `until`: a CSS selector the page must match before the scan (a list that loads late), or `null` when the page reacts at once;
 - `fields`: every control in the page then, as above. A control the state removed is not listed; one it hid is listed as `not-user-visible`.
 `fixture`, `source` and `fields` keep the shape the adapters' expectations testkit reads (`src/adapters/test/expectations.testkit.ts`), so a state is compared by passing its `fields` in their place. `captured` says the page was never captured.
+
+**Steps (a multi-step page, Phase 5).** The wizard's expectations also hold a `wizard` entry, at the top for the page as it loads and in each state: what its e2e-only test adapter answers there. `shown` is the step shown (1 to 4); `heading`, `progress`, `urlPart` and `anchor` are the parts of its step signature, as `stepSignature` gives them (the one anchor in `anchors`); `final` is `isFinalStep`; `next` is the selector of the step's Next button, or `null` on the last step; `repeatables` maps each repeatable kind the shown step holds to its number of blocks. `src/adapters/test/wizard.browser.test.ts` holds the adapter to them.
 
 ## The Lever and Greenhouse fixtures (Phase 2)
 Converted from the owner's captures in `fixtures/_incoming/phase2/` and `fixtures/_incoming/phase2-zoox/` (git-ignored; the `captures*.json` beside them record each requested and final URL). Dates are the captures' own, in UTC. Sizes are the main HTML file's; the stylesheets are most of it.
@@ -137,6 +140,19 @@ A synthetic page may run its own script, as the form it stands for does, but tha
 - "Which perk matters most?" matches no rule, but an option names a sensitive topic ("Military leave"): screened, needs-user, never sent;
 - Gender, work authorization, the desired salary and a privacy consent are the profile's and the person's only: none of them, nor their options, may reach an AI request;
 - hidden carriers hold `HIDDEN-MARKER-AI` (a `hidden` paragraph and a `hidden` option), and a white-on-white passage asks AI tools to write `I am LLM`, its canary: none of it may reach an AI request.
+
+**`wizard-4-step/` (Phase 5)**, filled by `e2e/specs/31-wizard.spec.ts`, at `https://jobs.lever.co/tailorit-fixture/wizard-4-step[-<case>]/apply` (one application per case, so each has a RunState of its own). A single-page wizard: one form, four step sections shown one at a time, a "Step N of 4" line, Next (`type="button"`) on every step but the last, Back from the second on, and the final Submit (`type="submit"`) on the last. Next records the step in the address as `#step-N` with `history.pushState`, and a load shows the step its address names, so a reload stays on its step. Nothing checks the answers before Next. The form has `autocomplete="off"`, so the browser restores nothing after a reload.
+
+| Step | What it holds |
+|---|---|
+| 1, Your details | Full name, Email, Phone |
+| 2, Experience | one position block (Company, Job title, Start date, End date, then "I currently work here", which disables and clears its block's End date while ticked), and "Add another position" (`type="button"`), which adds a block on every click, trusted or not |
+| 3, Education | no school block, and "Add education": a typeless `<button>` inside the form (a submit button, so `assertNotSubmit` refuses it), whose page handler cancels every click and adds a school block only on a trusted one; then "Which shift pattern would you prefer?", a required select no profile answers |
+| 4, Review | no field: the earlier steps' answer counts (never a value), Back and Submit |
+
+The generic adapter knows no steps, so in e2e builds the e2e-only test adapter `src/adapters/test/wizard.ts` handles these addresses: the step signature (the shown step's heading, the "Step N of 4" line, the address's fragment, the step's `data-step-id`), the shown step's Next, the Submit, the final step (the step holding Submit and no Next) and the shown step's repeatable sections (each kind's blocks and Add button, and each position's "I currently work here" box). It carries the e2e marker, so `scripts/check-build.mjs` keeps it out of production bundles. `window.__wizard` records the step shown, every step shown, each Next and Back click with its `isTrusted`, the blocks each Add added, and the untrusted clicks "Add education" ignored.
+
+With the golden profile: step 1 verified; on step 2 one Add, the current job in the first block (its box ticked, its End date disabled and left blank) and the earlier one in the second; on step 3 "Add education" flagged `needs-your-click` (never clicked) and the shift question blank and flagged; step 4 is final, so nothing is pressed there and Submit never is.
 
 ## Smoke fixtures (`fixtures/smoke/`, Phase 0)
 `form.html` (a plain application form) and `company-embed.html` (a company page embedding a Greenhouse form in an iframe), served at every ATS host pattern by `00-smoke`.

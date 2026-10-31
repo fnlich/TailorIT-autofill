@@ -1,0 +1,702 @@
+{
+  "fixture": "synthetic/wizard-4-step",
+  "source": "https://jobs.lever.co/tailorit-fixture/wizard-4-step/apply",
+  "captured": "never: a synthetic page, written by hand on 2026-10-30",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means, and what the states, their steps and the wizard entries are",
+  "note": "One form whose four steps are shown one at a time (index.html's header). Only the shown step's controls are user-visible: the others are listed as not-user-visible, under their own step's heading. The \"Add another position\" and \"Add education\" buttons, Next, Back and Submit are no fields. \"Add education\" is a typeless <button> inside the form whose page handler ignores untrusted clicks, so the school block it adds (School, Degree, Field of study, Start date, End date) appears only on a person's click and no state below reaches it. Each state's `wizard` entry is what the wizard's test adapter (src/adapters/test/wizard.ts) answers there: the step shown, the parts of its step signature (heading, progress, urlPart, the one anchor), isFinalStep, the Next button, and the blocks each repeatable kind of the shown step holds.",
+  "wizard": {
+    "shown": 1,
+    "heading": "Your details",
+    "progress": "Step 1 of 4",
+    "urlPart": "",
+    "anchor": "details",
+    "final": "not-final",
+    "next": "#next-details",
+    "repeatables": {}
+  },
+  "fields": [
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Your details",
+      "fillable": true,
+      "control": "#name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Your details",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Your details",
+      "fillable": true,
+      "control": "#phone"
+    },
+    {
+      "label": "Company",
+      "kind": "text",
+      "required": true,
+      "section": "Experience",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#company-0",
+      "note": "Position 1: block 0 of the experience repeatable. With the wizard's adapter its section is experience, block 0 (experience[0] in the key)."
+    },
+    {
+      "label": "Job title",
+      "kind": "text",
+      "required": true,
+      "section": "Experience",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#title-0"
+    },
+    {
+      "label": "Start date",
+      "kind": "date",
+      "required": true,
+      "section": "Experience",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#start-0",
+      "note": "An <input type=\"month\">: the date filler writes YYYY-MM."
+    },
+    {
+      "label": "End date",
+      "kind": "date",
+      "required": false,
+      "section": "Experience",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#end-0",
+      "note": "Disabled (and cleared) by the page while the block's \"I currently work here\" is ticked."
+    },
+    {
+      "label": "I currently work here",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Experience",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#current-0",
+      "note": "A lone checkbox in a wrapping label, after the End date in document order; the adapter's currentlyHere names it."
+    },
+    {
+      "label": "Which shift pattern would you prefer?",
+      "kind": "select",
+      "required": true,
+      "section": "Additional questions",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "options": 4,
+      "control": "#shift",
+      "note": "A required question no part of a profile answers (\"Select...\" and three shifts)."
+    }
+  ],
+  "states": [
+    {
+      "name": "step 2, as reached",
+      "variant": null,
+      "steps": [
+        {
+          "click": "#next-details"
+        }
+      ],
+      "until": null,
+      "wizard": {
+        "shown": 2,
+        "heading": "Experience",
+        "progress": "Step 2 of 4",
+        "urlPart": "#step-2",
+        "anchor": "experience",
+        "final": "not-final",
+        "next": "#next-experience",
+        "repeatables": {
+          "experience": 1
+        }
+      },
+      "fields": [
+        {
+          "label": "Full name",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#name"
+        },
+        {
+          "label": "Email",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#email"
+        },
+        {
+          "label": "Phone",
+          "kind": "text",
+          "required": false,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#phone"
+        },
+        {
+          "label": "Company",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#company-0",
+          "note": "Position 1: block 0 of the experience repeatable. With the wizard's adapter its section is experience, block 0 (experience[0] in the key)."
+        },
+        {
+          "label": "Job title",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#title-0"
+        },
+        {
+          "label": "Start date",
+          "kind": "date",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#start-0",
+          "note": "An <input type=\"month\">: the date filler writes YYYY-MM."
+        },
+        {
+          "label": "End date",
+          "kind": "date",
+          "required": false,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#end-0",
+          "note": "Disabled (and cleared) by the page while the block's \"I currently work here\" is ticked."
+        },
+        {
+          "label": "I currently work here",
+          "kind": "checkbox",
+          "required": false,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#current-0",
+          "note": "A lone checkbox in a wrapping label, after the End date in document order; the adapter's currentlyHere names it."
+        },
+        {
+          "label": "Which shift pattern would you prefer?",
+          "kind": "select",
+          "required": true,
+          "section": "Additional questions",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "options": 4,
+          "control": "#shift",
+          "note": "A required question no part of a profile answers (\"Select...\" and three shifts)."
+        }
+      ]
+    },
+    {
+      "name": "step 2, a second position added",
+      "variant": null,
+      "steps": [
+        {
+          "click": "#next-details"
+        },
+        {
+          "click": "#add-experience"
+        }
+      ],
+      "until": null,
+      "wizard": {
+        "shown": 2,
+        "heading": "Experience",
+        "progress": "Step 2 of 4",
+        "urlPart": "#step-2",
+        "anchor": "experience",
+        "final": "not-final",
+        "next": "#next-experience",
+        "repeatables": {
+          "experience": 2
+        }
+      },
+      "fields": [
+        {
+          "label": "Full name",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#name"
+        },
+        {
+          "label": "Email",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#email"
+        },
+        {
+          "label": "Phone",
+          "kind": "text",
+          "required": false,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#phone"
+        },
+        {
+          "label": "Company",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#company-0",
+          "note": "Position 1: block 0 of the experience repeatable. With the wizard's adapter its section is experience, block 0 (experience[0] in the key)."
+        },
+        {
+          "label": "Job title",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#title-0"
+        },
+        {
+          "label": "Start date",
+          "kind": "date",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#start-0",
+          "note": "An <input type=\"month\">: the date filler writes YYYY-MM."
+        },
+        {
+          "label": "End date",
+          "kind": "date",
+          "required": false,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#end-0",
+          "note": "Disabled (and cleared) by the page while the block's \"I currently work here\" is ticked."
+        },
+        {
+          "label": "I currently work here",
+          "kind": "checkbox",
+          "required": false,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#current-0",
+          "note": "A lone checkbox in a wrapping label, after the End date in document order; the adapter's currentlyHere names it."
+        },
+        {
+          "label": "Company",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#company-1",
+          "note": "Position 2: block 1 of the experience repeatable. With the wizard's adapter its section is experience, block 1 (experience[1] in the key)."
+        },
+        {
+          "label": "Job title",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#title-1"
+        },
+        {
+          "label": "Start date",
+          "kind": "date",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#start-1",
+          "note": "An <input type=\"month\">: the date filler writes YYYY-MM."
+        },
+        {
+          "label": "End date",
+          "kind": "date",
+          "required": false,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#end-1",
+          "note": "Disabled (and cleared) by the page while the block's \"I currently work here\" is ticked."
+        },
+        {
+          "label": "I currently work here",
+          "kind": "checkbox",
+          "required": false,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#current-1",
+          "note": "A lone checkbox in a wrapping label, after the End date in document order; the adapter's currentlyHere names it."
+        },
+        {
+          "label": "Which shift pattern would you prefer?",
+          "kind": "select",
+          "required": true,
+          "section": "Additional questions",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "options": 4,
+          "control": "#shift",
+          "note": "A required question no part of a profile answers (\"Select...\" and three shifts)."
+        }
+      ]
+    },
+    {
+      "name": "step 2, I currently work here ticked",
+      "variant": null,
+      "steps": [
+        {
+          "click": "#next-details"
+        },
+        {
+          "click": "#current-0"
+        }
+      ],
+      "until": null,
+      "wizard": {
+        "shown": 2,
+        "heading": "Experience",
+        "progress": "Step 2 of 4",
+        "urlPart": "#step-2",
+        "anchor": "experience",
+        "final": "not-final",
+        "next": "#next-experience",
+        "repeatables": {
+          "experience": 1
+        }
+      },
+      "fields": [
+        {
+          "label": "Full name",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#name"
+        },
+        {
+          "label": "Email",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#email"
+        },
+        {
+          "label": "Phone",
+          "kind": "text",
+          "required": false,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#phone"
+        },
+        {
+          "label": "Company",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#company-0",
+          "note": "Position 1: block 0 of the experience repeatable. With the wizard's adapter its section is experience, block 0 (experience[0] in the key)."
+        },
+        {
+          "label": "Job title",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#title-0"
+        },
+        {
+          "label": "Start date",
+          "kind": "date",
+          "required": true,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#start-0",
+          "note": "An <input type=\"month\">: the date filler writes YYYY-MM."
+        },
+        {
+          "label": "End date",
+          "kind": "date",
+          "required": false,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "disabled-or-readonly",
+          "control": "#end-0",
+          "note": "Disabled (and cleared) by the page while the block's \"I currently work here\" is ticked."
+        },
+        {
+          "label": "I currently work here",
+          "kind": "checkbox",
+          "required": false,
+          "section": "Experience",
+          "fillable": true,
+          "control": "#current-0",
+          "note": "A lone checkbox in a wrapping label, after the End date in document order; the adapter's currentlyHere names it."
+        },
+        {
+          "label": "Which shift pattern would you prefer?",
+          "kind": "select",
+          "required": true,
+          "section": "Additional questions",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "options": 4,
+          "control": "#shift",
+          "note": "A required question no part of a profile answers (\"Select...\" and three shifts)."
+        }
+      ]
+    },
+    {
+      "name": "step 3, as reached",
+      "variant": null,
+      "steps": [
+        {
+          "click": "#next-details"
+        },
+        {
+          "click": "#next-experience"
+        }
+      ],
+      "until": null,
+      "wizard": {
+        "shown": 3,
+        "heading": "Education",
+        "progress": "Step 3 of 4",
+        "urlPart": "#step-3",
+        "anchor": "education",
+        "final": "not-final",
+        "next": "#next-education",
+        "repeatables": {
+          "education": 0
+        }
+      },
+      "fields": [
+        {
+          "label": "Full name",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#name"
+        },
+        {
+          "label": "Email",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#email"
+        },
+        {
+          "label": "Phone",
+          "kind": "text",
+          "required": false,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#phone"
+        },
+        {
+          "label": "Company",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#company-0",
+          "note": "Position 1: block 0 of the experience repeatable. With the wizard's adapter its section is experience, block 0 (experience[0] in the key)."
+        },
+        {
+          "label": "Job title",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#title-0"
+        },
+        {
+          "label": "Start date",
+          "kind": "date",
+          "required": true,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#start-0",
+          "note": "An <input type=\"month\">: the date filler writes YYYY-MM."
+        },
+        {
+          "label": "End date",
+          "kind": "date",
+          "required": false,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#end-0",
+          "note": "Disabled (and cleared) by the page while the block's \"I currently work here\" is ticked."
+        },
+        {
+          "label": "I currently work here",
+          "kind": "checkbox",
+          "required": false,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#current-0",
+          "note": "A lone checkbox in a wrapping label, after the End date in document order; the adapter's currentlyHere names it."
+        },
+        {
+          "label": "Which shift pattern would you prefer?",
+          "kind": "select",
+          "required": true,
+          "section": "Additional questions",
+          "fillable": true,
+          "options": 4,
+          "control": "#shift",
+          "note": "A required question no part of a profile answers (\"Select...\" and three shifts)."
+        }
+      ]
+    },
+    {
+      "name": "step 4, as reached",
+      "variant": null,
+      "steps": [
+        {
+          "click": "#next-details"
+        },
+        {
+          "click": "#next-experience"
+        },
+        {
+          "click": "#next-education"
+        }
+      ],
+      "until": null,
+      "wizard": {
+        "shown": 4,
+        "heading": "Review",
+        "progress": "Step 4 of 4",
+        "urlPart": "#step-4",
+        "anchor": "review",
+        "final": "final",
+        "next": null,
+        "repeatables": {}
+      },
+      "fields": [
+        {
+          "label": "Full name",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#name"
+        },
+        {
+          "label": "Email",
+          "kind": "text",
+          "required": true,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#email"
+        },
+        {
+          "label": "Phone",
+          "kind": "text",
+          "required": false,
+          "section": "Your details",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#phone"
+        },
+        {
+          "label": "Company",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#company-0",
+          "note": "Position 1: block 0 of the experience repeatable. With the wizard's adapter its section is experience, block 0 (experience[0] in the key)."
+        },
+        {
+          "label": "Job title",
+          "kind": "text",
+          "required": true,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#title-0"
+        },
+        {
+          "label": "Start date",
+          "kind": "date",
+          "required": true,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#start-0",
+          "note": "An <input type=\"month\">: the date filler writes YYYY-MM."
+        },
+        {
+          "label": "End date",
+          "kind": "date",
+          "required": false,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#end-0",
+          "note": "Disabled (and cleared) by the page while the block's \"I currently work here\" is ticked."
+        },
+        {
+          "label": "I currently work here",
+          "kind": "checkbox",
+          "required": false,
+          "section": "Experience",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "control": "#current-0",
+          "note": "A lone checkbox in a wrapping label, after the End date in document order; the adapter's currentlyHere names it."
+        },
+        {
+          "label": "Which shift pattern would you prefer?",
+          "kind": "select",
+          "required": true,
+          "section": "Additional questions",
+          "fillable": false,
+          "reason": "not-user-visible",
+          "options": 4,
+          "control": "#shift",
+          "note": "A required question no part of a profile answers (\"Select...\" and three shifts)."
+        }
+      ]
+    }
+  ]
+}

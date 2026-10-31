@@ -29,8 +29,9 @@ import type { Adapter } from '../types';
 /** The size the snapshot converter compared visibility at (test/mhtml-to-fixture.test.ts). */
 export const SNAPSHOT_VIEWPORT = { width: 1280, height: 900 } as const;
 
-/** Why an entry is not fillable (docs/FIXTURES.md). */
-export const NOT_FILLABLE_REASONS = ['widget-phase-4', 'not-user-visible'] as const;
+/** Why an entry is not fillable (docs/FIXTURES.md). 'disabled-or-readonly' (Phase 5): a control a synthetic page's
+ *  state disabled, such as the wizard's End date while "I currently work here" is ticked. */
+export const NOT_FILLABLE_REASONS = ['widget-phase-4', 'not-user-visible', 'disabled-or-readonly'] as const;
 export type NotFillableReason = (typeof NOT_FILLABLE_REASONS)[number];
 
 /** One entry of a <case>.expect.json. */

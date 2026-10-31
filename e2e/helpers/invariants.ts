@@ -9,6 +9,10 @@
  *    boundary and move events (over, out, enter, leave, move), which it fires when the page changes under a cursor
  *    that sits still and no extension can cause. A trusted scroll counts too, except on a listbox (the spies mark it
  *    scrollTopSet): the widget helpers set a list's scrollTop to read it, and nothing else (the Phase 4 review, R8).
+ *    A spec that clicks as the person (Phase 5: a wizard's Next, with Playwright's trusted click) names those controls
+ *    in `personClicked`: their trusted events are the person's and are left out of this check, and none of them may
+ *    be a control that could submit. Nothing else is excused, and their untrusted events are still checked here and
+ *    in 3.
  * 3. The extension's own (untrusted) events are only the fillers' (input, change, focusout, blur, click, and any
  *    single activation event an adapter declares), and none is a click on a control assertNotSubmit refuses.
  * 4. No hidden marker or canary in a request to TailorIT, a report, RunState (its checked canarySet aside, which holds
@@ -58,6 +62,9 @@ export interface TrapRun {
   applicationKey: string | null;
   /** Single activation events an adapter declared for a widget on the page (none in Phase 2). */
   activation?: readonly string[];
+  /** The controls the spec clicked as the person (Playwright's trusted click), by their spy identity (#id): a wizard's
+   *  Next (Phase 5). Their trusted events are the person's, never a violation; none may be a control that submits. */
+  personClicked?: readonly string[];
 }
 
 type Row = FrameReport['fields'][number];
@@ -170,9 +177,15 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   expect(run.routeLog.submitted, 'a form was submitted').toEqual([]);
   expect(events.filter((event) => event.type === 'submit'), 'a submit event').toEqual([]);
 
-  // 2. Untrusted events only, Chromium's own input and change after an untrusted click on a box aside.
+  // 2. Untrusted events only, Chromium's own input and change after an untrusted click on a box aside, and the
+  //    person's own on the controls the spec clicked as them (none of which may submit).
+  const personal = new Set(run.personClicked ?? []);
+  const theirs = (event: (typeof events)[number]) => event.trusted && personal.has(event.control);
+  expect(events.filter((event) => theirs(event) && (event.submits || SUBMIT_WORDS.test(event.words))),
+    "the person's clicks the spec made on a control that could submit").toEqual([]);
   for (const record of records) {
-    expect(untrustedViolations(record.events), `trusted events on form controls in ${record.url}`).toEqual([]);
+    expect(untrustedViolations(record.events.filter((event) => !theirs(event))),
+      `trusted events on form controls in ${record.url}`).toEqual([]);
   }
 
   // 3. Only the fillers' events, and no click on a submit control.

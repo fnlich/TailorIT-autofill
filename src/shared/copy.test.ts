@@ -29,6 +29,9 @@ describe('the copy', () => {
     expect(COPY.notices.policy).toBe('This posting says AI-assisted applications are not allowed. Filling is your decision.');
     expect(COPY.notices['policy-unreadable'])
       .toBe("I couldn't read this posting to check whether it allows AI tools. Check it before you submit.");
+    expect(COPY.notices['final-unknown']).toBe("I can't tell whether this is the last step, so I won't press anything.");
+    expect(COPY.notices['max-steps'])
+      .toBe('This application has more steps than I can follow, so I stopped here. Please finish it yourself.');
     expect(COPY.reasons['sensitive-not-shared']).toBe("This browser may not read your work authorization and self-identification "
       + "answers. To allow it, connect the extension again from TailorIT's Settings › Autofill with that box ticked.");
     expect(COPY.reasons['resume-format-unsupported']).toBe('Your resume is an old Word file. Choose a PDF resume in TailorIT.');

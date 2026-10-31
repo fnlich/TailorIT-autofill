@@ -20,6 +20,17 @@ export const MAX_STEP_ATTEMPTS = 2;
 export const MAX_STEPS = 30;
 /** RunState expires this long after its last update. */
 export const RUN_STATE_TTL_MS = 24 * 60 * 60 * 1000;
+/** After a reload, a run resumes by itself in its own tab only this soon after its last update; later (until
+ *  RUN_STATE_TTL_MS) the person's Continue resumes it (Phase 5, steps/machine.ts resumeMode). */
+export const RESUME_AUTO_MS = 30 * 60 * 1000;
+
+/** How the adapter judges a step (adapters/types.ts isFinalStep). 'unknown' is treated as final: nothing is pressed. */
+export const STEP_FINALITIES = ['final', 'not-final', 'unknown'] as const;
+export type StepFinality = (typeof STEP_FINALITIES)[number];
+
+/** The repeatable sections an adapter declares (adapters/types.ts repeatables): one counter each per step. */
+export const REPEATABLE_KINDS = ['experience', 'education', 'language'] as const;
+export type RepeatableKind = (typeof REPEATABLE_KINDS)[number];
 
 /**
  * Persisted per application under `run:${applicationKey}`. The run id is minted per document at run/begin and never
@@ -54,3 +65,8 @@ export interface RunState {
   startedAt: number;
   updatedAt: number;
 }
+
+/** One repeatable section's counts on one step (RunState.repeatableCounters, keyed `${stepSignature}:${kind}`): the
+ *  profile's entries, the blocks rendered when it was last planned, and the Add clicks made, each counted before it is
+ *  made, so a reload never clicks past the profile's count. Counts only. */
+export type RepeatableCounter = RunState['repeatableCounters'][string];

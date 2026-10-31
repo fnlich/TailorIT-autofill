@@ -37,7 +37,9 @@ export const FillResultSchema = z.strictObject({
 export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attention-check', 'page-busy', 'auth', 'captcha',
   'validation', 'needs-click', 'posting-outside-frame', 'deferred-fields', 'step-retry-limit',
   // The Phase 2 review: policy text only hidden text holds (S6), and a form its page hides (S1).
-  'policy-hidden-text', 'form-hidden'] as const;
+  'policy-hidden-text', 'form-hidden',
+  // The step machine (Phase 5): a step whose finality the adapter cannot tell, with auto-advance on; a runaway wizard.
+  'final-unknown', 'max-steps'] as const;
 
 export const FrameReportSchema = z.strictObject({
   v: z.literal(1),

@@ -35,6 +35,9 @@ const NOTICES = {
   'step-retry-limit': 'This step was tried twice already, so nothing more is filled on it.',
   'policy-hidden-text': 'Text on this page that is not shown yet says AI-assisted applications may not be allowed. Read the whole posting before you submit.',
   'form-hidden': 'This form is hidden or out of view on its page, so nothing was filled. Scroll it into view, then choose Fill again.',
+  // The step machine (Phase 5): final-unknown is the plan's exact sentence, max-steps the coordinator's (2026-10-30).
+  'final-unknown': "I can't tell whether this is the last step, so I won't press anything.",
+  'max-steps': 'This application has more steps than I can follow, so I stopped here. Please finish it yourself.',
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
