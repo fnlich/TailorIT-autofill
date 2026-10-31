@@ -1,9 +1,10 @@
 /*
  * One planned write (docs/design/runtime.md §8.3; docs/ARCHITECTURE.md "Orchestrator"). The reactive loop (loop.ts)
  * scans, plans and orders a pass's writes, and hands each one here, in that order:
- * 1. the DOM half of the Guard re-finds the field by key in a fresh scan (never a cached node) and checks it may be
- *    written now (domGuardBeforeWrite); a follow-up box that holds other text on that scan keeps it (WriteOptions.keep,
- *    the Phase 3 review, L-S7);
+ * 1. a pause the page shows anywhere in the document, or another step showing, refuses it (PassEnv.heldBy, detectPause
+ *    document-wide: the Phase 5 review, X-S1); the DOM half of the Guard re-finds the field by key in a fresh scan (never a cached node) and
+ *    checks it may be written now (domGuardBeforeWrite); a follow-up box that holds other text on that scan keeps it
+ *    (WriteOptions.keep, the Phase 3 review, L-S7);
  * 2. the core's frame-side Guard checks the write against the field as it is now: honeypot, the value fits, the
  *    options it names still read as planned at their places, the provenance's shape, an llm-pick's option unchanged,
  *    the canary scan over this frame's canaries, the mark-all cover test (guardWriteInFrame);
@@ -76,6 +77,12 @@ export interface PassEnv {
   stopped(): boolean;
   /** The run's id now, for the resume port. */
   runId(): string;
+  /** Why no write may be made now, asked right before every write: a pause the page shows anywhere in the document
+   *  (detectPause: a CAPTCHA, an email code by its type or its label, a sign-in or account box, a session dialog outside
+   *  the form root: auth-required or challenge-present; the Phase 5 review, X-S1), or another step showing than the one
+   *  being filled (field-disappeared). Null to go on. Without it only the DOM guard's own check of the form root
+   *  counts. */
+  heldBy?(): ReasonCode | null;
   /** Overrides for the transfer, for tests. */
   resume?: { idleMs?: number; releaseAfterMs?: number };
 }
@@ -197,6 +204,10 @@ export function plannedFieldOf(field: ScannedField): PlannedField {
 export async function writeField(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
   planned: FillResult, held: WeakMap<Element, string>, options: WriteOptions = {}): Promise<WriteResult> {
   const wanted = plannedFieldOf(field);
+  // Nothing is written while the page asks for the person (a CAPTCHA, a code or a sign-in anywhere in the document),
+  // nor once another step shows.
+  const hold = env.heldBy?.() ?? null;
+  if (hold !== null) return { row: settleRow(planned, { kind: 'not-written', reason: hold }) };
   let verdict = domGuardBeforeWrite(last, wanted);
   if (!verdict.ok) return { row: settleRow(planned, refusal(verdict.reason, GUARD_BLOCKS)) };
   // A follow-up box the person (or the page) typed into since the pass's scan keeps that text: compared on the DOM
@@ -226,6 +237,11 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
     if (!got.ok) return { row: settleRow(planned, { kind: 'not-written', reason: got.reason }) };
     resume = got.resume;
     // The bytes took a moment, in which the page could change: the field is found and checked again.
+    const heldSince = env.heldBy?.() ?? null;
+    if (heldSince !== null) {
+      resume.release();
+      return { row: settleRow(planned, { kind: 'not-written', reason: heldSince }) };
+    }
     verdict = domGuardBeforeWrite(last, wanted);
     if (!verdict.ok) {
       resume.release();
@@ -317,6 +333,8 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
     guard: async (query) => {
       if (env.signal.aborted || !env.valid()) throw new RunAborted();
       if (env.stopped()) return { ok: false, reason: 'user-stopped', blocked: false };
+      const hold = env.heldBy?.() ?? null;
+      if (hold !== null) return { ok: false, reason: hold, blocked: false };
       const again = domGuardBeforeWrite(last, wanted);
       if (!again.ok) return { ok: false, reason: again.reason, blocked: GUARD_BLOCKS.has(again.reason) };
       const one: PlannedWrite = { ...write, value: { kind: 'query', queries: [query] } };

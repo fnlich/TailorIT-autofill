@@ -44,6 +44,7 @@ import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { mock } from '../helpers/mock.ts';
 import { eventsOn, writeEvents } from '../helpers/page-state.ts';
 import { writesOn } from '../helpers/reactive.ts';
+import type { SpyEvent } from '../helpers/spies.ts';
 import { closeSidePanelViews, stopWorker, workerStatus } from '../helpers/stop-worker.ts';
 import {
   ADD, ADD_EDUCATION_LABEL, BACK, expectValueFree, extensionClicks, NEXT, nextStepAt, rowIn, runAt, submitEvents,
@@ -126,10 +127,19 @@ async function expectEducationFlagged(page: Page, report: FrameReport): Promise<
   await expect(page.locator('#shift')).toHaveValue('');
 }
 
-/** The extension pressed none of the wizard's Back buttons and nothing on Submit. */
+/** The pointer's own comings and goings: after the person's (Playwright's) trusted click on Next, the next step is laid
+ *  out under the resting cursor, and the browser tells whatever is now under it (a Back button where Next was) with
+ *  trusted hover events. They press nothing, and the extension cannot make a trusted event. */
+const CURSOR_HOVER = new Set(['pointerover', 'pointerenter', 'pointerout', 'pointerleave', 'pointermove', 'mouseover',
+  'mouseenter', 'mouseout', 'mouseleave', 'mousemove']);
+const notTheCursor = (events: readonly SpyEvent[]) =>
+  events.filter((event) => !(event.trusted && CURSOR_HOVER.has(event.type)));
+
+/** The extension pressed none of the wizard's Back buttons and nothing on Submit: no untrusted event of any kind on
+ *  them, and no trusted one but the resting cursor's hover. */
 async function expectNoBackNoSubmit(page: Page): Promise<void> {
-  for (const back of BACK) expect(await eventsOn(page, back), back).toEqual([]);
-  expect(await submitEvents(page), 'an event on Submit').toEqual([]);
+  for (const back of BACK) expect(notTheCursor(await eventsOn(page, back)), back).toEqual([]);
+  expect(notTheCursor(await submitEvents(page)), 'an event on Submit').toEqual([]);
 }
 
 /** Each step a new signature, attempted once, and the step index one more than the last. */

@@ -6,8 +6,11 @@
 import type { z } from 'zod';
 import type { PlanInput, PlanOutput } from '../core/plan/types';
 import type { FieldSpec, FillResult, PlannedWrite, RunState } from '../core/types';
+import type { Settings } from '../core/types/settings';
 import type { FillResultSchema } from '../shared/report';
-import type { ContentMessageSchema, FieldSpecSchema, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema } from './schemas';
+import type {
+  ContentMessageSchema, FieldSpecSchema, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema, WorkerToContentSchema,
+} from './schemas';
 
 type Unbrand<T> = T extends string
   ? string
@@ -37,3 +40,8 @@ export type PlanRepeatablesMatch = Assert<Same<Unbrand<NonNullable<PlanInput['re
   Unbrand<NonNullable<PlanRequest['repeatables']>>>>;
 export type PlanAnswerRepeatablesMatch = Assert<Same<Unbrand<NonNullable<PlanOutput['repeatables']>>,
   Unbrand<NonNullable<z.infer<typeof PlanAnswerSchema>['repeatables']>>>>;
+/** settings/changed carries the part of the core's Settings a frame may know, and nothing more (the Phase 5 review,
+ *  C-S2): the worker's contentSettingsOf. */
+type SettingsChanged = Extract<z.infer<typeof WorkerToContentSchema>, { type: 'settings/changed' }>;
+export type SettingsChangedMatches = Assert<Same<Unbrand<Pick<Settings, 'panel' | 'autoAdvance' | 'llm'>>,
+  Unbrand<SettingsChanged['settings']>>>;

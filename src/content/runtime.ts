@@ -20,10 +20,15 @@
  *    the RunState of the application is marked done (SUBMITTED): the person submitted.
  * A run rests at review, at a pause or while it waits for the person's Next (orchestrator.ts); a run that rests and
  * watches the step is replaced by the next Fill. Fill always starts a fresh RunState; Continue starts the next run from
- * the last one's (CONTINUE after a pause, RESUMED by the person after an offer).
+ * the last one's (CONTINUE after a pause, RESUMED by the person after an offer), with what it carries (RunCarry: the
+ * value hasher and each step's loop books, so what the person typed meanwhile is never written over, and the CAPTCHA
+ * they were handed: the Phase 5 review, C-S3 and X-S4). Cancel at a pause stops that run for good: USER_STOPPED, stored
+ * and reported, and Continue has nothing left to resume (C-S6). The person's trusted input on the document is heard
+ * for the document's whole life (touches.ts), so a run knows what they typed while it rested.
  * The worker's messages are answered: frame/ping {pong}; run/start; run/continue (Continue after a pause, never Fill
  * anyway: a policy card waits for the person's own decision); run/cancel (stops a run, a policy card's wait included,
- * a run that waits for the next step, or leaves a pause); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
+ * a run that waits for the next step, or a paused one); settings/changed (the person saved their settings: the
+ * current run reads auto-advance from them, C-S2); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
  * answered `expired` when no run here waits at the card); field/focus (scroll the field or its proxy into view and
  * outline it, at the person's request); field/describe (the visible labels of a row's suggested options, from a fresh
  * scan, never kept); draft/confirm and answer/read not_implemented until Phase 6; report/update ignored until the
@@ -60,6 +65,7 @@ import { FillRun, RunFailure, type RunEnd, type RunOptions, type RunPage, type R
 import { readPostingPage } from './policy';
 import { createReportLimiter } from './report';
 import { elementsOf } from './targets';
+import { TouchLog } from './touches';
 import { mountPageUi, type PageUi } from './ui/page-ui';
 
 /** How the runtime is set up; every part defaults to the real one. */
@@ -141,6 +147,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   const channel = createChannel(platform, () => teardown('invalidated'));
   const limiter = createReportLimiter();
+  /** The person's trusted input on this document, for its whole life (touches.ts). */
+  const touches = new TouchLog(doc, lifetime.signal);
 
   function teardown(reason: 'invalidated' | 'leaving'): void {
     if (stopped) return;
@@ -171,6 +179,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         return ok({});
       case 'run/cancel':
         cancelRun();
+        return ok({});
+      case 'settings/changed':
+        current?.settingsChanged(msg.settings);
         return ok({});
       case 'run/policyDecision':
         return decidePolicy(msg.decision) ? ok({}) : refuse('expired');
@@ -228,6 +239,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       fillAgain(next) {
         if (current === run) startRun(next);
       },
+      touches,
     }, request);
     current = run;
     lastRows = new Map();
@@ -240,7 +252,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function continueRun(trigger: RunRequest['trigger']): void {
     if (current === null || current.ended !== 'paused') return;
     const state = current.runState;
-    startRun(state === null ? { trigger, dryRun: false } : { trigger, dryRun: false, from: { state, event: continueEventOf(state) } });
+    const carry = current.carryOut(true);
+    startRun(state === null ? { trigger, dryRun: false, carry }
+      : { trigger, dryRun: false, from: { state, event: continueEventOf(state) }, carry });
   }
 
   /** run/policyDecision: the side panel's policy card, for this frame. Answers whether a run here waited at the card. */
@@ -249,14 +263,18 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     return decision === 'fill' ? current.accept() : current.decline();
   }
 
-  /** run/cancel: Cancel at the policy card, stop a run that writes, or leave a pause. */
+  /** run/cancel: Cancel at the policy card, stop a run that writes, or stop a paused one for good (C-S6). */
   function cancelRun(): void {
     if (current === null) return;
     if (current.ended === null || current.watching) {
       current.stop();
       return;
     }
-    if (current.ended === 'paused') ui?.setLauncher({ state: 'idle', action: 'fill' });
+    if (current.ended === 'paused') {
+      const run = current;
+      current = null;
+      void run.cancelPause();
+    }
   }
 
   /** A fresh scan of the page, with what the last run read of its widgets (their keys carry the read options' hash). */

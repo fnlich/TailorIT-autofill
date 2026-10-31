@@ -34,7 +34,7 @@ import { createRunRegistry } from './runs';
 import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage } from './senders';
 import { createServerClient } from './server-client';
-import { createSettingsStore } from './settings';
+import { createSettingsStore, pushSettings } from './settings';
 import { systemTimers, type Timers } from './timers';
 import { bundledVocab } from './vocab';
 import { createCaptureWorkerPlatform } from '../platform/chrome';
@@ -234,7 +234,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/reports': (message) => panel.reports(message),
         // panel/confirmDraft and panel/saveAnswer arrive in Phase 6: the router answers not_implemented.
         'settings/get': async () => ok({ settings: await settings.get() }),
-        'settings/save': async (message) => ok({ settings: await settings.save(message.settings) }),
+        'settings/save': async (message) => {
+          const saved = await settings.save(message.settings);
+          // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
+          await pushSettings({ session, tabs: platform.tabs }, saved);
+          return ok({ settings: saved });
+        },
         'auth/status': async () => ok(await auth.status()),
         'auth/startPairing': () => auth.startPairing(),
         'auth/redeemCode': (message) => auth.redeemCode(message.code),

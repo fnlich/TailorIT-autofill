@@ -85,6 +85,20 @@ describe('the page channel\'s additions', () => {
     expect(PAGE_ANSWER_SCHEMAS['panel/policyDecision']).toBe(DoneAnswerSchema);
     expect(FRAME_ANSWER_SCHEMAS['run/policyDecision']).toBe(DoneAnswerSchema);
   });
+
+  it('push a saved change of the settings to a frame as its content settings only (the Phase 5 review, C-S2)', () => {
+    const changed = { v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
+      llm: { tiebreak: true, classify: true, drafts: false } } };
+    expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);
+    // Never the rest of the settings, never anything else.
+    expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings, preapprovedConsent: [] } }).success)
+      .toBe(false);
+    expect(WorkerToContentSchema.safeParse({ ...changed, tabId: 7 }).success).toBe(false);
+    expect(WorkerToContentSchema.safeParse({ v: 1, type: 'settings/changed' }).success).toBe(false);
+    expect(ContentMessageSchema.safeParse(changed).success).toBe(false);
+    expect(PageMessageSchema.safeParse(changed).success).toBe(false);
+    expect(FRAME_ANSWER_SCHEMAS['settings/changed']).toBe(DoneAnswerSchema);
+  });
 });
 
 describe('the payloads', () => {

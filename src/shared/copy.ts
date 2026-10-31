@@ -38,6 +38,9 @@ const NOTICES = {
   // The step machine (Phase 5): final-unknown is the plan's exact sentence, max-steps the coordinator's (2026-10-30).
   'final-unknown': "I can't tell whether this is the last step, so I won't press anything.",
   'max-steps': 'This application has more steps than I can follow, so I stopped here. Please finish it yourself.',
+  // The Phase 5 review (X-S8): a draft for the owner's review.
+  'next-hidden': "This form went out of view on its page, so I didn't press Next. Scroll it into view, then press Next yourself or choose Continue.",
+  'captcha-next': "This step still shows a check that you are human, so I won't press Next. Complete it, then press Next yourself.",
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */

@@ -12,13 +12,20 @@
  *   report. An event the status does not take is ignored: the same state, no effects.
  * - Step attempts are counted in RunState.stepAttempts by signature, across reloads: one when a step's fill starts,
  *   one more for a validation fix pass. A step scanned again after two attempts goes to review with step-retry-limit
- *   and nothing on it is written ("never loop on the same step more than twice").
+ *   and nothing on it is written ("never loop on the same step more than twice"). A step's index is its place among
+ *   the steps filled, in the order first filled, so Back and forth never counts a step twice, and the MAX_STEPS guard
+ *   counts distinct steps (the Phase 5 review, C-S8). At review, a step change to a step the run may no longer fill
+ *   (its attempts used, or past the guard) is ignored: nothing scanned, stored or reported (X-S5).
  * - Auto-advance (off by default) presses the adapter's Next only when the setting is on, the step is declared not
  *   final, Next is visible, nothing on the step is flagged, blocked or unresolved, no draft is unconfirmed, no error
- *   shows, the step has settled and it has had fewer than two attempts (autoAdvanceVerdict). A final step goes to
+ *   shows, no CAPTCHA widget on it is unsolved (as far as can be known: an Arkose widget never is), the step has
+ *   settled and it has had fewer than two attempts (autoAdvanceVerdict). A final step goes to
  *   review with Submit highlighted, and a step whose finality is unknown is treated as final: nothing is pressed, Next
  *   and Submit are highlighted ("I can't tell whether this is the last step, so I won't press anything"). The final
- *   Submit is never pressed: no event leads from a final or unknown step to press-next.
+ *   Submit is never pressed: no event leads from a final or unknown step to press-next. The validation that follows the
+ *   person's own Next (STEP_UNCHANGED) never presses: lastFill is cleared, so a press needs a fill of the step since
+ *   their click (X-S2). press-next itself may find auto-advance turned off since: NEXT_WITHHELD, Next is the person's
+ *   (C-S2).
  * - After the extension's click the transition is awaited at most TRANSITION_CAP_MS: at the cap an unchanged step
  *   pauses with needs-click, a changed but still busy page with page-busy. When the person is the one to press Next
  *   (auto-advance off, or a check failed), the wait has no timer.
@@ -31,7 +38,9 @@
  * - After a reload (resumeMode): automatic in the same tab within RESUME_AUTO_MS of updatedAt, otherwise the person's
  *   Continue; never in another tab, and never once RunState has expired (RUN_STATE_TTL_MS). A paused run shows its
  *   pause again. A run at review (a final, unknown or limited step: the person's turn) is never filled again by
- *   itself: it offers Continue, and done is never resumed.
+ *   itself: it offers Continue, and done is never resumed. Fill anyway at a card the new document only showed again
+ *   (POLICY_ACCEPTED, scanned false) scans the step first: its raw scan, tripwire and canaries come before any write
+ *   (C-S4).
  * - RunState holds no value: signatures are hashes, filled keys are stored with their section and label slug hashed
  *   (storedFieldKey, as the reveal edges are), counters are numbers, and the canaries are the page's, which the worker
  *   checks against the profile before storing. The reducer never adds a field RunState does not declare.
@@ -57,6 +66,11 @@ export const TRANSITION_CAP_MS = 20_000;
  *  (background/runstate-store.ts MAX_RUN_STATE_BYTES); RunStateSchema would take 500. The keys are a hint, so a step
  *  with more loses nothing but the hint for the rest. */
 export const MAX_FILLED_KEYS_PER_STEP = 50;
+/** A resting run follows at most this many step changes in a row that fill nothing (a page flipping its progress
+ *  line, a step already at its limit, Back and forth over finished steps); then it stops watching the step, and the
+ *  person's Fill or Continue starts the next run (the Phase 5 review, X-S5). The content script counts them: the
+ *  watching is its own. */
+export const MAX_IDLE_TRANSITIONS = 8;
 
 /** A wall that needs the person's sign-in or a new account (auth-needed). */
 export type AuthWall = 'sign-in' | 'create-account';
@@ -71,6 +85,9 @@ export interface StepFacts {
   settled: boolean;
   /** Drafts on the step the person has not confirmed. */
   unconfirmedDrafts: number;
+  /** The step shows a CAPTCHA widget not known to be solved (dom/pause-detect.ts unsolvedCaptchas): a token-bearing
+   *  one whose token is empty, or one whose vendor holds none (Arkose). Next is then the person's. */
+  captchaUnsolved: boolean;
 }
 
 /** What the content script tells the machine. Counts, keys and hashes only: no event carries a value. */
@@ -89,8 +106,9 @@ export type RunEvent =
   /** The step was scanned: its signature (stepSignature), the policy statements and tripwire hits found on it, and its
    *  canaries, nearest their hit first (the worker drops any that equals a profile value when it stores RunState). */
   | { type: 'SCANNED'; signature: string; policyHits: number; tripwireHits: number; canaries: readonly string[] }
-  /** The person's Fill anyway at the policy card. */
-  | { type: 'POLICY_ACCEPTED' }
+  /** The person's Fill anyway at the policy card. `scanned`: this document scanned the step (its raw scan, tripwire,
+   *  canaries and signature); false after a reload at the card, whose new document only showed it again. */
+  | { type: 'POLICY_ACCEPTED'; scanned: boolean }
   /** The person's Cancel at the policy card. */
   | { type: 'POLICY_DECLINED' }
   /** The step's fill ended (its repeatable sections, then the reactive loop): the keys written, and the counts of the
@@ -100,6 +118,9 @@ export type RunEvent =
   | { type: 'VALIDATED'; errors: number; fixable: number; step: StepFacts }
   /** Next was pressed: by the extension (press-next's click), or by the person before the extension would have. */
   | { type: 'ADVANCED'; by: 'extension' | 'person' }
+  /** press-next found, right before its click, that Next is the person's: their auto-advance setting is off now (they
+   *  turned it off since the validation), or the step shows a CAPTCHA not known to be solved. Nothing was pressed. */
+  | { type: 'NEXT_WITHHELD'; reason: 'setting-off' | 'captcha-unsolved' }
   /** The step's signature changed and the page is quiet (a step the person or the page moved to). */
   | { type: 'TRANSITIONED'; signature: string }
   /** The person's Next left the step as it was (errors showed instead): validate it again. */
@@ -123,7 +144,7 @@ export type RunEventType = RunEvent['type'];
  *  whether this is the last step, so I won't press anything.") is asked for only with auto-advance on, the one time it
  *  explains something nobody would expect; 'max-steps' when a wizard has more steps than MAX_STEPS. */
 export const STEP_NOTICES = ['tripwire', 'policy', 'auth', 'captcha', 'page-busy', 'needs-click', 'validation',
-  'step-retry-limit', 'final-unknown', 'max-steps'] as const;
+  'step-retry-limit', 'final-unknown', 'max-steps', 'captcha-next'] as const;
 export type StepNotice = (typeof STEP_NOTICES)[number];
 
 /** Why a run is at review. 'final-step': the adapter says the step is the last (Submit highlighted); 'final-unknown':
@@ -179,9 +200,10 @@ export interface RunStep {
   effects: RunEffect[];
 }
 
-/** Why auto-advance would not press Next, in the order they are checked. */
+/** Why auto-advance would not press Next, in the order they are checked. 'captcha-unsolved': the step shows a CAPTCHA
+ *  widget not known to be solved (the Phase 5 review, X-S4 tightened by the coordinator). */
 export const ADVANCE_REFUSALS = ['setting-off', 'final', 'final-unknown', 'no-next', 'errors', 'not-filled',
-  'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'not-settled', 'attempts'] as const;
+  'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled', 'attempts'] as const;
 export type AdvanceRefusal = (typeof ADVANCE_REFUSALS)[number];
 export type AdvanceVerdict = { advance: true } | { advance: false; refusal: AdvanceRefusal };
 
@@ -262,7 +284,7 @@ export function resumeMode(state: RunState | null, input: { now: number; sameTab
 /**
  * Whether auto-advance may press Next on the step being validated: the setting on, the step declared not final, Next
  * visible, no error, the step filled with nothing flagged, blocked or unresolved (RunState.lastFill), no unconfirmed
- * draft, the step settled, and fewer than MAX_STEP_ATTEMPTS attempts. The first rule that fails is the refusal.
+ * draft, no CAPTCHA not known solved, the step settled, and fewer than MAX_STEP_ATTEMPTS attempts. The first rule that fails is the refusal.
  */
 export function autoAdvanceVerdict(state: RunState, check: { errors: number; step: StepFacts },
   ctx: Pick<RunContext, 'autoAdvance'>): AdvanceVerdict {
@@ -279,6 +301,7 @@ export function autoAdvanceVerdict(state: RunState, check: { errors: number; ste
   if (fill.blocked > 0) return refuse('blocked');
   if (fill.unresolved > 0) return refuse('unresolved');
   if (step.unconfirmedDrafts > 0) return refuse('unconfirmed-draft');
+  if (step.captchaUnsolved) return refuse('captcha-unsolved');
   if (!step.settled) return refuse('not-settled');
   if (attemptsOf(state) >= MAX_STEP_ATTEMPTS) return refuse('attempts');
   return { advance: true };
@@ -337,7 +360,11 @@ function transition(state: RunState, event: RunEvent, ctx: RunContext): Outcome 
     case 'SCANNED':
       return status === 'scan-step' ? scanned(state, event) : null;
     case 'POLICY_ACCEPTED':
-      return status === 'policy-notice' ? startFill(state, { policyDecision: 'accepted' }, [], false) : null;
+      if (status !== 'policy-notice') return null;
+      // A document that only showed the card again (a reload at it) has read nothing of the step: no raw scan, no
+      // tripwire, no canary. It scans first, and the scan's gate takes the decision (the Phase 5 review, C-S4).
+      return event.scanned ? startFill(state, { policyDecision: 'accepted' }, [], false)
+        : move(enter(state, 'scan-step', { policyDecision: 'accepted' }), [{ type: 'scan' }]);
     case 'POLICY_DECLINED':
       return status === 'policy-notice' ? move(enter(state, 'stopped', { policyDecision: 'declined' })) : null;
     case 'FILLED':
@@ -346,11 +373,20 @@ function transition(state: RunState, event: RunEvent, ctx: RunContext): Outcome 
       return status === 'validate' ? validated(state, event, ctx) : null;
     case 'ADVANCED':
       return advanced(state, event.by, ctx);
+    case 'NEXT_WITHHELD':
+      return status === 'advance' ? awaitTransition(state, null, [
+        ...(event.reason === 'captcha-unsolved' ? [notify('captcha-next')] : []), { type: 'highlight-next' }]) : null;
     case 'TRANSITIONED':
-      return MAY_TRANSITION.has(status) && isStepSignature(event.signature) && event.signature !== state.stepSignature
-        ? rescan(state) : null;
+      if (!MAY_TRANSITION.has(status) || !isStepSignature(event.signature) || event.signature === state.stepSignature) {
+        return null;
+      }
+      // At review, a step the run may no longer fill is no reason to scan, store or report (the Phase 5 review, X-S5).
+      return status === 'review' && atLimit(state, event.signature) ? null : rescan(state);
     case 'STEP_UNCHANGED':
-      return status === 'wait-transition' ? move(enter(state, 'validate'), [{ type: 'validate' }]) : null;
+      // The person's Next left the step as it was: what the fill left is no longer what Next would press on, so the
+      // validation that follows never presses it (lastFill null: not-filled). A fix pass fills it again (X-S2).
+      return status === 'wait-transition'
+        ? move(enter(state, 'validate', { lastFill: null }), [{ type: 'validate' }]) : null;
     case 'TIMED_OUT':
       return status === 'wait-transition'
         ? pause(state, event.signature === state.stepSignature ? 'needs-click' : 'page-busy') : null;
@@ -391,18 +427,17 @@ function pause(state: RunState, reason: PauseReason): Outcome | null {
     [{ type: 'pause', kind: 'handoff' }, notify(noticeOfPause(reason))]);
 }
 
-/** The step's scan: a new step is counted, then the attempt limit, the step guard and the policy gate, then the fill. */
+/** The step's scan: the step's place, then the attempt limit, the step guard and the policy gate, then the fill. */
 function scanned(state: RunState, event: Extract<RunEvent, { type: 'SCANNED' }>): Outcome {
   const signature = event.signature;
   if (!isStepSignature(signature)) return move(enter(state, 'review'), [review('error', 'internal-error')]);
-  const isNew = state.stepSignature !== null && state.stepSignature !== signature;
   const known = Object.hasOwn(state.stepAttempts, signature);
   const attempts = known ? state.stepAttempts[signature]! : 0;
   const hits = whole(event.tripwireHits);
   const canaries = event.canaries.filter((canary) => canary.length <= CANARY_MAX_LENGTH);
   const seen: Partial<RunState> = {
     stepSignature: signature,
-    stepIndex: state.stepIndex + (isNew ? 1 : 0),
+    stepIndex: positionOf(state, signature),
     canarySet: mergeCanaries(canaries, state.canarySet),
     // A step's hits count once, at its first scan; a reload's scan of the same step finds the same text again.
     tripwire: { triggered: state.tripwire.triggered || hits > 0, hits: state.tripwire.hits + (known ? 0 : hits) },
@@ -412,8 +447,8 @@ function scanned(state: RunState, event: Extract<RunEvent, { type: 'SCANNED' }>)
     return move(enter(state, 'review', seen),
       [...notices, notify('step-retry-limit'), review('step-retry-limit')]);
   }
-  const stepIndex = seen.stepIndex!;
-  if (stepIndex >= MAX_STEPS || (!known && Object.keys(state.stepAttempts).length >= MAX_STEPS)) {
+  // The step guard counts distinct steps: Back and forth over the same steps never trips it (the Phase 5 review, C-S8).
+  if (!known && Object.keys(state.stepAttempts).length >= MAX_STEPS) {
     return move(enter(state, 'review', seen), [...notices, notify('max-steps'), review('max-steps')]);
   }
   if (whole(event.policyHits) > 0 && state.policyDecision === null) {
@@ -464,10 +499,11 @@ function validated(state: RunState, event: Extract<RunEvent, { type: 'VALIDATED'
     return move(enter(state, 'review'), [{ type: 'highlight-next' }, { type: 'highlight-submit' },
       ...(ctx.autoAdvance ? [notify('final-unknown')] : []), review('final-unknown')]);
   }
-  if (autoAdvanceVerdict(state, { errors, step: event.step }, ctx).advance) {
-    return move(enter(state, 'advance'), [{ type: 'press-next' }]);
-  }
-  return awaitTransition(state, null, [{ type: 'highlight-next' }]);
+  const verdict = autoAdvanceVerdict(state, { errors, step: event.step }, ctx);
+  if (verdict.advance) return move(enter(state, 'advance'), [{ type: 'press-next' }]);
+  // A CAPTCHA not known solved is the one refusal the person would not expect: the notice says to press Next.
+  const why = verdict.refusal === 'captcha-unsolved' ? [notify('captcha-next')] : [];
+  return awaitTransition(state, null, [...why, { type: 'highlight-next' }]);
 }
 
 /** Next was pressed: the extension's click is awaited with its cap, the person's without a timer. */
@@ -515,6 +551,21 @@ function repeatable(state: RunState, kind: RepeatableKind, counter: RepeatableCo
 /** The current step's attempts so far. */
 function attemptsOf(state: RunState): number {
   return state.stepSignature === null ? MAX_STEP_ATTEMPTS : state.stepAttempts[state.stepSignature] ?? 0;
+}
+
+/** A step's place among the steps the run has filled, in the order it first filled them (stepAttempts keeps that
+ *  order: a signature is never an array index); a step not filled yet comes after them. Back and forth keeps each
+ *  step's place (the Phase 5 review, C-S8). */
+function positionOf(state: RunState, signature: string): number {
+  const order = Object.keys(state.stepAttempts);
+  const at = order.indexOf(signature);
+  return at >= 0 ? at : order.length;
+}
+
+/** A step the run may no longer fill: it had its attempts, or it would pass the step guard. */
+function atLimit(state: RunState, signature: string): boolean {
+  if (Object.hasOwn(state.stepAttempts, signature)) return state.stepAttempts[signature]! >= MAX_STEP_ATTEMPTS;
+  return Object.keys(state.stepAttempts).length >= MAX_STEPS;
 }
 
 function expired(state: RunState, now: number): boolean {

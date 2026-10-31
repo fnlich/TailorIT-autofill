@@ -7,7 +7,10 @@
  * - The sections are the adapter's repeatables on the step, each kind once (the first the adapter names).
  * - Adds (addBlocks), before the step's reactive loop: planAdd decides from the counts; the Add button must be visible
  *   and pass assertNotSubmit before its click is counted, and the counters (the REPEATABLE event, stored before the
- *   click) never let the clicks on a step pass the profile's count, across reloads too. One untrusted click() at a
+ *   click) never let the clicks on a step pass the profile's count, across reloads too. Once counted, the button is
+ *   checked again at the click itself (still the adapter's Add, connected, shown, enabled, clickIfAllowed), with
+ *   nothing awaited between, and a click not made is uncounted (the Phase 5 review, X-S3). An Add that is, holds or
+ *   sits in the adapter's Next or Submit is never clicked (X-S7). One untrusted click() at a
  *   time, settled after each; a click that added no block stops the adding. A typeless button inside a form is a
  *   submit button: it is never clicked, and the entries left without a block are the person's to add
  *   (needs-your-click, the needs-click notice). No Add is ever a field, so it has no row (FIELD_KINDS has no button).
@@ -25,7 +28,7 @@ import { sectionKey } from '../core/text/keys';
 import type { FieldKey } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import { REPEATABLE_KINDS, type RepeatableCounter, type RepeatableKind } from '../core/types/run';
-import { assertNotSubmit } from '../dom/fillers';
+import { assertNotSubmit, clickIfAllowed } from '../dom/fillers';
 import { newScanCache } from '../dom/scan-cache';
 import { settle, type SettleOptions } from '../dom/settle';
 import type { ScanResult } from '../dom/types';
@@ -90,6 +93,19 @@ function clickable(button: HTMLElement | null): button is HTMLElement {
   return button !== null && isUserVisible(button, newScanCache()) && (button as HTMLButtonElement).disabled !== true;
 }
 
+/** The one untrusted click on a section's Add, decided where it is made: still the adapter's Add, in the page, shown,
+ *  enabled, and allowed by assertNotSubmit (clickIfAllowed: never Submit, never the step's Next). */
+function clickNow(button: HTMLElement, section: SectionView, env: AddEnv): boolean {
+  let now: HTMLElement | null;
+  try {
+    now = section.addButton();
+  } catch {
+    return false;
+  }
+  if (!button.isConnected || now !== button || !clickable(button)) return false;
+  return clickIfAllowed(button, { adapter: env.adapter, root: env.root });
+}
+
 /** Clicks each section's Add until every entry has a block, one click at a time (module header). */
 export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): Promise<AddOutcome[]> {
   const outcomes: AddOutcome[] = [];
@@ -122,7 +138,14 @@ export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): 
         outcomes.push({ kind: section.kind, counter: counted, clicks, stop: 'stopped', missing });
         break;
       }
-      button.click();
+      // The page had the record's round trip to change the button: it is checked again at the click itself, with
+      // nothing awaited between (the Phase 5 review, X-S3), and a click not made is uncounted after.
+      if (!clickNow(button, section, env)) {
+        const unclicked = { ...counted, addClicks: Math.max(0, counted.addClicks - 1) };
+        await env.record(section.kind, unclicked);
+        outcomes.push({ kind: section.kind, counter: unclicked, clicks, stop: 'add-refused', missing });
+        break;
+      }
       clicks += 1;
       afterClick = true;
       const settled = await settle(env.root, { adapter: env.adapter, signal: env.signal, ...env.settle });

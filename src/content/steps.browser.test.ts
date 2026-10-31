@@ -363,12 +363,14 @@ describe('pauses: nothing automated, the person continues', () => {
     expect(codes(lastReport(worker))).toContain('captcha');
     expect(worker.of('plan/request')).toEqual([]);
     expect(loaded.events.events.filter((event) => event.type === 'input')).toEqual([]);
-    // The person solved it: Continue (a new run from this one's state) fills the step.
-    loaded.fixture.doc.getElementById('captcha')!.remove();
+    // The person solved it, the widget staying where it is (as a vendor's does): Continue (a new run from this one's
+    // state) fills the step, and the widget it handed over does not pause it again (the Phase 5 review, X-S4).
     await worker.platform.deliver({ v: 1, type: 'run/continue' });
     await vi.waitFor(() => expect(lastState(worker).status).toBe('wait-transition'), { timeout: 15_000 });
+    expect(loaded.fixture.doc.getElementById('captcha')!.isConnected).toBe(true);
     expect(worker.of('run/begin')).toHaveLength(2);
     expect(Object.values(lastState(worker).stepAttempts)).toEqual([1]);
+    expect(byId(loaded.fixture, 'name').value).toBe(goldenProfile().identity.fullName);
   });
 
   it('is auth-needed on a sign-in step, and never fills it', async () => {

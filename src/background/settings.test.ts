@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
-import { contentSender, pageSender, startTestWorker, tokenRecord } from './worker.testkit';
+import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent } from './worker.testkit';
 
 const OPTIONS = pageSender('options.html');
 const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, autoAdvance: true, preapprovedConsent: ['privacy' as const],
@@ -39,6 +39,32 @@ describe('settings', () => {
       before: async () => fakeBrowser.storage.local.set({ 'settings:v1': { version: 1, panel: 'sideways' } }),
     });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: DEFAULT_SETTINGS } });
+  });
+
+  it('reach every frame with a form once saved, as its content settings, so a run reads auto-advance afresh (the Phase 5 review, C-S2)', async () => {
+    const worker = await startTestWorker();
+    const other = contentSender({ tab: { id: 8 }, frameId: 3, documentId: 'doc-3' });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true }, other);
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: false },
+      contentSender({ frameId: 5, documentId: 'doc-5' }));
+    // One frame is gone: the save is answered all the same.
+    worker.fakes.frameAnswers = ({ options }) => {
+      if (options?.frameId === 3) throw new Error('Could not establish connection. Receiving end does not exist.');
+      return { ok: true, data: {} };
+    };
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: CHOSEN }, OPTIONS))
+      .toEqual({ ok: true, data: { settings: CHOSEN } });
+    const pushed = sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')
+      .sort((a, b) => a.tabId - b.tabId);
+    const message = { v: 1, type: 'settings/changed', settings: { panel: 'in-page', autoAdvance: true, llm: CHOSEN.llm } };
+    expect(pushed).toEqual([
+      { tabId: 7, message, options: { frameId: 0, documentId: 'doc-1' } },
+      { tabId: 8, message, options: { frameId: 3, documentId: 'doc-3' } },
+    ]);
+    // A save that does not parse tells no frame anything.
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN, panel: 'floating' } }, OPTIONS);
+    expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')).toHaveLength(2);
   });
 
   it('are read and written by extension pages only', async () => {

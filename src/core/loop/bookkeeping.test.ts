@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { BaseKey } from '../types/field';
 import type { ValueMac } from '../types/loop';
 import {
-  awaitingKeys, baseKeyOf, childrenOf, createLoop, isFollowUpLabel, isStopped, loopVerdict, MAX_OPTION_CHANGES, MAX_PASSES,
-  MAX_REAPPEARANCES, MAX_REVEAL_EDGES, MAX_VALUE_FLIPS, mayWrite, observeScan, OPTION_WAIT_PASSES, orderPending,
-  recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf, storedBaseKey, type LoopEvent, type LoopField,
-  type LoopState,
+  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, isFollowUpLabel, isStopped, loopVerdict,
+  MAX_OPTION_CHANGES, MAX_PASSES, MAX_REAPPEARANCES, MAX_REVEAL_EDGES, MAX_VALUE_FLIPS, mayWrite, observeScan,
+  OPTION_WAIT_PASSES, orderPending, recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf,
+  storedBaseKey, type LoopEvent, type LoopField, type LoopState,
 } from './bookkeeping';
 import { field, fullSpec, inOrder, mac, rowOf, unwrittenRow, withOptions } from './loop.testkit';
 import { loopRows } from './rows';
@@ -760,5 +760,54 @@ describe('the Phase 3 review', () => {
     expect(recordRows(back.state, [rowOf(country, { status: 'skipped', reason: 'already-correct', wrote: false,
       provenance: null, verification: 'not-applicable' })]).fields.get(country.baseKey)?.row)
       .toMatchObject({ status: 'verified', wrote: true });
+  });
+});
+
+describe('the Phase 5 review: a later attempt on a step starts from the earlier one\'s books (C-S3, C-S5)', () => {
+  const name = field('Full name', 'text', { domOrder: 0 });
+  const email = field('Email', 'text', { domOrder: 1 });
+  const phone = field('Phone', 'text', { domOrder: 2 });
+  /** Attempt 1: all three written, and its books at the end. */
+  const first = () => {
+    let state = settled(inOrder(name, email, phone));
+    for (const [spec, value] of [[name, 'Alex Rivera'], [email, 'alex@example.com'], [phone, '512']] as const) {
+      state = written(state, spec, value);
+    }
+    return observeScan(state, inOrder(name, email, phone),
+      { valueMacs: macsOf({ 'Full name': 'Alex Rivera', Email: 'alex@example.com', Phone: '512' }, inOrder(name, email, phone)) })
+      .state;
+  };
+
+  it('carries the fields a pass wrote or the person took over, and nothing else', () => {
+    const untouched = field('City', 'text', { domOrder: 3 });
+    const books = recordRows(observeScan(first(), inOrder(name, email, phone, untouched)).state,
+      [unwrittenRow(untouched, 'no-profile-value')]);
+    expect(carriedFields(books).map((tracked) => tracked.label)).toEqual(['Full name', 'Email', 'Phone']);
+  });
+
+  it('keeps our verified rows as ours, never plans them again, and rows what the person changed as theirs', () => {
+    const fields = inOrder(name, email, phone);
+    const again = observeScan(createLoop({ carried: carriedFields(first()) }), fields, {
+      valueMacs: macsOf({ 'Full name': 'Jordan Person', Email: 'alex@example.com', Phone: '' }, fields),
+      // The person typed the name while the run rested; the page emptied the phone.
+      touched: new Set([name.baseKey]), cleared: new Set([phone.baseKey]),
+    });
+    expect(again.pending).toEqual([phone.key]);
+    expect(again.state.fields.get(name.baseKey)).toMatchObject({ status: 'frozen', reason: 'changed-by-you' });
+    expect(mayWrite(again.state, name.key)).toBe(false);
+    expect(again.state.fields.get(email.baseKey)).toMatchObject({ status: 'resolved', wrote: true,
+      row: { status: 'verified', wrote: true } });
+    expect(again.state.fields.get(phone.baseKey)).toMatchObject({ status: 'pending', cause: 'value-changed' });
+    // Its first scan is the attempt's pass 0, and nothing that changed since is a new field or an appearance.
+    expect(again.state.pass).toBe(0);
+    expect(types(again.events)).toEqual(['value-changed']);
+  });
+
+  it('writes nothing over a value the page replaced, and never one the person replaced', () => {
+    const fields = inOrder(name, email, phone);
+    const again = observeScan(createLoop({ carried: carriedFields(first()) }), fields, {
+      valueMacs: macsOf({ 'Full name': 'Alex R.', Email: 'alex@example.com', Phone: '512' }, fields) });
+    expect(again.state.fields.get(name.baseKey)).toMatchObject({ status: 'pending', cause: 'replaced' });
+    expect(mayWrite(again.state, name.key)).toBe(false);
   });
 });

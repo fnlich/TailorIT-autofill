@@ -1,7 +1,9 @@
 /*
  * Never submit (docs/ARCHITECTURE.md "Filler"; docs/design/runtime.md §6). submit() and requestSubmit() are banned by
  * lint everywhere, and every untrusted click() the extension makes goes through assertNotSubmit, which refuses:
- * - the adapter's Submit button, and anything inside it;
+ * - the adapter's Submit button, anything inside it, and anything that holds it;
+ * - the adapter's Next button, anything inside it and anything that holds it, unless the step machine allows Next (an
+ *   Add, an option or a box is never the step's Next: the Phase 5 review, X-S7);
  * - any element whose text is a submit word (submit, apply, send, finish, complete, confirm);
  * - any element whose activation would submit a form: a button with a form owner whose .type is "submit" (a typeless
  *   button included), input[type=submit] and input[type=image], anything inside such a button, and a <label> (or an
@@ -16,7 +18,7 @@ import type { Adapter } from '../../adapters/types';
 export const SUBMIT_WORDS = /\b(?:submit|apply|send|finish|complete|confirm)\b/i;
 
 /** Why a click was refused. */
-export const CLICK_REFUSALS = ['adapter-submit', 'submit-word', 'submits-form', 'inside-submit',
+export const CLICK_REFUSALS = ['adapter-submit', 'submit-word', 'submits-form', 'adapter-next', 'inside-submit',
   'label-of-refused'] as const;
 export type ClickRefusal = (typeof CLICK_REFUSALS)[number];
 
@@ -44,9 +46,12 @@ export function clickIfAllowed(el: HTMLElement, ctx: NotSubmitContext): boolean 
 
 function refusalOf(el: Element, ctx: NotSubmitContext, depth: number): ClickRefusal | null {
   const submitButton = ctx.root !== null ? ctx.adapter?.submitButton?.(ctx.root) ?? null : null;
-  if (submitButton !== null && (submitButton === el || submitButton.contains(el))) return 'adapter-submit';
+  if (submitButton !== null && (submitButton.contains(el) || el.contains(submitButton))) return 'adapter-submit';
   if (SUBMIT_WORDS.test(shownText(el))) return 'submit-word';
   if (submitsForm(el) && !nextException(el, ctx)) return 'submits-form';
+  // Next itself, on the step machine's word on a step declared not final, is the one click near it that may be made.
+  const next = ctx.root !== null ? ctx.adapter?.nextButton?.(ctx.root) ?? null : null;
+  if (next !== null && (next.contains(el) || el.contains(next)) && !nextException(el, ctx)) return 'adapter-next';
   const button = el.parentElement?.closest('button') ?? null;
   if (button !== null && depth < 4 && refusalOf(button, ctx, depth + 1) !== null) return 'inside-submit';
   const label = el.closest('label');

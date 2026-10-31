@@ -259,10 +259,31 @@ export function isFollowUpLabel(label: string): boolean {
   return FOLLOW_UP_LABEL.test(keyWithBrackets(label, 'label'));
 }
 
-/** A loop with no scan yet. `revealEdges` are earlier runs' (RunState.revealEdges, stored form), for ordering. */
-export function createLoop(prior: { revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]> } = {}): LoopState {
-  return { pass: -1, fields: new Map(), edges: [], priorEdges: (prior.revealEdges ?? []).slice(0, MAX_REVEAL_EDGES),
+/**
+ * A loop with no scan yet. `revealEdges` are earlier runs' (RunState.revealEdges, stored form), for ordering.
+ * `carried`: an earlier attempt's fields on the same step, in the same run (carriedFields: a fix pass, or the step
+ * again after Back), so this attempt knows what we wrote there (the value hash, under the run's key) and what the
+ * person took over (the Phase 5 review, C-S3, C-S5). Their first scan reads them as any later scan does: a value still
+ * ours keeps our row and is not planned again; one the person touched is frozen, theirs once it changed; one the page
+ * reset is written again; another value in its place is planned for its row only.
+ */
+export function createLoop(prior: { revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
+  carried?: readonly TrackedField[] } = {}): LoopState {
+  const fields = new Map<BaseKey, TrackedField>();
+  for (const field of prior.carried ?? []) {
+    // Where it was and what this attempt's passes did start afresh; what we wrote and whose it is stay.
+    fields.set(field.baseKey, { ...field, present: true, firstSeenPass: 0, lastSeenPass: -1, followUp: false,
+      waitedScans: 0 });
+  }
+  return { pass: -1, fields, edges: [], priorEdges: (prior.revealEdges ?? []).slice(0, MAX_REVEAL_EDGES),
     writers: [], signature: null, stalled: false };
+}
+
+/** The fields a later attempt on the same step carries (createLoop's `carried`): those present at the latest scan that
+ *  we wrote, whose row was a write of ours, or that the person took over. In memory only: they hold value hashes. */
+export function carriedFields(state: LoopState): TrackedField[] {
+  return [...state.fields.values()].filter((field) => field.present
+    && (field.wrote || field.ourRow !== null || field.status === 'frozen'));
 }
 
 /** The parts of a tracked field a scan sets. */

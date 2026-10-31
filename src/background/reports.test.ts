@@ -130,7 +130,13 @@ describe('reports', () => {
 
     await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'in-page' } }, pageSender('options.html'));
     await putReport(worker, runId, frameReport(runId, 0, { status: 'done' }));
+    // The save itself tells the frame its new settings (settings/changed, the Phase 5 review's C-S2); then the report.
     expect(sentToFrames(worker)).toEqual([{
+      tabId: 7,
+      message: { v: 1, type: 'settings/changed', settings: { panel: 'in-page', autoAdvance: false,
+        llm: DEFAULT_SETTINGS.llm } },
+      options: { frameId: 0, documentId: 'doc-1' },
+    }, {
       tabId: 7,
       message: { v: 1, type: 'report/update', reports: [frameReport(runId, 0, { status: 'done' })] },
       options: { frameId: 0, documentId: 'doc-1' },

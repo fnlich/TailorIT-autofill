@@ -39,7 +39,10 @@ export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attenti
   // The Phase 2 review: policy text only hidden text holds (S6), and a form its page hides (S1).
   'policy-hidden-text', 'form-hidden',
   // The step machine (Phase 5): a step whose finality the adapter cannot tell, with auto-advance on; a runaway wizard.
-  'final-unknown', 'max-steps'] as const;
+  'final-unknown', 'max-steps',
+  // The Phase 5 review (X-S8): a form its page hid just before auto-advance would have pressed Next; and (X-S4,
+  // tightened) a step whose CAPTCHA is not known solved, whose Next is left to the person.
+  'next-hidden', 'captcha-next'] as const;
 
 export const FrameReportSchema = z.strictObject({
   v: z.literal(1),

@@ -52,6 +52,8 @@ export const LOG_CODES = [
   'policy.evicted',
   'settings.saved',
   'settings.unreadable',
+  // settings/changed reached this many frames (the Phase 5 review, C-S2).
+  'settings.pushed',
   // The review panel and the frames.
   'panel.opened',
   'panel.open-failed',
@@ -104,6 +106,12 @@ export const LOG_CODES = [
   'content.next-refused',
   'content.step-review-error',
   'content.run-resumed',
+  // The Phase 5 review: Next withheld because auto-advance was turned off since the validation (C-S2), a resting run
+  // that stopped watching a page whose step kept changing with nothing to fill (X-S5), and a Cancel that ended a
+  // paused run (C-S6).
+  'content.next-withheld',
+  'content.watch-ended',
+  'content.pause-cancelled',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

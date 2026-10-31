@@ -12,6 +12,7 @@ import type { FillResult, PlannedWrite } from '../core/types/fill';
 import type { RepeatableCounter, RepeatableKind } from '../core/types/run';
 import { loadFixture, logEvents, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { scan } from '../dom/scan';
+import { deadline } from '../dom/time';
 import { addBlocks, boxBeforeEndDate, currentJobRows, needsClicks, sectionsOf, type AddEnv } from './repeatables';
 
 afterEach(() => removeFixtures(document));
@@ -107,6 +108,71 @@ describe('addBlocks: one Add click at a time, from counts', () => {
     const fixture = await loadFixture(document, positions(2));
     const { env, sections } = envOf(fixture, 0);
     expect(await addBlocks(env, sections)).toMatchObject([{ stop: 'complete', clicks: 0, missing: 0 }]);
+  });
+});
+
+describe('the Add button is checked at its click (the Phase 5 review, X-S3 and X-S7)', () => {
+  /** An add environment whose record (runstate/put, a round trip to the worker) lets the page act meanwhile. */
+  function racing(fixture: Fixture, meanwhile: (add: HTMLElement) => void) {
+    const { env, sections, stored } = envOf(fixture, 2);
+    const add = fixture.doc.getElementById('add')!;
+    const record = env.record;
+    env.record = async (kind, next) => {
+      await record(kind, next);
+      await deadline(5);
+      if (next.addClicks === 1) meanwhile(add);
+    };
+    return { env, sections, stored };
+  }
+
+  for (const [name, meanwhile] of [
+    ['turns it into a submit button', (add: HTMLElement) => add.removeAttribute('type')],
+    ['hides it', (add: HTMLElement) => add.setAttribute('hidden', '')],
+    ['disables it', (add: HTMLElement) => ((add as HTMLButtonElement).disabled = true)],
+    ['takes it out of the page', (add: HTMLElement) => add.remove()],
+  ] as const) {
+    it(`never clicks an Add the page ${name} while its click was being counted, and uncounts it`, async () => {
+      const fixture = await loadFixture(document, positions(1));
+      const log = logEvents(fixture.doc);
+      let submits = 0;
+      fixture.doc.getElementById('root')!.addEventListener('submit', (event) => {
+        submits += 1;
+        event.preventDefault();
+      });
+      const { env, sections, stored } = racing(fixture, meanwhile);
+      const outcomes = await addBlocks(env, sections);
+      expect(submits).toBe(0);
+      expect(log.on('add').filter((event) => event.type === 'click')).toEqual([]);
+      expect(outcomes).toEqual([{ kind: 'experience', counter: { profile: 2, rendered: 1, addClicks: 0 }, clicks: 0,
+        stop: 'add-refused', missing: 1 }]);
+      // Counted before the click, as ever; then the click it never made is taken back.
+      expect(stored).toEqual([{ profile: 2, rendered: 1, addClicks: 1 }, { profile: 2, rendered: 1, addClicks: 0 }]);
+    });
+  }
+
+  it("never clicks an Add that is, sits in or holds the adapter's Next", async () => {
+    const page = `<!doctype html><body><form id="root"><div id="blocks"></div><div id="row">
+      <button type="button" id="next" data-action="next"><span id="inner">Next</span></button></div></form>
+      <script>window.__next = 0; document.getElementById('next').addEventListener('click', () => { window.__next += 1; });
+      </script></body>`;
+    for (const addId of ['next', 'inner', 'row']) {
+      const fixture = await loadFixture(document, page);
+      const root = fixture.doc.getElementById('root')!;
+      const adapter: Adapter = { ...genericAdapter, nextButton: () => fixture.doc.getElementById('next'),
+        isFinalStep: () => 'not-final', repeatables: () => [{ kind: 'experience',
+          blocks: () => Array.from(root.querySelectorAll('#blocks > .block')),
+          addButton: () => fixture.doc.getElementById(addId) }] };
+      let counter: RepeatableCounter | null = null;
+      const env: AddEnv = { adapter, root, signal: new AbortController().signal, settle: { quietMs: 40 },
+        profile: new Map<RepeatableKind, number>([['experience', 1]]), prior: () => counter,
+        record: async (_kind, next) => {
+          counter = next;
+        }, stopped: () => false };
+      const outcomes = await addBlocks(env, sectionsOf(adapter, root));
+      expect([addId, (fixture.view as unknown as { __next: number }).__next, outcomes[0]?.stop])
+        .toEqual([addId, 0, 'add-refused']);
+      removeFixtures(document);
+    }
   });
 });
 

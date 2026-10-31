@@ -4,7 +4,8 @@ import { NOTICE_CODES } from '../../shared/report';
 import type { FieldKey } from '../types/field';
 import { RESUME_AUTO_MS, RUN_STATE_TTL_MS, RUN_STATUSES, type RunState, type RunStatus } from '../types/run';
 import {
-  ADVANCE_REFUSALS, autoAdvanceVerdict, createRunState, MAX_FILLED_KEYS_PER_STEP, MAX_STEP_ATTEMPTS, MAX_STEPS,
+  ADVANCE_REFUSALS, autoAdvanceVerdict, createRunState, MAX_FILLED_KEYS_PER_STEP, MAX_IDLE_TRANSITIONS, MAX_STEP_ATTEMPTS,
+  MAX_STEPS,
   noticeOfPause, reduceRun, repeatableCounterKey, resumeMode, STEP_NOTICES, storedFieldKey, TRANSITION_CAP_MS,
   type RunContext, type RunEffect, type RunEvent, type StepFacts,
 } from './machine';
@@ -31,7 +32,7 @@ const filled = (counts: Partial<{ flagged: number; blocked: number; unresolved: 
   keys: string[] = []): RunEvent => ({ type: 'FILLED', filledKeys: keys as FieldKey[], flagged: 0, blocked: 0,
   unresolved: 0, ...counts });
 const facts = (patch: Partial<StepFacts> = {}): StepFacts =>
-  ({ finality: 'not-final', nextVisible: true, settled: true, unconfirmedDrafts: 0, ...patch });
+  ({ finality: 'not-final', nextVisible: true, settled: true, unconfirmedDrafts: 0, captchaUnsolved: false, ...patch });
 const validated = (errors = 0, fixable = 0, step: Partial<StepFacts> = {}): RunEvent =>
   ({ type: 'VALIDATED', errors, fixable, step: facts(step) });
 const CLEAN = { flagged: 0, blocked: 0, unresolved: 0 };
@@ -197,7 +198,9 @@ describe('the transition table', () => {
     });
 
     it('SCANNED past MAX_STEPS steps: review with the max-steps notice, nothing filled', () => {
-      const deep = at('scan-step', { stepIndex: MAX_STEPS - 1 });
+      const many = Object.fromEntries(Array.from({ length: MAX_STEPS }, (_, n) =>
+        [stepSignature({ heading: `Page ${n}`, anchors: [] }), 1]));
+      const deep = { ...fresh(), status: 'scan-step' as const, stepAttempts: many };
       const { state, effects } = reduceRun(deep, scanned(S2), OFF);
       expect(state.status).toBe('review');
       expect(state.stepAttempts[S2]).toBeUndefined();
@@ -273,7 +276,7 @@ describe('the transition table', () => {
     const atCard = () => reduceRun({ ...fresh(), status: 'scan-step' }, scanned(S1, { policyHits: 1 }), OFF).state;
 
     it('POLICY_ACCEPTED: fill-step as attempt 1, the decision kept for later steps', () => {
-      const { state, effects } = reduceRun(atCard(), { type: 'POLICY_ACCEPTED' }, OFF);
+      const { state, effects } = reduceRun(atCard(), { type: 'POLICY_ACCEPTED', scanned: true }, OFF);
       expect(state).toMatchObject({ status: 'fill-step', policyDecision: 'accepted', stepAttempts: { [S1]: 1 } });
       expect(effects.at(-1)).toEqual({ type: 'fill-step', attempt: 1, fix: false });
     });
@@ -285,7 +288,8 @@ describe('the transition table', () => {
 
     it('takes the decision only at the card', () => {
       const state = at('fill-step');
-      expect(reduceRun(state, { type: 'POLICY_ACCEPTED' }, OFF)).toEqual({ state, effects: [] });
+      expect(reduceRun(state, { type: 'POLICY_ACCEPTED', scanned: true }, OFF)).toEqual({ state, effects: [] });
+      expect(reduceRun(state, { type: 'POLICY_ACCEPTED', scanned: false }, OFF)).toEqual({ state, effects: [] });
       expect(reduceRun(state, { type: 'POLICY_DECLINED' }, OFF)).toEqual({ state, effects: [] });
     });
   });
@@ -540,7 +544,9 @@ describe('the transition table', () => {
       const events: RunEvent[] = [{ type: 'DETECTED' }, { type: 'CONTINUE' }, scanned(S2), filled(), validated(),
         { type: 'ADVANCED', by: 'extension' }, { type: 'TRANSITIONED', signature: S2 }, { type: 'SUBMITTED' },
         { type: 'USER_STOPPED' }, { type: 'ERROR', reason: 'internal-error' }, { type: 'PAUSE', reason: 'captcha' },
-        { type: 'RESUMED', by: 'person', sameTab: true }, { type: 'POLICY_ACCEPTED' }];
+        { type: 'RESUMED', by: 'person', sameTab: true }, { type: 'POLICY_ACCEPTED', scanned: true },
+        { type: 'POLICY_ACCEPTED', scanned: false }, { type: 'NEXT_WITHHELD', reason: 'setting-off' },
+        { type: 'NEXT_WITHHELD', reason: 'captcha-unsolved' }];
       for (const status of ['done', 'stopped'] as const) {
         const state = at(status);
         for (const event of events) expect(reduceRun(state, event, ON)).toEqual({ state, effects: [] });
@@ -656,6 +662,7 @@ describe('auto-advance', () => {
     ['blocked', at('validate', { lastFill: { ...CLEAN, blocked: 1 } }), ok, true],
     ['unresolved', at('validate', { lastFill: { ...CLEAN, unresolved: 1 } }), ok, true],
     ['unconfirmed-draft', ready, { ...ok, step: facts({ unconfirmedDrafts: 1 }) }, true],
+    ['captcha-unsolved', ready, { ...ok, step: facts({ captchaUnsolved: true }) }, true],
     ['not-settled', ready, { ...ok, step: facts({ settled: false }) }, true],
     ['attempts', at('validate', { lastFill: CLEAN }, MAX_STEP_ATTEMPTS), ok, true],
   ] as const)('refuses with %s', (refusal, state, check, autoAdvance) => {
@@ -668,7 +675,7 @@ describe('auto-advance', () => {
 
   it('lists every refusal it can give', () => {
     expect([...ADVANCE_REFUSALS]).toEqual(['setting-off', 'final', 'final-unknown', 'no-next', 'errors', 'not-filled',
-      'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'not-settled', 'attempts']);
+      'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled', 'attempts']);
   });
 });
 
@@ -771,7 +778,10 @@ describe('RunState holds no value', () => {
     const events: RunEvent[] = [{ type: 'DETECTED' }, { type: 'NOT_AN_APPLICATION' }, { type: 'AUTH', wall: 'sign-in' },
       { type: 'PAUSE', reason: 'captcha' }, { type: 'PAUSE', reason: 'page-busy' }, { type: 'CONTINUE' },
       scanned(S1), scanned(S2, { policyHits: 1, tripwireHits: 1, canaries: ['a canary text'] }), scanned(S3),
-      { type: 'POLICY_ACCEPTED' }, filled({}, ['workday|s|a|none|0']), filled({ flagged: 1 }),
+      { type: 'POLICY_ACCEPTED', scanned: true }, { type: 'POLICY_ACCEPTED', scanned: false },
+      { type: 'NEXT_WITHHELD', reason: 'setting-off' }, { type: 'NEXT_WITHHELD', reason: 'captcha-unsolved' },
+      validated(0, 0, { captchaUnsolved: true }),
+      filled({}, ['workday|s|a|none|0']), filled({ flagged: 1 }),
       validated(), validated(1, 1), validated(1, 0), validated(0, 0, { finality: 'final' }),
       validated(0, 0, { finality: 'unknown' }), { type: 'ADVANCED', by: 'extension' }, { type: 'ADVANCED', by: 'person' },
       { type: 'TRANSITIONED', signature: S2 }, { type: 'TRANSITIONED', signature: S4 }, { type: 'STEP_UNCHANGED' },
@@ -826,5 +836,109 @@ describe('RunState holds no value', () => {
     // The walk went everywhere, and pressed Next sometimes.
     expect([...visited].sort()).toEqual([...RUN_STATUSES].sort());
     expect(pressed).toBeGreaterThan(0);
+  });
+});
+
+describe('the Phase 5 review', () => {
+  /** A step filled clean and validated with these facts. */
+  const step = (signature: string, finality: StepFacts['finality'] = 'not-final'): RunEvent[] =>
+    [scanned(signature), filled(), validated(0, 0, { finality })];
+
+  it('C-S4: Fill anyway in a document that has not scanned the step scans it first (tripwire, canaries), then fills', () => {
+    // A reload at the policy card: the new document shows the card again, and the person chooses Fill anyway there.
+    const card = reduceRun({ ...fresh(), status: 'scan-step' }, scanned(S1, { policyHits: 1 }), OFF).state;
+    const accepted = reduceRun(card, { type: 'POLICY_ACCEPTED', scanned: false }, OFF);
+    expect(accepted.state).toMatchObject({ status: 'scan-step', policyDecision: 'accepted', stepAttempts: {} });
+    expect(types(accepted.effects)).toEqual(['persist', 'report', 'scan']);
+    expect(types(accepted.effects)).not.toContain('fill-step');
+    // The scan's statement no longer stops it: the decision is taken.
+    const scannedAgain = reduceRun(accepted.state, scanned(S1, { policyHits: 1, tripwireHits: 1, canaries: ['Austin'] }),
+      OFF);
+    expect(scannedAgain.state).toMatchObject({ status: 'fill-step', canarySet: ['Austin'], stepAttempts: { [S1]: 1 } });
+    expect(scannedAgain.effects).toContainEqual({ type: 'notify', notice: 'tripwire' });
+  });
+
+  it('X-S2: a validation after the person\'s Next never presses Next; the step must be filled again first', () => {
+    // The person pressed Next on a clean step and the page, slow, still shows it: validate again, with auto-advance on.
+    const waiting = at('wait-transition', { lastFill: CLEAN });
+    const unchanged = reduceRun(waiting, { type: 'STEP_UNCHANGED' }, ON);
+    expect(unchanged.state).toMatchObject({ status: 'validate', lastFill: null });
+    const judged = reduceRun(unchanged.state, validated(), ON);
+    expect(types(judged.effects)).not.toContain('press-next');
+    expect(judged.state.status).toBe('wait-transition');
+    expect(judged.effects.slice(-2)).toEqual([{ type: 'highlight-next' }, { type: 'await-transition', from: S1,
+      capMs: null }]);
+    expect(autoAdvanceVerdict(unchanged.state, { errors: 0, step: facts() }, ON))
+      .toEqual({ advance: false, refusal: 'not-filled' });
+  });
+
+  it('C-S2: NEXT_WITHHELD (auto-advance turned off before the click) leaves Next to the person, with no timer', () => {
+    const { state, effects } = reduceRun(at('advance', { lastFill: CLEAN }), { type: 'NEXT_WITHHELD', reason: 'setting-off' },
+      OFF);
+    expect(state.status).toBe('wait-transition');
+    expect(effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'highlight-next' },
+      { type: 'await-transition', from: S1, capMs: null }]);
+    for (const status of ['validate', 'wait-transition', 'review', 'fill-step', 'handoff'] as const) {
+      const other = at(status);
+      expect(reduceRun(other, { type: 'NEXT_WITHHELD', reason: 'setting-off' }, ON)).toEqual({ state: other, effects: [] });
+    }
+  });
+
+  it('C-S8: a step\'s index is its place among the steps seen, so Back and forth never counts a step twice', () => {
+    let { state } = drive(reduceRun(fresh(), { type: 'DETECTED' }, OFF).state, [...step(S1),
+      { type: 'TRANSITIONED', signature: S2 }, ...step(S2), { type: 'TRANSITIONED', signature: S1 }, scanned(S1)], OFF);
+    expect(state).toMatchObject({ stepSignature: S1, stepIndex: 0 });
+    ({ state } = drive(state, [filled(), validated(), { type: 'TRANSITIONED', signature: S2 }, scanned(S2)], OFF));
+    expect(state).toMatchObject({ stepSignature: S2, stepIndex: 1 });
+    ({ state } = drive(state, [filled(), validated(), { type: 'TRANSITIONED', signature: S3 }, scanned(S3)], OFF));
+    expect(state).toMatchObject({ stepSignature: S3, stepIndex: 2 });
+    // However often the person goes back and forth, max-steps counts distinct steps only.
+    const notices: RunEffect[] = [];
+    for (let flip = 0; flip < 2 * MAX_STEPS; flip += 1) {
+      const next = drive(state, [{ type: 'TRANSITIONED', signature: flip % 2 === 0 ? S1 : S3 },
+        scanned(flip % 2 === 0 ? S1 : S3)], OFF);
+      state = next.state.status === 'review' ? next.state : drive(next.state, [filled(), validated()], OFF).state;
+      notices.push(...next.effects.flat().filter((effect) => effect.type === 'notify'));
+      expect(state.stepIndex).toBeLessThanOrEqual(2);
+    }
+    expect(notices).not.toContainEqual({ type: 'notify', notice: 'max-steps' });
+    expect(Object.keys(state.stepAttempts)).toEqual([S1, S2, S3]);
+  });
+
+  it('X-S5: at review, a step change to a step already at its limit is ignored: nothing counted, stored or reported', () => {
+    const limited = at('review', { stepAttempts: { [S1]: MAX_STEP_ATTEMPTS, [S2]: MAX_STEP_ATTEMPTS }, lastFill: CLEAN },
+      MAX_STEP_ATTEMPTS);
+    const state = { ...limited, stepAttempts: { [S1]: MAX_STEP_ATTEMPTS, [S2]: MAX_STEP_ATTEMPTS } };
+    expect(reduceRun(state, { type: 'TRANSITIONED', signature: S2 }, OFF)).toEqual({ state, effects: [] });
+    // So is one past the step guard.
+    const many = Object.fromEntries(Array.from({ length: MAX_STEPS }, (_, n) =>
+      [stepSignature({ heading: `Page ${n}`, anchors: [] }), MAX_STEP_ATTEMPTS]));
+    const full = { ...state, stepAttempts: many, stepSignature: Object.keys(many)[0]! };
+    expect(reduceRun(full, { type: 'TRANSITIONED', signature: S3 }, OFF)).toEqual({ state: full, effects: [] });
+    // A step with an attempt left is still followed; and from any other status the limited step is scanned (to review).
+    expect(reduceRun(state, { type: 'TRANSITIONED', signature: S3 }, OFF).state.status).toBe('scan-step');
+    expect(reduceRun({ ...state, status: 'wait-transition' }, { type: 'TRANSITIONED', signature: S2 }, OFF).state.status)
+      .toBe('scan-step');
+    expect(MAX_IDLE_TRANSITIONS).toBeGreaterThan(0);
+  });
+
+  it('X-S4, tightened: Next is never pressed on a step whose CAPTCHA is not known solved', () => {
+    // At validation: the person's Next, with the notice that says so.
+    const ready = at('validate', { lastFill: CLEAN });
+    const judged = reduceRun(ready, validated(0, 0, { captchaUnsolved: true }), ON);
+    expect(types(judged.effects)).not.toContain('press-next');
+    expect(judged.state.status).toBe('wait-transition');
+    expect(judged.effects.slice(2)).toEqual([{ type: 'notify', notice: 'captcha-next' }, { type: 'highlight-next' },
+      { type: 'await-transition', from: S1, capMs: null }]);
+    // With auto-advance off nothing would be pressed anyway: no notice.
+    expect(reduceRun(ready, validated(0, 0, { captchaUnsolved: true }), OFF).effects)
+      .not.toContainEqual({ type: 'notify', notice: 'captcha-next' });
+    // Right before the click: the same.
+    const withheld = reduceRun(at('advance', { lastFill: CLEAN }), { type: 'NEXT_WITHHELD', reason: 'captcha-unsolved' },
+      ON);
+    expect(withheld.state.status).toBe('wait-transition');
+    expect(withheld.effects.slice(2)).toEqual([{ type: 'notify', notice: 'captcha-next' }, { type: 'highlight-next' },
+      { type: 'await-transition', from: S1, capMs: null }]);
+    expect(STEP_NOTICES).toContain('captcha-next');
   });
 });

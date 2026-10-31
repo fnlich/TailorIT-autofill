@@ -80,6 +80,30 @@ describe('assertNotSubmit', () => {
       .toEqual({ ok: false, refusal: 'submit-word' });
   });
 
+  it("refuses, without the step machine's word, a click that is, sits in or holds the adapter's Next, and one that holds its Submit (the Phase 5 review, X-S7)", async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form id="f">
+      <div id="next-row"><button type="button" id="step-next" data-action="next"><span id="in-next">Next</span></button></div>
+      <div id="submit-row"><div role="button" id="go">Go on</div></div>
+      <button type="button" id="plain">Add another</button></form></body>`);
+    const root = fixture.doc.getElementById('f')!;
+    const adapter = { submitButton: () => fixture.doc.getElementById('go'),
+      nextButton: () => fixture.doc.getElementById('step-next'), isFinalStep: () => 'not-final' } as unknown as Adapter;
+    const verdict = (id: string, allowNext?: boolean) => assertNotSubmit(fixture.doc.getElementById(id)!,
+      { adapter, root, ...(allowNext === undefined ? {} : { allowNext }) });
+    expect(verdict('step-next')).toEqual({ ok: false, refusal: 'adapter-next' });
+    expect(verdict('in-next')).toEqual({ ok: false, refusal: 'adapter-next' });
+    expect(verdict('next-row')).toEqual({ ok: false, refusal: 'adapter-next' });
+    expect(verdict('submit-row')).toEqual({ ok: false, refusal: 'adapter-submit' });
+    expect(verdict('f')).toEqual({ ok: false, refusal: 'adapter-submit' });
+    expect(verdict('plain')).toEqual({ ok: true });
+    // The step machine's own click on Next stays allowed on a step declared not final; never one that holds Submit.
+    expect(verdict('step-next', true)).toEqual({ ok: true });
+    expect(verdict('submit-row', true)).toEqual({ ok: false, refusal: 'adapter-submit' });
+    const log = logEvents(fixture.doc);
+    expect(clickIfAllowed(fixture.doc.getElementById('step-next')!, { adapter, root })).toBe(false);
+    expect(log.events).toEqual([]);
+  });
+
   it('clicks only what it allows, and a refused click sends no event at all', async () => {
     const { fixture, root, adapter } = await setup();
     const log = logEvents(fixture.doc);

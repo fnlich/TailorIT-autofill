@@ -2365,7 +2365,9 @@ export type LoopEvent =
 export interface LoopVerdict { done: boolean; end: LoopEnd | null;
   unresolved: Array<{ key: FieldKey; baseKey: BaseKey; reason: ReasonCode }> }
 
-export function createLoop(prior?: { revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]> }): LoopState;
+export function createLoop(prior?: { revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
+  carried?: readonly TrackedField[] }): LoopState;        // carried: an earlier attempt's books on the step (Phase 5 review)
+export function carriedFields(state: LoopState): TrackedField[];   // present fields written, ours, or taken over
 export function observeScan(state: LoopState, scanned: readonly LoopField[], input?: {
   valueMacs?: ReadonlyMap<BaseKey, ValueMac>; attribution?: ReadonlyMap<BaseKey, BaseKey>;
   touched?: ReadonlySet<BaseKey>;                        // written fields the person touched since our write
@@ -2410,6 +2412,7 @@ Rules inside `observeScan`, `recordWrite` and `recordRows`:
 - **Order.** `pending` is in DOM order, as the planner takes it. `orderPending` orders a pass's writes: DOM order, except that a field another of them is known to reveal or change (this run's edges and earlier runs') comes after it; a cycle is broken at its first field in DOM order.
 - **The end** (`loopVerdict`, also in every observation): nothing pending, waiting or awaiting the LLM (`nothing-pending`); the scan after `MAX_PASSES` planned passes (`max-passes`); or a stalled page: the same keys as the scan before, no write between, and nothing new to plan (`stalled`, never while the LLM is awaited). `cut` ends it at once with the content script's reason (`page-busy` at the settle cap, `user-stopped`, and since the review a check before a later pass: `form-hidden`, `policy-notice`, `auth-required`, `challenge-present`) for what is pending or waiting, since a busy page says nothing yet of a list's options; before a cut at the settle cap, one more scan gives what the busy page revealed or changed meanwhile its `page-busy` rows. Otherwise it leaves, in DOM order: pending fields as `max-passes-reached` (or `internal-error` on a stalled page: they were handed out and no row came back), waiting lists as `options-never-loaded`, unresolvable and stopped fields with their own reasons.
 - **Rows** (`loopRows`): the fields present at the last scan in DOM order, then those that went. A field that went: one we wrote is settled as a write that did not read back (`filled`, flagged stays flagged; a hidden field may still hold our value), one we did not is `skipped`. A field left unresolved is flagged with the verdict's reason under the key it has now (a blocked row keeps its status and reason). A field never planned (it appeared at the last scan) gets a flagged row of its own, category `unknown`. A revealed field names its parent (`detail.revealedBy`).
+- **A later attempt on the same step** (the Phase 5 review, C-S3 and C-S5, 2026-10-31): a validation's fix pass, or the step again after Back, in the same run, starts from the earlier attempt's books, `createLoop({ carried: carriedFields(state) })`: the fields present at its latest scan that we wrote, whose row was a write of ours, or that the person took over. They keep their status, row, `ourRow`, `wrote`, value hash and flips (the content script hashes under the run's one key, so the hashes compare); where they were and what the attempt's passes did start afresh. Their first scan reads them as any later scan does: our value still there keeps our row and is not planned again; one the person touched since our write is frozen, theirs (`changed-by-you`) once it changed, never written; one the page reset is written again; another value in its place is planned for its row only. The content script's touch log runs for the document's whole life, so what the person typed while the run rested counts.
 - **Persistence.** `revealEdgesOf` gives this run's edges, then earlier runs' not found again, keys only, at most `MAX_REVEAL_EDGES`, for `RunState.revealEdges`, each key's section and label slug replaced by the first 16 hex of its SHA-256 (`storedBaseKey`): a label or a heading may echo a value the page shows back ("Preferred name if not Alex Rivera"), and RunState lives a day on disk (the Phase 3 review, L-S3, with the coordinator's ruling that the section is hashed too). `createLoop({ revealEdges })` takes them back after a reload, for ordering only, and `orderPending` and `childrenOf` compare them in that form. `childrenOf` names a writer's known dependants: the lists among them are the ones worth awaiting after its write.
 
 **Departures from the planned sketch** (the Phase 3 build, 2026-10-30):
@@ -2462,22 +2465,25 @@ export function isStepSignature(text: string): boolean;             // /^[a-f0-9
 export { MAX_STEP_ATTEMPTS, MAX_STEPS } from '../types/run';        // 2, 30
 export const TRANSITION_CAP_MS = 20_000;
 export const MAX_FILLED_KEYS_PER_STEP = 50;
+export const MAX_IDLE_TRANSITIONS = 8;   // a resting run follows at most this many step changes in a row that fill nothing
 export type AuthWall = 'sign-in' | 'create-account';
-export interface StepFacts { finality: StepFinality; nextVisible: boolean; settled: boolean; unconfirmedDrafts: number }
+export interface StepFacts { finality: StepFinality; nextVisible: boolean; settled: boolean; unconfirmedDrafts: number;
+  captchaUnsolved: boolean }                              // a CAPTCHA widget not known solved (Phase 5 review, X-S4)
 export type RunEvent =
   | { type: 'DETECTED' } | { type: 'NOT_AN_APPLICATION' }
   | { type: 'AUTH'; wall: AuthWall } | { type: 'PAUSE'; reason: PauseReason } | { type: 'CONTINUE' }
   | { type: 'SCANNED'; signature: string; policyHits: number; tripwireHits: number; canaries: readonly string[] }
-  | { type: 'POLICY_ACCEPTED' } | { type: 'POLICY_DECLINED' }
+  | { type: 'POLICY_ACCEPTED'; scanned: boolean } | { type: 'POLICY_DECLINED' }   // scanned: this document read the step
   | { type: 'FILLED'; filledKeys: readonly FieldKey[]; flagged: number; blocked: number; unresolved: number }
   | { type: 'VALIDATED'; errors: number; fixable: number; step: StepFacts }
   | { type: 'ADVANCED'; by: 'extension' | 'person' }
+  | { type: 'NEXT_WITHHELD'; reason: 'setting-off' | 'captcha-unsolved' }   // press-next: Next is the person's
   | { type: 'TRANSITIONED'; signature: string } | { type: 'STEP_UNCHANGED' } | { type: 'TIMED_OUT'; signature: string }
   | { type: 'SUBMITTED' } | { type: 'RESUMED'; by: 'load' | 'person'; sameTab: boolean }
   | { type: 'REPEATABLE'; kind: RepeatableKind; counter: RepeatableCounter }
   | { type: 'USER_STOPPED' } | { type: 'ERROR'; reason: ReasonCode };
 export const STEP_NOTICES = ['tripwire', 'policy', 'auth', 'captcha', 'page-busy', 'needs-click', 'validation',
-  'step-retry-limit', 'final-unknown', 'max-steps'] as const;      // each one of NOTICE_CODES
+  'step-retry-limit', 'final-unknown', 'max-steps', 'captcha-next'] as const;      // each one of NOTICE_CODES
 export const REVIEW_CAUSES = ['final-step', 'final-unknown', 'step-retry-limit', 'max-steps', 'validation-errors',
   'error'] as const;
 export type RunEffect =
@@ -2488,7 +2494,7 @@ export type RunEffect =
   | { type: 'show-review'; cause: ReviewCause; reason: ReasonCode | null } | { type: 'offer-continue' };
 export interface RunContext { autoAdvance: boolean; now: number; transitionCapMs?: number }
 export const ADVANCE_REFUSALS = ['setting-off', 'final', 'final-unknown', 'no-next', 'errors', 'not-filled',
-  'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'not-settled', 'attempts'] as const;
+  'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled', 'attempts'] as const;
 export function createRunState(input: { applicationKey: string; platform: Platform; now: number }): RunState;
 export function reduceRun(state: RunState, event: RunEvent, ctx: RunContext): { state: RunState; effects: RunEffect[] };
 export function autoAdvanceVerdict(state: RunState, check: { errors: number; step: StepFacts },
@@ -2510,11 +2516,12 @@ export function noticeOfPause(reason: PauseReason): StepNotice;
 | handoff | PAUSE {reason} | another reason | handoff, the newer reason, `resumeStatus` kept | pause(handoff), notify |
 | handoff, auth-needed | CONTINUE | — | scan-step, pause cleared | scan |
 | scan-step | SCANNED | `stepAttempts[sig] >= MAX_STEP_ATTEMPTS` (counted across reloads) | review | notify(step-retry-limit), show-review(step-retry-limit); nothing on the step is filled or counted |
-| scan-step | SCANNED | the step would pass `MAX_STEPS` (its index, or a 31st signature) | review | notify(max-steps), show-review(max-steps) |
+| scan-step | SCANNED | the step would be a 31st distinct signature (`MAX_STEPS`) | review | notify(max-steps), show-review(max-steps) |
 | scan-step | SCANNED | `policyHits > 0`, `policyDecision === null` | policy-notice | pause(policy), notify(policy) |
 | scan-step | SCANNED | otherwise | fill-step, `stepAttempts[sig]++` | fill-step {attempt, fix: false} |
 | scan-step | SCANNED | a malformed signature | review | show-review(error, internal-error) |
-| policy-notice | POLICY_ACCEPTED | — | fill-step, `policyDecision` accepted, `stepAttempts[sig]++` | fill-step |
+| policy-notice | POLICY_ACCEPTED {scanned: true} | this document scanned the step | fill-step, `policyDecision` accepted, `stepAttempts[sig]++` | fill-step |
+| policy-notice | POLICY_ACCEPTED {scanned: false} | a document that only showed the card again (a reload at it) | scan-step, `policyDecision` accepted | scan (the raw scan, tripwire and canaries come first; the scan's gate takes the decision) |
 | policy-notice | POLICY_DECLINED | — | stopped, `policyDecision` declined | — |
 | fill-step | REPEATABLE {kind, counter} | — | fill-step, `repeatableCounters[sig:kind]` = counter | (persist only) |
 | fill-step | FILLED | — | validate; `filledFieldKeys[sig]` ∪= `storedFieldKey(keys)` (first 50); `lastFill` the counts | validate |
@@ -2527,8 +2534,10 @@ export function noticeOfPause(reason: PauseReason): StepNotice;
 | validate | VALIDATED | no error, not final, otherwise | wait-transition | highlight-next, await-transition {from: sig, capMs: null} |
 | validate, advance | ADVANCED {by: person} | — | wait-transition | await-transition {capMs: null} |
 | advance | ADVANCED {by: extension} | — | wait-transition | await-transition {capMs: ctx.transitionCapMs ?? TRANSITION_CAP_MS} |
-| fill-step, validate, advance, wait-transition, review | TRANSITIONED {sig} | sig differs from the step's | scan-step | scan (the scan counts the new step: `stepIndex++`) |
-| wait-transition | STEP_UNCHANGED | — | validate | validate |
+| advance | NEXT_WITHHELD {reason} | auto-advance turned off since the validation (`setting-off`), or a CAPTCHA on the step not known solved (`captcha-unsolved`) | wait-transition | notify(captcha-next) for `captcha-unsolved`, highlight-next, await-transition {capMs: null} |
+| fill-step, validate, advance, wait-transition, review | TRANSITIONED {sig} | sig differs from the step's; at review, not a step at its limit | scan-step | scan (the scan sets the step's index) |
+| review | TRANSITIONED {sig} | sig is at its limit (`stepAttempts[sig] >= MAX_STEP_ATTEMPTS`, or a new one past `MAX_STEPS`) | unchanged (nothing stored or reported) | — |
+| wait-transition | STEP_UNCHANGED | — | validate, `lastFill` null (so the validation never presses Next: a fill of the step must come first) | validate |
 | wait-transition | TIMED_OUT {sig} | the step's signature | handoff, needs-click | pause(handoff), notify(needs-click) |
 | wait-transition | TIMED_OUT {sig} | another signature | handoff, page-busy | pause(handoff), notify(page-busy) |
 | any but done, stopped | SUBMITTED | — | done | — |
@@ -2542,9 +2551,9 @@ export function noticeOfPause(reason: PauseReason): StepNotice;
 | any other | RESUMED {by: load} | more than `RESUME_AUTO_MS` since `updatedAt` | unchanged (nothing stored) | report, offer-continue |
 | any other | RESUMED | by the load within `RESUME_AUTO_MS`, or by the person | scan-step | scan (`filledFieldKeys` is a hint: fields are verified again, never skipped) |
 
-**SCANNED, every row:** a signature other than the step's is a new step (`stepIndex++`); `stepSignature` is set; the canaries are merged nearest first (`mergeCanaries`, at most 32, none past 120 characters; the worker drops colliding ones when it stores RunState, section 7.4); the tripwire's hits count once per step, at its first scan, and any hit asks for notify(tripwire).
+**SCANNED, every row:** `stepIndex` is the step's place among the steps filled, in the order first filled (`stepAttempts`' key order; a step not filled yet comes after them), so Back and forth keeps each step's index; `stepSignature` is set; the canaries are merged nearest first (`mergeCanaries`, at most 32, none past 120 characters; the worker drops colliding ones when it stores RunState, section 7.4); the tripwire's hits count once per step, at its first scan, and any hit asks for notify(tripwire).
 
-**`autoAdvanceVerdict`**, in order: the setting on; the step declared `not-final` (`final`, then `final-unknown`, refuse); Next visible; no error; the step filled (`lastFill` not null) with nothing flagged, blocked or unresolved; no unconfirmed draft; settled; fewer than `MAX_STEP_ATTEMPTS` attempts. `startFill` clears `lastFill` for a new attempt, so it always describes the step being validated.
+**`autoAdvanceVerdict`**, in order: the setting on; the step declared `not-final` (`final`, then `final-unknown`, refuse); Next visible; no error; the step filled (`lastFill` not null) with nothing flagged, blocked or unresolved; no unconfirmed draft; no CAPTCHA widget not known solved (`captchaUnsolved`; a refusal for it adds notify(captcha-next) to the wait); settled; fewer than `MAX_STEP_ATTEMPTS` attempts. `startFill` clears `lastFill` for a new attempt, so it always describes the step being validated.
 
 **`resumeMode`:** none for no RunState, another tab, an expired or a finished one (done, stopped); continue for a paused one (auth-needed, handoff, policy-notice), one at review (the coordinator's ruling, 2026-10-30: a final, unknown or limited step is never filled again by itself on a reload), or one more than `RESUME_AUTO_MS` old; auto otherwise. The content script decides with it, and `reduceRun`'s `RESUMED` applies the same rules again.
 
@@ -2628,6 +2637,15 @@ export type BlockEntries = Readonly<Partial<Record<RepeatableKind, readonly (num
 - A request's own `entries` are kept, each checked against the profile's count (a whole index below it, else null), capped at `MAX_REPEATABLE_BLOCKS`.
 - The resolver fills a block of an assigned section from its entry (`blockEntries[kind][block]`; null, or a block past the assignment, gets no entry, so `no-profile-value`), and a section with no assignment from its block's place, as before. Languages too (`languages.language`, and a proficiency question's block).
 - The answer holds the entry count, each block's entry and whether it is a current job: no fingerprint, no value. `PlanOutput.repeatables` is absent when no section was named.
+
+**As built (the Phase 5 review, 2026-10-31):**
+- **Fill anyway after a reload at the card** (C-S4): `POLICY_ACCEPTED` carries `scanned`, whether the document that took the decision scanned the step. One that only showed the card again goes to scan-step with the decision taken, so the raw scan, the tripwire and the canaries come before any write.
+- **The person's own Next** (X-S2): `STEP_UNCHANGED` clears `lastFill`, so the validation that follows refuses with `not-filled`: it fixes, reviews or waits, and never presses on top of the person's click. A press needs a fill of the step since.
+- **Auto-advance turned off since the validation** (C-S2): press-next reads the setting again right before its click and answers `NEXT_WITHHELD` (`setting-off`); the run waits for the person's Next with no timer.
+- **A CAPTCHA not known solved** (X-S4, tightened by the coordinator, 2026-10-31): the person's Continue at a CAPTCHA pause stops the widgets they were handed from pausing the fill, but `StepFacts.captchaUnsolved` (dom/pause-detect.ts `unsolvedCaptchas`: a token-bearing widget whose response token is empty, and every Arkose widget, which holds none) refuses auto-advance with `captcha-unsolved`, at validation and again right before the click (`NEXT_WITHHELD` `captcha-unsolved`). The person presses Next; the `captcha-next` notice says so.
+- **A step's index** (C-S8) is its place among the steps filled, and `MAX_STEPS` counts distinct signatures: Back and forth over the same steps counts nothing twice and never trips the guard.
+- **At review** (X-S5) a step change to a step at its limit is ignored: the same state, no effect, nothing stored or reported. The content script then watches from what the page shows, and after `MAX_IDLE_TRANSITIONS` step changes in a row that filled nothing it stops watching.
+- **What the content script checks with it** (no new row): `detectPause` at validation and right before press-next's click (C-S1: a pause gives `AUTH` or `PAUSE`, never a click); before every write, `detectPause` over the whole document and the step still being the one filled (X-S1); a subframe still seen before the click (X-S8: `PAUSE` needs-click with the next-hidden notice); a run that failed feeds `ERROR` before it rests, so RunState is at review (C-S7); Cancel at a pause feeds `USER_STOPPED` (C-S6).
 
 ---
 

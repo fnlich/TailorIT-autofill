@@ -27,18 +27,32 @@
  *    hidden frame a later pass found cuts the loop (the Phase 3 review, L-S2 and L-S4): the pause, or the run ends
  *    stopped; a policy statement a later pass revealed shows the card (Cancel: stopped, policy-declined; Fill anyway:
  *    this run ends and a fresh one starts from its RunState, whose gate takes that decision).
- * 6. validate: the adapter's errors (fixable: those on a field no pass planned, or one the page emptied after our write:
- *    one more pass where the step has an attempt left), its finality ('unknown' without the hook: treated as final),
- *    Next's visibility, the settle, unconfirmed drafts (VALIDATED). Errors are surfaced at review, never paused on.
+ * 6. validate: a pause the step shows now (detectPause, the whole document: AUTH or PAUSE, never a click), then the
+ *    adapter's errors (fixable: those on a field no pass planned, or one the page emptied after our write, never one
+ *    the person emptied: one more pass where the step has an attempt left), its finality ('unknown' without the hook:
+ *    treated as final), Next's visibility, the settle, unconfirmed drafts (VALIDATED). Errors are surfaced at review,
+ *    never paused on.
  * 7. press-next: the one untrusted click() on the adapter's Next, through clickIfAllowed(…, {allowNext: true}), only
  *    when the reducer says so (auto-advance on, a step declared not final and clean); never Submit, which
- *    assertNotSubmit always refuses. A refused or missing Next pauses with needs-click.
+ *    assertNotSubmit always refuses. Right before it, with nothing awaited between the checks and the click: a frame
+ *    inside another page is still seen there (else a pause, the next-hidden notice), the step is the one validated,
+ *    no pause shows (detectPause: AUTH or PAUSE), auto-advance is still on and no CAPTCHA on the step is unsolved
+ *    (else NEXT_WITHHELD: Next is the person's). A refused or missing Next pauses with needs-click (the Phase 5
+ *    review, C-S1, C-S2, X-S4, X-S8).
  * 8. await-transition (transition.ts): the step's signature watched until it changes and the page is quiet, capped
  *    after our own click (TIMED_OUT), with no cap when the person advances: the run then rests ('waiting'), its report
  *    sent, and the person's Next moves it on (TRANSITIONED, or STEP_UNCHANGED when errors showed instead).
  * 9. highlight-next, highlight-submit, notify, show-review, pause, offer-continue: the in-page UI. At review the run
  *    rests and still watches the step (an adapter that tells steps apart): the person's own Next after fixing what
- *    the review showed is a transition. A pause ends the run; Continue (the runtime) starts the next from its state.
+ *    the review showed is a transition. A step change the machine ignores (a step at its limit) moves the watch on to
+ *    what the page shows, and after MAX_IDLE_TRANSITIONS step changes in a row that filled nothing the run stops
+ *    watching (the Phase 5 review, X-S5). A pause ends the run; Continue (the runtime) starts the next from its state,
+ *    with what this one carries (RunCarry): the value hasher, each step's loop books, and the CAPTCHA the person was
+ *    handed at a CAPTCHA pause, which does not pause that step again (X-S4). Cancel at a pause stops it for good
+ *    (USER_STOPPED, stored and reported: C-S6).
+ * Auto-advance is the run/begin answer's, then each settings/changed the worker pushes (settingsChanged: C-S2).
+ * A run that fails (RunFailure) gives the machine ERROR before it rests, so RunState is at review and a reload offers
+ * Continue rather than filling by itself (C-S7).
  * An 'expired' answer to run/begin, plan/request or report/put begins the run again, once; a second one ends the run in
  * the launcher's error state. plan/poll (Phase 4) never renews. The run ends for invalidation only on the platform's
  * word (channel.ts). Nothing here sends, stores or logs a value: RunState holds keys, hashes, counters and checked
@@ -50,15 +64,15 @@ import { mergeCanaries } from '../core/guard/canary';
 import { scanTripwires } from '../core/guard/tripwire';
 import type { RepeatableAnswer } from '../core/steps/blocks';
 import {
-  createRunState, reduceRun, repeatableCounterKey, TRANSITION_CAP_MS, type ReviewCause, type RunContext, type RunEffect,
-  type RunEvent, type StepFacts, type StepNotice,
+  createRunState, MAX_IDLE_TRANSITIONS, reduceRun, repeatableCounterKey, TRANSITION_CAP_MS, type ReviewCause,
+  type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice,
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, ReasonCode } from '../core/types/fill';
 import type { RepeatableKind, RunState, RunStatus } from '../core/types/run';
 import { clickIfAllowed } from '../dom/fillers';
-import { detectPause, type PauseSignal } from '../dom/pause-detect';
+import { captchaElements, detectPause, unsolvedCaptchas, type PauseSignal } from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
 import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
@@ -67,8 +81,9 @@ import { isUserVisible } from '../dom/visibility';
 import type { ErrorCode } from '../messaging/envelope';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
+import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
-import { runLoop, type LoopResult, type OptionsTimings, type SettleTimings } from './loop';
+import { runLoop, type LoopCarry, type LoopResult, type OptionsTimings, type SettleTimings } from './loop';
 import { RunAborted, type PlanAnswer } from './pass';
 import { frameHitsOf, hiddenPolicyHits, policyGateOf, postingOutsideFrame, type PolicyView } from './policy';
 import { addBlocks, currentJobRows, needsClicks, sectionsOf, type SectionView } from './repeatables';
@@ -77,11 +92,13 @@ import {
   type ReportLimiter,
 } from './report';
 import { highlightItems } from './targets';
+import type { TouchLog } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
 import type { HighlightItem } from './ui/highlights';
 import type { PolicyChoice } from './ui/notices';
 import type { PageUi } from './ui/page-ui';
+import { createValueHasher, type ValueHasher } from './values';
 import { finalGuard } from './verify';
 
 /** Why a run could not go on: a refusal from the worker, or a second 'expired'. */
@@ -108,6 +125,26 @@ export interface RunRequest {
   /** Where the machine starts: a RunState and the event that resumes it (CONTINUE after a pause, RESUMED after a
    *  reload or at the person's Continue). Without it a fresh RunState and DETECTED. Set by the runtime only. */
   from?: { state: RunState; event: RunEvent };
+  /** What the run before this one in the same document carries over (Continue, or Fill anyway mid-fill). Set by the
+   *  runtime only. Memory only. */
+  carry?: RunCarry;
+}
+
+/** What a run hands the next run in its document (FillRun.carryOut; the Phase 5 review, C-S3 and X-S4). Memory only:
+ *  the loop books hold value hashes and what was written. */
+export interface RunCarry {
+  /** The run's keyed value hasher, so the books' hashes still compare. */
+  hasher: ValueHasher | null;
+  /** Each step's loop books, by step signature (LoopResult.carry). */
+  steps: ReadonlyMap<string, LoopCarry>;
+  /** The CAPTCHA frames and containers the person was handed on a step, at their Continue at its CAPTCHA pause. */
+  handed: HandedCaptcha | null;
+}
+
+/** The CAPTCHA elements a step showed when the run paused on it (captchaElements), and that step's signature. */
+export interface HandedCaptcha {
+  signature: string;
+  elements: ReadonlySet<Element>;
 }
 
 /** The page a run fills: its application, adapter and form root, as they were when it started. */
@@ -149,6 +186,8 @@ export interface RunEnv {
   onRows(rows: readonly FillResult[]): void;
   /** Starts a fresh run once this one has ended (Fill anyway at a policy card a later pass showed). */
   fillAgain(request: RunRequest): void;
+  /** The person's trusted input on the document, heard all along (touches.ts): what they typed while a run rested. */
+  touches: TouchLog;
 }
 
 /** A report's counters before anything was scanned for the fill. */
@@ -157,7 +196,7 @@ const NO_COUNTERS: ReportHeader['counters'] = { passes: 0, hiddenControlsIgnored
 /** The notices of one step: a new step's scan forgets them. The run's own (tripwire, policy and the policy states)
  *  stay. */
 const STEP_NOTICE_CODES: readonly NoticeCode[] = ['attention-check', 'needs-click', 'deferred-fields', 'validation',
-  'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps'];
+  'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps', 'next-hidden', 'captcha-next'];
 
 /** The event a pause signal gives: sign-in and account creation are AUTH, the rest PAUSE with their reason. */
 function pauseEventOf(signal: PauseSignal): RunEvent {
@@ -250,9 +289,27 @@ export class FillRun {
   private offered = false;
   /** The run watches for the next step while it rests. */
   private watchingNow = false;
+  /** The run's keyed value hasher (made at its first fill, or carried). */
+  private hasher: ValueHasher | null;
+  /** Each step's loop books in this run, by step signature: its next attempt starts from them (C-S3). */
+  private readonly carries: Map<string, LoopCarry>;
+  /** The CAPTCHA the person was handed on a step, at their Continue (X-S4): it does not pause that step again. */
+  private readonly handed: HandedCaptcha | null;
+  /** The CAPTCHA this run paused on, for the Continue that follows. */
+  private pausedBy: HandedCaptcha | null = null;
+  /** Step changes in a row that filled nothing (X-S5). */
+  private idleTransitions = 0;
+  /** What the page showed at a step change the machine ignored: a resting run watches from it. */
+  private watchFrom: string | null = null;
+  /** settings/changed pushes so far, and the last one's auto-advance (C-S2). */
+  private pushes = 0;
+  private pushedAutoAdvance = false;
 
   constructor(private readonly env: RunEnv, readonly request: RunRequest) {
     this.root = env.page.root;
+    this.hasher = request.carry?.hasher ?? null;
+    this.carries = new Map(request.carry?.steps ?? []);
+    this.handed = request.carry?.handed ?? null;
   }
 
   /** Runs the run; resolves with where it first rests (or how it ended). It may move on later: at review or while it
@@ -307,6 +364,42 @@ export class FillRun {
     this.controller.abort();
   }
 
+  /** settings/changed: the person saved their settings. Auto-advance is read from them from now on: a validation, and
+   *  press-next right before its click, take it as it is (the Phase 5 review, C-S2). */
+  settingsChanged(settings: ContentSettings): void {
+    this.pushes += 1;
+    this.pushedAutoAdvance = settings.autoAdvance;
+    this.autoAdvance = settings.autoAdvance;
+  }
+
+  /** What the run that continues this one in its document carries over (RunCarry). `continued`: the person's trusted
+   *  Continue at this run's pause, which hands them a CAPTCHA it paused on. */
+  carryOut(continued: boolean): RunCarry {
+    return { hasher: this.hasher, steps: new Map(this.carries),
+      handed: continued && this.pausedBy !== null ? this.pausedBy : this.handed };
+  }
+
+  /** Cancel while the run rests at a pause (or an offer to continue): it stops for good, stored and reported stopped,
+   *  so neither Continue nor a reload resumes it (the Phase 5 review, C-S6). */
+  async cancelPause(): Promise<void> {
+    if (this.ended !== 'paused' || this.machine === null) return;
+    this.ended = 'stopped';
+    log('content.pause-cancelled');
+    this.env.ui()?.hidePolicyCard();
+    this.launcher({ state: 'idle', action: 'fill' });
+    const next = reduceRun(this.machine, { type: 'USER_STOPPED' }, this.ctx());
+    this.machine = next.state;
+    try {
+      for (const effect of next.effects) {
+        if (effect.type === 'persist') await this.persist();
+        else if (effect.type === 'report') this.reportDue = true;
+      }
+      await this.flushReport();
+    } catch {
+      // The extension went, or the worker refused: the run is stopped here all the same.
+    }
+  }
+
   private answer(choice: PolicyChoice): boolean {
     const choose = this.choose;
     if (choose === null) return false;
@@ -358,13 +451,15 @@ export class FillRun {
 
   private async begin(): Promise<void> {
     const { page, channel } = this.env;
+    const pushes = this.pushes;
     const answer = await channel.request({ v: 1, type: 'run/begin', applicationKey: page.app.applicationKey,
       trigger: this.request.trigger, dryRun: this.request.dryRun });
     this.alive();
     if (answer.ok) {
       this.id = answer.data.runId;
       this.policy ??= answer.data.policy;
-      this.autoAdvance = answer.data.settings.autoAdvance;
+      // A settings/changed that arrived meanwhile may be newer than the answer: both must say on.
+      this.autoAdvance = answer.data.settings.autoAdvance && (this.pushes === pushes || this.pushedAutoAdvance);
       return;
     }
     if (answer.error === 'expired') return this.renew();
@@ -504,7 +599,7 @@ export class FillRun {
       if (hiddenPolicyHits(fresh).length > 0) this.notices.add('policy-hidden-text');
     }
     this.showNotices();
-    const paused = detectPause(env.doc, this.root, env.page.adapter);
+    const paused = this.pauseNow();
     if (paused !== null) {
       this.loopCut = { kind: 'pause', signal: paused };
       return pauseCutOf(paused);
@@ -516,6 +611,15 @@ export class FillRun {
       return 'field-disappeared';
     }
     return null;
+  }
+
+  /** A pause the page shows now, anywhere in the document (detectPause), but the CAPTCHA the person was handed on this
+   *  step at their Continue (X-S4). */
+  private pauseNow(): PauseSignal | null {
+    const handed = this.handed !== null && this.handed.signature === this.signatureNow() ? this.handed.elements
+      : undefined;
+    return detectPause(this.env.doc, this.root, this.env.page.adapter, newScanCache(),
+      handed === undefined ? {} : { handed });
   }
 
   /** The step's signature now, when it is no longer the step being worked on (an adapter that tells steps apart);
@@ -562,6 +666,9 @@ export class FillRun {
    *  (at most one does: a scan, a fill, a validation, the click on Next, a wait, the policy card). */
   private async step(event: RunEvent): Promise<RunEvent | null> {
     const next = reduceRun(this.state, event, this.ctx());
+    // A step change the machine ignores (a step at its limit, seen at review): the watch goes on from what the page
+    // shows, so the same change is not seen again at once (X-S5).
+    if (event.type === 'TRANSITIONED' && next.effects.length === 0) this.watchFrom = event.signature;
     this.machine = next.state;
     let produced: RunEvent | null = null;
     for (const effect of next.effects) {
@@ -608,7 +715,12 @@ export class FillRun {
     this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
     this.end('review');
     if (status !== 'review' || !this.stepped || this.request.dryRun) return null;
-    const from = this.state.stepSignature;
+    // A page whose step keeps changing with nothing to fill is no longer followed (X-S5).
+    if (this.idleTransitions >= MAX_IDLE_TRANSITIONS) {
+      log('content.watch-ended');
+      return null;
+    }
+    const from = this.watchFrom ?? this.state.stepSignature;
     if (from === null) return null;
     return this.watchStep(from, null, false);
   }
@@ -624,7 +736,10 @@ export class FillRun {
       this.alive();
       if (outcome.kind === 'aborted') return this.stopRequested ? { type: 'USER_STOPPED' } : null;
       this.working();
-      if (outcome.kind === 'changed') return { type: 'TRANSITIONED', signature: outcome.signature };
+      if (outcome.kind === 'changed') {
+        this.idleTransitions += 1;
+        return { type: 'TRANSITIONED', signature: outcome.signature };
+      }
       if (outcome.kind === 'unchanged') return { type: 'STEP_UNCHANGED' };
       return { type: 'TIMED_OUT', signature: outcome.signature };
     } finally {
@@ -708,6 +823,7 @@ export class FillRun {
     }
     const first = this.scans === 0;
     this.scans += 1;
+    this.watchFrom = null;
     this.rootNow();
     const frameHits = frameHitsOf(env.doc);
     let policyHits = frameHits.length;
@@ -729,7 +845,7 @@ export class FillRun {
     this.showNotices();
     // A policy statement is the person's decision first; a pause the step shows is found when the fill starts.
     if (policyHits === 0 || this.state.policyDecision === 'accepted') {
-      const paused = detectPause(env.doc, this.root, env.page.adapter);
+      const paused = this.pauseNow();
       if (paused !== null) return pauseEventOf(paused);
     }
     const hits = Math.max(0, this.tripwireHits - this.hitsCounted);
@@ -742,7 +858,8 @@ export class FillRun {
     const { env } = this;
     const { adapter } = env.page;
     this.launcher({ state: 'running', action: null });
-    const paused = detectPause(env.doc, this.root, adapter);
+    this.idleTransitions = 0;
+    const paused = this.pauseNow();
     if (paused !== null) return pauseEventOf(paused);
     if (this.stopRequested) return { type: 'USER_STOPPED' };
     this.loopCut = null;
@@ -759,13 +876,13 @@ export class FillRun {
       const now = this.scanNow();
       await this.plan(now.fields.map(toFieldSpec), [], 0);
       if (!this.request.dryRun) {
-        const signature = this.state.stepSignature;
+        const step = this.state.stepSignature;
         outcomes = await addBlocks({
           adapter, root: this.root, signal: this.controller.signal,
           ...(env.options.settle ? { settle: env.options.settle } : {}),
           profile: new Map([...this.answers].map(([kind, answer]) => [kind, answer.profile])),
-          prior: (kind) => (signature === null ? null
-            : this.state.repeatableCounters[repeatableCounterKey(signature, kind)] ?? null),
+          prior: (kind) => (step === null ? null
+            : this.state.repeatableCounters[repeatableCounterKey(step, kind)] ?? null),
           record: (kind, counter) => this.feed({ type: 'REPEATABLE', kind, counter }),
           stopped: () => this.stopRequested,
         }, this.sections);
@@ -774,8 +891,11 @@ export class FillRun {
     }
     this.addsLeft = needsClicks(outcomes);
 
-    // 2. The reactive loop, "I currently work here", then the final Guard over its rows and its latest scan.
-    const loop = await this.fillLoop();
+    // 2. The reactive loop, "I currently work here", then the final Guard over its rows and its latest scan. The loop
+    // starts from this step's books in this run, and leaves its own for the step's next attempt (C-S3, C-S5).
+    const signature = this.state.stepSignature;
+    const loop = await this.fillLoop(signature === null ? undefined : this.carries.get(signature));
+    if (signature !== null && !this.request.dryRun) this.carries.set(signature, loop.carry);
     const last = loop.scan;
     let rows = new Map(loop.rows.map((row) => [row.key, row]));
     for (const section of this.sections) rows = currentJobRows(rows, last, section, this.answers.get(section.kind));
@@ -852,6 +972,9 @@ export class FillRun {
     // Another step shows already (the person's Next during the fill): its facts are not this step's to judge.
     const moved = this.movedOn();
     if (moved !== null) return { type: 'TRANSITIONED', signature: moved };
+    // What the step's last write revealed may be a pause: it is the person's, never a reason to press on (C-S1).
+    const paused = this.pauseNow();
+    if (paused !== null) return pauseEventOf(paused);
     const cache = newScanCache();
     let errors: Element[] = [];
     try {
@@ -874,40 +997,72 @@ export class FillRun {
     const nextVisible = next !== null && isUserVisible(next, cache) && (next as HTMLButtonElement).disabled !== true;
     this.lastErrors = errors.length;
     return { type: 'VALIDATED', errors: errors.length, fixable: this.fixable(errors), step: { finality, nextVisible,
-      settled: this.settledStep, unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft').length } };
+      settled: this.settledStep, unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft').length,
+      captchaUnsolved: unsolvedCaptchas(env.doc, root, cache) > 0 } };
   }
 
   /** The errors one more pass could address: on a field no pass of this step planned (it showed after the loop), or
-   *  on one the page emptied after our write. An error on a field the person must answer, or that holds our value,
-   *  is surfaced instead. */
+   *  on one the page emptied after our write. An error on a field the person must answer, that holds our value, or
+   *  that the person emptied themselves (their own input since our write: C-S3), is surfaced instead. */
   private fixable(errors: readonly Element[]): number {
     if (errors.length === 0) return 0;
     const fresh = this.scanNow();
     const byKey = new Map(this.rows.map((row) => [row.key, row] as const));
+    const signature = this.state.stepSignature;
+    const carry = signature === null ? undefined : this.carries.get(signature);
     let count = 0;
     for (const error of errors) {
+      let own: Element[] = [];
       const field = fresh.fields.find((candidate) => {
         const target = fresh.target(candidate.key);
         if (target === null) return false;
-        const own = [target.control, ...target.members, ...(target.proxy === null ? [] : [target.proxy])];
+        own = [target.control, ...target.members, ...(target.proxy === null ? [] : [target.proxy])];
         return own.some((el) => el === error || el.contains(error) || error.contains(el));
       });
       if (field === undefined) continue;
       const row = byKey.get(field.key);
       const emptied = field.current.kind === 'empty' || (field.current.kind === 'text' && field.current.text === '');
-      if (row === undefined || (row.wrote && emptied)) count += 1;
+      const since = carry?.lastWriteAt.get(field.baseKey) ?? Number.NEGATIVE_INFINITY;
+      const theirs = own.some((el) => this.env.touches.touchedSince(el, since));
+      if (row === undefined || (row.wrote && emptied && !theirs)) count += 1;
     }
     return count;
   }
 
   /** press-next: the one untrusted click on the adapter's Next, never Submit (module header, 7). */
-  private pressNext(): RunEvent {
+  private async pressNext(): Promise<RunEvent> {
     if (this.stopRequested) return { type: 'USER_STOPPED' };
+    if (!this.isTop) {
+      // A fresh reading: the page may have hidden the frame since the fill (X-S8). Never a click the person cannot see.
+      const shown = await this.env.frameShown(this.controller.signal, true);
+      this.alive();
+      if (!shown) {
+        log('content.form-hidden');
+        this.notices.add('next-hidden');
+        this.showNotices();
+        return { type: 'PAUSE', reason: 'needs-click' };
+      }
+      if (this.stopRequested) return { type: 'USER_STOPPED' };
+    }
+    // From here to the click nothing is awaited: what is checked is what is clicked.
     const { adapter } = this.env.page;
     const root = this.rootNow();
     // Never a click on a step other than the one validated: one that shows already is scanned instead.
     const moved = this.movedOn();
     if (moved !== null) return { type: 'TRANSITIONED', signature: moved };
+    // A pause shown since the validation is the person's (C-S1), and so is Next once they turned auto-advance off (C-S2)
+    // or while a CAPTCHA on the step is not known solved (X-S4).
+    const paused = this.pauseNow();
+    if (paused !== null) return pauseEventOf(paused);
+    if (!this.ctx().autoAdvance) {
+      log('content.next-withheld');
+      return { type: 'NEXT_WITHHELD', reason: 'setting-off' };
+    }
+    // A CAPTCHA handed to the person and not known solved since: Next is theirs (X-S4, tightened).
+    if (unsolvedCaptchas(this.env.doc, root) > 0) {
+      log('content.next-withheld');
+      return { type: 'NEXT_WITHHELD', reason: 'captcha-unsolved' };
+    }
     let next: HTMLElement | null = null;
     try {
       next = adapter.nextButton?.(root) ?? null;
@@ -951,7 +1106,8 @@ export class FillRun {
 
   /** pause {policy}: the card, until the person chooses (a run whose request carries Fill anyway takes it at once). */
   private async policyCard(): Promise<RunEvent> {
-    if (this.request.policyAccepted === true) return { type: 'POLICY_ACCEPTED' };
+    // Whether this document read the step: one that only showed the card again (a reload at it) scans first (C-S4).
+    if (this.request.policyAccepted === true) return { type: 'POLICY_ACCEPTED', scanned: this.scans > 0 };
     const ui = this.env.ui();
     this.notices.add('policy');
     this.showNotices();
@@ -967,7 +1123,7 @@ export class FillRun {
     ui?.hidePolicyCard();
     if (choice === 'declined') return { type: 'POLICY_DECLINED' };
     this.launcher({ state: 'running', action: null });
-    return { type: 'POLICY_ACCEPTED' };
+    return { type: 'POLICY_ACCEPTED', scanned: this.scans > 0 };
   }
 
   /**
@@ -999,12 +1155,18 @@ export class FillRun {
     this.halted = true;
     this.end('stopped');
     this.env.fillAgain({ ...this.request, policyAccepted: true,
-      from: { state: this.state, event: { type: 'RESUMED', by: 'person', sameTab: true } } });
+      from: { state: this.state, event: { type: 'RESUMED', by: 'person', sameTab: true } }, carry: this.carryOut(false) });
     return null;
   }
 
-  /** pause {auth, handoff}: the person acts; their Continue starts the next run (the runtime). */
+  /** pause {auth, handoff}: the person acts; their Continue starts the next run (the runtime). At a CAPTCHA pause the
+   *  widgets the step shows now are what the person is handed (carryOut, X-S4). */
   private paused(): null {
+    if (this.state.pauseReason === 'captcha') {
+      const signature = this.signatureNow();
+      const before = this.handed !== null && this.handed.signature === signature ? [...this.handed.elements] : [];
+      this.pausedBy = { signature, elements: new Set([...before, ...captchaElements(this.env.doc, this.root)]) };
+    }
     this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause' });
     return null;
   }
@@ -1040,6 +1202,23 @@ export class FillRun {
   }
 
   // ── The run ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  /** A run that failed: the machine takes ERROR (review), stored and reported, so a reload finds the person's turn
+   *  rather than a fill to resume by itself (C-S7). Best effort: the failure stands whatever this meets. */
+  private async failed(): Promise<void> {
+    if (this.machine === null || this.controller.signal.aborted) return;
+    try {
+      const next = reduceRun(this.machine, { type: 'ERROR', reason: 'internal-error' }, this.ctx());
+      this.machine = next.state;
+      for (const effect of next.effects) {
+        if (effect.type === 'persist') await this.persist();
+        else if (effect.type === 'report') this.reportDue = true;
+      }
+      await this.flushReport();
+    } catch {
+      // The worker is unreachable, or the run was aborted meanwhile: nothing more to do.
+    }
+  }
 
   private async execute(): Promise<void> {
     const { env } = this;
@@ -1099,6 +1278,7 @@ export class FillRun {
       }
       const code: ErrorCode = failure instanceof RunFailure ? failure.code : 'internal';
       log('content.run-failed', { notConnected: code === 'not_connected', expired: code === 'expired' });
+      await this.failed();
       env.ui()?.hidePolicyCard();
       this.launcher({ state: 'error', action: 'fill', reason: code === 'not_connected' ? 'not-connected' : 'failed' });
       this.end('error');
@@ -1108,10 +1288,13 @@ export class FillRun {
   }
 
   /** The fill step's reactive loop (loop.ts). plan/request carries the 32 nearest canaries; each write is scanned for
-   *  all of the frame's (both as the checks before each later pass leave them). */
-  private fillLoop(): Promise<LoopResult> {
+   *  all of the frame's (both as the checks before each later pass leave them), and refused while a pause shows or
+   *  once another step shows. */
+  private async fillLoop(carry: LoopCarry | undefined): Promise<LoopResult> {
     const { env } = this;
     const inMemory = () => this.inMemory;
+    this.hasher ??= await createValueHasher();
+    this.alive();
     return runLoop({
       content: env.content,
       adapter: env.page.adapter,
@@ -1130,6 +1313,21 @@ export class FillRun {
       planSome: (specs, planKeys, pass) => this.plan(specs, planKeys, pass, true),
       poll: (keys) => this.poll(keys),
       recheck: () => this.recheck(),
+      heldBy: () => {
+        // Never a write on a step other than the one being filled (the page moved on, or went back, mid-fill).
+        const moved = this.movedOn();
+        if (moved !== null) {
+          this.loopCut ??= { kind: 'moved', signature: moved };
+          return 'field-disappeared';
+        }
+        const signal = this.pauseNow();
+        if (signal === null) return null;
+        this.loopCut ??= { kind: 'pause', signal };
+        return pauseCutOf(signal);
+      },
+      hasher: this.hasher,
+      touches: env.touches,
+      ...(carry === undefined ? {} : { carry }),
       widgetReadings: this.widgetReadings,
       runId: () => this.runId,
       ...(env.options.resume ? { resume: env.options.resume } : {}),

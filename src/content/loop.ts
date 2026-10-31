@@ -6,8 +6,9 @@
  * 1. scan. Every scan of the run, the DOM guard's before each write included, goes through one tap that keeps the
  *    attribution (attribution.ts), and every scan reads the run's heldPlaceholders (DOM-7);
  * 2. observeScan, with the keyed hash of each written field's value now (values.ts), the DOM's attribution, the
- *    written fields the person touched since our write (a trusted input, keydown, paste or drop the form root heard:
- *    frozen, never written again) and those that now hold nothing or their placeholder (a reset: written again). The
+ *    written fields the person touched since our write (a trusted input, keydown, paste or drop: touches.ts, which the
+ *    run keeps for its document, resting included; frozen, never written again) and those that now hold nothing or
+ *    their placeholder (a reset: written again). The
  *    written fields its events name are dropped (field-disappeared; options-changed, whose old write is void), but kept
  *    aside: a re-plan that finds our value in place makes them ours again (the Phase 3 review, LC-4, LC-9);
  * 3. before every pass after the first, the run's checks of what the page now shows (LoopEnv.recheck: the frame still
@@ -44,14 +45,19 @@
  * scanned once more, observed, and the loop is cut with page-busy (the run pauses; Continue starts afresh). Cancel
  * cuts it with user-stopped, between writes, once the writes made are settled and verified and what they revealed is
  * observed (LC-11). A dry run plans one pass and writes nothing: nothing written, nothing revealed.
+ * A later attempt on the same step in the same run (a validation's fix pass, or the step again after Back) starts from
+ * the earlier attempt's books (LoopEnv.carry, LoopResult.carry: the Phase 5 review, C-S3 and C-S5): the fields we wrote
+ * keep their value hashes under the run's one key (LoopEnv.hasher), what was written (for the final Guard) and when, so
+ * a value still ours keeps our verified row and is not written again, a value the person changed since is theirs
+ * (changed-by-you, never written), and one the page reset is written again. Its passes add to the earlier ones'.
  * Values, free text and hashes stay in this frame's memory; nothing here sends or logs one (plan/request carries the
  * scan's FieldSpecs, as every pass's always did). The waits are settle()'s and awaitOptions()', on dom/time.ts's
  * timers: there is no fixed sleep.
  */
 import {
-  awaitingKeys, baseKeyOf, childrenOf, createLoop, isStopped, loopVerdict, mayWrite, orderPending, recordOptionsWait,
-  recordRows, recordWrite, requeueAwaiting, revealEdgesOf, observeScan, type LoopEnd, type LoopEvent, type LoopState,
-  type LoopVerdict, type ScanObservation,
+  awaitingKeys, baseKeyOf, carriedFields, childrenOf, createLoop, isStopped, loopVerdict, mayWrite, orderPending,
+  recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf, observeScan, type LoopEnd, type LoopEvent,
+  type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
 import { settleRow } from '../core/plan/settle';
@@ -74,6 +80,7 @@ import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-u
 import { boxBeforeEndDate } from './repeatables';
 import { RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WrittenField } from './pass';
 import type { ReceivedResume } from './transfer';
+import { TouchLog } from './touches';
 import { createValueHasher, type ValueHasher } from './values';
 import { verifyWritten } from './verify';
 
@@ -94,10 +101,6 @@ export const AI_WAIT_CAP_MS = 125_000;
 /** A dry run plans one pass, and asks again at most this many times for fields the worker forgot (it restarted). */
 const DRY_RUN_ASKS = 2;
 
-/** The person's own input on a field: trusted events of these types, heard on the form root (LC-4). */
-const TOUCH_EVENTS = ['input', 'keydown', 'paste', 'drop'] as const;
-/** At most this many touches are kept between two scans (the latest). */
-const MAX_TOUCHES = 512;
 
 /** What the loop needs from its run. */
 export interface LoopEnv extends PassEnv {
@@ -122,6 +125,24 @@ export interface LoopEnv extends PassEnv {
   widgetReadings?: Map<BaseKey, WidgetReading>;
   settle?: SettleTimings;
   options?: OptionsTimings;
+  /** The run's keyed value hasher (one key for the run, so an earlier attempt's hashes compare); a key of the loop's
+   *  own without it. */
+  hasher?: ValueHasher;
+  /** The person's input on the document, as the run hears it all along (touches.ts); the loop listens on the form
+   *  root for its own time without it. */
+  touches?: TouchLog;
+  /** An earlier attempt's books on this step, in this run (LoopResult.carry): the Phase 5 review, C-S3. */
+  carry?: LoopCarry;
+}
+
+/** What a later attempt on the same step starts from (LoopEnv.carry): the books of the fields written or taken over,
+ *  what was written and when, and the passes made so far. Memory only: `written` holds values. */
+export interface LoopCarry {
+  fields: readonly TrackedField[];
+  written: ReadonlyMap<BaseKey, WrittenField>;
+  /** When each was last written (monotonicNow): a touch counts only after it. */
+  lastWriteAt: ReadonlyMap<BaseKey, number>;
+  passes: number;
 }
 
 /** What the loop leaves for the final Guard and the report. Memory only: `written` holds values. */
@@ -144,6 +165,8 @@ export interface LoopResult {
   persistableCanaries: string[];
   /** The busy signs at the settle cap (names only), or null when every settle answered. */
   busy: BusySign[] | null;
+  /** What the step's next attempt in this run starts from (LoopEnv.carry). Memory only. */
+  carry: LoopCarry;
 }
 
 /** How a pass ended. */
@@ -155,7 +178,7 @@ type PassEnd =
 
 /** Runs the reactive loop over the form root. */
 export async function runLoop(env: LoopEnv): Promise<LoopResult> {
-  const hasher = await createValueHasher();
+  const hasher = env.hasher ?? await createValueHasher();
   if (env.signal.aborted) throw new RunAborted();
   return new ReactiveLoop(env, hasher).run();
 }
@@ -205,8 +228,10 @@ class ReactiveLoop {
   private readonly written = new Map<BaseKey, WrittenField>();
   /** When we last wrote each field (monotonicNow): a touch counts only after it. */
   private readonly lastWriteAt = new Map<BaseKey, number>();
-  /** The person's trusted input on the form since the latest scan: elements and times only, never a value. */
-  private touches: Array<{ target: Element; at: number }> = [];
+  /** The person's trusted input (touches.ts): elements and times only, never a value. */
+  private touches: TouchLog | null = null;
+  /** The passes an earlier attempt on this step made (LoopEnv.carry). */
+  private readonly passesBefore: number;
   /** Every resume received: released once its pass is verified, and when the loop ends whatever happened. */
   private readonly resumes: ReceivedResume[] = [];
   /** The choices written with free text since the latest scan, by base key. Memory only. */
@@ -236,19 +261,19 @@ class ReactiveLoop {
 
   constructor(private readonly env: LoopEnv, private readonly hasher: ValueHasher) {
     this.readings = env.widgetReadings ?? new Map();
+    const carry = env.carry;
+    this.passesBefore = carry?.passes ?? 0;
+    if (carry !== undefined) {
+      this.state = createLoop({ carried: carry.fields });
+      // What was written stays ours to verify; its resume was released when its own attempt ended.
+      for (const [baseKey, entry] of carry.written) this.written.set(baseKey, { ...entry, resume: null });
+      for (const [baseKey, at] of carry.lastWriteAt) this.lastWriteAt.set(baseKey, at);
+    }
   }
 
-  private readonly onTouch = (event: Event): void => {
-    if (!event.isTrusted) return;
-    const target = event.composedPath()[0] as Node | undefined;
-    if (target === undefined || target.nodeType !== 1) return;
-    this.touches.push({ target: target as Element, at: monotonicNow() });
-    if (this.touches.length > MAX_TOUCHES) this.touches.shift();
-  };
-
   async run(): Promise<LoopResult> {
-    const { root } = this.env;
-    for (const type of TOUCH_EVENTS) root.addEventListener(type, this.onTouch, { capture: true });
+    const listening = new AbortController();
+    this.touches = this.env.touches ?? new TouchLog(this.env.root, listening.signal);
     try {
       let current = this.scanNow();
       for (;;) {
@@ -283,7 +308,7 @@ class ReactiveLoop {
         current = end.scan;
       }
     } finally {
-      for (const type of TOUCH_EVENTS) root.removeEventListener(type, this.onTouch, { capture: true });
+      listening.abort();
       for (const resume of this.resumes) resume.release();
     }
   }
@@ -326,16 +351,13 @@ class ReactiveLoop {
   private touchedIn(scanned: ScanResult, wrote: readonly ScannedField[]): Set<BaseKey> {
     const touched = new Set<BaseKey>();
     const touches = this.touches;
-    this.touches = [];
-    if (touches.length === 0) return touched;
+    if (touches === null) return touched;
     for (const field of wrote) {
       const target = scanned.target(field.key);
       if (target === null) continue;
       const own = [target.control, ...target.members, ...(target.proxy === null ? [] : [target.proxy])];
       const since = this.lastWriteAt.get(field.baseKey) ?? Number.NEGATIVE_INFINITY;
-      if (touches.some((touch) => touch.at > since && own.some((el) => el === touch.target || el.contains(touch.target)))) {
-        touched.add(field.baseKey);
-      }
+      if (own.some((el) => touches.touchedSince(el, since))) touched.add(field.baseKey);
     }
     return touched;
   }
@@ -835,13 +857,25 @@ class ReactiveLoop {
     const end = verdict.end ?? 'nothing-pending';
     log('content.loop-ended', { passes: this.passes, nothingPending: end === 'nothing-pending',
       maxPasses: end === 'max-passes', stalled: end === 'stalled', cut: end === 'cut' });
-    return { rows: loopRows(this.state, verdict), scan: last, written, passes: this.passes, end, cut: this.cutBy,
-      revealEdges: revealEdgesOf(this.state), persistableCanaries: this.persistable, busy: this.busy };
+    const passes = this.passesBefore + this.passes;
+    return { rows: loopRows(this.state, verdict), scan: last, written, passes, end, cut: this.cutBy,
+      revealEdges: revealEdgesOf(this.state), persistableCanaries: this.persistable, busy: this.busy,
+      carry: this.carryOut(passes) };
+  }
+
+  /** What the step's next attempt in this run starts from: the fields written or taken over, and what was written. */
+  private carryOut(passes: number): LoopCarry {
+    const fields = carriedFields(this.state);
+    const kept = new Set(fields.map((tracked) => tracked.baseKey));
+    return { fields, passes,
+      written: new Map([...this.written].filter(([baseKey]) => kept.has(baseKey))),
+      lastWriteAt: new Map([...this.lastWriteAt].filter(([baseKey]) => kept.has(baseKey))) };
   }
 
   /** A dry run's one pass: the plan's rows, as the fill would leave them, and nothing written. */
   private dryRunResult(last: ScanResult, rows: FillResult[]): LoopResult {
     return { rows, scan: last, written: [], passes: this.passes, end: 'dry-run', cut: null, revealEdges: [],
-      persistableCanaries: this.persistable, busy: null };
+      persistableCanaries: this.persistable, busy: null,
+      carry: { fields: [], written: new Map(), lastWriteAt: new Map(), passes: 0 } };
   }
 }

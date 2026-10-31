@@ -171,7 +171,10 @@ describe("the e2e-only test adapter on the 4-step wizard's pages", () => {
     expect(allowed('add-education', true)).toEqual({ ok: false, refusal: 'submits-form' });
     expect(allowed('submit')).toEqual({ ok: false, refusal: 'adapter-submit' });
     expect(allowed('submit', true)).toEqual({ ok: false, refusal: 'adapter-submit' });
-    for (const id of ['next-education', 'back-education', 'add-experience', 'next-details']) {
+    // The shown step's Next only on the step machine's word (allowNext): no filler or Add click ever takes it.
+    expect(allowed('next-education')).toEqual({ ok: false, refusal: 'adapter-next' });
+    expect(allowed('next-education', true)).toEqual({ ok: true });
+    for (const id of ['back-education', 'add-experience', 'next-details']) {
       expect(allowed(id), id).toEqual({ ok: true });
     }
   });

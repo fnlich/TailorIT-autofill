@@ -304,6 +304,9 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('answer/read'), fieldKey: Key }),
   /** The tab's combined report, for the frame that shows the in-page panel while it is open. */
   z.strictObject({ v, type: z.literal('report/update'), reports: z.array(FrameReportSchema).max(20) }),
+  /** The person saved their settings (settings/save): the part a frame may know, so a run reads auto-advance as it is
+   *  now, not as it was at run/begin (the Phase 5 review, C-S2). Sent to every registered frame with a form. */
+  z.strictObject({ v, type: z.literal('settings/changed'), settings: ContentSettingsSchema }),
   /** Is this document still here? Sent to its {frameId, documentId} when another frame of the tab loads a document;
    *  the frame answers {pong: true}. Any answer keeps the frame; only "nothing receives here" lets it go, so a content
    *  script listens before it says frame/hello. */
@@ -343,8 +346,8 @@ export const PlanAnswerSchema = z.strictObject({
 
 /** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/focus,
  *  panel/policyDecision, and a frame's answer to run/start, run/continue, run/cancel, run/policyDecision, field/focus,
- *  draft/confirm and report/update. A frame answers run/policyDecision {} once the decision settled its policy card,
- *  and `expired` when no run there waits at one. */
+ *  draft/confirm, report/update and settings/changed. A frame answers run/policyDecision {} once the decision settled
+ *  its policy card, and `expired` when no run there waits at one. */
 export const DoneAnswerSchema = z.strictObject({});
 
 /** runstate/get: this tab's RunState for the application, or null when there is none, it has expired (24 h after its
@@ -448,6 +451,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   'field/describe': FieldDescribeAnswerSchema,
   'draft/confirm': DoneAnswerSchema,
   'report/update': DoneAnswerSchema,
+  'settings/changed': DoneAnswerSchema,
   'frame/ping': PingAnswerSchema,
 } as const satisfies Record<Exclude<WorkerToContent['type'], 'answer/read'>, z.ZodType>;
 
