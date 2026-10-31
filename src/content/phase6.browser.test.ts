@@ -199,21 +199,33 @@ describe('answer/read', () => {
     await personTypes(started.fixture, 'office', 'The Lisbon office');
     const read = (label: string) => started.worker.platform.deliver({ v: 1, type: 'answer/read',
       fieldKey: rowOf(report, label).key });
+    // With the company this frame's own address names: none for the reserved fixture board (the Phase 6 review, E5).
     expect(await read('Which of our offices would you visit first?')).toEqual({ ok: true, data: { optionSetHash: 'none',
-      answer: { kind: 'text', text: 'The Lisbon office' } } });
+      answer: { kind: 'text', text: 'The Lisbon office' }, company: null } });
     const team = byId<HTMLSelectElement>(started.fixture, 'team');
     team.selectedIndex = 2;
     const answer = await read('Which team would you like to meet?') as { data: { optionSetHash: string; answer: unknown } };
     expect(answer.data.answer).toEqual({ kind: 'options', labels: ['Data'] });
     expect(answer.data.optionSetHash).toMatch(/^[a-f0-9]{16}$/);
+    // A consent box takes no saved answer: no plan named it savable, so it is never read for TailorIT (T6-1).
     byId(started.fixture, 'share').checked = true;
-    expect(await read('I have a portfolio I can share')).toEqual({ ok: true, data: { optionSetHash: 'none',
-      answer: { kind: 'checked', checked: true } } });
+    expect(await read('I have a portfolio I can share')).toEqual({ ok: true, data: { refused: 'sensitive' } });
     // Nothing chosen but the placeholder, or nothing typed: nothing to save.
     team.selectedIndex = 0;
     expect(await read('Which team would you like to meet?')).toEqual({ ok: true, data: { refused: 'unsupported' } });
     expect(await started.worker.platform.deliver({ v: 1, type: 'answer/read', fieldKey: 'lever|main|gone|none|0' }))
       .toEqual({ ok: false, error: 'expired' });
+  });
+
+  it('reads a box’s state where a plan named it savable', async () => {
+    const started = await start(`<!doctype html><html lang="en"><body><form>
+      <label><input type="checkbox" id="travel" name="travel"> I am happy to travel for interviews</label>
+      <button type="submit">Submit application</button></form></body></html>`, 'p6-read-box');
+    await started.runtime.fill();
+    byId(started.fixture, 'travel').checked = true;
+    expect(await started.worker.platform.deliver({ v: 1, type: 'answer/read',
+      fieldKey: rowOf(lastReport(started.worker), 'I am happy to travel for interviews').key }))
+      .toEqual({ ok: true, data: { optionSetHash: 'none', answer: { kind: 'checked', checked: true }, company: null } });
   });
 
   it('refuses an answer that holds a canary the page planted', async () => {

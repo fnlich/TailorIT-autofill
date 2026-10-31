@@ -18,6 +18,8 @@ export type PauseReason = (typeof PAUSE_REASONS)[number];
 export const MAX_STEP_ATTEMPTS = 2;
 /** A runaway-wizard guard. */
 export const MAX_STEPS = 30;
+/** RunState.drafts keeps at most this many keys. */
+export const MAX_RUN_STATE_DRAFTS = 100;
 /** RunState expires this long after its last update. */
 export const RUN_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 /** After a reload, a run resumes by itself in its own tab only this soon after its last update; later (until
@@ -63,6 +65,10 @@ export interface RunState {
   revealEdges: Array<[BaseKey, BaseKey]>;
   /** Batch hash → TailorIT task id, so a finished AI answer is re-read after a reload rather than asked again. */
   aiTasks: Record<string, string>;
+  /** The AI drafts written and still waiting for the person (the Phase 6 review, E4), by stored base key
+   *  (bookkeeping.ts storedBaseKey: keys only, never a value or its hash), at most MAX_RUN_STATE_DRAFTS: a run resumed
+   *  after a reload rows a field there that holds text it did not write as an unconfirmed draft. Absent: none. */
+  drafts?: BaseKey[];
   lastFill: { flagged: number; blocked: number; unresolved: number } | null;
   startedAt: number;
   updatedAt: number;

@@ -105,8 +105,10 @@ const DRY_RUN_ASKS = 2;
 /** What the loop needs from its run. */
 export interface LoopEnv extends PassEnv {
   /** Sends plan/request with the whole scan's specs and the keys to plan (the run renews itself once on 'expired'),
-   *  and answers the plan. */
-  plan(specs: FieldSpec[], planKeys: FieldKey[], pass: number): Promise<PlanAnswer>;
+   *  and answers the plan. `revealEdges`: this run's reveal edges on the step ([parent, child] base keys), for a
+   *  draft's context (the Phase 6 review, E2). */
+  plan(specs: FieldSpec[], planKeys: FieldKey[], pass: number, revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>):
+    Promise<PlanAnswer>;
   /** plan/request for some of the frame's fields only (a typeahead's results, Phase 4): the run sends its step's
    *  block→entry assignment with it (Phase 5). plan() without it. */
   planSome?(specs: FieldSpec[], planKeys: FieldKey[], pass: number): Promise<PlanAnswer>;
@@ -440,7 +442,7 @@ class ReactiveLoop {
     let awaiting: FieldKey[] = [];
     if (asked.length > 0) {
       // The whole scan goes as context; only the asked keys are planned (LC-2), and only their answers are taken.
-      const plan = await env.plan(current.fields.map(toFieldSpec), asked, this.state.pass);
+      const plan = await env.plan(current.fields.map(toFieldSpec), asked, this.state.pass, this.revealed());
       this.alive();
       this.persistable = plan.persistableCanaries;
       const wanted = new Set<string>(asked);
@@ -604,6 +606,12 @@ class ReactiveLoop {
     this.lastWriteAt.set(baseKey, monotonicNow());
   }
 
+  /** This run's reveal edges on the step ([parent, child] base keys: the writer whose write revealed the child), as
+   *  plan/request carries them for a draft's context (E2). Keys only. */
+  private revealed(): Array<[BaseKey, BaseKey]> {
+    return this.state.edges.filter((edge) => edge.kind === 'revealed').map((edge) => [edge.parent, edge.child]);
+  }
+
   // ── Widgets (Phase 4) ─────────────────────────────────────────────────────────────────────────────────────────────
 
   /** What a widget's write needs: the run's readings, and plan/request for a typeahead's results, at this pass. */
@@ -742,7 +750,7 @@ class ReactiveLoop {
         continue;
       }
       asks += 1;
-      const plan = await this.env.plan(current.fields.map(toFieldSpec), requeued, this.state.pass);
+      const plan = await this.env.plan(current.fields.map(toFieldSpec), requeued, this.state.pass, this.revealed());
       this.alive();
       const wanted = new Set<string>(requeued);
       const again = (plan.results as unknown as FillResult[]).filter((row) => wanted.has(row.key));

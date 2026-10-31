@@ -11,11 +11,13 @@ import { z } from 'zod';
 import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
+import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
-import { MAX_REPEATABLE_BLOCKS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from '../core/types/run';
+import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from
+  '../core/types/run';
 import { FrameReportSchema } from '../shared/report';
 import { ContentSettingsSchema, SettingsSchema } from '../shared/settings';
 import { MESSAGE_VERSION } from './envelope';
@@ -170,6 +172,8 @@ export const RunStateSchema = z.strictObject({
   policyDecision: z.enum(['accepted', 'declined']).nullable(),
   revealEdges: z.array(z.tuple([Key, Key])).max(500),
   aiTasks: cappedRecord(z.string().max(64), Id, RUN_STATE_RECORD_CAPS.aiTasks),
+  /** The drafts still waiting for the person, by stored base key (the Phase 6 review, E4). Keys only. */
+  drafts: z.array(Key).max(MAX_RUN_STATE_DRAFTS).optional(),
   lastFill: z.strictObject({ flagged: Count, blocked: Count, unresolved: Count }).nullable(),
   startedAt: Count,
   updatedAt: Count,
@@ -212,7 +216,10 @@ const contentMessages = [
     repeatables: z.array(RepeatableRequestSchema).max(REPEATABLE_KINDS.length).optional(),
     /** Phase 6: the posting as the frame shows it (its visible text outside the form root), sent by the top frame
      *  while drafts are on: a draft's job text. Page text, never stored. */
-    postingText: Text(MAX_POSTING_TEXT).optional() })
+    postingText: Text(MAX_POSTING_TEXT).optional(),
+    /** The Phase 6 review (E2): the loop's reveal edges on this step, [parent, child] base keys (the writer whose write
+     *  revealed the child), for a draft's context. Keys only. */
+    revealEdges: z.array(z.tuple([Key, Key])).max(MAX_REVEAL_EDGES).optional() })
     .refine((message) => {
       const keys = new Set(message.specs.map((spec) => spec.key));
       return message.planKeys.every((key) => keys.has(key));
@@ -361,6 +368,8 @@ export const PlanAnswerSchema = z.strictObject({
   persistableCanaries: z.array(Text(120)).max(32),
   /** One per section plan/request named (Phase 5); absent when it named none. */
   repeatables: z.array(RepeatableAnswerSchema).max(REPEATABLE_KINDS.length).optional(),
+  /** The planned keys whose answer the person may save (Save my answer: the Phase 6 review, T6-1); absent: none. */
+  savable: z.array(Key).max(500).optional(),
 });
 
 /** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/shown, panel/focus,
@@ -392,12 +401,15 @@ export const SavedAnswerValueSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('checked'), checked: z.boolean() }),
 ]);
 
-/** A frame's answer to answer/read: the field's answer as it holds it now and the option-set hash it shows, or why it
- *  cannot be saved ('unsupported': nothing to save, or a kind saved answers never fill; 'canary': it holds a word
- *  hidden page text asked AI tools to write). Passed straight to TailorIT: never stored, never logged. */
+/** A frame's answer to answer/read: the field's answer as it holds it now and the option-set hash it shows, and the
+ *  company its own address names ('<platform>:<board>', null: none; the Phase 6 review, E5), or why it cannot be saved
+ *  ('unsupported': nothing to save, or a kind saved answers never fill; 'canary': it holds a word hidden page text
+ *  asked AI tools to write; 'sensitive': no plan named the field savable, T6-1). Passed straight to TailorIT: never
+ *  stored, never logged. */
 export const AnswerReadAnswerSchema = z.union([
-  z.strictObject({ optionSetHash: z.string().regex(/^(?:[a-f0-9]{16}|none)$/), answer: SavedAnswerValueSchema }),
-  z.strictObject({ refused: z.enum(['unsupported', 'canary']) }),
+  z.strictObject({ optionSetHash: z.string().regex(/^(?:[a-f0-9]{16}|none)$/), answer: SavedAnswerValueSchema,
+    company: z.string().max(220).regex(new RegExp(`^(?:${PLATFORMS.join('|')}):[^\\sA-Z]+$`)).nullable().optional() }),
+  z.strictObject({ refused: z.enum(['unsupported', 'canary', 'sensitive']) }),
 ]);
 
 /** runstate/get: this tab's RunState for the application, or null when there is none, it has expired (24 h after its

@@ -10,7 +10,9 @@
  * Every rule is scoped by the shadow root, and the host resets inheritance (all: initial), so no page style reaches in
  * and none of these reaches out. Colours: one per status, with a chip, from src/shared/palette.ts (the report's own),
  * so a status reads the same on the page and in the panel; drafts are dashed. The in-page review panel's frame is here
- * too; the report inside it adds the report's own stylesheet to the same root (src/content/ui/panel.tsx).
+ * too; the report inside it adds the report's own stylesheet to the same root (src/content/ui/panel.tsx). Its rows
+ * scroll inside its box (a flex column whose body may shrink, the box clipping what overflows): nothing of the panel is
+ * ever drawn outside the box its visibility watch observes (the Phase 6 review, E1).
  */
 import { ACCENT, STATUS_COLOURS } from '../../shared/palette';
 
@@ -74,13 +76,14 @@ ${STATUS_RULES}
 .hl[data-draft="true"] { border-style: dashed; }
 .notices.with-panel .notice { display: none; }
 .panel { pointer-events: auto; box-sizing: border-box; display: flex; flex-direction: column; width: 380px;
-  max-width: calc(100vw - 16px); max-height: 70vh; margin: 0; background: var(--tia-bg); color: var(--tia-fg);
-  border: 1px solid var(--tia-line); border-top: 4px solid ${ACCENT}; border-radius: 8px;
+  max-width: calc(100vw - 16px); max-height: 70vh; margin: 0; overflow: hidden; background: var(--tia-bg);
+  color: var(--tia-fg); border: 1px solid var(--tia-line); border-top: 4px solid ${ACCENT}; border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); text-align: left; }
-.panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--tia-line); }
+.panel__root { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.panel__head { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  padding: 10px 12px 8px; border-bottom: 1px solid var(--tia-line); }
 .panel__title { margin: 0; font-size: 15px; font-weight: 700; }
-.panel__body { overflow: auto; padding: 10px 12px 12px; overscroll-behavior: contain; }
+.panel__body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 12px 12px; overscroll-behavior: contain; }
 .panel__loading { margin: 0; color: var(--tia-muted); }
 button.panel__close { flex: 0 0 auto; width: 24px; height: 24px; margin: 0; padding: 0; border: 0; border-radius: 4px;
   background: transparent; color: var(--tia-muted); cursor: pointer; font: 600 16px/24px system-ui, sans-serif; }

@@ -41,11 +41,17 @@
  *   fills the block from that entry, not from the one its place names. The answer gives the frame the section's entry
  *   count, each block's entry and its current-job flag, for its Add clicks and "I currently work here".
  * - Phase 6: the person's saved answers apply by their exact key (resolver/saved.ts), a free-text one only for the
- *   company PlanInput.company names. With settings.llm.drafts on (never in a dry run), a free-text question no saved
- *   answer fills waits for a draft (drafts.ts: `ask.drafts`); the run's draft, once in (`ai.drafts`), is written as an
- *   llm-draft through guardWrite, always flagged, and a discarded or over-long one leaves the field flagged with its
- *   reason. The writes' matches the accepted-match cache may take once accepted are `cacheCandidates`, and the cache
- *   entries a match found stale `cacheDrops`: both for the worker, never for the frame.
+ *   company PlanInput.company names, and never to a field the classify screen withholds (resolve.ts, T6-1). With
+ *   settings.llm.drafts on (never in a dry run), a free-text question no saved answer fills waits for a draft
+ *   (drafts.ts: `ask.drafts`), unless it sits in an EEO, legal or sensitive context (its screen, the question that
+ *   revealed it by PlanInput.revealEdges, its section's, the one it follows up: E2); the run's draft, once in
+ *   (`ai.drafts`), is written as an llm-draft through guardWrite, always flagged, and a discarded or over-long one
+ *   leaves the field flagged with its reason. The writes' matches the accepted-match cache may take once accepted are
+ *   `cacheCandidates`, and the cache entries a match found stale `cacheDrops`: both for the worker, never for the
+ *   frame.
+ * - Save my answer (T6-1): `savable` names the planned fields whose answer the person may save, so the frame offers
+ *   Save my answer on those only: a class whose saved answers are not 'never', a kind a saved answer can fill, and a
+ *   question the classify screen lets through. Every other planned field, and any field no plan named, offers none.
  */
 import { FLAG_AT, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
 import type { MatcherStage } from '../enums';
@@ -75,7 +81,8 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../types/fill';
 import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../types/intent';
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
-import { draftItemOf, draftRefusal, type DraftItem, type DraftVerdict } from './drafts';
+import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
+import { draftItemOf, draftRefusal, type DraftContext, type DraftItem, type DraftVerdict } from './drafts';
 import type { CacheCandidate, PlanInput, PlanOutput } from './types';
 
 /** The match of a write with no options to choose from (text, a box, a date, a file, queries). */
@@ -510,6 +517,17 @@ function labelCanaries(spec: FieldSpec): string[] {
   });
 }
 
+/** The kinds a saved answer can fill (resolver/saved.ts answerFitsKind): a typed text, a list's options, a lone box. */
+const SAVABLE_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['text', 'textarea', 'select', 'radio',
+  'combobox', 'checkbox-group', 'multiselect', 'checkbox']);
+
+/** Whether the person may save their answer to a planned field (module header, T6-1): its row's class takes saved
+ *  answers, its kind can hold one, and the classify screen lets its question through. */
+function savableField(spec: FieldSpec, row: FillResult, vocab: PlanInput['vocab']): boolean {
+  return CLASS_POLICIES[policyClassOf(row.category)].savedAnswers !== 'never' && SAVABLE_KINDS.has(spec.kind)
+    && row.status !== 'blocked' && screenForClassify(spec, vocab) === null;
+}
+
 /** The category a classification gives, for the planner's look across the frame's fields. */
 function categoryOf(classification: FieldClassification): FieldCategory | null {
   return classification.by === 'rules' ? classification.rules.category ?? null : null;
@@ -569,10 +587,12 @@ export function planFrame(input: PlanInput): PlanOutput {
   // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
   // the run's draft when there is one, and is asked for otherwise.
   const drafting = input.settings.llm.drafts && !input.dryRun;
+  const draftContext: DraftContext = { fields: classified, revealEdges: input.revealEdges ?? [], vocab: input.vocab };
   const drafts: DraftItem[] = [];
   const planned = specs.map((spec, at) => {
     const field = resolved[at]!;
-    const item = drafting ? draftItemOf(spec, chosen[at]!.classification, field.resolution, writable(spec)) : null;
+    const item = drafting ? draftItemOf(spec, chosen[at]!.classification, field.resolution, writable(spec), draftContext)
+      : null;
     if (item !== null) {
       const verdict = input.ai?.drafts?.get(spec.key);
       if (verdict !== undefined) return { spec, ...planDraft(spec, field.resolution, verdict, ctx) };
@@ -588,7 +608,10 @@ export function planFrame(input: PlanInput): PlanOutput {
   const awaiting = specs.filter((spec) => asking.has(spec.key)).map((spec) => spec.key);
   const cacheCandidates = input.dryRun ? [] : planned.flatMap((field) => (field.write === undefined ? []
     : field.cache ?? []));
+  const savable = planned.filter((field) => savableField(field.spec, field.row, input.vocab))
+    .map((field) => field.spec.key);
   return { writes: input.dryRun ? [] : writes, results: planned.map((field) => field.row), awaiting,
+    ...(savable.length > 0 ? { savable } : {}),
     ...(awaiting.length > 0 ? { ask: { tiebreaks, classify, ...(drafts.length > 0 ? { drafts } : {}) } } : {}),
     needsSensitive: false, persistableCanaries: kept, ...sections,
     ...(cacheCandidates.length > 0 ? { cacheCandidates } : {}),

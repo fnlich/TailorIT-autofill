@@ -60,25 +60,41 @@
  *
  * Phase 6 (wave 2): drafts, the person's fixes, and their answers.
  * - With drafts on (settings.llm.drafts), the top frame's plan/request carries the posting as the person sees it: the
- *   document's visible text outside the form root (postingText). An embedded frame sends none.
+ *   document's visible text outside the form root (postingText). An embedded frame sends none, and neither does a dry
+ *   run, which asks for no draft (the Phase 6 review, E12). plan/request also carries the loop's reveal edges, so a box
+ *   an EEO, legal or sensitive question revealed gets no draft (E2).
  * - A draft (an llm-draft write, guarded like any write, highlighted dashed) waits for the person: confirmDraft (the
- *   side panel's draft/confirm, or the in-page panel's Confirm draft) makes its row verified, the person's choice;
- *   their own edit makes the text theirs (changed-by-you). Either way guardReady and the step's validation no longer
- *   count it as unconfirmed, on this attempt and on the step's later ones.
+ *   side panel's draft/confirm, or the in-page panel's Confirm draft) reads the field again first: it must still hold
+ *   the draft as written (its value MAC; else the row is changed-by-you) and no canary (else canary-in-value), and only
+ *   then is its row verified, the person's choice (E6). Their own edit makes the text theirs (changed-by-you), unless
+ *   the text still equals the draft (E3: a page re-inserting it is no edit). Either way guardReady and the step's
+ *   validation no longer count it as unconfirmed, on this attempt and on the step's later ones.
+ * - The drafts written in a document outlive the run (E4): RunEnv.drafts keeps each one's base key and value MAC under
+ *   the document's one hasher, so a later run (Fill again, Continue, Fill anyway) rows a field that still holds that
+ *   text as an unconfirmed llm-draft, dashed, with Confirm draft. RunState.drafts keeps their stored base keys (keys
+ *   only, never a value or its hash), so a run resumed after a reload rows a field there that holds text it did not
+ *   write as an unconfirmed draft too.
  * - The person's trusted edit of a field the run left flagged (touches.ts editedSince during the fill; personInput at
- *   rest) sets the row's detail.userEdited, while settings.offerToSaveAnswers is on, and the report goes out again: the
- *   review then offers Save my answer. Their edit at rest of a value we wrote makes it theirs (changed-by-you), as the
- *   next pass would. readAnswer reads a field's answer for answer/read (option labels, a text, a checked state),
- *   refusing one that holds a canary; it is passed to the worker and never kept here.
+ *   rest: an input after their own key, pointer, paste or drop on it, E3) sets the row's detail.userEdited, while
+ *   settings.offerToSaveAnswers is on and a plan named the field savable (the core's screen: T6-1), and the report goes
+ *   out again: the review then offers Save my answer. Their edit at rest of a value we wrote makes it theirs
+ *   (changed-by-you), as the next pass would. readAnswer reads a field's answer for answer/read (option labels, a
+ *   text, a checked state), refusing one that holds a canary or that no plan named savable; it is passed to the worker
+ *   and never kept here.
+ * - Before the step is left (our click on Next, or the person's activation at rest: a pointerdown, Enter or Space), the
+ *   values we wrote are read again: one whose value MAC is no longer the one the fill left is rowed verify-mismatch and
+ *   reported, so the accepted-match cache never takes a match the page or a widget changed at rest (E9).
  */
 import type { Adapter } from '../adapters/types';
 import type { ApplicationRef } from '../adapters';
 import type { z } from 'zod';
+import { LLM_DRAFT } from '../core/confidence';
 import { canariesIn, mergeCanaries } from '../core/guard/canary';
 import { cutInjected } from '../core/guard/injected';
 import { scanTripwires } from '../core/guard/tripwire';
-import { baseKeyOf } from '../core/loop/bookkeeping';
+import { baseKeyOf, MAX_REVEAL_EDGES, storedBaseKey } from '../core/loop/bookkeeping';
 import { unresolvedRow } from '../core/loop/rows';
+import { settleRow } from '../core/plan/settle';
 import type { RepeatableAnswer } from '../core/steps/blocks';
 import {
   createRunState, MAX_IDLE_TRANSITIONS, reduceRun, repeatableCounterKey, TRANSITION_CAP_MS, type ReviewCause,
@@ -87,7 +103,8 @@ import {
 import { stepSignature } from '../core/steps/signature';
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, ReasonCode } from '../core/types/fill';
-import type { RepeatableKind, RunState, RunStatus } from '../core/types/run';
+import type { ValueMac } from '../core/types/loop';
+import { MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus } from '../core/types/run';
 import { clickIfAllowed } from '../dom/fillers';
 import { captchaElements, detectPause, unsolvedCaptchas, type PauseSignal } from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
@@ -113,13 +130,13 @@ import {
   type ReportLimiter,
 } from './report';
 import { highlightItems } from './targets';
-import type { TouchLog, TouchType } from './touches';
+import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
 import type { HighlightItem } from './ui/highlights';
 import type { PolicyChoice } from './ui/notices';
 import type { PageUi } from './ui/page-ui';
-import { createValueHasher, type ValueHasher } from './values';
+import type { ValueHasher } from './values';
 import { finalGuard } from './verify';
 
 /** Why a run could not go on: a refusal from the worker, or a second 'expired'. */
@@ -209,6 +226,12 @@ export interface RunEnv {
   fillAgain(request: RunRequest): void;
   /** The person's trusted input on the document, heard all along (touches.ts): what they typed while a run rested. */
   touches: TouchLog;
+  /** The document's keyed value hasher, made once (values.ts): every run of the document hashes under its key, so
+   *  their value MACs compare (E4). Memory only. */
+  hasher(): Promise<ValueHasher>;
+  /** The drafts written in this document and not yet the person's, by base key: the value MAC of each as written,
+   *  under the document's hasher (E4). Every run of the document reads and keeps it. Memory only. */
+  drafts: Map<BaseKey, ValueMac>;
 }
 
 /** A report's counters before anything was scanned for the fill. */
@@ -379,12 +402,19 @@ export class FillRun {
   private owners = new WeakMap<Element, FieldKey>();
   /** When the step's fill began (monotonicNow): an edit after it may mark a flagged row userEdited. */
   private fillStartedAt = 0;
+  /** The planned fields whose answer the person may save, by base key: each plan answer's `savable` (T6-1). */
+  private readonly savable = new Set<BaseKey>();
+  /** The drafts a stored RunState names (stored base keys): written in an earlier document, never confirmed (E4). */
+  private readonly restoredDrafts: ReadonlySet<string>;
+  /** A look at what was written before the step is left (E9) is on its way. */
+  private looking = false;
 
   constructor(private readonly env: RunEnv, readonly request: RunRequest) {
     this.root = env.page.root;
     this.hasher = request.carry?.hasher ?? null;
     this.carries = new Map(request.carry?.steps ?? []);
     this.handed = request.carry?.handed ?? null;
+    this.restoredDrafts = new Set(request.from?.state.drafts ?? []);
   }
 
   /** Runs the run; resolves with where it first rests (or how it ended). It may move on later: at review or while it
@@ -460,26 +490,87 @@ export class FillRun {
     }
   }
 
-  /** Confirm draft (the side panel's draft/confirm, or the in-page panel's): the draft of this field, written and
-   *  waiting for the person, is theirs now. Answers whether one waited. */
-  confirmDraft(key: FieldKey): boolean {
-    if (this.ended === null) return false;
+  /**
+   * Confirm draft (the side panel's draft/confirm, or the in-page panel's): the draft of this field, written and
+   * waiting for the person, is theirs now. The field is read again first (E6): it must still hold the draft as written
+   * (its value MAC), else its row is changed-by-you; and no canary the frame knows, else canary-in-value. Answers
+   * whether a draft waited and was confirmed.
+   */
+  async confirmDraft(key: FieldKey): Promise<boolean> {
+    const waiting = (candidate: FillResult | undefined): candidate is FillResult => candidate !== undefined
+      && candidate.provenance === 'llm-draft' && candidate.wrote && candidate.needsUserAction
+      && candidate.status === 'flagged' && candidate.reason === 'llm-draft-needs-confirmation';
+    if (this.ended === null || !waiting(this.rows.find((candidate) => candidate.key === key))) return false;
+    const baseKey = baseKeyOf(key);
+    const written = this.env.drafts.get(baseKey);
+    const field = this.fieldNow(key);
+    const mac = field === null || written === undefined ? null : await (await this.valueHasher()).mac(field.current);
     const row = this.rows.find((candidate) => candidate.key === key);
-    if (row === undefined || row.provenance !== 'llm-draft' || !row.wrote || !row.needsUserAction
-      || row.status !== 'flagged' || row.reason !== 'llm-draft-needs-confirmation') return false;
-    this.confirmedDrafts.add(baseKeyOf(key));
+    if (this.ended === null || !waiting(row)) return false;
+    if (field === null || mac === null || mac !== written) {
+      // What the field holds now is no longer the draft as written: never confirmed as one.
+      log('draft.confirm-refused', { changed: true });
+      this.forgetDraft(baseKey);
+      this.replaceRow(unresolvedRow(row, 'changed-by-you'));
+      return false;
+    }
+    const text = field.current.kind === 'text' ? field.current.text : '';
+    if (canariesIn([text], this.inMemory).length > 0) {
+      log('draft.confirm-refused', { canary: true });
+      this.forgetDraft(baseKey);
+      this.replaceRow({ ...row, status: 'blocked', reason: 'canary-in-value', provenance: null, wrote: false,
+        verification: 'not-applicable', needsUserAction: true });
+      return false;
+    }
+    this.confirmedDrafts.add(baseKey);
+    this.forgetDraft(baseKey);
     log('draft.confirmed');
     this.replaceRow(confirmedDraftRow(row));
     return true;
   }
 
+  /** A field of the step as a fresh scan reads it now, by its key or its base key; null when it is not there. */
+  private fieldNow(key: FieldKey): ScannedField | null {
+    const fresh = this.scanNow();
+    return fresh.fields.find((candidate) => candidate.key === key)
+      ?? fresh.fields.find((candidate) => candidate.baseKey === baseKeyOf(key)) ?? null;
+  }
+
+  /** The run's hasher: the one it carries, else the document's (E4). */
+  private async valueHasher(): Promise<ValueHasher> {
+    this.hasher ??= await this.env.hasher();
+    return this.hasher;
+  }
+
+  /** A draft is no longer one waiting for the person (confirmed, or made theirs): the document and the stored RunState
+   *  forget it (E4). */
+  private forgetDraft(baseKey: BaseKey): void {
+    if (!this.env.drafts.delete(baseKey)) return;
+    this.storeDrafts();
+  }
+
+  /** The document's waiting drafts into the machine's state, stored at once while the run rests (E4): keys only. */
+  private storeDrafts(): void {
+    if (this.machine === null || this.request.dryRun) return;
+    const drafts = [...this.env.drafts.keys()].map(storedBaseKey).slice(0, MAX_RUN_STATE_DRAFTS);
+    const before = this.machine.drafts ?? [];
+    if (before.length === drafts.length && before.every((key, at) => key === drafts[at])) return;
+    this.machine = { ...this.machine, drafts };
+    if (this.ended !== null) void this.persist().catch(() => undefined);
+  }
+
   /**
-   * The person's trusted input on the page while the run rests (touches.ts): an edit (input) of a field the run left
-   * makes a draft or a value we wrote theirs (changed-by-you), and marks a field the run left flagged as edited by them
-   * (detail.userEdited, while the setting is on), and the report goes out again. Elements only; no value is read.
+   * The person's trusted input on the page while the run rests (touches.ts): their edit (an input after their own key,
+   * pointer, paste or drop on it: E3) of a field the run left makes a draft or a value we wrote theirs (changed-by-you)
+   * and marks a field the run left flagged, that a plan named savable, as edited by them (detail.userEdited, while the
+   * setting is on), and the report goes out again. A draft whose text still equals the draft as written stays an
+   * unconfirmed draft (its value MAC: a page re-inserting it is no edit). Their activation (a pointerdown, Enter or
+   * Space) first reads again what the run wrote (E9). Elements only, and a value's MAC; no value is kept.
    */
-  personInput(type: TouchType, path: readonly Element[]): void {
-    if (type !== 'input' || this.ended === null || this.request.dryRun || this.rows.length === 0) return;
+  personInput(type: HeardType, path: readonly Element[], heard: Heard): void {
+    if (this.ended === null || this.request.dryRun || this.rows.length === 0) return;
+    if (heard.activation) this.lookBeforeLeaving();
+    if (type !== 'input' || !heard.edit) return;
     let key: FieldKey | undefined;
     for (const el of path) {
       key = this.owners.get(el);
@@ -487,17 +578,43 @@ export class FillRun {
     }
     const row = key === undefined ? undefined : this.rows.find((candidate) => candidate.key === key);
     if (row === undefined || row.status === 'blocked') return;
+    if (row.wrote && row.provenance === 'llm-draft' && this.env.drafts.has(baseKeyOf(row.key))) {
+      void this.draftEdited(row.key).catch(() => undefined);
+      return;
+    }
+    this.edit(row);
+  }
+
+  /** The person's edit of a draft that waits (E3): theirs only once its text is no longer the draft as written. */
+  private async draftEdited(key: FieldKey): Promise<void> {
+    const baseKey = baseKeyOf(key);
+    const field = this.fieldNow(key);
+    const written = this.env.drafts.get(baseKey);
+    const mac = field === null || written === undefined ? null : await (await this.valueHasher()).mac(field.current);
+    const row = this.rows.find((candidate) => candidate.key === key);
+    if (this.ended === null || row === undefined || row.provenance !== 'llm-draft' || !row.wrote) return;
+    if (mac !== null && mac === written) return;
+    this.edit(row);
+  }
+
+  /** The person's edit of a row's field, at rest: our value or our draft is theirs now (changed-by-you), and a field
+   *  the run left flagged, that a plan named savable, says userEdited while the setting is on. */
+  private edit(row: FillResult): void {
+    const baseKey = baseKeyOf(row.key);
     const flagged = row.status === 'flagged';
     let next = row;
     if (row.wrote) {
       // Our value, or our draft, which the person changed: theirs now.
-      if (row.provenance === 'llm-draft') this.confirmedDrafts.add(baseKeyOf(row.key));
+      if (row.provenance === 'llm-draft') {
+        this.confirmedDrafts.add(baseKey);
+        this.forgetDraft(baseKey);
+      }
       next = unresolvedRow(row, 'changed-by-you');
     }
     // Only a field the run left flagged: a value of ours the person changed is theirs, but no fix of a flagged field.
     if (flagged && row.reason !== 'changed-by-you' && this.offerToSave && row.kind !== 'file'
-      && row.detail?.userEdited !== true) {
-      this.edited.add(baseKeyOf(row.key));
+      && row.detail?.userEdited !== true && this.savable.has(baseKey)) {
+      this.edited.add(baseKey);
       next = { ...next, detail: { ...next.detail, userEdited: true } };
     }
     if (next === row) return;
@@ -506,16 +623,54 @@ export class FillRun {
   }
 
   /**
+   * Before the step is left (E9): what the run wrote on it is read again, at once (a pointerdown comes before the
+   * click it starts), and a written row whose value MAC is no longer the one the fill left is rowed verify-mismatch and
+   * reported, so the accepted-match cache never takes a match the page or a widget changed at rest. Drafts are the
+   * person's to confirm, and never cached: they are left alone. One look at a time.
+   */
+  private lookBeforeLeaving(): Promise<boolean> {
+    if (this.looking || this.request.dryRun || this.hasher === null) return Promise.resolve(false);
+    const signature = this.machine?.stepSignature ?? null;
+    const carry = signature === null ? undefined : this.carries.get(signature);
+    const ours = (carry?.fields ?? []).filter((tracked) => tracked.wrote && tracked.valueMac !== null);
+    if (ours.length === 0) return Promise.resolve(false);
+    const fresh = this.scanNow();
+    const books = new Map(ours.map((tracked) => [tracked.baseKey, tracked.valueMac] as const));
+    const fields = fresh.fields.filter((field) => books.has(field.baseKey));
+    const hasher = this.hasher;
+    this.looking = true;
+    return (async () => {
+      try {
+        const macs = await hasher.macsOf(fields);
+        const changed = this.rows.flatMap((row) => {
+          const baseKey = baseKeyOf(row.key);
+          if (!row.wrote || row.verification !== 'verified' || row.provenance === 'llm-draft' || !books.has(baseKey)) {
+            return [];
+          }
+          const mac = macs.get(baseKey);
+          return mac !== undefined && mac === books.get(baseKey) ? [] : [settleRow(row, { kind: 'mismatch' })];
+        });
+        if (changed.length === 0) return false;
+        log('content.changed-at-rest', { fields: changed.length });
+        this.replaceRows(changed);
+        return true;
+      } finally {
+        this.looking = false;
+      }
+    })();
+  }
+
+  /**
    * answer/read (Phase 6): the answer a field holds now, as Save my answer sends it to TailorIT: its options' clean
    * labels (never their places), its text, or its box's state, with its observed option-set hash. Null when the field
-   * is not on the page; refused when there is nothing to save, a list whose options were never read, or a value holding
-   * a canary. Memory only: never kept, never logged.
+   * is not on the page; refused when no plan named it savable (T6-1), there is nothing to save, a list whose options
+   * were never read, or a value holding a canary. Memory only: never kept, never logged.
    */
   readAnswer(key: FieldKey): AnswerRead | null {
-    const fresh = this.scanNow();
-    const field = fresh.fields.find((candidate) => candidate.key === key)
-      ?? fresh.fields.find((candidate) => candidate.baseKey === baseKeyOf(key));
-    if (field === undefined) return null;
+    const field = this.fieldNow(key);
+    if (field === null) return null;
+    // A field no plan named savable (the core's screen, T6-1) is never read for TailorIT.
+    if (!this.savable.has(field.baseKey)) return { refused: 'sensitive' };
     const unsupported: AnswerRead = { refused: 'unsupported' };
     let answer: Extract<AnswerRead, { answer: unknown }>['answer'];
     if (field.kind === 'text' || field.kind === 'textarea') {
@@ -546,13 +701,22 @@ export class FillRun {
 
   /** One row changed at rest: the rows, its highlight, the launcher's count, and the report again. */
   private replaceRow(next: FillResult): void {
-    this.rows = this.rows.map((row) => (row.key === next.key ? next : row));
-    const status = next.status;
-    this.fieldHighlights = status === 'skipped' ? this.fieldHighlights.filter((item) => item.key !== next.key)
-      : this.fieldHighlights.map((item) => (item.key !== next.key ? item : {
-        ...item, status, draft: next.provenance === 'llm-draft',
-        draftConfirmed: next.provenance === 'llm-draft' && !next.needsUserAction,
-      }));
+    this.replaceRows([next]);
+  }
+
+  /** Some rows changed at rest, at once: the rows, their highlights, the launcher's count, and one report. */
+  private replaceRows(changed: readonly FillResult[]): void {
+    if (changed.length === 0) return;
+    const byKey = new Map(changed.map((row) => [row.key, row] as const));
+    this.rows = this.rows.map((row) => byKey.get(row.key) ?? row);
+    for (const next of changed) {
+      const { status } = next;
+      this.fieldHighlights = status === 'skipped' ? this.fieldHighlights.filter((item) => item.key !== next.key)
+        : this.fieldHighlights.map((item) => (item.key !== next.key ? item : {
+          ...item, status, draft: next.provenance === 'llm-draft',
+          draftConfirmed: next.provenance === 'llm-draft' && !next.needsUserAction,
+        }));
+    }
     this.drawHighlights();
     this.rowsChanged();
   }
@@ -568,23 +732,26 @@ export class FillRun {
   }
 
   /**
-   * The step's rows as the person left them (Phase 6): a draft they confirmed, or made theirs, stays so; a field the
-   * run left flagged that they edited during the fill (an input, paste or drop on its own elements after the fill began
-   * and after our last write to it), or before at rest, says userEdited while the setting is on. Also notes each row's
-   * field elements, for the person's edits at rest.
+   * The step's rows as the person left them (Phase 6): a draft they confirmed, or made theirs, stays so; a field that
+   * still holds a draft this document wrote (or, resumed from a stored RunState, text where one was) is an unconfirmed
+   * draft (heldDraft, E4); a field the run left flagged, that a plan named savable (T6-1), and that they edited during
+   * the fill (an input after their intent, a paste or a drop on its own elements after the fill began and after our
+   * last write to it), or before at rest, says userEdited while the setting is on. Also notes each row's field
+   * elements, for the person's edits at rest. `macs`: draftMacs's.
    */
-  private markedRows(rows: readonly FillResult[], fresh: ScanResult, lastWriteAt: ReadonlyMap<BaseKey, number>):
-    FillResult[] {
+  private markedRows(rows: readonly FillResult[], fresh: ScanResult, lastWriteAt: ReadonlyMap<BaseKey, number>,
+    macs: ReadonlyMap<BaseKey, ValueMac>): FillResult[] {
     const owners = new WeakMap<Element, FieldKey>();
     const marked = rows.map((row) => {
       const target = fresh.target(row.key);
       const own = target === null ? [] : ownElements(target);
       for (const el of own) owners.set(el, row.key);
       const baseKey = baseKeyOf(row.key);
-      let next = row;
-      if (row.provenance === 'llm-draft' && this.confirmedDrafts.has(baseKey) && row.status === 'flagged'
-        && row.reason === 'llm-draft-needs-confirmation') next = confirmedDraftRow(row);
-      if (next.status !== 'flagged' || !this.offerToSave || next.kind === 'file' || this.request.dryRun) return next;
+      let next = this.heldDraft(row, target?.field ?? null, macs) ?? row;
+      if (next.provenance === 'llm-draft' && this.confirmedDrafts.has(baseKey) && next.status === 'flagged'
+        && next.reason === 'llm-draft-needs-confirmation') next = confirmedDraftRow(next);
+      if (next.status !== 'flagged' || !this.offerToSave || next.kind === 'file' || this.request.dryRun
+        || !this.savable.has(baseKey)) return next;
       const since = Math.max(this.fillStartedAt, lastWriteAt.get(baseKey) ?? Number.NEGATIVE_INFINITY);
       // A value of ours the person changed during the fill (changed-by-you) is theirs, but no fix of a flagged field.
       const editedNow = next.reason !== 'changed-by-you' && target !== null && holdsAnswer(target.field)
@@ -595,6 +762,63 @@ export class FillRun {
     });
     this.owners = owners;
     return marked;
+  }
+
+  /**
+   * The row of a field that holds a draft written in this document earlier (E4): its value MAC equals the draft's as
+   * written (RunEnv.drafts), or, in a run resumed from a stored RunState, it holds text this run did not write where an
+   * unconfirmed draft was (RunState.drafts). It is an unconfirmed llm-draft row (dashed, Confirm draft), or blocked
+   * when it holds a canary the frame knows; null for any other field (one this run wrote is its own row). A field that
+   * no longer holds its draft is forgotten.
+   */
+  private heldDraft(row: FillResult, field: ScannedField | null, macs: ReadonlyMap<BaseKey, ValueMac>): FillResult | null {
+    if (row.wrote || row.status === 'blocked' || field === null || this.request.dryRun) return null;
+    const baseKey = baseKeyOf(row.key);
+    const written = this.env.drafts.get(baseKey);
+    const mac = macs.get(baseKey);
+    const text = field.current.kind === 'text' ? field.current.text : '';
+    if (written !== undefined) {
+      if (mac !== written) {
+        this.forgetDraft(baseKey);
+        return null;
+      }
+    } else if (!this.restoredDrafts.has(storedBaseKey(baseKey)) || text.trim() === '' || mac === undefined
+      || this.confirmedDrafts.has(baseKey)) {
+      return null;
+    } else {
+      this.env.drafts.set(baseKey, mac);
+    }
+    if (canariesIn([text], this.inMemory).length > 0) {
+      this.forgetDraft(baseKey);
+      return { ...row, status: 'blocked', reason: 'canary-in-value', provenance: null, needsUserAction: true };
+    }
+    return { ...row, status: 'flagged', provenance: 'llm-draft', matcherStage: 'not-applicable', confidence: LLM_DRAFT,
+      reason: 'llm-draft-needs-confirmation', wrote: true, verification: 'verified', needsUserAction: true };
+  }
+
+  /** The value MACs, at the step's last scan, of the fields a draft concerns (E4): this document's drafts, those a
+   *  stored RunState names, and the drafts this fill wrote. Memory only. */
+  private async draftMacs(fresh: ScanResult, rows: readonly FillResult[]): Promise<Map<BaseKey, ValueMac>> {
+    const drafted = new Set(rows.filter((row) => row.provenance === 'llm-draft' && row.wrote)
+      .map((row) => baseKeyOf(row.key)));
+    const wanted = fresh.fields.filter((field) => drafted.has(field.baseKey) || this.env.drafts.has(field.baseKey)
+      || (this.restoredDrafts.size > 0 && this.restoredDrafts.has(storedBaseKey(field.baseKey))));
+    if (wanted.length === 0) return new Map();
+    return (await this.valueHasher()).macsOf(wanted);
+  }
+
+  /** The drafts this fill wrote, still as written and waiting for the person, go in the document's book; those the
+   *  person made theirs or confirmed leave it (E4). Then RunState is told. */
+  private bookDrafts(rows: readonly FillResult[], macs: ReadonlyMap<BaseKey, ValueMac>): void {
+    for (const row of rows) {
+      const baseKey = baseKeyOf(row.key);
+      const waiting = row.provenance === 'llm-draft' && row.wrote && row.needsUserAction
+        && row.reason === 'llm-draft-needs-confirmation';
+      const mac = macs.get(baseKey);
+      if (waiting && mac !== undefined) this.env.drafts.set(baseKey, mac);
+      else if (this.env.drafts.has(baseKey) && !waiting) this.env.drafts.delete(baseKey);
+    }
+    this.storeDrafts();
   }
 
   /** What the run that continues this one in its document carries over (RunCarry). `continued`: the person's trusted
@@ -723,7 +947,11 @@ export class FillRun {
    * afresh (`kept` false); one over some fields only (a typeahead's results) carries the step's assignment. The
    * canaries the answer allows are the ones RunState may hold.
    */
-  private async plan(specs: FieldSpec[], planKeys: FieldKey[], pass: number, kept = false): Promise<PlanAnswer> {
+  private async plan(specs: FieldSpec[], planKeys: FieldKey[], pass: number,
+    options: { kept?: boolean; revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]> } = {}): Promise<PlanAnswer> {
+    const kept = options.kept === true;
+    const revealEdges = (options.revealEdges ?? []).slice(0, MAX_REVEAL_EDGES)
+      .map(([parent, child]): [BaseKey, BaseKey] => [parent, child]);
     const notices = [
       ...(this.notices.has('tripwire') ? [{ kind: 'tripwire' as const, count: this.tripwireHits }] : []),
       ...(this.machine?.policyDecision === 'accepted' ? [{ kind: 'policy' as const, count: 1 }] : []),
@@ -731,15 +959,28 @@ export class FillRun {
     const canaries = [...this.sent];
     const repeatables = this.sections.map((section) => ({ kind: section.kind,
       entries: kept ? this.answers.get(section.kind)?.entries ?? null : null }));
-    // Drafts on (Phase 6): the posting as the person sees it, from the top frame only, for a draft's job text.
-    const postingText = this.drafts && this.isTop && planKeys.length > 0 ? this.postingText() : '';
+    // Drafts on (Phase 6): the posting as the person sees it, from the top frame only, for a draft's job text; never
+    // in a dry run, which asks for no draft (E12).
+    const postingText = this.drafts && this.isTop && !this.request.dryRun && planKeys.length > 0 ? this.postingText()
+      : '';
     const answer = await this.call<'plan/request'>((runId) => ({ v: 1, type: 'plan/request', runId, pass, specs,
       planKeys, canaries, notices, ...(repeatables.length > 0 ? { repeatables } : {}),
-      ...(postingText === '' ? {} : { postingText }) }));
+      ...(postingText === '' ? {} : { postingText }), ...(revealEdges.length > 0 ? { revealEdges } : {}) }));
     if ('failed' in answer) throw new RunFailure(answer.failed);
+    this.noteSavable(answer);
     for (const canary of answer.persistableCanaries) this.checked.add(canary);
     if (!kept) for (const section of answer.repeatables ?? []) this.answers.set(section.kind, section);
     return answer;
+  }
+
+  /** What a plan answer says of its rows' fields: whether the person may save their answer (T6-1). */
+  private noteSavable(answer: PlanAnswer): void {
+    const named = new Set<string>(answer.savable ?? []);
+    for (const row of answer.results) {
+      const baseKey = baseKeyOf(row.key as FieldKey);
+      if (named.has(row.key)) this.savable.add(baseKey);
+      else this.savable.delete(baseKey);
+    }
   }
 
   /** The posting as the person sees it (Phase 6): the document's visible text outside the form root, within TailorIT's
@@ -757,6 +998,7 @@ export class FillRun {
   private async poll(keys: FieldKey[]): Promise<PlanAnswer | 'expired' | 'failed'> {
     const answer = await this.env.channel.request<'plan/poll'>({ v: 1, type: 'plan/poll', runId: this.runId, keys });
     this.alive();
+    if (answer.ok) this.noteSavable(answer.data);
     if (answer.ok) return answer.data;
     return answer.error === 'expired' ? 'expired' : 'failed';
   }
@@ -1160,9 +1402,13 @@ export class FillRun {
       log('content.form-hidden');
       this.notices.add('form-hidden');
     }
-    // The person's confirmations and edits during the fill stand on the rows (Phase 6).
-    const all = this.markedRows([...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)], after,
-      loop.carry.lastWriteAt);
+    // The person's confirmations and edits during the fill stand on the rows (Phase 6), and so do the drafts this
+    // document wrote (E4).
+    const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
+    const macs = await this.draftMacs(after, rowsNow);
+    this.alive();
+    const all = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
+    this.bookDrafts(all, macs);
     this.noticesFromRows(all, last);
     this.counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
       deferredFields: last.counters.deferredFields };
@@ -1282,8 +1528,12 @@ export class FillRun {
     return count;
   }
 
-  /** press-next: the one untrusted click on the adapter's Next, never Submit (module header, 7). */
+  /** press-next: the one untrusted click on the adapter's Next, never Submit (module header, 7). What the run wrote
+   *  is read again first, and a value changed since the fill is reported (E9). */
   private async pressNext(): Promise<RunEvent> {
+    if (this.stopRequested) return { type: 'USER_STOPPED' };
+    if (await this.lookBeforeLeaving()) await this.report();
+    this.alive();
     if (this.stopRequested) return { type: 'USER_STOPPED' };
     if (!this.isTop) {
       // A fresh reading: the page may have hidden the frame since the fill (X-S8). Never a click the person cannot see.
@@ -1546,7 +1796,7 @@ export class FillRun {
   private async fillLoop(carry: LoopCarry | undefined): Promise<LoopResult> {
     const { env } = this;
     const inMemory = () => this.inMemory;
-    this.hasher ??= await createValueHasher();
+    const hasher = await this.valueHasher();
     this.alive();
     return runLoop({
       content: env.content,
@@ -1562,8 +1812,9 @@ export class FillRun {
       valid: () => env.channel.valid(),
       stopped: () => this.stopRequested,
       stopSignal: this.stopping.signal,
-      plan: (specs, planKeys, pass) => this.plan(specs, planKeys, pass),
-      planSome: (specs, planKeys, pass) => this.plan(specs, planKeys, pass, true),
+      plan: (specs, planKeys, pass, revealEdges) => this.plan(specs, planKeys, pass,
+        revealEdges === undefined ? {} : { revealEdges }),
+      planSome: (specs, planKeys, pass) => this.plan(specs, planKeys, pass, { kept: true }),
       poll: (keys) => this.poll(keys),
       recheck: () => this.recheck(),
       heldBy: () => {
@@ -1578,7 +1829,7 @@ export class FillRun {
         this.loopCut ??= { kind: 'pause', signal };
         return pauseCutOf(signal);
       },
-      hasher: this.hasher,
+      hasher,
       touches: env.touches,
       ...(carry === undefined ? {} : { carry }),
       widgetReadings: this.widgetReadings,

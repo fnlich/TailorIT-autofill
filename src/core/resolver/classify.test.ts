@@ -8,8 +8,8 @@ import {
   screenForClassify, SHARED_SENSITIVE_TERMS, SERVER_CATEGORY_MAP, type ClassifyVerdict, type ServerCategory,
 } from './classify';
 
-/** The phrase fixture TailorIT's tests hold the same copy of (apps/api/test/fixtures/sensitive-phrases.json): 21 that
- *  must be screened and 23 that must not, each a question's text or a pick's value of the category named. */
+/** The phrase fixture TailorIT's tests hold the same copy of (apps/api/test/fixtures/sensitive-phrases.json): 23 that
+ *  must be screened and 24 that must not, each a question's text or a pick's value of the category named. */
 interface Phrase { text: string; as: 'question' | 'school' | 'degree' | 'field_of_study'; screened: boolean }
 const PHRASES = JSON.parse(readFileSync(new URL('./sensitive-phrases.fixture.json', import.meta.url), 'utf8')) as Phrase[];
 
@@ -46,9 +46,9 @@ describe('the sensitive terms TailorIT screens with too (the Phase 4 review, T-F
     }
   });
 
-  it('screens the 21 phrases the shared fixture holds and lets its other 23 through', () => {
-    expect(PHRASES).toHaveLength(44);
-    expect(PHRASES.filter((phrase) => phrase.screened)).toHaveLength(21);
+  it('screens the 23 phrases the shared fixture holds and lets its other 24 through', () => {
+    expect(PHRASES).toHaveLength(47);
+    expect(PHRASES.filter((phrase) => phrase.screened)).toHaveLength(23);
     for (const phrase of PHRASES) {
       if (phrase.as === 'question') {
         expect(namesSensitiveTopic(phrase.text), phrase.text).toBe(phrase.screened);

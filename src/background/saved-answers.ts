@@ -9,18 +9,15 @@
  *   attention check is dropped, so a saved answer is never an EEO, legal, pay, consent or attention-check answer.
  * Nothing here logs a question or an answer: counts only.
  */
-import { parseGreenhouseUrl } from '../adapters/greenhouse/url';
-import { parseLeverUrl } from '../adapters/lever/url';
 import type { AutofillSavedAnswer } from '../contract/tailorit';
 import { PLATFORMS, type Platform } from '../core/enums';
 import { attentionHits } from '../core/guard/attention';
-import { namesSensitiveTopic } from '../core/resolver/classify';
-import type { CompanyScope } from '../core/resolver/saved';
+import { namesSensitiveTopic, sectionWordsOfKey } from '../core/resolver/classify';
 import type { OptionSetHash } from '../core/types/field';
 import type { SavedAnswer } from '../core/types/saved';
 
 /** The core's company of a scope ('<platform>:<board>'), or null for one that names no known platform. */
-function companyOf(scope: string): { platform: Platform; board: string } | null {
+export function companyOfScope(scope: string): { platform: Platform; board: string } | null {
   const at = scope.indexOf(':');
   const platform = scope.slice(0, at);
   const board = scope.slice(at + 1);
@@ -28,30 +25,15 @@ function companyOf(scope: string): { platform: Platform; board: string } | null 
   return { platform: platform as Platform, board };
 }
 
-/** Whether a question is one a saved answer may never answer: a sensitive topic, or an attention check. */
-export function neverSaved(question: string): boolean {
-  return namesSensitiveTopic(question) || attentionHits(question, '').length > 0;
+/** Whether a question is one a saved answer may never answer: a sensitive topic, or an attention check, in its label,
+ *  or a sensitive topic in its section's words (a row's section key; T6-1). */
+export function neverSaved(question: string, section = ''): boolean {
+  return namesSensitiveTopic(question) || attentionHits(question, '').length > 0
+    || namesSensitiveTopic(sectionWordsOfKey(section));
 }
 
-/**
- * The company a frame's address names, for answers saved for one company (free text): its platform and its board (a
- * Greenhouse board, a Lever site) as the extension's own URL parsers read it, in lower case; null when the address
- * names none (an embedded form without its board, a platform with no parser yet, the reserved fixture board).
- */
-export function companyOfUrl(address: string): CompanyScope | null {
-  let url: URL;
-  try {
-    url = new URL(address);
-  } catch {
-    return null;
-  }
-  const parsed = parseLeverUrl(url) ?? parseGreenhouseUrl(url);
-  if (parsed === null || parsed.board === null || parsed.board === '' || /\s/.test(parsed.board)) return null;
-  return { platform: parsed.platform, board: parsed.board.toLowerCase() };
-}
-
-/** A company scope as TailorIT keeps it: '<platform>:<board>'. */
-export const scopeOf = (company: CompanyScope): string => `${company.platform}:${company.board}`;
+/** The company a frame's address names, and a scope as TailorIT keeps it (adapters/company.ts). */
+export { companyOfUrl, scopeOf } from '../adapters/company';
 
 /** One of TailorIT's saved answers as the core reads it, or null when it may not be used (module header). */
 export function savedAnswerOf(wire: AutofillSavedAnswer): SavedAnswer | null {
@@ -60,7 +42,7 @@ export function savedAnswerOf(wire: AutofillSavedAnswer): SavedAnswer | null {
   if (!Number.isFinite(updatedAt)) return null;
   let scope: SavedAnswer['scope'] = { kind: 'global' };
   if (wire.scope !== '') {
-    const company = companyOf(wire.scope);
+    const company = companyOfScope(wire.scope);
     if (company === null) return null;
     scope = { kind: 'company', ...company };
   }

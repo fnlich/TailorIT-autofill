@@ -12,10 +12,14 @@
  *   panel mirrors every notice, because a page could draw over this one.
  * - Every click in it must be the person's: a capture listener on the panel stops any untrusted click before React
  *   hears it. Confirm draft and Save my answer (Phase 6 wave 2 passes them) also need the panel to have been seen
- *   (IntersectionObserver v2, visible.ts) when the click came, as the launcher's own clicks do; the panel then says
- *   what came of each, under its title.
+ *   (IntersectionObserver v2, visible.ts) when the click came, as the launcher's own clicks do, and the click to have
+ *   landed on what was seen (the Phase 6 review, E1): the watch speaks for the panel's box only, so the click's point
+ *   (a keyboard's click: the control's centre) must lie inside that box, inside the scrolling body for a row's
+ *   control, and on the control itself. The rows scroll inside the box (styles.ts), which clips anything past it. The
+ *   panel then says what came of each, under its title.
  * - It renders synchronously (flushSync), so what it shows is what it was last given. It never shows or receives a
- *   value: reports hold none, and the suggested options' labels live in the open row's state only.
+ *   value: reports hold none, and the suggested options' labels live in the open row's state only. Closed, it keeps
+ *   nothing: its reports are dropped and its tree unmounted (E7), so the next opening waits for a fresh report.
  */
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -63,6 +67,36 @@ export interface InPagePanel {
 
 /** The click types the panel's buttons answer. */
 const CLICKS = ['click', 'auxclick', 'dblclick'] as const;
+
+/** Slack for a box's edges, in CSS pixels (sub-pixel layout). */
+const EDGE_PX = 1;
+
+/** Whether a point lies inside a box. */
+function within(x: number, y: number, box: DOMRect): boolean {
+  return x >= box.left - EDGE_PX && x <= box.right + EDGE_PX && y >= box.top - EDGE_PX && y <= box.bottom + EDGE_PX;
+}
+
+/**
+ * Whether a trusted click landed on what the person could see (E1): the control it reached (a button, else the panel)
+ * at a point inside the panel's box and, for a control in the scrolling body, inside the body's box. A pointer's click
+ * is judged at its point, which must also lie on the control; a keyboard's (detail 0, no point) at the control's
+ * centre.
+ */
+function landedInside(event: Event, panel: HTMLElement): boolean {
+  const path = event.composedPath();
+  const at = path.indexOf(panel);
+  if (at < 0) return false;
+  const control = (path.slice(0, at).find((node) => (node as Node).nodeType === 1
+    && (node as Element).tagName === 'BUTTON') ?? panel) as Element;
+  const own = control.getBoundingClientRect();
+  const mouse = event as MouseEvent;
+  const pointer = typeof mouse.detail === 'number' && mouse.detail > 0;
+  const x = pointer ? mouse.clientX : own.left + own.width / 2;
+  const y = pointer ? mouse.clientY : own.top + own.height / 2;
+  if (!within(x, y, panel.getBoundingClientRect()) || !within(x, y, own)) return false;
+  const body = panel.querySelector('.panel__body');
+  return body === null || !body.contains(control) || within(x, y, body.getBoundingClientRect());
+}
 
 /** The panel's body: the run's status, Close, then the report (or a loading line until the first report arrives). */
 function PanelView({ reports, frameId, actions, seenAtClick }: {
@@ -138,8 +172,8 @@ export function createInPagePanel(doc: Document, shadow: ShadowRoot, options: {
   container.className = 'panel__root';
   el.append(container);
 
-  // The person's clicks only: an untrusted one never reaches React. Whether the panel could be seen is read at the
-  // click, before React runs the button's handler in the same dispatch.
+  // The person's clicks only: an untrusted one never reaches React. Whether the panel could be seen, and the click
+  // landed on what was seen, is read at the click, before React runs the button's handler in the same dispatch.
   let seenAtClick = false;
   const gate = (event: Event) => {
     if (!event.isTrusted) {
@@ -147,7 +181,7 @@ export function createInPagePanel(doc: Document, shadow: ShadowRoot, options: {
       event.preventDefault();
       return;
     }
-    seenAtClick = visibility.shown(el);
+    seenAtClick = visibility.shown(el) && landedInside(event, el);
   };
   for (const type of CLICKS) el.addEventListener(type, gate, { capture: true });
   visibility.observe(el);
@@ -183,7 +217,11 @@ export function createInPagePanel(doc: Document, shadow: ShadowRoot, options: {
       render();
     },
     hide() {
+      // Closed, it keeps nothing of the tab's reports, other frames' labels included (E7).
       el.hidden = true;
+      reports = null;
+      root?.unmount();
+      root = null;
     },
     update(next) {
       reports = [...next];

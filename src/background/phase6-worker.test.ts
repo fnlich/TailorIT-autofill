@@ -234,7 +234,9 @@ describe('Save my answer', () => {
     await reported(off, FIXED);
     expect(await off.deliver({ v: 1, type: 'panel/saveAnswer', tabId: 7, frameId: 0, fieldKey: FIXED.key }, PANEL))
       .toEqual({ ok: false, error: 'expired' });
-    expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'answer/read')).toEqual([]);
+    // The worker with the setting off read nothing (the Phase 6 review, E10: this asserted on another worker).
+    expect(sentToFrames(off).filter((sent) => typeOfSent(sent) === 'answer/read')).toEqual([]);
+    expect(off.tailorit.count(PUT)).toBe(0);
   });
 
   it("passes the frame's own refusal on (a canary in the answer), and PUTs nothing", async () => {

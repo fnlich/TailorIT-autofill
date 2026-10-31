@@ -5,9 +5,10 @@
  * TailorIT's categories or null, and the code decides what that means.
  * - Screening, before a field enters a batch (screenForClassify): its label, description, section's words and option
  *   labels against the sensitive terms (TailorIT's SENSITIVE_LABEL list, plus work permit, eligib*, visa, citizen*,
- *   consent, agree, authori[sz]e and share my/your data or information, plus the Phase 4 review's shared terms), and its
- *   options against the EEO answers and the EEO decline vocabulary. A hit makes the field needs-user, and it is never
- *   sent.
+ *   consent, agree, authori[sz]e and share my/your data or information, plus the Phase 4 review's shared terms, plus
+ *   the Phase 6 review's sponsorship paraphrases), and its options against the EEO answers and the EEO decline
+ *   vocabulary. A hit makes the field needs-user, and it is never sent. The same screen keeps a field from a saved
+ *   answer and from Save my answer (resolve.ts, plan/frame.ts savable, T6-1) and from a draft (plan/drafts.ts, E2).
  * - A pick's value is screened by its category (namesSensitivePickValue): a school, a degree or a field of study only
  *   for a sum of money, any other also by the sensitive terms.
  * - What goes out is visible text only (classifyItemOf): the label, never one known only from aria-label; the
@@ -159,6 +160,9 @@ export const SENSITIVE_TERMS: readonly RegExp[] = [
   /\bauthori[sz]/, /\bsponsor/, /\bvisas?\b/, /\bcitizen/, /\bnationalit(?:y|ies)\b/, /\b(?:in)?eligib/,
   /\bwork\s*permits?\b/, /\bright\s+to\s+work\b/, /\blegally\s+(?:able|allowed|permitted|entitled)\b/, /\bimmigra/,
   /\bgreen\s+card\b/, /\bclearances?\b/, /\bexport\s+control/, /\bu\s*\.?\s*s\s*\.?\s+persons?\b/,
+  // Sponsorship with no topic word (the Phase 6 review, T6-1): "Will you now or in the future require us to support
+  // your employment?".
+  /\bnow\s+or\s+in\s+the\s+future\b/, /\bsupport\s+(?:for\s+)?(?:your|my|their)\s+(?:employment|work)\b/,
   // Self-identification (EEO; the review's: Aboriginal, Torres Strait Islander, Indigenous, First Nations, visible
   // minority, LGBTQ and its longer forms, and orientation as the EEO phrase only: "sexual orientation", or orientation
   // within a few words of gender, LGBTQ or identity; "Team orientation" is none).
@@ -309,6 +313,18 @@ function isEeoAnswer(label: string, vocab: Vocab): boolean {
   return key !== '' && eeoAnswerKeys(vocab).has(key);
 }
 
+/**
+ * Whether the option labels of an answer the person would save name what a saved answer may never answer (the Phase 6
+ * review, T6-1): an EEO answer the vocabulary knows ("Woman", "Asian"), a decline phrase ("Prefer not to say"), or a
+ * sensitive topic. Injected text is cut first. The worker reads it at Save my answer, whatever the question's label.
+ */
+export function namesUnsavableAnswer(labels: readonly string[], vocab: Vocab): boolean {
+  return labels.some((label) => {
+    const clean = cutInjected(label).clean.trim();
+    return clean !== '' && (namesSensitiveTopic(clean) || isEeoAnswer(clean, vocab) || isDeclinePhrase(clean, vocab));
+  });
+}
+
 /** Why a field may not enter a classify batch, or null when it may: a sensitive topic in its label, description,
  *  section's words or options, or an option that is an EEO answer ("How do you identify?" with Man, Woman and
  *  Non-binary: the review, R4) ('sensitive'); or a decline option among its options ('decline'). Such a field is
@@ -350,6 +366,12 @@ const QUOTE_MAX = 2000;
 /** The section id as the words it was made from: 'main' is no section. */
 function sectionWords(section: SectionRef): string {
   return section.id === 'main' ? '' : section.id.replace(/[-_]+/g, ' ').trim();
+}
+
+/** A row's section (text/keys.ts sectionKey: the id, and "[n]" for a repeatable block) as the words it was made from;
+ *  '' for the form's main part. */
+export function sectionWordsOfKey(key: string): string {
+  return sectionWords({ id: key.replace(/\[\d+\]$/, '') });
 }
 
 /**

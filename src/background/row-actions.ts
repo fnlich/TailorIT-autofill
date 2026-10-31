@@ -5,11 +5,15 @@
  * Save my answer: the side panel's panel/saveAnswer {tabId, frameId, fieldKey}, or the in-page panel's answer/save
  * {fieldKey} for its own frame. Only a row the frame's report offers it on (flagged, the person's own edit:
  * detail.userEdited, never a file, nor a class whose saved answers are 'never') with the setting on, and only:
- * 1. the question screened first: one naming a sensitive topic or reading like an attention check is never read or sent
- *    ('sensitive'); a free-text answer needs the company the frame's address named at its last plan
- *    ('company-unknown');
+ * 1. the question screened first: one naming a sensitive topic or reading like an attention check, in its label or its
+ *    section's words, is never read or sent ('sensitive'); a free-text answer needs the company the frame's address
+ *    named at its last plan ('company-unknown'), or, when the worker no longer knows it (it was stopped since: the
+ *    Phase 6 review, E5), the company the frame's own address names now, which its answer/read answer carries;
  * 2. answer/read {fieldKey} to that frame: the field's answer as it holds it now (option labels, never indices; a text;
- *    a checked state) and its observed option-set hash, or why it cannot be saved;
+ *    a checked state) and its observed option-set hash, or why it cannot be saved (a field no plan named savable:
+ *    'sensitive'). Option labels that are an EEO answer, a decline phrase or a sensitive topic are never sent
+ *    ('sensitive'): a question whose label names no topic ("How do you identify?") is answered in its options (the
+ *    Phase 6 review, T6-1);
  * 3. PUT /answers at once, keyed by the question's normalized label (the resolver's key), that hash ('' for none) and
  *    the scope (the company, '<platform>:<board>', for free text only; '' otherwise), with the kind, the visible label,
  *    the platform and the question's category as TailorIT names it.
@@ -24,11 +28,12 @@
 import { AutofillQuestionKeySchema, PutAutofillSavedAnswerBodySchema, type AutofillFieldCategory } from
   '../contract/tailorit';
 import { CLASS_POLICIES, policyClassOf } from '../core/resolver/categories';
-import { SERVER_CATEGORY_MAP } from '../core/resolver/classify';
+import { namesUnsavableAnswer, SERVER_CATEGORY_MAP } from '../core/resolver/classify';
 import { answerFitsKind } from '../core/resolver/saved';
 import { normalizeLabel } from '../core/text/normalize';
 import type { FieldKind } from '../core/enums';
 import type { FieldCategory } from '../core/types/intent';
+import type { Vocab } from '../core/vocab/types';
 import { answerSchema, ok, refuse, type Answer } from '../messaging/envelope';
 import { AnswerReadAnswerSchema, DoneAnswerSchema, type PageMessage, type SaveAnswerOutcome } from '../messaging/schemas';
 import type { WorkerPlatform } from '../platform/types';
@@ -37,7 +42,7 @@ import type { FrameReport } from '../shared/report';
 import { framesOfTab, frameTarget, type FrameEntry } from './frames';
 import type { Reports } from './reports';
 import type { FrameRef, RunRegistry } from './runs';
-import { neverSaved, scopeOf } from './saved-answers';
+import { companyOfScope, neverSaved, scopeOf } from './saved-answers';
 import type { ServerClient } from './server-client';
 import type { SettingsStore } from './settings';
 
@@ -75,6 +80,8 @@ export interface AnswerDeps {
   runs: Pick<RunRegistry, 'memo'>;
   server: Pick<ServerClient, 'putAnswer'>;
   settings: Pick<SettingsStore, 'get'>;
+  /** The vocabulary the answer's option labels are screened with (T6-1). */
+  vocab(): Vocab;
   connected(): Promise<boolean>;
 }
 
@@ -108,13 +115,15 @@ export function createAnswerHandlers(deps: AnswerDeps) {
     if (found === null || !offersSave(found.row)) return refuse('expired');
     const { report, row } = found;
     // The question first: one a saved answer may never answer is never read.
-    if (neverSaved(row.label)) return refused('sensitive');
+    if (neverSaved(row.label, row.section)) return refused('sensitive');
     if (!SAVABLE_KINDS.has(row.kind)) return refused('unsupported');
     const questionKey = normalizeLabel(row.label);
     if (!AutofillQuestionKeySchema.safeParse(questionKey).success) return refused('unsupported');
     const forCompany = CLASS_POLICIES[policyClassOf(row.category)].savedAnswers === 'company';
-    const company = forCompany ? deps.runs.memo(report.runId).company ?? null : null;
-    if (forCompany && company === null) return refused('company-unknown');
+    // The company the run's last plan read from the frame's address; undefined when this worker never planned for the
+    // run (it was stopped since): the frame's own word then decides, below (E5).
+    const planned = forCompany ? deps.runs.memo(report.runId).company : null;
+    if (forCompany && planned === null) return refused('company-unknown');
 
     let raw: unknown;
     try {
@@ -128,7 +137,14 @@ export function createAnswerHandlers(deps: AnswerDeps) {
     if (!read.data.ok) return refuse(read.data.error === 'expired' ? 'expired' : 'unavailable');
     const value = read.data.data;
     if ('refused' in value) return refused(value.refused);
+    const company = !forCompany ? null : planned ?? (value.company === undefined || value.company === null ? null
+      : companyOfScope(value.company));
+    if (forCompany && company === null) return refused('company-unknown');
     if (!answerFitsKind(value.answer, row.kind)) return refused('unsupported');
+    // The answer's own words: an EEO answer, a decline phrase or a sensitive topic is never kept (T6-1).
+    if (value.answer.kind === 'options' && namesUnsavableAnswer(value.answer.labels, deps.vocab())) {
+      return refused('sensitive');
+    }
     const body = PutAutofillSavedAnswerBodySchema.safeParse({
       questionKey,
       optionSetHash: value.optionSetHash === 'none' ? '' : value.optionSetHash,

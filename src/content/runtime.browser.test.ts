@@ -299,9 +299,11 @@ describe('the in-page panel', () => {
     await clickInUi(runtime, panel.querySelector('button.panel__close')!);
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown').at(-1)).toEqual({ v: 1, type: 'panel/shown', open: false });
-    // Closed, it takes no more reports.
-    await fake.platform.deliver({ v: 1, type: 'report/update', reports: [] });
-    expect(runtime.ui!.panel?.reports).toHaveLength(2);
+    // Closed, it keeps nothing (the Phase 6 review, E7), and takes no more reports.
+    expect(runtime.ui!.panel?.reports).toBeNull();
+    expect(panel.querySelectorAll('li[data-field-key]')).toHaveLength(0);
+    await fake.platform.deliver({ v: 1, type: 'report/update', reports: [report(0, 'lever|main|email|none|0')] });
+    expect(runtime.ui!.panel?.reports).toBeNull();
   });
 
   it('closes when the person chooses the side panel, which Open review then opens', async () => {

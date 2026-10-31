@@ -169,6 +169,91 @@ describe('the in-page panel', () => {
     expect(calls.confirmed).toEqual(['why']);
   });
 
+  // The Phase 6 review, E1: the rows overflowed the 70vh box the watch observes, so a click through a page decoy over
+  // the overflow reached Confirm draft.
+  it('scrolls its rows inside its box, so a row past the box can be neither seen nor clicked there', async () => {
+    const { ui, calls } = mount(document, 2, { confirm: true });
+    ui.openPanel();
+    const draft = row('why', { kind: 'textarea', category: 'freeText.whyCompany', status: 'flagged',
+      provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', needsUserAction: true });
+    ui.updatePanel([report(2, { fields: [...Array.from({ length: 40 }, (_, at) => row(`r${at}`)), draft] })]);
+    const panel = panelOf(ui);
+    const body = panel.querySelector<HTMLElement>('.panel__body')!;
+    const box = panel.getBoundingClientRect();
+    expect(box.height).toBeLessThanOrEqual(innerHeight * 0.7 + 1);
+    expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
+    expect(body.getBoundingClientRect().bottom).toBeLessThanOrEqual(box.bottom + 1);
+    const confirm = buttonIn(panel, COPY.report.confirmDraft)!;
+    const button = confirm.getBoundingClientRect();
+    expect(button.top).toBeGreaterThan(box.bottom);
+    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    // A trusted click where the button would be drawn, were it not clipped: it lands on the page, never on the panel.
+    const host = ui.host.getBoundingClientRect();
+    await userEvent.click(ui.host, { force: true, position: { x: button.left - host.left + button.width / 2,
+      y: Math.min(button.top + button.height / 2, innerHeight - 2) - host.top } });
+    expect(calls.confirmed).toEqual([]);
+    // Scrolled into view inside the body, it is the person's to click.
+    confirm.scrollIntoView({ block: 'nearest' });
+    expect(confirm.getBoundingClientRect().bottom).toBeLessThanOrEqual(body.getBoundingClientRect().bottom + 1);
+    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    await trustedClick(ui, confirm);
+    expect(calls.confirmed).toEqual(['why']);
+  });
+
+  it('refuses a click outside the box it watches, even if a row were drawn there', async () => {
+    const { ui, calls } = mount(document, 2, { confirm: true });
+    ui.openPanel();
+    const draft = row('why', { kind: 'textarea', category: 'freeText.whyCompany', status: 'flagged',
+      provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', needsUserAction: true });
+    const panel = panelOf(ui);
+    // As the panel drew before the fix: nothing clipped, the rows spilling past its box.
+    const spill = document.createElement('style');
+    spill.textContent = '.panel, .panel__body { overflow: visible !important; } .panel__root { display: block !important; }';
+    ui.shadow.append(spill);
+    const confirm = () => buttonIn(panel, COPY.report.confirmDraft)!;
+    // Rows before the draft until its button lies just past the box, still in the viewport.
+    const rows: Row[] = [];
+    for (let at = 0; at < 60; at += 1) {
+      ui.updatePanel([report(2, { fields: [...rows, draft] })]);
+      if (confirm().getBoundingClientRect().top > panel.getBoundingClientRect().bottom + 4) break;
+      rows.push(row(`r${at}`));
+    }
+    const box = panel.getBoundingClientRect();
+    const button = confirm().getBoundingClientRect();
+    expect(button.top).toBeGreaterThan(box.bottom);
+    expect(button.bottom).toBeLessThan(innerHeight);
+    // The page's decoy over the spill, letting clicks through: the watch still sees the box clear.
+    const decoy = document.createElement('div');
+    decoy.dataset.testRoot = '';
+    decoy.style.cssText = `position:fixed;left:${box.left - 10}px;top:${box.bottom + 2}px;width:${box.width + 20}px;`
+      + `height:${innerHeight - box.bottom - 2}px;background:#fff;z-index:2147483647;pointer-events:none`;
+    document.documentElement.append(decoy);
+    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    const host = ui.host.getBoundingClientRect();
+    await userEvent.click(ui.host, { force: true, position: { x: button.left - host.left + button.width / 2,
+      y: button.top - host.top + button.height / 2 } });
+    expect(calls.confirmed).toEqual([]);
+  });
+
+  // The Phase 6 review, E7: a closed panel kept the tab's reports, other frames' labels included, and its tree.
+  it('keeps nothing once closed: its reports are dropped and its rows gone until a fresh report', () => {
+    const { ui } = mount();
+    ui.openPanel();
+    ui.updatePanel([report(0, { fields: [row('other-frame', { label: 'Label from another frame' })] }),
+      report(2, { fields: [row('own')] })]);
+    expect(ui.shadow.querySelectorAll('li[data-field-key]').length).toBe(2);
+    ui.closePanel();
+    expect(ui.panel?.open).toBe(false);
+    expect(ui.panel?.reports).toBeNull();
+    expect(ui.shadow.querySelectorAll('li[data-field-key]').length).toBe(0);
+    expect(panelOf(ui).textContent).not.toContain('Label from another frame');
+    // Opened again, it waits for the worker's report.
+    ui.openPanel();
+    expect(panelOf(ui).textContent).toContain(COPY.inPage.loading);
+    ui.updatePanel([report(2, { fields: [row('own')] })]);
+    expect(ui.shadow.querySelectorAll('li[data-field-key]').length).toBe(1);
+  });
+
   it('hides the page’s plain notices while it is open, keeping the policy card, and says them in the same words', () => {
     const { ui } = mount();
     ui.setNotices(['tripwire', 'validation']);

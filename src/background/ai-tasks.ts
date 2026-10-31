@@ -64,7 +64,7 @@ import {
   namesSensitivePickValue, namesSensitiveTopic, type ClassifyItem, type ClassifyVerdict,
 } from '../core/resolver/classify';
 import { sha256Hex } from '../core/text/sha256';
-import type { FieldKey, FieldSpec } from '../core/types/field';
+import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { Settings } from '../core/types/settings';
 import { log } from '../shared/log';
 import type { ServerClient, ServerResult } from './server-client';
@@ -573,6 +573,9 @@ export interface AskContext {
   repeatables?: readonly RepeatableRequest[];
   /** The posting's visible text the frame sent with the request (Phase 6, drafts on, the top frame only). */
   postingText?: string;
+  /** The loop's reveal edges the frame sent with the request ([parent, child] base keys), for a draft's context (the
+   *  Phase 6 review, E2). */
+  revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
   /** What a draft request carries besides its questions (Phase 6), made from postingText and the run's lookup when a
    *  plan first asks for a draft; absent: no draft is sent. */
   draft?: DraftContext;

@@ -7,7 +7,10 @@
  *   1-3. the rules decide the category (classifyByRules, Phase 1); one that hands the field to the person (a needsUser
  *      cause) makes it needs-user, whatever its topic's class would allow;
  *   4. a saved answer with the exact key, in a scope the category's policy allows, supplies the value: that is how
- *      saved answers beat the profile and the rules;
+ *      saved answers beat the profile and the rules. Never for a field the classify screen withholds
+ *      (screenForClassify: a sensitive topic in its label, description, section or options, an EEO answer or a decline
+ *      phrase among its options): an EEO or legal question whose label names no topic ("How do you identify?" with
+ *      Man, Woman, Non-binary) is the person's every time (the Phase 6 review, T6-1);
  *   5. LLM classification (Phase 4, classify.ts): a field nothing classified takes the category the LLM gave it, when
  *      planFrame has one, always flagged (answerFromLlm); otherwise it is 'unknown', and takes only a saved answer;
  *   then the value: the profile's (values.ts), or the EEO, legal and consent policy's (policy.ts), behind the
@@ -33,7 +36,7 @@ import type { VisibleText } from '../types/text';
 import type { Vocab } from '../vocab/types';
 import { none, SHAPE_OF_KIND, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { policyClassOf } from './categories';
-import type { LlmClassification } from './classify';
+import { screenForClassify, type LlmClassification } from './classify';
 import { classifyByRules, type RuleClassification } from './classifyRules';
 import { dateIso, dateText } from './format';
 import { statementPolarity, type NeedsUserCause } from './labelRules';
@@ -326,7 +329,9 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   }
   const category: FieldCategory = rules?.category ?? 'unknown';
   const policy = policyClassOf(category);
-  const saved = findSavedAnswer(spec, ctx.savedAnswers, policy, ctx.company);
+  // A screened question never takes a saved answer (T6-1): screened only when one would apply, which is rare.
+  const found = findSavedAnswer(spec, ctx.savedAnswers, policy, ctx.company);
+  const saved = found !== null && screenForClassify(spec, ctx.vocab) === null ? found : null;
   const classifiedBy: Classifier = rules?.classifiedBy ?? (saved ? 'saved' : 'none');
   const classifyConfidence = saved ? Math.max(rules?.confidence ?? 0, CLASSIFY_SAVED_EXACT) : rules?.confidence ?? 0;
   const base = { key: spec.key, category, classifiedBy, rule: saved ? 'saved.exact-key' : rules?.rule ?? null,

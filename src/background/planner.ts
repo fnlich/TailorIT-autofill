@@ -28,18 +28,22 @@
  *
  * Phase 6 (wave 2):
  * - Saved answers: every plan reads the person's saved answers the profile cache holds (GET /answers, read with the
- *   profile, memory only), and the company the frame's address names (saved-answers.ts companyOfUrl), so a free-text
- *   answer applies only on its own company's forms. The run's memo keeps that company for Save my answer.
+ *   profile, memory only), and the company the frame's address names (adapters/company.ts companyOfUrl), so a
+ *   free-text answer applies only on its own company's forms. The run's memo keeps that company for Save my answer;
+ *   a worker stopped meanwhile takes the frame's own word for it instead (row-actions.ts, E5).
  * - Drafts: a plan that asks for drafts sends them with the posting text the frame read (plan/request's postingText;
  *   '' without it, as for a form embedded in another page), the lookup's company and job title, and the resume the run
- *   attaches (resume-choice.ts), with the request's canaries.
+ *   attaches (resume-choice.ts), with the request's canaries. The request's reveal edges (revealEdges) are planned
+ *   with, so a box an EEO, legal or sensitive question revealed gets no draft (the Phase 6 review, E2).
+ * - Save my answer (T6-1): the answer names the planned keys whose answer the person may save (`savable`, the core's
+ *   screen), and the frame offers Save on those only.
  * - The accepted-match cache (match-cache.ts): every plan reads it, its stale entries are dropped, and the writes'
  *   candidates go to the accept book, which stores them once the field was unchanged at the run's done.
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
 import type { RepeatableAnswer } from '../core/steps/blocks';
-import type { FieldKey, FieldSpec } from '../core/types/field';
+import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite } from '../core/types/fill';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import { PlanAnswerSchema, type ContentMessage } from '../messaging/schemas';
@@ -93,6 +97,8 @@ interface Gathered {
   writes: PlannedWrite[];
   results: FillResult[];
   awaiting: FieldKey[];
+  /** The keys whose answer the person may save (T6-1), as the latest plan of each key said. */
+  savable: FieldKey[];
   repeatables?: RepeatableAnswer[];
 }
 
@@ -144,6 +150,7 @@ export function createPlanner(deps: PlannerDeps) {
       now: ymdOf(deps.now()),
       ai: ai.answers,
       ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }),
+      ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }),
     });
     try {
       const memory = loaded.value.sensitiveState;
@@ -197,6 +204,7 @@ export function createPlanner(deps: PlannerDeps) {
     let context = asked;
     const rows = new Map(output.results.map((row) => [row.key, row] as const));
     const writes = new Map(output.writes.map((write) => [write.key, write] as const));
+    const savable = new Set<FieldKey>(output.savable ?? []);
     let awaiting = [...output.awaiting];
     let asking: readonly FieldKey[] = output.awaiting;
     let ask: PlanAsk | undefined = output.ask;
@@ -211,7 +219,11 @@ export function createPlanner(deps: PlannerDeps) {
       ai.settle(ready);
       const again = await planOnce(run, url, context, ready);
       if ('refusal' in again) return again;
-      for (const key of ready) writes.delete(key);
+      for (const key of ready) {
+        writes.delete(key);
+        savable.delete(key);
+      }
+      for (const key of again.output.savable ?? []) savable.add(key);
       for (const row of again.output.results) rows.set(row.key, row);
       for (const write of again.output.writes) writes.set(write.key, write);
       const done = new Set<string>(ready);
@@ -226,6 +238,7 @@ export function createPlanner(deps: PlannerDeps) {
       writes: [...writes.values()].sort((a, b) => (order.get(a.key) ?? 0) - (order.get(b.key) ?? 0)),
       results: [...rows.values()],
       awaiting,
+      savable: [...rows.keys()].filter((key) => savable.has(key)),
     } };
   }
 
@@ -237,6 +250,7 @@ export function createPlanner(deps: PlannerDeps) {
       writes: run.dryRun ? [] : gathered.writes,
       results: gathered.results,
       awaiting: gathered.awaiting,
+      ...(gathered.savable.length > 0 ? { savable: gathered.savable } : {}),
       persistableCanaries,
       ...(gathered.repeatables === undefined ? {} : { repeatables: gathered.repeatables }),
     });
@@ -256,7 +270,9 @@ export function createPlanner(deps: PlannerDeps) {
       // The schema's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
       const asked: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries,
         ...(message.repeatables === undefined ? {} : { repeatables: message.repeatables }),
-        ...(message.postingText === undefined ? {} : { postingText: message.postingText }) };
+        ...(message.postingText === undefined ? {} : { postingText: message.postingText }),
+        ...(message.revealEdges === undefined ? {} : {
+          revealEdges: message.revealEdges as unknown as Array<[BaseKey, BaseKey]> }) };
       const planKeys = message.planKeys as unknown as FieldKey[];
       const planned = await planOnce(run, from.url, asked, planKeys);
       if ('refusal' in planned) return planned.refusal;
@@ -279,7 +295,8 @@ export function createPlanner(deps: PlannerDeps) {
       const keys = message.keys as unknown as FieldKey[];
       const known = ai === undefined ? [] : keys.filter((key) => ai.state(key) !== 'unknown');
       if (ai === undefined || known.length === 0) return refuse('expired');
-      const gathered: Gathered = { writes: [], results: [], awaiting: known.filter((key) => ai.state(key) === 'waiting') };
+      const gathered: Gathered = { writes: [], results: [], savable: [],
+        awaiting: known.filter((key) => ai.state(key) === 'waiting') };
       // One plan per context the ready keys were asked from.
       const byContext = new Map<AskContext, FieldKey[]>();
       for (const key of known) {
@@ -296,6 +313,7 @@ export function createPlanner(deps: PlannerDeps) {
         gathered.writes.push(...answered.gathered.writes);
         gathered.results.push(...answered.gathered.results);
         gathered.awaiting.push(...answered.gathered.awaiting);
+        gathered.savable.push(...answered.gathered.savable);
       }
       return answerOf(run, gathered, [], keys.length);
     },

@@ -9,7 +9,7 @@ import type { TiebreakItem, TiebreakVerdict } from '../matcher/types';
 import type { ClassifyItem, ClassifyVerdict } from '../resolver/classify';
 import type { CompanyScope } from '../resolver/saved';
 import type { RepeatableAnswer, RepeatableRequest } from '../steps/blocks';
-import type { FieldKey, FieldSpec } from '../types/field';
+import type { BaseKey, FieldKey, FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite } from '../types/fill';
 import type { Profile, SensitiveState, Ymd } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
@@ -50,6 +50,9 @@ export interface PlanInput {
    *  assigned (or the frame's assignment kept) and the resolver fills the block from it. Absent: none, and a block's
    *  fields use the entry its place names. */
   repeatables?: readonly RepeatableRequest[];
+  /** The loop's reveal edges on this step (parent, child base keys: the writer whose write revealed the child), for a
+   *  draft's context (Phase 6 review, E2). Absent: none known. */
+  revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
 }
 
 /** A tiebreak verdict, with the TailorIT task that gave it: an llm-pick write names that task. */
@@ -97,6 +100,9 @@ export interface PlanOutput {
   /** Keys waiting for the LLM, whose writes come back through plan/poll (Phase 4). Each has a row in `results`: the
    *  one that stands until the LLM answers (blank and flagged), and the question in `ask`. */
   awaiting: FieldKey[];
+  /** The planned keys whose answer the person may save (Save my answer, T6-1): a class that takes saved answers, a
+   *  kind one can fill, a question the classify screen lets through. Any other row offers no Save. Absent: none. */
+  savable?: FieldKey[];
   /** What to ask the LLM for the awaiting keys; absent when nothing waits. */
   ask?: PlanAsk;
   /** True when a field needs the sensitive part while sensitiveState is 'not-loaded'. The worker then fetches

@@ -131,6 +131,10 @@ export const LOG_CODES = [
   'answer.refused',
   'draft.confirmed',
   'content.person-edited',
+  // The Phase 6 review: Confirm draft refused for a field that no longer holds the draft as written, or holds a canary
+  // (E6); values of ours found changed before the step was left (E9, a count).
+  'draft.confirm-refused',
+  'content.changed-at-rest',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

@@ -33,10 +33,13 @@
  * outline it, at the person's request); field/describe (the visible labels of a row's suggested options, from a fresh
  * scan, never kept); draft/confirm (Phase 6: the run's waiting draft of that field is the person's now; `expired` when
  * none waits); answer/read (Phase 6: the field's answer as it holds it now, for Save my answer, straight to the worker
- * and never kept; `expired` when the field is gone); report/update (the tab's combined report, for the in-page panel).
+ * and never kept, with the company this frame's own address names; `expired` when the field is gone); report/update
+ * (the tab's combined report, for the in-page panel).
  * The in-page card's own buttons decide locally, on trusted clicks.
  * The person's trusted input reaches the current run as it comes (TouchLog.subscribe), so a resting run marks what they
- * edited (Phase 6).
+ * edited (Phase 6). The document keeps one value hasher and the AI drafts written in it that still wait for the
+ * person, for every run it holds (the Phase 6 review, E4): a later run rows a field still holding one as an
+ * unconfirmed draft. Another application at the same address forgets them.
  * The in-page panel (Phase 6, ui/panel.tsx): with settings.panel 'in-page' (frame/hello's answer, then each
  * settings/changed), the launcher's Open review opens it in this frame and tells the worker (panel/shown {open: true}),
  * which then sends this frame alone the tab's report (report/update) while it is open; its Close button, or the person
@@ -58,10 +61,12 @@
  * parser does not read, W2) gets no launcher and no run, as a page with no form root does.
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
+import { companyOfUrl, scopeOf } from '../adapters/company';
 import type { Adapter } from '../adapters/types';
 import { reduceRun, resumeMode, type RunEvent } from '../core/steps/machine';
-import type { FieldKey } from '../core/types/field';
+import type { BaseKey, FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
+import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
 import { scan } from '../dom/scan';
 import type { ScanResult } from '../dom/types';
@@ -80,6 +85,7 @@ import { createReportLimiter } from './report';
 import { elementsOf } from './targets';
 import { TouchLog } from './touches';
 import { mountPageUi, type PageUi } from './ui/page-ui';
+import { createValueHasher, type ValueHasher } from './values';
 
 /** How the runtime is set up; every part defaults to the real one. */
 export interface RuntimeOptions extends RunOptions {
@@ -165,7 +171,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** The person's trusted input on this document, for its whole life (touches.ts); the current run hears it as it
    *  comes, so a resting run marks what the person edited (Phase 6). */
   const touches = new TouchLog(doc, lifetime.signal);
-  touches.subscribe((type, path) => current?.personInput(type, path));
+  touches.subscribe((type, path, heard) => current?.personInput(type, path, heard));
+  /** The document's one value hasher, and the AI drafts written here that still wait for the person (E4): every run of
+   *  the document hashes under the same key, so a later run knows a field that still holds a draft. Memory only. */
+  let documentHasher: Promise<ValueHasher> | null = null;
+  const drafts = new Map<BaseKey, ValueMac>();
 
   function teardown(reason: 'invalidated' | 'leaving'): void {
     if (stopped) return;
@@ -209,10 +219,15 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'field/describe':
         return ok(describeField(msg.fieldKey as FieldKey));
       case 'draft/confirm':
-        return current?.confirmDraft(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
+        return (await current?.confirmDraft(msg.fieldKey as FieldKey)) === true ? ok({}) : refuse('expired');
       case 'answer/read': {
         const read = stopped || page === null ? null : current?.readAnswer(msg.fieldKey as FieldKey) ?? null;
-        return read === null ? refuse('expired') : ok(read);
+        if (read === null) return refuse('expired');
+        if ('refused' in read) return ok(read);
+        // The company this frame's own address names, for a free-text answer (E5): the worker may have been stopped
+        // since its last plan read it.
+        const company = companyOfUrl(readHref());
+        return ok({ ...read, company: company === null ? null : scopeOf(company) });
       }
       case 'report/update':
         // The worker sends it only to the frame whose panel/shown said open; a closed panel keeps nothing.
@@ -301,6 +316,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         if (current === run) startRun(next);
       },
       touches,
+      hasher: () => (documentHasher ??= createValueHasher()),
+      drafts,
     }, request);
     current = run;
     lastRows = new Map();
@@ -428,8 +445,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           showField: (key) => focusField(key as FieldKey),
           describeField: async (key) => describeField(key as FieldKey).options,
           // Phase 6, wave 2: this frame's draft, confirmed here; its answer, saved through the worker.
-          confirmDraft: async (key) => (current?.confirmDraft(key as FieldKey) === true ? COPY.panel.draftConfirmed
-            : COPY.panel.confirmFailed),
+          confirmDraft: async (key) => ((await current?.confirmDraft(key as FieldKey)) === true
+            ? COPY.panel.draftConfirmed : COPY.panel.confirmFailed),
           saveAnswer: async (key) => saveFromPanel(key as FieldKey),
           closed: () => closePanel(),
         },
@@ -461,6 +478,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       current?.abort();
       current = null;
       lastRows = new Map();
+      drafts.clear();
       ui?.setHighlights([]);
       ui?.setNotices([]);
       ui?.hidePolicyCard();

@@ -19,7 +19,7 @@ import type { CompanyScope } from '../core/resolver/saved';
 import type { SavedAnswer } from '../core/types/saved';
 import type { RepeatableRequest } from '../core/steps/blocks';
 import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize';
-import type { FieldKey, FieldSpec } from '../core/types/field';
+import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { Profile, Ymd } from '../core/types/profile';
 import type { RunState } from '../core/types/run';
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
@@ -291,6 +291,8 @@ interface AskContext {
   specs: readonly FieldSpec[];
   canaries: readonly string[];
   repeatables?: readonly RepeatableRequest[];
+  /** The loop's reveal edges the request carried (the Phase 6 review, E2). */
+  revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
 }
 
 /** A run's LLM questions, as the fake worker keeps them. */
@@ -343,7 +345,8 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       ...(options.company === undefined ? {} : { company: options.company }),
       settings: options.settings ?? DEFAULT_SETTINGS, vocab: testVocab(), dryRun: run.dryRun, now: NOW,
       ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications, drafts: run.ai.drafts },
-      ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }) });
+      ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }),
+      ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }) });
     if (options.editPlan) plan = options.editPlan(plan, context.specs);
     for (const item of plan.ask?.tiebreaks ?? []) {
       const { picked, why } = options.ai?.pick?.(item) ?? { picked: null, why: 'no-match' as const };
@@ -386,12 +389,15 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         const specs = message.specs as FieldSpec[];
         const planKeys = message.planKeys as FieldKey[] | undefined;
         const asked = message.repeatables as RepeatableRequest[] | undefined;
-        const context: AskContext = { specs, canaries: message.canaries as string[], ...(asked ? { repeatables: asked } : {}) };
+        const edges = message.revealEdges as Array<[BaseKey, BaseKey]> | undefined;
+        const context: AskContext = { specs, canaries: message.canaries as string[], ...(asked ? { repeatables: asked } : {}),
+          ...(edges ? { revealEdges: edges } : {}) };
         const plan = planFor(run, context, planKeys ?? specs.map((spec) => spec.key));
         // Fields that wait for the LLM are planned again with the entries their blocks were given (as the worker does).
         if (plan.repeatables) context.repeatables = plan.repeatables.map((answer) => ({ kind: answer.kind, entries: answer.entries }));
         return { ok: true, data: { writes: run.dryRun ? [] : plan.writes, results: plan.results, awaiting: plan.awaiting,
-          persistableCanaries: plan.persistableCanaries, ...(plan.repeatables ? { repeatables: plan.repeatables } : {}) } };
+          persistableCanaries: plan.persistableCanaries, ...(plan.repeatables ? { repeatables: plan.repeatables } : {}),
+          ...(plan.savable ? { savable: plan.savable } : {}) } };
       }
       case 'plan/poll': {
         const run = runs.get(message.runId as string);
@@ -415,12 +421,14 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
           run.ai.waiting.delete(key);
           byContext.set(context, [...(byContext.get(context) ?? []), key]);
         }
-        const data = { writes: [] as unknown[], results: [] as unknown[], awaiting: [...still], persistableCanaries: [] };
+        const data = { writes: [] as unknown[], results: [] as unknown[], awaiting: [...still], persistableCanaries: [],
+          savable: [] as FieldKey[] };
         for (const [context, ready] of byContext) {
           const plan = planFor(run, context, ready);
           if (!run.dryRun) data.writes.push(...plan.writes);
           data.results.push(...plan.results);
           data.awaiting.push(...plan.awaiting);
+          data.savable.push(...plan.savable ?? []);
         }
         return { ok: true, data };
       }

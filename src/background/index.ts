@@ -103,7 +103,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const policyLimit = createRateLimit(POLICY_HIT_LIMIT.count, POLICY_HIT_LIMIT.windowMs, now);
   const shownLimit = createRateLimit(PANEL_SHOWN_LIMIT.count, PANEL_SHOWN_LIMIT.windowMs, now);
   // The anonymous counters (Phase 6): storage.local, only while the person opted in; nothing is ever sent.
-  const telemetry = createTelemetry({ local, settings });
+  const telemetry = createTelemetry({ local, session, settings });
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, shownLimit, telemetry,
     check: (tabId) => checkTab(tabId) });
@@ -119,7 +119,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes) });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId) });
   // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
-  const answers = createAnswerHandlers({ platform, reports, runs, server, settings, connected: () => auth.connected() });
+  const answers = createAnswerHandlers({ platform, reports, runs, server, settings, vocab: () => core.vocab(),
+    connected: () => auth.connected() });
   const beginDeps = {
     storageAccess: () => state.storageAccess,
     connected: () => auth.connected(),

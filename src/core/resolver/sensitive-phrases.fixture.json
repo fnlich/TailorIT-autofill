@@ -20,6 +20,8 @@
   { "text": "I accept the terms and conditions", "as": "question", "screened": true },
   { "text": "Are you a U.S. person under export control regulations?", "as": "question", "screened": true },
   { "text": "Do you have a condition that substantially limits a major life activity?", "as": "question", "screened": true },
+  { "text": "Will you now or in the future require us to support your employment?", "as": "question", "screened": true },
+  { "text": "Will you require support for your work in this country?", "as": "question", "screened": true },
   { "text": "United States Military Academy", "as": "school", "screened": false },
   { "text": "Virginia Military Institute", "as": "school", "screened": false },
   { "text": "Gender Studies", "as": "field_of_study", "screened": false },
@@ -42,5 +44,6 @@
   { "text": "LinkedIn profile", "as": "question", "screened": false },
   { "text": "Opt in to SMS updates", "as": "question", "screened": false },
   { "text": "Nashville, TN", "as": "question", "screened": false },
-  { "text": "Team orientation preference", "as": "question", "screened": false }
+  { "text": "Team orientation preference", "as": "question", "screened": false },
+  { "text": "How do you support your team?", "as": "question", "screened": false }
 ]
