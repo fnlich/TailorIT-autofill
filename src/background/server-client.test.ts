@@ -264,3 +264,50 @@ describe('the server client', () => {
     expect(info).toHaveBeenCalled();
   });
 });
+
+describe('the AI routes (Phase 4)', () => {
+  const PICK_BODY = { items: [{ key: 'lever|main|source|9d4c2b7e1f0a3c58|0', category: 'referral_source' as const,
+    optionSetHash: '9d4c2b7e1f0a3c58', intendedValue: 'LinkedIn', aliases: [], label: 'How did you hear about us?',
+    options: [{ index: 0, label: 'LinkedIn job post' }] }] };
+  const TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
+
+  it('posts a pick within the server client’s rules, and takes a finished task (200) or the id to poll (202)', async () => {
+    const { server, tailorit, timeouts } = client();
+    tailorit.reply('POST /api/autofill/ai/pick', { json: { ...goldens.lookup, ignored: true } }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'bad-answer' });
+    const golden = (await import('../contract/tailorit/v1/fixtures/AutofillPickTask/valid/golden.json')).default;
+    tailorit.reply('POST /api/autofill/ai/pick', { json: golden }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toEqual({ ok: true, value: { done: true, task: golden } });
+    tailorit.reply('POST /api/autofill/ai/pick', { status: 202, json: { taskId: TASK_ID } }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toEqual({ ok: true, value: { done: false, taskId: TASK_ID } });
+    const sent = tailorit.requests.at(-1)!;
+    expect(sent).toMatchObject({ method: 'POST', path: '/api/autofill/ai/pick', body: JSON.stringify(PICK_BODY) });
+    expect(sent.init).toMatchObject({ credentials: 'omit', redirect: 'error', cache: 'no-store' });
+    expect(sent.headers).toMatchObject({ 'x-tailorit-autofill-api': '1', authorization: `Bearer ${GOLDEN_TOKEN}` });
+    expect(timeouts.at(-1)?.ms).toBe(SERVER_TIMEOUT_MS);
+  });
+
+  it('reads a 409 ai_busy as a conflict with its code, and a string index as an answer off the contract', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('POST /api/autofill/ai/pick', { status: 409, json: errorBody('ai_busy') }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'conflict', status: 409, code: 'ai_busy' });
+    const golden = (await import('../contract/tailorit/v1/fixtures/AutofillPickTask/valid/golden.json')).default;
+    const stringIndex = { ...golden, result: { picks: [{ ...golden.result.picks[0], index: '3' }] } };
+    tailorit.reply('POST /api/autofill/ai/pick', { json: stringIndex }, { once: true });
+    expect(await server.aiPick(PICK_BODY)).toMatchObject({ ok: false, failure: 'bad-answer' });
+  });
+
+  it('polls and cancels a task by its id, and refuses an id that is not one before any request', async () => {
+    const { server, tailorit } = client();
+    const running = (await import('../contract/tailorit/v1/fixtures/AutofillPickTask/valid/running.json')).default;
+    tailorit.reply(`GET /api/ai/tasks/${TASK_ID}`, { json: running }, { once: true });
+    expect(await server.aiTask(TASK_ID)).toEqual({ ok: true, value: running });
+    tailorit.reply(`DELETE /api/ai/tasks/${TASK_ID}`, { json: { ...running, status: 'cancelled' } }, { once: true });
+    expect(await server.aiCancel(TASK_ID)).toMatchObject({ ok: true, value: { status: 'cancelled' } });
+    const before = tailorit.requests.length;
+    for (const id of ['../profile', 'ABC', TASK_ID.toUpperCase(), '']) {
+      expect(await server.aiTask(id)).toMatchObject({ ok: false, failure: 'refused-path' });
+    }
+    expect(tailorit.requests.length).toBe(before);
+  });
+});

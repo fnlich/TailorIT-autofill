@@ -32,7 +32,7 @@ const TIMERS = ['setTimeout', 'setInterval'].map((name) => ({
 const restrictImports = (patterns) => ['error', { patterns }];
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', '.output/**', '.output-e2e/**', '.wxt/**', 'e2e/artifacts/**', 'test-results/**'] },
+  { ignores: ['node_modules/**', '.output/**', '.output-e2e/**', '.output-worktree/**', '.wxt/**', 'e2e/artifacts/**', 'test-results/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

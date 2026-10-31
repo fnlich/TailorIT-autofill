@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": []
+    }
+  ]
+}

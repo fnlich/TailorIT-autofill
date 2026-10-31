@@ -1,0 +1,10 @@
+{
+  "picks": [
+    {
+      "key": "workday|my-information|country-of-citizenship|5c1e9a7b3d2f4086|0",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "index": null,
+      "reason": "sensitive"
+    }
+  ]
+}

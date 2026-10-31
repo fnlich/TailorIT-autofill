@@ -1,0 +1,10 @@
+{
+  "picks": [
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "index": 1180,
+      "reason": "tainted"
+    }
+  ]
+}

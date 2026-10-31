@@ -8,12 +8,20 @@
  * RunState holds no field value. Its one page-derived text, the canary set, is checked here: every canary that equals
  * a profile value is dropped before storing (the core's persistableCanaries), with the profile loaded first if it is
  * not in memory; when it cannot be loaded, the canary set is stored empty. A canary is never stored unchecked.
+ *
+ * RunState.aiTasks (Phase 4) is the worker's own: a batch hash to its TailorIT task id, never a value. The worker notes
+ * an id the moment TailorIT gives one (aiTasks()), in storage.session's `aitasks` record, since the content script puts
+ * its RunState only at a run's end; every put folds the application's entries in. A batch asked again after a worker
+ * restart or a reload is read by its id, from either place, within TailorIT's hour.
  */
+import { AUTOFILL_TASK_RETENTION_MS } from '../contract/tailorit';
 import { RUN_STATE_TTL_MS, type RunState } from '../core/types/run';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import { RunStateSchema } from '../messaging/schemas';
 import type { StorageArea } from '../platform/types';
 import { log } from '../shared/log';
+import { AI_TASKS_KEY, AiTaskRecordSchema, MAX_AI_TASK_ENTRIES, type AiTaskRecord } from '../shared/stored';
+import type { AiTaskIds } from './ai-tasks';
 import type { CoreFunctions } from './core';
 import { createKeyedQueue } from './locks';
 import type { ProfileResult } from './profile-cache';
@@ -54,6 +62,9 @@ export interface RunStateStore {
   forgetTab(tabId: number): Promise<void>;
   /** Drops expired and unreadable entries, then the oldest beyond MAX_RUN_STATES. */
   prune(): Promise<void>;
+  /** The AI tasks' ids of one application, for a run in this tab (Phase 4): noted in storage.session at once, and read
+   *  from there or from this tab's RunState.aiTasks. */
+  aiTasks(applicationKey: string, tabId: number): AiTaskIds;
 }
 
 /** What the RunState store needs. */
@@ -73,6 +84,23 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
   const queue = createKeyedQueue();
 
   const expired = (state: { updatedAt: number }) => state.updatedAt + RUN_STATE_TTL_MS <= deps.now();
+
+  /** The noted AI tasks still within TailorIT's hour; an unreadable record reads as none. */
+  async function taskEntries(): Promise<AiTaskRecord> {
+    const parsed = AiTaskRecordSchema.safeParse(await session.get(AI_TASKS_KEY));
+    if (!parsed.success) return [];
+    return parsed.data.filter((entry) => entry.at + AUTOFILL_TASK_RETENTION_MS > deps.now());
+  }
+
+  /** An application's noted tasks, as RunState.aiTasks holds them. */
+  const tasksOf = (entries: AiTaskRecord, applicationKey: string) => Object.fromEntries(entries
+    .filter((entry) => entry.applicationKey === applicationKey).map((entry) => [entry.hash, entry.taskId]));
+
+  /** RunState.aiTasks with the application's noted tasks folded in, the latest kept within its cap. */
+  function withTasks(aiTasks: Readonly<Record<string, string>>, noted: Record<string, string>): Record<string, string> {
+    const merged = { ...aiTasks, ...noted };
+    return Object.fromEntries(Object.entries(merged).slice(-MAX_AI_TASK_ENTRIES));
+  }
 
   /** The stored entry when it parses and has not expired; an entry that does neither is removed. */
   async function read(applicationKey: string): Promise<RunState | null> {
@@ -136,7 +164,8 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
     put(runState, tabId) {
       return queue.run('runstate', async (): Promise<Answer<{ updatedAt: number }>> => {
         const now = deps.now();
-        const stamped = { ...runState, startedAt: Math.min(runState.startedAt, now), updatedAt: now };
+        const aiTasks = withTasks(runState.aiTasks, tasksOf(await taskEntries(), runState.applicationKey));
+        const stamped = { ...runState, aiTasks, startedAt: Math.min(runState.startedAt, now), updatedAt: now };
         // Weighed as it would be stored, before the canary check (which may fetch the profile) and before any write;
         // dropping canaries only makes it lighter.
         const bytes = new TextEncoder().encode(JSON.stringify(stamped)).length;
@@ -171,6 +200,7 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
         const pointers = Object.keys(await session.getMany(TAB_PREFIX));
         if (states.length > 0) await local.remove(states);
         if (pointers.length > 0) await session.remove(pointers);
+        await session.remove([AI_TASKS_KEY]);
         return states.length;
       });
     },
@@ -183,6 +213,37 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
     },
     prune() {
       return queue.run('runstate', pruneNow);
+    },
+    aiTasks(applicationKey, tabId) {
+      return {
+        async get(hash) {
+          const noted = (await taskEntries()).find((entry) => entry.applicationKey === applicationKey && entry.hash === hash);
+          if (noted !== undefined) return noted.taskId;
+          return (await store.get(applicationKey, tabId))?.aiTasks[hash] ?? null;
+        },
+        note(hash, taskId) {
+          return queue.run('aitasks', async () => {
+            const entries = (await taskEntries())
+              .filter((entry) => !(entry.applicationKey === applicationKey && entry.hash === hash));
+            const next = [...entries, { applicationKey, hash, taskId, at: deps.now() }].slice(-MAX_AI_TASK_ENTRIES);
+            await session.set({ [AI_TASKS_KEY]: AiTaskRecordSchema.parse(next) });
+          });
+        },
+        forget(hash) {
+          return queue.run('aitasks', async () => {
+            const entries = await taskEntries();
+            const kept = entries.filter((entry) => !(entry.applicationKey === applicationKey && entry.hash === hash));
+            if (kept.length !== entries.length) await session.set({ [AI_TASKS_KEY]: kept });
+            // A RunState that still names it would send the next ask to the same dead id.
+            await queue.run('runstate', async () => {
+              const state = await store.get(applicationKey, tabId);
+              if (state === null || !(hash in state.aiTasks)) return;
+              const aiTasks = Object.fromEntries(Object.entries(state.aiTasks).filter(([name]) => name !== hash));
+              await local.set({ [stateKey(applicationKey)]: RunStateSchema.parse({ ...state, aiTasks }) });
+            });
+          });
+        },
+      };
     },
   };
   return store;

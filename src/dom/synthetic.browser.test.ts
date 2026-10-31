@@ -1,6 +1,6 @@
 /*
  * The synthetic fixtures' states as the scanner reads them (docs/FIXTURES.md "States"): Phase 3's pages, and Phase 4's
- * widgets and remote-typeahead. Each page loads into a srcdoc frame at the snapshot size, its variant (if the state
+ * widgets, remote-typeahead and ai-steps. Each page loads into a srcdoc frame at the snapshot size, its variant (if the state
  * names one) put on <html> as data-variant before it loads. Each state is reached from a fresh load: its steps act on the page as a filler would, with untrusted events
  * (a select's value set, then input and change dispatched, bubbling; a radio's click()), so the page's own script
  * reacts; a state with an `until` selector waits for the page to match it (a MutationObserver, capped, never a fixed
@@ -13,6 +13,8 @@
  * key it had with its placeholder alone, and the key changes once, when the states arrive.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import aiExpect from '../../fixtures/synthetic/ai-steps/index.expect.json';
+import aiHtml from '../../fixtures/synthetic/ai-steps/index.html?raw';
 import asyncExpect from '../../fixtures/synthetic/async-options/index.expect.json';
 import asyncHtml from '../../fixtures/synthetic/async-options/index.html?raw';
 import conditionalExpect from '../../fixtures/synthetic/conditional-reveal/index.expect.json';
@@ -95,6 +97,7 @@ const PAGES = {
   'async-options': readSynthetic(asyncHtml, asyncExpect),
   widgets: readSynthetic(widgetsHtml, widgetsExpect),
   'remote-typeahead': readSynthetic(typeaheadHtml, typeaheadExpect),
+  'ai-steps': readSynthetic(aiHtml, aiExpect),
 } as const;
 
 /** The page with `variant` put on its <html> as data-variant, before it loads; the page as it is for none. */

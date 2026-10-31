@@ -1,0 +1,43 @@
+{
+  "id": "3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60",
+  "kind": "autofill_pick",
+  "status": "succeeded",
+  "result": {
+    "picks": [
+      {
+        "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0",
+        "optionSetHash": "5c1e9a7b3d2f4086",
+        "index": 1180,
+        "reason": "matched"
+      },
+      {
+        "key": "greenhouse|education[0]|degree|a1b2c3d4e5f60718|0",
+        "optionSetHash": "a1b2c3d4e5f60718",
+        "index": 5,
+        "reason": "matched"
+      },
+      {
+        "key": "greenhouse|main|languages-you-speak|9d4c2b7e1f0a3c58|0#1@9d4c2b7e1f0a3c58",
+        "optionSetHash": "9d4c2b7e1f0a3c58",
+        "index": null,
+        "reason": "no_match"
+      },
+      {
+        "key": "greenhouse|main|spanish-proficiency|0e7f3a9c5b1d2468|0",
+        "optionSetHash": "0e7f3a9c5b1d2468",
+        "index": null,
+        "reason": "invalid"
+      },
+      {
+        "key": "greenhouse|main|how-did-you-hear-about-this-job|7b3e9f1a2c4d6e80|0",
+        "optionSetHash": "7b3e9f1a2c4d6e80",
+        "index": 3,
+        "reason": "matched"
+      }
+    ]
+  },
+  "error": null,
+  "createdAt": "2026-10-22T12:00:00.000Z",
+  "startedAt": "2026-10-22T12:00:00.120Z",
+  "finishedAt": "2026-10-22T12:00:04.870Z"
+}

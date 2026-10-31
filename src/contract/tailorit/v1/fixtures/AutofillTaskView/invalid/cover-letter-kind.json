@@ -1,0 +1,12 @@
+{
+  "id": "3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60",
+  "kind": "cover_letter",
+  "status": "succeeded",
+  "result": {
+    "letter": "Dear hiring team"
+  },
+  "error": null,
+  "createdAt": "2026-10-22T12:00:00.000Z",
+  "startedAt": "2026-10-22T12:00:00.120Z",
+  "finishedAt": "2026-10-22T12:00:04.870Z"
+}

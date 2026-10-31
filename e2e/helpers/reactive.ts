@@ -20,6 +20,10 @@ export const fixtureAddress = (name: string) => `https://jobs.lever.co/tailorit-
 export const REVEAL = { file: 'fixtures/synthetic/conditional-reveal/index.html', url: fixtureAddress('conditional-reveal'),
   expectations: 'fixtures/synthetic/conditional-reveal/index.expect.json' } as const;
 
+/** The LLM steps' page (Phase 4), served at one address per case so each case is an application of its own. */
+export const AI_STEPS = { file: 'fixtures/synthetic/ai-steps/index.html', expectations: 'fixtures/synthetic/ai-steps/index.expect.json',
+  url: (name: string) => fixtureAddress(name === '' ? 'ai-steps' : `ai-steps-${name}`) } as const;
+
 /** The async-options page's variants (its header says what each does), each served at its own address so each has an
  *  application of its own. */
 export const ASYNC_VARIANTS = ['fast', 'slow', 'never', 'failed', 'page-busy'] as const;

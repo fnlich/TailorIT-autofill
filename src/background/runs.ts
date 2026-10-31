@@ -11,6 +11,7 @@ import type { AutofillLookupResponse } from '../contract/tailorit';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { RUN_PREFIX, RunRecordSchema, type RunRecord } from '../shared/stored';
 import { toBase64Url } from './bytes';
+import type { RunAi } from './ai-tasks';
 import type { ResumeChoice } from './resume-choice';
 
 /** At most this many runs are remembered at once; the oldest go first. */
@@ -24,10 +25,12 @@ export interface FrameRef {
 }
 
 /** What a run keeps in memory only. `lookup` is undefined until run/begin's lookup ran, null when it failed;
- *  `resume` is undefined until the run chose the resume it attaches (resume-choice.ts), null when it has none. */
+ *  `resume` is undefined until the run chose the resume it attaches (resume-choice.ts), null when it has none; `ai`
+ *  is the run's LLM questions and answers (Phase 4, ai-tasks.ts), stopped when the run goes. */
 export interface RunMemo {
   lookup?: AutofillLookupResponse | null;
   resume?: ResumeChoice | null;
+  ai?: RunAi;
 }
 
 /** The runs the worker knows, by id. */
@@ -81,6 +84,7 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
     if (runIds.length === 0) return;
     for (const runId of runIds) {
       known.delete(runId);
+      memos.get(runId)?.ai?.stop();
       memos.delete(runId);
     }
     await session.remove(runIds.map(keyOf));

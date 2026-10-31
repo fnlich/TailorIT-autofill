@@ -1,0 +1,142 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 0,
+          "label": "Option 0"
+        },
+        {
+          "index": 1,
+          "label": "Option 1"
+        },
+        {
+          "index": 2,
+          "label": "Option 2"
+        },
+        {
+          "index": 3,
+          "label": "Option 3"
+        },
+        {
+          "index": 4,
+          "label": "Option 4"
+        },
+        {
+          "index": 5,
+          "label": "Option 5"
+        },
+        {
+          "index": 6,
+          "label": "Option 6"
+        },
+        {
+          "index": 7,
+          "label": "Option 7"
+        },
+        {
+          "index": 8,
+          "label": "Option 8"
+        },
+        {
+          "index": 9,
+          "label": "Option 9"
+        },
+        {
+          "index": 10,
+          "label": "Option 10"
+        },
+        {
+          "index": 11,
+          "label": "Option 11"
+        },
+        {
+          "index": 12,
+          "label": "Option 12"
+        },
+        {
+          "index": 13,
+          "label": "Option 13"
+        },
+        {
+          "index": 14,
+          "label": "Option 14"
+        },
+        {
+          "index": 15,
+          "label": "Option 15"
+        },
+        {
+          "index": 16,
+          "label": "Option 16"
+        },
+        {
+          "index": 17,
+          "label": "Option 17"
+        },
+        {
+          "index": 18,
+          "label": "Option 18"
+        },
+        {
+          "index": 19,
+          "label": "Option 19"
+        },
+        {
+          "index": 20,
+          "label": "Option 20"
+        },
+        {
+          "index": 21,
+          "label": "Option 21"
+        },
+        {
+          "index": 22,
+          "label": "Option 22"
+        },
+        {
+          "index": 23,
+          "label": "Option 23"
+        },
+        {
+          "index": 24,
+          "label": "Option 24"
+        },
+        {
+          "index": 25,
+          "label": "Option 25"
+        },
+        {
+          "index": 26,
+          "label": "Option 26"
+        },
+        {
+          "index": 27,
+          "label": "Option 27"
+        },
+        {
+          "index": 28,
+          "label": "Option 28"
+        },
+        {
+          "index": 29,
+          "label": "Option 29"
+        },
+        {
+          "index": 30,
+          "label": "Option 30"
+        }
+      ]
+    }
+  ]
+}

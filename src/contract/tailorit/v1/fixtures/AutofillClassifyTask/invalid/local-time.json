@@ -1,0 +1,33 @@
+{
+  "id": "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "kind": "autofill_classify",
+  "status": "succeeded",
+  "result": {
+    "items": [
+      {
+        "key": "greenhouse|main|where-do-you-work-today|none|0",
+        "category": "current_employer",
+        "reason": "classified"
+      },
+      {
+        "key": "greenhouse|employment[0]|tell-us-about-this-role|none|0",
+        "category": "role_description",
+        "reason": "classified"
+      },
+      {
+        "key": "greenhouse|main|earliest-date-you-could-join-us|1d3f5b7a9c0e2468|0",
+        "category": "start_date",
+        "reason": "classified"
+      },
+      {
+        "key": "greenhouse|main|do-you-have-a-portfolio-we-can-look-at|2a4c6e8b0d1f3579|0",
+        "category": null,
+        "reason": "unknown"
+      }
+    ]
+  },
+  "error": null,
+  "createdAt": "2026-10-22 12:00:00",
+  "startedAt": "2026-10-22T12:00:00.120Z",
+  "finishedAt": "2026-10-22T12:00:04.870Z"
+}

@@ -61,3 +61,22 @@ export const PolicyRecordSchema = z.strictObject({
 });
 /** A checked policy record. */
 export type PolicyRecord = z.infer<typeof PolicyRecordSchema>;
+
+/** storage.session `aitasks`: the AI tasks the worker submitted (Phase 4), by application and batch hash: ids and
+ *  hashes only, never an item or an answer. A batch asked again after a worker restart or a reload is read by its id
+ *  within TailorIT's hour (AUTOFILL_TASK_RETENTION_MS), and every runstate/put folds an application's entries into its
+ *  RunState.aiTasks. At most MAX_AI_TASK_ENTRIES are kept, the oldest going first. */
+export const AI_TASKS_KEY = 'aitasks';
+/** The most entries the record holds: RunState.aiTasks' own cap (RUN_STATE_RECORD_CAPS.aiTasks). */
+export const MAX_AI_TASK_ENTRIES = 720;
+/** The record: one entry per application and batch. */
+export const AiTaskRecordSchema = z.array(z.strictObject({
+  applicationKey: ApplicationKeySchema,
+  /** The batch's hash (ai-tasks.ts batchHash): `<kind>:<32 hex>`. */
+  hash: z.string().regex(/^[a-z]+:[0-9a-f]{32}$/),
+  taskId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+  /** When it was noted, by the worker's clock. */
+  at: z.number().int().nonnegative(),
+})).max(MAX_AI_TASK_ENTRIES);
+/** A checked task record. */
+export type AiTaskRecord = z.infer<typeof AiTaskRecordSchema>;

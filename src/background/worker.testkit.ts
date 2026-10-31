@@ -12,7 +12,11 @@ import resumesGolden from '../contract/tailorit/v1/fixtures/AutofillResumeList/v
 import sensitiveGolden from '../contract/tailorit/v1/fixtures/AutofillSensitiveEnvelope/valid/golden.json';
 import sessionGolden from '../contract/tailorit/v1/fixtures/AutofillSession/valid/golden.json';
 import type { AutofillProfile } from '../contract/tailorit';
+import type { TiebreakItem } from '../core/matcher/types';
 import type { PlanInput, PlanOutput } from '../core/plan/types';
+import type { ClassifyItem } from '../core/resolver/classify';
+import { sha256Hex as coreSha256Hex } from '../core/text/sha256';
+import type { UntrustedText } from '../core/types/text';
 import { attachResume } from '../core/profile/canonicalize';
 import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
@@ -146,13 +150,16 @@ export function createFakeTailorIT(): FakeTailorIT {
       init,
     };
     requests.push(request);
-    const route = `${request.method} ${request.path}`;
+    // A task's own path is scripted as its route (`GET /api/ai/tasks/:id`), whatever its id.
+    const exact = `${request.method} ${request.path}`;
+    const route = /^\/api\/ai\/tasks\/[^/]+$/.test(request.path) && !routes.has(exact)
+      ? `${request.method} /api/ai/tasks/:id` : exact;
     const queue = routes.get(route) ?? [];
     const scripted = queue[0];
     if (scripted?.once) queue.shift();
     let reply: Reply | undefined = scripted
       ? typeof scripted.reply === 'function' ? scripted.reply(request) : scripted.reply
-      : defaults[route];
+      : defaults[route] ?? AI_DEFAULTS[route]?.(request);
     if (!reply && /^GET \/api\/autofill\/resumes\/[a-z0-9-]+\/file$/.test(route)) reply = await fileReply(pdf);
     reply ??= { status: 404, json: { error: { code: 'not_found', message: 'Not found' } } };
     if ('fail' in reply) {
@@ -188,9 +195,37 @@ export function createFakeTailorIT(): FakeTailorIT {
       else queue.splice(0, queue.length, { reply, once: false });
       routes.set(route, queue);
     },
-    count: (route) => requests.filter((request) => `${request.method} ${request.path}` === route).length,
+    count: (route) => requests.filter((request) => `${request.method} ${request.path}` === route
+      || (route.endsWith('/:id') && `${request.method} ${request.path}`.startsWith(route.slice(0, -3)))).length,
   };
 }
+
+/** A task id the fake TailorIT hands out. */
+export const TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
+
+/** A task view, as TailorIT's AiTaskView shows one. */
+export function taskView(kind: 'autofill_pick' | 'autofill_classify', status: 'queued' | 'running' | 'succeeded'
+  | 'failed' | 'cancelled', result: unknown = null, id = TASK_ID): Record<string, unknown> {
+  const finished = status !== 'queued' && status !== 'running';
+  return { id, kind, status, result: status === 'succeeded' ? result : null,
+    error: status === 'failed' ? { code: 'ai_failed', message: 'The AI request failed.' } : null,
+    createdAt: '2026-10-30T12:00:00.000Z', startedAt: status === 'queued' ? null : '2026-10-30T12:00:00.100Z',
+    finishedAt: finished ? '2026-10-30T12:00:04.000Z' : null };
+}
+
+/** The items a recorded AI request asked about. */
+export function itemsOf(request: RecordedRequest): Array<Record<string, unknown>> {
+  return (JSON.parse(request.body ?? '{}') as { items?: Array<Record<string, unknown>> }).items ?? [];
+}
+
+/** The fake TailorIT's AI answers when a test scripts none: every pick no_match, every classification unknown, at
+ *  once (200); a task id it never handed out is not found. */
+const AI_DEFAULTS: Record<string, (request: RecordedRequest) => Reply> = {
+  'POST /api/autofill/ai/pick': (request) => ({ json: taskView('autofill_pick', 'succeeded', { picks: itemsOf(request)
+    .map((item) => ({ key: item.key, optionSetHash: item.optionSetHash, index: null, reason: 'no_match' })) }) }),
+  'POST /api/autofill/ai/classify': (request) => ({ json: taskView('autofill_classify', 'succeeded', { items: itemsOf(request)
+    .map((item) => ({ key: item.key, category: null, reason: 'unknown' })) }) }),
+};
 
 // ── The fake core ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -521,4 +556,88 @@ export async function beginRun(worker: TestWorker, overrides: Record<string, unk
 /** A plan output for tests that script the planner. */
 export function planOutput(overrides: Partial<PlanOutput> = {}): PlanOutput {
   return { writes: [], results: [], awaiting: [], needsSensitive: false, persistableCanaries: [], ...overrides };
+}
+
+// ── A core that asks the LLM ──────────────────────────────────────────────────────────────────────────────────────
+
+/** The tiebreak item the asking core builds for a field with options: every option a candidate, the clean label
+ *  hashed as the real core hashes it; an option whose label starts with '!' is the tainted one (injected). */
+export function tiebreakItemOf(spec: FieldSpec): TiebreakItem {
+  const options = spec.options === 'lazy' ? [] : spec.options;
+  return {
+    id: spec.key,
+    category: 'referral_source',
+    fieldLabel: spec.label as UntrustedText,
+    optionSetHash: spec.optionSetHash,
+    intended: 'LinkedIn',
+    aliases: ['LinkedIn Jobs'],
+    candidates: options.map((option) => {
+      const label = option.label.replace(/^!/, '') as UntrustedText;
+      return { optionIndex: option.index, label, labelHash: coreSha256Hex(label), hardConflict: false,
+        injected: option.label.startsWith('!') };
+    }),
+  };
+}
+
+/** The classify item the asking core builds for a field with no options. */
+export function classifyItemFor(spec: FieldSpec): ClassifyItem {
+  return { key: spec.key, platform: spec.platform, kind: spec.kind, label: spec.label as UntrustedText,
+    hint: '' as UntrustedText, section: '' as UntrustedText, options: [] };
+}
+
+/**
+ * planFrame, scripted for the worker's AI tests: every planned field it has no answer for waits for the LLM (a field
+ * with options as a tiebreak of them, any other as a classification); an answered one gets the row the real planner
+ * gives it, and a valid pick its llm-pick write. The real planner is tested on its own (src/core/plan/llm.test.ts).
+ */
+export function askingCore(): Pick<CoreFunctions, 'planFrame'> {
+  return {
+    planFrame(input) {
+      const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
+      const specs = input.specs.filter((spec) => wanted === null || wanted.has(spec.key));
+      const output: PlanOutput = { writes: [], results: [], awaiting: [], needsSensitive: false, persistableCanaries: [] };
+      const tiebreaks: TiebreakItem[] = [];
+      const classify: ClassifyItem[] = [];
+      for (const spec of specs) {
+        const row = skippedRow(spec);
+        const options = spec.options !== 'lazy' && spec.options.length > 0;
+        if (options) {
+          const answered = input.ai?.verdicts.get(spec.key);
+          const item = tiebreakItemOf(spec);
+          if (answered === undefined) {
+            tiebreaks.push(item);
+            output.awaiting.push(spec.key);
+            output.results.push({ ...row, status: 'flagged', reason: 'ambiguous-options', needsUserAction: true });
+            continue;
+          }
+          const { verdict, taskId } = answered;
+          const candidate = verdict.picked === null ? undefined : item.candidates[verdict.picked];
+          if (candidate === undefined || verdict.why !== 'ok') {
+            output.results.push({ ...row, status: 'flagged', reason: verdict.why === 'ok' ? 'no-match' : verdict.why,
+              needsUserAction: true });
+            continue;
+          }
+          output.writes.push({ key: spec.key, value: { kind: 'option', index: candidate.optionIndex, cleanLabel: candidate.label },
+            origin: { provenance: 'llm-pick', taskId, pickedCandidate: verdict.picked!, labelHash: candidate.labelHash },
+            match: { stage: 'llm', optionIndex: candidate.optionIndex, rule: 'llm-index', confidence: 0.75, flags: [],
+              suggestions: [], reason: 'llm-pick-needs-review' } });
+          output.results.push({ ...row, status: 'flagged', provenance: 'llm-pick', matcherStage: 'llm', confidence: 0.69,
+            reason: 'llm-pick-needs-review', needsUserAction: true });
+          continue;
+        }
+        const classified = input.ai?.classifications.get(spec.key);
+        if (classified === undefined) {
+          classify.push(classifyItemFor(spec));
+          output.awaiting.push(spec.key);
+          output.results.push(row);
+          continue;
+        }
+        output.results.push(classified.category === null
+          ? { ...row, reason: classified.why === 'unknown-field' ? 'unknown-field' : classified.why }
+          : { ...row, category: 'experience.currentCompany', status: 'flagged', reason: 'llm-classified-needs-review' });
+      }
+      if (output.awaiting.length > 0) output.ask = { tiebreaks, classify };
+      return output;
+    },
+  };
 }

@@ -1,0 +1,45 @@
+{
+  "platform": "greenhouse",
+  "items": [
+    {
+      "key": "greenhouse|main|where-do-you-work-today|none|0",
+      "kind": "text",
+      "label": "Where do you work today?",
+      "hint": "",
+      "section": "Additional questions",
+      "options": []
+    },
+    {
+      "key": "greenhouse|employment[0]|tell-us-about-this-role|none|0",
+      "kind": "textarea",
+      "label": "Tell us about this role",
+      "hint": "A few sentences on what you did there.",
+      "section": "Employment",
+      "options": []
+    },
+    {
+      "key": "greenhouse|main|earliest-date-you-could-join-us|1d3f5b7a9c0e2468|0",
+      "kind": "select",
+      "label": "Earliest date you could join us",
+      "hint": "",
+      "section": "Additional questions",
+      "options": [
+        "Immediately",
+        "Within 2 weeks",
+        "Within a month",
+        "More than a month"
+      ]
+    },
+    {
+      "key": "greenhouse|main|do-you-have-a-portfolio-we-can-look-at|2a4c6e8b0d1f3579|0",
+      "kind": "radio",
+      "label": "Do you have a portfolio we can look at?",
+      "hint": "",
+      "section": "Additional questions",
+      "options": [
+        "Yes",
+        "No"
+      ]
+    }
+  ]
+}

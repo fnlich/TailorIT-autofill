@@ -12,11 +12,15 @@ import type { z } from 'zod';
 import {
   AUTOFILL_CONTRACT_SCHEMAS,
   AUTOFILL_ROUTES,
+  AutofillClassifyTaskSchema,
   AutofillConnectResponseSchema,
   AutofillErrorBodySchema,
   AutofillLookupResponseSchema,
+  AutofillPickTaskSchema,
   AutofillRedeemResponseSchema,
   AutofillSessionSchema,
+  AutofillTaskAcceptedSchema,
+  AutofillTaskViewSchema,
   ConnectCodeSchema,
   normalizeConnectCode,
 } from '../src/contract/tailorit';
@@ -83,7 +87,10 @@ async function scenario(name: keyof typeof MOCK_SCENARIOS, options: { times?: nu
   expect(response.status).toBe(204);
 }
 
-const pathOf = (route: { path: string }) => route.path.replace(':id', GOLDEN_RESUME.id);
+/** The contract's golden pick task, which the mock always holds. */
+const GOLDEN_TASK_ID = (example('AutofillPickTask') as { id: string }).id;
+const pathOf = (route: { path: string }) => route.path.replace(':id', route.path.startsWith('/api/ai/tasks/') ? GOLDEN_TASK_ID
+  : GOLDEN_RESUME.id);
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 describe('the routes', () => {
@@ -96,7 +103,7 @@ describe('the routes', () => {
     '%s answers the extension its contract status and schema, naming version 1',
     async (_, route) => {
       const response = await call(pathOf(route), { method: route.method, headers: asToken(),
-        json: route.request === 'AutofillLookupRequest' ? example('AutofillLookupRequest') : undefined });
+        json: route.method === 'POST' && route.request !== null ? example(route.request) : undefined });
       expect(response.status).toBe(route.status);
       expect(response.headers.get(API)).toBe('1');
       expect(response.headers.get('cache-control')).toBe('no-store');
@@ -375,6 +382,83 @@ describe('the scripted answers', () => {
     await expect.poll(async () => ((await (await call('/__mock/requests')).json()) as unknown[]).length).toBe(1);
     expect((await call('/__mock/reset', { method: 'POST' })).status).toBe(204);
     await expect(pending).rejects.toThrow();
+  });
+});
+
+describe('the AI routes (Phase 4)', () => {
+  const PICK_BODY = { items: [{ key: 'lever|main|source|9d4c2b7e1f0a3c58|0', category: 'referral_source',
+    optionSetHash: '9d4c2b7e1f0a3c58', intendedValue: 'LinkedIn', aliases: ['LinkedIn Jobs'], label: 'How did you hear about us?',
+    options: [{ index: 1, label: 'Indeed' }, { index: 3, label: 'linkedin' }] }] };
+  const CLASSIFY_BODY = { platform: 'lever', items: [{ key: 'k1', kind: 'text', label: 'Where do you work today?' },
+    { key: 'k2', kind: 'text', label: 'Favourite colour' }] };
+  const pick = () => call('/api/autofill/ai/pick', { method: 'POST', headers: asToken(), json: PICK_BODY });
+  const picksOf = async (response: Response) => AutofillPickTaskSchema.parse(await response.json()).result?.picks;
+
+  it('answers a pick at once, as the fake CLI does: the option equal to the value or an alias, else null', async () => {
+    const response = await pick();
+    expect(response.status).toBe(200);
+    expect(await picksOf(response)).toEqual([{ key: PICK_BODY.items[0]!.key, optionSetHash: '9d4c2b7e1f0a3c58', index: 3,
+      reason: 'matched' }]);
+    const classify = await call('/api/autofill/ai/classify', { method: 'POST', headers: asToken(), json: CLASSIFY_BODY });
+    expect(AutofillClassifyTaskSchema.parse(await classify.json()).result?.items).toEqual([
+      { key: 'k1', category: 'current_employer', reason: 'classified' }, { key: 'k2', category: null, reason: 'unknown' }]);
+  });
+
+  it('refuses a pick of a category TailorIT does not take, as TailorIT does', async () => {
+    const country = { items: [{ ...PICK_BODY.items[0], category: 'country' }] };
+    const response = await call('/api/autofill/ai/pick', { method: 'POST', headers: asToken(), json: country });
+    expect([response.status, await errorCode(response)]).toEqual([400, 'validation_failed']);
+  });
+
+  it('scripts the hostile picks: an index of its choosing, a string index, null, invalid and sensitive', async () => {
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-pick-index', times: 1, value: 999 } });
+    expect((await picksOf(await pick()))?.[0]).toMatchObject({ index: 999, reason: 'matched' });
+    await scenario('ai-pick-string-index', { times: 1 });
+    const stringIndex = await (await pick()).json() as { result: { picks: Array<{ index: unknown }> } };
+    expect(stringIndex.result.picks[0]!.index).toBe('3');
+    expect(AutofillPickTaskSchema.safeParse(stringIndex).success).toBe(false);
+    for (const [name, reason] of [['ai-pick-null', 'no_match'], ['ai-pick-invalid', 'invalid'], ['ai-pick-sensitive', 'sensitive']] as const) {
+      await scenario(name, { times: 1 });
+      expect((await picksOf(await pick()))?.[0], name).toMatchObject({ index: null, reason });
+    }
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-classify-category', times: 1, value: 'school' } });
+    const classify = await call('/api/autofill/ai/classify', { method: 'POST', headers: asToken(), json: CLASSIFY_BODY });
+    expect(AutofillClassifyTaskSchema.parse(await classify.json()).result?.items.map((item) => item.category))
+      .toEqual(['school', 'school']);
+  });
+
+  it('answers a slow task 202, running when polled, then finished; and cancels one on DELETE', async () => {
+    await scenario('ai-slow', { times: 1, delayMs: 300 });
+    const accepted = await pick();
+    expect(accepted.status).toBe(202);
+    const { taskId } = AutofillTaskAcceptedSchema.parse(await accepted.json());
+    const view = async () => AutofillTaskViewSchema.parse(await (await call(`/api/ai/tasks/${taskId}`, { headers: asToken() })).json());
+    expect((await view()).status).toBe('running');
+    await expect.poll(async () => (await view()).status, { timeout: 3000 }).toBe('succeeded');
+    expect((await view()).result).toMatchObject({ picks: [{ index: 3 }] });
+
+    await scenario('ai-timeout', { times: 1 });
+    const endless = AutofillTaskAcceptedSchema.parse(await (await pick()).json()).taskId;
+    const cancelled = await call(`/api/ai/tasks/${endless}`, { method: 'DELETE', headers: asToken() });
+    expect(AutofillTaskViewSchema.parse(await cancelled.json())).toMatchObject({ status: 'cancelled', result: null });
+    expect((await call('/api/ai/tasks/00000000-0000-4000-8000-000000000000', { headers: asToken() })).status).toBe(404);
+  });
+
+  it('answers ai_busy and ai_unavailable as TailorIT words them', async () => {
+    await scenario('ai-busy', { times: 1 });
+    const busy = await pick();
+    expect([busy.status, await errorCode(busy)]).toEqual([409, 'ai_busy']);
+    await scenario('ai-unavailable', { times: 1 });
+    const off = await pick();
+    expect([off.status, await errorCode(off)]).toEqual([503, 'ai_unavailable']);
+    expect((await pick()).status).toBe(200);
+  });
+
+  it('logs every AI request body, Authorization redacted', async () => {
+    await pick();
+    const [logged] = await (await call('/__mock/requests')).json() as Array<{ body: string; headers: Record<string, string> }>;
+    expect(JSON.parse(logged!.body)).toEqual(PICK_BODY);
+    expect(logged!.headers.authorization).toBe('REDACTED');
   });
 });
 

@@ -17,11 +17,15 @@
  *   a single-use code for ten minutes and names this repository's extension id (the one keys/manifest-key.txt fixes);
  *   redeeming it answers the golden token with the code's scopes. Token and code expiries run from now (90 days, 10
  *   minutes), so the contract examples' fixed dates never lapse mid-run.
- * - Scripted answers per test (POST /__mock/scenario): see MOCK_SCENARIOS.
+ * - The AI routes (Phase 4): POST /ai/pick and /ai/classify make a task and answer it finished (200), or 202 {taskId}
+ *   when a scenario makes it slow; GET and DELETE /api/ai/tasks/:id poll and cancel it, and the contract's golden task
+ *   is always there. A pick's normal answer is the fake CLI's: the option whose folded text equals the intended value or
+ *   an alias, else null; a classification's is a small keyword table. Scenarios script the hostile answers.
+ * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
  */
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -62,8 +66,13 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
  *   scope: string | null; request: string | null; status: number; response: string | null }} ContractRoute
  */
 
+const CONTRACT_RECORD = readJson(join(CONTRACT, 'contract.json'));
 /** The contract's route table: what the mock answers. @type {ContractRoute[]} */
-export const CONTRACT_ROUTES = readJson(join(CONTRACT, 'contract.json')).routes;
+export const CONTRACT_ROUTES = CONTRACT_RECORD.routes;
+/** The pick categories TailorIT takes (a pick of any other, country or region, is refused with 400). @type {string[]} */
+const PICK_CATEGORIES = CONTRACT_RECORD.schemas.AutofillPickRequest.properties.items.items.properties.category.enum;
+/** The contract's golden pick task, which GET /api/ai/tasks/:id always holds. */
+const GOLDEN_TASK = example('AutofillPickTask');
 
 /** The golden "Alex Rivera" profile, the bare AutofillProfile and AutofillSensitive. */
 const PROFILE_FILE = join(ROOT, 'fixtures', 'profiles', 'alex-rivera.profile.json');
@@ -128,11 +137,38 @@ export const MOCK_SCENARIOS = Object.freeze({
   'resume-slow': 'GET /resumes/:id/file answers after delayMs (default 8 s).',
   'resume-fails': 'GET /resumes/:id/file gets 500.',
   'resume-hash-mismatch': "GET /resumes/:id/file sends an X-TailorIT-Sha256 that is not the bytes' digest.",
+  'ai-pick-index': 'POST /ai/pick answers every item matched with the index in value (a tainted option, one out of range).',
+  'ai-pick-string-index': 'POST /ai/pick answers every item with the index "3" as a string (off the contract).',
+  'ai-pick-null': 'POST /ai/pick answers every item null, no_match.',
+  'ai-pick-invalid': 'POST /ai/pick answers every item null, invalid.',
+  'ai-pick-sensitive': 'POST /ai/pick answers every item null, sensitive.',
+  'ai-classify-category': 'POST /ai/classify answers every item with the category in value, classified.',
+  'ai-classify-invalid': 'POST /ai/classify answers every item null, invalid.',
+  'ai-slow': 'An AI route answers 202 {taskId}; its task stays running for delayMs (default 4 s), then succeeds.',
+  'ai-busy': 'An AI route answers 409 ai_busy.',
+  'ai-timeout': 'An AI route answers 202 {taskId}, and its task never finishes: past the 120 s cap the extension keeps.',
+  'ai-unavailable': 'An AI route answers 503 ai_unavailable.',
 });
 /** @typedef {keyof typeof MOCK_SCENARIOS} ScenarioName */
 
+/** Text as the fake CLI compares it: no accents, lower case, letters and digits only. @param {unknown} text */
+const foldText = (text) => String(text).normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** The fake CLI's keyword table for a classification: the label's words to a category. @type {Array<[RegExp, string]>} */
+const CLASSIFY_KEYWORDS = [
+  [/\b(?:employer|company|where do you work)\b/, 'current_employer'],
+  [/\b(?:city|based)\b/, 'city'],
+  [/\b(?:job title|position)\b/, 'current_title'],
+  [/\b(?:school|university|college)\b/, 'school'],
+  [/\bhear about\b/, 'referral_source'],
+  [/\blinkedin\b/, 'linkedin'],
+  [/\bgithub\b/, 'github'],
+  [/\bportfolio\b/, 'portfolio'],
+];
+
 /** How long a slow scenario waits when the test names no delay. @type {Partial<Record<ScenarioName, number>>} */
-const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000 };
+const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000, 'ai-slow': 4_000 };
 const MAX_DELAY_MS = 120_000;
 
 // ── Connect codes (Crockford base32, as the contract's connect.ts reads them) ───────────────────────────────────────
@@ -240,10 +276,14 @@ export function createMock() {
   const freshState = () => ({
     /** @type {LoggedRequest[]} */
     requests: [],
-    /** @type {Array<{ name: ScenarioName; remaining: number; delayMs: number }>} */
+    /** @type {Array<{ name: ScenarioName; remaining: number; delayMs: number; value: unknown }>} */
     scenarios: [],
     /** @type {Map<string, { scopes: string[]; expiresAt: number; used: boolean }>} */
     codes: new Map(),
+    /** The AI tasks the AI routes made, by id: finished at readyAt (never when null), or cancelled.
+     *  @type {Map<string, { id: string; kind: 'autofill_pick' | 'autofill_classify'; createdAt: number;
+     *    readyAt: number | null; cancelledAt: number | null; result: unknown }>} */
+    tasks: new Map(),
     /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes. */
     token: { value: GOLDEN_TOKEN, scopes: [...ALL_SCOPES], revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
   });
@@ -299,6 +339,94 @@ export function createMock() {
     list.items = list.items.map((/** @type {{ id: string; fileName: string }} */ item) =>
       (item.id === GOLDEN_RESUME.id ? { ...item, fileName: GOLDEN_RESUME.fileName } : item));
     return list;
+  }
+
+  // ── The AI routes (Phase 4) ─────────────────────────────────────────────────────────────────────────────────────
+
+  /** A pick task's result for these items: a scenario's hostile answer, or the fake CLI's (the option whose folded
+   *  text equals the intended value or an alias, else null). @param {Array<Record<string, any>>} items */
+  function pickResult(items) {
+    const index = take('ai-pick-index');
+    const string = take('ai-pick-string-index');
+    const none = take('ai-pick-null');
+    const invalid = take('ai-pick-invalid');
+    const sensitive = take('ai-pick-sensitive');
+    return {
+      picks: items.map((item) => {
+        const base = { key: item.key, optionSetHash: item.optionSetHash };
+        if (index !== null) return { ...base, index: index.value, reason: 'matched' };
+        if (string !== null) return { ...base, index: '3', reason: 'matched' };
+        if (none !== null) return { ...base, index: null, reason: 'no_match' };
+        if (invalid !== null) return { ...base, index: null, reason: 'invalid' };
+        if (sensitive !== null) return { ...base, index: null, reason: 'sensitive' };
+        const wanted = new Set([item.intendedValue, ...(Array.isArray(item.aliases) ? item.aliases : [])].map(foldText));
+        const options = Array.isArray(item.options) ? item.options : [];
+        const found = options.find((/** @type {{ label: unknown }} */ option) => wanted.has(foldText(option.label)));
+        return found ? { ...base, index: found.index, reason: 'matched' } : { ...base, index: null, reason: 'no_match' };
+      }),
+    };
+  }
+
+  /** A classify task's result for these items: a scenario's, or the keyword table's. @param {Array<Record<string, any>>} items */
+  function classifyResult(items) {
+    const category = take('ai-classify-category');
+    const invalid = take('ai-classify-invalid');
+    return {
+      items: items.map((item) => {
+        if (category !== null) return { key: item.key, category: category.value, reason: 'classified' };
+        if (invalid !== null) return { key: item.key, category: null, reason: 'invalid' };
+        const label = foldText(item.label);
+        const hit = CLASSIFY_KEYWORDS.find(([words]) => words.test(label));
+        return hit ? { key: item.key, category: hit[1], reason: 'classified' } : { key: item.key, category: null, reason: 'unknown' };
+      }),
+    };
+  }
+
+  /** A task as AiTaskView shows it now. @param {{ id: string; kind: string; createdAt: number; readyAt: number | null;
+   *  cancelledAt: number | null; result: unknown }} task */
+  function viewOf(task) {
+    const now = Date.now();
+    const ready = task.readyAt !== null && task.readyAt <= now;
+    const status = task.cancelledAt !== null ? 'cancelled' : ready ? 'succeeded' : 'running';
+    const finishedAt = task.cancelledAt ?? (ready ? task.readyAt : null);
+    return { id: task.id, kind: task.kind, status, result: status === 'succeeded' ? task.result : null,
+      error: status === 'cancelled' ? { code: 'cancelled', message: 'The request was cancelled.' } : null,
+      createdAt: iso(task.createdAt), startedAt: iso(task.createdAt), finishedAt: finishedAt === null ? null : iso(finishedAt) };
+  }
+
+  /**
+   * POST /ai/pick and /ai/classify: a task made from the body, answered finished (200), or 202 {taskId} when a
+   * scenario makes it slow or endless; ai-busy and ai-unavailable refuse it. A pick of a category TailorIT does not
+   * take (country, region) is 400, as TailorIT's.
+   * @param {'autofill_pick' | 'autofill_classify'} kind @param {Record<string, unknown>} json @returns {Answer}
+   */
+  function aiAnswer(kind, json) {
+    const items = Array.isArray(json.items) ? /** @type {Array<Record<string, any>>} */ (json.items) : [];
+    if (items.length === 0 || items.length > 20) return invalid('items: 1 to 20 items');
+    if (kind === 'autofill_pick' && items.some((item) => !PICK_CATEGORIES.includes(item.category))) {
+      return invalid('items.category: Not a pick category');
+    }
+    if (take('ai-busy') !== null) return { status: 409, json: example('AutofillErrorBody', 'ai-busy') };
+    if (take('ai-unavailable') !== null) return { status: 503, json: example('AutofillErrorBody', 'ai-unavailable') };
+    const slow = take('ai-slow');
+    const endless = take('ai-timeout');
+    const now = Date.now();
+    const task = { id: randomUUID(), kind, createdAt: now, cancelledAt: null,
+      readyAt: endless !== null ? null : slow !== null ? now + slow.delayMs : now,
+      result: kind === 'autofill_pick' ? pickResult(items) : classifyResult(items) };
+    state.tasks.set(task.id, task);
+    return slow !== null || endless !== null ? jsonAnswer(202, { taskId: task.id }) : jsonAnswer(200, viewOf(task));
+  }
+
+  /** GET or DELETE /api/ai/tasks/:id: a task the mock made, or the contract's golden one; else 404.
+   *  @param {string} id @param {boolean} cancel @returns {Answer} */
+  function taskAnswer(id, cancel) {
+    const task = state.tasks.get(id);
+    if (task === undefined) return id === GOLDEN_TASK.id ? jsonAnswer(200, GOLDEN_TASK) : notFound();
+    if (cancel && task.cancelledAt === null && !(task.readyAt !== null && task.readyAt <= Date.now())) {
+      task.cancelledAt = Date.now();
+    }
+    return jsonAnswer(200, viewOf(task));
   }
 
   /**
@@ -361,6 +489,10 @@ export function createMock() {
       return jsonAnswer(200, lookupAnswer('golden'));
     },
     'GET /api/autofill/resumes': () => jsonAnswer(200, resumeList()),
+    'POST /api/autofill/ai/pick': ({ json }) => aiAnswer('autofill_pick', json),
+    'POST /api/autofill/ai/classify': ({ json }) => aiAnswer('autofill_classify', json),
+    'GET /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', false),
+    'DELETE /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', true),
     'GET /api/autofill/resumes/:id/file': ({ params }) => {
       if (params[0] !== GOLDEN_RESUME.id) return refusal(404, 'not_found', 'That resume was not found.');
       if (take('resume-fails') !== null) return serverError();
@@ -466,8 +598,10 @@ export function createMock() {
       if (typeof delayMs !== 'number' || !Number.isInteger(delayMs) || delayMs < 0 || delayMs > MAX_DELAY_MS) {
         return invalid('delayMs: 0 to 120000');
       }
+      // What a scenario answers with (ai-pick-index's index, ai-classify-category's category): any JSON value.
+      const value = json.value ?? null;
       state.scenarios = [...state.scenarios.filter((scenario) => scenario.name !== name),
-        { name: /** @type {ScenarioName} */ (name), remaining: times, delayMs }];
+        { name: /** @type {ScenarioName} */ (name), remaining: times, delayMs, value }];
       return { status: 204 };
     }
     return notFound();

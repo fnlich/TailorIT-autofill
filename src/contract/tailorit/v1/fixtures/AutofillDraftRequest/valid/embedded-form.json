@@ -1,0 +1,13 @@
+{
+  "questions": [
+    {
+      "key": "greenhouse|main|why-do-you-want-to-work-at-northwind|none|0",
+      "question": "Why do you want to work at Northwind?",
+      "maxLength": 1500
+    }
+  ],
+  "jobText": "",
+  "company": "Northwind Traders",
+  "jobTitle": "Senior Software Engineer",
+  "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13"
+}

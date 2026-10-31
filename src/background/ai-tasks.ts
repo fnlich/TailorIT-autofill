@@ -1,0 +1,519 @@
+/*
+ * The worker's AI tasks (Phase 4; docs/ARCHITECTURE.md "Messages" › "The worker's limits", "The LLM tiebreak" and
+ * "LLM classification"; docs/design/runtime.md §4.5; docs/design/tailorit.md §6). planFrame asks; this file translates
+ * the core's questions into TailorIT's pick and classify requests, submits each batch as a task, polls it, and
+ * translates the answers back into the verdicts planFrame completes the waiting fields with.
+ *
+ * Translation, out (pickItemOf, classifyItemOfCore):
+ * - a pick item: the core's item id as its key, the core's pick category, the observed option-set hash, the intended
+ *   value and at most 10 aliases (profile text), the visible label, and the options as {index, label}: each guard-passing
+ *   candidate's clean label, under the option's own index;
+ * - never sent: a candidate's label hash, its hardConflict or injected flag, an injected or hard-conflict candidate, and
+ *   an item whose category is not one of TailorIT's pick categories (country and region never are) or whose label,
+ *   value or aliases name a sensitive topic or a sum (EEO, legal, salary, consent). The core never builds such an item;
+ *   this checks again, and a withheld item gets its verdict at once (no-match: the cascade's own answer stands);
+ * - a classify item: the core's (visible text only, cut after a word at 200), with the frame's platform, screened again.
+ * Translation, back: a pick names an option's index, which maps to the core's candidate position, and the core's
+ * readTiebreakReply validates it (in range, never a hard-conflict or injected candidate, so a pick of a withheld option
+ * is llm-pick-rejected). `invalid` is llm-invalid-output and `sensitive` needs-user (llm-disabled-for-category): neither
+ * is no-match. An item answered twice or not at all is llm-invalid-output. A classification is a category or null.
+ *
+ * Submitting (createAiTasks): POST answers 200 with the finished task or 202 {taskId}; a 202 is polled every
+ * AUTOFILL_AI_POLL_MS until it finishes, at most AI_TASK_CAP_MS (120 s) from the start, then cancelled (DELETE) and its
+ * fields left blank and flagged (llm-unavailable). A 409 ai_busy waits for another task of this worker to finish, or
+ * one poll interval when none is in flight here, then tries again, within the same cap. A batch's task id is kept by
+ * the batch's hash (AiTaskIds: RunState.aiTasks), so a batch asked again after a worker restart or a reload is read by
+ * its id within TailorIT's hour; a queued or running one is reattached through TailorIT's dedupe key besides. Every call
+ * goes through the server client: its paths, credentials 'omit', the version header and AbortSignal.timeout(25 s).
+ *
+ * A run's questions (createRunAi): one task in flight per run, batches in the order they were asked, the answers kept
+ * for the run only (memory). Nothing here logs an item, a label or an answer: counts and statuses only.
+ */
+import {
+  AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AutofillClassifyItem,
+  type AutofillClassifyRequest, type AutofillClassifyResult, type AutofillPickItem, type AutofillPickRequest,
+  type AutofillPickResult, type AutofillTaskView,
+} from '../contract/tailorit';
+import { TIEBREAK_REQUEST_TEXT_SHARE } from '../core/confidence';
+import type { Platform } from '../core/enums';
+import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
+import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
+import type { AnsweredVerdict, PlanAi, PlanAsk } from '../core/plan/types';
+import { namesSensitiveTopic, namesSensitiveValue, type ClassifyItem, type ClassifyVerdict } from '../core/resolver/classify';
+import { sha256Hex } from '../core/text/sha256';
+import type { FieldKey, FieldSpec } from '../core/types/field';
+import type { Settings } from '../core/types/settings';
+import { log } from '../shared/log';
+import type { ServerClient, ServerResult } from './server-client';
+import type { Timers } from './timers';
+
+/** A batch's task is given up this long after it was first submitted (docs/ARCHITECTURE.md: the 120 s cap). */
+export const AI_TASK_CAP_MS = 120_000;
+
+/** The kinds of task the worker submits in Phase 4 (drafts come in Phase 6). */
+export const AI_KINDS = ['pick', 'classify'] as const;
+export type AiKind = (typeof AI_KINDS)[number];
+
+/** A classify request is filled to at most this many characters of text (TailorIT refuses above 100,000). */
+const CLASSIFY_TEXT_BUDGET = Math.floor(AUTOFILL_AI_LIMITS.requestText * TIEBREAK_REQUEST_TEXT_SHARE);
+
+// ── Translation ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const PICK_CATEGORY_SET: ReadonlySet<string> = new Set(AUTOFILL_PICK_CATEGORIES);
+const codePoints = (text: string) => [...text].length;
+
+/** A verdict that keeps the cascade's own answer: the LLM gave nothing. */
+function verdictOf(item: Pick<TiebreakItem, 'id' | 'optionSetHash'>, why: TiebreakVerdict['why']): TiebreakVerdict {
+  return { id: item.id, optionSetHash: item.optionSetHash, picked: null, labelHash: null, why };
+}
+
+/**
+ * The pick item TailorIT is sent for a core item, or null when it is never sent: a category outside TailorIT's pick
+ * categories, a label, value or alias naming a sensitive topic or a sum, a string over TailorIT's caps, or no candidate
+ * left once the injected and hard-conflict ones are withheld.
+ */
+export function pickItemOf(item: TiebreakItem): AutofillPickItem | null {
+  const limits = AUTOFILL_AI_LIMITS.pick;
+  if (!PICK_CATEGORY_SET.has(item.category)) return null;
+  if (namesSensitiveTopic(item.fieldLabel) || [item.intended, ...item.aliases].some(namesSensitiveValue)) return null;
+  const options = item.candidates.filter((candidate) => !candidate.hardConflict && !candidate.injected)
+    .map((candidate) => ({ index: candidate.optionIndex, label: candidate.label as string }));
+  if (options.length === 0 || options.length > limits.options) return null;
+  if (codePoints(item.id) > AUTOFILL_AI_LIMITS.key || codePoints(item.intended) > limits.intendedValue
+    || codePoints(item.fieldLabel) > limits.label || options.some((option) => codePoints(option.label) > limits.optionLabel)) {
+    return null;
+  }
+  const aliases = item.aliases.filter((alias) => codePoints(alias) <= limits.alias).slice(0, limits.aliases);
+  return { key: item.id, category: item.category, optionSetHash: item.optionSetHash, intendedValue: item.intended,
+    aliases, label: item.fieldLabel, options };
+}
+
+/** A batch: the request's body and the core items it holds. */
+export interface PickBatch {
+  kind: 'pick';
+  body: AutofillPickRequest;
+  items: TiebreakItem[];
+}
+export interface ClassifyBatch {
+  kind: 'classify';
+  body: AutofillClassifyRequest;
+  items: ClassifyItem[];
+}
+export type AiBatch = PickBatch | ClassifyBatch;
+
+/** A pass's tiebreak items as pick batches (the core's tiebreakRequests: at most 20 items, under the text cap), and
+ *  the verdicts of those never sent. */
+export function pickBatches(items: readonly TiebreakItem[]): { batches: PickBatch[]; withheld: TiebreakVerdict[] } {
+  const withheld: TiebreakVerdict[] = [];
+  const sendable: TiebreakItem[] = [];
+  for (const item of items) {
+    if (pickItemOf(item) === null) withheld.push(verdictOf(item, 'no-match'));
+    else sendable.push(item);
+  }
+  const batches: PickBatch[] = [];
+  for (const request of tiebreakRequests(sendable)) {
+    const sent = request.items.map((item) => ({ item, pick: pickItemOf(item)! }));
+    batches.push({ kind: 'pick', body: { items: sent.map(({ pick }) => pick) }, items: sent.map(({ item }) => item) });
+  }
+  // tiebreakRequests drops what it may not send (a clash of ids): those keep the cascade's answer too.
+  const batched = new Set(batches.flatMap((batch) => batch.items.map((item) => item.id)));
+  for (const item of sendable) if (!batched.has(item.id)) withheld.push(verdictOf(item, 'llm-invalid-output'));
+  return { batches, withheld };
+}
+
+/** The classify item TailorIT is sent, or null when its screen fails again (it is then needs-user, never sent). */
+export function classifyItemOfCore(item: ClassifyItem): AutofillClassifyItem | null {
+  const max = AUTOFILL_AI_LIMITS.classify.text;
+  if ([item.label, item.hint, ...item.options].some(namesSensitiveTopic)) return null;
+  if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key) return null;
+  const cut = (text: string) => cutAtWord(text, max);
+  return { key: item.key, kind: item.kind, label: cut(item.label), hint: cut(item.hint), section: cut(item.section),
+    options: item.options.slice(0, AUTOFILL_AI_LIMITS.classify.options).map(cut) };
+}
+
+/** The text a classify item holds, as TailorIT counts it. */
+const textOf = (item: AutofillClassifyItem) => [item.key, item.kind, item.label, item.hint, item.section, ...item.options]
+  .reduce((sum, text) => sum + text.length, 0);
+
+/** A pass's classify items as batches, per platform, at most 20 items each and under the text cap, and the verdicts
+ *  of those never sent. */
+export function classifyBatches(items: readonly ClassifyItem[]): { batches: ClassifyBatch[]; withheld: ClassifyVerdict[] } {
+  const withheld: ClassifyVerdict[] = [];
+  const byPlatform = new Map<Platform, Array<{ item: ClassifyItem; sent: AutofillClassifyItem }>>();
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.key)) continue;
+    seen.add(item.key);
+    const sent = classifyItemOfCore(item);
+    if (sent === null) withheld.push({ key: item.key, category: null, why: 'llm-disabled-for-category' });
+    else byPlatform.set(item.platform, [...(byPlatform.get(item.platform) ?? []), { item, sent }]);
+  }
+  const batches: ClassifyBatch[] = [];
+  for (const [platform, entries] of byPlatform) {
+    let chunk: typeof entries = [];
+    let size = 0;
+    const flush = () => {
+      if (chunk.length === 0) return;
+      batches.push({ kind: 'classify', body: { platform, items: chunk.map(({ sent }) => sent) },
+        items: chunk.map(({ item }) => item) });
+      chunk = [];
+      size = 0;
+    };
+    for (const entry of entries) {
+      const text = textOf(entry.sent);
+      if (chunk.length === AUTOFILL_AI_LIMITS.classify.items || (chunk.length > 0 && size + text > CLASSIFY_TEXT_BUDGET)) flush();
+      chunk.push(entry);
+      size += text;
+    }
+    flush();
+  }
+  return { batches, withheld };
+}
+
+/** A batch's identity: its kind and the hash of its body, as RunState.aiTasks keys it (at most 64 characters). */
+export function batchHash(batch: AiBatch): string {
+  return `${batch.kind}:${sha256Hex(JSON.stringify(batch.body)).slice(0, 32)}`;
+}
+
+/**
+ * The verdicts of a pick task's result for the items it was asked. Each answer's option index becomes the core's
+ * candidate position (an index that is no candidate's becomes one out of range), and the core's readTiebreakReply
+ * judges it; `invalid` is llm-invalid-output, `sensitive` llm-disabled-for-category, and an item answered twice or
+ * not at all llm-invalid-output.
+ */
+export function pickVerdicts(items: readonly TiebreakItem[], result: AutofillPickResult): Map<string, TiebreakVerdict> {
+  const byKey = new Map<string, AutofillPickResult['picks']>();
+  for (const pick of result.picks) byKey.set(pick.key, [...(byKey.get(pick.key) ?? []), pick]);
+  const answers: Array<{ id: string; optionSetHash: string; index: number | null }> = [];
+  const fixed = new Map<string, TiebreakVerdict>();
+  for (const item of items) {
+    const picks = byKey.get(item.id) ?? [];
+    const pick = picks[0];
+    if (picks.length !== 1 || pick === undefined || pick.optionSetHash !== item.optionSetHash) {
+      fixed.set(item.id, verdictOf(item, 'llm-invalid-output'));
+      continue;
+    }
+    if (pick.reason === 'invalid') fixed.set(item.id, verdictOf(item, 'llm-invalid-output'));
+    else if (pick.reason === 'sensitive') fixed.set(item.id, verdictOf(item, 'llm-disabled-for-category'));
+    else if (pick.reason === 'no_match' || pick.index === null) {
+      if (pick.index !== null || pick.reason !== 'no_match') fixed.set(item.id, verdictOf(item, 'llm-invalid-output'));
+      else answers.push({ id: item.id, optionSetHash: item.optionSetHash, index: null });
+    } else {
+      // The answer names an option's own index: the core judges its candidate by position.
+      const position = item.candidates.findIndex((candidate) => candidate.optionIndex === pick.index);
+      answers.push({ id: item.id, optionSetHash: item.optionSetHash, index: position >= 0 ? position : -1 });
+    }
+  }
+  const verdicts = readTiebreakReply(items, { answers });
+  for (const [id, verdict] of fixed) verdicts.set(id, verdict);
+  return verdicts;
+}
+
+/** The classifications of a classify task's result for the items it was asked. */
+export function classifyVerdicts(items: readonly ClassifyItem[], result: AutofillClassifyResult):
+  Map<string, ClassifyVerdict> {
+  const byKey = new Map<string, AutofillClassifyResult['items']>();
+  for (const entry of result.items) byKey.set(entry.key, [...(byKey.get(entry.key) ?? []), entry]);
+  const verdicts = new Map<string, ClassifyVerdict>();
+  for (const item of items) {
+    const entries = byKey.get(item.key) ?? [];
+    const entry = entries[0];
+    let verdict: ClassifyVerdict;
+    if (entries.length !== 1 || entry === undefined) verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
+    else if (entry.reason === 'classified' && entry.category !== null) {
+      verdict = { key: item.key, category: entry.category, why: 'ok' };
+    } else if (entry.category !== null) verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
+    else if (entry.reason === 'unknown') verdict = { key: item.key, category: null, why: 'unknown-field' };
+    else if (entry.reason === 'sensitive') verdict = { key: item.key, category: null, why: 'llm-disabled-for-category' };
+    else verdict = { key: item.key, category: null, why: 'llm-invalid-output' };
+    verdicts.set(item.key, verdict);
+  }
+  return verdicts;
+}
+
+/** Every item of a batch given up: what its fields get. */
+function failedVerdicts(batch: AiBatch, why: 'llm-unavailable' | 'llm-invalid-output'):
+  { picks: TiebreakVerdict[]; classes: ClassifyVerdict[] } {
+  return batch.kind === 'pick' ? { picks: batch.items.map((item) => verdictOf(item, why)), classes: [] }
+    : { picks: [], classes: batch.items.map((item) => ({ key: item.key, category: null, why })) };
+}
+
+// ── Submitting and polling ────────────────────────────────────────────────────────────────────────────────────────
+
+/** A batch's task id by the batch's hash: RunState.aiTasks (runstate-store.ts), for one run's application and tab. */
+export interface AiTaskIds {
+  get(hash: string): Promise<string | null>;
+  note(hash: string, taskId: string): Promise<void>;
+  forget(hash: string): Promise<void>;
+}
+
+/** How a batch's task ended: its result, or why there is none. */
+export type TaskOutcome =
+  | { ok: true; taskId: string; result: AutofillPickResult | AutofillClassifyResult }
+  | { ok: false; why: 'llm-unavailable' | 'llm-invalid-output'; timedOut?: boolean };
+
+/** What the task client needs. */
+export interface AiTasksDeps {
+  server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiTask' | 'aiCancel'>;
+  timers: Timers;
+  now(): number;
+}
+
+/** Failures worth another poll: the next one may answer. */
+const TRANSIENT: ReadonlySet<string> = new Set(['timeout', 'unreachable', 'server-error', 'rate-limited']);
+
+const TASK_KIND = { pick: 'autofill_pick', classify: 'autofill_classify' } as const;
+
+/** The task client: runs one batch's task to its end. */
+export interface AiTasks {
+  /** Submits a batch (or reads its known task), polls it, and answers how it ended. `active` false stops it (the run
+   *  went), cancelling the task. */
+  run(batch: AiBatch, ids: AiTaskIds, active: () => boolean): Promise<TaskOutcome>;
+}
+
+export function createAiTasks(deps: AiTasksDeps): AiTasks {
+  /** The tasks this worker has in flight, so an ai_busy waits for one of them to end. */
+  const inFlight = new Set<Promise<unknown>>();
+  /** Those of them waiting because TailorIT answered ai_busy: they hold no place there. */
+  const busyWaiting = new Set<Promise<unknown>>();
+  /** A wait on the worker's timers, and its cancel. */
+  const timer = (ms: number) => {
+    let cancel = () => undefined as void;
+    const done = new Promise<void>((resolve) => {
+      cancel = deps.timers.after(Math.max(0, ms), resolve);
+    });
+    return { done, cancel };
+  };
+  const wait = (ms: number) => timer(ms).done;
+
+  /** A finished view as an outcome, or null while it is queued or running. */
+  function settled(batch: AiBatch, view: AutofillTaskView): TaskOutcome | null {
+    if (view.kind !== TASK_KIND[batch.kind]) return { ok: false, why: 'llm-invalid-output' };
+    if (view.status === 'queued' || view.status === 'running') return null;
+    if (view.status !== 'succeeded') return { ok: false, why: 'llm-unavailable' };
+    return view.result === null ? { ok: false, why: 'llm-invalid-output' } : { ok: true, taskId: view.id, result: view.result };
+  }
+
+  async function submit(batch: AiBatch): Promise<ServerResult<{ done: true; task: AutofillTaskView } | { done: false; taskId: string }>> {
+    return batch.kind === 'pick' ? deps.server.aiPick(batch.body) : deps.server.aiClassify(batch.body);
+  }
+
+  async function execute(batch: AiBatch, ids: AiTaskIds, active: () => boolean, self: Promise<unknown>): Promise<TaskOutcome> {
+    const hash = batchHash(batch);
+    const cap = deps.now() + AI_TASK_CAP_MS;
+    let taskId: string | null = await ids.get(hash);
+
+    // A task this batch already has (a restart, a reload): read it again rather than ask again.
+    if (taskId !== null) {
+      const known = await deps.server.aiTask(taskId);
+      const outcome = known.ok ? settled(batch, known.value) : null;
+      if (known.ok && outcome === null) {
+        log('ai.reattached', { items: batch.items.length });
+      } else if (outcome?.ok) {
+        log('ai.reattached', { items: batch.items.length, finished: true });
+        return outcome;
+      } else {
+        // Gone (its hour passed), failed or cancelled: ask again.
+        await ids.forget(hash);
+        taskId = null;
+      }
+    }
+
+    while (taskId === null) {
+      if (!active()) return { ok: false, why: 'llm-unavailable' };
+      const answer = await submit(batch);
+      if (answer.ok) {
+        if (answer.value.done) {
+          const outcome = settled(batch, answer.value.task);
+          if (outcome !== null) {
+            if (outcome.ok) await ids.note(hash, outcome.taskId);
+            log('ai.answered', { items: batch.items.length, waited: false, ok: outcome.ok });
+            return outcome;
+          }
+          // A 200 with an unfinished task: poll it like a 202.
+          taskId = answer.value.task.id;
+        } else {
+          taskId = answer.value.taskId;
+        }
+        await ids.note(hash, taskId);
+        log('ai.submitted', { items: batch.items.length });
+        break;
+      }
+      const busy = answer.failure === 'conflict' && answer.code === 'ai_busy';
+      if (!busy) {
+        log('ai.failed', { items: batch.items.length, ...(answer.status === undefined ? {} : { status: answer.status }) });
+        return { ok: false, why: answer.failure === 'bad-answer' ? 'llm-invalid-output' : 'llm-unavailable' };
+      }
+      // TailorIT holds two of this kind for the account: finish one in flight, then try again.
+      log('ai.busy', { items: batch.items.length });
+      const left = cap - deps.now();
+      if (left <= 0) return { ok: false, why: 'llm-unavailable', timedOut: true };
+      // Only a task that holds a place counts: two that both wait on ai_busy (the places held elsewhere) would
+      // otherwise wait on each other until their caps.
+      const others = [...inFlight].filter((task) => task !== self && !busyWaiting.has(task));
+      const capped = timer(others.length > 0 ? left : Math.min(AUTOFILL_AI_POLL_MS, left));
+      busyWaiting.add(self);
+      await Promise.race([...others.map((task) => task.then(() => undefined, () => undefined)), capped.done]);
+      busyWaiting.delete(self);
+      capped.cancel();
+    }
+
+    for (;;) {
+      const left = cap - deps.now();
+      if (left <= 0 || !active()) break;
+      await wait(Math.min(AUTOFILL_AI_POLL_MS, left));
+      if (!active()) break;
+      const view = await deps.server.aiTask(taskId);
+      if (view.ok) {
+        const outcome = settled(batch, view.value);
+        if (outcome !== null) {
+          log('ai.answered', { items: batch.items.length, waited: true, ok: outcome.ok });
+          return outcome;
+        }
+        continue;
+      }
+      if (TRANSIENT.has(view.failure)) continue;
+      if (view.failure === 'not-found') await ids.forget(hash);
+      log('ai.failed', { items: batch.items.length, ...(view.status === undefined ? {} : { status: view.status }) });
+      return { ok: false, why: view.failure === 'bad-answer' ? 'llm-invalid-output' : 'llm-unavailable' };
+    }
+    // The cap, or the run went: the task is cancelled, and its fields are the person's.
+    await deps.server.aiCancel(taskId).catch(() => undefined);
+    await ids.forget(hash);
+    const timedOut = active();
+    if (timedOut) log('ai.timed-out', { items: batch.items.length });
+    return { ok: false, why: 'llm-unavailable', timedOut };
+  }
+
+  return {
+    run(batch, ids, active) {
+      let self: Promise<TaskOutcome> | null = null;
+      const started = Promise.resolve().then(() => execute(batch, ids, active, self!))
+        .catch((): TaskOutcome => ({ ok: false, why: 'llm-unavailable' }));
+      self = started;
+      inFlight.add(started);
+      void started.finally(() => inFlight.delete(started));
+      return started;
+    },
+  };
+}
+
+// ── One run's questions ────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Where a waiting field stands. */
+export type AwaitState = 'done' | 'waiting' | 'unknown';
+
+/** What a waiting key was asked from: the request's scan and canaries, which it is planned again with once answered. */
+export interface AskContext {
+  specs: readonly FieldSpec[];
+  canaries: readonly string[];
+}
+
+/** One run's LLM questions and answers, in the worker's memory for the run only. */
+export interface RunAi {
+  /** The answers so far, as planFrame reads them. */
+  readonly answers: PlanAi;
+  /** Takes what a plan asks: its awaiting keys wait for their batches, submitted one task at a time; an item never sent
+   *  is answered at once. `context` is what the keys are planned again with once answered. */
+  ask(ask: PlanAsk, awaiting: readonly FieldKey[], context: AskContext, llm: Settings['llm']): void;
+  /** Whether a key's answer is in (plan it again), still waited for, or unknown to this run (a worker that restarted). */
+  state(key: FieldKey): AwaitState;
+  /** What a waiting key was asked from. */
+  contextOf(key: FieldKey): AskContext | undefined;
+  /** The keys are planned again: they no longer wait. */
+  settle(keys: readonly FieldKey[]): void;
+  /** Settles when every batch asked so far has ended (for tests and the run's end). */
+  idle(): Promise<void>;
+  /** The run went: nothing more is submitted, and a task in flight is cancelled. */
+  stop(): void;
+}
+
+/** The field a tiebreak item or verdict is for: its id is the field's key, with a value's reference after '#' when one
+ *  field asks for several (tiebreakId). */
+const fieldKeyOf = (item: { id: string }): string => item.id.split('#')[0]!;
+
+/** Creates a run's questions over the task client and the run's task ids. */
+export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
+  const verdicts = new Map<string, AnsweredVerdict>();
+  const classifications = new Map<string, ClassifyVerdict>();
+  /** The batch each waiting key is answered by (null: answered at once), and the scan it was asked from. */
+  const waiting = new Map<FieldKey, { batch: string | null; context: AskContext }>();
+  /** Batches by hash, and whether each has ended. */
+  const batches = new Map<string, { done: boolean }>();
+  let chain: Promise<void> = Promise.resolve();
+  let stopped = false;
+
+  function record(batch: AiBatch, outcome: TaskOutcome): void {
+    if (!outcome.ok) {
+      const failed = failedVerdicts(batch, outcome.why);
+      for (const verdict of failed.picks) verdicts.set(verdict.id, { verdict, taskId: '' });
+      for (const verdict of failed.classes) classifications.set(verdict.key, verdict);
+      return;
+    }
+    if (batch.kind === 'pick') {
+      for (const [id, verdict] of pickVerdicts(batch.items, outcome.result as AutofillPickResult)) {
+        verdicts.set(id, { verdict, taskId: outcome.taskId });
+      }
+    } else {
+      for (const [key, verdict] of classifyVerdicts(batch.items, outcome.result as AutofillClassifyResult)) {
+        classifications.set(key, verdict);
+      }
+    }
+  }
+
+  function enqueue(batch: AiBatch): string {
+    const hash = batchHash(batch);
+    if (batches.has(hash)) return hash;
+    const entry = { done: false };
+    batches.set(hash, entry);
+    chain = chain.then(async () => {
+      const outcome = stopped ? { ok: false as const, why: 'llm-unavailable' as const }
+        : await tasks.run(batch, ids, () => !stopped);
+      record(batch, outcome);
+      entry.done = true;
+    });
+    return hash;
+  }
+
+  return {
+    answers: { verdicts, classifications },
+    ask(ask, awaiting, context, llm) {
+      const owner = new Map<string, string | null>();
+      const picks = llm.tiebreak ? pickBatches(ask.tiebreaks)
+        : { batches: [], withheld: ask.tiebreaks.map((item) => verdictOf(item, 'llm-disabled-for-category')) };
+      const classes = llm.classify ? classifyBatches(ask.classify)
+        : { batches: [], withheld: ask.classify.map((item): ClassifyVerdict => ({ key: item.key, category: null,
+          why: 'llm-disabled-for-category' })) };
+      for (const verdict of picks.withheld) {
+        verdicts.set(verdict.id, { verdict, taskId: '' });
+        owner.set(fieldKeyOf(verdict), null);
+      }
+      for (const verdict of classes.withheld) {
+        classifications.set(verdict.key, verdict);
+        owner.set(verdict.key, null);
+      }
+      if (picks.withheld.length + classes.withheld.length > 0) {
+        log('ai.withheld', { items: picks.withheld.length + classes.withheld.length });
+      }
+      for (const batch of [...classes.batches, ...picks.batches]) {
+        const hash = enqueue(batch);
+        for (const item of batch.items) owner.set(batch.kind === 'pick' ? fieldKeyOf(item as TiebreakItem) : (item as ClassifyItem).key, hash);
+      }
+      for (const key of awaiting) waiting.set(key, { batch: owner.get(key) ?? null, context });
+    },
+    state(key) {
+      const entry = waiting.get(key);
+      if (entry === undefined) return 'unknown';
+      if (entry.batch === null) return 'done';
+      return batches.get(entry.batch)?.done === true ? 'done' : 'waiting';
+    },
+    contextOf: (key) => waiting.get(key)?.context,
+    settle(keys) {
+      for (const key of keys) waiting.delete(key);
+    },
+    idle: () => chain,
+    stop() {
+      stopped = true;
+    },
+  };
+}

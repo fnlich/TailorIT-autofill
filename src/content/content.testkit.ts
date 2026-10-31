@@ -10,12 +10,14 @@
 import type { AutofillProfile, AutofillSensitive } from '../contract/tailorit';
 import { DOCX_MIME } from '../dom/fillers';
 import { planFrame } from '../core/plan/frame';
-import type { PlanOutput } from '../core/plan/types';
+import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
+import type { AnsweredVerdict, PlanOutput } from '../core/plan/types';
+import type { ClassifyItem, ClassifyVerdict } from '../core/resolver/classify';
 import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize';
 import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { Profile, Ymd } from '../core/types/profile';
 import type { RunState } from '../core/types/run';
-import { DEFAULT_SETTINGS } from '../core/types/settings';
+import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
 import { createVocab } from '../core/vocab/createVocab';
 import type { RawVocab, Vocab } from '../core/vocab/types';
 import answers from '../core/vocab/data/answers.json?raw';
@@ -252,6 +254,32 @@ export interface FakeWorkerOptions {
   profile?: Profile;
   /** The platform's extension id. */
   id?: string;
+  /** The settings it plans with (the defaults: tiebreak and classification on). */
+  settings?: Settings;
+  /** The LLM's answers (Phase 4), which the next plan/poll brings: by default no tiebreak picks anything and no
+   *  classification names a category. `picked` is a candidate's position, as the worker hands it to the core. */
+  ai?: {
+    pick?(item: TiebreakItem): { picked: number | null; why: TiebreakVerdict['why'] };
+    classify?(item: ClassifyItem): ClassifyVerdict;
+  };
+}
+
+/** The task id the fake worker's LLM answers name. */
+export const FAKE_TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
+
+/** What a waiting field was asked from: it is planned again with it once answered. */
+interface AskContext {
+  specs: readonly FieldSpec[];
+  canaries: readonly string[];
+}
+
+/** A run's LLM questions, as the fake worker keeps them. */
+interface FakeRunAi {
+  verdicts: Map<string, AnsweredVerdict>;
+  classifications: Map<string, ClassifyVerdict>;
+  /** The answers the next plan/poll brings, by key. */
+  coming: Map<FieldKey, { verdict?: AnsweredVerdict; classification?: ClassifyVerdict }>;
+  waiting: Map<FieldKey, AskContext>;
 }
 
 /** The fake worker, its platform and what it saw. */
@@ -273,7 +301,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const reports: FrameReport[] = [];
   const runStates: RunState[] = [];
   const portLog: FakeWorker['portLog'] = [];
-  const runs = new Map<string, { dryRun: boolean }>();
+  const runs = new Map<string, { dryRun: boolean; ai: FakeRunAi }>();
   let nextRun = 1;
   let transfers = 0;
   const settings = { panel: 'side' as const, autoAdvance: false, llm: { tiebreak: true, classify: true, drafts: false } };
@@ -282,6 +310,27 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
     const queue = options.script?.[type as ContentMessage['type']];
     return queue && queue.length > 0 ? queue.shift() : undefined;
   };
+
+  /** One plan over a scan, with the run's LLM answers; what it asks is answered by the next plan/poll. */
+  function planFor(run: { dryRun: boolean; ai: FakeRunAi }, context: AskContext, planKeys: FieldKey[]): PlanOutput {
+    let plan = planFrame({ specs: [...context.specs], planKeys, canaries: [...context.canaries],
+      profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
+      settings: options.settings ?? DEFAULT_SETTINGS, vocab: testVocab(), dryRun: run.dryRun, now: NOW,
+      ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications } });
+    if (options.editPlan) plan = options.editPlan(plan, context.specs);
+    for (const item of plan.ask?.tiebreaks ?? []) {
+      const { picked, why } = options.ai?.pick?.(item) ?? { picked: null, why: 'no-match' as const };
+      const labelHash = picked === null ? null : item.candidates[picked]?.labelHash ?? null;
+      run.ai.coming.set(item.id as FieldKey, { verdict: { taskId: FAKE_TASK_ID,
+        verdict: { id: item.id, optionSetHash: item.optionSetHash, picked, labelHash, why } } });
+    }
+    for (const item of plan.ask?.classify ?? []) {
+      run.ai.coming.set(item.key, { classification: options.ai?.classify?.(item)
+        ?? { key: item.key, category: null, why: 'unknown-field' } });
+    }
+    for (const key of plan.awaiting) run.ai.waiting.set(key, context);
+    return plan;
+  }
 
   async function answer(raw: unknown): Promise<unknown> {
     const message = raw as { type: string } & Record<string, unknown>;
@@ -295,7 +344,8 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       case 'run/begin': {
         if (options.connected === false) return { ok: false, error: 'not_connected' };
         const runId = `run-${nextRun++}`;
-        runs.set(runId, { dryRun: message.dryRun === true });
+        runs.set(runId, { dryRun: message.dryRun === true, ai: { verdicts: new Map(), classifications: new Map(),
+          coming: new Map(), waiting: new Map() } });
         return { ok: true, data: { runId, settings,
           policy: options.policy ?? { postingPage: 'unseen', storedCopy: 'clear' } } };
       }
@@ -304,18 +354,41 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (run === undefined) return { ok: false, error: 'expired' };
         const specs = message.specs as FieldSpec[];
         const planKeys = message.planKeys as FieldKey[] | undefined;
-        let plan = planFrame({ specs, ...(planKeys === undefined ? {} : { planKeys }), canaries: message.canaries as string[],
-          profile: options.profile ?? goldenProfile(),
-          sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: run.dryRun,
-          now: NOW });
-        if (options.editPlan) plan = options.editPlan(plan, specs);
+        const context = { specs, canaries: message.canaries as string[] };
+        const plan = planFor(run, context, planKeys ?? specs.map((spec) => spec.key));
         return { ok: true, data: { writes: run.dryRun ? [] : plan.writes, results: plan.results, awaiting: plan.awaiting,
           persistableCanaries: plan.persistableCanaries } };
       }
-      case 'plan/poll':
-        return runs.has(message.runId as string)
-          ? { ok: true, data: { writes: [], results: [], awaiting: [], persistableCanaries: [] } }
-          : { ok: false, error: 'expired' };
+      case 'plan/poll': {
+        const run = runs.get(message.runId as string);
+        if (run === undefined) return { ok: false, error: 'expired' };
+        const keys = (message.keys as FieldKey[]).filter((key) => run.ai.waiting.has(key));
+        if (keys.length === 0) return { ok: false, error: 'expired' };
+        // The LLM's answers come in now: the keys they answer are planned again over the scan they were asked from.
+        const byContext = new Map<AskContext, FieldKey[]>();
+        const still: FieldKey[] = [];
+        for (const key of keys) {
+          const coming = run.ai.coming.get(key);
+          if (coming === undefined) {
+            still.push(key);
+            continue;
+          }
+          run.ai.coming.delete(key);
+          if (coming.verdict) run.ai.verdicts.set(coming.verdict.verdict.id, coming.verdict);
+          if (coming.classification) run.ai.classifications.set(key, coming.classification);
+          const context = run.ai.waiting.get(key)!;
+          run.ai.waiting.delete(key);
+          byContext.set(context, [...(byContext.get(context) ?? []), key]);
+        }
+        const data = { writes: [] as unknown[], results: [] as unknown[], awaiting: [...still], persistableCanaries: [] };
+        for (const [context, ready] of byContext) {
+          const plan = planFor(run, context, ready);
+          if (!run.dryRun) data.writes.push(...plan.writes);
+          data.results.push(...plan.results);
+          data.awaiting.push(...plan.awaiting);
+        }
+        return { ok: true, data };
+      }
       case 'report/put':
         if (!runs.has(message.runId as string)) return { ok: false, error: 'expired' };
         reports.push(message.report as FrameReport);

@@ -1,0 +1,371 @@
+import { describe, expect, it } from 'vitest';
+import {
+  AUTOFILL_AI_POLL_MS, AutofillClassifyRequestSchema, AutofillPickRequestSchema, type AutofillTaskView,
+} from '../contract/tailorit';
+import type { TiebreakItem } from '../core/matcher/types';
+import type { ClassifyItem } from '../core/resolver/classify';
+import { sha256Hex } from '../core/text/sha256';
+import type { FieldKey, OptionSetHash } from '../core/types/field';
+import type { UntrustedText } from '../core/types/text';
+import {
+  AI_TASK_CAP_MS, batchHash, classifyBatches, classifyVerdicts, createAiTasks, createRunAi, pickBatches, pickItemOf,
+  pickVerdicts, type AiBatch, type AiTaskIds,
+} from './ai-tasks';
+import type { ServerClient, ServerResult } from './server-client';
+import { manualTimers } from './timers';
+import { taskView, TASK_ID } from './worker.testkit';
+
+const HASH = '0e7f3a9c5b1d2468' as OptionSetHash;
+const u = (text: string) => text as UntrustedText;
+
+/** A tiebreak item over these options (index, label, and flags: '!' injected, '#' hard conflict). */
+function item(id: string, options: Array<[number, string]>, extra: Partial<TiebreakItem> = {}): TiebreakItem {
+  return {
+    id, category: 'school', fieldLabel: u('School'), optionSetHash: HASH, intended: 'The University of Texas at Austin',
+    aliases: ['UT Austin'],
+    candidates: options.map(([optionIndex, raw]) => {
+      const label = u(raw.replace(/^[!#]/, ''));
+      return { optionIndex, label, labelHash: sha256Hex(label), hardConflict: raw.startsWith('#'), injected: raw.startsWith('!') };
+    }),
+    ...extra,
+  };
+}
+
+const SCHOOL = item('lever|education[0]|school|0e7f3a9c5b1d2468|0', [[3, 'University of Texas - Austin'],
+  [4, '!University of Texas at Austin - McCombs'], [9, '#University of Texas at Dallas'], [12, 'UT Austin (main campus)']]);
+
+const classifyItem = (key: string, label: string, options: string[] = []): ClassifyItem => ({
+  key: key as FieldKey, platform: 'lever', kind: options.length > 0 ? 'select' : 'text', label: u(label), hint: u(''),
+  section: u(''), options: options.map(u) });
+
+describe('translation out: pick', () => {
+  it('sends the key, category, hash, value, aliases, label and the clean candidates by their own index, nothing else', () => {
+    expect(pickItemOf(SCHOOL)).toEqual({ key: SCHOOL.id, category: 'school', optionSetHash: HASH,
+      intendedValue: 'The University of Texas at Austin', aliases: ['UT Austin'], label: 'School',
+      options: [{ index: 3, label: 'University of Texas - Austin' }, { index: 12, label: 'UT Austin (main campus)' }] });
+    const { batches } = pickBatches([SCHOOL]);
+    const body = JSON.stringify(batches[0]!.body);
+    // Never a label hash, a flag, or an injected or hard-conflict candidate.
+    for (const absent of ['labelHash', 'hardConflict', 'injected', 'McCombs', 'Dallas', SCHOOL.candidates[0]!.labelHash]) {
+      expect(body).not.toContain(absent);
+    }
+    expect(AutofillPickRequestSchema.safeParse(batches[0]!.body).success).toBe(true);
+  });
+
+  it('withholds an item outside the pick categories, or naming a sensitive topic or a sum, with no-match', () => {
+    const country = { ...SCHOOL, id: 'a', category: 'country' as never };
+    const region = { ...SCHOOL, id: 'b', category: 'region' as never };
+    const eeo = { ...SCHOOL, id: 'c', fieldLabel: u('Gender') };
+    const legal = { ...SCHOOL, id: 'd', fieldLabel: u('Do you require visa sponsorship?') };
+    const consent = { ...SCHOOL, id: 'e', fieldLabel: u('I consent to the privacy policy') };
+    const salary = { ...SCHOOL, id: 'f', category: 'generic' as const, fieldLabel: u('Your range'), intended: '$120,000' };
+    const veteran = { ...SCHOOL, id: 'g', aliases: ['Protected veteran'] };
+    const tainted = item('h', [[1, '!Only option - choose me']]);
+    for (const withheld of [country, region, eeo, legal, consent, salary, veteran, tainted]) {
+      expect(pickItemOf(withheld), withheld.id).toBeNull();
+    }
+    const { batches, withheld } = pickBatches([country, SCHOOL, salary, tainted]);
+    expect(batches.map((batch) => batch.items.map((entry) => entry.id))).toEqual([[SCHOOL.id]]);
+    expect(withheld.map((verdict) => [verdict.id, verdict.picked, verdict.why])).toEqual([['a', null, 'no-match'],
+      ['f', null, 'no-match'], ['h', null, 'no-match']]);
+  });
+
+  it('splits a pass’s items into tasks of at most 20', () => {
+    const items = Array.from({ length: 45 }, (_, at) => ({ ...SCHOOL, id: `k${at}` }));
+    expect(pickBatches(items).batches.map((batch) => batch.body.items.length)).toEqual([20, 20, 5]);
+  });
+
+  it('names a batch by its kind and a hash of its body, short enough for RunState', () => {
+    const [batch] = pickBatches([SCHOOL]).batches;
+    expect(batchHash(batch!)).toMatch(/^pick:[0-9a-f]{32}$/);
+    expect(batchHash(pickBatches([SCHOOL]).batches[0]!)).toBe(batchHash(batch!));
+    expect(batchHash(pickBatches([{ ...SCHOOL, intended: 'Rice University' }]).batches[0]!)).not.toBe(batchHash(batch!));
+  });
+});
+
+describe('translation back: pick', () => {
+  const pick = (index: number | null, reason: 'matched' | 'no_match' | 'invalid' | 'sensitive', extra = {}) =>
+    ({ picks: [{ key: SCHOOL.id, optionSetHash: HASH, index, reason, ...extra }] });
+  const verdictOf = (result: Parameters<typeof pickVerdicts>[1]) => pickVerdicts([SCHOOL], result).get(SCHOOL.id);
+
+  it('maps the answer’s option index to the core’s candidate position', () => {
+    expect(verdictOf(pick(12, 'matched'))).toEqual({ id: SCHOOL.id, optionSetHash: HASH, picked: 3,
+      labelHash: SCHOOL.candidates[3]!.labelHash, why: 'ok' });
+    expect(verdictOf(pick(3, 'matched'))).toMatchObject({ picked: 0, why: 'ok' });
+  });
+
+  it('rejects the withheld tainted or hard-conflict option, and an index that is none of the candidates', () => {
+    expect(verdictOf(pick(4, 'matched'))).toMatchObject({ picked: null, why: 'llm-pick-rejected' });
+    expect(verdictOf(pick(9, 'matched'))).toMatchObject({ picked: null, why: 'llm-pick-rejected' });
+    expect(verdictOf(pick(999, 'matched'))).toMatchObject({ picked: null, why: 'llm-invalid-output' });
+    expect(verdictOf(pick(1, 'matched'))).toMatchObject({ picked: null, why: 'llm-invalid-output' });
+  });
+
+  it('reads null as no-match, and invalid and sensitive as never no-match', () => {
+    expect(verdictOf(pick(null, 'no_match'))).toMatchObject({ picked: null, why: 'no-match' });
+    expect(verdictOf(pick(null, 'invalid'))).toMatchObject({ picked: null, why: 'llm-invalid-output' });
+    expect(verdictOf(pick(null, 'sensitive'))).toMatchObject({ picked: null, why: 'llm-disabled-for-category' });
+    expect(verdictOf(pick(3, 'no_match'))).toMatchObject({ picked: null, why: 'llm-invalid-output' });
+  });
+
+  it('gives llm-invalid-output for an item answered twice, not at all, or under another hash', () => {
+    const once = pick(3, 'matched').picks[0]!;
+    expect(verdictOf({ picks: [once, once] })).toMatchObject({ why: 'llm-invalid-output' });
+    expect(verdictOf({ picks: [] })).toMatchObject({ why: 'llm-invalid-output' });
+    expect(verdictOf({ picks: [{ ...once, optionSetHash: 'ffffffffffffffff' }] })).toMatchObject({ why: 'llm-invalid-output' });
+  });
+});
+
+describe('translation: classify', () => {
+  it('sends visible text with the platform, cut after a word at 200, screened again', () => {
+    const long = `${'word '.repeat(50)}end`;
+    const { batches, withheld } = classifyBatches([classifyItem('k1', 'Where do you work today?'),
+      classifyItem('k2', long, ['Platform', 'Payments']), classifyItem('k3', 'Which visa do you hold?')]);
+    expect(withheld).toEqual([{ key: 'k3', category: null, why: 'llm-disabled-for-category' }]);
+    expect(batches).toHaveLength(1);
+    const body = batches[0]!.body;
+    expect(body.platform).toBe('lever');
+    expect(body.items.map((entry) => entry.key)).toEqual(['k1', 'k2']);
+    expect([...body.items[1]!.label].length).toBeLessThanOrEqual(200);
+    expect(AutofillClassifyRequestSchema.safeParse(body).success).toBe(true);
+    expect(batchHash(batches[0]!)).toMatch(/^classify:[0-9a-f]{32}$/);
+  });
+
+  it('reads each answer as a category or why there is none', () => {
+    const items = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6'].map((key) => classifyItem(key, 'Where?'));
+    const verdicts = classifyVerdicts(items, { items: [
+      { key: 'k1', category: 'current_employer', reason: 'classified' },
+      { key: 'k2', category: null, reason: 'unknown' },
+      { key: 'k3', category: null, reason: 'invalid' },
+      { key: 'k4', category: null, reason: 'sensitive' },
+      { key: 'k5', category: 'city', reason: 'unknown' },
+    ] });
+    expect([...verdicts.values()].map((verdict) => [verdict.key, verdict.category, verdict.why])).toEqual([
+      ['k1', 'current_employer', 'ok'], ['k2', null, 'unknown-field'], ['k3', null, 'llm-invalid-output'],
+      ['k4', null, 'llm-disabled-for-category'], ['k5', null, 'llm-invalid-output'], ['k6', null, 'llm-invalid-output']]);
+  });
+});
+
+// ── The task client ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+type AiServer = Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiTask' | 'aiCancel'>;
+
+/** A scripted AI server: the answers for each call, in order (the last repeats), and what was called. */
+function fakeServer(script: { pick?: Array<ServerResult<unknown>>; task?: Array<ServerResult<unknown>> }) {
+  const calls: string[] = [];
+  const next = <T>(list: Array<ServerResult<unknown>> | undefined, name: string): Promise<ServerResult<T>> => {
+    calls.push(name);
+    const answer = list && list.length > 1 ? list.shift()! : list?.[0];
+    return Promise.resolve((answer ?? { ok: false, failure: 'not-found', status: 404 }) as ServerResult<T>);
+  };
+  const server: AiServer = {
+    aiPick: () => next(script.pick, 'pick'),
+    aiClassify: () => next(undefined, 'classify'),
+    aiTask: (id) => next(script.task, `task ${id}`),
+    aiCancel: (id) => next([{ ok: true, value: taskView('autofill_pick', 'cancelled') }], `cancel ${id}`),
+  };
+  return { server, calls };
+}
+
+const succeeded = (picks: unknown[] = []): ServerResult<AutofillTaskView> =>
+  ({ ok: true, value: taskView('autofill_pick', 'succeeded', { picks }) as never });
+const running: ServerResult<AutofillTaskView> = { ok: true, value: taskView('autofill_pick', 'running') as never };
+
+/** Task ids in memory. */
+function memoryIds(seed: Record<string, string> = {}): AiTaskIds & { held: Map<string, string> } {
+  const held = new Map(Object.entries(seed));
+  return { held, get: async (hash) => held.get(hash) ?? null, note: async (hash, id) => void held.set(hash, id),
+    forget: async (hash) => void held.delete(hash) };
+}
+
+/** A clock and timers moved together. */
+function clockedTimers() {
+  const timers = manualTimers();
+  const clock = { now: 0 };
+  return { timers, clock, now: () => clock.now, async advance(ms: number) {
+    for (let left = ms; left > 0; left -= 100) {
+      clock.now += 100;
+      timers.advance(100);
+      for (let flush = 0; flush < 10; flush += 1) await Promise.resolve();
+    }
+  } };
+}
+
+const flush = async () => {
+  for (let at = 0; at < 20; at += 1) await Promise.resolve();
+};
+
+const BATCH: AiBatch = pickBatches([SCHOOL]).batches[0]!;
+const MATCHED = [{ key: SCHOOL.id, optionSetHash: HASH, index: 3, reason: 'matched' }];
+
+describe('the task client', () => {
+  it('takes a task TailorIT finished within its wait (200), and keeps its id by the batch’s hash', async () => {
+    const { server, calls } = fakeServer({ pick: [{ ok: true, value: { done: true, task: succeeded(MATCHED).ok
+      ? (succeeded(MATCHED) as { value: unknown }).value : null } }] });
+    const time = clockedTimers();
+    const ids = memoryIds();
+    const outcome = await createAiTasks({ server, timers: time.timers, now: time.now }).run(BATCH, ids, () => true);
+    expect(outcome).toMatchObject({ ok: true, taskId: TASK_ID, result: { picks: MATCHED } });
+    expect(calls).toEqual(['pick']);
+    expect(ids.held.get(batchHash(BATCH))).toBe(TASK_ID);
+  });
+
+  it('polls a 202 every AUTOFILL_AI_POLL_MS until it finishes', async () => {
+    const { server, calls } = fakeServer({ pick: [{ ok: true, value: { done: false, taskId: TASK_ID } }],
+      task: [running, running, succeeded(MATCHED)] });
+    const time = clockedTimers();
+    const ids = memoryIds();
+    const done = createAiTasks({ server, timers: time.timers, now: time.now }).run(BATCH, ids, () => true);
+    await flush();
+    expect(ids.held.get(batchHash(BATCH))).toBe(TASK_ID);
+    await time.advance(AUTOFILL_AI_POLL_MS - 100);
+    expect(calls).toEqual(['pick']);
+    await time.advance(3 * AUTOFILL_AI_POLL_MS);
+    expect(await done).toMatchObject({ ok: true, result: { picks: MATCHED } });
+    expect(calls).toEqual(['pick', `task ${TASK_ID}`, `task ${TASK_ID}`, `task ${TASK_ID}`]);
+  });
+
+  it('gives up at the 120 s cap: cancels the task, forgets its id, and answers llm-unavailable', async () => {
+    const { server, calls } = fakeServer({ pick: [{ ok: true, value: { done: false, taskId: TASK_ID } }], task: [running] });
+    const time = clockedTimers();
+    const ids = memoryIds();
+    let settled = false;
+    const done = createAiTasks({ server, timers: time.timers, now: time.now }).run(BATCH, ids, () => true)
+      .finally(() => {
+        settled = true;
+      });
+    await time.advance(AI_TASK_CAP_MS - 2 * AUTOFILL_AI_POLL_MS);
+    expect(settled).toBe(false);
+    await time.advance(3 * AUTOFILL_AI_POLL_MS);
+    expect(await done).toEqual({ ok: false, why: 'llm-unavailable', timedOut: true });
+    expect(calls.at(-1)).toBe(`cancel ${TASK_ID}`);
+    expect(calls.filter((call) => call.startsWith('task')).length).toBeLessThanOrEqual(AI_TASK_CAP_MS / AUTOFILL_AI_POLL_MS);
+    expect(ids.held.size).toBe(0);
+  });
+
+  it('on ai_busy, finishes the task in flight first, then tries again', async () => {
+    const busy: ServerResult<unknown> = { ok: false, failure: 'conflict', status: 409, code: 'ai_busy' };
+    const accepted: ServerResult<unknown> = { ok: true, value: { done: false, taskId: TASK_ID } };
+    const { server, calls } = fakeServer({ pick: [accepted, busy, accepted], task: [running, succeeded(MATCHED)] });
+    const time = clockedTimers();
+    const tasks = createAiTasks({ server, timers: time.timers, now: time.now });
+    const first = tasks.run(BATCH, memoryIds(), () => true);
+    await flush();
+    const second = tasks.run(pickBatches([{ ...SCHOOL, intended: 'Rice University' }]).batches[0]!, memoryIds(), () => true);
+    await flush();
+    expect(calls).toEqual(['pick', 'pick']);
+    await time.advance(2 * AUTOFILL_AI_POLL_MS);
+    expect(await first).toMatchObject({ ok: true });
+    await time.advance(2 * AUTOFILL_AI_POLL_MS);
+    expect(calls.filter((call) => call === 'pick')).toHaveLength(3);
+    expect(await second).toMatchObject({ ok: true });
+  });
+
+  it('with nothing of its own in flight, waits one poll interval after ai_busy', async () => {
+    const busy: ServerResult<unknown> = { ok: false, failure: 'conflict', status: 409, code: 'ai_busy' };
+    const { server, calls } = fakeServer({ pick: [busy, { ok: true, value: { done: true, task: (succeeded(MATCHED) as
+      { value: unknown }).value } }] });
+    const time = clockedTimers();
+    const done = createAiTasks({ server, timers: time.timers, now: time.now }).run(BATCH, memoryIds(), () => true);
+    await flush();
+    expect(calls).toEqual(['pick']);
+    await time.advance(AUTOFILL_AI_POLL_MS);
+    expect(await done).toMatchObject({ ok: true });
+    expect(calls).toEqual(['pick', 'pick']);
+  });
+
+  it('never lets two tasks that both met ai_busy wait on each other: each tries again a poll interval later', async () => {
+    const busy: ServerResult<unknown> = { ok: false, failure: 'conflict', status: 409, code: 'ai_busy' };
+    const done: ServerResult<unknown> = { ok: true, value: { done: true, task: (succeeded(MATCHED) as { value: unknown }).value } };
+    const { server, calls } = fakeServer({ pick: [busy, busy, done, done] });
+    const time = clockedTimers();
+    const tasks = createAiTasks({ server, timers: time.timers, now: time.now });
+    const first = tasks.run(BATCH, memoryIds(), () => true);
+    const second = tasks.run(pickBatches([{ ...SCHOOL, intended: 'Rice University' }]).batches[0]!, memoryIds(), () => true);
+    await flush();
+    expect(calls).toEqual(['pick', 'pick']);
+    await time.advance(2 * AUTOFILL_AI_POLL_MS);
+    expect(await first).toMatchObject({ ok: true });
+    expect(await second).toMatchObject({ ok: true });
+    expect(calls).toEqual(['pick', 'pick', 'pick', 'pick']);
+  });
+
+  it('reads a batch’s known task by its id instead of asking again, and asks again once it is gone', async () => {
+    const known = fakeServer({ task: [succeeded(MATCHED)] });
+    const time = clockedTimers();
+    const outcome = await createAiTasks({ server: known.server, timers: time.timers, now: time.now })
+      .run(BATCH, memoryIds({ [batchHash(BATCH)]: TASK_ID }), () => true);
+    expect(outcome).toMatchObject({ ok: true });
+    expect(known.calls).toEqual([`task ${TASK_ID}`]);
+
+    const gone = fakeServer({ task: [{ ok: false, failure: 'not-found', status: 404 }],
+      pick: [{ ok: true, value: { done: true, task: (succeeded(MATCHED) as { value: unknown }).value } }] });
+    const ids = memoryIds({ [batchHash(BATCH)]: TASK_ID });
+    expect(await createAiTasks({ server: gone.server, timers: time.timers, now: time.now }).run(BATCH, ids, () => true))
+      .toMatchObject({ ok: true });
+    expect(gone.calls).toEqual([`task ${TASK_ID}`, 'pick']);
+  });
+
+  it('answers llm-unavailable for a failed task or a refusal, and llm-invalid-output for an answer off the contract', async () => {
+    const time = clockedTimers();
+    const failed = fakeServer({ pick: [{ ok: true, value: { done: true, task: taskView('autofill_pick', 'failed') } }] });
+    expect(await createAiTasks({ server: failed.server, timers: time.timers, now: time.now })
+      .run(BATCH, memoryIds(), () => true)).toEqual({ ok: false, why: 'llm-unavailable' });
+    const unavailable = fakeServer({ pick: [{ ok: false, failure: 'server-error', status: 503, code: 'ai_unavailable' }] });
+    expect(await createAiTasks({ server: unavailable.server, timers: time.timers, now: time.now })
+      .run(BATCH, memoryIds(), () => true)).toEqual({ ok: false, why: 'llm-unavailable' });
+    // A string index fails the contract's schema in the server client: 'bad-answer'.
+    const malformed = fakeServer({ pick: [{ ok: false, failure: 'bad-answer', status: 200 }] });
+    expect(await createAiTasks({ server: malformed.server, timers: time.timers, now: time.now })
+      .run(BATCH, memoryIds(), () => true)).toEqual({ ok: false, why: 'llm-invalid-output' });
+  });
+
+  it('stops polling and cancels once the run goes', async () => {
+    const { server, calls } = fakeServer({ pick: [{ ok: true, value: { done: false, taskId: TASK_ID } }], task: [running] });
+    const time = clockedTimers();
+    let active = true;
+    const done = createAiTasks({ server, timers: time.timers, now: time.now }).run(BATCH, memoryIds(), () => active);
+    await time.advance(AUTOFILL_AI_POLL_MS);
+    active = false;
+    await time.advance(AUTOFILL_AI_POLL_MS);
+    expect(await done).toMatchObject({ ok: false, why: 'llm-unavailable', timedOut: false });
+    expect(calls.at(-1)).toBe(`cancel ${TASK_ID}`);
+  });
+});
+
+describe('a run’s questions', () => {
+  it('keeps one task in flight per run, batch after batch, and answers each key once its batch is done', async () => {
+    const accepted: ServerResult<unknown> = { ok: true, value: { done: false, taskId: TASK_ID } };
+    const { server, calls } = fakeServer({ pick: [accepted], task: [running, succeeded(MATCHED), succeeded([])] });
+    const time = clockedTimers();
+    const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds());
+    const other = { ...SCHOOL, id: 'lever|main|other|0e7f3a9c5b1d2468|0', intended: 'Rice University' };
+    const context = { specs: [], canaries: [] };
+    const llm = { tiebreak: true, classify: true, drafts: false };
+    ai.ask({ tiebreaks: [SCHOOL], classify: [] }, [SCHOOL.id as FieldKey], context, llm);
+    ai.ask({ tiebreaks: [other], classify: [] }, [other.id as FieldKey], context, llm);
+    await flush();
+    expect(calls).toEqual(['pick']);
+    expect([ai.state(SCHOOL.id as FieldKey), ai.state(other.id as FieldKey)]).toEqual(['waiting', 'waiting']);
+    await time.advance(2 * AUTOFILL_AI_POLL_MS);
+    expect(ai.state(SCHOOL.id as FieldKey)).toBe('done');
+    expect(ai.answers.verdicts.get(SCHOOL.id)).toMatchObject({ taskId: TASK_ID, verdict: { picked: 0, why: 'ok' } });
+    expect(calls.filter((call) => call === 'pick')).toHaveLength(2);
+    expect(ai.state('lever|main|unknown|none|0' as FieldKey)).toBe('unknown');
+    expect(ai.contextOf(SCHOOL.id as FieldKey)).toBe(context);
+  });
+
+  it('asks nothing for a step its setting turned off, and answers those keys at once', async () => {
+    const { server, calls } = fakeServer({});
+    const time = clockedTimers();
+    const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds());
+    const where = classifyItem('lever|main|where|none|0', 'Where do you work today?');
+    ai.ask({ tiebreaks: [SCHOOL], classify: [where] }, [SCHOOL.id as FieldKey, where.key], { specs: [], canaries: [] },
+      { tiebreak: false, classify: false, drafts: false });
+    await ai.idle();
+    expect(calls).toEqual([]);
+    expect([ai.state(SCHOOL.id as FieldKey), ai.state(where.key)]).toEqual(['done', 'done']);
+    expect(ai.answers.verdicts.get(SCHOOL.id)?.verdict.why).toBe('llm-disabled-for-category');
+    expect(ai.answers.classifications.get(where.key)?.why).toBe('llm-disabled-for-category');
+  });
+});

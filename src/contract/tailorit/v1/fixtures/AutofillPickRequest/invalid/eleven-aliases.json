@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin 0",
+        "UT Austin 1",
+        "UT Austin 2",
+        "UT Austin 3",
+        "UT Austin 4",
+        "UT Austin 5",
+        "UT Austin 6",
+        "UT Austin 7",
+        "UT Austin 8",
+        "UT Austin 9",
+        "UT Austin 10"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    }
+  ]
+}

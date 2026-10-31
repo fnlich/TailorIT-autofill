@@ -5,6 +5,8 @@
  * profile.
  */
 import type { MatchCacheStore } from '../matcher/cache';
+import type { TiebreakItem, TiebreakVerdict } from '../matcher/types';
+import type { ClassifyItem, ClassifyVerdict } from '../resolver/classify';
 import type { FieldKey, FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite } from '../types/fill';
 import type { Profile, SensitiveState, Ymd } from '../types/profile';
@@ -36,6 +38,30 @@ export interface PlanInput {
   /** A dry run plans rows only: `writes` is empty, so no value reaches the frame. */
   dryRun: boolean;
   now: Ymd;
+  /** What the LLM has answered in this run (Phase 4); absent: nothing yet. The worker keeps it for the run only. */
+  ai?: PlanAi;
+}
+
+/** A tiebreak verdict, with the TailorIT task that gave it: an llm-pick write names that task. */
+export interface AnsweredVerdict {
+  verdict: TiebreakVerdict;
+  taskId: string;
+}
+
+/** The LLM's answers so far in a run, which planFrame completes waiting fields with (Phase 4). */
+export interface PlanAi {
+  /** Tiebreak verdicts by item id (tiebreakId). A verdict completes only the item it was given for. */
+  verdicts: ReadonlyMap<string, AnsweredVerdict>;
+  /** Classifications by field key. */
+  classifications: ReadonlyMap<string, ClassifyVerdict>;
+}
+
+/** The questions a plan needs the LLM for (Phase 4): each awaiting key has exactly one. */
+export interface PlanAsk {
+  /** Single-answer fields the cascade could not decide, as tiebreak items (settings.llm.tiebreak on). */
+  tiebreaks: TiebreakItem[];
+  /** Fields nothing classified, screened and with something to classify (settings.llm.classify on). */
+  classify: ClassifyItem[];
 }
 
 export interface PlanOutput {
@@ -45,8 +71,11 @@ export interface PlanOutput {
    *  value reads back as planned (wrote false, verification 'not-checked'); the frame settles it after the fill. In a
    *  dry run these rows are the report. */
   results: FillResult[];
-  /** Keys waiting for the LLM, whose writes come back through plan/poll (Phase 4; always empty before). */
+  /** Keys waiting for the LLM, whose writes come back through plan/poll (Phase 4). Each has a row in `results`: the
+   *  one that stands until the LLM answers (blank and flagged), and the question in `ask`. */
   awaiting: FieldKey[];
+  /** What to ask the LLM for the awaiting keys; absent when nothing waits. */
+  ask?: PlanAsk;
   /** True when a field needs the sensitive part while sensitiveState is 'not-loaded'. The worker then fetches
    *  GET /profile/sensitive, once per run, and plans again; writes, results and awaiting are empty. */
   needsSensitive: boolean;

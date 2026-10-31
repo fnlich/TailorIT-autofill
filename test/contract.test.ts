@@ -7,7 +7,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   ATS_KINDS,
+  AUTOFILL_AI_LIMITS,
   AUTOFILL_API_VERSION,
+  AUTOFILL_FIELD_CATEGORIES,
+  AUTOFILL_NEEDS_USER_CATEGORIES,
+  AUTOFILL_PICK_CATEGORIES,
   AUTOFILL_CONTRACT_SCHEMAS,
   AUTOFILL_FIELD_KINDS,
   AUTOFILL_ROUTES,
@@ -16,7 +20,15 @@ import {
   LANGUAGE_PROFICIENCIES,
   RACE_CATEGORIES,
   WORK_STATUSES as CONTRACT_WORK_STATUSES,
+  cutAtWord as contractCutAtWord,
 } from '../src/contract/tailorit';
+import {
+  CLASSIFY_MAX_ITEMS, CLASSIFY_MAX_OPTIONS, CLASSIFY_TEXT_MAX, TIEBREAK_ALIAS_MAX, TIEBREAK_ID_MAX, TIEBREAK_INTENDED_MAX,
+  TIEBREAK_LABEL_MAX, TIEBREAK_MAX_ALIASES, TIEBREAK_MAX_CANDIDATES, TIEBREAK_MAX_ITEMS, TIEBREAK_REQUEST_TEXT_MAX,
+} from '../src/core/confidence';
+import { PICK_CATEGORIES } from '../src/core/matcher/types';
+import { SERVER_CATEGORY_MAP } from '../src/core/resolver/classify';
+import { cutAtWord } from '../src/core/text/fold';
 import { DEGREE_LEVELS, FIELD_KINDS, GENDERS, PLATFORMS, PROFICIENCIES, RACES, WORK_STATUSES } from '../src/core/enums';
 
 // TailorIT's contract as `npm run contract:pull` copies it into src/contract/tailorit/: the schemas, their record
@@ -147,5 +159,31 @@ describe('the value lists the two sides share', () => {
     expect(RACE_CATEGORIES).toEqual(RACES);
     expect(GENDER_IDENTITIES).toEqual(GENDERS);
     expect(CONTRACT_WORK_STATUSES).toEqual(WORK_STATUSES);
+  });
+
+  // The AI contract (Phase 4): the lists the core keeps of its own, since it may import none of the contract at run time.
+  it('give the core the pick categories, a mapping for every classification category and TailorIT’s caps', () => {
+    expect(PICK_CATEGORIES).toEqual(AUTOFILL_PICK_CATEGORIES);
+    expect(Object.keys(SERVER_CATEGORY_MAP)).toEqual([...AUTOFILL_FIELD_CATEGORIES]);
+    expect(AUTOFILL_FIELD_CATEGORIES).toHaveLength(47);
+    expect(AUTOFILL_NEEDS_USER_CATEGORIES.map((category) => SERVER_CATEGORY_MAP[category]))
+      .toEqual(AUTOFILL_NEEDS_USER_CATEGORIES.map(() => 'needs-user'));
+    const { pick, classify } = AUTOFILL_AI_LIMITS;
+    expect([TIEBREAK_MAX_ITEMS, TIEBREAK_MAX_CANDIDATES, TIEBREAK_MAX_ALIASES, TIEBREAK_INTENDED_MAX, TIEBREAK_ALIAS_MAX,
+      TIEBREAK_LABEL_MAX, TIEBREAK_ID_MAX, TIEBREAK_REQUEST_TEXT_MAX]).toEqual([pick.items, pick.options, pick.aliases,
+      pick.intendedValue, pick.alias, pick.optionLabel, AUTOFILL_AI_LIMITS.key, AUTOFILL_AI_LIMITS.requestText]);
+    expect(TIEBREAK_LABEL_MAX).toBeLessThanOrEqual(pick.label);
+    expect([CLASSIFY_MAX_ITEMS, CLASSIFY_MAX_OPTIONS, CLASSIFY_TEXT_MAX]).toEqual([classify.items, classify.options,
+      classify.text]);
+  });
+
+  it('cut text after a word as TailorIT does: the core’s cutAtWord is the contract’s', () => {
+    const texts = ['', 'short', 'two words', 'a'.repeat(300), `${'word '.repeat(60)}end`, 'x y', '  padded  ',
+      'Uni\u{1F600}code \u{1F600}\u{1F600} w\u{F6}rds', `first ${'z'.repeat(250)}`];
+    for (const text of texts) {
+      for (const max of [0, 1, 4, 5, 10, 200]) {
+        expect(cutAtWord(text, max), `${text.slice(0, 20)} at ${max}`).toBe(contractCutAtWord(text, max));
+      }
+    }
   });
 });

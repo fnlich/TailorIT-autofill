@@ -3,7 +3,8 @@
  * capture page, the capture hotkeys' code or a `commands` key; a production bundle may hold none of the e2e build's
  * hooks; `externally_connectable` is exactly TailorIT's origin; and every file the content script lists exists and
  * stays within the size budget. The script runs as it is, copied with what it reads (proc.mjs, the host list, the
- * public key) into a temporary folder that holds three fixture builds, and each case breaks the builds in one way.
+ * public key) into a temporary folder that holds three fixture builds, and each case breaks the builds in one way. The
+ * dry run's worktree build (Phase 4) is added where a case needs it: production but for its TailorIT origin.
  */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -210,5 +211,71 @@ describe("check-build's manifest and bundle assertions", () => {
       changed.externally_connectable = connectable;
     })));
     expect(status).toBe(0);
+  });
+});
+
+/** The dry-run build's folder (npm run build:worktree, docs/DRY-RUN.md). */
+const WORKTREE = '.output-worktree/chrome-mv3';
+const WORKTREE_ORIGIN = 'http://localhost:3300';
+
+/** Writes a clean worktree build, its manifest changed by `change` and its background bundle `background`. */
+function worktreeBuild(write: (path: string, text: string) => void, change: (manifest: Record<string, unknown>) => void = () =>
+  undefined, background = 'var background=(function(){return {o:"http://localhost:3300"}})();'): void {
+  const changed = manifest(WORKTREE_ORIGIN);
+  change(changed);
+  write(`${WORKTREE}/manifest.json`, JSON.stringify(changed));
+  write(`${WORKTREE}/background.js`, background);
+  write(`${WORKTREE}/content-scripts/content.js`, 'var content=(function(){return {}})();');
+  write(`${WORKTREE}/options.html`, '<!doctype html><title>Settings</title>');
+  write(`${WORKTREE}/sidepanel.html`, '<!doctype html><title>Review</title>');
+}
+
+function checkBuildWith(root: string, args: string[]): { status: number | null; output: string } {
+  const run = spawnSync(process.execPath, [join(root, 'scripts', 'check-build.mjs'), ...args], { cwd: root, encoding: 'utf8',
+    env: { ...process.env, NO_COLOR: '1' } });
+  return { status: run.status, output: `${run.stdout}\n${run.stderr}` };
+}
+
+describe("check-build's dry-run build (TAILORIT_BUILD=worktree)", () => {
+  afterEach(() => {
+    for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
+  });
+
+  it('pass a worktree build that differs from production only by its TailorIT, and require it with --worktree', () => {
+    const passed = checkBuildWith(project((write) => worktreeBuild(write)), ['--all', '--worktree']);
+    expect(passed.output).toContain('4 build(s) match the manifest the plan allows');
+    expect(passed.status).toBe(0);
+    const missing = checkBuildWith(project(), ['--worktree']);
+    expect(missing.output).toContain(`${WORKTREE}: not built`);
+    expect(missing.status).toBe(1);
+    // Without the flag it is checked only when it is there.
+    expect(checkBuildWith(project(), ['--all']).status).toBe(0);
+  });
+
+  it('fail a worktree manifest that differs from production by more than the origin', () => {
+    const { status, output } = checkBuildWith(project((write) => worktreeBuild(write, (changed) => {
+      changed.name = 'TailorIT Autofill (dry run)';
+    })), ['--all', '--worktree']);
+    expect(output).toContain('the worktree manifest differs from production by more than the origin');
+    expect(status).toBe(1);
+  });
+
+  it('fail a worktree build that holds an e2e hook, or another build’s TailorIT', () => {
+    const hook = checkBuildWith(project((write) => worktreeBuild(write, undefined,
+      'var background=(function(){chrome.storage.session.get("e2e:events")})();')), ['--all', '--worktree']);
+    expect(hook.output).toContain(`${WORKTREE}: background.js contains "e2e:events"`);
+    expect(hook.status).toBe(1);
+    const production = checkBuildWith(project((write) => worktreeBuild(write, undefined,
+      'var background=(function(){return {o:"http://localhost:3100"}})();')), ['--all', '--worktree']);
+    expect(production.output).toContain(`${WORKTREE}: background.js holds another build's TailorIT, "localhost:3100"`);
+    expect(production.status).toBe(1);
+  });
+
+  it('fail a production bundle that names the worktree’s TailorIT', () => {
+    const { status, output } = checkBuildWith(project((write) => {
+      write(`${BUILDS.chrome}/background.js`, 'var background=(function(){return {o:"http://localhost:3300"}})();');
+    }), ['--all']);
+    expect(output).toContain(`${BUILDS.chrome}: background.js holds another build's TailorIT, "localhost:3300"`);
+    expect(status).toBe(1);
   });
 });

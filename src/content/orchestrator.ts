@@ -33,9 +33,9 @@
  *    nearest when a check found new canaries since the last plan, which the worker's store filters as it always does;
  *    the tripwire counts, lastFill, the loop's reveal edges, status review); the highlights and the launcher's
  *    "Review N".
- * An 'expired' answer to run/begin, plan/request or report/put begins the run again, once (the same call() will carry
- * plan/poll when Phase 4's fields wait for the LLM; before then nothing ever awaits); a second one ends the run in the
- * launcher's error state. The run ends for invalidation only on the platform's word (channel.ts).
+ * An 'expired' answer to run/begin, plan/request or report/put begins the run again, once; a second one ends the run in
+ * the launcher's error state. plan/poll (Phase 4: fields waiting for the LLM) never renews: its 'expired' means the
+ * worker forgot those fields, which the loop then plans again with plan/request. The run ends for invalidation only on the platform's word (channel.ts).
  */
 import type { Adapter } from '../adapters/types';
 import type { ApplicationRef } from '../adapters';
@@ -95,6 +95,8 @@ export interface RunOptions {
   /** awaitOptions()' window and cap. */
   awaitOptions?: OptionsTimings;
   resume?: { idleMs?: number; releaseAfterMs?: number };
+  /** The poll interval and the cap on waiting for the LLM (loop.ts). */
+  ai?: { pollMs?: number; capMs?: number };
 }
 
 /** What a run needs from the runtime. */
@@ -295,6 +297,18 @@ export class FillRun {
       planKeys, canaries, notices }));
     if ('failed' in answer) throw new RunFailure(answer.failed);
     return answer;
+  }
+
+  /**
+   * plan/poll for fields that wait for the LLM (Phase 4). Sent as it is, never renewing the run: 'expired' means the
+   * worker knows none of them (it restarted), and the loop sends them in plan/request again, which renews the run when
+   * the worker no longer knows it either. Any other refusal is 'failed': the fields are left to the person.
+   */
+  private async poll(keys: FieldKey[]): Promise<PlanAnswer | 'expired' | 'failed'> {
+    const answer = await this.env.channel.request<'plan/poll'>({ v: 1, type: 'plan/poll', runId: this.runId, keys });
+    this.alive();
+    if (answer.ok) return answer.data;
+    return answer.error === 'expired' ? 'expired' : 'failed';
   }
 
   /** report/put: the run's rows and notices, never a value. A refusal other than a second 'expired' is logged. */
@@ -619,12 +633,14 @@ export class FillRun {
       stopped: () => this.stopRequested,
       stopSignal: this.stopping.signal,
       plan: (specs, planKeys, pass) => this.plan(specs, planKeys, pass),
+      poll: (keys) => this.poll(keys),
       recheck: () => this.recheck(),
       widgetReadings: this.widgetReadings,
       runId: () => this.runId,
       ...(env.options.resume ? { resume: env.options.resume } : {}),
       ...(env.options.settle ? { settle: env.options.settle } : {}),
       ...(env.options.awaitOptions ? { options: env.options.awaitOptions } : {}),
+      ...(env.options.ai ? { ai: env.options.ai } : {}),
     });
   }
 

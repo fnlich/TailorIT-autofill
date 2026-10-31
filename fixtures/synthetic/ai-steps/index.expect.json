@@ -1,0 +1,176 @@
+{
+  "fixture": "synthetic/ai-steps",
+  "source": "https://jobs.lever.co/tailorit-fixture/ai-steps/apply",
+  "captured": "never: a synthetic page, written by hand on 2026-10-30",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "note": "The LLM steps' page (index.html's header). The hidden option in the referral select is no option a person sees, so the select counts four.",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": false,
+      "section": "About you",
+      "fillable": true,
+      "control": "#first"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": false,
+      "section": "About you",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "required": false,
+      "section": "About you",
+      "fillable": true,
+      "options": 4,
+      "control": "#source"
+    },
+    {
+      "label": "Where do you work today? VISIBLE-MARKER-AI",
+      "kind": "text",
+      "required": false,
+      "section": "About you",
+      "fillable": true,
+      "control": "#work"
+    },
+    {
+      "label": "Which perk matters most?",
+      "kind": "select",
+      "required": false,
+      "section": "About you",
+      "fillable": true,
+      "options": 4,
+      "control": "#perk"
+    },
+    {
+      "label": "Gender",
+      "kind": "radio",
+      "required": false,
+      "section": "Voluntary self-identification",
+      "fillable": true,
+      "options": 3,
+      "control": "#gender input"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "radio",
+      "required": false,
+      "section": "Voluntary self-identification",
+      "fillable": true,
+      "options": 2,
+      "control": "#authorized input"
+    },
+    {
+      "label": "Desired salary",
+      "kind": "text",
+      "required": false,
+      "section": "Voluntary self-identification",
+      "fillable": true,
+      "control": "#salary"
+    },
+    {
+      "label": "I have read and agree to the privacy policy",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Voluntary self-identification",
+      "fillable": true,
+      "control": "#privacy"
+    }
+  ],
+  "states": [
+    {
+      "name": "the referral chosen",
+      "variant": null,
+      "steps": [
+        {
+          "choose": "#source",
+          "value": "post"
+        }
+      ],
+      "until": null,
+      "fields": [
+        {
+          "label": "First name",
+          "kind": "text",
+          "required": false,
+          "section": "About you",
+          "fillable": true,
+          "control": "#first"
+        },
+        {
+          "label": "Email",
+          "kind": "text",
+          "required": false,
+          "section": "About you",
+          "fillable": true,
+          "control": "#email"
+        },
+        {
+          "label": "How did you hear about us?",
+          "kind": "select",
+          "required": false,
+          "section": "About you",
+          "fillable": true,
+          "options": 4,
+          "control": "#source"
+        },
+        {
+          "label": "Where do you work today? VISIBLE-MARKER-AI",
+          "kind": "text",
+          "required": false,
+          "section": "About you",
+          "fillable": true,
+          "control": "#work"
+        },
+        {
+          "label": "Which perk matters most?",
+          "kind": "select",
+          "required": false,
+          "section": "About you",
+          "fillable": true,
+          "options": 4,
+          "control": "#perk"
+        },
+        {
+          "label": "Gender",
+          "kind": "radio",
+          "required": false,
+          "section": "Voluntary self-identification",
+          "fillable": true,
+          "options": 3,
+          "control": "#gender input"
+        },
+        {
+          "label": "Are you legally authorized to work in the United States?",
+          "kind": "radio",
+          "required": false,
+          "section": "Voluntary self-identification",
+          "fillable": true,
+          "options": 2,
+          "control": "#authorized input"
+        },
+        {
+          "label": "Desired salary",
+          "kind": "text",
+          "required": false,
+          "section": "Voluntary self-identification",
+          "fillable": true,
+          "control": "#salary"
+        },
+        {
+          "label": "I have read and agree to the privacy policy",
+          "kind": "checkbox",
+          "required": false,
+          "section": "Voluntary self-identification",
+          "fillable": true,
+          "control": "#privacy"
+        }
+      ]
+    }
+  ]
+}

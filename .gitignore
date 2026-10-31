@@ -1,6 +1,7 @@
 node_modules/
 .output/
 .output-e2e/
+.output-worktree/
 .wxt/
 e2e/artifacts/
 test-results/

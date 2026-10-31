@@ -17,6 +17,7 @@ import { createWorkerPlatform } from '../platform/chrome';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { createAuth, createTokenKeeper } from './auth';
+import { createAiTasks } from './ai-tasks';
 import type { CoreFunctions } from './core';
 import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, registerFrame } from './frames';
 import { createKeyedQueue, createRateLimit } from './locks';
@@ -100,7 +101,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, check: (tabId) => checkTab(tabId) });
   const chooseResume = createResumeChooser({ runs, server, profiles: profileCache });
-  const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, now });
+  // The LLM steps' tasks on TailorIT (Phase 4), shared by every run; each run keeps its own questions (ai-tasks.ts).
+  const aiTasks = createAiTasks({ server, timers, now });
+  const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
+    aiTaskIds: runStates, now });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes) });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId) });
   const beginDeps = {

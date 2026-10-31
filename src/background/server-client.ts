@@ -13,14 +13,24 @@ import {
   AUTOFILL_FILE_KIND_HEADER,
   AUTOFILL_FILE_SHA256_HEADER,
   AUTOFILL_RESUME_MAX_BYTES,
+  AutofillClassifyTaskSchema,
   AutofillErrorBodySchema,
   AutofillLookupResponseSchema,
+  AutofillPickTaskSchema,
   AutofillProfileEnvelopeSchema,
   AutofillRedeemResponseSchema,
   AutofillResumeListSchema,
   AutofillSensitiveEnvelopeSchema,
   AutofillSessionSchema,
+  AutofillTaskAcceptedSchema,
+  AutofillTaskIdSchema,
+  AutofillTaskViewSchema,
+  type AutofillClassifyRequest,
+  type AutofillClassifyTask,
   type AutofillLookupRequest,
+  type AutofillPickRequest,
+  type AutofillPickTask,
+  type AutofillTaskView,
   type AutofillLookupResponse,
   type AutofillProfileEnvelope,
   type AutofillRedeemBody,
@@ -55,6 +65,9 @@ export type ServerResult<T> =
       retryAfterSeconds?: number;
     };
 
+/** An AI route's answer (Phase 4): its task, finished within TailorIT's wait (200), or the id to poll (202). */
+export type AiSubmitted<T> = { done: true; task: T } | { done: false; taskId: string };
+
 /** The resume file as GET /resumes/:id/file sent it: the bytes and the headers that describe them. */
 export interface ResumeFile {
   bytes: Uint8Array;
@@ -78,6 +91,14 @@ export interface ServerClient {
   resumes(): Promise<ServerResult<AutofillResumeList>>;
   /** GET /resumes/:id/file, refused above `maxBytes` (TailorIT's 10 MiB cap) before or while reading. */
   resumeFile(id: string, maxBytes?: number): Promise<ServerResult<ResumeFile>>;
+  /** POST /ai/pick (Phase 4): the finished task, or its id to poll. A 409 `ai_busy` is a conflict with that code. */
+  aiPick(body: AutofillPickRequest): Promise<ServerResult<AiSubmitted<AutofillPickTask>>>;
+  /** POST /ai/classify (Phase 4), as aiPick. */
+  aiClassify(body: AutofillClassifyRequest): Promise<ServerResult<AiSubmitted<AutofillClassifyTask>>>;
+  /** GET /api/ai/tasks/:id: the task as it is now. An id that is not a task id is refused before any request. */
+  aiTask(id: string): Promise<ServerResult<AutofillTaskView>>;
+  /** DELETE /api/ai/tasks/:id: cancels the task (one already finished stays as it was). */
+  aiCancel(id: string): Promise<ServerResult<AutofillTaskView>>;
 }
 
 /** What the server client needs. */
@@ -110,7 +131,9 @@ export function isAllowedRequest(method: string, path: string): boolean {
   return false;
 }
 
-type Body = { kind: 'json'; schema: z.ZodType } | { kind: 'none' } | { kind: 'bytes'; maxBytes: number };
+type Body = { kind: 'json'; schema: z.ZodType } | { kind: 'none' } | { kind: 'bytes'; maxBytes: number }
+  /** An AI route's: the finished task's schema for a 200, AutofillTaskAccepted for a 202. */
+  | { kind: 'task'; schema: z.ZodType };
 
 interface Call {
   method: Method;
@@ -201,7 +224,7 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     if (call.token !== null && token === null) return failure('not-connected');
 
     const headers: Record<string, string> = { [AUTOFILL_API_HEADER]: String(AUTOFILL_API_VERSION) };
-    if (call.answer.kind === 'json') headers.Accept = 'application/json';
+    if (call.answer.kind === 'json' || call.answer.kind === 'task') headers.Accept = 'application/json';
     if (token !== null) headers.Authorization = `Bearer ${token}`;
     if (call.json !== undefined) headers['Content-Type'] = 'application/json';
     const init: RequestInit = {
@@ -248,7 +271,16 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
       }
 
       let value: unknown = null;
-      if (call.answer.kind === 'json') {
+      if (call.answer.kind === 'task') {
+        const accepted = response.status === 202;
+        const parsed = (accepted ? AutofillTaskAcceptedSchema : call.answer.schema).safeParse(await response.json());
+        if (!parsed.success || (!accepted && response.status !== 200)) {
+          log('server.bad-answer', { status: response.status });
+          return failure('bad-answer', { status: response.status });
+        }
+        value = accepted ? { done: false, taskId: (parsed.data as { taskId: string }).taskId }
+          : { done: true, task: parsed.data };
+      } else if (call.answer.kind === 'json') {
         const parsed = call.answer.schema.safeParse(await response.json());
         if (!parsed.success) {
           log('server.bad-answer', { status: response.status });
@@ -280,6 +312,20 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
   async function json<T>(call: Omit<Call, 'answer'>, schema: z.ZodType<T>): Promise<ServerResult<T>> {
     const raw = await send({ ...call, answer: { kind: 'json', schema } });
     return raw.ok ? { ok: true, value: raw.value as T } : raw;
+  }
+
+  async function submit<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<ServerResult<AiSubmitted<T>>> {
+    const raw = await send({ method: 'POST', path, token: 'current', json: body, answer: { kind: 'task', schema } });
+    return raw.ok ? { ok: true, value: raw.value as AiSubmitted<T> } : raw;
+  }
+
+  /** GET or DELETE on one task, its id checked before it becomes part of a path. */
+  async function task(method: 'GET' | 'DELETE', id: string): Promise<ServerResult<AutofillTaskView>> {
+    if (!AutofillTaskIdSchema.safeParse(id).success) {
+      log('server.path-refused');
+      return failure('refused-path');
+    }
+    return json({ method, path: `/api/ai/tasks/${id}`, token: 'current' }, AutofillTaskViewSchema);
   }
 
   return {
@@ -315,5 +361,9 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
         },
       };
     },
+    aiPick: (body) => submit('/api/autofill/ai/pick', body, AutofillPickTaskSchema),
+    aiClassify: (body) => submit('/api/autofill/ai/classify', body, AutofillClassifyTaskSchema),
+    aiTask: (id) => task('GET', id),
+    aiCancel: (id) => task('DELETE', id),
   };
 }

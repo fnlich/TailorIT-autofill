@@ -43,6 +43,23 @@ export function capCodePoints(text: string, max: number): string {
   return text.slice(0, units);
 }
 
+/**
+ * `text` with at most `max` code points: a longer text is cut after its last whole word within them, so no word is
+ * split, and only a first word longer than `max` is cut inside; the spaces at the cut go. TailorIT's cutAtWord (the
+ * contract's ai.ts) to the letter, which test/contract.test.ts checks: the core may not import it.
+ */
+export function cutAtWord(text: string, max: number): string {
+  const points = [...text];
+  if (points.length <= max) return text;
+  const head = points.slice(0, Math.max(0, max));
+  let end = head.length;
+  if (!/\s/.test(points[end] ?? '')) {
+    while (end > 0 && !/\s/.test(head[end - 1]!)) end -= 1;
+  }
+  const kept = head.slice(0, end).join('').trimEnd();
+  return kept === '' ? head.join('').trimEnd() : kept;
+}
+
 /** Step 1: deletes the invisible characters ("UT\u200B Austin" becomes "UT Austin"). */
 export function removeInvisibles(text: string): string {
   return text.replace(INVISIBLES, '');

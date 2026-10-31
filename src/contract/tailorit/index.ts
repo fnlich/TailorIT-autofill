@@ -9,4 +9,5 @@ export * from './resumes';
 export * from './profile';
 export * from './connect';
 export * from './lookup';
+export * from './ai';
 export * from './registry';

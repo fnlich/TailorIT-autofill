@@ -1,0 +1,14 @@
+{
+  "drafts": [
+    {
+      "key": "greenhouse|main|why-do-you-want-to-work-at-northwind|none|0",
+      "text": null,
+      "reason": "too_long"
+    },
+    {
+      "key": "greenhouse|main|is-there-anything-else-you-would-like-us-to-know|none|0",
+      "text": null,
+      "reason": "canary"
+    }
+  ]
+}

@@ -36,8 +36,9 @@ export const mock = {
   async reset(): Promise<void> {
     await control('/__mock/reset', { method: 'POST' });
   },
-  /** Turns a scripted answer on, for `times` matching requests (default: until the next reset). */
-  async scenario(name: MockScenario, options: { times?: number; delayMs?: number } = {}): Promise<void> {
+  /** Turns a scripted answer on, for `times` matching requests (default: until the next reset); `value` is what an AI
+   *  scenario answers with (ai-pick-index's index, ai-classify-category's category). */
+  async scenario(name: MockScenario, options: { times?: number; delayMs?: number; value?: unknown } = {}): Promise<void> {
     await control('/__mock/scenario', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, ...options }) });
   },

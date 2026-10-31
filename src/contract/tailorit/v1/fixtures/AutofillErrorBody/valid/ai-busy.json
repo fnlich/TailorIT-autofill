@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "ai_busy",
+    "message": "An AI request of this kind is already running for your account. Wait for it to finish, then try again.",
+    "requestId": "r_Xk2pQ9aZ"
+  }
+}

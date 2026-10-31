@@ -33,6 +33,13 @@
  *    the next scan sees the options, never-loaded flags options-never-loaded, gone is left to the next scan; Cancel ends
  *    the waits at once, and so does the run's end. A list the page replaces is found again by one shared scan while the
  *    page has not changed since it was made, and a pass makes at most MAX_REFIND_SCANS of them (L-S5).
+ * Fields the plan leaves waiting for the LLM (Phase 4: a tiebreak or a classification the worker asked TailorIT for)
+ * are polled with plan/poll before each pass: at once when the pass has other fields to plan, else every AI_POLL_MS
+ * until an answer comes, capped at AI_WAIT_CAP_MS with no answer coming in (then llm-unavailable). What arrives (rows,
+ * and the writes of those the LLM settled) is written by the next pass through the same guards as its own plan's, an
+ * llm-pick's option text checked again (guardWriteInFrame's llmPickStillValid); a field the worker no longer knows (it
+ * restarted) is pending again, so the next pass asks plan/request again. A field the pass wrote anyway (a choice's free
+ * text typed into it) stops waiting. A dry run waits for its answers too, and shows their rows.
  * The loop ends when loopVerdict says so: nothing pending, MAX_PASSES, or a stalled page. At the settle cap the page is
  * scanned once more, observed, and the loop is cut with page-busy (the run pauses; Continue starts afresh). Cancel
  * cuts it with user-stopped, between writes, once the writes made are settled and verified and what they revealed is
@@ -42,9 +49,9 @@
  * timers: there is no fixed sleep.
  */
 import {
-  baseKeyOf, childrenOf, createLoop, isStopped, loopVerdict, mayWrite, orderPending, recordOptionsWait, recordRows,
-  recordWrite, revealEdgesOf, observeScan, type LoopEnd, type LoopEvent, type LoopState, type LoopVerdict,
-  type ScanObservation,
+  awaitingKeys, baseKeyOf, childrenOf, createLoop, isStopped, loopVerdict, mayWrite, orderPending, recordOptionsWait,
+  recordRows, recordWrite, requeueAwaiting, revealEdgesOf, observeScan, type LoopEnd, type LoopEvent, type LoopState,
+  type LoopVerdict, type ScanObservation,
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
 import { settleRow } from '../core/plan/settle';
@@ -55,7 +62,7 @@ import { isUsableOption } from '../dom/option-hash';
 import { scan, toFieldSpec } from '../dom/scan';
 import { busySigns, settle, type SettleOptions } from '../dom/settle';
 import { OPTIONS_QUIET_MS } from '../dom/thresholds';
-import { monotonicNow } from '../dom/time';
+import { deadline, monotonicNow } from '../dom/time';
 import {
   BUSY_SIGNS, type BusySign, type ScannedField, type ScanResult, type SettleResult, type WidgetReading,
 } from '../dom/types';
@@ -76,6 +83,15 @@ export type OptionsTimings = Pick<AwaitOptionsOptions, 'quietMs' | 'capMs'>;
 /** A pass's awaited lists find the ones the page replaced again with at most this many fresh scans (L-S5). */
 export const MAX_REFIND_SCANS = 24;
 
+/** How often the fields waiting for the LLM are polled (TailorIT's AUTOFILL_AI_POLL_MS; test/contract.test.ts checks):
+ *  each plan/poll keeps the worker awake while its task runs. */
+export const AI_POLL_MS = 1500;
+/** How long the loop waits for the LLM with no answer coming in: the worker's own cap on a task (120 s) and a poll
+ *  more. Past it the fields still waiting are left blank and flagged (llm-unavailable). */
+export const AI_WAIT_CAP_MS = 125_000;
+/** A dry run plans one pass, and asks again at most this many times for fields the worker forgot (it restarted). */
+const DRY_RUN_ASKS = 2;
+
 /** The person's own input on a field: trusted events of these types, heard on the form root (LC-4). */
 const TOUCH_EVENTS = ['input', 'keydown', 'paste', 'drop'] as const;
 /** At most this many touches are kept between two scans (the latest). */
@@ -86,6 +102,12 @@ export interface LoopEnv extends PassEnv {
   /** Sends plan/request with the whole scan's specs and the keys to plan (the run renews itself once on 'expired'),
    *  and answers the plan. */
   plan(specs: FieldSpec[], planKeys: FieldKey[], pass: number): Promise<PlanAnswer>;
+  /** Sends plan/poll for fields that wait for the LLM (Phase 4): the answer holds the rows and writes of those whose
+   *  answers are in and names those still waited for; 'expired' when the worker knows none of them; 'failed' when it
+   *  could not answer. Without it nothing is polled, and a waiting field ends as the loop leaves it. */
+  poll?(keys: FieldKey[]): Promise<PlanAnswer | 'expired' | 'failed'>;
+  /** The poll interval and the cap on waiting for the LLM, overridable for tests. */
+  ai?: { pollMs?: number; capMs?: number };
   /** The run's checks before a pass after the first: null to go on, or the reason that cuts the loop (form-hidden,
    *  policy-notice, auth-required, challenge-present). */
   recheck?(): Promise<ReasonCode | null>;
@@ -200,6 +222,12 @@ class ReactiveLoop {
   private busy: BusySign[] | null = null;
   private passes = 0;
   private cutBy: ReasonCode | null = null;
+  /** What plan/poll brought for fields that waited for the LLM, by key: their row, and their write when there is one
+   *  (memory only: a write holds a value). The next pass writes them as it writes its own plan's. */
+  private arrived = new Map<FieldKey, { row: FillResult; write?: PlannedWrite }>();
+  /** When the wait for the LLM last made progress (a field began waiting, or an answer came): its cap runs from it. */
+  private aiProgressAt: number | null = null;
+  private aiPolls = 0;
 
   constructor(private readonly env: LoopEnv, private readonly hasher: ValueHasher) {
     this.readings = env.widgetReadings ?? new Map();
@@ -228,8 +256,19 @@ class ReactiveLoop {
           this.alive();
           if (reason !== null) return this.cut(current, reason);
         }
+        let pending = observed.pending;
+        if (awaitingKeys(this.state).length > 0 && this.env.poll !== undefined && !this.env.dryRun) {
+          // Fields waiting for the LLM are polled between passes; with nothing else to plan, the loop waits for them.
+          const requeued = await this.pollAwaiting(pending.length === 0);
+          pending = [...pending, ...requeued];
+          if (pending.length === 0 && this.arrived.size === 0) {
+            if (this.env.stopped()) return this.cut(current, 'user-stopped');
+            const verdict = loopVerdict(this.state);
+            if (verdict.done) return this.result(current, verdict);
+          }
+        }
         this.passes += 1;
-        const end = await this.pass(current, observed.pending);
+        const end = await this.pass(current, pending);
         if (end.kind === 'dry-run') return this.dryRunResult(current, end.rows);
         if (end.kind === 'busy' || end.kind === 'stopped') {
           // What the pass revealed or changed meanwhile gets its row: one more scan, then the cut.
@@ -360,9 +399,15 @@ class ReactiveLoop {
   private async pass(current: ScanResult, pending: readonly FieldKey[]): Promise<PassEnd> {
     const { env } = this;
     const fields = new Map(current.fields.map((field) => [field.key, field] as const));
-    const order = orderPending(this.state, pending).filter((key) => fields.has(key));
-    const holding = new Set(env.dryRun ? [] : order.filter((key) => loadingWithOptions(current, fields.get(key)!)));
-    const asked = order.filter((key) => !holding.has(key));
+    // What the LLM's answers brought since the last pass, for fields still under the key they were asked by and still
+    // waiting (not one the person has since touched, which is theirs).
+    const arrived = new Map([...this.arrived].filter(([key]) => fields.has(key)
+      && this.state.fields.get(baseKeyOf(key))?.status === 'awaiting-llm'));
+    this.arrived = new Map();
+    const order = orderPending(this.state, [...pending, ...arrived.keys()]).filter((key) => fields.has(key));
+    const holding = new Set(env.dryRun ? [] : order.filter((key) => !arrived.has(key)
+      && loadingWithOptions(current, fields.get(key)!)));
+    const asked = order.filter((key) => !holding.has(key) && !arrived.has(key));
     const rows = new Map<FieldKey, FillResult>();
     let writes: PlannedWrite[] = [];
     let awaiting: FieldKey[] = [];
@@ -377,9 +422,17 @@ class ReactiveLoop {
       writes = (plan.writes as unknown as PlannedWrite[]).filter((write) => wanted.has(write.key));
       awaiting = (plan.awaiting as FieldKey[]).filter((key) => wanted.has(key));
     }
+    for (const [key, entry] of arrived) {
+      rows.set(key, entry.row);
+      if (entry.write !== undefined) writes.push(entry.write);
+    }
+    // A field that begins to wait means a task was asked for: the wait's cap runs from now.
+    if (awaiting.length > 0) this.aiProgressAt = monotonicNow();
     if (env.dryRun) {
+      if (awaiting.length > 0 && env.poll !== undefined) await this.dryRunAnswers(current, rows, awaiting);
       for (const [key, row] of rows) rows.set(key, settleRow(row, { kind: 'dry-run' }));
-      this.state = recordRows(this.state, rows.values(), { awaiting });
+      this.state = recordRows(this.state, rows.values(), { awaiting: env.poll === undefined ? awaiting
+        : awaitingKeys(this.state) });
       return { kind: 'dry-run', rows: [...rows.values()] };
     }
 
@@ -413,7 +466,10 @@ class ReactiveLoop {
       rows.set(entry.key, verifyWritten(fresh, entry));
       entry.resume?.release();
     }
-    this.state = recordRows(this.state, rows.values(), { awaiting });
+    // A field this pass wrote anyway (a choice's free text typed into it) no longer waits for the LLM: its answer
+    // would only overwrite the row of our write.
+    const waiting = awaiting.filter((key) => rows.get(key)?.wrote !== true);
+    this.state = recordRows(this.state, rows.values(), { awaiting: waiting });
     this.settleFollowUps(rows);
     if (settled !== null && !settled.settled) {
       const busy = busySigns(env.root, env.adapter);
@@ -528,6 +584,109 @@ class ReactiveLoop {
     }
     if (rows.length > 0) this.state = recordRows(this.state, rows);
     return read;
+  }
+
+  // ── The LLM's answers (Phase 4) ───────────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Polls the fields waiting for the LLM (plan/poll): the rows and writes of those whose answers are in wait for the
+   * next pass (arrived), and those the worker no longer knows (it restarted) are pending again, so the next pass sends
+   * them in plan/request. With `block` the poll repeats every AI_POLL_MS until something comes, the person stops the
+   * run, or AI_WAIT_CAP_MS pass with no progress: then what still waits is left blank and flagged, llm-unavailable, and
+   * so is everything when the worker could not answer. Answers the keys put back to pending.
+   */
+  private async pollAwaiting(block: boolean): Promise<FieldKey[]> {
+    const { env } = this;
+    const pollMs = env.ai?.pollMs ?? AI_POLL_MS;
+    const capMs = env.ai?.capMs ?? AI_WAIT_CAP_MS;
+    this.aiProgressAt ??= monotonicNow();
+    const started = monotonicNow();
+    try {
+      for (;;) {
+        const keys = awaitingKeys(this.state).filter((key) => !this.arrived.has(key));
+        if (keys.length === 0 || env.poll === undefined) return [];
+        this.aiPolls += 1;
+        const answer = await env.poll(keys);
+        this.alive();
+        if (answer === 'failed') {
+          this.giveUp(keys, 'llm-unavailable');
+          return [];
+        }
+        const asked = new Set<string>(keys);
+        let forgotten: FieldKey[] = keys;
+        if (answer !== 'expired') {
+          // The answer's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
+          const writes = new Map((answer.writes as unknown as PlannedWrite[]).map((write) => [write.key, write] as const));
+          const still = new Set<string>(answer.awaiting);
+          for (const row of answer.results as unknown as FillResult[]) {
+            if (!asked.has(row.key) || still.has(row.key)) continue;
+            const write = writes.get(row.key);
+            this.arrived.set(row.key, write === undefined ? { row } : { row, write });
+          }
+          forgotten = keys.filter((key) => !still.has(key) && !this.arrived.has(key));
+          if (this.arrived.size > 0) this.aiProgressAt = monotonicNow();
+        }
+        const requeue = requeueAwaiting(this.state, forgotten);
+        this.state = requeue.state;
+        if (!block || this.arrived.size > 0 || requeue.requeued.length > 0) return requeue.requeued;
+        const left = capMs - (monotonicNow() - this.aiProgressAt);
+        if (left <= 0) {
+          this.giveUp(awaitingKeys(this.state), 'llm-unavailable');
+          return [];
+        }
+        const stop = env.stopSignal === undefined ? env.signal : AbortSignal.any([env.signal, env.stopSignal]);
+        const waited = await deadline(Math.min(pollMs, left), stop);
+        this.alive();
+        if (waited === 'aborted' || env.stopped()) return [];
+      }
+    } finally {
+      if (block) log('content.ai-waited', { polls: this.aiPolls, ms: Math.round(monotonicNow() - started) });
+    }
+  }
+
+  /** Fields still waiting for the LLM that it will not answer now: their rows, flagged with `reason`, wait for the next
+   *  pass, with nothing to write. */
+  private giveUp(keys: readonly FieldKey[], reason: ReasonCode): void {
+    for (const key of keys) {
+      const tracked = this.state.fields.get(baseKeyOf(key));
+      if (tracked === undefined || tracked.key !== key || tracked.status !== 'awaiting-llm') continue;
+      this.arrived.set(key, { row: tracked.row === null ? unplannedRow(tracked, reason)
+        : unresolvedRow(tracked.row, reason, key) });
+    }
+  }
+
+  /**
+   * A dry run's one pass, when some of its fields wait for the LLM: it waits for their answers (they are rows only: a
+   * dry run gets no write), and a field the worker forgot is asked again, at most DRY_RUN_ASKS times. The rows go into
+   * `rows`.
+   */
+  private async dryRunAnswers(current: ScanResult, rows: Map<FieldKey, FillResult>, awaiting: readonly FieldKey[]):
+    Promise<void> {
+    this.state = recordRows(this.state, rows.values(), { awaiting });
+    for (let asks = 0; awaitingKeys(this.state).length > 0 && !this.env.stopped();) {
+      const requeued = await this.pollAwaiting(true);
+      const answered = [...this.arrived.values()].map((entry) => entry.row);
+      this.arrived = new Map();
+      for (const row of answered) rows.set(row.key, row);
+      this.state = recordRows(this.state, answered);
+      if (requeued.length === 0) continue;
+      if (asks >= DRY_RUN_ASKS) {
+        const left = requeued.flatMap((key) => {
+          const row = rows.get(key);
+          return row === undefined ? [] : [unresolvedRow(row, 'llm-unavailable', key)];
+        });
+        for (const row of left) rows.set(row.key, row);
+        this.state = recordRows(this.state, left);
+        continue;
+      }
+      asks += 1;
+      const plan = await this.env.plan(current.fields.map(toFieldSpec), requeued, this.state.pass);
+      this.alive();
+      const wanted = new Set<string>(requeued);
+      const again = (plan.results as unknown as FillResult[]).filter((row) => wanted.has(row.key));
+      for (const row of again) rows.set(row.key, row);
+      this.state = recordRows(this.state, again, { awaiting: (plan.awaiting as FieldKey[]).filter((key) => wanted.has(key)) });
+    }
   }
 
   // ── Option lists ──────────────────────────────────────────────────────────────────────────────────────────────────

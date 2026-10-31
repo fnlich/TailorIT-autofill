@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { BaseKey } from '../types/field';
 import type { ValueMac } from '../types/loop';
 import {
-  baseKeyOf, childrenOf, createLoop, isFollowUpLabel, isStopped, loopVerdict, MAX_OPTION_CHANGES, MAX_PASSES,
+  awaitingKeys, baseKeyOf, childrenOf, createLoop, isFollowUpLabel, isStopped, loopVerdict, MAX_OPTION_CHANGES, MAX_PASSES,
   MAX_REAPPEARANCES, MAX_REVEAL_EDGES, MAX_VALUE_FLIPS, mayWrite, observeScan, OPTION_WAIT_PASSES, orderPending,
-  recordOptionsWait, recordRows, recordWrite, revealEdgesOf, storedBaseKey, type LoopEvent, type LoopField,
+  recordOptionsWait, recordRows, recordWrite, requeueAwaiting, revealEdgesOf, storedBaseKey, type LoopEvent, type LoopField,
   type LoopState,
 } from './bookkeeping';
 import { field, fullSpec, inOrder, mac, rowOf, unwrittenRow, withOptions } from './loop.testkit';
@@ -601,6 +601,21 @@ describe('the end of the loop', () => {
     const once = observeScan(books, [school]);
     const twice = observeScan(once.state, [school]);
     expect([once.verdict.done, twice.verdict.done, twice.state.stalled]).toEqual([false, false, true]);
+  });
+
+  it('puts a field the worker forgot back to pending, unretried, and leaves every other field alone', () => {
+    const school = field('School', 'select', { options: ['University of Texas at Austin'] });
+    const name = field('Full name', 'text', { domOrder: 1 });
+    const first = observeScan(createLoop(), [school, name]).state;
+    const books = recordRows(first, [unwrittenRow(school, 'ambiguous-options'), rowOf(name)], { awaiting: [school.key] });
+    expect(awaitingKeys(books)).toEqual([school.key]);
+    const moved = withOptions(school, ['University of Texas at Dallas']);
+    expect(requeueAwaiting(books, [moved.key, name.key])).toEqual({ state: books, requeued: [] });
+    const { state, requeued } = requeueAwaiting(books, [school.key, name.key]);
+    expect(requeued).toEqual([school.key]);
+    expect(state.fields.get(school.baseKey)).toMatchObject({ status: 'pending', retries: 0 });
+    expect(state.fields.get(name.baseKey)?.status).toBe('resolved');
+    expect(awaitingKeys(state)).toEqual([]);
   });
 });
 

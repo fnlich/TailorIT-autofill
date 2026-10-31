@@ -308,11 +308,11 @@ describe('the resume a plan attaches', () => {
 });
 
 describe('plan/poll', () => {
-  it('answers no writes and nothing awaiting for a run it knows (nothing waits for the LLM before Phase 4)', async () => {
+  it('answers expired for a run it knows when none of the keys waits there (a worker that restarted forgot them)', async () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     const runId = await beginRun(worker);
     expect(await worker.deliver({ v: 1, type: 'plan/poll', runId, keys: [fieldSpec(1).key] }, contentSender()))
-      .toEqual({ ok: true, data: { writes: [], results: [], awaiting: [], persistableCanaries: [] } });
+      .toEqual({ ok: false, error: 'expired' });
   });
 
   it('answers expired for a run it does not know, so the frame plans again', async () => {

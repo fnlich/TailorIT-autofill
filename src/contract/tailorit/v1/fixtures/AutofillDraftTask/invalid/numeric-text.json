@@ -1,0 +1,18 @@
+{
+  "id": "b2d4f6a8-1c3e-4a5b-9d7f-0e2c4a6b8d10",
+  "kind": "autofill_draft",
+  "status": "succeeded",
+  "result": {
+    "drafts": [
+      {
+        "key": "greenhouse|main|why-do-you-want-to-work-at-northwind|none|0",
+        "text": 42,
+        "reason": "drafted"
+      }
+    ]
+  },
+  "error": null,
+  "createdAt": "2026-10-22T12:00:00.000Z",
+  "startedAt": "2026-10-22T12:00:00.120Z",
+  "finishedAt": "2026-10-22T12:00:04.870Z"
+}

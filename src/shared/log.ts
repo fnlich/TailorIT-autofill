@@ -87,6 +87,16 @@ export const LOG_CODES = [
   // only, never page text) kept a page busy at a settle's cap.
   'content.loop-ended',
   'content.page-busy',
+  // The LLM steps (Phase 4): the worker's tasks on TailorIT (item counts, statuses and timings only, never an item,
+  // a label or an answer) and the content script's waits for them.
+  'ai.submitted',
+  'ai.reattached',
+  'ai.answered',
+  'ai.busy',
+  'ai.failed',
+  'ai.timed-out',
+  'ai.withheld',
+  'content.ai-waited',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

@@ -1,0 +1,466 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#0",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#1",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#2",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#3",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#4",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#5",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#6",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#7",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#8",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#9",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#10",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#11",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#12",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#13",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#14",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#15",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#16",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#17",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#18",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#19",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    },
+    {
+      "key": "greenhouse|education[0]|school|5c1e9a7b3d2f4086|0#20",
+      "category": "school",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "The University of Texas at Austin",
+      "aliases": [
+        "UT Austin",
+        "UT-Austin",
+        "University of Texas at Austin"
+      ],
+      "label": "School",
+      "options": [
+        {
+          "index": 1180,
+          "label": "University of Texas - Austin"
+        },
+        {
+          "index": 1181,
+          "label": "University of Texas at Austin - McCombs School of Business"
+        }
+      ]
+    }
+  ]
+}

@@ -2,16 +2,33 @@
   "apiVersion": 1,
   "zod": "4.6.7",
   "files": {
+    "ai.ts": "df7ea13f00a232a3939406256a00cfe5d1cb73f192362d976922e7ae8f18a99f",
     "common.ts": "92eee1fd65c7f7e79026ab88299a8d71e39b524ed30add9eb19a44dac38fc156",
     "connect.ts": "4c4da225a06a368e458253fbe961100d5087c16be85daa6469ad51a5b1c0c645",
-    "index.ts": "025cd034e468c8e41c48b008320ce110ca7d7ab6634983f57b92a11982434e08",
+    "index.ts": "eafd8bf833f7ea9b7139ec79e57c5f99ef472617e2794e36ff75901cd28fc8ca",
     "lookup.ts": "a5dac1363488e309d485e8038592c66f3dd548ac32c9197c209378ad6bfa8f8a",
     "profile.ts": "646005a2a2346d4d75a6e70cf65b99b5bb143ec319c31e81e2fe68adc5bc0304",
-    "registry.ts": "a9ea4ba8fdfce21278c83df02a022f6c5ca91af65174bcf606b5a9cfcefccfad",
+    "registry.ts": "8edabe425a5ae1c56380dd68c64adfd305ca6b0d6729ca0d35e0bc9a5d975532",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
     "version.ts": "bbe0bdc979576627c7ce14431efa53c2d36cd93ad77922ac8100bd0711e402fc"
   },
   "fixtures": {
+    "AutofillClassifyRequest/invalid/label-over-200.json": "ad377b1513238ab9248e12900f6c1a9650a94a8eaf24932c4eea3f53f465b174",
+    "AutofillClassifyRequest/invalid/no-items.json": "44f694156fb8025f2a1172af67fb112a8870c23d2e68fb11b9e1109824bb4298",
+    "AutofillClassifyRequest/invalid/repeated-key.json": "5d9419a970c289ee249e83377e9e4691e94a0128e539782442b8914f29eaa3f7",
+    "AutofillClassifyRequest/invalid/twenty-one-options.json": "330ede17147e1fa1b31da301293680c5de42c9c74f3ae107cd3ffef153667f8f",
+    "AutofillClassifyRequest/invalid/unknown-kind.json": "798e49602822cdf8fdd135f824a24bc66b4424d995ad90136cbaa1312fc7624a",
+    "AutofillClassifyRequest/invalid/unknown-platform.json": "3bfbb9b78151116290cb9b966573c664586433df77eb7c1e347732a396277208",
+    "AutofillClassifyRequest/valid/golden.json": "07ec85d144451f6489461fddb8446885b9d8e93a759ea961ba1b150784d801b7",
+    "AutofillClassifyRequest/valid/text-field.json": "9ef323dcc4389a60a33072d7d20a48473ac69d38067d94d1930ef8c8b52d3a39",
+    "AutofillClassifyResult/invalid/no-reason.json": "1568b139d0d8fbf9e9fbd5fe01c027171ff5d7b00c3e8193b02e44c8d41d770c",
+    "AutofillClassifyResult/invalid/unknown-category.json": "40d17a74d5e423f8a9000f13a5b03839dd2c49535c809833431b5ad07da4281a",
+    "AutofillClassifyResult/valid/golden.json": "b34b10ae5c6b1c08eb2da2c168f9b479eed09233305df055dfa2ed989b36fe89",
+    "AutofillClassifyResult/valid/screened-and-refused.json": "c37e6ab00efb7fb013dcf83fef595a22895d76532de5ff394e81b95d3497b0c0",
+    "AutofillClassifyTask/invalid/local-time.json": "4a18ec3be3a04fbb455a93b12a3c781ea97cd2e26de59365a5bcce2185ad1283",
+    "AutofillClassifyTask/invalid/pick-result.json": "6569699e2338f64c979b460f2fcd210c55919e130f7bba1efa0bd0b8cd88e611",
+    "AutofillClassifyTask/valid/golden.json": "e7157d124a56fde918347077e5fa47df03eb7c1c65d0a58bf6c73a2d63e12a37",
+    "AutofillClassifyTask/valid/queued.json": "8e295b338f59fc47633a558d1764b977df093bb88734f2911cf7eb5ac5f153ba",
     "AutofillConnectBody/invalid/choice-as-text.json": "79c3d3e6ee8d51985a8e97a481c238ecf85f15723320ade6c1af957b7b140728",
     "AutofillConnectBody/invalid/no-choice.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "AutofillConnectBody/valid/golden.json": "ef84d703e0cf4fdcd336f31f802785a50eac8bf06be013363f298002606b1dfb",
@@ -20,7 +37,23 @@
     "AutofillConnectResponse/invalid/upper-case-extension-id.json": "ad0815bd6be970573245398d5dc90ad67b1b61f78f2c0206b20b95623f3ac080",
     "AutofillConnectResponse/valid/golden.json": "a4cf2d2af5855f5cf289df62276bfdbc3d463dc08801a86dc5e7162b10adc038",
     "AutofillConnectResponse/valid/no-extension-ids.json": "b63dd300e8575700e82cbc24dcf558d569a7d7d94c70b69d50fa0e7f742a3f78",
+    "AutofillDraftRequest/invalid/empty-question.json": "2e7c0640a18f224783e9b33d0e3331867e27621363b0d6408e0b29de92b6dad8",
+    "AutofillDraftRequest/invalid/four-questions.json": "8686b57ffc47574b49c4240f4ced06bfd5206c98682f596396c959a883c69390",
+    "AutofillDraftRequest/invalid/max-length-under-50.json": "4d39f5e568f8adc3b9a1830d850f926c096acae60c52c4755e212c7f161153ce",
+    "AutofillDraftRequest/invalid/one-letter-canary.json": "1a8feb5f8c0b2be5da245a80f6d35188abefafc8bfd7775bce55d12a8bcf70c8",
+    "AutofillDraftRequest/invalid/repeated-key.json": "f8a2d8a4bdd9ee78bef0efb7c5d974e914f41af2f5c5de46bb59582756ac5bae",
+    "AutofillDraftRequest/valid/embedded-form.json": "a6ff1b5dbf542616a93b425c4b27ba61887e03c6068a17db501f949bd0b4aba4",
+    "AutofillDraftRequest/valid/golden.json": "d5316170d715aa0dbc31557e1920afdcd74458066af1e27ba3aeed57ab8cf3b6",
+    "AutofillDraftResult/invalid/text-over-5000.json": "abea5f35347e80fa5e612188bfb0567ad6a7c0ebbd30c7153767b9586be8aa75",
+    "AutofillDraftResult/invalid/unknown-reason.json": "976929bec00a9f8bb87d56db90208e9b5d80eac3ac7113eda48a167a76203a2f",
+    "AutofillDraftResult/valid/golden.json": "d14d96c0f4bf746cb2f613c422e556df984df880977285e6757da6217a5fc326",
+    "AutofillDraftResult/valid/refused.json": "a94bd57bd2665304eff63f5db89874ae35f07b73315d07d01ac71e206c165784",
+    "AutofillDraftTask/invalid/numeric-text.json": "f3cf9c8347fba36ba1c81b959dfacf3bc8210484494445b5291181de2b282292",
+    "AutofillDraftTask/valid/cancelled.json": "fab6945b39094127b2fb3663c5b1e6437ea18c808181f993b22716ef3c30c790",
+    "AutofillDraftTask/valid/golden.json": "91a1d1d476544eec69a883b12f7a88d848b5e165e9631d960219a31e135f84ec",
     "AutofillErrorBody/invalid/not-wrapped.json": "abc775365bbf10c22476cd5c76492f5f7f3d791433375e52d8a0465a8567be16",
+    "AutofillErrorBody/valid/ai-busy.json": "f4284927d641caea7ee065fc3cc78aed5c1354b372bf8f08a2db8f2a24c93592",
+    "AutofillErrorBody/valid/ai-unavailable.json": "23b3d5cede69ce5321c343ec1bba6931529762d6e8ff8af8e480a51447c3e8a4",
     "AutofillErrorBody/valid/golden.json": "c9b84d27e579fee85b5ac11e93ef2f95e52dd80341ec2d1c8886aa0f989edf71",
     "AutofillErrorBody/valid/other-api-version.json": "50242c36adc8591d00199b16ec1eda268341a186fc41c70a42ca8853e9bb0c4f",
     "AutofillErrorBody/valid/rate-limited.json": "b24c201b6f016bcdc9a7eb5722e1f83c8de9983105d24368d19a6a7596625e0e",
@@ -36,6 +69,31 @@
     "AutofillLookupResponse/valid/unknown-page-default-resume.json": "1dcdf4b37df818476048d0718babb15819ea89a488a0146a0698582bbcdbb387",
     "AutofillLookupResponse/valid/unknown-page.json": "5a09d3f50a72ce20730dcd5380d4a6dc59a039ebea51ea4d224db8fe01958d05",
     "AutofillLookupResponse/valid/with-posting-text.json": "ab9f86a9a6300b0683f7ed97a6de4221b89cfa8c1539ca40972a5f8ef4d66e4a",
+    "AutofillPickRequest/invalid/country-category.json": "a2fc492bc12a5960b0dae622ff3041bcbe1a8b6b18a684e372510c274391478e",
+    "AutofillPickRequest/invalid/eleven-aliases.json": "337c625757578f2b36cb328e51ba537f01a1316da58ed43573122f0a933710c5",
+    "AutofillPickRequest/invalid/empty-intended-value.json": "dbb7f6436ba3b8887d1880af9cf5e9e7d2e786c9a8e7a1f1016f020657290313",
+    "AutofillPickRequest/invalid/full-length-hash.json": "75eaf50066b8f8d945aca00d6f6eaa89af472aae4bba1e655c8280b3ea9704be",
+    "AutofillPickRequest/invalid/no-items.json": "0343639fac1511a32a4c9a92c7655a6e9f9ad3a600fc6f30b5bdad6806160a97",
+    "AutofillPickRequest/invalid/no-options.json": "ec969eb9e111af59133c9a52d1df7e2f2dcb4c1b6d293fe61cbea9d9ca26cbdc",
+    "AutofillPickRequest/invalid/repeated-key.json": "44538316c337b15d8b2712e1daee16b10576385d9860ed05d0979448e1ce36d7",
+    "AutofillPickRequest/invalid/repeated-option-index.json": "6184a4b43f8b586323613059896df4b6fc00ef79745b17202fe7d443949e0ceb",
+    "AutofillPickRequest/invalid/thirty-one-options.json": "a8f8c4254b283224d180811c447632096aa7cba5fe6466fe1e30909e88e769c3",
+    "AutofillPickRequest/invalid/twenty-one-items.json": "89f857462e76c97a4681d7c5da8bc0e3a84ca136f54ac7fffca2d77dcad5cb91",
+    "AutofillPickRequest/valid/golden.json": "8913a35e714512a9960b3375ea87c5edc4251e568b6f0a69fa2fbf4073a1fdda",
+    "AutofillPickRequest/valid/no-aliases-no-label.json": "c43dde2e51fd2a5b605c3466c6a422ad5835f2d42857fab99ac6ce2792913fe3",
+    "AutofillPickResult/invalid/fractional-index.json": "6b11a4a54fced26fb5282e8dcbf1653a7444c34aa25c3eb71e51caf9ca79eddf",
+    "AutofillPickResult/invalid/negative-index.json": "30c2fd70b0141005a0b50bcc8d52cabb5f657d62f8671013f0711f683f7f6e39",
+    "AutofillPickResult/invalid/string-index.json": "63e9c9c52e482fc47ecc4438e4fd600183da9805588e53d908cb2d72cbf24ebe",
+    "AutofillPickResult/invalid/unknown-reason.json": "90c2ec7e100bc2d377708f438d14b642270ad893495abee97e6c76d5aef924b8",
+    "AutofillPickResult/valid/golden.json": "9a682978a750a6a23dafa85b31132eb5daf27432d16db515fcd573dbe0284eca",
+    "AutofillPickResult/valid/screened.json": "fc78467fc48434fcc2ad03955a2aade17aff5880a3b18cbfd07e714315c05c4c",
+    "AutofillPickTask/invalid/classify-kind.json": "519c6fd6b3c8f814c1c4b8140e1cc6898fc7fabb4415330537ce1016d3dd325a",
+    "AutofillPickTask/invalid/unknown-status.json": "415b1e39cf92c99dc0184e50e95086d18d5d49752244e4279840705902097d8f",
+    "AutofillPickTask/invalid/upper-case-id.json": "97be11a824da6e63708b7f84f089b90fa99f5d95691ba04c47a221c71d031aeb",
+    "AutofillPickTask/valid/failed.json": "f0a27d13d726e4ca2a004ccc184c5163b763f9245f20b21bd86d6c6f8993da52",
+    "AutofillPickTask/valid/golden.json": "f31ec7f1db7a418d1aca53fba55ce832a2a8bfb1d89400da11aa8672169170cf",
+    "AutofillPickTask/valid/interrupted.json": "f48e9ccf63c9778c61efb1b82d85e184f519f5cec17ae40ab3165617f053a2a8",
+    "AutofillPickTask/valid/running.json": "78c99167c6a3c1f9e1cc5ee762210d27579155a73bc8e684bd81c9fd6865b80e",
     "AutofillProfile/invalid/date-with-a-day.json": "dd97c8fb0014668b444a0e5f48d00c724382b31fe0b345aee89bf9747b3e5108",
     "AutofillProfile/invalid/lower-case-country.json": "21547536bc89122ee3194c198b69f9e994a3d6c71ec82f8535cd7a157e43e531",
     "AutofillProfile/invalid/missing-preferences.json": "13c1765cac090a84afcfcda1cfac4987d174247e9e5b7ced38979c65324da016",
@@ -87,6 +145,15 @@
     "AutofillSession/invalid/no-ai.json": "ddc9a5f262ce61528173deb264575cdfa1a1d87cb9efade55903b4c082b64768",
     "AutofillSession/valid/golden.json": "280008a014bf8102a596c5d9ecce91aaa6e48ee9bb3ae7de6afcedd2cd009468",
     "AutofillSession/valid/without-sensitive.json": "594ad90e7a3ca9f2ffbc5969bb1f7c4976d8526bfb95c2d3423e3406e56625ee",
+    "AutofillTaskAccepted/invalid/no-task-id.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "AutofillTaskAccepted/invalid/not-a-uuid.json": "533a6acca25c542ed5adc3c6413cbdbf6a3cf6a4615cdcb6c0ebfe1f3a334a69",
+    "AutofillTaskAccepted/valid/golden.json": "d1595b4020d355682291c70bc32762e3150d9315ae3169eab1d683e565082958",
+    "AutofillTaskView/invalid/cover-letter-kind.json": "2a9ec9ea259bf8df31fee9b5557b95bfba8e0ffaea3bdcdee0ef00db132d72a7",
+    "AutofillTaskView/invalid/pick-without-picks.json": "5ca6bdf0bbea8f0e3103a484993da018faf16b35dceaf5d294f5ed92621d49d5",
+    "AutofillTaskView/valid/cancelled.json": "4148f7e134e26f13f4697883d2fcbba90493d19b94953aa31bc4425efeba99db",
+    "AutofillTaskView/valid/classify.json": "e7157d124a56fde918347077e5fa47df03eb7c1c65d0a58bf6c73a2d63e12a37",
+    "AutofillTaskView/valid/draft-running.json": "6816bedc929fe2d9ea89fc477e030e794708c7b5ea10cdc1db74f35f38764378",
+    "AutofillTaskView/valid/golden.json": "f31ec7f1db7a418d1aca53fba55ce832a2a8bfb1d89400da11aa8672169170cf",
     "AutofillTokenList/invalid/no-total.json": "6ba532350a8f18b916aabaca4edd5eea5109b50e95f14c50c36b4ea3d85c45f6",
     "AutofillTokenList/valid/golden.json": "852d159b1b7738071309aefe8b660c76494b4e058547bfece78fb6c64379e846",
     "AutofillTokenList/valid/none.json": "70687c8fa319500122348b82c7c442f45cb27c5e4c1791a0fae18d46acc50f05",
@@ -7175,6 +7242,1465 @@
         "defaultResumeId"
       ],
       "additionalProperties": false
+    },
+    "AutofillPickRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "items": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "school",
+                  "degree",
+                  "field_of_study",
+                  "language",
+                  "language_proficiency",
+                  "referral_source",
+                  "generic"
+                ]
+              },
+              "optionSetHash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{16}$"
+              },
+              "intendedValue": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "aliases": {
+                "default": [],
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "options": {
+                "minItems": 1,
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "index": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "required": [
+                    "index",
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "key",
+              "category",
+              "optionSetHash",
+              "intendedValue",
+              "aliases",
+              "label",
+              "options"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillPickResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "picks": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "optionSetHash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{16}$"
+              },
+              "index": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "matched",
+                  "no_match",
+                  "invalid",
+                  "sensitive"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "optionSetHash",
+              "index",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "picks"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillPickTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "autofill_pick"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "picks": {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "optionSetHash": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$"
+                      },
+                      "index": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "matched",
+                          "no_match",
+                          "invalid",
+                          "sensitive"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "optionSetHash",
+                      "index",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "picks"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "result",
+        "error",
+        "createdAt",
+        "startedAt",
+        "finishedAt"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillClassifyRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string",
+          "enum": [
+            "greenhouse",
+            "lever",
+            "ashby",
+            "workday"
+          ]
+        },
+        "items": {
+          "minItems": 1,
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "radio",
+                  "checkbox",
+                  "checkbox-group",
+                  "combobox",
+                  "multiselect",
+                  "typeahead-remote",
+                  "date",
+                  "file"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "hint": {
+                "default": "",
+                "type": "string",
+                "maxLength": 200
+              },
+              "section": {
+                "default": "",
+                "type": "string",
+                "maxLength": 200
+              },
+              "options": {
+                "default": [],
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            },
+            "required": [
+              "key",
+              "kind",
+              "label",
+              "hint",
+              "section",
+              "options"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "platform",
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillClassifyResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "items": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "category": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "first_name",
+                      "middle_name",
+                      "last_name",
+                      "full_name",
+                      "preferred_name",
+                      "email",
+                      "phone",
+                      "phone_country_code",
+                      "address_line1",
+                      "address_line2",
+                      "city",
+                      "region",
+                      "postal_code",
+                      "country",
+                      "location",
+                      "linkedin",
+                      "github",
+                      "portfolio",
+                      "website",
+                      "current_employer",
+                      "current_title",
+                      "employer",
+                      "job_title",
+                      "role_description",
+                      "years_experience",
+                      "school",
+                      "degree",
+                      "field_of_study",
+                      "graduation_date",
+                      "gpa",
+                      "language",
+                      "language_proficiency",
+                      "skills",
+                      "start_date",
+                      "end_date",
+                      "notice_period",
+                      "relocation",
+                      "work_arrangement",
+                      "referral_source",
+                      "resume_upload",
+                      "cover_letter_upload",
+                      "sensitive_eeo",
+                      "sensitive_legal",
+                      "sensitive_compensation",
+                      "consent",
+                      "attention_check",
+                      "free_text_question"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "classified",
+                  "unknown",
+                  "invalid",
+                  "sensitive"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "category",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillClassifyTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "autofill_classify"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "category": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "first_name",
+                              "middle_name",
+                              "last_name",
+                              "full_name",
+                              "preferred_name",
+                              "email",
+                              "phone",
+                              "phone_country_code",
+                              "address_line1",
+                              "address_line2",
+                              "city",
+                              "region",
+                              "postal_code",
+                              "country",
+                              "location",
+                              "linkedin",
+                              "github",
+                              "portfolio",
+                              "website",
+                              "current_employer",
+                              "current_title",
+                              "employer",
+                              "job_title",
+                              "role_description",
+                              "years_experience",
+                              "school",
+                              "degree",
+                              "field_of_study",
+                              "graduation_date",
+                              "gpa",
+                              "language",
+                              "language_proficiency",
+                              "skills",
+                              "start_date",
+                              "end_date",
+                              "notice_period",
+                              "relocation",
+                              "work_arrangement",
+                              "referral_source",
+                              "resume_upload",
+                              "cover_letter_upload",
+                              "sensitive_eeo",
+                              "sensitive_legal",
+                              "sensitive_compensation",
+                              "consent",
+                              "attention_check",
+                              "free_text_question"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "classified",
+                          "unknown",
+                          "invalid",
+                          "sensitive"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "category",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "items"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "result",
+        "error",
+        "createdAt",
+        "startedAt",
+        "finishedAt"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillDraftRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "questions": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "question": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "maxLength": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 5000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "question",
+              "maxLength"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "jobText": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "company": {
+          "default": "",
+          "type": "string",
+          "maxLength": 200
+        },
+        "jobTitle": {
+          "default": "",
+          "type": "string",
+          "maxLength": 200
+        },
+        "resumeId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canaries": {
+          "default": [],
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 200
+          }
+        }
+      },
+      "required": [
+        "questions",
+        "jobText",
+        "company",
+        "jobTitle",
+        "resumeId",
+        "canaries"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillDraftResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "drafts": {
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "drafted",
+                  "trimmed",
+                  "empty",
+                  "too_long",
+                  "canary",
+                  "ai_reference",
+                  "sensitive"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "text",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "drafts"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillDraftTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "autofill_draft"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "drafts": {
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "text": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 5000
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "drafted",
+                          "trimmed",
+                          "empty",
+                          "too_long",
+                          "canary",
+                          "ai_reference",
+                          "sensitive"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "text",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "drafts"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "result",
+        "error",
+        "createdAt",
+        "startedAt",
+        "finishedAt"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillTaskAccepted": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillTaskView": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "kind": {
+              "type": "string",
+              "const": "autofill_pick"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "picks": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300
+                          },
+                          "optionSetHash": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          },
+                          "index": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "matched",
+                              "no_match",
+                              "invalid",
+                              "sensitive"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "optionSetHash",
+                          "index",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "picks"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "finishedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "status",
+            "result",
+            "error",
+            "createdAt",
+            "startedAt",
+            "finishedAt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "kind": {
+              "type": "string",
+              "const": "autofill_classify"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300
+                          },
+                          "category": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "first_name",
+                                  "middle_name",
+                                  "last_name",
+                                  "full_name",
+                                  "preferred_name",
+                                  "email",
+                                  "phone",
+                                  "phone_country_code",
+                                  "address_line1",
+                                  "address_line2",
+                                  "city",
+                                  "region",
+                                  "postal_code",
+                                  "country",
+                                  "location",
+                                  "linkedin",
+                                  "github",
+                                  "portfolio",
+                                  "website",
+                                  "current_employer",
+                                  "current_title",
+                                  "employer",
+                                  "job_title",
+                                  "role_description",
+                                  "years_experience",
+                                  "school",
+                                  "degree",
+                                  "field_of_study",
+                                  "graduation_date",
+                                  "gpa",
+                                  "language",
+                                  "language_proficiency",
+                                  "skills",
+                                  "start_date",
+                                  "end_date",
+                                  "notice_period",
+                                  "relocation",
+                                  "work_arrangement",
+                                  "referral_source",
+                                  "resume_upload",
+                                  "cover_letter_upload",
+                                  "sensitive_eeo",
+                                  "sensitive_legal",
+                                  "sensitive_compensation",
+                                  "consent",
+                                  "attention_check",
+                                  "free_text_question"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "classified",
+                              "unknown",
+                              "invalid",
+                              "sensitive"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "category",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "finishedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "status",
+            "result",
+            "error",
+            "createdAt",
+            "startedAt",
+            "finishedAt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "kind": {
+              "type": "string",
+              "const": "autofill_draft"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "drafts": {
+                      "maxItems": 3,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300
+                          },
+                          "text": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 5000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "drafted",
+                              "trimmed",
+                              "empty",
+                              "too_long",
+                              "canary",
+                              "ai_reference",
+                              "sensitive"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "text",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "drafts"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "finishedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "status",
+            "result",
+            "error",
+            "createdAt",
+            "startedAt",
+            "finishedAt"
+          ],
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "routes": [
@@ -7185,7 +8711,8 @@
       "scope": null,
       "request": "AutofillConnectBody",
       "status": 201,
-      "response": "AutofillConnectResponse"
+      "response": "AutofillConnectResponse",
+      "accepted": null
     },
     {
       "method": "POST",
@@ -7194,7 +8721,8 @@
       "scope": null,
       "request": "AutofillRedeemBody",
       "status": 200,
-      "response": "AutofillRedeemResponse"
+      "response": "AutofillRedeemResponse",
+      "accepted": null
     },
     {
       "method": "GET",
@@ -7203,7 +8731,8 @@
       "scope": null,
       "request": null,
       "status": 200,
-      "response": "AutofillSession"
+      "response": "AutofillSession",
+      "accepted": null
     },
     {
       "method": "DELETE",
@@ -7212,7 +8741,8 @@
       "scope": null,
       "request": null,
       "status": 204,
-      "response": null
+      "response": null,
+      "accepted": null
     },
     {
       "method": "GET",
@@ -7221,7 +8751,8 @@
       "scope": null,
       "request": null,
       "status": 200,
-      "response": "AutofillTokenList"
+      "response": "AutofillTokenList",
+      "accepted": null
     },
     {
       "method": "DELETE",
@@ -7230,7 +8761,8 @@
       "scope": null,
       "request": null,
       "status": 204,
-      "response": null
+      "response": null,
+      "accepted": null
     },
     {
       "method": "GET",
@@ -7239,7 +8771,8 @@
       "scope": "profile:read",
       "request": null,
       "status": 200,
-      "response": "AutofillProfileEnvelope"
+      "response": "AutofillProfileEnvelope",
+      "accepted": null
     },
     {
       "method": "GET",
@@ -7248,7 +8781,8 @@
       "scope": "profile:sensitive",
       "request": null,
       "status": 200,
-      "response": "AutofillSensitiveEnvelope"
+      "response": "AutofillSensitiveEnvelope",
+      "accepted": null
     },
     {
       "method": "PUT",
@@ -7257,7 +8791,8 @@
       "scope": null,
       "request": "PutAutofillProfileBody",
       "status": 200,
-      "response": "PutAutofillProfileResponse"
+      "response": "PutAutofillProfileResponse",
+      "accepted": null
     },
     {
       "method": "GET",
@@ -7266,7 +8801,8 @@
       "scope": null,
       "request": "AutofillSeedQuery",
       "status": 200,
-      "response": "AutofillSeed"
+      "response": "AutofillSeed",
+      "accepted": null
     },
     {
       "method": "POST",
@@ -7275,7 +8811,8 @@
       "scope": "jobs:lookup",
       "request": "AutofillLookupRequest",
       "status": 200,
-      "response": "AutofillLookupResponse"
+      "response": "AutofillLookupResponse",
+      "accepted": null
     },
     {
       "method": "GET",
@@ -7284,7 +8821,8 @@
       "scope": "resumes:read",
       "request": null,
       "status": 200,
-      "response": "AutofillResumeList"
+      "response": "AutofillResumeList",
+      "accepted": null
     },
     {
       "method": "GET",
@@ -7293,7 +8831,48 @@
       "scope": "resumes:read",
       "request": null,
       "status": 200,
-      "response": null
+      "response": null,
+      "accepted": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/ai/pick",
+      "caller": "either",
+      "scope": "ai:run",
+      "request": "AutofillPickRequest",
+      "status": 200,
+      "response": "AutofillPickTask",
+      "accepted": "AutofillTaskAccepted"
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/ai/classify",
+      "caller": "either",
+      "scope": "ai:run",
+      "request": "AutofillClassifyRequest",
+      "status": 200,
+      "response": "AutofillClassifyTask",
+      "accepted": "AutofillTaskAccepted"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai/tasks/:id",
+      "caller": "either",
+      "scope": "ai:run",
+      "request": null,
+      "status": 200,
+      "response": "AutofillTaskView",
+      "accepted": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/ai/tasks/:id",
+      "caller": "either",
+      "scope": "ai:run",
+      "request": null,
+      "status": 200,
+      "response": "AutofillTaskView",
+      "accepted": null
     }
   ]
 }

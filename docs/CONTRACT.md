@@ -27,7 +27,7 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | GET, PUT, DELETE | `/answers`, `/answers/:id` | token (`answers:write`) | 6 | saved answers |
 
 ## How the extension calls it (`src/background/server-client.ts`, Phase 2)
-- **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, or the mock's `http://localhost:3190` in the e2e build). Content scripts and pages never do.
+- **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, the mock's `http://localhost:3190` in the e2e build, or the autofill worktree's `http://localhost:3300` in the dry-run build). Content scripts and pages never do.
 - **The allow-list:** `<origin>/api/autofill/*` (lower-case letters, digits, `/` and `-` only, no `//`, the server's own `tokenScope` pattern) and `GET` or `DELETE <origin>/api/ai/tasks/<uuid>`. Any other path is refused before a request is made. A resume id goes into a path only when it is `[a-z0-9-]{1,64}`.
 - **Every request:**
   - `credentials: 'omit'` (no cookie, ever), `redirect: 'error'`, `cache: 'no-store'`, `referrerPolicy: 'no-referrer'`;
@@ -55,6 +55,15 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | `POST /lookup {url, includePostingText: true}` | every `run/begin`, with the frame's own address | `postingText` for the policy check only; `suggestedResume` for the resume port |
 | `GET /resumes` | the resume port, when the lookup suggests no resume and the profile names one | that resume's file kind and name |
 | `GET /resumes/:id/file` | the resume port | the bytes, released within 60 s |
+| `POST /ai/pick`, `POST /ai/classify` | `plan/request` or `plan/poll`, when a plan leaves fields waiting for the LLM and the setting allows it (Phase 4, `src/background/ai-tasks.ts`) | the finished task (200), or its id to poll (202) |
+| `GET /api/ai/tasks/:id` | every 1.5 s while a task runs, at most 120 s from its first submit; and first, for a batch whose task id RunState.aiTasks already holds | the task's result, validated again against the options sent |
+| `DELETE /api/ai/tasks/:id` | at the 120 s cap, and when the run that asked goes | none |
+
+### The AI calls as built (Phase 4)
+- **Translation out** (`pickItemOf`, `classifyItemOfCore`): a pick item is the core's item id as `key`, the core's pick category, the observed `optionSetHash`, `intendedValue` and at most 10 `aliases` (profile text), the visible `label`, and `options` as `{index, label}`: each guard-passing candidate's clean label under the option's own index. Never sent: a candidate's label hash, its hardConflict or injected flags, an injected or hard-conflict candidate, and an item outside the pick categories or whose label, value or aliases name a sensitive topic or a sum (such an item keeps the cascade's own answer). A classify item is visible text only (label, hint, section words, the first 20 usable options' clean labels, each cut after a word at 200), with the frame's `platform`, screened again.
+- **Translation back** (`pickVerdicts`, `classifyVerdicts`): a pick's option index maps to the core's candidate position, and the core's `readTiebreakReply` judges it; an index that names a withheld (injected or hard-conflict) option is `llm-pick-rejected`, one that names no candidate `llm-invalid-output`. `invalid` is `llm-invalid-output` and `sensitive` needs-user (`llm-disabled-for-category`), never no-match; null `no_match` keeps the cascade's answer. An item answered twice, not at all, or under another hash is `llm-invalid-output`. A classification `classified` with a category is that category; `unknown` leaves the field unknown; anything else is `llm-invalid-output`.
+- **Submitting:** at most one task in flight per run, batches in the order they were asked (classifications before picks). A 200 is the answer; a 202 is polled every `AUTOFILL_AI_POLL_MS`; a 409 `ai_busy` waits for another task of this worker to end (one poll interval when it has none in flight) and tries again; every call within the 120 s cap from the batch's first submit, after which the task is cancelled and its fields are `llm-unavailable`. A transient failure of a poll (a timeout, a 5xx, a 429) polls again; a 404 forgets the id. A failed or cancelled task is `llm-unavailable`; an answer off the contract (a string index) `llm-invalid-output`.
+- **Task ids:** each batch's id is noted by the batch's hash (`<kind>:<32 hex>`, the SHA-256 of its body) in storage.session's `aitasks` record the moment TailorIT gives one, and folded into the application's `RunState.aiTasks` at every `runstate/put`. A batch asked again (after a worker restart, or a reload within TailorIT's hour) is read by that id first; a queued or running one would be reattached by TailorIT's dedupe key anyway.
 
 ## The mock (e2e)
 
@@ -91,8 +100,8 @@ The worker's own tests use the same answers (`src/background/worker.testkit.ts`,
 | `GET /__mock/health` | `{ok: true}` |
 | `GET /__mock/requests` | every request since the last reset: method, path, query, headers (Authorization `REDACTED`), body and status (0 while a slow answer waits, and when its client left first) |
 | `GET /__mock/resume` | the golden resume's id, name, kind, type, size and SHA-256 |
-| `POST /__mock/reset` | forgets requests, scenarios and codes, ends slow answers still waiting, and makes the golden token valid with all its scopes again |
-| `POST /__mock/scenario {name, times?, delayMs?}` | turns on a scripted answer for `times` matching requests (default: until the next reset) |
+| `POST /__mock/reset` | forgets requests, scenarios, codes and AI tasks, ends slow answers still waiting, and makes the golden token valid with all its scopes again |
+| `POST /__mock/scenario {name, times?, delayMs?, value?}` | turns on a scripted answer for `times` matching requests (default: until the next reset); `value` is what an AI scenario answers with |
 
 | Scenario | Effect |
 |---|---|
@@ -107,3 +116,18 @@ The worker's own tests use the same answers (`src/background/worker.testkit.ts`,
 | `resume-slow` | the file answers after `delayMs` (default 8 s) |
 | `resume-fails` | the file gets 500 |
 | `resume-hash-mismatch` | the file's `X-TailorIT-Sha256` is not its bytes' digest |
+| `ai-pick-index {value}` | `POST /ai/pick` answers every item `matched` with the index in `value` (a tainted option's, one out of range) |
+| `ai-pick-string-index` | `POST /ai/pick` answers every item with the index `"3"`, a string: off the contract |
+| `ai-pick-null`, `ai-pick-invalid`, `ai-pick-sensitive` | `POST /ai/pick` answers every item null, with the reason `no_match`, `invalid` or `sensitive` |
+| `ai-classify-category {value}`, `ai-classify-invalid` | `POST /ai/classify` answers every item with the category in `value`, or null `invalid` |
+| `ai-slow` | an AI route answers 202 `{taskId}`; its task stays `running` for `delayMs` (default 4 s), then succeeds |
+| `ai-busy`, `ai-unavailable` | an AI route answers 409 `ai_busy` or 503 `ai_unavailable` (`AutofillErrorBody/valid/ai-busy.json`, `ai-unavailable.json`) |
+| `ai-timeout` | an AI route answers 202 `{taskId}`, and its task never finishes: past the 120 s the extension waits |
+
+### The mock's AI routes (Phase 4)
+The contract at TailorIT `a1a3e9b` adds `POST /api/autofill/ai/pick`, `POST /api/autofill/ai/classify`, and `GET` and `DELETE /api/ai/tasks/:id` (scope `ai:run`). The mock answers them as TailorIT's routes do:
+- **An AI route** makes a task from the body and answers it finished (200, `AutofillPickTask` or `AutofillClassifyTask`), or 202 `AutofillTaskAccepted` under `ai-slow` and `ai-timeout`. A pick of a category TailorIT does not take (country, region) is 400 `validation_failed`, as TailorIT's.
+- **A pick's normal answer** is the fake CLI's: the option whose folded text equals the intended value or an alias, else null `no_match`. **A classification's** is a small keyword table on the label (an employer, a city, a job title, a school, "hear about", LinkedIn, GitHub, a portfolio), else null `unknown`. The scenarios above script the hostile answers.
+- **A task** is read and cancelled at `/api/ai/tasks/:id`: `running` until its time, then `succeeded`; `DELETE` cancels one still running. The contract's golden pick task (`AutofillPickTask/valid/golden.json`) is always there; any other id is 404. A reset forgets the tasks.
+- **The request log** keeps every AI request's body (Authorization redacted), which the AI spec's marker and privacy checks read.
+- `POST /__mock/scenario` takes an optional `value` beside `times` and `delayMs`: what an AI scenario answers with.

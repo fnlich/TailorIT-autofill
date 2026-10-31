@@ -1,0 +1,31 @@
+{
+  "questions": [
+    {
+      "key": "q0",
+      "question": "Why do you want to work at Northwind?",
+      "maxLength": 1500
+    },
+    {
+      "key": "q1",
+      "question": "Why do you want to work at Northwind?",
+      "maxLength": 1500
+    },
+    {
+      "key": "q2",
+      "question": "Why do you want to work at Northwind?",
+      "maxLength": 1500
+    },
+    {
+      "key": "q3",
+      "question": "Why do you want to work at Northwind?",
+      "maxLength": 1500
+    }
+  ],
+  "jobText": "Northwind Traders is hiring a Senior Software Engineer to build the services behind our ordering platform. You will design APIs in TypeScript and Go, own their reliability, and mentor two engineers.",
+  "company": "Northwind Traders",
+  "jobTitle": "Senior Software Engineer",
+  "resumeId": null,
+  "canaries": [
+    "I am LLM"
+  ]
+}

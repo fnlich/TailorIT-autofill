@@ -21,7 +21,10 @@
  *    defines, and each row's key is built from its own label and section (the key carries the label's slug, which is
  *    set aside with the label, as is the slug in the key of the field that revealed it, detail.revealedBy, and the
  *    row's category, a closed enum such as links.linkedin). RunState sets nothing aside: its reveal edges carry each
- *    section and label slug hashed (L-S3).
+ *    section and label slug hashed (L-S3). An AI request (Phase 4) sets aside, by the contract's design, the page text
+ *    it quotes (an item's label, hint, section and options: hidden markers and canaries are still looked for there, and
+ *    the AI spec checks those bodies field by field), a pick's intended value and aliases (the one place profile text
+ *    goes to TailorIT's AI), and an item key that is a report row's (proven built from its page label).
  * 6. Every filled or verified row has a provenance.
  * 7. The run never reaches done.
  * 8. No request went anywhere the routes do not answer.
@@ -36,7 +39,7 @@ import type { RouteLog } from '../routes';
 import type { ConsoleEntry } from './console';
 import type { Extension } from './extension';
 import { profileSentinels } from './golden';
-import { mock } from './mock';
+import { mock, type MockRequest } from './mock';
 import { spyRecords } from './spies';
 
 export interface TrapRun {
@@ -110,6 +113,30 @@ function withoutLabels(report: unknown): unknown {
         ...(row.detail.revealedBy === undefined ? {} : { revealedBy: slugAside(row.detail.revealedBy) }) } }),
     })),
   };
+}
+
+/** The AI routes' page-text fields (each item's) and the pick's profile-text fields. */
+const AI_PAGE_TEXT = ['label', 'hint', 'section', 'options'];
+const AI_PROFILE_TEXT = ['intendedValue', 'aliases'];
+
+/**
+ * A request's body as the profile-value search reads it. An AI request (POST /api/autofill/ai/pick or /classify) has
+ * set aside what the contract gives page text (each item's label, hint, section and options, which a page may write
+ * as a profile value says it: trap 5's "TypeScript"; the marker test proves them visible text) and the pick's intended
+ * value and aliases (the one place profile text goes to TailorIT's AI, by design), and an item's key when it is one of
+ * the reports' row keys (proven built from the page's own label and section). What is left (categories, hashes,
+ * kinds, a key no row has) is searched. Any other body is read whole.
+ */
+function sentinelBody(request: MockRequest, rowKeys: ReadonlySet<string>): string {
+  if (request.method !== 'POST' || !/^\/api\/autofill\/ai\/(?:pick|classify)$/.test(request.path)) return request.body;
+  try {
+    const body = JSON.parse(request.body) as { items?: Array<Record<string, unknown>> };
+    const items = (body.items ?? []).map((item) => Object.fromEntries(Object.entries(item).filter(([name, value]) =>
+      !AI_PAGE_TEXT.includes(name) && !AI_PROFILE_TEXT.includes(name) && !(name === 'key' && rowKeys.has(String(value))))));
+    return JSON.stringify({ ...body, items });
+  } catch {
+    return request.body;
+  }
 }
 
 /** Every form control's final value in every frame of the page: text, a select's chosen options (value and text), a
@@ -189,12 +216,15 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   }
   const reportsAside = (area: Record<string, unknown>) =>
     Object.fromEntries(Object.entries(area).map(([key, value]) => [key, key.startsWith('report:') ? withoutLabels(value) : value]));
+  // The rows' keys, each proven above to be built from its own (page) label: an AI request's item key may be one.
+  const rowKeys = new Set(reports.flatMap((report) => report.fields.map((row) => row.key)));
   const anywhere: Record<string, string> = {
     'a report (its labels aside)': JSON.stringify(reports.map(withoutLabels)),
     RunState: JSON.stringify(runState),
     "the extension's storage (its reports' labels aside)": JSON.stringify({ session: reportsAside(storage.session), local: storage.local }),
     'a console message': consoleText,
-    'a request to TailorIT': requestText,
+    'a request to TailorIT (an AI request’s page text, its keys of rows and a pick’s value aside)': requests
+      .map((request) => `${request.path}${request.query} ${sentinelBody(request, rowKeys)}`).join('\n'),
   };
   for (const sentinel of profileSentinels()) {
     for (const [where, haystack] of Object.entries(anywhere)) {

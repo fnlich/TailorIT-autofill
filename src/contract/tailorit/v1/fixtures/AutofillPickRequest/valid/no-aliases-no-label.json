@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "key": "lever|main|where-did-you-study|5c1e9a7b3d2f4086|0",
+      "category": "generic",
+      "optionSetHash": "5c1e9a7b3d2f4086",
+      "intendedValue": "Texas A&M University",
+      "label": "",
+      "options": [
+        {
+          "index": 0,
+          "label": "Texas A&M University - College Station"
+        }
+      ]
+    }
+  ]
+}

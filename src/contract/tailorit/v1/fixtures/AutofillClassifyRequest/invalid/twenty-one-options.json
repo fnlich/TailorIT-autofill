@@ -1,0 +1,35 @@
+{
+  "platform": "greenhouse",
+  "items": [
+    {
+      "key": "greenhouse|main|where-do-you-work-today|none|0",
+      "kind": "select",
+      "label": "Where do you work today?",
+      "hint": "",
+      "section": "Additional questions",
+      "options": [
+        "Option 0",
+        "Option 1",
+        "Option 2",
+        "Option 3",
+        "Option 4",
+        "Option 5",
+        "Option 6",
+        "Option 7",
+        "Option 8",
+        "Option 9",
+        "Option 10",
+        "Option 11",
+        "Option 12",
+        "Option 13",
+        "Option 14",
+        "Option 15",
+        "Option 16",
+        "Option 17",
+        "Option 18",
+        "Option 19",
+        "Option 20"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|main|will-you-need-a-visa-for-our-london-office|2a4c6e8b0d1f3579|0",
+      "category": null,
+      "reason": "sensitive"
+    },
+    {
+      "key": "greenhouse|main|your-password|none|0",
+      "category": null,
+      "reason": "invalid"
+    },
+    {
+      "key": "greenhouse|main|why-northwind|none|0",
+      "category": "free_text_question",
+      "reason": "classified"
+    }
+  ]
+}

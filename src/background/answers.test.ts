@@ -15,6 +15,7 @@ import {
   PageMessageSchema,
 } from '../messaging/schemas';
 import {
+  askingCore,
   beginRun,
   connectPageSender,
   contentSender,
@@ -39,7 +40,8 @@ describe('every answer parses with the schema its receiver uses', () => {
   });
 
   it('for content messages', async () => {
-    const worker = await startTestWorker({ token: tokenRecord() });
+    // A core that asks the LLM, so a field waits and plan/poll has something to answer.
+    const worker = await startTestWorker({ token: tokenRecord(), core: askingCore() });
     /** Each message, built when it is sent (a message that names a run gets a run of its own). */
     const messages: Array<() => Promise<Record<string, unknown>>> = [
       async () => ({ type: 'ping' }),
@@ -47,7 +49,12 @@ describe('every answer parses with the schema its receiver uses', () => {
       async () => ({ type: 'run/begin', applicationKey: LEVER_KEY, trigger: 'launcher', dryRun: true }),
       async () => ({ type: 'plan/request', runId: await beginRun(worker), pass: 0, specs: [fieldSpec(1)], planKeys: [fieldSpec(1).key], canaries: [],
         notices: [] }),
-      async () => ({ type: 'plan/poll', runId: await beginRun(worker), keys: [] }),
+      async () => {
+        const runId = await beginRun(worker);
+        await worker.deliver({ v: 1, type: 'plan/request', runId, pass: 0, specs: [fieldSpec(1)], planKeys: [fieldSpec(1).key],
+          canaries: [], notices: [] }, contentSender());
+        return { type: 'plan/poll', runId, keys: [fieldSpec(1).key] };
+      },
       async () => ({ type: 'runstate/put', runState: runState() }),
       async () => ({ type: 'runstate/get', applicationKey: LEVER_KEY }),
       async () => ({ type: 'runstate/clear', applicationKey: LEVER_KEY }),

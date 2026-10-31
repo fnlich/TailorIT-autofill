@@ -1,4 +1,17 @@
 import type { z } from 'zod';
+import {
+  AutofillClassifyRequestSchema,
+  AutofillClassifyResultSchema,
+  AutofillClassifyTaskSchema,
+  AutofillDraftRequestSchema,
+  AutofillDraftResultSchema,
+  AutofillDraftTaskSchema,
+  AutofillPickRequestSchema,
+  AutofillPickResultSchema,
+  AutofillPickTaskSchema,
+  AutofillTaskAcceptedSchema,
+  AutofillTaskViewSchema,
+} from './ai';
 import { AutofillErrorBodySchema } from './common';
 import {
   AutofillConnectBodySchema,
@@ -47,6 +60,17 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillLookupRequest: AutofillLookupRequestSchema,
   AutofillLookupResponse: AutofillLookupResponseSchema,
   AutofillResumeList: AutofillResumeListSchema,
+  AutofillPickRequest: AutofillPickRequestSchema,
+  AutofillPickResult: AutofillPickResultSchema,
+  AutofillPickTask: AutofillPickTaskSchema,
+  AutofillClassifyRequest: AutofillClassifyRequestSchema,
+  AutofillClassifyResult: AutofillClassifyResultSchema,
+  AutofillClassifyTask: AutofillClassifyTaskSchema,
+  AutofillDraftRequest: AutofillDraftRequestSchema,
+  AutofillDraftResult: AutofillDraftResultSchema,
+  AutofillDraftTask: AutofillDraftTaskSchema,
+  AutofillTaskAccepted: AutofillTaskAcceptedSchema,
+  AutofillTaskView: AutofillTaskViewSchema,
 } satisfies Record<string, z.ZodType>;
 export type AutofillContractName = keyof typeof AUTOFILL_CONTRACT_SCHEMAS;
 
@@ -61,7 +85,7 @@ export type AutofillRouteCaller = (typeof AUTOFILL_ROUTE_CALLERS)[number];
 
 export interface AutofillRoute {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  /** The whole path; ':id' is a path parameter. */
+  /** The whole path; ':id' is a path parameter (a task's UUID on /api/ai/tasks/:id). */
   path: string;
   caller: AutofillRouteCaller;
   /** The scope a token needs here; null where no token comes, and on /session, which any live token may call. */
@@ -71,12 +95,21 @@ export interface AutofillRoute {
   status: number;
   /** The success answer's schema; null for 204 and for the resume file, whose answer is the file itself. */
   response: AutofillContractName | null;
+  /**
+   * The 202 answer's schema, for a route that may answer before its work is done: an AI route answers `status` with
+   * `response`, its finished task, when the task finishes within AUTOFILL_AI_WAIT_MS, else 202 with this. Null for
+   * every other route.
+   */
+  accepted: AutofillContractName | null;
 }
 
 /**
  * The routes, as the design lists them (§11.1 of docs/design/tailorit.md in the extension's repository). Every answer
  * to a token request carries the X-TailorIT-Autofill-Api header; a refusal's body is an AutofillErrorBody (409
- * `conflict` for another API version, 401 for a dead token, 403 for a missing scope, 429 when rate-limited).
+ * `conflict` for another API version, 401 for a dead token, 403 for a missing scope, 429 when rate-limited). The AI
+ * routes refuse with AUTOFILL_AI_REFUSALS too; their tasks are polled and cancelled on /api/ai/tasks/:id, the one path
+ * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). POST
+ * /api/autofill/ai/draft joins in Phase 6.
  */
 export const AUTOFILL_ROUTES = [
   {
@@ -87,6 +120,7 @@ export const AUTOFILL_ROUTES = [
     request: 'AutofillConnectBody',
     status: 201,
     response: 'AutofillConnectResponse',
+    accepted: null,
   },
   {
     method: 'POST',
@@ -96,6 +130,7 @@ export const AUTOFILL_ROUTES = [
     request: 'AutofillRedeemBody',
     status: 200,
     response: 'AutofillRedeemResponse',
+    accepted: null,
   },
   {
     method: 'GET',
@@ -105,6 +140,7 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: 'AutofillSession',
+    accepted: null,
   },
   {
     method: 'DELETE',
@@ -114,6 +150,7 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 204,
     response: null,
+    accepted: null,
   },
   {
     method: 'GET',
@@ -123,6 +160,7 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: 'AutofillTokenList',
+    accepted: null,
   },
   {
     method: 'DELETE',
@@ -132,6 +170,7 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 204,
     response: null,
+    accepted: null,
   },
   {
     method: 'GET',
@@ -141,6 +180,7 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: 'AutofillProfileEnvelope',
+    accepted: null,
   },
   {
     method: 'GET',
@@ -150,6 +190,7 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: 'AutofillSensitiveEnvelope',
+    accepted: null,
   },
   {
     method: 'PUT',
@@ -159,6 +200,7 @@ export const AUTOFILL_ROUTES = [
     request: 'PutAutofillProfileBody',
     status: 200,
     response: 'PutAutofillProfileResponse',
+    accepted: null,
   },
   {
     method: 'GET',
@@ -168,6 +210,7 @@ export const AUTOFILL_ROUTES = [
     request: 'AutofillSeedQuery',
     status: 200,
     response: 'AutofillSeed',
+    accepted: null,
   },
   {
     method: 'POST',
@@ -177,6 +220,7 @@ export const AUTOFILL_ROUTES = [
     request: 'AutofillLookupRequest',
     status: 200,
     response: 'AutofillLookupResponse',
+    accepted: null,
   },
   {
     method: 'GET',
@@ -186,6 +230,7 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: 'AutofillResumeList',
+    accepted: null,
   },
   {
     method: 'GET',
@@ -195,5 +240,46 @@ export const AUTOFILL_ROUTES = [
     request: null,
     status: 200,
     response: null,
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/ai/pick',
+    caller: 'either',
+    scope: 'ai:run',
+    request: 'AutofillPickRequest',
+    status: 200,
+    response: 'AutofillPickTask',
+    accepted: 'AutofillTaskAccepted',
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/ai/classify',
+    caller: 'either',
+    scope: 'ai:run',
+    request: 'AutofillClassifyRequest',
+    status: 200,
+    response: 'AutofillClassifyTask',
+    accepted: 'AutofillTaskAccepted',
+  },
+  {
+    method: 'GET',
+    path: '/api/ai/tasks/:id',
+    caller: 'either',
+    scope: 'ai:run',
+    request: null,
+    status: 200,
+    response: 'AutofillTaskView',
+    accepted: null,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/ai/tasks/:id',
+    caller: 'either',
+    scope: 'ai:run',
+    request: null,
+    status: 200,
+    response: 'AutofillTaskView',
+    accepted: null,
   },
 ] as const satisfies readonly AutofillRoute[];

@@ -46,6 +46,7 @@ const REASONS = {
   'prefill-kept': 'The site had already filled this in, and that was kept.',
   'prefill-conflict': 'The site had filled this in differently from your profile. Check which is right.',
   'llm-pick-needs-review': 'The AI picked this option from the list. Check it.',
+  'llm-classified-needs-review': 'The AI worked out what this question asks, and it was filled from your profile. Check it.',
   'llm-draft-needs-confirmation': 'The AI drafted this answer. Edit or confirm it before you submit.',
   'other-option-with-free-text': 'No option fit, so "Other" was chosen and your answer typed in. Check it.',
   'other-without-free-text': 'No option fit, so "Other" was chosen. Add any details the form asks for yourself.',

@@ -39,6 +39,8 @@ export const REASON_CODES = [
   // the Phase 3 review: a value the person changed after our write (LC-4); the loop cut at a policy notice or by a
   // frame its page hid mid-fill (L-S2, L-S4)
   'changed-by-you', 'policy-notice', 'form-hidden',
+  // the LLM steps (Phase 4): a field whose category only the LLM's classification gave, filled and flagged
+  'llm-classified-needs-review',
   // a bug
   'internal-error',
 ] as const;

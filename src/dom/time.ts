@@ -1,8 +1,9 @@
 /*
  * The content side's only timers (docs/ARCHITECTURE.md "Isolation", "settle()"). Every wait in the content script ends
- * on a DOM condition or one of these caps, never on a fixed sleep: a timer here only ever bounds a wait or polls the
- * address, and it is cleared by whoever started it or by the run's own AbortSignal. WXT's context timers are never
- * used, because a page can reach that context. Lint allows setTimeout and setInterval in this file alone.
+ * on a DOM condition or one of these caps, never on a fixed sleep: a timer here only ever bounds a wait, polls the
+ * address, or spaces the polls for the LLM's answers (content/loop.ts, AI_POLL_MS), and it is cleared by whoever
+ * started it or by the run's own AbortSignal. WXT's context timers are never used, because a page can reach that
+ * context. Lint allows setTimeout and setInterval in this file alone.
  */
 
 /** Cancels a timer started here; calling it twice is harmless. */

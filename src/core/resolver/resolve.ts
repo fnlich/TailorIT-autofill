@@ -8,13 +8,14 @@
  *      cause) makes it needs-user, whatever its topic's class would allow;
  *   4. a saved answer with the exact key, in a scope the category's policy allows, supplies the value: that is how
  *      saved answers beat the profile and the rules;
- *   5. LLM classification is Phase 4: a field nothing classified is 'unknown', and takes only a saved answer;
+ *   5. LLM classification (Phase 4, classify.ts): a field nothing classified takes the category the LLM gave it, when
+ *      planFrame has one, always flagged (answerFromLlm); otherwise it is 'unknown', and takes only a saved answer;
  *   then the value: the profile's (values.ts), or the EEO, legal and consent policy's (policy.ts), behind the
  *   sensitive part's gate, shaped for the field's kind (candidate.ts).
  * Confidence is classification × value here; the match multiplies in later (planFrame). An unanswered EEO, legal or
  * sensitive question, and a required field with no value, are flagged rather than skipped, so the person sees them.
  */
-import { CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE } from '../confidence';
+import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE } from '../confidence';
 import { attentionHits, namesConsentTopic } from '../guard/attention';
 import { hasTripwire } from '../guard/tripwire';
 import { intendedText } from '../matcher/intended';
@@ -32,6 +33,7 @@ import type { VisibleText } from '../types/text';
 import type { Vocab } from '../vocab/types';
 import { none, SHAPE_OF_KIND, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { policyClassOf } from './categories';
+import type { LlmClassification } from './classify';
 import { classifyByRules, type RuleClassification } from './classifyRules';
 import { dateIso, dateText } from './format';
 import { statementPolarity, type NeedsUserCause } from './labelRules';
@@ -55,12 +57,14 @@ export interface ResolveContext {
   postingCountry?: string;
 }
 
-/** What decided a field's category, before any value: a tripwire in its label, an attention check, the rules, or
+/** What decided a field's category, before any value: a tripwire in its label, an attention check, the rules, the
+ *  LLM (step 5, Phase 4: classify.ts's judgement of its answer, or of the screen that kept the field from it), or
  *  nothing. */
 export type FieldClassification =
   | { by: 'tripwire'; rules: RuleClassification | null }
   | { by: 'attention'; patternId: string; consent: FieldCategory | null }
   | { by: 'rules'; rules: RuleClassification }
+  | { by: 'llm'; llm: LlmClassification }
   | { by: 'none' };
 
 /** Step 0 and steps 1 to 3 (§8.1): the tripwire in the field's own text, then attention checks, then the rules. */
@@ -249,6 +253,48 @@ function statementText(spec: FieldSpec, rules: RuleClassification | null): strin
   return words.join(' ');
 }
 
+/**
+ * Step 5 (§8.4): a field only the LLM classified (classify.ts judged its answer). An accepted category scores
+ * CLASSIFY_LLM (0.70) at most and is always flagged; a field the person must answer (a needs-user category, a screened
+ * field, a lone checkbox, one that offers a decline option) shows the suggested category and stays blank; one the LLM
+ * left unknown keeps its reason, flagged when the LLM could not help (unreachable, or an answer that could not be used).
+ */
+function answerFromLlm(spec: FieldSpec, ctx: ResolveContext, llm: LlmClassification): ResolvedField {
+  const answer = (resolution: Resolution, shaped: Shaped | null = null): ResolvedField =>
+    ({ resolution, shaped, needsSensitive: false });
+  if (llm.kind === 'none') {
+    const unknown = { key: spec.key, category: 'unknown' as const, classifiedBy: 'none' as const, rule: null,
+      confidence: 0, policy: 'unknown' as const, awaiting: null };
+    return answer(withoutValue(unknown, spec, llm.reason, llm.reason !== 'unknown-field', false));
+  }
+  const { category } = llm;
+  const base = { key: spec.key, category, classifiedBy: 'llm-classify' as const, rule: 'llm.classify',
+    confidence: CLASSIFY_LLM, policy: policyClassOf(category), awaiting: null };
+  if (llm.kind === 'needs-user') {
+    return answer({ ...base, intended: null, origin: null, action: 'needs-user', reason: llm.reason });
+  }
+  // judgeClassification lets only the profile class through, whose values need no sensitive part; checked again.
+  if (sensitiveGate(category, ctx.sensitiveState) !== 'ready' || policyClassOf(category) !== 'profile') {
+    return answer(withoutValue(base, spec, 'llm-disabled-for-category', true, true));
+  }
+  const result = profileValue(category, { spec, profile: ctx.profile, vocab: ctx.vocab, now: ctx.now,
+    separatePhoneCountry: ctx.separatePhoneCountry ?? false });
+  if (!result.ok) {
+    const { reason, flagged, needsUser } = result.none;
+    return answer(withoutValue(base, spec, reason, flagged, needsUser === true));
+  }
+  const { candidate } = result;
+  const shaped = shapeFor(spec, candidate, ctx.vocab);
+  if (shaped === null) return answer(withoutValue(base, spec, 'format-unsupported', true, false));
+  // Never a tick on the LLM's word alone.
+  if (shaped.shaped.shape === 'check') return answer(withoutValue(base, spec, 'llm-disabled-for-category', true, true));
+  const confidence = round(Math.min(CLASSIFY_LLM, CLASSIFY_LLM * candidate.confidence));
+  const action = actionFor(confidence, true);
+  return answer({ ...base, confidence, intended: intendedOf(shaped.shaped), origin: candidate.origin, action,
+    reason: action === 'leave-blank' ? 'low-confidence' : candidate.flag ?? 'llm-classified-needs-review' },
+  action === 'leave-blank' ? null : shaped.shaped);
+}
+
 /** The resolver's full answer for one field (§8.1). `classification` is classifyField's, when the caller has it. */
 export function resolveField(spec: FieldSpec, ctx: ResolveContext, classification = classifyField(spec)):
   ResolvedField {
@@ -268,6 +314,7 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
       action: 'needs-user', reason: classification.consent === null ? 'attention-check' : 'consent-requires-user',
       awaiting: null });
   }
+  if (classification.by === 'llm') return answerFromLlm(spec, ctx, classification.llm);
   const rules = classification.by === 'rules' ? classification.rules : null;
   if (rules?.needsUser !== undefined) {
     return answer({ key: spec.key, category: rules.asks, classifiedBy: rules.classifiedBy, rule: rules.rule,

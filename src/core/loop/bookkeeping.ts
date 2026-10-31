@@ -613,6 +613,30 @@ export function recordOptionsWait(state: LoopState, key: FieldKey, verdict: 'rea
   return { ...state, fields };
 }
 
+/** The keys of the fields present at the latest scan that await the LLM (Phase 4), in DOM order. */
+export function awaitingKeys(state: LoopState): FieldKey[] {
+  return presentWith(state.fields, 'awaiting-llm').map((field) => field.key);
+}
+
+/**
+ * Puts fields that await the LLM back to pending (Phase 4): plan/poll answered that the worker no longer knows them
+ * (it restarted, and its memory of the task went with it), so the next pass sends them in plan/request again, where the
+ * worker finds the task by its id or TailorIT reattaches it. Not a retry: nothing was written. A key the field no longer
+ * has, or a field that does not await, is left alone. Answers the state and the keys put back.
+ */
+export function requeueAwaiting(state: LoopState, keys: Iterable<FieldKey>): { state: LoopState; requeued: FieldKey[] } {
+  const fields = new Map(state.fields);
+  const requeued: FieldKey[] = [];
+  for (const key of keys) {
+    const baseKey = baseKeyOf(key);
+    const field = fields.get(baseKey);
+    if (field === undefined || field.key !== key || field.status !== 'awaiting-llm') continue;
+    fields.set(baseKey, { ...field, status: 'pending', cause: 'new', reason: null });
+    requeued.push(key);
+  }
+  return requeued.length === 0 ? { state, requeued } : { state: { ...state, fields }, requeued };
+}
+
 /**
  * Whether the loop is over: nothing pending, waiting or awaiting; the scan after MAX_PASSES planned passes; or a
  * stalled page (not while the LLM is awaited). `cut` ends it now with that reason for what is pending or waiting

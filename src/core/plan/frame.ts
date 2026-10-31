@@ -1,9 +1,17 @@
 /*
  * planFrame: one plan/request in the core (docs/ARCHITECTURE.md "What the worker does"; docs/design/core.md §10.1's
  * pass, for one frame's fields). For each field: the honeypot and label checks, resolve (resolver/resolve.ts), match
- * the value onto the field's options (matchOne, with the LLM off in Phase 2), plan the write in the shape the field's
- * kind takes, pass it through guardWrite, and give the field a row. The answer holds the values for this frame's own
- * fields only, never the profile.
+ * the value onto the field's options (matchOne), plan the write in the shape the field's kind takes, pass it through
+ * guardWrite, and give the field a row. The answer holds the values for this frame's own fields only, never the
+ * profile.
+ * - The LLM steps (Phase 4), each only while its setting is on: a field nothing classified, screened first
+ *   (classify.ts), and a single answer the cascade hands to the tiebreak, wait for the LLM. Such a field is in
+ *   `awaiting`, with its question in `ask` and the row that stands until the answer (blank, flagged). The worker asks,
+ *   and plans the field again with the run's answers (`ai`): a classification decides its category (at most 0.70,
+ *   always flagged), a verdict completes its match (completeTiebreak). A valid pick is written as an llm-pick naming
+ *   its task, the candidate and the hash of the option's clean text as sent, at 0.75 at most, always flagged; the frame
+ *   checks that text before it writes (llmPickStillValid). A set's values and a typeahead's results never go to the
+ *   LLM.
  * - The request carries the frame's whole scan and the keys this pass plans (planKeys; every spec without them). Only
  *   those are resolved, written and rowed, and only they can ask for the sensitive part; every spec is read for what
  *   the planner sees across the frame, so a phone planned again alone still knows the code select beside it (the
@@ -36,11 +44,14 @@ import { cutInjected } from '../guard/injected';
 import { tripwireHits } from '../guard/tripwire';
 import { guardWrite, type GuardContext, type WriteSubject } from '../guard/write';
 import { noMatch, matchOne } from '../matcher/cascade';
+import { completeTiebreak } from '../matcher/tiebreak';
 import { prepareOptions } from '../matcher/prepare';
-import type { MatchInput, PreparedOptions } from '../matcher/types';
+import type { MatchInput, PreparedOptions, TiebreakItem } from '../matcher/types';
 import { parseSelectionHints, selectionLimits } from '../multiselect/hints';
 import { planMultiSelect, type MultiSelectValue } from '../multiselect/plan';
 import type { Choice } from '../resolver/candidate';
+import { classifiable, classifyItemOf, judgeClassification, SCREENED, screenForClassify, type ClassifyItem } from
+  '../resolver/classify';
 import { actionFor, classifyField, resolveField, type FieldClassification, type ResolvedField, type Shaped } from
   '../resolver/resolve';
 import { sectionKey } from '../text/keys';
@@ -124,13 +135,28 @@ interface FieldPlanContext {
   guard: GuardContext;
 }
 
-/** A field's write before the Guard: its value, its match, and a reason it must be flagged for, if any. */
+/** A field's write before the Guard: its value, its match, a reason it must be flagged for, if any, and the origin
+ *  when it is not the resolution's (the LLM's pick). */
 interface Planned {
   value: WriteValue;
   match: Match;
   flag?: ReasonCode;
   multi?: WriteSubject['multi'];
+  origin?: ValueOrigin;
 }
+
+/** A field that waits for the LLM's tiebreak: its question, and the row that stands until the answer comes. */
+interface Asked {
+  asked: TiebreakItem;
+  row: FillResult;
+}
+
+/** What matching one value of a single-answer field gave, the LLM allowed: a match (with the llm-pick origin when the
+ *  LLM chose), a wait for options, or a question for the LLM and the match that stands until it answers. */
+type Matched =
+  | { kind: 'match'; match: Match; origin?: ValueOrigin }
+  | { kind: 'waiting' }
+  | { kind: 'ask'; item: TiebreakItem; fallback: Match };
 
 /** The input matchOne reads for one of the field's values. */
 function matchInputOf(spec: FieldSpec, resolution: Resolution, choice: Choice, options: PreparedOptions,
@@ -152,7 +178,9 @@ function matchInputOf(spec: FieldSpec, resolution: Resolution, choice: Choice, o
   };
 }
 
-/** One value's match, the LLM off: a field the LLM would be asked about falls back to Other or blank. */
+/** One value's match, the LLM off: a field the LLM would be asked about falls back to Other or blank. A set's values
+ *  and a typeahead's results never go to the LLM (a pick's provenance names one option, and a search chooses only in
+ *  the fill band, which a pick never reaches). */
 function matchValue(input: MatchInput, ctx: FieldPlanContext): Match | 'waiting' {
   const outcome = matchOne(input, { vocab: ctx.input.vocab, llm: false, ...(ctx.input.cache ? { cache: ctx.input.cache }
     : {}) });
@@ -160,17 +188,51 @@ function matchValue(input: MatchInput, ctx: FieldPlanContext): Match | 'waiting'
   return 'waiting' in outcome ? 'waiting' : outcome.partial.fallback;
 }
 
+/**
+ * A single answer's match with the LLM tiebreak allowed (settings.llm.tiebreak; the domain and the policy class decide
+ * the rest: matchOne's stage plan). A field the cascade hands to the LLM completes with the run's verdict for its
+ * item (completeTiebreak, which refuses a verdict of another item or a changed label), else waits for one. A valid
+ * pick is written as an llm-pick: the task, the candidate and the hash of the option's clean text as sent.
+ */
+function matchChoice(input: MatchInput, ctx: FieldPlanContext): Matched {
+  const llm = ctx.input.settings.llm.tiebreak;
+  const outcome = matchOne(input, { vocab: ctx.input.vocab, llm, ...(ctx.input.cache ? { cache: ctx.input.cache }
+    : {}) });
+  if (outcome.done) return { kind: 'match', match: outcome.match };
+  if ('waiting' in outcome) return { kind: 'waiting' };
+  const answered = ctx.input.ai?.verdicts.get(outcome.tiebreak.id);
+  if (answered === undefined) return { kind: 'ask', item: outcome.tiebreak, fallback: outcome.partial.fallback };
+  const { verdict, taskId } = answered;
+  const match = completeTiebreak(outcome.partial, verdict);
+  if (match.stage !== 'llm' || verdict.picked === null || verdict.labelHash === null) return { kind: 'match', match };
+  return { kind: 'match', match,
+    origin: { provenance: 'llm-pick', taskId, pickedCandidate: verdict.picked, labelHash: verdict.labelHash } };
+}
+
 /** A row with nothing written, for the field being planned. */
 type Blank = (status: FillResult['status'], reason: ReasonCode, match?: Match) => FillResult;
 
 /** One answer chosen among a field's options (a select, a radio group, a combobox, a typeahead's results), or the row
- *  it gets instead. */
-function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext, blank: Blank):
-  Planned | FillResult {
+ *  it gets instead. With `llm`, a tie may go to the LLM tiebreak: the field then waits for it (Asked). */
+function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext, blank: Blank,
+  llm = false): Planned | Asked | FillResult {
   if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
   const prepared = prepareOptions(spec.options, choice.domain, ctx.input.vocab);
-  const match = matchValue(matchInputOf(spec, resolution, choice, prepared), ctx);
-  if (match === 'waiting') return blank('flagged', 'waiting-for-options');
+  const input = matchInputOf(spec, resolution, choice, prepared);
+  let matched: Matched;
+  if (llm) {
+    matched = matchChoice(input, ctx);
+  } else {
+    const plain = matchValue(input, ctx);
+    matched = plain === 'waiting' ? { kind: 'waiting' } : { kind: 'match', match: plain };
+  }
+  if (matched.kind === 'waiting') return blank('flagged', 'waiting-for-options');
+  if (matched.kind === 'ask') {
+    // Until the LLM answers, the field stands as the cascade left it, blank and flagged.
+    return { asked: matched.item, row: blank('flagged', matched.fallback.stage === 'none' ? matched.fallback.reason
+      : 'ambiguous-options', { ...matched.fallback, stage: 'none', optionIndex: null }) };
+  }
+  const { match, origin } = matched;
   if (match.stage === 'none' || match.optionIndex === null) return blank('flagged', match.reason, match);
   const option = prepared.list.find((candidate) => candidate.index === match.optionIndex)!;
   const selected = selectedIndices(spec, prepared);
@@ -182,12 +244,12 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   const prefilled = selected.size > 0 && (spec.kind !== 'select' || prepared.list.some((item) => item.placeholder));
   return {
     value: { kind: 'option', index: option.index, cleanLabel: option.clean, ...(freeText ? { freeText } : {}) },
-    match, ...(prefilled ? { flag: 'prefill-conflict' as const } : {}),
+    match, ...(prefilled ? { flag: 'prefill-conflict' as const } : {}), ...(origin ? { origin } : {}),
   };
 }
 
-/** The planned write of a field, or the row it gets instead. */
-function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: FieldPlanContext): Planned | FillResult {
+/** The planned write of a field, the row it gets instead, or the question it waits on. */
+function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: FieldPlanContext): Planned | Asked | FillResult {
   const { category } = resolution;
   const blank: Blank = (status, reason, match) =>
     rowWithout(spec, category, status, reason, resolution.confidence * (match?.confidence ?? 1), match);
@@ -222,7 +284,10 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       // The results one of its queries showed, which the frame read (Phase 4, §4.11): matched as a choice. Only a match
       // in the fill band chooses one (planField); anything less leaves them unchosen, and the frame types its next
       // query.
-      if (spec.options !== 'lazy' && spec.options.length > 0) return planChoice(spec, resolution, shaped.choice, ctx, blank);
+      if (spec.options !== 'lazy' && spec.options.length > 0) {
+        const chosen = planChoice(spec, resolution, shaped.choice, ctx, blank);
+        return 'asked' in chosen ? chosen.row : chosen;
+      }
       const search: Planned = { value: { kind: 'query', queries: shaped.queries }, match: NOT_APPLICABLE };
       const shown = current.kind === 'text' ? [current.text] : current.kind === 'selected' ? current.labels : [];
       if (shown.length === 0 || shown.every((text) => text.trim() === '')) return search;
@@ -239,7 +304,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       return { ...search, flag: 'prefill-conflict' };
     }
     case 'choice':
-      return planChoice(spec, resolution, shaped.choice, ctx, blank);
+      return planChoice(spec, resolution, shaped.choice, ctx, blank, true);
     case 'set': {
       if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
       const preparedBy = new Map<string, PreparedOptions>();
@@ -296,9 +361,9 @@ function originOf(resolution: Resolution, value: WriteValue): ValueOrigin {
   return origin;
 }
 
-/** One field's write, if any, and its row. */
+/** One field's write, if any, its row, and the tiebreak it waits on, if any. */
 function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanContext):
-  { write?: PlannedWrite; row: FillResult } {
+  { write?: PlannedWrite; row: FillResult; asked?: TiebreakItem } {
   const { resolution, shaped } = resolved;
   const honeypot = checkHoneypot(spec);
   if (!honeypot.ok) {
@@ -311,6 +376,7 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   if (!fills || shaped === null || resolution.origin === null) return { row: rowOfResolution(spec, resolution) };
 
   const planned = plan(spec, resolution, shaped, ctx);
+  if ('asked' in planned) return { row: planned.row, asked: planned.asked };
   if (!('value' in planned)) return { row: planned };
   const confidence = round(resolution.confidence * planned.match.confidence);
   const flag = planned.flag ?? (resolution.reason !== 'ok' ? resolution.reason : undefined)
@@ -325,8 +391,8 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   if (spec.kind === 'typeahead-remote' && planned.value.kind === 'option' && action !== 'fill') {
     return { row: rowWithout(spec, resolution.category, 'flagged', flag ?? 'low-confidence', confidence, planned.match) };
   }
-  const write: PlannedWrite = { key: spec.key, value: planned.value, origin: originOf(resolution, planned.value),
-    match: planned.match };
+  const write: PlannedWrite = { key: spec.key, value: planned.value,
+    origin: planned.origin ?? originOf(resolution, planned.value), match: planned.match };
   const verdict = guardWrite(write, { spec, category: resolution.category,
     ...(planned.multi ? { multi: planned.multi } : {}) }, ctx.guard);
   if (!verdict.ok) {
@@ -371,13 +437,29 @@ export function planFrame(input: PlanInput): PlanOutput {
     .map((field) => sectionKey(field.spec.section)));
   const chosen = classified.filter((field) => wanted === null || wanted.has(field.spec.key));
   const specs = chosen.map((field) => field.spec);
-  const resolved = chosen.map(({ spec, classification }) => resolveField(spec, {
+  const resolveWith = (spec: FieldSpec, classification: FieldClassification) => resolveField(spec, {
     profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
-  }, classification));
-  // Only a field that could be written asks for the sensitive part: never a honeypot, a disabled control or a field no
-  // visible label names (checkHoneypot).
+  }, classification);
+  // Only a field that could be written asks for the sensitive part or the LLM: never a honeypot, a disabled control or
+  // a field no visible label names (checkHoneypot).
   const writable = (spec: FieldSpec) => checkHoneypot(spec).ok && !spec.disabled && !spec.readOnly;
+  const classify: ClassifyItem[] = [];
+  const resolved = chosen.map(({ spec, classification }) => {
+    const first = resolveWith(spec, classification);
+    // Step 5: a field nothing classified, not even a saved answer, goes to the LLM (settings.llm.classify), screened
+    // first; the run's answer, once it has one, decides it.
+    if (classification.by !== 'none' || first.resolution.classifiedBy !== 'none' || !input.settings.llm.classify
+      || !writable(spec) || !classifiable(spec)) return first;
+    if (screenForClassify(spec, input.vocab) !== null) return resolveWith(spec, { by: 'llm', llm: SCREENED });
+    const verdict = input.ai?.classifications.get(spec.key);
+    if (verdict !== undefined) {
+      return resolveWith(spec, { by: 'llm', llm: judgeClassification(spec, verdict, input.vocab) });
+    }
+    const item = classifyItemOf(spec);
+    if (item !== null) classify.push(item);
+    return first;
+  });
   if (input.sensitiveState === 'not-loaded' && resolved.some((field, at) => field.needsSensitive && writable(specs[at]!))) {
     return { writes: [], results: [], awaiting: [], needsSensitive: true, persistableCanaries: kept };
   }
@@ -387,6 +469,10 @@ export function planFrame(input: PlanInput): PlanOutput {
   const planned = specs.map((spec, at) => ({ spec, ...planField(spec, resolved[at]!, { input, guard }) }));
   const writes = planned.filter((field) => field.write !== undefined)
     .sort((a, b) => a.spec.domOrder - b.spec.domOrder).map((field) => field.write!);
-  return { writes: input.dryRun ? [] : writes, results: planned.map((field) => field.row), awaiting: [],
-    needsSensitive: false, persistableCanaries: kept };
+  const tiebreaks = planned.flatMap((field) => field.asked === undefined ? [] : [field.asked]);
+  const asking = new Set<string>([...classify.map((item) => item.key), ...planned
+    .filter((field) => field.asked !== undefined).map((field) => field.spec.key)]);
+  const awaiting = specs.filter((spec) => asking.has(spec.key)).map((spec) => spec.key);
+  return { writes: input.dryRun ? [] : writes, results: planned.map((field) => field.row), awaiting,
+    ...(awaiting.length > 0 ? { ask: { tiebreaks, classify } } : {}), needsSensitive: false, persistableCanaries: kept };
 }

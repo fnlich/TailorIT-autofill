@@ -1,6 +1,9 @@
 // Fails any build that drifts from the narrowest manifest the plan allows (docs/PRIVACY.md justifies each key).
-// Checks .output/chrome-mv3, .output/edge-mv3 and .output-e2e/chrome-mv3; pass --all to require all three.
-// Usage: node scripts/check-build.mjs [--all]
+// Checks .output/chrome-mv3, .output/edge-mv3 and .output-e2e/chrome-mv3; pass --all to require all three. Also checks
+// the dry-run build, .output-worktree/chrome-mv3 (npm run build:worktree, docs/DRY-RUN.md), when it is there, and
+// requires it with --worktree: a production build that differs from .output/chrome-mv3 only by TailorIT's origin.
+// Every build's bundles hold no other build's TailorIT origin.
+// Usage: node scripts/check-build.mjs [--all] [--worktree]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -8,6 +11,7 @@ import { paint } from './proc.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const requireAll = process.argv.includes('--all');
+const requireWorktree = process.argv.includes('--worktree');
 const { ATS_MATCHES } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
 const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
 /** The content script, React included once the in-page panel lands, must stay under this: every file the manifest's
@@ -18,7 +22,11 @@ const BUILDS = [
   { dir: '.output/chrome-mv3', origin: 'http://localhost:3100', production: true },
   { dir: '.output/edge-mv3', origin: 'http://localhost:3100', production: true },
   { dir: '.output-e2e/chrome-mv3', origin: 'http://localhost:3190', production: false },
+  // The dry run's: production in every way but TailorIT's origin, the autofill worktree's web server.
+  { dir: '.output-worktree/chrome-mv3', origin: 'http://localhost:3300', production: true, worktree: true },
 ];
+/** Each build's TailorIT, as its bundles name it: none may hold another build's. */
+const ORIGIN_HOSTS = [...new Set(BUILDS.map((build) => new URL(build.origin).host))];
 /**
  * Strings that exist only in the e2e build; a production bundle containing one fails. The e2e fallback's sender check
  * (src/background/senders.ts) is a regular expression, which a bundle holds as written, its dots escaped: hence both
@@ -105,7 +113,8 @@ const checked = [];
 for (const build of BUILDS) {
   const dir = join(ROOT, build.dir);
   if (!existsSync(join(dir, 'manifest.json'))) {
-    if (requireAll || build.dir === '.output/chrome-mv3') failures.push(`${build.dir}: not built`);
+    const required = build.worktree ? requireWorktree : requireAll || build.dir === '.output/chrome-mv3';
+    if (required) failures.push(`${build.dir}: not built`);
     continue;
   }
   const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
@@ -121,18 +130,30 @@ for (const build of BUILDS) {
   for (const file of all) {
     const text = readFileSync(file, 'utf8');
     for (const needle of DEV_ONLY) if (text.includes(needle)) fail(build, `${relative(dir, file)} contains the development-only "${needle}"`);
+    const own = new URL(build.origin).host;
+    for (const host of ORIGIN_HOSTS.filter((other) => other !== own && !(build.production && E2E_ONLY.includes(other)))) {
+      if (text.includes(host)) fail(build, `${relative(dir, file)} holds another build's TailorIT, "${host}"`);
+    }
   }
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
   checkContentScriptSize(build, dir, manifest);
   checked.push({ build, sizes: all.map((file) => [relative(dir, file), statSync(file).size]) });
 }
 
-// The e2e manifest may differ from production only by TailorIT's origin (and the fallback match, when on).
+// The e2e manifest may differ from production only by TailorIT's origin (and the fallback match, when on), and so may
+// the dry run's.
 const production = BUILDS[0]?.manifest;
 const e2e = BUILDS[2]?.manifest;
+const worktree = BUILDS[3]?.manifest;
 if (production && e2e) {
   const normalise = (m) => JSON.parse(JSON.stringify(m).replaceAll('http://localhost:3190', 'http://localhost:3100').replaceAll(',"http://127.0.0.1/*"', ''));
   if (JSON.stringify(normalise(e2e)) !== JSON.stringify(production)) failures.push('the e2e manifest differs from production by more than the origin');
+}
+if (production && worktree) {
+  const normalise = (m) => JSON.parse(JSON.stringify(m).replaceAll('http://localhost:3300', 'http://localhost:3100'));
+  if (JSON.stringify(normalise(worktree)) !== JSON.stringify(production)) {
+    failures.push('the worktree manifest differs from production by more than the origin');
+  }
 }
 
 for (const { build, sizes } of checked) {

@@ -1,0 +1,21 @@
+{
+  "platform": "greenhouse",
+  "items": [
+    {
+      "key": "greenhouse|main|where-do-you-work-today|none|0",
+      "kind": "text",
+      "label": "Where do you work today?",
+      "hint": "",
+      "section": "Additional questions",
+      "options": []
+    },
+    {
+      "key": "greenhouse|main|where-do-you-work-today|none|0",
+      "kind": "text",
+      "label": "Current employer",
+      "hint": "",
+      "section": "Additional questions",
+      "options": []
+    }
+  ]
+}

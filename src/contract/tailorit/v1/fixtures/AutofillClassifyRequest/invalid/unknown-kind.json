@@ -1,0 +1,13 @@
+{
+  "platform": "greenhouse",
+  "items": [
+    {
+      "key": "greenhouse|main|where-do-you-work-today|none|0",
+      "kind": "dropdown",
+      "label": "Where do you work today?",
+      "hint": "",
+      "section": "Additional questions",
+      "options": []
+    }
+  ]
+}

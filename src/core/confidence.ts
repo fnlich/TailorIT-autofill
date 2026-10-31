@@ -209,3 +209,8 @@ export const TIEBREAK_REQUEST_TEXT_MAX = 100_000;
 /** A task is filled to at most this share of TIEBREAK_REQUEST_TEXT_MAX, counted as the JSON of the extension's own
  *  items (which hold more than the request TailorIT reads), so the count errs high and the margin stays. */
 export const TIEBREAK_REQUEST_TEXT_SHARE = 0.9;
+
+// TailorIT's caps on a classify request (Phase 4, AUTOFILL_AI_LIMITS.classify in the contract).
+
+/** A classify item's label, hint, section and each option: at most this many code points, cut after a whole word. */
+export const CLASSIFY_TEXT_MAX = 200;
