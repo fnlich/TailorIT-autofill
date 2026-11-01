@@ -6,10 +6,18 @@
  *
  * Layout: the notices on top (a policy card among them for each frame whose run waits for that decision; its buttons
  * decide for that frame alone, so another frame's pause or card is never answered by them; under its sentence, the
- * line saying when only TailorIT's saved copy of the posting said it, as the page's own card says), then one block
+ * line saying when only TailorIT's saved copy of the posting said it, as the page's own card says), unless the
+ * container draws them itself (ReportNotices: the side panel puts them above its main button); then the completion
+ * (the rows ready of those ready or waiting for the person, as counts and never a percent, the required ones, a count
+ * per status, and a line saying nothing needs the person only when no run works and no notice stands); then one block
  * per frame, with its run status and step (the adapter's progress line where the report has one), then its rows by
- * section. A row shows the label, status, provenance, matcher stage, confidence and a reason sentence (COPY), and
- * carries data-field-key, data-status, data-provenance and data-draft for tests.
+ * section, in report order.
+ *
+ * A row that needs the person (needsPerson: it asks for them, or it is flagged or blocked) is an open card: its label,
+ * status, a reason sentence (COPY), its provenance, matcher stage and confidence, then its actions. Every other row
+ * folds into one line (details/summary) that keeps its label, provenance and status in view, the rest a click away;
+ * an AI draft keeps its mark and its dashed edge either way. No button ever sits in a summary. Each row carries
+ * data-field-key, data-status, data-provenance, data-draft and data-layout for tests.
  *
  * Row actions, each drawn only when the container passes its callback (and, with actionsFrameId, only on that frame's
  * rows: the in-page panel acts on its own frame alone):
@@ -21,14 +29,17 @@
  *
  * No value is ever shown: a report holds none, and a row renders only the fields named above, whatever else an object
  * might carry. The one page text beyond labels and progress lines is a row's suggested options, asked for when the row
- * is opened (describeField) and held in the open row's state only, never stored or logged.
+ * is opened (describeField) and held in the open row's state only, never stored or logged: a folded row that closes
+ * forgets them.
  */
-import { useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { COPY } from '../../shared/copy';
+import { noticeToneOf } from '../../shared/palette';
 import type { FrameReport } from '../../shared/report';
+import { Icon } from '../brand/Icon';
 import {
-  awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, offersSave, overallStatus, percent, policyFromStoredCopy,
-  sectionsOf, stepText, type ReportRow,
+  awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, needsPerson, offersSave, overallStatus, percent,
+  policyFromStoredCopy, rowIconOf, sectionsOf, stepText, stripToneOf, tallyOf, type ReportRow,
 } from './model';
 import { adoptReportStyles } from './styles';
 
@@ -64,10 +75,13 @@ export interface ReportActions {
 export interface ReportProps extends ReportActions {
   /** The tab's reports, one per frame. */
   reports: readonly FrameReport[];
+  /** Whether the report draws the notices on top (the default). The side panel draws them itself, above its main
+   *  button, with ReportNotices. */
+  notices?: boolean;
 }
 
-/** The whole report: notices, then each frame's rows. */
-export function Report({ reports, ...actions }: ReportProps) {
+/** The whole report: notices, the completion, then each frame's rows. */
+export function Report({ reports, notices = true, ...actions }: ReportProps) {
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (root.current) adoptReportStyles(root.current.getRootNode());
@@ -75,81 +89,157 @@ export function Report({ reports, ...actions }: ReportProps) {
   const frames = [...reports].sort((a, b) => a.frameId - b.frameId);
   return (
     <div className="tia-report" ref={root}>
-      <Notices reports={frames} onPolicyDecision={actions.onPolicyDecision} busy={actions.busy ?? false} />
+      {notices && <ReportNotices reports={frames} onPolicyDecision={actions.onPolicyDecision} busy={actions.busy ?? false} />}
       {frames.length === 0 ? (
         <p className="tia-empty">{COPY.panelEmpty}</p>
       ) : (
-        frames.map((report) => <Frame key={report.frameId} report={report} actions={actions} />)
+        <>
+          <Completion reports={frames} />
+          {frames.map((report) => <Frame key={report.frameId} report={report} actions={actions} />)}
+        </>
       )}
     </div>
   );
 }
 
 /** The run status that most needs the person across the tab's frames, with its step ("Ready for your review · Step 2
- *  of 4"); nothing without a report. The side panel and the in-page panel show it above the report. */
+ *  of 4"), as a strip toned by where the run stands; nothing without a report. The side panel and the in-page panel
+ *  show it above the report. Its dot is drawn by the stylesheet, so its text is exactly the status and step. */
 export function RunStatusLine({ reports, className = 'tia-status' }: { reports: readonly FrameReport[]; className?: string }) {
   const status = overallStatus(reports);
   if (status === null) return null;
   // The step of a frame at that status that tells steps apart (a frame whose adapter cannot has none).
   const step = reports.find((report) => report.status === status && report.step !== undefined)?.step;
   return (
-    <p className={className} data-run-status={status}>
+    <p className={`${className} tia-strip`} data-run-status={status}
+      data-tone={stripToneOf(status, tallyOf(reports)?.needsYou ?? 0)}>
       {COPY.runStatuses[status]}
       {step && ` · ${stepText(step)}`}
     </p>
   );
 }
 
-/** Every frame's notices once each; the policy cards lead, one per frame whose run waits for the person's decision.
- *  When several wait, each card names its frame. */
-function Notices({ reports, onPolicyDecision, busy }: {
+/** Every frame's notices once each, each with its tone's icon; the policy cards lead, one per frame whose run waits
+ *  for the person's decision. When several wait, each card names its frame. */
+export function ReportNotices({ reports, onPolicyDecision, busy = false }: {
   reports: readonly FrameReport[];
-  onPolicyDecision: ReportActions['onPolicyDecision'];
-  busy: boolean;
+  onPolicyDecision?: ReportActions['onPolicyDecision'];
+  busy?: boolean;
 }) {
-  const waiting = framesAtPolicyCard(reports);
-  const codes = combinedNotices(reports).filter((code) => !(waiting.length > 0 && code === 'policy'));
+  const frames = [...reports].sort((a, b) => a.frameId - b.frameId);
+  const waiting = framesAtPolicyCard(frames);
+  const codes = combinedNotices(frames).filter((code) => !(waiting.length > 0 && code === 'policy'));
   if (waiting.length === 0 && codes.length === 0) return null;
   // Past the card: the policy notice says where it was found when every frame that reported it found it only in the
   // saved copy.
-  const policyFrames = reports.filter((report) => report.notices.some((notice) => notice.code === 'policy'));
+  const policyFrames = frames.filter((report) => report.notices.some((notice) => notice.code === 'policy'));
   const storedOnly = policyFrames.length > 0 && policyFrames.every(policyFromStoredCopy);
   return (
     <div className="tia-notices">
       {waiting.map((report) => (
-        <div key={report.frameId} className="tia-notice tia-notice--policy" data-notice="policy"
+        <div key={report.frameId} className="tia-notice tia-notice--policy" data-notice="policy" data-tone="warning"
           data-policy-frame={report.frameId} role="alert">
-          <p className="tia-notice__text">{COPY.notices.policy}</p>
-          {policyFromStoredCopy(report) && (
-            <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>
-          )}
-          {waiting.length > 1 && (
-            <p className="tia-notice__text">{COPY.report.frame(COPY.platforms[report.platform], report.frameId !== 0)}</p>
-          )}
-          {onPolicyDecision && (
-            <div className="tia-notice__actions">
-              <button type="button" className="tia-button tia-button--primary" disabled={busy}
-                onClick={() => onPolicyDecision(report.frameId, 'fill')}>{COPY.policyFillAnyway}</button>
-              <button type="button" className="tia-button" disabled={busy}
-                onClick={() => onPolicyDecision(report.frameId, 'cancel')}>{COPY.policyCancel}</button>
-            </div>
-          )}
+          <Icon name="alert" size={18} className="tia-icon tia-notice__icon" />
+          <div className="tia-notice__body">
+            <p className="tia-notice__text">{COPY.notices.policy}</p>
+            {policyFromStoredCopy(report) && (
+              <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>
+            )}
+            {waiting.length > 1 && (
+              <p className="tia-notice__text">{COPY.report.frame(COPY.platforms[report.platform], report.frameId !== 0)}</p>
+            )}
+            {onPolicyDecision && (
+              <div className="tia-notice__actions">
+                <button type="button" className="tia-button tia-button--primary" disabled={busy}
+                  onClick={() => onPolicyDecision(report.frameId, 'fill')}>{COPY.policyFillAnyway}</button>
+                <button type="button" className="tia-button" disabled={busy}
+                  onClick={() => onPolicyDecision(report.frameId, 'cancel')}>{COPY.policyCancel}</button>
+              </div>
+            )}
+          </div>
         </div>
       ))}
       {codes.map((code) => (code === 'policy' ? (
-        <div key={code} className="tia-notice tia-notice--policy" data-notice={code} role="alert">
-          <p className="tia-notice__text">{COPY.notices.policy}</p>
-          {storedOnly && <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>}
+        <div key={code} className="tia-notice tia-notice--policy" data-notice={code} data-tone="warning" role="alert">
+          <Icon name="alert" size={18} className="tia-icon tia-notice__icon" />
+          <div className="tia-notice__body">
+            <p className="tia-notice__text">{COPY.notices.policy}</p>
+            {storedOnly && <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>}
+          </div>
         </div>
       ) : (
-        <p key={code} className={`tia-notice tia-notice--${code}`} data-notice={code}
+        <p key={code} className={`tia-notice tia-notice--${code}`} data-notice={code} data-tone={noticeToneOf(code)}
           role={code === 'tripwire' ? 'alert' : undefined}>
+          <Icon name={noticeToneOf(code) === 'info' ? 'info' : 'alert'} size={18} className="tia-icon tia-notice__icon" />
           {COPY.notices[code]}
         </p>
       )))}
     </div>
   );
 }
+
+/**
+ * How far the tab's forms are: the rows ready of those ready or waiting for the person, as counts and a bar; how many
+ * wait; the required ones; a count per status. "Nothing needs you" only when nothing waits, something is ready, no run
+ * still works and no notice stands (a notice can ask the person to check something, such as a posting the extension
+ * could not read), and never in a dry run, which wrote nothing.
+ */
+function Completion({ reports }: { reports: readonly FrameReport[] }) {
+  const labelId = useId();
+  const tally = tallyOf(reports);
+  if (tally === null) return null;
+  const { ready, needsYou, required, dryRun, working } = tally;
+  const of = ready + needsYou;
+  const words = COPY.report;
+  const allClear = needsYou === 0 && ready > 0 && !working && !dryRun && combinedNotices(reports).length === 0
+    && framesAtPolicyCard(reports).length === 0;
+  return (
+    <div className="tia-completion" data-completion="" data-ready={ready} data-needs={needsYou}>
+      {of > 0 && (
+        <>
+          <div className="tia-completion__head">
+            <span className="tia-completion__label" id={labelId}>{words.completion}</span>
+            <span className="tia-completion__value">
+              {dryRun ? words.completionValueDryRun(ready, of) : words.completionValue(ready, of)}
+            </span>
+          </div>
+          <div className="tia-progress" role="progressbar" aria-labelledby={labelId} aria-valuemin={0} aria-valuemax={of}
+            aria-valuenow={ready} aria-valuetext={dryRun ? words.completionTextDryRun(ready, of) : words.completionText(ready, of)}>
+            {/* The width goes through the CSSOM (React's style property), which a page's style-src does not govern. */}
+            <div className="tia-progress__fill" style={{ width: `${(ready / of) * 100}%` }} />
+          </div>
+        </>
+      )}
+      {needsYou > 0 && (
+        <p className="tia-completion__needs">
+          <Icon name="alert" size={16} />
+          {dryRun ? words.needsYouDryRun(needsYou) : words.needsYou(needsYou)}
+        </p>
+      )}
+      {allClear && (
+        <p className="tia-allclear">
+          <Icon name="check-circle" size={16} />
+          {words.allClear}
+        </p>
+      )}
+      {required.of > 0 && (
+        <p className="tia-completion__required">
+          {dryRun ? words.requiredReadyDryRun(required.ready, required.of) : words.requiredReady(required.ready, required.of)}
+        </p>
+      )}
+      <ul className="tia-tally">
+        {TALLY_ORDER.filter((status) => tally.byStatus[status] > 0).map((status) => (
+          <li key={status} className={`tia-tag tia-tag--${status}`} data-tally={status}>
+            {words.tally(tally.byStatus[status], COPY.statuses[status])}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The tally's order: what is done, then what waits, then what was left alone. */
+const TALLY_ORDER = ['verified', 'filled', 'flagged', 'blocked', 'skipped'] as const;
 
 /** One frame: what it is, where its run stands, then its rows by section. */
 function Frame({ report, actions }: { report: FrameReport; actions: ReportActions }) {
@@ -166,9 +256,9 @@ function Frame({ report, actions }: { report: FrameReport; actions: ReportAction
         </span>
       </header>
       {report.status === 'handoff' && report.pauseReason !== null && (
-        <p className="tia-frame__note">{COPY.pauseReasons[report.pauseReason]}</p>
+        <p className="tia-frame__note tia-frame__note--pause">{COPY.pauseReasons[report.pauseReason]}</p>
       )}
-      {report.mode === 'dry-run' && <p className="tia-frame__note">{COPY.report.dryRun}</p>}
+      {report.mode === 'dry-run' && <p className="tia-frame__note tia-frame__note--dry-run">{COPY.report.dryRun}</p>}
       {report.counters.hiddenControlsIgnored > 0 && (
         <p className="tia-frame__note">{COPY.report.hiddenIgnored(report.counters.hiddenControlsIgnored)}</p>
       )}
@@ -193,7 +283,10 @@ type Suggestions =
   | { state: 'failed' }
   | { state: 'shown'; labels: readonly SuggestionLabel[] };
 
-/** One field's row. It renders only the fields it names: never a value, whatever the object carries. */
+/**
+ * One field's row: an open card when it needs the person, else folded into a line. It renders only the fields it
+ * names: never a value, whatever the object carries.
+ */
 function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actions: ReportActions }) {
   const [suggestions, setSuggestions] = useState<Suggestions>({ state: 'closed' });
   const asked = useRef(0);
@@ -204,13 +297,18 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
   const draft = row.provenance === 'llm-draft';
   const describe = describeField !== undefined && scores.length > 0;
 
-  const toggle = () => {
+  /** Forgets the labels: they live only while the row is open (a folded row's line too). */
+  const forget = () => {
     asked.current += 1;
+    setSuggestions({ state: 'closed' });
+  };
+
+  const toggle = () => {
     if (suggestions.state !== 'closed') {
-      // Closing forgets the labels: they live only while the row is open.
-      setSuggestions({ state: 'closed' });
+      forget();
       return;
     }
+    asked.current += 1;
     if (!describeField) return;
     const ask = asked.current;
     setSuggestions({ state: 'loading' });
@@ -237,27 +335,34 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
     </button>
   );
 
-  return (
-    <li className="tia-row" data-field-key={row.key} data-status={row.status} data-provenance={row.provenance ?? 'none'}
-      data-draft={draft ? 'true' : 'false'}>
-      <div className="tia-row__head">
-        <span className="tia-row__label">
-          {row.label || COPY.report.noLabel}
-          {row.required && (
-            <>
-              <span className="tia-row__required" aria-hidden="true">*</span>
-              <span className="tia-visually-hidden">{` (${COPY.report.required})`}</span>
-            </>
-          )}
-          {draft && <span className="tia-row__draft">{COPY.report.draftMark}</span>}
-        </span>
-        <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>
-      </div>
+  const label = (
+    <span className="tia-row__label">
+      {row.label || COPY.report.noLabel}
+      {row.required && (
+        <>
+          <span className="tia-row__required" aria-hidden="true">*</span>
+          <span className="tia-visually-hidden">{` (${COPY.report.required})`}</span>
+        </>
+      )}
+    </span>
+  );
+  const draftMark = draft && (
+    <span className="tia-row__draft">
+      <Icon name="sparkle" size={12} />
+      {COPY.report.draftMark}
+    </span>
+  );
+  const chip = <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>;
+  const icon = <Icon name={rowIconOf(row)} size={18} className={`tia-icon tia-row__icon tia-row__icon--${row.status}`} />;
+  const source = row.provenance === null ? COPY.report.noSource : COPY.provenances[row.provenance];
+
+  const body: ReactNode = (
+    <div className="tia-row__body">
       <p className="tia-row__reason">{COPY.reasons[row.reason]}</p>
       <dl className="tia-row__facts">
         <div className="tia-row__fact">
           <dt>{COPY.report.source}</dt>
-          <dd>{row.provenance === null ? COPY.report.noSource : COPY.provenances[row.provenance]}</dd>
+          <dd>{source}</dd>
         </div>
         <div className="tia-row__fact">
           <dt>{COPY.report.match}</dt>
@@ -273,13 +378,14 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
           {confirmButton}
           {saveButton}
           {onShowField && (
-            <button type="button" className="tia-button" data-action="show-field" onClick={() => onShowField(frameId, row.key)}>
+            <button type="button" className="tia-button tia-button--quiet" data-action="show-field"
+              onClick={() => onShowField(frameId, row.key)}>
               {COPY.report.showOnPage}
             </button>
           )}
           {describe && (
-            <button type="button" className="tia-button" data-action="suggestions" aria-expanded={suggestions.state !== 'closed'}
-              aria-controls={panelId} onClick={toggle}>
+            <button type="button" className="tia-button tia-button--quiet" data-action="suggestions"
+              aria-expanded={suggestions.state !== 'closed'} aria-controls={panelId} onClick={toggle}>
               {suggestions.state === 'closed' ? COPY.report.showSuggestions(scores.length) : COPY.report.hideSuggestions}
             </button>
           )}
@@ -307,6 +413,47 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
           )}
         </div>
       )}
+    </div>
+  );
+
+  const hooks = { 'data-field-key': row.key, 'data-status': row.status, 'data-provenance': row.provenance ?? 'none',
+    'data-draft': draft ? 'true' : 'false' };
+  if (needsPerson(row)) {
+    return (
+      <li className={`tia-row tia-row--card tia-row--${row.status}`} {...hooks} data-layout="card">
+        <div className="tia-row__head">
+          {icon}
+          <span className="tia-row__title">
+            {label}
+            {draftMark}
+          </span>
+          {chip}
+        </div>
+        {body}
+      </li>
+    );
+  }
+  return (
+    <li className={`tia-row tia-row--line tia-row--${row.status}`} {...hooks} data-layout="line">
+      <details className="tia-row__more" onToggle={(event) => {
+        // Folded again, the row forgets the options it asked for.
+        if (!event.currentTarget.open && suggestions.state !== 'closed') forget();
+      }}>
+        <summary className="tia-row__line">
+          {icon}
+          <span className="tia-row__title">
+            {label}
+            {draftMark}
+            <span className="tia-row__source">{source}</span>
+          </span>
+          {chip}
+          <span className="tia-row__chevron">
+            <Icon name="chevron-down" size={16} className="tia-icon tia-chevron tia-chevron--down" />
+            <Icon name="chevron-up" size={16} className="tia-icon tia-chevron tia-chevron--up" />
+          </span>
+        </summary>
+        {body}
+      </details>
     </li>
   );
 }

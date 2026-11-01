@@ -1,13 +1,18 @@
 /*
- * The launcher (docs/design/runtime.md §10.1): a 32 px button the page UI anchors to the form root's top-right corner.
- * It shows the run's state (idle, running, needs you, review N, error) and offers the one action that state allows:
- * Fill, Continue or Open review (the runtime picks it; at the policy card it is Open review, since the side panel
- * mirrors the card). It accepts trusted clicks only, so a page can never
- * start a fill or open the panel by clicking it from script. Its action runs synchronously inside the click handler:
- * Open review must reach the worker (panel/open) before anything is awaited, or the browser no longer counts the click
- * as the person's gesture.
+ * The launcher (docs/design/runtime.md §10.1): a 32 px button the page UI anchors to the form root's top-right corner,
+ * drawn as TailorIT's tile (the teal square with its white "T", src/shared/icons.ts LOGO_GLYPH on the button's own teal
+ * background). It shows the run's state (idle, running, needs you, review N, error) in a toned badge on its corner and
+ * offers the one action that state allows: Autofill, Continue or Open review (the runtime picks it; at the policy card
+ * it is Open review, since the side panel mirrors the card). The badge takes no pointer events, so a click on it is
+ * no click on the launcher, whose own box is what the visibility watch judges. It accepts trusted clicks only, so a
+ * page can never start a fill or open the panel by clicking it from script. Its action runs synchronously inside the
+ * click handler: Open review must reach the worker (panel/open) before anything is awaited, or the browser no longer
+ * counts the click as the person's gesture.
  */
 import { COPY } from '../../shared/copy';
+import { ICONS, LOGO_GLYPH } from '../../shared/icons';
+import type { ToneName } from '../../shared/palette';
+import { svgOf } from './svg';
 
 /** The launcher's states. */
 export const LAUNCHER_STATES = ['idle', 'running', 'needs-you', 'review', 'error'] as const;
@@ -34,8 +39,22 @@ export interface Launcher {
   set(view: LauncherView): void;
 }
 
-const GLYPHS: Readonly<Record<LauncherState, string>> = { idle: 'T', running: 'T', 'needs-you': '!', review: '\u{2713}',
-  error: '!' };
+/** What the badge says in a state: its tone and its text (a count or "!"; null: a tick); null hides it. */
+function badgeOf(view: LauncherView): { tone: ToneName; text: string | null } | null {
+  switch (view.state) {
+    case 'idle':
+    case 'running':
+      return null;
+    case 'needs-you':
+      return { tone: 'warning', text: '!' };
+    case 'review': {
+      const count = view.count ?? 0;
+      return count === 0 ? { tone: 'success', text: null } : { tone: 'warning', text: count > 99 ? '99+' : String(count) };
+    }
+    case 'error':
+      return { tone: 'danger', text: '!' };
+  }
+}
 
 function titleOf(view: LauncherView): string {
   switch (view.state) {
@@ -60,6 +79,7 @@ export function createLauncher(doc: Document, onAction: (action: LauncherAction)
   const glyph = doc.createElement('span');
   glyph.className = 'glyph';
   glyph.setAttribute('aria-hidden', 'true');
+  glyph.append(svgOf(doc, LOGO_GLYPH, 32, 'mark'));
   const badge = doc.createElement('span');
   badge.className = 'badge';
   badge.setAttribute('aria-hidden', 'true');
@@ -80,10 +100,16 @@ export function createLauncher(doc: Document, onAction: (action: LauncherAction)
     el.title = title;
     el.setAttribute('aria-label', title);
     el.setAttribute('aria-busy', next.state === 'running' ? 'true' : 'false');
-    glyph.textContent = GLYPHS[next.state];
-    const count = next.state === 'review' ? next.count ?? 0 : 0;
-    badge.hidden = count === 0;
-    badge.textContent = count > 99 ? '99+' : String(count);
+    const shown = badgeOf(next);
+    badge.hidden = shown === null;
+    if (shown === null) {
+      badge.replaceChildren();
+      delete badge.dataset.tone;
+      return;
+    }
+    badge.dataset.tone = shown.tone;
+    if (shown.text === null) badge.replaceChildren(svgOf(doc, ICONS.tick, 10));
+    else badge.textContent = shown.text;
   }
   set(view);
 

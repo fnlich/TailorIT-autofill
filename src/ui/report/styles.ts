@@ -5,101 +5,239 @@
  * the browser can construct one, else a <style> element. It works from that root alone and never assumes the global
  * document.
  *
- * Every class starts with "tia-". The colour tokens sit on .tia-report and .tia-page, so the extension's pages (which
- * add src/ui/page/styles.ts) share them, and a page's own styles cannot reach them inside a shadow root. The status
- * colours are src/shared/palette.ts's, which the page's highlights use too.
+ * Every class starts with "tia-". The tokens sit on .tia-report and .tia-page, so the extension's pages (which add
+ * src/ui/page/styles.ts) share them, and a page's own styles cannot reach them inside a shadow root. Every colour is
+ * src/shared/palette.ts's, TailorIT's own, light only (color-scheme: light): the page's highlights use the same status
+ * colours. What both panels draw lives here: the brand, the strips, notices, buttons, the feedback line, the
+ * completion and the rows. The teal fills (the progress bar); text that reads as the brand is its ink.
+ *
+ * The in-page panel's rules (src/content/ui/styles.ts) forbid transform, opacity below 1, filter and will-change on its
+ * box and buttons, so a disabled button here is greyed by colour, never faded, and every animation is a descendant's.
  */
 import { FILL_STATUSES } from '../../core/enums';
-import { STATUS_COLOURS, STATUS_COLOURS_DARK, type StatusColour } from '../../shared/palette';
+import { BRAND, FONT_STACK, NEUTRAL, SHADOWS, STATUS_COLOURS, TONES } from '../../shared/palette';
 
 /** The status tokens, one pair per status. */
-const statusTokens = (colours: Readonly<Record<(typeof FILL_STATUSES)[number], StatusColour>>, indent: string) =>
-  FILL_STATUSES.map((status) =>
-    `${indent}--tia-${status}: ${colours[status].fg};\n${indent}--tia-${status}-bg: ${colours[status].bg};`).join('\n');
+const STATUS_TOKENS = FILL_STATUSES.map((status) =>
+  `  --tia-${status}: ${STATUS_COLOURS[status].fg};\n  --tia-${status}-bg: ${STATUS_COLOURS[status].bg};`).join('\n');
+
+/** The tone tokens: --tia-tone-<name>-fg and -bg (and danger's -line). */
+const TONE_TOKENS = Object.entries(TONES).map(([name, tone]) =>
+  Object.entries(tone).map(([part, colour]) => `  --tia-tone-${name}-${part}: ${colour};`).join('\n')).join('\n');
+
+/** Each status's own colour on what it marks: a card's edge, an icon, a chip, a tally. */
+const STATUS_RULES = FILL_STATUSES.map((status) => [
+  `.tia-row--card[data-status="${status}"] { border-left-color: var(--tia-${status}); }`,
+  `.tia-row__icon--${status} { color: var(--tia-${status}); }`,
+  `.tia-chip--${status}, .tia-tag--${status} { color: var(--tia-${status}); background: var(--tia-${status}-bg); }`,
+].join('\n')).join('\n');
+
+/** A strip's tint and dot, per tone. */
+const STRIP_TONES = ([['brand', 'brand'], ['working', 'brand'], ['attention', 'warning'], ['done', 'success'],
+  ['neutral', 'neutral'], ['problem', 'danger']] as const).map(([strip, tone]) =>
+  `.tia-strip[data-tone="${strip}"] { background: var(--tia-tone-${tone}-bg); }\n`
+  + `.tia-strip[data-tone="${strip}"]::before { background: var(--tia-tone-${tone}-fg); }`).join('\n');
+
+/** A notice's tint and icon, per tone. */
+const NOTICE_TONES = (['warning', 'danger', 'info'] as const).map((tone) =>
+  `.tia-notice[data-tone="${tone}"] { background: var(--tia-tone-${tone}-bg); }\n`
+  + `.tia-notice[data-tone="${tone}"] .tia-notice__icon { color: var(--tia-tone-${tone}-fg); }`).join('\n');
 
 export const REPORT_CSS = `
 .tia-report, .tia-page {
-  --tia-bg: #ffffff;
-  --tia-fg: #1f2328;
-  --tia-muted: #59636e;
-  --tia-line: #d1d9e0;
-  --tia-card: #f6f8fa;
-  --tia-accent: #0b57d0;
-  --tia-on-accent: #ffffff;
-${statusTokens(STATUS_COLOURS, '  ')}
+  color-scheme: light;
+  --tia-font: ${FONT_STACK};
+  --tia-bg: ${NEUTRAL.surface};
+  --tia-canvas: ${NEUTRAL.canvas};
+  --tia-fg: ${NEUTRAL.fg};
+  --tia-muted: ${NEUTRAL.muted};
+  --tia-line: ${NEUTRAL.line};
+  --tia-control: ${NEUTRAL.control};
+  --tia-control-hover: ${NEUTRAL.controlHover};
+  --tia-input: ${NEUTRAL.input};
+  --tia-chip: ${NEUTRAL.chip};
+  --tia-subtle: ${NEUTRAL.subtle};
+  --tia-track: ${NEUTRAL.track};
+  --tia-hover: ${NEUTRAL.hover};
+  --tia-on-ink: ${NEUTRAL.surface};
+  --tia-brand: ${BRAND.fill};
+  --tia-brand-hover: ${BRAND.fillHover};
+  --tia-brand-active: ${BRAND.fillActive};
+  --tia-ink: ${BRAND.ink};
+  --tia-ink-hover: ${BRAND.inkHover};
+  --tia-brand-container: ${BRAND.container};
+  --tia-brand-tint: ${BRAND.tint};
+  --tia-brand-wash: ${BRAND.wash};
+  --tia-ring-track: ${BRAND.ringTrack};
+  --tia-focus: ${BRAND.ink};
+${STATUS_TOKENS}
+${TONE_TOKENS}
+  --tia-r-control: 10px;
+  --tia-r-row: 12px;
+  --tia-r-card: 16px;
+  --tia-r-panel: 20px;
+  --tia-shadow-control: ${SHADOWS.control};
+  --tia-shadow-card: ${SHADOWS.card};
+  --tia-shadow-pop: ${SHADOWS.pop};
   color: var(--tia-fg);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  .tia-report, .tia-page {
-    --tia-bg: #0d1117;
-    --tia-fg: #e6edf3;
-    --tia-muted: #9198a1;
-    --tia-line: #3d444d;
-    --tia-card: #151b23;
-    --tia-accent: #4c8df6;
-    --tia-on-accent: #0d1117;
-${statusTokens(STATUS_COLOURS_DARK, '    ')}
-  }
+  font: 400 14px/1.5 var(--tia-font);
+  -webkit-font-smoothing: antialiased;
 }
 .tia-report *, .tia-report *::before, .tia-report *::after { box-sizing: border-box; }
+.tia-report { display: flex; flex-direction: column; gap: 16px; }
 .tia-visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden;
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
+.tia-icon { display: block; flex: none; }
+
+.tia-brand { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--tia-fg); }
+.tia-mark { display: block; flex: none; }
+.tia-brand__name { white-space: nowrap; }
+.tia-wordmark { font-weight: 800; letter-spacing: -0.035em; }
+.tia-wordmark__it { color: var(--tia-ink); }
+.tia-brand__product { font-weight: 600; letter-spacing: -0.01em; }
+
 .tia-button {
-  font: inherit; font-size: 13px; line-height: 1.3; padding: 4px 10px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--tia-line); background: var(--tia-card); color: var(--tia-fg);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; margin: 0;
+  padding: 0 12px; border: 1px solid var(--tia-control); border-radius: var(--tia-r-control); background: var(--tia-bg);
+  color: var(--tia-fg); font: 600 13px/1.2 var(--tia-font); text-decoration: none; cursor: pointer;
+  box-shadow: var(--tia-shadow-control);
 }
-.tia-button:hover { border-color: var(--tia-muted); }
-.tia-button:focus-visible { outline: 2px solid var(--tia-accent); outline-offset: 1px; }
-.tia-button:disabled { opacity: 0.55; cursor: default; }
-.tia-button--primary { background: var(--tia-accent); border-color: var(--tia-accent); color: var(--tia-on-accent); }
-.tia-notices { display: grid; gap: 8px; margin: 0 0 12px; }
-.tia-notice { margin: 0; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--tia-line); background: var(--tia-card); }
-.tia-notice--tripwire, .tia-notice--policy { border-color: var(--tia-flagged); background: var(--tia-flagged-bg); }
+.tia-button:hover { border-color: var(--tia-control-hover); background: var(--tia-hover); }
+.tia-button:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-button--primary { border-color: var(--tia-ink); background: var(--tia-ink); color: var(--tia-on-ink); box-shadow: none; }
+.tia-button--primary:hover { border-color: var(--tia-ink-hover); background: var(--tia-ink-hover); }
+.tia-button--quiet { min-height: 28px; padding: 0 8px; border-color: transparent; background: transparent; color: var(--tia-ink);
+  box-shadow: none; }
+.tia-button--quiet:hover { border-color: transparent; background: var(--tia-brand-wash); }
+.tia-button:disabled, .tia-button:disabled:hover { border-color: var(--tia-track); background: var(--tia-track);
+  color: var(--tia-muted); box-shadow: none; cursor: default; }
+
+.tia-strip {
+  position: relative; display: block; margin: 0; padding: 9px 12px 9px 28px; border-radius: var(--tia-r-row);
+  font: 600 13px/1.35 var(--tia-font); color: var(--tia-fg); background: var(--tia-tone-brand-bg); overflow-wrap: anywhere;
+}
+.tia-strip::before {
+  content: ""; position: absolute; top: 14px; left: 12px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--tia-ink);
+}
+${STRIP_TONES}
+.tia-strip[data-tone="working"]::before { animation: tia-pulse 1.4s ease-in-out infinite; }
+.tia-strip a { color: inherit; text-decoration: underline; font-weight: 700; }
+.tia-strip .tia-button { min-height: 28px; margin-left: 4px; vertical-align: middle; }
+@keyframes tia-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(8 117 140 / 0.35); }
+  50% { box-shadow: 0 0 0 4px rgb(8 117 140 / 0); }
+}
+
+.tia-feedback {
+  margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control); background: var(--tia-subtle); color: var(--tia-fg);
+  font: 400 13px/1.45 var(--tia-font);
+}
+
+.tia-notices { display: grid; gap: 8px; margin: 0; }
+.tia-notice {
+  display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 12px 14px; border-radius: var(--tia-r-row);
+  color: var(--tia-fg); font: 400 13px/1.45 var(--tia-font);
+}
+.tia-notice[data-tone="danger"] { box-shadow: inset 0 0 0 1px var(--tia-tone-danger-line); }
+${NOTICE_TONES}
+.tia-notice__icon { margin-top: -1px; }
+.tia-notice__body { flex: 1 1 auto; min-width: 0; }
 .tia-notice__text { margin: 0; }
-.tia-notice__source { margin: 4px 0 0; font-size: 13px; color: var(--tia-muted); }
-.tia-notice__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.tia-notice__text + .tia-notice__text { margin-top: 4px; font-weight: 600; }
+.tia-notice__source { margin: 4px 0 0; font-size: 12px; color: var(--tia-muted); }
+.tia-notice__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
 .tia-empty { margin: 0; color: var(--tia-muted); }
-.tia-frame { margin: 0 0 16px; }
-.tia-frame__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0 0 4px; }
-.tia-frame__name { margin: 0; font-size: 15px; }
-.tia-frame__status { color: var(--tia-muted); }
-.tia-frame__note { margin: 0 0 6px; color: var(--tia-muted); }
-.tia-section { margin: 10px 0 0; }
-.tia-section__name { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--tia-muted); overflow-wrap: anywhere; }
-.tia-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.tia-row {
-  padding: 8px 10px; border: 1px solid var(--tia-line); border-left-width: 4px; border-radius: 6px; background: var(--tia-bg);
+
+.tia-completion { display: grid; gap: 8px; }
+.tia-completion__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tia-completion__label { font-weight: 700; }
+.tia-completion__value { font-size: 13px; font-weight: 700; color: var(--tia-ink); font-variant-numeric: tabular-nums; }
+.tia-progress { height: 10px; border-radius: 999px; background: var(--tia-track); overflow: hidden; }
+.tia-progress__fill { height: 100%; min-width: 0; border-radius: 999px; background: var(--tia-brand); }
+.tia-completion__needs, .tia-allclear {
+  display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600;
 }
-.tia-row[data-status="verified"] { border-left-color: var(--tia-verified); }
-.tia-row[data-status="filled"] { border-left-color: var(--tia-filled); }
-.tia-row[data-status="skipped"] { border-left-color: var(--tia-skipped); }
-.tia-row[data-status="flagged"] { border-left-color: var(--tia-flagged); }
-.tia-row[data-status="blocked"] { border-left-color: var(--tia-blocked); }
-.tia-row[data-draft="true"] { border-left-style: dashed; }
-.tia-row__draft { margin-left: 6px; font-size: 12px; font-weight: 600; color: var(--tia-muted); }
-.tia-row__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.tia-completion__needs { color: var(--tia-tone-warning-fg); }
+.tia-allclear { color: var(--tia-tone-success-fg); }
+.tia-completion__needs .tia-icon, .tia-allclear .tia-icon { flex: none; }
+.tia-completion__required { margin: 0; font-size: 13px; color: var(--tia-muted); font-variant-numeric: tabular-nums; }
+.tia-tally { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tia-tag {
+  display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; background: var(--tia-chip);
+  color: var(--tia-fg); font: 600 12px/1.4 var(--tia-font); font-variant-numeric: tabular-nums;
+}
+
+.tia-frame { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--tia-line); }
+.tia-frame__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
+.tia-frame__name { margin: 0; font: 800 15px/1.3 var(--tia-font); color: var(--tia-fg); }
+.tia-frame__status { font-size: 12px; font-weight: 600; color: var(--tia-muted); }
+.tia-frame__note { margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control); background: var(--tia-subtle); font-size: 13px; }
+.tia-frame__note--pause { background: var(--tia-tone-warning-bg); }
+.tia-frame__note--dry-run { background: var(--tia-brand-tint); }
+.tia-section { display: grid; gap: 6px; }
+.tia-section__name {
+  margin: 4px 0 0; font: 700 11px/1.4 var(--tia-font); letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--tia-muted); overflow-wrap: anywhere;
+}
+.tia-rows { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+
+.tia-row { margin: 0; border-radius: var(--tia-r-row); background: var(--tia-bg); }
+.tia-row--card {
+  margin: 2px 0; padding: 12px 12px 12px 10px; border: 1px solid var(--tia-line); border-left: 3px solid var(--tia-muted);
+  box-shadow: var(--tia-shadow-control);
+}
+.tia-row--line { border-left: 2px solid transparent; }
+.tia-row[data-draft="true"] { border-left: 2px dashed var(--tia-ink); }
+.tia-row__head, .tia-row__line { display: flex; align-items: flex-start; gap: 8px; }
+.tia-row__icon { margin-top: 1px; color: var(--tia-muted); }
+${STATUS_RULES}
+.tia-row__title { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
 .tia-row__label { font-weight: 600; overflow-wrap: anywhere; }
-.tia-run-status { margin: 0; color: var(--tia-muted); }
 .tia-row__required { margin-left: 2px; color: var(--tia-blocked); }
-.tia-chip { flex: none; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-.tia-chip--verified { color: var(--tia-verified); background: var(--tia-verified-bg); }
-.tia-chip--filled { color: var(--tia-filled); background: var(--tia-filled-bg); }
-.tia-chip--skipped { color: var(--tia-skipped); background: var(--tia-skipped-bg); }
-.tia-chip--flagged { color: var(--tia-flagged); background: var(--tia-flagged-bg); }
-.tia-chip--blocked { color: var(--tia-blocked); background: var(--tia-blocked-bg); }
-.tia-row__reason { margin: 4px 0; }
-.tia-row__facts { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0; font-size: 12px; color: var(--tia-muted); }
-.tia-row__fact { display: flex; gap: 4px; }
+.tia-row__draft {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 999px;
+  background: var(--tia-brand-container); color: var(--tia-ink); font: 700 11px/1.6 var(--tia-font); white-space: nowrap;
+}
+.tia-row__draft .tia-icon { display: inline-block; }
+.tia-row__source { font-size: 12px; color: var(--tia-muted); }
+.tia-chip {
+  flex: none; padding: 1px 8px; border-radius: 999px; font: 600 12px/1.5 var(--tia-font); white-space: nowrap;
+}
+.tia-row__body { display: grid; gap: 8px; margin: 8px 0 0 26px; }
+.tia-row__reason { margin: 0; font-size: 13px; }
+.tia-row__facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; font-size: 12px; color: var(--tia-muted); }
+.tia-row__fact { display: flex; gap: 4px; padding: 1px 8px; border-radius: 8px; background: var(--tia-subtle); }
 .tia-row__fact dt { font-weight: 600; }
 .tia-row__fact dd { margin: 0; }
-.tia-row__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
-.tia-suggestions { margin: 6px 0 0; padding: 6px 8px; border-radius: 6px; background: var(--tia-card); font-size: 13px; }
+.tia-row__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 0 -8px; }
+.tia-row__actions .tia-button--primary { margin-left: 8px; }
+.tia-row__more { margin: 0; }
+.tia-row__line {
+  align-items: center; padding: 7px 8px; border-radius: var(--tia-r-control); cursor: pointer; list-style: none;
+}
+.tia-row__line::-webkit-details-marker { display: none; }
+.tia-row__line:hover { background: var(--tia-hover); }
+.tia-row__line:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: -2px; }
+.tia-row__line .tia-row__icon { margin-top: 0; }
+.tia-row__chevron { flex: none; color: var(--tia-muted); }
+.tia-chevron--up, .tia-row__more[open] .tia-chevron--down { display: none; }
+.tia-row__more[open] .tia-chevron--up { display: block; }
+.tia-row--line .tia-row__body { margin: 2px 8px 10px 34px; }
+.tia-suggestions { padding: 8px 10px; border-radius: var(--tia-r-control); background: var(--tia-subtle); font-size: 13px; }
 .tia-suggestions__heading { margin: 0; font-weight: 600; }
 .tia-suggestions__list { margin: 4px 0 0; padding-left: 20px; }
 .tia-suggestions__score { color: var(--tia-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tia-strip[data-tone="working"]::before { animation: none; }
+}
+@media (forced-colors: active) {
+  .tia-button { border: 1px solid ButtonText; }
+  .tia-progress__fill { background: Highlight; }
+}
 `;
 
 const DOCUMENT_NODE = 9;

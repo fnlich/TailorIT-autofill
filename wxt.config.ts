@@ -36,7 +36,9 @@ export default defineConfig({
     permissions: ['storage', 'sidePanel', ...(mode === 'development' ? ['pageCapture'] : [])],
     host_permissions: [...ATS_MATCHES, `${TAILORIT_ORIGIN}/*`],
     externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
-    action: { default_title: 'TailorIT Autofill' },
+    // TailorIT's mark (apps/web/public/logo-mark.svg), rendered by scripts/icons.mjs; check-build checks each size.
+    icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
+    action: { default_title: 'TailorIT Autofill', default_icon: { 16: 'icon/16.png', 32: 'icon/32.png' } },
     // Development builds only, like pageCapture: the snapshot hotkeys (src/background/capture.ts, docs/FIXTURES.md).
     ...(mode === 'development'
       ? { commands: captureCommands({ now: CAPTURE_COPY.commandNow, later: CAPTURE_COPY.commandLater }) }

@@ -20,6 +20,9 @@
  * - It renders synchronously (flushSync), so what it shows is what it was last given. It never shows or receives a
  *   value: reports hold none, and the suggested options' labels live in the open row's state only. Closed, it keeps
  *   nothing: its reports are dropped and its tree unmounted (E7), so the next opening waits for a fresh report.
+ * - TailorIT's look: a white card with a 20 px radius (styles.ts), its head TailorIT's mark and "TailorIT Autofill"
+ *   beside a round chevron that closes it (Close the review), then the run's status strip and what the last action
+ *   did; its body the report (notices, completion, rows). It shows no job facts.
  */
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -27,6 +30,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { COPY } from '../../shared/copy';
 import { log } from '../../shared/log';
 import type { FrameReport } from '../../shared/report';
+import { Brand, Icon } from '../../ui/brand';
 import { adoptReportStyles, Report, RunStatusLine, type SuggestionLabel } from '../../ui/report';
 
 /** What the panel's buttons ask the runtime for. Each is about one of this frame's own fields. */
@@ -98,7 +102,8 @@ function landedInside(event: Event, panel: HTMLElement): boolean {
   return body === null || !body.contains(control) || within(x, y, body.getBoundingClientRect());
 }
 
-/** The panel's body: the run's status, Close, then the report (or a loading line until the first report arrives). */
+/** The panel's head (TailorIT's name, Close, the run's status and what the last action did), then the report (or a
+ *  loading line until the first report arrives). */
 function PanelView({ reports, frameId, actions, seenAtClick }: {
   reports: readonly FrameReport[] | null;
   frameId: number | null;
@@ -125,13 +130,15 @@ function PanelView({ reports, frameId, actions, seenAtClick }: {
   return (
     <>
       <header className="panel__head">
-        <div>
-          <h2 className="panel__title">{COPY.panelTitle}</h2>
-          {reports !== null && <RunStatusLine reports={reports} className="tia-run-status" />}
-          {feedback !== null && <p className="tia-feedback" role="status" data-panel-feedback="">{feedback}</p>}
+        <div className="panel__bar">
+          <h2 className="panel__title tia-brand"><Brand markSize={24} /></h2>
+          <button type="button" className="panel__close" aria-label={COPY.inPage.close} title={COPY.inPage.close}
+            onClick={() => actions.closed()}>
+            <Icon name="chevron-up" size={18} />
+          </button>
         </div>
-        <button type="button" className="panel__close" aria-label={COPY.inPage.close} title={COPY.inPage.close}
-          onClick={() => actions.closed()} />
+        {reports !== null && <RunStatusLine reports={reports} className="tia-run-status" />}
+        {feedback !== null && <p className="tia-feedback" role="status" data-panel-feedback="">{feedback}</p>}
       </header>
       <div className="panel__body">
         {reports === null ? (

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { FrameReport } from '../../shared/report';
 import {
-  awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, offersSave, overallStatus, percent, policyFromStoredCopy,
-  sectionsOf, stepText, type ReportRow,
+  awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, isReady, needsPerson, offersSave, overallStatus, percent,
+  policyFromStoredCopy, rowIconOf, sectionsOf, stepText, stripToneOf, tallyOf, type ReportRow,
 } from './model';
 
 function row(key: string, section: string): ReportRow {
@@ -79,5 +79,58 @@ describe('the report model (Phase 6)', () => {
     expect(policyFromStoredCopy(report(0, { notices: [{ code: 'policy' }] }))).toBe(false);
     // The stored-copy line is said under the policy notice, never as one of its own.
     expect(combinedNotices([report(0, { notices: [{ code: 'policy' }, { code: 'policy-stored-copy' }] })])).toEqual(['policy']);
+  });
+});
+
+describe('the report model (the completion)', () => {
+  let made = 0;
+  const at = (status: ReportRow['status'], overrides: Partial<ReportRow> = {}): ReportRow => {
+    made += 1;
+    return { ...row(`${status}-${made}`, 'Contact'), status, ...overrides };
+  };
+
+  it('needs the person for a flagged, blocked or asking row, whatever its status', () => {
+    expect(needsPerson(at('flagged'))).toBe(true);
+    // A blocked row may come without needsUserAction (core/plan/frame.ts): it still needs the person.
+    expect(needsPerson(at('blocked', { needsUserAction: false }))).toBe(true);
+    expect(needsPerson(at('filled', { provenance: 'llm-draft', needsUserAction: true }))).toBe(true);
+    expect(needsPerson(at('verified'))).toBe(false);
+    expect(needsPerson(at('skipped'))).toBe(false);
+    expect([rowIconOf(at('flagged')), rowIconOf(at('blocked')), rowIconOf(at('verified')), rowIconOf(at('filled')),
+      rowIconOf(at('skipped')), rowIconOf(at('skipped', { reason: 'already-correct' }))])
+      .toEqual(['alert', 'x-circle', 'check-circle', 'check', 'minus-circle', 'check']);
+  });
+
+  it('counts ready, needing and required rows across frames; a field that held its answer is ready', () => {
+    const reports = [
+      report(0, { fields: [at('verified', { required: true }), at('filled'), at('flagged', { required: true, needsUserAction: true }),
+        at('skipped', { reason: 'already-correct', required: true }), at('skipped')] }),
+      report(4, { mode: 'fill', status: 'fill-step', fields: [at('blocked'), at('skipped', { reason: 'end-date-not-applicable' })] }),
+    ];
+    expect(isReady(at('skipped', { reason: 'already-correct' }))).toBe(true);
+    expect(isReady(at('verified', { needsUserAction: true }))).toBe(false);
+    expect(tallyOf(reports)).toEqual({
+      byStatus: { verified: 1, filled: 1, skipped: 3, flagged: 1, blocked: 1 },
+      ready: 4,
+      needsYou: 2,
+      required: { ready: 2, of: 3 },
+      dryRun: false,
+      working: true,
+    });
+    expect(tallyOf([report(0, { mode: 'dry-run', fields: [at('verified')] })])).toMatchObject({ dryRun: true, working: false });
+  });
+
+  it('has no tally without a row', () => {
+    expect(tallyOf([])).toBeNull();
+    expect(tallyOf([report(0), report(2)])).toBeNull();
+  });
+
+  it('tones the strip by run status and what needs the person', () => {
+    expect(['detect', 'fill-step', 'wait-transition'].map((status) => stripToneOf(status as never, 0)))
+      .toEqual(['working', 'working', 'working']);
+    expect([stripToneOf('policy-notice', 0), stripToneOf('auth-needed', 0), stripToneOf('handoff', 0)])
+      .toEqual(['attention', 'attention', 'attention']);
+    expect([stripToneOf('review', 2), stripToneOf('review', 0), stripToneOf('done', 0), stripToneOf('stopped', 3)])
+      .toEqual(['attention', 'done', 'done', 'neutral']);
   });
 });

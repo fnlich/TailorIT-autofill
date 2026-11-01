@@ -1,7 +1,8 @@
 /*
  * The options page (it opens in a tab): the connection to TailorIT and every setting the person may change. Each change
  * is one settings/save, and the page shows what the worker answered: the change shows while it is on its way, then
- * the stored settings the answer carries; a refused save shows the settings as they were.
+ * the stored settings the answer carries; a refused save shows the settings as they were. TailorIT's look: its mark
+ * and wordmark over white cards on its canvas, native checkboxes and radios in its ink.
  *
  * - Connection: the first-run disclosure, always above Connect while not connected; Connect (auth/startPairing) and
  *   the pairing's countdown; the typed code (auth/redeemCode); "Connected as …" and Disconnect (auth/disconnect);
@@ -28,6 +29,7 @@ import type { Settings } from '../../core/types/settings';
 import type { ErrorCode } from '../../messaging/envelope';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
+import { LogoMark, Wordmark } from '../brand/Logo';
 import { request } from '../page/request';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
@@ -49,7 +51,15 @@ export function Options({ platform, now = Date.now, frames = animationFrames }: 
   const settings = useSettings(platform);
   return (
     <main className="tia-page tia-options" ref={root}>
-      <h1 className="tia-options__title">{COPY.optionsTitle}</h1>
+      <header className="tia-options__head">
+        <LogoMark size={36} />
+        {/* Reads exactly COPY.optionsTitle: the wordmark, then "Autofill settings". */}
+        <h1 className="tia-options__title tia-brand__name">
+          <Wordmark large />
+          {' '}
+          <span className="tia-brand__product">{COPY.brand.settings}</span>
+        </h1>
+      </header>
       <Connection platform={platform} auth={auth} now={now} frames={frames} />
       <SettingsCards settings={settings} />
       <Counters platform={platform} settings={settings} />

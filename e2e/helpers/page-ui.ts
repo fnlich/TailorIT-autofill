@@ -138,6 +138,17 @@ export class PageUi {
     await this.page.mouse.click(x, y);
   }
 
+  /** A shown element's box in the viewport's CSS pixels (its border box, where a click aims), or null without one. */
+  async box(target: UiElement): Promise<{ x: number; y: number; width: number; height: number } | null> {
+    const { quads } = await this.cdp.send('DOM.getContentQuads', { nodeId: target.nodeId }).catch(() => ({ quads: [] }));
+    const quad = quads[0];
+    if (quad === undefined) return null;
+    const xs = [quad[0]!, quad[2]!, quad[4]!, quad[6]!];
+    const ys = [quad[1]!, quad[3]!, quad[5]!, quad[7]!];
+    const [x, y] = [Math.min(...xs), Math.min(...ys)];
+    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
+  }
+
   /** A trusted click on the shown button whose text or accessible name is exactly `name`. */
   async clickButton(name: string): Promise<void> {
     const button = (await this.elements('button')).find((el) => el.shown && (el.text === name || el.attributes['aria-label'] === name));

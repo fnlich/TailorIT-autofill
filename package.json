@@ -23,6 +23,8 @@
     "check:build": "node scripts/check-build.mjs",
     "verify": "node scripts/verify.mjs",
     "contract:pull": "node scripts/contract-pull.mjs",
+    "icons": "node scripts/icons.mjs",
+    "shots": "node scripts/shots.mjs",
     "vocab:fetch": "node scripts/vocab-fetch.mjs",
     "vocab:build": "node --import tsx scripts/vocab-build.ts"
   },

@@ -1,10 +1,10 @@
 /*
  * scripts/check-build.mjs's assertions: no build it checks (chrome, edge and e2e, all production mode) may hold the
  * capture page, the capture hotkeys' code or a `commands` key; a production bundle may hold none of the e2e build's
- * hooks; no bundle names another build's TailorIT; `externally_connectable` is exactly TailorIT's origin; and every
- * file the content script lists exists and stays within the size budget. The script runs as it is, copied with what it
- * reads (proc.mjs, the host list, the public key) into a temporary folder that holds three fixture builds, and each case
- * breaks the builds in one way.
+ * hooks; no bundle names another build's TailorIT; `externally_connectable` is exactly TailorIT's origin; every file
+ * the content script lists exists and stays within the size budget; and every build ships its four icons as PNGs of
+ * their sizes. The script runs as it is, copied with what it reads (proc.mjs, the host list, the public key) into a
+ * temporary folder that holds three fixture builds, and each case breaks the builds in one way.
  */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -18,6 +18,23 @@ const ROOT = resolve(import.meta.dirname, '..');
 const KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
 const BUILDS = { chrome: '.output/chrome-mv3', edge: '.output/edge-mv3', e2e: '.output-e2e/chrome-mv3' } as const;
 
+/** The manifest's icons, as wxt.config.ts names them. */
+const ICONS = { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' } as const;
+
+/** The smallest file check-build reads as a PNG of this size: the signature and an IHDR chunk naming its width and
+ *  height (the bytes a real PNG's header holds; the image data does not matter to the check). */
+function png(width: number, height = width): Uint8Array {
+  const bytes = new Uint8Array(33);
+  const view = new DataView(bytes.buffer);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  view.setUint32(8, 13);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  bytes.set([8, 6, 0, 0, 0], 24);
+  return bytes;
+}
+
 /** A production manifest as wxt.config.ts makes it, for TailorIT at `origin`. */
 function manifest(origin: string): Record<string, unknown> {
   return {
@@ -29,7 +46,8 @@ function manifest(origin: string): Record<string, unknown> {
     permissions: ['storage', 'sidePanel'],
     host_permissions: [...ATS_MATCHES, `${origin}/*`],
     externally_connectable: { matches: [`${origin}/*`] },
-    action: { default_title: 'TailorIT Autofill' },
+    icons: { ...ICONS },
+    action: { default_title: 'TailorIT Autofill', default_icon: { 16: ICONS[16], 32: ICONS[32] } },
     background: { service_worker: 'background.js' },
     options_ui: { open_in_tab: true, page: 'options.html' },
     side_panel: { default_path: 'sidepanel.html' },
@@ -40,10 +58,10 @@ function manifest(origin: string): Record<string, unknown> {
 const folders: string[] = [];
 
 /** A copy of the script and what it reads, with three clean builds; `change` then breaks what a case needs. */
-function project(change: (write: (path: string, text: string) => void) => void = () => undefined): string {
+function project(change: (write: (path: string, text: string | Uint8Array) => void) => void = () => undefined): string {
   const root = mkdtempSync(join(tmpdir(), 'tailorit-check-build-'));
   folders.push(root);
-  const write = (path: string, text: string) => {
+  const write = (path: string, text: string | Uint8Array) => {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
   };
@@ -58,6 +76,7 @@ function project(change: (write: (path: string, text: string) => void) => void =
     write(`${dir}/chunks/options-abc.js`, 'export const options = 1;');
     write(`${dir}/options.html`, '<!doctype html><title>Settings</title>');
     write(`${dir}/sidepanel.html`, '<!doctype html><title>Review</title>');
+    for (const [size, path] of Object.entries(ICONS)) write(`${dir}/${path}`, png(Number(size)));
   }
   change(write);
   return root;
@@ -116,7 +135,8 @@ describe("check-build's development-only assertions", () => {
 });
 
 /** Writes every build's manifest, changed by `change` (the e2e one stays the production one but for its origin). */
-function everyManifest(write: (path: string, text: string) => void, change: (manifest: Record<string, unknown>) => void): void {
+function everyManifest(write: (path: string, text: string | Uint8Array) => void,
+  change: (manifest: Record<string, unknown>) => void): void {
   for (const [name, dir] of Object.entries(BUILDS)) {
     const changed = manifest(name === 'e2e' ? 'http://localhost:3190' : 'http://localhost:3100');
     change(changed);
@@ -218,5 +238,29 @@ describe("check-build's manifest and bundle assertions", () => {
       changed.externally_connectable = connectable;
     })));
     expect(status).toBe(0);
+  });
+
+  it('fail a build whose icons are missing, not PNGs or the wrong size, or whose action names others', () => {
+    const missing = checkBuild(project((write) => everyManifest(write, (changed) => {
+      changed.icons = { ...ICONS, 48: 'icon/missing.png' };
+    })));
+    expect(missing.output).toContain('.output/chrome-mv3: the 48 px icon icon/missing.png is missing');
+    expect(missing.status).toBe(1);
+
+    const sizes = checkBuild(project((write) => {
+      write(`${BUILDS.edge}/${ICONS[32]}`, png(32, 16));
+      write(`${BUILDS.e2e}/${ICONS[128]}`, 'not a picture');
+    }));
+    expect(sizes.output).toContain('.output/edge-mv3: the 32 px icon icon/32.png is 32×16');
+    expect(sizes.output).toContain('.output-e2e/chrome-mv3: the 128 px icon icon/128.png is not a PNG');
+    expect(sizes.status).toBe(1);
+
+    const keys = checkBuild(project((write) => everyManifest(write, (changed) => {
+      changed.icons = { 16: ICONS[16], 32: ICONS[32], 48: ICONS[48] };
+      changed.action = { default_title: 'TailorIT Autofill', default_icon: { 16: ICONS[16] } };
+    })));
+    expect(keys.output).toContain('.output/chrome-mv3: icons are ["16","32","48"], not 16, 32, 48 and 128');
+    expect(keys.output).toContain(".output/chrome-mv3: the action's icons are not the 16 and 32 px icons");
+    expect(keys.status).toBe(1);
   });
 });

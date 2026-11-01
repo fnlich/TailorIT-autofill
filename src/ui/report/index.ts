@@ -3,6 +3,7 @@
  * closed shadow root. Presentational only: props in, callbacks out.
  */
 export {
-  Report, RunStatusLine, type PolicyCardDecision, type ReportActions, type ReportProps, type SuggestionLabel,
+  Report, ReportNotices, RunStatusLine, type PolicyCardDecision, type ReportActions, type ReportProps,
+  type SuggestionLabel,
 } from './Report';
 export { adoptReportStyles, adoptStyles, REPORT_CSS } from './styles';

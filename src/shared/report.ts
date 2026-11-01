@@ -75,3 +75,12 @@ export const FrameReportSchema = z.strictObject({
   updatedAt: z.number().int().nonnegative(),
 });
 export type FrameReport = z.infer<typeof FrameReportSchema>;
+
+/**
+ * Whether a row needs the person: it asks for them (an AI draft to confirm, a question left for them), or the run left
+ * it flagged or blocked. One rule for the review's count (src/ui/report/model.ts) and the launcher's (the content
+ * orchestrator), so the two never disagree about a row: a blocked row can come without `needsUserAction`.
+ */
+export function needsPerson(row: Pick<FrameReport['fields'][number], 'needsUserAction' | 'status'>): boolean {
+  return row.needsUserAction || row.status === 'flagged' || row.status === 'blocked';
+}

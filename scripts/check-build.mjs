@@ -1,6 +1,7 @@
 // Fails any build that drifts from the narrowest manifest the plan allows (docs/PRIVACY.md justifies each key).
 // Checks .output/chrome-mv3, .output/edge-mv3 and .output-e2e/chrome-mv3; pass --all to require all three.
-// Every build's bundles hold no other build's TailorIT origin.
+// Every build's bundles hold no other build's TailorIT origin, and every build ships TailorIT's mark as its icons, each
+// a PNG of the size its key names (scripts/icons.mjs renders them).
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -37,6 +38,12 @@ const E2E_ONLY = ['e2e:events', 'e2e/probe', 'storage-local-probe', 'localhost:3
 const DEV_ONLY = ['tailorit-dev-capture', 'saveAsMHTML', 'capture.html'];
 /** Pages only a development build has: the capture page (wxt.config.ts skips it in every other mode). */
 const DEV_ONLY_PAGES = ['capture.html'];
+
+/** The manifest's icon sizes; the toolbar's action uses the two smallest. */
+const ICON_SIZES = ['16', '32', '48', '128'];
+const ACTION_ICON_SIZES = ['16', '32'];
+/** A PNG file's first eight bytes. */
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const failures = [];
 const fail = (build, message) => failures.push(`${build.dir}: ${message}`);
@@ -80,6 +87,33 @@ function checkManifest(build, manifest) {
   for (const page of [manifest.options_ui?.page, manifest.side_panel?.default_path]) {
     if (!page || !existsSync(join(ROOT, build.dir, page))) fail(build, `page ${page} is missing`);
   }
+}
+
+/** The icons: exactly the four sizes, each a PNG in the build whose header (IHDR, bytes 16-23) gives its key's width
+ *  and height; the action's icons are the 16 and 32 px ones. */
+function checkIcons(build, dir, manifest) {
+  const icons = manifest.icons ?? {};
+  if (!sameSet(Object.keys(icons), ICON_SIZES)) {
+    fail(build, `icons are ${JSON.stringify(Object.keys(icons))}, not 16, 32, 48 and 128`);
+  }
+  for (const size of ICON_SIZES) {
+    const path = icons[size];
+    const file = typeof path === 'string' ? join(dir, path) : null;
+    if (file === null || !existsSync(file) || !statSync(file).isFile()) {
+      fail(build, `the ${size} px icon ${String(path)} is missing`);
+      continue;
+    }
+    const bytes = readFileSync(file);
+    if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.toString('latin1', 12, 16) !== 'IHDR') {
+      fail(build, `the ${size} px icon ${path} is not a PNG`);
+      continue;
+    }
+    const [width, height] = [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
+    if (width !== Number(size) || height !== Number(size)) fail(build, `the ${size} px icon ${path} is ${width}×${height}`);
+  }
+  const action = manifest.action?.default_icon;
+  const expected = Object.fromEntries(ACTION_ICON_SIZES.map((size) => [size, icons[size]]));
+  if (!isDeepStrictEqual(action, expected)) fail(build, "the action's icons are not the 16 and 32 px icons");
 }
 
 /** The budget over every file the manifest's content script lists, wherever the build put them; a listed file that is
@@ -131,6 +165,7 @@ for (const build of BUILDS) {
   }
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
   checkContentScriptSize(build, dir, manifest);
+  checkIcons(build, dir, manifest);
   checked.push({ build, sizes: all.map((file) => [relative(dir, file), statSync(file).size]) });
 }
 

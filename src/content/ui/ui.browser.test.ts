@@ -121,7 +121,7 @@ describe('the in-page UI', () => {
     const { ui } = mount();
     ui.anchorTo(root);
     ui.setNotices(['tripwire', 'policy-unreadable']);
-    // A notice's whole text is its sentence: the dismiss glyph is drawn by the stylesheet, not written into it.
+    // A notice's whole text is its sentence: its icon and the dismiss button's cross are drawings with no text.
     const texts = () => Array.from(ui.shadow.querySelectorAll('.notice'), (notice) => notice.textContent);
     expect(texts()).toEqual(['This page contains text addressed to AI tools. It was ignored.',
       "I couldn't read this posting to check whether it allows AI tools. Check it before you submit."]);
@@ -148,7 +148,7 @@ describe('the in-page UI', () => {
     expect(ui.styleMode).toBe('style-element');
     expect(ui.shadow.querySelector('style')?.textContent).toContain('.launcher');
     const style = fixture.view.getComputedStyle(ui.launcher.el);
-    expect([style.width, style.height, style.borderRadius]).toEqual(['32px', '32px', '16px']);
+    expect([style.width, style.height, style.borderRadius]).toEqual(['32px', '32px', '9px']);
   });
 
   it('puts the host back when the page removes it, at most three times', async () => {

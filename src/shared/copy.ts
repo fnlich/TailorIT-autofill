@@ -32,10 +32,10 @@ const NOTICES = {
   validation: 'The form shows errors. The fields that need you are highlighted.',
   'needs-click': 'Some controls respond only to your own click. They are highlighted for you.',
   'posting-outside-frame': 'This form sits inside another site\'s page, which cannot be read, so that page\'s text was not checked.',
-  'deferred-fields': 'Some fields were not rendered yet. Scroll to them and choose Fill again.',
+  'deferred-fields': 'Some fields were not rendered yet. Scroll to them and choose Autofill again.',
   'step-retry-limit': 'This step was tried twice already, so nothing more is filled on it.',
   'policy-hidden-text': 'Text on this page that is not shown yet says AI-assisted applications may not be allowed. Read the whole posting before you submit.',
-  'form-hidden': 'This form is hidden or out of view on its page, so nothing was filled. Scroll it into view, then choose Fill again.',
+  'form-hidden': 'This form is hidden or out of view on its page, so nothing was filled. Scroll it into view, then choose Autofill again.',
   // The step machine (Phase 5): final-unknown is the plan's exact sentence, max-steps the coordinator's (2026-10-30).
   'final-unknown': "I can't tell whether this is the last step, so I won't press anything.",
   'max-steps': 'This application has more steps than I can follow, so I stopped here. Please finish it yourself.',
@@ -256,11 +256,25 @@ const REPORT = {
   step: (index: number, of?: number) => (of === undefined ? `Step ${index + 1}` : `Step ${index + 1} of ${of}`),
   dryRun: 'Dry run: nothing was written.',
   hiddenIgnored: (count: number) => (count === 1 ? '1 hidden field was left alone.' : `${count} hidden fields were left alone.`),
+  // The review's completion: counts, never a percent. Ready rows over ready and waiting ones; a skipped row that needed
+  // nothing counts in neither. Drafts for the owner's review.
+  completion: 'Completion',
+  completionValue: (ready: number, of: number) => `${ready} of ${of} ready`,
+  completionValueDryRun: (ready: number, of: number) => `${ready} of ${of} would be filled`,
+  completionText: (ready: number, of: number) => `${ready} of ${of} fields ready`,
+  completionTextDryRun: (ready: number, of: number) => `${ready} of ${of} fields would be filled`,
+  /** Worded apart from the launcher's "Review: N fields need you", which also counts the Add buttons left. */
+  needsYou: (count: number) => (count === 1 ? '1 field is left for you' : `${count} fields are left for you`),
+  needsYouDryRun: (count: number) => (count === 1 ? '1 field would be left for you' : `${count} fields would be left for you`),
+  requiredReady: (ready: number, of: number) => `Required: ${ready} of ${of} ready`,
+  requiredReadyDryRun: (ready: number, of: number) => `Required: ${ready} of ${of} would be filled`,
+  allClear: 'Nothing needs you. Check the form, then submit it yourself.',
+  tally: (count: number, status: string) => `${count} ${status}`,
 } as const;
 
 /** The side panel (src/ui/panel). */
 const PANEL = {
-  fill: 'Fill',
+  fill: 'Autofill',
   dryRun: 'Dry run',
   continue: 'Continue',
   cancel: 'Cancel',
@@ -282,10 +296,15 @@ const PANEL = {
   rateLimited: 'Too many fills in a minute. Wait a little, then try again.',
   noAnswer: 'The extension did not answer. Close the panel and open it again.',
   failed: 'That did not work. Try again.',
-  focusFailed: 'That field could not be shown. The page may have changed: choose Fill again.',
+  focusFailed: 'That field could not be shown. The page may have changed: choose Autofill again.',
   linkLost: 'The panel lost its link to the extension, so it is not updating.',
   reconnect: 'Reconnect',
   extensionGone: 'The extension was updated or removed. Close this panel and open it again.',
+  /** The header's gear: the extension's own settings. */
+  settings: 'Settings',
+  /** The links at the panel's foot, to the person's TailorIT. */
+  autofillInfo: 'Your autofill information',
+  openJobs: 'Open TailorIT Jobs',
   // Phase 6: the rows' Confirm draft and Save my answer.
   draftConfirmed: 'Draft confirmed.',
   confirmFailed: 'The draft could not be confirmed. Is the form still open?',
@@ -334,7 +353,7 @@ const OPTIONS = {
     disclosureHeading: 'Before you connect',
     disclosure: [
       'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.',
-      'When you choose Fill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application\'s progress, never your answers.',
+      'When you choose Autofill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application\'s progress, never your answers.',
       'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists and working out unusual questions are on unless you turn them off below. Drafting open answers is off unless you turn it on; it also gives Claude the posting\'s visible text and your profile to write from. Your self-identification, work authorization, sponsorship, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
@@ -445,8 +464,10 @@ const OPTIONS = {
 
 export const COPY = {
   appName: 'TailorIT Autofill',
+  /** The name as the headers draw it: "Tailor", then "IT" in TailorIT's ink, then the product's word. */
+  brand: { name: ['Tailor', 'IT'], product: 'Autofill', settings: 'Autofill settings' },
   panelTitle: 'Review',
-  panelEmpty: 'Nothing to review yet. Open a job application and choose Fill.',
+  panelEmpty: 'Nothing to review yet. Open a job application and choose Autofill.',
   optionsTitle: 'TailorIT Autofill settings',
   tripwire: NOTICES.tripwire,
   notices: NOTICES,
@@ -457,7 +478,7 @@ export const COPY = {
   policyFromStoredCopy: NOTICES['policy-stored-copy'],
   // The in-page UI (src/content/ui): the launcher's name in each state (its tooltip and accessible name), a notice's
   // dismiss button, and the highlights' chips. Drafts from the content runtime, for the owner's review.
-  launcherFill: 'Fill this application with TailorIT',
+  launcherFill: 'Autofill this application with TailorIT',
   launcherRunning: 'Filling the application',
   launcherNeedsYou: 'This needs you. Choose to continue.',
   launcherPolicy: 'This posting says AI-assisted applications are not allowed. See the notice.',

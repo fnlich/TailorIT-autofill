@@ -119,6 +119,7 @@ import type { ErrorCode } from '../messaging/envelope';
 import { MAX_POSTING_TEXT, type AnswerReadAnswerSchema } from '../messaging/schemas';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
+import { needsPerson } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
 import { runLoop, type LoopCarry, type LoopResult, type OptionsTimings, type SettleTimings } from './loop';
@@ -891,9 +892,10 @@ export class FillRun {
     return typeof this.env.page.adapter.stepSignature === 'function';
   }
 
-  /** How many rows (and Add buttons left to the person) need the person, for the launcher's review. */
+  /** How many rows (and Add buttons left to the person) need the person, for the launcher's review: the rows by the
+   *  review's own rule (needsPerson), so the badge and the panel count a row alike. */
   private needing(): number {
-    return this.rows.filter((row) => row.needsUserAction).length + this.addsLeft;
+    return this.rows.filter(needsPerson).length + this.addsLeft;
   }
 
   // ── The run's messages ──────────────────────────────────────────────────────────────────────────────────────────

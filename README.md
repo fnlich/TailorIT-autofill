@@ -27,6 +27,8 @@ npx playwright install chromium
 | `npm run test:e2e` | Builds production and the e2e variant, checks both, starts the TailorIT mock on 3190, runs Playwright |
 | `npm run check:build` | Fails a build whose manifest drifts from the allowed one |
 | `npm run verify` | All of the above in order, stopping at the first failure |
+| `npm run icons` | Renders TailorIT's mark (its `logo-mark.svg`, drawn as data in `src/shared/icons.ts`) into the manifest's PNGs in `public/icon` |
+| `npm run shots` | Opt-in, never part of verify: the e2e build against the mock draws the side panel, the in-page panel, the launcher and the options page into `e2e/artifacts/shots`; `TIA_SHOTS_REFERENCE` may name a local folder of reference pictures to show beside them |
 
 ## Loading the extension
 Build it, open `chrome://extensions` (or `edge://extensions`), turn on Developer mode, choose **Load unpacked** and pick `.output/chrome-mv3` (or `.output/edge-mv3`). The manifest carries a fixed public key, so the extension id is always `flmloalhjldmcihejnmkndbcnhaacmng`; TailorIT's `AUTOFILL_EXTENSION_IDS` defaults to it.

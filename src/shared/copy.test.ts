@@ -84,6 +84,28 @@ describe('the copy', () => {
     expect(COPY.report.step(2)).toBe('Step 3');
   });
 
+  it('names the brand as the headers draw it, the main button Autofill, and counts the completion, never as a percent', () => {
+    expect(`${COPY.brand.name.join('')} ${COPY.brand.product}`).toBe(COPY.appName);
+    expect(`${COPY.brand.name.join('')} ${COPY.brand.settings}`).toBe(COPY.optionsTitle);
+    expect([COPY.panel.fill, COPY.panel.dryRun, COPY.panel.continue, COPY.panel.cancel]).toEqual(['Autofill', 'Dry run', 'Continue',
+      'Cancel']);
+    expect(COPY.report.completionValue(12, 15)).toBe('12 of 15 ready');
+    expect(COPY.report.completionValueDryRun(3, 4)).toBe('3 of 4 would be filled');
+    expect(COPY.report.requiredReady(9, 11)).toBe('Required: 9 of 11 ready');
+    expect([COPY.report.needsYou(1), COPY.report.needsYou(3)]).toEqual(['1 field is left for you', '3 fields are left for you']);
+    // Worded apart from the launcher's count, which also counts the Add buttons left.
+    expect(COPY.report.needsYou(3)).not.toBe(COPY.launcherReview(3).replace('Review: ', ''));
+    expect(COPY.report.tally(10, COPY.statuses.verified)).toBe('10 Verified');
+    for (const sentence of [COPY.report.allClear, COPY.panelEmpty, COPY.notices['deferred-fields'], COPY.notices['form-hidden'],
+      COPY.panel.focusFailed]) {
+      expect(sentence).toMatch(SENTENCE);
+      expect(sentence).not.toMatch(/\bFill again\b|choose Fill\b/);
+    }
+    for (const value of [COPY.report.completionValue(1, 2), COPY.report.completionText(1, 2), COPY.report.requiredReady(1, 2)]) {
+      expect(value).not.toContain('%');
+    }
+  });
+
   it('gives docs/PRIVACY.md the disclosure the options page shows, word for word', () => {
     const privacy = readFileSync(new URL('../../docs/PRIVACY.md', import.meta.url), 'utf8');
     for (const paragraph of [...COPY.options.connection.disclosure, COPY.options.connection.consentLine]) {

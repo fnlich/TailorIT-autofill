@@ -46,7 +46,8 @@ Never: self-identification (EEO) answers, work authorization, sponsorship, pay, 
 | `host_permissions` | the ATS hosts (Greenhouse, Lever, Ashby, Workday) | Exactly the sites whose application forms are filled; also lets the panel see the active tab's address on those sites without the `tabs` permission | `<all_urls>`; `activeTab`, which is revoked on navigation and so cannot follow a multi-step application |
 | | `http://localhost:3100/*` | The service worker calls the person's own TailorIT with its token; TailorIT sends no CORS headers by design | CORS on TailorIT |
 | `externally_connectable` | `http://localhost:3100/*` | TailorIT's Connect page hands over a one-time code after the person clicks Connect | the typed code (kept as the fallback) |
-| `action` | a title | The toolbar button opens the panel | none |
+| `action` | a title, and TailorIT's mark at 16 and 32 px (`default_icon`) | The toolbar button opens the panel | none |
+| `icons` | TailorIT's mark at 16, 32, 48 and 128 px, PNGs packaged with the extension (`public/icon`) | The extensions page and the store show it; nothing is fetched, and the files are not web-accessible | remote images |
 | `side_panel`, `options_ui` | the panel and settings pages | none | none |
 | Absent by design | `tabs`, `scripting`, `activeTab`, `cookies`, `webRequest`, `debugger`, `alarms`, `offscreen`, `downloads`, `web_accessible_resources`, a CSP override, remote code | | |
 
@@ -65,7 +66,7 @@ The options page shows this above Connect whenever the extension is not connecte
 >
 > TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.
 >
-> When you choose Fill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application's progress, never your answers.
+> When you choose Autofill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application's progress, never your answers.
 >
 > Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists and working out unusual questions are on unless you turn them off below. Drafting open answers is off unless you turn it on; it also gives Claude the posting's visible text and your profile to write from. Your self-identification, work authorization, sponsorship, pay and consent answers never go to the AI. The extension talks only to your TailorIT.
 >

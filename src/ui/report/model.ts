@@ -1,12 +1,16 @@
 /*
  * What the report shows, worked out from the tab's frame reports: the notices of every frame once each, each frame's
- * rows by section, and the one run status that most needs the person. Plain functions over the reports, which hold
- * labels, codes and counts and never a value.
+ * rows by section, the one run status that most needs the person, and the completion: how many rows are ready and how
+ * many need the person. Plain functions over the reports, which hold labels, codes and counts and never a value.
  */
+import { FILL_STATUSES, type FillStatus } from '../../core/enums';
 import { CLASS_POLICIES, policyClassOf } from '../../core/resolver/categories';
 import type { RunStatus } from '../../core/types/run';
 import { COPY } from '../../shared/copy';
-import { NOTICE_CODES, type FrameReport } from '../../shared/report';
+import type { IconName } from '../../shared/icons';
+import { needsPerson, NOTICE_CODES, type FrameReport } from '../../shared/report';
+
+export { needsPerson };
 
 /** A report notice's code. */
 export type NoticeCode = (typeof NOTICE_CODES)[number];
@@ -80,4 +84,73 @@ export function offersSave(row: ReportRow): boolean {
 /** Whether a frame's policy notice came only from TailorIT's saved copy of the posting. */
 export function policyFromStoredCopy(report: FrameReport): boolean {
   return report.notices.some((notice) => notice.code === 'policy-stored-copy');
+}
+
+/** The run statuses of a run still at work: the strip pulses and the main button spins. */
+export const WORKING_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>(['detect', 'scan-step', 'fill-step', 'validate',
+  'advance', 'wait-transition']);
+
+/** Whether a row is done for the person: written (verified or filled), or a question that already held its answer or
+ *  needed none (an end date for a job they still hold). A row that needs the person never is. */
+export function isReady(row: ReportRow): boolean {
+  if (needsPerson(row)) return false;
+  return row.status === 'verified' || row.status === 'filled' || row.reason === 'already-correct'
+    || row.reason === 'end-date-not-applicable';
+}
+
+/** The tab's rows counted: per status, ready, needing the person, the required ones among both, and whether every
+ *  frame is a dry run and whether any run still works. */
+export interface Tally {
+  byStatus: Readonly<Record<FillStatus, number>>;
+  ready: number;
+  needsYou: number;
+  required: { ready: number; of: number };
+  dryRun: boolean;
+  working: boolean;
+}
+
+/** The completion across every frame of the tab: ready / (ready + needing the person), skipped rows that needed nothing
+ *  left out. Null without a row. */
+export function tallyOf(reports: readonly FrameReport[]): Tally | null {
+  const rows = reports.flatMap((report) => report.fields);
+  if (rows.length === 0) return null;
+  const byStatus = Object.fromEntries(FILL_STATUSES.map((status) => [status, 0])) as Record<FillStatus, number>;
+  let ready = 0;
+  let needsYou = 0;
+  const required = { ready: 0, of: 0 };
+  for (const row of rows) {
+    byStatus[row.status] += 1;
+    const done = isReady(row);
+    const waiting = needsPerson(row);
+    if (done) ready += 1;
+    if (waiting) needsYou += 1;
+    if (row.required && (done || waiting)) {
+      required.of += 1;
+      if (done) required.ready += 1;
+    }
+  }
+  return { byStatus, ready, needsYou, required, dryRun: reports.every((report) => report.mode === 'dry-run'),
+    working: reports.some((report) => WORKING_STATUSES.has(report.status)) };
+}
+
+/** A strip's tone: its tint, and the colour of its dot. */
+export type StripTone = 'brand' | 'working' | 'attention' | 'done' | 'neutral' | 'problem';
+
+/** The run status line's tone: at work, waiting for the person, ready (with something left for them, or nothing), or
+ *  stopped. */
+export function stripToneOf(status: RunStatus, needsYou: number): StripTone {
+  if (WORKING_STATUSES.has(status)) return 'working';
+  if (status === 'policy-notice' || status === 'auth-needed' || status === 'handoff') return 'attention';
+  if (status === 'review') return needsYou > 0 ? 'attention' : 'done';
+  if (status === 'done') return 'done';
+  return 'neutral';
+}
+
+/** A row's icon: an alert or a cross on a row that needs the person; a filled tick for verified, a ringed tick for
+ *  filled or a question that needed nothing, a dash for any other skip. */
+export function rowIconOf(row: ReportRow): IconName {
+  if (needsPerson(row)) return row.status === 'blocked' ? 'x-circle' : 'alert';
+  if (row.status === 'verified') return 'check-circle';
+  if (row.status === 'filled' || isReady(row)) return 'check';
+  return 'minus-circle';
 }

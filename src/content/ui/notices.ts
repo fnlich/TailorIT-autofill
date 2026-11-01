@@ -7,9 +7,17 @@
  * person can see them (page-ui.ts decides, from the visibility watch, with the button it is handed). A dismissed
  * notice leaves the stack only; the report keeps it, and the side panel mirrors every notice, because a page could
  * draw over this one.
+ *
+ * Each is a white card in TailorIT's look: a notice leads with its tone's icon (palette.ts noticeToneOf), the
+ * tripwire's on a light red; the policy card is named by its first line, TailorIT's mark and "TailorIT Autofill"
+ * (aria-labelledby), then an alert icon, its sentence and the stored-copy line. Icons are drawings with no text, so a
+ * notice's text is exactly its sentence and the card's paragraphs are exactly its two lines.
  */
 import { COPY } from '../../shared/copy';
+import { ICONS, LOGO_MARK } from '../../shared/icons';
+import { noticeToneOf } from '../../shared/palette';
 import type { FrameReport } from '../../shared/report';
+import { svgOf } from './svg';
 
 /** A report notice's code. */
 export type NoticeCode = FrameReport['notices'][number]['code'];
@@ -43,17 +51,36 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
   const card = doc.createElement('div');
   card.className = 'card';
   card.setAttribute('role', 'alertdialog');
+  // The card's name: TailorIT's mark and "TailorIT Autofill", the "IT" in TailorIT's ink. Not a paragraph: the card's
+  // paragraphs are its sentence and the stored-copy line alone.
+  const brand = doc.createElement('div');
+  brand.className = 'card__brand';
+  brand.id = 'tailorit-policy-card-name';
+  const it = doc.createElement('span');
+  it.className = 'it';
+  it.textContent = COPY.brand.name[1];
+  const name = doc.createElement('span');
+  name.className = 'name';
+  name.append(COPY.brand.name[0], it, ` ${COPY.brand.product}`);
+  brand.append(svgOf(doc, LOGO_MARK, 16, 'mark'), name);
+  card.setAttribute('aria-labelledby', brand.id);
   const sentence = doc.createElement('p');
   sentence.textContent = COPY.notices.policy;
   const source = doc.createElement('p');
   source.className = 'source';
   source.textContent = COPY.policyFromStoredCopy;
+  const text = doc.createElement('div');
+  text.className = 'card__text';
+  text.append(sentence, source);
+  const body = doc.createElement('div');
+  body.className = 'card__body';
+  body.append(svgOf(doc, ICONS.alert, 18), text);
   const actions = doc.createElement('div');
   actions.className = 'actions';
   const cancel = button(doc, COPY.policyCancel, 'action secondary');
   const fill = button(doc, COPY.policyFillAnyway, 'action');
   actions.append(cancel, fill);
-  card.append(sentence, source, actions);
+  card.append(brand, body, actions);
   card.hidden = true;
   el.append(card);
   cancel.addEventListener('click', (event) => {
@@ -75,11 +102,14 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
       const item = doc.createElement('div');
       item.className = 'notice';
       item.dataset.code = code;
+      const tone = noticeToneOf(code);
+      item.dataset.tone = tone;
       item.setAttribute('role', code === 'tripwire' ? 'alert' : 'status');
       const text = doc.createElement('p');
       text.textContent = COPY.notices[code];
-      // The glyph is drawn by the stylesheet, so the notice's text is exactly its sentence.
+      // The icons are drawings with no text, so the notice's text is exactly its sentence.
       const close = button(doc, '', 'dismiss');
+      close.append(svgOf(doc, ICONS.close, 14));
       close.setAttribute('aria-label', COPY.dismiss);
       close.title = COPY.dismiss;
       close.addEventListener('click', (event) => {
@@ -87,7 +117,7 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
         dismissed.add(code);
         render();
       });
-      item.append(text, close);
+      item.append(svgOf(doc, tone === 'info' ? ICONS.info : ICONS.alert, 18), text, close);
       el.append(item);
       return item;
     });

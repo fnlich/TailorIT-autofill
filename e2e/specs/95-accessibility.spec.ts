@@ -1,7 +1,8 @@
 /*
  * The optional accessibility check (Phase 6; docs/design/runtime.md §12): @axe-core/playwright 4.13.0 over the report
- * page after a trap run and over the options page with the anonymous counters showing, neither with a serious or
- * critical violation. Along the way it checks the counters end to end: opted in, a fill counts its fields with the
+ * page after a trap run (in TailorIT's look: its brand, the strip, Autofill, the completion and the folded rows), over
+ * the report page while a run waits at the policy card, and over the options page with the anonymous counters showing,
+ * none with a serious or critical violation. Along the way it checks the counters end to end: opted in, a fill counts its fields with the
  * five fields and nothing else, and Clear empties them. The settings and the counts go back to their defaults
  * afterwards: the extension's context outlives this test.
  */
@@ -59,4 +60,19 @@ test('the report page and the options page have no serious or critical accessibi
     await ext.data({ v: 1, type: 'telemetry/clear' }).catch(() => undefined);
     await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
   }
+});
+
+test('the report page at the policy card has no serious or critical accessibility violation', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  // TailorIT's stored copy of the posting says no AI tools: the run stops at the card, which the panel mirrors.
+  await tailorit.scenario('lookup-posting-text');
+  const url = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a095/apply';
+  routeLog.serve({ [url]: 'fixtures/synthetic/policy-apply.html' });
+  const page = await extContext.newPage();
+  await page.goto(url);
+  const tabId = await ext.fill(page);
+  expect((await ext.settled(tabId)).status).toBe('policy-notice');
+  const panel = await ext.reportPage(tabId);
+  await panel.bringToFront();
+  await expect(panel.locator('[data-notice="policy"] button')).toHaveCount(2);
+  expect(await seriousViolations(panel), 'the report page at the policy card').toEqual([]);
 });
