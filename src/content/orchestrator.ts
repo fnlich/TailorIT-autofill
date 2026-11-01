@@ -539,6 +539,8 @@ export class FillRun {
     this.pushedAutoAdvance = settings.autoAdvance;
     this.autoAdvance = settings.autoAdvance;
     this.llm = settings.llm;
+    // AI-written answers turned off (or on) at rest: Edit with AI goes (or comes back) at once.
+    this.drawAiEdits();
     const offered = this.offerToSave;
     this.offerToSave = settings.offerToSaveAnswers;
     // Turned off: no row offers Save my answer any more.
@@ -598,10 +600,11 @@ export class FillRun {
   }
 
   /** Whether the page may offer Edit with AI now: the run rests at review or for the person's Next, not in a dry run
-   *  or a profile-only run, with no rewrite on its way and no policy card waiting. */
+   *  or a profile-only run, with AI-written answers on (settings.llm.drafts, as the person last saved them: the Phase E
+   *  review, MINOR 8), with no rewrite on its way and no policy card waiting. */
   private get aiEditsOpen(): boolean {
     return (this.ended === 'review' || this.ended === 'waiting') && !this.request.dryRun && !this.noAi
-      && this.choose === null;
+      && this.llm?.drafts !== false && this.choose === null;
   }
 
   /** The Edit with AI buttons the page shows now (module header): one per offered field found on the step, none while
@@ -725,7 +728,9 @@ export class FillRun {
     };
   }
 
-  /** The run fills from the profile only from now on (module header): the notice says why, and Edit with AI goes. */
+  /** The run fills from the profile only from now on (module header): the notice says why, and Edit with AI goes. The
+   *  fill loop gives up what still waits for the AI as ai-off-for-posting, and writes no AI answer that came in
+   *  (LoopEnv.aiOff); every later plan/request says noAi, and the worker, marking the run, asks the AI nothing more. */
   private profileOnly(why: 'posting' | 'attestation'): void {
     if (!this.noAi) log('content.profile-only', { posting: why === 'posting', attestation: why === 'attestation' });
     this.noAi = true;
@@ -2108,6 +2113,9 @@ export class FillRun {
         revealEdges === undefined ? {} : { revealEdges }),
       planSome: (specs, planKeys, pass) => this.plan(specs, planKeys, pass, { kept: true }),
       poll: (keys) => this.poll(keys),
+      // Profile-only from now on (a later pass's policy hit, an attestation found): what still waits for the AI is
+      // given up (the Phase E review, security MINOR 4).
+      aiOff: () => this.noAi,
       recheck: () => this.recheck(),
       heldBy: () => {
         // Never a write on a step other than the one being filled (the page moved on, or went back, mid-fill).

@@ -35,7 +35,8 @@
  * none waits); answer/read (Phase 6: the field's answer as it holds it now, for Save my answer, straight to the worker
  * and never kept, with the company this frame's own address names; `expired` when the field is gone); report/update
  * (the tab's combined report, for the in-page panel); job/refresh and job/postingText (v2: the side panel's job card
- * and custom question, job-relay.ts).
+ * and custom question, job-relay.ts). A single-page application's new address is counted (frame/hello's `nav`, said
+ * again at each one while the frame shows a form), so the worker reads the job card again for the posting shown now.
  * The in-page card's own buttons decide locally, on trusted clicks.
  * The person's trusted input reaches the current run as it comes (TouchLog.subscribe), so a resting run marks what they
  * edited (Phase 6). The document keeps one value hasher and the AI drafts written in it that still wait for the
@@ -166,6 +167,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let frameId: number | null = null;
   /** The hasForm the worker was last told. */
   let told: boolean | null = null;
+  /** How many times a single-page application changed this document's address (v2): frame/hello carries it, so the
+   *  worker reads the side panel's job card again for the posting the frame shows now. A count, never the address. */
+  let nav = 0;
   /** Where the person wants the review: frame/hello's settings, then each settings/changed. */
   let placement: 'side' | 'in-page' = 'side';
   let lastRows = new Map<FieldKey, FillResult>();
@@ -244,14 +248,15 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'job/refresh':
         return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null);
       case 'job/postingText':
-        return ok(stopped ? { text: '', canaries: [] } : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal));
+        return ok(stopped ? { text: '', canaries: [], policy: false }
+          : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal));
     }
   });
 
   // ── Runs ────────────────────────────────────────────────────────────────────────────────────────────────────────
   async function hello(): Promise<void> {
     const hasForm = page !== null;
-    const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm });
+    const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }) });
     if (!answer.ok) return;
     told = hasForm;
     frameId = answer.data.frameId;
@@ -505,7 +510,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     }
     if (page === null) ui?.anchorTo(null);
     else mountUi();
-    if (told !== (page !== null)) void hello().catch(() => undefined);
+    // Each new address is counted; the worker hears of it while the frame shows a form (the job card is that form's
+    // posting), and whenever the form came or went.
+    nav += 1;
+    if (told !== (page !== null) || page !== null) void hello().catch(() => undefined);
     void readPosting().catch(() => undefined);
   }
 

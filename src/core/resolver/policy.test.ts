@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAUTIOUS_SETTINGS, goldenProfile, settingsWith, specOf, vocab } from '../plan/plan.testkit';
+import { CAUTIOUS_SETTINGS, fieldOf, goldenProfile, planOf, settingsWith, specOf, vocab } from '../plan/plan.testkit';
 import type { Explicit, Profile } from '../types/profile';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { ValueResult } from './candidate';
@@ -151,6 +151,11 @@ describe('legal values (§8.7)', () => {
     expect(postingCountryOf('Remote', vocab)).toBeUndefined();
     expect(postingCountryOf('New York, NY or Toronto, ON', vocab)).toBeUndefined();
     expect(postingCountryOf('Georgia', vocab)).toBeUndefined();
+    // Several countries between the named ones and the regions' (the Phase E review, MINOR 1).
+    expect(postingCountryOf('New York, NY; London, United Kingdom', vocab)).toBeUndefined();
+    expect(postingCountryOf('San Francisco, CA or Toronto, Canada', vocab)).toBeUndefined();
+    expect(postingCountryOf('Remote - US or London, UK', vocab)).toBeUndefined();
+    expect(postingCountryOf('Austin, TX, United States', vocab)).toBe('US');
   });
 
   it('chooses the decline option for an explicit decline, and answers criminal history from the person’s own answer', () => {
@@ -166,10 +171,40 @@ describe('legal values (§8.7)', () => {
     expect(candidate(legal('screening.criminalHistory', 'Have you been convicted of a felony?', record(no))))
       .toMatchObject({ origin: { provenance: 'profile', path: 'screening.criminalRecord' },
         choice: { intended: { kind: 'boolean', value: false }, domain: 'polarity' }, check: false });
-    expect(candidate(legal('screening.criminalHistory', 'Have you been convicted of a felony?', record(yes)))?.choice
-      ?.intended).toEqual({ kind: 'boolean', value: true });
+    expect(candidate(legal('screening.criminalHistory', 'Have you ever been convicted of a crime?', record(yes)))
+      ?.choice?.intended).toEqual({ kind: 'boolean', value: true });
     expect(reason(legal('screening.criminalHistory', 'Have you been convicted of a felony?', record(decline))))
       .toBe('legal-not-in-profile');
+  });
+
+  it('answers only what the person’s one answer settles (the lead’s decision on the Phase E review, M4)', () => {
+    const record = (answer: Explicit<boolean>): Profile => ({ ...profile, screening: { criminalRecord: answer } });
+    const answered = (label: string, answer: Explicit<boolean>) => {
+      const found = candidate(legal('screening.criminalHistory', label, record(answer)));
+      return found === null ? reason(legal('screening.criminalHistory', label, record(answer)))
+        : (found.choice?.intended as { value: boolean }).value;
+    };
+    // Generic conviction wording: the answer, either way.
+    for (const label of ['Have you ever been convicted of a crime?', 'Do you have a criminal record?',
+      'Have you ever been convicted of a criminal offense?', 'Criminal history']) {
+      expect(answered(label, yes), label).toBe(true);
+      expect(answered(label, no), label).toBe(false);
+    }
+    // Narrower conviction questions: No answers them, Yes says nothing of them.
+    for (const label of ['Have you been convicted of a felony?', 'Have you been convicted of a misdemeanor?',
+      'Have you been convicted of a crime in the last 7 years?', 'Do you have any unspent convictions?',
+      'Have you ever been convicted of a crime (excluding minor traffic violations)?',
+      'Have you been convicted of a felony in the past ten years?']) {
+      expect(answered(label, no), label).toBe(false);
+      expect(answered(label, yes), label).toBe('criminal-not-covered');
+    }
+    // Arrests, charges, pending charges, sex-offender registration: never from this answer.
+    for (const label of ['Have you ever been arrested?', 'Have you ever been charged with a crime?',
+      'Do you have any pending criminal charges?', 'Are you a registered sex offender?',
+      'Have you been convicted of a crime or are any charges pending?']) {
+      expect(answered(label, no), label).toBe('criminal-not-covered');
+      expect(answered(label, yes), label).toBe('criminal-not-covered');
+    }
   });
 });
 
@@ -255,6 +290,17 @@ describe('EEO values (§8.7)', () => {
 
 describe('consent values (§8.7)', () => {
   const profile = goldenProfile();
+
+  it('never ticks Spotify\'s marketing consent under the defaults, but keeps the application on file (the Phase E review, B1)', () => {
+    const spotify = specOf('Spotify has my consent to contact me about future job opportunities.', 'checkbox');
+    expect(fieldOf(planOf([spotify]), spotify)).toMatchObject({ write: undefined,
+      row: { category: 'consent.marketing', reason: 'consent-requires-user', wrote: false } });
+    const onFile = specOf('Keep my information on file for future opportunities', 'checkbox');
+    expect(fieldOf(planOf([onFile]), onFile).write?.value).toEqual({ kind: 'check' });
+    // Ticked once the person pre-approves marketing themselves.
+    const marketing = settingsWith({ preapprovedConsent: [...DEFAULT_SETTINGS.preapprovedConsent, 'marketing'] });
+    expect(fieldOf(planOf([spotify], { settings: marketing }), spotify).write?.value).toEqual({ kind: 'check' });
+  });
 
   it('ticks a box only when every consent kind its label names is pre-approved', () => {
     const settings = settingsWith({ preapprovedConsent: ['privacy'] });

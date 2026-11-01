@@ -13,10 +13,12 @@
  * - Never in an EEO, legal or sensitive context (the Phase 6 review, E2): the box itself passes the classify screen
  *   (screenForClassify: its label, description, section's words and options), and so does every question it belongs
  *   to, none of which may be of the eeo, legal, sensitive, consent or attention class: the question whose answer
- *   revealed it (the loop's reveal edges), every other question of its section when it has one, and, for a box that
- *   only asks for more about another question ("Please provide details", "If yes, please explain"), the question
- *   before it in its section. A "Please provide details" box under Criminal history, or beside a felony question, gets
- *   no draft.
+ *   revealed it (the loop's reveal edges) and, for a box that only asks for more about another question ("Please
+ *   provide details", "If yes, please explain"), the question before it in its section. A "Please provide details" box
+ *   under Criminal history, or after a felony question, gets no draft; nor does a box in a section whose every other
+ *   question is closed (a self-identification or legal block whose heading the screen does not name). In a section
+ *   that also holds open questions, its other questions close nothing else (the Phase E review, M1): a legal radio
+ *   beside "Why do you want to work here?" in one Greenhouse section leaves that question open.
  * - What is asked: the field's key, its visible label (UntrustedText) and min(maxLength, DRAFT_MAX_LENGTH), or null
  *   with no maxLength (TailorIT then keeps the draft to DRAFT_DEFAULT_LENGTH). The worker adds the posting's visible
  *   text, the lookup's company and title, the canaries and the resume.
@@ -24,7 +26,8 @@
  *   same screens (a free-text or unknown question, visible, labelled, no tripwire or attention check, no EEO, legal or
  *   sensitive context); rewriteItemOf is the one field's draft question at the person's click, with what the box holds
  *   now (`current`, page text quoted as untrusted, line breaks kept) for TailorIT to rewrite, the empty-box rule left
- *   out for that key only.
+ *   out for that key only, and none when what it holds names a sensitive answer, a sum, a contact detail or a postal
+ *   address (namesSensitiveAnswer: the Phase E review, MAJOR 3).
  * - What comes back (DraftVerdict, the worker's translation of TailorIT's answer): a text, or why there is none. A
  *   discarded draft is never written: its row is flagged with the reason. A text longer than the field's cap (its
  *   maxLength, else DRAFT_DEFAULT_LENGTH) is discarded too (draft-too-long), and the Guard's canary scan blocks one
@@ -37,7 +40,7 @@ import {
 } from '../confidence';
 import { llmMaySeeLabel } from '../guard/honeypot';
 import { policyClassOf } from '../resolver/categories';
-import { screenForClassify } from '../resolver/classify';
+import { namesSensitiveAnswer, screenForClassify } from '../resolver/classify';
 import type { FieldClassification } from '../resolver/resolve';
 import { capCodePoints, foldLetters } from '../text/fold';
 import { asUntrusted } from '../text/untrusted';
@@ -130,8 +133,9 @@ export function closedQuestion(field: DraftNeighbour, vocab: Vocab): boolean {
     || screenForClassify(field.spec, vocab) !== null;
 }
 
-/** The questions a box belongs to (module header): its revealers, its section's other questions, and the question
- *  before it in its section when it only asks for more. */
+/** The questions a box belongs to (module header): the questions whose answers revealed it, and the question before it
+ *  in its section when it only asks for more. Its section's other questions are not among them (the Phase E review,
+ *  M1): Greenhouse puts a form's every question in one section, a legal or consent one among the rest. */
 export function questionsOf(spec: FieldSpec, context: DraftContext): DraftNeighbour[] {
   const related: DraftNeighbour[] = [];
   for (const [parent, child] of context.revealEdges) {
@@ -139,23 +143,32 @@ export function questionsOf(spec: FieldSpec, context: DraftContext): DraftNeighb
     const found = context.fields.find((field) => field.spec.baseKey === parent);
     if (found !== undefined) related.push(found);
   }
-  const sameSection = context.fields.filter((field) => field.spec.key !== spec.key
-    && field.spec.section.id === spec.section.id);
-  if (spec.section.id !== 'main') {
-    related.push(...sameSection.filter((field) => field.spec.section.block === spec.section.block));
-  }
   if (FOLLOW_UP_ASK.test(foldLetters(spec.label).toLowerCase())) {
-    const before = sameSection.filter((field) => field.spec.domOrder < spec.domOrder)
+    const before = context.fields.filter((field) => field.spec.key !== spec.key
+      && field.spec.section.id === spec.section.id && field.spec.domOrder < spec.domOrder)
       .sort((a, b) => b.spec.domOrder - a.spec.domOrder)[0];
     if (before !== undefined) related.push(before);
   }
   return related;
 }
 
-/** Whether a field sits in an EEO, legal or sensitive context (E2): its own screen, then the questions it belongs to. */
+/** Whether a box sits in a block of closed questions only, whose heading the screen does not name ("Voluntary
+ *  disclosures", "Legal"): a section of its own, every other question of which (its block's) is one no draft or AI
+ *  answer may belong to. A section that also holds questions of the person's own (Greenhouse's one section) is none. */
+function inClosedBlock(spec: FieldSpec, context: DraftContext): boolean {
+  if (spec.section.id === 'main') return false;
+  const others = context.fields.filter((field) => field.spec.key !== spec.key
+    && field.spec.section.id === spec.section.id && field.spec.section.block === spec.section.block);
+  return others.length > 0 && others.every((field) => closedQuestion(field, context.vocab));
+}
+
+/** Whether a field sits in an EEO, legal or sensitive context (E2): its own screen (its section's words included),
+ *  the questions it belongs to, and a block of closed questions only. A legal, consent or EEO question beside it in a
+ *  section that holds other open questions closes nothing else (the Phase E review, M1). */
 export function inClosedContext(spec: FieldSpec, context: DraftContext): boolean {
   return screenForClassify(spec, context.vocab) !== null
-    || questionsOf(spec, context).some((field) => closedQuestion(field, context.vocab));
+    || questionsOf(spec, context).some((field) => closedQuestion(field, context.vocab))
+    || inClosedBlock(spec, context);
 }
 
 /** Whether the classification says the field is a free-text question a draft may answer: the rules' free-text
@@ -232,12 +245,14 @@ function currentOf(spec: FieldSpec): UntrustedText {
 }
 
 /** Edit with AI (module header): the one field's draft question at the person's click, with what it holds now; null
- *  when the page may not offer the button on it. */
+ *  when the page may not offer the button on it, or what it holds names a sensitive answer, a sum, a contact detail
+ *  or a postal address (classify.ts namesSensitiveAnswer: the Phase E review, MAJOR 3). */
 export function rewriteItemOf(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
   row: Pick<FillResult, 'status'>, writable: boolean, context: DraftContext): DraftItem | null {
   if (!aiEditableField(spec, classification, resolution, row, writable, context)) return null;
   const max = spec.constraints.maxLength;
   const current = currentOf(spec);
+  if (current !== '' && namesSensitiveAnswer(current, context.vocab)) return null;
   return { key: spec.key, question: questionOf(spec), maxLength: max === undefined ? null : Math.min(max, DRAFT_MAX_LENGTH),
     ...(current === '' ? {} : { current }) };
 }

@@ -4,7 +4,8 @@
  * real adapters, in a dry run and then in a fill, each in a tab of its own.
  * - Dry run: nothing is written (no row wrote, every row not-checked, no write event, every value as the page had it).
  * - Fill: the identity fields the golden profile answers are verified from the profile; every control the
- *   expectations mark not fillable keeps its value; and each row the dry run promised ends with the dry run's status,
+ *   expectations mark not fillable keeps its value; Spotify's marketing consent stays unticked under the defaults (the
+ *   Phase E review, B1); and each row the dry run promised ends with the dry run's status,
  *   unless what happened was the filler's or the page's to say (a read-back that differed, a widget that ignored us),
  *   or the AI's: a dry run asks for no draft or answer (the owner's amendments), so a row a draft or an answer wrote
  *   in the fill is the AI's to say.
@@ -31,11 +32,16 @@ const IDENTITY: Record<'lever' | 'greenhouse', Array<{ label: string; value: str
     { label: 'Email', value: GOLDEN.email }],
 };
 
-/** Reasons only a fill can give: what the filler, the read-back or the page said. A dry run cannot know them. */
+/** Reasons only a fill can give: what the filler, the read-back or the page said. A dry run cannot know them: it opens
+ *  no widget either, so a list whose options never showed when the fill opened it (an unknown question's lazy list the
+ *  fill reads to ask its answer: the Phase E review, M7) is the page's to say. */
 const FILL_ONLY: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'widget-unsupported', 'needs-your-click',
   'unexpected-selection', 'element-not-found', 'disabled-or-readonly', 'value-rejected-by-site', 'format-unsupported',
   'maxlength-exceeded', 'pdf-only-input', 'resume-unavailable', 'resume-transfer-failed', 'resume-format-unsupported',
-  'field-disappeared', 'value-oscillated', 'page-busy']);
+  'field-disappeared', 'value-oscillated', 'page-busy', 'options-never-loaded']);
+
+/** Spotify's marketing consent box (fixtures/lever/spotify-ny.expect.json). */
+const SPOTIFY_MARKETING = 'Spotify has my consent to contact me about future job opportunities.';
 
 /** Reasons only the AI's draft or answer gives, which a dry run never asks for (the owner's amendments). */
 const AI_ONLY: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['llm-draft-written', 'llm-draft-needs-confirmation',
@@ -100,6 +106,13 @@ for (const name of CASES) {
         else expect(value, identity.label).toBe(identity.value);
       }
       expect(await notFillableValues(page, snapshot.fields)).toEqual(untouched);
+      // Spotify's marketing consent ("contact me about future job opportunities") is never ticked under the defaults,
+      // which pre-approve data retention but not marketing (the Phase E review, B1).
+      if (name === 'lever/spotify-ny') {
+        expect(row(report, SPOTIFY_MARKETING)).toMatchObject({ category: 'consent.marketing', wrote: false,
+          provenance: null });
+        await expect(page.locator('input[name="consent[marketing]"]')).not.toBeChecked();
+      }
       // The dry run's promise, kept: each row it planned ends with its status, but where only a fill could tell.
       const planByKey = new Map(planned.fields.map((field) => [field.key, field] as const));
       const broken = report.fields.filter((field) => !FILL_ONLY.has(field.reason) && !AI_ONLY.has(field.reason)

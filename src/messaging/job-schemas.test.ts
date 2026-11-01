@@ -45,7 +45,14 @@ describe('the v2 messages', () => {
     // The frame's answer to a refresh is {}: it never carries the card.
     expect(FRAME_ANSWER_SCHEMAS['job/refresh'].safeParse({}).success).toBe(true);
     expect(FRAME_ANSWER_SCHEMAS['job/refresh'].safeParse({ card: CARD }).success).toBe(false);
-    expect(FRAME_ANSWER_SCHEMAS['job/postingText'].safeParse({ text: 'Posting.', canaries: ['I am LLM'] }).success).toBe(true);
+    expect(FRAME_ANSWER_SCHEMAS['job/postingText'].safeParse({ text: 'Posting.', canaries: ['I am LLM'], policy: false }).success)
+      .toBe(true);
+    expect(FRAME_ANSWER_SCHEMAS['job/postingText'].safeParse({ text: 'Posting.', canaries: [], policy: true, url: 'https://x' })
+      .success).toBe(false);
+    // A single-page application's address change is a count in frame/hello, never the address.
+    expect(ContentMessageSchema.safeParse({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, nav: 3 }).success).toBe(true);
+    expect(ContentMessageSchema.safeParse({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, nav: 'https://x' }).success)
+      .toBe(false);
   });
 
   it('answers panel/job with a card and nothing more; a match whose counts disagree is refused', () => {
@@ -60,7 +67,9 @@ describe('the v2 messages', () => {
       .toBe(false);
     expect(PAGE_ANSWER_SCHEMAS['panel/job']).toBe(PanelJobAnswerSchema);
     expect(AddJobAnswerSchema.safeParse({ outcome: 'added' }).success).toBe(true);
-    expect(PanelAskAnswerSchema.safeParse({ outcome: 'answered', text: 'Yes.', resumeLabel: 'Backend' }).success).toBe(true);
+    expect(PanelAskAnswerSchema.safeParse({ outcome: 'answered', text: 'Yes.', resumeLabel: 'Backend', policy: false }).success)
+      .toBe(true);
+    expect(PanelAskAnswerSchema.safeParse({ outcome: 'ai-off' }).success).toBe(true);
     expect(PanelAskAnswerSchema.safeParse({ outcome: 'sensitive', text: 'leak' }).success).toBe(false);
   });
 
@@ -70,5 +79,9 @@ describe('the v2 messages', () => {
     expect(TabReportsAnswerSchema.safeParse({ tabId: 7, reports: [] }).success).toBe(true);
     expect(PanelPortMessageSchema.safeParse({ v: 1, type: 'panel/update', tabId: 7, reports: [], page }).success).toBe(true);
     expect(TabReportsAnswerSchema.safeParse({ tabId: 7, reports: [], page: { ...page, url: 'https://x' } }).success).toBe(false);
+    // The connection or the settings changed: the panel is told what, and nothing more.
+    expect(PanelPortMessageSchema.safeParse({ v: 1, type: 'panel/changed', what: 'connection' }).success).toBe(true);
+    expect(PanelPortMessageSchema.safeParse({ v: 1, type: 'panel/changed', what: 'connection', account: 'x' }).success)
+      .toBe(false);
   });
 });

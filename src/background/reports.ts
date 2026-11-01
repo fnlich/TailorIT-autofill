@@ -20,10 +20,12 @@
  * v2: every read and push also carries the tab's page state (frames.ts pageOfTab: a form found and its platform, frames
  * of ours with no form, or none), so the side panel says where the tab stands before any run. It is pushed again when a
  * frame says hello or a sweep forgets one (pageChanged), only to a watcher it changed for. Every push for a tab goes
- * through one queue per tab, reading the reports and the page inside it, so an older state is never posted last.
+ * through one queue per tab, reading the reports and the page inside it, so an older state is never posted last. A
+ * change of connection or settings goes to every open panel port as panel/changed {what} (tellPanels), with nothing
+ * else in it: the panel reads them again itself, and drops a card it read with the old connection.
  */
 import { ok, refuse, type Answer } from '../messaging/envelope';
-import { PanelPortMessageSchema, type ContentMessage, type PageState } from '../messaging/schemas';
+import { PanelPortMessageSchema, type ContentMessage, type PageState, type PANEL_CHANGES } from '../messaging/schemas';
 import type { PortLike, StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { FrameReportSchema, type FrameReport } from '../shared/report';
@@ -72,7 +74,11 @@ export interface Reports {
   page(tabId: number): Promise<PageState>;
   /** The tab's frames changed (a hello, a forgotten frame): watchers whose page state it changed get the tab again. */
   pageChanged(tabId: number): Promise<void>;
+  /** The connection or the settings changed (v2): every open panel port is told what, and nothing more. */
+  tellPanels(what: PanelChange): void;
 }
+
+type PanelChange = (typeof PANEL_CHANGES)[number];
 
 /** What the reports need. */
 export interface ReportsDeps {
@@ -95,6 +101,8 @@ export function createReports(deps: ReportsDeps): Reports {
   const { session } = deps;
   /** Each watching port, the tab it follows and the page state it was last sent (as JSON). */
   const watchers = new Map<PortLike, { tabId: number; page: string | null }>();
+  /** Every open panel port, watching a tab or not yet (v2: told of a connection or settings change). */
+  const ports = new Set<PortLike>();
   /** One queue per report key: a put and a document's forget never interleave. */
   const writes = createKeyedQueue();
   /** One queue per tab for what is pushed to its watchers, so pushes land in the order their states were read. */
@@ -238,12 +246,24 @@ export function createReports(deps: ReportsDeps): Reports {
       await pushToPanelFrame(from.tabId, await ofTab(from.tabId));
       return ok({});
     },
+    tellPanels(what) {
+      for (const port of [...ports]) {
+        try {
+          port.post({ v: 1, type: 'panel/changed', what });
+        } catch {
+          ports.delete(port);
+          watchers.delete(port);
+        }
+      }
+    },
     watch(port) {
+      ports.add(port);
       port.onMessage((raw) => {
         const parsed = PanelPortMessageSchema.safeParse(raw);
         if (!parsed.success || parsed.data.type !== 'panel/watch') {
           log('port.refused');
           watchers.delete(port);
+          ports.delete(port);
           port.disconnect();
           return;
         }
@@ -254,7 +274,10 @@ export function createReports(deps: ReportsDeps): Reports {
         }).catch(() => undefined);
         deps.check?.(tabId);
       });
-      port.onDisconnect(() => void watchers.delete(port));
+      port.onDisconnect(() => {
+        watchers.delete(port);
+        ports.delete(port);
+      });
     },
   };
 }

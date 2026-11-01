@@ -20,7 +20,11 @@
  * - A legal, EEO or sensitive question on a kind that cannot hold its answer stops at a needs-user hit instead of
  *   letting a later rule claim it; consent does the same once no consent kind fits the field.
  * - Consent wording adds unrecognised consent (`consent.other`) for each clause no specific kind covers, and an AI
- *   attestation whenever it names AI.
+ *   attestation whenever it names AI; only a real "I did not use AI" statement (attestsNoAiUse) is one a run reads as
+ *   forbidding AI (the Phase E review, M5).
+ * - Data retention is the employer retaining or keeping the application on file; being contacted about future roles,
+ *   job alerts and a talent community or pool are marketing (the Phase E review, B1), which is never pre-approved by
+ *   default.
  */
 import { LABEL_RULE_CONFIDENCE } from '../confidence';
 import type { FieldKind } from '../enums';
@@ -377,6 +381,18 @@ const TRANSGENDER_SELF = /^transgender(?:\s+(?:status|identity|experience|histor
 const OVER18_WIDE = /\b(?:over|above|older\s+than)\s+the\s+age\s+of\s+(?:18|eighteen)\b|\b(?:18|eighteen)\s+(?:years\s+)?(?:of\s+age\s+)?(?:old\s+)?(?:or|and)\s+(?:older|over|above)\b|\b(?:at\s+least|over|older\s+than)\s+eighteen\b|\beighteen\s+years\s+(?:of\s+age|or\s+older)\b/;
 /** Criminal-history wordings §8.3's rule misses ("unspent convictions", "found guilty", "an offence"). */
 const CRIMINAL_WIDE = /\bconvictions?\b|\boffen[cs]es?\b|\boffenders?\b|\bguilty\b|\barrested\b|\bunspent\b|\bmisdemeanou?rs?\b|\bnolo\s+contendere\b|\bcharged\s+with\s+(?:a\s+|an\s+|any\s+)?(?:crime|criminal|offen[cs]e|felony|misdemeanou?r)\b|\bcrimes?\b/;
+/** Data retention as the Phase E review reads it (B1): the employer retaining, storing or keeping the application on
+ *  file. Being considered for, contacted about or told of future roles, and a talent community or pool, are not. */
+const RETENTION_ONLY = /\bretain(?:s|ed|ing)?\b|\bretention\b|\bkeep(?:s|ing)?\s+(?:\w+\s+){0,4}?on\s+file\b|\bon\s+file\b|\bstor(?:e|es|ed|ing)\s+(?:my|your)\s+(?:personal\s+)?(?:data|information|details|application|cv|resume|profile)\b/;
+/** Retention wordings §8.3's rule misses ("retaining my CV", "storing your details"). */
+const RETENTION_WIDE = /\bretain(?:s|ed|ing)?\s+(?:my|your)\s+(?:personal\s+)?(?:data|information|details|application|cv|resume|profile)\b|\bkeep(?:s|ing)?\s+(?:my|your)\s+(?:personal\s+)?(?:data|information|details|application|cv|resume|profile)\s+on\s+file\b|\bstor(?:e|es|ed|ing)\s+(?:my|your)\s+(?:personal\s+)?(?:data|information|details|application|cv|resume|profile)\b/;
+/** Future roles named after a contact verb: "about future job opportunities", "of other openings". */
+const FUTURE_ROLES = String.raw`(?:future|other|new|upcoming|similar|relevant|additional|open|more)\s+(?:\w+\s+){0,2}?(?:jobs?|careers?|roles?|positions?|openings?|opportunit\w*|vacanc\w*|postings?)`;
+const CONTACT_VERB = String.raw`(?:contact|contacted|contacting|email|emailed|emailing|e\s?mail|e\s?mailed|notify|notified|notifying|notifications?|reach\s+out|reached\s+out|call|called|text|texted|message|messaged|send|sent|sending|receive|receiving|hear|inform|informed|alert|alerted|updates?|updated)`;
+/** Marketing as the Phase E review reads it (B1): being contacted, emailed, notified, sent updates or alerts about
+ *  future roles, or joining a talent community or pool. Never pre-approved by default (docs/SPEC-AMENDMENTS.md §7). */
+const MARKETING_WIDE = new RegExp(String.raw`\b${CONTACT_VERB}\b(?:\s+\w+){0,6}?\s+${FUTURE_ROLES}\b|\b(?:talent|candidate)\s+(?:pool|community|network|database)s?\b|\bkeep\s+me\s+(?:updated|informed|posted)\b|\bstay\s+in\s+touch\b|\bjob\s+(?:alerts?|notifications?|updates?)\b|\bcareer\s+(?:updates?|newsletters?|alerts?)\b`);
+
 /** A check the person consents to, which is not a claim about their record ("a criminal background check"). */
 const RECORD_CHECK = /\b(?:criminal\s+)?(?:background|record|records|history)\s+(?:checks?|screenings?|search|searches|investigations?|reports?|verifications?)\b|\bcriminal\s+(?:checks?|screenings?|search|searches|investigations?|reports?)\b/g;
 
@@ -504,6 +520,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.availability': { only: START_AVAILABILITY, ask: true,
     otherwise: { id: 'label.other-availability', category: 'screening.other', strength: 'normal' } },
   'label.relocation': { unless: /\brelocat\w*\s+(?:assistance|package|support|benefits?|reimbursement|bonus|expenses?|costs?|stipend|allowance|help|budget|polic(?:y|ies)|services?)\b/ },
+  // "Have you worked here before?" (docs/SPEC-AMENDMENTS.md §8), which §8.3's rule misses. The rule's value is taken
+  // only for a question that names the posting's company or points at it (values.ts, the Phase E review, M3).
+  'label.previously-employed': { also: /\bworked\s+(?:here|for\s+us|with\s+us)\b|\bemployed\s+(?:here|by\s+us)\b|\bworked\s+(?:at|for)\s+(?:\w+\s+){1,4}?before\b|\bex\s+employees?\b|\bformer\s+employees?\b/ },
   'label.travel': { unless: /\btravel\s+(?:restrictions?|limitations?|constraints?|bans?|reimbursements?|expenses?|polic(?:y|ies)|documents?|history)\b|\brestrictions?\s+on\s+(?:your\s+)?travel\b/ },
   // "Which languages do you speak?" (Phase 2): §8.3's rule takes "languages you speak" with nothing between. Only
   // "speak": "What programming languages do you know?" asks about skills.
@@ -514,6 +533,8 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.why-company': { also: /why\s+do\s+you\s+want\s+to\s+(?:work|join)|why\s+(?:are\s+you\s+)?interested\s+in\s+(?:joining|working\s+(?:at|for|with))|what\s+(?:excites|interests|attracts|draws)\s+you\s+(?:to|about)\s+(?:joining|working\s+(?:at|for|with)|our\s+company|the\s+company|us)\b|^why\s+us$/ },
   'label.why-role': { also: /why\s+(?:are\s+you\s+)?interested\s+in\s+(?:this|the|our)\s+(?:role|position|job|opportunity)|why\s+do\s+you\s+want\s+(?:this|the)\s+(?:role|position|job)|why\s+(?:are\s+you\s+)?applying\s+(?:for|to)\s+(?:this|the)\s+(?:role|position|job)|what\s+(?:excites|interests|attracts|draws|appeals\s+to)\s+you\s+(?:about|in|to)\s+(?:this|the)\s+(?:role|position|job|opportunity)/ },
   'label.consent-ai': { also: AI_ATTESTATION },
+  'label.consent-retention': { also: RETENTION_WIDE, only: RETENTION_ONLY },
+  'label.consent-marketing': { also: MARKETING_WIDE },
   'label.consent-generic': { also: CONSENT_WIDE },
 };
 
@@ -786,6 +807,29 @@ export function withDescriptionConsent(hit: LabelRuleHit, description: string, k
   const merged = [...own, ...extra.filter((entry) => !hit.consentKinds!.includes(entry.category))]
     .sort((a, b) => consentRank(a.category) - consentRank(b.category));
   return consentVerdict(merged, kind);
+}
+
+/**
+ * Whether normalized text is a real "I did not use AI" attestation (the Phase E review, M5): label.consent-ai's own
+ * wording or its negation pattern (AI_ATTESTATION). Consent wording that only names AI ("AI tools may be used to review
+ * my application") is an AI attestation to the consent policy, never ticked, but no such statement: it does not switch
+ * a run to the profile only.
+ */
+export function attestsNoAiUse(text: string): boolean {
+  return AI_CONSENT_RULE.re.test(text) || AI_ATTESTATION.test(text);
+}
+
+/** Marketing and contact wordings a question can carry with no consent verb ("Receive our newsletter?", "Can we text
+ *  you?"). */
+const CONTACT_TOPIC = /\bnewsletters?\b|\bjob\s+alerts?\b|\bmarketing\s+(?:e\s?mails?|communications?|messages?|materials?|updates?|offers?|lists?)\b|\btext\s+messages?\b|\bsms\b|\b(?:un)?subscribe\b|\bopt\s+(?:in|out)\b|\b(?:text|sms|call|e\s?mail|contact|message)\s+(?:you|me)\b/;
+
+/**
+ * Whether normalized text asks for a consent the person gives (B1's marketing and retention wordings, newsletters,
+ * texts, being contacted), with or without a consent verb: on a radio or a list such a question is no consent kind to
+ * the rules, but an AI answer must never give it (plan/answers.ts namesUnanswerableTopic).
+ */
+export function namesConsentTopic(text: string): boolean {
+  return MARKETING_WIDE.test(text) || RETENTION_WIDE.test(text) || CONTACT_TOPIC.test(text);
 }
 
 /** UNLABELLED_TEXTAREA_RULE's hit for a textarea whose normalized label is empty, else null. */

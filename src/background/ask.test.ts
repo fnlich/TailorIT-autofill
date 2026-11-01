@@ -3,14 +3,19 @@
  * profile's), what the draft request carries (the form frame's visible posting text, '' when it sends none, never
  * TailorIT's stored copy; the card's company and title; the page's canaries; the length's cap), the screen that keeps a
  * sensitive question from the AI, a task polled to its end, an answer refused for a canary, and nothing kept or logged.
+ * The Phase E review: nothing sent across a token change or with AI-written answers off, and the answer says when the
+ * posting forbids AI (before any run, and after one in every mode).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { AUTOFILL_CUSTOM_QUESTION_LENGTHS, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS } from '../contract/tailorit';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { MAX_CUSTOM_QUESTION } from '../messaging/schemas';
 import { ASK_LIMIT, screenQuestion } from './ask';
 import {
+  beginRun,
   contentSender,
+  frameReport,
   goldens,
   pageSender,
   questionsOf,
@@ -25,15 +30,16 @@ const DRAFT = 'POST /api/autofill/ai/draft';
 const QUESTION = 'Why do you want to work at Northwind?';
 const POSTING = 'Northwind builds ordering software for restaurants.';
 
-/** A connected worker whose tab 7 shows a form that relays the card and sends `posting` as its job text. */
-async function withForm(posting: { text: string; canaries: string[] } = { text: POSTING, canaries: ['I am LLM'] }):
-  Promise<TestWorker> {
+/** A connected worker whose tab 7 shows a form that relays the card and sends `posting` as its job text (`policy`:
+ *  whether the frame's visible text forbids AI, none by default). */
+async function withForm(posting: { text: string; canaries: string[]; policy?: boolean } = { text: POSTING,
+  canaries: ['I am LLM'] }): Promise<TestWorker> {
   const worker = await startTestWorker({ token: tokenRecord() });
   await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
   worker.fakes.frameAnswers = async (sent) => {
     const message = sent.message as { type?: string };
     if (message.type === 'job/refresh') return worker.deliver({ v: 1, type: 'job/lookup' }, contentSender());
-    if (message.type === 'job/postingText') return { ok: true, data: posting };
+    if (message.type === 'job/postingText') return { ok: true, data: { policy: false, ...posting } };
     return { ok: true, data: {} };
   };
   return worker;
@@ -51,7 +57,7 @@ describe('the custom question (v2)', () => {
     const worker = await withForm();
     expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'answered',
       text: 'I have built ordering platforms for four years, and I would like to bring that here.',
-      resumeLabel: 'Senior Software Engineer' } });
+      resumeLabel: 'Senior Software Engineer', policy: false } });
     const body = draftBody(worker);
     expect(body).toEqual({
       questions: [{ key: 'custom-question', question: QUESTION, maxLength: AUTOFILL_CUSTOM_QUESTION_LENGTHS.medium }],
@@ -163,6 +169,48 @@ describe('the custom question (v2)', () => {
     const worker = await startTestWorker();
     expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'not-connected' } });
     expect(worker.tailorit.requests).toEqual([]);
+  });
+
+  it('sends nothing when the token changed while the question was being asked (another window connected)', async () => {
+    const worker = await withForm();
+    worker.fakes.frameAnswers = async (sent) => {
+      const message = sent.message as { type?: string };
+      if (message.type === 'job/refresh') return worker.deliver({ v: 1, type: 'job/lookup' }, contentSender());
+      if (message.type === 'job/postingText') {
+        await worker.deliver({ v: 1, type: 'auth/redeemCode', code: 'K7QM-2XRD-9VHT-PA3C' }, pageSender('options.html'));
+        return { ok: true, data: { text: POSTING, canaries: [], policy: false } };
+      }
+      return { ok: true, data: {} };
+    };
+    expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'not-connected' } });
+    expect(worker.tailorit.count(DRAFT)).toBe(0);
+  });
+
+  it('is refused, asking nothing, while AI-written answers (the drafts setting) are off', async () => {
+    const worker = await withForm();
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false } } }, pageSender('options.html'));
+    expect(await ask(worker)).toEqual({ ok: true, data: { outcome: 'ai-off' } });
+    expect(worker.tailorit.count(DRAFT)).toBe(0);
+    expect(worker.tailorit.count('POST /api/autofill/lookup')).toBe(0);
+  });
+
+  it('says the posting forbids AI with the answer: from the frame’s visible text before any run, or a run’s notice', async () => {
+    // Before any run: the form frame's own visible text says so (the profile-only default asks no AI for the fill, but
+    // the person's own question is still answered, under that notice).
+    const before = await withForm({ text: POSTING, canaries: [], policy: true });
+    expect(await ask(before)).toMatchObject({ ok: true, data: { outcome: 'answered', policy: true } });
+
+    // After a run that filled from the profile only: its report's notice says so, whatever the frame's text says now.
+    for (const code of ['policy-profile-only', 'ai-attestation', 'policy'] as const) {
+      const worker = await withForm();
+      const runId = await beginRun(worker);
+      expect(await worker.deliver({ v: 1, type: 'report/put', runId, report: frameReport(runId, 0, { notices: [{ code }] }) },
+        contentSender()), code).toEqual({ ok: true, data: {} });
+      expect(await ask(worker), code).toMatchObject({ ok: true, data: { outcome: 'answered', policy: true } });
+    }
+    const clean = await withForm();
+    expect(await ask(clean)).toMatchObject({ ok: true, data: { outcome: 'answered', policy: false } });
   });
 
   it('keeps neither the question nor the answer: not in storage, not in the logs', async () => {

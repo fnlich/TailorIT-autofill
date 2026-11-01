@@ -26,6 +26,9 @@ export interface FrameEntry {
   isTop: boolean;
   hasForm: boolean;
   registeredAt: number;
+  /** How many times a single-page application changed the frame's address within this document, as its hello said
+   *  (v2; absent: none). A count, never an address. */
+  nav?: number;
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
@@ -33,7 +36,8 @@ const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
 /** Records a frame. One key per frame, so frames of one tab registering at once never overwrite each other. */
 export async function registerFrame(
   session: StorageArea,
-  frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean },
+  frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean;
+    nav?: number },
   now: number,
 ): Promise<FrameEntry> {
   const entry: FrameEntry = {
@@ -45,6 +49,7 @@ export async function registerFrame(
     isTop: frame.isTop,
     hasForm: frame.hasForm,
     registeredAt: now,
+    ...(frame.nav === undefined || frame.nav === 0 ? {} : { nav: frame.nav }),
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
@@ -60,17 +65,23 @@ export function formFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
   return frames.filter((frame) => frame.hasForm).sort((a, b) => a.frameId - b.frameId)[0] ?? null;
 }
 
+/** The navigation count a frame's hello gave (0: none). */
+export const navOf = (frame: Pick<FrameEntry, 'nav'>): number => frame.nav ?? 0;
+
 /**
  * What a tab's page holds (v2), from the registry alone, never an address: 'form' with the form frame's platform and a
- * key that changes when that frame shows another document; else 'no-form' when a frame of ours is there (a posting
- * page), else 'none'.
+ * key that changes when that frame shows another document, or when a single-page application moved it to another
+ * address within its document (its navigation count); else 'no-form' when a frame of ours is there (a posting page),
+ * else 'none'.
  */
 export async function pageOfTab(session: StorageArea, tabId: number): Promise<PageState> {
   const frames = await framesOfTab(session, tabId);
   const form = formFrameOf(frames);
   if (form === null) return { support: frames.length > 0 ? 'no-form' : 'none', platform: null, formKey: null };
+  const document = (form.documentId ?? `at-${form.registeredAt}`).slice(0, 96);
+  const nav = navOf(form);
   return { support: 'form', platform: form.platform,
-    formKey: `${form.frameId}:${form.documentId ?? `at-${form.registeredAt}`}`.slice(0, 120) };
+    formKey: `${form.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120) };
 }
 
 /** One registered frame, or null. */

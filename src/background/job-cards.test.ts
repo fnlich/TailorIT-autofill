@@ -166,6 +166,75 @@ describe('the job card (v2)', () => {
     expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'job/refresh')).toEqual([]);
   });
 
+  it("reads the card again after the frame's address changes in the same document, never the old posting's", async () => {
+    const worker = await withForm();
+    const port = worker.connect('panel', pageSender());
+    port.post({ v: 1, type: 'panel/watch', tabId: 7 });
+    await card(worker);
+    // A single-page application shows the next posting in the same document: the frame says hello with a new count.
+    // Chrome still gives the document's first address as sender.url; the tab's address (sender.tab.url) is the new one.
+    const next = LEVER_URL.replace('5f6e3c2b1a00', '5f6e3c2b1a01');
+    const moved = contentSender({ tab: { id: 7, url: next } });
+    relayFrom(worker, true, moved);
+    worker.tailorit.reply(LOOKUP, { json: { ...golden, job: { ...golden.job, companyName: 'Contoso', title: 'Platform Engineer' } } });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, nav: 1 }, moved);
+    // The panel hears of it as a new page key (a count, never the address), so it reads the card again.
+    await vi.waitFor(() => expect(port.received.some((message) =>
+      (message as { page?: { formKey?: string } }).page?.formKey === '0:doc-1#1')).toBe(true));
+    expect(JSON.stringify(port.received)).not.toContain('5f6e3c2b1a01');
+    const answer = (await card(worker)) as { data: { card: { job: { company: string; title: string } } } };
+    expect(answer.data.card.job).toMatchObject({ company: 'Contoso', title: 'Platform Engineer' });
+    expect(bodyOf(worker, LOOKUP).map((body) => body.url)).toEqual([LEVER_URL, next]);
+    // The same count again (a hello that changes nothing): the card is answered from memory.
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, nav: 1 }, moved);
+    await card(worker);
+    expect(worker.tailorit.count(LOOKUP)).toBe(2);
+    // The frame's registry entry holds the count, never the address.
+    expect(JSON.stringify(await fakeBrowser.storage.session.get(null))).not.toContain('5f6e3c2b1a01');
+    // A tab address on another origin is never taken for the frame's; and the document's first address, which the page
+    // has left, is not looked up either.
+    const elsewhere = contentSender({ tab: { id: 7, url: 'https://boards.greenhouse.io/acme/jobs/123' } });
+    relayFrom(worker, true, elsewhere);
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, nav: 2 }, elsewhere);
+    expect(await card(worker)).toEqual({ ok: true, data: { tabId: 7, card: { state: 'unavailable' } } });
+    expect(worker.tailorit.count(LOOKUP)).toBe(2);
+  });
+
+  it('shows unavailable, never the previous posting, for a subframe a single-page application moved', async () => {
+    // A form in a subframe: Chrome gives no tab address for it, and its sender.url is the document's first one.
+    const frame = contentSender({ frameId: 3 });
+    const worker = await startTestWorker({ token: tokenRecord() });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true }, frame);
+    relayFrom(worker, true, frame);
+    expect(((await card(worker)) as { data: { card: { state: string } } }).data.card.state).toBe('answered');
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true, nav: 1 }, frame);
+    expect(await card(worker)).toEqual({ ok: true, data: { tabId: 7, card: { state: 'unavailable' } } });
+    expect(await add(worker)).toEqual({ ok: true, data: { outcome: 'unavailable' } });
+    // A fill there begins with no lookup either (as one that failed), never the previous posting's.
+    await beginRun(worker, {}, frame);
+    expect(worker.tailorit.count(LOOKUP)).toBe(1);
+    expect(worker.tailorit.count(ADD)).toBe(0);
+  });
+
+  it('keeps no card for a lookup answered after its tab closed, from the card or from run/begin', async () => {
+    for (const read of ['card', 'run/begin'] as const) {
+      const worker = await withForm();
+      const closeTab = () => void fakeBrowser.tabs.onRemoved.trigger(7, { windowId: 1, isWindowClosing: false });
+      // TailorIT answers once the tab is gone: what it says must not become a card for whatever registers next.
+      worker.tailorit.reply(LOOKUP, () => {
+        closeTab();
+        return { json: golden };
+      }, { once: true });
+      if (read === 'card') expect(await card(worker), read).toEqual({ ok: true, data: { tabId: 7, card: { state: 'unavailable' } } });
+      else await beginRun(worker);
+      await vi.waitFor(async () => expect(Object.keys(await fakeBrowser.storage.session.get(null))
+        .filter((key) => key.startsWith('frames:7:'))).toEqual([]));
+      await withFrame(worker);
+      await card(worker);
+      expect(worker.tailorit.count(LOOKUP), read).toBe(2);
+    }
+  });
+
   it('forgets a document that is gone, and reads the new one', async () => {
     const worker = await withForm();
     await card(worker);
@@ -257,6 +326,27 @@ describe('the resume the person chose (v2)', () => {
     await card(worker);
     expect(bodyOf(worker, LOOKUP).at(-1)!.resumeId).toBeUndefined();
   });
+
+  it('applies a Change made while a fill runs to every file the fill has not uploaded yet', async () => {
+    const worker = await withForm();
+    const runId = await beginRun(worker);
+    const files = () => worker.tailorit.requests.filter((request) => request.path.endsWith('/file')).map((request) => request.path);
+    const upload = async (count: number) => {
+      const port = worker.connect('resume', contentSender());
+      port.post({ v: 1, type: 'resume/request', runId });
+      await vi.waitFor(() => expect(files()).toHaveLength(count));
+    };
+    await upload(1);
+    expect(files()).toEqual([`/api/autofill/resumes/${golden.suggestedResume!.id}/file`]);
+    // The person chooses another resume mid-run: the next file the run uploads is that one, as TailorIT names it.
+    const other = goldens.resumes.items[1]!;
+    await worker.deliver({ v: 1, type: 'panel/setResume', tabId: 7, resumeId: other.id }, pageSender());
+    worker.tailorit.reply(LOOKUP, { json: { ...golden, suggestedResume: { id: other.id, label: other.label, kind: other.kind,
+      fileKind: other.fileKind, fileName: other.fileName, reason: 'chosen' } } });
+    await upload(2);
+    expect(files()[1]).toBe(`/api/autofill/resumes/${other.id}/file`);
+    expect(bodyOf(worker, LOOKUP).at(-1)).toEqual({ url: LEVER_URL, includePostingText: false, resumeId: other.id });
+  });
 });
 
 describe('a token change (v2, token hygiene)', () => {
@@ -285,12 +375,50 @@ describe('a token change (v2, token hygiene)', () => {
       await held;
       return worker.deliver({ v: 1, type: 'job/lookup' }, contentSender());
     };
-    // The token changes while the frame has not relayed yet: the lookup it then makes is not kept.
+    // The token changes while the frame has not relayed yet: the relay that then comes sends nothing under the new one.
     const reading = card(worker);
     await worker.deliver({ v: 1, type: 'auth/disconnect' }, pageSender('options.html'));
     await worker.deliver({ v: 1, type: 'auth/redeemCode', code: 'K7QM-2XRD-9VHT-PA3C' }, pageSender('options.html'));
     release();
     expect(await reading).toEqual({ ok: true, data: { tabId: 7, card: { state: 'unavailable' } } });
+    expect(worker.tailorit.count(LOOKUP)).toBe(0);
+  });
+
+  it('tells every open side panel when the connection or the settings change, and nothing more', async () => {
+    const worker = await withForm();
+    // One panel follows the tab, another has not watched any yet (a window with no tab of ours).
+    const watching = worker.connect('panel', pageSender());
+    watching.post({ v: 1, type: 'panel/watch', tabId: 7 });
+    const idle = worker.connect('panel', pageSender());
+    const changes = (port: typeof idle) => port.received.filter((message) => (message as { type?: string }).type === 'panel/changed');
+    await worker.deliver({ v: 1, type: 'auth/redeemCode', code: 'K7QM-2XRD-9VHT-PA3C' }, pageSender('options.html'));
+    await worker.deliver({ v: 1, type: 'auth/disconnect' }, pageSender('options.html'));
+    for (const port of [watching, idle]) {
+      expect(changes(port)).toEqual([{ v: 1, type: 'panel/changed', what: 'connection' },
+        { v: 1, type: 'panel/changed', what: 'connection' }]);
+    }
+    await worker.deliver({ v: 1, type: 'settings/save', settings: (await worker.deliver({ v: 1, type: 'settings/get' },
+      pageSender('options.html')) as { data: { settings: unknown } }).data.settings }, pageSender('options.html'));
+    expect(changes(idle).at(-1)).toEqual({ v: 1, type: 'panel/changed', what: 'settings' });
+  });
+
+  it('sends no Add that was asked for before the token changed, and says to connect', async () => {
+    const worker = await withForm();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    worker.fakes.frameAnswers = async (sent) => {
+      const message = sent.message as { type?: string };
+      if (message.type !== 'job/refresh') return { ok: true, data: {} };
+      await held;
+      return worker.deliver({ v: 1, type: 'job/add' }, contentSender());
+    };
+    const adding = add(worker);
+    await worker.deliver({ v: 1, type: 'auth/redeemCode', code: 'K7QM-2XRD-9VHT-PA3C' }, pageSender('options.html'));
+    release();
+    expect(await adding).toEqual({ ok: true, data: { outcome: 'not-connected' } });
+    expect(worker.tailorit.count(ADD)).toBe(0);
   });
 
   it('keeps nothing of the card in storage or the logs', async () => {

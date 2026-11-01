@@ -33,7 +33,11 @@
  *    the AI spec checks those bodies field by field), a pick's intended value and aliases (the one place profile text
  *    goes to TailorIT's AI), and an item key that is a report row's (proven built from its page label); a draft request
  *    (Phase 6) its questions and job text (page text; markers and canaries are still looked for there) and the
- *    lookup's company and job title.
+ *    lookup's company and job title. A question's current answer (Edit with AI's `currentAnswer`: what the box holds,
+ *    which may be the person's own words) is set aside only for the boxes the spec clicked Edit with AI on (`rewrites`,
+ *    by their question): any other draft request that carries one is searched in full. Of a draft or answer request's
+ *    `canaries` (the page's words addressed to AI tools), only those the spec declares the page's are set aside (trap
+ *    1b's hidden text asks for "Austin", the golden profile's city); any other is searched.
  * 6. Every filled or verified row has a provenance.
  * 7. The run never reaches done.
  * 8. No request went anywhere the routes do not answer.
@@ -69,6 +73,9 @@ export interface TrapRun {
   /** The controls the spec clicked as the person (Playwright's trusted click), by their spy identity (#id): a wizard's
    *  Next (Phase 5). Their trusted events are the person's, never a violation; none may be a control that submits. */
   personClicked?: readonly string[];
+  /** The questions (their visible text, as the draft request sends it) whose Edit with AI the spec clicked: only their
+   *  rewrite request's `currentAnswer` is page text set aside (point 5). None by default. */
+  rewrites?: readonly string[];
 }
 
 type Row = FrameReport['fields'][number];
@@ -153,25 +160,37 @@ const AI_PROFILE_TEXT = ['intendedValue', 'aliases'];
  * job text: the page's visible text outside the form, which the marker test proves visible), the lookup's company and
  * job title (TailorIT's own words), and a question's key when it is a row's. An answer request (the owner's
  * amendments) sets aside the same: each item's question, hint, section and options (page text), the job text, the
- * company and title, and an item's key when it is a row's; a rewrite's current answer (Edit with AI) is page text too.
+ * company and title, and an item's key when it is a row's. A rewrite's current answer (Edit with AI) is page text too,
+ * but only for a question the spec rewrote (`rewrites`): a current answer on any other question is searched. Both set
+ * aside, from their `canaries` (the page's text addressed to AI tools, sent by the contract's design), only the ones
+ * the spec declares the page's (`run.canaries`: a trap may ask for "Austin", the golden profile's city); any other
+ * canary is searched.
  * Any other body is read whole.
  */
-function sentinelBody(request: MockRequest, rowKeys: ReadonlySet<string>): string {
+function sentinelBody(request: MockRequest, rowKeys: ReadonlySet<string>, rewrites: ReadonlySet<string>,
+  pageCanaries: ReadonlySet<string>): string {
+  /** A request's canaries less the page's declared ones. */
+  const unknownCanaries = (canaries: unknown) => (Array.isArray(canaries)
+    ? { canaries: canaries.filter((canary) => !pageCanaries.has(lower(String(canary)))) } : {});
   if (request.method === 'POST' && request.path === '/api/autofill/ai/draft') {
     try {
-      const { jobText: _job, company: _company, jobTitle: _title, questions, ...rest } = JSON.parse(request.body) as
-        { jobText?: unknown; company?: unknown; jobTitle?: unknown; questions?: Array<Record<string, unknown>> };
-      return JSON.stringify({ ...rest, questions: (questions ?? []).map(({ question: _question,
-        currentAnswer: _current, key, ...question }) => ({ ...question, ...(rowKeys.has(String(key)) ? {} : { key }) })) });
+      const { jobText: _job, company: _company, jobTitle: _title, questions, canaries, ...rest } = JSON.parse(request.body) as
+        { jobText?: unknown; company?: unknown; jobTitle?: unknown; questions?: Array<Record<string, unknown>>;
+          canaries?: unknown };
+      return JSON.stringify({ ...rest, ...unknownCanaries(canaries), questions: (questions ?? []).map(({ question,
+        currentAnswer, key, ...others }) => ({
+        ...others,
+        ...(currentAnswer === undefined || rewrites.has(String(question)) ? {} : { currentAnswer }),
+        ...(rowKeys.has(String(key)) ? {} : { key }) })) });
     } catch {
       return request.body;
     }
   }
   if (request.method === 'POST' && request.path === '/api/autofill/ai/answer') {
     try {
-      const { jobText: _job, company: _company, jobTitle: _title, items, ...rest } = JSON.parse(request.body) as
-        { jobText?: unknown; company?: unknown; jobTitle?: unknown; items?: Array<Record<string, unknown>> };
-      return JSON.stringify({ ...rest, items: (items ?? []).map(({ question: _question, hint: _hint, section: _section,
+      const { jobText: _job, company: _company, jobTitle: _title, items, canaries, ...rest } = JSON.parse(request.body) as
+        { jobText?: unknown; company?: unknown; jobTitle?: unknown; items?: Array<Record<string, unknown>>; canaries?: unknown };
+      return JSON.stringify({ ...rest, ...unknownCanaries(canaries), items: (items ?? []).map(({ question: _question, hint: _hint, section: _section,
         options: _options, key, ...item }) => ({ ...item, ...(rowKeys.has(String(key)) ? {} : { key }) })) });
     } catch {
       return request.body;
@@ -273,13 +292,15 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
     Object.fromEntries(Object.entries(area).map(([key, value]) => [key, key.startsWith('report:') ? withoutLabels(value) : value]));
   // The rows' keys, each proven above to be built from its own (page) label: an AI request's item key may be one.
   const rowKeys = new Set(reports.flatMap((report) => report.fields.map((row) => row.key)));
+  const rewrites = new Set(run.rewrites ?? []);
+  const pageCanaries = new Set(run.canaries.map(lower));
   const anywhere: Record<string, string> = {
     'a report (its labels aside)': JSON.stringify(reports.map(withoutLabels)),
     RunState: JSON.stringify(runState),
     "the extension's storage (its reports' labels aside)": JSON.stringify({ session: reportsAside(storage.session), local: storage.local }),
     'a console message': consoleText,
     'a request to TailorIT (an AI request’s page text, its keys of rows and a pick’s value aside)': requests
-      .map((request) => `${request.path}${request.query} ${sentinelBody(request, rowKeys)}`).join('\n'),
+      .map((request) => `${request.path}${request.query} ${sentinelBody(request, rowKeys, rewrites, pageCanaries)}`).join('\n'),
   };
   for (const sentinel of profileSentinels()) {
     for (const [where, haystack] of Object.entries(anywhere)) {

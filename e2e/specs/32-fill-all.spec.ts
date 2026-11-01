@@ -3,8 +3,9 @@
  * defaults, a question nothing on the extension's side settles is answered through TailorIT's answer route and marked
  * "AI guess", from visible text only; a free-text question's draft is written and accepted; and Edit with AI, on the
  * person's trusted click on the button in the box, asks TailorIT to rewrite what the box holds (the draft request's
- * currentAnswer) and writes the rewrite (the mock's CLEAN_REWRITE, never the box's text) over the draft. Each case then
- * runs assertTrapInvariants.
+ * currentAnswer) and writes the rewrite (the mock's CLEAN_REWRITE, never the box's text) over the draft. A legal question
+ * in a section of open ones (Greenhouse's layout) closes neither of them (the Phase E review, M1). Each case then runs
+ * assertTrapInvariants.
  */
 import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
@@ -18,6 +19,9 @@ import { trap } from '../helpers/traps.ts';
 import { CLEAN_ANSWER, CLEAN_DRAFT, CLEAN_REWRITE } from '../mock-server/mock.mjs';
 
 const SAVED = { file: 'fixtures/synthetic/saved-answers.html', url: fixtureAddress('fill-all-answers') } as const;
+/** One section holding a legal question beside open ones, as Greenhouse lays a form out (the Phase E review, M1). */
+const SECTION = { file: 'fixtures/synthetic/fill-all-section.html', url: fixtureAddress('fill-all-section') } as const;
+const LEGAL = 'Are you legally authorized to work in the United States?';
 const QUESTION = 'Which of our offices would you visit first?';
 const LABELS = ['First name', 'Email', QUESTION];
 const WHY = 'Why do you want to work here?';
@@ -42,6 +46,32 @@ test.describe('fill everything (the owner’s amendments)', () => {
     for (const value of [GOLDEN.first, GOLDEN.last, GOLDEN.email]) expect(answer!.body).not.toContain(value);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(SAVED.url) });
+  });
+
+  test('a legal question in a section of open ones closes neither: the question is answered and the box drafted (M1)', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    routeLog.serve({ [SECTION.url]: SECTION.file });
+    await tailorit.scenario('ai-answer');
+    const page = await extContext.newPage();
+    await page.goto(SECTION.url);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(report.status).toBe('review');
+    // The legal question is the profile's.
+    expect(row(report, LEGAL)).toMatchObject({ provenance: 'profile', wrote: true });
+    // The open questions beside it: answered and drafted, each needing nothing of the person.
+    expect(row(report, QUESTION)).toMatchObject({ status: 'verified', provenance: 'llm-answer', reason: 'ai-guess',
+      wrote: true, needsUserAction: false });
+    await expect(page.locator('#office')).toHaveValue(CLEAN_ANSWER);
+    expect(row(report, WHY)).toMatchObject({ status: 'verified', provenance: 'llm-draft', reason: 'llm-draft-written',
+      wrote: true, needsUserAction: false });
+    await expect(page.locator('#why')).toHaveValue(CLEAN_DRAFT);
+    const sent = await mock.requestsTo('POST /api/autofill/ai/*');
+    expect(sent.map((request) => request.path)).toEqual(expect.arrayContaining(['/api/autofill/ai/answer',
+      '/api/autofill/ai/draft']));
+    // Never the legal question, nor its options.
+    for (const request of sent) expect(request.body, request.path).not.toContain('legally authorized');
+    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [],
+      labels: ['First name', 'Email', LEGAL, QUESTION, WHY], applicationKey: applicationKeyOf(SECTION.url) });
   });
 
   test('Edit with AI rewrites a box on the person’s click: the draft request carries what it holds, and the rewrite is written', async ({ extContext, connected: ext, routeLog, logs }) => {

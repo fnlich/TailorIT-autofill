@@ -155,6 +155,33 @@ describe('a posting that forbids AI', () => {
     expect(started.runtime.ui!.aiEditButtons).toHaveLength(0);
   });
 
+  it('gives up what still waits for the AI when a later pass finds the statement, and writes none of it (security MINOR 4)', async () => {
+    // The statement shows once the first pass has asked the AI (at its plan/request): the next pass's check finds it.
+    let shown = false;
+    const started = await start(FORM, 'fa-policy-later', { onMessage(message) {
+      if (message.type !== 'plan/request' || shown) return;
+      shown = true;
+      const notice = started.fixture.doc.createElement('p');
+      notice.textContent = 'Applicants must not use AI tools to write their application.';
+      started.fixture.doc.getElementById('posting')!.after(notice);
+    } });
+    expect(await started.runtime.fill()).toBe('review');
+    const report = lastReport(started.worker);
+    expect(report.notices.map((notice) => notice.code)).toContain('policy-profile-only');
+    // Nothing the AI was asked is waited for, or written.
+    expect(started.worker.of('plan/poll')).toEqual([]);
+    expect(byId(started.fixture, 'office').value).toBe('');
+    expect(byId<HTMLTextAreaElement>(started.fixture, 'why').value).toBe('');
+    expect(byId<HTMLSelectElement>(started.fixture, 'team').value).toBe('');
+    for (const label of [OFFICE, TEAM, WHY]) {
+      expect(rowOf(report, label), label).toMatchObject({ status: 'flagged', reason: 'ai-off-for-posting', wrote: false,
+        provenance: null });
+    }
+    expect(byId(started.fixture, 'first').value).not.toBe('');
+    expect(started.worker.of('plan/request').slice(1).every((message) => message.noAi === true)).toBe(true);
+    expect(started.runtime.ui!.aiEditButtons).toHaveLength(0);
+  });
+
   it('shows the card with "Ask me each time", and fills on with the AI with "Use AI anyway"', async () => {
     const ask = await start(FORM, 'fa-policy-ask', { policy: HIT, settings: withLlm({ whenForbidden: 'ask' }) });
     void ask.runtime.fill();
@@ -235,6 +262,41 @@ describe('Edit with AI', () => {
     expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ status: 'verified', provenance: 'llm-draft',
       reason: 'llm-draft-written', wrote: true });
     expect(aiChips(started.runtime)).toEqual(expect.arrayContaining([{ ai: 'written', chip: COPY.aiChip }]));
+  });
+
+  it('is never offered on a hidden box or a honeypot, and refuses a box hidden since (MINOR 9)', async () => {
+    const page = FORM.replace('<button type="submit">', '<label for="hp">Tell us more</label><textarea id="hp" name="hp" '
+      + 'tabindex="-1" style="position: absolute; left: -9999px"></textarea><div hidden><label for="later">Anything else?'
+      + '</label><textarea id="later" name="later"></textarea></div><button type="submit">');
+    const started = await start(page, 'fa-edit-hidden', rewriting);
+    await started.runtime.fill();
+    // The office answer and the draft only: never the honeypot, nor the hidden box.
+    const buttons = await editButtons(started.runtime, 2);
+    const hp = byId<HTMLTextAreaElement>(started.fixture, 'hp').getBoundingClientRect();
+    expect(buttons.every((button) => button.getBoundingClientRect().left > hp.right)).toBe(true);
+    // The draft's box hidden, then moved off the page, since it was offered: refused, nothing sent.
+    const why = byId<HTMLTextAreaElement>(started.fixture, 'why');
+    const key = rowOf(lastReport(started.worker), WHY).key;
+    why.style.display = 'none';
+    expect(await started.runtime.run!.rewriteField(key)).toBe(false);
+    why.style.display = '';
+    why.style.position = 'absolute';
+    why.style.left = '-9999px';
+    expect(await started.runtime.run!.rewriteField(key)).toBe(false);
+    expect(started.worker.of('draft/rewrite')).toEqual([]);
+    expect(why.value).toBe(FAKE_DRAFT);
+  });
+
+  it('takes the buttons away when AI-written answers are turned off at rest, and refuses a click (MINOR 8)', async () => {
+    const started = await start(FORM, 'fa-edit-off', rewriting);
+    await started.runtime.fill();
+    await editButtons(started.runtime, 2);
+    await started.worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false }, offerToSaveAnswers: true } });
+    await vi.waitFor(() => expect(started.runtime.ui!.aiEditButtons).toHaveLength(0));
+    const key = rowOf(lastReport(started.worker), WHY).key;
+    expect(await started.runtime.run!.rewriteField(key)).toBe(false);
+    expect(started.worker.of('draft/rewrite')).toEqual([]);
   });
 
   it('offers no button in a dry run', async () => {

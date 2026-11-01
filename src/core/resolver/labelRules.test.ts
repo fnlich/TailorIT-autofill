@@ -4,7 +4,7 @@ import type { FieldKind } from '../enums';
 import { normalize, normalizeLabel } from '../text/normalize';
 import { FIELD_CATEGORIES, type FieldCategory } from '../types/intent';
 import {
-  CONSENT_STRICTNESS, LABEL_RULES, matchLabelRules, NEEDS_USER_CAUSES, PRE_RULES, RULE_STRENGTHS, sectionKindOf,
+  attestsNoAiUse, CONSENT_STRICTNESS, LABEL_RULES, matchLabelRules, NEEDS_USER_CAUSES, PRE_RULES, RULE_STRENGTHS, sectionKindOf,
   SPONSORSHIP_TIMES, sponsorshipKind, sponsorshipTime, UNLABELLED_TEXTAREA_RULE, unlabelledTextarea,
   UNRECOGNISED_FIELD_RULES, unrecognisedField, withDescriptionConsent, type SectionKind, type SponsorshipTime,
 } from './labelRules';
@@ -597,7 +597,6 @@ describe('consent first, on a lone checkbox and on a radio that asks for it', ()
     ['I understand that this is a remote position', 'checkbox', 'consent.other'],
     ['I consent to Acme retaining my CV for future opportunities', 'checkbox', 'consent.dataRetention'],
     ['I agree that my resume may be shared with affiliated companies', 'checkbox', 'consent.other'],
-    ['Do you consent to us storing your CV in our talent pool?', 'radio', 'consent.dataRetention'],
     ['I understand that former employees must be eligible for rehire', 'checkbox', 'consent.other'],
     ['I authorize a criminal background check', 'checkbox', 'consent.backgroundCheck'],
     ['Would you like to receive marketing emails?', 'radio', 'consent.marketing'],
@@ -636,7 +635,6 @@ describe('unrecognised consent', () => {
     ['I have read and understood the above', 'checkbox'],
     ['By checking this box, I give permission to contact my references', 'checkbox'],
     ['By submitting you agree that we may share your data', 'checkbox'],
-    ['Yes, I would like to receive emails about future roles', 'checkbox'],
   ])('%j (%s) is consent.other, which nothing ticks', (label, kind) => {
     expect(labelHit(label, kind)).toMatchObject({ rule: 'label.consent-generic', category: 'consent.other',
       consentKinds: ['consent.other'] });
@@ -922,8 +920,8 @@ describe('free-text questions', () => {
       expect(labelHit(label, 'textarea')).toBeNull();
     });
 
-  it('keeps "Do you want to join our talent community?" consent', () => {
-    expect(labelHit('Do you want to join our talent community?', 'checkbox')?.category).toBe('consent.dataRetention');
+  it('keeps "Do you want to join our talent community?" consent: marketing (the Phase E review, B1)', () => {
+    expect(labelHit('Do you want to join our talent community?', 'checkbox')?.category).toBe('consent.marketing');
   });
 });
 
@@ -969,5 +967,42 @@ describe('the language rule’s widening (Phase 2)', () => {
     expect(labelHit('What programming languages do you know?', 'checkbox-group')?.category)
       .not.toBe('languages.language');
     expect(labelHit('What level of Spanish do you speak?', 'select')?.category).not.toBe('languages.language');
+  });
+});
+
+describe('marketing and data retention (the Phase E review, B1)', () => {
+  it.each<[string, FieldKind, FieldCategory[]]>([
+    // Being contacted, emailed or told about future roles, or a talent community or pool: marketing.
+    ['Spotify has my consent to contact me about future job opportunities.', 'checkbox', ['consent.marketing']],
+    ['I agree to be contacted about future job opportunities', 'checkbox', ['consent.marketing']],
+    ['Please contact me about future job opportunities', 'checkbox', ['consent.marketing']],
+    ['Yes, I would like to receive emails about future roles', 'checkbox', ['consent.marketing']],
+    ['Would you like to join our talent community?', 'radio', ['consent.marketing']],
+    ['May we contact you about future openings?', 'radio', ['consent.marketing']],
+    ['Would you like to hear about other roles at Acme?', 'radio', ['consent.marketing']],
+    ['I would like to be considered for future roles and join the talent community', 'checkbox',
+      ['consent.marketing']],
+    // Retaining or keeping the application on file: retention.
+    ['Keep my information on file for future opportunities', 'checkbox', ['consent.dataRetention']],
+    ['I consent to Acme retaining my CV for future opportunities', 'checkbox', ['consent.dataRetention']],
+    // Both: every kind must be pre-approved, so the default leaves it.
+    ['Do you consent to us storing your CV in our talent pool?', 'radio', ['consent.dataRetention', 'consent.marketing']],
+  ])('%j (%s) is %j', (label, kind, kinds) => {
+    expect(labelHit(label, kind)).toMatchObject({ category: kinds[0], consentKinds: kinds });
+  });
+});
+
+describe('an "I did not use AI" statement (the Phase E review, M5)', () => {
+  it('is a negation of AI use, never consent wording that only names AI', () => {
+    for (const text of ['i did not use ai to write this application', 'i certify that i have not used chatgpt',
+      'no ai tools were used', 'ai was not used to prepare my answers', 'written without the use of ai']) {
+      expect(attestsNoAiUse(text), text).toBe(true);
+    }
+    for (const text of ['i acknowledge the privacy notice including that ai tools may be used to review my application',
+      'i consent to acme using ai to screen applications', 'i understand that ai may assist recruiters']) {
+      expect(attestsNoAiUse(text), text).toBe(false);
+      // Still an AI attestation to the consent policy, which nothing ticks.
+      expect(labelHit(text, 'checkbox')?.consentKinds, text).toContain('consent.aiAttestation');
+    }
   });
 });

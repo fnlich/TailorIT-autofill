@@ -19,9 +19,14 @@
  *   choice for the tab (panel/setResume). In a dry run the resume "Would attach".
  * - Autofill (panel/fill {tabId, dryRun: false}), its label constant, with a spinner while its request is out or a run
  *   works; then Dry run, Continue and Cancel (panel/fill {dryRun: true}, panel/continue, panel/cancel), Continue marked
- *   while a run waits for the person and Cancel while one works; then what the last button did, until a newer report
- *   tells more.
- * - Ask a custom question (v2, Ask.tsx; panel/ask), answered from the tab's active resume.
+ *   while a run waits for the person and Cancel while one works, both off until a run reports; then what the last
+ *   button did, until a newer report tells more.
+ * - Ask a custom question (v2, Ask.tsx; panel/ask), answered from the tab's active resume: off while AI-written answers
+ *   (the drafts setting, read with settings/get and again when the worker says the settings changed) are off, and
+ *   under the posting's no-AI notice when any report of the tab says the posting forbids AI (saysNoAi) or the answer
+ *   says so.
+ * - When the worker says the connection changed (panel/changed, perhaps from another window), the connection is read
+ *   again and the job card read with the old one is dropped at once.
  * - "Review": the report, its completion and then its rows. Per row: Show on page (panel/focus); opening a row asks for
  *   its suggested options (panel/describe), shown only while the row is open; Confirm draft on an AI draft that waits
  *   (panel/confirmDraft {tabId, frameId, fieldKey}); Save my answer on a flagged row the person fixed
@@ -38,6 +43,7 @@ import type { Answer } from '../../messaging/envelope';
 import type { AddJobOutcome, AskLength, PageMessage, PageState, SaveAnswerOutcome } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
+import { saysNoAi } from '../../shared/report';
 import { Brand } from '../brand/Logo';
 import { Icon } from '../brand/Icon';
 import { request } from '../page/request';
@@ -108,7 +114,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const root = useRef<HTMLElement>(null);
   const dashboardId = useId();
   const tabId = useFollowedTab(platform, pinnedTabId);
-  const { reports, page, link, reconnect } = useTabReports(platform, tabId, now);
+  const { reports, page, link, reconnect, changes } = useTabReports(platform, tabId, now);
   const auth = useAuthStatus(platform, root);
   const [busy, setBusy] = useState(false);
   /** What the last button did. A run button's line holds only until a report newer than its click arrives (`newest`:
@@ -116,12 +122,32 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const [feedback, setFeedback] = useState<{ tabId: number | null; text: string; newest: number } | null>(null);
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<{ tabId: number; outcome: AddJobOutcome } | null>(null);
+  /** AI-written answers (the drafts setting) are off: the custom question is too. Null until the settings are read. */
+  const [aiOff, setAiOff] = useState<boolean | null>(null);
   const { refresh } = auth;
+  // The card's connection key: the token's expiry, and every change the worker announced (another window may have
+  // connected or disconnected), so a card read with the old connection is dropped the moment the change is heard.
   const connection = auth.status === null ? undefined
-    : auth.status.connection === 'connected' ? String(auth.status.expiresAt ?? 0) : null;
+    : auth.status.connection === 'connected' ? `${auth.status.expiresAt ?? 0}|${changes.connection}` : null;
   const job = useTabJob(platform, tabId, { page, connection, reports });
   const newestReport = Math.max(0, ...reports.map((report) => report.updatedAt));
   const settingsUrl = platform.runtime.getURL('/options.html');
+
+  // The connection changed (a token stored or dropped, in this window or another): read it again.
+  useEffect(() => {
+    if (changes.connection > 0) refresh();
+  }, [changes.connection, refresh]);
+
+  // The settings, at the start and whenever the worker says they changed: whether AI-written answers are on.
+  useEffect(() => {
+    let live = true;
+    void request(platform, { v: 1, type: 'settings/get' }).then((answer) => {
+      if (live && answer.ok) setAiOff(!answer.data.settings.llm.drafts);
+    });
+    return () => {
+      live = false;
+    };
+  }, [platform, changes.settings]);
 
   // Another tab: the connection may have changed meanwhile (connected in the settings, say). The first tab needs no
   // second read: useAuthStatus has just made one.
@@ -189,8 +215,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const shownFeedback = feedback !== null && feedback.tabId === tabId && newestReport <= feedback.newest ? feedback : null;
   const dryRun = reports.length > 0 && reports.every((report) => report.mode === 'dry-run');
   const card = job.view.state === 'shown' ? job.view.card : null;
-  const policy = reports.some((report) => report.status === 'policy-notice'
-    || report.notices.some((notice) => notice.code === 'policy'));
+  // The posting forbids AI, whichever mode the run filled in: the policy card, the notice past it, profile only, the
+  // form's "I did not use AI" attestation, or TailorIT's saved copy.
+  const policy = reports.some(saysNoAi);
+  // Continue and Cancel act on a run: before any report there is none.
+  const noRun = reports.length === 0;
 
   return (
     <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}>
@@ -234,10 +263,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           <div className="tia-toolbar__more">
             <button type="button" className="tia-button" disabled={disabled}
               onClick={() => void run({ v: 1, type: 'panel/fill', tabId, dryRun: true })}>{COPY.panel.dryRun}</button>
-            <button type="button" className="tia-button" disabled={disabled}
+            <button type="button" className="tia-button" disabled={disabled || noRun}
               data-emphasis={status === 'handoff' || status === 'auth-needed' ? '' : undefined}
               onClick={() => void run({ v: 1, type: 'panel/continue', tabId })}>{COPY.panel.continue}</button>
-            <button type="button" className="tia-button" disabled={disabled} data-emphasis={working ? '' : undefined}
+            <button type="button" className="tia-button" disabled={disabled || noRun} data-emphasis={working ? '' : undefined}
               onClick={() => void run({ v: 1, type: 'panel/cancel', tabId })}>{COPY.panel.cancel}</button>
           </div>
         </div>
@@ -245,7 +274,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
       {shownFeedback !== null && <p className="tia-feedback" role="status">{shownFeedback.text}</p>}
       {tabId !== null && (
         <AskQuestion key={tabId} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
-          connected={connection !== undefined && connection !== null}
+          connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
           noResume={card !== null && card.state === 'answered' && card.resume === null} policy={policy} />
       )}
       <section className="tia-dashboard" aria-labelledby={dashboardId}>

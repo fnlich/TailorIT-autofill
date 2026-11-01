@@ -36,9 +36,12 @@ export interface RunMemo {
   /** The company the run's frame address names (Phase 6, set at each plan; null: none), for a free-text answer the
    *  person saves. */
   company?: CompanyScope | null;
-  /** The resume the person chose in the side panel for the run's tab when the run began (v2; null: none chosen), which
-   *  its lookup asked for and which the run attaches first (resume-choice.ts). */
+  /** The resume the person chose in the side panel for the run's tab (v2; null: none chosen), as the run last chose
+   *  with: its lookup asked for it, and the run attaches it first (resume-choice.ts). A Change while the run goes on
+   *  replaces it at the next file the run uploads. */
   chosen?: string | null;
+  /** The run's tab (v2, set at run/begin), whose resume choice the run follows. */
+  tabId?: number;
 }
 
 /** The runs the worker knows, by id. */

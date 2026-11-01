@@ -160,7 +160,9 @@ const LABELS: Array<[string, FieldKind, FieldCategory, number, string, Partial<F
   ['I did not use AI to complete this application', 'checkbox', 'consent.aiAttestation', 0.97, 'label.consent-ai'],
   ['Please type your full legal name to sign', 'text', 'consent.signature', 0.97, 'label.consent-signature'],
   ['I consent to receive text messages', 'checkbox', 'consent.sms', 0.97, 'label.consent-sms'],
-  ['Join our talent community', 'checkbox', 'consent.dataRetention', 0.97, 'label.consent-retention'],
+  ['Join our talent community', 'checkbox', 'consent.marketing', 0.97, 'label.consent-marketing'],
+  ['Keep my application on file for future openings', 'checkbox', 'consent.dataRetention', 0.97,
+    'label.consent-retention'],
   ['I authorize a background check', 'checkbox', 'consent.backgroundCheck', 0.97, 'label.consent-background'],
   ['I acknowledge', 'checkbox', 'consent.other', 0.97, 'label.consent-generic'],
 ];

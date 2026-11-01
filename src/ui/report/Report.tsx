@@ -130,10 +130,12 @@ export function ReportNotices({ reports, onPolicyDecision, busy = false }: {
   const waiting = framesAtPolicyCard(frames);
   const codes = combinedNotices(frames).filter((code) => !(waiting.length > 0 && code === 'policy'));
   if (waiting.length === 0 && codes.length === 0) return null;
-  // Past the card: the policy notice says where it was found when every frame that reported it found it only in the
-  // saved copy.
-  const policyFrames = frames.filter((report) => report.notices.some((notice) => notice.code === 'policy'));
-  const storedOnly = policyFrames.length > 0 && policyFrames.every(policyFromStoredCopy);
+  // Past the card, and in profile-only mode (the owner's amendments): the notice says where the statement was found
+  // when every frame that reported that notice found it only in the saved copy.
+  const storedOnly = (code: 'policy' | 'policy-profile-only') => {
+    const said = frames.filter((report) => report.notices.some((notice) => notice.code === code));
+    return said.length > 0 && said.every(policyFromStoredCopy);
+  };
   return (
     <div className="tia-notices">
       {waiting.map((report) => (
@@ -164,7 +166,15 @@ export function ReportNotices({ reports, onPolicyDecision, busy = false }: {
           <Icon name="alert" size={18} className="tia-icon tia-notice__icon" />
           <div className="tia-notice__body">
             <p className="tia-notice__text">{COPY.notices.policy}</p>
-            {storedOnly && <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>}
+            {storedOnly(code) && <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>}
+          </div>
+        </div>
+      ) : code === 'policy-profile-only' && storedOnly(code) ? (
+        <div key={code} className={`tia-notice tia-notice--${code}`} data-notice={code} data-tone={noticeToneOf(code)}>
+          <Icon name={noticeToneOf(code) === 'info' ? 'info' : 'alert'} size={18} className="tia-icon tia-notice__icon" />
+          <div className="tia-notice__body">
+            <p className="tia-notice__text">{COPY.notices[code]}</p>
+            <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>
           </div>
         </div>
       ) : (

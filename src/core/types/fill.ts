@@ -53,6 +53,9 @@ export const REASON_CODES = [
   // unanswered. Then, flagged: the AI gave no answer; the posting forbids AI, so a question only the AI could answer
   // was left for the person
   'llm-draft-written', 'llm-answer-written', 'ai-guess', 'eeo-decline-default', 'llm-no-answer', 'ai-off-for-posting',
+  // the Phase E review: a criminal-history question the person's one answer ("convicted of a crime?") does not settle:
+  // a narrower one when the answer is yes, or an arrest, a charge or a registration
+  'criminal-not-covered',
   // a bug
   'internal-error',
 ] as const;

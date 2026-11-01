@@ -63,12 +63,25 @@ describe('settings', () => {
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
       version: 2, panel: 'in-page', autoAdvance: true, preapprovedConsent: ['privacy', 'marketing'],
-      llm: { tiebreak: false, classify: false, drafts: true, answers: true, confirmDrafts: false,
+      // The AI turned off (tiebreak and classification): answers stay off, drafts as the person set them (MINOR 4).
+      llm: { tiebreak: false, classify: false, drafts: true, answers: false, confirmDrafts: false,
         whenForbidden: 'profile-only' },
       telemetry: { optIn: true }, offerToSaveAnswers: false,
       // Interpretation 2 was on version 1's default (off), so it takes version 2's.
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
     } } });
+  });
+
+  it('keeps the AI off for a person who turned it off in version 1: no drafts, no answers (the Phase E review, MINOR 4)', async () => {
+    const off = { ...V1_DEFAULTS, llm: { tiebreak: false, classify: false, drafts: false } };
+    const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': off }) });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true, data: { settings: {
+      llm: { tiebreak: false, classify: false, drafts: false, answers: false } } } });
+    // One of the two still on: the new defaults, as before.
+    const one = { ...V1_DEFAULTS, llm: { tiebreak: false, classify: true, drafts: false } };
+    const again = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': one }) });
+    expect(await again.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true, data: { settings: {
+      llm: { tiebreak: false, classify: true, drafts: true, answers: true } } } });
   });
 
   it('reach every frame with a form once saved, as its content settings, so a run reads auto-advance afresh (the Phase 5 review, C-S2)', async () => {

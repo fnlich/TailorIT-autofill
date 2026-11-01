@@ -46,10 +46,13 @@
  *   posting's company and location ("Have you worked here before?", interpretation 1's country), from the worker's
  *   memory: the lookup never reaches the frame.
  * - Profile only: a request that says its run fills from the profile only (plan/request's noAi) is planned with no LLM
- *   step, and so are its fields when they are planned again; nothing is asked of TailorIT's AI.
+ *   step, and so are its fields when they are planned again; nothing is asked of TailorIT's AI. The first such request
+ *   marks the run (in memory, by its memo), so its later plans and polls, those of keys asked before the mark included,
+ *   ask nothing either, and draft/rewrite is refused (the Phase E review, security MINOR 4).
  * - Edit with AI (draft/rewrite): the one field is planned as a rewrite (PlanInput.rewrite) over the scan the frame
  *   sent, the run's earlier draft or answer of it forgotten, and its draft asked with what the box holds now; the
- *   answer is plan/request's (the field awaiting), and plan/poll brings the write. Never in a dry run.
+ *   answer is plan/request's (the field awaiting), and plan/poll brings the write. Never in a dry run, a profile-only
+ *   run, or with AI-written answers off (settings.llm.drafts: the Phase E review, MINOR 8).
  * - The answer names the keys the page may offer Edit with AI on (`aiEditable`), and says when the frame's scan holds
  *   an "I did not use AI" attestation (`aiAttestation`).
  */
@@ -68,7 +71,7 @@ import type { AcceptBook, MatchCache } from './match-cache';
 import type { ProfileCache } from './profile-cache';
 import { companyOfUrl } from './saved-answers';
 import type { ResumeChooser } from './resume-choice';
-import type { FrameRef, RunRegistry } from './runs';
+import type { FrameRef, RunMemo, RunRegistry } from './runs';
 import type { RunStateStore } from './runstate-store';
 import type { SettingsStore } from './settings';
 
@@ -132,9 +135,16 @@ export function createPlanner(deps: PlannerDeps) {
   /** The run's LLM questions and answers, made at its first need. */
   function aiOf(run: RunRecord): RunAi {
     const memo = deps.runs.memo(run.runId);
-    memo.ai ??= createRunAi(deps.ai, deps.aiTaskIds.aiTasks(run.applicationKey, run.tabId));
+    memo.ai ??= createRunAi(deps.ai, deps.aiTaskIds.aiTasks(run.applicationKey, run.tabId), deps.core.vocab());
     return memo.ai;
   }
+
+  /** The runs that fill from the profile only (by their memory-only memo, so a run that goes takes its mark with it):
+   *  the first request that says noAi marks its run, and every later plan of it, its polls and plans again included,
+   *  asks no AI; draft/rewrite is refused (the Phase E review, security MINOR 4). */
+  const profileOnly = new WeakSet<RunMemo>();
+  const aiOffFor = (run: RunRecord, context: AskContext): boolean => context.noAi === true
+    || profileOnly.has(deps.runs.memo(run.runId));
 
   /**
    * One plan of `planKeys` over a scan and its canaries: the sensitive part fetched once per run when the plan needs
@@ -173,7 +183,7 @@ export function createPlanner(deps: PlannerDeps) {
       ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }),
       ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }),
       ...(posting === null ? {} : { posting }),
-      ...(context.noAi === true ? { noAi: true } : {}),
+      ...(aiOffFor(run, context) ? { noAi: true } : {}),
       ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }),
     });
     try {
@@ -226,9 +236,9 @@ export function createPlanner(deps: PlannerDeps) {
     Promise<{ gathered: Gathered } | { refusal: Answer<never> }> {
     const ai = aiOf(run);
     const settings = await deps.settings.get();
-    // A profile-only request asks nothing; Edit with AI is the person's own request for its one draft.
-    const llm = asked.noAi === true ? { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false }
-      : asked.rewrite !== undefined ? { ...settings.llm, drafts: true } : settings.llm;
+    // A profile-only request, or any plan of a run marked profile-only since it was asked, asks nothing.
+    const llm = aiOffFor(run, asked)
+      ? { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false } : settings.llm;
     let context = asked;
     const rows = new Map(output.results.map((row) => [row.key, row] as const));
     const writes = new Map(output.writes.map((write) => [write.key, write] as const));
@@ -306,6 +316,11 @@ export function createPlanner(deps: PlannerDeps) {
     async request(message: PlanRequest, from: FrameRef & { url: string }): Promise<Answer<PlanAnswer>> {
       const run = await deps.runs.find(message.runId, from);
       if (run === null) return refuse('expired');
+      if (message.noAi === true) {
+        const memo = deps.runs.memo(run.runId);
+        if (!profileOnly.has(memo)) log('plan.profile-only');
+        profileOnly.add(memo);
+      }
       // The schema's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
       const asked: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries,
         ...(message.repeatables === undefined ? {} : { repeatables: message.repeatables }),
@@ -369,6 +384,12 @@ export function createPlanner(deps: PlannerDeps) {
       const run = await deps.runs.find(message.runId, from);
       if (run === null) return refuse('expired');
       if (run.dryRun) return refuse('bad_message');
+      // Edit with AI writes text with the AI: only while AI-written answers are on, and never once the run fills from
+      // the profile only (the Phase E review, MINOR 8 and security MINOR 4).
+      if (profileOnly.has(deps.runs.memo(run.runId)) || !(await deps.settings.get()).llm.drafts) {
+        log('plan.rewrite-refused');
+        return refuse('bad_message');
+      }
       const key = message.fieldKey as unknown as FieldKey;
       const asked: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries,
         ...(message.postingText === undefined ? {} : { postingText: message.postingText }),

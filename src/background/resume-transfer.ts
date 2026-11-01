@@ -1,7 +1,7 @@
 /*
  * The `resume` port (runtime.md §4.4, ARCHITECTURE "Resume transfer"). A content script opens it only when a planned
  * write targets a file field, and posts resume/request {runId}. The worker sends the resume the run chose
- * (resume-choice.ts, shared with the planner), refuses a legacy .doc before any fetch, fetches GET /resumes/:id/file (at most 10 MiB),
+ * (resume-choice.ts, shared with the planner; asked when the file is written, so a Change since counts), refuses a legacy .doc before any fetch, fetches GET /resumes/:id/file (at most 10 MiB),
  * checks the bytes (a PDF starts with %PDF-; a DOCX has the ZIP signature and X-TailorIT-File-Kind: docx) and their
  * SHA-256 against X-TailorIT-Sha256, then sends a header and 256 KiB base64 chunks, each acknowledged before the next,
  * and resume/end. The bytes are released on resume/done, on an error or a disconnect, and at the latest 60 seconds
@@ -14,7 +14,7 @@ import type { PortLike } from '../platform/types';
 import { log } from '../shared/log';
 import { PDF_SIGNATURE, startsWith, toBase64, ZIP_SIGNATURE } from './bytes';
 import type { ProfileCache } from './profile-cache';
-import { createResumeChooser, type ResumeChoice } from './resume-choice';
+import { createResumeChooser, type ResumeChoice, type ResumeChooser } from './resume-choice';
 import type { FrameRef, RunRegistry } from './runs';
 import type { ServerClient } from './server-client';
 import type { Timers } from './timers';
@@ -31,6 +31,9 @@ export interface ResumeTransferDeps {
   profiles: ProfileCache;
   timers: Timers;
   sha256(bytes: Uint8Array): Promise<string>;
+  /** The chooser the planner uses (index.ts), which follows the token's generation and the tab's resume choice; one
+   *  of this port's own by default. */
+  choose?: ResumeChooser;
 }
 
 /** The name the file is uploaded under: no path or control characters, the kind's extension, at most 255 characters. */
@@ -44,8 +47,9 @@ export function uploadName(fileName: string, kind: 'pdf' | 'docx'): string {
 
 /** The `resume` port's server: accept() serves one port. */
 export function createResumeTransfer(deps: ResumeTransferDeps) {
-  /** Which resume this run attaches: the one the planner attached, read from the run's memo (resume-choice.ts). */
-  const choose = createResumeChooser(deps);
+  /** Which resume this run attaches: the one the planner attached, read from the run's memo (resume-choice.ts), or the
+   *  one the person has chosen for the tab since (v2: a Change applies to every file not uploaded yet). */
+  const choose = deps.choose ?? createResumeChooser(deps);
 
   /** Fetches and checks the file; the bytes, or why there are none. */
   async function fetchChecked(choice: ResumeChoice): Promise<{ bytes: Uint8Array; kind: 'pdf' | 'docx'; sha256: string } | Refusal> {

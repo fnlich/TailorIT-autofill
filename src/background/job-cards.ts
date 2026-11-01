@@ -9,17 +9,25 @@
  *   for that very document, at most JOB_RELAY_LIMIT a minute per frame; it then looks the sender's own address up
  *   (POST /lookup, includePostingText false, the chosen resume), keeps the card and answers {}. The frame answers the
  *   job/refresh {} in turn, and the worker reads what it kept. A frame that does not relay, or one that is gone, gives
- *   'unavailable': a loading card always ends.
+ *   'unavailable': a loading card always ends. The sender's address is the top frame's tab address now (senders.ts:
+ *   Chrome's sender.url stays the document's first address after a single-page application's pushState); a subframe a
+ *   single-page application has moved since its script started, whose address now Chrome does not give, is not looked
+ *   up at all ('unavailable', never the previous posting's card).
  * - panel/addJob {tabId} ("Add this job to TailorIT", "Save to tracker") goes the same way with action 'add' and job/add:
  *   POST /api/autofill/jobs with the sender's address, only for an address TailorIT can add from (addablePosting); its
  *   lookup becomes the card, and its outcome is answered.
  * - Refreshes of one document and action are merged: a second panel/job waits for the one in flight.
  * - run/begin's own lookup becomes the document's card too (remember), without its posting text: the card then shows
  *   what the fill attaches, with no request of its own.
- * - A card goes with its document (forgetDocument), its tab, the token (one read across a change is never kept), the
- *   tab's resume choice (it is read again with the new one), and JOB_CARD_TTL_MS after it was read. A lookup that failed
- *   is kept as 'unavailable' for JOB_CARD_FAILED_TTL_MS only, so the read a fill's start sets off does not ask a
- *   TailorIT that just failed again (run/begin asks it anyway, and its answer replaces the failure).
+ * - A card goes with its document (forgetDocument, also when a single-page application moved the frame to another
+ *   address in it: index.ts), its tab, the token (one read across a change is never kept), the tab's resume choice (it
+ *   is read again with the new one), and JOB_CARD_TTL_MS after it was read. A lookup that failed is kept as
+ *   'unavailable' for JOB_CARD_FAILED_TTL_MS only, so the read a fill's start sets off does not ask a TailorIT that just
+ *   failed again (run/begin asks it anyway, and its answer replaces the failure).
+ * - What was asked before a forget or a token change never lands after it: each refresh and run/begin's lookup takes
+ *   the token's generation and its document's epoch (bumped when the document or the tab is forgotten) when it starts.
+ *   A relay that arrives once the token changed sends nothing (a lookup, or an Add answered 'not-connected'), and a
+ *   lookup answered after either moved is not kept.
  * - panel/resumes lists the account's resumes for the card's Change; panel/setResume keeps the tab's choice, which the
  *   card's lookup, run/begin and Add pass as `resumeId`.
  * Memory only: nothing here is stored, and no log line names the job, the address, the resume or the person.
@@ -29,12 +37,12 @@ import {
 } from '../contract/tailorit';
 import { answerSchema, ok, refuse, type Answer } from '../messaging/envelope';
 import {
-  DoneAnswerSchema, type AddJobOutcome, type JobCard, type JobRelayAction, type PageMessage, type PanelJobAnswer,
-  type ResumeListAnswer,
+  DoneAnswerSchema, JOB_RELAY_ACTIONS, type AddJobOutcome, type JobCard, type JobRelayAction, type PageMessage,
+  type PanelJobAnswer, type ResumeListAnswer,
 } from '../messaging/schemas';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import { formFrameOf, framesOfTab, frameTarget, type FrameEntry } from './frames';
+import { formFrameOf, frameEntry, framesOfTab, frameTarget, navOf, type FrameEntry } from './frames';
 import type { createRateLimit } from './locks';
 import type { ContentChannel } from './router';
 import type { ServerClient, ServerResult } from './server-client';
@@ -79,9 +87,16 @@ export interface JobCards {
   setResume(message: Of<'panel/setResume'>): Promise<Answer<Record<string, never>>>;
   /** The content script's job/lookup or job/add, from the frame a refresh asked. */
   relay(action: JobRelayAction, from: ContentChannel): Promise<Answer<Record<string, never>>>;
-  /** run/begin's lookup, read with `generation` and the run's chosen resume, as the frame document's card. */
+  /** The epoch of a frame's document now: run/begin takes it before its lookup, and remember keeps the lookup only while
+   *  it has not moved (the document or its tab was not forgotten meanwhile). */
+  epoch(from: Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId'>): string;
+  /** Whether Chrome's address for the frame may be a posting the page has left (a subframe a single-page application
+   *  moved): run/begin then looks nothing up, as the card does not. */
+  addressStale(from: AddressedFrame): Promise<boolean>;
+  /** run/begin's lookup, read with `generation`, the document's `epoch` and the run's chosen resume, as the frame
+   *  document's card. */
   remember(from: Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId' | 'url'>, lookup: AutofillLookupResponse | null,
-    read: { generation: number; chosen: string | null }): void;
+    read: CardRead): void;
   /** The resume the person chose for a tab (null: none). */
   chosen(tabId: number): string | null;
   /** What the tab's card says of its job and resume, reading the card first when none is held. */
@@ -90,6 +105,16 @@ export interface JobCards {
   forgetTab(tabId: number): void;
   /** The token changed: every card and choice goes. */
   dropTokenData(): void;
+}
+
+/** A frame as its address's freshness needs it: where its document is, and where Chrome's address came from. */
+export type AddressedFrame = Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId' | 'addressFrom'>;
+
+/** What a lookup was asked with: the token's generation, the document's epoch and the tab's resume choice. */
+export interface CardRead {
+  generation: number;
+  epoch: string;
+  chosen: string | null;
 }
 
 interface CardEntry {
@@ -102,9 +127,7 @@ interface CardEntry {
 }
 
 /** A refresh in flight: what it was asked with, whether the frame relayed it, and an add's outcome. */
-interface Relay {
-  generation: number;
-  chosen: string | null;
+interface Relay extends CardRead {
   taken: boolean;
   outcome: AddJobOutcome | null;
   /** `limited`: the frame said its relay was over JOB_RELAY_LIMIT. */
@@ -178,8 +201,14 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
   const cards = new Map<string, CardEntry>();
   const relays = new Map<string, Relay>();
   const choices = new Map<number, string>();
+  /** The epochs: a tab's moves when the tab is forgotten, a document's when the document is (one clock for both, so a
+   *  value is never given twice). */
+  let clock = 0;
+  const tabEpochs = new Map<number, number>();
+  const docEpochs = new Map<string, number>();
 
   const chosenFor = (tabId: number) => choices.get(tabId) ?? null;
+  const epochOf = (tabId: number, docKey: string) => `${tabEpochs.get(tabId) ?? 0}/${docEpochs.get(docKey) ?? 0}`;
 
   /** The entry when it is fresh, was read with the current token and with the tab's current choice; else null. */
   function usable(tabId: number, key: string): CardEntry | null {
@@ -198,11 +227,14 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     return formFrameOf(await framesOfTab(deps.session, tabId));
   }
 
-  /** Keeps a lookup as a document's card, unless the token or the tab's choice changed since it was asked. */
+  /** Keeps a lookup as a document's card, unless the token, the tab's choice or the document's epoch (it, or its tab,
+   *  was forgotten) changed since it was asked. */
   function keep(from: Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId' | 'url'>, lookup: AutofillLookupResponse | null,
-    read: { generation: number; chosen: string | null }): void {
-    if (read.generation !== deps.generation() || read.chosen !== chosenFor(from.tabId)) return;
-    cards.set(docKeyOf(from.tabId, from.frameId, from.documentId), {
+    read: CardRead): void {
+    const key = docKeyOf(from.tabId, from.frameId, from.documentId);
+    if (read.generation !== deps.generation() || read.chosen !== chosenFor(from.tabId)
+      || read.epoch !== epochOf(from.tabId, key)) return;
+    cards.set(key, {
       lookup: lookup === null ? null : withoutPostingText(lookup),
       addable: addablePosting(parseAtsUrl(from.url)) !== null,
       at: deps.now(),
@@ -213,11 +245,12 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
 
   /** Asks the frame to relay `action` and waits for its answer; one at a time per document and action. */
   function refresh(tabId: number, frame: FrameEntry, action: JobRelayAction): Relay['done'] {
-    const key = `${docKeyOf(tabId, frame.frameId, frame.documentId)}|${action}`;
+    const docKey = docKeyOf(tabId, frame.frameId, frame.documentId);
+    const key = `${docKey}|${action}`;
     const held = relays.get(key);
     if (held !== undefined) return held.done;
-    const relay: Relay = { generation: deps.generation(), chosen: chosenFor(tabId), taken: false, outcome: null,
-      done: Promise.resolve({ relayed: false, limited: false, outcome: null }) };
+    const relay: Relay = { generation: deps.generation(), epoch: epochOf(tabId, docKey), chosen: chosenFor(tabId),
+      taken: false, outcome: null, done: Promise.resolve({ relayed: false, limited: false, outcome: null }) };
     relay.done = (async () => {
       let relayed = false;
       let limited = false;
@@ -229,7 +262,8 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       } catch {
         log('frame.unreachable');
       } finally {
-        relays.delete(key);
+        // A forget may have dropped this relay and a newer one taken its place: only this one goes.
+        if (relays.get(key) === relay) relays.delete(key);
       }
       return { relayed, limited, outcome: relay.outcome };
     })();
@@ -237,8 +271,24 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     return relay.done;
   }
 
+  /** Whether a relay may still send: the token and its document are the ones it was asked with. An address sent for
+   *  another connection, or for a page that has since changed, would be another one's request. */
+  function stillCurrent(from: ContentChannel, relay: Relay): boolean {
+    return relay.generation === deps.generation()
+      && relay.epoch === epochOf(from.tabId, docKeyOf(from.tabId, from.frameId, from.documentId));
+  }
+
+  /** Whether the frame's address as Chrome gave it may name a posting the page has left: a subframe (Chrome gives no
+   *  tab address for one) whose document a single-page application has moved since its script started. Its card is
+   *  then 'unavailable', never the previous posting's. */
+  async function addressStale(from: AddressedFrame): Promise<boolean> {
+    if (from.addressFrom === 'tab') return false;
+    const entry = await frameEntry(deps.session, from.tabId, from.frameId);
+    return entry !== null && entry.documentId === (from.documentId ?? null) && navOf(entry) > 0;
+  }
+
   async function lookUp(from: ContentChannel, relay: Relay): Promise<void> {
-    if (from.url.length > AUTOFILL_LOOKUP_URL_MAX) return;
+    if (from.url.length > AUTOFILL_LOOKUP_URL_MAX || (await addressStale(from)) || !stillCurrent(from, relay)) return;
     const answer = await deps.server.lookup({ url: from.url, includePostingText: false,
       ...(relay.chosen === null ? {} : { resumeId: relay.chosen }) });
     log('job.looked-up', { status: answer.ok ? 200 : answer.status ?? 0, job: answer.ok && answer.value.job !== null });
@@ -249,6 +299,17 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     // Only an address TailorIT can add from is sent: any other gets the same answer TailorIT would give, unasked.
     if (from.url.length > AUTOFILL_LOOKUP_URL_MAX || addablePosting(parseAtsUrl(from.url)) === null) {
       relay.outcome = 'unsupported';
+      return;
+    }
+    const stale = await addressStale(from);
+    if (relay.generation !== deps.generation()) {
+      relay.outcome = 'not-connected';
+      return;
+    }
+    // The page moved on since the person chose Add (a single-page application's next posting), or Chrome's address for
+    // the frame may be the previous posting's: not this job.
+    if (stale || !stillCurrent(from, relay)) {
+      relay.outcome = 'unavailable';
       return;
     }
     const answer = await deps.server.addJob({ url: from.url, ...(relay.chosen === null ? {} : { resumeId: relay.chosen }) });
@@ -321,6 +382,8 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       else await addFrom(from, relay);
       return ok({});
     },
+    epoch: (from) => epochOf(from.tabId, docKeyOf(from.tabId, from.frameId, from.documentId)),
+    addressStale,
     remember(from, lookup, read) {
       if (lookup !== null) keep(from, lookup, read);
     },
@@ -336,10 +399,21 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       return { frame: read?.frame ?? null, resume, company: lookup?.job?.companyName ?? '', jobTitle: lookup?.job?.title ?? '' };
     },
     forgetDocument(tabId, frameId, documentId) {
-      cards.delete(docKeyOf(tabId, frameId, documentId));
+      const key = docKeyOf(tabId, frameId, documentId);
+      cards.delete(key);
+      // What is in flight for it lands nowhere, and the next read starts afresh rather than waiting for it.
+      clock += 1;
+      docEpochs.set(key, clock);
+      for (const action of JOB_RELAY_ACTIONS) relays.delete(`${key}|${action}`);
     },
     forgetTab(tabId) {
-      for (const key of [...cards.keys()]) if (key.startsWith(`${tabId}:`)) cards.delete(key);
+      const prefix = `${tabId}:`;
+      for (const key of [...cards.keys()]) if (key.startsWith(prefix)) cards.delete(key);
+      for (const key of [...relays.keys()]) if (key.startsWith(prefix)) relays.delete(key);
+      // The tab's epoch moves, so its documents' own are no longer needed.
+      clock += 1;
+      tabEpochs.set(tabId, clock);
+      for (const key of [...docEpochs.keys()]) if (key.startsWith(prefix)) docEpochs.delete(key);
       choices.delete(tabId);
       deps.limit.forget(`${tabId}/`);
     },

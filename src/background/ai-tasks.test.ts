@@ -3,7 +3,7 @@ import {
   AUTOFILL_AI_POLL_MS, AutofillClassifyRequestSchema, AutofillPickRequestSchema, type AutofillTaskView,
 } from '../contract/tailorit';
 import type { TiebreakItem } from '../core/matcher/types';
-import { planOf, specOf } from '../core/plan/plan.testkit';
+import { planOf, specOf, vocab } from '../core/plan/plan.testkit';
 import type { ClassifyItem } from '../core/resolver/classify';
 import { sha256Hex } from '../core/text/sha256';
 import type { FieldKey, OptionSetHash } from '../core/types/field';
@@ -441,7 +441,7 @@ describe('a run’s questions', () => {
     const accepted: ServerResult<unknown> = { ok: true, value: { done: false, taskId: TASK_ID } };
     const { server, calls } = fakeServer({ pick: [accepted], task: [running, succeeded(MATCHED), succeeded([])] });
     const time = clockedTimers();
-    const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds());
+    const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds(), vocab);
     const other = { ...SCHOOL, id: 'lever|main|other|0e7f3a9c5b1d2468|0', intended: 'Rice University' };
     const context = { specs: [], canaries: [] };
     const llm = { tiebreak: true, classify: true, drafts: false, answers: false, confirmDrafts: false,
@@ -462,7 +462,7 @@ describe('a run’s questions', () => {
   it('asks nothing for a step its setting turned off, and answers those keys at once', async () => {
     const { server, calls } = fakeServer({});
     const time = clockedTimers();
-    const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds());
+    const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds(), vocab);
     const where = classifyItem('lever|main|where|none|0', 'Where do you work today?');
     ai.ask({ tiebreaks: [SCHOOL], classify: [where] }, [SCHOOL.id as FieldKey, where.key], { specs: [], canaries: [] },
       { tiebreak: false, classify: false, drafts: false, answers: false, confirmDrafts: false,

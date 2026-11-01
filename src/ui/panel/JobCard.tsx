@@ -6,8 +6,8 @@
  * - Found: the company's initial on a tile, the company and "Lever application", the match ring on the right ("75%"
  *   above "match", named "75% match"); the title; chips for the location, arrangement, pay, the tracker status, Closed
  *   and Archived, then "Posted 2 days ago"; "Already in your tracker as Applied" from Applied on; then the resume a fill
- *   attaches ("Would attach" in a dry run), why, and its keywords, with Change; and Save to tracker when the job is not
- *   tracked yet.
+ *   attaches ("Would attach" in a dry run), why, and its keywords, with Change (also when there is none to attach, so
+ *   one of the account's resumes can be chosen); and Save to tracker when the job is not tracked yet.
  * - Not found: "Not in your TailorIT jobs", Add this job to TailorIT where TailorIT can add from this site (else why
  *   not), help that never contradicts a tracker entry (none when one exists), and the resume.
  * - Loading (a busy skeleton), unavailable, and a card asking to connect.
@@ -200,14 +200,21 @@ function ResumeRow({ card, dryRun, loadResumes, chooseResume }: { card: Answered
     setPicker({ state: 'closed' });
     chooseResume(resumeId);
   };
+  const change = (
+    <button type="button" className="tia-button tia-button--quiet tia-job__change" aria-expanded={picker.state !== 'closed'}
+      aria-controls={pickerId} data-job-action="change" onClick={open}>{COPY.job.change}</button>
+  );
 
   return (
     <div className="tia-job__resume" data-job-resume="">
       {resume === null ? (
-        <p className="tia-job__resume-line">
+        // No resume TailorIT would attach: Change still lists the account's resumes, so one can be chosen (and the
+        // custom question asked from it); the list says when there are none.
+        <div className="tia-job__resume-head">
           <Icon name="doc" size={18} className="tia-icon tia-job__doc" />
-          <span>{COPY.job.noResume}</span>
-        </p>
+          <span className="tia-job__resume-text">{COPY.job.noResume}</span>
+          {change}
+        </div>
       ) : (
         <>
           <div className="tia-job__resume-head">
@@ -217,8 +224,7 @@ function ResumeRow({ card, dryRun, loadResumes, chooseResume }: { card: Answered
               <strong className="tia-job__resume-label">{resume.label}</strong>{' '}
               <span className="tia-tag tia-job__kind">{COPY.job.fileKinds[resume.fileKind]}</span>
             </span>
-            <button type="button" className="tia-button tia-button--quiet tia-job__change" aria-expanded={picker.state !== 'closed'}
-              aria-controls={pickerId} data-job-action="change" onClick={open}>{COPY.job.change}</button>
+            {change}
           </div>
           <p className="tia-job__why">
             {COPY.job.resumeReasons[resume.reason]}

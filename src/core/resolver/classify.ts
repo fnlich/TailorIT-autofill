@@ -11,6 +11,9 @@
  *   answer and from Save my answer (resolve.ts, plan/frame.ts savable, T6-1) and from a draft (plan/drafts.ts, E2).
  * - A pick's value is screened by its category (namesSensitivePickValue): a school, a degree or a field of study only
  *   for a sum of money, any other also by the sensitive terms.
+ * - What a box holds, before Edit with AI sends it to be rewritten (namesSensitiveAnswer): the sensitive terms and
+ *   sums, an EEO answer or a decline phrase on a line of its own, and any contact detail or postal address, as
+ *   TailorIT's screen reads the same text.
  * - What goes out is visible text only (classifyItemOf): the label, never one known only from aria-label; the
  *   description; the section's slug; the first 20 usable options' clean labels, injected text cut. Each passes
  *   asUntrusted. Fields nothing could be learnt from (a file, a field with no label the LLM may see) are not sent.
@@ -357,6 +360,87 @@ export function namesUnsavableAnswer(labels: readonly string[], vocab: Vocab): b
     const clean = cutInjected(label).clean.trim();
     return clean !== '' && (namesSensitiveTopic(clean) || isEeoAnswer(clean, vocab) || isDeclinePhrase(clean, vocab));
   });
+}
+
+// ── What a box holds (Edit with AI) ─────────────────────────────────────────────────────────────────────────────────
+// The contact patterns of TailorIT's screen (apps/api/src/features/autofill/ai/contacts.ts), which refuses a current
+// answer sent to be rewritten that holds any: an email address, a link, a domain, a phone number or a postal address.
+
+const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu;
+const LINK = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s<>"'`]+/gi;
+/** A domain with a path ("evil.ru/apply"), but a code name ("Node.js/TypeScript", "ASP.NET/C#"). */
+const PATHED_DOMAIN = /(?<![\p{L}\p{N}@._/-])(?<domain>(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+(?<ending>\p{L}{2,63}))\/[^\s<>"'`]*/giu;
+/** A domain without a path, in lower case, with one of these endings; a product ending ("socket.io") only with a path. */
+const BARE_DOMAIN = /(?<![\p{L}\p{N}@._/-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?<ending>com|net|org|io|ai|co|dev|app|me|info|biz|xyz|link|site|online|tech|cloud|page|us|uk|ca|de|fr|eu|in|au|nz|gg|tv|ly|sh|to)(?![\p{L}\p{N}-])/gu;
+const PRODUCT_ENDINGS: ReadonlySet<string> = new Set(['io', 'ai', 'dev', 'app', 'me', 'tech', 'cloud', 'gg', 'tv', 'ly',
+  'sh', 'to']);
+const CODE_ENDINGS: ReadonlySet<string> = new Set(['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'json', 'yaml', 'yml', 'toml',
+  'html', 'htm', 'css', 'scss', 'sass', 'cpp', 'hpp', 'java', 'kt', 'kts', 'swift', 'txt', 'csv', 'exe', 'dll', 'lock',
+  'vue', 'svelte']);
+const DOT_NET_NAMES: ReadonlySet<string> = new Set(['asp.net', 'vb.net', 'ado.net']);
+/** A run of digits and the separators phone numbers are written with. */
+const PHONE_RUN = /\+?\(?\d[\d\s().\-‐-―]{5,}\d/g;
+/** The words a street address ends its street with ("221B Baker Street", "12 Elm St."). */
+const STREET_WORDS = String.raw`(?:street|st|road|rd|avenue|ave|boulevard|blvd|lane|ln|drive|dr|court|ct|place|pl|way|terrace|close|crescent|square|sq|parkway|pkwy|highway|hwy|row|mews|grove|gardens|walk|circle|cir|trail|alley|plaza)`;
+const POSTCODE_END = String.raw`(?=\s*(?:$|[,;|)]))`;
+/** A postal address in a line: a street address, a post office box or an apartment, a UK or Canadian postcode in
+ *  capitals, or a US state and ZIP code. */
+const ADDRESS: readonly RegExp[] = [
+  new RegExp(String.raw`(?:^|[,|;:]\s*)\d{1,6}[a-z]?\s+(?:[\p{L}'.-]+\s+){0,3}${STREET_WORDS}\b`, 'imu'),
+  /\b(?:p\.?\s?o\.?\s+box|apt\.?\s*#?\s*\d|apartment\s+#?\d|suite\s+#?\d|flat\s+\d)/i,
+  new RegExp(String.raw`\b[A-Z]{1,2}\d[A-Z\d]?\s+\d[A-Z]{2}\b${POSTCODE_END}`, 'm'),
+  new RegExp(String.raw`\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b${POSTCODE_END}`, 'm'),
+  /\b(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\s+\d{5}(?:-\d{4})?\b/,
+];
+
+/** A run that is a phone number: 9 to 15 digits, and not years only ("2019 2023"). */
+function isPhoneNumber(run: string): boolean {
+  const digits = run.replace(/\D/g, '');
+  if (digits.length < 9 || digits.length > 15) return false;
+  return !run.split(/\D+/).filter(Boolean).every((group) => /^(?:19|20)\d\d$/.test(group));
+}
+
+/** The views the contact patterns read: the text as written, and its compatibility form with look-alike letters read
+ *  as Latin ones, case kept. */
+const contactViews = (text: string) => [...new Set([text, caseKept(text.normalize('NFKC'))])];
+
+/** Whether text holds a contact detail (TailorIT's namesForeignContact with no contacts of the person's) or a postal
+ *  address (holdsPostalAddress). */
+export function namesContactDetail(text: string): boolean {
+  return contactViews(text).some((view) => {
+    if (ADDRESS.some((pattern) => pattern.test(view))) return true;
+    let rest = view;
+    if ((rest.match(EMAIL) ?? []).length > 0) return true;
+    rest = rest.replace(EMAIL, ' ');
+    if ((rest.match(LINK) ?? []).length > 0) return true;
+    rest = rest.replace(LINK, ' ');
+    for (const match of rest.matchAll(PATHED_DOMAIN)) {
+      const { domain = '', ending = '' } = match.groups ?? {};
+      if (!CODE_ENDINGS.has(ending.toLowerCase()) && !DOT_NET_NAMES.has(domain.toLowerCase())) return true;
+    }
+    rest = rest.replace(PATHED_DOMAIN, ' ');
+    for (const match of rest.matchAll(BARE_DOMAIN)) {
+      if (!PRODUCT_ENDINGS.has(match.groups?.ending ?? '')) return true;
+    }
+    rest = rest.replace(BARE_DOMAIN, ' ');
+    return (rest.match(PHONE_RUN) ?? []).some(isPhoneNumber);
+  });
+}
+
+/**
+ * Whether what a box holds is one no LLM may see (Edit with AI's current text: the Phase E review, MAJOR 3): a
+ * sensitive topic or a sum (namesSensitiveValue), a line that is an EEO answer the vocabulary knows or a decline
+ * phrase, or a contact detail or postal address (namesContactDetail, as TailorIT screens the same text). The core asks
+ * no rewrite of such a box (plan/drafts.ts rewriteItemOf), and the worker checks again (ai-tasks.ts draftBatches).
+ */
+export function namesSensitiveAnswer(text: string, vocab: Vocab): boolean {
+  if (text.trim() === '') return false;
+  if (namesSensitiveValue(text)) return true;
+  const lines = text.split(/\r\n?|\n/).map((line) => cutInjected(line).clean.trim()).filter((line) => line !== '');
+  if (lines.some((line) => namesSensitiveValue(line) || isEeoAnswer(line, vocab) || isDeclinePhrase(line, vocab))) {
+    return true;
+  }
+  return namesContactDetail(text);
 }
 
 /** Why a field may not enter a classify batch, or null when it may: a sensitive topic in its label, description,

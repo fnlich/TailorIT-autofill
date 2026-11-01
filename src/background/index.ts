@@ -21,7 +21,7 @@ import { createAiTasks } from './ai-tasks';
 import { ASK_LIMIT, createAsk } from './ask';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
-import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, registerFrame } from './frames';
+import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, navOf, registerFrame } from './frames';
 import { createJobCards, JOB_RELAY_LIMIT, type JobCards } from './job-cards';
 import { createKeyedQueue, createRateLimit } from './locks';
 import { createAcceptBook, createMatchCache } from './match-cache';
@@ -29,7 +29,8 @@ import { createPanelHandlers, openSidePanel } from './panel';
 import { createPlanner } from './planner';
 import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
 import { createProfileCache, type ProfileCache } from './profile-cache';
-import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT } from './reports';
+import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
+import { saysNoAi } from '../shared/report';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
 import { createRouter, type ContentChannel } from './router';
@@ -86,10 +87,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let profiles: ProfileCache | null = null;
   let runRegistry: RunRegistry | null = null;
   let jobCards: JobCards | null = null;
+  let panelReports: Reports | null = null;
   const keeper = createTokenKeeper(platform, () => {
     profiles?.drop();
     runRegistry?.dropTokenData();
     jobCards?.dropTokenData();
+    // Every side panel reads the connection again and drops the card it holds, whichever window the change came from.
+    panelReports?.tellPanels('connection');
   });
   const server = createServerClient({
     origin,
@@ -120,11 +124,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, shownLimit, telemetry,
     check: (tabId) => checkTab(tabId) });
-  const chooseResume = createResumeChooser({ runs, server, profiles: profileCache, generation: () => keeper.generation });
+  panelReports = reports;
   // The side panel's job card and custom question (v2): read through the tab's form frame, kept in memory only.
   const jobs = createJobCards({ session, tabs: platform.tabs, server, connected: () => auth.connected(),
     generation: () => keeper.generation, now, limit: relayLimit });
   jobCards = jobs;
+  // One chooser for the planner and the resume port: it follows the token and the tab's resume choice (v2: a Change
+  // mid-run applies to every file not uploaded yet).
+  const chooseResume = createResumeChooser({ runs, server, profiles: profileCache, generation: () => keeper.generation,
+    chosen: (tabId) => jobs.chosen(tabId) });
   // The LLM steps' tasks on TailorIT (Phase 4), shared by every run; each run keeps its own questions (ai-tasks.ts).
   const aiTasks = createAiTasks({ server, timers, now });
   // The accepted-match cache (Phase 6): storage.session, in memory; a match goes in once the field was unchanged at the
@@ -133,13 +141,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const accepts = createAcceptBook(matchCache);
   const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
     aiTaskIds: runStates, cache: matchCache, accepts, now });
-  const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes) });
+  const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes),
+    choose: chooseResume });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId) });
   // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
   const answers = createAnswerHandlers({ platform, reports, runs, server, settings, vocab: () => core.vocab(),
     connected: () => auth.connected() });
   const ask = createAsk({ jobs, server, profiles: profileCache, tabs: platform.tabs, timers, now,
-    connected: () => auth.connected(), limit: askLimit });
+    connected: () => auth.connected(), generation: () => keeper.generation, settings, limit: askLimit,
+    policyHeld: async (tabId) => (await reports.ofTab(tabId)).some(saysNoAi) });
   const beginDeps = {
     jobs,
     generation: () => keeper.generation,
@@ -209,11 +219,18 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'frame/hello': async (message, from) => {
           const { previous, entry } = await lockTab(from.tabId, async () => ({
             previous: await frameEntry(session, from.tabId, from.frameId),
-            entry: await registerFrame(session, { ...from, isTop: message.isTop, hasForm: message.hasForm }, now()),
+            entry: await registerFrame(session, { ...from, isTop: message.isTop, hasForm: message.hasForm, nav: message.nav },
+              now()),
           }));
           const newDocument = previous === null || previous.documentId !== entry.documentId;
           // The document it left goes; anything this document began before its hello stays.
           if (previous !== null && newDocument) await forgetDocument(from.tabId, from.frameId, previous.documentId);
+          // A single-page application moved the frame to another address in the same document (v2): its job card is
+          // another posting's now, so it goes and is read again; the document's run and report stay (the content
+          // script ends a run whose application changed).
+          if (previous !== null && !newDocument && navOf(previous) !== navOf(entry)) {
+            jobs.forgetDocument(from.tabId, from.frameId, entry.documentId);
+          }
           // A document the registry has not seen may mean others went (a top frame's new page takes its subframes).
           // The sweep asks them in the background, so the hello is answered at once.
           if (newDocument) void sweepTab(from.tabId, from.frameId).catch(() => undefined);
@@ -304,6 +321,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           const saved = await settings.save(message.settings);
           // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
           await pushSettings({ session, tabs: platform.tabs }, saved);
+          // And every side panel (v2): the custom question follows the AI drafts switch.
+          reports.tellPanels('settings');
           return ok({ settings: saved });
         },
         'auth/status': async () => ok(await auth.status()),

@@ -139,7 +139,8 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     counts: [], pages: new Map(), cards: new Map(), addOutcome: 'added',
     resumes: [{ id: 'resume-1', label: 'Backend resume', fileKind: 'pdf', kind: 'built', current: true },
       { id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }],
-    askAnswer: { outcome: 'answered', text: 'I like building the systems Northwind runs on.', resumeLabel: 'Backend resume' } };
+    askAnswer: { outcome: 'answered', text: 'I like building the systems Northwind runs on.', resumeLabel: 'Backend resume',
+      policy: false } };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();

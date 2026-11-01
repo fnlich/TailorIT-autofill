@@ -11,7 +11,11 @@
  *   takes a draft); a job preference, availability, referral, years of experience or skill the profile holds no value
  *   for (ANSWERABLE_PROFILE_CATEGORIES); or, among the profile's questions, a list only the LLM classified whose match
  *   was a tie no tiebreak could settle (an AI-only tie). Never a sensitive, legal, EEO, consent, attention or file
- *   question, never one only the person answers.
+ *   question, never one only the person answers, and never one about another person, an identifier, a postal address
+ *   or a security clearance (namesUnanswerableTopic, classifyRules' namesAnotherPerson: the Phase E review, M2).
+ * - A lazy list (a combobox whose options show only when opened) whose question is answerable waits for its options
+ *   (answerWaitsForOptions: the planner rows it waiting-for-options), so the loop reads it and the next pass asks with
+ *   them (the Phase E review, M7).
  * - Its shape: a choice for a select, a radio group or a combobox (never a set, a lone checkbox, a typeahead, a date or
  *   an upload), whose list was read whole, holds nothing chosen yet, and offers 2 to ANSWER_MAX_OPTIONS options that
  *   can be chosen, an option whose label had injected text cut never among them; or a text for an empty text box or
@@ -32,13 +36,18 @@ import {
   DRAFT_MIN_LENGTH, TIEBREAK_LABEL_MAX,
 } from '../confidence';
 import type { FieldFormat, FieldKind } from '../enums';
+import { detectionViews } from '../guard/fold';
 import { llmMaySeeLabel } from '../guard/honeypot';
+import { cutInjected } from '../guard/injected';
 import { chooseable, prepareOptions } from '../matcher/prepare';
 import { ANSWERABLE_PROFILE_CATEGORIES, policyClassOf, USER_ONLY_CATEGORIES } from '../resolver/categories';
 import { classifiable, sectionWordsOfKey } from '../resolver/classify';
+import { namesAnotherPerson } from '../resolver/classifyRules';
+import { namesConsentTopic } from '../resolver/labelRules';
 import type { FieldClassification } from '../resolver/resolve';
 import { capCodePoints } from '../text/fold';
 import { sectionKey } from '../text/keys';
+import { normalizeLabel } from '../text/normalize';
 import { sha256Hex } from '../text/sha256';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldKey, FieldSpec } from '../types/field';
@@ -100,6 +109,45 @@ const TEXT_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['text', 'textarea
 const NO_ANSWER_FORMATS: ReadonlySet<FieldFormat> = new Set<FieldFormat>(['email', 'tel', 'url', 'date', 'month-year',
   'postal-code']);
 
+/**
+ * What an AI answer never states, read in a question's text, its hint, its section's words and its options (the Phase
+ * E review, M2): another person's details (an emergency contact, a referee or reference, a manager's, a spouse's), an
+ * identifier (a number, an ID, a licence, a passport, a social security or insurance number), a postal address, and a
+ * security clearance (TS/SCI, secret, ITAR: the legal class). Lower case, over every detection view.
+ */
+const UNANSWERABLE: readonly RegExp[] = [
+  // Another person.
+  /\bemergency\b/, /\breferences?\b/, /\breferees?\b/, /\bnext\s+of\s+kin\b/, /\bspouses?\b/, /\bguardians?\b/,
+  /\b(?:manager|supervisor|spouse|partner|parent|guardian)(?:'|’)s\b/,
+  /\b(?:managers?|supervisors?)\s+(?:name|e\s?-?mail|phone|contact|title)\b/,
+  // Identifiers ("Number of years" counts, so a number followed by "of" is none).
+  /\bnumbers?\b(?!\s+of\b)/, /\bids?\b/, /\bidentification\b/, /\bidentifier\b/, /\blicen[cs]e[sd]?\b/, /\bpassports?\b/,
+  /\bssn\b/, /\bsocial\s+(?:security|insurance)\b/, /\bnational\s+insurance\b/, /\btax\s+(?:id|file|number)\b/,
+  // A postal address ("address" as a verb, "How would you address a conflict?", is none).
+  /\b(?:home|mailing|postal|street|current|permanent|residential|billing|physical|full|your|e\s?-?mail)\s+address(?:es)?\b/,
+  /^\W*address(?:es)?\b/, /\baddress\s+(?:line|1|2|of\s+residence)\b/, /\bstreet\b/, /\bzip\b/, /\bpostal\b/,
+  /\bpost\s?codes?\b/, /\bp\.?\s?o\.?\s+box\b/, /\bapartment\b/, /\bwhere\s+do\s+you\s+(?:currently\s+)?live\b/,
+  // A security clearance.
+  /\bclearances?\b/, /\bts\s*[/-]?\s*sci\b/, /\bsecret\b/, /\bitar\b/, /\bpolygraph\b/,
+];
+
+/** The short identifiers matched in capitals only, as the page wrote them: SIN, NI ("sin" and "ni" are words too). */
+const UNANSWERABLE_ACRONYMS: readonly RegExp[] = [/\bSIN\b/, /\bNI\b/];
+
+/** Whether page text names what an AI answer never states (UNANSWERABLE, the Phase E review, M2), or asks for a
+ *  consent (labelRules namesConsentTopic: a newsletter, being contacted about other roles, a talent pool), which only
+ *  the person or a pre-approval gives. The worker screens each answer item again with it (ai-tasks.ts
+ *  answerItemOfCore). */
+export function namesUnanswerableTopic(text: string): boolean {
+  if (text.trim() === '') return false;
+  if (UNANSWERABLE_ACRONYMS.some((acronym) => acronym.test(text))) return true;
+  if (namesConsentTopic(normalizeLabel(text))) return true;
+  return detectionViews(text).some((view) => {
+    const lower = view.toLowerCase();
+    return UNANSWERABLE.some((pattern) => pattern.test(lower));
+  });
+}
+
 /** The reasons a profile field's row gives for a gap an AI answer may fill (ANSWERABLE_PROFILE_CATEGORIES). */
 const PROFILE_GAPS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['no-profile-value', 'low-confidence', 'no-match',
   'ambiguous-options', 'unknown-field']);
@@ -154,22 +202,46 @@ function choiceOptions(spec: FieldSpec, context: DraftContext): AnswerOption[] |
   return options.some((option) => option.label === '') ? null : options;
 }
 
+/** Whether a field's question is one an AI answer may fill, its options aside (module header): writable, labelled for
+ *  the LLM, no tripwire or attention check, no rule or LLM handing it to the person, no saved answer, a gap an answer
+ *  may fill, no EEO, legal or sensitive context, and nothing an answer never states (namesUnanswerableTopic, another
+ *  person). */
+function answerable(spec: FieldSpec, classification: FieldClassification, resolution: Resolution, row: FillResult,
+  writable: boolean, context: DraftContext): boolean {
+  if (!writable || !classifiable(spec) || !llmMaySeeLabel(spec.labelSource)) return false;
+  if (classification.by === 'tripwire' || classification.by === 'attention') return false;
+  if (classification.by === 'rules' && classification.rules.needsUser !== undefined) return false;
+  // What the LLM hands to the person (a sensitive, consent or attention-check question) is theirs; a free-text
+  // question it names takes a draft, or an answer when its box is short.
+  if (classification.by === 'llm' && classification.llm.kind === 'needs-user'
+    && policyClassOf(classification.llm.category) !== 'free-text') return false;
+  if (resolution.classifiedBy === 'saved' || row.status === 'blocked' || row.wrote) return false;
+  if (!answerableGap(spec, resolution, row)) return false;
+  if (inClosedContext(spec, context)) return false;
+  const options = spec.options === 'lazy' ? [] : spec.options.map((option) => cutInjected(option.label).clean);
+  if ([spec.label, spec.description, sectionWordsOfKey(sectionKey(spec.section)), ...options]
+    .some(namesUnanswerableTopic)) return false;
+  return !namesAnotherPerson(spec);
+}
+
+/**
+ * Whether a field would be asked once its options are read (the Phase E review, M7): a single choice whose list is
+ * lazy (a combobox read only when opened) and whose question is answerable. The planner then rows it
+ * waiting-for-options, so the loop reads the widget and the next pass asks with the real options.
+ */
+export function answerWaitsForOptions(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
+  row: FillResult, writable: boolean, context: DraftContext): boolean {
+  return spec.options === 'lazy' && CHOICE_KINDS.has(spec.kind)
+    && answerable(spec, classification, resolution, row, writable, context);
+}
+
 /**
  * The answer item of a field, or null when it gets none (module header). `row` is the row planField gave it (the gap
  * it leaves), `writable` the planner's own check (no honeypot, not disabled or read-only).
  */
 export function answerItemOf(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
   row: FillResult, writable: boolean, context: DraftContext): AnswerItem | null {
-  if (!writable || !classifiable(spec) || !llmMaySeeLabel(spec.labelSource)) return null;
-  if (classification.by === 'tripwire' || classification.by === 'attention') return null;
-  if (classification.by === 'rules' && classification.rules.needsUser !== undefined) return null;
-  // What the LLM hands to the person (a sensitive, consent or attention-check question) is theirs; a free-text
-  // question it names takes a draft, or an answer when its box is short.
-  if (classification.by === 'llm' && classification.llm.kind === 'needs-user'
-    && policyClassOf(classification.llm.category) !== 'free-text') return null;
-  if (resolution.classifiedBy === 'saved' || row.status === 'blocked' || row.wrote) return null;
-  if (!answerableGap(spec, resolution, row)) return null;
-  if (inClosedContext(spec, context)) return null;
+  if (!answerable(spec, classification, resolution, row, writable, context)) return null;
   const question = quote(spec.label, ANSWER_QUESTION_MAX);
   if (question === '') return null;
   const base = { key: spec.key, kind: spec.kind, question, hint: quote(spec.description, ANSWER_HINT_MAX),

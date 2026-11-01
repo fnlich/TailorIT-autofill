@@ -11,7 +11,7 @@ import type { TiebreakItem } from '../core/matcher/types';
 // defaults have tests of their own: fill-all.browser.test.ts).
 import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations } from '../dom/fixture.testkit';
-import { createFakeWorker, FAKE_TASK_ID, sentinelsIn, testVocab, VALUE_SENTINELS, type FakeWorkerOptions } from './content.testkit';
+import { createFakeWorker, FAKE_ANSWER, FAKE_TASK_ID, sentinelsIn, testVocab, VALUE_SENTINELS, type FakeWorkerOptions } from './content.testkit';
 import { AI_POLL_MS } from './loop';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
@@ -138,6 +138,36 @@ describe('fields that wait for the LLM', () => {
     const failed = await fill({ ai: ANSWERS, script: { 'plan/poll': [{ ok: false, error: 'unavailable' }] } }, {}, 'ai-failed');
     expect(failed.end).toBe('review');
     expect(failed.row(SOURCE)).toMatchObject({ status: 'flagged', reason: 'llm-unavailable', wrote: false });
+  });
+
+  it('give each task of a classify-then-answer chain its own cap: a field asked anew is progress (the Phase E review, M6)', async () => {
+    // One unknown box, no write in the first pass (no settle before the waits). Each task takes about 14 polls (some
+    // 300 ms at 20 ms a poll), under the 450 ms cap; both together take over it.
+    const page = `<!doctype html><html><body><main><h1>Platform Engineer</h1><form action="/__submitted" method="post">
+      <label for="work">Where do you work today?</label><input id="work" name="work">
+      <button type="submit">Submit application</button></form></main></body></html>`;
+    const fixture = await loadFixture(document, page);
+    const waiting = () => ({ ok: true, data: { writes: [], results: [], awaiting: [] as string[], persistableCanaries: [] } });
+    // 14 polls that still wait, then the worker's own answer (the classification in, the answer asked anew), then 14
+    // more that wait, then its own again (the answer in). An undefined entry is answered by the fake worker itself.
+    const polls: unknown[] = [...Array.from({ length: 14 }, waiting), undefined, ...Array.from({ length: 14 }, waiting)];
+    const worker = createFakeWorker({
+      settings: { ...CAUTIOUS_SETTINGS, llm: { ...CAUTIOUS_SETTINGS.llm, answers: true } },
+      ai: { classify: (item) => ({ key: item.key, category: null, why: 'unknown-field' }) },
+      onMessage(message) {
+        const next = polls[0] as ReturnType<typeof waiting> | undefined;
+        if (message.type === 'plan/poll' && next !== undefined) next.data.awaiting = (message as { keys?: string[] }).keys ?? [];
+      },
+      script: { 'plan/poll': polls },
+    });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => URL_OF('ai-chain'), isTop: true,
+      settle: { quietMs: 30 }, ai: { pollMs: 20, capMs: 450 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).toBe('review');
+    const row = worker.reports.at(-1)!.fields.find((candidate) => candidate.label === 'Where do you work today?')!;
+    expect(row).toMatchObject({ provenance: 'llm-answer', reason: 'ai-guess', wrote: true });
+    expect((fixture.doc.getElementById('work') as HTMLInputElement).value).toBe(FAKE_ANSWER);
+    expect(worker.of('plan/poll').length).toBeGreaterThanOrEqual(30);
   });
 
   it('in a dry run, wait for the answers and show the rows they would give, writing nothing', async () => {

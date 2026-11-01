@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { AUTOFILL_ANSWER_REASONS, AutofillAnswerRequestSchema, AutofillAnswerResultSchema } from '../contract/tailorit';
 import type { AnswerItem } from '../core/plan/answers';
 import type { DraftItem } from '../core/plan/drafts';
+import { vocab } from '../core/plan/plan.testkit';
 import { sha256Hex } from '../core/text/sha256';
 import type { FieldKey } from '../core/types/field';
 import type { UntrustedText } from '../core/types/text';
@@ -113,13 +114,43 @@ describe('Edit with AI’s draft request', () => {
     maxLength: null, current: u('I like the product.') };
 
   it('sends what the box holds now as currentAnswer, and nothing naming a sensitive topic', () => {
-    const { batches } = draftBatches([item], CONTEXT, []);
+    const { batches } = draftBatches([item], CONTEXT, [], vocab);
     expect(batches[0]!.body.questions).toEqual([{ key: item.key, question: item.question, maxLength: null,
       currentAnswer: 'I like the product.' }]);
     const { batches: none, withheld } = draftBatches([{ ...item, current: u('My visa sponsorship ends in May.') }],
-      CONTEXT, []);
+      CONTEXT, [], vocab);
     expect(none).toEqual([]);
     expect(withheld).toEqual([{ key: item.key, text: null, why: 'llm-disabled-for-category' }]);
+  });
+
+  it('never sends a current text holding a sum, a contact detail, a postal address, an EEO answer or a decline (MAJOR 3)', () => {
+    const currents = ['I would want $140,000 a year.', 'Reach me at jo.doe@example.com any time.',
+      'My site is jodoe.dev/work.', 'Call me on +1 415 555 0134.', '221B Baker Street, London NW1 6XE',
+      'Apt 4, 12 Elm St.', 'Austin, TX 78701',
+      'Woman', 'Prefer not to say', 'My notes:\nAsian\nThe product is great.'];
+    for (const current of currents) {
+      const { batches, withheld } = draftBatches([{ ...item, current: u(current) }], CONTEXT, [], vocab);
+      expect(batches, current).toEqual([]);
+      expect(withheld, current).toEqual([{ key: item.key, text: null, why: 'llm-disabled-for-category' }]);
+    }
+    // Code names and product endings are no contact detail: "Node.js/TypeScript", "socket.io".
+    const { batches } = draftBatches([{ ...item, current: u('I ship Node.js/TypeScript services with socket.io.') }],
+      CONTEXT, [], vocab);
+    expect(batches).toHaveLength(1);
+  });
+});
+
+describe('what an answer never states (M2), screened again here', () => {
+  it('never sends a question about another person, an identifier, an address or a clearance', () => {
+    const questions = ['Emergency contact name', 'Reference 1: full name', "Your manager's name at your current job",
+      'Spouse name', 'Driver license number', 'Passport number', 'National ID number', 'Home address',
+      'Do you hold an active TS/SCI?', 'Are you a U.S. person as defined by ITAR?', 'What is your SIN?'];
+    const items = questions.map((question, at) => ({ ...text(at), question: u(question) }));
+    expect(items.map((item) => answerItemOfCore(item))).toEqual(items.map(() => null));
+    // A count is no identifier, and "address" as a verb no postal address.
+    for (const question of ['Number of years of experience with Go', 'How would you address a conflict on your team?']) {
+      expect(answerItemOfCore({ ...text(99), question: u(question) }), question).not.toBeNull();
+    }
   });
 });
 
@@ -137,7 +168,7 @@ describe('the extension’s own sensitive terms (TailorIT’s server-only ones, 
     const drafts = [{ ...why, key: 'lever|main|d1|none|0' as FieldKey, question: u('Describe any time spent in prison.') },
       { ...why, key: 'lever|main|d2|none|0' as FieldKey, current: u('My SIN is on file.') },
       { ...why, key: 'lever|main|d3|none|0' as FieldKey, current: u('My current day rate suits this role.') }, why];
-    const drafted = draftBatches(drafts, CONTEXT, []);
+    const drafted = draftBatches(drafts, CONTEXT, [], vocab);
     expect(drafted.withheld).toEqual(drafts.slice(0, 3).map((item) => ({ key: item.key, text: null,
       why: 'llm-disabled-for-category' })));
     expect(drafted.batches.flatMap((batch) => batch.body.questions.map((question) => question.key))).toEqual([why.key]);

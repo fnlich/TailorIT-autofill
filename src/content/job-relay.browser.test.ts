@@ -76,5 +76,20 @@ describe('the job relay (v2)', () => {
     const embedded = await postingTextOf(doc, form, false, new AbortController().signal);
     expect(embedded.text).toBe('');
     expect(embedded.canaries).toEqual(top.canaries);
+    expect(top.policy).toBe(false);
+  });
+
+  it("says when the frame's visible text forbids AI, so the panel shows that notice before any run", async () => {
+    const { doc, form } = laidOut();
+    const statement = doc.createElement('p');
+    statement.textContent = 'Please do not use AI tools to apply.';
+    doc.body.prepend(statement);
+    // An embedded frame reads its own visible text for the statement, as a run's gate does, though it sends no text.
+    for (const isTop of [true, false]) {
+      expect((await postingTextOf(doc, form, isTop, new AbortController().signal)).policy, String(isTop)).toBe(true);
+    }
+    // Text a person cannot see says nothing here, as it stops nothing at a run.
+    statement.style.display = 'none';
+    expect((await postingTextOf(doc, form, true, new AbortController().signal)).policy).toBe(false);
   });
 });

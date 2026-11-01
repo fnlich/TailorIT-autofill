@@ -4,10 +4,12 @@
  * with Change). Short, Medium or Long caps it at 600, 1500 or 3000 characters. The answer card says which resume it was
  * written from, with Copy and Regenerate.
  *
- * It is disabled, saying why, when the extension is not connected or the person has no resume. On a posting that says
- * AI-assisted applications are not allowed, that is said above the box: the person may still ask, since they asked.
- * The question and the answer live in this component's state only: never stored, never logged, gone when the panel
- * closes or follows another tab.
+ * It is disabled, saying why, when the extension is not connected, AI-written answers are turned off in Options (the
+ * drafts setting: the question is written by the AI too), or the person has no resume. On a posting that says
+ * AI-assisted applications are not allowed, that is said above the box (from the tab's reports, or the answer itself,
+ * which the worker marks so from the form's visible text even before any run): the person may still ask, since they
+ * asked. The question and the answer live in this component's state only: never stored, never logged, gone when the
+ * panel closes or follows another tab.
  */
 import { useId, useState } from 'react';
 import type { Answer } from '../../messaging/envelope';
@@ -18,7 +20,7 @@ import { Icon } from '../brand/Icon';
 type State =
   | { state: 'idle' }
   | { state: 'working' }
-  | { state: 'answered'; text: string; label: string; copied: 'copied' | 'failed' | null }
+  | { state: 'answered'; text: string; label: string; policy: boolean; copied: 'copied' | 'failed' | null }
   | { state: 'refused'; text: string };
 
 export interface AskProps {
@@ -27,20 +29,24 @@ export interface AskProps {
   /** Puts text on the clipboard; false when the browser would not. */
   copy(text: string): Promise<boolean>;
   connected: boolean;
+  /** AI-written answers are turned off in Options. */
+  aiOff?: boolean;
   /** The tab's card says there is no resume to attach. */
   noResume: boolean;
   /** The posting says AI-assisted applications are not allowed. */
   policy: boolean;
 }
 
-export function AskQuestion({ ask, copy, connected, noResume, policy }: AskProps) {
+export function AskQuestion({ ask, copy, connected, aiOff = false, noResume, policy }: AskProps) {
   const questionId = useId();
   const [question, setQuestion] = useState('');
   const [length, setLength] = useState<AskLength>('medium');
   const [result, setResult] = useState<State>({ state: 'idle' });
-  const disabledWhy = !connected ? COPY.ask.notConnected : noResume ? COPY.ask.outcomes['no-resume'] : null;
+  const disabledWhy = !connected ? COPY.ask.notConnected : aiOff ? COPY.ask.outcomes['ai-off']
+    : noResume ? COPY.ask.outcomes['no-resume'] : null;
   const working = result.state === 'working';
   const canAsk = disabledWhy === null && !working && question.trim() !== '';
+  const forbidsAi = policy || (result.state === 'answered' && result.policy);
 
   const submit = async () => {
     if (!canAsk) return;
@@ -52,7 +58,8 @@ export function AskQuestion({ ask, copy, connected, noResume, policy }: AskProps
       return;
     }
     const data = answer.data;
-    setResult(data.outcome === 'answered' ? { state: 'answered', text: data.text, label: data.resumeLabel, copied: null }
+    setResult(data.outcome === 'answered'
+      ? { state: 'answered', text: data.text, label: data.resumeLabel, policy: data.policy, copied: null }
       : { state: 'refused', text: COPY.ask.outcomes[data.outcome] });
   };
 
@@ -72,7 +79,7 @@ export function AskQuestion({ ask, copy, connected, noResume, policy }: AskProps
         </span>
       </summary>
       <div className="tia-ask__body">
-        {policy && <p className="tia-ask__policy" data-ask-policy="">{COPY.ask.policy}</p>}
+        {forbidsAi && <p className="tia-ask__policy" data-ask-policy="">{COPY.ask.policy}</p>}
         {disabledWhy !== null && <p className="tia-ask__why" data-ask-disabled="">{disabledWhy}</p>}
         <label className="tia-ask__label" htmlFor={questionId}>{COPY.ask.label}</label>
         <textarea id={questionId} className="tia-ask__input" rows={3} maxLength={MAX_CUSTOM_QUESTION}

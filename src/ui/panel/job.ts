@@ -2,8 +2,9 @@
  * The side panel's job card, as data (v2): panel/job for the followed tab, read whenever what it depends on changes,
  * and only then. No timer, no focus or visibility read: the panel never wakes a stopped worker on its own.
  *
- * The read key is the tab, the form frame's document (the page state's formKey), the connection (its expiry: every new
- * token has a new one), the tab's runs (so the card the fill's own lookup left is shown once a fill starts) and a count
+ * The read key is the tab, the form frame's document (the page state's formKey, which also moves when a single-page
+ * application shows another address in it), the connection (its expiry: every new token has a new one; and every
+ * connection change the worker announced, so a change made in another window drops the card at once), the tab's runs (so the card the fill's own lookup left is shown once a fill starts) and a count
  * the panel bumps after Add, Save or Change. An answer counts only while its key is still current. A change of tab,
  * document or connection shows the loading card at once, so a card is never shown under another page or another
  * connection (the v2 review, M2); a change of runs or a bump keeps the card on show until the new answer lands. A null
@@ -32,7 +33,7 @@ export function runsKeyOf(reports: readonly FrameReport[]): string {
 
 /**
  * The card of `tabId`'s form. `connection` is undefined while the connection is unknown, null when not connected, and
- * otherwise a string that changes with the token (its expiry).
+ * otherwise a string that changes with the token (its expiry) and with each connection change the worker announced.
  */
 export function useTabJob(platform: PagePlatform, tabId: number | null, options: {
   page: PageState | null;

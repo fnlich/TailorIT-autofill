@@ -11,7 +11,12 @@
  *   canaries and the active resume's id. It goes to POST /api/autofill/ai/draft, and a task TailorIT did not finish
  *   within its wait is polled every AUTOFILL_AI_POLL_MS, for at most ASK_CAP_MS.
  * - What comes back is checked again here: a draft holding a canary, or longer than its cap, is 'unusable'.
- * - It works in profile-only mode too, because the person asked; the panel shows the posting's no-AI notice above it.
+ * - It is written by the AI, so it follows the AI-drafts switch (`llm.drafts`, on by default): with it off, the answer is
+ *   'ai-off' and nothing is sent (the panel disables the box too).
+ * - It works in profile-only mode too, because the person asked; the answer says whether the posting says AI-assisted
+ *   applications are not allowed (`policy`: the form frame's visible text, or a notice a run of the tab raised, which
+ *   covers the posting page and TailorIT's saved copy), so the panel shows that notice with it, even before any run.
+ * - A token change while it is asked (another window connected or disconnected) sends nothing: 'not-connected'.
  * The question and the answer pass through the worker's memory only for the call: nothing is stored, and no log line
  * holds either (an outcome flag only).
  */
@@ -31,6 +36,7 @@ import type { JobCards } from './job-cards';
 import type { createRateLimit } from './locks';
 import type { ProfileCache } from './profile-cache';
 import type { ServerClient, ServerResult } from './server-client';
+import type { SettingsStore } from './settings';
 import type { Timers } from './timers';
 
 /** A custom question's task is given up this long after it was submitted (the planner's AI cap). */
@@ -52,6 +58,12 @@ export interface AskDeps {
   timers: Timers;
   now(): number;
   connected(): Promise<boolean>;
+  /** The token keeper's generation (auth.ts): a question asked across a change is not sent. */
+  generation(): number;
+  /** The settings: `llm.drafts` switches the custom question on and off. */
+  settings: Pick<SettingsStore, 'get'>;
+  /** Whether a run of the tab raised a notice that the posting forbids AI (its reports). */
+  policyHeld?(tabId: number): Promise<boolean>;
   /** ASK_LIMIT, keyed `${tabId}/`. */
   limit: ReturnType<typeof createRateLimit>;
 }
@@ -91,9 +103,11 @@ export function createAsk(deps: AskDeps): (message: Ask) => Promise<Answer<Panel
     return { id, label: cutAtWord(label, 200) };
   }
 
-  /** The posting's visible text and the page's canaries, from the form frame; none without one. */
-  async function pageText(tabId: number, job: Awaited<ReturnType<JobCards['tabJob']>>): Promise<{ text: string; canaries: string[] }> {
-    if (job.frame === null) return { text: '', canaries: [] };
+  /** The posting's visible text, the page's canaries and whether the frame's text forbids AI, from the form frame; none
+   *  without one. */
+  async function pageText(tabId: number, job: Awaited<ReturnType<JobCards['tabJob']>>):
+    Promise<{ text: string; canaries: string[]; policy: boolean }> {
+    if (job.frame === null) return { text: '', canaries: [], policy: false };
     try {
       const answer = await deps.tabs.sendToFrame(tabId, { v: 1, type: 'job/postingText' }, frameTarget(job.frame));
       const parsed = answerSchema(JobPostingTextAnswerSchema).safeParse(answer);
@@ -101,7 +115,7 @@ export function createAsk(deps: AskDeps): (message: Ask) => Promise<Answer<Panel
     } catch {
       log('frame.unreachable');
     }
-    return { text: '', canaries: [] };
+    return { text: '', canaries: [], policy: false };
   }
 
   /** The task once finished: polled within ASK_CAP_MS; null when it never finished. */
@@ -119,10 +133,15 @@ export function createAsk(deps: AskDeps): (message: Ask) => Promise<Answer<Panel
     if (!(await deps.connected())) return { outcome: 'not-connected' };
     const question = message.question.trim();
     if (screenQuestion(question) !== null) return { outcome: 'sensitive' };
+    if (!(await deps.settings.get()).llm.drafts) return { outcome: 'ai-off' };
+    const generation = deps.generation();
     const job = await deps.jobs.tabJob(message.tabId);
     const resume = await activeResume(job);
     if (resume === null) return { outcome: 'no-resume' };
-    const { text, canaries } = await pageText(message.tabId, job);
+    const { text, canaries, policy: here } = await pageText(message.tabId, job);
+    const policy = here || ((await deps.policyHeld?.(message.tabId).catch(() => false)) ?? false);
+    // Another connection since the question was asked: its card, resume and posting are not this one's to send.
+    if (generation !== deps.generation()) return { outcome: 'not-connected' };
     const maxLength = AUTOFILL_CUSTOM_QUESTION_LENGTHS[message.length];
     const limits = AUTOFILL_AI_LIMITS.draft;
     const started = deps.now();
@@ -153,7 +172,7 @@ export function createAsk(deps: AskDeps): (message: Ask) => Promise<Answer<Panel
     if (written === '' || [...written].length > maxLength || canariesIn([written], canaries).length > 0) {
       return { outcome: 'unusable' };
     }
-    return { outcome: 'answered', text: written, resumeLabel: resume.label };
+    return { outcome: 'answered', text: written, resumeLabel: resume.label, policy };
   }
 
   return async (message) => {

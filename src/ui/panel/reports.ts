@@ -12,7 +12,9 @@
  *
  * v2: each read and push also carries the tab's page state (a form found, frames with none, none of ours), null until
  * known or from an older worker. When the followed tab finishes loading a page (tabs.onUpdated, status 'complete'),
- * the tab is read again: a page without our script says no hello, and the read's frame check prunes what went.
+ * the tab is read again: a page without our script says no hello, and the read's frame check prunes what went. The
+ * port also says when the connection or the settings changed (panel/changed), whichever window it happened in: each
+ * bumps its count in `changes`, so the panel reads them again.
  */
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { PanelPortMessageSchema, type PageState } from '../../messaging/schemas';
@@ -37,15 +39,24 @@ function watch(port: PortLike | null, tabId: number): void {
   }
 }
 
-/** The tab's reports and page state as last read or pushed, the link's state, and a way to reconnect by hand. */
+/** How many times the worker said the connection or the settings changed since the panel opened. */
+export interface PanelChanges {
+  connection: number;
+  settings: number;
+}
+
+/** The tab's reports and page state as last read or pushed, the link's state, a way to reconnect by hand, and the
+ *  connection and settings changes the worker announced. */
 export function useTabReports(platform: PagePlatform, tabId: number | null, now: () => number): {
   reports: readonly FrameReport[];
   page: PageState | null;
   link: LinkState;
   reconnect(): void;
+  changes: PanelChanges;
 } {
   const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[]; page: PageState | null }>(
     { tabId: null, reports: NO_REPORTS, page: null });
+  const [changes, setChanges] = useState<PanelChanges>({ connection: 0, settings: 0 });
   const [link, setLink] = useState<LinkState>('live');
   const [generation, setGeneration] = useState(0);
   const port = useRef<PortLike | null>(null);
@@ -71,6 +82,11 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
       next.onMessage((raw) => {
         if (closed || port.current !== next) return;
         const parsed = PanelPortMessageSchema.safeParse(raw);
+        if (parsed.success && parsed.data.type === 'panel/changed') {
+          const what = parsed.data.what;
+          setChanges((count) => ({ ...count, [what]: count[what] + 1 }));
+          return;
+        }
         if (!parsed.success || parsed.data.type !== 'panel/update' || parsed.data.tabId !== watched.current) return;
         pushes.current += 1;
         setShown({ tabId: parsed.data.tabId, reports: parsed.data.reports, page: parsed.data.page ?? null });
@@ -129,5 +145,5 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
     setGeneration((count) => count + 1);
   }, []);
   const current = shown.tabId === tabId && tabId !== null;
-  return { reports: current ? shown.reports : NO_REPORTS, page: current ? shown.page : null, link, reconnect };
+  return { reports: current ? shown.reports : NO_REPORTS, page: current ? shown.page : null, link, reconnect, changes };
 }

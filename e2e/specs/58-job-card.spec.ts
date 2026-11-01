@@ -8,6 +8,7 @@
  *   the card; Add refused (closed, the ATS down), and no Add where TailorIT cannot add from the address;
  * - Save to tracker for a job not tracked yet;
  * - Change: the chosen resume goes with the lookup, and the card says it was chosen;
+ * - a single-page application's next posting in the same page: the card is read again for it (the Phase E review);
  * - a custom question answered from the card's resume, and a sensitive one never sent;
  * - a lookup that fails: the card says TailorIT could not say, and Autofill still works.
  * Nothing of the card is stored.
@@ -138,6 +139,23 @@ test.describe('the job card', () => {
     await expect(card.locator('.tia-job__resume-label')).toHaveText(other.label);
     await expect(card).toContainText(COPY.job.resumeReasons.chosen);
     await expect.poll(async () => (await bodies(LOOKUP)).at(-1)?.resumeId).toBe(other.id);
+  });
+
+  test('reads the card again when a single-page application shows another posting in the same page, never the old one', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+    const first = at('b1');
+    const page = await extContext.newPage();
+    const { card } = await openPanel(ext, page, routeLog, first);
+    await expect(card).toHaveAttribute('data-job-state', 'found');
+    await expect(card.locator('.tia-job__title')).toHaveText(GOLDEN.job.title);
+    // The page moves to the next posting without loading (history.pushState): its card is read for the new address.
+    await tailorit.scenario('lookup-not-found', { times: 1 });
+    const second = at('b2');
+    await page.evaluate((next) => history.pushState({}, '', next), second);
+    await expect(card).toHaveAttribute('data-job-state', 'not-found');
+    expect(await bodies(LOOKUP)).toEqual([{ url: first, includePostingText: false }, { url: second, includePostingText: false }]);
+    // The count that told the worker is no address: neither one is kept.
+    const kept = JSON.stringify(await ext.storage());
+    for (const url of [first, second]) expect(kept).not.toContain(url);
   });
 
   test('answers a custom question from the card’s resume, and never sends a sensitive one', async ({ extContext, connected: ext, routeLog }) => {

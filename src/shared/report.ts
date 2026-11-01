@@ -79,6 +79,18 @@ export const FrameReportSchema = z.strictObject({
 });
 export type FrameReport = z.infer<typeof FrameReportSchema>;
 
+/** The notices that say the posting forbids AI (v2): the policy notice past or without its card, the profile-only and
+ *  attestation notices, and the saved copy's. */
+export const NO_AI_NOTICES: ReadonlySet<(typeof NOTICE_CODES)[number]> = new Set(['policy', 'policy-profile-only',
+  'ai-attestation', 'policy-stored-copy']);
+
+/** Whether a frame's report says the posting forbids AI: its run waits at the policy card, or it raised one of
+ *  NO_AI_NOTICES. The side panel shows that notice above the custom question, and the worker tells the question's
+ *  answer so. */
+export function saysNoAi(report: Pick<FrameReport, 'status' | 'notices'>): boolean {
+  return report.status === 'policy-notice' || report.notices.some((notice) => NO_AI_NOTICES.has(notice.code));
+}
+
 /**
  * Whether a row needs the person: it asks for them (an AI draft to confirm, a question left for them), or the run left
  * it flagged or blocked. One rule for the review's count (src/ui/report/model.ts) and the launcher's (the content

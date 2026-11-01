@@ -23,7 +23,7 @@ type RawSender = {
   id?: string;
   url?: string;
   origin?: string;
-  tab?: { id?: number };
+  tab?: { id?: number; url?: string };
   frameId?: number;
   documentId?: string;
   documentLifecycle?: string;
@@ -35,6 +35,7 @@ function toSender(raw: RawSender | undefined): Sender {
     url: raw?.url,
     origin: raw?.origin,
     tabId: raw?.tab?.id,
+    tabUrl: raw?.tab?.url,
     frameId: raw?.frameId,
     documentId: raw?.documentId,
     documentLifecycle: raw?.documentLifecycle,

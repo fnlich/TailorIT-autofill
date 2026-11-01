@@ -88,6 +88,7 @@ const REASONS = {
   'sensitive-not-shared': "This browser may not read your work authorization and self-identification answers. To allow it, connect the extension again from TailorIT's Settings › Autofill with that box ticked.",
   'sensitive-unavailable': 'Your work authorization and self-identification answers could not be read from TailorIT just now, so this was left for you.',
   'statement-not-affirmative': "This box isn't worded as a plain yes, so whether to tick it was left for you.",
+  'criminal-not-covered': "Your answer about criminal convictions doesn't settle this question, so it was left for you.",
   // The matcher.
   'no-match': 'None of the options matched your profile.',
   'ambiguous-options': 'More than one option could match your answer, so none was chosen.',
@@ -441,6 +442,7 @@ const ASK = {
     'rate-limited': 'Too many questions in a minute. Wait a little, then try again.',
     'not-connected': 'Connect to TailorIT in the settings first.',
     unavailable: "TailorIT's AI couldn't answer just now. Try again.",
+    'ai-off': 'AI-written answers are turned off in Options.',
   } satisfies Record<Exclude<AskOutcome, 'answered'>, string>,
 } as const;
 
@@ -476,7 +478,7 @@ const OPTIONS = {
     disclosure: [
       'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.',
       'While its side panel shows an application page, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application\'s progress, never your answers.',
-      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers and answering the questions your profile does not are on unless you turn them off below; drafts and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
+      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers and answering the questions your profile does not are on unless you turn them off below; drafts and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
     connect: 'Connect to TailorIT',

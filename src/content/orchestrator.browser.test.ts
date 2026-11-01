@@ -19,11 +19,12 @@ import type { Adapter } from '../adapters/types';
 import type { PlanOutput } from '../core/plan/types';
 import type { FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite } from '../core/types/fill';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { logEvents, loadFixture, removeFixtures, untrustedViolations, watchHoneypots, type EventLog,
   type Fixture } from '../dom/fixture.testkit';
 import type { FrameReport } from '../shared/report';
 import {
-  createFakeWorker, fakePdf, PAGE_TEXT_SENTINELS, sentinelsIn, testVocab, trapUrl, VALUE_SENTINELS,
+  createFakeWorker, FAKE_TASK_ID, fakePdf, PAGE_TEXT_SENTINELS, sentinelsIn, testVocab, trapUrl, VALUE_SENTINELS,
   type FakeWorker, type FakeWorkerOptions,
 } from './content.testkit';
 import type { RunEnd } from './orchestrator';
@@ -298,6 +299,45 @@ describe('a whole pass over the trap fixtures, planned from the golden profile',
     expect(ran.runtime.stopped).toBe(false);
     expect(ran.runtime.ui!.host.isConnected).toBe(true);
     expect(ran.runtime.ui!.launcher.view.state).toBe('review');
+  });
+});
+
+describe('a trap under version 2’s defaults (the Phase E review, MINOR 7)', () => {
+  it('trap 01 with a visible unknown question: the AI answers it and drafts the box from visible text only', async () => {
+    // Trap 01 as it is, with a visible question no rule knows added to its form (the fixture file is unchanged).
+    const page = trap01.replace('<button type="submit">', '<label for="office">Which of our offices would you visit '
+      + 'first?</label><input id="office" name="office"><button type="submit">');
+    const asked: unknown[] = [];
+    const fixture = await loadFixture(document, page);
+    const events = logEvents(fixture.doc);
+    const honeypots = watchHoneypots(fixture.doc);
+    const worker = createFakeWorker({ settings: DEFAULT_SETTINGS, ai: {
+      answer: (item) => {
+        asked.push(item);
+        return { key: item.key, kind: 'text', text: 'The downtown office', basis: 'guess', taskId: FAKE_TASK_ID };
+      },
+      draft: (item) => {
+        asked.push(item);
+        return { key: item.key, text: 'I would like to build tools for hiring teams.', taskId: FAKE_TASK_ID };
+      },
+    } });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => trapUrl('01-v2'), isTop: true,
+      settle: { quietMs: 60 }, ai: { pollMs: 20 } });
+    runtimes.push(runtime);
+    const ran = ranOf({ fixture, events, honeypots, worker, runtime }, await runtime.fill());
+    expectInvariants(ran);
+    expect(ran.row('Which of our offices would you visit first?')).toMatchObject({ status: 'verified',
+      provenance: 'llm-answer', reason: 'ai-guess', wrote: true });
+    expect(ran.row('Why do you want to work here?')).toMatchObject({ status: 'verified', provenance: 'llm-draft',
+      reason: 'llm-draft-written', wrote: true });
+    // What went to the AI: the questions' visible text, never the hidden instructions, their markers or the canary.
+    expect(asked).toHaveLength(2);
+    const sent = JSON.stringify([asked, ran.worker.of('plan/request').map((message) => message.postingText)]);
+    for (const hidden of ['HIDDEN-MARKER', 'I am LLM', 'i am llm', 'Ignore previous instructions']) {
+      expect(sent, hidden).not.toContain(hidden);
+    }
+    expect(sent).toContain('VISIBLE-MARKER-01');
+    for (const value of formValues(fixture.doc)) expect(value.toLowerCase()).not.toContain('i am llm');
   });
 });
 

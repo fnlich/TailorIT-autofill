@@ -119,6 +119,24 @@ describe('the content runtime’s start-up', () => {
     expect(runtime.ui!.launcher.el.getBoundingClientRect().width).toBe(0);
   });
 
+  it('says hello again with a new count at each address a form shows, so the side panel reads the next posting (v2)', async () => {
+    let href = trapUrl('route-a');
+    const { fixture, fake } = await startOn(plain, () => href);
+    expect(fake.of('frame/hello')).toEqual([{ v: 1, type: 'frame/hello', isTop: true, hasForm: true }]);
+    // The application's next posting in the same document, then the board, then a posting again.
+    for (const [next, hasForm, count] of [[trapUrl('route-b'), true, 2], [POSTING, false, 3], [trapUrl('route-c'), true, 4]] as const) {
+      href = next;
+      fixture.view.dispatchEvent(new fixture.view.PopStateEvent('popstate'));
+      await vi.waitFor(() => expect(fake.of('frame/hello')).toHaveLength(count));
+      expect(fake.of('frame/hello').at(-1)).toEqual({ v: 1, type: 'frame/hello', isTop: true, hasForm, nav: count - 1 });
+    }
+    // A forged popstate at an unchanged address says nothing, and no hello ever carries the address.
+    fixture.view.dispatchEvent(new fixture.view.PopStateEvent('popstate'));
+    await fixture.view.Promise.resolve();
+    expect(fake.of('frame/hello')).toHaveLength(4);
+    expect(JSON.stringify(fake.of('frame/hello'))).not.toContain('route-');
+  });
+
   it('offers no launcher and runs nothing at a Lever address that is no application (W2)', async () => {
     // A site's board: the generic adapter would find the form, but the address names no posting.
     const { fake, runtime } = await startOn(plain, 'https://jobs.lever.co/acme');

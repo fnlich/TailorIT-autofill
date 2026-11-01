@@ -8,12 +8,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AnswerItem } from '../core/plan/answers';
 import type { DraftItem } from '../core/plan/drafts';
+import { vocab } from '../core/plan/plan.testkit';
 import type { PlanOutput } from '../core/plan/types';
 import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { UntrustedText } from '../core/types/text';
 import type { CoreFunctions } from './core';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import {
-  ANSWER_TEXT, beginRun, contentSender, DRAFT_TEXT, fieldSpec, goldens, itemsOf, questionsOf, skippedRow,
+  ANSWER_TEXT, beginRun, contentSender, DRAFT_TEXT, fieldSpec, goldens, itemsOf, pageSender, questionsOf, skippedRow,
   startTestWorker, tokenRecord, type TestWorker,
 } from './worker.testkit';
 
@@ -30,8 +32,10 @@ const WHY = fieldSpec(2, { kind: 'textarea', label: 'Why do you want to work her
  * run has one; with PlanInput.rewrite, the one textarea waits for its draft (with what it holds now) and gets it.
  * Everything else is skipped.
  */
-function answeringCore(): Pick<CoreFunctions, 'planFrame'> {
+function answeringCore(): Pick<CoreFunctions, 'planFrame' | 'vocab'> {
   return {
+    // The bundled vocabulary: the worker screens a rewrite's current text with it (draftBatches).
+    vocab: () => vocab,
     planFrame(input) {
       const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
       const specs = input.specs.filter((spec) => wanted === null || wanted.has(spec.key));
@@ -152,6 +156,42 @@ describe('Edit with AI in the worker (draft/rewrite)', () => {
       canaries: [] }, contentSender())).toEqual({ ok: false, error: 'bad_message' });
     const dry = await beginRun(worker, { dryRun: true });
     expect(await worker.deliver({ v: 1, type: 'draft/rewrite', runId: dry, fieldKey: WHY.key, specs: [WHY],
+      canaries: [] }, contentSender())).toEqual({ ok: false, error: 'bad_message' });
+    expect(worker.tailorit.count(DRAFT)).toBe(0);
+  });
+
+  it('refuses a rewrite while AI-written answers are off (MINOR 8)', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), core: answeringCore() });
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false } } }, pageSender('options.html'));
+    const runId = await beginRun(worker);
+    expect(await worker.deliver({ v: 1, type: 'draft/rewrite', runId, fieldKey: WHY.key, specs: [WHY],
+      canaries: [] }, contentSender())).toEqual({ ok: false, error: 'bad_message' });
+    expect(worker.tailorit.count(DRAFT)).toBe(0);
+  });
+});
+
+describe('a run that turns profile-only (security MINOR 4)', () => {
+  it('asks nothing more once a request says noAi: the keys asked before are planned again with noAi, and no rewrite', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), core: answeringCore() });
+    const runId = await beginRun(worker);
+    await request(worker, runId, [YEARS]);
+    await vi.waitFor(() => expect(worker.tailorit.count(ANSWER)).toBe(1));
+    // A later pass found the posting forbids AI: its request says so.
+    const later = fieldSpec(5);
+    await request(worker, runId, [later], { noAi: true });
+    // The answer asked before is planned again from the profile only.
+    await vi.waitFor(async () => {
+      await poll(worker, runId, [YEARS.key]);
+      const last = worker.core.calls.planFrame.at(-1)!;
+      expect([last.planKeys, last.noAi]).toEqual([[YEARS.key], true]);
+    });
+    // A request that no longer says noAi is planned profile-only all the same, and asks nothing.
+    const after = fieldSpec(6, { label: 'Which office would you visit first?', key: 'lever|main|office|none|0' as FieldKey });
+    expect(await request(worker, runId, [after])).toMatchObject({ ok: true, data: { awaiting: [] } });
+    expect(worker.core.calls.planFrame.at(-1)!.noAi).toBe(true);
+    expect(worker.tailorit.count(ANSWER)).toBe(1);
+    expect(await worker.deliver({ v: 1, type: 'draft/rewrite', runId, fieldKey: WHY.key, specs: [WHY],
       canaries: [] }, contentSender())).toEqual({ ok: false, error: 'bad_message' });
     expect(worker.tailorit.count(DRAFT)).toBe(0);
   });

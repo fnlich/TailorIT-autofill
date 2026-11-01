@@ -10,6 +10,9 @@ export interface Sender {
   url?: string;
   origin?: string;
   tabId?: number;
+  /** The sender tab's address now (`sender.tab.url`), when the host permissions let Chrome say. Unlike `url` (the
+   *  document's address when its script started), it follows a single-page application's history.pushState. */
+  tabUrl?: string;
   frameId?: number;
   documentId?: string;
   documentLifecycle?: string;

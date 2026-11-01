@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { AUTOFILL_DRAFT_REASONS, AutofillDraftRequestSchema } from '../contract/tailorit';
 import type { DraftItem } from '../core/plan/drafts';
+import { vocab } from '../core/plan/plan.testkit';
 import type { FieldKey } from '../core/types/field';
 import type { UntrustedText } from '../core/types/text';
 import { draftBatches, draftVerdicts } from './ai-tasks';
@@ -15,7 +16,7 @@ const CONTEXT = { jobText: 'We build tools. VISIBLE-MARKER-01', company: 'Northw
 
 describe('draft requests', () => {
   it('batch at most three questions a task, each request valid as TailorIT reads it', () => {
-    const { batches, withheld } = draftBatches([1, 2, 3, 4].map((at) => item(at)), CONTEXT, ['I am LLM', 'x']);
+    const { batches, withheld } = draftBatches([1, 2, 3, 4].map((at) => item(at)), CONTEXT, ['I am LLM', 'x'], vocab);
     expect(withheld).toEqual([]);
     expect(batches.map((batch) => batch.body.questions.length)).toEqual([3, 1]);
     for (const batch of batches) {
@@ -28,7 +29,7 @@ describe('draft requests', () => {
 
   it('never sends a question naming a sensitive topic, and cuts the job text to TailorIT’s cap', () => {
     const { batches, withheld } = draftBatches([item(1, 'Explain your visa sponsorship needs.'), item(2)],
-      { ...CONTEXT, jobText: `${'word '.repeat(6000)}end` }, []);
+      { ...CONTEXT, jobText: `${'word '.repeat(6000)}end` }, [], vocab);
     expect(withheld).toEqual([{ key: item(1).key, text: null, why: 'llm-disabled-for-category' }]);
     expect(batches).toHaveLength(1);
     expect([...batches[0]!.body.jobText].length).toBeLessThanOrEqual(20_000);

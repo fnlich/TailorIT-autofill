@@ -209,8 +209,11 @@ const v = z.literal(MESSAGE_VERSION);
 
 const contentMessages = [
   z.strictObject({ v, type: z.literal('ping') }),
-  /** A frame announces itself. The worker trusts the sender's address, never a URL in a payload. */
-  z.strictObject({ v, type: z.literal('frame/hello'), isTop: z.boolean(), hasForm: z.boolean() }),
+  /** A frame announces itself. The worker trusts the sender's address, never a URL in a payload. `nav` counts the
+   *  address changes of a single-page application within this document (v2): the frame says hello again at each one
+   *  while it shows a form, so the worker reads the side panel's job card again for the new posting. A count, never an
+   *  address. */
+  z.strictObject({ v, type: z.literal('frame/hello'), isTop: z.boolean(), hasForm: z.boolean(), nav: Count.optional() }),
   /** Answers a run id and the content settings; never the profile. */
   z.strictObject({ v, type: z.literal('run/begin'), applicationKey: z.string().max(80),
     trigger: z.enum(['launcher', 'panel', 'resume']), dryRun: z.boolean() }),
@@ -358,11 +361,18 @@ export type PageState = z.infer<typeof PageStateSchema>;
  *  the tab's page state (v2; absent from an older worker). */
 const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(20), page: PageStateSchema.optional() };
 
+/** What changed for every side panel (v2): the connection (a token stored or dropped, perhaps from another window) or
+ *  the settings. */
+export const PANEL_CHANGES = ['connection', 'settings'] as const;
+
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
   /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). */
   z.strictObject({ v, type: z.literal('panel/watch'), tabId: TabId }),
   /** Worker → page: the watched tab's reports, once at the watch and again on every change. */
   z.strictObject({ v, type: z.literal('panel/update'), ...TabReportsShape }),
+  /** Worker → page (v2): the connection or the settings changed. The panel reads them again, and drops a job card it
+   *  read with the old connection at once. Nothing else: no token, no account, no setting. */
+  z.strictObject({ v, type: z.literal('panel/changed'), what: z.enum(PANEL_CHANGES) }),
 ]);
 export type PanelPortMessage = z.infer<typeof PanelPortMessageSchema>;
 
@@ -499,11 +509,13 @@ export const FieldDescribeAnswerSchema = z.strictObject({
 });
 
 /** A frame's answer to job/postingText (v2): the posting's visible text outside the form root ('' in a frame inside
- *  another page) and the page's canaries (the nearest 32). Page text: passed to TailorIT with a custom question, never
- *  kept, never logged. */
+ *  another page), the page's canaries (the nearest 32), and whether the frame's visible text says AI-assisted
+ *  applications are not allowed (`policy`, so the side panel shows that notice with the answer even before any run).
+ *  Page text: passed to TailorIT with a custom question, never kept, never logged. */
 export const JobPostingTextAnswerSchema = z.strictObject({
   text: Text(MAX_POSTING_TEXT),
   canaries: z.array(Text(120)).max(32),
+  policy: z.boolean(),
 });
 
 // ── Answers to extension pages ────────────────────────────────────────────────────────────────────────────────────
@@ -605,13 +617,17 @@ export type ResumeListAnswer = z.infer<typeof ResumeListAnswerSchema>;
  * none: 'no-resume' (the account has no resume to write from), 'sensitive' (a self-identification, legal, pay or consent
  * question, or an attention check: never sent to the AI, by the extension's own screen or TailorIT's), 'unusable' (the
  * AI's answer failed a check: a canary, talk of being an AI, a foreign link), 'rate-limited', 'not-connected',
- * 'unavailable' (TailorIT's AI could not answer just now). Kept in the side panel's memory only.
+ * 'unavailable' (TailorIT's AI could not answer just now), 'ai-off' (AI-written answers, the drafts setting, are turned
+ * off: nothing is sent). An answer says whether the posting says AI-assisted applications are not allowed (`policy`:
+ * the form frame's visible text, or a notice a run of the tab raised), so the panel shows that notice with it. Kept in
+ * the side panel's memory only.
  */
-export const ASK_REFUSALS = ['no-resume', 'sensitive', 'unusable', 'rate-limited', 'not-connected', 'unavailable'] as const;
+export const ASK_REFUSALS = ['no-resume', 'sensitive', 'unusable', 'rate-limited', 'not-connected', 'unavailable',
+  'ai-off'] as const;
 export const ASK_OUTCOMES = ['answered', ...ASK_REFUSALS] as const;
 export type AskOutcome = (typeof ASK_OUTCOMES)[number];
 export const PanelAskAnswerSchema = z.discriminatedUnion('outcome', [
-  z.strictObject({ outcome: z.literal('answered'), text: Text(3000).min(1), resumeLabel: Text(200) }),
+  z.strictObject({ outcome: z.literal('answered'), text: Text(3000).min(1), resumeLabel: Text(200), policy: z.boolean() }),
   z.strictObject({ outcome: z.enum(ASK_REFUSALS) }),
 ]);
 export type PanelAskAnswer = z.infer<typeof PanelAskAnswerSchema>;

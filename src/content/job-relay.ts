@@ -5,8 +5,10 @@
  *   answered it. Both answers carry nothing: what TailorIT said of the job never reaches the page's process. A frame
  *   with no form of ours relays nothing ('expired').
  * - job/postingText: for the side panel's custom question, the posting's visible text outside the form root, as a draft
- *   reads it (the top frame only: '' in a frame inside another site's page), and the page's canaries (its text addressed
- *   to AI tools, hidden or not), so TailorIT and the worker refuse an answer that holds one. Page text, never kept.
+ *   reads it (the top frame only: '' in a frame inside another site's page), the page's canaries (its text addressed
+ *   to AI tools, hidden or not), so TailorIT and the worker refuse an answer that holds one, and whether the frame's
+ *   visible text says AI-assisted applications are not allowed (the policy patterns, as a run's gate reads them), so the
+ *   panel shows that notice with the answer even before any run. Page text, never kept.
  */
 import { scanTripwires } from '../core/guard/tripwire';
 import { rawScan } from '../dom/raw-scan';
@@ -14,6 +16,7 @@ import { visibleTextWithout } from '../dom/visible-text';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import { MAX_POSTING_TEXT, type JobRelayAction } from '../messaging/schemas';
 import type { Channel } from './channel';
+import { frameHitsOf } from './policy';
 
 /** job/refresh: relays the action to the worker; {} once it answered, or why it would not. */
 export async function relayJob(channel: Channel, action: JobRelayAction, hasForm: boolean):
@@ -23,12 +26,14 @@ export async function relayJob(channel: Channel, action: JobRelayAction, hasForm
   return answer.ok ? ok({}) : refuse(answer.error === 'rate_limited' ? 'rate_limited' : 'unavailable');
 }
 
-/** job/postingText: the posting's visible text outside `root` (top frame only) and the page's nearest canaries. */
+/** job/postingText: the posting's visible text outside `root` (top frame only), the page's nearest canaries, and
+ *  whether the frame's visible text forbids AI. */
 export async function postingTextOf(doc: Document, root: Element | null, isTop: boolean, signal: AbortSignal):
-  Promise<{ text: string; canaries: string[] }> {
+  Promise<{ text: string; canaries: string[]; policy: boolean }> {
   const body = doc.body;
   const text = isTop && body !== null ? visibleTextWithout(body, root === null ? [] : [root], { cap: MAX_POSTING_TEXT }).trim()
     : '';
   const raw = await rawScan(doc, { signal });
-  return { text, canaries: scanTripwires(raw.passages).canaries.filter((canary) => canary.length <= 120).slice(0, 32) };
+  return { text, canaries: scanTripwires(raw.passages).canaries.filter((canary) => canary.length <= 120).slice(0, 32),
+    policy: frameHitsOf(doc).length > 0 };
 }

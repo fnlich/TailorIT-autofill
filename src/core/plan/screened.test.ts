@@ -109,6 +109,26 @@ describe('E2: no draft in an EEO, legal or sensitive context', () => {
     }
   });
 
+  it('drafts and answers the open questions of a Greenhouse-style section that holds a legal or consent one (M1)', () => {
+    const section = { id: 'application-questions' };
+    const office = specOf('Which of our offices would you visit first?', 'text', { section });
+    const why = specOf('Why do you want to work here?', 'textarea', { section });
+    for (const closed of [specOf('Are you legally authorized to work in the United States?', 'radio',
+      { section, optionLabels: ['Yes', 'No'] }), specOf('I agree to the privacy policy', 'checkbox', { section }),
+      specOf('Are you a protected veteran?', 'select', { section, optionLabels: ['Yes', 'No'] })]) {
+      const specs = [closed, office, why].map((spec, domOrder) => ({ ...spec, domOrder }));
+      const unknown = new Map([[office.key as string, { key: office.key, category: null, why: 'unknown-field' as const }]]);
+      const out = planOf(specs, { ai: { verdicts: new Map(), classifications: unknown } });
+      expect(out.ask?.drafts?.map((item) => item.key), closed.label).toEqual([why.key]);
+      expect(out.ask?.answers?.map((item) => item.key), closed.label).toEqual([office.key]);
+    }
+    // A follow-up box after the legal question still belongs to it.
+    const legal = specOf('Will you require visa sponsorship?', 'radio', { section, optionLabels: ['Yes', 'No'] });
+    const details = specOf('If yes, please explain', 'textarea', { section });
+    const followed = [office, legal, details].map((spec, domOrder) => ({ ...spec, domOrder }));
+    expect(planOf(followed).ask?.drafts ?? []).toEqual([]);
+  });
+
   it('still drafts a question of its own beside a legal one in the main part', () => {
     const legal = specOf('Are you legally authorized to work in the United States?', 'radio', { optionLabels: ['Yes', 'No'] });
     const why = specOf('Why do you want to work here?', 'textarea');

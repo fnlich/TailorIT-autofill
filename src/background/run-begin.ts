@@ -7,7 +7,8 @@
  * v2: the lookup asks for the resume the person chose for the tab in the side panel (resumeId), which the run keeps as
  * its chosen resume; the lookup, without its posting text, also becomes the frame document's job card (job-cards.ts),
  * so the card shows what this fill attaches with no request of its own. A lookup answered after the token changed is
- * not kept: the run reads it again with the new one when it needs it.
+ * not kept: the run reads it again with the new one when it needs it. The address is the top frame's tab address now
+ * (senders.ts, which follows a single-page application); a subframe such an application moved is not looked up.
  */
 import { AUTOFILL_LOOKUP_URL_MAX, type AutofillLookupResponse } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -44,8 +45,10 @@ export interface RunBeginDeps {
   policy: PolicyBook;
   settings: SettingsStore;
   core: Pick<CoreFunctions, 'policyHits'>;
-  /** The side panel's job cards (v2): the tab's chosen resume, and where the lookup is kept as the card. */
-  jobs?: Pick<JobCards, 'chosen' | 'remember'>;
+  /** The side panel's job cards (v2): the tab's chosen resume, and where the lookup is kept as the card (with the
+   *  document's epoch taken before it was asked, so a lookup that outlived its page is not kept); and whether Chrome's
+   *  address for the frame may be a posting a single-page application has left (then nothing is looked up). */
+  jobs?: Pick<JobCards, 'chosen' | 'remember' | 'epoch' | 'addressStale'>;
   /** The token keeper's generation (auth.ts). */
   generation?(): number;
 }
@@ -66,8 +69,8 @@ async function lookUp(server: ServerClient, url: string, chosen: string | null):
 }
 
 /** Handles run/begin for the frame that sent it. */
-export async function beginRun(deps: RunBeginDeps, message: RunBegin, from: FrameRef & { url: string }):
-  Promise<Answer<RunBeginAnswer>> {
+export async function beginRun(deps: RunBeginDeps, message: RunBegin,
+  from: FrameRef & { url: string; addressFrom?: 'tab' | 'document' }): Promise<Answer<RunBeginAnswer>> {
   if (deps.storageAccess() === 'refused') {
     log('run.refused', { storage: true });
     return refuse('unavailable');
@@ -83,7 +86,12 @@ export async function beginRun(deps: RunBeginDeps, message: RunBegin, from: Fram
 
   const generation = deps.generation?.() ?? 0;
   const chosen = deps.jobs?.chosen(from.tabId) ?? null;
-  const [profile, lookup] = await Promise.all([deps.profiles.refresh(), lookUp(deps.server, from.url, chosen)]);
+  const epoch = deps.jobs?.epoch(from) ?? '';
+  // A subframe a single-page application moved: Chrome's address for it is the posting it left, so none is asked for
+  // (the run goes on as with a lookup that failed).
+  const stale = (await deps.jobs?.addressStale(from)) ?? false;
+  const [profile, lookup] = await Promise.all([deps.profiles.refresh(),
+    stale ? Promise.resolve(null) : lookUp(deps.server, from.url, chosen)]);
   if (!profile.ok) {
     log('run.refused', { profile: true });
     return refuse(profile.failure === 'not-connected' ? 'not_connected' : profile.failure === 'internal' ? 'internal' : 'unavailable');
@@ -92,10 +100,12 @@ export async function beginRun(deps: RunBeginDeps, message: RunBegin, from: Fram
   const run = await deps.runs.create({ frame: from, applicationKey: message.applicationKey, dryRun: message.dryRun });
   const memo = deps.runs.memo(run.runId);
   memo.chosen = chosen;
+  // The tab the run belongs to, so its resume follows a Change the person makes while it runs (resume-choice.ts).
+  memo.tabId = from.tabId;
   // Read with a token that has since changed: not kept (the run reads it again with the new one when it needs it).
   if ((deps.generation?.() ?? 0) === generation) {
     memo.lookup = lookup;
-    deps.jobs?.remember(from, lookup, { generation, chosen });
+    deps.jobs?.remember(from, lookup, { generation, epoch, chosen });
   }
   const [postingPage, settings] = await Promise.all([deps.policy.postingPage(message.applicationKey), deps.settings.content()]);
   const storedCopy = storedCopyState(lookup?.job?.postingText, deps.core);

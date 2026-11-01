@@ -84,16 +84,19 @@ export interface SettingsV1 {
 /**
  * Version 1's settings as version 2's: each choice still on version 1's default (drafts off, nothing pre-approved, the
  * two interpretations off) takes version 2's, and every choice the person changed is kept. The new switches take their
- * defaults.
+ * defaults, but a person who had turned the AI off (the tiebreak and classification both off) keeps answers off and
+ * drafts as they were (off unless they turned them on: the lead's decision on the Phase E review, MINOR 4).
  */
 export function migrateSettings(old: SettingsV1): Settings {
+  const aiOff = !old.llm.tiebreak && !old.llm.classify;
   return {
     version: 2,
     panel: old.panel,
     autoAdvance: old.autoAdvance,
     preapprovedConsent: old.preapprovedConsent.length === 0 ? [...DEFAULT_PREAPPROVED_CONSENT]
       : [...old.preapprovedConsent],
-    llm: { tiebreak: old.llm.tiebreak, classify: old.llm.classify, drafts: true, answers: DEFAULT_SETTINGS.llm.answers,
+    llm: { tiebreak: old.llm.tiebreak, classify: old.llm.classify, drafts: aiOff ? old.llm.drafts : true,
+      answers: aiOff ? false : DEFAULT_SETTINGS.llm.answers,
       confirmDrafts: DEFAULT_SETTINGS.llm.confirmDrafts, whenForbidden: DEFAULT_SETTINGS.llm.whenForbidden },
     telemetry: { optIn: old.telemetry.optIn },
     offerToSaveAnswers: old.offerToSaveAnswers,

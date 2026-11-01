@@ -16,7 +16,8 @@
  *   work-authorization entry's. A combined "now or in the future" sponsorship question is Yes when either answer is an
  *   explicit yes, No only when both are an explicit no, the decline option when either is declined and neither is yes,
  *   and blank otherwise. Criminal history is the person's own answer in the sensitive part (version 2), matched by its
- *   polarity alone; absent or declined, the field is blank and flagged.
+ *   polarity alone; absent or declined, the field is blank and flagged. It answers a generic conviction question; a
+ *   narrower one (a felony, a time, unspent) only when it is No; never an arrest or a charge (criminal-not-covered).
  * - Consent: ticked only when every consent kind the label names is pre-approved in settings (§8.7); an AI attestation
  *   and unrecognised consent never can be. A pre-approved signature types the person's full name.
  * - The sensitive part (authorization, EEO, age, criminal record, pronouns, pay): until it is loaded no such field is
@@ -119,17 +120,36 @@ export interface PlacesNamed {
  * Jersey", "Jersey City" name no country), and a phrase a country and a region share in full ("Georgia") is ambiguous.
  */
 export function placesNamed(text: string, vocab: Vocab): PlacesNamed {
+  const { countries, ambiguous } = readPlaces(text, vocab);
+  return { countries, ambiguous };
+}
+
+/** placesNamed's reading, with the countries of the regions it read besides ("NY", "Ontario"). */
+interface PlacesRead extends PlacesNamed {
+  /** The ISO alpha-2 codes of the countries the regions read belong to, each once. */
+  regionCountries: string[];
+}
+
+/** The places a text names, read left to right, longest first (placesNamed), with its regions' countries. */
+function readPlaces(text: string, vocab: Vocab): PlacesRead {
   const tokens = normalize(text, 'country').tokens;
   const countries = vocab.phrases('country');
   const regions = vocab.phrases('region');
   const found = new Set<string>();
+  const ofRegions = new Set<string>();
   let ambiguous = false;
   let at = 0;
   while (at < tokens.length) {
     const country = phraseAt(countries, tokens, at, text);
     const city = CITIES_NAMED_FOR_A_COUNTRY.find((name) => name.every((token, offset) => tokens[at + offset] === token));
-    const region = Math.max(phraseAt(regions, tokens, at, text).length, city?.length ?? 0);
+    const regionFound = phraseAt(regions, tokens, at, text);
+    const region = Math.max(regionFound.length, city?.length ?? 0);
     if (country.length === 0 || region > country.length) {
+      // A region (not a city named for a country): the country it belongs to is named too.
+      if (regionFound.length > 0 && regionFound.length >= (city?.length ?? 0) && regionFound.id !== null) {
+        const entity = vocab.entity(regionFound.id);
+        if (entity?.kind === 'region') ofRegions.add(entity.country);
+      }
       at += Math.max(region, 1);
       continue;
     }
@@ -141,7 +161,7 @@ export function placesNamed(text: string, vocab: Vocab): PlacesNamed {
     }
     at += country.length;
   }
-  return { countries: [...found], ambiguous };
+  return { countries: [...found], ambiguous, regionCountries: [...ofRegions] };
 }
 
 /** The countries a question names, as ISO alpha-2 codes (placesNamed's countries). */
@@ -151,28 +171,15 @@ export function countriesNamed(text: string, vocab: Vocab): string[] {
 
 /**
  * The country a posting's location names (TailorIT's job location: "San Francisco, CA", "London, United Kingdom",
- * "Remote - Canada"), as an ISO alpha-2 code: the one country it names, else the one country its US states and Canadian
- * provinces belong to; undefined when it names none, or several, or a place that may or may not be a country.
+ * "Remote - Canada"), as an ISO alpha-2 code: the one country among those it names and those its regions (US states,
+ * Canadian provinces) belong to; undefined when it names none, more than one ("New York, NY; London, United Kingdom",
+ * "San Francisco, CA or Toronto, Canada": the Phase E review, MINOR 1), or a place that may or may not be a country.
  */
 export function postingCountryOf(location: string, vocab: Vocab): string | undefined {
-  const places = placesNamed(location, vocab);
-  if (places.ambiguous || places.countries.length > 1) return undefined;
-  if (places.countries.length === 1) return places.countries[0];
-  const tokens = normalize(location, 'country').tokens;
-  const regions = vocab.phrases('region');
-  const found = new Set<string>();
-  let at = 0;
-  while (at < tokens.length) {
-    const region = phraseAt(regions, tokens, at, location);
-    if (region.length === 0) {
-      at += 1;
-      continue;
-    }
-    const entity = region.id === null ? undefined : vocab.entity(region.id);
-    if (entity?.kind === 'region') found.add(entity.country);
-    at += region.length;
-  }
-  return found.size === 1 ? [...found][0] : undefined;
+  const places = readPlaces(location, vocab);
+  if (places.ambiguous) return undefined;
+  const all = new Set([...places.countries, ...places.regionCountries]);
+  return all.size === 1 ? [...all][0] : undefined;
 }
 
 /** What a legal question's country may come from besides its own words: interpretation 1, when it is on, and the
@@ -234,15 +241,40 @@ const WORK_STATUS_TEXT: Readonly<Record<string, string>> = {
   'student-visa': 'Student visa',
 };
 
+/** A criminal-history question the person's answer ("Have you ever been convicted of a crime?") never settles: an
+ *  arrest, a charge (pending or not), sex-offender registration, a caution or warning, a sentence served, a diversion
+ *  (the lead's decision on the Phase E review, M4). */
+const NOT_CONVICTION = /\barrest\w*|\bcharge[sd]?\b|\bcharging\b|\bindict\w*|\bpending\b|\bsex(?:ual)?\s+offen\w*|\bregistered\s+(?:as\s+an?\s+)?(?:sex\s+)?offenders?\b|\boffenders?\s+regist\w*|\bcautions?\b|\breprimands?\b|\bfinal\s+warnings?\b|\bprobation\b|\bparole\b|\bincarcerat\w*|\bimprison\w*|\bjail\b|\bprison\b|\bdetained\b|\bunder\s+investigation\b|\bwarrants?\b|\bdiversion\b|\bdeferred\b|\bcited\b|\bcitations?\b/;
+/** Wording that asks about a conviction at all: what the person's answer is to. */
+const CONVICTION = /\bconvict\w*|\bcriminal\s+(?:records?|history|histories|background|past|offen[cs]es?|convictions?|activit\w*)\b|\bguilty\b|\bno\s+contest\b|\bnolo\s+contendere\b|\bcrimes?\b|\boffen[cs]es?\b/;
+/** A narrower conviction question: one kind (a felony, a misdemeanour, a named offence), a time ("in the last 7 years",
+ *  "since"), what is unspent, or exclusions ("other than minor traffic violations"). The person's No to any conviction
+ *  answers it No; their Yes says nothing of it. */
+const NARROWER_CONVICTION = /\bfelon\w*|\bmisdemeano\w*|\bunspent\b|\bspent\b|\b(?:in|within|during|over)\s+(?:the\s+)?(?:last|past|previous|preceding)\b|\b(?:last|past|previous)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\s+(?:years?|months?)\b|\bsince\b|\bas\s+an?\s+(?:adult|juvenile)\b|\bexclud\w*|\bexcept\w*|\bother\s+than\b|\bnot\s+including\b|\bapart\s+from\b|\bexpunge\w*|\bsealed\b|\bpardon\w*|\bdui\b|\bdwi\b|\bdriving\b|\btraffic\b|\bdrugs?\b|\bviolen\w*|\bfraud\w*|\btheft\b|\bdishonest\w*|\bfinancial\b|\bassault\w*|\bweapons?\b|\bfirearms?\b|\bchild\w*|\bminors?\b|\bvulnerable\b|\bmoral\s+turpitude\b|\bbank\w*|\bembezzl\w*|\bmoney\s+laundering\b|\bbribery\b|\bcorruption\b|\bhealth\s?care\b/;
+
+/**
+ * The criminal-history answer (docs/SPEC-AMENDMENTS.md §6; the lead's decision on the Phase E review, M4): the person's
+ * own answer is to "Have you ever been convicted of a crime?", matched by its polarity alone. A question with that
+ * generic wording takes it; a narrower conviction question (NARROWER_CONVICTION) takes only a No, since no conviction
+ * at all is none of a subset; an arrest, a charge or a registration (NOT_CONVICTION), or a question that asks about no
+ * conviction at all, never takes it. What it does not settle is blank and flagged, criminal-not-covered.
+ */
+function criminalValue(spec: FieldSpec, profile: Profile): ValueResult {
+  // A declined answer is theirs to give here: no decline rule fits it.
+  const record = profile.screening.criminalRecord;
+  if (record === undefined || record.kind === 'decline') return none('legal-not-in-profile');
+  const label = normalize(spec.label, 'label');
+  const question = [label.key, ...label.qualifiers.map((qualifier) => qualifier.tokens.join(' ')),
+    normalize(spec.description, 'label').key].join(' ');
+  if (NOT_CONVICTION.test(question) || !CONVICTION.test(question)) return none('criminal-not-covered');
+  if (NARROWER_CONVICTION.test(question) && record.value) return none('criminal-not-covered');
+  return yesNo(record.value, fromProfile('screening.criminalRecord'));
+}
+
 /** The value of a legal question (§8.7): authorization, sponsorship, status and age from explicit answers only. */
 export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Profile, vocab: Vocab,
   legal: LegalContext): ValueResult {
-  if (category === 'screening.criminalHistory') {
-    // The person's own answer, by its polarity alone (a declined one is theirs to give here: no decline rule fits it).
-    const record = profile.screening.criminalRecord;
-    if (record === undefined || record.kind === 'decline') return none('legal-not-in-profile');
-    return yesNo(record.value, fromProfile('screening.criminalRecord'));
-  }
+  if (category === 'screening.criminalHistory') return criminalValue(spec, profile);
   if (category === 'screening.over18') return legalAnswer(profile.screening.over18, 'screening.over18');
   if (category === 'workAuth.visaType' || category === 'workAuth.clearance') return none('legal-not-in-profile');
   const found = authorizationEntry(spec, profile, vocab, legal);

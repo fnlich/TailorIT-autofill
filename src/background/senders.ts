@@ -10,14 +10,43 @@ import type { Sender } from '../platform/types';
 
 const ATS_PATTERNS = ATS_MATCHES.map((pattern) => new MatchPattern(pattern));
 
+/** A content channel's `url` is the frame's address as Chrome says it (`addressFrom`): the tab's address now for the
+ *  top frame ('tab'), else the document's address when its script started ('document'), which a single-page
+ *  application's pushState since then does not move. */
 export type Channel =
-  | { kind: 'content'; tabId: number; frameId: number; documentId: string | undefined; url: string }
+  | { kind: 'content'; tabId: number; frameId: number; documentId: string | undefined; url: string;
+    addressFrom?: 'tab' | 'document' }
   | { kind: 'page' };
 
 function isAtsAddress(url: string): boolean {
   if (ATS_PATTERNS.some((pattern) => pattern.includes(url))) return true;
   // The e2e fallback build serves fixtures from 127.0.0.1 when routed pages get no content script.
   return __E2E__ && /^http:\/\/127\.0\.0\.1:\d+\//.test(url);
+}
+
+/** The origin of an address, or null when it does not read. */
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The top frame's address now (v2, the Phase E review): Chrome's `sender.url` is the document's address when its
+ * content script started, so after a single-page application's history.pushState it names the previous posting. The
+ * tab's address (`sender.tab.url`, readable on the ATS hosts) follows it, so for the top frame it is taken when it is
+ * on the document's own origin (pushState cannot leave it) and an ATS address; otherwise, and for any subframe (whose
+ * address now Chrome does not give), `sender.url`.
+ */
+function addressOf(sender: Sender & { url: string }): { url: string; addressFrom: 'tab' | 'document' } {
+  const tabUrl = sender.tabUrl;
+  if (sender.frameId === 0 && tabUrl !== undefined && tabUrl !== sender.url && isAtsAddress(tabUrl)
+    && originOf(tabUrl) !== null && originOf(tabUrl) === originOf(sender.url)) {
+    return { url: tabUrl, addressFrom: 'tab' };
+  }
+  return { url: sender.url, addressFrom: sender.frameId === 0 && tabUrl === sender.url ? 'tab' : 'document' };
 }
 
 /** The channel a message arrived on, or null when the sender may not talk to the worker at all. */
@@ -30,7 +59,8 @@ export function channelOf(sender: Sender, ownId: string, ownPagesPrefix: string)
   if (sender.url.startsWith(ownPagesPrefix)) return { kind: 'page' };
   if (typeof sender.frameId !== 'number' || !isAtsAddress(sender.url)) return null;
   if (sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return null;
-  return { kind: 'content', tabId: sender.tabId, frameId: sender.frameId, documentId: sender.documentId, url: sender.url };
+  const { url, addressFrom } = addressOf({ ...sender, url: sender.url });
+  return { kind: 'content', tabId: sender.tabId, frameId: sender.frameId, documentId: sender.documentId, url, addressFrom };
 }
 
 /** TailorIT's page that hands over a connect code (Settings › Autofill), at exactly TailorIT's origin. */

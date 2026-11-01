@@ -113,7 +113,8 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'salary.expected': ['text', 'textarea', ...CHOICE], 'salary.currency': ['text', 'select', 'combobox'],
   'availability.startDate': ['text', 'textarea', 'date', ...CHOICE], 'availability.noticePeriod': ['text', ...CHOICE],
   'preferences.relocation': YES_NO, 'preferences.workArrangement': [...YES_NO, 'checkbox-group', 'multiselect'],
-  'preferences.travel': YES_NO,
+  // A text box takes the profile's travel share (docs/SPEC-AMENDMENTS.md §8; the Phase E review, MINOR 6).
+  'preferences.travel': [...YES_NO, 'text'],
   'referral.source': ['text', ...CHOICE, 'checkbox-group', 'multiselect'], 'referral.referrerName': LINE,
   'consent.privacy': CONSENT, 'consent.terms': CONSENT, 'consent.certify': CONSENT, 'consent.dataRetention': CONSENT,
   'consent.marketing': CONSENT, 'consent.sms': CONSENT, 'consent.backgroundCheck': CONSENT,

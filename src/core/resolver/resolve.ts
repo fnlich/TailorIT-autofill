@@ -234,7 +234,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
     case 'free-text':
       return none('free-text-requires-user', true, true);
     case 'unknown':
-      return category === 'screening.previouslyEmployed' ? previouslyEmployedValue(profile, ctx.postingCompany)
+      return category === 'screening.previouslyEmployed'
+        ? previouslyEmployedValue(profile, ctx.postingCompany, `${spec.label} ${spec.description}`)
         : none('unknown-field', false);
     default:
       return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false,

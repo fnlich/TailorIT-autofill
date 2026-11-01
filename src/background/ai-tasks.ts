@@ -43,7 +43,8 @@
  * canary-in-value reasons; invalid llm-invalid-output; sensitive llm-disabled-for-category), and a question answered
  * twice or not at all, or a text where none belongs, is llm-invalid-output. A draft's text stays in the run's memory
  * until the frame has it. Edit with AI's rewrite is one draft question with the box's current text as
- * `currentAnswer` (cut after a whole word at TailorIT's cap); a current text naming a sensitive topic is never sent.
+ * `currentAnswer` (cut after a whole word at TailorIT's cap); a current text naming a sensitive answer, a sum, a contact
+ * detail or a postal address is never sent (namesSensitiveAnswer, as the core screens it: the Phase E review, MAJOR 3).
  *
  * Answers (the owner's amendments, docs/SPEC-AMENDMENTS.md; settings.llm.answers on; core/plan/answers.ts): a pass's
  * questions nothing else settled go as TailorIT's answer requests (POST …/ai/answer), at most ANSWER_MAX_ITEMS a task
@@ -71,16 +72,17 @@ import { ANSWER_MAX_ITEMS, DRAFT_MAX_QUESTIONS, TIEBREAK_REQUEST_TEXT_SHARE } fr
 import type { Platform } from '../core/enums';
 import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
-import type { AnswerDiscard, AnswerItem, AnswerVerdict } from '../core/plan/answers';
+import { namesUnanswerableTopic, type AnswerDiscard, type AnswerItem, type AnswerVerdict } from '../core/plan/answers';
 import type { DraftDiscard, DraftItem, DraftVerdict } from '../core/plan/drafts';
 import type { AnsweredVerdict, PlanAi, PlanAsk } from '../core/plan/types';
 import type { RepeatableRequest } from '../core/steps/blocks';
 import {
-  namesSensitivePickValue, namesSensitiveTopic, type ClassifyItem, type ClassifyVerdict,
+  namesSensitiveAnswer, namesSensitivePickValue, namesSensitiveTopic, type ClassifyItem, type ClassifyVerdict,
 } from '../core/resolver/classify';
 import { sha256Hex } from '../core/text/sha256';
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { Settings } from '../core/types/settings';
+import type { Vocab } from '../core/vocab/types';
 import { log } from '../shared/log';
 import type { ServerClient, ServerResult } from './server-client';
 import type { Timers } from './timers';
@@ -251,10 +253,11 @@ const DRAFT_DISCARDS: Readonly<Record<Exclude<AutofillDraftReason, 'drafted' | '
 };
 
 /** A pass's draft questions as draft batches (at most DRAFT_MAX_QUESTIONS each, every string within TailorIT's caps,
- *  cut after a whole word), and the verdicts of those never sent: a question naming a sensitive topic, or a key past
- *  TailorIT's cap. */
-export function draftBatches(items: readonly DraftItem[], context: DraftContext, canaries: readonly string[]):
-  { batches: DraftBatch[]; withheld: DraftVerdict[] } {
+ *  cut after a whole word), and the verdicts of those never sent: a question naming a sensitive topic, a rewrite whose
+ *  current text names a sensitive answer, a sum, a contact detail or a postal address (namesSensitiveAnswer, over the
+ *  vocabulary), or a key past TailorIT's cap. */
+export function draftBatches(items: readonly DraftItem[], context: DraftContext, canaries: readonly string[],
+  vocab: Vocab): { batches: DraftBatch[]; withheld: DraftVerdict[] } {
   const limits = AUTOFILL_AI_LIMITS.draft;
   const withheld: DraftVerdict[] = [];
   const sendable: DraftItem[] = [];
@@ -262,8 +265,10 @@ export function draftBatches(items: readonly DraftItem[], context: DraftContext,
   for (const item of items) {
     if (seen.has(item.key)) continue;
     seen.add(item.key);
-    // A rewrite's current text is screened as its question is: what the box holds may state a sensitive answer.
-    if (namesSensitiveTopic(item.question) || (item.current !== undefined && namesSensitiveTopic(item.current))) {
+    // A rewrite's current text is screened as the core screens it (the Phase E review, MAJOR 3): what the box holds may
+    // state a sensitive answer, a sum or a contact detail.
+    if (namesSensitiveTopic(item.question)
+      || (item.current !== undefined && namesSensitiveAnswer(item.current, vocab))) {
       withheld.push({ key: item.key, text: null, why: 'llm-disabled-for-category' });
     } else if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') {
       withheld.push({ key: item.key, text: null, why: 'llm-invalid-output' });
@@ -317,11 +322,14 @@ export function draftVerdicts(items: readonly DraftItem[], result: AutofillDraft
 const ANSWER_TEXT_BUDGET = Math.floor(AUTOFILL_AI_LIMITS.requestText * TIEBREAK_REQUEST_TEXT_SHARE);
 
 /** The answer item TailorIT is sent for a core item, or null when it is never sent: a question, hint, section or option
- *  naming a sensitive topic (screened again), a key or a label past TailorIT's caps, or a shape that does not hold. */
+ *  naming a sensitive topic, or what an answer never states (another person, an identifier, a postal address, a
+ *  security clearance: namesUnanswerableTopic, the Phase E review, M2), screened again; a key or a label past
+ *  TailorIT's caps; or a shape that does not hold. */
 export function answerItemOfCore(item: AnswerItem): AutofillAnswerItem | null {
   const limits = AUTOFILL_AI_LIMITS.answer;
   const labels = item.options.map((option) => option.label as string);
-  if ([item.question, item.hint, item.section, ...labels].some(namesSensitiveTopic)) return null;
+  const texts = [item.question, item.hint, item.section, ...labels];
+  if (texts.some(namesSensitiveTopic) || texts.some(namesUnanswerableTopic)) return null;
   if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') return null;
   if (labels.some((label) => codePoints(label) > limits.optionLabel || label.trim() === '')) return null;
   if (item.shape === 'choice'
@@ -760,8 +768,9 @@ export interface RunAi {
  *  field asks for several (tiebreakId). */
 const fieldKeyOf = (item: { id: string }): string => item.id.split('#')[0]!;
 
-/** Creates a run's questions over the task client and the run's task ids. */
-export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
+/** Creates a run's questions over the task client and the run's task ids; `vocab` screens a rewrite's current text
+ *  (draftBatches). */
+export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi {
   const verdicts = new Map<string, AnsweredVerdict>();
   const classifications = new Map<string, ClassifyVerdict>();
   const drafts = new Map<string, DraftVerdict>();
@@ -837,7 +846,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
       // Drafts (Phase 6): only with the setting on and a context to send them with.
       const asked = ask.drafts ?? [];
       const written = llm.drafts && context.draft !== undefined
-        ? draftBatches(asked, context.draft, context.canaries)
+        ? draftBatches(asked, context.draft, context.canaries, vocab)
         : { batches: [], withheld: asked.map((item): DraftVerdict => ({ key: item.key, text: null, why: 'drafts-disabled' })) };
       for (const verdict of written.withheld) {
         drafts.set(verdict.key, verdict);

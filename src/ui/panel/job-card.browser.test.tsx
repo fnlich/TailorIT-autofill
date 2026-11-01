@@ -241,6 +241,46 @@ describe('the job card states (v2)', () => {
     expect(card.querySelector('[data-job-outcome]')?.textContent).toBe(COPY.job.addOutcomes['not-allowed']);
   });
 
+  it('offers Change with no resume to attach, so one of the account’s resumes can be chosen', async () => {
+    const choose = vi.fn();
+    const root = await drawCard(jobCard({ resume: null, match: null }), { chooseResume: choose, loadResumes: async () => [
+      { id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }] });
+    const change = button(root, COPY.job.change)!;
+    expect(change.getAttribute('aria-expanded')).toBe('false');
+    await click(change);
+    expect(change.getAttribute('aria-expanded')).toBe('true');
+    await click(root.querySelector('[data-resume-choice]'));
+    expect(choose).toHaveBeenCalledWith('resume-2');
+    // None in the account: the picker says so.
+    const empty = await drawCard(jobCard({ resume: null, match: null }), { loadResumes: async () => [] });
+    await click(button(empty, COPY.job.change));
+    expect(empty.textContent).toContain(COPY.job.picker.empty);
+  });
+
+  it('drops the card read with the old connection the moment the worker says it changed, and reads both again', async () => {
+    const worker = withForm();
+    const root = await open(worker);
+    expect(cardOf(root)?.dataset.jobState).toBe('found');
+    const authReads = reads(worker, 'auth/status');
+    // Another window connected again or disconnected: the panel hears of it on its port, before any read of its own.
+    let answer: (reply: unknown) => void = () => undefined;
+    worker.on('panel/job', () => new Promise((resolve) => {
+      answer = resolve;
+    }));
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'connection' }));
+    await settle();
+    expect(cardOf(root)?.dataset.jobState).toBe('loading');
+    expect(reads(worker, 'auth/status')).toBe(authReads + 1);
+    await act(async () => answer({ ok: true, data: { tabId: 5, card: jobCard({ job: { ...JOB, company: 'Contoso' } }) } }));
+    await settle();
+    expect(cardOf(root)?.querySelector('.tia-job__company')?.textContent).toBe('Contoso');
+    // Disconnected: the card asks to connect.
+    worker.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'connection' }));
+    await settle();
+    expect(cardOf(root)?.dataset.jobState).toBe('disconnected');
+  });
+
   it('shows a busy skeleton while loading, and a slim card when TailorIT could not say', async () => {
     const loading = await mount(<JobCard view={{ state: 'loading' }} platform="lever" dryRun={false} adding={false} outcome={null}
       now={NOW} onAdd={() => undefined} loadResumes={async () => []} chooseResume={() => undefined} />);
@@ -315,6 +355,49 @@ describe('Ask a custom question (v2)', () => {
     const withPolicy = await open(policy);
     expect(withPolicy.querySelector('[data-ask-policy]')?.textContent).toBe(COPY.ask.policy);
     expect(withPolicy.querySelector<HTMLTextAreaElement>('[data-ask] textarea')?.disabled).toBe(false);
+  });
+
+  it('shows the no-AI notice in every mode a run filled in: profile only, the attestation, past the card, the saved copy', async () => {
+    for (const code of ['policy-profile-only', 'ai-attestation', 'policy', 'policy-stored-copy'] as const) {
+      const worker = withForm();
+      worker.script.reports.set(5, [frameReport(0, { status: 'review', notices: [{ code }] })]);
+      const root = await open(worker);
+      expect(root.querySelector('[data-ask-policy]')?.textContent, code).toBe(COPY.ask.policy);
+      expect(root.querySelector<HTMLTextAreaElement>('[data-ask] textarea')?.disabled, code).toBe(false);
+      unmountAll();
+    }
+    const clean = withForm();
+    clean.script.reports.set(5, [frameReport(0, { status: 'review', notices: [{ code: 'tripwire' }] })]);
+    expect((await open(clean)).querySelector('[data-ask-policy]')).toBeNull();
+  });
+
+  it('shows the no-AI notice with an answer that says the posting forbids AI, before any run', async () => {
+    const worker = withForm();
+    worker.script.askAnswer = { outcome: 'answered', text: 'An answer written by AI.', resumeLabel: 'Backend resume', policy: true };
+    const root = await open(worker);
+    expect(root.querySelector('[data-ask-policy]')).toBeNull();
+    await click(summaryOf(root));
+    await typeInto(root.querySelector<HTMLTextAreaElement>('[data-ask] textarea')!, QUESTION);
+    await click(button(root, COPY.ask.submit));
+    expect(root.querySelector('[data-ask-answer]')).not.toBeNull();
+    expect(root.querySelector('[data-ask-policy]')?.textContent).toBe(COPY.ask.policy);
+  });
+
+  it('is disabled, saying why, while AI-written answers are off in Options, and follows the settings as they change', async () => {
+    const worker = withForm();
+    const llm = worker.script.settings.llm;
+    worker.script.settings = { ...worker.script.settings, llm: { ...llm, drafts: false } };
+    const root = await open(worker);
+    const input = () => root.querySelector<HTMLTextAreaElement>('[data-ask] textarea')!;
+    expect(root.querySelector('[data-ask-disabled]')?.textContent).toBe(COPY.ask.outcomes['ai-off']);
+    expect(COPY.ask.outcomes['ai-off']).toBe('AI-written answers are turned off in Options.');
+    expect(input().disabled).toBe(true);
+    // Turned on again in Options: the worker says the settings changed, and the panel reads them.
+    worker.script.settings = { ...worker.script.settings, llm: { ...llm, drafts: true } };
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'settings' }));
+    await settle();
+    expect(root.querySelector('[data-ask-disabled]')).toBeNull();
+    expect(input().disabled).toBe(false);
   });
 });
 

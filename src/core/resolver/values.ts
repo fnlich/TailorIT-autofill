@@ -503,22 +503,39 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
 }
 
 /** A company's name as two names are compared: folded, without its punctuation and its legal form ("Inc.", "LLC",
- *  "Ltd", "GmbH", "Corp"). */
+ *  "Ltd", "GmbH", "Corp", "AB"). */
 function companyKey(name: string): string {
   return normalize(name, 'label').tokens
-    .filter((token) => !/^(?:inc|incorporated|llc|ltd|limited|plc|gmbh|corp|corporation|co|company|sa|ag|bv)$/.test(token))
+    .filter((token) => !/^(?:inc|incorporated|llc|llp|lp|ltd|limited|plc|gmbh|corp|corporation|co|company|sa|ag|bv|nv|ab|oy|aps|kg|pty|pte|sarl|sas|srl|spa)$/.test(token))
     .join(' ');
+}
+
+/** Words that point at the posting's own company: "this company", "our organization", "here", "a former employee".
+ *  "us" counts only in lower case, as the page wrote it ("the US" is a country). */
+const NAMES_THIS_COMPANY = /\b(?:this|our|the\s+same)\s+(?:company|organi[sz]ation|firm|business|employer|group)\b|\bhere\b|\b(?:former|ex|previous|past)\s+employees?\b|\bboomerang\b|\balumn(?:us|a|i|ae)\b/;
+const US = /\bus\b/;
+
+/** Whether a question names the posting's company (its companyKey's words, in order) or points at it ("here", "this
+ *  company", "us", "former employee"). */
+function namesPostingCompany(question: string, company: string): boolean {
+  if (NAMES_THIS_COMPANY.test(question.toLowerCase()) || US.test(question)) return true;
+  const name = company.split(' ').filter((token) => token !== '');
+  const tokens = normalize(question, 'label').tokens;
+  return name.length > 0 && tokens.some((_, at) => name.every((token, offset) => tokens[at + offset] === token));
 }
 
 /**
  * "Have you worked here before?" (rule screening.previously-employed): yes when an employer of the profile's is the
- * company the posting names (the lookup's company, compared by companyKey), else no. Without the posting's company it
- * has no value. A deterministic rule over the profile's own entries (VALUE_TRANSFORM); it names no path, since a
- * profile with no employer answers no.
+ * company the posting names (the lookup's company, compared by companyKey), else no. Only for a question that names
+ * that company or points at it (namesPostingCompany): "Have you ever worked for a government agency?" or "at a
+ * competitor of ours?" asks something else, which the AI answers, marked (the Phase E review, M3). Without the posting's
+ * company it has no value. A deterministic rule over the profile's own entries (VALUE_TRANSFORM); it names no path,
+ * since a profile with no employer answers no.
  */
-export function previouslyEmployedValue(profile: Profile, postingCompany: string | undefined): ValueResult {
+export function previouslyEmployedValue(profile: Profile, postingCompany: string | undefined,
+  question: string): ValueResult {
   const company = postingCompany === undefined ? '' : companyKey(postingCompany);
-  if (company === '') return none('unknown-field', false);
+  if (company === '' || !namesPostingCompany(question, company)) return none('unknown-field', false);
   const worked = profile.experience.some((entry) => companyKey(entry.company) === company);
   return value({ origin: { provenance: 'rule', ruleId: 'screening.previously-employed' }, confidence: VALUE_TRANSFORM,
     choice: { intended: { kind: 'boolean', value: worked }, domain: 'polarity' }, check: worked });

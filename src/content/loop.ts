@@ -36,7 +36,10 @@
  *    page has not changed since it was made, and a pass makes at most MAX_REFIND_SCANS of them (L-S5).
  * Fields the plan leaves waiting for the LLM (Phase 4: a tiebreak or a classification the worker asked TailorIT for)
  * are polled with plan/poll before each pass: at once when the pass has other fields to plan, else every AI_POLL_MS
- * until an answer comes, capped at AI_WAIT_CAP_MS with no answer coming in (then llm-unavailable). What arrives (rows,
+ * until an answer comes, capped at AI_WAIT_CAP_MS with no answer coming in (then llm-unavailable); a field the worker
+ * planned again and asked anew (a classification in, then its answer asked) counts as an answer coming in, so each
+ * task of a chain has its own cap (the Phase E review, M6). Once the run fills from the profile only (LoopEnv.aiOff),
+ * what still waits is given up, and an AI write that came in is not written, both ai-off-for-posting. What arrives (rows,
  * and the writes of those the LLM settled) is written by the next pass through the same guards as its own plan's, an
  * llm-pick's option text checked again (guardWriteInFrame's llmPickStillValid); a field the worker no longer knows (it
  * restarted) is pending again, so the next pass asks plan/request again. A field the pass wrote anyway (a choice's free
@@ -60,6 +63,7 @@ import {
   type LoopState, type LoopVerdict, type ScanObservation, type TrackedField,
 } from '../core/loop/bookkeeping';
 import { loopRows, unplannedRow, unresolvedRow } from '../core/loop/rows';
+import type { Provenance } from '../core/enums';
 import { settleRow } from '../core/plan/settle';
 import { reconcilePrefill, type PrefillIntent } from '../core/steps/prefill';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec, OptionSetHash } from '../core/types/field';
@@ -116,6 +120,10 @@ export interface LoopEnv extends PassEnv {
    *  answers are in and names those still waited for; 'expired' when the worker knows none of them; 'failed' when it
    *  could not answer. Without it nothing is polled, and a waiting field ends as the loop leaves it. */
   poll?(keys: FieldKey[]): Promise<PlanAnswer | 'expired' | 'failed'>;
+  /** Whether the run fills from the profile only now (the owner's amendments: a later pass found the posting forbids
+   *  AI, or an "I did not use AI" attestation): the fields still waiting for the LLM are given up, ai-off-for-posting,
+   *  and an AI write that came in is never written (the Phase E review, security MINOR 4). */
+  aiOff?(): boolean;
   /** The poll interval and the cap on waiting for the LLM, overridable for tests. */
   ai?: { pollMs?: number; capMs?: number };
   /** The run's checks before a pass after the first: null to go on, or the reason that cuts the loop (form-hidden,
@@ -209,6 +217,18 @@ function isCleared(current: CurrentValue): boolean {
     case 'files':
       return current.count === 0;
   }
+}
+
+/** The provenances of what the AI writes: an option it picked, a draft, an answer. */
+const AI_WRITES: ReadonlySet<Provenance> = new Set<Provenance>(['llm-pick', 'llm-draft', 'llm-answer']);
+
+/** The row of a field the AI would have answered, once the run fills from the profile only: an optional question left
+ *  skipped stays so, and any other is flagged ai-off-for-posting with nothing of the AI's in it (planFrame's own rule). */
+function aiOffRow(row: FillResult, key: FieldKey = row.key): FillResult {
+  if (row.status === 'skipped' && row.provenance === null) return { ...row, key };
+  if (row.status === 'blocked') return { ...row, key };
+  return { ...row, key, status: 'flagged', reason: 'ai-off-for-posting', provenance: null, wrote: false,
+    verification: 'not-applicable', needsUserAction: true };
 }
 
 /** The row of a choice whose free text was typed nowhere. */
@@ -452,8 +472,10 @@ class ReactiveLoop {
       awaiting = (plan.awaiting as FieldKey[]).filter((key) => wanted.has(key));
     }
     for (const [key, entry] of arrived) {
-      rows.set(key, entry.row);
-      if (entry.write !== undefined) writes.push(entry.write);
+      // Profile-only since it came in (an attestation this pass's plan found): no AI write is written.
+      const dropped = env.aiOff?.() === true && entry.write !== undefined && AI_WRITES.has(entry.write.origin.provenance);
+      rows.set(key, dropped ? aiOffRow(entry.row) : entry.row);
+      if (!dropped && entry.write !== undefined) writes.push(entry.write);
     }
     // A field that begins to wait means a task was asked for: the wait's cap runs from now.
     if (awaiting.length > 0) this.aiProgressAt = monotonicNow();
@@ -673,6 +695,11 @@ class ReactiveLoop {
     const started = monotonicNow();
     try {
       for (;;) {
+        // Profile-only now: nothing more is waited for, or written, of the AI's.
+        if (env.aiOff?.() === true) {
+          this.dropAi();
+          return [];
+        }
         const keys = awaitingKeys(this.state).filter((key) => !this.arrived.has(key));
         if (keys.length === 0 || env.poll === undefined) return [];
         this.aiPolls += 1;
@@ -688,13 +715,20 @@ class ReactiveLoop {
           // The answer's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
           const writes = new Map((answer.writes as unknown as PlannedWrite[]).map((write) => [write.key, write] as const));
           const still = new Set<string>(answer.awaiting);
+          let asksAgain = false;
           for (const row of answer.results as unknown as FillResult[]) {
-            if (!asked.has(row.key) || still.has(row.key)) continue;
+            if (!asked.has(row.key)) continue;
+            // A key still waiting that comes with a row was planned again and asked anew (a classification in, then
+            // its answer asked): a task finished, so the wait made progress (the Phase E review, M6).
+            if (still.has(row.key)) {
+              asksAgain = true;
+              continue;
+            }
             const write = writes.get(row.key);
             this.arrived.set(row.key, write === undefined ? { row } : { row, write });
           }
           forgotten = keys.filter((key) => !still.has(key) && !this.arrived.has(key));
-          if (this.arrived.size > 0) this.aiProgressAt = monotonicNow();
+          if (this.arrived.size > 0 || asksAgain) this.aiProgressAt = monotonicNow();
         }
         const requeue = requeueAwaiting(this.state, forgotten);
         this.state = requeue.state;
@@ -711,6 +745,23 @@ class ReactiveLoop {
       }
     } finally {
       if (block) log('content.ai-waited', { polls: this.aiPolls, ms: Math.round(monotonicNow() - started) });
+    }
+  }
+
+  /** The run fills from the profile only now (LoopEnv.aiOff): the fields still waiting for the LLM are given up, and an
+   *  AI write that came in is dropped; each row says ai-off-for-posting (aiOffRow) and waits for the next pass. */
+  private dropAi(): void {
+    for (const key of awaitingKeys(this.state)) {
+      if (this.arrived.has(key)) continue;
+      const tracked = this.state.fields.get(baseKeyOf(key));
+      if (tracked === undefined || tracked.key !== key || tracked.status !== 'awaiting-llm') continue;
+      this.arrived.set(key, { row: tracked.row === null ? unplannedRow(tracked, 'ai-off-for-posting')
+        : aiOffRow(tracked.row, key) });
+    }
+    for (const [key, entry] of this.arrived) {
+      if (entry.write !== undefined && AI_WRITES.has(entry.write.origin.provenance)) {
+        this.arrived.set(key, { row: aiOffRow(entry.row) });
+      }
     }
   }
 

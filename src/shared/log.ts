@@ -150,6 +150,10 @@ export const LOG_CODES = [
   'content.profile-only',
   'content.ai-edit',
   'content.ai-edit-refused',
+  // The Phase E review: the worker's mark of a run that fills from the profile only (its later plans and polls ask no
+  // AI), and an Edit with AI rewrite it refused (the run profile-only, or AI-written answers off).
+  'plan.profile-only',
+  'plan.rewrite-refused',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

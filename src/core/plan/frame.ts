@@ -60,9 +60,13 @@
  *   the AI anyway: `aiAttestation` then tells the frame), asks the LLM nothing at all: a question only a draft or an
  *   answer could fill is left flagged with ai-off-for-posting. PlanInput.posting gives the lookup's company and
  *   location: "Have you worked here before?" and interpretation 1's country.
+ *   A lazy list such an answer would fill is rowed waiting-for-options, so the loop reads it and the next pass asks with
+ *   its options (answers.ts answerWaitsForOptions). Only a real "I did not use AI" statement makes the frame
+ *   profile-only; a consent that only names AI is never ticked, and switches nothing (the Phase E review, M5, M7).
  * - Edit with AI: `aiEditable` names the planned text boxes the page may offer the button on (drafts.ts
- *   aiEditableField; never in a dry run or a profile-only run). A request with PlanInput.rewrite plans that one field:
- *   its draft is asked with what it holds now, and written over it once in.
+ *   aiEditableField; never in a dry run, a profile-only run, or with settings.llm.drafts off). A request with
+ *   PlanInput.rewrite plans that one field: its draft is asked with what it holds now (unless that names a sensitive
+ *   answer or a contact detail: drafts.ts rewriteItemOf), and written over it once in.
  * - Save my answer (T6-1): `savable` names the planned fields whose answer the person may save, so the frame offers
  *   Save my answer on those only: a class whose saved answers are not 'never', a kind a saved answer can fill, and a
  *   question the classify screen lets through. Every other planned field, and any field no plan named, offers none.
@@ -97,8 +101,9 @@ import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../typ
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
+import { statesNoAiUse } from '../resolver/classifyRules';
 import { postingCountryOf } from '../resolver/policy';
-import { answerItemOf, answerRefusal, type AnswerItem, type AnswerVerdict } from './answers';
+import { answerItemOf, answerRefusal, answerWaitsForOptions, type AnswerItem, type AnswerVerdict } from './answers';
 import {
   aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
 } from './drafts';
@@ -616,14 +621,16 @@ function categoryOf(classification: FieldClassification): FieldCategory | null {
   return classification.by === 'rules' ? classification.rules.category ?? null : null;
 }
 
-/** Whether a field is an "I did not use AI" attestation (the rules' category, what they hand to the person, or one
- *  of the consent kinds its label names). */
-function attestsNoAi(classification: FieldClassification): boolean {
+/** Whether a field is an "I did not use AI" attestation: the rules read it as an AI attestation (their category, what
+ *  they hand to the person, or one of the consent kinds its label names) and its own words state that no AI was used
+ *  (statesNoAiUse). An employer's notice that it may use AI ("AI tools may be used to review my application") is an AI
+ *  attestation to the consent policy, never ticked, but switches nothing (the Phase E review, M5). */
+function attestsNoAi(spec: FieldSpec, classification: FieldClassification): boolean {
   const rules = classification.by === 'rules' || classification.by === 'tripwire' ? classification.rules : null;
-  if (classification.by === 'attention') return classification.consent === 'consent.aiAttestation';
-  if (rules === null) return false;
-  return rules.category === 'consent.aiAttestation' || rules.asks === 'consent.aiAttestation'
-    || (rules.consentKinds ?? []).includes('consent.aiAttestation');
+  const named = classification.by === 'attention' ? classification.consent === 'consent.aiAttestation'
+    : rules !== null && (rules.category === 'consent.aiAttestation' || rules.asks === 'consent.aiAttestation'
+      || (rules.consentKinds ?? []).includes('consent.aiAttestation'));
+  return named && statesNoAiUse(spec);
 }
 
 /** The settings with every LLM step off: a run that fills from the profile only. */
@@ -638,7 +645,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const kept = persistableCanaries(asked.canaries, profile);
   // An "I did not use AI" attestation anywhere in the frame's scan makes it a profile-only frame, as a posting that
   // forbids AI does (unless the person's setting is to use the AI anyway).
-  const attestation = asked.specs.some((spec) => attestsNoAi(classifyField(spec)));
+  const attestation = asked.specs.some((spec) => attestsNoAi(spec, classifyField(spec)));
   const aiOff = asked.noAi === true || (attestation && asked.settings.llm.whenForbidden !== 'use-ai');
   const input: PlanInput = aiOff ? { ...asked, settings: withoutAi(asked.settings) } : asked;
   const wantedLlm = asked.settings.llm;
@@ -715,9 +722,11 @@ export function planFrame(asked: PlanInput): PlanOutput {
     const field = resolved[at]!;
     const classification = decided[at]!;
     const canWrite = writable(spec);
-    // Edit with AI (the person's click): this field's draft, asked with what it holds now, written over it once in.
-    if (input.rewrite === spec.key && !aiOff && !input.dryRun) {
+    // Edit with AI (the person's click): this field's draft, asked with what it holds now, written over it once in;
+    // never in a dry run, a profile-only frame, or with AI-written answers off (the Phase E review, MINOR 8).
+    if (input.rewrite === spec.key) {
       const standing = planField(spec, field, ctx);
+      if (aiOff || input.dryRun || !input.settings.llm.drafts) return { spec, ...standing };
       const item = rewriteItemOf(spec, classification, field.resolution, standing.row, canWrite, draftContext);
       if (item !== null) {
         const verdict = input.ai?.drafts?.get(spec.key);
@@ -742,7 +751,15 @@ export function planFrame(asked: PlanInput): PlanOutput {
       return { spec, ...standing };
     }
     const question = answerItemOf(spec, classification, field.resolution, standing.row, canWrite, draftContext);
-    if (question === null) return { spec, ...standing };
+    if (question === null) {
+      // A lazy list it would answer: read first, asked at the next pass with its options (the Phase E review, M7).
+      if (!answerWaitsForOptions(spec, classification, field.resolution, standing.row, canWrite, draftContext)) {
+        return { spec, ...standing };
+      }
+      if (aiOff) return { spec, ...standing, row: offAi(standing.row) };
+      return { spec, ...standing, row: rowWithout(spec, field.resolution.category, 'flagged', 'waiting-for-options',
+        standing.row.confidence) };
+    }
     if (aiOff) return { spec, ...standing, row: offAi(standing.row) };
     const verdict = input.ai?.answers?.get(spec.key);
     if (verdict !== undefined) return { spec, ...planAnswer(spec, field.resolution, standing.row, verdict, ctx) };
@@ -761,8 +778,9 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const savable = planned.filter((field) => savableField(field.spec, field.row, input.vocab))
     .map((field) => field.spec.key);
   // Edit with AI: the planned text boxes the page may offer it on, none still asked about (its answer comes with the
-  // poll that brings it); never in a dry run or a profile-only frame.
-  const aiEditable: FieldKey[] = input.dryRun || aiOff ? [] : planned.flatMap((field, at) => (!asking.has(field.spec.key)
+  // poll that brings it); never in a dry run, a profile-only frame, or with AI-written answers off (MINOR 8).
+  const aiEditable: FieldKey[] = input.dryRun || aiOff || !input.settings.llm.drafts ? []
+    : planned.flatMap((field, at) => (!asking.has(field.spec.key)
     && aiEditableField(field.spec, decided[at]!, resolved[at]!.resolution, field.row,
       writable(field.spec), draftContext) ? [field.spec.key] : []));
   return { writes: input.dryRun ? [] : writes, results: planned.map((field) => field.row), awaiting,

@@ -27,7 +27,9 @@ export interface RawSender {
   id?: string;
   url?: string;
   origin?: string;
-  tab?: { id: number };
+  /** `url`: the tab's address now, which Chrome gives with the ATS host permissions (a single-page application's
+   *  pushState moves it, while `url` above stays the document's first). */
+  tab?: { id: number; url?: string };
   frameId?: number;
   documentId?: string;
   documentLifecycle?: string;

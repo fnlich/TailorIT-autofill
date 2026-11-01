@@ -137,6 +137,67 @@ describe('the questions asked (answerItemOf)', () => {
     for (const spec of never) expect(planOf([spec]).ask?.answers ?? [], spec.label).toEqual([]);
   });
 
+  it('never asks about another person, an identifier, a postal address or a clearance (M2), classified or not', () => {
+    const never: FieldSpec[] = ['Emergency contact name', 'Emergency contact phone number', 'Reference 1: full name',
+      "Your manager's name at your current job", 'Spouse name', 'Driver license number', 'National ID number',
+      'Home address', 'Mailing address line 1', 'Do you hold an active TS/SCI?', 'What clearance level do you hold?',
+      'Have you held a Top Secret clearance?', 'Are you a U.S. person as defined by ITAR?']
+      .map((label) => specOf(label, label.startsWith('Do ') || label.startsWith('Have ') || label.startsWith('Are ')
+        ? 'radio' : 'text', label.startsWith('Do ') || label.startsWith('Have ') || label.startsWith('Are ')
+        ? { optionLabels: ['Yes', 'No'] } : {}));
+    for (const spec of never) {
+      const unknown = new Map([[spec.key as string, { key: spec.key, category: null, why: 'unknown-field' as const }]]);
+      for (const out of [planOf([spec]), planOf([spec], { ai: { verdicts: new Map(), classifications: unknown } })]) {
+        expect(out.ask?.answers ?? [], spec.label).toEqual([]);
+      }
+    }
+    // A count is no identifier, and "address" as a verb names no postal address: those are asked.
+    for (const label of ['Number of years of experience with Go', 'How would you address a conflict on your team?']) {
+      const spec = specOf(label, 'text');
+      const unknown = new Map([[spec.key as string, { key: spec.key, category: null, why: 'unknown-field' as const }]]);
+      expect(planOf([spec], { ai: { verdicts: new Map(), classifications: unknown } }).ask?.answers
+        ?.map((item) => item.key), label).toEqual([spec.key]);
+    }
+  });
+
+  it('never gives a marketing or contact consent a radio or a list asks for with no consent verb (B1)', () => {
+    for (const label of ['Receive our newsletter?', 'Keep me updated about new jobs', 'Can we text you about your application?',
+      'Stay in touch about future opportunities', 'Would you like job alerts for similar roles?']) {
+      for (const kind of ['radio', 'select'] as const) {
+        const spec = specOf(label, kind, { optionLabels: ['Yes', 'No'] });
+        const unknown = new Map([[spec.key as string, { key: spec.key, category: null, why: 'unknown-field' as const }]]);
+        expect(planOf([spec], { ai: { verdicts: new Map(), classifications: unknown } }).ask?.answers ?? [],
+          `${kind}: ${label}`).toEqual([]);
+      }
+    }
+  });
+
+  it('reads a lazy list first, then asks it with its options (M7)', () => {
+    const lazy = specOf('Are you comfortable working from our office three days a week?', 'combobox',
+      { options: 'lazy', optionSetHash: 'lazy' as FieldSpec['optionSetHash'] });
+    const none = new Map([[lazy.key as string, { key: lazy.key, category: null, why: 'unknown-field' as const }]]);
+    const out = planOf([lazy], { ai: { verdicts: new Map(), classifications: none } });
+    // Rowed waiting for its options, so the loop opens the widget and reads them.
+    expect(fieldOf(out, lazy)).toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'waiting-for-options' } });
+    expect(out.ask?.answers ?? []).toEqual([]);
+    // Read: asked as a choice of the options it showed.
+    const read = specOf(lazy.label, 'combobox', { optionLabels: ['Yes', 'No'] });
+    const classifiedRead = new Map([[read.key as string, { key: read.key, category: null, why: 'unknown-field' as const }]]);
+    expect(planOf([read], { ai: { verdicts: new Map(), classifications: classifiedRead } }).ask?.answers
+      ?.map((item) => [item.key, item.shape])).toEqual([[read.key, 'choice']]);
+    // Answers off, a dry run, or a lazy list it would not answer: as before.
+    expect(fieldOf(planOf([lazy], { settings: NO_ANSWERS, ai: { verdicts: new Map(), classifications: none } }), lazy)
+      .row.reason).toBe('unknown-field');
+    expect(fieldOf(planOf([lazy], { dryRun: true, ai: { verdicts: new Map(), classifications: none } }), lazy)
+      .row.reason).toBe('unknown-field');
+    // A self-identification list is never asked, read or not.
+    const gender = specOf('What is your gender?', 'combobox', { options: 'lazy',
+      optionSetHash: 'lazy' as FieldSpec['optionSetHash'] });
+    expect(planOf([gender]).ask?.answers ?? []).toEqual([]);
+    const genderRead = specOf('What is your gender?', 'combobox', { optionLabels: ['Woman', 'Man'] });
+    expect(planOf([genderRead]).ask?.answers ?? []).toEqual([]);
+  });
+
   it('never asks a follow-up box that belongs to a criminal-history question (E2)', () => {
     const felony = specOf('Have you ever been convicted of a felony?', 'radio', { optionLabels: ['Yes', 'No'],
       section: { id: 'background' } });
@@ -229,6 +290,15 @@ describe('an "I did not use AI" attestation in the frame', () => {
     expect(out.aiEditable).toBeUndefined();
   });
 
+  it('is a real "I did not use AI" statement: a consent that only names AI switches nothing, and is never ticked (M5)', () => {
+    const notice = specOf('I acknowledge the privacy notice, including that AI tools may be used to review my application',
+      'checkbox');
+    const out = planOf(inOrder([notice, KUBERNETES]), { ai: classified() });
+    expect(out.aiAttestation).toBeUndefined();
+    expect(out.ask?.answers?.map((item) => item.key)).toEqual([KUBERNETES.key]);
+    expect(fieldOf(out, notice)).toMatchObject({ write: undefined, row: { wrote: false } });
+  });
+
   it('keeps the AI with the setting to use it anyway, and the box is still never ticked', () => {
     const useAi = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'use-ai' } });
     const out = planOf(inOrder([attest, KUBERNETES]), { settings: useAi, ai: classified() });
@@ -273,6 +343,47 @@ describe('Edit with AI (aiEditable and the rewrite)', () => {
     const email = specOf('Email', 'text', { current: { kind: 'text', text: 'a@b.co' } });
     expect(planOf([email], { rewrite: email.key }).ask).toBeUndefined();
   });
+
+  it('asks no rewrite of a box holding a sum, a contact detail, a postal address or an EEO answer (MAJOR 3)', () => {
+    for (const text of ['I would want $140,000 a year.', 'Write to me at jo.doe@example.com.',
+      'See jodoe.dev/work for more.', 'Call +1 415 555 0134.', '221B Baker Street, London NW1 6XE', 'Flat 2, 12 Elm St.', 'Woman',
+      'Prefer not to say']) {
+      const typed = { ...WHY, current: { kind: 'text' as const, text } };
+      expect(planOf([typed], { planKeys: [typed.key], rewrite: typed.key }).ask, text).toBeUndefined();
+    }
+  });
+
+  it('follows AI-written answers: none offered, and no rewrite asked, with drafts off (MINOR 8)', () => {
+    const typed = { ...WHY, current: { kind: 'text' as const, text: 'I like your product.' } };
+    const off = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, drafts: false } });
+    const answered = new Map([[GO_YEARS.key as string, { key: GO_YEARS.key, kind: 'text' as const, text: 'Six',
+      basis: 'resume' as const, taskId: TASK }]]);
+    expect(planOf([typed, GO_YEARS], { settings: off, ai: { verdicts: new Map(), classifications: new Map(),
+      answers: answered } }).aiEditable).toBeUndefined();
+    expect(planOf([typed], { settings: off, planKeys: [typed.key], rewrite: typed.key }).ask).toBeUndefined();
+  });
+
+  it('is never offered, and never asked, on a hidden box or a honeypot (MINOR 9)', () => {
+    const typed = (extra: Partial<FieldSpec>) => ({ ...WHY, ...extra,
+      current: { kind: 'text' as const, text: 'I like your product.' } });
+    const drafts = new Map<string, DraftVerdict>([[WHY.key, { key: WHY.key, text: 'Because.', taskId: TASK }]]);
+    // A text box hidden from people is a honeypot whatever its label (checkHoneypot); one named by a label nobody
+    // sees is no visible question either.
+    for (const extra of [{ visibility: 'hidden-native-with-visible-label' }, { visibility: 'hidden-file-with-visible-control' },
+      { labelSource: 'aria-label', labelVisible: false }] as Array<Partial<FieldSpec>>) {
+      const visibility = JSON.stringify(extra);
+      const box = typed(extra);
+      expect(planOf([box], { ai: { verdicts: new Map(), classifications: new Map(), drafts } }).aiEditable, visibility)
+        .toBeUndefined();
+      expect(planOf([box], { planKeys: [box.key], rewrite: box.key }).ask, visibility).toBeUndefined();
+    }
+    // The same box, visible: offered and asked.
+    const shown = typed({});
+    expect(planOf([shown], { ai: { verdicts: new Map(), classifications: new Map(), drafts } }).aiEditable)
+      .toEqual([shown.key]);
+    expect(planOf([shown], { planKeys: [shown.key], rewrite: shown.key }).ask?.drafts?.map((item) => item.key))
+      .toEqual([shown.key]);
+  });
 });
 
 describe('deterministic answers the profile holds (the owner’s amendments)', () => {
@@ -284,6 +395,33 @@ describe('deterministic answers the profile holds (the owner’s amendments)', (
     expect(at('Northwind')).toMatchObject({ write: { value: { index: 1 } }, row: { status: 'verified' } });
     // No company known: the AI answers it.
     expect(planOf([before]).ask?.answers?.map((item) => item.key)).toEqual([before.key]);
+    // Named, or pointed at with "here", "us" or "former employee": the rule.
+    for (const label of ['Have you ever worked for Quillfeather Labs?', 'Have you worked here before?',
+      'Have you ever been employed by us?', 'Are you a former employee?']) {
+      const spec = specOf(label, 'radio', { optionLabels: ['Yes', 'No'] });
+      expect(fieldOf(planOf([spec], { posting: { company: 'Quillfeather Labs, Inc.' } }), spec).write?.origin, label)
+        .toEqual({ provenance: 'rule', ruleId: 'screening.previously-employed' });
+    }
+  });
+
+  it('never answers another employer’s question with the rule: the AI answers it, marked (M3)', () => {
+    for (const label of ['Have you ever worked for a government agency?', 'Have you ever been employed by a competitor of ours?',
+      'Have you previously worked at a startup?', 'Have you ever worked for the US government?']) {
+      const spec = specOf(label, 'radio', { optionLabels: ['Yes', 'No'] });
+      const out = planOf([spec], { posting: { company: 'Acme' } });
+      expect(fieldOf(out, spec).write, label).toBeUndefined();
+      expect(out.ask?.answers?.map((item) => item.key), label).toEqual([spec.key]);
+    }
+  });
+
+  it('types the profile’s travel share into a travel text box, and answers a yes/no one by it (MINOR 6)', () => {
+    const golden = goldenProfile();
+    const travels: Profile = { ...golden, preferences: { ...golden.preferences, travelPercent: 25 } };
+    const box = specOf('What percentage of travel are you comfortable with?', 'text');
+    expect(fieldOf(planOf([box], { profile: travels }), box)).toMatchObject({
+      write: { value: { kind: 'text', text: '25%' }, origin: { provenance: 'profile', path: 'preferences.travelPercent' } } });
+    const yesNo = specOf('Are you willing to travel?', 'radio', { optionLabels: ['Yes', 'No'] });
+    expect(fieldOf(planOf([yesNo], { profile: travels }), yesNo).write?.value).toMatchObject({ index: 0 });
   });
 
   it('reads the posting’s country from the lookup’s location for a legal question that names none', () => {
@@ -333,12 +471,18 @@ describe('the extension’s own sensitive terms (TailorIT’s server-only ones, 
 
   it('still answers what the profile holds: criminal history by its polarity, the salary it names', () => {
     const golden = goldenProfile();
-    const charged = specOf('Have you ever been charged with a crime?', 'radio', { optionLabels: ['Yes', 'No'] });
+    const charged = specOf('Have you ever been convicted of a crime?', 'radio', { optionLabels: ['Yes', 'No'] });
     const record: Profile = { ...golden, screening: { ...golden.screening, criminalRecord: { kind: 'value', value: false } } };
     const out = planOf([charged], { profile: record });
     expect(fieldOf(out, charged)).toMatchObject({ write: { value: { index: 1 },
       origin: { provenance: 'profile', path: 'screening.criminalRecord' } } });
     expect(out.ask).toBeUndefined();
+    // A charge the answer does not settle (M4): left for the person, never asked of the AI either.
+    const arrested = specOf('Have you ever been charged with a crime?', 'radio', { optionLabels: ['Yes', 'No'] });
+    const left = planOf([arrested], { profile: record });
+    expect(fieldOf(left, arrested)).toMatchObject({ write: undefined, row: { status: 'flagged',
+      reason: 'criminal-not-covered' } });
+    expect(left.ask).toBeUndefined();
     // No answer in TailorIT: left for the person to answer once, never asked of the AI.
     const none = planOf([charged]);
     expect(fieldOf(none, charged)).toMatchObject({ write: undefined, row: { reason: 'legal-not-in-profile' } });

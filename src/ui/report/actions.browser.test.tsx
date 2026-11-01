@@ -108,5 +108,15 @@ describe('the report (Phase 6)', () => {
     expect(past.querySelector('[data-notice="policy"] [data-notice-source="stored-copy"]')?.textContent).toBe(COPY.policyFromStoredCopy);
     const onPage = await mount(<Report reports={[frameReport(0, { status: 'policy-notice', notices: [{ code: 'policy' }] })]} />);
     expect(onPage.querySelector('[data-notice-source]')).toBeNull();
+    // In profile-only mode (the default) the notice says where the statement was found too, and only when it was there.
+    const profileOnly = await mount(<Report reports={[frameReport(0, { notices: [{ code: 'policy-profile-only' },
+      { code: 'policy-stored-copy' }] })]} />);
+    const notice = profileOnly.querySelector('[data-notice="policy-profile-only"]')!;
+    expect([...notice.querySelectorAll('p')].map((p) => p.textContent)).toEqual([COPY.notices['policy-profile-only'],
+      COPY.policyFromStoredCopy]);
+    expect(profileOnly.querySelector('[data-notice="policy-stored-copy"]')).toBeNull();
+    const fromPage = await mount(<Report reports={[frameReport(0, { notices: [{ code: 'policy-profile-only' }] })]} />);
+    expect(fromPage.querySelector('[data-notice="policy-profile-only"]')?.textContent).toBe(COPY.notices['policy-profile-only']);
+    expect(fromPage.querySelector('[data-notice-source]')).toBeNull();
   });
 });

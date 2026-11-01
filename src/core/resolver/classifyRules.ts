@@ -25,7 +25,7 @@ import { normalize, normalizeLabel } from '../text/normalize';
 import { autocompleteRule } from './autocomplete';
 import { policyClassOf } from './categories';
 import {
-  matchLabelRules, sectionKindOf, unlabelledTextarea, unrecognisedField, withDescriptionConsent,
+  attestsNoAiUse, matchLabelRules, sectionKindOf, unlabelledTextarea, unrecognisedField, withDescriptionConsent,
   type LabelContext, type LabelRuleHit, type NeedsUserCause,
 } from './labelRules';
 import { nameIdRule, nameIdText } from './nameId';
@@ -232,6 +232,22 @@ function otherPersonNamedBy(spec: FieldSpec, label: string): RuleClassifier | nu
   const section = spec.section.id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
   if (OTHER_PERSON_LABEL.test(label) || OTHER_PERSON_SECTION.test(section)) return 'label-rule';
   return OTHER_PERSON_ID.test(nameIdText(spec.nameAttr, spec.idAttr)) ? 'name-id' : null;
+}
+
+/** Whether a field asks about someone other than the applicant (a referee, an emergency contact, a manager), by its
+ *  label, its section or its name and id: an AI answer never fills one (plan/answers.ts, the Phase E review, M2). */
+export function namesAnotherPerson(spec: FieldSpec): boolean {
+  return otherPersonNamedBy(spec, ruleText(normalize(spec.label, 'label').key)) !== null;
+}
+
+/** Whether a field's own words state "I did not use AI" (labelRules attestsNoAiUse): its normalized label with its
+ *  parentheticals, or its description (the Phase E review, M5). */
+export function statesNoAiUse(spec: Pick<FieldSpec, 'label' | 'description'>): boolean {
+  const normalized = normalize(spec.label, 'label');
+  const label = [ruleText(normalized.key), ...normalized.qualifiers.map((qualifier) => qualifier.tokens.join(' '))]
+    .join(' ').trim();
+  const description = ruleText(normalizeLabel(spec.description));
+  return [label, description].some((text) => text !== '' && attestsNoAiUse(text));
 }
 
 /** The applicant's own details: none of them belongs in a field about another person. Referral fields stay. */

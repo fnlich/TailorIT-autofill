@@ -10,7 +10,7 @@ import { pinnedTabOf } from './tab';
 const keysShown = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('li[data-field-key]')].map((each) => each.dataset.fieldKey);
 /** What the page sent other than its reads: the messages its buttons sent. */
 const actions = (worker: FakeWorker) => worker.platform.sent.filter((message) =>
-  !['panel/reports', 'auth/status'].includes(String((message as { type?: unknown }).type)));
+  !['panel/reports', 'auth/status', 'settings/get'].includes(String((message as { type?: unknown }).type)));
 const watches = (worker: FakeWorker) => worker.posted.filter((message) => (message as { type?: unknown }).type === 'panel/watch');
 
 async function open(worker: FakeWorker, pinnedTabId: number | null, now?: () => number): Promise<HTMLElement> {
@@ -68,6 +68,12 @@ describe('the review panel', () => {
   it('sends exactly one message per button: Fill, Dry run, Continue, Cancel', async () => {
     const worker = createFakeWorker();
     worker.script.frames = 2;
+    // Before any run, Continue and Cancel have nothing to act on.
+    const before = await open(createFakeWorker(), 5);
+    expect([button(before, COPY.panel.continue)!.disabled, button(before, COPY.panel.cancel)!.disabled]).toEqual([true, true]);
+    expect([button(before, COPY.panel.fill)!.disabled, button(before, COPY.panel.dryRun)!.disabled]).toEqual([false, false]);
+    unmountAll();
+    worker.script.reports.set(5, [frameReport(0, { status: 'review' })]);
     const root = await open(worker, 5);
     await click(button(root, COPY.panel.fill));
     expect(root.textContent).toContain(COPY.panel.started(2));
@@ -182,6 +188,8 @@ describe('the review panel', () => {
   it('says why a button did nothing, and reads the connection again when it was not connected', async () => {
     const worker = createFakeWorker();
     worker.on('panel/fill', () => ({ ok: false, error: 'not_connected' }));
+    // A run that reported and waits for nothing: Continue reaches no frame.
+    worker.script.reports.set(5, [frameReport(0, { status: 'review' })]);
     const root = await open(worker, 5);
     const reads = worker.sentOfType('auth/status').length;
     await click(button(root, COPY.panel.fill));

@@ -9,7 +9,9 @@
  * - an index out of range: llm-invalid-output, flagged;
  * - the worker stopped between plan/request and plan/poll: the task is read again by its id, and the run still ends
  *   with the pick written;
- * - the settings' switches off: no AI request at all.
+ * - the settings' switches off: no AI request at all;
+ * - version 2's defaults live, on the page with an unknown question and a free-text one more: no answer or draft request
+ *   holds anything sensitive either (the Phase E review, MINOR 7).
  * Each case then runs assertTrapInvariants.
  */
 import { expect, test } from '../fixtures.ts';
@@ -17,7 +19,7 @@ import { DEFAULT_SETTINGS, type Settings } from '../../src/core/types/settings';
 import { applicationKeyOf, row, noticeCount, type Extension } from '../helpers/extension.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { mock, type MockRequest } from '../helpers/mock.ts';
-import { AI_STEPS, syntheticLabels } from '../helpers/reactive.ts';
+import { AI_STEPS, fixtureAddress, syntheticLabels } from '../helpers/reactive.ts';
 import { stopWorker } from '../helpers/stop-worker.ts';
 import { trap } from '../helpers/traps.ts';
 
@@ -28,6 +30,10 @@ const PICK = 'POST /api/autofill/ai/pick';
 const CLASSIFY = 'POST /api/autofill/ai/classify';
 /** The option of the referral select the scripted pick names: "LinkedIn job post". */
 const LINKEDIN_POST = 1;
+/** The page with an unknown question and a free-text one more, for version 2's defaults (MINOR 7). */
+const V2_PAGE = 'fixtures/synthetic/ai-steps/v2-defaults.html';
+const V2_OFFICE = 'Which of our offices would you visit first?';
+const V2_WHY = 'Why do you want to work here?';
 
 /** Every AI request the mock received (pick and classify). */
 const aiRequests = (): Promise<MockRequest[]> => mock.requestsTo('POST /api/autofill/ai/*');
@@ -110,6 +116,40 @@ test.describe('the LLM steps', () => {
       await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: ['HIDDEN-MARKER-AI'],
         canaries: ['I am LLM'], labels: LABELS, applicationKey: applicationKeyOf(url) });
     });
+  });
+
+  test('version 2’s defaults live: nothing sensitive reaches any AI request, the answer and draft routes included (MINOR 7)', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    // The same page with an unknown question and a free-text one more (fixtures/synthetic/ai-steps/v2-defaults.html),
+    // filled with version 2's defaults: classify, pick, answer and draft all live.
+    const url = fixtureAddress('ai-steps-v2');
+    routeLog.serve({ [url]: V2_PAGE });
+    await tailorit.scenario('ai-pick-index', { value: LINKEDIN_POST });
+    await tailorit.scenario('ai-answer');
+    const page = await extContext.newPage();
+    await page.goto(url);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(report.status).toBe('review');
+    expect(row(report, V2_OFFICE)).toMatchObject({ provenance: 'llm-answer', reason: 'ai-guess', wrote: true });
+    expect(row(report, V2_WHY)).toMatchObject({ provenance: 'llm-draft', reason: 'llm-draft-written', wrote: true });
+    const sent = await aiRequests();
+    expect([...new Set(sent.map((request) => request.path))].sort()).toEqual(['/api/autofill/ai/answer',
+      '/api/autofill/ai/classify', '/api/autofill/ai/draft', '/api/autofill/ai/pick']);
+    for (const request of sent) {
+      expect(request.headers.authorization).toBe('REDACTED');
+      // The page's canaries go to TailorIT on purpose (its own screen reads them): set aside, never anything else.
+      const body = JSON.parse(request.body) as Record<string, unknown>;
+      delete body.canaries;
+      const text = JSON.stringify(body);
+      for (const needle of NEVER_SENT) expect(text, `${request.path} holds ${needle}`).not.toContain(needle);
+    }
+    // The profile's own, never the AI's: the decline, the authorization, the pay, the consent, the screened perk.
+    for (const label of ['Gender', 'Are you legally authorized to work in the United States?', 'Desired salary',
+      'I have read and agree to the privacy policy', 'Which perk matters most?']) {
+      expect(row(report, label).provenance ?? '', label).not.toMatch(/^llm-/);
+    }
+    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: ['HIDDEN-MARKER-AI'],
+      canaries: ['I am LLM'], labels: [...LABELS, V2_OFFICE, V2_WHY], applicationKey: applicationKeyOf(url) });
   });
 
   test('07c the tiebreak answers the tainted option: llm-pick-rejected, flagged, and the select untouched', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
