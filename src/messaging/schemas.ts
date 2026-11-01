@@ -242,9 +242,9 @@ const contentMessages = [
     /** The owner's amendments: this run fills from the profile only (its posting forbids AI, or its form holds an "I
      *  did not use AI" attestation, and the person's setting says so): the worker asks the LLM nothing. */
     noAi: z.literal(true).optional(),
-    /** Phase G: the company and job title the frame's own page title names, sent with a pass that plans an upload
-     *  (not in a dry run's): a cover letter for a posting TailorIT does not have is asked for with them. Page text,
-     *  never kept. */
+    /** Phase G: the company and job title the frame's own page title names, sent with a pass that plans an upload (a
+     *  dry run's too, whose check for the person's own letter needs them): a cover letter for a posting TailorIT does
+     *  not have is asked for with them. Page text, never kept. */
     posting: PostingNamesSchema.optional() })
     .refine((message) => {
       const keys = new Set(message.specs.map((spec) => spec.key));
@@ -536,6 +536,9 @@ export const JobPostingTextAnswerSchema = z.strictObject({
   /** Phase G: the company and job title the frame's page title names (absent: it names none), for a cover letter the
    *  side panel writes for a posting TailorIT does not have. */
   names: PostingNamesSchema.optional(),
+  /** The Phase G review (MINOR 5): the form's fields hold an "I did not use AI" statement (planFrame's reading), so the
+   *  side panel's Write it now writes nothing before any run has said so. Absent: none. */
+  attestation: z.literal(true).optional(),
 });
 
 // ── Answers to extension pages ────────────────────────────────────────────────────────────────────────────────────

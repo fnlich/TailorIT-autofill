@@ -9,8 +9,8 @@
  *   attaches ("Would attach" in a dry run), why, and its keywords, with Change (also when there is none to attach, so
  *   one of the account's resumes can be chosen); then (Phase G) the cover letter: the person's letter for this job, or
  *   that TailorIT's AI writes one when the form asks for one, with Write it now (Writing…, then Ready or Couldn't write
- *   it), or why only a letter the person wrote is attached (a posting that forbids AI, AI-written answers off); and
- *   Save to tracker when the job is not tracked yet.
+ *   it; never in a dry run), or why only a letter the person wrote is attached (a posting that forbids AI, AI-written
+ *   answers off); and Save to tracker when the job is not tracked yet.
  * - Not found: "Not in your TailorIT jobs", Add this job to TailorIT where TailorIT can add from this site (else why
  *   not), help that never contradicts a tracker entry (none when one exists), and the resume.
  * - Loading (a busy skeleton), unavailable, and a card asking to connect.
@@ -136,7 +136,7 @@ function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loa
       )}
       {job === null && tracked === null && <p className="tia-job__help">{card.addable ? COPY.job.notFoundHelp : COPY.job.cannotAdd}</p>}
       <ResumeRow card={card} dryRun={dryRun} loadResumes={loadResumes} chooseResume={chooseResume} />
-      {letter !== undefined && <LetterRow letter={letter} mode={letterMode} onWrite={onWriteLetter} />}
+      {letter !== undefined && <LetterRow letter={letter} mode={letterMode} dryRun={dryRun} onWrite={onWriteLetter} />}
       {(job === null ? card.addable : tracked === null) && (
         <div className="tia-job__actions">
           <button type="button" className={`tia-button ${job === null ? 'tia-button--primary' : ''}`} disabled={adding}
@@ -209,10 +209,12 @@ const HAS_LETTER: ReadonlySet<LetterOutcome | null> = new Set<LetterOutcome | nu
 
 /**
  * The cover letter (Phase G): whose letter a fill attaches, or that TailorIT's AI writes one when the form asks for
- * one, with Write it now while there is none and the AI may write it; or why only the person's own is attached.
+ * one, with Write it now while there is none and the AI may write it (never in a dry run, which writes nothing); or why
+ * only the person's own is attached.
  */
-function LetterRow({ letter, mode, onWrite }: { letter: LetterView; mode: LetterMode; onWrite: (() => void) | undefined }) {
-  const offers = mode === 'ai' && onWrite !== undefined && !HAS_LETTER.has(letter.outcome)
+function LetterRow({ letter, mode, dryRun, onWrite }: { letter: LetterView; mode: LetterMode; dryRun: boolean;
+  onWrite: (() => void) | undefined }) {
+  const offers = !dryRun && mode === 'ai' && onWrite !== undefined && !HAS_LETTER.has(letter.outcome)
     && letter.outcome !== 'not-allowed';
   const note = letter.writing ? null : letter.wrote === null ? null
     : HAS_LETTER.has(letter.wrote) ? COPY.job.letter.ready : COPY.job.letter.outcomes[letter.wrote];

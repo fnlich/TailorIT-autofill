@@ -18,7 +18,7 @@ export function elementsOf(target: FieldTarget): Element[] {
 }
 
 /** The reasons of a row whose value the AI wrote and that needs nothing of the person (the owner's amendments; Phase
- *  G: a cover letter TailorIT's AI wrote during this run). */
+ *  G: a cover letter TailorIT's AI wrote, during this run or before it, that the person never edited). */
 const AI_WRITTEN: ReadonlySet<FillResult['reason']> = new Set<FillResult['reason']>(['llm-draft-written',
   'llm-answer-written', 'cover-letter-written']);
 

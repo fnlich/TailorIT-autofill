@@ -62,6 +62,23 @@ describe('planFrame: a cover-letter upload waits for the run’s letter', () => 
     expect(planOf([portfolio]).coverLetter).toBeUndefined();
     expect(fieldOf(planOf([portfolio], { coverLetter: ready(false) }), portfolio).write).toBeUndefined();
   });
+
+  it('asks nothing for, and writes nothing into, an upload whose accept list refuses a PDF', () => {
+    const wordOnly = { ...LETTER, constraints: { accept: ['.doc', '.docx'] } };
+    for (const coverLetter of [undefined, { state: 'waiting' } as const, ready(false), ready(true)]) {
+      const out = planOf([wordOnly], coverLetter === undefined ? {} : { coverLetter });
+      expect(out.coverLetter, coverLetter?.state).toBeUndefined();
+      expect(fieldOf(out, wordOnly), coverLetter?.state).toMatchObject({ write: undefined,
+        row: { status: 'flagged', reason: 'format-unsupported', provenance: null, needsUserAction: true } });
+    }
+    // A list that takes a PDF, by its extension, its type or its family, waits for the letter as any upload does.
+    for (const accept of [['.pdf', '.docx'], ['application/pdf'], ['application/*']]) {
+      const takes = { ...LETTER, constraints: { accept } };
+      expect(planOf([takes]).coverLetter, accept.join()).toEqual({ keys: [LETTER.key], generate: true });
+      expect(fieldOf(planOf([takes], { coverLetter: ready(false) }), takes).write, accept.join())
+        .toMatchObject({ value: { kind: 'file', ref: 'cover-letter' } });
+    }
+  });
 });
 
 describe('planFrame: a letter ready to upload', () => {

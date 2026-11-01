@@ -153,7 +153,10 @@ describe('the worker keeps the cover letter to itself (Phase G)', () => {
     // At a multiple of 3, so a chunk's base64 holds the words' own base64 too.
     pdf.set(new TextEncoder().encode(words), 99);
     const worker = await startTestWorker({ token: tokenRecord(), core: letterCore() });
-    worker.tailorit.reply('POST /api/autofill/cover-letters', { json: { letterId, state: 'generating' } });
+    // A check (generate false) finds none of the person's; the ask that may write has TailorIT's AI write it.
+    worker.tailorit.reply('POST /api/autofill/cover-letters', (request) => ((JSON.parse(request.body!) as {
+      generate: boolean }).generate ? { json: { letterId, state: 'generating', aiWritten: true } }
+      : { status: 404, json: { error: { code: 'not_found', message: 'Not found.' } } }));
     worker.tailorit.reply(`GET /api/autofill/cover-letters/${letterId}`, { json: { state: 'ready' } });
     worker.tailorit.reply(`GET /api/autofill/cover-letters/${letterId}/file`, await fileReply(pdf));
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());

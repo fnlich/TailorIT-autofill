@@ -31,7 +31,7 @@ import { createPlanner } from './planner';
 import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
 import { createProfileCache, type ProfileCache } from './profile-cache';
 import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
-import { fillsFromProfileOnly, saysNoAi } from '../shared/report';
+import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
 import { createRouter, type ContentChannel } from './router';
@@ -149,7 +149,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
     aiTaskIds: runStates, cache: matchCache, accepts, letters, now });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes),
-    choose: chooseResume });
+    choose: chooseResume, letters });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId) });
   // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
   const answers = createAnswerHandlers({ platform, reports, runs, server, settings, vocab: () => core.vocab(),
@@ -160,7 +160,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const panelLetters = createPanelLetters({ ...letters, jobs, profiles: profileCache, tabs: platform.tabs, settings,
     connected: () => auth.connected(), generation: () => keeper.generation, limit: letterLimit,
     policyHeld: async (tabId) => (await reports.ofTab(tabId)).some(saysNoAi),
-    profileOnlyHeld: async (tabId) => (await reports.ofTab(tabId)).some(fillsFromProfileOnly) });
+    profileOnlyHeld: async (tabId) => (await reports.ofTab(tabId)).some(fillsFromProfileOnly),
+    dryRunHeld: async (tabId) => latestReport(await reports.ofTab(tabId))?.mode === 'dry-run' });
   letterRows = panelLetters;
   const beginDeps = {
     jobs,

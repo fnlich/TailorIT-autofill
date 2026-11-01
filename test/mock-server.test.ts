@@ -702,7 +702,7 @@ describe('cover letters (Phase G)', () => {
     const none = await ask({ ...golden, generate: false });
     expect([none.status, none.headers.get(API), await errorCode(none)]).toEqual([404, V, 'not_found']);
     const made = await letterOf();
-    expect(made.state).toBe('generating');
+    expect([made.state, made.aiWritten]).toEqual(['generating', true]);
     expect((await fileOf(made.letterId)).status).toBe(409);
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(await stateOf(made.letterId)).toBe('ready');
@@ -724,9 +724,15 @@ describe('cover letters (Phase G)', () => {
     expect([other.status, await errorCode(other)]).toEqual([404, 'not_found']);
   });
 
-  it('answers each scenario: ready, written later, failed and none', async () => {
+  it('answers each scenario: ready, the AI’s ready, written later, failed and none', async () => {
     await scenario('letter-ready', { times: 1 });
-    expect((await letterOf({ ...golden, generate: false })).state).toBe('ready');
+    expect(await letterOf({ ...golden, generate: false })).toMatchObject({ state: 'ready', aiWritten: false });
+    // An untouched letter the AI wrote earlier: never the answer to a check, ready and the AI's to an ask that may write.
+    await scenario('letter-ai-ready', { times: 1 });
+    expect((await ask({ ...golden, generate: false })).status).toBe(404);
+    const earlier = await letterOf();
+    expect(earlier).toMatchObject({ state: 'ready', aiWritten: true });
+    expect((await fileOf(earlier.letterId)).status).toBe(200);
     await scenario('letter-generating-then-ready', { times: 1, delayMs: 60 });
     const slow = await letterOf();
     expect([slow.state, await stateOf(slow.letterId)]).toEqual(['generating', 'generating']);
@@ -739,7 +745,7 @@ describe('cover letters (Phase G)', () => {
     expect([failing.state, await stateOf(failing.letterId)]).toEqual(['generating', 'failed']);
     expect((await fileOf(failing.letterId)).status).toBe(409);
     await scenario('letter-failed', { times: 1 });
-    expect((await letterOf({ ...golden, generate: false })).state).toBe('failed');
+    expect(await letterOf({ ...golden, generate: false })).toMatchObject({ state: 'failed', aiWritten: false });
     await scenario('letter-none', { times: 1 });
     expect((await ask({ ...golden, generate: false })).status).toBe(404);
   });

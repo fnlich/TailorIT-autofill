@@ -97,6 +97,9 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
     if (held) return held;
     const parsed = RunRecordSchema.safeParse(await session.get(keyOf(runId)));
     const record = parsed.success && parsed.data.runId === runId ? parsed.data : null;
+    // Another call loaded it, and may have changed it, while this one read storage: memory's copy is the current one.
+    const meanwhile = known.get(runId);
+    if (meanwhile) return meanwhile;
     if (record !== null) known.set(runId, record);
     return record;
   }
@@ -178,7 +181,9 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
       }
     },
     async noteLetterWritten(runId) {
-      const record = await load(runId);
+      const loaded = await load(runId);
+      // What memory holds now: a setSensitive that ran while the record was read is kept (the Phase G review, MINOR 6).
+      const record = loaded === null ? null : known.get(runId) ?? loaded;
       if (record === null || record.letterWritten === true) return;
       const next = { ...record, letterWritten: true as const };
       known.set(runId, next);

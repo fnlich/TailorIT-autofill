@@ -76,8 +76,9 @@ export type CoverLetterGap = Extract<ReasonCode, 'cover-letter-failed' | 'cover-
   | 'cover-letter-timed-out' | 'cover-letter-reconnect'>;
 
 /**
- * Where the run's cover letter stands (Phase G): ready to upload (`aiWritten`: TailorIT's AI wrote it during this run;
- * else it is the person's own, or one written before), still being found or written, or none, with why.
+ * Where the run's cover letter stands (Phase G): ready to upload (`aiWritten`: TailorIT's AI wrote it, during this run
+ * or before it, and the person never edited it; else it is the person's own), still being found or written, or none,
+ * with why.
  */
 export type CoverLetterState =
   | { state: 'ready'; aiWritten: boolean }

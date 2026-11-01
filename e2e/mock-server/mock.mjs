@@ -34,10 +34,11 @@
  * - Cover letters (version 2, Phase G): POST /cover-letters checks its body as TailorIT does (a resume id, a company
  *   and a title without a job, the caps), then answers 404 not_found when it may not write (generate false:
  *   the person has no letter for the job), and otherwise a new letter `generating` that reads `ready` at its first
- *   poll; GET …/:id gives a letter's state (404 for one the mock never made), GET …/:id/file the golden cover letter
- *   beside this file (golden-cover-letter.pdf) with X-TailorIT-File-Kind pdf, X-TailorIT-Sha256 and a
- *   Content-Disposition, 409 conflict until it is ready. The contract's golden letter is always there, ready.
- *   Scenarios: letter-ready, letter-generating-then-ready, letter-failed, letter-none.
+ *   poll; each answer says who wrote the letter (`aiWritten`: true while the AI writes it, and for a letter the AI
+ *   wrote that the person never edited). GET …/:id gives a letter's state (404 for one the mock never made), GET
+ *   …/:id/file the golden cover letter beside this file (golden-cover-letter.pdf) with X-TailorIT-File-Kind pdf,
+ *   X-TailorIT-Sha256 and a Content-Disposition, 409 conflict until it is ready. The contract's golden letter is always
+ *   there, ready. Scenarios: letter-ready, letter-ai-ready, letter-generating-then-ready, letter-failed, letter-none.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -213,6 +214,9 @@ export const MOCK_SCENARIOS = Object.freeze({
   // Phase G: cover letters. Without these, POST /cover-letters answers 404 to generate false (no letter of the
   // person's) and a new letter `generating`, ready at its first poll, to generate true.
   'letter-ready': "POST /cover-letters answers a finished letter of the person's (ready), whatever generate says.",
+  'letter-ai-ready': "POST /cover-letters with generate true answers a finished letter TailorIT's AI wrote earlier "
+    + "(ready, aiWritten: Write it now, or the letter editor's Generate) that the person never edited; with generate "
+    + "false it gets 404 not_found, as TailorIT answers only the person's own letter then.",
   'letter-generating-then-ready': 'POST /cover-letters with generate true answers generating, and the letter reads ready '
     + 'delayMs later (default 4 s); with generate false it gets 404 not_found, as letter-none.',
   'letter-failed': 'POST /cover-letters with generate true answers generating, and the letter reads failed at its first '
@@ -734,12 +738,16 @@ export function createMock() {
       return invalid('canaries: Invalid');
     }
     const now = Date.now();
-    const made = (/** @type {number | null} */ readyAt, /** @type {number | null} */ failAt) => {
+    /** A letter now kept: its answer says the AI wrote it while it is written, or when `ai` (never edited since). */
+    const made = (/** @type {number | null} */ readyAt, /** @type {number | null} */ failAt, ai = false) => {
       const letter = { id: randomUUID(), readyAt, failAt };
       state.letters.set(letter.id, letter);
-      return jsonAnswer(200, { letterId: letter.id, state: letterState(letter) });
+      const stands = letterState(letter);
+      return jsonAnswer(200, { letterId: letter.id, state: stands, aiWritten: ai || stands === 'generating' });
     };
     if (take('letter-ready') !== null) return made(now, null);
+    // An untouched AI letter is not the person's: a check (generate false) does not answer it.
+    if (json.generate && take('letter-ai-ready') !== null) return made(now, null, true);
     const failed = take('letter-failed');
     if (failed !== null) return json.generate ? made(null, now + LETTER_WRITE_MS) : made(null, now);
     // With generate false, only a letter the person wrote is answered: none here (letter-none says so outright).

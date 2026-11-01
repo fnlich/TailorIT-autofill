@@ -52,7 +52,7 @@ export function sectionName(section: string): string {
 }
 
 /** The reasons of an answer the AI wrote and the run accepted (the owner's amendments; Phase G: a cover letter
- *  TailorIT's AI wrote during this run). */
+ *  TailorIT's AI wrote, during this run or before it, that the person never edited). */
 const AI_WRITTEN: ReadonlySet<ReportRow['reason']> = new Set<ReportRow['reason']>(['llm-draft-written', 'llm-answer-written',
   'cover-letter-written']);
 

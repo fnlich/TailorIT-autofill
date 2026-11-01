@@ -97,6 +97,13 @@ export function fillsFromProfileOnly(report: Pick<FrameReport, 'notices'>): bool
   return report.notices.some((notice) => notice.code === 'policy-profile-only' || notice.code === 'ai-attestation');
 }
 
+/** A tab's latest report (its latest updatedAt), or null when it has none: its mode says whether the tab's latest run
+ *  is a dry run (the Phase G review, MINOR 4: Write it now writes nothing there). */
+export function latestReport<T extends Pick<FrameReport, 'updatedAt'>>(reports: readonly T[]): T | null {
+  return reports.reduce<T | null>((latest, report) => (latest === null || report.updatedAt > latest.updatedAt ? report
+    : latest), null);
+}
+
 /**
  * Whether a row needs the person: it asks for them (an AI draft to confirm, a question left for them), or the run left
  * it flagged or blocked. One rule for the review's count (src/ui/report/model.ts) and the launcher's (the content

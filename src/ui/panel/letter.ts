@@ -5,8 +5,8 @@
  *
  * It asks once per read key: the tab, the form's document, the connection, and the resume the card attaches (a Change
  * asks again), and only while the card has answered. A row of the tab's report that attached a letter says more than
- * an earlier answer (the fill's own: the person's letter, or one TailorIT's AI wrote during the run). Write it now's
- * outcome is kept for its key, so the row says Ready or Couldn't write it until the key moves.
+ * an earlier answer (the fill's own: the person's letter, or one TailorIT's AI wrote and they never edited). Write it
+ * now's outcome is kept for its key, so the row says Ready or Couldn't write it until the key moves.
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { JobCard, LetterOutcome } from '../../messaging/schemas';

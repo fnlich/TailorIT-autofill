@@ -75,6 +75,7 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
 
 export { assertNotSubmit, clickIfAllowed, SUBMIT_WORDS, CLICK_REFUSALS, type ClickRefusal, type NotSubmitContext } from './not-submit';
 export { holds, markedInvalid, readBackRuleOf, sameText, verifyAfterSettle } from './verify';
-export { accepts, acceptTokens, DOCX_MIME } from './file';
+export { acceptTokens, DOCX_MIME } from './file';
+export { accepts } from '../../core/accept';
 export { dateValueFor } from './date';
 export { ALLOWED_EVENTS } from './events';

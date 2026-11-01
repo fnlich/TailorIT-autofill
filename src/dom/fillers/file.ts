@@ -5,6 +5,7 @@
  * input with no accept or one that allows .docx or its MIME type (else pdf-only-input). The read-back compares the
  * file's name, size and type.
  */
+import { accepts } from '../../core/accept';
 import type { FillOutcome } from '../types';
 import { fireChange, fireInput, setFiles } from './events';
 import { done, mismatch, refused } from './outcome';
@@ -15,15 +16,6 @@ export const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordproc
 /** The accept tokens of a file input, lower case. */
 export function acceptTokens(input: HTMLInputElement): string[] {
   return input.accept.split(',').map((token) => token.trim().toLowerCase()).filter((token) => token !== '');
-}
-
-/** Does an accept list take this file? An empty list takes anything. */
-export function accepts(tokens: readonly string[], file: { name: string; type: string }): boolean {
-  if (tokens.length === 0) return true;
-  const name = file.name.toLowerCase();
-  const type = file.type.toLowerCase();
-  return tokens.some((token) => (token.startsWith('.') ? name.endsWith(token)
-    : token.endsWith('/*') ? type.startsWith(token.slice(0, -1)) : token === type));
 }
 
 function kindOfFile(file: File): 'pdf' | 'docx' | 'other' {

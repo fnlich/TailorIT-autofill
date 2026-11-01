@@ -70,7 +70,7 @@ import type { BaseKey, FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
-import { scan } from '../dom/scan';
+import { scan, toFieldSpec } from '../dom/scan';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
 import { WorkerToContentSchema, type PolicyDecision } from '../messaging/schemas';
@@ -248,8 +248,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'job/refresh':
         return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null);
       case 'job/postingText':
+        // The form's fields too (the Phase G review, MINOR 5): an "I did not use AI" statement on it keeps the side
+        // panel's Write it now from writing before a run has said so.
         return ok(stopped ? { text: '', canaries: [], policy: false }
-          : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal, page?.app.platform ?? null));
+          : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal, page?.app.platform ?? null,
+            page === null ? [] : scanPage(page).fields.map(toFieldSpec)));
     }
   });
 

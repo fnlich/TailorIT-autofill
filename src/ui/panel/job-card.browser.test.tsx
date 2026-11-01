@@ -472,6 +472,18 @@ describe('the cover letter on the job card (Phase G)', () => {
     expect(letterRow(checking)!.textContent).toContain(COPY.job.letter.checking);
   });
 
+  it('offers no Write it now in a dry run, which writes nothing', async () => {
+    const dry = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), dryRun: true, onWriteLetter: () => undefined });
+    expect(letterRow(dry)!.dataset.letterMode).toBe('ai');
+    expect(writeButton(dry)).toBeNull();
+    // In the panel: the tab's run is a dry run.
+    const worker = withForm();
+    worker.script.reports.set(5, [frameReport(0, { mode: 'dry-run' })]);
+    const root = await open(worker);
+    expect(letterRow(root)!.dataset.letterOutcome).toBe('none');
+    expect(writeButton(root)).toBeNull();
+  });
+
   it('in the panel: asks once per card, writes on Write it now, and follows the settings and the posting', async () => {
     const worker = withForm();
     const root = await open(worker);

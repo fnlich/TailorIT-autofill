@@ -13,13 +13,17 @@
  * never in a message), is fetched from GET /cover-letters/:id/file (at most AUTOFILL_COVER_LETTER_MAX_BYTES, 10 MiB),
  * accepted only as a PDF (X-TailorIT-File-Kind pdf and %PDF-) whose SHA-256 is X-TailorIT-Sha256, named as TailorIT's
  * Download names it (its Content-Disposition, cleaned by uploadName), and sent and released exactly as a resume is. No
- * letter ready (a dry run, a run that has none, a worker that restarted since) is resume-unavailable before any fetch.
+ * letter ready (a dry run, a run that has none) is resume-unavailable before any fetch. A worker that restarted since
+ * the plan, or whose token changed, holds no letter for the run: it checks TailorIT again for the person's own letter
+ * for the run's job (checkLetter: generate false, so nothing is written and no AI letter is answered; the lookup read
+ * again from the frame's address), and sends that one, or answers resume-unavailable (the Phase G review, MINOR 7).
  */
 import { AUTOFILL_COVER_LETTER_MAX_BYTES, AUTOFILL_FILE_MIME_TYPES, AUTOFILL_RESUME_MAX_BYTES } from '../contract/tailorit';
 import { RESUME_CHUNK_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
 import type { PortLike } from '../platform/types';
 import { log } from '../shared/log';
 import { PDF_SIGNATURE, startsWith, toBase64, ZIP_SIGNATURE } from './bytes';
+import { checkLetter, type LetterDeps } from './cover-letters';
 import type { ProfileCache } from './profile-cache';
 import { createResumeChooser, type ResumeChoice, type ResumeChooser } from './resume-choice';
 import type { FrameRef, RunRegistry } from './runs';
@@ -41,6 +45,9 @@ export interface ResumeTransferDeps {
   /** The chooser the planner uses (index.ts), which follows the token's generation and the tab's resume choice; one
    *  of this port's own by default. */
   choose?: ResumeChooser;
+  /** What the planner asks for a run's cover letter with (index.ts): a run that holds no letter (a worker that
+   *  restarted) checks for the person's own again. Absent: it answers resume-unavailable. */
+  letters?: LetterDeps;
 }
 
 /** The name the file is uploaded under: no path or control characters, the kind's extension, at most 255 characters;
@@ -61,6 +68,17 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
   /** Which resume this run attaches: the one the planner attached, read from the run's memo (resume-choice.ts), or the
    *  one the person has chosen for the tab since (v2: a Change applies to every file not uploaded yet). */
   const choose = deps.choose ?? createResumeChooser(deps);
+
+  /** The person's own letter for a run whose letter this worker does not hold (module header): its id, or null. */
+  async function recheckLetter(runId: string, written: boolean, url: string, active: () => boolean):
+    Promise<string | null> {
+    if (deps.letters === undefined) return null;
+    const choice = await choose(runId, url);
+    const job = deps.runs.memo(runId).lookup?.job ?? null;
+    if (job === null || !active()) return null;
+    return checkLetter(deps.letters, { jobId: job.id, company: job.companyName, jobTitle: job.title,
+      resumeId: choice?.id ?? null, written }, active);
+  }
 
   /** Fetches and checks the run's cover letter (Phase G): a PDF only, whose bytes hash to TailorIT's header. */
   async function fetchLetter(letterId: string): Promise<{ bytes: Uint8Array; name: string; sha256: string } | Refusal> {
@@ -155,8 +173,12 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
         return close('resume-unavailable');
       }
       if (document === 'cover-letter') {
-        // The run's letter, ready: its id never left the worker's memory (Phase G).
-        const letterId = deps.runs.memo(run.runId).letter?.readyId() ?? null;
+        // The run's letter, ready: its id never left the worker's memory (Phase G); or, where the worker holds no letter
+        // for the run (it restarted since the plan), the person's own, checked for again.
+        const held = deps.runs.memo(run.runId).letter;
+        const letterId = held !== undefined ? held.readyId() : await recheckLetter(run.runId, run.letterWritten === true,
+          from.url, () => phase === 'preparing');
+        if (phase !== 'preparing') return;
         if (letterId === null) {
           log('resume.refused', { letter: false });
           return close('resume-unavailable');

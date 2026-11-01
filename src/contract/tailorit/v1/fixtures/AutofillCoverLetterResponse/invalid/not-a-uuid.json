@@ -1,4 +1,5 @@
 {
   "letterId": "letter-1",
-  "state": "ready"
+  "state": "ready",
+  "aiWritten": false
 }

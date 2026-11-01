@@ -1,9 +1,12 @@
 /*
  * The job card's relay in the content script (v2, job-relay.ts): job/refresh relayed as job/lookup or job/add with no
  * payload, the worker's answer passed back as {} only; and a custom question's job text: the posting's visible text
- * outside the form root from the top frame alone, never hidden text, with the page's canaries.
+ * outside the form root from the top frame alone, never hidden text, with the page's canaries, and whether the form
+ * states "I did not use AI".
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { genericAdapter } from '../adapters/generic';
+import { scan, toFieldSpec } from '../dom/scan';
 import type { Answer } from '../messaging/envelope';
 import type { Channel } from './channel';
 import { postingNamesOf, postingTextOf, relayJob } from './job-relay';
@@ -118,4 +121,27 @@ describe('the job relay (v2)', () => {
       .toEqual({ company: 'Northwind', title: 'Senior Backend Engineer' });
     expect((await postingTextOf(doc, form, true, new AbortController().signal)).names).toBeUndefined();
   });
+
+  it('says when the form states “I did not use AI”, as a run reads it, so Write it now writes nothing (Phase G review)',
+    async () => {
+      const { doc, form } = laidOut();
+      /** A checkbox labelled `text`, the form's only field. */
+      const onlyBox = (text: string) => {
+        const label = doc.createElement('label');
+        const box = doc.createElement('input');
+        box.type = 'checkbox';
+        box.name = 'statement';
+        label.append(box, ` ${text}`);
+        form.replaceChildren(label);
+      };
+      const specs = () => scan(form, genericAdapter, { platform: 'lever' }).fields.map(toFieldSpec);
+      onlyBox('I certify that I did not use AI to write this application');
+      expect((await postingTextOf(doc, form, true, new AbortController().signal, 'lever', specs())).attestation)
+        .toBe(true);
+      // A notice that the employer may use AI, or no such field, states nothing.
+      onlyBox('I understand AI tools may be used to review my application');
+      expect((await postingTextOf(doc, form, true, new AbortController().signal, 'lever', specs())))
+        .not.toHaveProperty('attestation');
+      expect(await postingTextOf(doc, form, true, new AbortController().signal)).not.toHaveProperty('attestation');
+    });
 });

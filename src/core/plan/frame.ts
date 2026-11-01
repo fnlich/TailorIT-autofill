@@ -73,8 +73,10 @@
  * - Cover letters (Phase G; planCoverLetter): a cover-letter upload waits for the run's letter (`coverLetter`, never
  *   `awaiting`) until the worker has asked TailorIT, TailorIT's AI allowed to write it only where it may write any
  *   answer and never in a dry run; once ready (PlanInput.coverLetter) it is the profile's own document, planned and
- *   guarded as an upload, marked as the AI's when TailorIT's AI wrote it during the run.
+ *   guarded as an upload, marked as the AI's when TailorIT's AI wrote it (during the run, or before it and never
+ *   edited since).
  */
+import { accepts, COVER_LETTER_FILE } from '../accept';
 import { FLAG_AT, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
 import type { MatcherStage } from '../enums';
 import { extractCanaries, persistableCanaries, profileIndex } from '../guard/canary';
@@ -105,10 +107,10 @@ import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../typ
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
-import { statesNoAiUse } from '../resolver/classifyRules';
 import { postingCountryOf } from '../resolver/policy';
 import { withCoverLetter } from '../profile/canonicalize';
 import { answerItemOf, answerRefusal, answerWaitsForOptions, type AnswerItem, type AnswerVerdict } from './answers';
+import { holdsNoAiAttestation } from './attestation';
 import {
   aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
 } from './drafts';
@@ -626,18 +628,6 @@ function categoryOf(classification: FieldClassification): FieldCategory | null {
   return classification.by === 'rules' ? classification.rules.category ?? null : null;
 }
 
-/** Whether a field is an "I did not use AI" attestation: the rules read it as an AI attestation (their category, what
- *  they hand to the person, or one of the consent kinds its label names) and its own words state that no AI was used
- *  (statesNoAiUse). An employer's notice that it may use AI ("AI tools may be used to review my application") is an AI
- *  attestation to the consent policy, never ticked, but switches nothing (the Phase E review, M5). */
-function attestsNoAi(spec: FieldSpec, classification: FieldClassification): boolean {
-  const rules = classification.by === 'rules' || classification.by === 'tripwire' ? classification.rules : null;
-  const named = classification.by === 'attention' ? classification.consent === 'consent.aiAttestation'
-    : rules !== null && (rules.category === 'consent.aiAttestation' || rules.asks === 'consent.aiAttestation'
-      || (rules.consentKinds ?? []).includes('consent.aiAttestation'));
-  return named && statesNoAiUse(spec);
-}
-
 /** The settings with every LLM step off: a run that fills from the profile only. */
 function withoutAi(settings: PlanInput['settings']): PlanInput['settings'] {
   return { ...settings, llm: { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false } };
@@ -659,19 +649,23 @@ interface LetterPlan {
  * A cover-letter upload (Phase G; docs/SPEC-AMENDMENTS.md "Cover letters"). With the run's letter ready, the profile
  * carries it (withCoverLetter) and planField plans it as any upload, through guardWrite: provenance `profile`, path
  * `coverLetter` (the Guard allows a cover-letter upload nothing else); its row says whose letter it is
- * (cover-letter-attached), or that TailorIT's AI wrote it during this run (cover-letter-written, marked "AI"). An
+ * (cover-letter-attached), or that TailorIT's AI wrote it (cover-letter-written, marked "AI"). An
  * AI-written letter is never attached once the frame is profile-only, or with AI-written answers off. Without it, a
  * field that could take it (writable, the rules' file.coverLetter with nothing but the letter missing, empty) waits for
  * it (LetterPlan.wait, cover-letter-waiting) until the worker has asked TailorIT; a letter that will not come leaves it
- * flagged with why. In a dry run the worker only asks whether the person has one: none, where a fill would have
- * TailorIT's AI write one, is that promise (cover-letter-would-write, as the would-be write's row).
+ * flagged with why. An input whose accept list refuses a PDF (TailorIT's letter is one) is flagged format-unsupported:
+ * nothing is waited for, asked or written. In a dry run the worker only asks whether the person has one: none, where a
+ * fill would have TailorIT's AI write one, is that promise (cover-letter-would-write, as the would-be write's row).
  */
 function planCoverLetter(spec: FieldSpec, field: ResolvedField, ctx: FieldPlanContext, how: LetterPlan): FieldPlan {
   const { resolution } = field;
   const { category } = resolution;
   const standing = planField(spec, field, ctx);
   const { letter } = how;
+  // An input whose accept list refuses a PDF takes no letter (TailorIT's is a PDF): it is never waited for or asked.
+  const takesPdf = accepts(spec.constraints.accept ?? [], COVER_LETTER_FILE);
   if (standing.write !== undefined) {
+    if (!takesPdf) return { row: rowWithout(spec, category, 'flagged', 'format-unsupported', 0) };
     const aiWritten = letter?.state === 'ready' && letter.aiWritten;
     if (aiWritten && !how.aiMay) {
       return { row: rowWithout(spec, category, 'flagged', how.aiOff ? 'ai-off-for-posting' : 'drafts-disabled', 0) };
@@ -685,6 +679,7 @@ function planCoverLetter(spec: FieldSpec, field: ResolvedField, ctx: FieldPlanCo
   if (spec.current.kind === 'files' && spec.current.count > 0) {
     return { row: rowWithout(spec, category, 'flagged', 'prefill-kept', resolution.confidence) };
   }
+  if (!takesPdf) return { row: rowWithout(spec, category, 'flagged', 'format-unsupported', 0) };
   if (letter === undefined || letter.state === 'waiting') {
     how.wait(spec.key);
     return { row: rowWithout(spec, category, 'flagged', 'cover-letter-waiting', 0) };
@@ -710,7 +705,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const kept = persistableCanaries(asked.canaries, profile);
   // An "I did not use AI" attestation anywhere in the frame's scan makes it a profile-only frame, as a posting that
   // forbids AI does (unless the person's setting is to use the AI anyway).
-  const attestation = asked.specs.some((spec) => attestsNoAi(spec, classifyField(spec)));
+  const attestation = holdsNoAiAttestation(asked.specs);
   const aiOff = asked.noAi === true || (attestation && asked.settings.llm.whenForbidden !== 'use-ai');
   const input: PlanInput = aiOff ? { ...asked, settings: withoutAi(asked.settings) } : asked;
   const wantedLlm = asked.settings.llm;

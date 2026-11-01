@@ -80,10 +80,13 @@ export const AutofillCoverLetterRequestSchema = z
   });
 export type AutofillCoverLetterRequest = z.infer<typeof AutofillCoverLetterRequestSchema>;
 
-/** POST /api/autofill/cover-letters's answer (200): the letter to upload and where it stands. */
+/** POST /api/autofill/cover-letters's answer (200): the letter to upload, where it stands, and who wrote it. */
 export const AutofillCoverLetterResponseSchema = z.object({
   letterId: AutofillCoverLetterIdSchema,
   state: z.enum(AUTOFILL_COVER_LETTER_STATES),
+  /** TailorIT's AI wrote it: it is being written now, or the AI wrote it and the person has not edited it since.
+   *  False for a letter the person wrote or edited. */
+  aiWritten: z.boolean(),
 });
 export type AutofillCoverLetterResponse = z.infer<typeof AutofillCoverLetterResponseSchema>;
 

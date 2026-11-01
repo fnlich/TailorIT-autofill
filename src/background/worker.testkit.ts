@@ -678,7 +678,8 @@ export function askingCore(): Pick<CoreFunctions, 'planFrame'> {
 /**
  * planFrame scripted for a cover-letter upload (Phase G; the real one is src/core/plan/cover-letter.test.ts): with no letter
  * yet it waits (PlanOutput.coverLetter, TailorIT's AI allowed unless the run is profile-only or a dry run); ready, it is
- * the profile's cover letter; none, flagged with why.
+ * the profile's cover letter, unless the AI wrote it and the run is profile-only (ai-off-for-posting); none, flagged
+ * with why.
  */
 export function letterCore(): Pick<CoreFunctions, 'planFrame'> {
   return {
@@ -695,6 +696,8 @@ export function letterCore(): Pick<CoreFunctions, 'planFrame'> {
           output.results.push({ ...row, status: 'flagged', reason: 'cover-letter-waiting', needsUserAction: true });
         } else if (letter.state === 'none') {
           output.results.push({ ...row, status: 'flagged', reason: letter.reason, needsUserAction: true });
+        } else if (letter.aiWritten && input.noAi === true) {
+          output.results.push({ ...row, status: 'flagged', reason: 'ai-off-for-posting', needsUserAction: true });
         } else {
           // The worker attached nothing to the profile: planFrame does (withCoverLetter).
           output.writes.push({ key: spec.key, value: { kind: 'file', ref: 'cover-letter' },

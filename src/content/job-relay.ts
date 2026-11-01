@@ -12,11 +12,15 @@
  * - Phase G: postingNamesOf, the company and job title the frame's own page title names (Greenhouse's "Job Application
  *   for <title> at <company>", Lever's "<company> - <title>"), for a cover letter of a posting TailorIT does not have;
  *   job/postingText carries them (`names`), and so does a plan/request that plans an upload (`posting`). A title that
- *   speaks to AI tools (a tripwire), or one of another shape, names nothing.
+ *   speaks to AI tools (a tripwire), or one of another shape, names nothing. job/postingText also says when the form's
+ *   fields state "I did not use AI" (`attestation`, read as planFrame reads it: the Phase G review, MINOR 5), so the
+ *   side panel's Write it now writes nothing there before any run.
  */
 import type { Platform } from '../core/enums';
 import { scanTripwires, tripwireHits } from '../core/guard/tripwire';
+import { holdsNoAiAttestation } from '../core/plan/attestation';
 import { capCodePoints } from '../core/text/fold';
+import type { FieldSpec } from '../core/types/field';
 import type { VisibleText } from '../core/types/text';
 import { rawScan } from '../dom/raw-scan';
 import { visibleTextWithout } from '../dom/visible-text';
@@ -60,14 +64,17 @@ export function postingNamesOf(doc: Document, platform: Platform | null): Postin
 }
 
 /** job/postingText: the posting's visible text outside `root` (top frame only), the page's nearest canaries, whether
- *  the frame's visible text forbids AI, and the names its page title gives (Phase G). */
+ *  the frame's visible text forbids AI, the names its page title gives (Phase G), and whether the form's fields
+ *  (`specs`, its scan) state "I did not use AI" (the Phase G review, MINOR 5: read as planFrame reads it). */
 export async function postingTextOf(doc: Document, root: Element | null, isTop: boolean, signal: AbortSignal,
-  platform: Platform | null = null): Promise<{ text: string; canaries: string[]; policy: boolean; names?: PostingNames }> {
+  platform: Platform | null = null, specs: readonly FieldSpec[] = []):
+  Promise<{ text: string; canaries: string[]; policy: boolean; names?: PostingNames; attestation?: true }> {
   const body = doc.body;
   const text = isTop && body !== null ? visibleTextWithout(body, root === null ? [] : [root], { cap: MAX_POSTING_TEXT }).trim()
     : '';
   const raw = await rawScan(doc, { signal });
   const names = postingNamesOf(doc, platform);
   return { text, canaries: scanTripwires(raw.passages).canaries.filter((canary) => canary.length <= 120).slice(0, 32),
-    policy: frameHitsOf(doc).length > 0, ...(names === null ? {} : { names }) };
+    policy: frameHitsOf(doc).length > 0, ...(names === null ? {} : { names }),
+    ...(holdsNoAiAttestation(specs) ? { attestation: true as const } : {}) };
 }

@@ -409,7 +409,7 @@ export function attachResume(profile: Profile, choice: Pick<AutofillResumeChoice
 
 /** The profile with the run's cover letter (Phase G) when the worker holds it ready to upload, as the Guard checks an
  *  upload's origin against it (profile path `coverLetter`); without it otherwise, so a cover-letter upload is never
- *  planned for a letter that is not there. Whether TailorIT's AI wrote it during this run only: never an id or a word. */
+ *  planned for a letter that is not there. Whether TailorIT's AI wrote it only: never an id or a word. */
 export function withCoverLetter(profile: Profile, letter: { state: string; aiWritten?: boolean } | undefined): Profile {
   const { coverLetter: _dropped, ...rest } = profile;
   if (letter?.state !== 'ready') return rest;

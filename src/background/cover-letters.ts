@@ -12,30 +12,40 @@
  * - generate: TailorIT's AI may write one when the person has none (planFrame's word: not a dry run, not a profile-only
  *   run, AI-written answers on). With generate false TailorIT answers only a letter the person wrote or edited, and
  *   404 when there is none.
- * An answer `generating` is polled (GET …/:id) every LETTER_POLL_MS, 30 a minute against TailorIT's 120 state reads a
- * minute per account, or after a 429's hint, for at most LETTER_CAP_MS from the first ask; `ready` is the letter to
- * upload (aiWritten when TailorIT's AI wrote it during this run), `failed` and the refusals leave the field flagged
- * with why. A 409 ai_busy (two letters already being written for the account) is asked again within the cap.
+ * It asks in two steps: first a check (generate false, no page text: TailorIT counts checks apart, 60 a minute, so the
+ * person's own letter never uses up the letters that may be written), then, only where TailorIT may write the letter
+ * and the check found none to use (404, or `failed`: an empty letter TailorIT writes into, or the person's unfinished
+ * one), the ask that may write (generate true: 10 a minute and 60 an hour per account). The answer says who wrote the
+ * letter (`aiWritten`: TailorIT's AI, while it writes and until the person edits it), so a letter the AI wrote before
+ * this run, or from the side panel's Write it now, is the AI's as one written now is. An answer `generating` is polled
+ * (GET …/:id) every LETTER_POLL_MS, 30 a minute against TailorIT's 120 state reads a minute per account, or after a
+ * 429's hint, for at most LETTER_CAP_MS from the first ask; `ready` is the letter to upload, `failed` and the refusals
+ * leave the field flagged with why. A 409 ai_busy (two letters already being written for the account) is asked again
+ * after LETTER_BUSY_MS (15 s, 30 s, then 60 s), so it makes at most 5 asks that may write within the cap; a 429 whose
+ * hint goes past the cap ends the ask at once as TailorIT's limit (cover-letter-unavailable, `limited`), not a
+ * time-out.
  *
  * One run's letter (createRunLetter): asked once per run, by the first plan that has a cover-letter upload to fill; the
  * keys waiting for it are planned again (plan/poll) once it is settled, and its id stays here for the resume port,
  * which sends the PDF as it sends a resume. A run that went stops it. A run whose letter TailorIT started writing is
  * marked in its value-free record (runs.ts `letterWritten`), so a worker that restarted still marks that letter as the
- * AI's.
+ * AI's. A worker that restarted between the plan and the upload has lost the letter's id: the resume port checks for
+ * the person's letter again (checkLetter: generate false, so nothing is written).
  *
  * The side panel's row (createPanelLetters, panel/letter {tabId, write}): whether the person has a letter for the tab's
  * job (write false: nothing is written), or Write it now (write true: TailorIT's AI writes one when there is none, never
- * with AI-written answers off, or where the tab fills from the profile only: a posting that forbids AI under the default
- * setting, or a run of the tab that went profile-only). It reads the job card the worker
- * holds (job-cards.ts tabJob) and, to write or for a posting TailorIT does not have, the form frame's visible posting
- * text and names (job/postingText). It answers a state only, kept per document for JOB_CARD_TTL_MS; never an id, never
- * a word of a letter.
+ * with AI-written answers off, in a dry run of the tab, where the form frame's page cannot be read, or where the tab
+ * fills from the profile only: a posting that forbids AI under the default setting, an "I did not use AI" statement on
+ * the form, or a run of the tab that went profile-only). It reads the job card the worker holds (job-cards.ts tabJob)
+ * and, to write or for a posting TailorIT does not have, the form frame's visible posting text and names
+ * (job/postingText). It answers a state only, kept per document for JOB_CARD_TTL_MS; never an id, never a word of a
+ * letter.
  *
  * Memory only: nothing here is stored but the run record's flag, and no log line names a letter, a job, an address or
  * a word: codes and counts.
  */
 import {
-  AUTOFILL_COVER_LETTER_LIMITS, cutAtWord, type AutofillCoverLetterRequest, type AutofillCoverLetterState,
+  AUTOFILL_COVER_LETTER_LIMITS, cutAtWord, type AutofillCoverLetterRequest, type AutofillCoverLetterResponse,
 } from '../contract/tailorit';
 import type { CoverLetterGap, CoverLetterState } from '../core/plan/types';
 import type { FieldKey } from '../core/types/field';
@@ -56,6 +66,10 @@ import type { Timers } from './timers';
 
 /** How often a letter being written is asked after: 30 a minute, under TailorIT's 120 state reads a minute. */
 export const LETTER_POLL_MS = 2_000;
+/** How long an ask TailorIT answers ai_busy waits before it is made again: the first wait, the second, then each one
+ *  after. Each such ask may write, so TailorIT counts it against its 10 a minute and 60 an hour: at most 5 within
+ *  LETTER_CAP_MS. */
+export const LETTER_BUSY_MS = [15_000, 30_000, 60_000] as const;
 /** A letter not written this long after it was first asked for leaves its field flagged (cover-letter-timed-out). */
 export const LETTER_CAP_MS = 180_000;
 /** panel/letter per tab: each may be a POST TailorIT counts against its 10 a minute. */
@@ -81,8 +95,9 @@ export interface LetterAsk {
   written?: boolean;
 }
 
-/** How asking ended: the letter to upload (its id, memory only, and whether TailorIT's AI wrote it during this run), or
- *  none, with why (`limited`: a 429 the caller would not wait on). */
+/** How asking ended: the letter to upload (its id, memory only, and whether TailorIT's AI wrote it: TailorIT's word, or
+ *  this run had it written), or none, with why (`limited`: TailorIT's limit, which the caller would not or could not
+ *  wait out). */
 export type LetterResult =
   | { state: 'ready'; letterId: string; aiWritten: boolean }
   | { state: 'none'; reason: CoverLetterGap; limited?: true };
@@ -146,7 +161,14 @@ export async function fetchLetter(deps: LetterDeps, ask: LetterAsk, active: () =
     deps.timers.after(ms, resolve);
   });
   const gone: LetterResult = { state: 'none', reason: 'cover-letter-unavailable' };
-  const timedOut = (): LetterResult => {
+  const limitedOut: LetterResult = { state: 'none', reason: 'cover-letter-unavailable', limited: true };
+  /** Whether waiting `delay` more stays within the cap; past it, how the ask ends: TailorIT's limit said as such. */
+  const pastCap = (delay: number, limited: boolean): LetterResult | null => {
+    if (elapsed() + delay <= LETTER_CAP_MS) return null;
+    if (limited) {
+      log('letter.limited', { capped: true });
+      return limitedOut;
+    }
     log('letter.timed-out', { s: Math.round(elapsed() / 1000) });
     return { state: 'none', reason: 'cover-letter-timed-out' };
   };
@@ -154,49 +176,66 @@ export async function fetchLetter(deps: LetterDeps, ask: LetterAsk, active: () =
   const hinted = (failure: { retryAfterSeconds?: number }) =>
     Math.max(LETTER_POLL_MS, (failure.retryAfterSeconds ?? 0) * 1000);
 
-  let posted: { letterId: string; state: AutofillCoverLetterState };
-  for (;;) {
-    if (!active()) return gone;
-    const answer = await deps.server.coverLetter(body);
-    if (!active()) return gone;
-    if (answer.ok) {
-      posted = answer.value;
-      break;
+  /** One POST, made again past ai_busy (LETTER_BUSY_MS) and a 429 (its hint) within the cap; a 404 is `missing`. */
+  async function post(request: AutofillCoverLetterRequest):
+    Promise<{ posted: AutofillCoverLetterResponse } | { missing: true } | { ended: LetterResult }> {
+    for (let busy = 0; ;) {
+      if (!active()) return { ended: gone };
+      const answer = await deps.server.coverLetter(request);
+      if (!active()) return { ended: gone };
+      if (answer.ok) return { posted: answer.value };
+      const isBusy = answer.failure === 'conflict' && answer.code === 'ai_busy';
+      const limited = answer.failure === 'rate-limited';
+      if (limited && options.waitOnLimit === false) return { ended: limitedOut };
+      if (!isBusy && !limited) {
+        log('letter.refused', { status: answer.status ?? 0 });
+        if (answer.failure === 'not-found' && !request.generate) return { missing: true };
+        return { ended: { state: 'none', reason: refusalOf(answer, request.generate) } };
+      }
+      const delay = limited ? hinted(answer) : LETTER_BUSY_MS[Math.min(busy, LETTER_BUSY_MS.length - 1)]!;
+      if (isBusy) busy += 1;
+      const capped = pastCap(delay, limited);
+      if (capped !== null) return { ended: capped };
+      log(isBusy ? 'letter.busy' : 'letter.limited');
+      await wait(delay);
     }
-    const busy = answer.failure === 'conflict' && answer.code === 'ai_busy';
-    const limited = answer.failure === 'rate-limited';
-    if (limited && options.waitOnLimit === false) return { state: 'none', reason: 'cover-letter-unavailable', limited: true };
-    if (!busy && !limited) {
-      log('letter.refused', { status: answer.status ?? 0 });
-      return { state: 'none', reason: refusalOf(answer, ask.generate) };
-    }
-    const delay = limited ? hinted(answer) : LETTER_POLL_MS;
-    if (elapsed() + delay > LETTER_CAP_MS) return timedOut();
-    log(busy ? 'letter.busy' : 'letter.limited');
-    await wait(delay);
   }
 
-  const { letterId } = posted;
-  if (posted.state === 'ready') {
-    log('letter.ready', { written: ask.written === true });
-    return { state: 'ready', letterId, aiWritten: ask.written === true };
+  // The check first (generate false); the ask that may write only where TailorIT may write the letter and the check
+  // found none to use: none of the person's (404), or one that is not ready (an empty letter TailorIT writes into).
+  let request = ask.generate ? letterRequestOf({ ...ask, generate: false })! : body;
+  let step = await post(request);
+  if (ask.generate && ('missing' in step || ('posted' in step && step.posted.state === 'failed'))) {
+    request = body;
+    step = await post(request);
   }
-  if (posted.state === 'failed') {
+  if ('ended' in step) return step.ended;
+  if ('missing' in step) return { state: 'none', reason: 'cover-letter-none' };
+  const { letterId, state } = step.posted;
+  const aiWritten = step.posted.aiWritten || ask.written === true;
+  if (state === 'ready') {
+    log('letter.ready', { written: aiWritten });
+    return { state: 'ready', letterId, aiWritten };
+  }
+  if (state === 'failed') {
     log('letter.failed');
     return { state: 'none', reason: 'cover-letter-failed' };
   }
-  // Generating: only ever for an ask that may write (TailorIT never answers it to generate false).
-  if (!ask.generate) {
+  // Generating: only ever for an ask that may write (TailorIT never answers it to a check).
+  if (!request.generate) {
     log('letter.refused', { generating: true });
     return gone;
   }
   options.onWriting?.();
   let delay = LETTER_POLL_MS;
+  let limited = false;
   for (;;) {
-    if (elapsed() + delay > LETTER_CAP_MS) return timedOut();
+    const capped = pastCap(delay, limited);
+    if (capped !== null) return capped;
     await wait(delay);
     if (!active()) return gone;
     delay = LETTER_POLL_MS;
+    limited = false;
     const view = await deps.server.coverLetterState(letterId);
     if (!active()) return gone;
     if (view.ok) {
@@ -212,12 +251,25 @@ export async function fetchLetter(deps: LetterDeps, ask: LetterAsk, active: () =
     }
     if (view.failure === 'rate-limited') {
       delay = hinted(view);
+      limited = true;
       continue;
     }
     if (TRANSIENT.has(view.failure)) continue;
     log('letter.refused', { status: view.status ?? 0, polled: true });
     return { state: 'none', reason: refusalOf(view, true) };
   }
+}
+
+/**
+ * The person's own letter for a run, checked for again (generate false: nothing is written, and only a letter they wrote
+ * or edited is answered): the resume port's way back to a letter whose id a worker that restarted between the plan and
+ * the upload has lost (the Phase G review, MINOR 7). Its id when it is ready, else null; a 429 is not waited on.
+ */
+export async function checkLetter(deps: LetterDeps, ask: Pick<LetterAsk, 'jobId' | 'company' | 'jobTitle' | 'resumeId'
+  | 'written'>, active: () => boolean): Promise<string | null> {
+  const result = await fetchLetter(deps, { ...ask, generate: false, jobText: '', canaries: [] }, active,
+    { waitOnLimit: false });
+  return result.state === 'ready' ? result.letterId : null;
 }
 
 /** One run's cover letter, in the worker's memory (module header). */
@@ -302,6 +354,8 @@ export interface PanelLettersDeps extends LetterDeps {
   policyHeld?(tabId: number): Promise<boolean>;
   /** Whether a run of the tab fills from the profile only (its reports' policy-profile-only or ai-attestation). */
   profileOnlyHeld?(tabId: number): Promise<boolean>;
+  /** Whether the tab's latest run is a dry run (its latest report's mode), which writes nothing. */
+  dryRunHeld?(tabId: number): Promise<boolean>;
   /** LETTER_LIMIT, keyed `${tabId}/`. */
   limit: ReturnType<typeof createRateLimit>;
 }
@@ -342,6 +396,8 @@ export function createPanelLetters(deps: PanelLettersDeps) {
     if (!(await deps.connected())) return 'not-connected';
     const settings = await deps.settings.get();
     if (write && !settings.llm.drafts) return 'ai-off';
+    // A dry run writes nothing: its card offers no Write it now, and one that comes anyway is refused.
+    if (write && ((await deps.dryRunHeld?.(tabId).catch(() => true)) ?? false)) return 'unavailable';
     const generation = deps.generation();
     const job = await deps.jobs.tabJob(tabId);
     if (job.frame === null) return 'unavailable';
@@ -356,12 +412,16 @@ export function createPanelLetters(deps: PanelLettersDeps) {
     if (!write && held !== undefined && deps.now() - held.at < JOB_CARD_TTL_MS) return held.outcome;
     const page = write || job.jobId === null ? await pageOf(tabId, job.frame) : null;
     if (write) {
-      // Profile only: a posting that forbids AI, with the person's setting at its default, or a run of the tab that
-      // fills from the profile only, gets no letter written by the AI. "Ask me" leaves it to the person's click, and
-      // "Use AI anyway" writes it.
-      const policy = page?.policy === true || ((await deps.policyHeld?.(tabId).catch(() => false)) ?? false);
+      // A page that could not be read may forbid AI or hold an "I did not use AI" statement: nothing is written.
+      if (page === null) return 'unavailable';
+      // Profile only: a posting that forbids AI, with the person's setting at its default, a form that states "I did
+      // not use AI" (unless the setting is to use the AI anyway, as planFrame reads it), or a run of the tab that fills
+      // from the profile only, gets no letter written by the AI. "Ask me" leaves the posting's notice to the person's
+      // click, and "Use AI anyway" writes it.
+      const policy = page.policy || ((await deps.policyHeld?.(tabId).catch(() => false)) ?? false);
+      const attested = page.attestation === true && settings.llm.whenForbidden !== 'use-ai';
       const held = (await deps.profileOnlyHeld?.(tabId).catch(() => false)) ?? false;
-      if ((policy && settings.llm.whenForbidden === 'profile-only') || held) return 'ai-off';
+      if ((policy && settings.llm.whenForbidden === 'profile-only') || attested || held) return 'ai-off';
     }
     if (generation !== deps.generation()) return 'not-connected';
     const result = await fetchLetter(deps, {

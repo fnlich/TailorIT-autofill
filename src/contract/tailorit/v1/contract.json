@@ -6,7 +6,7 @@
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "92eee1fd65c7f7e79026ab88299a8d71e39b524ed30add9eb19a44dac38fc156",
     "connect.ts": "856a13f2327d4ab08b88df598563a93426ab1bb1df14d86d02df69aa5b4f046f",
-    "cover-letters.ts": "3801742c857d7fc88dfc41a20a9fe377591c3260529eeb3245c126610b3f3ac0",
+    "cover-letters.ts": "5ba60218ba68c7d3c16b762fc6c8a74fb8d786f5f4391d4ac02f744df6d0a0f4",
     "index.ts": "4044d2c2e0ce13319bc6062fa1534e6a8d92278260fdff9481cc6fb04fa0bfad",
     "lookup.ts": "463b4bdbcc527d37b9484184e8c06e73a3793267d79fbb5e6889de5383364352",
     "profile.ts": "3e83fbd9f623f8b53d1fce16d908ebacb7635ab7221f952497a893ae5b26a425",
@@ -85,11 +85,14 @@
     "AutofillCoverLetterRequest/valid/golden.json": "22707574ce1d355e54f6d239b30ead47d17d625b5ef6ad844f1cee2dde22caaf",
     "AutofillCoverLetterRequest/valid/posting-tailorit-lacks.json": "1d66c969beaeae21aadbeac2a405d6ddbf82b8d0c8ed5d86715fd12075cf7e43",
     "AutofillCoverLetterRequest/valid/with-canaries.json": "b5a25671536bac63d00fffbba88963a92bd3bac7dd7080a639fbda2dd2e1fb32",
-    "AutofillCoverLetterResponse/invalid/not-a-uuid.json": "381a7b56f0a92b8a61e6be493360d84256a28f494b0abdaf8d5128d7a5d19251",
-    "AutofillCoverLetterResponse/invalid/unknown-state.json": "448e26e89f47935529cd372d34c69680aaf9a24aee18f27f1f9d4340a38fc596",
-    "AutofillCoverLetterResponse/valid/failed.json": "289d3a88c9baf9aa1504fc492c4a5546db25dc4c34e73371ee4c81c2a473da02",
-    "AutofillCoverLetterResponse/valid/golden.json": "5df46d564fde6acff22330e2435afe40863d55480cf8f8ea40986530748d20b5",
-    "AutofillCoverLetterResponse/valid/ready.json": "71071c96c6692749ffe10e2d83dfba93b99755ee325ec10ed50fc36920b9cc2a",
+    "AutofillCoverLetterResponse/invalid/ai-written-not-boolean.json": "750ab9ad70c0a07b80255b1e9d313e991c748c3d21643d9cbba8d6970d8f98a1",
+    "AutofillCoverLetterResponse/invalid/no-ai-written.json": "71071c96c6692749ffe10e2d83dfba93b99755ee325ec10ed50fc36920b9cc2a",
+    "AutofillCoverLetterResponse/invalid/not-a-uuid.json": "fa69ea8435403cd2f87a8d35ed4120db678b05fbf460db12af5ba7e3d519abbd",
+    "AutofillCoverLetterResponse/invalid/unknown-state.json": "af2403709d50aaee6507246a01c6d95e1e956125c78b9c99e137cb258be4851d",
+    "AutofillCoverLetterResponse/valid/failed.json": "cac4c6777fe62ff25fb9d7b522beb2376bb52a9db94165835f8c576adeba0fa9",
+    "AutofillCoverLetterResponse/valid/golden.json": "318dad1083706769652a0479c7491da5539d29fbc4fb4591f7cd130e52b050ba",
+    "AutofillCoverLetterResponse/valid/ready-ai-written.json": "d23adbbd0971b4957552e808d7dfb74449589145a5e20cd42f3118da2c86300f",
+    "AutofillCoverLetterResponse/valid/ready.json": "09f9153223420ad66c4b004783ccf28300be555c012063c8f5f06fbdde5514df",
     "AutofillCoverLetterStatus/invalid/no-state.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "AutofillCoverLetterStatus/invalid/unknown-state.json": "9543db47ce693586feb43f20ed4d8a74e4cd2b6a951e8ac81b1a4628c51a570e",
     "AutofillCoverLetterStatus/valid/generating.json": "bd0d7e873c4d3328fc7604089c8d0dcb855920fcc84a6ec2ca1babae6e82978e",
@@ -10749,11 +10752,15 @@
             "generating",
             "failed"
           ]
+        },
+        "aiWritten": {
+          "type": "boolean"
         }
       },
       "required": [
         "letterId",
-        "state"
+        "state",
+        "aiWritten"
       ],
       "additionalProperties": false
     },

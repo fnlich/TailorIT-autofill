@@ -3,7 +3,10 @@
  * asks TailorIT for the job's letter (the lookup's job, the page's visible text, the resume the fill attaches), polls
  * it while TailorIT writes it, and sends its PDF over the resume port; the content script puts it into the
  * cover-letter upload. Checked from the page: the file's name, type and size, and a SHA-256 computed in the page.
- * - TailorIT's AI writes it during the fill: attached, its row marked as the AI's.
+ * - TailorIT's AI writes it during the fill: attached, its row marked as the AI's. The fill checks for the person's own
+ *   first (generate false), and asks with generate true only when there is none.
+ * - A letter TailorIT's AI wrote earlier that the person never edited: TailorIT says so (aiWritten), and the fill
+ *   attaches it as the AI's.
  * - A posting that forbids AI (profile only, the default): only a letter the person wrote is asked for and attached;
  *   with none, the field is flagged and nothing is written.
  * - A letter TailorIT could not write: flagged, the input untouched, no file asked for.
@@ -82,11 +85,11 @@ test.describe('cover letters', () => {
     // The resume is the resume.
     expect(await fileHeld(page, '#resume')).toMatchObject({ name: GOLDEN_RESUME.fileName, sha256: GOLDEN_RESUME.sha256 });
 
-    // The fill asked once: the lookup's job, the page's visible text, the resume the fill attaches, TailorIT's AI
-    // allowed. The side panel's card only asked whether the person has one.
+    // The fill asked once that may write: the lookup's job, the page's visible text, the resume the fill attaches,
+    // TailorIT's AI allowed. Before it, the fill checked whether the person has one, as the side panel's card did.
     const [asked, ...more] = (await bodies()).filter((body) => body.generate === true);
     expect(more).toEqual([]);
-    expect((await bodies()).filter((body) => body.generate !== true)).toEqual([OWN_ONLY]);
+    expect((await bodies()).filter((body) => body.generate !== true)).toEqual([OWN_ONLY, OWN_ONLY]);
     expect(asked).toMatchObject({ jobId: GOLDEN_JOB.id, company: GOLDEN_JOB.companyName, jobTitle: GOLDEN_JOB.title,
       resumeId: GOLDEN_RESUME.id, generate: true });
     expect(String(asked!.jobText)).toContain('Northwind builds ordering software for restaurants.');
@@ -96,6 +99,24 @@ test.describe('cover letters', () => {
     expect(polls.length).toBeGreaterThanOrEqual(2);
     expect(polls.length).toBeLessThanOrEqual(10);
     expect((await fileRequests()).map((request) => request.status)).toEqual([200]);
+    await letterKeptToTheInput(ext, tabId, logs());
+    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
+      applicationKey: applicationKeyOf(url) });
+  });
+
+  test('a letter TailorIT’s AI wrote earlier, never edited: TailorIT says so, and the fill attaches it as the AI’s', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    await tailorit.scenario('letter-ai-ready');
+    const page = await extContext.newPage();
+    const url = await open(page, routeLog, 'cover-letter-earlier');
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(row(report, 'Cover letter')).toMatchObject({ status: 'verified', provenance: 'profile',
+      reason: 'cover-letter-written', wrote: true });
+    expect(await fileHeld(page, '#cover_letter')).toEqual(LETTER_FILE);
+    // Nothing was written: the fill's check (as the card's) found none of the person's, and its ask answered the
+    // earlier letter, ready.
+    expect((await bodies()).map((body) => String(body.generate)).sort()).toEqual(['false', 'false', 'true']);
+    expect((await mock.requestsTo(STATE)).filter((request) => !request.path.endsWith('/file'))).toEqual([]);
     await letterKeptToTheInput(ext, tabId, logs());
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(url) });
@@ -180,7 +201,9 @@ test.describe('cover letters', () => {
     await letter.getByRole('button', { name: COPY.job.letter.write }).click();
     await expect(letter).toHaveAttribute('data-letter-outcome', 'written', { timeout: 15_000 });
     await expect(letter.locator('[role="status"]')).toHaveText(COPY.job.letter.ready);
-    const [, written] = await bodies();
+    // Write it now checks first, then asks with generate true.
+    const [, check, written, ...more] = await bodies();
+    expect([check, more]).toEqual([OWN_ONLY, []]);
     expect(written).toMatchObject({ generate: true, jobId: GOLDEN_JOB.id });
     expect(String(written!.jobText)).toContain('Northwind builds ordering software for restaurants.');
     // Nothing of the letter on the card but its state.
