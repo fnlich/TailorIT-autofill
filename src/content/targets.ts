@@ -17,9 +17,10 @@ export function elementsOf(target: FieldTarget): Element[] {
   return [target.proxy ?? target.control];
 }
 
-/** The reasons of a row whose value the AI wrote and that needs nothing of the person (the owner's amendments). */
+/** The reasons of a row whose value the AI wrote and that needs nothing of the person (the owner's amendments; Phase
+ *  G: a cover letter TailorIT's AI wrote during this run). */
 const AI_WRITTEN: ReadonlySet<FillResult['reason']> = new Set<FillResult['reason']>(['llm-draft-written',
-  'llm-answer-written']);
+  'llm-answer-written', 'cover-letter-written']);
 
 /** How a row's outline marks the AI (the owner's amendments): 'guess' for an answer with nothing to go on ("AI
  *  guess"), 'written' for a draft or an answer the AI wrote, read back as written ("AI"); absent otherwise (a draft

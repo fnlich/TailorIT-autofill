@@ -55,6 +55,12 @@
  *   run, or with AI-written answers off (settings.llm.drafts: the Phase E review, MINOR 8).
  * - The answer names the keys the page may offer Edit with AI on (`aiEditable`), and says when the frame's scan holds
  *   an "I did not use AI" attestation (`aiAttestation`).
+ *
+ * Cover letters (Phase G; cover-letters.ts): a plan's cover-letter uploads (PlanOutput.coverLetter) have the run ask
+ * TailorIT for its letter once (the lookup's job, else the request's `posting` names; the resume the run attaches; and,
+ * where TailorIT's AI may write it, the request's posting text and canaries), and wait for it as awaiting keys the frame
+ * polls; plan/poll plans them again once the letter is settled, with the letter's state in PlanInput.coverLetter. The
+ * letter's id stays in the run's memo for the resume port.
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
@@ -66,6 +72,7 @@ import { PlanAnswerSchema, type ContentMessage } from '../messaging/schemas';
 import { log } from '../shared/log';
 import type { RunRecord } from '../shared/stored';
 import { createRunAi, type AiTasks, type AskContext, type RunAi } from './ai-tasks';
+import { createRunLetter, type LetterDeps } from './cover-letters';
 import { ymdOf, type CoreFunctions } from './core';
 import type { AcceptBook, MatchCache } from './match-cache';
 import type { ProfileCache } from './profile-cache';
@@ -100,6 +107,9 @@ export interface PlannerDeps {
   cache?: Pick<MatchCache, 'ready' | 'get' | 'drop'>;
   /** Which writes' matches the cache may take once accepted (Phase 6). */
   accepts?: Pick<AcceptBook, 'planned'>;
+  /** What a run's cover letter is asked with (Phase G, cover-letters.ts). Absent: no plan asks for one, and a
+   *  cover-letter upload waits until the frame stops waiting (tests that plan no letter). */
+  letters?: LetterDeps;
   now(): number;
 }
 
@@ -166,6 +176,8 @@ export function createPlanner(deps: PlannerDeps) {
     // What the run's lookup knows of the posting: its company and location (the owner's amendments). Memory only.
     const job = deps.runs.memo(run.runId).lookup?.job ?? null;
     const posting = job === null ? null : { company: job.companyName, location: job.location };
+    // The run's cover letter as far as it is known (Phase G): planFrame attaches it once ready.
+    const letter = deps.runs.memo(run.runId).letter?.input();
     const plan = (state: PlanSensitiveState, profile: typeof loaded & { ok: true }) => deps.core.planFrame({
       specs: context.specs,
       planKeys,
@@ -185,6 +197,7 @@ export function createPlanner(deps: PlannerDeps) {
       ...(posting === null ? {} : { posting }),
       ...(aiOffFor(run, context) ? { noAi: true } : {}),
       ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }),
+      ...(letter === undefined ? {} : { coverLetter: letter }),
     });
     try {
       const memory = loaded.value.sensitiveState;
@@ -229,8 +242,38 @@ export function createPlanner(deps: PlannerDeps) {
   }
 
   /**
+   * A plan's cover-letter uploads (Phase G): the run's letter is asked for once, by the first plan that has one to
+   * fill, and they wait for it as keys the frame polls (planned again with this context once it is settled).
+   * TailorIT's AI may write it only when the plan says so, the run is no dry run and it is not marked profile-only.
+   * The lookup's job (id, company, title) stays here; without one, the page's own title's names are asked with.
+   */
+  async function awaitLetter(run: RunRecord, url: string, context: AskContext, output: PlanOutput): Promise<FieldKey[]> {
+    const wanted = output.coverLetter;
+    if (wanted === undefined || wanted.keys.length === 0 || deps.letters === undefined) return [];
+    const memo = deps.runs.memo(run.runId);
+    memo.letter ??= createRunLetter(deps.letters, () => void deps.runs.noteLetterWritten(run.runId).catch(() => undefined));
+    if (memo.letter.input() === undefined) {
+      const resume = await deps.chooseResume(run.runId, url);
+      const job = memo.lookup?.job ?? null;
+      memo.letter.ask({
+        jobId: job?.id ?? null,
+        company: job?.companyName ?? context.posting?.company ?? '',
+        jobTitle: job?.title ?? context.posting?.title ?? '',
+        jobText: context.postingText ?? '',
+        resumeId: resume?.id ?? null,
+        generate: wanted.generate && !run.dryRun && !aiOffFor(run, context),
+        canaries: context.canaries,
+        written: run.letterWritten === true,
+      });
+    }
+    memo.letter.wait(wanted.keys, context);
+    return wanted.keys;
+  }
+
+  /**
    * A plan's awaiting keys handed to the run's questions, and those whose answers are in at once (an item never sent)
-   * planned again, at most MAX_REPLANS times: the keys planned again take their new rows and writes.
+   * planned again, at most MAX_REPLANS times: the keys planned again take their new rows and writes. Its cover-letter
+   * uploads wait for the run's letter (awaitLetter).
    */
   async function withAnswers(run: RunRecord, url: string, asked: AskContext, output: PlanOutput, read: number):
     Promise<{ gathered: Gathered } | { refusal: Answer<never> }> {
@@ -245,7 +288,7 @@ export function createPlanner(deps: PlannerDeps) {
     const savable = new Set<FieldKey>(output.savable ?? []);
     const aiEditable = new Set<FieldKey>(output.aiEditable ?? []);
     let aiAttestation = output.aiAttestation === true;
-    let awaiting = [...output.awaiting];
+    let awaiting = [...output.awaiting, ...(await awaitLetter(run, url, asked, output))];
     let asking: readonly FieldKey[] = output.awaiting;
     let ask: PlanAsk | undefined = output.ask;
     let revision = read;
@@ -271,7 +314,8 @@ export function createPlanner(deps: PlannerDeps) {
       for (const row of again.output.results) rows.set(row.key, row);
       for (const write of again.output.writes) writes.set(write.key, write);
       const done = new Set<string>(ready);
-      awaiting = [...awaiting.filter((key) => !done.has(key)), ...again.output.awaiting];
+      awaiting = [...awaiting.filter((key) => !done.has(key)), ...again.output.awaiting,
+        ...(await awaitLetter(run, url, context, again.output))];
       asking = again.output.awaiting;
       ask = again.output.ask;
       revision = again.revision;
@@ -327,7 +371,8 @@ export function createPlanner(deps: PlannerDeps) {
         ...(message.postingText === undefined ? {} : { postingText: message.postingText }),
         ...(message.revealEdges === undefined ? {} : {
           revealEdges: message.revealEdges as unknown as Array<[BaseKey, BaseKey]> }),
-        ...(message.noAi === true ? { noAi: true } : {}) };
+        ...(message.noAi === true ? { noAi: true } : {}),
+        ...(message.posting === undefined ? {} : { posting: message.posting }) };
       const planKeys = message.planKeys as unknown as FieldKey[];
       const planned = await planOnce(run, from.url, asked, planKeys);
       if ('refusal' in planned) return planned.refusal;
@@ -346,21 +391,26 @@ export function createPlanner(deps: PlannerDeps) {
     async poll(message: PlanPoll, from: FrameRef & { url: string }): Promise<Answer<PlanAnswer>> {
       const run = await deps.runs.find(message.runId, from);
       if (run === null) return refuse('expired');
-      const ai = deps.runs.memo(run.runId).ai;
+      const { ai, letter } = deps.runs.memo(run.runId);
       const keys = message.keys as unknown as FieldKey[];
-      const known = ai === undefined ? [] : keys.filter((key) => ai.state(key) !== 'unknown');
-      if (ai === undefined || known.length === 0) return refuse('expired');
+      // A key waits for the LLM, or (Phase G) for the run's cover letter.
+      const ofLetter = (key: FieldKey) => letter !== undefined && letter.state(key) !== 'unknown';
+      const stateOf = (key: FieldKey) => (ofLetter(key) ? letter!.state(key) : ai?.state(key) ?? 'unknown');
+      const contextOf = (key: FieldKey) => (ofLetter(key) ? letter!.contextOf(key) : ai?.contextOf(key));
+      const known = keys.filter((key) => stateOf(key) !== 'unknown');
+      if (known.length === 0) return refuse('expired');
       const gathered: Gathered = { writes: [], results: [], savable: [], aiEditable: [],
-        awaiting: known.filter((key) => ai.state(key) === 'waiting') };
+        awaiting: known.filter((key) => stateOf(key) === 'waiting') };
       // One plan per context the ready keys were asked from.
       const byContext = new Map<AskContext, FieldKey[]>();
       for (const key of known) {
-        const context = ai.contextOf(key);
-        if (ai.state(key) !== 'done' || context === undefined) continue;
+        const context = contextOf(key);
+        if (stateOf(key) !== 'done' || context === undefined) continue;
         byContext.set(context, [...(byContext.get(context) ?? []), key]);
       }
       for (const [context, ready] of byContext) {
-        ai.settle(ready);
+        ai?.settle(ready.filter((key) => !ofLetter(key)));
+        letter?.settle(ready.filter(ofLetter));
         const planned = await planOnce(run, from.url, context, ready);
         if ('refusal' in planned) return planned.refusal;
         const answered = await withAnswers(run, from.url, context, planned.output, planned.revision);

@@ -14,6 +14,7 @@ export const SPONSORSHIP = 'Will you now or in the future require sponsorship fo
 export const SYNTHETIC_LABELS = {
   'policy-apply': ['Full name', 'Email', 'Phone'],
   'resume-upload': ['Full name', 'Email', 'Resume'],
+  'cover-letter-upload': ['Full name', 'Email', 'Resume', 'Cover letter'],
   'sensitive-questions': ['Full name', 'Email', AUTHORIZED, SPONSORSHIP, 'Gender'],
   'react-controlled': ['First name', 'Last name', 'Email', 'Phone', 'Degree', 'How did you hear about us?',
     'Which of these skills have you used?'],

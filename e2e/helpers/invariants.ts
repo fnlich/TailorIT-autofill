@@ -19,7 +19,8 @@
  *    canaries by design), storage, a console message, or a form control's final value; canaries of 8 or more
  *    characters are also looked for with spaces and punctuation removed, as the Guard does. A draft request (Phase 6)
  *    sets aside its `canaries`, which carry the page's canaries by the contract's design (TailorIT refuses a draft
- *    holding one); its job text and questions are still searched.
+ *    holding one); its job text and questions are still searched. A cover-letter request (Phase G) sets aside its
+ *    `canaries` the same way (TailorIT refuses a letter holding one); its job text is still searched.
  * 5. No free-text value of the golden profile, case-insensitively, anywhere but a report row's label: reports (each
  *    row's label set aside), RunState, storage (its stored reports' labels set aside), console messages and requests to
  *    TailorIT, in full. Among them the free text a follow-up box takes (the referral source, a self-description: the
@@ -37,7 +38,9 @@
  *    which may be the person's own words) is set aside only for the boxes the spec clicked Edit with AI on (`rewrites`,
  *    by their question): any other draft request that carries one is searched in full. Of a draft or answer request's
  *    `canaries` (the page's words addressed to AI tools), only those the spec declares the page's are set aside (trap
- *    1b's hidden text asks for "Austin", the golden profile's city); any other is searched.
+ *    1b's hidden text asks for "Austin", the golden profile's city); any other is searched. A cover-letter request
+ *    (Phase G) sets aside the same as a draft request: its job text (page text), its company and job title (the
+ *    lookup's, or the page title's) and the page's declared canaries.
  * 6. Every filled or verified row has a provenance.
  * 7. The run never reaches done.
  * 8. No request went anywhere the routes do not answer.
@@ -137,7 +140,9 @@ function withoutLabels(report: unknown): unknown {
 /** A request's body as the marker and canary search reads it: a draft or an answer request's `canaries` aside (point
  *  4; the answer route since the owner's amendments). */
 function markerBody(request: MockRequest): string {
-  if (request.method !== 'POST' || !/^\/api\/autofill\/ai\/(?:draft|answer)$/.test(request.path)) return request.body;
+  if (request.method !== 'POST' || !/^\/api\/autofill\/(?:ai\/(?:draft|answer)|cover-letters)$/.test(request.path)) {
+    return request.body;
+  }
   try {
     const { canaries: _canaries, ...body } = JSON.parse(request.body) as Record<string, unknown>;
     return JSON.stringify(body);
@@ -182,6 +187,15 @@ function sentinelBody(request: MockRequest, rowKeys: ReadonlySet<string>, rewrit
         ...others,
         ...(currentAnswer === undefined || rewrites.has(String(question)) ? {} : { currentAnswer }),
         ...(rowKeys.has(String(key)) ? {} : { key }) })) });
+    } catch {
+      return request.body;
+    }
+  }
+  if (request.method === 'POST' && request.path === '/api/autofill/cover-letters') {
+    try {
+      const { jobText: _job, company: _company, jobTitle: _title, canaries, ...rest } = JSON.parse(request.body) as
+        { jobText?: unknown; company?: unknown; jobTitle?: unknown; canaries?: unknown };
+      return JSON.stringify({ ...rest, ...unknownCanaries(canaries) });
     } catch {
       return request.body;
     }

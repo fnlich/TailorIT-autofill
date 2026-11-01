@@ -15,7 +15,7 @@ import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
 import type { AnswerItem, AnswerVerdict } from '../core/plan/answers';
 import type { DraftItem, DraftVerdict } from '../core/plan/drafts';
 import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
-import type { AnsweredVerdict, PlanOutput } from '../core/plan/types';
+import type { AnsweredVerdict, CoverLetterState, PlanOutput } from '../core/plan/types';
 import type { ClassifyItem, ClassifyVerdict } from '../core/resolver/classify';
 import type { CompanyScope } from '../core/resolver/saved';
 import type { SavedAnswer } from '../core/types/saved';
@@ -283,6 +283,9 @@ export interface FakeWorkerOptions {
   /** Phase 6: the person's saved answers the plans read, and the company the form belongs to. */
   savedAnswers?: SavedAnswer[];
   company?: CompanyScope;
+  /** Phase G: the run's cover letter, as the next plan/poll after a plan asked for it settles it (`state`), and the
+   *  file the resume port sends for it (`file`; none: the port refuses). Without it a cover-letter upload waits on. */
+  letter?: { state: CoverLetterState; file?: FakeResume };
 }
 
 /** The fake worker's draft for a free-text question, when a test scripts none (Phase 6). */
@@ -315,8 +318,12 @@ interface FakeRunAi {
   answers: Map<string, AnswerVerdict>;
   /** The answers the next plan/poll brings, by key. */
   coming: Map<FieldKey, { verdict?: AnsweredVerdict; classification?: ClassifyVerdict; draft?: DraftVerdict;
-    answer?: AnswerVerdict }>;
+    answer?: AnswerVerdict; letter?: true }>;
   waiting: Map<FieldKey, AskContext>;
+  /** Phase G: the run's cover letter as planFrame reads it (undefined: not asked yet), and whether a plan asked with
+   *  TailorIT's AI allowed to write it. */
+  letter?: CoverLetterState;
+  letterGenerate?: boolean;
 }
 
 /** The fake worker, its platform and what it saw. */
@@ -363,8 +370,19 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }),
       ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }),
       ...(context.noAi === true ? { noAi: true } : {}),
-      ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }) });
+      ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }),
+      ...(run.ai.letter === undefined ? {} : { coverLetter: run.ai.letter }) });
     if (options.editPlan) plan = options.editPlan(plan, context.specs);
+    // A cover-letter upload waits for the run's letter (Phase G): asked once, settled by the next poll.
+    for (const key of plan.coverLetter?.keys ?? []) {
+      if (run.ai.letter === undefined) {
+        run.ai.letter = { state: 'waiting' };
+        run.ai.letterGenerate = plan.coverLetter!.generate;
+      }
+      if (options.letter !== undefined) run.ai.coming.set(key, { letter: true });
+      run.ai.waiting.set(key, context);
+    }
+    if (plan.coverLetter !== undefined) plan = { ...plan, awaiting: [...plan.awaiting, ...plan.coverLetter.keys] };
     for (const item of plan.ask?.tiebreaks ?? []) {
       const { picked, why } = options.ai?.pick?.(item) ?? { picked: null, why: 'no-match' as const };
       const labelHash = picked === null ? null : item.candidates[picked]?.labelHash ?? null;
@@ -458,6 +476,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
           if (coming.classification) run.ai.classifications.set(key, coming.classification);
           if (coming.draft) run.ai.drafts.set(key, coming.draft);
           if (coming.answer) run.ai.answers.set(key, coming.answer);
+          if (coming.letter && options.letter !== undefined) run.ai.letter = options.letter.state;
           const context = run.ai.waiting.get(key)!;
           run.ai.waiting.delete(key);
           byContext.set(context, [...(byContext.get(context) ?? []), key]);
@@ -501,7 +520,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   }
 
   function serveResume(port: PortLike): void {
-    const resume = options.resume;
+    let resume = options.resume;
     const transfer = transfers++;
     let chunks: string[] = [];
     let sha = '';
@@ -518,20 +537,23 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       const message = (parsed.success ? parsed.data : { type: 'unparsed' }) as { type: string } & Record<string, unknown>;
       portLog.push({ from: 'content', message });
       if (message.type === 'resume/request') {
+        // Phase G: the run's cover letter, when the request names it.
+        if (message.document === 'cover-letter') resume = options.letter?.file;
         if (resume === undefined || resume.refuse !== undefined) {
           post({ v: 1, type: 'resume/error', reason: resume?.refuse ?? 'resume-unavailable' });
           port.disconnect();
           return;
         }
-        void sha256Of(resume.bytes).then((digest) => {
+        const served = resume;
+        void sha256Of(served.bytes).then((digest) => {
           sha = digest;
-          const sent = new Uint8Array(resume.bytes);
-          if (transfer < (resume.corrupt ?? 0)) sent[7] = (sent[7] ?? 0) ^ 0xff;
+          const sent = new Uint8Array(served.bytes);
+          if (transfer < (served.corrupt ?? 0)) sent[7] = (sent[7] ?? 0) ^ 0xff;
           chunks = [];
           for (let at = 0; at < sent.length; at += RESUME_CHUNK_BYTES) {
             chunks.push(base64Of(sent.subarray(at, at + RESUME_CHUNK_BYTES)));
           }
-          post({ v: 1, type: 'resume/header', name: resume.name, mime: resume.mime, size: resume.bytes.length, sha256: sha,
+          post({ v: 1, type: 'resume/header', name: served.name, mime: served.mime, size: served.bytes.length, sha256: sha,
             chunkCount: chunks.length });
           post({ v: 1, type: 'resume/chunk', index: 0, data: chunks[0]! });
         });

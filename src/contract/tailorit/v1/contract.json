@@ -5,13 +5,14 @@
     "ai.ts": "28022ed5313c803da7e185cbe772bae6b474c5b549c31b8a934d67542dfc4223",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "92eee1fd65c7f7e79026ab88299a8d71e39b524ed30add9eb19a44dac38fc156",
-    "connect.ts": "9a9559b6ba13e5cb1437c8014f2e4ad3a90c074ba2b247a14bc3b7fdd630e82f",
-    "index.ts": "5d30457b067f37f1c8ceb104ae269edb079ed90d98d91586f9efcc6c13eb8937",
+    "connect.ts": "856a13f2327d4ab08b88df598563a93426ab1bb1df14d86d02df69aa5b4f046f",
+    "cover-letters.ts": "3801742c857d7fc88dfc41a20a9fe377591c3260529eeb3245c126610b3f3ac0",
+    "index.ts": "4044d2c2e0ce13319bc6062fa1534e6a8d92278260fdff9481cc6fb04fa0bfad",
     "lookup.ts": "463b4bdbcc527d37b9484184e8c06e73a3793267d79fbb5e6889de5383364352",
     "profile.ts": "3e83fbd9f623f8b53d1fce16d908ebacb7635ab7221f952497a893ae5b26a425",
-    "registry.ts": "bad1b8ad7a8f400404ae7aa9901b52bac2ef6d3b895abeb29b74458deb3549ee",
+    "registry.ts": "8df22133bb7d048488b4a64cef26f976b142e4de88e9b2af61d217d2c816fd84",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
-    "version.ts": "21cd90ee69f64b01d0799d0ec79c1e6af2eb7867fe0754f61ec37b84a5ef9bf7"
+    "version.ts": "49572cdf99d18e195aac4744fc6965e95682eb43ae43bf2498a73738d930cdd1"
   },
   "fixtures": {
     "AutofillAddJobRequest/invalid/empty-url.json": "f1928aa6e8d457480cd6177764fdc943720b90340a16dfd718c2c541471fd8bb",
@@ -74,6 +75,25 @@
     "AutofillConnectResponse/invalid/upper-case-extension-id.json": "ad0815bd6be970573245398d5dc90ad67b1b61f78f2c0206b20b95623f3ac080",
     "AutofillConnectResponse/valid/golden.json": "a4cf2d2af5855f5cf289df62276bfdbc3d463dc08801a86dc5e7162b10adc038",
     "AutofillConnectResponse/valid/no-extension-ids.json": "b63dd300e8575700e82cbc24dcf558d569a7d7d94c70b69d50fa0e7f742a3f78",
+    "AutofillCoverLetterRequest/invalid/empty-resume-id.json": "6e1067b0b42adb800abdab5e6753fb6538a4f7f23b1bce59c21af94599761ff8",
+    "AutofillCoverLetterRequest/invalid/fractional-job-id.json": "b1f760787352bc625605a6fff8fd29c58004b38098238a62fd3ebf1b0be0dfaa",
+    "AutofillCoverLetterRequest/invalid/no-company-without-job.json": "74863302f4f8c059700bbba294923bb5b7d91c24d1eecb8957ac134747d1ba13",
+    "AutofillCoverLetterRequest/invalid/no-generate.json": "177c4f47c7dc6be4bb3bd58d634ac2b259af1d6003d7364800a107cddbfa44ff",
+    "AutofillCoverLetterRequest/invalid/no-title-without-job.json": "201a65534d1bdbb12bfa76f0bc3a63743c8983a3822f65eea62deafe9e3f2c70",
+    "AutofillCoverLetterRequest/invalid/one-letter-canary.json": "d3c873a690431b8732ecc9c27d7e30b91145a9eb5681f2d0a4897d4af694d54d",
+    "AutofillCoverLetterRequest/valid/existing-only.json": "574bc3718d7238413e447f533df8eb20bcca19a40c6a037d59c60a543ea726a5",
+    "AutofillCoverLetterRequest/valid/golden.json": "22707574ce1d355e54f6d239b30ead47d17d625b5ef6ad844f1cee2dde22caaf",
+    "AutofillCoverLetterRequest/valid/posting-tailorit-lacks.json": "1d66c969beaeae21aadbeac2a405d6ddbf82b8d0c8ed5d86715fd12075cf7e43",
+    "AutofillCoverLetterRequest/valid/with-canaries.json": "b5a25671536bac63d00fffbba88963a92bd3bac7dd7080a639fbda2dd2e1fb32",
+    "AutofillCoverLetterResponse/invalid/not-a-uuid.json": "381a7b56f0a92b8a61e6be493360d84256a28f494b0abdaf8d5128d7a5d19251",
+    "AutofillCoverLetterResponse/invalid/unknown-state.json": "448e26e89f47935529cd372d34c69680aaf9a24aee18f27f1f9d4340a38fc596",
+    "AutofillCoverLetterResponse/valid/failed.json": "289d3a88c9baf9aa1504fc492c4a5546db25dc4c34e73371ee4c81c2a473da02",
+    "AutofillCoverLetterResponse/valid/golden.json": "5df46d564fde6acff22330e2435afe40863d55480cf8f8ea40986530748d20b5",
+    "AutofillCoverLetterResponse/valid/ready.json": "71071c96c6692749ffe10e2d83dfba93b99755ee325ec10ed50fc36920b9cc2a",
+    "AutofillCoverLetterStatus/invalid/no-state.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "AutofillCoverLetterStatus/invalid/unknown-state.json": "9543db47ce693586feb43f20ed4d8a74e4cd2b6a951e8ac81b1a4628c51a570e",
+    "AutofillCoverLetterStatus/valid/generating.json": "bd0d7e873c4d3328fc7604089c8d0dcb855920fcc84a6ec2ca1babae6e82978e",
+    "AutofillCoverLetterStatus/valid/golden.json": "1c5ba079896272f398d82c16ec8f42401fbfb6ebc069a23b8ede12a4ee2cd2a8",
     "AutofillDraftRequest/invalid/current-answer-over-5000.json": "5cccd3942f2dfe093597bf791dc01bb80c9cf16467e69ec16006ef80ab8150f8",
     "AutofillDraftRequest/invalid/custom-question-over-1000.json": "8ddfcf9acecbaf6928a3ba2c1c6202c5f049b77e9d27b2a187c7d2928940b5a0",
     "AutofillDraftRequest/invalid/empty-question.json": "2e7c0640a18f224783e9b33d0e3331867e27621363b0d6408e0b29de92b6dad8",
@@ -10666,6 +10686,94 @@
         "category"
       ],
       "additionalProperties": false
+    },
+    "AutofillCoverLetterRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "company": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "jobTitle": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "jobText": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "resumeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "generate": {
+          "type": "boolean"
+        },
+        "canaries": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 200
+          }
+        }
+      },
+      "required": [
+        "company",
+        "jobTitle",
+        "resumeId",
+        "generate"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillCoverLetterResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "letterId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "generating",
+            "failed"
+          ]
+        }
+      },
+      "required": [
+        "letterId",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillCoverLetterStatus": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "generating",
+            "failed"
+          ]
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
     }
   },
   "routes": [
@@ -10896,6 +11004,36 @@
       "scope": "answers:write",
       "request": null,
       "status": 204,
+      "response": null,
+      "accepted": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/cover-letters",
+      "caller": "either",
+      "scope": "letters:write",
+      "request": "AutofillCoverLetterRequest",
+      "status": 200,
+      "response": "AutofillCoverLetterResponse",
+      "accepted": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/autofill/cover-letters/:id",
+      "caller": "either",
+      "scope": "letters:write",
+      "request": null,
+      "status": 200,
+      "response": "AutofillCoverLetterStatus",
+      "accepted": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/autofill/cover-letters/:id/file",
+      "caller": "either",
+      "scope": "letters:write",
+      "request": null,
+      "status": 200,
       "response": null,
       "accepted": null
     }

@@ -101,6 +101,14 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-job__kind { padding: 0 7px; font-size: 11px; vertical-align: 1px; }
 .tia-job__change { flex: none; margin: -4px -8px 0 0; }
 .tia-job__why { margin: 0 0 0 26px; font-size: 12px; color: var(--tia-muted); }
+/* Phase G: the cover letter, under the resume, laid out as it is: its name above its line. */
+.tia-job__letter { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--tia-line); }
+.tia-job__letter-text {
+  display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere;
+}
+.tia-job__letter-label { font-weight: 700; }
+.tia-job__letter-line { color: var(--tia-muted); }
+.tia-job__letter .tia-button .tia-icon { margin-right: 4px; vertical-align: -2px; }
 .tia-job__resume-line { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; }
 .tia-job__actions { display: flex; }
 .tia-job__actions .tia-button { flex: 1 1 auto; min-height: 36px; }

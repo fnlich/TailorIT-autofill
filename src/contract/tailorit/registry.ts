@@ -18,6 +18,11 @@ import {
 import { AutofillSavedAnswerListSchema, AutofillSavedAnswerSchema, PutAutofillSavedAnswerBodySchema } from './answers';
 import { AutofillErrorBodySchema } from './common';
 import {
+  AutofillCoverLetterRequestSchema,
+  AutofillCoverLetterResponseSchema,
+  AutofillCoverLetterStatusSchema,
+} from './cover-letters';
+import {
   AutofillConnectBodySchema,
   AutofillConnectResponseSchema,
   AutofillRedeemBodySchema,
@@ -88,6 +93,9 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillSavedAnswer: AutofillSavedAnswerSchema,
   AutofillSavedAnswerList: AutofillSavedAnswerListSchema,
   PutAutofillSavedAnswerBody: PutAutofillSavedAnswerBodySchema,
+  AutofillCoverLetterRequest: AutofillCoverLetterRequestSchema,
+  AutofillCoverLetterResponse: AutofillCoverLetterResponseSchema,
+  AutofillCoverLetterStatus: AutofillCoverLetterStatusSchema,
 } satisfies Record<string, z.ZodType>;
 export type AutofillContractName = keyof typeof AUTOFILL_CONTRACT_SCHEMAS;
 
@@ -102,7 +110,10 @@ export type AutofillRouteCaller = (typeof AUTOFILL_ROUTE_CALLERS)[number];
 
 export interface AutofillRoute {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  /** The whole path; ':id' is a path parameter: a UUID (an AI task's, a connection's or a saved answer's). */
+  /**
+   * The whole path; ':id' is a path parameter: a UUID (an AI task's, a connection's, a resume's, a saved answer's or a
+   * cover letter's).
+   */
   path: string;
   caller: AutofillRouteCaller;
   /** The scope a token needs here; null where no token comes, and on /session, which any live token may call. */
@@ -110,7 +121,7 @@ export interface AutofillRoute {
   /** The JSON body's schema, or a GET's query's. */
   request: AutofillContractName | null;
   status: number;
-  /** The success answer's schema; null for 204 and for the resume file, whose answer is the file itself. */
+  /** The success answer's schema; null for 204 and for the files (a resume's, a cover letter's), answered as bytes. */
   response: AutofillContractName | null;
   /**
    * The 202 answer's schema, for a route that may answer before its work is done: an AI route answers `status` with
@@ -126,8 +137,8 @@ export interface AutofillRoute {
  * `conflict` for another API version, 401 for a dead token, 403 for a missing scope, 429 when rate-limited). The AI
  * routes refuse with AUTOFILL_AI_REFUSALS too; their tasks are polled and cancelled on /api/ai/tasks/:id, the one path
  * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). The
- * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS, and adding a job with AUTOFILL_ADD_JOB_REFUSALS
- * (version 2). The extension reads the saved answers (GET
+ * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS, adding a job with AUTOFILL_ADD_JOB_REFUSALS and the
+ * cover-letter routes with AUTOFILL_COVER_LETTER_REFUSALS (both version 2). The extension reads the saved answers (GET
  * /api/autofill/answers, with profile:read) together with GET /api/autofill/profile, once per run.
  */
 export const AUTOFILL_ROUTES = [
@@ -358,6 +369,36 @@ export const AUTOFILL_ROUTES = [
     scope: 'answers:write',
     request: null,
     status: 204,
+    response: null,
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/cover-letters',
+    caller: 'either',
+    scope: 'letters:write',
+    request: 'AutofillCoverLetterRequest',
+    status: 200,
+    response: 'AutofillCoverLetterResponse',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/cover-letters/:id',
+    caller: 'either',
+    scope: 'letters:write',
+    request: null,
+    status: 200,
+    response: 'AutofillCoverLetterStatus',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/cover-letters/:id/file',
+    caller: 'either',
+    scope: 'letters:write',
+    request: null,
+    status: 200,
     response: null,
     accepted: null,
   },

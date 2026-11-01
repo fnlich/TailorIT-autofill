@@ -154,6 +154,17 @@ export const LOG_CODES = [
   // AI), and an Edit with AI rewrite it refused (the run profile-only, or AI-written answers off).
   'plan.profile-only',
   'plan.rewrite-refused',
+  // Cover letters (Phase G): TailorIT asked for the run's letter, or the side panel's (statuses, flags and seconds
+  // only, never a letter's id, a job, an address or a word); a letter not asked for (no resume, or a posting TailorIT
+  // lacks whose page names no company or title); the side panel's answer (its outcome as a number).
+  'letter.not-asked',
+  'letter.ready',
+  'letter.failed',
+  'letter.refused',
+  'letter.busy',
+  'letter.limited',
+  'letter.timed-out',
+  'job.letter-answered',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

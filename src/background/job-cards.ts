@@ -77,6 +77,9 @@ export interface TabJob {
   resume: { id: string; label: string | null } | null;
   company: string;
   jobTitle: string;
+  /** TailorIT's own id of the job (null: TailorIT does not have it), for its cover letter (Phase G). Worker memory
+   *  only: it never reaches a frame or a page. */
+  jobId: number | null;
 }
 
 /** The job cards, their relay and the tab's resume choice. */
@@ -396,7 +399,8 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       let resume: TabJob['resume'] = null;
       if (suggested !== null && (chosen === null || suggested.id === chosen)) resume = { id: suggested.id, label: suggested.label };
       else if (chosen !== null) resume = { id: chosen, label: null };
-      return { frame: read?.frame ?? null, resume, company: lookup?.job?.companyName ?? '', jobTitle: lookup?.job?.title ?? '' };
+      return { frame: read?.frame ?? null, resume, company: lookup?.job?.companyName ?? '', jobTitle: lookup?.job?.title ?? '',
+        jobId: lookup?.job?.id ?? null };
     },
     forgetDocument(tabId, frameId, documentId) {
       const key = docKeyOf(tabId, frameId, documentId);

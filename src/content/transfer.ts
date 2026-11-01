@@ -15,10 +15,13 @@
  * - The bytes are released when the caller is done with them (the input is set and verified), and at the latest
  *   RESUME_RELEASE_MS after the buffer was allocated. After that the File lives only in the page's FileList, which the
  *   upload needs. Nothing here is ever logged but codes and counts.
+ * - Phase G: the same port carries the run's cover letter (ResumeRequest.document 'cover-letter', posted as the
+ *   request's `document`), under every rule above; the worker sends only a PDF for it.
  */
 import { DOCX_MIME } from '../dom/fillers';
 import { monotonicNow, startDeadline, type Cancel } from '../dom/time';
 import { RESUME_CHUNK_BYTES, RESUME_MAX_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
+import type { FileRef } from '../core/types/intent';
 import type { ContentPlatform, PortLike } from '../platform/types';
 import { log } from '../shared/log';
 
@@ -48,6 +51,8 @@ export interface ReceivedResume {
 /** What a transfer needs. */
 export interface ResumeRequest {
   runId: string;
+  /** What the write takes: the run's resume (the default) or its cover letter (Phase G). */
+  document?: FileRef;
   /** Whether the file input takes a file of this name and type (its accept list). */
   accepts(file: { name: string; type: string }): boolean;
   signal?: AbortSignal;
@@ -224,7 +229,8 @@ function attemptTransfer(platform: ContentPlatform, request: ResumeRequest): Pro
     request.signal?.addEventListener('abort', onAbort, { once: true });
     idle();
     try {
-      port.post({ v: 1, type: 'resume/request', runId: request.runId });
+      port.post({ v: 1, type: 'resume/request', runId: request.runId,
+        ...(request.document === 'cover-letter' ? { document: 'cover-letter' as const } : {}) });
     } catch {
       fail('resume-transfer-failed', false);
     }

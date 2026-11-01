@@ -61,7 +61,7 @@ export type RuleId = (typeof RULE_IDS)[number];
  *  content script checks only its shape. */
 export type ProfilePath = string & { readonly __brand: 'ProfilePath' };
 export const PROFILE_PATH_PATTERN =
-  /^(identity|contact|address|location|links|workAuthorization|eeo|screening|education|experience|languages|skills|preferences|referralSource|resume)(\.[A-Za-z0-9]+|\[\d+\])*$/;
+  /^(identity|contact|address|location|links|workAuthorization|eeo|screening|education|experience|languages|skills|preferences|referralSource|resume|coverLetter)(\.[A-Za-z0-9]+|\[\d+\])*$/;
 
 /** Where a value came from. A value without one cannot exist: the Guard blocks it as a bug. */
 export type ValueOrigin =
@@ -111,7 +111,15 @@ export type IntendedValue =
   | { kind: 'date'; y: number; m?: number; d?: number }
   /** A set, highest priority first (a lower number is more important). */
   | { kind: 'set'; items: Array<{ value: IntendedValue; priority: number }> }
-  | { kind: 'file'; file: 'resume' | 'cover-letter' };
+  | { kind: 'file'; file: FileRef };
+
+/** The documents an upload field can be given (Phase G): the run's resume, or its cover letter from TailorIT. Each is
+ *  the profile's own path (FILE_PATHS): an upload's origin must name the one its value names. */
+export const FILE_REFS = ['resume', 'cover-letter'] as const;
+export type FileRef = (typeof FILE_REFS)[number];
+
+/** The profile path each document is attached at (the worker attaches it: attachResume, withCoverLetter). */
+export const FILE_PATHS: Readonly<Record<FileRef, string>> = { resume: 'resume', 'cover-letter': 'coverLetter' };
 
 /** What the filler writes. Indices point into the field's visible options as scanned; each choice also carries the
  *  clean label (injected text cut) of the option it means, so a list the page re-ordered or re-labelled since the plan
@@ -124,5 +132,6 @@ export type WriteValue =
   /** Typeahead queries, typed one at a time; each is itself a guarded write. */
   | { kind: 'query'; queries: string[] }
   | { kind: 'check' }
-  | { kind: 'file'; ref: 'resume' }
+  /** The run's resume, or its cover letter (Phase G), which the frame receives over the resume port when it writes. */
+  | { kind: 'file'; ref: FileRef }
   | { kind: 'date'; iso: string };

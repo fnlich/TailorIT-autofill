@@ -16,7 +16,10 @@
  * - The job card (v2, JobCard.tsx and job.ts): what TailorIT knows of the job in the tab's form, read through the
  *   worker (panel/job) only while the tab shows a form of ours and the extension is connected; Add this job to TailorIT
  *   and Save to tracker (panel/addJob), and Change, which lists the account's resumes (panel/resumes) and keeps the
- *   choice for the tab (panel/setResume). In a dry run the resume "Would attach".
+ *   choice for the tab (panel/setResume). In a dry run the resume "Would attach". Under the resume (Phase G, letter.ts),
+ *   the cover letter: whether the person has one for this job (panel/letter {write: false}), else that TailorIT's AI
+ *   writes one when the form asks, with Write it now (panel/letter {write: true}); explained, with no button, when
+ *   AI-written answers are off or the posting forbids AI and the person's setting fills from the profile only.
  * - Autofill (panel/fill {tabId, dryRun: false}), its label constant, with a spinner while its request is out or a run
  *   works; then Dry run, Continue and Cancel (panel/fill {dryRun: true}, panel/continue, panel/cancel), Continue marked
  *   while a run waits for the person and Cancel while one works, both off until a run reports; then what the last
@@ -43,7 +46,7 @@ import type { Answer } from '../../messaging/envelope';
 import type { AddJobOutcome, AskLength, PageMessage, PageState, SaveAnswerOutcome } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
-import { saysNoAi } from '../../shared/report';
+import { fillsFromProfileOnly, saysNoAi } from '../../shared/report';
 import { Brand } from '../brand/Logo';
 import { Icon } from '../brand/Icon';
 import { request } from '../page/request';
@@ -52,7 +55,8 @@ import { overallStatus, WORKING_STATUSES } from '../report/model';
 import { Report, ReportNotices, RunStatusLine } from '../report/Report';
 import { AskQuestion } from './Ask';
 import { useTabJob } from './job';
-import { JobCard } from './JobCard';
+import { JobCard, type LetterMode } from './JobCard';
+import { useTabLetter } from './letter';
 import { useTabReports, type LinkState } from './reports';
 import { useFollowedTab } from './tab';
 
@@ -124,6 +128,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const [added, setAdded] = useState<{ tabId: number; outcome: AddJobOutcome } | null>(null);
   /** AI-written answers (the drafts setting) are off: the custom question is too. Null until the settings are read. */
   const [aiOff, setAiOff] = useState<boolean | null>(null);
+  /** Whether a posting that forbids AI is filled from the profile only (Phase G: the cover letter's row says so). */
+  const [whenForbidden, setWhenForbidden] = useState<'profile-only' | 'ask' | 'use-ai'>('profile-only');
   const { refresh } = auth;
   // The card's connection key: the token's expiry, and every change the worker announced (another window may have
   // connected or disconnected), so a card read with the old connection is dropped the moment the change is heard.
@@ -142,7 +148,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   useEffect(() => {
     let live = true;
     void request(platform, { v: 1, type: 'settings/get' }).then((answer) => {
-      if (live && answer.ok) setAiOff(!answer.data.settings.llm.drafts);
+      if (live && answer.ok) {
+        setAiOff(!answer.data.settings.llm.drafts);
+        setWhenForbidden(answer.data.settings.llm.whenForbidden);
+      }
     });
     return () => {
       live = false;
@@ -220,6 +229,14 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const policy = reports.some(saysNoAi);
   // Continue and Cancel act on a run: before any report there is none.
   const noRun = reports.length === 0;
+  // The card's cover letter (Phase G), read with the card's own key, and whether TailorIT's AI may write it here.
+  const cardBase = tabId !== null && page !== null && page.support === 'form' && typeof connection === 'string'
+    ? `${tabId}|${page.formKey ?? ''}|${connection}` : null;
+  const letter = useTabLetter(platform, tabId, { base: cardBase, card, reports });
+  // Profile only: a posting that forbids AI under the default setting, or a run of the tab that went profile-only ("Ask
+  // me" leaves Write it now to the person; "Use AI anyway" writes).
+  const letterMode: LetterMode = aiOff === true ? 'ai-off'
+    : (policy && whenForbidden === 'profile-only') || reports.some(fillsFromProfileOnly) ? 'profile-only' : 'ai';
 
   return (
     <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}>
@@ -251,7 +268,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             const answer = await request(platform, { v: 1, type: 'panel/resumes', tabId });
             return answer.ok ? answer.data.items : null;
           }}
-          chooseResume={(resumeId) => chooseResume(tabId, resumeId)} />
+          chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
+          letter={letter.view} letterMode={letterMode} onWriteLetter={letter.write} />
       )}
       {tabId !== null && (
         <div className="tia-toolbar">

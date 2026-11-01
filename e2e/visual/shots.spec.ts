@@ -8,6 +8,8 @@
  *   opened, the policy card, and the review again under a dark system scheme (it stays light).
  * - v2: the job card found, not found with Add, already applied, loading, unavailable, a dry run's "Would attach", the
  *   resume picker, and a custom question answered.
+ * - Phase G: the job card's cover-letter row: "Written by AI when the form asks for one" with Write it now, Writing…,
+ *   then Ready; the person's own letter; and a fill's review with the letter attached, marked "AI".
  * - The page's own UI: the launcher at rest and at review, its notices and the policy card, the in-page panel open.
  * - The options page.
  * Every capture is in the light scheme with reduced motion and animations stopped, so a picture is the same each time.
@@ -262,6 +264,48 @@ test('the job card in a dry run, and a custom question answered', async ({ extCo
   await expect(answer).toBeVisible();
   await answer.scrollIntoViewIfNeeded();
   await shoot(panel, '16-custom-question.png', 'Ask a custom question, answered from the resume the card attaches');
+});
+
+test('the cover letter on the job card, and attached in a review', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  const COVER = (name: string) => `https://jobs.lever.co/tailorit-fixture/cover-shot-${name}/apply`;
+  const serve = (url: string) => routeLog.serve({ [url]: 'fixtures/synthetic/cover-letter-upload.html' });
+  const open = async (url: string) => {
+    serve(url);
+    const page = await extContext.newPage();
+    await page.goto(url);
+    const tabId = await ext.tabIdOf(page);
+    await ext.frameWithForm(tabId);
+    const panel = await sidePanel(ext, tabId);
+    await panel.bringToFront();
+    return { page, tabId, panel, letter: panel.locator('[data-job-letter]') };
+  };
+
+  const none = await open(COVER('none'));
+  await expect(none.letter).toHaveAttribute('data-letter-outcome', 'none');
+  await none.letter.scrollIntoViewIfNeeded();
+  await shoot(none.panel, '17-cover-letter-row.png', 'Job card: the cover letter, written by AI when the form asks, with Write it now');
+  await tailorit.scenario('letter-generating-then-ready', { times: 1, delayMs: 6_000 });
+  await none.letter.getByRole('button', { name: 'Write it now' }).click();
+  await expect(none.letter.getByRole('button', { name: 'Writing…' })).toBeVisible();
+  await shoot(none.panel, '17b-cover-letter-writing.png', 'Job card: Write it now, Writing…');
+  await expect(none.letter).toHaveAttribute('data-letter-outcome', 'written', { timeout: 20_000 });
+  await shoot(none.panel, '17c-cover-letter-ready.png', 'Job card: the cover letter written, Ready');
+  await tailorit.reset();
+
+  await tailorit.scenario('letter-ready');
+  const own = await open(COVER('own'));
+  await expect(own.letter).toHaveAttribute('data-letter-outcome', 'yours');
+  await shoot(own.panel, '17d-cover-letter-yours.png', "Job card: the person's own letter for this job");
+  await tailorit.reset();
+
+  const filled = await open(COVER('filled'));
+  await ext.fill(filled.page);
+  expect((await ext.settled(filled.tabId)).status).toBe('review');
+  await filled.panel.bringToFront();
+  const row = filled.panel.locator('.tia-row', { hasText: 'Cover letter' }).first();
+  await expect(row).toHaveAttribute('data-status', 'verified');
+  await row.scrollIntoViewIfNeeded();
+  await shoot(filled.panel, '17e-cover-letter-review.png', 'Review: the cover letter attached, marked "AI"');
 });
 
 test('the options page', async ({ extContext, connected: ext }) => {

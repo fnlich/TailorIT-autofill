@@ -19,6 +19,7 @@ import { log } from '../shared/log';
 import { createAuth, createTokenKeeper } from './auth';
 import { createAiTasks } from './ai-tasks';
 import { ASK_LIMIT, createAsk } from './ask';
+import { createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, navOf, registerFrame } from './frames';
@@ -30,7 +31,7 @@ import { createPlanner } from './planner';
 import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
 import { createProfileCache, type ProfileCache } from './profile-cache';
 import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
-import { saysNoAi } from '../shared/report';
+import { fillsFromProfileOnly, saysNoAi } from '../shared/report';
 import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
 import { createRouter, type ContentChannel } from './router';
@@ -88,10 +89,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let runRegistry: RunRegistry | null = null;
   let jobCards: JobCards | null = null;
   let panelReports: Reports | null = null;
+  let letterRows: ReturnType<typeof createPanelLetters> | null = null;
   const keeper = createTokenKeeper(platform, () => {
     profiles?.drop();
     runRegistry?.dropTokenData();
     jobCards?.dropTokenData();
+    letterRows?.dropTokenData();
     // Every side panel reads the connection again and drops the card it holds, whichever window the change came from.
     panelReports?.tellPanels('connection');
   });
@@ -119,6 +122,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // The job card's relay (v2), keyed `${tabId}/${frameId}`, and the custom question, keyed `${tabId}/`.
   const relayLimit = createRateLimit(JOB_RELAY_LIMIT.count, JOB_RELAY_LIMIT.windowMs, now);
   const askLimit = createRateLimit(ASK_LIMIT.count, ASK_LIMIT.windowMs, now);
+  // The job card's cover-letter row (Phase G), keyed `${tabId}/`.
+  const letterLimit = createRateLimit(LETTER_LIMIT.count, LETTER_LIMIT.windowMs, now);
   // The anonymous counters (Phase 6): storage.local, only while the person opted in; nothing is ever sent.
   const telemetry = createTelemetry({ local, session, settings });
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
@@ -139,8 +144,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // run's done (match-cache.ts).
   const matchCache = createMatchCache(session);
   const accepts = createAcceptBook(matchCache);
+  // Cover letters (Phase G): a run asks TailorIT for its letter once (cover-letters.ts), and the resume port sends it.
+  const letters = { server, timers, now };
   const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
-    aiTaskIds: runStates, cache: matchCache, accepts, now });
+    aiTaskIds: runStates, cache: matchCache, accepts, letters, now });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes),
     choose: chooseResume });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId) });
@@ -150,6 +157,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const ask = createAsk({ jobs, server, profiles: profileCache, tabs: platform.tabs, timers, now,
     connected: () => auth.connected(), generation: () => keeper.generation, settings, limit: askLimit,
     policyHeld: async (tabId) => (await reports.ofTab(tabId)).some(saysNoAi) });
+  const panelLetters = createPanelLetters({ ...letters, jobs, profiles: profileCache, tabs: platform.tabs, settings,
+    connected: () => auth.connected(), generation: () => keeper.generation, limit: letterLimit,
+    policyHeld: async (tabId) => (await reports.ofTab(tabId)).some(saysNoAi),
+    profileOnlyHeld: async (tabId) => (await reports.ofTab(tabId)).some(fillsFromProfileOnly) });
+  letterRows = panelLetters;
   const beginDeps = {
     jobs,
     generation: () => keeper.generation,
@@ -314,6 +326,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/resumes': (message) => jobs.resumes(message),
         'panel/setResume': (message) => jobs.setResume(message),
         'panel/ask': (message) => ask(message),
+        // The job card's cover letter (Phase G): whether there is one, or Write it now.
+        'panel/letter': (message) => panelLetters.letter(message),
         'panel/confirmDraft': (message) => answers.confirmDraft(message),
         'panel/saveAnswer': (message) => answers.saveAnswer(message),
         'settings/get': async () => ok({ settings: await settings.get() }),
@@ -385,7 +399,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     policyLimit.forget(`${tabId}/`);
     shownLimit.forget(`${tabId}/`);
     askLimit.forget(`${tabId}/`);
+    letterLimit.forget(`${tabId}/`);
     jobs.forgetTab(tabId);
+    panelLetters.forgetTab(tabId);
     void Promise.all([
       forgetTabFrames(session, tabId),
       reports.forgetTab(tabId),

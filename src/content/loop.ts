@@ -44,6 +44,10 @@
  * llm-pick's option text checked again (guardWriteInFrame's llmPickStillValid); a field the worker no longer knows (it
  * restarted) is pending again, so the next pass asks plan/request again. A field the pass wrote anyway (a choice's free
  * text typed into it) stops waiting. A dry run waits for its answers too, and shows their rows.
+ * A cover-letter upload waiting for the run's letter (Phase G: TailorIT finding or writing it) is polled the same way,
+ * under LETTER_WAIT_CAP_MS instead (the worker's own cap is 180 s), and given up as cover-letter-timed-out (or
+ * cover-letter-unavailable when the worker could not answer). A profile-only run keeps waiting for it (a letter the
+ * person wrote is still theirs to attach), but never writes one TailorIT's AI wrote (cover-letter-written).
  * The loop ends when loopVerdict says so: nothing pending, MAX_PASSES, or a stalled page. At the settle cap the page is
  * scanned once more, observed, and the loop is cut with page-busy (the run pauses; Continue starts afresh). Cancel
  * cuts it with user-stopped, between writes, once the writes made are settled and verified and what they revealed is
@@ -102,6 +106,9 @@ export const AI_POLL_MS = 1500;
 /** How long the loop waits for the LLM with no answer coming in: the worker's own cap on a task (120 s) and a poll
  *  more. Past it the fields still waiting are left blank and flagged (llm-unavailable). */
 export const AI_WAIT_CAP_MS = 125_000;
+/** How long the loop waits for a cover-letter upload's letter with no answer coming in (Phase G): the worker's cap on
+ *  it (180 s, background/cover-letters.ts LETTER_CAP_MS) and a few polls more. */
+export const LETTER_WAIT_CAP_MS = 185_000;
 /** A dry run plans one pass, and asks again at most this many times for fields the worker forgot (it restarted). */
 const DRY_RUN_ASKS = 2;
 
@@ -124,8 +131,8 @@ export interface LoopEnv extends PassEnv {
    *  AI, or an "I did not use AI" attestation): the fields still waiting for the LLM are given up, ai-off-for-posting,
    *  and an AI write that came in is never written (the Phase E review, security MINOR 4). */
   aiOff?(): boolean;
-  /** The poll interval and the cap on waiting for the LLM, overridable for tests. */
-  ai?: { pollMs?: number; capMs?: number };
+  /** The poll interval and the caps on waiting for the LLM and for a cover letter (Phase G), overridable for tests. */
+  ai?: { pollMs?: number; capMs?: number; letterCapMs?: number };
   /** The run's checks before a pass after the first: null to go on, or the reason that cuts the loop (form-hidden,
    *  policy-notice, auth-required, challenge-present). */
   recheck?(): Promise<ReasonCode | null>;
@@ -221,6 +228,18 @@ function isCleared(current: CurrentValue): boolean {
 
 /** The provenances of what the AI writes: an option it picked, a draft, an answer. */
 const AI_WRITES: ReadonlySet<Provenance> = new Set<Provenance>(['llm-pick', 'llm-draft', 'llm-answer']);
+
+/** Whether an arrived write is the AI's: an AI provenance, or a cover letter TailorIT's AI wrote (Phase G: its origin
+ *  is the profile's document, its row says the AI wrote it). */
+function aiWrite(entry: { row: FillResult; write?: PlannedWrite }): boolean {
+  return entry.write !== undefined && (AI_WRITES.has(entry.write.origin.provenance)
+    || entry.row.reason === 'cover-letter-written');
+}
+
+/** Whether a waiting field waits for the run's cover letter (Phase G), by the row it stands with. */
+function waitsForLetter(field: { row: FillResult | null } | undefined): boolean {
+  return field?.row?.category === 'file.coverLetter';
+}
 
 /** The row of a field the AI would have answered, once the run fills from the profile only: an optional question left
  *  skipped stays so, and any other is flagged ai-off-for-posting with nothing of the AI's in it (planFrame's own rule). */
@@ -473,7 +492,7 @@ class ReactiveLoop {
     }
     for (const [key, entry] of arrived) {
       // Profile-only since it came in (an attestation this pass's plan found): no AI write is written.
-      const dropped = env.aiOff?.() === true && entry.write !== undefined && AI_WRITES.has(entry.write.origin.provenance);
+      const dropped = env.aiOff?.() === true && aiWrite(entry);
       rows.set(key, dropped ? aiOffRow(entry.row) : entry.row);
       if (!dropped && entry.write !== undefined) writes.push(entry.write);
     }
@@ -690,15 +709,18 @@ class ReactiveLoop {
   private async pollAwaiting(block: boolean): Promise<FieldKey[]> {
     const { env } = this;
     const pollMs = env.ai?.pollMs ?? AI_POLL_MS;
-    const capMs = env.ai?.capMs ?? AI_WAIT_CAP_MS;
+    const aiCapMs = env.ai?.capMs ?? AI_WAIT_CAP_MS;
+    // A cover letter's wait is longer (Phase G): while one waits, the cap is its own.
+    const capMs = () => (awaitingKeys(this.state).some((key) => waitsForLetter(this.state.fields.get(baseKeyOf(key))))
+      ? Math.max(aiCapMs, env.ai?.letterCapMs ?? LETTER_WAIT_CAP_MS) : aiCapMs);
     this.aiProgressAt ??= monotonicNow();
     const started = monotonicNow();
     try {
       for (;;) {
-        // Profile-only now: nothing more is waited for, or written, of the AI's.
+        // Profile-only now: nothing more is waited for, or written, of the AI's; a cover letter still is (Phase G).
         if (env.aiOff?.() === true) {
           this.dropAi();
-          return [];
+          if (!awaitingKeys(this.state).some((key) => !this.arrived.has(key))) return [];
         }
         const keys = awaitingKeys(this.state).filter((key) => !this.arrived.has(key));
         if (keys.length === 0 || env.poll === undefined) return [];
@@ -706,7 +728,7 @@ class ReactiveLoop {
         const answer = await env.poll(keys);
         this.alive();
         if (answer === 'failed') {
-          this.giveUp(keys, 'llm-unavailable');
+          this.giveUp(keys, 'llm-unavailable', 'cover-letter-unavailable');
           return [];
         }
         const asked = new Set<string>(keys);
@@ -733,9 +755,9 @@ class ReactiveLoop {
         const requeue = requeueAwaiting(this.state, forgotten);
         this.state = requeue.state;
         if (!block || this.arrived.size > 0 || requeue.requeued.length > 0) return requeue.requeued;
-        const left = capMs - (monotonicNow() - this.aiProgressAt);
+        const left = capMs() - (monotonicNow() - this.aiProgressAt);
         if (left <= 0) {
-          this.giveUp(awaitingKeys(this.state), 'llm-unavailable');
+          this.giveUp(awaitingKeys(this.state), 'llm-unavailable', 'cover-letter-timed-out');
           return [];
         }
         const stop = env.stopSignal === undefined ? env.signal : AbortSignal.any([env.signal, env.stopSignal]);
@@ -755,24 +777,25 @@ class ReactiveLoop {
       if (this.arrived.has(key)) continue;
       const tracked = this.state.fields.get(baseKeyOf(key));
       if (tracked === undefined || tracked.key !== key || tracked.status !== 'awaiting-llm') continue;
+      // A cover letter still comes (Phase G): the person's own is theirs to attach; the AI's is dropped as it arrives.
+      if (waitsForLetter(tracked)) continue;
       this.arrived.set(key, { row: tracked.row === null ? unplannedRow(tracked, 'ai-off-for-posting')
         : aiOffRow(tracked.row, key) });
     }
     for (const [key, entry] of this.arrived) {
-      if (entry.write !== undefined && AI_WRITES.has(entry.write.origin.provenance)) {
-        this.arrived.set(key, { row: aiOffRow(entry.row) });
-      }
+      if (aiWrite(entry)) this.arrived.set(key, { row: aiOffRow(entry.row) });
     }
   }
 
-  /** Fields still waiting for the LLM that it will not answer now: their rows, flagged with `reason`, wait for the next
-   *  pass, with nothing to write. */
-  private giveUp(keys: readonly FieldKey[], reason: ReasonCode): void {
+  /** Fields still waiting for the LLM that it will not answer now: their rows, flagged with `reason` (a cover-letter
+   *  upload's with `letterReason`, Phase G), wait for the next pass, with nothing to write. */
+  private giveUp(keys: readonly FieldKey[], reason: ReasonCode, letterReason: ReasonCode = reason): void {
     for (const key of keys) {
       const tracked = this.state.fields.get(baseKeyOf(key));
       if (tracked === undefined || tracked.key !== key || tracked.status !== 'awaiting-llm') continue;
-      this.arrived.set(key, { row: tracked.row === null ? unplannedRow(tracked, reason)
-        : unresolvedRow(tracked.row, reason, key) });
+      const why = waitsForLetter(tracked) ? letterReason : reason;
+      this.arrived.set(key, { row: tracked.row === null ? unplannedRow(tracked, why)
+        : unresolvedRow(tracked.row, why, key) });
     }
   }
 

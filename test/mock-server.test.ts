@@ -17,6 +17,8 @@ import {
   AutofillAnswerTaskSchema,
   AutofillClassifyTaskSchema,
   AutofillConnectResponseSchema,
+  AutofillCoverLetterResponseSchema,
+  AutofillCoverLetterStatusSchema,
   AutofillDraftTaskSchema,
   AutofillErrorBodySchema,
   AutofillLookupResponseSchema,
@@ -36,11 +38,13 @@ import {
   CONTRACT_ROUTES,
   EXTENSION_ID,
   CLEAN_ANSWER,
+  GOLDEN_LETTER,
   GOLDEN_RESUME,
   MOCK_API_VERSION,
   MOCK_SCENARIOS,
   example,
   extensionIdOf,
+  goldenLetterBytes,
   goldenResumeBytes,
   normalizeCode,
   startMock,
@@ -102,7 +106,7 @@ async function scenario(name: keyof typeof MOCK_SCENARIOS, options: { times?: nu
 /** The contract's golden pick task, which the mock always holds. */
 const GOLDEN_TASK_ID = (example('AutofillPickTask') as { id: string }).id;
 const pathOf = (route: { path: string }) => route.path.replace(':id', route.path.startsWith('/api/ai/tasks/') ? GOLDEN_TASK_ID
-  : GOLDEN_RESUME.id);
+  : route.path.startsWith('/api/autofill/cover-letters/') ? GOLDEN_LETTER.id : GOLDEN_RESUME.id);
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 describe('the routes', () => {
@@ -682,5 +686,70 @@ describe('version 2: the job card, adding a job and AI answers', () => {
     const answered = await ask();
     expect(answered.result?.answers.every((answer) => answer.reason === 'answered' && answer.basis === 'resume')).toBe(true);
     expect(answered.result?.answers.find((answer) => answer.optionSetHash === null)?.text).toBe(CLEAN_ANSWER);
+  });
+});
+
+describe('cover letters (Phase G)', () => {
+  const golden = example('AutofillCoverLetterRequest') as Record<string, unknown>;
+  const ask = async (body: Record<string, unknown> = golden) => call('/api/autofill/cover-letters', { method: 'POST',
+    headers: asToken(), json: body });
+  const letterOf = async (body?: Record<string, unknown>) => AutofillCoverLetterResponseSchema.parse(await (await ask(body)).json());
+  const stateOf = async (id: string) => AutofillCoverLetterStatusSchema.parse(await (await call(`/api/autofill/cover-letters/${id}`,
+    { headers: asToken() })).json()).state;
+  const fileOf = (id: string) => call(`/api/autofill/cover-letters/${id}/file`, { headers: asToken() });
+
+  it('answers 404 when it may not write, and a letter being written, ready at its first poll, when it may', async () => {
+    const none = await ask({ ...golden, generate: false });
+    expect([none.status, none.headers.get(API), await errorCode(none)]).toEqual([404, V, 'not_found']);
+    const made = await letterOf();
+    expect(made.state).toBe('generating');
+    expect((await fileOf(made.letterId)).status).toBe(409);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(await stateOf(made.letterId)).toBe('ready');
+  });
+
+  it('sends the golden cover letter as TailorIT does: a PDF, its kind, its SHA-256 and its name', async () => {
+    const response = await fileOf(GOLDEN_LETTER.id);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(response.headers.get('x-tailorit-file-kind')).toBe('pdf');
+    expect(response.headers.get('x-tailorit-sha256')).toBe(sha256(bytes));
+    expect(response.headers.get('content-disposition')).toContain(`filename="${GOLDEN_LETTER.fileName}"`);
+    expect(Buffer.from(bytes)).toEqual(repoFile('e2e/mock-server/golden-cover-letter.pdf'));
+    expect(new TextDecoder().decode(bytes.subarray(0, 5))).toBe('%PDF-');
+    expect([GOLDEN_LETTER.size, GOLDEN_LETTER.sha256]).toEqual([bytes.byteLength, sha256(goldenLetterBytes())]);
+    expect(new TextDecoder('latin1').decode(bytes)).toContain(GOLDEN_LETTER.sentinel);
+    const other = await fileOf('0b3c5d7e-9f1a-4b2c-8d4e-6f8a0b2c4d6e');
+    expect([other.status, await errorCode(other)]).toEqual([404, 'not_found']);
+  });
+
+  it('answers each scenario: ready, written later, failed and none', async () => {
+    await scenario('letter-ready', { times: 1 });
+    expect((await letterOf({ ...golden, generate: false })).state).toBe('ready');
+    await scenario('letter-generating-then-ready', { times: 1, delayMs: 60 });
+    const slow = await letterOf();
+    expect([slow.state, await stateOf(slow.letterId)]).toEqual(['generating', 'generating']);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(await stateOf(slow.letterId)).toBe('ready');
+    await scenario('letter-failed', { times: 1 });
+    const failing = await letterOf();
+    expect(await stateOf(failing.letterId)).toBe('generating');
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect([failing.state, await stateOf(failing.letterId)]).toEqual(['generating', 'failed']);
+    expect((await fileOf(failing.letterId)).status).toBe(409);
+    await scenario('letter-failed', { times: 1 });
+    expect((await letterOf({ ...golden, generate: false })).state).toBe('failed');
+    await scenario('letter-none', { times: 1 });
+    expect((await ask({ ...golden, generate: false })).status).toBe(404);
+  });
+
+  it('refuses a body TailorIT refuses: no generate, no resume, no company or title without a job', async () => {
+    const { jobId: _jobId, ...withoutJob } = golden;
+    for (const body of [{ ...golden, generate: 'yes' }, { ...golden, resumeId: '' }, { ...withoutJob, company: ' ' },
+      { ...withoutJob, jobTitle: '' }, { ...golden, canaries: ['x'] }]) {
+      const refused = await ask(body);
+      expect([refused.status, await errorCode(refused)]).toEqual([400, 'validation_failed']);
+    }
   });
 });

@@ -8,8 +8,10 @@
  * 2. the core's frame-side Guard checks the write against the field as it is now: honeypot, the value fits, the
  *    options it names still read as planned at their places, the provenance's shape, an llm-pick's option unchanged,
  *    the canary scan over this frame's canaries, the mark-all cover test (guardWriteInFrame);
- * 3. a file write first receives the resume over the `resume` port (transfer.ts), then is checked again, since the
- *    page had a moment to change, and is dropped as user-stopped if the person pressed Cancel meanwhile;
+ * 3. a file write first receives the resume over the `resume` port (transfer.ts), or the run's cover letter (Phase G:
+ *    the write's `ref`; a letter that could not be brought is cover-letter-unavailable, one the input refuses
+ *    format-unsupported), then is checked again, since the page had a moment to change, and is dropped as user-stopped
+ *    if the person pressed Cancel meanwhile;
  * 4. fill() writes with untrusted events and reads back at once; what the field then holds (readBack, values.ts) is
  *    what the loop hashes for its flip count. An ARIA widget is written by the widget helpers instead (Phase 4,
  *    dom/widgets): its option chosen, its missing options added, its member pressed, or, for a remote typeahead, each
@@ -45,7 +47,7 @@ import {
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
-import { receiveResume, type ReceivedResume } from './transfer';
+import { receiveResume, type ReceivedResume, type ResumeFailure } from './transfer';
 import { readBack } from './values';
 
 /** The run was aborted (the extension went away, the document is leaving, or a new run replaced it). */
@@ -178,6 +180,13 @@ export function rowAfterFill(planned: FillResult, outcome: DomFillOutcome): Fill
   return settleRow(planned, refusal(outcome.reason, FILL_BLOCKS));
 }
 
+/** Why a cover letter could not be put into its field (Phase G), as its row says it: an input that refuses a PDF
+ *  takes no letter (format-unsupported), and anything else is the letter that could not be brought. */
+function letterFailure(reason: ResumeFailure): ReasonCode {
+  return reason === 'resume-format-unsupported' || reason === 'pdf-only-input' ? 'format-unsupported'
+    : 'cover-letter-unavailable';
+}
+
 /** How a text read-back is compared, from the planned row's category. */
 function readBackOf(category: FieldCategory): ReadBackRule | undefined {
   if (category === 'contact.phone') return 'digits';
@@ -223,8 +232,9 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   let resume: ReceivedResume | null = null;
   if (write.value.kind === 'file') {
     const tokens = acceptTokens(verdict.target.control as HTMLInputElement);
+    const document = write.value.ref;
     const got = await receiveResume(env.content, { runId: env.runId(), accepts: (file) => accepts(tokens, file),
-      signal: env.signal, ...env.resume });
+      signal: env.signal, ...env.resume, ...(document === 'cover-letter' ? { document } : {}) });
     if (env.signal.aborted || !env.valid()) {
       if (got.ok) got.resume.release();
       throw new RunAborted();
@@ -234,7 +244,10 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
       if (got.ok) got.resume.release();
       return { row: settleRow(planned, { kind: 'not-written', reason: 'user-stopped' }) };
     }
-    if (!got.ok) return { row: settleRow(planned, { kind: 'not-written', reason: got.reason }) };
+    if (!got.ok) {
+      const reason = document === 'cover-letter' ? letterFailure(got.reason) : got.reason;
+      return { row: settleRow(planned, { kind: 'not-written', reason }) };
+    }
     resume = got.resume;
     // The bytes took a moment, in which the page could change: the field is found and checked again.
     const heldSince = env.heldBy?.() ?? null;

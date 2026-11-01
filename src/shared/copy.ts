@@ -12,7 +12,7 @@ import type { AutofillFileKind, ResumeChoiceReason, WorkArrangement } from '../c
 import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
 import type { ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunStatus } from '../core/types/run';
-import type { AddJobOutcome, AskLength, AskOutcome, SaveAnswerOutcome } from '../messaging/schemas';
+import type { AddJobOutcome, AskLength, AskOutcome, LetterOutcome, SaveAnswerOutcome } from '../messaging/schemas';
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -156,6 +156,16 @@ const REASONS = {
   'eeo-decline-default': "You haven't answered this in TailorIT, so the form's option to decline was chosen.",
   'llm-no-answer': 'The AI had no answer for this, so it was left for you.',
   'ai-off-for-posting': "This posting doesn't allow AI, and only the AI could answer this, so it was left for you.",
+  // Cover letters (Phase G): drafts for the owner's review.
+  'cover-letter-attached': 'Your cover letter for this job was attached from TailorIT.',
+  'cover-letter-written': "TailorIT's AI wrote this cover letter for the job from your resume. Read it in TailorIT before you submit.",
+  'cover-letter-would-write': "You have no cover letter for this job, so a fill has TailorIT's AI write one from your resume.",
+  'cover-letter-waiting': 'TailorIT is finding or writing your cover letter for this job.',
+  'cover-letter-failed': "TailorIT couldn't write a cover letter for this job, or yours isn't finished. Finish it in TailorIT, or attach one yourself.",
+  'cover-letter-none': 'You have no finished cover letter for this job in TailorIT, and its AI may not write one here, so this was left for you.',
+  'cover-letter-unavailable': 'Your cover letter could not be brought from TailorIT just now, so this was left for you.',
+  'cover-letter-timed-out': 'TailorIT took too long writing your cover letter, so this was left for you. Check it in TailorIT, then attach it.',
+  'cover-letter-reconnect': "This connection can't attach cover letters. Connect the extension again from TailorIT's Settings › Autofill.",
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;
@@ -254,6 +264,8 @@ const REPORT = {
   untitledSection: 'Form',
   source: 'Source',
   noSource: 'Nothing written',
+  /** Phase G: a cover-letter upload's source, the person's letters in TailorIT. */
+  coverLetterSource: "Your TailorIT cover letters",
   match: 'Match',
   confidence: 'Confidence',
   showOnPage: 'Show on page',
@@ -407,6 +419,33 @@ const JOB = {
     latest: 'Your latest resume',
   } satisfies Record<ResumeChoiceReason, string>,
   fileKinds: { pdf: 'PDF', docx: 'Word', doc: 'Word' } satisfies Record<AutofillFileKind, string>,
+  /** Phase G: the card's cover-letter row, below the resume. Drafts for the owner's review. */
+  letter: {
+    label: 'Cover letter',
+    checking: 'Checking TailorIT for your letter…',
+    yours: 'Your letter for this job',
+    written: "Your letter for this job, written by TailorIT's AI just now",
+    whenAsked: 'Written by AI when the form asks for one',
+    profileOnly: "This posting doesn't allow AI, so only a letter you wrote is attached.",
+    aiOff: 'AI-written answers are off, so only a letter you wrote is attached.',
+    failed: "Your letter for this job isn't finished. Finish it in TailorIT's Cover Letters.",
+    notAllowed: "This connection can't attach cover letters. Connect it again from TailorIT's Settings › Autofill.",
+    write: 'Write it now',
+    writing: 'Writing…',
+    ready: 'Ready',
+    couldNot: "Couldn't write it",
+    outcomes: {
+      yours: 'Ready',
+      written: 'Ready',
+      none: "Couldn't write it",
+      failed: "Couldn't write it",
+      'ai-off': "Couldn't write it: AI-written answers are off, or this posting doesn't allow AI.",
+      'not-allowed': "Couldn't write it: connect the extension again from TailorIT's Settings › Autofill.",
+      'rate-limited': "Couldn't write it: too many requests in a minute. Wait a little, then try again.",
+      'not-connected': 'Connect to TailorIT in the settings first.',
+      unavailable: "Couldn't write it: TailorIT couldn't be reached just now. Try again.",
+    } satisfies Record<LetterOutcome, string>,
+  },
   picker: {
     heading: 'Choose the resume to attach',
     loading: 'Reading your resumes…',
@@ -477,8 +516,8 @@ const OPTIONS = {
     disclosureHeading: 'Before you connect',
     disclosure: [
       'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.',
-      'While its side panel shows an application page, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application\'s progress, never your answers.',
-      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers and answering the questions your profile does not are on unless you turn them off below; drafts and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
+      'While its side panel shows an application page, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings and notes on each application\'s progress, never your answers.',
+      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
     connect: 'Connect to TailorIT',

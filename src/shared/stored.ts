@@ -47,6 +47,8 @@ export const RunRecordSchema = z.strictObject({
   /** What became of this run's one fetch of the sensitive part. */
   sensitive: z.enum(['untried', 'loaded', 'not-shared', 'unavailable']),
   startedAt: z.number().int().nonnegative(),
+  /** Phase G: TailorIT's AI started writing this run's cover letter (a flag; the letter's id stays in memory). */
+  letterWritten: z.literal(true).optional(),
 });
 /** A checked run record. */
 export type RunRecord = z.infer<typeof RunRecordSchema>;

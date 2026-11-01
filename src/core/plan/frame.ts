@@ -70,6 +70,10 @@
  * - Save my answer (T6-1): `savable` names the planned fields whose answer the person may save, so the frame offers
  *   Save my answer on those only: a class whose saved answers are not 'never', a kind a saved answer can fill, and a
  *   question the classify screen lets through. Every other planned field, and any field no plan named, offers none.
+ * - Cover letters (Phase G; planCoverLetter): a cover-letter upload waits for the run's letter (`coverLetter`, never
+ *   `awaiting`) until the worker has asked TailorIT, TailorIT's AI allowed to write it only where it may write any
+ *   answer and never in a dry run; once ready (PlanInput.coverLetter) it is the profile's own document, planned and
+ *   guarded as an upload, marked as the AI's when TailorIT's AI wrote it during the run.
  */
 import { FLAG_AT, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
 import type { MatcherStage } from '../enums';
@@ -103,11 +107,12 @@ import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
 import { statesNoAiUse } from '../resolver/classifyRules';
 import { postingCountryOf } from '../resolver/policy';
+import { withCoverLetter } from '../profile/canonicalize';
 import { answerItemOf, answerRefusal, answerWaitsForOptions, type AnswerItem, type AnswerVerdict } from './answers';
 import {
   aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
 } from './drafts';
-import type { CacheCandidate, PlanInput, PlanOutput } from './types';
+import type { CacheCandidate, CoverLetterState, PlanInput, PlanOutput } from './types';
 
 /** The match of a write with no options to choose from (text, a box, a date, a file, queries). */
 const NOT_APPLICABLE: Match = { stage: 'not-applicable', optionIndex: null, rule: null, confidence: 1, flags: [],
@@ -352,7 +357,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         ...(current.kind === 'text' && current.text.trim() !== '' ? { flag: 'prefill-conflict' as const } : {}) };
     case 'file':
       if (current.kind === 'files' && current.count > 0) return blank('flagged', 'prefill-kept');
-      return { value: { kind: 'file', ref: 'resume' }, match: NOT_APPLICABLE };
+      return { value: { kind: 'file', ref: shaped.ref }, match: NOT_APPLICABLE };
     case 'check': {
       const checked = current.kind === 'checked' && current.checked;
       if (!shaped.check) return checked ? blank('flagged', 'unexpected-selection') : blank('skipped', 'already-correct');
@@ -638,10 +643,70 @@ function withoutAi(settings: PlanInput['settings']): PlanInput['settings'] {
   return { ...settings, llm: { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false } };
 }
 
+/** How a cover-letter upload is planned (Phase G): the run's letter as the worker knows it, whether TailorIT's AI may
+ *  write it here (not a profile-only frame, AI-written answers on), and where its key goes while it waits. */
+interface LetterPlan {
+  letter: CoverLetterState | undefined;
+  /** The posting allows AI and AI-written answers are on (generation itself is never in a dry run). */
+  aiMay: boolean;
+  /** The frame is profile-only (its posting forbids AI, or it holds an "I did not use AI" attestation). */
+  aiOff: boolean;
+  canWrite: boolean;
+  wait(key: FieldKey): void;
+}
+
+/**
+ * A cover-letter upload (Phase G; docs/SPEC-AMENDMENTS.md "Cover letters"). With the run's letter ready, the profile
+ * carries it (withCoverLetter) and planField plans it as any upload, through guardWrite: provenance `profile`, path
+ * `coverLetter` (the Guard allows a cover-letter upload nothing else); its row says whose letter it is
+ * (cover-letter-attached), or that TailorIT's AI wrote it during this run (cover-letter-written, marked "AI"). An
+ * AI-written letter is never attached once the frame is profile-only, or with AI-written answers off. Without it, a
+ * field that could take it (writable, the rules' file.coverLetter with nothing but the letter missing, empty) waits for
+ * it (LetterPlan.wait, cover-letter-waiting) until the worker has asked TailorIT; a letter that will not come leaves it
+ * flagged with why. In a dry run the worker only asks whether the person has one: none, where a fill would have
+ * TailorIT's AI write one, is that promise (cover-letter-would-write, as the would-be write's row).
+ */
+function planCoverLetter(spec: FieldSpec, field: ResolvedField, ctx: FieldPlanContext, how: LetterPlan): FieldPlan {
+  const { resolution } = field;
+  const { category } = resolution;
+  const standing = planField(spec, field, ctx);
+  const { letter } = how;
+  if (standing.write !== undefined) {
+    const aiWritten = letter?.state === 'ready' && letter.aiWritten;
+    if (aiWritten && !how.aiMay) {
+      return { row: rowWithout(spec, category, 'flagged', how.aiOff ? 'ai-off-for-posting' : 'drafts-disabled', 0) };
+    }
+    if (standing.row.status !== 'verified') return standing;
+    return { ...standing, row: { ...standing.row, reason: aiWritten ? 'cover-letter-written' : 'cover-letter-attached' } };
+  }
+  // Nothing to ask for: a field the Guard keeps from being written, one the rules hand to the person or whose label
+  // speaks to AI tools, or one that already holds a file (the page's or the person's: kept, as a resume upload's is).
+  if (!how.canWrite || resolution.reason !== 'no-profile-value') return standing;
+  if (spec.current.kind === 'files' && spec.current.count > 0) {
+    return { row: rowWithout(spec, category, 'flagged', 'prefill-kept', resolution.confidence) };
+  }
+  if (letter === undefined || letter.state === 'waiting') {
+    how.wait(spec.key);
+    return { row: rowWithout(spec, category, 'flagged', 'cover-letter-waiting', 0) };
+  }
+  if (letter.state === 'none') {
+    if (ctx.input.dryRun && letter.reason === 'cover-letter-none' && how.aiMay) {
+      return { row: { key: spec.key, label: spec.label, kind: spec.kind, category, section: sectionKey(spec.section),
+        required: spec.required, status: 'verified', provenance: 'profile', matcherStage: 'not-applicable',
+        confidence: round(resolution.confidence), reason: 'cover-letter-would-write', wrote: false,
+        verification: 'not-checked', needsUserAction: false } };
+    }
+    return { row: rowWithout(spec, category, 'flagged', letter.reason, 0) };
+  }
+  // Ready, yet planField planned nothing (the Guard refused it): its row stands.
+  return standing;
+}
+
 /** One plan/request (types.ts): every field of planKeys (every spec without them) resolved, matched, planned and
  *  guarded, each with a value-free row; the other specs are read for context only (the Phase 3 review, LC-2). */
 export function planFrame(asked: PlanInput): PlanOutput {
-  const { profile } = asked;
+  // The run's cover letter (Phase G), once ready, is planned with as the profile's own document (withCoverLetter).
+  const profile = withCoverLetter(asked.profile, asked.coverLetter);
   const kept = persistableCanaries(asked.canaries, profile);
   // An "I did not use AI" attestation anywhere in the frame's scan makes it a profile-only frame, as a posting that
   // forbids AI does (unless the person's setting is to use the AI anyway).
@@ -718,10 +783,17 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const classifying = new Set<string>(classify.map((item) => item.key));
   const offAi = (row: FillResult): FillResult => (row.status === 'skipped' ? row
     : { ...row, status: 'flagged', reason: 'ai-off-for-posting', needsUserAction: true });
+  // Cover letters (Phase G): TailorIT's AI may write one only where it may write any answer, and never in a dry run.
+  const letterKeys: FieldKey[] = [];
+  const letterAi = !aiOff && wantedLlm.drafts;
   const planned = specs.map((spec, at) => {
     const field = resolved[at]!;
     const classification = decided[at]!;
     const canWrite = writable(spec);
+    if (field.resolution.category === 'file.coverLetter' && spec.kind === 'file') {
+      return { spec, ...planCoverLetter(spec, field, ctx, { letter: input.coverLetter, aiMay: letterAi, aiOff, canWrite,
+        wait: (key) => letterKeys.push(key) }) };
+    }
     // Edit with AI (the person's click): this field's draft, asked with what it holds now, written over it once in;
     // never in a dry run, a profile-only frame, or with AI-written answers off (the Phase E review, MINOR 8).
     if (input.rewrite === spec.key) {
@@ -791,5 +863,6 @@ export function planFrame(asked: PlanInput): PlanOutput {
     ...(cacheCandidates.length > 0 ? { cacheCandidates } : {}),
     ...(ctx.drops.size > 0 ? { cacheDrops: [...ctx.drops] } : {}),
     ...(aiEditable.length > 0 ? { aiEditable } : {}),
-    ...(attestation ? { aiAttestation: true as const } : {}) };
+    ...(attestation ? { aiAttestation: true as const } : {}),
+    ...(letterKeys.length > 0 ? { coverLetter: { keys: letterKeys, generate: letterAi && !input.dryRun } } : {}) };
 }

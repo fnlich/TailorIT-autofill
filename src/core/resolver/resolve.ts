@@ -27,7 +27,7 @@ import type { PlanSensitiveState } from '../plan/types';
 import { normalize, normalizeLabel } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import type { ReasonCode } from '../types/fill';
-import type { FieldCategory, IntendedValue } from '../types/intent';
+import type { FieldCategory, FileRef, IntendedValue } from '../types/intent';
 import type { Action, Classifier, Resolution } from '../types/match';
 import type { Profile, Ymd } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
@@ -101,7 +101,7 @@ export type Shaped =
   | { shape: 'set'; set: Choice[] }
   | { shape: 'check'; check: boolean }
   | { shape: 'date'; iso: string }
-  | { shape: 'file' }
+  | { shape: 'file'; ref: FileRef }
   | { shape: 'search'; queries: string[]; choice: Choice };
 
 /** The resolver's full answer for one field: the Resolution, the value shaped for the field, and whether the field
@@ -186,7 +186,7 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       return iso === null ? null : plain({ shape: 'date', iso });
     }
     case 'file':
-      return candidate.file ? plain({ shape: 'file' }) : null;
+      return candidate.file ? plain({ shape: 'file', ref: candidate.file }) : null;
     case 'search': {
       const choice = candidate.choice ?? (candidate.text !== undefined
         ? { intended: intendedText(candidate.text), domain: 'generic' as const } : undefined);
@@ -214,7 +214,7 @@ function intendedOf(shaped: Shaped): IntendedValue {
       return { kind: 'date', y: y!, ...(m !== undefined ? { m } : {}), ...(d !== undefined ? { d } : {}) };
     }
     case 'file':
-      return { kind: 'file', file: 'resume' };
+      return { kind: 'file', file: shaped.ref };
   }
 }
 

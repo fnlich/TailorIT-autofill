@@ -154,6 +154,7 @@ import {
   type ReportLimiter,
 } from './report';
 import { aiMarkOf, highlightItems } from './targets';
+import { postingNamesOf } from './job-relay';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
@@ -1224,10 +1225,15 @@ export class FillRun {
     const postingText = aiText && this.isTop && !this.request.dryRun && !this.noAi && planKeys.length > 0
       ? this.postingText() : '';
     const noAi = this.noAi;
+    // Phase G: a pass that plans an upload sends the company and job title its page title names, for a cover letter of
+    // a posting TailorIT does not have (page text, never kept).
+    const planned = new Set<string>(planKeys);
+    const names = specs.some((spec) => spec.kind === 'file' && planned.has(spec.key))
+      ? postingNamesOf(this.env.doc, this.env.page.app.platform) : null;
     const answer = await this.call<'plan/request'>((runId) => ({ v: 1, type: 'plan/request', runId, pass, specs,
       planKeys, canaries, notices, ...(repeatables.length > 0 ? { repeatables } : {}),
       ...(postingText === '' ? {} : { postingText }), ...(revealEdges.length > 0 ? { revealEdges } : {}),
-      ...(noAi ? { noAi: true as const } : {}) }));
+      ...(noAi ? { noAi: true as const } : {}), ...(names === null ? {} : { posting: names }) }));
     if ('failed' in answer) throw new RunFailure(answer.failed);
     this.noteSavable(answer);
     this.noteAiAnswer(answer);

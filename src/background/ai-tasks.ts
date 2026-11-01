@@ -739,6 +739,9 @@ export interface AskContext {
   noAi?: boolean;
   /** Edit with AI: the one key this context rewrites (draft/rewrite), planned again as a rewrite. */
   rewrite?: FieldKey;
+  /** Phase G: the company and job title the frame's page title names (plan/request's `posting`), for a cover letter
+   *  of a posting TailorIT does not have. Page text, memory only. */
+  posting?: { company: string; title: string };
 }
 
 /** One run's LLM questions and answers, in the worker's memory for the run only. */

@@ -9,7 +9,7 @@
 import type { FieldKind } from '../enums';
 import type { MatchDomain } from '../matcher/types';
 import type { ReasonCode } from '../types/fill';
-import type { IntendedValue, ValueOrigin } from '../types/intent';
+import type { FileRef, IntendedValue, ValueOrigin } from '../types/intent';
 import type { FieldOfStudy } from '../types/profile';
 import type { DateParts } from './format';
 
@@ -46,8 +46,8 @@ export interface Candidate {
   check?: boolean;
   /** For a date control, or laid out as text for a text box. */
   date?: DateParts;
-  /** The profile's resume, for an upload. */
-  file?: true;
+  /** The document an upload is given: the profile's resume, or the run's cover letter (Phase G). */
+  file?: FileRef;
 }
 
 /** Why a field gets no value, and whether the person must see it (flagged) or it may be skipped. */

@@ -13,6 +13,7 @@ import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { RUN_PREFIX, RunRecordSchema, type RunRecord } from '../shared/stored';
 import { toBase64Url } from './bytes';
 import type { RunAi } from './ai-tasks';
+import type { RunLetter } from './cover-letters';
 import type { ResumeChoice } from './resume-choice';
 
 /** At most this many runs are remembered at once; the oldest go first. */
@@ -42,6 +43,8 @@ export interface RunMemo {
   chosen?: string | null;
   /** The run's tab (v2, set at run/begin), whose resume choice the run follows. */
   tabId?: number;
+  /** The run's cover letter (Phase G, cover-letters.ts): asked once, stopped when the run goes. */
+  letter?: RunLetter;
 }
 
 /** The runs the worker knows, by id. */
@@ -60,8 +63,12 @@ export interface RunRegistry {
   forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void>;
   forgetTab(tabId: number): Promise<void>;
   /** The token changed: every run forgets what it read with the old one (its lookup, its resume and the resume chosen
-   *  for it), so nothing of one connection reaches the next; a run that still needs them reads them again. */
+   *  for it, its cover letter), so nothing of one connection reaches the next; a run that still needs them reads them
+   *  again. */
   dropTokenData(): void;
+  /** TailorIT started writing the run's cover letter (Phase G): its record says so (a flag, no id), so a worker that
+   *  restarted still marks that letter as the AI's. */
+  noteLetterWritten(runId: string): Promise<void>;
 }
 
 const keyOf = (runId: string) => `${RUN_PREFIX}${runId}`;
@@ -99,6 +106,7 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
     for (const runId of runIds) {
       known.delete(runId);
       memos.get(runId)?.ai?.stop();
+      memos.get(runId)?.letter?.stop();
       memos.delete(runId);
     }
     await session.remove(runIds.map(keyOf));
@@ -164,7 +172,17 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
         memo.lookup = undefined;
         memo.resume = undefined;
         memo.chosen = undefined;
+        // A cover letter asked with the old token is never uploaded with the new one (Phase G).
+        memo.letter?.stop();
+        memo.letter = undefined;
       }
+    },
+    async noteLetterWritten(runId) {
+      const record = await load(runId);
+      if (record === null || record.letterWritten === true) return;
+      const next = { ...record, letterWritten: true as const };
+      known.set(runId, next);
+      await session.set({ [keyOf(runId)]: next });
     },
   };
 }

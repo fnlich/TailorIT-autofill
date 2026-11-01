@@ -56,6 +56,14 @@ export const REASON_CODES = [
   // the Phase E review: a criminal-history question the person's one answer ("convicted of a crime?") does not settle:
   // a narrower one when the answer is yes, or an arrest, a charge or a registration
   'criminal-not-covered',
+  // cover letters (Phase G), on a cover-letter upload: the person's own letter for the job attached; one TailorIT's AI
+  // wrote during this run attached (marked "AI"); a dry run's promise that a fill has TailorIT's AI write one. Then,
+  // flagged: TailorIT is finding or writing it (the row while the field waits); TailorIT could not write one, or the
+  // person's own is not finished; there is none and TailorIT's AI may not write one here; TailorIT could not be asked
+  // or could not send it; it took past the cap; this connection was made before cover letters
+  'cover-letter-attached', 'cover-letter-written', 'cover-letter-would-write', 'cover-letter-waiting',
+  'cover-letter-failed', 'cover-letter-none', 'cover-letter-unavailable', 'cover-letter-timed-out',
+  'cover-letter-reconnect',
   // a bug
   'internal-error',
 ] as const;

@@ -11,4 +11,5 @@ export * from './connect';
 export * from './lookup';
 export * from './ai';
 export * from './answers';
+export * from './cover-letters';
 export * from './registry';

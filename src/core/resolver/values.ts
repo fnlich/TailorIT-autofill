@@ -493,8 +493,11 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     }
     case 'file.resume':
       return profile.resume === undefined ? none('resume-unavailable')
-        : value({ origin: fromProfile('resume'), confidence: VALUE_EXPLICIT, file: true });
+        : value({ origin: fromProfile('resume'), confidence: VALUE_EXPLICIT, file: 'resume' });
     case 'file.coverLetter':
+      // The run's cover letter (Phase G), once the worker has it ready (planFrame asks for it otherwise).
+      return profile.coverLetter === undefined ? none('no-profile-value')
+        : value({ origin: fromProfile('coverLetter'), confidence: VALUE_EXPLICIT, file: 'cover-letter' });
     case 'file.other':
       return none('no-profile-value');
     default:

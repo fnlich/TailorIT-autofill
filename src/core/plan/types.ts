@@ -10,7 +10,7 @@ import type { ClassifyItem, ClassifyVerdict } from '../resolver/classify';
 import type { CompanyScope } from '../resolver/saved';
 import type { RepeatableAnswer, RepeatableRequest } from '../steps/blocks';
 import type { BaseKey, FieldKey, FieldSpec } from '../types/field';
-import type { FillResult, PlannedWrite } from '../types/fill';
+import type { FillResult, PlannedWrite, ReasonCode } from '../types/fill';
 import type { Profile, SensitiveState, Ymd } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
 import type { Settings } from '../types/settings';
@@ -64,7 +64,25 @@ export interface PlanInput {
   /** Edit with AI: the one field whose text the person asked TailorIT to rewrite (its draft, with what it holds now).
    *  Only that key is planned. */
   rewrite?: FieldKey;
+  /** The run's cover letter as the worker knows it (Phase G; memory only). Absent: not asked yet, so a cover-letter
+   *  upload the plan could fill waits for it (PlanOutput.coverLetter). Ready: the plan attaches it (withCoverLetter). */
+  coverLetter?: CoverLetterState;
 }
+
+/** Why a cover-letter upload has no letter (Phase G), as its row says: TailorIT could not write one, or the person's own
+ *  is not finished (`failed`); there is none and TailorIT's AI may not write one here; TailorIT could not be asked or
+ *  could not send it; it took past the worker's cap; the connection was made before cover letters. */
+export type CoverLetterGap = Extract<ReasonCode, 'cover-letter-failed' | 'cover-letter-none' | 'cover-letter-unavailable'
+  | 'cover-letter-timed-out' | 'cover-letter-reconnect'>;
+
+/**
+ * Where the run's cover letter stands (Phase G): ready to upload (`aiWritten`: TailorIT's AI wrote it during this run;
+ * else it is the person's own, or one written before), still being found or written, or none, with why.
+ */
+export type CoverLetterState =
+  | { state: 'ready'; aiWritten: boolean }
+  | { state: 'waiting' }
+  | { state: 'none'; reason: CoverLetterGap };
 
 /** A tiebreak verdict, with the TailorIT task that gave it: an llm-pick write names that task. */
 export interface AnsweredVerdict {
@@ -141,4 +159,8 @@ export interface PlanOutput {
   /** The frame's scan holds an "I did not use AI" attestation: the frame fills from the profile only from now on
    *  (unless the person's setting is to use the AI anyway), and says so. */
   aiAttestation?: true;
+  /** The cover-letter uploads that wait for the run's cover letter (Phase G), never in `awaiting` (they are no LLM
+   *  question): the worker asks TailorIT once per run, then plans them again. `generate`: TailorIT's AI may write one
+   *  when the person has none (never in a dry run, a profile-only run, or with AI-written answers off). Absent: none. */
+  coverLetter?: { keys: FieldKey[]; generate: boolean };
 }

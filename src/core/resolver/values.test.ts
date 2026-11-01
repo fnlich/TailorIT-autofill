@@ -126,11 +126,20 @@ describe('the rest of the table', () => {
   });
 
   it('gives an upload the resume only when the profile has one', () => {
-    expect(candidate(valueOf('file.resume', field('Resume', 'file')))).toMatchObject({ file: true,
+    expect(candidate(valueOf('file.resume', field('Resume', 'file')))).toMatchObject({ file: 'resume',
       origin: { provenance: 'profile', path: 'resume' } });
     expect(valueOf('file.resume', field('Resume', 'file'), goldenProfile({ resume: false })))
       .toEqual({ ok: false, none: { reason: 'resume-unavailable', flagged: true } });
     expect(valueOf('file.coverLetter', field('Cover letter', 'file')).ok).toBe(false);
+  });
+
+  it("gives a cover-letter upload the run's letter only once the worker attached it (Phase G), never the resume", () => {
+    const withLetter: Profile = { ...profile, coverLetter: { aiWritten: true } };
+    expect(candidate(valueOf('file.coverLetter', field('Cover letter', 'file'), withLetter))).toMatchObject({
+      file: 'cover-letter', origin: { provenance: 'profile', path: 'coverLetter' } });
+    expect(valueOf('file.coverLetter', field('Cover letter', 'file'), profile))
+      .toEqual({ ok: false, none: { reason: 'no-profile-value', flagged: true } });
+    expect(valueOf('file.other', field('Portfolio', 'file'), withLetter).ok).toBe(false);
   });
 
   it('dates a start from a notice period (availability.from-notice), and never converts pay between periods', () => {

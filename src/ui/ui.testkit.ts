@@ -11,7 +11,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
 import type { TelemetryCount } from '../core/types/telemetry';
-import type { AuthStatus, JobCard, PageState, PanelAskAnswer, ResumeListAnswer } from '../messaging/schemas';
+import type { AuthStatus, JobCard, LetterOutcome, PageState, PanelAskAnswer, ResumeListAnswer } from '../messaging/schemas';
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
 import type { FrameReport } from '../shared/report';
@@ -115,6 +115,8 @@ export interface WorkerScript {
   resumes: ResumeListAnswer['items'];
   /** What panel/ask answers (v2). */
   askAnswer: PanelAskAnswer;
+  /** What panel/letter answers (Phase G): asked whether there is one (`check`), and Write it now (`write`). */
+  letter: { check: LetterOutcome; write: LetterOutcome };
 }
 
 export interface FakeWorker {
@@ -140,7 +142,8 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     resumes: [{ id: 'resume-1', label: 'Backend resume', fileKind: 'pdf', kind: 'built', current: true },
       { id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }],
     askAnswer: { outcome: 'answered', text: 'I like building the systems Northwind runs on.', resumeLabel: 'Backend resume',
-      policy: false } };
+      policy: false },
+    letter: { check: 'none', write: 'written' } };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
@@ -158,6 +161,7 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     'panel/resumes': () => ok({ items: script.resumes }),
     'panel/setResume': () => ok({}),
     'panel/ask': () => ok(script.askAnswer),
+    'panel/letter': (message) => ok({ outcome: message.write === true ? script.letter.write : script.letter.check }),
     'panel/fill': () => ok({ frames: script.frames }),
     'panel/continue': () => ok({ frames: script.frames }),
     'panel/cancel': () => ok({ frames: script.frames }),

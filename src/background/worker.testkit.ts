@@ -20,6 +20,7 @@ import type { UntrustedText } from '../core/types/text';
 import { attachResume } from '../core/profile/canonicalize';
 import type { FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
+import type { ProfilePath } from '../core/types/intent';
 import type { Profile } from '../core/types/profile';
 import type { RunState } from '../core/types/run';
 import type { Vocab } from '../core/vocab/types';
@@ -667,6 +668,43 @@ export function askingCore(): Pick<CoreFunctions, 'planFrame'> {
           : { ...row, category: 'experience.currentCompany', status: 'flagged', reason: 'llm-classified-needs-review' });
       }
       if (output.awaiting.length > 0) output.ask = { tiebreaks, classify };
+      return output;
+    },
+  };
+}
+
+// ── A core that plans a cover letter (Phase G) ────────────────────────────────────────────────────────────────────
+
+/**
+ * planFrame scripted for a cover-letter upload (Phase G; the real one is src/core/plan/cover-letter.test.ts): with no letter
+ * yet it waits (PlanOutput.coverLetter, TailorIT's AI allowed unless the run is profile-only or a dry run); ready, it is
+ * the profile's cover letter; none, flagged with why.
+ */
+export function letterCore(): Pick<CoreFunctions, 'planFrame'> {
+  return {
+    planFrame(input) {
+      const output: PlanOutput = { writes: [], results: [], awaiting: [], needsSensitive: false, persistableCanaries: [] };
+      const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
+      for (const spec of input.specs.filter((each) => wanted === null || wanted.has(each.key))) {
+        const row = { ...skippedRow(spec), category: 'file.coverLetter' as const };
+        const letter = input.coverLetter;
+        if (spec.kind !== 'file') {
+          output.results.push(skippedRow(spec));
+        } else if (letter === undefined || letter.state === 'waiting') {
+          output.coverLetter = { keys: [spec.key], generate: input.noAi !== true && !input.dryRun };
+          output.results.push({ ...row, status: 'flagged', reason: 'cover-letter-waiting', needsUserAction: true });
+        } else if (letter.state === 'none') {
+          output.results.push({ ...row, status: 'flagged', reason: letter.reason, needsUserAction: true });
+        } else {
+          // The worker attached nothing to the profile: planFrame does (withCoverLetter).
+          output.writes.push({ key: spec.key, value: { kind: 'file', ref: 'cover-letter' },
+            origin: { provenance: 'profile', path: 'coverLetter' as ProfilePath },
+            match: { stage: 'not-applicable', optionIndex: null, rule: null, confidence: 1, flags: [], suggestions: [],
+              reason: 'ok' } });
+          output.results.push({ ...row, status: 'verified', provenance: 'profile',
+            reason: letter.aiWritten ? 'cover-letter-written' : 'cover-letter-attached' });
+        }
+      }
       return output;
     },
   };

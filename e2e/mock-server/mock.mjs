@@ -31,6 +31,13 @@
  *   address TailorIT cannot add from. A lookup naming `resumeId`, one of the listed resumes, suggests that resume
  *   (reason chosen) and scores it. POST /ai/answer makes an answer task: by default every item has no answer
  *   (no_answer), so a form fills as it did before; scenarios answer every item, as a guess or from the resume.
+ * - Cover letters (version 2, Phase G): POST /cover-letters checks its body as TailorIT does (a resume id, a company
+ *   and a title without a job, the caps), then answers 404 not_found when it may not write (generate false:
+ *   the person has no letter for the job), and otherwise a new letter `generating` that reads `ready` at its first
+ *   poll; GET …/:id gives a letter's state (404 for one the mock never made), GET …/:id/file the golden cover letter
+ *   beside this file (golden-cover-letter.pdf) with X-TailorIT-File-Kind pdf, X-TailorIT-Sha256 and a
+ *   Content-Disposition, 409 conflict until it is ready. The contract's golden letter is always there, ready.
+ *   Scenarios: letter-ready, letter-generating-then-ready, letter-failed, letter-none.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -90,6 +97,7 @@ const SENSITIVE_FILE = join(ROOT, 'fixtures', 'profiles', 'alex-rivera.sensitive
 
 const CONNECT_PAGE = readFileSync(join(HERE, 'connect-page.html'), 'utf8');
 const RESUME_BYTES = readFileSync(join(HERE, 'golden-resume.pdf'));
+const LETTER_BYTES = readFileSync(join(HERE, 'golden-cover-letter.pdf'));
 const LOOKUP_GOLDEN = example('AutofillLookupResponse');
 
 /** The golden resume as TailorIT describes it: the contract's suggested resume, renamed for the golden profile, with
@@ -108,6 +116,23 @@ export const GOLDEN_RESUME = Object.freeze({
 /** A copy of the golden resume's bytes. */
 export function goldenResumeBytes() {
   return Uint8Array.from(RESUME_BYTES);
+}
+
+/** The golden cover letter (Phase G): the PDF beside this file, as GET /cover-letters/:id/file sends it for every
+ *  letter, under the name its Content-Disposition gives. `sentinel` is a word only its bytes hold. */
+export const GOLDEN_LETTER = Object.freeze({
+  /** The contract's golden letter id, which the mock always holds, ready. */
+  id: /** @type {string} */ (example('AutofillCoverLetterResponse').letterId),
+  fileName: 'Cover Letter - Northwind.pdf',
+  mime: 'application/pdf',
+  size: LETTER_BYTES.byteLength,
+  sha256: createHash('sha256').update(LETTER_BYTES).digest('hex'),
+  sentinel: 'GOLDEN-LETTER-K8M4',
+});
+
+/** A copy of the golden cover letter's bytes. */
+export function goldenLetterBytes() {
+  return Uint8Array.from(LETTER_BYTES);
 }
 
 /**
@@ -185,6 +210,14 @@ export const MOCK_SCENARIOS = Object.freeze({
   // Phase 6: saved answers. Without these, GET lists what PUT saved since the last reset (none at first).
   'answers-unavailable': 'GET /answers gets 500.',
   'answers-refused': 'PUT /answers gets 400 validation_failed, as TailorIT refuses a question it never keeps.',
+  // Phase G: cover letters. Without these, POST /cover-letters answers 404 to generate false (no letter of the
+  // person's) and a new letter `generating`, ready at its first poll, to generate true.
+  'letter-ready': "POST /cover-letters answers a finished letter of the person's (ready), whatever generate says.",
+  'letter-generating-then-ready': 'POST /cover-letters with generate true answers generating, and the letter reads ready '
+    + 'delayMs later (default 4 s); with generate false it gets 404 not_found, as letter-none.',
+  'letter-failed': 'POST /cover-letters with generate true answers generating, and the letter reads failed at its first '
+    + "poll (TailorIT's AI could not write it); with generate false it answers failed (the person's letter, unfinished).",
+  'letter-none': "POST /cover-letters with generate false gets 404 not_found: the person has no letter for this job.",
 });
 /** @typedef {keyof typeof MOCK_SCENARIOS} ScenarioName */
 /** @typedef {'autofill_pick' | 'autofill_classify' | 'autofill_draft' | 'autofill_answer'} AiKind */
@@ -235,7 +268,10 @@ const SAVED_ANSWER_KINDS = new Set(['text', 'textarea', 'select', 'radio', 'chec
 const SAVED_ANSWER_LIMIT = 500;
 
 /** How long a slow scenario waits when the test names no delay. @type {Partial<Record<ScenarioName, number>>} */
-const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000, 'ai-slow': 4_000 };
+const DEFAULT_DELAYS = { 'lookup-slow': 30_000, 'resume-slow': 8_000, 'ai-slow': 4_000,
+  'letter-generating-then-ready': 4_000 };
+/** How long a letter the mock writes takes when no scenario says (Phase G): less than the worker's first poll (2 s). */
+const LETTER_WRITE_MS = 500;
 const MAX_DELAY_MS = 120_000;
 
 // ── Connect codes (Crockford base32, as the contract's connect.ts reads them) ───────────────────────────────────────
@@ -356,6 +392,9 @@ export function createMock() {
     answers: new Map(),
     /** The lookup a POST /jobs added (version 2): every later lookup finds that job until the reset. @type {Record<string, any> | null} */
     added: null,
+    /** The cover letters POST /cover-letters made (Phase G), by id: ready at readyAt, failed at failAt (never when null).
+     *  @type {Map<string, { id: string; readyAt: number | null; failAt: number | null }>} */
+    letters: new Map(),
     /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes. */
     token: { value: GOLDEN_TOKEN, scopes: [...ALL_SCOPES], revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
   });
@@ -657,6 +696,81 @@ export function createMock() {
     return jsonAnswer(200, saved);
   }
 
+  // ── Cover letters (Phase G) ──────────────────────────────────────────────────────────────────────────────────
+
+  /** A letter's state now. @param {{ readyAt: number | null; failAt: number | null }} letter */
+  function letterState(letter) {
+    const now = Date.now();
+    if (letter.failAt !== null && letter.failAt <= now) return 'failed';
+    return letter.readyAt !== null && letter.readyAt <= now ? 'ready' : 'generating';
+  }
+
+  /** A letter the mock knows: one POST made, or the contract's golden one (always ready). @param {string} id */
+  function letterOf(id) {
+    if (id === GOLDEN_LETTER.id) return { id, readyAt: 0, failAt: null };
+    return state.letters.get(id) ?? null;
+  }
+
+  /**
+   * POST /cover-letters: TailorIT's checks in brief (a resume id, a company and a title without a job, the caps),
+   * then a scenario's answer, or the default (module header).
+   * @param {Record<string, any>} json @returns {Answer}
+   */
+  function coverLetter(json) {
+    const text = (/** @type {unknown} */ value, /** @type {number} */ max) => typeof value === 'string' && value.length <= max;
+    if (typeof json.generate !== 'boolean') return invalid('generate: Expected a boolean');
+    if (!(typeof json.resumeId === 'string' && json.resumeId.length >= 1 && json.resumeId.length <= 64)) {
+      return invalid('resumeId: Required');
+    }
+    if (!text(json.company, 200) || !text(json.jobTitle, 200)) return invalid('company: Required');
+    if (json.jobId !== undefined && !(Number.isInteger(json.jobId) && json.jobId > 0)) return invalid('jobId: Invalid');
+    if (json.jobId === undefined && (json.company.trim() === '' || json.jobTitle.trim() === '')) {
+      return invalid('company: Required');
+    }
+    if (json.jobText !== undefined && !text(json.jobText, 20_000)) return invalid('jobText: Too long');
+    const canaries = json.canaries ?? [];
+    if (!Array.isArray(canaries) || canaries.length > 50
+      || canaries.some((/** @type {unknown} */ canary) => typeof canary !== 'string' || canary.length < 2 || canary.length > 200)) {
+      return invalid('canaries: Invalid');
+    }
+    const now = Date.now();
+    const made = (/** @type {number | null} */ readyAt, /** @type {number | null} */ failAt) => {
+      const letter = { id: randomUUID(), readyAt, failAt };
+      state.letters.set(letter.id, letter);
+      return jsonAnswer(200, { letterId: letter.id, state: letterState(letter) });
+    };
+    if (take('letter-ready') !== null) return made(now, null);
+    const failed = take('letter-failed');
+    if (failed !== null) return json.generate ? made(null, now + LETTER_WRITE_MS) : made(null, now);
+    // With generate false, only a letter the person wrote is answered: none here (letter-none says so outright).
+    if (!json.generate) {
+      take('letter-none');
+      return refusal(404, 'not_found', 'A cover letter for this job was not found.');
+    }
+    const slow = take('letter-generating-then-ready');
+    return made(now + (slow?.delayMs ?? LETTER_WRITE_MS), null);
+  }
+
+  /** GET /cover-letters/:id/file: the golden PDF once the letter is ready; 409 before; 404 for one the mock never made.
+   *  @param {string} id @returns {Answer} */
+  function coverLetterFile(id) {
+    const letter = letterOf(id);
+    if (letter === null) return refusal(404, 'not_found', 'That cover letter was not found.');
+    if (letterState(letter) !== 'ready') {
+      return refusal(409, 'conflict', 'This cover letter is still being written. Ask again in a moment.');
+    }
+    return {
+      status: 200,
+      bytes: goldenLetterBytes(),
+      headers: {
+        'Content-Type': GOLDEN_LETTER.mime,
+        'Content-Disposition': `attachment; filename="${GOLDEN_LETTER.fileName}"; filename*=UTF-8''${encodeURIComponent(GOLDEN_LETTER.fileName)}`,
+        [FILE_KIND_HEADER]: 'pdf',
+        [SHA256_HEADER]: GOLDEN_LETTER.sha256,
+      },
+    };
+  }
+
   /** GET or DELETE /api/ai/tasks/:id: a task the mock made, or the contract's golden one; else 404.
    *  @param {string} id @param {boolean} cancel @returns {Answer} */
   function taskAnswer(id, cancel) {
@@ -735,6 +849,13 @@ export function createMock() {
     'DELETE /api/autofill/answers/:id': ({ params }) => (state.answers.delete(params[0] ?? '') ? { status: 204 } : notFound()),
     'GET /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', false),
     'DELETE /api/ai/tasks/:id': ({ params }) => taskAnswer(params[0] ?? '', true),
+    'POST /api/autofill/cover-letters': ({ json }) => coverLetter(json),
+    'GET /api/autofill/cover-letters/:id': ({ params }) => {
+      const letter = letterOf(params[0] ?? '');
+      return letter === null ? refusal(404, 'not_found', 'That cover letter was not found.')
+        : jsonAnswer(200, { state: letterState(letter) });
+    },
+    'GET /api/autofill/cover-letters/:id/file': ({ params }) => coverLetterFile(params[0] ?? ''),
     'GET /api/autofill/resumes/:id/file': ({ params }) => {
       if (params[0] !== GOLDEN_RESUME.id) return refusal(404, 'not_found', 'That resume was not found.');
       if (take('resume-fails') !== null) return serverError();
@@ -817,6 +938,7 @@ export function createMock() {
     if (path === '/__mock/health') return jsonAnswer(200, { ok: true });
     if (path === '/__mock/requests' && method === 'GET') return jsonAnswer(200, state.requests);
     if (path === '/__mock/resume' && method === 'GET') return jsonAnswer(200, GOLDEN_RESUME);
+    if (path === '/__mock/letter' && method === 'GET') return jsonAnswer(200, GOLDEN_LETTER);
     if (path === '/__mock/reset' && method === 'POST') {
       reset();
       return { status: 204 };

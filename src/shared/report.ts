@@ -91,6 +91,12 @@ export function saysNoAi(report: Pick<FrameReport, 'status' | 'notices'>): boole
   return report.status === 'policy-notice' || report.notices.some((notice) => NO_AI_NOTICES.has(notice.code));
 }
 
+/** Whether a frame's run fills from the profile only (Phase G): it raised policy-profile-only or ai-attestation, so
+ *  nothing of it goes to the AI, the side panel's Write it now included. */
+export function fillsFromProfileOnly(report: Pick<FrameReport, 'notices'>): boolean {
+  return report.notices.some((notice) => notice.code === 'policy-profile-only' || notice.code === 'ai-attestation');
+}
+
 /**
  * Whether a row needs the person: it asks for them (an AI draft to confirm, a question left for them), or the run left
  * it flagged or blocked. One rule for the review's count (src/ui/report/model.ts) and the launcher's (the content

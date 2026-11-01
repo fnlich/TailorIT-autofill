@@ -1,6 +1,6 @@
 # The TailorIT contract
 
-The extension talks to TailorIT only over HTTP, from its service worker, with a bearer token. TailorIT owns the contract: zod schemas in `packages/shared/src/autofill/` of the TailorIT repository, version `apiVersion: 2` (version 1 until the v2 pull: the scopes `jobs:add` and `letters:write`, the resume reason `chosen`, the lookup's `match` and job facts, `POST /jobs`, `POST /ai/answer`, a draft question's `currentAnswer`). The full design (DDL, every route, the rate limits) is [design/tailorit.md](design/tailorit.md).
+The extension talks to TailorIT only over HTTP, from its service worker, with a bearer token. TailorIT owns the contract: zod schemas in `packages/shared/src/autofill/` of the TailorIT repository, version `apiVersion: 2` (version 1 until the v2 pull: the scopes `jobs:add` and `letters:write`, the resume reason `chosen`, the lookup's `match` and job facts, `POST /jobs`, `POST /ai/answer`, a draft question's `currentAnswer`, and (Phase G, TailorIT v1.2 `3b049ce`) the cover letters). The full design (DDL, every route, the rate limits) is [design/tailorit.md](design/tailorit.md).
 
 ## Keeping the copy in step (from Phase 2)
 - `npm run contract:pull -- F:\Develop\TailorIT` (the owner's checkout, branch `v1.2`; during Phases 2-6, the `autofill` worktree) copies the contract's non-test files byte for byte into `src/contract/tailorit/`, its `contract.json` and fixtures into `src/contract/tailorit/v1/`, and records the source commit in `SOURCE.json`. The copied files are never edited by hand.
@@ -27,6 +27,8 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | POST | `/ai/answer` | token (`ai:run`) | v2 | an answer (an option or a short text, with its basis) to a question nothing else settles |
 | GET, DELETE | `/api/ai/tasks/:id` | token (autofill kinds only) | 4 | poll or cancel an AI task |
 | GET, PUT, DELETE | `/answers`, `/answers/:id` | token (GET `profile:read`; PUT and DELETE `answers:write`) | 6 | saved answers |
+| POST | `/cover-letters` `{jobId?, company, jobTitle, jobText?, resumeId, generate, canaries?}` | token (`letters:write`) | v2 (Phase G) | the person's letter for the application, written now by TailorIT's cover-letter AI when `generate` and there is none; answers `{letterId, state: ready \| generating \| failed}`, 404 with `generate` false and no letter the person wrote |
+| GET | `/cover-letters/:id`, `/cover-letters/:id/file` | token (`letters:write`) | v2 (Phase G) | where a letter stands (polled, 120 a minute); its PDF with `X-TailorIT-File-Kind: pdf`, `X-TailorIT-Sha256` and a Content-Disposition name (409 until ready, 413 over 10 MiB) |
 
 ## How the extension calls it (`src/background/server-client.ts`, Phase 2)
 - **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, or the mock's `http://localhost:3190` in the e2e build). Content scripts and pages never do.
@@ -60,6 +62,9 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | `POST /ai/draft` (v2, one question) | `panel/ask`: the person's custom question, with the active resume's id and a cap of 600, 1,500 or 3,000 | the draft, checked again for the page's canaries and its cap |
 | `GET /resumes` | the resume port, when the lookup suggests no resume and the profile (or, v2, the person's choice) names one; (v2) the card's Change, `panel/resumes`; a custom question's resume title when no card names it | that resume's file kind and name; the picker's ids, titles and kinds (never a file name) |
 | `GET /resumes/:id/file` | the resume port | the bytes, released within 60 s |
+| `POST /cover-letters` (Phase G) | once per run, by the first plan with a cover-letter upload to fill (`background/cover-letters.ts`): the lookup's job id, company and title (else the page title's names), the resume the run attaches, `generate` (AI-written answers on, not a dry run, not profile-only) and, only with it, the posting's visible text and the page's canaries; and the job card's row (`panel/letter`: `generate` false to say whether there is one, true for Write it now) | the letter's id (memory only) and state; 409 `ai_busy` and 429 asked again within the 180 s cap; 403 a connection made before `letters:write` |
+| `GET /cover-letters/:id` (Phase G) | every 2 s while the letter is `generating`, at most 180 s from the first ask | `ready` or `failed` |
+| `GET /cover-letters/:id/file` (Phase G) | the resume port, `resume/request {document: 'cover-letter'}`, once the run's letter is ready | the PDF (kind `pdf`, `%PDF-`, its hash checked), its name; released within 60 s |
 | `POST /ai/pick`, `POST /ai/classify` | `plan/request` or `plan/poll`, when a plan leaves fields waiting for the LLM and the setting allows it (Phase 4, `src/background/ai-tasks.ts`) | the finished task (200), or its id to poll (202) |
 | `GET /api/ai/tasks/:id` | every 1.5 s while a task runs, at most 120 s from its first submit; and first, for a batch whose task id RunState.aiTasks already holds | the task's result, validated again against the options sent |
 | `DELETE /api/ai/tasks/:id` | never (the Phase 4 review, T-F2): a task TailorIT deduplicated may be another caller's too, and TailorIT prunes every task within its hour. The server client has no such call, and its allow-list refuses one | none |
@@ -147,6 +152,11 @@ The worker's own tests use the same answers (`src/background/worker.testkit.ts`,
 - **A lookup naming `resumeId`** that is one of the listed resumes suggests that resume (reason `chosen`) and scores it with `chosen.json`'s match; any other id is passed over, as TailorIT does. Every lookup's match names the resume it suggests.
 - **`POST /ai/answer`** makes an `autofill_answer` task as the other AI routes do (1 to 10 items, each `choice` or `text`); by default every item is `no_answer`, so a form fills as it did before version 2, and `ai-answer` answers them all.
 - The mock still refuses to start when a route of the contract's table has no answer.
+
+### The mock's cover letters (Phase G)
+- **`POST /cover-letters`** checks its body as TailorIT does in brief (`generate` a boolean, a resume id, a company and a title of at most 200, both needed without a `jobId`, `jobText` at most 20,000, at most 50 canaries of 2 to 200 characters; else 400). By default `generate` false is 404 `not_found` (the person has no letter for the job), and `generate` true makes a letter `generating` that reads `ready` half a second later (before the worker's first poll).
+- **`GET /cover-letters/:id`** answers a letter's state (404 for one the mock never made); **`GET /cover-letters/:id/file`** sends `e2e/mock-server/golden-cover-letter.pdf` (its words hold the sentinel `GOLDEN-LETTER-K8M4`) with `X-TailorIT-File-Kind: pdf`, its SHA-256 and `Content-Disposition` naming "Cover Letter - Northwind.pdf", and 409 `conflict` until the letter is ready. The contract's golden letter (`AutofillCoverLetterResponse/valid/golden.json`'s id) is always there, ready. `GET /__mock/letter` answers its description (`GOLDEN_LETTER`).
+- Scenarios: `letter-ready` (a finished letter of the person's, whatever `generate` says), `letter-generating-then-ready` (with `generate`, ready `delayMs` later, default 4 s), `letter-failed` (with `generate`, `generating` then `failed` at its first poll; without, `failed`), `letter-none` (404 to `generate` false).
 
 ### The mock's AI routes (Phase 4)
 The contract at TailorIT `a1a3e9b` adds `POST /api/autofill/ai/pick`, `POST /api/autofill/ai/classify`, and `GET` and `DELETE /api/ai/tasks/:id` (scope `ai:run`). The mock answers them as TailorIT's routes do:

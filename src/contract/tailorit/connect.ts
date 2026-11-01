@@ -10,9 +10,9 @@ import { InstantSchema } from './common';
 /**
  * What a token may do. `profile:sensitive` (work authorization and self-identification answers) is granted only when
  * the person ticked "Let this browser read work authorization and self-identification answers" at connect time.
- * `jobs:add` adds a posting to TailorIT's jobs and the person's tracker (API version 2); `letters:write` is for cover
- * letters, which a later version adds. A token keeps the scopes its code carried: one made before a scope existed
- * is refused where it is needed (403, "Connect the extension again").
+ * `jobs:add` adds a posting to TailorIT's jobs and the person's tracker, and `letters:write` finds or writes the
+ * person's cover letter for a form and reads it as a PDF (both API version 2). A token keeps the scopes its code
+ * carried: one made before a scope existed is refused where it is needed (403, "Connect the extension again").
  */
 export const EXTENSION_SCOPES = [
   'profile:read',

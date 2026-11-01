@@ -10,6 +10,13 @@
 import { z } from 'zod';
 import {
   AutofillAddJobResponseSchema,
+  AUTOFILL_COVER_LETTER_MAX_BYTES,
+  AutofillCoverLetterIdSchema,
+  AutofillCoverLetterResponseSchema,
+  AutofillCoverLetterStatusSchema,
+  type AutofillCoverLetterRequest,
+  type AutofillCoverLetterResponse,
+  type AutofillCoverLetterStatus,
   AutofillLookupMatchSchema,
   type AutofillAddJobRequest,
   type AutofillAddJobResponse,
@@ -93,6 +100,29 @@ export interface ResumeFile {
   sha256: string | null;
 }
 
+/** A cover letter's file as GET /cover-letters/:id/file sent it (Phase G): the bytes, the headers that describe them,
+ *  and the name it is downloaded under (Content-Disposition's, null when absent). */
+export interface CoverLetterFile extends ResumeFile {
+  fileName: string | null;
+}
+
+/** The name a Content-Disposition gives (RFC 6266): `filename*` (UTF-8, percent-encoded) first, else `filename`; null
+ *  when it names none or does not decode. */
+export function dispositionName(header: string | null): string | null {
+  if (header === null) return null;
+  const extended = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (extended !== null) {
+    try {
+      return decodeURIComponent(extended[1]!.trim());
+    } catch {
+      return null;
+    }
+  }
+  const plain = /filename\s*=\s*"([^"]*)"/i.exec(header) ?? /filename\s*=\s*([^;]+)/i.exec(header);
+  const name = plain?.[1]?.trim() ?? '';
+  return name === '' ? null : name;
+}
+
 /** The routes the worker calls, one method each. */
 export interface ServerClient {
   /** POST /connect/redeem: no Authorization header, no cookie. */
@@ -128,6 +158,14 @@ export interface ServerClient {
   /** GET /api/ai/tasks/:id: the task as it is now. An id that is not a task id is refused before any request. No
    *  task is ever cancelled from here: another caller may share it. */
   aiTask(id: string): Promise<ServerResult<AutofillTaskView>>;
+  /** POST /cover-letters (Phase G): the person's letter for this application, written now by TailorIT's AI when
+   *  `generate` and there is none. A refusal's code (`not_found`, `ai_busy`, ...) is in `code`. */
+  coverLetter(body: AutofillCoverLetterRequest): Promise<ServerResult<AutofillCoverLetterResponse>>;
+  /** GET /cover-letters/:id: where the letter stands. An id that is not a letter id is refused before any request. */
+  coverLetterState(id: string): Promise<ServerResult<AutofillCoverLetterStatus>>;
+  /** GET /cover-letters/:id/file: the letter's PDF, refused above `maxBytes` (TailorIT's 10 MiB cap) before or while
+   *  reading; a letter not ready yet is a conflict (409). */
+  coverLetterFile(id: string, maxBytes?: number): Promise<ServerResult<CoverLetterFile>>;
 }
 
 /** What the server client needs. */
@@ -421,5 +459,32 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     putAnswer: (body) =>
       json({ method: 'PUT', path: '/api/autofill/answers', token: 'current', json: body }, AutofillSavedAnswerSchema),
     aiTask: (id) => task(id),
+    coverLetter: (body) =>
+      json({ method: 'POST', path: '/api/autofill/cover-letters', token: 'current', json: body }, AutofillCoverLetterResponseSchema),
+    coverLetterState(id) {
+      if (!AutofillCoverLetterIdSchema.safeParse(id).success) {
+        log('server.path-refused');
+        return Promise.resolve(failure('refused-path'));
+      }
+      return json({ method: 'GET', path: `/api/autofill/cover-letters/${id}`, token: 'current' }, AutofillCoverLetterStatusSchema);
+    },
+    async coverLetterFile(id, maxBytes = AUTOFILL_COVER_LETTER_MAX_BYTES) {
+      if (!AutofillCoverLetterIdSchema.safeParse(id).success) {
+        log('server.path-refused');
+        return failure('refused-path');
+      }
+      const raw = await send({ method: 'GET', path: `/api/autofill/cover-letters/${id}/file`, token: 'current',
+        answer: { kind: 'bytes', maxBytes } });
+      if (!raw.ok) return raw;
+      return {
+        ok: true,
+        value: {
+          bytes: raw.value as Uint8Array,
+          kind: raw.response.headers.get(AUTOFILL_FILE_KIND_HEADER),
+          sha256: raw.response.headers.get(AUTOFILL_FILE_SHA256_HEADER),
+          fileName: dispositionName(raw.response.headers.get('content-disposition')),
+        },
+      };
+    },
   };
 }

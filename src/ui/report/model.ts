@@ -51,8 +51,10 @@ export function sectionName(section: string): string {
   return words === '' ? COPY.report.untitledSection : `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
 }
 
-/** The reasons of an answer the AI wrote and the run accepted (the owner's amendments). */
-const AI_WRITTEN: ReadonlySet<ReportRow['reason']> = new Set<ReportRow['reason']>(['llm-draft-written', 'llm-answer-written']);
+/** The reasons of an answer the AI wrote and the run accepted (the owner's amendments; Phase G: a cover letter
+ *  TailorIT's AI wrote during this run). */
+const AI_WRITTEN: ReadonlySet<ReportRow['reason']> = new Set<ReportRow['reason']>(['llm-draft-written', 'llm-answer-written',
+  'cover-letter-written']);
 
 /**
  * How a row marks the AI, by E1's rule (src/content/targets.ts aiMarkOf, which the page's highlights use; the UI may not

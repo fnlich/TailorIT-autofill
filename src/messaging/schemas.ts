@@ -17,7 +17,7 @@ import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_
 import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
-import { ANSWER_BASES, RULE_IDS } from '../core/types/intent';
+import { ANSWER_BASES, FILE_REFS, RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from
   '../core/types/run';
@@ -34,6 +34,15 @@ const Count = z.number().int().nonnegative();
 /** The longest posting text plan/request carries (Phase 6): TailorIT's cap on a draft's job text
  *  (AUTOFILL_AI_LIMITS.draft.jobText, in code points, as zod counts them), which the frame's visibleText cap keeps. */
 export const MAX_POSTING_TEXT = 20_000;
+
+/** The longest company and job title a page's own heading gives (Phase G): TailorIT's caps on a cover letter's
+ *  (AUTOFILL_COVER_LETTER_LIMITS). */
+export const MAX_POSTING_NAME = 200;
+
+/** The company and the job title the page names in its own title (Phase G; content/job-relay.ts postingNamesOf): a
+ *  cover letter for a posting TailorIT does not have is found or written for them. Page text, never kept. */
+export const PostingNamesSchema = z.strictObject({ company: Text(MAX_POSTING_NAME).min(1),
+  title: Text(MAX_POSTING_NAME).min(1) });
 
 // ── Payloads ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -104,7 +113,8 @@ export const WriteValueSchema = z.discriminatedUnion('kind', [
     .refine((value) => value.cleanLabels.length === value.indices.length),
   z.strictObject({ kind: z.literal('query'), queries: z.array(Text(300)).max(4) }),
   z.strictObject({ kind: z.literal('check') }),
-  z.strictObject({ kind: z.literal('file'), ref: z.literal('resume') }),
+  /** The run's resume or its cover letter (Phase G), received over the resume port when it is written. */
+  z.strictObject({ kind: z.literal('file'), ref: z.enum(FILE_REFS) }),
   z.strictObject({ kind: z.literal('date'), iso: z.string().regex(/^\d{4}(?:-\d{2}(?:-\d{2})?)?$/) }),
 ]);
 
@@ -231,7 +241,11 @@ const contentMessages = [
     revealEdges: z.array(z.tuple([Key, Key])).max(MAX_REVEAL_EDGES).optional(),
     /** The owner's amendments: this run fills from the profile only (its posting forbids AI, or its form holds an "I
      *  did not use AI" attestation, and the person's setting says so): the worker asks the LLM nothing. */
-    noAi: z.literal(true).optional() })
+    noAi: z.literal(true).optional(),
+    /** Phase G: the company and job title the frame's own page title names, sent with a pass that plans an upload
+     *  (not in a dry run's): a cover letter for a posting TailorIT does not have is asked for with them. Page text,
+     *  never kept. */
+    posting: PostingNamesSchema.optional() })
     .refine((message) => {
       const keys = new Set(message.specs.map((spec) => spec.key));
       return message.planKeys.every((key) => keys.has(key));
@@ -340,6 +354,9 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** "Ask a custom question" (v2): the person's own question, answered by TailorIT's AI from the tab's active resume. */
   z.strictObject({ v, type: z.literal('panel/ask'), tabId: TabId, question: z.string().min(1).max(MAX_CUSTOM_QUESTION),
     length: z.enum(ASK_LENGTHS) }),
+  /** The job card's cover letter (Phase G): whether the person has a letter for the tab's job (`write` false: TailorIT
+   *  writes nothing), or Write it now (`write` true: TailorIT's AI writes one when there is none). States only. */
+  z.strictObject({ v, type: z.literal('panel/letter'), tabId: TabId, write: z.boolean() }),
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -516,6 +533,9 @@ export const JobPostingTextAnswerSchema = z.strictObject({
   text: Text(MAX_POSTING_TEXT),
   canaries: z.array(Text(120)).max(32),
   policy: z.boolean(),
+  /** Phase G: the company and job title the frame's page title names (absent: it names none), for a cover letter the
+   *  side panel writes for a posting TailorIT does not have. */
+  names: PostingNamesSchema.optional(),
 });
 
 // ── Answers to extension pages ────────────────────────────────────────────────────────────────────────────────────
@@ -632,6 +652,20 @@ export const PanelAskAnswerSchema = z.discriminatedUnion('outcome', [
 ]);
 export type PanelAskAnswer = z.infer<typeof PanelAskAnswerSchema>;
 
+/**
+ * What the job card's cover-letter row says (Phase G; panel/letter), states only: 'yours' (a finished letter of the
+ * person's for this job), 'written' (TailorIT's AI has just written it: Write it now), 'none' (no letter for this job:
+ * one is written when the form asks for one), 'failed' (TailorIT could not write one, or the person's own is not
+ * finished), 'ai-off' (AI-written answers are off, or the posting forbids AI: nothing is written), 'not-allowed' (this
+ * connection was made before cover letters: connect again), 'rate-limited', 'not-connected', 'unavailable' (TailorIT
+ * could not be asked: no job facts, no resume, or it failed). Never a letter's id or a word of it.
+ */
+export const LETTER_OUTCOMES = ['yours', 'written', 'none', 'failed', 'ai-off', 'not-allowed', 'rate-limited',
+  'not-connected', 'unavailable'] as const;
+export type LetterOutcome = (typeof LETTER_OUTCOMES)[number];
+export const PanelLetterAnswerSchema = z.strictObject({ outcome: z.enum(LETTER_OUTCOMES) });
+export type PanelLetterAnswer = z.infer<typeof PanelLetterAnswerSchema>;
+
 /** runs/clear: how many stored runs were removed. */
 export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
 
@@ -691,6 +725,7 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/resumes': ResumeListAnswerSchema,
   'panel/setResume': DoneAnswerSchema,
   'panel/ask': PanelAskAnswerSchema,
+  'panel/letter': PanelLetterAnswerSchema,
   'settings/get': SettingsAnswerSchema,
   'settings/save': SettingsAnswerSchema,
   'auth/status': AuthStatusSchema,
@@ -724,12 +759,15 @@ export const EXTERNAL_ANSWER_SCHEMAS = { 'pair/complete': DoneAnswerSchema } as 
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────
 
-/** 256 KiB chunks, base64; at most 40 of them (10 MiB). */
+/** 256 KiB chunks, base64; at most 40 of them (10 MiB). The cover letter (Phase G) travels the same way, under the same
+ *  cap (TailorIT's AUTOFILL_COVER_LETTER_MAX_BYTES is its resume cap). */
 export const RESUME_CHUNK_BYTES = 262_144;
 export const RESUME_MAX_BYTES = 10 * 1024 * 1024;
 
 export const ResumePortMessageSchema = z.discriminatedUnion('type', [
-  z.strictObject({ v, type: z.literal('resume/request'), runId: Id }),
+  /** Phase G: `document` names what the write takes, the run's resume (absent, or 'resume') or its cover letter; the
+   *  rest of the transfer is the same for both. */
+  z.strictObject({ v, type: z.literal('resume/request'), runId: Id, document: z.enum(FILE_REFS).optional() }),
   z.strictObject({ v, type: z.literal('resume/header'), name: Text(255), mime: Text(100), size: Count.max(RESUME_MAX_BYTES),
     sha256: z.string().regex(/^[a-f0-9]{64}$/), chunkCount: Count.max(40) }),
   z.strictObject({ v, type: z.literal('resume/chunk'), index: Count.max(39), data: z.string().max(Math.ceil(RESUME_CHUNK_BYTES / 3) * 4) }),

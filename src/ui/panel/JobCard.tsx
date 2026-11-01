@@ -7,7 +7,10 @@
  *   above "match", named "75% match"); the title; chips for the location, arrangement, pay, the tracker status, Closed
  *   and Archived, then "Posted 2 days ago"; "Already in your tracker as Applied" from Applied on; then the resume a fill
  *   attaches ("Would attach" in a dry run), why, and its keywords, with Change (also when there is none to attach, so
- *   one of the account's resumes can be chosen); and Save to tracker when the job is not tracked yet.
+ *   one of the account's resumes can be chosen); then (Phase G) the cover letter: the person's letter for this job, or
+ *   that TailorIT's AI writes one when the form asks for one, with Write it now (Writing…, then Ready or Couldn't write
+ *   it), or why only a letter the person wrote is attached (a posting that forbids AI, AI-written answers off); and
+ *   Save to tracker when the job is not tracked yet.
  * - Not found: "Not in your TailorIT jobs", Add this job to TailorIT where TailorIT can add from this site (else why
  *   not), help that never contradicts a tracker entry (none when one exists), and the resume.
  * - Loading (a busy skeleton), unavailable, and a card asking to connect.
@@ -18,10 +21,11 @@
 import { useId, useState } from 'react';
 import { AUTOFILL_TRACKER_STATUSES } from '../../contract/tailorit/lookup';
 import type { Platform } from '../../core/enums';
-import type { AddJobOutcome, JobCard as Card, ResumeListAnswer } from '../../messaging/schemas';
+import type { AddJobOutcome, JobCard as Card, LetterOutcome, ResumeListAnswer } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
 import type { JobView } from './job';
+import type { LetterView } from './letter';
 
 type Answered = Extract<Card, { state: 'answered' }>;
 type ResumeItem = ResumeListAnswer['items'][number];
@@ -39,7 +43,13 @@ export interface JobCardActions {
   loadResumes(): Promise<readonly ResumeItem[] | null>;
   /** The person chose a resume (null: TailorIT's own choice again). */
   chooseResume(resumeId: string | null): void;
+  /** Write it now: TailorIT's AI writes the cover letter for this job (Phase G). */
+  onWriteLetter?(): void;
 }
+
+/** Whether TailorIT's AI may write the cover letter here (Phase G): yes, not on a posting that forbids AI in
+ *  profile-only mode, not with AI-written answers off. */
+export type LetterMode = 'ai' | 'profile-only' | 'ai-off';
 
 export interface JobCardProps extends JobCardActions {
   view: JobView;
@@ -53,6 +63,9 @@ export interface JobCardProps extends JobCardActions {
   outcome: AddJobOutcome | null;
   /** The clock (ms), for "Posted 2 days ago". */
   now: number;
+  /** The cover-letter row (Phase G); absent: no row. */
+  letter?: LetterView;
+  letterMode?: LetterMode;
 }
 
 export function JobCard(props: JobCardProps) {
@@ -89,8 +102,8 @@ export function JobCard(props: JobCardProps) {
   return <AnsweredCard {...props} card={view.card} />;
 }
 
-function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loadResumes, chooseResume }:
-  JobCardProps & { card: Answered }) {
+function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loadResumes, chooseResume, letter,
+  letterMode = 'ai', onWriteLetter }: JobCardProps & { card: Answered }) {
   const { job, tracked } = card;
   const via = platform === null ? null : COPY.job.via(COPY.platforms[platform]);
   const status = tracked === null ? null : trackerLabel(tracked.status);
@@ -123,6 +136,7 @@ function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loa
       )}
       {job === null && tracked === null && <p className="tia-job__help">{card.addable ? COPY.job.notFoundHelp : COPY.job.cannotAdd}</p>}
       <ResumeRow card={card} dryRun={dryRun} loadResumes={loadResumes} chooseResume={chooseResume} />
+      {letter !== undefined && <LetterRow letter={letter} mode={letterMode} onWrite={onWriteLetter} />}
       {(job === null ? card.addable : tracked === null) && (
         <div className="tia-job__actions">
           <button type="button" className={`tia-button ${job === null ? 'tia-button--primary' : ''}`} disabled={adding}
@@ -175,6 +189,54 @@ export function MatchRing({ percentage }: { percentage: number }) {
       </span>
       <span className="tia-ring__caption" aria-hidden="true">{COPY.job.match}</span>
     </span>
+  );
+}
+
+/** The words of the cover-letter row's status line (Phase G). */
+function letterLine(letter: LetterView, mode: LetterMode): string {
+  if (letter.outcome === 'yours') return COPY.job.letter.yours;
+  if (letter.outcome === 'written') return COPY.job.letter.written;
+  if (letter.outcome === 'failed') return COPY.job.letter.failed;
+  if (letter.outcome === 'not-allowed') return COPY.job.letter.notAllowed;
+  if (letter.checking) return COPY.job.letter.checking;
+  if (mode === 'profile-only') return COPY.job.letter.profileOnly;
+  if (mode === 'ai-off') return COPY.job.letter.aiOff;
+  return COPY.job.letter.whenAsked;
+}
+
+/** The outcomes after which there is a letter to attach: Write it now has nothing left to do. */
+const HAS_LETTER: ReadonlySet<LetterOutcome | null> = new Set<LetterOutcome | null>(['yours', 'written']);
+
+/**
+ * The cover letter (Phase G): whose letter a fill attaches, or that TailorIT's AI writes one when the form asks for
+ * one, with Write it now while there is none and the AI may write it; or why only the person's own is attached.
+ */
+function LetterRow({ letter, mode, onWrite }: { letter: LetterView; mode: LetterMode; onWrite: (() => void) | undefined }) {
+  const offers = mode === 'ai' && onWrite !== undefined && !HAS_LETTER.has(letter.outcome)
+    && letter.outcome !== 'not-allowed';
+  const note = letter.writing ? null : letter.wrote === null ? null
+    : HAS_LETTER.has(letter.wrote) ? COPY.job.letter.ready : COPY.job.letter.outcomes[letter.wrote];
+  return (
+    <div className="tia-job__letter" data-job-letter="" data-letter-outcome={letter.outcome ?? 'unknown'}
+      data-letter-mode={mode}>
+      <div className="tia-job__resume-head">
+        <Icon name="doc" size={18} className="tia-icon tia-job__doc" />
+        <span className="tia-job__letter-text">
+          <strong className="tia-job__letter-label">{COPY.job.letter.label}</strong>
+          <span className="tia-job__letter-line">{letterLine(letter, mode)}</span>
+        </span>
+        {offers && (
+          <button type="button" className="tia-button tia-button--quiet tia-job__change" data-job-action="write-letter"
+            disabled={letter.writing} aria-busy={letter.writing ? 'true' : undefined} onClick={onWrite}>
+            {letter.writing && <Icon name="spinner" size={14} className="tia-icon tia-spin" />}
+            {letter.writing ? COPY.job.letter.writing : COPY.job.letter.write}
+          </button>
+        )}
+      </div>
+      {note !== null && (
+        <p className="tia-job__why" role="status" data-letter-wrote={letter.wrote ?? undefined}>{note}</p>
+      )}
+    </div>
   );
 }
 

@@ -12,7 +12,7 @@ Amends SPEC NON-NEGOTIABLES "Never fabricate. If confidence is low, leave the fi
 - A choice is one of the field's own visible options, written as an `llm-pick` naming the option and the hash of its label as sent, so the frame checks the option is unchanged before it writes. A text is short (at most 500 characters, never past the field's own cap), written with the new provenance `llm-answer`.
 - TailorIT answers from the person's resume and the non-sensitive part of the autofill profile (work history, education, languages, skills, job preferences), which it reads itself; the extension sends only the question's visible text and options, the posting's visible text, the job's title and company, the resume to draw on and the page's canaries.
 - An answer that passes every Guard needs nothing of the person (row reason `llm-answer-written`). It is marked as written by AI on the page (a teal outline with an "AI" chip) and in the review.
-- Never a set (a checkbox group, a multiselect), a lone checkbox, a remote typeahead, a date or an upload; never a contact detail, a link or a postal code; never in a dry run.
+- Never a set (a checkbox group, a multiselect), a lone checkbox, a remote typeahead, a date or an upload (a cover letter is TailorIT's own document, §10, never an AI answer); never a contact detail, a link or a postal code; never in a dry run.
 
 ## 2. The best guess, marked "AI guess"
 
@@ -67,6 +67,18 @@ Amends SPEC NON-NEGOTIABLES "Consent checkboxes … are the user's click, or a p
 ## 9. Settings version 2
 
 The settings move to version 2 (`src/core/types/settings.ts`). An install still on version 1 is migrated when the worker first reads its settings: each choice still on version 1's default (drafts off, nothing pre-approved, the two interpretations off) takes version 2's, every choice the person changed is kept, and the new switches take their defaults. Auto-advance stays off by default.
+
+## 10. Cover letters are filled
+
+Phase G (2026-11-01; the plan's "Fill everything" carried to uploads). Amends ARCHITECTURE's "Later" item "Attaching the job's TailorIT cover letter to a cover-letter upload field. Until then such fields are flagged."
+
+- A form's cover-letter upload gets the person's own letter for the job from TailorIT (Documents › Cover Letters). When they have none, TailorIT's cover-letter AI writes one from the resume the fill attaches and the posting's visible text (never TailorIT's stored copy; none for a form inside another site's page), screened for the page's canaries, and it is attached: row reason `cover-letter-written`, marked "AI" on the page and in the review. The person's own letter is `cover-letter-attached`.
+- TailorIT's AI writes one only where it may write any answer: AI-written answers on (`llm.drafts`), and not on a posting that forbids AI in profile-only mode (§3) or a form with an "I did not use AI" attestation. There only a letter the person wrote or edited is attached; with none the field is left flagged (`cover-letter-none`). A letter the AI wrote is never attached to such a run.
+- A dry run writes nothing and has nothing written: it asks only whether the person has a letter, and says a fill would have TailorIT's AI write one (`cover-letter-would-write`).
+- A letter TailorIT could not write, or one of the person's still holding a placeholder, leaves the field flagged (`cover-letter-failed`), and so does one not written within 180 seconds (`cover-letter-timed-out`).
+- Its provenance is the person's own TailorIT document, as the resume's is (`profile`, path `coverLetter`), whoever wrote it: the Guard lets a cover-letter upload take that and nothing else, and the resume upload only the resume. That TailorIT's AI wrote it during the fill is said by its row (`cover-letter-written`, the "AI" mark), since the letter's id never reaches the page.
+- The side panel's job card shows the cover letter under the resume, with **Write it now** (the person's request) where TailorIT's AI may write one.
+- The letter's PDF travels as the resume does (its hash checked, released within seconds); its id and its words never reach the page's process, a log or storage, and the upload is the only place its bytes go.
 
 ## The hard rules that stay
 

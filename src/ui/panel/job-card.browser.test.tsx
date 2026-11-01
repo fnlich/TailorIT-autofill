@@ -9,6 +9,7 @@ import { COPY } from '../../shared/copy';
 import { authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, mount, PROFILE_SENTINELS, row, settle,
   typeInto, unmountAll, type FakeWorker } from '../ui.testkit';
 import { JobCard, type JobCardProps } from './JobCard';
+import type { LetterView } from './letter';
 import { Panel } from './Panel';
 
 const NOW = Date.UTC(2026, 9, 31, 12);
@@ -417,5 +418,102 @@ describe("the run buttons' line (the Phase F1 review, 7)", () => {
     await click(button(root, COPY.report.confirmDraft));
     await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { updatedAt: 30 })] }));
     expect(root.querySelector('.tia-feedback')?.textContent).toBe(COPY.panel.draftConfirmed);
+  });
+});
+
+describe('the cover letter on the job card (Phase G)', () => {
+  const view = (extra: Partial<LetterView> = {}): LetterView => ({ outcome: null, checking: false, writing: false,
+    wrote: null, ...extra });
+  const letterRow = (root: ParentNode) => root.querySelector<HTMLElement>('[data-job-letter]');
+  const writeButton = (root: ParentNode) => root.querySelector<HTMLButtonElement>('[data-job-action="write-letter"]');
+
+  it('sits under the resume and says whose letter a fill attaches, with no button once there is one', async () => {
+    const root = await drawCard(jobCard(), { letter: view({ outcome: 'yours' }), onWriteLetter: () => undefined });
+    const shown = letterRow(root)!;
+    expect(shown.previousElementSibling?.matches('[data-job-resume]')).toBe(true);
+    expect(shown.textContent).toContain(COPY.job.letter.label);
+    expect(shown.textContent).toContain(COPY.job.letter.yours);
+    expect(writeButton(root)).toBeNull();
+    const written = await drawCard(jobCard(), { letter: view({ outcome: 'written' }), onWriteLetter: () => undefined });
+    expect(letterRow(written)!.textContent).toContain(COPY.job.letter.written);
+    expect(writeButton(written)).toBeNull();
+  });
+
+  it('says the AI writes one when the form asks, and offers Write it now: Writing…, then Ready or Couldn’t write it', async () => {
+    const onWriteLetter = vi.fn();
+    const root = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), onWriteLetter });
+    expect(letterRow(root)!.textContent).toContain(COPY.job.letter.whenAsked);
+    expect(writeButton(root)!.textContent).toBe(COPY.job.letter.write);
+    await click(writeButton(root)!);
+    expect(onWriteLetter).toHaveBeenCalledOnce();
+    const writing = await drawCard(jobCard(), { letter: view({ outcome: 'none', writing: true }), onWriteLetter });
+    expect(writeButton(writing)!.disabled).toBe(true);
+    expect(writeButton(writing)!.textContent).toBe(COPY.job.letter.writing);
+    const failed = await drawCard(jobCard(), { letter: view({ outcome: 'none', wrote: 'failed' }), onWriteLetter });
+    expect(letterRow(failed)!.querySelector('[role="status"]')?.textContent).toBe(COPY.job.letter.outcomes.failed);
+    expect(COPY.job.letter.outcomes.failed).toBe(COPY.job.letter.couldNot);
+    const ready = await drawCard(jobCard(), { letter: view({ outcome: 'written', wrote: 'written' }), onWriteLetter });
+    expect(letterRow(ready)!.querySelector('[role="status"]')?.textContent).toBe(COPY.job.letter.ready);
+  });
+
+  it('explains, with no button, where TailorIT’s AI may not write it: profile only, AI-written answers off', async () => {
+    const profileOnly = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), letterMode: 'profile-only',
+      onWriteLetter: () => undefined });
+    expect(letterRow(profileOnly)!.textContent).toContain(COPY.job.letter.profileOnly);
+    expect(writeButton(profileOnly)).toBeNull();
+    const off = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), letterMode: 'ai-off',
+      onWriteLetter: () => undefined });
+    expect(letterRow(off)!.textContent).toContain(COPY.job.letter.aiOff);
+    expect(writeButton(off)).toBeNull();
+    // The person's own letter is still theirs to attach there.
+    const own = await drawCard(jobCard(), { letter: view({ outcome: 'yours' }), letterMode: 'profile-only' });
+    expect(letterRow(own)!.textContent).toContain(COPY.job.letter.yours);
+    const checking = await drawCard(jobCard(), { letter: view({ checking: true }) });
+    expect(letterRow(checking)!.textContent).toContain(COPY.job.letter.checking);
+  });
+
+  it('in the panel: asks once per card, writes on Write it now, and follows the settings and the posting', async () => {
+    const worker = withForm();
+    const root = await open(worker);
+    expect(worker.sentOfType('panel/letter')).toEqual([{ v: 1, type: 'panel/letter', tabId: 5, write: false }]);
+    expect(letterRow(root)!.dataset.letterOutcome).toBe('none');
+    await click(writeButton(root)!);
+    await settle();
+    expect(worker.sentOfType('panel/letter').at(-1)).toEqual({ v: 1, type: 'panel/letter', tabId: 5, write: true });
+    expect(letterRow(root)!.dataset.letterOutcome).toBe('written');
+    expect(letterRow(root)!.querySelector('[role="status"]')?.textContent).toBe(COPY.job.letter.ready);
+    expect(writeButton(root)).toBeNull();
+    // Nothing of the letter but its state: no id, no text.
+    expect(letterRow(root)!.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
+
+    const off = withForm();
+    off.script.settings = { ...off.script.settings, llm: { ...off.script.settings.llm, drafts: false } };
+    const offRoot = await open(off);
+    expect(letterRow(offRoot)!.dataset.letterMode).toBe('ai-off');
+    expect(writeButton(offRoot)).toBeNull();
+
+    const forbidden = withForm();
+    forbidden.script.reports.set(5, [frameReport(0, { notices: [{ code: 'policy-profile-only' }] })]);
+    const forbiddenRoot = await open(forbidden);
+    expect(letterRow(forbiddenRoot)!.dataset.letterMode).toBe('profile-only');
+    expect(letterRow(forbiddenRoot)!.textContent).toContain(COPY.job.letter.profileOnly);
+    expect(writeButton(forbiddenRoot)).toBeNull();
+
+    // "Ask me each time": the posting's notice leaves Write it now to the person.
+    const asking = withForm();
+    asking.script.settings = { ...asking.script.settings, llm: { ...asking.script.settings.llm, whenForbidden: 'ask' } };
+    asking.script.reports.set(5, [frameReport(0, { notices: [{ code: 'policy' }] })]);
+    const askingRoot = await open(asking);
+    expect(letterRow(askingRoot)!.dataset.letterMode).toBe('ai');
+    expect(writeButton(askingRoot)).not.toBeNull();
+  });
+
+  it('in the panel: a fill’s own letter says more than an earlier answer', async () => {
+    const worker = withForm();
+    worker.script.reports.set(5, [frameReport(0, { fields: [row('letter', { kind: 'file', category: 'file.coverLetter',
+      reason: 'cover-letter-written', wrote: true, status: 'verified' })] })]);
+    const root = await open(worker);
+    expect(letterRow(root)!.dataset.letterOutcome).toBe('written');
+    expect(letterRow(root)!.textContent).toContain(COPY.job.letter.written);
   });
 });

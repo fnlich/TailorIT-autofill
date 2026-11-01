@@ -10,7 +10,9 @@
  *   current options the frame also checks the llm-pick's option (llmPickStillValid).
  * Then the category policy (checkCategoryPolicy): EEO and legal values need `profile` or the decline rule (for EEO also
  * the decline-default rule), consent the pre-approval rule, a free text a saved answer, a draft or an AI answer, an
- * upload the profile's resume; an attention check, and every category only the person answers, allow nothing. An AI
+ * upload its own category's document (a resume upload the profile's resume, a cover-letter upload the run's cover
+ * letter, Phase G; any other upload nothing, and a file write's origin always names the document it carries); an
+ * attention check, and every category only the person answers, allow nothing. An AI
  * answer's text (llm-answer, version 2) fills an unknown or free-text field, or one of the profile categories
  * ANSWERABLE_PROFILE_CATEGORIES lists; never a sensitive, legal, EEO or consent one.
  */
@@ -23,7 +25,8 @@ import { asUntrusted } from '../text/untrusted';
 import type { FieldSpec } from '../types/field';
 import type { PlannedWrite, ReasonCode } from '../types/fill';
 import {
-  ANSWER_BASES, PROFILE_PATH_PATTERN, RULE_IDS, type FieldCategory, type PolicyClass, type RuleId, type ValueOrigin,
+  ANSWER_BASES, FILE_PATHS, PROFILE_PATH_PATTERN, RULE_IDS, type FieldCategory, type PolicyClass, type RuleId,
+  type ValueOrigin,
 } from '../types/intent';
 import type { Profile } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
@@ -131,6 +134,10 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
   switch (origin.provenance) {
     case 'profile':
       if (!isPath(origin.path)) return fail('missing-provenance');
+      // An upload names the document it takes, and its origin the profile's path of that document (Phase G): the
+      // resume is never sent as a cover letter, nor a cover letter as the resume.
+      if (write.value.kind === 'file' && (origin.transform !== undefined
+        || origin.path !== FILE_PATHS[write.value.ref])) return fail('policy-violation');
       return origin.transform === undefined || isRuleId(origin.transform) ? PASS : fail('policy-violation');
     case 'saved':
       return nonEmpty(origin.savedAnswerId) ? PASS : fail('missing-provenance');
@@ -235,8 +242,17 @@ export function checkCategoryPolicy(origin: ValueOrigin, category: FieldCategory
     const rules = CLASS_RULES[policy];
     if (rules !== 'any' && !rules.includes(origin.ruleId)) return fail('policy-violation');
   }
-  if (policy === 'file' && (origin.provenance !== 'profile' || origin.path !== 'resume')) {
+  // An upload takes only its own category's document (Phase G): a resume upload the profile's resume, a cover-letter
+  // upload the run's cover letter, and any other upload nothing.
+  if (policy === 'file' && (origin.provenance !== 'profile' || origin.transform !== undefined
+    || origin.path !== FILE_DOCUMENTS[category])) {
     return fail('policy-violation');
   }
   return PASS;
 }
+
+/** The profile path of the one document each upload category takes (Phase G): none for any other upload. */
+const FILE_DOCUMENTS: Readonly<Partial<Record<FieldCategory, string>>> = {
+  'file.resume': FILE_PATHS.resume,
+  'file.coverLetter': FILE_PATHS['cover-letter'],
+};

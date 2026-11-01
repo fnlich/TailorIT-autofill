@@ -9,12 +9,19 @@
  *   to AI tools, hidden or not), so TailorIT and the worker refuse an answer that holds one, and whether the frame's
  *   visible text says AI-assisted applications are not allowed (the policy patterns, as a run's gate reads them), so the
  *   panel shows that notice with the answer even before any run. Page text, never kept.
+ * - Phase G: postingNamesOf, the company and job title the frame's own page title names (Greenhouse's "Job Application
+ *   for <title> at <company>", Lever's "<company> - <title>"), for a cover letter of a posting TailorIT does not have;
+ *   job/postingText carries them (`names`), and so does a plan/request that plans an upload (`posting`). A title that
+ *   speaks to AI tools (a tripwire), or one of another shape, names nothing.
  */
-import { scanTripwires } from '../core/guard/tripwire';
+import type { Platform } from '../core/enums';
+import { scanTripwires, tripwireHits } from '../core/guard/tripwire';
+import { capCodePoints } from '../core/text/fold';
+import type { VisibleText } from '../core/types/text';
 import { rawScan } from '../dom/raw-scan';
 import { visibleTextWithout } from '../dom/visible-text';
 import { ok, refuse, type Answer } from '../messaging/envelope';
-import { MAX_POSTING_TEXT, type JobRelayAction } from '../messaging/schemas';
+import { MAX_POSTING_NAME, MAX_POSTING_TEXT, type JobRelayAction } from '../messaging/schemas';
 import type { Channel } from './channel';
 import { frameHitsOf } from './policy';
 
@@ -26,14 +33,41 @@ export async function relayJob(channel: Channel, action: JobRelayAction, hasForm
   return answer.ok ? ok({}) : refuse(answer.error === 'rate_limited' ? 'rate_limited' : 'unavailable');
 }
 
-/** job/postingText: the posting's visible text outside `root` (top frame only), the page's nearest canaries, and
- *  whether the frame's visible text forbids AI. */
-export async function postingTextOf(doc: Document, root: Element | null, isTop: boolean, signal: AbortSignal):
-  Promise<{ text: string; canaries: string[]; policy: boolean }> {
+/** The company and the job title a page's title names (module header). */
+export interface PostingNames {
+  company: string;
+  title: string;
+}
+
+/** One name as a page's title gives it: control and format characters gone, spaces folded, at most MAX_POSTING_NAME. */
+const nameOf = (text: string) => capCodePoints(text.replace(/[\p{Cc}\p{Cf}]+/gu, ' ').replace(/\s+/g, ' ').trim(),
+  MAX_POSTING_NAME).trim();
+
+/** The company and job title the frame's own page title names, by its platform's shape; null for none (module
+ *  header). */
+export function postingNamesOf(doc: Document, platform: Platform | null): PostingNames | null {
+  const heading = nameOf(doc.title ?? '');
+  if (heading === '' || tripwireHits(heading as VisibleText).length > 0) return null;
+  let names: PostingNames | null = null;
+  if (platform === 'greenhouse') {
+    const match = /^Job Application for (.+) at (.+)$/i.exec(heading);
+    if (match !== null) names = { title: nameOf(match[1]!), company: nameOf(match[2]!) };
+  } else if (platform === 'lever') {
+    const at = heading.indexOf(' - ');
+    if (at > 0) names = { company: nameOf(heading.slice(0, at)), title: nameOf(heading.slice(at + 3)) };
+  }
+  return names !== null && names.company !== '' && names.title !== '' ? names : null;
+}
+
+/** job/postingText: the posting's visible text outside `root` (top frame only), the page's nearest canaries, whether
+ *  the frame's visible text forbids AI, and the names its page title gives (Phase G). */
+export async function postingTextOf(doc: Document, root: Element | null, isTop: boolean, signal: AbortSignal,
+  platform: Platform | null = null): Promise<{ text: string; canaries: string[]; policy: boolean; names?: PostingNames }> {
   const body = doc.body;
   const text = isTop && body !== null ? visibleTextWithout(body, root === null ? [] : [root], { cap: MAX_POSTING_TEXT }).trim()
     : '';
   const raw = await rawScan(doc, { signal });
+  const names = postingNamesOf(doc, platform);
   return { text, canaries: scanTripwires(raw.passages).canaries.filter((canary) => canary.length <= 120).slice(0, 32),
-    policy: frameHitsOf(doc).length > 0 };
+    policy: frameHitsOf(doc).length > 0, ...(names === null ? {} : { names }) };
 }

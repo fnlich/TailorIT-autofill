@@ -389,7 +389,9 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
   ) : null;
   const chip = <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>;
   const icon = <Icon name={rowIconOf(row)} size={18} className={`tia-icon tia-row__icon tia-row__icon--${row.status}`} />;
-  const source = row.provenance === null ? COPY.report.noSource : COPY.provenances[row.provenance];
+  // A cover letter (Phase G) comes from the person's TailorIT letters, whoever wrote it (the AI's has its mark).
+  const source = row.provenance === null ? COPY.report.noSource
+    : row.category === 'file.coverLetter' ? COPY.report.coverLetterSource : COPY.provenances[row.provenance];
 
   const body: ReactNode = (
     <div className="tia-row__body">

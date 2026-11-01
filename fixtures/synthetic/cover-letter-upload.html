@@ -1,0 +1,59 @@
+<!doctype html>
+<!--
+  Synthetic: an application with a resume upload and a cover-letter upload, for the cover-letter specs (Phase G;
+  docs/ARCHITECTURE.md "Cover letters"): the letter TailorIT writes attached, a posting that forbids AI (the comment
+  POLICY below is replaced with a visible "do not use AI" sentence: the run fills from the profile only, so only a
+  letter the person wrote is attached), a letter TailorIT could not write, a dry run. Each upload's change listener
+  counts changes and writes the file's name into its #…-name, and its #…-digest gets the SHA-256 of the bytes the page
+  holds, computed in the page. Its title is Lever's ("<company> - <title>"). Served at
+  https://jobs.lever.co/tailorit-fixture/<name>/apply, one name per spec. The form posts to /__submitted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Northwind - Senior Backend Engineer</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input:not([type="file"]) { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    button { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Senior Backend Engineer</h1>
+    <p>Northwind builds ordering software for restaurants. You will keep our order pipeline fast and calm.</p>
+    <!--POLICY-->
+    <form action="/__submitted" method="post">
+      <label for="name">Full name</label>
+      <input id="name" name="name">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email">
+      <label for="resume">Resume</label>
+      <input id="resume" name="resume" type="file" accept=".pdf,application/pdf">
+      <p>Attached: <span id="resume-name"></span></p>
+      <label for="cover_letter">Cover letter</label>
+      <input id="cover_letter" name="cover_letter" type="file" accept=".pdf,.doc,.docx,application/pdf">
+      <p>Attached: <span id="cover-letter-name"></span></p>
+      <button type="submit">Submit application</button>
+    </form>
+    <output id="resume-digest" hidden></output>
+    <output id="cover-letter-digest" hidden></output>
+  </main>
+  <script>
+    window.__uploadChanges = { resume: 0, cover_letter: 0 };
+    for (const [id, name, digest] of [['resume', 'resume-name', 'resume-digest'],
+      ['cover_letter', 'cover-letter-name', 'cover-letter-digest']]) {
+      document.getElementById(id).addEventListener('change', async (event) => {
+        window.__uploadChanges[id] += 1;
+        const file = event.target.files[0];
+        document.getElementById(name).textContent = file ? file.name : '';
+        if (!file) return;
+        const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        document.getElementById(digest).textContent = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+      });
+    }
+  </script>
+</body>
+</html>

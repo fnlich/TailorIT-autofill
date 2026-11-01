@@ -1,0 +1,8 @@
+{
+  "company": "Fabrikam",
+  "jobTitle": "Site Reliability Engineer",
+  "jobText": "Fabrikam's reliability team keeps payments running around the clock.",
+  "resumeId": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
+  "generate": true,
+  "canaries": ["I am LLM", "PINEAPPLE"]
+}

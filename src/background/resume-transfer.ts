@@ -1,14 +1,21 @@
 /*
  * The `resume` port (runtime.md §4.4, ARCHITECTURE "Resume transfer"). A content script opens it only when a planned
- * write targets a file field, and posts resume/request {runId}. The worker sends the resume the run chose
+ * write targets a file field, and posts resume/request {runId, document?}: the run's resume, or (Phase G) its cover
+ * letter, which travels the same way under the same rules (below the resume's). The worker sends the resume the run chose
  * (resume-choice.ts, shared with the planner; asked when the file is written, so a Change since counts), refuses a legacy .doc before any fetch, fetches GET /resumes/:id/file (at most 10 MiB),
  * checks the bytes (a PDF starts with %PDF-; a DOCX has the ZIP signature and X-TailorIT-File-Kind: docx) and their
  * SHA-256 against X-TailorIT-Sha256, then sends a header and 256 KiB base64 chunks, each acknowledged before the next,
  * and resume/end. The bytes are released on resume/done, on an error or a disconnect, and at the latest 60 seconds
  * after the fetch; they are never stored or cached between transfers. A failed or timed-out fetch is
  * resume-unavailable.
+ *
+ * The cover letter (Phase G): the run's letter, once TailorIT has it ready (cover-letters.ts; its id in the run's memory,
+ * never in a message), is fetched from GET /cover-letters/:id/file (at most AUTOFILL_COVER_LETTER_MAX_BYTES, 10 MiB),
+ * accepted only as a PDF (X-TailorIT-File-Kind pdf and %PDF-) whose SHA-256 is X-TailorIT-Sha256, named as TailorIT's
+ * Download names it (its Content-Disposition, cleaned by uploadName), and sent and released exactly as a resume is. No
+ * letter ready (a dry run, a run that has none, a worker that restarted since) is resume-unavailable before any fetch.
  */
-import { AUTOFILL_FILE_MIME_TYPES, AUTOFILL_RESUME_MAX_BYTES } from '../contract/tailorit';
+import { AUTOFILL_COVER_LETTER_MAX_BYTES, AUTOFILL_FILE_MIME_TYPES, AUTOFILL_RESUME_MAX_BYTES } from '../contract/tailorit';
 import { RESUME_CHUNK_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
 import type { PortLike } from '../platform/types';
 import { log } from '../shared/log';
@@ -36,20 +43,36 @@ export interface ResumeTransferDeps {
   choose?: ResumeChooser;
 }
 
-/** The name the file is uploaded under: no path or control characters, the kind's extension, at most 255 characters. */
-export function uploadName(fileName: string, kind: 'pdf' | 'docx'): string {
+/** The name the file is uploaded under: no path or control characters, the kind's extension, at most 255 characters;
+ *  `fallback` when nothing is left (a resume's 'Resume', a cover letter's 'Cover Letter'). */
+export function uploadName(fileName: string, kind: 'pdf' | 'docx', fallback = 'Resume'): string {
   const extension = `.${kind}`;
   let base = fileName.replace(/[\p{Cc}\p{Cf}\\/:*?"<>|]+/gu, ' ').replace(/\s+/g, ' ').trim();
   if (base.toLowerCase().endsWith(extension)) base = base.slice(0, -extension.length).trim();
   base = base.replace(/[. ]+$/, '');
-  return `${(base || 'Resume').slice(0, 255 - extension.length)}${extension}`;
+  return `${(base || fallback).slice(0, 255 - extension.length)}${extension}`;
 }
+
+/** A cover letter's name when TailorIT names none (TailorIT's own fallback for a Download). */
+const LETTER_NAME = 'Cover Letter';
 
 /** The `resume` port's server: accept() serves one port. */
 export function createResumeTransfer(deps: ResumeTransferDeps) {
   /** Which resume this run attaches: the one the planner attached, read from the run's memo (resume-choice.ts), or the
    *  one the person has chosen for the tab since (v2: a Change applies to every file not uploaded yet). */
   const choose = deps.choose ?? createResumeChooser(deps);
+
+  /** Fetches and checks the run's cover letter (Phase G): a PDF only, whose bytes hash to TailorIT's header. */
+  async function fetchLetter(letterId: string): Promise<{ bytes: Uint8Array; name: string; sha256: string } | Refusal> {
+    const answer = await deps.server.coverLetterFile(letterId, AUTOFILL_COVER_LETTER_MAX_BYTES);
+    if (!answer.ok) return 'resume-unavailable';
+    const { bytes, kind, sha256: sentSha, fileName } = answer.value;
+    if (kind !== 'pdf' || !startsWith(bytes, PDF_SIGNATURE) || bytes.byteLength === 0) return 'resume-unavailable';
+    if (sentSha === null || !/^[a-f0-9]{64}$/.test(sentSha)) return 'resume-unavailable';
+    const sha256 = await deps.sha256(bytes);
+    if (sha256 !== sentSha) return 'resume-unavailable';
+    return { bytes, name: uploadName(fileName ?? LETTER_NAME, 'pdf', LETTER_NAME), sha256 };
+  }
 
   /** Fetches and checks the file; the bytes, or why there are none. */
   async function fetchChecked(choice: ResumeChoice): Promise<{ bytes: Uint8Array; kind: 'pdf' | 'docx'; sha256: string } | Refusal> {
@@ -110,7 +133,18 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
       send({ v: 1, type: 'resume/chunk', index, data });
     }
 
-    async function start(runId: string): Promise<void> {
+    /** Sends the header and the first chunk of checked bytes, holding them until the transfer ends or the release. */
+    function begin(checked: { bytes: Uint8Array; name: string; mime: string; sha256: string }): void {
+      bytes = checked.bytes;
+      cancelRelease = deps.timers.after(RESUME_RELEASE_MS, () => close('resume-transfer-failed'));
+      chunkCount = Math.ceil(checked.bytes.byteLength / RESUME_CHUNK_BYTES);
+      phase = 'sending';
+      send({ v: 1, type: 'resume/header', name: checked.name, mime: checked.mime, size: checked.bytes.byteLength,
+        sha256: checked.sha256, chunkCount });
+      if (phase === 'sending') sendChunk(0);
+    }
+
+    async function start(runId: string, document: 'resume' | 'cover-letter'): Promise<void> {
       phase = 'preparing';
       await ready();
       if (phase !== 'preparing') return;
@@ -119,6 +153,21 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
       if (run === null || run.dryRun) {
         log('resume.refused', { run: run !== null });
         return close('resume-unavailable');
+      }
+      if (document === 'cover-letter') {
+        // The run's letter, ready: its id never left the worker's memory (Phase G).
+        const letterId = deps.runs.memo(run.runId).letter?.readyId() ?? null;
+        if (letterId === null) {
+          log('resume.refused', { letter: false });
+          return close('resume-unavailable');
+        }
+        const letter = await fetchLetter(letterId);
+        if (phase !== 'preparing') return;
+        if (typeof letter === 'string') {
+          log('resume.refused', { letter: true, fetched: false });
+          return close(letter);
+        }
+        return begin({ ...letter, mime: AUTOFILL_FILE_MIME_TYPES.pdf });
       }
       const choice = await choose(run.runId, from.url);
       if (phase !== 'preparing') return;
@@ -137,20 +186,8 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
         log('resume.refused', { fetched: false });
         return close(fetched);
       }
-      bytes = fetched.bytes;
-      cancelRelease = deps.timers.after(RESUME_RELEASE_MS, () => close('resume-transfer-failed'));
-      chunkCount = Math.ceil(fetched.bytes.byteLength / RESUME_CHUNK_BYTES);
-      phase = 'sending';
-      send({
-        v: 1,
-        type: 'resume/header',
-        name: uploadName(choice.fileName, fetched.kind),
-        mime: AUTOFILL_FILE_MIME_TYPES[fetched.kind],
-        size: fetched.bytes.byteLength,
-        sha256: fetched.sha256,
-        chunkCount,
-      });
-      if (phase === 'sending') sendChunk(0);
+      begin({ bytes: fetched.bytes, name: uploadName(choice.fileName, fetched.kind),
+        mime: AUTOFILL_FILE_MIME_TYPES[fetched.kind], sha256: fetched.sha256 });
     }
 
     port.onMessage((raw) => {
@@ -158,7 +195,7 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
       const message = parsed.success ? parsed.data : null;
       if (message?.type === 'resume/error') return close();
       if (phase === 'request' && message?.type === 'resume/request') {
-        void start(message.runId).catch(() => close('resume-unavailable'));
+        void start(message.runId, message.document ?? 'resume').catch(() => close('resume-unavailable'));
         return;
       }
       if (phase === 'sending' && message?.type === 'resume/ack' && message.index === next) {

@@ -3,9 +3,9 @@
  * before each test, script its answers, and read its request log (Authorization redacted). It talks to 127.0.0.1, so
  * the test process never depends on how localhost resolves; the extension calls the same server as localhost.
  */
-import { GOLDEN_RESUME, MOCK_SCENARIOS } from '../mock-server/mock.mjs';
+import { GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS } from '../mock-server/mock.mjs';
 
-export { GOLDEN_RESUME, MOCK_SCENARIOS };
+export { GOLDEN_LETTER, GOLDEN_RESUME, MOCK_SCENARIOS };
 
 /** The mock's address for the test process. */
 export const MOCK_CONTROL = 'http://127.0.0.1:3190';

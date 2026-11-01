@@ -249,7 +249,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null);
       case 'job/postingText':
         return ok(stopped ? { text: '', canaries: [], policy: false }
-          : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal));
+          : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal, page?.app.platform ?? null));
     }
   });
 
