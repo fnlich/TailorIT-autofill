@@ -462,6 +462,15 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       return value({ origin: fromProfile('preferences.relocation'), confidence: VALUE_EXPLICIT,
         choice: { intended: { kind: 'boolean', value: relocation.value }, domain: 'polarity' }, check: relocation.value });
     }
+    case 'preferences.travel': {
+      // How much the person will travel (TailorIT's travelPercent): a text box takes the share, a yes/no question or a
+      // lone box whether it is any at all.
+      const percent = profile.preferences.travelPercent;
+      if (percent === undefined) return none('no-profile-value', false);
+      const willing = percent > 0;
+      return value({ origin: fromProfile('preferences.travelPercent'), confidence: VALUE_EXPLICIT, text: `${percent}%`,
+        choice: { intended: { kind: 'boolean', value: willing }, domain: 'polarity' }, check: willing });
+    }
     case 'preferences.workArrangement': {
       const texts = (profile.preferences.workArrangements ?? []).map((arrangement) => ARRANGEMENT_TEXT[arrangement]!);
       if (spec.kind === 'checkbox') return none('format-unsupported');
@@ -491,6 +500,28 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     default:
       return none('no-profile-value', false);
   }
+}
+
+/** A company's name as two names are compared: folded, without its punctuation and its legal form ("Inc.", "LLC",
+ *  "Ltd", "GmbH", "Corp"). */
+function companyKey(name: string): string {
+  return normalize(name, 'label').tokens
+    .filter((token) => !/^(?:inc|incorporated|llc|ltd|limited|plc|gmbh|corp|corporation|co|company|sa|ag|bv)$/.test(token))
+    .join(' ');
+}
+
+/**
+ * "Have you worked here before?" (rule screening.previously-employed): yes when an employer of the profile's is the
+ * company the posting names (the lookup's company, compared by companyKey), else no. Without the posting's company it
+ * has no value. A deterministic rule over the profile's own entries (VALUE_TRANSFORM); it names no path, since a
+ * profile with no employer answers no.
+ */
+export function previouslyEmployedValue(profile: Profile, postingCompany: string | undefined): ValueResult {
+  const company = postingCompany === undefined ? '' : companyKey(postingCompany);
+  if (company === '') return none('unknown-field', false);
+  const worked = profile.experience.some((entry) => companyKey(entry.company) === company);
+  return value({ origin: { provenance: 'rule', ruleId: 'screening.previously-employed' }, confidence: VALUE_TRANSFORM,
+    choice: { intended: { kind: 'boolean', value: worked }, domain: 'polarity' }, check: worked });
 }
 
 /** The value of an education field: its entry's school, degree, field, minor, dates or GPA. */

@@ -229,3 +229,26 @@ export const DRAFT_MAX_LENGTH = 5000;
 export const DRAFT_DEFAULT_LENGTH = 3000;
 /** A draft question (the field's visible label) is sent with at most this many code points. */
 export const DRAFT_QUESTION_MAX = 1000;
+
+// AI answers (the owner's amendments, docs/SPEC-AMENDMENTS.md; AUTOFILL_AI_LIMITS.answer in the contract).
+
+/** An AI answer's confidence on its row: informational only. An answer that passes every Guard is written and needs
+ *  nothing of the person (marked "AI guess" when it rests on nothing); the fill bands never apply to it. */
+export const LLM_ANSWER = 0.7;
+/** At most this many questions in one answer task. */
+export const ANSWER_MAX_ITEMS = 10;
+/** A choice is asked with at least this many of the field's options... */
+export const ANSWER_MIN_OPTIONS = 2;
+/** ...and at most this many. */
+export const ANSWER_MAX_OPTIONS = 30;
+/** The longest text answer, the most a field's maxLength is sent as, and the cap of a field that names none. */
+export const ANSWER_TEXT_MAX = 500;
+/** An answer's question (the field's visible label): at most this many code points. */
+export const ANSWER_QUESTION_MAX = 1000;
+/** Its visible description: at most this many code points. */
+export const ANSWER_HINT_MAX = 500;
+/** Its section's words: at most this many code points. */
+export const ANSWER_SECTION_MAX = 200;
+/** Edit with AI: what a box holds now is sent with its draft question as at most this many code points
+ *  (AUTOFILL_AI_LIMITS.draft.currentAnswer). */
+export const DRAFT_CURRENT_MAX = 5000;

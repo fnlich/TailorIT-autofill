@@ -12,7 +12,9 @@ import type { AutofillProfile, AutofillSensitive } from '../contract/tailorit';
 import { DOCX_MIME } from '../dom/fillers';
 import { planFrame } from '../core/plan/frame';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
+import type { AnswerItem, AnswerVerdict } from '../core/plan/answers';
 import type { DraftItem, DraftVerdict } from '../core/plan/drafts';
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import type { AnsweredVerdict, PlanOutput } from '../core/plan/types';
 import type { ClassifyItem, ClassifyVerdict } from '../core/resolver/classify';
 import type { CompanyScope } from '../core/resolver/saved';
@@ -22,7 +24,7 @@ import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize'
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { Profile, Ymd } from '../core/types/profile';
 import type { RunState } from '../core/types/run';
-import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
+import type { Settings } from '../core/types/settings';
 import { createVocab } from '../core/vocab/createVocab';
 import type { RawVocab, Vocab } from '../core/vocab/types';
 import answers from '../core/vocab/data/answers.json?raw';
@@ -264,8 +266,8 @@ export interface FakeWorkerOptions {
   profile?: Profile;
   /** The platform's extension id. */
   id?: string;
-  /** The settings it plans with (the defaults: tiebreak and classification on); their autoAdvance is also what run/begin
-   *  answers (off by default). */
+  /** The settings it plans with (CAUTIOUS_SETTINGS by default: version 1's defaults, tiebreak and classification on,
+   *  drafts and answers off, the policy card); their content part is also what frame/hello and run/begin answer. */
   settings?: Settings;
   /** The LLM's answers (Phase 4), which the next plan/poll brings: by default no tiebreak picks anything and no
    *  classification names a category. `picked` is a candidate's position, as the worker hands it to the core. */
@@ -274,6 +276,9 @@ export interface FakeWorkerOptions {
     classify?(item: ClassifyItem): ClassifyVerdict;
     /** Phase 6: a draft for a question (by default FAKE_DRAFT, from FAKE_TASK_ID). */
     draft?(item: DraftItem): DraftVerdict;
+    /** The owner's amendments: an answer for a question (by default a choice's first option, a text FAKE_ANSWER, both
+     *  guesses, from FAKE_TASK_ID). */
+    answer?(item: AnswerItem): AnswerVerdict;
   };
   /** Phase 6: the person's saved answers the plans read, and the company the form belongs to. */
   savedAnswers?: SavedAnswer[];
@@ -282,6 +287,9 @@ export interface FakeWorkerOptions {
 
 /** The fake worker's draft for a free-text question, when a test scripts none (Phase 6). */
 export const FAKE_DRAFT = 'I have built ordering platforms for four years, and I would like to bring that here.';
+
+/** The fake worker's text answer, when a test scripts none (the owner's amendments). */
+export const FAKE_ANSWER = 'Four years';
 
 /** The task id the fake worker's LLM answers name. */
 export const FAKE_TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
@@ -293,6 +301,10 @@ interface AskContext {
   repeatables?: readonly RepeatableRequest[];
   /** The loop's reveal edges the request carried (the Phase 6 review, E2). */
   revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
+  /** The request said its run fills from the profile only. */
+  noAi?: boolean;
+  /** Edit with AI: the one key this context rewrites. */
+  rewrite?: FieldKey;
 }
 
 /** A run's LLM questions, as the fake worker keeps them. */
@@ -300,8 +312,10 @@ interface FakeRunAi {
   verdicts: Map<string, AnsweredVerdict>;
   classifications: Map<string, ClassifyVerdict>;
   drafts: Map<string, DraftVerdict>;
+  answers: Map<string, AnswerVerdict>;
   /** The answers the next plan/poll brings, by key. */
-  coming: Map<FieldKey, { verdict?: AnsweredVerdict; classification?: ClassifyVerdict; draft?: DraftVerdict }>;
+  coming: Map<FieldKey, { verdict?: AnsweredVerdict; classification?: ClassifyVerdict; draft?: DraftVerdict;
+    answer?: AnswerVerdict }>;
   waiting: Map<FieldKey, AskContext>;
 }
 
@@ -329,9 +343,9 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const stored = new Map<string, RunState>();
   let nextRun = 1;
   let transfers = 0;
-  const settings = { panel: options.settings?.panel ?? 'side', autoAdvance: options.settings?.autoAdvance ?? false,
-    llm: { tiebreak: true, classify: true, drafts: options.settings?.llm.drafts ?? false },
-    offerToSaveAnswers: options.settings?.offerToSaveAnswers ?? DEFAULT_SETTINGS.offerToSaveAnswers };
+  const planned = options.settings ?? CAUTIOUS_SETTINGS;
+  const settings = { panel: planned.panel, autoAdvance: planned.autoAdvance, llm: { ...planned.llm },
+    offerToSaveAnswers: planned.offerToSaveAnswers };
 
   const scripted = (type: string): unknown => {
     const queue = options.script?.[type as ContentMessage['type']];
@@ -343,10 +357,13 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
     let plan = planFrame({ specs: [...context.specs], planKeys, canaries: [...context.canaries],
       profile: options.profile ?? goldenProfile(), sensitiveState: 'loaded', savedAnswers: options.savedAnswers ?? [],
       ...(options.company === undefined ? {} : { company: options.company }),
-      settings: options.settings ?? DEFAULT_SETTINGS, vocab: testVocab(), dryRun: run.dryRun, now: NOW,
-      ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications, drafts: run.ai.drafts },
+      settings: planned, vocab: testVocab(), dryRun: run.dryRun, now: NOW,
+      ai: { verdicts: run.ai.verdicts, classifications: run.ai.classifications, drafts: run.ai.drafts,
+        answers: run.ai.answers },
       ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }),
-      ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }) });
+      ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }),
+      ...(context.noAi === true ? { noAi: true } : {}),
+      ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }) });
     if (options.editPlan) plan = options.editPlan(plan, context.specs);
     for (const item of plan.ask?.tiebreaks ?? []) {
       const { picked, why } = options.ai?.pick?.(item) ?? { picked: null, why: 'no-match' as const };
@@ -361,6 +378,14 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
     for (const item of plan.ask?.drafts ?? []) {
       run.ai.coming.set(item.key, { draft: options.ai?.draft?.(item)
         ?? { key: item.key, text: FAKE_DRAFT, taskId: FAKE_TASK_ID } });
+    }
+    for (const item of plan.ask?.answers ?? []) {
+      const first = item.options[0];
+      run.ai.coming.set(item.key, { answer: options.ai?.answer?.(item)
+        ?? (item.shape === 'choice' && first !== undefined
+          ? { key: item.key, kind: 'choice', optionSetHash: item.optionSetHash!, index: first.index,
+            labelHash: first.labelHash, basis: 'guess', taskId: FAKE_TASK_ID }
+          : { key: item.key, kind: 'text', text: FAKE_ANSWER, basis: 'guess', taskId: FAKE_TASK_ID }) });
     }
     for (const key of plan.awaiting) run.ai.waiting.set(key, context);
     return plan;
@@ -379,7 +404,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (options.connected === false) return { ok: false, error: 'not_connected' };
         const runId = `run-${nextRun++}`;
         runs.set(runId, { dryRun: message.dryRun === true, ai: { verdicts: new Map(), classifications: new Map(),
-          drafts: new Map(), coming: new Map(), waiting: new Map() } });
+          drafts: new Map(), answers: new Map(), coming: new Map(), waiting: new Map() } });
         return { ok: true, data: { runId, settings,
           policy: options.policy ?? { postingPage: 'unseen', storedCopy: 'clear' } } };
       }
@@ -391,13 +416,28 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         const asked = message.repeatables as RepeatableRequest[] | undefined;
         const edges = message.revealEdges as Array<[BaseKey, BaseKey]> | undefined;
         const context: AskContext = { specs, canaries: message.canaries as string[], ...(asked ? { repeatables: asked } : {}),
-          ...(edges ? { revealEdges: edges } : {}) };
+          ...(edges ? { revealEdges: edges } : {}), ...(message.noAi === true ? { noAi: true } : {}) };
         const plan = planFor(run, context, planKeys ?? specs.map((spec) => spec.key));
         // Fields that wait for the LLM are planned again with the entries their blocks were given (as the worker does).
         if (plan.repeatables) context.repeatables = plan.repeatables.map((answer) => ({ kind: answer.kind, entries: answer.entries }));
         return { ok: true, data: { writes: run.dryRun ? [] : plan.writes, results: plan.results, awaiting: plan.awaiting,
           persistableCanaries: plan.persistableCanaries, ...(plan.repeatables ? { repeatables: plan.repeatables } : {}),
-          ...(plan.savable ? { savable: plan.savable } : {}) } };
+          ...(plan.savable ? { savable: plan.savable } : {}),
+          ...(plan.aiEditable && !run.dryRun ? { aiEditable: plan.aiEditable } : {}),
+          ...(plan.aiAttestation ? { aiAttestation: true } : {}) } };
+      }
+      case 'draft/rewrite': {
+        const run = runs.get(message.runId as string);
+        if (run === undefined) return { ok: false, error: 'expired' };
+        if (run.dryRun) return { ok: false, error: 'bad_message' };
+        const key = message.fieldKey as FieldKey;
+        run.ai.drafts.delete(key);
+        const edges = message.revealEdges as Array<[BaseKey, BaseKey]> | undefined;
+        const context: AskContext = { specs: message.specs as FieldSpec[], canaries: message.canaries as string[],
+          ...(edges ? { revealEdges: edges } : {}), rewrite: key };
+        const plan = planFor(run, context, [key]);
+        return { ok: true, data: { writes: plan.writes, results: plan.results, awaiting: plan.awaiting,
+          persistableCanaries: plan.persistableCanaries, ...(plan.aiEditable ? { aiEditable: plan.aiEditable } : {}) } };
       }
       case 'plan/poll': {
         const run = runs.get(message.runId as string);
@@ -417,18 +457,20 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
           if (coming.verdict) run.ai.verdicts.set(coming.verdict.verdict.id, coming.verdict);
           if (coming.classification) run.ai.classifications.set(key, coming.classification);
           if (coming.draft) run.ai.drafts.set(key, coming.draft);
+          if (coming.answer) run.ai.answers.set(key, coming.answer);
           const context = run.ai.waiting.get(key)!;
           run.ai.waiting.delete(key);
           byContext.set(context, [...(byContext.get(context) ?? []), key]);
         }
         const data = { writes: [] as unknown[], results: [] as unknown[], awaiting: [...still], persistableCanaries: [],
-          savable: [] as FieldKey[] };
+          savable: [] as FieldKey[], aiEditable: [] as FieldKey[] };
         for (const [context, ready] of byContext) {
           const plan = planFor(run, context, ready);
           if (!run.dryRun) data.writes.push(...plan.writes);
           data.results.push(...plan.results);
           data.awaiting.push(...plan.awaiting);
           data.savable.push(...plan.savable ?? []);
+          if (!run.dryRun) data.aiEditable.push(...plan.aiEditable ?? []);
         }
         return { ok: true, data };
       }

@@ -3,6 +3,11 @@
  * looks the page up (POST /lookup with the sender frame's own address and the stored posting text), then answers the
  * run id, the content settings and the posting's policy states: never the profile, never the lookup. The lookup's
  * suggested resume stays in memory for the resume port; its posting text is read only by the policy patterns.
+ *
+ * v2: the lookup asks for the resume the person chose for the tab in the side panel (resumeId), which the run keeps as
+ * its chosen resume; the lookup, without its posting text, also becomes the frame document's job card (job-cards.ts),
+ * so the card shows what this fill attaches with no request of its own. A lookup answered after the token changed is
+ * not kept: the run reads it again with the new one when it needs it.
  */
 import { AUTOFILL_LOOKUP_URL_MAX, type AutofillLookupResponse } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -15,6 +20,7 @@ import type { CoreFunctions } from './core';
 import type { createRateLimit } from './locks';
 import { storedCopyState, type PolicyBook } from './policy';
 import type { ProfileCache } from './profile-cache';
+import type { JobCards } from './job-cards';
 import type { FrameRef, RunRegistry } from './runs';
 import type { RunStateStore } from './runstate-store';
 import type { ServerClient } from './server-client';
@@ -38,6 +44,10 @@ export interface RunBeginDeps {
   policy: PolicyBook;
   settings: SettingsStore;
   core: Pick<CoreFunctions, 'policyHits'>;
+  /** The side panel's job cards (v2): the tab's chosen resume, and where the lookup is kept as the card. */
+  jobs?: Pick<JobCards, 'chosen' | 'remember'>;
+  /** The token keeper's generation (auth.ts). */
+  generation?(): number;
 }
 
 /** Whether an application key fits the frame: `${platform}:${hex16}`, its platform the frame host's (when known). */
@@ -47,9 +57,9 @@ export function keyFitsFrame(applicationKey: string, frameUrl: string): boolean 
   return platform === null || applicationKey.startsWith(`${platform}:`);
 }
 
-async function lookUp(server: ServerClient, url: string): Promise<AutofillLookupResponse | null> {
+async function lookUp(server: ServerClient, url: string, chosen: string | null): Promise<AutofillLookupResponse | null> {
   if (url.length > AUTOFILL_LOOKUP_URL_MAX) return null;
-  const answer = await server.lookup({ url, includePostingText: true });
+  const answer = await server.lookup({ url, includePostingText: true, ...(chosen === null ? {} : { resumeId: chosen }) });
   if (answer.ok) return answer.value;
   log('run.lookup-failed', { status: answer.status ?? 0 });
   return null;
@@ -71,14 +81,22 @@ export async function beginRun(deps: RunBeginDeps, message: RunBegin, from: Fram
     return refuse('expired');
   }
 
-  const [profile, lookup] = await Promise.all([deps.profiles.refresh(), lookUp(deps.server, from.url)]);
+  const generation = deps.generation?.() ?? 0;
+  const chosen = deps.jobs?.chosen(from.tabId) ?? null;
+  const [profile, lookup] = await Promise.all([deps.profiles.refresh(), lookUp(deps.server, from.url, chosen)]);
   if (!profile.ok) {
     log('run.refused', { profile: true });
     return refuse(profile.failure === 'not-connected' ? 'not_connected' : profile.failure === 'internal' ? 'internal' : 'unavailable');
   }
 
   const run = await deps.runs.create({ frame: from, applicationKey: message.applicationKey, dryRun: message.dryRun });
-  deps.runs.memo(run.runId).lookup = lookup;
+  const memo = deps.runs.memo(run.runId);
+  memo.chosen = chosen;
+  // Read with a token that has since changed: not kept (the run reads it again with the new one when it needs it).
+  if ((deps.generation?.() ?? 0) === generation) {
+    memo.lookup = lookup;
+    deps.jobs?.remember(from, lookup, { generation, chosen });
+  }
   const [postingPage, settings] = await Promise.all([deps.policy.postingPage(message.applicationKey), deps.settings.content()]);
   const storedCopy = storedCopyState(lookup?.job?.postingText, deps.core);
   log('run.begun', { dryRun: message.dryRun, lookup: lookup !== null, job: lookup?.job != null });

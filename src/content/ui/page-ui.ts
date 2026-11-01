@@ -18,9 +18,13 @@
  *   since its choice needs no user gesture.
  * - launcherShown() is the frame's own visibility on its page (S1): a frame the page around it hides (opacity 0,
  *   off-screen, in a zero-height wrapper) has a launcher that is not visible, which no check inside the frame can see.
+ * - Edit with AI (the owner's amendments, ai-edits.ts): its buttons sit in their own layer, beside the highlights and
+ *   not hidden from assistive technology, each watched like a card button: a trusted click counts only while the
+ *   button is visible (a button just drawn waits for the watch's first word, capped).
  */
 import { log } from '../../shared/log';
 import type { FrameReport } from '../../shared/report';
+import { createAiEdits, type AiEditItem } from './ai-edits';
 import { createHighlights, type HighlightItem } from './highlights';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
 import { createNotices, type NoticeCode, type PolicyChoice } from './notices';
@@ -41,6 +45,8 @@ export const PANEL_MIN_VIEWPORT = { width: 420, height: 360 } as const;
 export interface PageUiHandlers {
   onLauncher(action: LauncherAction): void;
   onPolicyChoice(choice: PolicyChoice): void;
+  /** Edit with AI on one field (the owner's amendments): a trusted click on its visible button. */
+  onAiEdit?(key: string): void;
   /** The in-page panel's actions, for this frame's own fields, and this frame's id (none: no panel is made). */
   panel?: PanelActions & { frameId(): number | null };
 }
@@ -64,6 +70,10 @@ export interface PageUi {
   showPolicyCard(options: { fromStoredCopy: boolean }): void;
   hidePolicyCard(): void;
   setHighlights(items: readonly HighlightItem[]): void;
+  /** The Edit with AI buttons (ai-edits.ts): one per item; [] removes them all. */
+  setAiEdits(items: readonly AiEditItem[]): void;
+  /** The Edit with AI buttons drawn now (for tests). */
+  readonly aiEditButtons: readonly HTMLButtonElement[];
   /** Outlines one field on request (field/focus), after the caller scrolled it into view; null removes it. */
   showFocus(elements: readonly Element[] | null): void;
   /** The in-page panel (null when the handlers gave it no actions). */
@@ -97,6 +107,8 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   layer.className = 'layer';
   const highlightLayer = doc.createElement('div');
   highlightLayer.className = 'highlights';
+  const aiEditLayer = doc.createElement('div');
+  aiEditLayer.className = 'ai-edits';
   const anchor = doc.createElement('div');
   anchor.className = 'anchor';
   const visibility = createVisibilityWatch(view as (Window & typeof globalThis) | null);
@@ -118,11 +130,28 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     });
   });
   anchor.append(launcher.el, notices.el);
-  // The outlines repeat what the report says; assistive technology reads the report, not them.
+  // The outlines repeat what the report says; assistive technology reads the report, not them. The Edit with AI
+  // buttons are controls, so their layer is not hidden.
   highlightLayer.setAttribute('aria-hidden', 'true');
-  layer.append(highlightLayer, anchor);
+  layer.append(highlightLayer, aiEditLayer, anchor);
   root.append(layer);
   const highlights = createHighlights(doc, highlightLayer);
+  const aiEdits = createAiEdits(doc, aiEditLayer, (key, button) => {
+    const act = () => handlers.onAiEdit?.(key);
+    if (visibility.known(button)) {
+      if (visibility.shown(button)) act();
+      else log('content.ui-click-refused', { launcher: false, known: true });
+      return;
+    }
+    // A button just drawn: its rewrite needs no user gesture, so the click waits for the watch's first word.
+    void visibility.settled(button, lifetime.signal).then((shown) => {
+      if (shown && button.isConnected && !button.disabled) act();
+      else log('content.ui-click-refused', { launcher: false, known: visibility.known(button) });
+    });
+  }, (added, removed) => {
+    for (const button of removed) visibility.unobserve(button);
+    for (const button of added) visibility.observe(button);
+  });
   visibility.observe(launcher.el);
   for (const button of notices.cardButtons) visibility.observe(button);
   const panelHandlers = handlers.panel;
@@ -167,6 +196,7 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       anchor.style.transform = 'translateX(-100%)';
     }
     highlights.render(hostRect);
+    aiEdits.render(hostRect);
   }
 
   function schedule(): void {
@@ -221,6 +251,13 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     setHighlights(items) {
       highlights.set(items);
       layout();
+    },
+    setAiEdits(items) {
+      aiEdits.set(items);
+      layout();
+    },
+    get aiEditButtons() {
+      return aiEdits.buttons;
     },
     showFocus(elements) {
       highlights.showFocus(elements);

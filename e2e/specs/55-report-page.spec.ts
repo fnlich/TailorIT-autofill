@@ -8,6 +8,8 @@ import { COPY } from '../../src/shared/copy';
 import type { FrameReport } from '../../src/shared/report';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf } from '../helpers/extension.ts';
+import { GOLDEN_RESUME } from '../helpers/mock.ts';
+import { example } from '../mock-server/mock.mjs';
 import { GOLDEN, profileSentinels } from '../helpers/golden.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { trap } from '../helpers/traps.ts';
@@ -56,12 +58,32 @@ test('the report page shows a trap run’s rows as the worker holds them, its no
   expect(await notice.evaluate((el, first) => Boolean(el.compareDocumentPosition(document.querySelector(first)!)
     & Node.DOCUMENT_POSITION_FOLLOWING), 'li[data-field-key]')).toBe(true);
 
-  // No value: the page shows labels and words of its own, never what was typed, hidden or asked for by the trap.
-  const shown = (await panel.locator('main').innerText()).toLowerCase();
+  // No value: the page shows labels and words of its own, never what was typed, hidden or asked for by the trap. Every
+  // folded row counts (its textContent: innerText skips a closed fold). The job card (v2) is read on its own below: it
+  // says what TailorIT's lookup said, whose words can hold a profile value ("Austin, TX, USA"; a resume titled as the
+  // profile's job title).
+  const shown = (await panel.locator('main').evaluate((main) => {
+    const copy = main.cloneNode(true) as HTMLElement;
+    copy.querySelector('[data-job-card]')?.remove();
+    return copy.textContent ?? '';
+  })).toLowerCase();
   for (const value of [GOLDEN.email, GOLDEN.first, GOLDEN.last, ...profileSentinels()]) {
     expect(shown, 'a profile value on the report page').not.toContain(value.toLowerCase());
   }
   for (const hidden of [...served.markers, ...served.canaries]) expect(shown).not.toContain(hidden.toLowerCase());
+
+  // The card: the lookup's own words, a profile value only inside them, and nothing the trap hid.
+  const card = panel.locator('[data-job-card]');
+  await expect(card).toHaveAttribute('data-job-state', 'found');
+  const cardText = ((await card.textContent()) ?? '').toLowerCase();
+  const lookup = example('AutofillLookupResponse') as { job: { title: string; companyName: string; location: string } };
+  const said = [lookup.job.title, lookup.job.companyName, lookup.job.location, GOLDEN_RESUME.label, COPY.job.keywords(9, 12),
+    '75%', COPY.job.match].map((word) => word.toLowerCase());
+  for (const word of said) expect(cardText, `the card's ${word}`).toContain(word);
+  for (const value of [GOLDEN.email, GOLDEN.first, GOLDEN.last, ...profileSentinels()].map((each) => each.toLowerCase())) {
+    if (cardText.includes(value)) expect(said.some((word) => word.includes(value)), `${value} on the card`).toBe(true);
+  }
+  for (const hidden of [...served.markers, ...served.canaries]) expect(cardText).not.toContain(hidden.toLowerCase());
 
   await page.bringToFront();
   await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: served.markers, canaries: served.canaries,

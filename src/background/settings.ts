@@ -1,14 +1,16 @@
 /*
  * The person's settings, in storage.local under `settings:v1`, checked with SettingsSchema on the way in and out. A
- * stored value that no longer parses gives the cautious defaults. Content scripts get only the part they need (panel
+ * stored value that no longer parses gives the defaults; a version 1 value (an install from before the owner's
+ * amendments, docs/SPEC-AMENDMENTS.md) is migrated to version 2, each choice still on version 1's default taking
+ * version 2's (migrateSettings), and stored again. Content scripts get only the part they need (panel
  * placement, auto-advance, the AI switches, the offer to save answers) with frame/hello and run/begin, and again with
  * settings/changed whenever the person saves them (pushSettings: every registered frame with a form, so a run in
  * progress reads auto-advance as it is now: the Phase 5 review, C-S2); they never read storage.
  */
-import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
+import { DEFAULT_SETTINGS, migrateSettings, type Settings } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
+import { SETTINGS_KEY, SettingsSchema, SettingsV1Schema, type ContentSettings } from '../shared/settings';
 import { frameTarget, type FrameEntry } from './frames';
 
 /** The settings, as the worker reads and saves them. */
@@ -39,8 +41,24 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
         return cached;
       }
       const parsed = SettingsSchema.safeParse(stored);
-      if (!parsed.success) log('settings.unreadable');
-      cached = parsed.success ? parsed.data : DEFAULT_SETTINGS;
+      if (parsed.success) {
+        cached = parsed.data;
+        return cached;
+      }
+      const old = SettingsV1Schema.safeParse(stored);
+      if (!old.success) {
+        log('settings.unreadable');
+        cached = DEFAULT_SETTINGS;
+        return cached;
+      }
+      cached = migrateSettings(old.data);
+      try {
+        await local.set({ [SETTINGS_KEY]: cached });
+        log('settings.migrated', { from: 1, to: 2 });
+      } catch {
+        // Kept in memory only: the next start migrates the stored value again.
+        log('settings.migrated', { from: 1, to: 2, stored: false });
+      }
       return cached;
     },
     async save(settings) {

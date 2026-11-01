@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalizeProfile } from '../profile/canonicalize';
 import type { FieldSpec } from '../types/field';
+import { DEFAULT_SETTINGS } from '../types/settings';
 import { planFrame } from './frame';
 import {
   fieldOf, goldenProfile, goldenWire, inOrder, inputOf, NOW, planOf, settingsWith, specOf, vocab,
@@ -167,8 +168,12 @@ describe('planFrame: EEO, legal and consent', () => {
   });
 
   it('never ticks consent without pre-approval, and ticks a pre-approved kind', () => {
-    expect(fieldOf(planOf([PRIVACY]), PRIVACY)).toMatchObject({ write: undefined,
+    const none = settingsWith({ preapprovedConsent: [] });
+    expect(fieldOf(planOf([PRIVACY], { settings: none }), PRIVACY)).toMatchObject({ write: undefined,
       row: { status: 'flagged', reason: 'consent-requires-user', needsUserAction: true } });
+    // The standard consents are pre-approved by default since settings version 2 (docs/SPEC-AMENDMENTS.md).
+    expect(fieldOf(planOf([PRIVACY]), PRIVACY)).toMatchObject({ write: { value: { kind: 'check' } },
+      row: { status: 'verified' } });
     const settings = settingsWith({ preapprovedConsent: ['privacy'] });
     expect(fieldOf(planOf([PRIVACY], { settings }), PRIVACY)).toMatchObject({ write: { value: { kind: 'check' },
       origin: { provenance: 'rule', ruleId: 'consent.preapproved' } }, row: { status: 'verified' } });
@@ -181,8 +186,14 @@ describe('planFrame: EEO, legal and consent', () => {
     expect(planOf([NAME, GENDER], { sensitiveState: 'not-loaded' })).toEqual({ writes: [], results: [], awaiting: [],
       needsSensitive: true, persistableCanaries: [] });
     expect(planOf([NAME], { sensitiveState: 'not-loaded' }).needsSensitive).toBe(false);
-    expect(fieldOf(planOf([GENDER], { sensitiveState: 'not-shared' }), GENDER).row)
+    const noDecline = settingsWith({ interpretations: { ...DEFAULT_SETTINGS.interpretations, eeoDeclineByDefault: false } });
+    expect(fieldOf(planOf([GENDER], { sensitiveState: 'not-shared', settings: noDecline }), GENDER).row)
       .toMatchObject({ status: 'flagged', reason: 'sensitive-not-shared' });
+    // The decline default (the owner's amendments): a question this browser may not read the answer for declines; one
+    // whose answer could not be read stays blank and flagged.
+    expect(fieldOf(planOf([GENDER], { sensitiveState: 'not-shared' }), GENDER)).toMatchObject({
+      write: { value: { kind: 'option', index: 3 }, origin: { provenance: 'rule', ruleId: 'eeo.decline-default' } },
+      row: { status: 'verified', reason: 'eeo-decline-default', needsUserAction: false } });
     expect(fieldOf(planOf([GENDER], { sensitiveState: 'unavailable' }), GENDER).row)
       .toMatchObject({ status: 'flagged', reason: 'sensitive-unavailable' });
   });
@@ -372,7 +383,8 @@ describe('planFrame: the answer', () => {
     const shuffled = [specs[3]!, specs[0]!, specs[4]!, specs[1]!];
     const out = planFrame({ ...inputOf([]), specs: shuffled });
     expect(out.results.map((row) => row.key)).toEqual(shuffled.map((spec) => spec.key));
-    expect(out.writes.map((write) => write.key)).toEqual([NAME.key, SCHOOL.key, RESUME.key]);
+    // The privacy box is pre-approved by default (settings version 2).
+    expect(out.writes.map((write) => write.key)).toEqual([NAME.key, SCHOOL.key, PRIVACY.key, RESUME.key]);
   });
 
   it('plans rows only in a dry run, each the status the fill would produce', () => {

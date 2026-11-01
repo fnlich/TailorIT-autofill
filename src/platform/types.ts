@@ -139,6 +139,10 @@ export interface PagePlatform {
   activeTabId(): Promise<number | null>;
   /** Calls `cb` with the tab's id whenever a tab becomes active; the returned function stops listening. */
   onActiveTabChanged(cb: (tabId: number) => void): () => void;
+  /** Calls `cb` with a tab's id whenever it finishes loading a page (tabs.onUpdated, status 'complete': no permission
+   *  needed, and no address read); the returned function stops listening. The side panel reads its tab again then
+   *  (v2), since a page without our script says no hello. */
+  onTabLoaded(cb: (tabId: number) => void): () => void;
 }
 
 /** The tab a keyboard command was pressed in: where the capture page opens beside it. */

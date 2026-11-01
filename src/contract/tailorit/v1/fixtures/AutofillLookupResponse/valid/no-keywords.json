@@ -1,0 +1,31 @@
+{
+  "ats": {
+    "kind": "greenhouse",
+    "board": "northwind",
+    "externalId": "5512345002"
+  },
+  "job": {
+    "id": 1042,
+    "title": "Office Coordinator",
+    "companyName": "Northwind",
+    "location": "Austin, TX, USA",
+    "active": true,
+    "matchedBy": "source_link",
+    "postedAt": null,
+    "salary": null,
+    "workArrangement": "onsite"
+  },
+  "application": null,
+  "suggestedResume": {
+    "id": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+    "label": "Senior Software Engineer",
+    "kind": "built",
+    "fileKind": "pdf",
+    "fileName": "Elena Ruiz Resume.pdf",
+    "reason": "default"
+  },
+  "match": {
+    "state": "no_keywords",
+    "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13"
+  }
+}

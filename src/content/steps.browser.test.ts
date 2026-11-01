@@ -16,7 +16,9 @@ import type { FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite } from '../core/types/fill';
 import type { ProfilePath } from '../core/types/intent';
 import type { RunState } from '../core/types/run';
-import { DEFAULT_SETTINGS } from '../core/types/settings';
+// The Phase 2-6 behaviour these tests pin: version 1's defaults in version 2's shape (the owner's amendments' new
+// defaults have tests of their own: fill-all.browser.test.ts).
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations, type EventLog, type Fixture } from '../dom/fixture.testkit';
 import type { FrameReport } from '../shared/report';
 import { createFakeWorker, goldenProfile, PAGE_TEXT_SENTINELS, sentinelsIn, testVocab, VALUE_SENTINELS,
@@ -225,7 +227,7 @@ describe('auto-advance off: each step filled, then the person moves on', () => {
 
 describe('auto-advance on', () => {
   it('presses Next on the clean steps only, after their writes, and never on the Review step or Submit', async () => {
-    const worker = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
     const loaded = await load(worker);
     const { fixture, runtime } = loaded;
     // Steps 1 and 2 are clean, so the run presses their Next; step 3 holds flagged fields, so it waits there.
@@ -259,7 +261,7 @@ describe('auto-advance on', () => {
     const page = html.replace("wireCurrent(byId('experience-0'));",
       "byId('phone').addEventListener('change', () => byId('next-details').click());\n      wireCurrent(byId('experience-0'));");
     expect(page).not.toBe(html);
-    const worker = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
     const loaded = await load(worker, page);
     expect(await loaded.runtime.fill()).toBe('waiting');
     // Step 2 was filled (its Add and its positions) before anything was pressed on it.
@@ -276,7 +278,7 @@ describe('auto-advance on', () => {
     const page = html.replace("button.addEventListener('click', (event) => {\n          wizard.next.push(",
       "button.addEventListener('click', (event) => {\n          if (wizard.next.length === 0) { wizard.next.push({ step: 0, trusted: event.isTrusted }); return; }\n          wizard.next.push(");
     expect(page).not.toBe(html);
-    const worker = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
     const fixture = await loadFixture(document, page, { width: 900, height: 1400 });
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WIZARD_URL, isTop: true,
       adapters: () => [ADAPTER], settle: { quietMs: 60 }, transition: { capMs: 600 } });
@@ -389,7 +391,7 @@ describe('validation', () => {
   it('surfaces an error the plan cannot fix at review, never pauses on it, and presses nothing', async () => {
     // The page marks the required shift question invalid as soon as step 3 shows.
     const page = html.replace('<select id="shift" name="shift" required>', '<select id="shift" name="shift" required aria-invalid="true">');
-    const worker = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
     const loaded = await load(worker, page);
     expect(await loaded.runtime.fill()).toBe('review');
     expect(lastState(worker).status).toBe('review');

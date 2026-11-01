@@ -17,6 +17,19 @@ export function elementsOf(target: FieldTarget): Element[] {
   return [target.proxy ?? target.control];
 }
 
+/** The reasons of a row whose value the AI wrote and that needs nothing of the person (the owner's amendments). */
+const AI_WRITTEN: ReadonlySet<FillResult['reason']> = new Set<FillResult['reason']>(['llm-draft-written',
+  'llm-answer-written']);
+
+/** How a row's outline marks the AI (the owner's amendments): 'guess' for an answer with nothing to go on ("AI
+ *  guess"), 'written' for a draft or an answer the AI wrote, read back as written ("AI"); absent otherwise (a draft
+ *  the person confirmed shows its status, and a row that needs the person shows its status). */
+export function aiMarkOf(row: Pick<FillResult, 'provenance' | 'reason' | 'wrote' | 'status'>): HighlightItem['ai'] {
+  if (!row.wrote || row.status !== 'verified') return undefined;
+  if (row.reason === 'ai-guess') return 'guess';
+  return AI_WRITTEN.has(row.reason) ? 'written' : undefined;
+}
+
 /** The highlights of a run's rows over a fresh scan: every row but the skipped ones, on the fields found again. */
 export function highlightItems(fresh: ScanResult, rows: ReadonlyMap<FieldKey, FillResult>,
   removeSelection: ReadonlySet<FieldKey>): HighlightItem[] {
@@ -26,8 +39,9 @@ export function highlightItems(fresh: ScanResult, rows: ReadonlyMap<FieldKey, Fi
     const target = fresh.target(key);
     if (target === null) continue;
     const draft = row.provenance === 'llm-draft';
+    const ai = aiMarkOf(row);
     items.push({ key, status: row.status, draft, ...(draft && !row.needsUserAction ? { draftConfirmed: true } : {}),
-      removeSelection: removeSelection.has(key), elements: elementsOf(target) });
+      ...(ai === undefined ? {} : { ai }), removeSelection: removeSelection.has(key), elements: elementsOf(target) });
   }
   return items;
 }

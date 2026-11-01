@@ -33,6 +33,9 @@ export interface Candidate {
   confidence: number;
   /** The value is always filled and flagged, with this reason (a self-described gender, a guessed date layout). */
   flag?: ReasonCode;
+  /** The row's reason when the value fills, without flagging it (NOTE_REASONS: the decline option chosen for an
+   *  unanswered self-identification question). */
+  note?: ReasonCode;
   /** For a text box. */
   text?: string;
   /** For a list that takes one answer, and the queries of a remote search. */
@@ -58,6 +61,9 @@ export interface NoValue {
 
 /** A value, or why there is none. */
 export type ValueResult = { ok: true; candidate: Candidate } | { ok: false; none: NoValue };
+
+/** The reasons a written value's row may carry and still need nothing of the person: a note, never a flag. */
+export const NOTE_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['eeo-decline-default']);
 
 /** A value result. */
 export const value = (candidate: Candidate): ValueResult => ({ ok: true, candidate });

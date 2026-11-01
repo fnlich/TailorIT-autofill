@@ -44,13 +44,17 @@ export const POLICY_CLASSES = ['profile', 'sensitive', 'legal', 'eeo', 'consent'
   'unknown'] as const;
 export type PolicyClass = (typeof POLICY_CLASSES)[number];
 
-/** Rules that produce or transform a value; every 'rule' provenance names one. 'eeo.two-or-more-races' and
- *  'legal.posting-country' apply only when the owner turns on the matching interpretation in settings. */
+/** Rules that produce or transform a value; every 'rule' provenance names one. 'eeo.two-or-more-races',
+ *  'legal.posting-country' and 'eeo.decline-default' apply only while the matching interpretation is on in settings
+ *  (on by default since settings version 2). 'eeo.decline-default' chooses the form's decline option for a
+ *  self-identification question the profile does not answer (it names no profile path); 'screening.previously-employed'
+ *  answers "Have you worked here before?" from the profile's employers and the posting's company. */
 export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.compose', 'years.from-experience',
   'availability.from-notice', 'education.highest-completed', 'experience.current-checkbox', 'eeo.decline',
   'eeo.self-describe', 'eeo.two-or-more-races', 'legal.decline', 'legal.sponsorship-combined', 'legal.posting-country',
   'consent.preapproved',
-  'consent.signature-preapproved', 'numeric.range-bucket', 'other.free-text', 'guard.revert', 'typeahead.query'] as const;
+  'consent.signature-preapproved', 'numeric.range-bucket', 'other.free-text', 'guard.revert', 'typeahead.query',
+  'eeo.decline-default', 'screening.previously-employed'] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
 /** A profile location such as 'contact.email' or 'education[0].institution'. The worker checks that it resolves; the
@@ -67,7 +71,15 @@ export type ValueOrigin =
   /** labelHash: an unkeyed SHA-256 of the clean option text as sent. Page text, never stored; it proves the option
    *  has not changed since the LLM saw it. */
   | { provenance: 'llm-pick'; taskId: string; pickedCandidate: number; labelHash: string }
-  | { provenance: 'llm-draft'; taskId: string; confirmedByUser: boolean };
+  | { provenance: 'llm-draft'; taskId: string; confirmedByUser: boolean }
+  /** A short text TailorIT's AI answered with (version 2), and what it rested on: the resume, the profile, the job's
+   *  own words, or nothing (a guess, marked "AI guess"). */
+  | { provenance: 'llm-answer'; taskId: string; basis: AnswerBasis };
+
+/** What an AI answer rested on (TailorIT's AUTOFILL_ANSWER_BASES): `guess` when nothing in the resume, the profile or
+ *  the posting settles it. */
+export const ANSWER_BASES = ['resume', 'profile', 'job', 'guess'] as const;
+export type AnswerBasis = (typeof ANSWER_BASES)[number];
 
 /** Vocabulary domains: which tables, and which matcher stages, a value is compared through. */
 export const VOCAB_DOMAINS = ['institution', 'degree', 'field', 'country', 'region', 'language', 'proficiency',

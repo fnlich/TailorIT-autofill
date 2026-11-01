@@ -145,8 +145,12 @@ export const VALUE_SOURCES = [
   'preapproved-consent',
   /** An answer the person saved earlier (Requirement F). */
   'saved',
-  /** A draft the person must edit or confirm. */
+  /** A draft from the resume (version 2: written and accepted; kept for the person's confirmation while
+   *  settings.llm.confirmDrafts is on). */
   'llm-draft',
+  /** An AI answer (version 2): one of the field's own options, or a short text, marked "AI guess" when nothing settles
+   *  it (plan/answers.ts). */
+  'llm-answer',
 ] as const;
 export type ValueSource = (typeof VALUE_SOURCES)[number];
 
@@ -165,8 +169,11 @@ export interface ClassPolicy {
 }
 
 /**
- * §8.2's table, one row per class, except one cell docs/ARCHITECTURE.md overrules: a free-text category that came only
- * from LLM classification maps to needs-user (AI › Category mapping), so it gets no draft (§8.2 said "draft only").
+ * §8.2's table, one row per class. The owner's amendments (docs/SPEC-AMENDMENTS.md) put back its "draft only" cell for
+ * a free-text category only the LLM classified (docs/ARCHITECTURE.md had made it needs-user), and add the AI answer as
+ * a source of the unknown and free-text classes (a short text, or one of the field's options), and of the profile
+ * categories ANSWERABLE_PROFILE_CATEGORIES lists. The rule source of the unknown class is
+ * screening.previously-employed.
  */
 export const CLASS_POLICIES: Readonly<Record<PolicyClass, ClassPolicy>> = {
   profile: { valueFrom: ['profile', 'rule'], savedAnswers: 'global', llmTiebreak: 'per-domain',
@@ -180,12 +187,12 @@ export const CLASS_POLICIES: Readonly<Record<PolicyClass, ClassPolicy>> = {
   consent: { valueFrom: ['preapproved-consent'], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never',
     fuzzy: 'never' },
   attention: { valueFrom: [], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never', fuzzy: 'never' },
-  'free-text': { valueFrom: ['saved', 'llm-draft'], savedAnswers: 'company', llmTiebreak: 'not-applicable',
-    llmClassified: 'never', fuzzy: 'not-applicable' },
+  'free-text': { valueFrom: ['saved', 'llm-draft', 'llm-answer'], savedAnswers: 'company', llmTiebreak: 'not-applicable',
+    llmClassified: 'draft-only', fuzzy: 'not-applicable' },
   file: { valueFrom: ['profile'], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never',
     fuzzy: 'not-applicable' },
-  unknown: { valueFrom: ['saved'], savedAnswers: 'global', llmTiebreak: 'allowed', llmClassified: 'not-applicable',
-    fuzzy: 'generic' },
+  unknown: { valueFrom: ['saved', 'rule', 'llm-answer'], savedAnswers: 'global', llmTiebreak: 'allowed',
+    llmClassified: 'not-applicable', fuzzy: 'generic' },
 };
 
 /**
@@ -195,9 +202,19 @@ export const CLASS_POLICIES: Readonly<Record<PolicyClass, ClassPolicy>> = {
 export const OPEN_CLASSES: readonly PolicyClass[] = ['profile', 'free-text', 'unknown'];
 
 /**
- * Categories nothing may ever fill: the person answers them. Criminal history is always the user's (§8.2, §8.7); an
- * attention check is left blank and flagged; an "I did not use AI" attestation and unrecognised consent can never be
- * pre-approved (§8.7).
+ * Categories nothing may ever fill: the person answers them. An attention check is left blank and flagged; an "I did
+ * not use AI" attestation and unrecognised consent can never be pre-approved (§8.7). Criminal history was here until
+ * the owner's amendments (docs/SPEC-AMENDMENTS.md): it is now answered from the person's own answer in the sensitive
+ * part, by its polarity alone, like any legal question, and never by an AI or an inference.
  */
-export const USER_ONLY_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['screening.criminalHistory',
-  'attentionCheck', 'consent.aiAttestation', 'consent.other']);
+export const USER_ONLY_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['attentionCheck',
+  'consent.aiAttestation', 'consent.other']);
+
+/**
+ * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job
+ * preferences, availability, how the person heard of the job, years of experience and a skill chosen from a list. Never
+ * a name, contact detail, address, link, school, employer, date or file: those come from the profile or stay blank.
+ */
+export const ANSWERABLE_PROFILE_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>([
+  'preferences.relocation', 'preferences.workArrangement', 'preferences.travel', 'availability.noticePeriod',
+  'availability.startDate', 'referral.source', 'experience.totalYears', 'skills.list']);

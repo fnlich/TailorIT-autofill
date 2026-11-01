@@ -10,8 +10,11 @@ import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import {
+  AUTOFILL_API_VERSION,
   AUTOFILL_CONTRACT_SCHEMAS,
   AUTOFILL_ROUTES,
+  AutofillAddJobResponseSchema,
+  AutofillAnswerTaskSchema,
   AutofillClassifyTaskSchema,
   AutofillConnectResponseSchema,
   AutofillDraftTaskSchema,
@@ -29,9 +32,12 @@ import {
 } from '../src/contract/tailorit';
 import {
   CLEAN_DRAFT,
+  CLEAN_REWRITE,
   CONTRACT_ROUTES,
   EXTENSION_ID,
+  CLEAN_ANSWER,
   GOLDEN_RESUME,
+  MOCK_API_VERSION,
   MOCK_SCENARIOS,
   example,
   extensionIdOf,
@@ -46,6 +52,8 @@ const repoJson = (path: string): unknown => JSON.parse(repoFile(path).toString('
 
 const TOKEN = (example('AutofillRedeemResponse') as { token: string }).token;
 const API = 'X-TailorIT-Autofill-Api';
+/** The version the mock speaks: the contract's (version 2). */
+const V = String(MOCK_API_VERSION);
 const CLIENT = { browser: 'other', extensionVersion: '0.1.0', os: 'windows' };
 const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
 
@@ -69,7 +77,7 @@ function call(path: string, { method = 'GET', headers = {}, json }: Call = {}): 
 }
 
 /** A request as the extension's worker sends it: the golden token and this version. */
-const asToken = (extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${TOKEN}`, [API]: '1', ...extra });
+const asToken = (extra: Record<string, string> = {}) => ({ Authorization: `Bearer ${TOKEN}`, [API]: V, ...extra });
 
 async function errorCode(response: Response): Promise<string> {
   return AutofillErrorBodySchema.parse(await response.json()).error.code;
@@ -104,7 +112,7 @@ describe('the routes', () => {
 
   const extensionRoutes = AUTOFILL_ROUTES.filter((route) => route.caller === 'token' || route.caller === 'either');
   it.each(extensionRoutes.map((route) => [`${route.method} ${route.path}`, route] as const))(
-    '%s answers the extension its contract status and schema, naming version 1',
+    '%s answers the extension its contract status and schema, naming the contract version',
     async (_, route) => {
       // A saved answer is deleted by its id: the one a PUT of the golden body gives it (Phase 6).
       let path = pathOf(route);
@@ -117,7 +125,7 @@ describe('the routes', () => {
       const response = await call(path, { method: route.method, headers: asToken(),
         json: sendsBody ? example(route.request!) : undefined });
       expect(response.status).toBe(route.status);
-      expect(response.headers.get(API)).toBe('1');
+      expect(response.headers.get(API)).toBe(V);
       expect(response.headers.get('cache-control')).toBe('no-store');
       if (route.response !== null) {
         const schema: z.ZodType = AUTOFILL_CONTRACT_SCHEMAS[route.response];
@@ -135,7 +143,7 @@ describe('the routes', () => {
       expect(page.status).toBe(route.status);
       if (route.response !== null) expect(await page.json()).toEqual(example(route.response));
       const token = await call(pathOf(route), { method: route.method, headers: asToken(), json });
-      expect([token.status, token.headers.get(API), await errorCode(token)]).toEqual([403, '1', 'forbidden']);
+      expect([token.status, token.headers.get(API), await errorCode(token)]).toEqual([403, V, 'forbidden']);
     },
   );
 
@@ -169,7 +177,7 @@ describe('the routes', () => {
     expect([GOLDEN_RESUME.size, GOLDEN_RESUME.sha256]).toEqual([bytes.byteLength, sha256(goldenResumeBytes())]);
     expect(bytes.byteLength).toBeLessThan(4096);
     const other = await call('/api/autofill/resumes/7d9f2b14-3e6a-4f80-b2c5-91e3a7d4f650/file', { headers: asToken() });
-    expect([other.status, other.headers.get(API), await errorCode(other)]).toEqual([404, '1', 'not_found']);
+    expect([other.status, other.headers.get(API), await errorCode(other)]).toEqual([404, V, 'not_found']);
   });
 
   it('answers 404 to an autofill route the contract does not have', async () => {
@@ -181,21 +189,21 @@ describe('the routes', () => {
 describe("a token request, as TailorIT's middleware treats it", () => {
   it('names the version on every answer, refusals included', async () => {
     const dead = await call('/api/autofill/profile', { headers: { ...asToken(), Authorization: 'Bearer tia_not-the-golden-token' } });
-    expect([dead.status, dead.headers.get(API)]).toEqual([401, '1']);
+    expect([dead.status, dead.headers.get(API)]).toEqual([401, V]);
     expect(await dead.json()).toEqual(example('AutofillErrorBody'));
     const outside = await call('/api/me/preferences', { headers: asToken() });
-    expect([outside.status, outside.headers.get(API), await errorCode(outside)]).toEqual([403, '1', 'forbidden']);
+    expect([outside.status, outside.headers.get(API), await errorCode(outside)]).toEqual([403, V, 'forbidden']);
     const encoded = await call('/api/autofill/resumes%2fx', { headers: asToken() });
     expect([encoded.status, await errorCode(encoded)]).toEqual([403, 'forbidden']);
   });
 
   it('refuses a missing or another version header with 409 conflict', async () => {
-    for (const version of [null, '2']) {
+    for (const version of [null, '1', String(MOCK_API_VERSION + 1)]) {
       const headers: Record<string, string> = asToken();
       if (version === null) delete headers[API];
       else headers[API] = version;
       const response = await call('/api/autofill/session', { headers });
-      expect([version, response.status, response.headers.get(API), await errorCode(response)]).toEqual([version, 409, '1', 'conflict']);
+      expect([version, response.status, response.headers.get(API), await errorCode(response)]).toEqual([version, 409, V, 'conflict']);
     }
   });
 
@@ -253,7 +261,7 @@ describe('pairing', () => {
   it("grants a code minted with the sensitive box unticked no profile:sensitive, until the next reset", async () => {
     expect((await redeem(await mintCode(false))).status).toBe(200);
     const sensitive = await call('/api/autofill/profile/sensitive', { headers: asToken() });
-    expect([sensitive.status, sensitive.headers.get(API), await errorCode(sensitive)]).toEqual([403, '1', 'forbidden']);
+    expect([sensitive.status, sensitive.headers.get(API), await errorCode(sensitive)]).toEqual([403, V, 'forbidden']);
     const session = AutofillSessionSchema.parse(await (await call('/api/autofill/session', { headers: asToken() })).json());
     expect(session.token.scopes).toEqual((example('AutofillRedeemResponse', 'without-sensitive') as { scopes: string[] }).scopes);
     mock.reset();
@@ -262,7 +270,7 @@ describe('pairing', () => {
 
   it('revokes the token on DELETE /session, until a code is redeemed again', async () => {
     const ended = await call('/api/autofill/session', { method: 'DELETE', headers: asToken() });
-    expect([ended.status, ended.headers.get(API)]).toEqual([204, '1']);
+    expect([ended.status, ended.headers.get(API)]).toEqual([204, V]);
     expect((await call('/api/autofill/profile', { headers: asToken() })).status).toBe(401);
     expect((await redeem(await mintCode())).status).toBe(200);
     expect((await call('/api/autofill/profile', { headers: asToken() })).status).toBe(200);
@@ -296,14 +304,14 @@ describe('the scripted answers', () => {
     await scenario('unauthorized');
     for (const path of ['/api/autofill/profile', '/api/autofill/session']) {
       const response = await call(path, { headers: asToken() });
-      expect([path, response.status, response.headers.get(API), await errorCode(response)]).toEqual([path, 401, '1', 'not_signed_in']);
+      expect([path, response.status, response.headers.get(API), await errorCode(response)]).toEqual([path, 401, V, 'not_signed_in']);
     }
   });
 
-  it('version-mismatch: a server speaking version 2 refuses with 409 and says so in its header', async () => {
+  it('version-mismatch: a server speaking the next version refuses with 409 and says so in its header', async () => {
     await scenario('version-mismatch');
     const response = await call('/api/autofill/profile', { headers: asToken() });
-    expect([response.status, response.headers.get(API), await errorCode(response)]).toEqual([409, '2', 'conflict']);
+    expect([response.status, response.headers.get(API), await errorCode(response)]).toEqual([409, String(MOCK_API_VERSION + 1), 'conflict']);
   });
 
   it('sensitive-forbidden and profile-unavailable refuse those routes only', async () => {
@@ -357,7 +365,7 @@ describe('the scripted answers', () => {
     expect(stored.job?.postingText).toMatch(/do not use AI tools/i);
     expect(stored.suggestedResume?.id).toBe(GOLDEN_RESUME.id);
     await scenario('lookup-no-resume', { times: 1 });
-    expect(await lookup()).toEqual({ ats: null, job: null, application: null, suggestedResume: null });
+    expect(await lookup()).toEqual({ ats: null, job: null, application: null, suggestedResume: null, match: null });
   });
 
   it('resume-hash-mismatch, resume-fails and resume-slow change the file answer', async () => {
@@ -492,6 +500,17 @@ describe('drafts (Phase 6)', () => {
     ]);
   });
 
+  it('rewrites what a box holds (Edit with AI’s currentAnswer) with a clean text that is never the box’s', async () => {
+    const questions = [{ ...DRAFT_BODY.questions[0]!, currentAnswer: CLEAN_DRAFT }, DRAFT_BODY.questions[1]!];
+    const response = await call('/api/autofill/ai/draft', { method: 'POST', headers: asToken(), json: { ...DRAFT_BODY, questions } });
+    expect(response.status).toBe(200);
+    expect(await draftsOf(response)).toEqual([
+      { key: questions[0]!.key, text: CLEAN_REWRITE, reason: 'drafted' },
+      { key: questions[1]!.key, text: CLEAN_DRAFT.slice(0, 60), reason: 'drafted' },
+    ]);
+    expect(CLEAN_REWRITE).not.toBe(CLEAN_DRAFT);
+  });
+
   it('scripts the hostile drafts: a canary it missed, AI talk, a foreign link, one past its cap, a trimmed one', async () => {
     await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-draft-canary', times: 1 } });
     expect((await draftsOf(await draft()))?.[0]).toMatchObject({ reason: 'drafted', text: expect.stringContaining('pineapple') });
@@ -583,5 +602,85 @@ describe('listening', () => {
   it('answers health, and refuses any host but loopback', async () => {
     expect(await (await call('/__mock/health')).json()).toEqual({ ok: true });
     await expect(startMock({ port: 0, hosts: ['0.0.0.0'] })).rejects.toThrow(/loopback only/);
+  });
+});
+
+describe('version 2: the job card, adding a job and AI answers', () => {
+  const lookup = async (json: Record<string, unknown> = { url: 'https://jobs.lever.co/x/y/apply' }) =>
+    AutofillLookupResponseSchema.parse(await (await call('/api/autofill/lookup', { method: 'POST', headers: asToken(), json })).json());
+  const addJob = (json: Record<string, unknown> = { url: 'https://jobs.lever.co/x/y/apply' }) =>
+    call('/api/autofill/jobs', { method: 'POST', headers: asToken(), json });
+
+  it("speaks the contract's API version", () => {
+    expect(MOCK_API_VERSION).toBe(AUTOFILL_API_VERSION);
+  });
+
+  it("scores the golden resume in the golden lookup, and names the job's facts", async () => {
+    const golden = await lookup();
+    expect(golden.match).toEqual({ state: 'ok', resumeId: GOLDEN_RESUME.id, matchedCount: 9, total: 12, percentage: 75 });
+    expect(golden.job).toMatchObject({ postedAt: '2026-10-18T15:20:00.000Z', salary: '$150k - $185k/yr', workArrangement: 'hybrid' });
+    expect(golden.job?.postingText).toBeUndefined();
+  });
+
+  it('suggests a listed resume the lookup names (reason chosen) and scores it; passes over one it does not list', async () => {
+    const other = (example('AutofillResumeList') as { items: Array<{ id: string; label: string }> }).items[1]!;
+    const chosen = await lookup({ url: 'https://jobs.lever.co/x/y/apply', resumeId: other.id });
+    expect(chosen.suggestedResume).toMatchObject({ id: other.id, label: other.label, reason: 'chosen' });
+    expect(chosen.match).toMatchObject({ state: 'ok', resumeId: other.id });
+    const unknown = await lookup({ url: 'https://jobs.lever.co/x/y/apply', resumeId: 'not-a-resume' });
+    expect(unknown.suggestedResume).toMatchObject({ id: GOLDEN_RESUME.id, reason: 'application' });
+  });
+
+  it("answers the card's scenarios with their fixtures", async () => {
+    await scenario('lookup-not-found', { times: 1 });
+    expect(await lookup()).toMatchObject({ job: null, application: null, suggestedResume: { id: GOLDEN_RESUME.id, reason: 'default' } });
+    await scenario('lookup-applied', { times: 1 });
+    expect(await lookup()).toMatchObject({ job: { active: false }, application: { status: 2, archived: true },
+      match: { state: 'unreadable', resumeId: GOLDEN_RESUME.id } });
+    await scenario('lookup-untracked', { times: 1 });
+    expect(await lookup()).toMatchObject({ application: null, job: { title: 'Senior Backend Engineer' } });
+    await scenario('lookup-no-keywords', { times: 1 });
+    expect((await lookup()).match).toEqual({ state: 'no_keywords', resumeId: GOLDEN_RESUME.id });
+    await scenario('lookup-bad-match', { times: 1 });
+    const raw = await (await call('/api/autofill/lookup', { method: 'POST', headers: asToken(),
+      json: { url: 'https://jobs.lever.co/x/y/apply' } })).json() as { match: { percentage: number } };
+    expect(raw.match.percentage).toBe(74.5);
+    expect(AutofillLookupResponseSchema.safeParse(raw).success).toBe(false);
+  });
+
+  it('adds a posting (created), and every later lookup finds that job until the reset', async () => {
+    const added = await addJob();
+    expect([added.status, added.headers.get(API)]).toEqual([200, V]);
+    const answer = AutofillAddJobResponseSchema.parse(await added.json());
+    expect(answer.created).toBe(true);
+    expect(answer.lookup).toMatchObject({ job: { title: 'Staff Platform Engineer' }, application: { status: 1 },
+      suggestedResume: { id: GOLDEN_RESUME.id, reason: 'application' }, match: { state: 'ok', resumeId: GOLDEN_RESUME.id } });
+    expect((await lookup()).job?.title).toBe('Staff Platform Engineer');
+    await mock.reset();
+    expect((await lookup()).job?.title).toBe('Senior Backend Engineer');
+  });
+
+  it("refuses as TailorIT does: existing, closed, the ATS down, an address it cannot add from", async () => {
+    await scenario('add-job-existing', { times: 1 });
+    expect(AutofillAddJobResponseSchema.parse(await (await addJob()).json()).created).toBe(false);
+    for (const [name, status, code] of [['add-job-closed', 404, 'not_found'], ['add-job-ats-down', 503, 'ats_unavailable'],
+      ['add-job-unsupported', 400, 'unsupported']] as const) {
+      await scenario(name, { times: 1 });
+      const refused = await addJob();
+      expect([name, refused.status, refused.headers.get(API), await errorCode(refused)]).toEqual([name, status, V, code]);
+    }
+    const empty = await addJob({ url: '' });
+    expect([empty.status, await errorCode(empty)]).toEqual([400, 'validation_failed']);
+  });
+
+  it('answers no AI answer item by default, and every item under ai-answer, with its basis', async () => {
+    const ask = async () => AutofillAnswerTaskSchema.parse(await (await call('/api/autofill/ai/answer', { method: 'POST',
+      headers: asToken(), json: example('AutofillAnswerRequest') })).json());
+    const none = await ask();
+    expect(none.result?.answers.every((answer) => answer.reason === 'no_answer')).toBe(true);
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-answer', times: 1, value: 'resume' } });
+    const answered = await ask();
+    expect(answered.result?.answers.every((answer) => answer.reason === 'answered' && answer.basis === 'resume')).toBe(true);
+    expect(answered.result?.answers.find((answer) => answer.optionSetHash === null)?.text).toBe(CLEAN_ANSWER);
   });
 });

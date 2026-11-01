@@ -3,22 +3,26 @@
  * only from what the person stated: nothing is inferred, nothing is fuzzy-matched or sent to an LLM, and nothing is
  * cached (the matcher's domain table and the policy classes keep those stages off).
  * - EEO: an explicit value is matched through the EEO vocabulary; an explicit decline chooses the form's decline
- *   option (else blank, decline-option-missing); no answer leaves the field blank and flagged (eeo-not-in-profile). A
- *   self-described gender chooses the self-describe option and types the person's own words into the box it reveals,
- *   always flagged. Several races on a single-choice question are blank and flagged, unless the owner turned on
- *   interpretation 2 ("Two or More Races", flagged). A race option that asserts a Hispanic or Latino answer is chosen
- *   only when the person's own explicit answer agrees (MatchInput.hispanicLatino).
+ *   option (else blank, decline-option-missing). No answer chooses the form's decline option too while
+ *   settings.interpretations.eeoDeclineByDefault is on (rule eeo.decline-default, the owner's amendments: a decline is
+ *   no guess), and leaves the field blank and flagged otherwise (eeo-not-in-profile). A self-described gender chooses
+ *   the self-describe option and types the person's own words into the box it reveals, always flagged. Several races
+ *   on a single-choice question are blank and flagged, unless interpretation 2 is on ("Two or More Races", flagged). A
+ *   race option that asserts a Hispanic or Latino answer is chosen only when the person's own explicit answer agrees
+ *   (MatchInput.hispanicLatino).
  * - Legal: the answer of the work-authorization entry for the country the question names. A question that names no
- *   country, or several, is blank and flagged. Interpretation 1, when the owner turns it on, answers one that names
- *   none from the entry for the posting's country, flagged; it needs the caller to know that country, and no plan
- *   request carries it yet, so it stays inert in planFrame. A combined "now or in the future" sponsorship question is
- *   Yes when either answer is an explicit yes, No only when both are an explicit no, the decline option when either is
- *   declined and neither is yes, and blank otherwise. Criminal history is always the person's.
+ *   country, or several, is blank and flagged. Interpretation 1 answers one that names none from the entry for the
+ *   posting's country, flagged: the country the lookup's location names (postingCountryOf), else the profile's only
+ *   work-authorization entry's. A combined "now or in the future" sponsorship question is Yes when either answer is an
+ *   explicit yes, No only when both are an explicit no, the decline option when either is declined and neither is yes,
+ *   and blank otherwise. Criminal history is the person's own answer in the sensitive part (version 2), matched by its
+ *   polarity alone; absent or declined, the field is blank and flagged.
  * - Consent: ticked only when every consent kind the label names is pre-approved in settings (§8.7); an AI attestation
  *   and unrecognised consent never can be. A pre-approved signature types the person's full name.
- * - The sensitive part (authorization, EEO, age, pronouns, pay): until it is loaded no such field is answered. While
- *   it is 'not-loaded' the plan asks the worker to fetch it (planFrame's needsSensitive); when the token may not read
- *   it ('not-shared') or the fetch failed ('unavailable'), those fields are blank and flagged.
+ * - The sensitive part (authorization, EEO, age, criminal record, pronouns, pay): until it is loaded no such field is
+ *   answered. While it is 'not-loaded' the plan asks the worker to fetch it (planFrame's needsSensitive); when the
+ *   token may not read it ('not-shared') or the fetch failed ('unavailable'), those fields are blank and flagged, but
+ *   a self-identification question while it is not shared, which takes the decline default (eeoDeclineDefault).
  */
 import {
   POSTING_COUNTRY_FACTOR, VALUE_CONSENT_PREAPPROVED, VALUE_EXPLICIT, VALUE_TRANSFORM, VALUE_TWO_OR_MORE_RACES,
@@ -44,13 +48,13 @@ const byRule = (ruleId: RuleId, at: string): ValueOrigin => ({ provenance: 'rule
 // ---------------------------------------------------------------------------------------------------------------
 // The sensitive part
 
-/** The categories whose answer lives in the sensitive part: work authorization, age, self-identification, pronouns
- *  and pay. Visa type, clearance, sexual orientation and transgender identity have no answer in either part, and
- *  criminal history is always the person's, so they never need it. */
+/** The categories whose answer lives in the sensitive part: work authorization, age, criminal record (version 2),
+ *  self-identification, pronouns and pay. Visa type, clearance, sexual orientation and transgender identity have no
+ *  answer in either part, so they never need it. */
 export const SENSITIVE_PART_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['workAuth.authorized',
   'workAuth.sponsorship', 'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture', 'workAuth.status',
-  'screening.over18', 'eeo.gender', 'eeo.hispanicLatino', 'eeo.race', 'eeo.veteran', 'eeo.disability',
-  'identity.pronouns', 'salary.expected', 'salary.currency']);
+  'screening.over18', 'screening.criminalHistory', 'eeo.gender', 'eeo.hispanicLatino', 'eeo.race', 'eeo.veteran',
+  'eeo.disability', 'identity.pronouns', 'salary.expected', 'salary.currency']);
 
 /** What the sensitive part's state means for a field of this category: answer it ('ready'), fetch the part first
  *  ('fetch'), or leave it blank and flagged with the state's reason. */
@@ -145,8 +149,35 @@ export function countriesNamed(text: string, vocab: Vocab): string[] {
   return placesNamed(text, vocab).countries;
 }
 
-/** What a legal question's country may come from besides its own words: interpretation 1, when the owner has turned
- *  it on, and the posting's country, when the caller knows it (no plan request carries it yet). */
+/**
+ * The country a posting's location names (TailorIT's job location: "San Francisco, CA", "London, United Kingdom",
+ * "Remote - Canada"), as an ISO alpha-2 code: the one country it names, else the one country its US states and Canadian
+ * provinces belong to; undefined when it names none, or several, or a place that may or may not be a country.
+ */
+export function postingCountryOf(location: string, vocab: Vocab): string | undefined {
+  const places = placesNamed(location, vocab);
+  if (places.ambiguous || places.countries.length > 1) return undefined;
+  if (places.countries.length === 1) return places.countries[0];
+  const tokens = normalize(location, 'country').tokens;
+  const regions = vocab.phrases('region');
+  const found = new Set<string>();
+  let at = 0;
+  while (at < tokens.length) {
+    const region = phraseAt(regions, tokens, at, location);
+    if (region.length === 0) {
+      at += 1;
+      continue;
+    }
+    const entity = region.id === null ? undefined : vocab.entity(region.id);
+    if (entity?.kind === 'region') found.add(entity.country);
+    at += region.length;
+  }
+  return found.size === 1 ? [...found][0] : undefined;
+}
+
+/** What a legal question's country may come from besides its own words: interpretation 1, when it is on, and the
+ *  posting's country, when the caller knows it (the lookup's location: postingCountryOf); with none, the profile's
+ *  only work-authorization entry's. */
 export interface LegalContext {
   settings: Settings;
   postingCountry?: string;
@@ -163,9 +194,12 @@ function authorizationEntry(spec: FieldSpec, profile: Profile, vocab: Vocab, leg
   }
   if (places.ambiguous) return { reason: 'work-auth-country-unknown' };
   let countries = places.countries;
+  // The posting's country, else the one country the person answered for (interpretation 1).
+  const posting = legal.postingCountry
+    ?? (profile.workAuthorization.length === 1 ? profile.workAuthorization[0]!.country : undefined);
   const fromPosting = countries.length === 0 && legal.settings.interpretations.postingCountryForLegal
-    && legal.postingCountry !== undefined;
-  if (fromPosting) countries = [legal.postingCountry!];
+    && posting !== undefined;
+  if (fromPosting) countries = [posting];
   if (countries.length !== 1) return { reason: 'work-auth-country-unknown' };
   const index = profile.workAuthorization.findIndex((entry) => entry.country === countries[0]);
   return index < 0 ? { reason: 'legal-not-in-profile' } : { index, fromPosting };
@@ -203,7 +237,12 @@ const WORK_STATUS_TEXT: Readonly<Record<string, string>> = {
 /** The value of a legal question (§8.7): authorization, sponsorship, status and age from explicit answers only. */
 export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Profile, vocab: Vocab,
   legal: LegalContext): ValueResult {
-  if (category === 'screening.criminalHistory') return none('legal-not-in-profile', true, true);
+  if (category === 'screening.criminalHistory') {
+    // The person's own answer, by its polarity alone (a declined one is theirs to give here: no decline rule fits it).
+    const record = profile.screening.criminalRecord;
+    if (record === undefined || record.kind === 'decline') return none('legal-not-in-profile');
+    return yesNo(record.value, fromProfile('screening.criminalRecord'));
+  }
   if (category === 'screening.over18') return legalAnswer(profile.screening.over18, 'screening.over18');
   if (category === 'workAuth.visaType' || category === 'workAuth.clearance') return none('legal-not-in-profile');
   const found = authorizationEntry(spec, profile, vocab, legal);
@@ -266,15 +305,29 @@ function asksProtectedStatus(spec: FieldSpec): boolean {
   return [spec.label, spec.description, ...options].some((text) => /\bprotected\b/i.test(text));
 }
 
+/**
+ * The decline default (rule eeo.decline-default, settings.interpretations.eeoDeclineByDefault): the form's decline
+ * option for a self-identification question the profile leaves unanswered, or one asked while this browser may not read
+ * the sensitive part. It names no profile path; the matcher chooses only a decline option (decline-option-missing
+ * when the form offers none), and a lone checkbox stays the person's. Null while the setting is off.
+ */
+export function eeoDeclineDefault(category: FieldCategory, spec: FieldSpec, settings: Settings): ValueResult | null {
+  if (!settings.interpretations.eeoDeclineByDefault) return null;
+  if (!EEO_CHOICE_KINDS.includes(spec.kind)) return none('format-unsupported');
+  const domain: VocabDomain = EEO_DOMAIN[category] ?? 'generic';
+  return value({ origin: { provenance: 'rule', ruleId: 'eeo.decline-default' }, confidence: VALUE_EXPLICIT,
+    choice: { intended: intendedDecline(domain), domain }, note: 'eeo-decline-default' });
+}
+
 /** The value of a self-identification question (§8.7). */
 export function eeoValue(category: FieldCategory, spec: FieldSpec, profile: Profile, settings: Settings, vocab: Vocab):
   ValueResult {
   const domain = EEO_DOMAIN[category];
-  if (domain === undefined) return none('eeo-not-in-profile');
+  if (domain === undefined) return eeoDeclineDefault(category, spec, settings) ?? none('eeo-not-in-profile');
   const { eeo } = profile;
   const question = category.slice('eeo.'.length) as 'gender' | 'hispanicLatino' | 'race' | 'veteran' | 'disability';
   const answer: Explicit<unknown> | undefined = eeo[question];
-  if (answer === undefined) return none('eeo-not-in-profile');
+  if (answer === undefined) return eeoDeclineDefault(category, spec, settings) ?? none('eeo-not-in-profile');
   if (!EEO_CHOICE_KINDS.includes(spec.kind)) return none('format-unsupported');
   const at = `eeo.${question}`;
   if (answer.kind === 'decline') {

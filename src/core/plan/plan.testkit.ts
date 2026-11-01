@@ -94,6 +94,8 @@ export function settingsWith(extra: Partial<Settings> = {}): Settings {
   return { ...DEFAULT_SETTINGS, ...extra };
 }
 
+export { CAUTIOUS_SETTINGS } from './settings.testkit';
+
 /** A plan input over `specs` with the golden profile, its sensitive part loaded, and the default settings. */
 export function inputOf(specs: readonly FieldSpec[], extra: Partial<PlanInput> = {}): PlanInput {
   return { specs: inOrder(specs), canaries: [], profile: goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],

@@ -1,19 +1,55 @@
 {
-  "apiVersion": 1,
+  "apiVersion": 2,
   "zod": "4.6.7",
   "files": {
-    "ai.ts": "945b2a807ab3e962a5b522fa3cb137e91a25ef0446626ddff9250bf2ac667322",
+    "ai.ts": "28022ed5313c803da7e185cbe772bae6b474c5b549c31b8a934d67542dfc4223",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "92eee1fd65c7f7e79026ab88299a8d71e39b524ed30add9eb19a44dac38fc156",
-    "connect.ts": "4c4da225a06a368e458253fbe961100d5087c16be85daa6469ad51a5b1c0c645",
+    "connect.ts": "9a9559b6ba13e5cb1437c8014f2e4ad3a90c074ba2b247a14bc3b7fdd630e82f",
     "index.ts": "5d30457b067f37f1c8ceb104ae269edb079ed90d98d91586f9efcc6c13eb8937",
-    "lookup.ts": "a5dac1363488e309d485e8038592c66f3dd548ac32c9197c209378ad6bfa8f8a",
-    "profile.ts": "646005a2a2346d4d75a6e70cf65b99b5bb143ec319c31e81e2fe68adc5bc0304",
-    "registry.ts": "8217a4e731d2809103e05b6bfede7ddae33f6a176b25a48adf7abbfd7cc1905d",
+    "lookup.ts": "463b4bdbcc527d37b9484184e8c06e73a3793267d79fbb5e6889de5383364352",
+    "profile.ts": "3e83fbd9f623f8b53d1fce16d908ebacb7635ab7221f952497a893ae5b26a425",
+    "registry.ts": "bad1b8ad7a8f400404ae7aa9901b52bac2ef6d3b895abeb29b74458deb3549ee",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
-    "version.ts": "bbe0bdc979576627c7ce14431efa53c2d36cd93ad77922ac8100bd0711e402fc"
+    "version.ts": "21cd90ee69f64b01d0799d0ec79c1e6af2eb7867fe0754f61ec37b84a5ef9bf7"
   },
   "fixtures": {
+    "AutofillAddJobRequest/invalid/empty-url.json": "f1928aa6e8d457480cd6177764fdc943720b90340a16dfd718c2c541471fd8bb",
+    "AutofillAddJobRequest/valid/golden.json": "7bef15f724f9a329a888a279ab4e8849c9631af603b7049f6ee5de50c3fab8d6",
+    "AutofillAddJobRequest/valid/without-resume.json": "8738441e2a03e1dfbaccd4cd71208ee2f0ae0d2215371c91c2a6bbecb717afcd",
+    "AutofillAddJobResponse/invalid/no-lookup.json": "c1a75c8b781577c574cccb0e248a12c7bd2afa71300e1aa5953e77fbbdc080ee",
+    "AutofillAddJobResponse/valid/existing.json": "2df7f8db68891446d316c0479d97b8c66a3f5b39065d7fb8775a4ef8314522a6",
+    "AutofillAddJobResponse/valid/golden.json": "ae76eb602a99787d15a4e9a446c01b6783d55618cd6129d249d8eb733fee62ef",
+    "AutofillAnswerRequest/invalid/checkbox-kind.json": "635299f90633ee3a8423682913421f74a414023791d5859ff5c6e46b42214250",
+    "AutofillAnswerRequest/invalid/choice-with-max-length.json": "73e8fcc9468d3f4c3b3294da5ca6c62079fea40914331248e6df5daa100799d1",
+    "AutofillAnswerRequest/invalid/choice-with-one-option.json": "87cd67a80aa3760e4c53dd05cb84c6e6877dba23a841b2e23df3ba9b0232a54c",
+    "AutofillAnswerRequest/invalid/choice-without-option-set.json": "ade884e0d1571ca6a520c985832c43636ec5db29c26cee81b493f9022bc1b1c6",
+    "AutofillAnswerRequest/invalid/eleven-items.json": "6916e17748e481d092195f1cb9e77b952e82ece99efbef0c24ca689d00752436",
+    "AutofillAnswerRequest/invalid/empty-question.json": "e8aa49b1537a6530137c592296e91ceae571a714ccd647f388cbccedd5e9e24a",
+    "AutofillAnswerRequest/invalid/max-length-over-500.json": "707d41e433cbd76a01e4e9b543cb42b18e28d22f0868fcb5158e4f759826c7c4",
+    "AutofillAnswerRequest/invalid/no-items.json": "036e132f900e53ab5a22ba2133e804a20c69b30488dcbd348fc77e7813afcc6d",
+    "AutofillAnswerRequest/invalid/one-letter-canary.json": "fa14078c64d95ae0a799740d12e347831a779d375c62e70a56cfa2c40078f527",
+    "AutofillAnswerRequest/invalid/repeated-key.json": "e27aa70f059d684cc4bb8013bb0ef6e92536fcda0a858d8e38da0edcf8a2efcc",
+    "AutofillAnswerRequest/invalid/repeated-option-index.json": "7772a8e2dc8aa405bf1a5cf124572d3ad516325a73c6ede65ba8db6657e53bae",
+    "AutofillAnswerRequest/invalid/text-kind-for-a-choice.json": "8e8ac962e214cad8f0acda66f5bba9730663fa304cd45f69633d2d7e1161f871",
+    "AutofillAnswerRequest/invalid/text-with-option-set.json": "c886ee5235e7a2a69ce9c6ff27d5e087ba7c8197db856204065076468030a2a2",
+    "AutofillAnswerRequest/invalid/text-with-options.json": "a342807645776b2a91a5b705267595110331ffc647cb27d4a55d1f2443a76f53",
+    "AutofillAnswerRequest/invalid/thirty-one-options.json": "5648317eaaaf30a436eb6e729ff04f5893f4091ce5a4e49c7f37112d2757c32f",
+    "AutofillAnswerRequest/valid/embedded-form.json": "3de37f26bbb87f03af2aae169ad562285f5e26c14301e20e294b582cc7fffd02",
+    "AutofillAnswerRequest/valid/golden.json": "733701c61af16b788a5820dabfd8406f74239bc432e10c52c71b8cb6bb366b8f",
+    "AutofillAnswerResult/invalid/answered-without-basis.json": "0b4e9b688f9cd776e38777ecdcd1e8a62cd197e1f134e19f61b8f135df2693a0",
+    "AutofillAnswerResult/invalid/basis-without-answer.json": "1d453bc98211f148a59e7ad00801bb92d02d34be05ca4c2206791445b6d480c5",
+    "AutofillAnswerResult/invalid/choice-with-text.json": "e00356090adf88e3e22fe619fb13fd87cd7cabac71862a294e1fa36bf44c5575",
+    "AutofillAnswerResult/invalid/text-over-500.json": "1bd245e5f39f69fbc54efed554a202c1561ad2fe5239110c90b2556d6e862956",
+    "AutofillAnswerResult/invalid/text-with-index.json": "6441a4f0e54ffca294383094ba95d516cbd59e86ae1f08562de9a46d83c30847",
+    "AutofillAnswerResult/invalid/unknown-basis.json": "3c881f48aaa1b7b199f5ad947013e62d126b37938ca68e4657289e1f55ca62d8",
+    "AutofillAnswerResult/invalid/unknown-reason.json": "bd28892281d537b4ea6cf24e75edce7fa79b74738bd5342370cd5b9ef8654a23",
+    "AutofillAnswerResult/valid/golden.json": "8b5ddb3576a9b5206b1b815c4c0396889e1463fb45e19aa182ac7eb375f600c5",
+    "AutofillAnswerResult/valid/screened.json": "8aac808cceb4154f755a2a48b80adf52e7b0229fb3a36f9bb120d9ffca17249b",
+    "AutofillAnswerTask/invalid/answers-as-drafts.json": "cd32d778d314c354703f1dad10981ac62a247ba9c20ca55e942852fd288b9558",
+    "AutofillAnswerTask/invalid/draft-kind.json": "ac3626052f1a15c9e45ca18f95ec0ee0e91deec09df0cc54cc14d56ebe428a62",
+    "AutofillAnswerTask/valid/failed.json": "1b2db6ca915b6581fa5e538fdb7f2d9ee119636335a451a6e55b7820fed7bd82",
+    "AutofillAnswerTask/valid/golden.json": "3707c2c59f177e08301bd21bce953ddeb474e395bca93e7a374194983e473359",
     "AutofillClassifyRequest/invalid/label-over-200.json": "ad377b1513238ab9248e12900f6c1a9650a94a8eaf24932c4eea3f53f465b174",
     "AutofillClassifyRequest/invalid/no-items.json": "44f694156fb8025f2a1172af67fb112a8870c23d2e68fb11b9e1109824bb4298",
     "AutofillClassifyRequest/invalid/repeated-key.json": "5d9419a970c289ee249e83377e9e4691e94a0128e539782442b8914f29eaa3f7",
@@ -38,13 +74,17 @@
     "AutofillConnectResponse/invalid/upper-case-extension-id.json": "ad0815bd6be970573245398d5dc90ad67b1b61f78f2c0206b20b95623f3ac080",
     "AutofillConnectResponse/valid/golden.json": "a4cf2d2af5855f5cf289df62276bfdbc3d463dc08801a86dc5e7162b10adc038",
     "AutofillConnectResponse/valid/no-extension-ids.json": "b63dd300e8575700e82cbc24dcf558d569a7d7d94c70b69d50fa0e7f742a3f78",
+    "AutofillDraftRequest/invalid/current-answer-over-5000.json": "5cccd3942f2dfe093597bf791dc01bb80c9cf16467e69ec16006ef80ab8150f8",
+    "AutofillDraftRequest/invalid/custom-question-over-1000.json": "8ddfcf9acecbaf6928a3ba2c1c6202c5f049b77e9d27b2a187c7d2928940b5a0",
     "AutofillDraftRequest/invalid/empty-question.json": "2e7c0640a18f224783e9b33d0e3331867e27621363b0d6408e0b29de92b6dad8",
     "AutofillDraftRequest/invalid/four-questions.json": "8686b57ffc47574b49c4240f4ced06bfd5206c98682f596396c959a883c69390",
     "AutofillDraftRequest/invalid/max-length-under-50.json": "4d39f5e568f8adc3b9a1830d850f926c096acae60c52c4755e212c7f161153ce",
     "AutofillDraftRequest/invalid/one-letter-canary.json": "1a8feb5f8c0b2be5da245a80f6d35188abefafc8bfd7775bce55d12a8bcf70c8",
     "AutofillDraftRequest/invalid/repeated-key.json": "f8a2d8a4bdd9ee78bef0efb7c5d974e914f41af2f5c5de46bb59582756ac5bae",
+    "AutofillDraftRequest/valid/custom-question.json": "c0120833d00fccf6604fa66b6faceb7ed786270bfd80f09261051224b2c20c14",
     "AutofillDraftRequest/valid/embedded-form.json": "a6ff1b5dbf542616a93b425c4b27ba61887e03c6068a17db501f949bd0b4aba4",
     "AutofillDraftRequest/valid/golden.json": "d5316170d715aa0dbc31557e1920afdcd74458066af1e27ba3aeed57ab8cf3b6",
+    "AutofillDraftRequest/valid/rewrite.json": "5708f051f2b487c1174345331e7e44054fe76ede638850b98aebae48f750ee2f",
     "AutofillDraftResult/invalid/text-over-5000.json": "abea5f35347e80fa5e612188bfb0567ad6a7c0ebbd30c7153767b9586be8aa75",
     "AutofillDraftResult/invalid/unknown-reason.json": "976929bec00a9f8bb87d56db90208e9b5d80eac3ac7113eda48a167a76203a2f",
     "AutofillDraftResult/valid/every-reason.json": "058caaf682d3d7c57535996f9ff8102b0fae2259eb3afc3d213ec072bfbdadb2",
@@ -60,16 +100,21 @@
     "AutofillErrorBody/valid/other-api-version.json": "50242c36adc8591d00199b16ec1eda268341a186fc41c70a42ca8853e9bb0c4f",
     "AutofillErrorBody/valid/rate-limited.json": "b24c201b6f016bcdc9a7eb5722e1f83c8de9983105d24368d19a6a7596625e0e",
     "AutofillErrorBody/valid/validation-failed.json": "2aecc3b8ebc0dccc7b374a399827a641bc2e14948c3fe0806274277b887befb2",
+    "AutofillLookupRequest/invalid/empty-resume-id.json": "2a280c254e072a250505b46c48c5beb643396a10ab0b53a1264039328742c5a1",
     "AutofillLookupRequest/invalid/empty-url.json": "216673388b36464e2f958802134ced30cda65bd4accbb49d16a677248e147be3",
     "AutofillLookupRequest/invalid/url-over-2048.json": "4cdf8b18bff676f68aed639ee29e78cf63542f304cb771be1e182aade1c665ca",
     "AutofillLookupRequest/valid/golden.json": "038ec88e90ccb9fb9c0e9dd9f520d22807c23fe6358cdfd975b9c74d500ce6a9",
+    "AutofillLookupRequest/valid/with-resume.json": "44af6080b069cd777a946b6a169d8a6c1251ab43334eb3ae349ef492ecaa5e54",
     "AutofillLookupRequest/valid/without-posting-text.json": "631b0ad52abc890fa841aa8766989037021fb9f4c88bfe8a7606370b50e56df3",
+    "AutofillLookupResponse/invalid/match-over-100.json": "9a662e535c370a74b29c19d4c3ce8466dc6285b71b675a7695123522a6df0c8b",
     "AutofillLookupResponse/invalid/unknown-ats.json": "5bb79fed4f91caa7cef8ec130872f34a13dcdc5b071bb702cad7ff9c93014061",
     "AutofillLookupResponse/invalid/unknown-reason.json": "e00de97035250da2aaf12c335e04c78d1debd2e88ad05a3dad6057e3139bff45",
-    "AutofillLookupResponse/valid/company-page.json": "282c1f20a8c1862bf480df2c402cd924883cac3c91c760d48a1389852fe2ad39",
-    "AutofillLookupResponse/valid/golden.json": "d67e315d415e199f2e2e7cd69598b7eafce9d28a3d95ce86919882bf9ad3aabc",
-    "AutofillLookupResponse/valid/unknown-page-default-resume.json": "1dcdf4b37df818476048d0718babb15819ea89a488a0146a0698582bbcdbb387",
-    "AutofillLookupResponse/valid/unknown-page.json": "5a09d3f50a72ce20730dcd5380d4a6dc59a039ebea51ea4d224db8fe01958d05",
+    "AutofillLookupResponse/valid/chosen.json": "b582a87f4bcc4e0d9fcbcc919526992ea9cce55d336782ef0fb169a1b31d6a7b",
+    "AutofillLookupResponse/valid/company-page.json": "0a5a01e6ab565a1142e254a01698c7c62ba324528ab3079a1456d0d8272e65ce",
+    "AutofillLookupResponse/valid/golden.json": "13f44f268aa9f7d261cc25d79154a07bd35457cfac6d6e2a53b5b27df677a6b2",
+    "AutofillLookupResponse/valid/no-keywords.json": "40d8063549e470411510662202d3104a9c34aac8d5ac960238188571dd57e616",
+    "AutofillLookupResponse/valid/unknown-page-default-resume.json": "bfcfbc3f71d4fa6a784a5f2310ae3f8933cede22df18ac23f310f4164700e95e",
+    "AutofillLookupResponse/valid/unknown-page.json": "5944f7ddc56b5fe9908e8648ec1cac4abd6f366d066d1efe837ec6fd6b2bd3b8",
     "AutofillLookupResponse/valid/with-posting-text.json": "ab9f86a9a6300b0683f7ed97a6de4221b89cfa8c1539ca40972a5f8ef4d66e4a",
     "AutofillPickRequest/invalid/country-category.json": "a2fc492bc12a5960b0dae622ff3041bcbe1a8b6b18a684e372510c274391478e",
     "AutofillPickRequest/invalid/eleven-aliases.json": "337c625757578f2b36cb328e51ba537f01a1316da58ed43573122f0a933710c5",
@@ -105,10 +150,10 @@
     "AutofillProfile/invalid/unknown-proficiency.json": "2999e644da0235073072355b40c9224422bd41e1ae41bc50807f134b1b9bb2c8",
     "AutofillProfile/valid/empty.json": "e06ce8cdb23b6ddae85c0e94216798a07576f3189dcd71088346bce49a08b19b",
     "AutofillProfile/valid/golden.json": "af349d89b8a5ba45d4719eeb19b81a39159477ef621f5a9e9e6826572c9d9ec5",
-    "AutofillProfileEnvelope/invalid/missing-profile.json": "8b824ef1c97449f6a4451a0fa678ed8b5afffa231d5eaee25635ae2ee851e64f",
-    "AutofillProfileEnvelope/invalid/negative-revision.json": "cdb42155501dd07fd31104de50840208a7f18bc2fae4f909f8ae15b68f705fd1",
-    "AutofillProfileEnvelope/valid/golden.json": "7e864f69607e74d5b08c6fd212f339f6ce2ac8271dad352c4f5f9b5b1c7e1d53",
-    "AutofillProfileEnvelope/valid/no-row.json": "7354a3a6888da86fc3b13e82d96be26102704f301e85bd5d3dd972009917a45c",
+    "AutofillProfileEnvelope/invalid/missing-profile.json": "2e6f2a8d3c8e6dceed6e09140cab137565b62a2dbba33cdbc6332576c65e048b",
+    "AutofillProfileEnvelope/invalid/negative-revision.json": "cd665a798a6edf9149718ddd21d44709b6e8740c785c34945bece951e50f7dc4",
+    "AutofillProfileEnvelope/valid/golden.json": "e6e7381ab6523101a78f133a3ec68e091b9cd19128de214cb08d4db2d6fe6422",
+    "AutofillProfileEnvelope/valid/no-row.json": "412e22ca59926f8f773d7d03027bddf5ebea2a66030342e50394fbf5f1d80791",
     "AutofillRedeemBody/invalid/letter-u.json": "178040bdaa9e13515ec87a228ec6a595a5780fb91a19fae18726c0b8c6115eac",
     "AutofillRedeemBody/invalid/no-client.json": "793e4fd4c9be049d2089ea5cb803efdb6bc8d8cfd0a9accc0331a4cfb2ad42e6",
     "AutofillRedeemBody/invalid/short-code.json": "39a26db7a1de17ff8409c23bb41f862a9d39ee353cfb61bebed3679cb45e52cd",
@@ -116,10 +161,10 @@
     "AutofillRedeemBody/valid/golden.json": "c34caa080faa4912448f45ec575aa2d2a1b46569b5bb8d87e554a0689c8fc7df",
     "AutofillRedeemBody/valid/look-alike-letters.json": "10fac8f1a6bec78cc26a52d7a39396617dcfb34350c4a224edef49229690d827",
     "AutofillRedeemBody/valid/typed-code.json": "24f1431448dd3a24eeaa3b01f9621eb73c5fa520bf13518de0d1aab222736de4",
-    "AutofillRedeemResponse/invalid/foreign-token.json": "e0a5ed37be9f0a53335760c595c786fb257dedf9581f1b8268e642d87eed51a7",
-    "AutofillRedeemResponse/invalid/unknown-scope.json": "b005b2b958df8f8e35f79e21bbd93f04eb51b7cfeda5a96211468b4850f015d5",
-    "AutofillRedeemResponse/valid/golden.json": "dc7bc07a6492a28e40369d89da0f9a5469ec57cba28bdeba2724b58aa2f8394a",
-    "AutofillRedeemResponse/valid/without-sensitive.json": "8d3b7d6c1d0a5328f7ac78d51b97eb7b40f0f0ef60fa3342b846604f7934fb97",
+    "AutofillRedeemResponse/invalid/foreign-token.json": "804070463d6ec0900c9979bb4d4865ed372dc18c2ed25e2c164c7a5358c5d915",
+    "AutofillRedeemResponse/invalid/unknown-scope.json": "e722ae0d90d27dd5214d4b215dd346350bdadb678e14cfa94f7dda8e76b7cf0a",
+    "AutofillRedeemResponse/valid/golden.json": "79fb9c274f252e958b8d4cc10ba17ba7d7460a542259632c717b10316d07a706",
+    "AutofillRedeemResponse/valid/without-sensitive.json": "49b1f8640a27243aeb64119601555625eef4f4dbc82b05b995eeb7a6105135df",
     "AutofillResumeList/invalid/unknown-file-kind.json": "837aa7db5027680296c9f5a5ebdfab381a4b1df6497043cd575790676aa9114e",
     "AutofillResumeList/valid/golden.json": "4ac733a1f445e870dc1856a05e0eb30a35da5087681866905ab4d174bdd66393",
     "AutofillResumeList/valid/none.json": "ad13fbd1e9c76a3beae2d83d0bca99a43a150efdf5daddb4a29d00c8ffd8e615",
@@ -147,6 +192,7 @@
     "AutofillSeedQuery/invalid/empty-id.json": "902b4449b5a611018d359020b665ea780bd9f5b1a2e8340bc761ee943187916e",
     "AutofillSeedQuery/valid/default-resume.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "AutofillSeedQuery/valid/golden.json": "b0026a86abb1634fb8e4dae5eebf6d66015b87ded39bc21c6168c9621fac3f6f",
+    "AutofillSensitive/invalid/criminal-record-as-text.json": "24669e0356f1d3835b4505bba1f7249a6337d96a3c607866686d019089f3e08a",
     "AutofillSensitive/invalid/lower-case-currency.json": "89f63f00abe81c09b298a4fe9582d57fe88aa7303ae1c25140b928b1d7a417e9",
     "AutofillSensitive/invalid/no-race.json": "3f3723b82036638da4defa8988ede672720225144f38138e526c6332d2a9db82",
     "AutofillSensitive/invalid/one-sponsorship-answer.json": "fc8f2036155fb640c8161130c49029f4e9d984e3e809b3edda2e71a5369f2535",
@@ -154,27 +200,29 @@
     "AutofillSensitive/invalid/unknown-state.json": "66fc9b77e41d550b7d4539407cf37c17c6b60261578a83cece72e4149c2c6a28",
     "AutofillSensitive/invalid/unknown-work-status.json": "32ec8cac69640de28415f887a4ea3805aa9f441b1c465f1f32792dfde4faa4ee",
     "AutofillSensitive/invalid/value-without-value.json": "61614601ed46db751f34002dab81ca711761896940af2e79e224ab12d15f96ce",
-    "AutofillSensitive/valid/all-declined.json": "5af689546a84bfff379b5870ace06a25c337221e57d8c79b1ce60c3533894239",
+    "AutofillSensitive/valid/all-declined.json": "87fad58e3eafba181822dc5aec17c9cab63386f8e456115a7a74f104bbf548e4",
     "AutofillSensitive/valid/empty.json": "9659039a133b715fbbb379f8d9b9bdd7e6fa3fc1078986a1d49778f195240282",
-    "AutofillSensitive/valid/golden.json": "e740432f28d6b8cf08973a72845226c5d66ba75711bb91c5b2b8747c9721629a",
+    "AutofillSensitive/valid/golden.json": "7bff58d137abf0a73df69f4ed6d01512e7523a46a3fcffdbc889f4a37bd2e850",
     "AutofillSensitive/valid/self-described.json": "d75fa6a314928b404d930a32779fa7b28e2d8eb23d256f3753ab35868107fa2a",
-    "AutofillSensitiveEnvelope/invalid/local-time.json": "31c4a270bed4f063acd57b5e9cd588e4dc9977a269170dbb5df60a4a730f9f4a",
-    "AutofillSensitiveEnvelope/valid/golden.json": "46dc91b0bf85791235434e6f64e8fb50435c5675ca573a91b84150a7b1602134",
-    "AutofillSensitiveEnvelope/valid/no-row.json": "4caaa8af07b5bad2a199a6f0f78c5f8467a495a2cdc50debcd3e4e759001f898",
-    "AutofillSession/invalid/no-ai.json": "ddc9a5f262ce61528173deb264575cdfa1a1d87cb9efade55903b4c082b64768",
-    "AutofillSession/valid/golden.json": "280008a014bf8102a596c5d9ecce91aaa6e48ee9bb3ae7de6afcedd2cd009468",
-    "AutofillSession/valid/without-sensitive.json": "594ad90e7a3ca9f2ffbc5969bb1f7c4976d8526bfb95c2d3423e3406e56625ee",
+    "AutofillSensitiveEnvelope/invalid/local-time.json": "b6b2fbc2d82bdb2a60857c5ea14e9dd986d1c6408a57c92dbd7c6cb4d9ab9b11",
+    "AutofillSensitiveEnvelope/valid/golden.json": "3b7722566f4ee9f86a66c82b9545c12a1bda52b69b36e18b1c3f5885fc41693f",
+    "AutofillSensitiveEnvelope/valid/no-row.json": "061eb2db61c12b21d9835832ed3757e6107b73731671c6d4a14b9aa6e3b0dafa",
+    "AutofillSession/invalid/no-ai.json": "c82f850f046879460e423166ca560b309857afab2f8333ac62e8f9e4b13c833e",
+    "AutofillSession/valid/golden.json": "98a473486f5e928215dc44d076d763552c7837386f583a5c98f7c95b9995a8f2",
+    "AutofillSession/valid/without-sensitive.json": "8cb06b99cf494aa1347f79bbe5c0836f6676e23f3d54aebd298e79d9122c4bb3",
     "AutofillTaskAccepted/invalid/no-task-id.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "AutofillTaskAccepted/invalid/not-a-uuid.json": "533a6acca25c542ed5adc3c6413cbdbf6a3cf6a4615cdcb6c0ebfe1f3a334a69",
     "AutofillTaskAccepted/valid/golden.json": "d1595b4020d355682291c70bc32762e3150d9315ae3169eab1d683e565082958",
     "AutofillTaskView/invalid/cover-letter-kind.json": "2a9ec9ea259bf8df31fee9b5557b95bfba8e0ffaea3bdcdee0ef00db132d72a7",
     "AutofillTaskView/invalid/pick-without-picks.json": "5ca6bdf0bbea8f0e3103a484993da018faf16b35dceaf5d294f5ed92621d49d5",
+    "AutofillTaskView/valid/answer-running.json": "86f4eb772f5e982c39609500397301b25cf833a822c12e66068da5bfb0a9ad76",
+    "AutofillTaskView/valid/answer.json": "3707c2c59f177e08301bd21bce953ddeb474e395bca93e7a374194983e473359",
     "AutofillTaskView/valid/cancelled.json": "4148f7e134e26f13f4697883d2fcbba90493d19b94953aa31bc4425efeba99db",
     "AutofillTaskView/valid/classify.json": "e7157d124a56fde918347077e5fa47df03eb7c1c65d0a58bf6c73a2d63e12a37",
     "AutofillTaskView/valid/draft-running.json": "6816bedc929fe2d9ea89fc477e030e794708c7b5ea10cdc1db74f35f38764378",
     "AutofillTaskView/valid/golden.json": "f31ec7f1db7a418d1aca53fba55ce832a2a8bfb1d89400da11aa8672169170cf",
-    "AutofillTokenList/invalid/no-total.json": "6ba532350a8f18b916aabaca4edd5eea5109b50e95f14c50c36b4ea3d85c45f6",
-    "AutofillTokenList/valid/golden.json": "852d159b1b7738071309aefe8b660c76494b4e058547bfece78fb6c64379e846",
+    "AutofillTokenList/invalid/no-total.json": "c488803bd648ccd9d1c3b7cc7a351e124193654a59eae17a1dc21fc832e7950b",
+    "AutofillTokenList/valid/golden.json": "6b2182592cd4defa6b0289ceb2bb9412aca6bb1fe5d13d1d1c78b167f7d1fb82",
     "AutofillTokenList/valid/none.json": "70687c8fa319500122348b82c7c442f45cb27c5e4c1791a0fae18d46acc50f05",
     "AutofillTokenList/valid/unknown-client.json": "af48a0a4779bc1eea68a5e24b4845cb36da4323b14530beff7da76cab142317d",
     "PutAutofillProfileBody/invalid/country-twice.json": "3b5942d182e552432008e5a5d1b26ed5ec70c1288b888af0feb4bbfa25607938",
@@ -186,10 +234,10 @@
     "PutAutofillProfileBody/invalid/same-entry-id.json": "7dd8a8dac284dcf92e315173c466eef6ca531cde5aed68c4e06c00ed7bd43af2",
     "PutAutofillProfileBody/invalid/self-describe-without-words.json": "4317f2d4748f52f495f6d007d959d25bc95d0129f1f5aef33a24594b0b47e564",
     "PutAutofillProfileBody/valid/first-save.json": "93ab68904ca9537da802dac4b7d53dfc02f4aea64602b48013a0161344e9a48a",
-    "PutAutofillProfileBody/valid/golden.json": "d41d64cbcda4a6a1a4c45a358007a45a030c14066b1b147c8164171071584fa8",
+    "PutAutofillProfileBody/valid/golden.json": "55b19ffa78f4c9206df00cc342ec7d0d3ec5cf3ce9f3f0c4845d5638165c1337",
     "PutAutofillProfileBody/valid/year-and-month.json": "7f1ed281bd26bbcd2a53927ec1844524fc2f63deef4ee712b4ed069cc0908b1d",
     "PutAutofillProfileResponse/invalid/never-saved.json": "9535de822ea124de069bc1bcb553a9e5ab36dd718d714f3654bbc3f700da7a17",
-    "PutAutofillProfileResponse/valid/golden.json": "71b2f2859d041b39aa563c4f8b5065ec5855271029bebe2e076afe7b5d219b4f",
+    "PutAutofillProfileResponse/valid/golden.json": "d938f97acf36fc361fe475618dc2cb445d12510a59eeb6351bf618b2fa393643",
     "PutAutofillSavedAnswerBody/invalid/company-scope-for-a-checkbox.json": "e9be042840ef79730e2915febc4aafe7e068a90e03ddc6a9a92ce744f87041e9",
     "PutAutofillSavedAnswerBody/invalid/file.json": "09d3c562a0cb8eb5d9a8af156ed7bd78625cae6e7e2026b1dc754b9a2dc14515",
     "PutAutofillSavedAnswerBody/invalid/no-answer.json": "c564711c4708e0a25f077aa095cbcb799555c793194ec3949b0419354511670c",
@@ -358,7 +406,9 @@
               "resumes:read",
               "jobs:lookup",
               "ai:run",
-              "answers:write"
+              "answers:write",
+              "jobs:add",
+              "letters:write"
             ]
           }
         },
@@ -422,7 +472,9 @@
                   "resumes:read",
                   "jobs:lookup",
                   "ai:run",
-                  "answers:write"
+                  "answers:write",
+                  "jobs:add",
+                  "letters:write"
                 ]
               }
             },
@@ -523,7 +575,9 @@
                     "resumes:read",
                     "jobs:lookup",
                     "ai:run",
-                    "answers:write"
+                    "answers:write",
+                    "jobs:add",
+                    "letters:write"
                   ]
                 }
               },
@@ -1856,10 +1910,61 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "criminalRecord": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "required": [
-            "atLeast18"
+            "atLeast18",
+            "criminalRecord"
           ],
           "additionalProperties": false
         },
@@ -3306,10 +3411,61 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "criminalRecord": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
-                "atLeast18"
+                "atLeast18",
+                "criminalRecord"
               ],
               "additionalProperties": false
             },
@@ -4713,10 +4869,61 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "criminalRecord": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
-                "atLeast18"
+                "atLeast18",
+                "criminalRecord"
               ],
               "additionalProperties": false
             },
@@ -6124,10 +6331,61 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "criminalRecord": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
-                "atLeast18"
+                "atLeast18",
+                "criminalRecord"
               ],
               "additionalProperties": false
             },
@@ -6990,6 +7248,11 @@
         "includePostingText": {
           "default": false,
           "type": "boolean"
+        },
+        "resumeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "required": [
@@ -7073,6 +7336,39 @@
                 "postingText": {
                   "type": "string",
                   "maxLength": 20000
+                },
+                "postedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "salary": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "workArrangement": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "remote",
+                        "hybrid",
+                        "onsite"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -7170,6 +7466,7 @@
                 "reason": {
                   "type": "string",
                   "enum": [
+                    "chosen",
                     "application",
                     "profile",
                     "best_match",
@@ -7193,6 +7490,86 @@
               "type": "null"
             }
           ]
+        },
+        "match": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "ok"
+                    },
+                    "resumeId": {
+                      "type": "string"
+                    },
+                    "matchedCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "percentage": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "resumeId",
+                    "matchedCount",
+                    "total",
+                    "percentage"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "no_keywords"
+                    },
+                    "resumeId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "resumeId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "unreadable"
+                    },
+                    "resumeId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "resumeId"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -7200,6 +7577,358 @@
         "job",
         "application",
         "suggestedResume"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillAddJobRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "resumeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillAddJobResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "created": {
+          "type": "boolean"
+        },
+        "lookup": {
+          "type": "object",
+          "properties": {
+            "ats": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "greenhouse",
+                        "lever",
+                        "ashby",
+                        "workday"
+                      ]
+                    },
+                    "board": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "board",
+                    "externalId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "job": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "companyName": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "source_link",
+                        "link_key"
+                      ]
+                    },
+                    "postingText": {
+                      "type": "string",
+                      "maxLength": 20000
+                    },
+                    "postedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "salary": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "workArrangement": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "remote",
+                            "hybrid",
+                            "onsite"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "companyName",
+                    "location",
+                    "active",
+                    "matchedBy"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "application": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "trackedOn": {
+                      "type": "string"
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "resumeId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "matchedBy": {
+                      "type": "string",
+                      "enum": [
+                        "job",
+                        "posting_url"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "trackedOn",
+                    "archived",
+                    "resumeId",
+                    "matchedBy"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "suggestedResume": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "built",
+                        "uploaded"
+                      ]
+                    },
+                    "fileKind": {
+                      "type": "string",
+                      "enum": [
+                        "pdf",
+                        "docx",
+                        "doc"
+                      ]
+                    },
+                    "fileName": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "chosen",
+                        "application",
+                        "profile",
+                        "best_match",
+                        "only_resume",
+                        "default",
+                        "latest"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "kind",
+                    "fileKind",
+                    "fileName",
+                    "reason"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "match": {
+              "anyOf": [
+                {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "ok"
+                        },
+                        "resumeId": {
+                          "type": "string"
+                        },
+                        "matchedCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "total": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "percentage": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "resumeId",
+                        "matchedCount",
+                        "total",
+                        "percentage"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "no_keywords"
+                        },
+                        "resumeId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "resumeId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "unreadable"
+                        },
+                        "resumeId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "resumeId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "ats",
+            "job",
+            "application",
+            "suggestedResume"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "created",
+        "lookup"
       ],
       "additionalProperties": false
     },
@@ -7972,6 +8701,10 @@
                     "type": "null"
                   }
                 ]
+              },
+              "currentAnswer": {
+                "type": "string",
+                "maxLength": 5000
               }
             },
             "required": [
@@ -8160,6 +8893,455 @@
               },
               "required": [
                 "drafts"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "result",
+        "error",
+        "createdAt",
+        "startedAt",
+        "finishedAt"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillAnswerRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "items": {
+          "minItems": 1,
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "choice",
+                  "text"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "select",
+                  "radio",
+                  "checkbox",
+                  "checkbox-group",
+                  "combobox",
+                  "multiselect",
+                  "typeahead-remote",
+                  "date",
+                  "file"
+                ]
+              },
+              "question": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "hint": {
+                "default": "",
+                "type": "string",
+                "maxLength": 500
+              },
+              "section": {
+                "default": "",
+                "type": "string",
+                "maxLength": 200
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "options": {
+                "default": [],
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "index": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "required": [
+                    "index",
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "maxLength": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "shape",
+              "kind",
+              "question",
+              "hint",
+              "section",
+              "optionSetHash",
+              "options",
+              "maxLength"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "jobText": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "company": {
+          "default": "",
+          "type": "string",
+          "maxLength": 200
+        },
+        "jobTitle": {
+          "default": "",
+          "type": "string",
+          "maxLength": 200
+        },
+        "resumeId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canaries": {
+          "default": [],
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 200
+          }
+        }
+      },
+      "required": [
+        "items",
+        "jobText",
+        "company",
+        "jobTitle",
+        "resumeId",
+        "canaries"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillAnswerResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "answers": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "optionSetHash": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{16}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "index": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "basis": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "resume",
+                      "profile",
+                      "job",
+                      "guess"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "answered",
+                  "no_answer",
+                  "invalid",
+                  "too_long",
+                  "canary",
+                  "ai_reference",
+                  "wrapper",
+                  "contact",
+                  "sensitive"
+                ]
+              }
+            },
+            "required": [
+              "key",
+              "optionSetHash",
+              "index",
+              "text",
+              "basis",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "answers"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillAnswerTask": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "autofill_answer"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "answers": {
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                      },
+                      "optionSetHash": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "index": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "text": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "basis": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "resume",
+                              "profile",
+                              "job",
+                              "guess"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "enum": [
+                          "answered",
+                          "no_answer",
+                          "invalid",
+                          "too_long",
+                          "canary",
+                          "ai_reference",
+                          "wrapper",
+                          "contact",
+                          "sensitive"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "optionSetHash",
+                      "index",
+                      "text",
+                      "basis",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "answers"
               ],
               "additionalProperties": false
             },
@@ -8663,6 +9845,195 @@
                   },
                   "required": [
                     "drafts"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "finishedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "status",
+            "result",
+            "error",
+            "createdAt",
+            "startedAt",
+            "finishedAt"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "kind": {
+              "type": "string",
+              "const": "autofill_answer"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "answers": {
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300
+                          },
+                          "optionSetHash": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "index": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "text": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "basis": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "resume",
+                                  "profile",
+                                  "job",
+                                  "guess"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "answered",
+                              "no_answer",
+                              "invalid",
+                              "too_long",
+                              "canary",
+                              "ai_reference",
+                              "wrapper",
+                              "contact",
+                              "sensitive"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "optionSetHash",
+                          "index",
+                          "text",
+                          "basis",
+                          "reason"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "answers"
                   ],
                   "additionalProperties": false
                 },
@@ -9409,6 +10780,16 @@
       "accepted": null
     },
     {
+      "method": "POST",
+      "path": "/api/autofill/jobs",
+      "caller": "either",
+      "scope": "jobs:add",
+      "request": "AutofillAddJobRequest",
+      "status": 200,
+      "response": "AutofillAddJobResponse",
+      "accepted": null
+    },
+    {
       "method": "GET",
       "path": "/api/autofill/resumes",
       "caller": "either",
@@ -9456,6 +10837,16 @@
       "request": "AutofillDraftRequest",
       "status": 200,
       "response": "AutofillDraftTask",
+      "accepted": "AutofillTaskAccepted"
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/ai/answer",
+      "caller": "either",
+      "scope": "ai:run",
+      "request": "AutofillAnswerRequest",
+      "status": 200,
+      "response": "AutofillAnswerTask",
       "accepted": "AutofillTaskAccepted"
     },
     {

@@ -45,15 +45,29 @@
  *   settings.llm.drafts on (never in a dry run), a free-text question no saved answer fills waits for a draft
  *   (drafts.ts: `ask.drafts`), unless it sits in an EEO, legal or sensitive context (its screen, the question that
  *   revealed it by PlanInput.revealEdges, its section's, the one it follows up: E2); the run's draft, once in
- *   (`ai.drafts`), is written as an llm-draft through guardWrite, always flagged, and a discarded or over-long one
- *   leaves the field flagged with its reason. The writes' matches the accepted-match cache may take once accepted are
+ *   (`ai.drafts`), is written as an llm-draft through guardWrite, and a discarded or over-long one leaves the field
+ *   flagged with its reason. The writes' matches the accepted-match cache may take once accepted are
  *   `cacheCandidates`, and the cache entries a match found stale `cacheDrops`: both for the worker, never for the
  *   frame.
+ * - The owner's amendments (docs/SPEC-AMENDMENTS.md, "fill everything"): a draft is accepted as written
+ *   (llm-draft-written, verified, nothing asked of the person) unless settings.llm.confirmDrafts keeps the Phase 6
+ *   confirmation. With settings.llm.answers on (never in a dry run), a question nothing else settled, and no tiebreak
+ *   or classification waits on, waits for TailorIT's answer (answers.ts: `ask.answers`); the run's answer, once in
+ *   (`ai.answers`), is written as an llm-pick of one of the field's own options (its hash checked against the option
+ *   now) or an llm-answer text, through guardWrite, verified and needing nothing of the person: `ai-guess` when it
+ *   rests on nothing, else llm-answer-written. A run that fills from the profile only (PlanInput.noAi: the posting
+ *   forbids AI), or a frame whose scan holds an "I did not use AI" attestation (unless the person's setting is to use
+ *   the AI anyway: `aiAttestation` then tells the frame), asks the LLM nothing at all: a question only a draft or an
+ *   answer could fill is left flagged with ai-off-for-posting. PlanInput.posting gives the lookup's company and
+ *   location: "Have you worked here before?" and interpretation 1's country.
+ * - Edit with AI: `aiEditable` names the planned text boxes the page may offer the button on (drafts.ts
+ *   aiEditableField; never in a dry run or a profile-only run). A request with PlanInput.rewrite plans that one field:
+ *   its draft is asked with what it holds now, and written over it once in.
  * - Save my answer (T6-1): `savable` names the planned fields whose answer the person may save, so the frame offers
  *   Save my answer on those only: a class whose saved answers are not 'never', a kind a saved answer can fill, and a
  *   question the classify screen lets through. Every other planned field, and any field no plan named, offers none.
  */
-import { FLAG_AT, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
+import { FLAG_AT, LLM_ANSWER, LLM_DRAFT, MATCH_LLM_PICK, TIEBREAK_LABEL_MAX } from '../confidence';
 import type { MatcherStage } from '../enums';
 import { extractCanaries, persistableCanaries, profileIndex } from '../guard/canary';
 import { checkHoneypot, llmMaySeeLabel } from '../guard/honeypot';
@@ -67,7 +81,7 @@ import { prepareOptions } from '../matcher/prepare';
 import type { MatchInput, PreparedOptions, TiebreakItem } from '../matcher/types';
 import { parseSelectionHints, selectionLimits } from '../multiselect/hints';
 import { planMultiSelect, type MultiSelectValue } from '../multiselect/plan';
-import type { Choice } from '../resolver/candidate';
+import { NOTE_REASONS, type Choice } from '../resolver/candidate';
 import { classifiable, classifyItemOf, judgeClassification, SCREENED, screenForClassify, type ClassifyItem } from
   '../resolver/classify';
 import { actionFor, classifyField, resolveField, type FieldClassification, type ResolvedField, type Shaped } from
@@ -75,14 +89,19 @@ import { actionFor, classifyField, resolveField, type FieldClassification, type 
 import { planRepeatables } from '../steps/blocks';
 import { sectionKey } from '../text/keys';
 import { normalizeLabel } from '../text/normalize';
+import { sha256Hex } from '../text/sha256';
 import { asUntrusted } from '../text/untrusted';
-import type { FieldSpec } from '../types/field';
+import type { FieldKey, FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../types/fill';
 import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../types/intent';
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
-import { draftItemOf, draftRefusal, type DraftContext, type DraftItem, type DraftVerdict } from './drafts';
+import { postingCountryOf } from '../resolver/policy';
+import { answerItemOf, answerRefusal, type AnswerItem, type AnswerVerdict } from './answers';
+import {
+  aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
+} from './drafts';
 import type { CacheCandidate, PlanInput, PlanOutput } from './types';
 
 /** The match of a write with no options to choose from (text, a box, a date, a file, queries). */
@@ -435,8 +454,9 @@ interface FieldPlan {
 
 /**
  * A free-text field with its draft (drafts.ts): the draft written as an llm-draft through guardWrite (its canary scan
- * included), always flagged for the person's confirmation; or, for a draft TailorIT discarded or one past the field's
- * cap, a flagged row with the reason, and nothing written. A Guard refusal blocks it, as any write's.
+ * included), accepted as written (llm-draft-written, verified), or flagged for the person's confirmation while
+ * settings.llm.confirmDrafts is on; or, for a draft TailorIT discarded or one past the field's cap, a flagged row with
+ * the reason, and nothing written. A Guard refusal blocks it, as any write's.
  */
 function planDraft(spec: FieldSpec, resolution: Resolution, verdict: DraftVerdict, ctx: FieldPlanContext): FieldPlan {
   const { category } = resolution;
@@ -449,13 +469,74 @@ function planDraft(spec: FieldSpec, resolution: Resolution, verdict: DraftVerdic
   if (!guarded.ok) {
     return { row: rowWithout(spec, category, refusedStatus(spec, guarded.reason), guarded.reason, LLM_DRAFT) };
   }
+  const confirm = ctx.input.settings.llm.confirmDrafts;
   return {
     write,
     row: {
       key: spec.key, label: spec.label, kind: spec.kind, category, section: sectionKey(spec.section),
-      required: spec.required, status: 'flagged', provenance: 'llm-draft', matcherStage: 'not-applicable',
-      confidence: LLM_DRAFT, reason: 'llm-draft-needs-confirmation', wrote: false, verification: 'not-checked',
-      needsUserAction: true,
+      required: spec.required, status: confirm ? 'flagged' : 'verified', provenance: 'llm-draft',
+      matcherStage: 'not-applicable', confidence: LLM_DRAFT,
+      reason: confirm ? 'llm-draft-needs-confirmation' : 'llm-draft-written', wrote: false, verification: 'not-checked',
+      needsUserAction: confirm,
+    },
+  };
+}
+
+/** The reasons an AI answer's absence leaves an optional question skipped: the AI had none, could not be reached, or
+ *  was never asked. */
+const QUIET_GAPS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['llm-no-answer', 'llm-unavailable',
+  'llm-disabled-for-category']);
+
+/** The text an option's label is sent as to an LLM (the tiebreak's and the answer's), whose hash an llm-pick names. */
+function sentLabelOf(label: string): string {
+  return asUntrusted(cutInjected(label).clean as VisibleText, TIEBREAK_LABEL_MAX);
+}
+
+/**
+ * A field with its AI answer (answers.ts): a choice written as an llm-pick of the option it names (still enabled, its
+ * option set and its label's hash unchanged since it was sent), a text as an llm-answer within the field's cap, each
+ * through guardWrite (its canary scan included), verified and needing nothing of the person: `ai-guess` when the answer
+ * rests on nothing, else llm-answer-written. An answer TailorIT did not give, or one that no longer fits the field,
+ * leaves the row planField gave (`standing`), flagged with its reason unless the field could be skipped.
+ */
+function planAnswer(spec: FieldSpec, resolution: Resolution, standing: FillResult, verdict: AnswerVerdict,
+  ctx: FieldPlanContext): FieldPlan {
+  const { category } = resolution;
+  // An optional question the AI had no answer for stays skipped; any other gap, or a refused answer, is flagged.
+  const left = (reason: ReasonCode): FieldPlan => ({ row: standing.status === 'skipped' && QUIET_GAPS.has(reason)
+    ? standing : rowWithout(spec, category, 'flagged', reason, 0) });
+  if (verdict.kind === 'none') return left(verdict.why);
+  let write: PlannedWrite;
+  if (verdict.kind === 'choice') {
+    if (spec.options === 'lazy' || spec.optionSetHash !== verdict.optionSetHash) return left('options-changed');
+    const option = spec.options.find((candidate) => candidate.index === verdict.index);
+    if (option === undefined || option.disabled) return left('llm-pick-rejected');
+    const cut = cutInjected(option.label);
+    if (cut.injected || cut.clean === '' || sha256Hex(sentLabelOf(option.label)) !== verdict.labelHash) {
+      return left('llm-pick-rejected');
+    }
+    write = { key: spec.key, value: { kind: 'option', index: option.index, cleanLabel: cut.clean },
+      origin: { provenance: 'llm-pick', taskId: verdict.taskId, pickedCandidate: option.index,
+        labelHash: verdict.labelHash },
+      match: { stage: 'llm', optionIndex: option.index, rule: 'llm-index', confidence: LLM_ANSWER, flags: [],
+        suggestions: [], reason: 'ok' } };
+  } else {
+    const refusal = answerRefusal(spec, verdict.text);
+    if (refusal !== null) return left(refusal);
+    write = { key: spec.key, value: { kind: 'text', text: verdict.text },
+      origin: { provenance: 'llm-answer', taskId: verdict.taskId, basis: verdict.basis }, match: NOT_APPLICABLE };
+  }
+  const guarded = guardWrite(write, { spec, category }, ctx.guard);
+  if (!guarded.ok) {
+    return { row: rowWithout(spec, category, refusedStatus(spec, guarded.reason), guarded.reason, LLM_ANSWER) };
+  }
+  return {
+    write,
+    row: {
+      key: spec.key, label: spec.label, kind: spec.kind, category, section: sectionKey(spec.section),
+      required: spec.required, status: 'verified', provenance: write.origin.provenance, matcherStage: write.match.stage,
+      confidence: LLM_ANSWER, reason: verdict.basis === 'guess' ? 'ai-guess' : 'llm-answer-written', wrote: false,
+      verification: 'not-checked', needsUserAction: false,
     },
   };
 }
@@ -477,7 +558,9 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   if ('asked' in planned) return { row: planned.row, asked: planned.asked };
   if (!('value' in planned)) return { row: planned };
   const confidence = round(resolution.confidence * planned.match.confidence);
-  const flag = planned.flag ?? (resolution.reason !== 'ok' ? resolution.reason : undefined)
+  // A note (the decline default) names how the value came without flagging it.
+  const note = NOTE_REASONS.has(resolution.reason) ? resolution.reason : undefined;
+  const flag = planned.flag ?? (resolution.reason !== 'ok' && note === undefined ? resolution.reason : undefined)
     ?? (planned.match.reason !== 'ok' ? planned.match.reason : undefined);
   const action = actionFor(confidence, flag !== undefined || planned.match.flags.some((item) => FORCING_FLAGS.has(item)));
   if (action === 'leave-blank') {
@@ -497,7 +580,7 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
     return { row: rowWithout(spec, resolution.category, refusedStatus(spec, verdict.reason), verdict.reason, confidence) };
   }
   const status: FillResult['status'] = action === 'fill' ? 'verified' : 'flagged';
-  const reason: ReasonCode = flag ?? (action === 'fill-and-flag' ? 'filled-low-confidence' : 'ok');
+  const reason: ReasonCode = flag ?? (action === 'fill-and-flag' ? 'filled-low-confidence' : note ?? 'ok');
   return {
     write,
     ...(planned.cache !== undefined ? { cache: planned.cache } : {}),
@@ -533,11 +616,32 @@ function categoryOf(classification: FieldClassification): FieldCategory | null {
   return classification.by === 'rules' ? classification.rules.category ?? null : null;
 }
 
+/** Whether a field is an "I did not use AI" attestation (the rules' category, what they hand to the person, or one
+ *  of the consent kinds its label names). */
+function attestsNoAi(classification: FieldClassification): boolean {
+  const rules = classification.by === 'rules' || classification.by === 'tripwire' ? classification.rules : null;
+  if (classification.by === 'attention') return classification.consent === 'consent.aiAttestation';
+  if (rules === null) return false;
+  return rules.category === 'consent.aiAttestation' || rules.asks === 'consent.aiAttestation'
+    || (rules.consentKinds ?? []).includes('consent.aiAttestation');
+}
+
+/** The settings with every LLM step off: a run that fills from the profile only. */
+function withoutAi(settings: PlanInput['settings']): PlanInput['settings'] {
+  return { ...settings, llm: { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false } };
+}
+
 /** One plan/request (types.ts): every field of planKeys (every spec without them) resolved, matched, planned and
  *  guarded, each with a value-free row; the other specs are read for context only (the Phase 3 review, LC-2). */
-export function planFrame(input: PlanInput): PlanOutput {
-  const { profile } = input;
-  const kept = persistableCanaries(input.canaries, profile);
+export function planFrame(asked: PlanInput): PlanOutput {
+  const { profile } = asked;
+  const kept = persistableCanaries(asked.canaries, profile);
+  // An "I did not use AI" attestation anywhere in the frame's scan makes it a profile-only frame, as a posting that
+  // forbids AI does (unless the person's setting is to use the AI anyway).
+  const attestation = asked.specs.some((spec) => attestsNoAi(classifyField(spec)));
+  const aiOff = asked.noAi === true || (attestation && asked.settings.llm.whenForbidden !== 'use-ai');
+  const input: PlanInput = aiOff ? { ...asked, settings: withoutAi(asked.settings) } : asked;
+  const wantedLlm = asked.settings.llm;
   // Each requested section's blocks get their entries (a prefilled block its own) before anything is resolved.
   const repeatables = planRepeatables(input.repeatables ?? [], input.specs, profile, input.vocab);
   const blockEntries = Object.fromEntries(repeatables.map((answer) => [answer.kind, answer.entries]));
@@ -551,26 +655,37 @@ export function planFrame(input: PlanInput): PlanOutput {
     .map((field) => sectionKey(field.spec.section)));
   const chosen = classified.filter((field) => wanted === null || wanted.has(field.spec.key));
   const specs = chosen.map((field) => field.spec);
+  const posting = input.posting ?? {};
+  const postingCountry = posting.location === undefined ? undefined : postingCountryOf(posting.location, input.vocab);
   const resolveWith = (spec: FieldSpec, classification: FieldClassification) => resolveField(spec, {
     profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
     ...(input.company !== undefined ? { company: input.company } : {}),
     ...(repeatables.length > 0 ? { blockEntries } : {}),
+    ...(postingCountry !== undefined ? { postingCountry } : {}),
+    ...(posting.company !== undefined && posting.company.trim() !== '' ? { postingCompany: posting.company } : {}),
   }, classification);
   // Only a field that could be written asks for the sensitive part or the LLM: never a honeypot, a disabled control or
   // a field no visible label names (checkHoneypot).
   const writable = (spec: FieldSpec) => checkHoneypot(spec).ok && !spec.disabled && !spec.readOnly;
   const classify: ClassifyItem[] = [];
-  const resolved = chosen.map(({ spec, classification }) => {
+  // What classified each planned field in the end: the rules', or the LLM's once it answered (for a draft's, an
+  // answer's and Edit with AI's checks).
+  const decided: FieldClassification[] = chosen.map((field) => field.classification);
+  const resolved = chosen.map(({ spec, classification }, at) => {
     const first = resolveWith(spec, classification);
     // Step 5: a field nothing classified, not even a saved answer, goes to the LLM (settings.llm.classify), screened
     // first; the run's answer, once it has one, decides it.
     if (classification.by !== 'none' || first.resolution.classifiedBy !== 'none' || !input.settings.llm.classify
       || !writable(spec) || !classifiable(spec)) return first;
-    if (screenForClassify(spec, input.vocab) !== null) return resolveWith(spec, { by: 'llm', llm: SCREENED });
+    if (screenForClassify(spec, input.vocab) !== null) {
+      decided[at] = { by: 'llm', llm: SCREENED };
+      return resolveWith(spec, decided[at]!);
+    }
     const verdict = input.ai?.classifications.get(spec.key);
     if (verdict !== undefined) {
-      return resolveWith(spec, { by: 'llm', llm: judgeClassification(spec, verdict, input.vocab) });
+      decided[at] = { by: 'llm', llm: judgeClassification(spec, verdict, input.vocab) };
+      return resolveWith(spec, decided[at]!);
     }
     const item = classifyItemOf(spec);
     if (item !== null) classify.push(item);
@@ -585,35 +700,78 @@ export function planFrame(input: PlanInput): PlanOutput {
     profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers };
   const ctx: FieldPlanContext = { input, guard, drops: new Set() };
   // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
-  // the run's draft when there is one, and is asked for otherwise.
+  // the run's draft when there is one, and is asked for otherwise. Then answers (the owner's amendments): a question
+  // nothing else settled, and no tiebreak or classification waits on, takes the run's answer, or is asked. A
+  // profile-only run asks neither, and rows what only they could fill as ai-off-for-posting.
   const drafting = input.settings.llm.drafts && !input.dryRun;
+  const answering = input.settings.llm.answers && !input.dryRun;
   const draftContext: DraftContext = { fields: classified, revealEdges: input.revealEdges ?? [], vocab: input.vocab };
   const drafts: DraftItem[] = [];
+  const answers: AnswerItem[] = [];
+  const classifying = new Set<string>(classify.map((item) => item.key));
+  const offAi = (row: FillResult): FillResult => (row.status === 'skipped' ? row
+    : { ...row, status: 'flagged', reason: 'ai-off-for-posting', needsUserAction: true });
   const planned = specs.map((spec, at) => {
     const field = resolved[at]!;
-    const item = drafting ? draftItemOf(spec, chosen[at]!.classification, field.resolution, writable(spec), draftContext)
-      : null;
+    const classification = decided[at]!;
+    const canWrite = writable(spec);
+    // Edit with AI (the person's click): this field's draft, asked with what it holds now, written over it once in.
+    if (input.rewrite === spec.key && !aiOff && !input.dryRun) {
+      const standing = planField(spec, field, ctx);
+      const item = rewriteItemOf(spec, classification, field.resolution, standing.row, canWrite, draftContext);
+      if (item !== null) {
+        const verdict = input.ai?.drafts?.get(spec.key);
+        if (verdict !== undefined) return { spec, ...planDraft(spec, field.resolution, verdict, ctx) };
+        drafts.push(item);
+      }
+      return { spec, ...standing };
+    }
+    const wouldDraft = drafting || (aiOff && wantedLlm.drafts && !input.dryRun);
+    const item = wouldDraft ? draftItemOf(spec, classification, field.resolution, canWrite, draftContext) : null;
     if (item !== null) {
+      const standing = planField(spec, field, ctx);
+      if (aiOff) return { spec, ...standing, row: offAi(standing.row) };
       const verdict = input.ai?.drafts?.get(spec.key);
       if (verdict !== undefined) return { spec, ...planDraft(spec, field.resolution, verdict, ctx) };
       drafts.push(item);
+      return { spec, ...standing };
     }
-    return { spec, ...planField(spec, field, ctx) };
+    const standing = planField(spec, field, ctx);
+    const wouldAnswer = answering || (aiOff && wantedLlm.answers && !input.dryRun);
+    if (!wouldAnswer || standing.write !== undefined || standing.asked !== undefined || classifying.has(spec.key)) {
+      return { spec, ...standing };
+    }
+    const question = answerItemOf(spec, classification, field.resolution, standing.row, canWrite, draftContext);
+    if (question === null) return { spec, ...standing };
+    if (aiOff) return { spec, ...standing, row: offAi(standing.row) };
+    const verdict = input.ai?.answers?.get(spec.key);
+    if (verdict !== undefined) return { spec, ...planAnswer(spec, field.resolution, standing.row, verdict, ctx) };
+    answers.push(question);
+    return { spec, ...standing };
   });
   const writes = planned.filter((field) => field.write !== undefined)
     .sort((a, b) => a.spec.domOrder - b.spec.domOrder).map((field) => field.write!);
   const tiebreaks = planned.flatMap((field) => field.asked === undefined ? [] : [field.asked]);
-  const asking = new Set<string>([...classify.map((item) => item.key), ...drafts.map((item) => item.key), ...planned
-    .filter((field) => field.asked !== undefined).map((field) => field.spec.key)]);
+  const asking = new Set<string>([...classify.map((item) => item.key), ...drafts.map((item) => item.key),
+    ...answers.map((item) => item.key), ...planned.filter((field) => field.asked !== undefined)
+      .map((field) => field.spec.key)]);
   const awaiting = specs.filter((spec) => asking.has(spec.key)).map((spec) => spec.key);
   const cacheCandidates = input.dryRun ? [] : planned.flatMap((field) => (field.write === undefined ? []
     : field.cache ?? []));
   const savable = planned.filter((field) => savableField(field.spec, field.row, input.vocab))
     .map((field) => field.spec.key);
+  // Edit with AI: the planned text boxes the page may offer it on, none still asked about (its answer comes with the
+  // poll that brings it); never in a dry run or a profile-only frame.
+  const aiEditable: FieldKey[] = input.dryRun || aiOff ? [] : planned.flatMap((field, at) => (!asking.has(field.spec.key)
+    && aiEditableField(field.spec, decided[at]!, resolved[at]!.resolution, field.row,
+      writable(field.spec), draftContext) ? [field.spec.key] : []));
   return { writes: input.dryRun ? [] : writes, results: planned.map((field) => field.row), awaiting,
     ...(savable.length > 0 ? { savable } : {}),
-    ...(awaiting.length > 0 ? { ask: { tiebreaks, classify, ...(drafts.length > 0 ? { drafts } : {}) } } : {}),
+    ...(awaiting.length > 0 ? { ask: { tiebreaks, classify, ...(drafts.length > 0 ? { drafts } : {}),
+      ...(answers.length > 0 ? { answers } : {}) } } : {}),
     needsSensitive: false, persistableCanaries: kept, ...sections,
     ...(cacheCandidates.length > 0 ? { cacheCandidates } : {}),
-    ...(ctx.drops.size > 0 ? { cacheDrops: [...ctx.drops] } : {}) };
+    ...(ctx.drops.size > 0 ? { cacheDrops: [...ctx.drops] } : {}),
+    ...(aiEditable.length > 0 ? { aiEditable } : {}),
+    ...(attestation ? { aiAttestation: true as const } : {}) };
 }

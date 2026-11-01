@@ -38,8 +38,8 @@ import { noticeToneOf } from '../../shared/palette';
 import type { FrameReport } from '../../shared/report';
 import { Icon } from '../brand/Icon';
 import {
-  awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, needsPerson, offersSave, overallStatus, percent,
-  policyFromStoredCopy, rowIconOf, sectionsOf, stepText, stripToneOf, tallyOf, type ReportRow,
+  aiCountsOf, aiMarkOf, awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, needsPerson, offersSave, overallStatus,
+  percent, policyFromStoredCopy, rowIconOf, sectionName, sectionsOf, stepText, stripToneOf, tallyOf, type ReportRow,
 } from './model';
 import { adoptReportStyles } from './styles';
 
@@ -191,6 +191,7 @@ function Completion({ reports }: { reports: readonly FrameReport[] }) {
   const { ready, needsYou, required, dryRun, working } = tally;
   const of = ready + needsYou;
   const words = COPY.report;
+  const ai = aiCountsOf(reports);
   const allClear = needsYou === 0 && ready > 0 && !working && !dryRun && combinedNotices(reports).length === 0
     && framesAtPolicyCard(reports).length === 0;
   return (
@@ -214,6 +215,12 @@ function Completion({ reports }: { reports: readonly FrameReport[] }) {
         <p className="tia-completion__needs">
           <Icon name="alert" size={16} />
           {dryRun ? words.needsYouDryRun(needsYou) : words.needsYou(needsYou)}
+        </p>
+      )}
+      {ai.written > 0 && (
+        <p className="tia-completion__ai" data-ai-answers={ai.written} data-ai-guesses={ai.guesses}>
+          <Icon name="sparkle" size={14} />
+          {words.aiAnswers(ai.written, ai.guesses)}
         </p>
       )}
       {allClear && (
@@ -264,9 +271,13 @@ function Frame({ report, actions }: { report: FrameReport; actions: ReportAction
       )}
       {sectionsOf(report.fields).map(({ section, rows }) => (
         <section className="tia-section" key={section}>
-          <h3 className="tia-section__name">{section || COPY.report.untitledSection}</h3>
+          <h3 className="tia-section__name">{sectionName(section)}</h3>
           <ul className="tia-rows">
-            {rows.map((row) => <Row key={row.key} row={row} frameId={report.frameId} actions={acts ? actions : NO_ACTIONS} />)}
+            {/* Keyed by layout too: a row that turns from a card into a line starts afresh, its suggestions forgotten. */}
+            {rows.map((row) => (
+              <Row key={`${row.key}:${needsPerson(row) ? 'card' : 'line'}`} row={row} frameId={report.frameId}
+                actions={acts ? actions : NO_ACTIONS} />
+            ))}
           </ul>
         </section>
       ))}
@@ -352,6 +363,20 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
       {COPY.report.draftMark}
     </span>
   );
+  // The owner's amendments: an answer the AI wrote is marked "AI" (a draft keeps its own mark); one it guessed with
+  // nothing to go on, "AI guess" (E1's rule and words, as the page's highlights draw them).
+  const mark = aiMarkOf(row);
+  const aiMark = mark === 'guess' ? (
+    <span className="tia-row__ai tia-row__ai--guess" data-ai-mark="guess">
+      <Icon name="sparkle" size={12} />
+      {COPY.aiGuessChip}
+    </span>
+  ) : mark === 'written' && !draft ? (
+    <span className="tia-row__ai" data-ai-mark="ai">
+      <Icon name="sparkle" size={12} />
+      {COPY.aiChip}
+    </span>
+  ) : null;
   const chip = <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>;
   const icon = <Icon name={rowIconOf(row)} size={18} className={`tia-icon tia-row__icon tia-row__icon--${row.status}`} />;
   const source = row.provenance === null ? COPY.report.noSource : COPY.provenances[row.provenance];
@@ -426,6 +451,7 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
           <span className="tia-row__title">
             {label}
             {draftMark}
+            {aiMark}
           </span>
           {chip}
         </div>
@@ -444,6 +470,7 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
           <span className="tia-row__title">
             {label}
             {draftMark}
+            {aiMark}
             <span className="tia-row__source">{source}</span>
           </span>
           {chip}

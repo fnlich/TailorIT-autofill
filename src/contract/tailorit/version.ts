@@ -3,9 +3,12 @@
 /**
  * The autofill API's major version. Bump it for any change an extension built against the previous one cannot parse
  * (a removed or renamed field, a narrower type, a new value in a response enum). Additive optional fields and new
- * endpoints do not bump it. The server speaks one version at a time.
+ * endpoints do not bump it. The server speaks one version at a time. 2: the scopes `jobs:add` and `letters:write`, the
+ * resume reason `chosen` and the AI task kind `autofill_answer` (new values in response enums), with the lookup's
+ * match and job facts, POST /api/autofill/jobs, POST /api/autofill/ai/answer, a draft question's `currentAnswer` and
+ * the sensitive part's `legal.criminalRecord` (all unreleased until version 2 ships, so one version covers them).
  */
-export const AUTOFILL_API_VERSION = 1;
+export const AUTOFILL_API_VERSION = 2;
 
 /**
  * Sent by the extension on every request, and by the server on every answer to a request that presents a tia_ bearer,

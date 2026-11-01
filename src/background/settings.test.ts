@@ -5,10 +5,15 @@ import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, 
 
 const OPTIONS = pageSender('options.html');
 const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, autoAdvance: true, preapprovedConsent: ['privacy' as const],
-  llm: { tiebreak: false, classify: true, drafts: true }, offerToSaveAnswers: false };
+  llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: true }, offerToSaveAnswers: false };
+
+/** Version 1's settings as an install stored them before the owner's amendments, on its defaults. */
+const V1_DEFAULTS = { version: 1, panel: 'side', autoAdvance: false, preapprovedConsent: [],
+  llm: { tiebreak: true, classify: true, drafts: false }, telemetry: { optIn: false }, offerToSaveAnswers: true,
+  interpretations: { postingCountryForLegal: false, twoOrMoreRaces: false } };
 
 describe('settings', () => {
-  it('answers the cautious defaults until something is saved', async () => {
+  it('answers the defaults until something is saved', async () => {
     const worker = await startTestWorker();
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: DEFAULT_SETTINGS } });
   });
@@ -27,7 +32,9 @@ describe('settings', () => {
       { ...CHOSEN, panel: 'floating' },
       { ...CHOSEN, preapprovedConsent: ['i-did-not-use-ai'] },
       { ...CHOSEN, extra: true },
-      { ...CHOSEN, version: 2 },
+      { ...CHOSEN, version: 1 },
+      { ...CHOSEN, llm: { ...CHOSEN.llm, whenForbidden: 'sometimes' } },
+      { ...CHOSEN, llm: { tiebreak: true, classify: true, drafts: true } },
     ]) {
       expect(await worker.deliver({ v: 1, type: 'settings/save', settings }, OPTIONS)).toEqual({ ok: false, error: 'bad_message' });
     }
@@ -39,6 +46,29 @@ describe('settings', () => {
       before: async () => fakeBrowser.storage.local.set({ 'settings:v1': { version: 1, panel: 'sideways' } }),
     });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: DEFAULT_SETTINGS } });
+  });
+
+  it('migrates version 1 settings still on its defaults to version 2’s, and stores them (the owner’s amendments)', async () => {
+    const worker = await startTestWorker({
+      before: async () => fakeBrowser.storage.local.set({ 'settings:v1': V1_DEFAULTS }),
+    });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: DEFAULT_SETTINGS } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': DEFAULT_SETTINGS });
+  });
+
+  it('keeps every version 1 choice the person changed when it migrates', async () => {
+    const chosen = { ...V1_DEFAULTS, panel: 'in-page', autoAdvance: true, preapprovedConsent: ['privacy', 'marketing'],
+      llm: { tiebreak: false, classify: false, drafts: true }, telemetry: { optIn: true }, offerToSaveAnswers: false,
+      interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } };
+    const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
+      version: 2, panel: 'in-page', autoAdvance: true, preapprovedConsent: ['privacy', 'marketing'],
+      llm: { tiebreak: false, classify: false, drafts: true, answers: true, confirmDrafts: false,
+        whenForbidden: 'profile-only' },
+      telemetry: { optIn: true }, offerToSaveAnswers: false,
+      // Interpretation 2 was on version 1's default (off), so it takes version 2's.
+      interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
+    } } });
   });
 
   it('reach every frame with a form once saved, as its content settings, so a run reads auto-advance afresh (the Phase 5 review, C-S2)', async () => {

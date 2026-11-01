@@ -5,7 +5,9 @@
  * - Dry run: nothing is written (no row wrote, every row not-checked, no write event, every value as the page had it).
  * - Fill: the identity fields the golden profile answers are verified from the profile; every control the
  *   expectations mark not fillable keeps its value; and each row the dry run promised ends with the dry run's status,
- *   unless what happened was the filler's or the page's to say (a read-back that differed, a widget that ignored us).
+ *   unless what happened was the filler's or the page's to say (a read-back that differed, a widget that ignored us),
+ *   or the AI's: a dry run asks for no draft or answer (the owner's amendments), so a row a draft or an answer wrote
+ *   in the fill is the AI's to say.
  * - Both: no report, RunState, storage or log holds a value (assertTrapInvariants, with no markers).
  */
 import type { Page } from '@playwright/test';
@@ -34,6 +36,10 @@ const FILL_ONLY: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch
   'unexpected-selection', 'element-not-found', 'disabled-or-readonly', 'value-rejected-by-site', 'format-unsupported',
   'maxlength-exceeded', 'pdf-only-input', 'resume-unavailable', 'resume-transfer-failed', 'resume-format-unsupported',
   'field-disappeared', 'value-oscillated', 'page-busy']);
+
+/** Reasons only the AI's draft or answer gives, which a dry run never asks for (the owner's amendments). */
+const AI_ONLY: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['llm-draft-written', 'llm-draft-needs-confirmation',
+  'llm-answer-written', 'ai-guess', 'llm-no-answer']);
 
 function caseOf(name: (typeof CASES)[number]) {
   const expected = expectation(name);
@@ -96,7 +102,8 @@ for (const name of CASES) {
       expect(await notFillableValues(page, snapshot.fields)).toEqual(untouched);
       // The dry run's promise, kept: each row it planned ends with its status, but where only a fill could tell.
       const planByKey = new Map(planned.fields.map((field) => [field.key, field] as const));
-      const broken = report.fields.filter((field) => !FILL_ONLY.has(field.reason) && planByKey.has(field.key)
+      const broken = report.fields.filter((field) => !FILL_ONLY.has(field.reason) && !AI_ONLY.has(field.reason)
+        && planByKey.has(field.key)
         && planByKey.get(field.key)!.status !== field.status)
         .map((field) => ({ label: field.label, planned: planByKey.get(field.key)!.status, ended: field.status, reason: field.reason }));
       expect(broken, 'rows that ended unlike their dry run').toEqual([]);

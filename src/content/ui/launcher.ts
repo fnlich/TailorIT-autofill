@@ -28,6 +28,9 @@ export interface LauncherView {
   action: LauncherAction | null;
   /** The fields that need the person, for 'review'. */
   count?: number;
+  /** At 'review', a notice still stands (the tripwire's, a posting the extension could not read): with nothing counted,
+   *  the badge says "!" rather than a tick, as the report then shows no all-clear (the Phase F1 review, 3). */
+  notices?: boolean;
   /** Why it is in 'needs-you' or 'error'. */
   reason?: 'policy' | 'pause' | 'not-connected' | 'failed';
 }
@@ -49,7 +52,8 @@ function badgeOf(view: LauncherView): { tone: ToneName; text: string | null } | 
       return { tone: 'warning', text: '!' };
     case 'review': {
       const count = view.count ?? 0;
-      return count === 0 ? { tone: 'success', text: null } : { tone: 'warning', text: count > 99 ? '99+' : String(count) };
+      if (count > 0) return { tone: 'warning', text: count > 99 ? '99+' : String(count) };
+      return view.notices === true ? { tone: 'warning', text: '!' } : { tone: 'success', text: null };
     }
     case 'error':
       return { tone: 'danger', text: '!' };

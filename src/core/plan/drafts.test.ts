@@ -4,6 +4,7 @@ import { guardWriteInFrame } from '../guard/write';
 import { normalizeLabel } from '../text/normalize';
 import type { FieldKey } from '../types/field';
 import type { SavedAnswer } from '../types/saved';
+import { DEFAULT_SETTINGS } from '../types/settings';
 import { draftCap, draftRefusal, type DraftVerdict } from './drafts';
 import { fieldOf, planOf, settingsWith, specOf } from './plan.testkit';
 import type { PlanAi } from './types';
@@ -12,7 +13,8 @@ import type { PlanAi } from './types';
 // a draft with the setting on, and the run's draft is written as an llm-draft through the Guard, always flagged.
 
 const WHY = specOf('Why do you want to work here?', 'textarea');
-const DRAFTS_ON = settingsWith({ llm: { tiebreak: true, classify: true, drafts: true } });
+const DRAFTS_ON = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, tiebreak: true, classify: true, drafts: true,
+  answers: false, confirmDrafts: true } });
 const TASK = 'b2d4f6a8-1c3e-4a5b-9d7f-0e2c4a6b8d10';
 const TEXT = 'I have built ordering platforms for four years, and I would like to bring that here.';
 
@@ -23,12 +25,25 @@ function withDraft(verdict: DraftVerdict): PlanAi {
 const drafted = (key: FieldKey, text = TEXT): DraftVerdict => ({ key, text, taskId: TASK });
 
 describe('planFrame and drafts', () => {
-  it('asks for nothing while drafts are off (the default): the question is left for the person', () => {
-    const out = planOf([WHY]);
+  it('asks for nothing while drafts are off: the question is left for the person', () => {
+    const off = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, drafts: false, answers: false } });
+    const out = planOf([WHY], { settings: off });
     expect(out.awaiting).toEqual([]);
     expect(out.ask).toBeUndefined();
     expect(fieldOf(out, WHY).row).toMatchObject({ category: 'freeText.whyCompany', status: 'flagged',
       reason: 'free-text-requires-user', provenance: null });
+  });
+
+  it("asks for a draft by default, and writes it accepted as written (the owner's amendments)", () => {
+    expect(planOf([WHY]).ask?.drafts).toEqual([{ key: WHY.key, question: 'Why do you want to work here?',
+      maxLength: null }]);
+    const out = planOf([WHY], { ai: withDraft(drafted(WHY.key)) });
+    const { write, row } = fieldOf(out, WHY);
+    expect(write).toMatchObject({ value: { kind: 'text', text: TEXT },
+      origin: { provenance: 'llm-draft', taskId: TASK, confirmedByUser: false } });
+    expect(row).toMatchObject({ status: 'verified', provenance: 'llm-draft', confidence: LLM_DRAFT,
+      reason: 'llm-draft-written', wrote: false, needsUserAction: false });
+    expect(guardWriteInFrame(write!, WHY, [])).toEqual({ ok: true });
   });
 
   it('asks for a draft with the setting on: the visible label, and no maxLength when the field names none', () => {
@@ -119,5 +134,20 @@ describe('planFrame and drafts', () => {
       const other = planOf([WHY], { settings: DRAFTS_ON, savedAnswers: [saved], ...(company ? { company } : {}) });
       expect(other.awaiting, company?.board ?? 'none').toEqual([WHY.key]);
     }
+  });
+});
+
+describe('a free-text question only the AI classified (the owner’s amendments: §8.2’s "draft only")', () => {
+  it('asks for its draft once the classifier names it a free-text question, and writes it accepted', () => {
+    const box = specOf('Tell us something surprising about you', 'text');
+    expect(planOf([box]).ask).toMatchObject({ classify: [{ key: box.key }] });
+    const classifications = new Map([[box.key as string, { key: box.key, category: 'free_text_question' as const,
+      why: 'ok' as const }]]);
+    const asked = planOf([box], { ai: { verdicts: new Map(), classifications } });
+    expect(asked.ask?.drafts).toEqual([{ key: box.key, question: box.label, maxLength: null }]);
+    const out = planOf([box], { ai: { verdicts: new Map(), classifications, drafts: new Map([[box.key as string,
+      drafted(box.key)]]) } });
+    expect(fieldOf(out, box)).toMatchObject({ write: { origin: { provenance: 'llm-draft' } },
+      row: { category: 'freeText.other', status: 'verified', reason: 'llm-draft-written' } });
   });
 });

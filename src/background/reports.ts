@@ -16,13 +16,18 @@
  *   labels another frame of the tab reported; now only the frame the person opened the panel in does.
  * - Each report/put also feeds the anonymous counters (telemetry.ts), with the report it replaces, so a row is counted
  *   once per run.
+ *
+ * v2: every read and push also carries the tab's page state (frames.ts pageOfTab: a form found and its platform, frames
+ * of ours with no form, or none), so the side panel says where the tab stands before any run. It is pushed again when a
+ * frame says hello or a sweep forgets one (pageChanged), only to a watcher it changed for. Every push for a tab goes
+ * through one queue per tab, reading the reports and the page inside it, so an older state is never posted last.
  */
 import { ok, refuse, type Answer } from '../messaging/envelope';
-import { PanelPortMessageSchema, type ContentMessage } from '../messaging/schemas';
+import { PanelPortMessageSchema, type ContentMessage, type PageState } from '../messaging/schemas';
 import type { PortLike, StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { FrameReportSchema, type FrameReport } from '../shared/report';
-import { framesOfTab } from './frames';
+import { framesOfTab, pageOfTab } from './frames';
 import { createKeyedQueue, type createRateLimit } from './locks';
 import type { FrameRef, RunRegistry } from './runs';
 import type { SettingsStore } from './settings';
@@ -63,6 +68,10 @@ export interface Reports {
   watch(port: PortLike): void;
   /** panel/shown: the frame opened (or closed) its in-page panel. An opened one gets the tab's report at once. */
   panelShown(from: FrameRef, open: boolean): Promise<Answer<Record<string, never>>>;
+  /** The tab's page state (v2), from the frame registry. */
+  page(tabId: number): Promise<PageState>;
+  /** The tab's frames changed (a hello, a forgotten frame): watchers whose page state it changed get the tab again. */
+  pageChanged(tabId: number): Promise<void>;
 }
 
 /** What the reports need. */
@@ -84,10 +93,12 @@ export interface ReportsDeps {
 /** The reports over storage.session, with no panel watching yet. */
 export function createReports(deps: ReportsDeps): Reports {
   const { session } = deps;
-  /** Each watching port and the tab it follows. */
-  const watchers = new Map<PortLike, number>();
+  /** Each watching port, the tab it follows and the page state it was last sent (as JSON). */
+  const watchers = new Map<PortLike, { tabId: number; page: string | null }>();
   /** One queue per report key: a put and a document's forget never interleave. */
   const writes = createKeyedQueue();
+  /** One queue per tab for what is pushed to its watchers, so pushes land in the order their states were read. */
+  const pushes = createKeyedQueue();
 
   async function ofTab(tabId: number): Promise<FrameReport[]> {
     const stored = await session.getMany(`${REPORT_PREFIX}${tabId}:`);
@@ -99,12 +110,22 @@ export function createReports(deps: ReportsDeps): Reports {
     return reports.sort((a, b) => a.frameId - b.frameId).slice(0, MAX_FRAME_REPORTS);
   }
 
-  function post(port: PortLike, tabId: number, reports: FrameReport[]): void {
+  function post(port: PortLike, tabId: number, reports: FrameReport[], page: PageState): void {
     try {
-      port.post({ v: 1, type: 'panel/update', tabId, reports });
+      port.post({ v: 1, type: 'panel/update', tabId, reports, page });
+      const watching = watchers.get(port);
+      if (watching !== undefined && watching.tabId === tabId) watching.page = JSON.stringify(page);
     } catch {
       watchers.delete(port);
     }
+  }
+
+  /** Runs a push for a tab after the ones before it, reading its reports and page state inside. */
+  function push(tabId: number, task: (reports: FrameReport[], page: PageState) => Promise<void> | void): Promise<void> {
+    return pushes.run(`push:${tabId}`, async () => {
+      const [reports, page] = await Promise.all([ofTab(tabId), pageOfTab(session, tabId)]);
+      await task(reports, page);
+    });
   }
 
   /** The frame that shows the tab's in-page panel, while its document is still the one registered; else null. */
@@ -130,10 +151,11 @@ export function createReports(deps: ReportsDeps): Reports {
   }
 
   /** Pushes the tab's combined report to its watchers and to the frame that shows its in-page panel. */
-  async function changed(tabId: number): Promise<void> {
-    const reports = await ofTab(tabId);
-    for (const [port, watched] of watchers) if (watched === tabId) post(port, tabId, reports);
-    await pushToPanelFrame(tabId, reports);
+  function changed(tabId: number): Promise<void> {
+    return push(tabId, async (reports, page) => {
+      for (const [port, watched] of watchers) if (watched.tabId === tabId) post(port, tabId, reports, page);
+      await pushToPanelFrame(tabId, reports);
+    });
   }
 
   /** Forgets the tab's panel frame when it is this frame's (and, given one, this document's). */
@@ -193,6 +215,15 @@ export function createReports(deps: ReportsDeps): Reports {
       await session.remove(keys);
       await changed(tabId);
     },
+    page: (tabId) => pageOfTab(session, tabId),
+    pageChanged(tabId) {
+      return push(tabId, (reports, page) => {
+        const now = JSON.stringify(page);
+        for (const [port, watched] of watchers) {
+          if (watched.tabId === tabId && watched.page !== now) post(port, tabId, reports, page);
+        }
+      });
+    },
     async panelShown(from, open) {
       const retry = deps.shownLimit?.take(`${from.tabId}/${from.frameId}`) ?? null;
       if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
@@ -217,10 +248,10 @@ export function createReports(deps: ReportsDeps): Reports {
           return;
         }
         const tabId = parsed.data.tabId;
-        watchers.set(port, tabId);
-        void ofTab(tabId).then((reports) => {
-          if (watchers.get(port) === tabId) post(port, tabId, reports);
-        });
+        watchers.set(port, { tabId, page: null });
+        void push(tabId, (reports, page) => {
+          if (watchers.get(port)?.tabId === tabId) post(port, tabId, reports, page);
+        }).catch(() => undefined);
         deps.check?.(tabId);
       });
       port.onDisconnect(() => void watchers.delete(port));

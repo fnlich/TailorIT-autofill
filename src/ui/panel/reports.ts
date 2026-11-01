@@ -9,9 +9,13 @@
  *
  * Every message is parsed with the catalogue's strict schema, so an update carrying anything a report may not hold
  * (a value, a row of the wrong shape) is dropped whole and never rendered.
+ *
+ * v2: each read and push also carries the tab's page state (a form found, frames with none, none of ours), null until
+ * known or from an older worker. When the followed tab finishes loading a page (tabs.onUpdated, status 'complete'),
+ * the tab is read again: a page without our script says no hello, and the read's frame check prunes what went.
  */
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import { PanelPortMessageSchema } from '../../messaging/schemas';
+import { PanelPortMessageSchema, type PageState } from '../../messaging/schemas';
 import type { PagePlatform, PortLike } from '../../platform/types';
 import type { FrameReport } from '../../shared/report';
 import { request } from '../page/request';
@@ -33,13 +37,15 @@ function watch(port: PortLike | null, tabId: number): void {
   }
 }
 
-/** The tab's reports as last read or pushed, the link's state, and a way to reconnect by hand. */
+/** The tab's reports and page state as last read or pushed, the link's state, and a way to reconnect by hand. */
 export function useTabReports(platform: PagePlatform, tabId: number | null, now: () => number): {
   reports: readonly FrameReport[];
+  page: PageState | null;
   link: LinkState;
   reconnect(): void;
 } {
-  const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[] }>({ tabId: null, reports: NO_REPORTS });
+  const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[]; page: PageState | null }>(
+    { tabId: null, reports: NO_REPORTS, page: null });
   const [link, setLink] = useState<LinkState>('live');
   const [generation, setGeneration] = useState(0);
   const port = useRef<PortLike | null>(null);
@@ -67,7 +73,7 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
         const parsed = PanelPortMessageSchema.safeParse(raw);
         if (!parsed.success || parsed.data.type !== 'panel/update' || parsed.data.tabId !== watched.current) return;
         pushes.current += 1;
-        setShown({ tabId: parsed.data.tabId, reports: parsed.data.reports });
+        setShown({ tabId: parsed.data.tabId, reports: parsed.data.reports, page: parsed.data.page ?? null });
       });
       next.onDisconnect(() => {
         if (closed || port.current !== next) return;
@@ -99,12 +105,22 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
     if (tabId === null) return undefined;
     watch(port.current, tabId);
     let live = true;
-    void request(platform, { v: 1, type: 'panel/reports', tabId }).then((answer) => {
-      if (!live || !answer.ok || pushes.current > 0 || watched.current !== tabId || answer.data.tabId !== tabId) return;
-      setShown({ tabId, reports: answer.data.reports });
+    /** One read of the tab; an answer older than a push that came after it was sent is dropped. */
+    const read = () => {
+      const before = pushes.current;
+      void request(platform, { v: 1, type: 'panel/reports', tabId }).then((answer) => {
+        if (!live || !answer.ok || pushes.current > before || watched.current !== tabId || answer.data.tabId !== tabId) return;
+        setShown({ tabId, reports: answer.data.reports, page: answer.data.page ?? null });
+      });
+    };
+    read();
+    // The tab loaded a page: read it again (its frame check prunes a page of ours that went).
+    const stop = platform.onTabLoaded((loaded) => {
+      if (loaded === tabId) read();
     });
     return () => {
       live = false;
+      stop();
     };
   }, [platform, tabId]);
 
@@ -112,5 +128,6 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
     setLink('live');
     setGeneration((count) => count + 1);
   }, []);
-  return { reports: shown.tabId === tabId && tabId !== null ? shown.reports : NO_REPORTS, link, reconnect };
+  const current = shown.tabId === tabId && tabId !== null;
+  return { reports: current ? shown.reports : NO_REPORTS, page: current ? shown.page : null, link, reconnect };
 }

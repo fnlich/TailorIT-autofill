@@ -47,34 +47,48 @@ describe('the options page', () => {
   it('shows the stored settings, saves each change through the worker, and shows what the worker answered', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);
+    // Version 2's defaults (the owner's amendments, docs/SPEC-AMENDMENTS.md).
     expect(setting(root, 'autoAdvance').checked).toBe(false);
     expect(setting(root, 'llm.tiebreak').checked).toBe(true);
     expect(setting(root, 'llm.classify').checked).toBe(true);
-    expect(setting(root, 'llm.drafts').checked).toBe(false);
+    expect(setting(root, 'llm.drafts').checked).toBe(true);
+    expect(setting(root, 'llm.answers').checked).toBe(true);
+    expect(setting(root, 'llm.confirmDrafts').checked).toBe(false);
+    expect(setting(root, 'llm.whenForbidden.profile-only').checked).toBe(true);
+    expect(setting(root, 'interpretations.eeoDeclineByDefault').checked).toBe(true);
     expect(setting(root, 'panel.side').checked).toBe(true);
-    for (const category of CONSENT_CATEGORIES) expect(setting(root, `consent.${category}`).checked, category).toBe(false);
+    for (const category of CONSENT_CATEGORIES) {
+      expect(setting(root, `consent.${category}`).checked, category).toBe(category !== 'marketing' && category !== 'sms');
+    }
 
     await click(setting(root, 'autoAdvance'));
-    await click(setting(root, 'consent.certify'));
+    await click(setting(root, 'consent.marketing'));
     await click(setting(root, 'consent.privacy'));
     await click(setting(root, 'llm.drafts'));
+    await click(setting(root, 'llm.confirmDrafts'));
+    await click(setting(root, 'llm.whenForbidden.ask'));
     await click(setting(root, 'interpretations.twoOrMoreRaces'));
     await click(setting(root, 'panel.in-page'));
-    expect(saves(worker)).toHaveLength(6);
+    expect(saves(worker)).toHaveLength(8);
     // Each save is the whole settings, built on the last answer; consent stays in the closed list's order.
-    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, autoAdvance: true, preapprovedConsent: ['privacy', 'certify'],
-      llm: { tiebreak: true, classify: true, drafts: true }, panel: 'in-page',
-      interpretations: { postingCountryForLegal: false, twoOrMoreRaces: true } });
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, autoAdvance: true,
+      preapprovedConsent: ['terms', 'certify', 'dataRetention', 'marketing', 'backgroundCheck', 'signature'],
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false, confirmDrafts: true, whenForbidden: 'ask' }, panel: 'in-page',
+      interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } });
     expect(root.textContent).toContain(TEXT.saved);
-    for (const name of ['autoAdvance', 'consent.certify', 'consent.privacy', 'llm.drafts', 'interpretations.twoOrMoreRaces', 'panel.in-page']) {
+    for (const name of ['autoAdvance', 'consent.marketing', 'llm.confirmDrafts', 'llm.whenForbidden.ask', 'panel.in-page']) {
       expect(setting(root, name).checked, name).toBe(true);
+    }
+    for (const name of ['consent.privacy', 'llm.drafts', 'interpretations.twoOrMoreRaces', 'llm.whenForbidden.profile-only']) {
+      expect(setting(root, name).checked, name).toBe(false);
     }
   });
 
   it('shows the settings the worker stored, not the ones it was sent, and the old ones when a save is refused', async () => {
     const worker = createFakeWorker();
     // The worker stores something else than asked (as storage would after a schema change): the page shows it.
-    worker.on('settings/save', () => ({ ok: true, data: { settings: { ...DEFAULT_SETTINGS, llm: { tiebreak: false, classify: true, drafts: false } } } }));
+    worker.on('settings/save', () => ({ ok: true, data: { settings: { ...DEFAULT_SETTINGS,
+      llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: false } } } }));
     const root = await open(worker);
     await click(setting(root, 'autoAdvance'));
     expect(setting(root, 'autoAdvance').checked).toBe(false);

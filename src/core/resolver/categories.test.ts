@@ -120,13 +120,14 @@ describe('CLASS_POLICIES (§8.2)', () => {
       llmClassified: 'never', fuzzy: 'never' }],
     ['attention', { valueFrom: [], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never',
       fuzzy: 'never' }],
-    // docs/ARCHITECTURE.md (AI › Category mapping) overrules §8.2's "draft only": a free-text category that came
-    // only from LLM classification maps to needs-user.
-    ['free-text', { valueFrom: ['saved', 'llm-draft'], savedAnswers: 'company', llmTiebreak: 'not-applicable',
-      llmClassified: 'never', fuzzy: 'not-applicable' }],
+    // The owner's amendments (docs/SPEC-AMENDMENTS.md) put back §8.2's "draft only" for a free-text category only the
+    // LLM classified, and add the AI answer (a short box).
+    ['free-text', { valueFrom: ['saved', 'llm-draft', 'llm-answer'], savedAnswers: 'company',
+      llmTiebreak: 'not-applicable', llmClassified: 'draft-only', fuzzy: 'not-applicable' }],
     ['file', { valueFrom: ['profile'], savedAnswers: 'never', llmTiebreak: 'never', llmClassified: 'never',
       fuzzy: 'not-applicable' }],
-    ['unknown', { valueFrom: ['saved'], savedAnswers: 'global', llmTiebreak: 'allowed',
+    // The AI answer, and the rule that answers "Have you worked here before?" (the owner's amendments).
+    ['unknown', { valueFrom: ['saved', 'rule', 'llm-answer'], savedAnswers: 'global', llmTiebreak: 'allowed',
       llmClassified: 'not-applicable', fuzzy: 'generic' }],
   ])('%s follows its row', (policyClass, policy) => {
     expect(CLASS_POLICIES[policyClass]).toEqual(policy);
@@ -146,16 +147,18 @@ describe('CLASS_POLICIES (§8.2)', () => {
       const policy = CLASS_POLICIES[policyClass];
       const closed = policy.savedAnswers === 'never' && off.includes(policy.llmTiebreak)
         && off.includes(policy.llmClassified) && off.includes(policy.fuzzy)
-        && !policy.valueFrom.includes('saved') && !policy.valueFrom.includes('llm-draft');
+        && !policy.valueFrom.includes('saved') && !policy.valueFrom.includes('llm-draft')
+        && !policy.valueFrom.includes('llm-answer');
       expect(closed, policyClass).toBe(!OPEN_CLASSES.includes(policyClass));
     }
   });
 });
 
 describe('USER_ONLY_CATEGORIES', () => {
-  it('holds criminal history, attention checks, AI attestations and unrecognised consent', () => {
-    expect([...USER_ONLY_CATEGORIES].sort()).toEqual(['attentionCheck', 'consent.aiAttestation', 'consent.other',
-      'screening.criminalHistory']);
+  it('holds attention checks, AI attestations and unrecognised consent', () => {
+    // Criminal history left the set with the owner's amendments: it is answered from the person's own answer in the
+    // sensitive part, by its polarity alone (policy.ts), never by an AI.
+    expect([...USER_ONLY_CATEGORIES].sort()).toEqual(['attentionCheck', 'consent.aiAttestation', 'consent.other']);
   });
 
   it('holds no consent category a person may pre-approve', () => {

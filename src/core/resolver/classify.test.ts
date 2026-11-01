@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CLASSIFY_LLM } from '../confidence';
 import { inOrder, planOf, settingsWith, specOf, vocab } from '../plan/plan.testkit';
 import { FIELD_CATEGORIES, type FieldCategory } from '../types/intent';
+import { DEFAULT_SETTINGS } from '../types/settings';
 import {
   classifyItemOf, judgeClassification, mapServerCategory, namesSensitivePickValue, namesSensitiveTopic,
   screenForClassify, SHARED_SENSITIVE_TERMS, SERVER_CATEGORY_MAP, type ClassifyVerdict, type ServerCategory,
@@ -63,6 +64,48 @@ describe('the sensitive terms TailorIT screens with too (the Phase 4 review, T-F
     for (const disguised of ['G\u0332e\u0332n\u0332d\u0332e\u0332r\u0332 identity', 'G\u0435nder identity',
       'G e n d e r identity', 'Are you a U S person?', 'Your p a s s p o r t number', 'H\u20111B status']) {
       expect(namesSensitiveTopic(disguised), disguised).toBe(true);
+    }
+  });
+});
+
+describe('the extension’s own terms: TailorIT’s server-only ones, beyond the pinned lists', () => {
+  /** One question for each of the extension's own terms, none of which the pinned lists catch. */
+  const OWN = [
+    // Criminal history.
+    'Have you ever been charged with a crime?', 'List any crimes on your record', 'Do you have pending charges?',
+    'Are you currently on probation?', 'Are you on parole?', 'Have you ever been incarcerated?',
+    'Have you spent time in jail?', 'Have you been to prison?', 'Have you ever been sentenced?',
+    'Did you plead no contest?', 'Any nolo pleas?',
+    // Pay.
+    'What was your income last year?', 'What is your OTE?', 'Expected base', 'Desired rate', 'Target earnings',
+    'Minimum rates', 'Asking rate', 'Current day rate', 'Daily rate', 'Contract rates', 'Billing rate',
+    'Current earnings', 'Expected package', 'Minimum package', 'Asking package?', 'What rate would you accept?',
+    // Identity and tax numbers.
+    'Social Insurance Number', 'Tax file number', 'Tax identification no.', 'Tax ID #', 'Tax reference number',
+    'Tax registration numbers', 'Tax payer number',
+    // The acronyms, in capitals.
+    'Your SIN', 'Your TFN',
+  ];
+
+  it('screens each one, in any case and disguised, though the pinned lists catch none of them', () => {
+    for (const question of OWN) {
+      expect(namesSensitiveTopic(question), question).toBe(true);
+      expect(namesSensitiveTopic(question.toUpperCase()), question).toBe(true);
+      expect(screenForClassify(specOf(question, 'text'), vocab), question).toBe('sensitive');
+    }
+    // A Cyrillic dze and i that look like S and I, combining marks and spaced-out letters.
+    for (const disguised of ['Are you on p a r o l e?', 'Have you been ch\u0430rged with anything?', 'Your S I N',
+      'Your \u0405\u0406N', 'In\u0332c\u0332o\u0332m\u0332e\u0332 last year']) {
+      expect(namesSensitiveTopic(disguised), disguised).toBe(true);
+    }
+  });
+
+  it('matches SIN and TFN in capitals only, a package that is pay only, and lets the everyday words through', () => {
+    for (const passed of ['Is sin a word?', 'Sin City', 'tfn', 'Current package manager', 'Expected package version',
+      'Desired package management tool', 'Target package registry', 'Rate your proficiency in Python', 'Contract type',
+      'Expected start date', 'Billing system experience', 'Have you read about the prisoner’s dilemma?',
+      'Tax software you have used', 'What is your current title?']) {
+      expect(namesSensitiveTopic(passed), passed).toBe(false);
     }
   });
 });
@@ -242,6 +285,9 @@ describe('judgeClassification', () => {
     expect(judgeClassification(text, verdict(text.key, 'attention_check'), vocab)).toMatchObject({ reason: 'attention-check' });
     expect(judgeClassification(text, verdict(text.key, 'free_text_question'), vocab))
       .toMatchObject({ reason: 'free-text-requires-user' });
+    // On a box that can hold it, it is a free-text question (the owner's amendments): its draft or AI answer comes next.
+    expect(judgeClassification(text, verdict(text.key, 'free_text_question'), vocab)).toEqual({ kind: 'needs-user',
+      category: 'freeText.other', reason: 'free-text-requires-user' });
     for (const server of ['sensitive_eeo', 'sensitive_legal', 'sensitive_compensation'] as const) {
       expect(judgeClassification(text, verdict(text.key, server), vocab)).toEqual({ kind: 'needs-user',
         category: 'unknown', reason: 'llm-disabled-for-category' });
@@ -296,7 +342,7 @@ describe('planFrame with LLM classification (§8.4)', () => {
   });
 
   it('asks nothing, and screens nothing, with classification off', () => {
-    const out = planOf(specs, { settings: settingsWith({ llm: { tiebreak: true, classify: false, drafts: false } }) });
+    const out = planOf(specs, { settings: settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, tiebreak: true, classify: false, drafts: false, answers: false } }) });
     expect(out).toMatchObject({ awaiting: [] });
     expect(out.ask).toBeUndefined();
     expect(out.results.every((row) => row.reason === 'unknown-field')).toBe(true);

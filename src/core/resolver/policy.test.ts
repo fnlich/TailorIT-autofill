@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { goldenProfile, settingsWith, specOf, vocab } from '../plan/plan.testkit';
+import { CAUTIOUS_SETTINGS, goldenProfile, settingsWith, specOf, vocab } from '../plan/plan.testkit';
 import type { Explicit, Profile } from '../types/profile';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { ValueResult } from './candidate';
 import {
-  combinedSponsorship, consentValue, countriesNamed, eeoValue, legalValue, placesNamed, SENSITIVE_PART_CATEGORIES,
+  combinedSponsorship, consentValue, countriesNamed, eeoValue, legalValue, placesNamed, postingCountryOf,
+  SENSITIVE_PART_CATEGORIES,
   sensitiveGate,
 } from './policy';
 
@@ -75,15 +76,19 @@ describe('the sensitive part’s gate', () => {
     expect(reason(sensitiveGate('identity.pronouns', 'unavailable') as ValueResult)).toBe('sensitive-unavailable');
     expect(sensitiveGate('identity.firstName', 'not-loaded')).toBe('ready');
     // Questions neither part answers never need it.
-    for (const category of ['workAuth.visaType', 'eeo.sexualOrientation', 'screening.criminalHistory'] as const) {
+    for (const category of ['workAuth.visaType', 'eeo.sexualOrientation'] as const) {
       expect(SENSITIVE_PART_CATEGORIES.has(category), category).toBe(false);
     }
+    // Criminal history is answered once in TailorIT's sensitive part since the owner's amendments.
+    expect(SENSITIVE_PART_CATEGORIES.has('screening.criminalHistory')).toBe(true);
+    expect(reason(sensitiveGate('screening.criminalHistory', 'not-shared') as ValueResult)).toBe('sensitive-not-shared');
   });
 });
 
 describe('legal values (§8.7)', () => {
   const profile = goldenProfile();
-  const LEGAL = { settings: DEFAULT_SETTINGS };
+  // Interpretation 1 off: a question's own words name its country.
+  const LEGAL = { settings: CAUTIOUS_SETTINGS };
   const radio = (label: string) => specOf(label, 'radio', { optionLabels: ['Yes', 'No'] });
   const legal = (category: Parameters<typeof legalValue>[0], label: string, of: Profile = profile,
     context: Parameters<typeof legalValue>[4] = LEGAL) => legalValue(category, radio(label), of, vocab, context);
@@ -110,10 +115,11 @@ describe('legal values (§8.7)', () => {
   });
 
   it('reads the posting’s country for a question naming none only under interpretation 1, flagged', () => {
-    const on = { settings: settingsWith({ interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } }),
+    const on = { settings: settingsWith({ interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false,
+      eeoDeclineByDefault: false } }),
       postingCountry: 'US' };
     expect(reason(legal('workAuth.authorized', 'Are you legally authorized to work?', profile,
-      { settings: DEFAULT_SETTINGS, postingCountry: 'US' }))).toBe('work-auth-country-unknown');
+      { settings: CAUTIOUS_SETTINGS, postingCountry: 'US' }))).toBe('work-auth-country-unknown');
     expect(candidate(legal('workAuth.authorized', 'Are you legally authorized to work?', profile, on))).toMatchObject({
       origin: { path: 'workAuthorization[0].authorized', transform: 'legal.posting-country' }, confidence: 0.776,
       flag: 'filled-low-confidence', choice: { intended: { kind: 'boolean', value: true } } });
@@ -124,13 +130,46 @@ describe('legal values (§8.7)', () => {
       postingCountry: 'FR' }))).toBe('legal-not-in-profile');
   });
 
-  it('chooses the decline option for an explicit decline, and leaves criminal history to the person', () => {
+  it('reads the profile’s only work-authorization country when the posting names none (on by default)', () => {
+    expect(profile.workAuthorization.map((entry) => entry.country)).toEqual(['US']);
+    expect(candidate(legal('workAuth.authorized', 'Are you legally authorized to work?', profile,
+      { settings: DEFAULT_SETTINGS }))).toMatchObject({ origin: { path: 'workAuthorization[0].authorized',
+      transform: 'legal.posting-country' }, flag: 'filled-low-confidence' });
+    // With two entries, and no posting country, nothing says which.
+    const two: Profile = { ...profile, workAuthorization: [...profile.workAuthorization,
+      { country: 'CA', authorized: no }] };
+    expect(reason(legal('workAuth.authorized', 'Are you legally authorized to work?', two,
+      { settings: DEFAULT_SETTINGS }))).toBe('work-auth-country-unknown');
+    expect(candidate(legal('workAuth.authorized', 'Are you legally authorized to work?', two,
+      { settings: DEFAULT_SETTINGS, postingCountry: 'CA' }))?.choice?.intended).toEqual({ kind: 'boolean', value: false });
+  });
+
+  it('finds the posting’s country in the lookup’s location: a country, else the one country of its regions', () => {
+    expect(postingCountryOf('London, United Kingdom', vocab)).toBe('GB');
+    expect(postingCountryOf('San Francisco, CA', vocab)).toBe('US');
+    expect(postingCountryOf('Toronto, ON, Canada', vocab)).toBe('CA');
+    expect(postingCountryOf('Remote', vocab)).toBeUndefined();
+    expect(postingCountryOf('New York, NY or Toronto, ON', vocab)).toBeUndefined();
+    expect(postingCountryOf('Georgia', vocab)).toBeUndefined();
+  });
+
+  it('chooses the decline option for an explicit decline, and answers criminal history from the person’s own answer', () => {
     const declined: Profile = { ...profile, screening: { over18: { kind: 'decline' } } };
     expect(candidate(legal('screening.over18', 'Are you at least 18 years of age?', declined))).toMatchObject({
       origin: { provenance: 'rule', ruleId: 'legal.decline', path: 'screening.over18' },
       choice: { intended: { kind: 'decline', domain: 'polarity' } } });
+    // No answer in TailorIT: blank and flagged (answer it once in Settings › Autofill).
     expect(legal('screening.criminalHistory', 'Have you been convicted of a felony?'))
-      .toEqual({ ok: false, none: { reason: 'legal-not-in-profile', flagged: true, needsUser: true } });
+      .toEqual({ ok: false, none: { reason: 'legal-not-in-profile', flagged: true } });
+    // The owner's amendments: the sensitive part's criminalRecord, by its polarity alone; a declined one stays blank.
+    const record = (answer: Explicit<boolean>): Profile => ({ ...profile, screening: { criminalRecord: answer } });
+    expect(candidate(legal('screening.criminalHistory', 'Have you been convicted of a felony?', record(no))))
+      .toMatchObject({ origin: { provenance: 'profile', path: 'screening.criminalRecord' },
+        choice: { intended: { kind: 'boolean', value: false }, domain: 'polarity' }, check: false });
+    expect(candidate(legal('screening.criminalHistory', 'Have you been convicted of a felony?', record(yes)))?.choice
+      ?.intended).toEqual({ kind: 'boolean', value: true });
+    expect(reason(legal('screening.criminalHistory', 'Have you been convicted of a felony?', record(decline))))
+      .toBe('legal-not-in-profile');
   });
 });
 
@@ -146,11 +185,26 @@ describe('EEO values (§8.7)', () => {
         choice: { intended: { kind: 'decline', domain: 'eeo.gender' }, domain: 'eeo.gender' } });
   });
 
-  it('leaves an unanswered question blank and flagged', () => {
-    expect(eeoValue('eeo.gender', field('Gender', ['Female']), withEeo({}), DEFAULT_SETTINGS, vocab))
+  it('leaves an unanswered question blank and flagged with the decline default off', () => {
+    expect(eeoValue('eeo.gender', field('Gender', ['Female']), withEeo({}), CAUTIOUS_SETTINGS, vocab))
       .toEqual({ ok: false, none: { reason: 'eeo-not-in-profile', flagged: true } });
     expect(reason(eeoValue('eeo.sexualOrientation', field('Sexual orientation', ['Straight']), profile,
-      DEFAULT_SETTINGS, vocab))).toBe('eeo-not-in-profile');
+      CAUTIOUS_SETTINGS, vocab))).toBe('eeo-not-in-profile');
+  });
+
+  it('declines an unanswered question by default, by the rule eeo.decline-default (no guess, no path)', () => {
+    const declined = { origin: { provenance: 'rule', ruleId: 'eeo.decline-default' }, note: 'eeo-decline-default' };
+    expect(candidate(eeoValue('eeo.gender', field('Gender', ['Female', 'Decline to self-identify']), withEeo({}),
+      DEFAULT_SETTINGS, vocab))).toMatchObject({ ...declined,
+      choice: { intended: { kind: 'decline', domain: 'eeo.gender' }, domain: 'eeo.gender' } });
+    expect(candidate(eeoValue('eeo.sexualOrientation', field('Sexual orientation', ['Straight', 'Prefer not to say']),
+      profile, DEFAULT_SETTINGS, vocab))).toMatchObject({ ...declined,
+      choice: { intended: { kind: 'decline', domain: 'generic' } } });
+    expect(candidate(eeoValue('eeo.gender', field('Gender', ['Female']), withEeo({}), DEFAULT_SETTINGS, vocab))
+      ?.origin).toEqual({ provenance: 'rule', ruleId: 'eeo.decline-default' });
+    // Never a tick on a lone box.
+    expect(reason(eeoValue('eeo.disability', specOf('I have a disability', 'checkbox'), withEeo({}), DEFAULT_SETTINGS,
+      vocab))).toBe('format-unsupported');
   });
 
   it('chooses the self-describe option and carries the person’s own words, always flagged', () => {
@@ -164,8 +218,9 @@ describe('EEO values (§8.7)', () => {
     const races = withEeo({ race: { kind: 'value', value: ['asian', 'white'] }, hispanicLatino: { kind: 'value',
       value: false } });
     const single = field('Race', ['Asian', 'White', 'Two or More Races']);
-    expect(reason(eeoValue('eeo.race', single, races, DEFAULT_SETTINGS, vocab))).toBe('ambiguous-options');
-    const on = settingsWith({ interpretations: { postingCountryForLegal: false, twoOrMoreRaces: true } });
+    expect(reason(eeoValue('eeo.race', single, races, CAUTIOUS_SETTINGS, vocab))).toBe('ambiguous-options');
+    const on = settingsWith({ interpretations: { postingCountryForLegal: false, twoOrMoreRaces: true,
+      eeoDeclineByDefault: false } });
     expect(candidate(eeoValue('eeo.race', single, races, on, vocab))).toMatchObject({
       origin: { transform: 'eeo.two-or-more-races' }, confidence: 0.8,
       choice: { intended: { id: 'eeo.race:two-or-more-races' }, hispanicLatino: false } });
@@ -207,8 +262,22 @@ describe('consent values (§8.7)', () => {
       origin: { provenance: 'rule', ruleId: 'consent.preapproved' }, confidence: 0.9, check: true });
     expect(consentValue('consent.privacy', ['consent.certify', 'consent.privacy'], profile, settings))
       .toEqual({ ok: false, none: { reason: 'consent-requires-user', flagged: true, needsUser: true } });
-    expect(reason(consentValue('consent.privacy', ['consent.privacy'], profile, DEFAULT_SETTINGS)))
+    expect(reason(consentValue('consent.privacy', ['consent.privacy'], profile, CAUTIOUS_SETTINGS)))
       .toBe('consent-requires-user');
+  });
+
+  it('pre-approves the usual consents by default, never marketing or SMS (the owner’s amendments)', () => {
+    for (const kind of ['privacy', 'terms', 'dataRetention', 'certify', 'backgroundCheck'] as const) {
+      const category = `consent.${kind}` as const;
+      expect(candidate(consentValue(category, [category], profile, DEFAULT_SETTINGS))?.check, kind).toBe(true);
+    }
+    for (const kind of ['marketing', 'sms'] as const) {
+      const category = `consent.${kind}` as const;
+      expect(reason(consentValue(category, [category], profile, DEFAULT_SETTINGS)), kind).toBe('consent-requires-user');
+    }
+    expect(candidate(consentValue('consent.signature', ['consent.signature'], profile, DEFAULT_SETTINGS))?.text)
+      .toBe('Alex Rivera');
+    expect(reason(consentValue('consent.aiAttestation', undefined, profile, DEFAULT_SETTINGS))).toBe('consent-requires-user');
   });
 
   it('never ticks an AI attestation or unrecognised consent, whatever the settings', () => {

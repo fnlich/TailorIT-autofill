@@ -244,7 +244,8 @@ describe('a panel that reads or follows a tab', () => {
     const port = worker.connect('panel', pageSender());
     port.post({ v: 1, type: 'panel/watch', tabId: 7 });
     await vi.waitFor(() => expect(port.received).toHaveLength(1));
-    await afterGrace(worker, async () => expect(port.received.at(-1)).toEqual({ v: 1, type: 'panel/update', tabId: 7, reports: [] }));
+    await afterGrace(worker, async () => expect(port.received.at(-1)).toEqual({ v: 1, type: 'panel/update', tabId: 7, reports: [],
+      page: { support: 'none', platform: null, formKey: null } }));
     expect(await registered()).toEqual([]);
   });
 
@@ -261,5 +262,22 @@ describe('a panel that reads or follows a tab', () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(await registered()).toEqual(['3:doc-3']);
     expect(await reported()).toEqual([3]);
+  });
+});
+
+describe('the page state a side panel shows (v2)', () => {
+  it('prunes a page our script left once Autofill checks the tab, and pushes page none to the panel', async () => {
+    const { worker, gone } = await tab();
+    await hello(worker, top('doc-1'));
+    const panel = worker.connect('panel', pageSender());
+    panel.post({ v: 1, type: 'panel/watch', tabId: 7 });
+    await vi.waitFor(() => expect(panel.received.length).toBeGreaterThanOrEqual(1));
+    await afterGrace(worker, async () => expect((panel.received.at(-1) as { page: { support: string } }).page.support).toBe('form'));
+    // The tab went to a page with none of our frames: no hello. Autofill reaches no form, then checks the tab.
+    gone.add('doc-1');
+    await worker.deliver({ v: 1, type: 'panel/fill', tabId: 7, dryRun: false }, pageSender());
+    await afterGrace(worker, async () => expect((panel.received.at(-1) as { page: unknown }).page)
+      .toEqual({ support: 'none', platform: null, formKey: null }));
+    expect(await registered()).toEqual([]);
   });
 });

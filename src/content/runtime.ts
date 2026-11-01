@@ -34,7 +34,8 @@
  * scan, never kept); draft/confirm (Phase 6: the run's waiting draft of that field is the person's now; `expired` when
  * none waits); answer/read (Phase 6: the field's answer as it holds it now, for Save my answer, straight to the worker
  * and never kept, with the company this frame's own address names; `expired` when the field is gone); report/update
- * (the tab's combined report, for the in-page panel).
+ * (the tab's combined report, for the in-page panel); job/refresh and job/postingText (v2: the side panel's job card
+ * and custom question, job-relay.ts).
  * The in-page card's own buttons decide locally, on trusted clicks.
  * The person's trusted input reaches the current run as it comes (TouchLog.subscribe), so a resting run marks what they
  * edited (Phase 6). The document keeps one value hasher and the AI drafts written in it that still wait for the
@@ -79,7 +80,10 @@ import { log } from '../shared/log';
 import { createChannel, Invalidated } from './channel';
 import { watchWxtEvents } from './forged';
 import { watchLocation } from './location';
-import { FillRun, RunFailure, type RunEnd, type RunOptions, type RunPage, type RunRequest } from './orchestrator';
+import { postingTextOf, relayJob } from './job-relay';
+import {
+  FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
+} from './orchestrator';
 import { readPostingPage } from './policy';
 import { createReportLimiter } from './report';
 import { elementsOf } from './targets';
@@ -176,6 +180,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *  the document hashes under the same key, so a later run knows a field that still holds a draft. Memory only. */
   let documentHasher: Promise<ValueHasher> | null = null;
   const drafts = new Map<BaseKey, ValueMac>();
+  /** The AI's answers written here (the owner's amendments), as the drafts are kept. Memory only. */
+  const answers = new Map<BaseKey, HeldAnswer>();
 
   function teardown(reason: 'invalidated' | 'leaving'): void {
     if (stopped) return;
@@ -233,6 +239,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         // The worker sends it only to the frame whose panel/shown said open; a closed panel keeps nothing.
         if (ui?.panel?.open === true) ui.updatePanel(msg.reports);
         return ok({});
+      // The side panel's job card (v2, job-relay.ts): relayed with nothing in either answer, and the custom question's
+      // job text.
+      case 'job/refresh':
+        return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null);
+      case 'job/postingText':
+        return ok(stopped ? { text: '', canaries: [] } : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal));
     }
   });
 
@@ -318,6 +330,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       touches,
       hasher: () => (documentHasher ??= createValueHasher()),
       drafts,
+      answers,
     }, request);
     current = run;
     lastRows = new Map();
@@ -436,6 +449,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           else if (action === 'continue') continueRun('launcher');
           else startRun({ trigger: 'launcher', dryRun: false });
         },
+        // Edit with AI (the owner's amendments): the current run rewrites that field, if it may now.
+        onAiEdit(key) {
+          if (!channel.valid()) return;
+          void current?.rewriteField(key as FieldKey).catch(() => undefined);
+        },
         onPolicyChoice(choice) {
           if (choice === 'accepted') current?.accept();
           else current?.decline();
@@ -479,6 +497,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       current = null;
       lastRows = new Map();
       drafts.clear();
+      answers.clear();
       ui?.setHighlights([]);
       ui?.setNotices([]);
       ui?.hidePolicyCard();

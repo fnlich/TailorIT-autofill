@@ -124,7 +124,9 @@ export function finalGuard(env: FinalGuardEnv, fresh: ScanResult, rows: Map<Fiel
   for (const field of fresh.fields) {
     const row = out.get(field.key);
     const provenance = row !== undefined && row.wrote ? row.provenance : null;
-    const confirmed = provenance === 'llm-draft' && env.confirmedDrafts?.has(field.key) === true;
+    // A draft the person confirmed, or one accepted as written (the owner's amendments: llm-draft-written).
+    const confirmed = provenance === 'llm-draft' && (env.confirmedDrafts?.has(field.key) === true
+      || row?.reason === 'llm-draft-written');
     for (const text of readBackTexts(field)) {
       readBack.push({ key: field.key, provenance, text, ...(confirmed ? { draftConfirmed: true } : {}) });
     }

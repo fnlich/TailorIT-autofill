@@ -1,0 +1,132 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#0",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#1",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#2",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#3",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#4",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#5",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#6",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#7",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#8",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#9",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0#10",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "hint": "",
+      "section": "Experience",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20
+    }
+  ],
+  "jobText": "Northwind Traders is hiring a Senior Software Engineer to build the services behind our ordering platform. You will design APIs in TypeScript and Go, own their reliability, and mentor two engineers. The role is based in our Austin office, with travel to customer sites about a quarter of the time.",
+  "company": "Northwind Traders",
+  "jobTitle": "Senior Software Engineer",
+  "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+  "canaries": [
+    "I am LLM"
+  ]
+}

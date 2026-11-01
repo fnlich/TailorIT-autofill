@@ -10,7 +10,10 @@ import { userEvent } from 'vitest/browser';
 import trap01 from '../../fixtures/traps/01-white-on-white.html?raw';
 import trap08 from '../../fixtures/traps/08-canary-in-draft.html?raw';
 import type { FillResult } from '../core/types/fill';
-import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
+// The Phase 2-6 behaviour these tests pin: version 1's defaults in version 2's shape (the owner's amendments' new
+// defaults have tests of their own: fill-all.browser.test.ts).
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
+import type { Settings } from '../core/types/settings';
 import { loadFixture, logEvents, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { COPY } from '../shared/copy';
 import type { FrameReport } from '../shared/report';
@@ -18,7 +21,7 @@ import { createFakeWorker, FAKE_DRAFT, FAKE_TASK_ID, testVocab, trapUrl, type Fa
   type FakeWorkerOptions } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
-const DRAFTS_ON: Settings = { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, drafts: true } };
+const DRAFTS_ON: Settings = { ...CAUTIOUS_SETTINGS, llm: { ...CAUTIOUS_SETTINGS.llm, drafts: true } };
 
 /** A form with a required question no rule knows (left blank and flagged), a select no rule knows, a box, and a
  *  free-text question. */
@@ -173,7 +176,7 @@ describe('the person’s fix of a flagged field (Requirement F)', () => {
   });
 
   it('marks nothing with the offer to save answers off, nor for a change the page made', async () => {
-    const started = await start(FORM, 'p6-fix-off', { settings: { ...DEFAULT_SETTINGS, offerToSaveAnswers: false } });
+    const started = await start(FORM, 'p6-fix-off', { settings: { ...CAUTIOUS_SETTINGS, offerToSaveAnswers: false } });
     await started.runtime.fill();
     await personTypes(started.fixture, 'office', 'Lisbon');
     const office = byId(started.fixture, 'office');

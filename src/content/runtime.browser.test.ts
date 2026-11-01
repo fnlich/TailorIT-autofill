@@ -3,7 +3,9 @@ import { userEvent } from 'vitest/browser';
 import trap07 from '../../fixtures/traps/07-option-injection.html?raw';
 import trap11 from '../../fixtures/traps/11-forged-wxt-events.html?raw';
 import type { PlanOutput } from '../core/plan/types';
-import { DEFAULT_SETTINGS } from '../core/types/settings';
+// The Phase 2-6 behaviour these tests pin: version 1's defaults in version 2's shape (the owner's amendments' new
+// defaults have tests of their own: fill-all.browser.test.ts).
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { createFakeWorker, testVocab, trapUrl, type FakeWorkerOptions } from './content.testkit';
 import { restoredFromCache, startContentRuntime, type ContentRuntime } from './runtime';
@@ -260,7 +262,7 @@ describe('the in-page panel', () => {
   }
 
   async function startInPage(doc: Document, isTop: boolean) {
-    const fake = createFakeWorker({ settings: { ...DEFAULT_SETTINGS, panel: 'in-page' } });
+    const fake = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, panel: 'in-page' } });
     const runtime = await startContentRuntime(fake.platform, doc, { href: () => trapUrl('in-page'), isTop,
       settle: { quietMs: 60 } });
     runtimes.push(runtime);
@@ -314,7 +316,7 @@ describe('the in-page panel', () => {
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(runtime.ui!.panel?.open).toBe(true);
     await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
-      llm: DEFAULT_SETTINGS.llm, offerToSaveAnswers: true } });
+      llm: CAUTIOUS_SETTINGS.llm, offerToSaveAnswers: true } });
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }, { v: 1, type: 'panel/shown', open: false }]);
     await clickInUi(runtime, runtime.ui!.launcher.el);

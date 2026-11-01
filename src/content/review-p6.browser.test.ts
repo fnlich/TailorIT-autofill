@@ -13,7 +13,10 @@ import { baseKeyOf, storedBaseKey } from '../core/loop/bookkeeping';
 import type { FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { RunState } from '../core/types/run';
-import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
+// The Phase 2-6 behaviour these tests pin: version 1's defaults in version 2's shape (the owner's amendments' new
+// defaults have tests of their own: fill-all.browser.test.ts).
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
+import type { Settings } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { deadline } from '../dom/time';
 import { COPY } from '../shared/copy';
@@ -22,7 +25,7 @@ import { createFakeWorker, FAKE_DRAFT, FAKE_TASK_ID, testVocab, trapUrl, type Fa
   type FakeWorkerOptions } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
-const DRAFTS_ON: Settings = { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, drafts: true } };
+const DRAFTS_ON: Settings = { ...CAUTIOUS_SETTINGS, llm: { ...CAUTIOUS_SETTINGS.llm, drafts: true } };
 const WHY = 'Why do you want to work here?';
 const OFFICE = 'Which of our offices would you visit first?';
 const IDENTIFY = 'How do you identify?';

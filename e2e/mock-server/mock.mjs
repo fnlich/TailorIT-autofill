@@ -22,9 +22,15 @@
  *   is always there. A pick's normal answer is the fake CLI's: the option whose folded text equals the intended value or
  *   an alias, else null; a classification's is a small keyword table. Scenarios script the hostile answers.
  * - Phase 6: POST /ai/draft makes a draft task the same way, the fake CLI's clean draft (CLEAN_DRAFT) for each
- *   question unless a scenario scripts a canary, AI talk, a foreign link, a draft past its cap or a trimmed one. GET,
+ *   question (CLEAN_REWRITE for one that carries a currentAnswer: Edit with AI's rewrite, version 2) unless a scenario
+ *   scripts a canary, AI talk, a foreign link, a draft past its cap or a trimmed one. GET,
  *   PUT and DELETE /answers keep saved answers in the mock's state until the reset (none at first), with TailorIT's
  *   refusals in brief: a file, a misfit, a company scope on a non-text answer, a category or question it never keeps.
+ * - Version 2: POST /jobs adds the posting (the contract's AutofillAddJobResponse, created) and keeps its lookup, so
+ *   every later lookup finds that job until the reset; scenarios answer it as existing, closed, the ATS down or an
+ *   address TailorIT cannot add from. A lookup naming `resumeId`, one of the listed resumes, suggests that resume
+ *   (reason chosen) and scores it. POST /ai/answer makes an answer task: by default every item has no answer
+ *   (no_answer), so a form fills as it did before; scenarios answer every item, as a guess or from the resume.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -52,7 +58,7 @@ export function example(schema, name = 'golden') {
 }
 
 /** The API version TailorIT speaks, as the contract's version.ts names it. */
-export const MOCK_API_VERSION = 1;
+export const MOCK_API_VERSION = 2;
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';
@@ -128,7 +134,7 @@ const WITHOUT_SENSITIVE = /** @type {string[]} */ (example('AutofillRedeemRespon
  */
 export const MOCK_SCENARIOS = Object.freeze({
   unauthorized: 'Every token request gets 401 not_signed_in: TailorIT no longer knows the token.',
-  'version-mismatch': 'The mock speaks API version 2: every token request gets 409 conflict, its header naming 2.',
+  'version-mismatch': 'The mock speaks API version 3: every token request gets 409 conflict, its header naming 3.',
   'sensitive-forbidden': 'GET /profile/sensitive gets 403: this connection may not read the sensitive part.',
   'sensitive-not-authorized': 'GET /profile/sensitive answers the golden part with US authorized: false (the rest as '
     + 'golden), and both profile routes name the next revision, so a worker drops a sensitive part it held and fetches '
@@ -138,6 +144,21 @@ export const MOCK_SCENARIOS = Object.freeze({
   'lookup-fails': 'POST /lookup gets 500.',
   'lookup-posting-text': 'POST /lookup answers with-posting-text.json: a stored copy that asks applicants not to use AI tools.',
   'lookup-no-resume': 'POST /lookup answers unknown-page.json: no job, and no resume to suggest.',
+  // Version 2: the job card.
+  'lookup-not-found': 'POST /lookup answers unknown-page-default-resume.json: no job (Add this job to TailorIT), the default '
+    + 'resume to attach.',
+  'lookup-applied': 'POST /lookup answers company-page.json: a closed posting already applied to, archived, its resume '
+    + "unreadable (a pairing TailorIT's helper never makes with the built PDF: the card's states only).",
+  'lookup-untracked': 'POST /lookup answers the golden job with no tracker entry (Save to tracker).',
+  'lookup-no-keywords': 'POST /lookup answers no-keywords.json: a posting that names no keywords, so no match number.',
+  'lookup-bad-match': "POST /lookup answers the golden lookup with a match off the contract (74.5%): the extension drops the "
+    + 'match alone.',
+  'add-job-existing': 'POST /jobs answers existing.json: TailorIT had the job, now in the tracker (created false).',
+  'add-job-closed': 'POST /jobs gets 404 not_found: the ATS has no such posting any more.',
+  'add-job-ats-down': 'POST /jobs gets 503 ats_unavailable: the ATS could not be reached in time.',
+  'add-job-unsupported': 'POST /jobs gets 400 unsupported: TailorIT cannot add from that address.',
+  'ai-answer': 'POST /ai/answer answers every item: a choice its first option, a text CLEAN_ANSWER within its cap, with the '
+    + "basis in value (default 'guess').",
   'resume-slow': 'GET /resumes/:id/file answers after delayMs (default 8 s).',
   'resume-fails': 'GET /resumes/:id/file gets 500.',
   'resume-hash-mismatch': "GET /resumes/:id/file sends an X-TailorIT-Sha256 that is not the bytes' digest.",
@@ -152,7 +173,8 @@ export const MOCK_SCENARIOS = Object.freeze({
   'ai-busy': 'An AI route answers 409 ai_busy.',
   'ai-timeout': 'An AI route answers 202 {taskId}, and its task never finishes: past the 120 s cap the extension keeps.',
   'ai-unavailable': 'An AI route answers 503 ai_unavailable.',
-  // Phase 6: drafts. Without one, every question gets the fake CLI's clean draft (CLEAN_DRAFT), reason drafted.
+  // Phase 6: drafts. Without one, every question gets the fake CLI's clean draft (CLEAN_DRAFT, or CLEAN_REWRITE for a
+  // question with a currentAnswer), reason drafted.
   'ai-draft-canary': 'POST /ai/draft answers every question with a draft holding the word in value (default '
     + '"pineapple"), reason drafted: a canary TailorIT missed, which the extension must catch itself.',
   'ai-draft-ai-talk': 'POST /ai/draft answers every question null, ai_reference: the draft spoke of being an AI.',
@@ -165,7 +187,7 @@ export const MOCK_SCENARIOS = Object.freeze({
   'answers-refused': 'PUT /answers gets 400 validation_failed, as TailorIT refuses a question it never keeps.',
 });
 /** @typedef {keyof typeof MOCK_SCENARIOS} ScenarioName */
-/** @typedef {'autofill_pick' | 'autofill_classify' | 'autofill_draft'} AiKind */
+/** @typedef {'autofill_pick' | 'autofill_classify' | 'autofill_draft' | 'autofill_answer'} AiKind */
 
 /** Text as the fake CLI compares it: no accents, lower case, letters and digits only. @param {unknown} text */
 const foldText = (text) => String(text).normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
@@ -186,6 +208,14 @@ const CLASSIFY_KEYWORDS = [
 /** The fake CLI's draft for a free-text question: clean, first person, no link, no contact detail, no canary. */
 export const CLEAN_DRAFT = 'I have spent four years building the kind of product this team makes, and I would like to '
   + 'bring that experience to the work described in this posting.';
+
+/** The mock's rewrite of what a box holds (version 2's currentAnswer, Edit with AI): clean like CLEAN_DRAFT, and never
+ *  the same text, so a spec can tell the rewrite was written. */
+export const CLEAN_REWRITE = 'Four years of building products like this one taught me how to ship them well, and I want '
+  + 'to do that work on this team.';
+
+/** The fake CLI's answer to a text item (version 2): one short line, no link, no contact detail. */
+export const CLEAN_ANSWER = 'About three years';
 
 /** A draft's cap when its question names no maxLength (the contract's AUTOFILL_AI_LIMITS.draft.defaultLength). */
 const DRAFT_DEFAULT_LENGTH = 3000;
@@ -324,6 +354,8 @@ export function createMock() {
     /** The saved answers PUT /answers kept (Phase 6), by id, in the order they were first saved.
      *  @type {Map<string, Record<string, unknown>>} */
     answers: new Map(),
+    /** The lookup a POST /jobs added (version 2): every later lookup finds that job until the reset. @type {Record<string, any> | null} */
+    added: null,
     /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes. */
     token: { value: GOLDEN_TOKEN, scopes: [...ALL_SCOPES], revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
   });
@@ -364,14 +396,67 @@ export function createMock() {
     return { ...envelope, revision: revisionOf(envelope), sensitive };
   }
 
-  /** A lookup answer with its suggested resume pointing at the golden PDF. @param {string} name */
-  function lookupAnswer(name) {
-    const answer = example('AutofillLookupResponse', name);
+  /** A lookup answer with its suggested resume pointing at the golden PDF, and its match scoring it.
+   *  @param {string} name @param {Record<string, any>} [given] another answer to adjust the same way */
+  function lookupAnswer(name, given) {
+    const answer = given ?? example('AutofillLookupResponse', name);
     if (answer.suggestedResume !== null) {
       answer.suggestedResume = { ...answer.suggestedResume, id: GOLDEN_RESUME.id, label: GOLDEN_RESUME.label,
         kind: GOLDEN_RESUME.kind, fileKind: GOLDEN_RESUME.fileKind, fileName: GOLDEN_RESUME.fileName };
     }
+    if (answer.match && typeof answer.match.resumeId === 'string') answer.match = { ...answer.match, resumeId: GOLDEN_RESUME.id };
     return answer;
+  }
+
+  /** A lookup's answer for the person's chosen resume (`resumeId`, version 2): when it is one of the listed resumes, it
+   *  is the suggestion (reason chosen) and the one scored (chosen.json's match); else the answer stands.
+   *  @param {Record<string, any>} answer @param {unknown} resumeId */
+  function withChosen(answer, resumeId) {
+    const item = typeof resumeId === 'string' ? resumeList().items.find((/** @type {{ id: string }} */ entry) => entry.id === resumeId) : undefined;
+    if (item === undefined) return answer;
+    const chosen = example('AutofillLookupResponse', 'chosen');
+    return { ...answer, suggestedResume: { id: item.id, label: item.label, kind: item.kind, fileKind: item.fileKind,
+      fileName: item.fileName, reason: 'chosen' }, match: answer.job === null ? null : { ...chosen.match, resumeId: item.id } };
+  }
+
+  /** The lookup's answer to a body (version 2): a scenario's, the job POST /jobs added, or the golden one; then the
+   *  chosen resume. @param {Record<string, unknown>} json @returns {Answer} */
+  function lookupOf(json) {
+    const slow = take('lookup-slow');
+    if (slow !== null) return { ...jsonAnswer(200, withChosen(lookupAnswer('golden'), json.resumeId)), delayMs: slow.delayMs };
+    if (take('lookup-fails') !== null) return serverError();
+    /** @type {Record<string, any>} */
+    let answer;
+    if (take('lookup-posting-text') !== null) answer = lookupAnswer('with-posting-text');
+    else if (take('lookup-no-resume') !== null) answer = lookupAnswer('unknown-page');
+    else if (take('lookup-not-found') !== null) answer = lookupAnswer('unknown-page-default-resume');
+    else if (take('lookup-applied') !== null) answer = lookupAnswer('company-page');
+    else if (take('lookup-no-keywords') !== null) answer = lookupAnswer('no-keywords');
+    else if (take('lookup-untracked') !== null) answer = { ...lookupAnswer('golden'), application: null };
+    else if (take('lookup-bad-match') !== null) {
+      answer = lookupAnswer('golden');
+      answer.match = { ...answer.match, percentage: 74.5 };
+    } else answer = state.added === null ? lookupAnswer('golden') : JSON.parse(JSON.stringify(state.added));
+    if (json.includePostingText !== true && answer.job) delete answer.job.postingText;
+    return jsonAnswer(200, withChosen(answer, json.resumeId));
+  }
+
+  /** POST /jobs (version 2): TailorIT's refusals by scenario, else the contract's created answer (or existing.json), its
+   *  lookup kept for the lookups after it. @param {Record<string, unknown>} json @returns {Answer} */
+  function addJob(json) {
+    const urlOk = typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048;
+    if (!urlOk) return invalid('url: Required');
+    if (take('add-job-unsupported') !== null) return refusal(400, 'unsupported', 'TailorIT cannot add jobs from that address.');
+    if (take('add-job-closed') !== null) return refusal(404, 'not_found', 'That posting is no longer open.');
+    if (take('add-job-ats-down') !== null) return refusal(503, 'ats_unavailable', 'The job site could not be reached. Try again later.');
+    const existing = take('add-job-existing') !== null;
+    const body = example('AutofillAddJobResponse', existing ? 'existing' : 'golden');
+    // The new Saved application links TailorIT's best resume: the golden PDF here, unless the person chose one.
+    const base = lookupAnswer('golden', body.lookup);
+    if (base.suggestedResume !== null) base.suggestedResume.reason = 'application';
+    const lookup = withChosen(base, json.resumeId);
+    state.added = lookup;
+    return jsonAnswer(200, { created: !existing, lookup });
   }
 
   function resumeList() {
@@ -441,7 +526,29 @@ export function createMock() {
         if (aiTalk !== null) return { key, text: null, reason: 'ai_reference' };
         if (url !== null) return { key, text: null, reason: 'contact' };
         if (tooLong !== null) return { key, text: `${CLEAN_DRAFT} `.repeat(Math.ceil((cap + 1) / CLEAN_DRAFT.length) + 1).slice(0, cap + 1), reason: 'drafted' };
-        return { key, text: CLEAN_DRAFT.slice(0, cap), reason: trimmed !== null ? 'trimmed' : 'drafted' };
+        const clean = typeof question.currentAnswer === 'string' && question.currentAnswer !== '' ? CLEAN_REWRITE
+          : CLEAN_DRAFT;
+        return { key, text: clean.slice(0, cap), reason: trimmed !== null ? 'trimmed' : 'drafted' };
+      }),
+    };
+  }
+
+  /** An answer task's result for these items (version 2): no answer for any, unless the ai-answer scenario answers each
+   *  (a choice its first option, a text CLEAN_ANSWER within its cap) with its basis. @param {Array<Record<string, any>>} items */
+  function answerResult(items) {
+    const answering = take('ai-answer');
+    const basis = typeof answering?.value === 'string' ? answering.value : 'guess';
+    return {
+      answers: items.map((item) => {
+        const optionSetHash = item.shape === 'choice' ? item.optionSetHash : null;
+        const none = { key: item.key, optionSetHash, index: null, text: null, basis: null, reason: 'no_answer' };
+        if (answering === null) return none;
+        if (item.shape === 'choice') {
+          const first = Array.isArray(item.options) ? item.options[0] : undefined;
+          return first === undefined ? none : { ...none, index: first.index, basis, reason: 'answered' };
+        }
+        const cap = typeof item.maxLength === 'number' ? item.maxLength : 500;
+        return { ...none, text: CLEAN_ANSWER.slice(0, cap), basis, reason: 'answered' };
       }),
     };
   }
@@ -468,7 +575,11 @@ export function createMock() {
   function aiAnswer(kind, json) {
     const field = kind === 'autofill_draft' ? json.questions : json.items;
     const items = Array.isArray(field) ? /** @type {Array<Record<string, any>>} */ (field) : [];
-    if (kind === 'autofill_draft') {
+    if (kind === 'autofill_answer') {
+      if (items.length === 0 || items.length > 10) return invalid('items: 1 to 10 items');
+      if (items.some((item) => !['choice', 'text'].includes(item.shape))) return invalid('items.shape: choice or text');
+      if (typeof json.jobText !== 'string') return invalid('jobText: Required');
+    } else if (kind === 'autofill_draft') {
       if (items.length === 0 || items.length > 3) return invalid('questions: 1 to 3 questions');
       if (items.some((item) => item.maxLength !== null && !(Number.isInteger(item.maxLength) && item.maxLength >= 50
         && item.maxLength <= 5000))) return invalid('questions.maxLength: 50 to 5000, or null');
@@ -485,7 +596,7 @@ export function createMock() {
     const task = { id: randomUUID(), kind, createdAt: now, cancelledAt: null,
       readyAt: endless !== null ? null : slow !== null ? now + slow.delayMs : now,
       result: kind === 'autofill_pick' ? pickResult(items) : kind === 'autofill_classify' ? classifyResult(items)
-        : draftResult(items) };
+        : kind === 'autofill_answer' ? answerResult(items) : draftResult(items) };
     state.tasks.set(task.id, task);
     return slow !== null || endless !== null ? jsonAnswer(202, { taskId: task.id }) : jsonAnswer(200, viewOf(task));
   }
@@ -608,18 +719,17 @@ export function createMock() {
     'POST /api/autofill/lookup': ({ json }) => {
       const urlOk = typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048;
       const textOk = json.includePostingText === undefined || typeof json.includePostingText === 'boolean';
-      if (!urlOk || !textOk) return invalid('url: Required');
-      const slow = take('lookup-slow');
-      if (slow !== null) return { ...jsonAnswer(200, lookupAnswer('golden')), delayMs: slow.delayMs };
-      if (take('lookup-fails') !== null) return serverError();
-      if (take('lookup-posting-text') !== null) return jsonAnswer(200, lookupAnswer('with-posting-text'));
-      if (take('lookup-no-resume') !== null) return jsonAnswer(200, lookupAnswer('unknown-page'));
-      return jsonAnswer(200, lookupAnswer('golden'));
+      const resumeOk = json.resumeId === undefined || (typeof json.resumeId === 'string' && json.resumeId.length >= 1
+        && json.resumeId.length <= 64);
+      if (!urlOk || !textOk || !resumeOk) return invalid('url: Required');
+      return lookupOf(json);
     },
+    'POST /api/autofill/jobs': ({ json }) => addJob(json),
     'GET /api/autofill/resumes': () => jsonAnswer(200, resumeList()),
     'POST /api/autofill/ai/pick': ({ json }) => aiAnswer('autofill_pick', json),
     'POST /api/autofill/ai/classify': ({ json }) => aiAnswer('autofill_classify', json),
     'POST /api/autofill/ai/draft': ({ json }) => aiAnswer('autofill_draft', json),
+    'POST /api/autofill/ai/answer': ({ json }) => aiAnswer('autofill_answer', json),
     'GET /api/autofill/answers': () => answerList(),
     'PUT /api/autofill/answers': ({ json }) => saveAnswer(json),
     'DELETE /api/autofill/answers/:id': ({ params }) => (state.answers.delete(params[0] ?? '') ? { status: 204 } : notFound()),

@@ -11,6 +11,7 @@
  * follow a tab asks the same of all its frames, because a page with none of our frames says no hello at all.
  */
 import type { Platform } from '../core/enums';
+import type { PageState } from '../messaging/schemas';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
@@ -52,6 +53,24 @@ export async function registerFrame(
 /** Every registered frame of a tab. */
 export async function framesOfTab(session: StorageArea, tabId: number): Promise<FrameEntry[]> {
   return Object.values(await session.getMany(`frames:${tabId}:`)) as FrameEntry[];
+}
+
+/** The frame a tab's form is in (v2): its lowest registered frame with a form, or null. */
+export function formFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
+  return frames.filter((frame) => frame.hasForm).sort((a, b) => a.frameId - b.frameId)[0] ?? null;
+}
+
+/**
+ * What a tab's page holds (v2), from the registry alone, never an address: 'form' with the form frame's platform and a
+ * key that changes when that frame shows another document; else 'no-form' when a frame of ours is there (a posting
+ * page), else 'none'.
+ */
+export async function pageOfTab(session: StorageArea, tabId: number): Promise<PageState> {
+  const frames = await framesOfTab(session, tabId);
+  const form = formFrameOf(frames);
+  if (form === null) return { support: frames.length > 0 ? 'no-form' : 'none', platform: null, formKey: null };
+  return { support: 'form', platform: form.platform,
+    formKey: `${form.frameId}:${form.documentId ?? `at-${form.registeredAt}`}`.slice(0, 120) };
 }
 
 /** One registered frame, or null. */

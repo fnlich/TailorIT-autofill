@@ -47,6 +47,12 @@ export const REASON_CODES = [
   // to say; it was longer than the field allows; it spoke of being an AI; it held the prompt's wrapper or sentinels; it
   // named a link, an email or a phone number that is not the person's
   'draft-empty', 'draft-too-long', 'draft-ai-reference', 'draft-wrapper', 'draft-contact',
+  // the owner's amendments (docs/SPEC-AMENDMENTS.md), each on a row that needs nothing of the person: a draft written
+  // and accepted; an AI answer resting on the resume, the profile or the job; an AI answer with nothing to rest on
+  // (marked "AI guess"); the form's decline option chosen for a self-identification question the profile leaves
+  // unanswered. Then, flagged: the AI gave no answer; the posting forbids AI, so a question only the AI could answer
+  // was left for the person
+  'llm-draft-written', 'llm-answer-written', 'ai-guess', 'eeo-decline-default', 'llm-no-answer', 'ai-off-for-posting',
   // a bug
   'internal-error',
 ] as const;

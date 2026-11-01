@@ -15,6 +15,7 @@ import type { Profile, SensitiveState, Ymd } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
 import type { Settings } from '../types/settings';
 import type { Vocab } from '../vocab/types';
+import type { AnswerItem, AnswerVerdict } from './answers';
 import type { DraftItem, DraftVerdict } from './drafts';
 
 /** canonicalizeProfile's state, plus 'unavailable': the worker tried to fetch the sensitive part and failed for a reason
@@ -53,6 +54,16 @@ export interface PlanInput {
   /** The loop's reveal edges on this step (parent, child base keys: the writer whose write revealed the child), for a
    *  draft's context (Phase 6 review, E2). Absent: none known. */
   revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
+  /** What TailorIT's lookup knows of the posting (the run's lookup, in the worker's memory): its company, for "Have
+   *  you worked here before?", and its location, whose country interpretation 1 reads. Absent: no job was found. */
+  posting?: { company?: string; location?: string };
+  /** The run fills from the profile only (the owner's amendments): its posting forbids AI, and the person's setting
+   *  says so (settings.llm.whenForbidden). No tiebreak, classification, draft or answer is asked, and nothing is
+   *  editable with AI; a question only the AI could answer is left for the person (ai-off-for-posting). */
+  noAi?: boolean;
+  /** Edit with AI: the one field whose text the person asked TailorIT to rewrite (its draft, with what it holds now).
+   *  Only that key is planned. */
+  rewrite?: FieldKey;
 }
 
 /** A tiebreak verdict, with the TailorIT task that gave it: an llm-pick write names that task. */
@@ -69,6 +80,8 @@ export interface PlanAi {
   classifications: ReadonlyMap<string, ClassifyVerdict>;
   /** Drafts by field key (Phase 6, drafts.ts): a text, or why there is none. */
   drafts?: ReadonlyMap<string, DraftVerdict>;
+  /** AI answers by field key (answers.ts): a chosen option, a text, or why there is none. */
+  answers?: ReadonlyMap<string, AnswerVerdict>;
 }
 
 /** The questions a plan needs the LLM for (Phase 4): each awaiting key has exactly one. */
@@ -77,8 +90,11 @@ export interface PlanAsk {
   tiebreaks: TiebreakItem[];
   /** Fields nothing classified, screened and with something to classify (settings.llm.classify on). */
   classify: ClassifyItem[];
-  /** Free-text questions to draft an answer for (Phase 6, settings.llm.drafts on; drafts.ts). */
+  /** Free-text questions to draft an answer for (Phase 6, settings.llm.drafts on; drafts.ts), or the one field Edit with
+   *  AI rewrites. */
   drafts?: DraftItem[];
+  /** Questions nothing else settled, for TailorIT's AI to answer (settings.llm.answers on; answers.ts). */
+  answers?: AnswerItem[];
 }
 
 /** A match the planner would cache once accepted (core/matcher/cache.ts cacheEntryFor): the field it was written to,
@@ -119,4 +135,10 @@ export interface PlanOutput {
   /** Cache keys whose entries no longer fit the options (matchOne's cacheDrop): the worker deletes them. Absent when
    *  there are none. Never sent to the frame. */
   cacheDrops?: string[];
+  /** The planned keys the page may offer Edit with AI on (drafts.ts aiEditableField); absent: none (a dry run, a run
+   *  filling from the profile only). */
+  aiEditable?: FieldKey[];
+  /** The frame's scan holds an "I did not use AI" attestation: the frame fills from the profile only from now on
+   *  (unless the person's setting is to use the AI anyway), and says so. */
+  aiAttestation?: true;
 }

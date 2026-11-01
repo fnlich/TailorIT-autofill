@@ -9,11 +9,13 @@
     "jobs:lookup",
     "ai:run",
     "answers:write",
+    "jobs:add",
+    "letters:write",
     "telemetry:write"
   ],
   "account": {
     "name": "Elena Ruiz",
     "email": "elena.ruiz@example.com"
   },
-  "apiVersion": 1
+  "apiVersion": 2
 }

@@ -10,7 +10,10 @@
     "companyName": "Northwind",
     "location": "Austin, TX, USA",
     "active": false,
-    "matchedBy": "link_key"
+    "matchedBy": "link_key",
+    "postedAt": "2026-09-02T00:00:00.000Z",
+    "salary": null,
+    "workArrangement": null
   },
   "application": {
     "id": "5e1c9a7b-2d84-4f36-a0b9-8c7d3e2f1a64",
@@ -27,5 +30,9 @@
     "fileKind": "docx",
     "fileName": "Elena_Ruiz_CV.docx",
     "reason": "default"
+  },
+  "match": {
+    "state": "unreadable",
+    "resumeId": "7d9f2b14-3e6a-4f80-b2c5-91e3a7d4f650"
   }
 }

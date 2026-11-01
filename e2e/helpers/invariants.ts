@@ -127,9 +127,10 @@ function withoutLabels(report: unknown): unknown {
   };
 }
 
-/** A request's body as the marker and canary search reads it: a draft request's `canaries` aside (point 4). */
+/** A request's body as the marker and canary search reads it: a draft or an answer request's `canaries` aside (point
+ *  4; the answer route since the owner's amendments). */
 function markerBody(request: MockRequest): string {
-  if (request.method !== 'POST' || request.path !== '/api/autofill/ai/draft') return request.body;
+  if (request.method !== 'POST' || !/^\/api\/autofill\/ai\/(?:draft|answer)$/.test(request.path)) return request.body;
   try {
     const { canaries: _canaries, ...body } = JSON.parse(request.body) as Record<string, unknown>;
     return JSON.stringify(body);
@@ -150,15 +151,28 @@ const AI_PROFILE_TEXT = ['intendedValue', 'aliases'];
  * the reports' row keys (proven built from the page's own label and section). What is left (categories, hashes,
  * kinds, a key no row has) is searched. A draft request (Phase 6) sets aside its page text too (each question, and the
  * job text: the page's visible text outside the form, which the marker test proves visible), the lookup's company and
- * job title (TailorIT's own words), and a question's key when it is a row's. Any other body is read whole.
+ * job title (TailorIT's own words), and a question's key when it is a row's. An answer request (the owner's
+ * amendments) sets aside the same: each item's question, hint, section and options (page text), the job text, the
+ * company and title, and an item's key when it is a row's; a rewrite's current answer (Edit with AI) is page text too.
+ * Any other body is read whole.
  */
 function sentinelBody(request: MockRequest, rowKeys: ReadonlySet<string>): string {
   if (request.method === 'POST' && request.path === '/api/autofill/ai/draft') {
     try {
       const { jobText: _job, company: _company, jobTitle: _title, questions, ...rest } = JSON.parse(request.body) as
         { jobText?: unknown; company?: unknown; jobTitle?: unknown; questions?: Array<Record<string, unknown>> };
-      return JSON.stringify({ ...rest, questions: (questions ?? []).map(({ question: _question, key, ...question }) =>
-        ({ ...question, ...(rowKeys.has(String(key)) ? {} : { key }) })) });
+      return JSON.stringify({ ...rest, questions: (questions ?? []).map(({ question: _question,
+        currentAnswer: _current, key, ...question }) => ({ ...question, ...(rowKeys.has(String(key)) ? {} : { key }) })) });
+    } catch {
+      return request.body;
+    }
+  }
+  if (request.method === 'POST' && request.path === '/api/autofill/ai/answer') {
+    try {
+      const { jobText: _job, company: _company, jobTitle: _title, items, ...rest } = JSON.parse(request.body) as
+        { jobText?: unknown; company?: unknown; jobTitle?: unknown; items?: Array<Record<string, unknown>> };
+      return JSON.stringify({ ...rest, items: (items ?? []).map(({ question: _question, hint: _hint, section: _section,
+        options: _options, key, ...item }) => ({ ...item, ...(rowKeys.has(String(key)) ? {} : { key }) })) });
     } catch {
       return request.body;
     }

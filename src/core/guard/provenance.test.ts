@@ -141,6 +141,8 @@ describe('the category policy (§7.6, §8.2)', () => {
         return { provenance, taskId: 't', pickedCandidate: 0, labelHash: 'a'.repeat(64) };
       case 'llm-draft':
         return { provenance, taskId: 't', confirmedByUser: true };
+      case 'llm-answer':
+        return { provenance, taskId: 't', basis: 'resume' };
     }
   };
   const allows = (category: FieldCategory) => (['profile', 'saved', 'rule', 'llm-pick', 'llm-draft'] as const)
@@ -161,7 +163,8 @@ describe('the category policy (§7.6, §8.2)', () => {
       .toBe(false);
     expect(allows('attentionCheck')).toEqual([]);
     expect(allows('consent.aiAttestation')).toEqual([]);
-    expect(allows('screening.criminalHistory')).toEqual([]);
+    // Criminal history is a legal answer from the person's own profile since the owner's amendments, never an AI's.
+    expect(allows('screening.criminalHistory')).toEqual(['profile', 'rule']);
   });
 
   it('lets drafts and saved answers fill free text, and only the resume an upload', () => {
@@ -177,5 +180,30 @@ describe('the category policy (§7.6, §8.2)', () => {
     expect(RULE_SCOPES['consent.preapproved']('consent.other')).toBe(false);
     expect(RULE_SCOPES['legal.sponsorship-combined']('workAuth.sponsorship')).toBe(true);
     expect(RULE_SCOPES['legal.sponsorship-combined']('workAuth.sponsorshipNow')).toBe(false);
+  });
+});
+
+describe('an AI answer’s text (llm-answer, the owner’s amendments)', () => {
+  const answer = (basis: string): ValueOrigin => ({ provenance: 'llm-answer', taskId: 't', basis } as ValueOrigin);
+
+  it('needs its task, a known basis and a text', () => {
+    expect(checkProvenanceShape(writeOf(answer('guess')))).toEqual({ ok: true });
+    expect(checkProvenanceShape(writeOf(answer('hunch')))).toEqual({ ok: false, reason: 'missing-provenance' });
+    expect(checkProvenanceShape(writeOf({ provenance: 'llm-answer', taskId: '', basis: 'resume' })))
+      .toEqual({ ok: false, reason: 'missing-provenance' });
+    expect(checkProvenanceShape(writeOf(answer('resume'), { kind: 'check' })))
+      .toEqual({ ok: false, reason: 'policy-violation' });
+  });
+
+  it('fills an unknown or free-text field and the answerable job preferences, never anything closed', () => {
+    for (const category of ['unknown', 'screening.other', 'freeText.whyCompany', 'preferences.travel',
+      'experience.totalYears'] as const) {
+      expect(checkCategoryPolicy(answer('resume'), category).ok, category).toBe(true);
+    }
+    for (const category of ['contact.email', 'identity.firstName', 'education.school', 'workAuth.authorized',
+      'screening.criminalHistory', 'eeo.gender', 'consent.privacy', 'salary.expected', 'attentionCheck',
+      'consent.aiAttestation', 'file.resume'] as const) {
+      expect(checkCategoryPolicy(answer('guess'), category).ok, category).toBe(false);
+    }
   });
 });

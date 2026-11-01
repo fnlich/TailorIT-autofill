@@ -18,9 +18,11 @@ import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { createAuth, createTokenKeeper } from './auth';
 import { createAiTasks } from './ai-tasks';
+import { ASK_LIMIT, createAsk } from './ask';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, registerFrame } from './frames';
+import { createJobCards, JOB_RELAY_LIMIT, type JobCards } from './job-cards';
 import { createKeyedQueue, createRateLimit } from './locks';
 import { createAcceptBook, createMatchCache } from './match-cache';
 import { createPanelHandlers, openSidePanel } from './panel';
@@ -32,7 +34,7 @@ import { createResumeChooser } from './resume-choice';
 import { createResumeTransfer } from './resume-transfer';
 import { createRouter, type ContentChannel } from './router';
 import { beginRun, keyFitsFrame, RUN_BEGIN_LIMIT } from './run-begin';
-import { createRunRegistry } from './runs';
+import { createRunRegistry, type RunRegistry } from './runs';
 import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage } from './senders';
 import { createServerClient } from './server-client';
@@ -79,9 +81,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const state: WorkerState = { storageAccess: 'pending', ready: Promise.resolve() };
 
   // ── The parts (no awaits here: listeners come next, synchronously) ──────────────────────────────────────────────
-  // The profile read with a token goes with it: a new or dropped token empties the cache.
+  // What was read with a token goes with it: a new or dropped token empties the profile cache, every run's lookup and
+  // resume, and the side panel's job cards and resume choices (v2).
   let profiles: ProfileCache | null = null;
-  const keeper = createTokenKeeper(platform, () => profiles?.drop());
+  let runRegistry: RunRegistry | null = null;
+  let jobCards: JobCards | null = null;
+  const keeper = createTokenKeeper(platform, () => {
+    profiles?.drop();
+    runRegistry?.dropTokenData();
+    jobCards?.dropTokenData();
+  });
   const server = createServerClient({
     origin,
     platform,
@@ -94,6 +103,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const auth = createAuth({ platform, origin, server, keeper, storageAccess: () => state.storageAccess });
   const settings = createSettingsStore(local);
   const runs = createRunRegistry(platform, session);
+  runRegistry = runs;
   const runStates = createRunStateStore({ local, session, now, profile: () => profileCache.get(), core });
   const policy = createPolicyBook(session);
   // Keyed `${tabId}/` (run/begin) and `${tabId}/${frameId}` (report/put, policy/hit), so a closed tab's counts go with
@@ -102,12 +112,19 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const reportLimit = createRateLimit(REPORT_PUT_LIMIT.count, REPORT_PUT_LIMIT.windowMs, now);
   const policyLimit = createRateLimit(POLICY_HIT_LIMIT.count, POLICY_HIT_LIMIT.windowMs, now);
   const shownLimit = createRateLimit(PANEL_SHOWN_LIMIT.count, PANEL_SHOWN_LIMIT.windowMs, now);
+  // The job card's relay (v2), keyed `${tabId}/${frameId}`, and the custom question, keyed `${tabId}/`.
+  const relayLimit = createRateLimit(JOB_RELAY_LIMIT.count, JOB_RELAY_LIMIT.windowMs, now);
+  const askLimit = createRateLimit(ASK_LIMIT.count, ASK_LIMIT.windowMs, now);
   // The anonymous counters (Phase 6): storage.local, only while the person opted in; nothing is ever sent.
   const telemetry = createTelemetry({ local, session, settings });
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, shownLimit, telemetry,
     check: (tabId) => checkTab(tabId) });
-  const chooseResume = createResumeChooser({ runs, server, profiles: profileCache });
+  const chooseResume = createResumeChooser({ runs, server, profiles: profileCache, generation: () => keeper.generation });
+  // The side panel's job card and custom question (v2): read through the tab's form frame, kept in memory only.
+  const jobs = createJobCards({ session, tabs: platform.tabs, server, connected: () => auth.connected(),
+    generation: () => keeper.generation, now, limit: relayLimit });
+  jobCards = jobs;
   // The LLM steps' tasks on TailorIT (Phase 4), shared by every run; each run keeps its own questions (ai-tasks.ts).
   const aiTasks = createAiTasks({ server, timers, now });
   // The accepted-match cache (Phase 6): storage.session, in memory; a match goes in once the field was unchanged at the
@@ -121,7 +138,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
   const answers = createAnswerHandlers({ platform, reports, runs, server, settings, vocab: () => core.vocab(),
     connected: () => auth.connected() });
+  const ask = createAsk({ jobs, server, profiles: profileCache, tabs: platform.tabs, timers, now,
+    connected: () => auth.connected(), limit: askLimit });
   const beginDeps = {
+    jobs,
+    generation: () => keeper.generation,
     storageAccess: () => state.storageAccess,
     connected: () => auth.connected(),
     limit: beginLimit,
@@ -142,6 +163,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
    *  reported and began goes. Only that document's: a page the frame shows again from the back/forward cache, which
    *  says no hello, keeps its run and report. */
   async function forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void> {
+    jobs.forgetDocument(tabId, frameId, documentId);
     await Promise.all([reports.forgetDocument(tabId, frameId, documentId), runs.forgetDocument(tabId, frameId, documentId)]);
   }
 
@@ -156,6 +178,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     async forget(tabId, frameId, documentId) {
       await forgetFrames(session, tabId, [frameId]);
       await forgetDocument(tabId, frameId, documentId);
+      // The page state may have changed with it (v2: the side panel's strip and card).
+      await reports.pageChanged(tabId);
     },
   });
 
@@ -193,12 +217,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // A document the registry has not seen may mean others went (a top frame's new page takes its subframes).
           // The sweep asks them in the background, so the hello is answered at once.
           if (newDocument) void sweepTab(from.tabId, from.frameId).catch(() => undefined);
+          // The side panel's strip and card follow what the tab holds now (v2).
+          void reports.pageChanged(from.tabId).catch(() => undefined);
           log('frame.registered', { frameId: entry.frameId, top: entry.isTop });
           return ok({ frameId: from.frameId, connected: await auth.connected(), settings: await settings.content() });
         },
         'run/begin': (message, from) => beginRun(beginDeps, message, from),
         'plan/request': (message, from) => planner.request(message, from),
         'plan/poll': (message, from) => planner.poll(message, from),
+        // Edit with AI (the owner's amendments): one field's rewrite, then plan/poll.
+        'draft/rewrite': (message, from) => planner.rewrite(message, from),
         'runstate/get': async (message, from) => {
           if (!fits(message.applicationKey, from)) return refuse('bad_message');
           return ok({ runState: await runStates.get(message.applicationKey, from.tabId) });
@@ -241,6 +269,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/shown': (message, from) => reports.panelShown(from, message.open),
         // The in-page panel's Save my answer (Phase 6, wave 2), for the sending frame's own field.
         'answer/save': (message, from) => answers.saveOwn(message.fieldKey, from),
+        // The job card's relay (v2): the frame a job/refresh asked, with its own address as Chrome reports it.
+        'job/lookup': (_message, from) => jobs.relay('lookup', from),
+        'job/add': (_message, from) => jobs.relay('add', from),
         ...(__E2E__
           ? {
               'e2e/probe': async (message: { storageLocal: 'refused' | 'allowed' }) => {
@@ -260,6 +291,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/focus': (message) => panel.focus(message),
         'panel/describe': (message) => panel.describe(message),
         'panel/reports': (message) => panel.reports(message),
+        // The job card, Add/Save to tracker, the resume picker and the custom question (v2).
+        'panel/job': (message) => jobs.card(message),
+        'panel/addJob': (message) => jobs.add(message),
+        'panel/resumes': (message) => jobs.resumes(message),
+        'panel/setResume': (message) => jobs.setResume(message),
+        'panel/ask': (message) => ask(message),
         'panel/confirmDraft': (message) => answers.confirmDraft(message),
         'panel/saveAnswer': (message) => answers.saveAnswer(message),
         'settings/get': async () => ok({ settings: await settings.get() }),
@@ -328,6 +365,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     reportLimit.forget(`${tabId}/`);
     policyLimit.forget(`${tabId}/`);
     shownLimit.forget(`${tabId}/`);
+    askLimit.forget(`${tabId}/`);
+    jobs.forgetTab(tabId);
     void Promise.all([
       forgetTabFrames(session, tabId),
       reports.forgetTab(tabId),

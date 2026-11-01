@@ -38,6 +38,9 @@ export interface TokenKeeper {
   readonly versionMismatch: boolean;
   /** Why the last token went, when it did not go at the person's request; null otherwise. */
   readonly lastDrop: 'revoked' | 'expired' | null;
+  /** Counts the token's changes (each store and forget): what was asked of TailorIT with one token is kept only while
+   *  this has not moved since, so an answer in flight across a change never lands (the v2 review, token hygiene). */
+  readonly generation: number;
 }
 
 /** `onChange` runs whenever the token is stored or forgotten: whatever was read with the old one is dropped. */
@@ -46,6 +49,7 @@ export function createTokenKeeper(platform: Pick<WorkerPlatform, 'secrets' | 'no
   let record: TokenRecord | null = null;
   let versionMismatch = false;
   let lastDrop: 'revoked' | 'expired' | null = null;
+  let generation = 0;
 
   async function load(): Promise<TokenRecord | null> {
     let stored: unknown;
@@ -85,6 +89,7 @@ export function createTokenKeeper(platform: Pick<WorkerPlatform, 'secrets' | 'no
       record = checked;
       lastDrop = null;
       versionMismatch = false;
+      generation += 1;
       onChange();
     },
     async forget(reason) {
@@ -93,6 +98,7 @@ export function createTokenKeeper(platform: Pick<WorkerPlatform, 'secrets' | 'no
       record = null;
       lastDrop = reason === 'disconnected' ? null : reason;
       versionMismatch = false;
+      generation += 1;
       await platform.secrets.clear().catch(() => undefined);
       if (held) log(reason === 'disconnected' ? 'auth.disconnected' : 'auth.token-dropped');
       onChange();
@@ -108,6 +114,9 @@ export function createTokenKeeper(platform: Pick<WorkerPlatform, 'secrets' | 'no
     },
     get lastDrop() {
       return lastDrop;
+    },
+    get generation() {
+      return generation;
     },
   };
   return keeper;

@@ -117,6 +117,8 @@ export interface MemoryPagePlatform extends PagePlatform {
   activateElsewhere(tabId: number): void;
   /** The extension was reloaded or removed under the page: sends reject and nothing connects. */
   invalidate(): void;
+  /** A tab finished loading a page, as tabs.onUpdated says with status 'complete'. */
+  loaded(tabId: number): void;
 }
 
 /**
@@ -130,6 +132,7 @@ export function createMemoryPagePlatform(
 ): MemoryPagePlatform {
   const sent: unknown[] = [];
   const listeners = new Set<(tabId: number) => void>();
+  const loads = new Set<(tabId: number) => void>();
   let active = options.activeTabId ?? null;
   let valid = true;
   let connects = 0;
@@ -163,6 +166,13 @@ export function createMemoryPagePlatform(
     onActiveTabChanged(cb) {
       listeners.add(cb);
       return () => void listeners.delete(cb);
+    },
+    onTabLoaded(cb) {
+      loads.add(cb);
+      return () => void loads.delete(cb);
+    },
+    loaded(tabId) {
+      for (const cb of [...loads]) cb(tabId);
     },
     activate(tabId) {
       active = tabId;

@@ -8,10 +8,11 @@
  * - Count sentences are small functions of the count. No sentence ever holds a field value: the report has none.
  * - The development build's capture tool has its own export, CAPTURE_COPY, so no production bundle carries its words.
  */
+import type { AutofillFileKind, ResumeChoiceReason, WorkArrangement } from '../contract/tailorit';
 import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
 import type { ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunStatus } from '../core/types/run';
-import type { SaveAnswerOutcome } from '../messaging/schemas';
+import type { AddJobOutcome, AskLength, AskOutcome, SaveAnswerOutcome } from '../messaging/schemas';
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -44,6 +45,10 @@ const NOTICES = {
   'captcha-next': "This step still shows a check that you are human, so I won't press Next. Complete it, then press Next yourself.",
   // Phase 6: said under the policy sentence, in the page's card and the panel's alike.
   'policy-stored-copy': "This was found in TailorIT's saved copy of the posting.",
+  // The owner's amendments (docs/SPEC-AMENDMENTS.md): a run filled from the profile only, with no AI request. Drafts
+  // for the owner's review.
+  'policy-profile-only': 'This posting says AI-assisted applications are not allowed, so only your TailorIT profile was used. Nothing was sent to the AI.',
+  'ai-attestation': 'This form asks you to confirm you did not use AI, so only your TailorIT profile was used and nothing was sent to the AI. That box is left for you.',
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -67,7 +72,7 @@ const REASONS = {
   'low-confidence': 'No answer was certain enough to fill in, so it was left for you.',
   'classification-conflict': 'The question could be read in more than one way. Check this field.',
   'eeo-not-in-profile': 'Your profile has no self-identification answer for this, so it was left for you.',
-  'legal-not-in-profile': "Your profile doesn't answer this legal question, so it was left for you.",
+  'legal-not-in-profile': "Your profile doesn't answer this legal question, so it was left for you. Answer it once in TailorIT's Settings › Autofill.",
   'decline-option-missing': 'You chose not to answer this, but the form offers no way to decline. It was left for you.',
   'work-auth-country-unknown': "The question doesn't say which country it means, so it was left for you.",
   'consent-requires-user': 'Agreeing is your decision, so this was left for you.',
@@ -142,6 +147,14 @@ const REASONS = {
   'draft-ai-reference': 'The AI draft spoke of being an AI, so it was not written. Answer it yourself.',
   'draft-wrapper': 'The AI draft held text from its own instructions, so it was not written. Answer it yourself.',
   'draft-contact': 'The AI draft named a link, email or phone number that is not yours, so it was not written.',
+  // The owner's amendments (docs/SPEC-AMENDMENTS.md): written by AI and accepted, or chosen for you; then what was left.
+  // Drafts for the owner's review.
+  'llm-draft-written': 'The AI wrote this answer from your resume. Read it before you submit.',
+  'llm-answer-written': 'The AI answered this from your resume and profile. Check it before you submit.',
+  'ai-guess': "Your resume and profile don't answer this, so the AI gave its best guess. Check it before you submit.",
+  'eeo-decline-default': "You haven't answered this in TailorIT, so the form's option to decline was chosen.",
+  'llm-no-answer': 'The AI had no answer for this, so it was left for you.',
+  'ai-off-for-posting': "This posting doesn't allow AI, and only the AI could answer this, so it was left for you.",
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;
@@ -162,6 +175,7 @@ const PROVENANCES = {
   rule: 'A rule',
   'llm-pick': 'AI pick',
   'llm-draft': 'AI draft',
+  'llm-answer': 'AI answer',
 } as const satisfies Record<Provenance, string>;
 
 /** Which stage of the matcher chose the option. */
@@ -245,6 +259,9 @@ const REPORT = {
   /** Phase 6: an AI draft waits for the person (wave 2 wires what it does). */
   confirmDraft: 'Confirm draft',
   draftMark: 'AI draft',
+  /** The completion's line on the AI's answers: "3 answers written by AI · 1 is a guess". */
+  aiAnswers: (written: number, guesses: number) => `${written === 1 ? '1 answer' : `${written} answers`} written by AI${
+    guesses === 0 ? '' : guesses === 1 ? ' · 1 is a guess' : ` · ${guesses} are guesses`}`,
   /** Phase 6: offered only after the person fixed a flagged field themselves (Requirement F; wave 2 wires the save). */
   saveAnswer: 'Save my answer',
   showSuggestions: (count: number) => (count === 1 ? 'Show the closest option' : `Show the ${count} closest options`),
@@ -285,7 +302,7 @@ const PANEL = {
   expired: 'Your connection to TailorIT expired.',
   revoked: "TailorIT no longer accepts this browser's connection.",
   openSettings: 'Open settings',
-  versionMismatch: 'This extension and your TailorIT use different versions, so nothing is filled until one of them is updated.',
+  versionMismatch: 'This extension and your TailorIT use different versions, so nothing is filled. Update the older one, then connect again in the settings.',
   storageRefused: "Filling is blocked: this browser would not keep the extension's storage away from web pages. Update it to Chrome or Edge 144 or later.",
   started: (count: number) => (count === 0 ? 'No application form was found in this tab.' : `Filling ${forms(count)}.`),
   dryRunStarted: (count: number) =>
@@ -322,6 +339,111 @@ const PANEL = {
   } satisfies Record<SaveAnswerOutcome, string>,
 } as const;
 
+/** The side panel's strip before any run (v2): what the tab's page holds. */
+const STRIP = {
+  form: (platform: string | null) => (platform === null ? 'Application form found' : `${platform} application form found`),
+  noForm: 'No application form on this page. Open its application to use Autofill.',
+  none: 'Open a job application on Greenhouse, Lever, Ashby or Workday to use Autofill.',
+} as const;
+
+/** "Posted 2 days ago", from whole days since it was posted. */
+function posted(days: number): string {
+  if (days <= 0) return 'Posted today';
+  if (days === 1) return 'Posted yesterday';
+  if (days < 14) return `Posted ${days} days ago`;
+  if (days < 60) return `Posted ${Math.floor(days / 7)} weeks ago`;
+  return `Posted ${Math.floor(days / 30)} months ago`;
+}
+
+/** The side panel's job card (v2, src/ui/panel/JobCard.tsx): what TailorIT knows of the job, before and during a fill.
+ *  Drafts for the owner's review. */
+const JOB = {
+  region: 'This job',
+  loading: 'Reading what TailorIT knows of this job…',
+  unavailable: "TailorIT couldn't say which job this is. Autofill still works.",
+  disconnected: 'Connect to TailorIT to see this job, your match and the resume it attaches.',
+  notFound: 'Not in your TailorIT jobs',
+  notFoundHelp: 'Autofill still works. Add the job to TailorIT to track it and see your match.',
+  cannotAdd: "TailorIT can't add jobs from this site yet. Autofill still works.",
+  add: 'Add this job to TailorIT',
+  save: 'Save to tracker',
+  adding: 'Adding…',
+  addOutcomes: {
+    added: 'Added to your TailorIT jobs, and to your tracker as Saved.',
+    saved: 'Saved to your tracker.',
+    closed: "This posting has closed, so TailorIT couldn't add it.",
+    unsupported: "TailorIT can't add jobs from this site yet.",
+    'not-allowed': "This browser's connection can't add jobs. Connect it again from TailorIT's Settings › Autofill.",
+    'rate-limited': 'Too many jobs added in a minute. Wait a little, then try again.',
+    'not-connected': 'Connect to TailorIT in the settings first.',
+    unavailable: "TailorIT couldn't add the job just now. Try again.",
+  } satisfies Record<AddJobOutcome, string>,
+  via: (platform: string) => `${platform} application`,
+  match: 'match',
+  matchLabel: (percentage: number) => `${percentage}% match`,
+  keywords: (matched: number, total: number) => `${matched} of ${total} keywords`,
+  noKeywords: 'This posting names no keywords to match.',
+  unreadable: "This resume's text couldn't be read, so it has no match score.",
+  attaches: 'Attaches',
+  wouldAttach: 'Would attach',
+  change: 'Change',
+  noResume: 'No resume to attach. Add one in TailorIT.',
+  closed: 'Closed',
+  archived: 'Archived',
+  /** The tracker chip of a status code TailorIT added after this version. */
+  tracked: 'In your tracker',
+  posted,
+  alreadyApplied: (status: string | null) => (status === null ? 'Already in your tracker. Check before you apply again.'
+    : `Already in your tracker as ${status}. Check before you apply again.`),
+  arrangements: { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' } satisfies Record<WorkArrangement, string>,
+  resumeReasons: {
+    chosen: 'Chosen by you',
+    application: 'Linked to this job',
+    profile: 'Chosen in your profile',
+    best_match: 'Your best match for this job',
+    only_resume: 'Your only resume',
+    default: 'Your default resume',
+    latest: 'Your latest resume',
+  } satisfies Record<ResumeChoiceReason, string>,
+  fileKinds: { pdf: 'PDF', docx: 'Word', doc: 'Word' } satisfies Record<AutofillFileKind, string>,
+  picker: {
+    heading: 'Choose the resume to attach',
+    loading: 'Reading your resumes…',
+    failed: "Your resumes couldn't be read. Try again.",
+    empty: 'You have no resume to attach. Add one in TailorIT.',
+    current: 'Attached now',
+    suggested: "Use TailorIT's choice",
+    cancel: 'Cancel',
+    kinds: { built: 'Built in TailorIT', uploaded: 'Uploaded' },
+  },
+} as const;
+
+/** The side panel's "Ask a custom question" (v2, src/ui/panel/Ask.tsx). Drafts for the owner's review. */
+const ASK = {
+  heading: 'Ask a custom question',
+  label: 'Your question',
+  placeholder: 'e.g. Why do you want to work at Northwind?',
+  length: 'Length',
+  lengths: { short: 'Short', medium: 'Medium', long: 'Long' } satisfies Record<AskLength, string>,
+  submit: 'Get answer',
+  working: 'Writing your answer…',
+  writtenFrom: (label: string) => `Written from your resume: ${label}`,
+  copy: 'Copy',
+  copied: 'Copied.',
+  copyFailed: 'It could not be copied. Select the text and copy it yourself.',
+  regenerate: 'Regenerate',
+  notConnected: 'Connect to TailorIT to ask a question.',
+  policy: 'This posting says AI-assisted applications are not allowed. An answer you ask for here is still written by AI.',
+  outcomes: {
+    'no-resume': 'You have no resume to answer from. Add one in TailorIT.',
+    sensitive: "This question wasn't sent: questions about self-identification, work authorization, pay or consent, and checks that you read the form, never go to the AI.",
+    unusable: "The AI's answer couldn't be used. Reword the question or try again.",
+    'rate-limited': 'Too many questions in a minute. Wait a little, then try again.',
+    'not-connected': 'Connect to TailorIT in the settings first.',
+    unavailable: "TailorIT's AI couldn't answer just now. Try again.",
+  } satisfies Record<Exclude<AskOutcome, 'answered'>, string>,
+} as const;
+
 /** The in-page review panel (src/content/ui/panel.tsx): the same report, in the page's closed root. */
 const IN_PAGE = {
   region: 'TailorIT Autofill review',
@@ -353,8 +475,8 @@ const OPTIONS = {
     disclosureHeading: 'Before you connect',
     disclosure: [
       'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.',
-      'When you choose Autofill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application\'s progress, never your answers.',
-      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists and working out unusual questions are on unless you turn them off below. Drafting open answers is off unless you turn it on; it also gives Claude the posting\'s visible text and your profile to write from. Your self-identification, work authorization, sponsorship, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
+      'While its side panel shows an application page, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume when the form asks for one. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the resume only for the seconds it takes to attach it. This browser keeps your settings and notes on each application\'s progress, never your answers.',
+      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers and answering the questions your profile does not are on unless you turn them off below; drafts and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
     connect: 'Connect to TailorIT',
@@ -367,7 +489,7 @@ const OPTIONS = {
     disconnected: "Disconnected. TailorIT was asked to revoke this browser's connection too.",
     expired: 'Your connection expired: connections last 90 days. Connect again to keep filling.',
     revoked: "TailorIT stopped accepting this browser's connection: it was revoked in TailorIT, or the account was disabled. Connect again to keep filling.",
-    versionMismatch: 'This version of the extension and your TailorIT use different versions of their connection, so nothing is filled until one of them is updated.',
+    versionMismatch: 'This version of the extension and your TailorIT use different versions of their connection, so nothing is filled. Update the older one, then connect again here.',
     storageRefused: "Filling is blocked. This browser would not keep the extension's storage away from web pages, which needs Chrome or Edge 144 or later. Update the browser, then open these settings again.",
     waiting: 'Waiting for TailorIT. On the page that opened, choose "Connect the extension".',
     endsIn: (time: string) => `This request ends in ${time}.`,
@@ -396,29 +518,44 @@ const OPTIONS = {
   },
   consent: {
     heading: 'Consent boxes',
-    intro: 'A consent box is ticked for you only when you pre-approve its kind here, and every kind starts off. A box that names several kinds is ticked only when you approved them all.',
+    intro: 'A consent box is ticked for you only when you pre-approve its kind here. The usual ones start on; marketing and text messages start off. A box that names several kinds is ticked only when you approved them all.',
     categories: CONSENT,
     certifyWarning: 'Certifying states that everything in an application is true and complete. Turn this on only if you check every application before you submit it.',
     never: 'Statements that you did not use AI, and consent the extension does not recognise, are always left for you.',
   },
   ai: {
     heading: 'AI help',
-    intro: 'Through your TailorIT, which asks Claude. An answer the AI helped with is always flagged for you to check.',
+    intro: 'Through your TailorIT, which asks Claude. Everything the AI writes is marked on the page and in the review, and an answer with nothing to go on is marked "AI guess".',
     tiebreak: 'Pick from a list when unsure',
     tiebreakHelp: 'When your answer could match more than one option, the AI picks among the visible options.',
     classify: 'Work out unusual questions',
     classifyHelp: 'When no rule recognises a question, the AI says what it asks, so your profile can answer it.',
     drafts: 'Draft open answers',
-    draftsHelp: 'Drafts answers to questions like "Why this company?" from your resume and the posting. A draft is highlighted and waits for you to edit or confirm it.',
+    draftsHelp: 'Drafts answers to questions like "Why this company?" from your resume and the posting, and writes them in.',
+    answers: 'Answer the questions my profile does not',
+    answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess, marked "AI guess".',
+    confirmDrafts: 'Wait for me to confirm each draft',
+    confirmDraftsHelp: 'A draft stays highlighted until you edit or confirm it, and the form is not ready until you have.',
+    whenForbidden: {
+      heading: 'When a posting says AI is not allowed',
+      'profile-only': 'Fill from my profile only',
+      'profile-onlyHelp': 'Nothing is sent to the AI for that posting, and questions only the AI could answer are left for you. The same goes for a form that asks you to confirm you did not use AI.',
+      ask: 'Ask me each time',
+      askHelp: 'Filling stops at a notice until you choose Fill anyway or Cancel.',
+      'use-ai': 'Use AI anyway',
+      'use-aiHelp': 'The notice is shown, and filling goes on with the AI.',
+    },
     never: 'Your EEO, authorization and sponsorship answers never go to the AI, and questions that look like them are not sent to it.',
   },
   interpretations: {
     heading: 'Interpretations',
-    intro: 'Two readings that go further than the rules say. Each is off until you turn it on.',
+    intro: 'Readings that go further than the rules say. Each is on unless you turn it off.',
     postingCountryForLegal: 'Answer work authorization questions that name no country',
-    postingCountryForLegalHelp: 'Uses your answer for the country of the posting. The field stays flagged for you to check.',
+    postingCountryForLegalHelp: 'Uses your answer for the country of the posting, or for your only country when the posting names none. The field stays flagged for you to check.',
     twoOrMoreRaces: 'Answer "Two or More Races"',
     twoOrMoreRacesHelp: 'When you gave several races and the question takes one answer. The field stays flagged for you to check.',
+    eeoDeclineByDefault: 'Decline self-identification questions I have not answered',
+    eeoDeclineByDefaultHelp: 'Chooses the form\'s "Decline to self-identify" option when TailorIT holds no answer of yours. With no such option, the question is left for you.',
   },
   answers: {
     heading: 'Your fixes',
@@ -490,6 +627,13 @@ export const COPY = {
   removeSelection: 'Remove this selection',
   /** The chip of an AI draft that waits for the person. */
   draftChip: 'AI draft: please confirm',
+  /** The chips of a field the AI wrote, and of one it answered with nothing to go on (the owner's amendments). */
+  aiChip: 'AI',
+  aiGuessChip: 'AI guess',
+  /** The button in a text box that asks the AI to rewrite what it holds (its accessible name), and its state while the
+   *  rewrite is on its way. */
+  editWithAi: 'Edit with AI',
+  editingWithAi: 'Rewriting…',
   chips: CHIPS,
   /** One sentence per reason code. */
   reasons: REASONS,
@@ -502,6 +646,9 @@ export const COPY = {
   fieldKinds: FIELD_KIND_NAMES,
   report: REPORT,
   panel: PANEL,
+  strip: STRIP,
+  job: JOB,
+  ask: ASK,
   inPage: IN_PAGE,
   options: OPTIONS,
 } as const;

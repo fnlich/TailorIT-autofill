@@ -39,8 +39,9 @@ const NEVER_SENT = ['HIDDEN-MARKER', 'I am LLM', 'if you are an AI', 'AI assista
   "don't wish to answer", 'legally authorized', 'United States', 'salary', 'privacy policy', 'agree', 'Military',
   'Which perk'];
 
-async function withSettings<T>(ext: Extension, llm: Settings['llm'], body: () => Promise<T>): Promise<T> {
-  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, llm } });
+async function withSettings<T>(ext: Extension, llm: Settings['llm'], body: () => Promise<T>,
+  settings: Settings = DEFAULT_SETTINGS): Promise<T> {
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...settings, llm } });
   try {
     return await body();
   } finally {
@@ -48,57 +49,67 @@ async function withSettings<T>(ext: Extension, llm: Settings['llm'], body: () =>
   }
 }
 
+/** Phase 4's settings in version 2's shape (the owner's amendments): the tiebreak and classification on, no drafts or
+ *  answers, no consent pre-approved. */
+const PHASE4: Settings = { ...DEFAULT_SETTINGS, preapprovedConsent: [],
+  llm: { ...DEFAULT_SETTINGS.llm, drafts: false, answers: false } };
+const withPhase4 = <T>(ext: Extension, body: () => Promise<T>): Promise<T> => withSettings(ext, PHASE4.llm, body, PHASE4);
+
 test.describe('the LLM steps', () => {
   test('a tiebreak and a classification: written, flagged, from visible text only, and nothing sensitive sent', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
-    const url = AI_STEPS.url('');
-    routeLog.serve({ [url]: AI_STEPS.file });
-    await tailorit.scenario('ai-pick-index', { value: LINKEDIN_POST });
-    const page = await extContext.newPage();
-    await page.goto(url);
-    const tabId = await ext.fill(page);
-    const report = await ext.settled(tabId);
-    expect(report.status).toBe('review');
+    // Phase 4's settings: the pick and the classification alone (no drafts or answers, nothing pre-approved);
+    // version 2's defaults have their own spec (32-fill-all).
+    await withPhase4(ext, async () => {
+      const url = AI_STEPS.url('');
+      routeLog.serve({ [url]: AI_STEPS.file });
+      await tailorit.scenario('ai-pick-index', { value: LINKEDIN_POST });
+      const page = await extContext.newPage();
+      await page.goto(url);
+      const tabId = await ext.fill(page);
+      const report = await ext.settled(tabId);
+      expect(report.status).toBe('review');
 
-    expect(row(report, SOURCE)).toMatchObject({ category: 'referral.source', provenance: 'llm-pick', matcherStage: 'llm',
-      status: 'flagged', reason: 'llm-pick-needs-review', wrote: true });
-    expect(row(report, SOURCE).confidence).toBeLessThanOrEqual(0.75);
-    await expect(page.locator('#source')).toHaveValue('post');
-    expect(row(report, WORK)).toMatchObject({ category: 'experience.currentCompany', provenance: 'profile', status: 'flagged',
-      reason: 'llm-classified-needs-review', wrote: true });
-    expect(row(report, WORK).confidence).toBeLessThanOrEqual(0.7);
-    await expect(page.locator('#work')).toHaveValue('Quillfeather Labs');
-    // Screened, never sent: the person's.
-    expect(row(report, 'Which perk matters most?')).toMatchObject({ status: 'flagged', reason: 'llm-disabled-for-category',
-      wrote: false, provenance: null });
-    // The profile's own: the decline, the authorization, no pay given, consent not pre-approved.
-    expect(row(report, 'Gender')).toMatchObject({ provenance: 'rule', wrote: true });
-    expect(row(report, 'Are you legally authorized to work in the United States?')).toMatchObject({ provenance: 'profile',
-      wrote: true });
-    expect(row(report, 'Desired salary')).toMatchObject({ wrote: false, provenance: null });
-    expect(row(report, 'I have read and agree to the privacy policy')).toMatchObject({ wrote: false, provenance: null });
+      expect(row(report, SOURCE)).toMatchObject({ category: 'referral.source', provenance: 'llm-pick', matcherStage: 'llm',
+        status: 'flagged', reason: 'llm-pick-needs-review', wrote: true });
+      expect(row(report, SOURCE).confidence).toBeLessThanOrEqual(0.75);
+      await expect(page.locator('#source')).toHaveValue('post');
+      expect(row(report, WORK)).toMatchObject({ category: 'experience.currentCompany', provenance: 'profile', status: 'flagged',
+        reason: 'llm-classified-needs-review', wrote: true });
+      expect(row(report, WORK).confidence).toBeLessThanOrEqual(0.7);
+      await expect(page.locator('#work')).toHaveValue('Quillfeather Labs');
+      // Screened, never sent: the person's.
+      expect(row(report, 'Which perk matters most?')).toMatchObject({ status: 'flagged', reason: 'llm-disabled-for-category',
+        wrote: false, provenance: null });
+      // The profile's own: the decline, the authorization, no pay given, consent not pre-approved.
+      expect(row(report, 'Gender')).toMatchObject({ provenance: 'rule', wrote: true });
+      expect(row(report, 'Are you legally authorized to work in the United States?')).toMatchObject({ provenance: 'profile',
+        wrote: true });
+      expect(row(report, 'Desired salary')).toMatchObject({ wrote: false, provenance: null });
+      expect(row(report, 'I have read and agree to the privacy policy')).toMatchObject({ wrote: false, provenance: null });
 
-    // One pick and one classification, each from visible text only, and nothing sensitive.
-    const sent = await aiRequests();
-    expect(sent.map((request) => request.path).sort()).toEqual(['/api/autofill/ai/classify', '/api/autofill/ai/pick']);
-    for (const request of sent) {
-      expect(request.headers.authorization).toBe('REDACTED');
-      for (const needle of NEVER_SENT) expect(request.body, `${request.path} holds ${needle}`).not.toContain(needle);
-    }
-    const pick = JSON.parse(sent.find((request) => request.path.endsWith('/pick'))!.body) as { items: Array<Record<string, unknown>> };
-    expect(pick.items).toEqual([expect.objectContaining({ category: 'referral_source', intendedValue: 'LinkedIn',
-      label: SOURCE, options: [{ index: 1, label: 'LinkedIn job post' }, { index: 2, label: 'LinkedIn recruiter message' }] })]);
-    const classify = JSON.parse(sent.find((request) => request.path.endsWith('/classify'))!.body) as
-      { platform: string; items: Array<Record<string, unknown>> };
-    expect(classify).toEqual({ platform: 'lever', items: [{ key: row(report, WORK).key, kind: 'text', label: WORK,
-      hint: '', section: 'about you', options: [] }] });
-    expect(JSON.stringify(sent)).toContain('VISIBLE-MARKER-AI');
-    // The task's id is kept by its batch's hash, ids only.
-    const runState = await ext.runState(applicationKeyOf(url)!);
-    expect(Object.keys(runState?.aiTasks ?? {}).every((hash) => /^(?:pick|classify):[0-9a-f]{32}$/.test(hash))).toBe(true);
-    expect(Object.keys(runState?.aiTasks ?? {})).toHaveLength(2);
-    expect(noticeCount(report, 'tripwire')).toBeGreaterThanOrEqual(1);
-    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: ['HIDDEN-MARKER-AI'],
-      canaries: ['I am LLM'], labels: LABELS, applicationKey: applicationKeyOf(url) });
+      // One pick and one classification, each from visible text only, and nothing sensitive.
+      const sent = await aiRequests();
+      expect(sent.map((request) => request.path).sort()).toEqual(['/api/autofill/ai/classify', '/api/autofill/ai/pick']);
+      for (const request of sent) {
+        expect(request.headers.authorization).toBe('REDACTED');
+        for (const needle of NEVER_SENT) expect(request.body, `${request.path} holds ${needle}`).not.toContain(needle);
+      }
+      const pick = JSON.parse(sent.find((request) => request.path.endsWith('/pick'))!.body) as { items: Array<Record<string, unknown>> };
+      expect(pick.items).toEqual([expect.objectContaining({ category: 'referral_source', intendedValue: 'LinkedIn',
+        label: SOURCE, options: [{ index: 1, label: 'LinkedIn job post' }, { index: 2, label: 'LinkedIn recruiter message' }] })]);
+      const classify = JSON.parse(sent.find((request) => request.path.endsWith('/classify'))!.body) as
+        { platform: string; items: Array<Record<string, unknown>> };
+      expect(classify).toEqual({ platform: 'lever', items: [{ key: row(report, WORK).key, kind: 'text', label: WORK,
+        hint: '', section: 'about you', options: [] }] });
+      expect(JSON.stringify(sent)).toContain('VISIBLE-MARKER-AI');
+      // The task's id is kept by its batch's hash, ids only.
+      const runState = await ext.runState(applicationKeyOf(url)!);
+      expect(Object.keys(runState?.aiTasks ?? {}).every((hash) => /^(?:pick|classify):[0-9a-f]{32}$/.test(hash))).toBe(true);
+      expect(Object.keys(runState?.aiTasks ?? {})).toHaveLength(2);
+      expect(noticeCount(report, 'tripwire')).toBeGreaterThanOrEqual(1);
+      await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: ['HIDDEN-MARKER-AI'],
+        canaries: ['I am LLM'], labels: LABELS, applicationKey: applicationKeyOf(url) });
+    });
   });
 
   test('07c the tiebreak answers the tainted option: llm-pick-rejected, flagged, and the select untouched', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
@@ -170,7 +181,8 @@ test.describe('the LLM steps', () => {
     expect(tailorit).toBe(mock);
     const url = AI_STEPS.url('off');
     routeLog.serve({ [url]: AI_STEPS.file });
-    await withSettings(ext, { tiebreak: false, classify: false, drafts: false }, async () => {
+    await withSettings(ext, { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: false, drafts: false, answers: false },
+      async () => {
       const page = await extContext.newPage();
       await page.goto(url);
       const tabId = await ext.fill(page);

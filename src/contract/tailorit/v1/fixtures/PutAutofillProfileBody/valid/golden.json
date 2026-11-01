@@ -238,6 +238,10 @@
       "atLeast18": {
         "state": "value",
         "value": true
+      },
+      "criminalRecord": {
+        "state": "value",
+        "value": false
       }
     },
     "compensation": {

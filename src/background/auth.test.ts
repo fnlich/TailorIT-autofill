@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { AUTOFILL_API_VERSION } from '../contract/tailorit';
 import { PAIRING_TTL_MS } from './auth';
 import {
   connectPageSender,
@@ -239,7 +240,7 @@ describe('the connection', () => {
   it('reports the storage access, the version and the pending pairing', async () => {
     const worker = await startTestWorker({ token: tokenRecord() });
     worker.tailorit.reply('GET /api/autofill/session', { status: 409, json: { error: { code: 'conflict', message: 'x' } },
-      headers: { 'X-TailorIT-Autofill-Api': '2' } });
+      headers: { 'X-TailorIT-Autofill-Api': String(AUTOFILL_API_VERSION + 1) } });
     await worker.deliver({ v: 1, type: 'auth/startPairing' }, pageSender('options.html'));
     const answer = await worker.deliver({ v: 1, type: 'auth/status' }, pageSender('options.html'));
     expect(answer).toEqual({

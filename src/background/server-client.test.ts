@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AUTOFILL_API_VERSION } from '../contract/tailorit';
 import { createServerClient, isAllowedRequest, SERVER_TIMEOUT_MS, type ServerClientDeps } from './server-client';
 import { createFakeTailorIT, fakePdf, fileReply, goldens, GOLDEN_TOKEN, ORIGIN, START_MS, type FakeTailorIT } from './worker.testkit';
 
@@ -91,11 +92,11 @@ describe('the server client', () => {
     await server.lookup({ url: 'https://jobs.lever.co/a/b/apply', includePostingText: true });
     await server.redeem(REDEEM_BODY);
     const [profile, lookup, redeem] = tailorit.requests;
-    expect(profile!.headers).toMatchObject({ 'x-tailorit-autofill-api': '1', authorization: `Bearer ${GOLDEN_TOKEN}` });
-    expect(lookup!.headers).toMatchObject({ 'x-tailorit-autofill-api': '1', authorization: `Bearer ${GOLDEN_TOKEN}`,
+    expect(profile!.headers).toMatchObject({ 'x-tailorit-autofill-api': String(AUTOFILL_API_VERSION), authorization: `Bearer ${GOLDEN_TOKEN}` });
+    expect(lookup!.headers).toMatchObject({ 'x-tailorit-autofill-api': String(AUTOFILL_API_VERSION), authorization: `Bearer ${GOLDEN_TOKEN}`,
       'content-type': 'application/json' });
     expect(JSON.parse(lookup!.body!)).toEqual({ url: 'https://jobs.lever.co/a/b/apply', includePostingText: true });
-    expect(redeem!.headers['x-tailorit-autofill-api']).toBe('1');
+    expect(redeem!.headers['x-tailorit-autofill-api']).toBe(String(AUTOFILL_API_VERSION));
   });
 
   it('redeems with no Authorization header and no cookie, even while a token is held', async () => {
@@ -149,9 +150,9 @@ describe('the server client', () => {
     it('differ only when the answer\'s header says so, whatever the status', async () => {
       const tailorit = createFakeTailorIT();
       const { server, versions } = client({}, tailorit);
-      tailorit.reply('GET /api/autofill/profile', { status: 409, json: errorBody('conflict'), headers: { 'X-TailorIT-Autofill-Api': '2' } });
+      tailorit.reply('GET /api/autofill/profile', { status: 409, json: errorBody('conflict'), headers: { 'X-TailorIT-Autofill-Api': String(AUTOFILL_API_VERSION + 1) } });
       expect(await server.profile()).toMatchObject({ ok: false, failure: 'version-mismatch', status: 409 });
-      tailorit.reply('GET /api/autofill/profile', { status: 200, json: goldens.profile, headers: { 'X-TailorIT-Autofill-Api': '2' } });
+      tailorit.reply('GET /api/autofill/profile', { status: 200, json: goldens.profile, headers: { 'X-TailorIT-Autofill-Api': String(AUTOFILL_API_VERSION + 1) } });
       expect(await server.profile()).toMatchObject({ ok: false, failure: 'version-mismatch', status: 200 });
       expect(versions).toEqual([false, false]);
     });
@@ -284,7 +285,7 @@ describe('the AI routes (Phase 4)', () => {
     const sent = tailorit.requests.at(-1)!;
     expect(sent).toMatchObject({ method: 'POST', path: '/api/autofill/ai/pick', body: JSON.stringify(PICK_BODY) });
     expect(sent.init).toMatchObject({ credentials: 'omit', redirect: 'error', cache: 'no-store' });
-    expect(sent.headers).toMatchObject({ 'x-tailorit-autofill-api': '1', authorization: `Bearer ${GOLDEN_TOKEN}` });
+    expect(sent.headers).toMatchObject({ 'x-tailorit-autofill-api': String(AUTOFILL_API_VERSION), authorization: `Bearer ${GOLDEN_TOKEN}` });
     expect(timeouts.at(-1)?.ms).toBe(SERVER_TIMEOUT_MS);
   });
 

@@ -7,11 +7,13 @@
     "resumes:read",
     "jobs:lookup",
     "ai:run",
-    "answers:write"
+    "answers:write",
+    "jobs:add",
+    "letters:write"
   ],
   "account": {
     "name": "Elena Ruiz",
     "email": "elena.ruiz@example.com"
   },
-  "apiVersion": 1
+  "apiVersion": 2
 }

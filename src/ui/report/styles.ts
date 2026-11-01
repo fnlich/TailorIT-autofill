@@ -163,6 +163,8 @@ ${NOTICE_TONES}
 .tia-completion__needs { color: var(--tia-tone-warning-fg); }
 .tia-allclear { color: var(--tia-tone-success-fg); }
 .tia-completion__needs .tia-icon, .tia-allclear .tia-icon { flex: none; }
+.tia-completion__ai { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--tia-ink); }
+.tia-completion__ai .tia-icon { flex: none; }
 .tia-completion__required { margin: 0; font-size: 13px; color: var(--tia-muted); font-variant-numeric: tabular-nums; }
 .tia-tally { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .tia-tag {
@@ -202,6 +204,11 @@ ${STATUS_RULES}
   background: var(--tia-brand-container); color: var(--tia-ink); font: 700 11px/1.6 var(--tia-font); white-space: nowrap;
 }
 .tia-row__draft .tia-icon { display: inline-block; }
+.tia-row__ai {
+  display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; border-radius: 999px;
+  background: var(--tia-brand-container); color: var(--tia-ink); font: 700 11px/1.6 var(--tia-font); white-space: nowrap;
+}
+.tia-row__ai--guess { background: var(--tia-tone-warning-bg); color: var(--tia-tone-warning-fg); }
 .tia-row__source { font-size: 12px; color: var(--tia-muted); }
 .tia-chip {
   flex: none; padding: 1px 8px; border-radius: 999px; font: 600 12px/1.5 var(--tia-font); white-space: nowrap;

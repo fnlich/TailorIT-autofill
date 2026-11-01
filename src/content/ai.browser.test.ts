@@ -7,7 +7,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { AUTOFILL_AI_POLL_MS } from '../contract/tailorit';
 import type { TiebreakItem } from '../core/matcher/types';
-import { DEFAULT_SETTINGS } from '../core/types/settings';
+// The Phase 2-6 behaviour these tests pin: version 1's defaults in version 2's shape (the owner's amendments' new
+// defaults have tests of their own: fill-all.browser.test.ts).
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations } from '../dom/fixture.testkit';
 import { createFakeWorker, FAKE_TASK_ID, sentinelsIn, testVocab, VALUE_SENTINELS, type FakeWorkerOptions } from './content.testkit';
 import { AI_POLL_MS } from './loop';
@@ -150,8 +152,8 @@ describe('fields that wait for the LLM', () => {
   });
 
   it('ask nothing, and poll nothing, with the switches off', async () => {
-    const ran = await fill({ ai: ANSWERS, settings: { ...DEFAULT_SETTINGS, llm: { tiebreak: false, classify: false,
-      drafts: false } } });
+    const ran = await fill({ ai: ANSWERS, settings: { ...CAUTIOUS_SETTINGS, llm: { ...CAUTIOUS_SETTINGS.llm,
+      tiebreak: false, classify: false, drafts: false } } });
     expect(ran.worker.of('plan/poll')).toEqual([]);
     expect(ran.worker.of('plan/request').every((message) => message.type === 'plan/request')).toBe(true);
     expect(ran.row(SOURCE)).toMatchObject({ provenance: null, wrote: false, status: 'flagged' });

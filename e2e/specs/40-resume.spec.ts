@@ -5,7 +5,8 @@
  * name, type and size, and a SHA-256 computed in the page.
  * - The worker stopped in the middle (stop-worker.ts) while it waits on the file: the port drops, the content script
  *   starts again from scratch once, a new worker (the run is still known from storage.session) reads the lookup again
- *   and sends the file, and the field ends verified.
+ *   and sends the file, and the field ends verified. (v2: the side panel's job card made one lookup of its own, through
+ *   the form frame, before the fill.)
  * - A digest that does not match, and a lookup that suggests no resume: the worker refuses (resume-unavailable), which
  *   is final, and the input is never touched.
  */
@@ -50,7 +51,11 @@ test.describe('the resume transfer', () => {
     // The first fetch died with its worker; the retry fetched again, from a worker that read the lookup afresh.
     const files = await mock.requestsTo(RESUME_FILE_ROUTE);
     expect(files.map((request) => request.status)).toEqual([0, 200]);
-    expect((await mock.requestsTo('POST /api/autofill/lookup')).length).toBe(2);
+    // The card's lookup (v2) and the new worker's ask without the posting text; run/begin's with it.
+    const lookups = (await mock.requestsTo('POST /api/autofill/lookup'))
+      .map((request) => (JSON.parse(request.body) as { includePostingText: boolean }).includePostingText);
+    expect(lookups.filter((withText) => withText)).toHaveLength(1);
+    expect(lookups.filter((withText) => !withText)).toHaveLength(2);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(url) });
   });

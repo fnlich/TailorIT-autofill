@@ -9,12 +9,15 @@
  */
 import { z } from 'zod';
 import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
+import { RESUME_CHOICE_REASONS } from '../contract/tailorit/lookup';
+import { WORK_ARRANGEMENTS } from '../contract/tailorit/profile';
+import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from '../contract/tailorit/resumes';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
 import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
-import { RULE_IDS } from '../core/types/intent';
+import { ANSWER_BASES, RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from
   '../core/types/run';
@@ -112,6 +115,8 @@ export const ValueOriginSchema = z.discriminatedUnion('provenance', [
   z.strictObject({ provenance: z.literal('rule'), ruleId: z.enum(RULE_IDS), path: ProfilePath.optional() }),
   z.strictObject({ provenance: z.literal('llm-pick'), taskId: Id, pickedCandidate: Count, labelHash: z.string().regex(/^[a-f0-9]{64}$/) }),
   z.strictObject({ provenance: z.literal('llm-draft'), taskId: Id, confirmedByUser: z.boolean() }),
+  /** An AI answer's text (the owner's amendments): its task, and what it rested on (`guess`: marked "AI guess"). */
+  z.strictObject({ provenance: z.literal('llm-answer'), taskId: Id, basis: z.enum(ANSWER_BASES) }),
 ]);
 
 export const MatchSchema = z.strictObject({
@@ -137,13 +142,14 @@ export const PlannedWriteSchema = z.strictObject({
 /**
  * The most entries each of RunState's records may hold, from the core's runaway-wizard guard (MAX_STEPS): one per step
  * for the step-signature records; per step, one counter per kind of repeatable section (experience, education,
- * language); per step, one batch per pass (MAX_PASSES, 8, docs/design/core.md) for each of the three AI task kinds.
+ * language); per step, one batch per pass (MAX_PASSES, 8, docs/design/core.md) for each of the four AI task kinds
+ * (pick, classify, draft and, since the owner's amendments, answer).
  */
 export const RUN_STATE_RECORD_CAPS = {
   stepAttempts: MAX_STEPS,
   filledFieldKeys: MAX_STEPS,
   repeatableCounters: MAX_STEPS * 3,
-  aiTasks: MAX_STEPS * 8 * 3,
+  aiTasks: MAX_STEPS * 8 * 4,
 } as const;
 
 /** A record of at most `max` entries. zod's record has no cap of its own, so the count is checked first, before any
@@ -219,7 +225,10 @@ const contentMessages = [
     postingText: Text(MAX_POSTING_TEXT).optional(),
     /** The Phase 6 review (E2): the loop's reveal edges on this step, [parent, child] base keys (the writer whose write
      *  revealed the child), for a draft's context. Keys only. */
-    revealEdges: z.array(z.tuple([Key, Key])).max(MAX_REVEAL_EDGES).optional() })
+    revealEdges: z.array(z.tuple([Key, Key])).max(MAX_REVEAL_EDGES).optional(),
+    /** The owner's amendments: this run fills from the profile only (its posting forbids AI, or its form holds an "I
+     *  did not use AI" attestation, and the person's setting says so): the worker asks the LLM nothing. */
+    noAi: z.literal(true).optional() })
     .refine((message) => {
       const keys = new Set(message.specs.map((spec) => spec.key));
       return message.planKeys.every((key) => keys.has(key));
@@ -228,6 +237,16 @@ const contentMessages = [
       === (message.repeatables ?? []).length, { message: 'a repeatable kind named twice', path: ['repeatables'] }),
   /** Writes for fields that were waiting for the LLM. */
   z.strictObject({ v, type: z.literal('plan/poll'), runId: Id, keys: z.array(Key).max(500) }),
+  /** Edit with AI (the owner's amendments), on the person's trusted click on the button in one of this frame's text
+   *  boxes, while its run rests: the frame's whole scan as plan/request carries it, the one field to rewrite
+   *  (`fieldKey`, a spec's key), the canaries, the posting's visible text (the top frame only) and the reveal edges.
+   *  Answered as plan/request is, the field awaiting its draft (then plan/poll). */
+  z.strictObject({ v, type: z.literal('draft/rewrite'), runId: Id, fieldKey: Key,
+    specs: z.array(FieldSpecSchema).max(500), canaries: z.array(Text(120)).max(32),
+    postingText: Text(MAX_POSTING_TEXT).optional(),
+    revealEdges: z.array(z.tuple([Key, Key])).max(MAX_REVEAL_EDGES).optional() })
+    .refine((message) => message.specs.some((spec) => spec.key === message.fieldKey),
+      { message: 'fieldKey names no spec', path: ['fieldKey'] }),
   z.strictObject({ v, type: z.literal('runstate/get'), applicationKey: z.string().max(80) }),
   z.strictObject({ v, type: z.literal('runstate/put'), runState: RunStateSchema }),
   z.strictObject({ v, type: z.literal('runstate/clear'), applicationKey: z.string().max(80) }),
@@ -243,6 +262,12 @@ const contentMessages = [
    *  fields. The worker treats it as the side panel's panel/saveAnswer for the sending frame: it reads the answer back
    *  with answer/read and sends it straight to TailorIT. */
   z.strictObject({ v, type: z.literal('answer/save'), fieldKey: Key }),
+  /** The job card's relay (v2): the frame's answer to the worker's job/refresh. The worker looks the sender's own
+   *  address up (job/lookup) or adds its posting to TailorIT (job/add), never an address in a payload, keeps the card in
+   *  its memory and answers {}: no card data ever reaches the page's process. Taken only while a job/refresh of the same
+   *  action waits for this document. */
+  z.strictObject({ v, type: z.literal('job/lookup') }),
+  z.strictObject({ v, type: z.literal('job/add') }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -261,6 +286,16 @@ const FrameRef = { tabId: TabId, frameId: Count, fieldKey: Key };
 /** The person's choice at a policy card: 'fill' is Fill anyway, 'cancel' is Cancel. */
 export const POLICY_DECISIONS = ['fill', 'cancel'] as const;
 export type PolicyDecision = (typeof POLICY_DECISIONS)[number];
+
+/** The longest custom question (v2): TailorIT's cap on a draft's question (AUTOFILL_AI_LIMITS.draft.question). */
+export const MAX_CUSTOM_QUESTION = 1000;
+/** A custom question's answer length: Short, Medium or Long (AUTOFILL_CUSTOM_QUESTION_LENGTHS: 600, 1500, 3000). */
+export const ASK_LENGTHS = ['short', 'medium', 'long'] as const;
+export type AskLength = (typeof ASK_LENGTHS)[number];
+
+/** What the worker asks the form frame to relay for the job card (v2): its lookup, or Add/Save to tracker. */
+export const JOB_RELAY_ACTIONS = ['lookup', 'add'] as const;
+export type JobRelayAction = (typeof JOB_RELAY_ACTIONS)[number];
 
 export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('ping') }),
@@ -288,13 +323,40 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('telemetry/clear') }),
   /** One read of a tab's reports; the `panel` port follows them (below). */
   z.strictObject({ v, type: z.literal('panel/reports'), tabId: TabId }),
+  /** The side panel's job card (v2): what TailorIT knows of the job in the tab's form frame, from the worker's memory,
+   *  or looked up through that frame (job/refresh) when the memory has none. */
+  z.strictObject({ v, type: z.literal('panel/job'), tabId: TabId }),
+  /** "Add this job to TailorIT" and "Save to tracker" (v2): the posting of the tab's form frame goes to TailorIT's jobs
+   *  and the person's tracker (job/refresh {action: 'add'}). */
+  z.strictObject({ v, type: z.literal('panel/addJob'), tabId: TabId }),
+  /** The resume picker behind the card's Change (v2): the account's resumes, the one the card attaches marked. */
+  z.strictObject({ v, type: z.literal('panel/resumes'), tabId: TabId }),
+  /** The person chose the resume to attach in this tab (null: TailorIT's suggestion again). Kept in the worker's memory;
+   *  the card is looked up again with it, and the tab's next fill attaches it. */
+  z.strictObject({ v, type: z.literal('panel/setResume'), tabId: TabId, resumeId: Id.nullable() }),
+  /** "Ask a custom question" (v2): the person's own question, answered by TailorIT's AI from the tab's active resume. */
+  z.strictObject({ v, type: z.literal('panel/ask'), tabId: TabId, question: z.string().min(1).max(MAX_CUSTOM_QUESTION),
+    length: z.enum(ASK_LENGTHS) }),
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
 // ── The review panel's port (`panel`, extension pages only) ───────────────────────────────────────────────────────
 
-/** A tab's reports, one per frame that reported, by frame id. They hold labels and statuses, never a value. */
-const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(20) };
+/** What a tab's page holds (v2), read from the frame registry, never from an address: 'form' (a frame of ours found an
+ *  application form; `platform` and `formKey` are the lowest such frame's), 'no-form' (frames of ours, none with a form:
+ *  a posting page), 'none' (no frame of ours). `formKey` changes whenever that frame shows another document, so the side
+ *  panel reads the job card again. */
+export const PAGE_SUPPORT = ['form', 'no-form', 'none'] as const;
+export const PageStateSchema = z.strictObject({
+  support: z.enum(PAGE_SUPPORT),
+  platform: z.enum(PLATFORMS).nullable(),
+  formKey: Text(120).nullable(),
+});
+export type PageState = z.infer<typeof PageStateSchema>;
+
+/** A tab's reports, one per frame that reported, by frame id. They hold labels and statuses, never a value. `page` is
+ *  the tab's page state (v2; absent from an older worker). */
+const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(20), page: PageStateSchema.optional() };
 
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
   /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). */
@@ -337,6 +399,13 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
    *  the frame answers {pong: true}. Any answer keeps the frame; only "nothing receives here" lets it go, so a content
    *  script listens before it says frame/hello. */
   z.strictObject({ v, type: z.literal('frame/ping') }),
+  /** The side panel wants this document's job card ('lookup'), or Add/Save to tracker ('add') (v2): the frame relays it
+   *  as job/lookup or job/add, so the worker reads the frame's own address from Chrome, and answers {} once the worker
+   *  answered that. It never learns what TailorIT said. */
+  z.strictObject({ v, type: z.literal('job/refresh'), action: z.enum(JOB_RELAY_ACTIONS) }),
+  /** A custom question's job text (v2): the posting's visible text outside the form root ('' in a frame inside another
+   *  page) and the page's canaries. Page text, passed on and never kept. */
+  z.strictObject({ v, type: z.literal('job/postingText') }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -370,6 +439,10 @@ export const PlanAnswerSchema = z.strictObject({
   repeatables: z.array(RepeatableAnswerSchema).max(REPEATABLE_KINDS.length).optional(),
   /** The planned keys whose answer the person may save (Save my answer: the Phase 6 review, T6-1); absent: none. */
   savable: z.array(Key).max(500).optional(),
+  /** The planned keys the page may offer Edit with AI on (the owner's amendments); absent: none. */
+  aiEditable: z.array(Key).max(500).optional(),
+  /** The frame's scan holds an "I did not use AI" attestation: the frame fills from the profile only from now on. */
+  aiAttestation: z.literal(true).optional(),
 });
 
 /** An answer with nothing to report: runstate/clear, report/put, policy/hit, panel/open, panel/shown, panel/focus,
@@ -425,6 +498,14 @@ export const FieldDescribeAnswerSchema = z.strictObject({
   options: z.array(z.strictObject({ index: Count, label: Text(300) })).max(3),
 });
 
+/** A frame's answer to job/postingText (v2): the posting's visible text outside the form root ('' in a frame inside
+ *  another page) and the page's canaries (the nearest 32). Page text: passed to TailorIT with a custom question, never
+ *  kept, never logged. */
+export const JobPostingTextAnswerSchema = z.strictObject({
+  text: Text(MAX_POSTING_TEXT),
+  canaries: z.array(Text(120)).max(32),
+});
+
 // ── Answers to extension pages ────────────────────────────────────────────────────────────────────────────────────
 
 /** settings/get and settings/save: the settings as stored. */
@@ -460,6 +541,81 @@ export const PanelSentAnswerSchema = z.strictObject({ frames: Count });
 export const TabReportsAnswerSchema = z.strictObject(TabReportsShape);
 export type TabReports = z.infer<typeof TabReportsAnswerSchema>;
 
+/** The job card's match (v2): the attached resume's keywords found in the job ("9 of 12 keywords", 75%), or why there
+ *  is no number: the posting names no keywords, or the resume's text could not be read. */
+export const JobCardMatchSchema = z.discriminatedUnion('state', [
+  z.strictObject({ state: z.literal('ok'), matchedCount: Count, total: z.number().int().positive(),
+    percentage: z.number().int().min(0).max(100) })
+    .refine((match) => match.matchedCount <= match.total, { message: 'more keywords found than the job names' }),
+  z.strictObject({ state: z.literal('no-keywords') }),
+  z.strictObject({ state: z.literal('unreadable') }),
+]);
+export type JobCardMatch = z.infer<typeof JobCardMatchSchema>;
+
+/**
+ * What the side panel's job card shows (v2): 'unavailable' when TailorIT could not say (it failed, or the frame did not
+ * relay); else the job (null: not in the person's TailorIT jobs), their tracker entry, the resume a fill attaches (its
+ * title, which may be the person's name, its file kind and why it was chosen), its match, and whether "Add this job to
+ * TailorIT" can work from this page's address (Greenhouse's and Lever's own pages). Never an id, an address, the posting
+ * text, a file name or the ATS reading; the date it was posted only as a time (ms), to say "2 days ago".
+ */
+export const JobCardSchema = z.discriminatedUnion('state', [
+  z.strictObject({ state: z.literal('unavailable') }),
+  z.strictObject({
+    state: z.literal('answered'),
+    job: z.strictObject({ title: Text(300), company: Text(200), location: Text(300), closed: z.boolean(),
+      postedAt: Count.nullable(), salary: Text(120).nullable(), workArrangement: z.enum(WORK_ARRANGEMENTS).nullable() })
+      .nullable(),
+    tracked: z.strictObject({ status: z.number().int(), archived: z.boolean() }).nullable(),
+    resume: z.strictObject({ label: Text(200), fileKind: z.enum(AUTOFILL_FILE_KINDS), reason: z.enum(RESUME_CHOICE_REASONS) })
+      .nullable(),
+    match: JobCardMatchSchema.nullable(),
+    addable: z.boolean(),
+  }),
+]);
+export type JobCard = z.infer<typeof JobCardSchema>;
+
+/** panel/job: the card of the tab's form frame; null when the tab shows no form of ours or the extension is not
+ *  connected. */
+export const PanelJobAnswerSchema = z.strictObject({ tabId: TabId, card: JobCardSchema.nullable() });
+export type PanelJobAnswer = z.infer<typeof PanelJobAnswerSchema>;
+
+/**
+ * What came of Add this job to TailorIT or Save to tracker (v2), which the panel says: 'added' (new to TailorIT, now in
+ * the tracker as Saved), 'saved' (TailorIT had it: it is in the tracker now), 'closed' (the ATS has no such posting any
+ * more), 'unsupported' (TailorIT cannot add from this address), 'not-allowed' (this connection was made before adding
+ * jobs existed: connect again), 'rate-limited', 'not-connected', 'unavailable' (TailorIT or the ATS could not be reached,
+ * or the page did not answer). The card itself is read again with panel/job.
+ */
+export const ADD_JOB_OUTCOMES = ['added', 'saved', 'closed', 'unsupported', 'not-allowed', 'rate-limited', 'not-connected',
+  'unavailable'] as const;
+export type AddJobOutcome = (typeof ADD_JOB_OUTCOMES)[number];
+export const AddJobAnswerSchema = z.strictObject({ outcome: z.enum(ADD_JOB_OUTCOMES) });
+
+/** panel/resumes: the account's resumes as the picker lists them (title, file kind, built or uploaded), the one the
+ *  tab's card attaches marked `current`. Never a file name. */
+export const ResumeListAnswerSchema = z.strictObject({
+  items: z.array(z.strictObject({ id: Id, label: Text(200), fileKind: z.enum(AUTOFILL_FILE_KINDS),
+    kind: z.enum(AUTOFILL_RESUME_KINDS), current: z.boolean() })).max(200),
+});
+export type ResumeListAnswer = z.infer<typeof ResumeListAnswerSchema>;
+
+/**
+ * What came of a custom question (v2): the answer and the title of the resume it was written from; or why there is
+ * none: 'no-resume' (the account has no resume to write from), 'sensitive' (a self-identification, legal, pay or consent
+ * question, or an attention check: never sent to the AI, by the extension's own screen or TailorIT's), 'unusable' (the
+ * AI's answer failed a check: a canary, talk of being an AI, a foreign link), 'rate-limited', 'not-connected',
+ * 'unavailable' (TailorIT's AI could not answer just now). Kept in the side panel's memory only.
+ */
+export const ASK_REFUSALS = ['no-resume', 'sensitive', 'unusable', 'rate-limited', 'not-connected', 'unavailable'] as const;
+export const ASK_OUTCOMES = ['answered', ...ASK_REFUSALS] as const;
+export type AskOutcome = (typeof ASK_OUTCOMES)[number];
+export const PanelAskAnswerSchema = z.discriminatedUnion('outcome', [
+  z.strictObject({ outcome: z.literal('answered'), text: Text(3000).min(1), resumeLabel: Text(200) }),
+  z.strictObject({ outcome: z.enum(ASK_REFUSALS) }),
+]);
+export type PanelAskAnswer = z.infer<typeof PanelAskAnswerSchema>;
+
 /** runs/clear: how many stored runs were removed. */
 export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
 
@@ -489,6 +645,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'run/begin': RunBeginAnswerSchema,
   'plan/request': PlanAnswerSchema,
   'plan/poll': PlanAnswerSchema,
+  'draft/rewrite': PlanAnswerSchema,
   'runstate/get': RunStateGetAnswerSchema,
   'runstate/put': RunStatePutAnswerSchema,
   'runstate/clear': DoneAnswerSchema,
@@ -497,6 +654,8 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'panel/open': DoneAnswerSchema,
   'panel/shown': DoneAnswerSchema,
   'answer/save': SaveAnswerAnswerSchema,
+  'job/lookup': DoneAnswerSchema,
+  'job/add': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. */
@@ -511,6 +670,11 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/confirmDraft': DoneAnswerSchema,
   'panel/saveAnswer': SaveAnswerAnswerSchema,
   'panel/reports': TabReportsAnswerSchema,
+  'panel/job': PanelJobAnswerSchema,
+  'panel/addJob': AddJobAnswerSchema,
+  'panel/resumes': ResumeListAnswerSchema,
+  'panel/setResume': DoneAnswerSchema,
+  'panel/ask': PanelAskAnswerSchema,
   'settings/get': SettingsAnswerSchema,
   'settings/save': SettingsAnswerSchema,
   'auth/status': AuthStatusSchema,
@@ -535,6 +699,8 @@ export const FRAME_ANSWER_SCHEMAS = {
   'report/update': DoneAnswerSchema,
   'settings/changed': DoneAnswerSchema,
   'frame/ping': PingAnswerSchema,
+  'job/refresh': DoneAnswerSchema,
+  'job/postingText': JobPostingTextAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

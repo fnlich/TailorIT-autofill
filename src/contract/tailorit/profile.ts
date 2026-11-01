@@ -12,10 +12,10 @@ import { AUTOFILL_RESUME_KINDS } from './resumes';
 
 // The autofill profile (GET and PUT /api/autofill/profile), edited on Settings › Autofill and seeded from a resume.
 // Two parts, stored and served apart: the profile, which the extension reads for every fill, and the sensitive part
-// (work authorization, self-identification, age, pronouns, pay), which it fetches only when a form asks such a
-// question, and only with the profile:sensitive scope. Entities, not strings: the extension's matcher maps them onto
-// each site's options. The value lists equal the extension's own (its src/core/enums.ts): DEGREE_LEVELS as written
-// there, the others in kebab case.
+// (work authorization, self-identification, age, criminal record, pronouns, pay), which it fetches only when a form
+// asks such a question, and only with the profile:sensitive scope. Entities, not strings: the extension's matcher maps
+// them onto each site's options. The value lists equal the extension's own (its src/core/enums.ts): DEGREE_LEVELS as
+// written there, the others in kebab case.
 
 /** `professional` covers MBA, JD and MD. */
 export const DEGREE_LEVELS = [
@@ -210,7 +210,16 @@ export const AutofillSensitiveSchema = z.object({
     disability: sensitive(z.boolean()),
     pronouns: sensitive(textOf(40).min(1, 'Required')),
   }),
-  legal: z.object({ atLeast18: sensitive(z.boolean()) }),
+  legal: z.object({
+    atLeast18: sensitive(z.boolean()),
+    /**
+     * "Have you ever been convicted of a crime?" (version 2): true, yes; false, no. Matched to a form's question by
+     * its polarity alone, never guessed and never sent to Claude. Optional in what is sent (an older extension's
+     * copy, a row saved before it): absent reads as not provided, so every answer carries it, and a save that leaves
+     * it out keeps the answer already stored.
+     */
+    criminalRecord: sensitive(z.boolean()).default(() => ({ state: 'not_provided' as const })),
+  }),
   compensation: z.object({
     expectedSalary: sensitive(
       z.object({
@@ -412,6 +421,6 @@ export const EMPTY_AUTOFILL_SENSITIVE: AutofillSensitive = {
     disability: { state: 'not_provided' },
     pronouns: { state: 'not_provided' },
   },
-  legal: { atLeast18: { state: 'not_provided' } },
+  legal: { atLeast18: { state: 'not_provided' }, criminalRecord: { state: 'not_provided' } },
   compensation: { expectedSalary: { state: 'not_provided' } },
 };

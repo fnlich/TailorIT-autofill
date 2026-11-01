@@ -88,7 +88,8 @@ describe('the page channel\'s additions', () => {
 
   it('push a saved change of the settings to a frame as its content settings only (the Phase 5 review, C-S2)', () => {
     const changed = { v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
-      llm: { tiebreak: true, classify: true, drafts: false }, offerToSaveAnswers: true } };
+      llm: { tiebreak: true, classify: true, drafts: false, answers: true, confirmDrafts: false,
+        whenForbidden: 'profile-only' }, offerToSaveAnswers: true } };
     expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);
     // Never the rest of the settings, never anything else.
     expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings, preapprovedConsent: [] } }).success)
@@ -135,7 +136,7 @@ describe('the payloads', () => {
 
     it('are capped by the core\'s step guard: as many entries as a run can make, and no more', () => {
       expect(RUN_STATE_RECORD_CAPS).toEqual({ stepAttempts: MAX_STEPS, filledFieldKeys: MAX_STEPS,
-        repeatableCounters: MAX_STEPS * 3, aiTasks: MAX_STEPS * 8 * 3 });
+        repeatableCounters: MAX_STEPS * 3, aiTasks: MAX_STEPS * 8 * 4 });
       for (const [name, value] of Object.entries(values)) {
         const cap = RUN_STATE_RECORD_CAPS[name as keyof typeof values];
         expect(put({ [name]: entries(cap, value) }), `${name} at its cap`).toBe(true);

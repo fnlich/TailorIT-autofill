@@ -1,0 +1,28 @@
+{
+  "answers": [
+    {
+      "key": "greenhouse|main|are-you-willing-to-travel-up-to-25|3a7c1e9b5d2f4068|0",
+      "optionSetHash": "3a7c1e9b5d2f4068",
+      "index": 0,
+      "text": null,
+      "basis": "profile",
+      "reason": "answered"
+    },
+    {
+      "key": "greenhouse|main|which-container-platform-have-you-used-most|8e2d4f6a1c3b5079|0",
+      "optionSetHash": "8e2d4f6a1c3b5079",
+      "index": 1,
+      "text": null,
+      "basis": "intuition",
+      "reason": "answered"
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0",
+      "optionSetHash": null,
+      "index": null,
+      "text": "3",
+      "basis": "guess",
+      "reason": "answered"
+    }
+  ]
+}

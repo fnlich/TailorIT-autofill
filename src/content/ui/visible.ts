@@ -5,7 +5,8 @@
  * no opacity under 1, no filter, no transform other than a 2D move or upscale, nothing painted over it (a layer that
  * lets clicks through included). So a frame its parent page hides (opacity 0, off-screen, a zero-height wrapper) has a
  * launcher that is not visible, and so has a launcher a page draws a decoy over.
- * - Only the extension's own controls are observed (the launcher, the policy card's two buttons), never the page's
+ * - Only the extension's own controls are observed (the launcher, the policy card's two buttons, the Edit with AI
+ *   buttons), never the page's
  *   elements: a page element is legitimately covered by our UI and by sticky headers, so observing it would block real
  *   fills.
  * - The answer is the latest notification's. Chromium sends one at least VISIBILITY_DELAY_MS apart and only when
@@ -31,6 +32,8 @@ export interface VisibilityWatch {
   known(el: Element): boolean;
   /** Forgets what is known of `el` (it was just shown) and asks for a fresh notification. */
   reset(el: Element): void;
+  /** Stops watching `el` (it was removed), and forgets what is known of it. */
+  unobserve(el: Element): void;
   /** shown(el) once a notification has come, at once if one has; false after `capMs`, or when `signal` aborts. */
   settled(el: Element, signal?: AbortSignal, capMs?: number): Promise<boolean>;
   disconnect(): void;
@@ -94,6 +97,10 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
         else waiting.delete(el);
       }
       return !signal?.aborted && watch.shown(el);
+    },
+    unobserve(el) {
+      state.delete(el);
+      observer?.unobserve(el);
     },
     disconnect() {
       observer?.disconnect();

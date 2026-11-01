@@ -42,6 +42,14 @@ export const LOG_CODES = [
   'run.begun',
   'run.refused',
   'run.lookup-failed',
+  // The job card (v2): a lookup's match that broke the contract, dropped alone (the lookup is kept); the card's lookup
+  // and Add through the form frame (statuses and outcomes as numbers and flags, never the job or the address); a relay
+  // the worker did not ask for; a custom question's outcome (never the question or the answer).
+  'server.lookup-match-dropped',
+  'job.looked-up',
+  'job.added',
+  'job.relay-refused',
+  'job.ask-answered',
   'plan.answered',
   'plan.failed',
   'runstate.stored',
@@ -135,6 +143,13 @@ export const LOG_CODES = [
   // (E6); values of ours found changed before the step was left (E9, a count).
   'draft.confirm-refused',
   'content.changed-at-rest',
+  // The owner's amendments (docs/SPEC-AMENDMENTS.md): version 1 settings migrated (the versions only); a run that fills
+  // from the profile only because its posting forbids AI or its form holds an AI attestation (which one, as flags);
+  // Edit with AI asked for one field, refused (why, as flags) or written (the outcome as flags).
+  'settings.migrated',
+  'content.profile-only',
+  'content.ai-edit',
+  'content.ai-edit-refused',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

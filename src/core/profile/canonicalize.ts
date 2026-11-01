@@ -343,6 +343,10 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
   const referralSource = referralOf(preferences.referralSource, issues, vocab);
   const over18 = sensitive ? explicit(sensitive.legal.atLeast18, 'screening.over18', issues, (value: boolean) => value)
     : undefined;
+  // Version 2: an older copy of the sensitive part has no criminal record, which reads as not provided.
+  const criminalRecord = sensitive?.legal.criminalRecord === undefined ? undefined
+    : explicit(sensitive.legal.criminalRecord, 'screening.criminalRecord', issues, (value: boolean) => value);
+  const travel = preferences.travelPercent;
 
   const canonical: Profile = {
     identity: {
@@ -364,7 +368,7 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
     },
     workAuthorization: sensitive ? workAuthorizationOf(sensitive.workAuthorization, issues) : [],
     eeo: sensitive ? eeoOf(sensitive.eeo, issues) : {},
-    screening: over18 ? { over18 } : {},
+    screening: { ...(over18 ? { over18 } : {}), ...(criminalRecord ? { criminalRecord } : {}) },
     education: profile.education.map((entry, index) => educationOf(entry, index, issues, vocab, now)),
     experience: profile.experience.map((entry, index) => experienceOf(entry, index, issues, vocab)),
     languages: languagesOf(profile.languages, issues, vocab),
@@ -374,6 +378,8 @@ export function canonicalizeProfile(profile: AutofillProfile, sensitive: Autofil
       ...(startDate ? { startDate } : {}),
       ...(relocation ? { relocation } : {}),
       ...(arrangements.length > 0 ? { workArrangements: arrangements } : {}),
+      ...(typeof travel === 'number' && Number.isInteger(travel) && travel >= 0 && travel <= 100
+        ? { travelPercent: travel } : {}),
     },
     ...(referralSource ? { referralSource } : {}),
   };

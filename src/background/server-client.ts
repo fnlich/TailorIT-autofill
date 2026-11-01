@@ -7,13 +7,18 @@
  * schema, so drift fails here, loudly, as 'bad-answer'. It logs statuses and timings only: never a URL, a header or a
  * body.
  */
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
+  AutofillAddJobResponseSchema,
+  AutofillLookupMatchSchema,
+  type AutofillAddJobRequest,
+  type AutofillAddJobResponse,
   AUTOFILL_API_HEADER,
   AUTOFILL_API_VERSION,
   AUTOFILL_FILE_KIND_HEADER,
   AUTOFILL_FILE_SHA256_HEADER,
   AUTOFILL_RESUME_MAX_BYTES,
+  AutofillAnswerTaskSchema,
   AutofillClassifyTaskSchema,
   AutofillDraftTaskSchema,
   AutofillErrorBodySchema,
@@ -29,6 +34,8 @@ import {
   AutofillTaskAcceptedSchema,
   AutofillTaskIdSchema,
   AutofillTaskViewSchema,
+  type AutofillAnswerRequest,
+  type AutofillAnswerTask,
   type AutofillClassifyRequest,
   type AutofillClassifyTask,
   type AutofillDraftRequest,
@@ -96,7 +103,12 @@ export interface ServerClient {
   endSession(token?: string): Promise<ServerResult<null>>;
   profile(): Promise<ServerResult<AutofillProfileEnvelope>>;
   sensitive(): Promise<ServerResult<AutofillSensitiveEnvelope>>;
+  /** POST /lookup. A `match` that breaks the contract drops only the match (null), never the lookup: the job, the
+   *  tracker entry and the stored copy's policy check do not hang on it. */
   lookup(body: AutofillLookupRequest): Promise<ServerResult<AutofillLookupResponse>>;
+  /** POST /jobs (v2): adds the page's posting to TailorIT's jobs and the person's tracker; its lookup is read as
+   *  lookup()'s. A refusal's code (`unsupported`, `not_found`, `ats_unavailable`, ...) is in `code`. */
+  addJob(body: AutofillAddJobRequest): Promise<ServerResult<AutofillAddJobResponse>>;
   resumes(): Promise<ServerResult<AutofillResumeList>>;
   /** GET /resumes/:id/file, refused above `maxBytes` (TailorIT's 10 MiB cap) before or while reading. */
   resumeFile(id: string, maxBytes?: number): Promise<ServerResult<ResumeFile>>;
@@ -106,6 +118,8 @@ export interface ServerClient {
   aiClassify(body: AutofillClassifyRequest): Promise<ServerResult<AiSubmitted<AutofillClassifyTask>>>;
   /** POST /ai/draft (Phase 6), as aiPick. */
   aiDraft(body: AutofillDraftRequest): Promise<ServerResult<AiSubmitted<AutofillDraftTask>>>;
+  /** POST /ai/answer (version 2: the owner's amendments), as aiPick. */
+  aiAnswer(body: AutofillAnswerRequest): Promise<ServerResult<AiSubmitted<AutofillAnswerTask>>>;
   /** GET /answers (Phase 6): the account's saved answers, read with the profile. */
   answers(): Promise<ServerResult<AutofillSavedAnswerList>>;
   /** PUT /answers (Phase 6): saves one answer the person asked to save, as TailorIT then keeps it. A refusal's 400
@@ -212,6 +226,21 @@ async function readCapped(response: Response, max: number): Promise<Uint8Array |
     offset += part.byteLength;
   }
   return bytes;
+}
+
+/** A lookup as the wire may carry it, its match read apart (lookupOf): a cosmetic field never decides whether the rest,
+ *  the stored copy's policy check among it, is read (the v2 review, M1). */
+const LookupWireSchema = AutofillLookupResponseSchema.extend({ match: z.unknown().optional() });
+const AddJobWireSchema = AutofillAddJobResponseSchema.extend({ lookup: LookupWireSchema });
+
+/** The lookup with its match checked on its own: absent stays absent (a TailorIT older than the field), and one that
+ *  breaks the contract becomes null, logged as a code. */
+function lookupOf(wire: z.infer<typeof LookupWireSchema>): AutofillLookupResponse {
+  const { match, ...rest } = wire;
+  if (match === undefined) return rest;
+  const parsed = AutofillLookupMatchSchema.nullable().safeParse(match);
+  if (!parsed.success) log('server.lookup-match-dropped');
+  return { ...rest, match: parsed.success ? parsed.data : null };
 }
 
 /** TailorIT's error body, when it sent one: its code and retry hint only. */
@@ -354,7 +383,14 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     profile: () => json({ method: 'GET', path: '/api/autofill/profile', token: 'current' }, AutofillProfileEnvelopeSchema),
     sensitive: () =>
       json({ method: 'GET', path: '/api/autofill/profile/sensitive', token: 'current' }, AutofillSensitiveEnvelopeSchema),
-    lookup: (body) => json({ method: 'POST', path: '/api/autofill/lookup', token: 'current', json: body }, AutofillLookupResponseSchema),
+    async lookup(body) {
+      const raw = await json({ method: 'POST', path: '/api/autofill/lookup', token: 'current', json: body }, LookupWireSchema);
+      return raw.ok ? { ok: true, value: lookupOf(raw.value) } : raw;
+    },
+    async addJob(body) {
+      const raw = await json({ method: 'POST', path: '/api/autofill/jobs', token: 'current', json: body }, AddJobWireSchema);
+      return raw.ok ? { ok: true, value: { created: raw.value.created, lookup: lookupOf(raw.value.lookup) } } : raw;
+    },
     resumes: () => json({ method: 'GET', path: '/api/autofill/resumes', token: 'current' }, AutofillResumeListSchema),
     async resumeFile(id, maxBytes = AUTOFILL_RESUME_MAX_BYTES) {
       if (!RESUME_ID.test(id)) {
@@ -380,6 +416,7 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     aiPick: (body) => submit('/api/autofill/ai/pick', body, AutofillPickTaskSchema),
     aiClassify: (body) => submit('/api/autofill/ai/classify', body, AutofillClassifyTaskSchema),
     aiDraft: (body) => submit('/api/autofill/ai/draft', body, AutofillDraftTaskSchema),
+    aiAnswer: (body) => submit('/api/autofill/ai/answer', body, AutofillAnswerTaskSchema),
     answers: () => json({ method: 'GET', path: '/api/autofill/answers', token: 'current' }, AutofillSavedAnswerListSchema),
     putAnswer: (body) =>
       json({ method: 'PUT', path: '/api/autofill/answers', token: 'current', json: body }, AutofillSavedAnswerSchema),

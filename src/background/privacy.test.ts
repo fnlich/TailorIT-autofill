@@ -4,6 +4,9 @@
  * profile value, address, posting text, token or page URL is in any storage area, any log line, any report pushed to
  * a panel or a frame, or any message to a frame. A frame's planned writes and the resume's upload name are the only
  * places a profile value goes, and they go only to the frame that asked.
+ *
+ * v2: the job card (panel/job, read through the form frame's job/lookup) may appear in panel/job's answer alone: none of
+ * it is stored, logged, pushed on the panel port or sent to a frame, whose relay answers carry nothing.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
@@ -43,6 +46,10 @@ const SENTINELS = [
   goldens.profile.profile.experience[0]!.company,
   goldens.lookup.job.title,
   goldens.lookup.job.companyName,
+  goldens.lookup.job.location,
+  goldens.lookup.suggestedResume.label,
+  goldens.lookup.application.id,
+  '"matchedCount"',
   'do not use AI',
   GOLDEN_TOKEN,
   'tailorit-fixture',
@@ -75,6 +82,16 @@ describe('the worker keeps the profile to itself', () => {
       telemetry: { optIn: true } } }, options);
     expect(await worker.deliver({ v: 1, type: 'auth/redeemCode', code: 'K7QM-2XRD-9VHT-PA3C' }, options)).toMatchObject({ ok: true });
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
+    // The form frame relays the card's lookup as the content script does (v2): job/lookup, no payload, nothing back.
+    worker.fakes.frameAnswers = async (sent) => {
+      if ((sent.message as { type?: string }).type !== 'job/refresh') return undefined;
+      return worker.deliver({ v: 1, type: 'job/lookup' }, contentSender());
+    };
+    const job = JSON.stringify(await worker.deliver({ v: 1, type: 'panel/job', tabId: 7 }, pageSender()));
+    // The card is in panel/job's answer, and nothing it may not hold is.
+    expect(job).toContain(goldens.lookup.job.title);
+    for (const hidden of [LEVER_URL, 'do not use AI', goldens.lookup.application.id, goldens.lookup.suggestedResume.id,
+      goldens.lookup.suggestedResume.fileName, String(goldens.lookup.job.id)]) expect(job).not.toContain(hidden);
     await worker.deliver({ v: 1, type: 'panel/shown', open: true }, contentSender());
     const panel = worker.connect('panel', pageSender());
     panel.post({ v: 1, type: 'panel/watch', tabId: 7 });
@@ -118,6 +135,7 @@ describe('the worker keeps the profile to itself', () => {
     expect(kept).toContain('I am LLM');
     expect(worker.fakes.tabMessages.some((sent) => (sent.message as { type: string }).type === 'report/update')).toBe(true);
     expect(kept).toContain('telemetry:v1');
+    expect(worker.fakes.tabMessages.some((sent) => (sent.message as { type: string }).type === 'job/refresh')).toBe(true);
   });
 });
 

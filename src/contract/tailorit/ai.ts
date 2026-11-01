@@ -1,17 +1,20 @@
 import { z } from 'zod';
-import { AUTOFILL_FIELD_KINDS, InstantSchema } from './common';
+import { AUTOFILL_FIELD_KINDS, InstantSchema, type AutofillFieldKind } from './common';
 import { ATS_KINDS } from './lookup';
 
 // The AI steps the extension asks TailorIT for, run as tasks on its Claude queue: the tiebreak between options it
-// could not choose between (POST /api/autofill/ai/pick), what an unusual question asks (POST …/ai/classify) and a
-// draft for a free-text question (POST …/ai/draft). Claude has no authority over a form: a pick answers an option's
-// index or null, a classification a category from a closed list or null, a draft capped text the person must confirm.
-// TailorIT checks every answer before it stores it, and the extension checks it again against the form as it is then.
-// Page text travels only in the fields named for it (labels, options, hints, sections, questions, job text, a draft's
-// company and job title), which TailorIT quotes to Claude as data, never as instructions; profile text only in a
-// pick's intended value and its aliases (a draft's facts TailorIT reads itself). Nothing sensitive is sent: the
-// extension screens a question before it asks, and TailorIT answers one that still looks sensitive null (reason
-// `sensitive`) without asking Claude.
+// could not choose between (POST /api/autofill/ai/pick), what an unusual question asks (POST …/ai/classify), a draft
+// for a free-text question (POST …/ai/draft) and, since version 2, an answer to a question the profile and the
+// extension's rules do not settle (POST …/ai/answer). Claude has no authority over a form: a pick answers an option's
+// index or null, a classification a category from a closed list or null, a draft capped text, an answer one of the
+// item's own option indices or a short capped text, with where it came from. The extension writes drafts and answers
+// into the form marked as written by AI, an answer with nothing to go on marked "AI guess". TailorIT checks every
+// answer before it stores it, and the extension checks it again against the form as it is then. Page text travels
+// only in the fields named for it (labels, options, hints, sections, questions, a draft's current answer, job text,
+// the company and job title), which TailorIT quotes to Claude as data, never as instructions; profile text only in a
+// pick's intended value and its aliases (the facts of a draft or an answer TailorIT reads itself). Nothing sensitive
+// is sent: the extension screens a question before it asks, and TailorIT answers one that still looks sensitive null
+// (reason `sensitive`) without asking Claude.
 //
 // A route waits up to AUTOFILL_AI_WAIT_MS for its task and answers 200 with the finished task, else 202 {taskId}; the
 // extension then polls GET /api/ai/tasks/:id every AUTOFILL_AI_POLL_MS (DELETE on the same path cancels it). The same
@@ -19,8 +22,9 @@ import { ATS_KINDS } from './lookup';
 // of the task's input), never a second one; a finished task is read again by its id, within
 // AUTOFILL_TASK_RETENTION_MS, rather than asked again. A token sees only these kinds' tasks: any other id answers 404.
 
-/** The task kinds the extension creates. All three were reserved at once, so ai_tasks was rebuilt once. */
-export const AUTOFILL_TASK_KINDS = ['autofill_pick', 'autofill_classify', 'autofill_draft'] as const;
+/** The task kinds the extension creates: the first three reserved at once (TailorIT's 0004 rebuilt ai_tasks for
+ *  them), `autofill_answer` with version 2 (0005). */
+export const AUTOFILL_TASK_KINDS = ['autofill_pick', 'autofill_classify', 'autofill_draft', 'autofill_answer'] as const;
 export type AutofillTaskKind = (typeof AUTOFILL_TASK_KINDS)[number];
 
 /** TailorIT's AI_TASK_STATUSES: queued and running are not finished yet; succeeded, failed and cancelled are. */
@@ -59,6 +63,23 @@ export const AUTOFILL_AI_LIMITS = {
     maxLength: 5000,
     /** The cap of a question with no maxLength. */
     defaultLength: 3000,
+    /** A question's current answer, sent for a rewrite ("Edit with AI"). */
+    currentAnswer: 5000,
+    jobText: 20_000,
+    company: 200,
+    jobTitle: 200,
+    canaries: 50,
+    canary: 200,
+  },
+  answer: {
+    items: 10,
+    question: 1000,
+    hint: 500,
+    section: 200,
+    options: 30,
+    optionLabel: 300,
+    /** The longest written answer, the most a text item's maxLength may name, and the cap of one with none. */
+    textMax: 500,
     jobText: 20_000,
     company: 200,
     jobTitle: 200,
@@ -68,8 +89,17 @@ export const AUTOFILL_AI_LIMITS = {
 } as const;
 
 /**
+ * The side panel's custom question ("Ask a custom question": Short, Medium, Long), the person's own words about the
+ * resume the job card attaches: sent as one draft question (POST …/ai/draft, at most 1000 characters) with the job
+ * card's `resumeId`, the posting's visible text or '' and this many characters as its `maxLength`. No task kind of its
+ * own; TailorIT refuses a sensitive or attention-check question as it refuses any draft's.
+ */
+export const AUTOFILL_CUSTOM_QUESTION_LENGTHS = { short: 600, medium: 1500, long: 3000 } as const;
+
+/**
  * What an AI route refuses with, besides every token route's refusals (401, 403, 409 `conflict`, 429), and the status
- * of each: `validation_failed` (a body over a cap, a pick category not in the list), `not_found` (a draft's resume),
+ * of each: `validation_failed` (a body over a cap, a pick category not in the list), `not_found` (a draft's or an
+ * answer's resume),
  * `ai_busy` (finish polling the task in flight, then retry; no Retry-After) and `ai_unavailable` (Claude is off, signed
  * out or paused on this server, or this server has no handler for the kind yet).
  */
@@ -350,18 +380,26 @@ export type AutofillClassifyResult = z.infer<typeof AutofillClassifyResultSchema
 /** One free-text question to draft an answer for. */
 export const AutofillDraftQuestionSchema = z.object({
   key: ItemKeySchema,
-  /** The question as the form shows it: page text. */
+  /** The question as the form shows it: page text (a custom question: the person's own words, as typed). */
   question: z.string().min(1).max(AUTOFILL_AI_LIMITS.draft.question),
   /** The field's maxLength, at most 5000; null when it has none (the draft is then kept to 3000). */
   maxLength: z.number().int().min(AUTOFILL_AI_LIMITS.draft.minLength).max(AUTOFILL_AI_LIMITS.draft.maxLength).nullable(),
+  /**
+   * What the field holds now, for a rewrite ("Edit with AI", version 2): page text, quoted to Claude as data. Absent
+   * or blank for a new draft. Sent as written, so a current answer that states a sensitive answer, is a sum of money,
+   * or holds a contact detail or a postal address is answered `sensitive` without asking.
+   */
+  currentAnswer: z.string().max(AUTOFILL_AI_LIMITS.draft.currentAnswer).optional(),
 });
 export type AutofillDraftQuestion = z.infer<typeof AutofillDraftQuestionSchema>;
 
 /**
- * POST /api/autofill/ai/draft (scope ai:run): at most three questions of one form. TailorIT writes each draft from the
- * person's resume and autofill profile, which it reads itself (never the sensitive part, and no contact details), and
- * from the job text; a question that looks sensitive is answered `sensitive` without asking. 404 `not_found` when
- * `resumeId` is not one of the account's resumes.
+ * POST /api/autofill/ai/draft (scope ai:run): at most three questions of one form, or one custom question
+ * (AUTOFILL_CUSTOM_QUESTION_LENGTHS). TailorIT writes each draft from the person's resume and autofill profile (its
+ * work history, education, languages, skills and job preferences), which it reads itself (never the sensitive part,
+ * and no name, contact details or address), and from the job text; a question that looks sensitive or like an
+ * attention check is answered `sensitive` without asking. 404 `not_found` when `resumeId` is not one of the account's
+ * resumes.
  */
 export const AutofillDraftRequestSchema = z
   .object({
@@ -390,9 +428,10 @@ export type AutofillDraftRequest = z.infer<typeof AutofillDraftRequestSchema>;
  * held the prompt's `<untrusted>` wrapper, the JSON sentinels or the fake CLI's scenario tag. `contact`: it named a
  * link, an email address or a phone number that is not the person's own (in the autofill profile). `invalid`: its
  * answer was not a text, or the answer as a whole was not trusted (it did not name each question exactly once).
- * `sensitive`: TailorIT did not ask, because the question looked sensitive or like an attention check. Only `drafted`
- * and `trimmed` carry text. A canary or talk of being an AI anywhere in Claude's reply, prose outside the JSON
- * included, discards every draft of the task with that reason.
+ * `sensitive`: TailorIT did not ask, because the question looked sensitive or like an attention check, or its current
+ * answer stated a sensitive answer; or the draft stated one. Only `drafted` and `trimmed` carry text. A canary or talk
+ * of being an AI anywhere in Claude's reply, prose outside the JSON included, discards every draft of the task with
+ * that reason.
  */
 export const AUTOFILL_DRAFT_REASONS = [
   'drafted',
@@ -410,7 +449,8 @@ export type AutofillDraftReason = (typeof AUTOFILL_DRAFT_REASONS)[number];
 
 export const AutofillDraftSchema = z.object({
   key: ItemKeySchema,
-  /** Plain text in the first person, for the person to edit or confirm; null unless `drafted` or `trimmed`. */
+  /** Plain text in the first person, written into the field as the person's answer; null unless `drafted` or
+   *  `trimmed`. */
   text: z.string().max(AUTOFILL_AI_LIMITS.draft.maxLength).nullable(),
   reason: z.enum(AUTOFILL_DRAFT_REASONS),
 });
@@ -421,6 +461,181 @@ export const AutofillDraftResultSchema = z.object({
   drafts: z.array(AutofillDraftSchema).max(AUTOFILL_AI_LIMITS.draft.questions),
 });
 export type AutofillDraftResult = z.infer<typeof AutofillDraftResultSchema>;
+
+/** What an answer is (version 2): one option of the field's own list, or a short text. */
+export const AUTOFILL_ANSWER_SHAPES = ['choice', 'text'] as const;
+export type AutofillAnswerShape = (typeof AUTOFILL_ANSWER_SHAPES)[number];
+
+/**
+ * The field kinds each shape answers. Never a set (a checkbox group, a multiselect), a lone checkbox, a remote
+ * typeahead, a date or a file: Claude answers none of those.
+ */
+export const AUTOFILL_ANSWER_KINDS = {
+  choice: ['select', 'radio', 'combobox'],
+  text: ['text', 'textarea'],
+} as const satisfies Record<AutofillAnswerShape, readonly AutofillFieldKind[]>;
+
+/** One question nothing on the extension's side settled. Every text is page text. */
+export const AutofillAnswerItemSchema = z.object({
+  key: ItemKeySchema,
+  shape: z.enum(AUTOFILL_ANSWER_SHAPES),
+  /** The field's kind, one of AUTOFILL_ANSWER_KINDS[shape]. */
+  kind: z.enum(AUTOFILL_FIELD_KINDS),
+  /** The question as the form shows it (its visible label). */
+  question: z.string().min(1).max(AUTOFILL_AI_LIMITS.answer.question),
+  /** Its visible description, if any. */
+  hint: z.string().max(AUTOFILL_AI_LIMITS.answer.hint).default(''),
+  /** The heading of the part of the form it sits in. */
+  section: z.string().max(AUTOFILL_AI_LIMITS.answer.section).default(''),
+  /** A choice's option set, repeated in the answer; null for a text. */
+  optionSetHash: OptionSetHashSchema.nullable(),
+  /** A choice's candidates (2 to 30, in the field's order, each index once: only options that passed the extension's
+   *  guard); [] for a text. */
+  options: z.array(AutofillPickOptionSchema).max(AUTOFILL_AI_LIMITS.answer.options).default([]),
+  /** A text's cap: the field's maxLength, at most 500; null when it names none (the answer is then kept to 500).
+   *  Null for a choice. */
+  maxLength: z.number().int().min(1).max(AUTOFILL_AI_LIMITS.answer.textMax).nullable(),
+});
+export type AutofillAnswerItem = z.infer<typeof AutofillAnswerItemSchema>;
+
+/** A choice names its kind, its option set and 2 to 30 options, each index once, and no maxLength; a text names its
+ *  kind and neither an option set nor options. */
+function checkAnswerRequest(request: { items: readonly AutofillAnswerItem[] }, ctx: z.RefinementCtx): void {
+  request.items.forEach((item, at) => {
+    const issue = (field: string, message: string) =>
+      ctx.addIssue({ code: 'custom', path: ['items', at, field], message });
+    const kinds: readonly string[] = AUTOFILL_ANSWER_KINDS[item.shape];
+    if (!kinds.includes(item.kind)) issue('kind', `A ${item.shape} answers a ${kinds.join(', ')} field only`);
+    if (item.shape === 'text') {
+      if (item.optionSetHash !== null) issue('optionSetHash', 'A text has no option set');
+      if (item.options.length > 0) issue('options', 'A text has no options');
+      return;
+    }
+    if (item.optionSetHash === null) issue('optionSetHash', 'A choice needs its option set');
+    if (item.options.length < 2) issue('options', 'A choice needs at least two options');
+    if (item.maxLength !== null) issue('maxLength', 'A choice has no maxLength');
+    const indices = new Set<number>();
+    item.options.forEach((option, index) => {
+      if (indices.has(option.index)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['items', at, 'options', index, 'index'],
+          message: 'Each option needs its own index',
+        });
+      }
+      indices.add(option.index);
+    });
+  });
+  checkItems('items', request.items, request, ctx);
+}
+
+/**
+ * POST /api/autofill/ai/answer (scope ai:run; version 2): at most ten questions of one form. TailorIT answers each as
+ * the person would, from their resume and autofill profile (its work history, education, languages, skills and job
+ * preferences), which it reads itself (never the sensitive part, and no name, contact details, address or saved
+ * answers), and from the job text; when those do not settle a question, with the most likely answer for this person,
+ * marked `guess`. A question that looks sensitive (its text, hint, section or an option: a self-identification, legal,
+ * pay or consent question, an EEO answer or a decline to self-identify) or like an attention check is answered
+ * `sensitive` without asking. 404 `not_found` when `resumeId` is not one of the account's resumes.
+ */
+export const AutofillAnswerRequestSchema = z
+  .object({
+    items: z.array(AutofillAnswerItemSchema).min(1).max(AUTOFILL_AI_LIMITS.answer.items),
+    /** The job description the form's own page shows (page text); '' on an embedded form. Never TailorIT's stored
+     *  copy. */
+    jobText: z.string().max(AUTOFILL_AI_LIMITS.answer.jobText),
+    /** The lookup's company and job title, '' when it found no job. */
+    company: z.string().max(AUTOFILL_AI_LIMITS.answer.company).default(''),
+    jobTitle: z.string().max(AUTOFILL_AI_LIMITS.answer.jobTitle).default(''),
+    /** The resume whose facts the answers may use (the one the fill attaches); null: the profile's, else the
+     *  default. */
+    resumeId: z.string().max(64).nullable(),
+    /** The page's tripwire tokens: an answer holding one is refused (`canary`). */
+    canaries: z
+      .array(z.string().min(2).max(AUTOFILL_AI_LIMITS.answer.canary))
+      .max(AUTOFILL_AI_LIMITS.answer.canaries)
+      .default([]),
+  })
+  .superRefine(checkAnswerRequest);
+export type AutofillAnswerRequest = z.infer<typeof AutofillAnswerRequestSchema>;
+
+/**
+ * Where an answer comes from. `resume`: the resume's facts settle it. `profile`: the autofill profile's (its work
+ * history, education, languages, skills or job preferences). `job`: the job's own words do (the office the posting
+ * names). `guess`: nothing settles it, so Claude gave the most likely answer for this person; the extension marks it
+ * "AI guess". An answer Claude gave no basis for, or one not in this list, is a `guess`.
+ */
+export const AUTOFILL_ANSWER_BASES = ['resume', 'profile', 'job', 'guess'] as const;
+export type AutofillAnswerBasis = (typeof AUTOFILL_ANSWER_BASES)[number];
+
+/**
+ * Why an answer is what it is. `answered`: one of the item's sent option indices (a choice), or a text within its cap
+ * (a text), with its basis. `no_answer`: Claude gave none (null, or a text with nothing left once cleaned). `invalid`:
+ * the answer did not fit the item (a choice's index not one the item sent, or with a text; a text that is not a
+ * string, comes with an index, or holds a line break for a one-line input); or the answer as a whole was not trusted
+ * (it did not name each item exactly once), which makes every item `invalid`. `too_long`: a text over its cap (it is
+ * never cut). `canary`: one of the page's canaries anywhere in Claude's reply; `ai_reference`: Claude speaking as an
+ * AI anywhere in it; either makes every item so. `wrapper`: the text holds the prompt's `<untrusted>` wrapper, the JSON
+ * sentinels or the fake CLI's scenario tag. `contact`: it names a link, an email address, a phone number or a postal
+ * address that is not the person's own. `sensitive`: TailorIT did not ask (see the request), or the text states a sensitive answer, is an
+ * EEO answer or is a sum of money. Only `answered` carries an index or a text, and a basis.
+ */
+export const AUTOFILL_ANSWER_REASONS = [
+  'answered',
+  'no_answer',
+  'invalid',
+  'too_long',
+  'canary',
+  'ai_reference',
+  'wrapper',
+  'contact',
+  'sensitive',
+] as const;
+export type AutofillAnswerReason = (typeof AUTOFILL_ANSWER_REASONS)[number];
+
+interface AnswerEntry {
+  optionSetHash: string | null;
+  index: number | null;
+  text: string | null;
+  basis: AutofillAnswerBasis | null;
+  reason: AutofillAnswerReason;
+}
+
+/** An answered item carries its basis and one value of its own shape (a choice an index, a text a text); any other
+ *  carries neither. */
+function checkAnswer(answer: AnswerEntry, ctx: z.RefinementCtx): void {
+  const fits = answer.optionSetHash === null ? answer.index === null : answer.text === null;
+  const values = Number(answer.index !== null) + Number(answer.text !== null);
+  const holds = values === 1 && answer.basis !== null;
+  const empty = values === 0 && answer.basis === null;
+  if (!fits) {
+    ctx.addIssue({ code: 'custom', path: [], message: 'A choice answers an index and a text answers a text' });
+  } else if (answer.reason === 'answered' ? !holds : !empty) {
+    ctx.addIssue({ code: 'custom', path: [], message: 'Only an answered item carries a value and its basis' });
+  }
+}
+
+export const AutofillAnswerSchema = z
+  .object({
+    key: ItemKeySchema,
+    /** The item's option set, repeated; null for a text. */
+    optionSetHash: OptionSetHashSchema.nullable(),
+    /** A choice's chosen option `index`, as the request sent it; null unless answered. */
+    index: z.number().int().nonnegative().nullable(),
+    /** A text's answer, plain text in the first person, one line for a text input; null unless answered. */
+    text: z.string().max(AUTOFILL_AI_LIMITS.answer.textMax).nullable(),
+    /** Null unless answered. */
+    basis: z.enum(AUTOFILL_ANSWER_BASES).nullable(),
+    reason: z.enum(AUTOFILL_ANSWER_REASONS),
+  })
+  .superRefine(checkAnswer);
+export type AutofillAnswer = z.infer<typeof AutofillAnswerSchema>;
+
+/** An answer task's result: one answer per item, in the request's order. */
+export const AutofillAnswerResultSchema = z.object({
+  answers: z.array(AutofillAnswerSchema).max(AUTOFILL_AI_LIMITS.answer.items),
+});
+export type AutofillAnswerResult = z.infer<typeof AutofillAnswerResultSchema>;
 
 /** An AI route's answer when its task has not finished within AUTOFILL_AI_WAIT_MS (202): poll it. */
 export const AutofillTaskAcceptedSchema = z.object({ taskId: AutofillTaskIdSchema });
@@ -451,11 +666,15 @@ export type AutofillClassifyTask = z.infer<typeof AutofillClassifyTaskSchema>;
 /** POST …/ai/draft's 200 answer. */
 export const AutofillDraftTaskSchema = taskOf('autofill_draft', AutofillDraftResultSchema);
 export type AutofillDraftTask = z.infer<typeof AutofillDraftTaskSchema>;
+/** POST …/ai/answer's 200 answer (version 2). */
+export const AutofillAnswerTaskSchema = taskOf('autofill_answer', AutofillAnswerResultSchema);
+export type AutofillAnswerTask = z.infer<typeof AutofillAnswerTaskSchema>;
 
 /** GET /api/ai/tasks/:id, and DELETE on the same path (the task after cancelling; a finished one unchanged). */
 export const AutofillTaskViewSchema = z.discriminatedUnion('kind', [
   AutofillPickTaskSchema,
   AutofillClassifyTaskSchema,
   AutofillDraftTaskSchema,
+  AutofillAnswerTaskSchema,
 ]);
 export type AutofillTaskView = z.infer<typeof AutofillTaskViewSchema>;

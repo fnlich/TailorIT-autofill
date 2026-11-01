@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years have you written Go?",
+      "optionSetHash": null,
+      "maxLength": null
+    }
+  ],
+  "jobText": "",
+  "resumeId": null
+}

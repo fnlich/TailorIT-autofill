@@ -42,21 +42,36 @@
  * reason is why there is none (empty, too_long, canary, ai_reference, wrapper and contact as the draft-* or
  * canary-in-value reasons; invalid llm-invalid-output; sensitive llm-disabled-for-category), and a question answered
  * twice or not at all, or a text where none belongs, is llm-invalid-output. A draft's text stays in the run's memory
- * until the frame has it.
+ * until the frame has it. Edit with AI's rewrite is one draft question with the box's current text as
+ * `currentAnswer` (cut after a whole word at TailorIT's cap); a current text naming a sensitive topic is never sent.
  *
- * A run's questions (createRunAi): one task in flight per run, batches in the order they were asked, the answers kept
- * for the run only (memory). Nothing here logs an item, a label or an answer: counts and statuses only.
+ * Answers (the owner's amendments, docs/SPEC-AMENDMENTS.md; settings.llm.answers on; core/plan/answers.ts): a pass's
+ * questions nothing else settled go as TailorIT's answer requests (POST …/ai/answer), at most ANSWER_MAX_ITEMS a task
+ * and under the text cap, each with the posting's visible text, the lookup's company and title, the resume and the
+ * canaries, as drafts are. Visible text only, screened again: an item whose question, hint, section or any option
+ * names a sensitive topic is never sent (llm-disabled-for-category). An option's label hash stays here. What comes
+ * back is the core's AnswerVerdict: an answered choice must name one of the item's own sent indices and repeat its
+ * option set, and becomes that option with its label's hash as sent; an answered text must be a text; each keeps its
+ * basis (`guess` is marked "AI guess" by the core). no_answer is llm-no-answer, canary canary-in-value, sensitive
+ * llm-disabled-for-category, and every other reason, a value of the wrong shape, or an item answered twice or not at
+ * all, llm-invalid-output.
+ *
+ * A run's questions (createRunAi): one task in flight per run, batches in the order they were asked (classify, pick,
+ * draft, answer), the answers kept for the run only (memory). Nothing here logs an item, a label or an answer: counts
+ * and statuses only.
  */
 import {
-  AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AutofillClassifyItem,
+  AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AutofillAnswerItem,
+  type AutofillAnswerReason, type AutofillAnswerRequest, type AutofillAnswerResult, type AutofillClassifyItem,
   type AutofillClassifyRequest, type AutofillClassifyResult, type AutofillDraftReason, type AutofillDraftRequest,
   type AutofillDraftResult, type AutofillPickItem, type AutofillPickRequest, type AutofillPickResult,
   type AutofillTaskView,
 } from '../contract/tailorit';
-import { DRAFT_MAX_QUESTIONS, TIEBREAK_REQUEST_TEXT_SHARE } from '../core/confidence';
+import { ANSWER_MAX_ITEMS, DRAFT_MAX_QUESTIONS, TIEBREAK_REQUEST_TEXT_SHARE } from '../core/confidence';
 import type { Platform } from '../core/enums';
 import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
+import type { AnswerDiscard, AnswerItem, AnswerVerdict } from '../core/plan/answers';
 import type { DraftDiscard, DraftItem, DraftVerdict } from '../core/plan/drafts';
 import type { AnsweredVerdict, PlanAi, PlanAsk } from '../core/plan/types';
 import type { RepeatableRequest } from '../core/steps/blocks';
@@ -73,8 +88,9 @@ import type { Timers } from './timers';
 /** A batch's task is given up this long after it was first submitted (docs/ARCHITECTURE.md: the 120 s cap). */
 export const AI_TASK_CAP_MS = 120_000;
 
-/** The kinds of task the worker submits: picks and classifications (Phase 4), drafts (Phase 6). */
-export const AI_KINDS = ['pick', 'classify', 'draft'] as const;
+/** The kinds of task the worker submits: picks and classifications (Phase 4), drafts (Phase 6), answers (the owner's
+ *  amendments). */
+export const AI_KINDS = ['pick', 'classify', 'draft', 'answer'] as const;
 export type AiKind = (typeof AI_KINDS)[number];
 
 /** A classify request is filled to at most this many characters of text (TailorIT refuses above 100,000). */
@@ -132,7 +148,12 @@ export interface DraftBatch {
   body: AutofillDraftRequest;
   items: DraftItem[];
 }
-export type AiBatch = PickBatch | ClassifyBatch | DraftBatch;
+export interface AnswerBatch {
+  kind: 'answer';
+  body: AutofillAnswerRequest;
+  items: AnswerItem[];
+}
+export type AiBatch = PickBatch | ClassifyBatch | DraftBatch | AnswerBatch;
 
 /** A pass's tiebreak items as pick batches (the core's tiebreakRequests: at most 20 items, under the text cap), and
  *  the verdicts of those never sent. `revision` is the profile's the values came from. */
@@ -241,8 +262,10 @@ export function draftBatches(items: readonly DraftItem[], context: DraftContext,
   for (const item of items) {
     if (seen.has(item.key)) continue;
     seen.add(item.key);
-    if (namesSensitiveTopic(item.question)) withheld.push({ key: item.key, text: null, why: 'llm-disabled-for-category' });
-    else if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') {
+    // A rewrite's current text is screened as its question is: what the box holds may state a sensitive answer.
+    if (namesSensitiveTopic(item.question) || (item.current !== undefined && namesSensitiveTopic(item.current))) {
+      withheld.push({ key: item.key, text: null, why: 'llm-disabled-for-category' });
+    } else if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') {
       withheld.push({ key: item.key, text: null, why: 'llm-invalid-output' });
     } else sendable.push(item);
   }
@@ -253,7 +276,8 @@ export function draftBatches(items: readonly DraftItem[], context: DraftContext,
     const chunk = sendable.slice(at, at + DRAFT_MAX_QUESTIONS);
     batches.push({ kind: 'draft', items: chunk, body: {
       questions: chunk.map((item) => ({ key: item.key, question: cutAtWord(item.question, limits.question),
-        maxLength: item.maxLength })),
+        maxLength: item.maxLength,
+        ...(item.current === undefined ? {} : { currentAnswer: cutAtWord(item.current, limits.currentAnswer) }) })),
       jobText: cutAtWord(context.jobText, limits.jobText),
       company: cutAtWord(context.company, limits.company),
       jobTitle: cutAtWord(context.jobTitle, limits.jobTitle),
@@ -287,6 +311,124 @@ export function draftVerdicts(items: readonly DraftItem[], result: AutofillDraft
   return verdicts;
 }
 
+// ── Answers (the owner's amendments) ───────────────────────────────────────────────────────────────────────────────
+
+/** An answer request is filled to at most this many characters of text (TailorIT refuses above 100,000). */
+const ANSWER_TEXT_BUDGET = Math.floor(AUTOFILL_AI_LIMITS.requestText * TIEBREAK_REQUEST_TEXT_SHARE);
+
+/** The answer item TailorIT is sent for a core item, or null when it is never sent: a question, hint, section or option
+ *  naming a sensitive topic (screened again), a key or a label past TailorIT's caps, or a shape that does not hold. */
+export function answerItemOfCore(item: AnswerItem): AutofillAnswerItem | null {
+  const limits = AUTOFILL_AI_LIMITS.answer;
+  const labels = item.options.map((option) => option.label as string);
+  if ([item.question, item.hint, item.section, ...labels].some(namesSensitiveTopic)) return null;
+  if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') return null;
+  if (labels.some((label) => codePoints(label) > limits.optionLabel || label.trim() === '')) return null;
+  if (item.shape === 'choice'
+    ? item.optionSetHash === null || item.options.length < 2 || item.options.length > limits.options
+    : item.options.length > 0 || (item.maxLength !== null && (item.maxLength < 1 || item.maxLength > limits.textMax))) {
+    return null;
+  }
+  return { key: item.key, shape: item.shape, kind: item.kind, question: cutAtWord(item.question, limits.question),
+    hint: cutAtWord(item.hint, limits.hint), section: cutAtWord(item.section, limits.section),
+    optionSetHash: item.shape === 'choice' ? item.optionSetHash : null,
+    options: item.options.map((option) => ({ index: option.index, label: option.label as string })),
+    maxLength: item.shape === 'text' ? item.maxLength : null };
+}
+
+/** The text an answer item holds, as TailorIT counts it. */
+const answerTextOf = (item: AutofillAnswerItem) => [item.key, item.shape, item.kind, item.question, item.hint,
+  item.section, ...item.options.map((option) => option.label)].reduce((sum, text) => sum + text.length, 0);
+
+/** A pass's answer items as answer batches (at most ANSWER_MAX_ITEMS each, under the text cap, each with the job
+ *  context and the canaries), and the verdicts of those never sent. */
+export function answerBatches(items: readonly AnswerItem[], context: DraftContext, canaries: readonly string[]):
+  { batches: AnswerBatch[]; withheld: AnswerVerdict[] } {
+  const limits = AUTOFILL_AI_LIMITS.answer;
+  const withheld: AnswerVerdict[] = [];
+  const sendable: Array<{ item: AnswerItem; sent: AutofillAnswerItem }> = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.key)) continue;
+    seen.add(item.key);
+    const sent = answerItemOfCore(item);
+    if (sent === null) withheld.push({ key: item.key, kind: 'none', why: 'llm-disabled-for-category' });
+    else sendable.push({ item, sent });
+  }
+  const shared = {
+    jobText: cutAtWord(context.jobText, limits.jobText),
+    company: cutAtWord(context.company, limits.company),
+    jobTitle: cutAtWord(context.jobTitle, limits.jobTitle),
+    resumeId: context.resumeId,
+    canaries: canaries.filter((canary) => codePoints(canary) >= 2 && codePoints(canary) <= limits.canary)
+      .slice(0, limits.canaries),
+  };
+  const sharedText = shared.jobText.length + shared.company.length + shared.jobTitle.length
+    + (shared.resumeId ?? '').length + shared.canaries.reduce((sum, canary) => sum + canary.length, 0);
+  const batches: AnswerBatch[] = [];
+  let chunk: typeof sendable = [];
+  let size = sharedText;
+  const flush = () => {
+    if (chunk.length === 0) return;
+    batches.push({ kind: 'answer', body: { items: chunk.map(({ sent }) => sent), ...shared },
+      items: chunk.map(({ item }) => item) });
+    chunk = [];
+    size = sharedText;
+  };
+  for (const entry of sendable) {
+    const text = answerTextOf(entry.sent);
+    if (chunk.length === ANSWER_MAX_ITEMS || (chunk.length > 0 && size + text > ANSWER_TEXT_BUDGET)) flush();
+    chunk.push(entry);
+    size += text;
+  }
+  flush();
+  return { batches, withheld };
+}
+
+/** TailorIT's reasons for no answer, as the core's (module header). */
+const ANSWER_DISCARDS: Readonly<Record<Exclude<AutofillAnswerReason, 'answered'>, AnswerDiscard>> = {
+  no_answer: 'llm-no-answer',
+  invalid: 'llm-invalid-output',
+  too_long: 'llm-invalid-output',
+  canary: 'canary-in-value',
+  ai_reference: 'llm-invalid-output',
+  wrapper: 'llm-invalid-output',
+  contact: 'llm-invalid-output',
+  sensitive: 'llm-disabled-for-category',
+};
+
+/** The verdicts of an answer task's result for the items it was asked (module header). */
+export function answerVerdicts(items: readonly AnswerItem[], result: AutofillAnswerResult, taskId: string):
+  Map<string, AnswerVerdict> {
+  const byKey = new Map<string, AutofillAnswerResult['answers']>();
+  for (const answer of result.answers) byKey.set(answer.key, [...(byKey.get(answer.key) ?? []), answer]);
+  const verdicts = new Map<string, AnswerVerdict>();
+  for (const item of items) {
+    const answers = byKey.get(item.key) ?? [];
+    const answer = answers[0];
+    const invalid: AnswerVerdict = { key: item.key, kind: 'none', why: 'llm-invalid-output' };
+    let verdict: AnswerVerdict = invalid;
+    if (answers.length === 1 && answer !== undefined) {
+      if (answer.reason !== 'answered') {
+        verdict = answer.index === null && answer.text === null
+          ? { key: item.key, kind: 'none', why: ANSWER_DISCARDS[answer.reason] } : invalid;
+      } else if (answer.basis !== null && item.shape === 'choice' && answer.text === null && answer.index !== null
+        && answer.optionSetHash === item.optionSetHash && item.optionSetHash !== null) {
+        const option = item.options.find((candidate) => candidate.index === answer.index);
+        if (option !== undefined) {
+          verdict = { key: item.key, kind: 'choice', optionSetHash: item.optionSetHash, index: option.index,
+            labelHash: option.labelHash, basis: answer.basis, taskId };
+        }
+      } else if (answer.basis !== null && item.shape === 'text' && answer.index === null && answer.text !== null
+        && answer.optionSetHash === null && answer.text.trim() !== '') {
+        verdict = { key: item.key, kind: 'text', text: answer.text, basis: answer.basis, taskId };
+      }
+    }
+    verdicts.set(item.key, verdict);
+  }
+  return verdicts;
+}
+
 /**
  * What a batch's name is the hash of: a classify body whole (page text only); a pick body without its profile text
  * (each item's key, category, option-set hash and options), with the profile's revision instead, so a stored name
@@ -294,8 +436,9 @@ export function draftVerdicts(items: readonly DraftItem[], result: AutofillDraft
  * and a profile edited since asks again.
  */
 export function batchIdentity(batch: AiBatch): string {
-  // A draft body holds page text, TailorIT's own company and title, a resume id and the page's canaries: no profile.
-  if (batch.kind === 'classify' || batch.kind === 'draft') return JSON.stringify(batch.body);
+  // A draft or an answer body holds page text, TailorIT's own company and title, a resume id and the page's canaries:
+  // no profile.
+  if (batch.kind === 'classify' || batch.kind === 'draft' || batch.kind === 'answer') return JSON.stringify(batch.body);
   return JSON.stringify({ revision: batch.revision, items: batch.body.items.map((item) => ({ key: item.key,
     category: item.category, optionSetHash: item.optionSetHash, options: item.options })) });
 }
@@ -363,12 +506,14 @@ export function classifyVerdicts(items: readonly ClassifyItem[], result: Autofil
 
 /** Every item of a batch given up: what its fields get. */
 function failedVerdicts(batch: AiBatch, why: 'llm-unavailable' | 'llm-invalid-output'):
-  { picks: TiebreakVerdict[]; classes: ClassifyVerdict[]; drafts: DraftVerdict[] } {
-  if (batch.kind === 'pick') return { picks: batch.items.map((item) => verdictOf(item, why)), classes: [], drafts: [] };
-  if (batch.kind === 'draft') {
-    return { picks: [], classes: [], drafts: batch.items.map((item) => ({ key: item.key, text: null, why })) };
+  { picks: TiebreakVerdict[]; classes: ClassifyVerdict[]; drafts: DraftVerdict[]; answers: AnswerVerdict[] } {
+  const none = { picks: [], classes: [], drafts: [], answers: [] };
+  if (batch.kind === 'pick') return { ...none, picks: batch.items.map((item) => verdictOf(item, why)) };
+  if (batch.kind === 'draft') return { ...none, drafts: batch.items.map((item) => ({ key: item.key, text: null, why })) };
+  if (batch.kind === 'answer') {
+    return { ...none, answers: batch.items.map((item): AnswerVerdict => ({ key: item.key, kind: 'none', why })) };
   }
-  return { picks: [], classes: batch.items.map((item) => ({ key: item.key, category: null, why })), drafts: [] };
+  return { ...none, classes: batch.items.map((item) => ({ key: item.key, category: null, why })) };
 }
 
 // ── Submitting and polling ────────────────────────────────────────────────────────────────────────────────────────
@@ -382,13 +527,14 @@ export interface AiTaskIds {
 
 /** How a batch's task ended: its result, or why there is none. */
 export type TaskOutcome =
-  | { ok: true; taskId: string; result: AutofillPickResult | AutofillClassifyResult | AutofillDraftResult }
+  | { ok: true; taskId: string; result: AutofillPickResult | AutofillClassifyResult | AutofillDraftResult
+      | AutofillAnswerResult }
   | { ok: false; why: 'llm-unavailable' | 'llm-invalid-output'; timedOut?: boolean };
 
 /** What the task client needs. Never a cancel: a task TailorIT deduplicated may be another caller's too, and TailorIT
  *  prunes every task within its hour (the review, T-F2). */
 export interface AiTasksDeps {
-  server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiTask'>;
+  server: Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiAnswer' | 'aiTask'>;
   timers: Timers;
   now(): number;
 }
@@ -396,7 +542,8 @@ export interface AiTasksDeps {
 /** Failures worth another poll: the next one may answer. */
 const TRANSIENT: ReadonlySet<string> = new Set(['timeout', 'unreachable', 'server-error', 'rate-limited']);
 
-const TASK_KIND = { pick: 'autofill_pick', classify: 'autofill_classify', draft: 'autofill_draft' } as const;
+const TASK_KIND = { pick: 'autofill_pick', classify: 'autofill_classify', draft: 'autofill_draft',
+  answer: 'autofill_answer' } as const;
 
 /** The task client: runs one batch's task to its end. */
 export interface AiTasks {
@@ -431,6 +578,7 @@ export function createAiTasks(deps: AiTasksDeps): AiTasks {
 
   async function submit(batch: AiBatch): Promise<ServerResult<{ done: true; task: AutofillTaskView } | { done: false; taskId: string }>> {
     if (batch.kind === 'pick') return deps.server.aiPick(batch.body);
+    if (batch.kind === 'answer') return deps.server.aiAnswer(batch.body);
     return batch.kind === 'draft' ? deps.server.aiDraft(batch.body) : deps.server.aiClassify(batch.body);
   }
 
@@ -576,9 +724,13 @@ export interface AskContext {
   /** The loop's reveal edges the frame sent with the request ([parent, child] base keys), for a draft's context (the
    *  Phase 6 review, E2). */
   revealEdges?: ReadonlyArray<readonly [BaseKey, BaseKey]>;
-  /** What a draft request carries besides its questions (Phase 6), made from postingText and the run's lookup when a
-   *  plan first asks for a draft; absent: no draft is sent. */
+  /** What a draft or an answer request carries besides its questions (Phase 6; the owner's amendments), made from
+   *  postingText and the run's lookup when a plan first asks for either; absent: none is sent. */
   draft?: DraftContext;
+  /** The request said its run fills from the profile only (plan/request's noAi): planned again the same way. */
+  noAi?: boolean;
+  /** Edit with AI: the one key this context rewrites (draft/rewrite), planned again as a rewrite. */
+  rewrite?: FieldKey;
 }
 
 /** One run's LLM questions and answers, in the worker's memory for the run only. */
@@ -595,6 +747,9 @@ export interface RunAi {
   contextOf(key: FieldKey): AskContext | undefined;
   /** The keys are planned again: they no longer wait. */
   settle(keys: readonly FieldKey[]): void;
+  /** Edit with AI: the run's draft and answer of these keys are dropped, so their next plan asks again (a rewrite
+   *  asked twice with the same text reads the same task, by its name). */
+  forget(keys: readonly FieldKey[]): void;
   /** Settles when every batch asked so far has ended (for tests and the run's end). */
   idle(): Promise<void>;
   /** The run went: nothing more is submitted, and a task in flight is cancelled. */
@@ -610,10 +765,13 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
   const verdicts = new Map<string, AnsweredVerdict>();
   const classifications = new Map<string, ClassifyVerdict>();
   const drafts = new Map<string, DraftVerdict>();
+  const answers = new Map<string, AnswerVerdict>();
   /** The batch each waiting key is answered by (null: answered at once), and the scan it was asked from. */
   const waiting = new Map<FieldKey, { batch: string | null; context: AskContext }>();
   /** Batches by hash, and whether each has ended. */
   const batches = new Map<string, { done: boolean }>();
+  /** The batch that last answered each key, so Edit with AI can ask it again (forget). */
+  const answeredBy = new Map<FieldKey, string>();
   let chain: Promise<void> = Promise.resolve();
   let stopped = false;
 
@@ -623,6 +781,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
       for (const verdict of failed.picks) verdicts.set(verdict.id, { verdict, taskId: '' });
       for (const verdict of failed.classes) classifications.set(verdict.key, verdict);
       for (const verdict of failed.drafts) drafts.set(verdict.key, verdict);
+      for (const verdict of failed.answers) answers.set(verdict.key, verdict);
       return;
     }
     if (batch.kind === 'pick') {
@@ -632,6 +791,10 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
     } else if (batch.kind === 'draft') {
       for (const [key, verdict] of draftVerdicts(batch.items, outcome.result as AutofillDraftResult, outcome.taskId)) {
         drafts.set(key, verdict);
+      }
+    } else if (batch.kind === 'answer') {
+      for (const [key, verdict] of answerVerdicts(batch.items, outcome.result as AutofillAnswerResult, outcome.taskId)) {
+        answers.set(key, verdict);
       }
     } else {
       for (const [key, verdict] of classifyVerdicts(batch.items, outcome.result as AutofillClassifyResult)) {
@@ -655,7 +818,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
   }
 
   return {
-    answers: { verdicts, classifications, drafts },
+    answers: { verdicts, classifications, drafts, answers },
     ask(ask, awaiting, context, llm, revision) {
       const owner = new Map<string, string | null>();
       const picks = llm.tiebreak ? pickBatches(ask.tiebreaks, revision)
@@ -680,12 +843,26 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
         drafts.set(verdict.key, verdict);
         owner.set(verdict.key, null);
       }
-      const withheld = picks.withheld.length + classes.withheld.length + written.withheld.length;
+      // Answers (the owner's amendments): only with the setting on and a context to send them with.
+      const questions = ask.answers ?? [];
+      const answered = llm.answers && context.draft !== undefined
+        ? answerBatches(questions, context.draft, context.canaries)
+        : { batches: [], withheld: questions.map((item): AnswerVerdict => ({ key: item.key, kind: 'none',
+          why: 'llm-disabled-for-category' })) };
+      for (const verdict of answered.withheld) {
+        answers.set(verdict.key, verdict);
+        owner.set(verdict.key, null);
+      }
+      const withheld = picks.withheld.length + classes.withheld.length + written.withheld.length
+        + answered.withheld.length;
       if (withheld > 0) log('ai.withheld', { items: withheld });
-      for (const batch of [...classes.batches, ...picks.batches, ...written.batches]) {
+      for (const batch of [...classes.batches, ...picks.batches, ...written.batches, ...answered.batches]) {
         const hash = enqueue(batch);
         for (const item of batch.items) {
-          owner.set(batch.kind === 'pick' ? fieldKeyOf(item as TiebreakItem) : (item as ClassifyItem | DraftItem).key, hash);
+          const key = batch.kind === 'pick' ? fieldKeyOf(item as TiebreakItem)
+            : (item as ClassifyItem | DraftItem | AnswerItem).key;
+          owner.set(key, hash);
+          answeredBy.set(key as FieldKey, hash);
         }
       }
       for (const key of awaiting) waiting.set(key, { batch: owner.get(key) ?? null, context });
@@ -699,6 +876,18 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds): RunAi {
     contextOf: (key) => waiting.get(key)?.context,
     settle(keys) {
       for (const key of keys) waiting.delete(key);
+    },
+    forget(keys) {
+      for (const key of keys) {
+        drafts.delete(key);
+        answers.delete(key);
+        // The batch that answered it, once ended, is enqueued afresh when asked again (its name may be the same: then
+        // its task is read again by its id).
+        const hash = answeredBy.get(key);
+        if (hash !== undefined && batches.get(hash)?.done === true) batches.delete(hash);
+        answeredBy.delete(key);
+        waiting.delete(key);
+      }
     },
     idle: () => chain,
     stop() {

@@ -3,8 +3,8 @@
   Synthetic: questions only the profile's sensitive part answers (docs/ARCHITECTURE.md "Resolver": the sensitive part,
   legal and EEO). The worker fetches GET /profile/sensitive the first time a plan meets one of them. With the golden
   sensitive part: authorized in the US (Yes), no sponsorship now or in the future (No), gender declined (the decline
-  option). When TailorIT answers 403 (this browser may not read that part), all three are left blank with
-  sensitive-not-shared. Served at https://jobs.lever.co/tailorit-fixture/sensitive/apply and
+  option). When TailorIT answers 403 (this browser may not read that part), the two legal questions are left blank
+  with sensitive-not-shared, and gender takes the decline option (docs/SPEC-AMENDMENTS.md §5). Served at https://jobs.lever.co/tailorit-fixture/sensitive/apply and
   .../sensitive-forbidden/apply. The form posts to /__submitted.
 -->
 <html lang="en">

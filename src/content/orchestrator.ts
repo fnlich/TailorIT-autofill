@@ -84,12 +84,34 @@
  * - Before the step is left (our click on Next, or the person's activation at rest: a pointerdown, Enter or Space), the
  *   values we wrote are read again: one whose value MAC is no longer the one the fill left is rowed verify-mismatch and
  *   reported, so the accepted-match cache never takes a match the page or a widget changed at rest (E9).
+ *
+ * The owner's amendments (docs/SPEC-AMENDMENTS.md):
+ * - Drafts are accepted as written (llm-draft-written) unless settings.llm.confirmDrafts keeps the Phase 6
+ *   confirmation: an accepted draft reads back as confirmed in the final Guard, is no unconfirmed draft at validation,
+ *   and is booked in the document like a waiting one, so a later run rows a field still holding it as the accepted draft
+ *   it is. The AI's answers (llm-answer texts, and llm-picks with an answer's reason) are booked the same way, in memory
+ *   only. The posting text goes with plan/request while drafts or answers are on.
+ * - When a posting forbids AI (the policy gate at the first scan, or a later pass's hit), settings.llm.whenForbidden
+ *   decides: 'ask' shows the policy card as before; 'profile-only' (the default) fills on with no card, from the
+ *   profile only: every plan/request says noAi, so the worker asks the LLM nothing, the policy-profile-only notice
+ *   shows, and Edit with AI is offered nowhere; 'use-ai' fills on with the AI, the policy notice shown. A plan answer
+ *   that names an "I did not use AI" attestation in the frame's scan switches the run to profile-only the same way (the
+ *   ai-attestation notice), unless the setting is 'use-ai'.
+ * - Edit with AI: the plan answers name the text boxes the page may offer it on (`aiEditable`); while the run rests at
+ *   review or waits for the person's Next, not in a dry run or a profile-only run and with no pause on the page, the
+ *   page UI draws the button in each (ui/ai-edits.ts). rewriteField, on the person's trusted click on a visible button,
+ *   reads the field again (still offered, visible, no honeypot, no canary in what it holds), sends draft/rewrite with
+ *   the frame's scan, polls plan/poll for its draft, and writes it through writeField (the DOM Guard, then the frame
+ *   Guard over every canary in memory). One rewrite at a time. A rewrite the box already holds writes nothing and
+ *   leaves the box's row as it was (the AI's draft stays marked as the AI's). The person's later edit makes the text
+ *   theirs (changed-by-you), as any draft's.
  */
 import type { Adapter } from '../adapters/types';
 import type { ApplicationRef } from '../adapters';
 import type { z } from 'zod';
-import { LLM_DRAFT } from '../core/confidence';
+import { LLM_ANSWER, LLM_DRAFT } from '../core/confidence';
 import { canariesIn, mergeCanaries } from '../core/guard/canary';
+import { checkHoneypot } from '../core/guard/honeypot';
 import { cutInjected } from '../core/guard/injected';
 import { scanTripwires } from '../core/guard/tripwire';
 import { baseKeyOf, MAX_REVEAL_EDGES, storedBaseKey } from '../core/loop/bookkeeping';
@@ -102,7 +124,7 @@ import {
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
-import type { FillResult, ReasonCode } from '../core/types/fill';
+import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import { MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus } from '../core/types/run';
 import { clickIfAllowed } from '../dom/fillers';
@@ -111,7 +133,7 @@ import { rawScan, type RawPassage } from '../dom/raw-scan';
 import { isUsableOption } from '../dom/option-hash';
 import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
-import { monotonicNow } from '../dom/time';
+import { deadline, monotonicNow } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
 import { visibleTextWithout } from '../dom/visible-text';
 import { isUserVisible } from '../dom/visibility';
@@ -122,18 +144,20 @@ import { log } from '../shared/log';
 import { needsPerson } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
-import { runLoop, type LoopCarry, type LoopResult, type OptionsTimings, type SettleTimings } from './loop';
-import { RunAborted, type PlanAnswer } from './pass';
+import { AI_POLL_MS, AI_WAIT_CAP_MS, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
+  type SettleTimings } from './loop';
+import { RunAborted, writeField, type PassEnv, type PlanAnswer } from './pass';
 import { frameHitsOf, hiddenPolicyHits, policyGateOf, postingOutsideFrame, type PolicyView } from './policy';
 import { addBlocks, currentJobRows, needsClicks, sectionsOf, type SectionView } from './repeatables';
 import {
   buildReport, lastFillOf, NoticeBook, persistedRunState, uploadRow, type NoticeCode, type ReportHeader,
   type ReportLimiter,
 } from './report';
-import { highlightItems } from './targets';
+import { aiMarkOf, highlightItems } from './targets';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
+import type { AiEditItem } from './ui/ai-edits';
 import type { HighlightItem } from './ui/highlights';
 import type { PolicyChoice } from './ui/notices';
 import type { PageUi } from './ui/page-ui';
@@ -231,9 +255,25 @@ export interface RunEnv {
    *  their value MACs compare (E4). Memory only. */
   hasher(): Promise<ValueHasher>;
   /** The drafts written in this document and not yet the person's, by base key: the value MAC of each as written,
-   *  under the document's hasher (E4). Every run of the document reads and keeps it. Memory only. */
+   *  under the document's hasher (E4), whether it waits for the person's confirmation or was accepted. Every run of the
+   *  document reads and keeps it. Memory only. */
   drafts: Map<BaseKey, ValueMac>;
+  /** The AI's answers written in this document and not yet the person's (the owner's amendments), by base key: the
+   *  value MAC of each as written and the row it had, so a later run rows a field still holding one as that answer.
+   *  Memory only; absent: the run keeps its own. */
+  answers?: Map<BaseKey, HeldAnswer>;
 }
+
+/** An AI answer written in the document (RunEnv.answers): its value MAC as written, and its row's provenance and
+ *  reason. */
+export interface HeldAnswer {
+  mac: ValueMac;
+  provenance: 'llm-answer' | 'llm-pick';
+  reason: 'llm-answer-written' | 'ai-guess';
+}
+
+/** The reasons of a row the AI's answer wrote. */
+const ANSWER_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['llm-answer-written', 'ai-guess']);
 
 /** A report's counters before anything was scanned for the fill. */
 const NO_COUNTERS: ReportHeader['counters'] = { passes: 0, hiddenControlsIgnored: 0, deferredFields: 0 };
@@ -306,6 +346,18 @@ function holdsAnswer(field: ScannedField): boolean {
 /** A draft the person confirmed: their choice, verified (Phase 6). */
 function confirmedDraftRow(row: FillResult): FillResult {
   return { ...row, status: 'verified', reason: 'ok', needsUserAction: false };
+}
+
+/** Whether a row is a draft this document holds as written: one waiting for the person, or one accepted. */
+function heldDraftRow(row: FillResult): boolean {
+  return row.provenance === 'llm-draft' && row.wrote
+    && (row.reason === 'llm-draft-needs-confirmation' || row.reason === 'llm-draft-written');
+}
+
+/** Whether a row is one the AI's answer wrote (an llm-answer text, or an llm-pick with an answer's reason). */
+function aiAnswerRow(row: FillResult): boolean {
+  return row.wrote && ANSWER_REASONS.has(row.reason)
+    && (row.provenance === 'llm-answer' || row.provenance === 'llm-pick');
 }
 
 /** One run. start() runs it until it first comes to rest; accept(), decline() and stop() are the person's choices. */
@@ -391,10 +443,20 @@ export class FillRun {
   /** settings/changed pushes so far, and the last one's auto-advance (C-S2). */
   private pushes = 0;
   private pushedAutoAdvance = false;
-  /** Phase 6: whether the person's fixes are marked for Save my answer (settings.offerToSaveAnswers), and whether
-   *  drafts are on (settings.llm.drafts): run/begin's, then each settings/changed. */
+  /** Phase 6: whether the person's fixes are marked for Save my answer (settings.offerToSaveAnswers), and the AI
+   *  switches (settings.llm: drafts, answers, the draft confirmation, what a posting that forbids AI does): run/begin's,
+   *  then each settings/changed. */
   private offerToSave = false;
-  private drafts = false;
+  private llm: ContentSettings['llm'] | null = null;
+  /** The run fills from the profile only (the owner's amendments): its posting forbids AI, or its form holds an "I did
+   *  not use AI" attestation. Every plan/request says so; Edit with AI is offered nowhere. */
+  private noAi = false;
+  /** The planned fields the page may offer Edit with AI on, by base key: each plan answer's `aiEditable`. */
+  private readonly aiEditable = new Set<BaseKey>();
+  /** The field whose Edit with AI is on its way (one at a time). */
+  private rewriting: FieldKey | null = null;
+  /** The AI's answers this run keeps when the document keeps none (RunEnv.answers). */
+  private readonly ownAnswers = new Map<BaseKey, HeldAnswer>();
   /** The fields the person edited after the run left them flagged (their rows say userEdited), by base key. */
   private readonly edited = new Set<BaseKey>();
   /** The drafts the person confirmed or made their own, by base key: never unconfirmed again in this run. */
@@ -476,7 +538,7 @@ export class FillRun {
     this.pushes += 1;
     this.pushedAutoAdvance = settings.autoAdvance;
     this.autoAdvance = settings.autoAdvance;
-    this.drafts = settings.llm.drafts;
+    this.llm = settings.llm;
     const offered = this.offerToSave;
     this.offerToSave = settings.offerToSaveAnswers;
     // Turned off: no row offers Save my answer any more.
@@ -528,6 +590,148 @@ export class FillRun {
     log('draft.confirmed');
     this.replaceRow(confirmedDraftRow(row));
     return true;
+  }
+
+  /** The AI's answers written in this document (RunEnv.answers, else the run's own). */
+  private get heldAnswers(): Map<BaseKey, HeldAnswer> {
+    return this.env.answers ?? this.ownAnswers;
+  }
+
+  /** Whether the page may offer Edit with AI now: the run rests at review or for the person's Next, not in a dry run
+   *  or a profile-only run, with no rewrite on its way and no policy card waiting. */
+  private get aiEditsOpen(): boolean {
+    return (this.ended === 'review' || this.ended === 'waiting') && !this.request.dryRun && !this.noAi
+      && this.choose === null;
+  }
+
+  /** The Edit with AI buttons the page shows now (module header): one per offered field found on the step, none while
+   *  they may not be offered. */
+  private drawAiEdits(): void {
+    if (this.controller.signal.aborted) return;
+    const ui = this.env.ui();
+    if (ui === null) return;
+    if (!this.aiEditsOpen || this.aiEditable.size === 0) {
+      ui.setAiEdits([]);
+      return;
+    }
+    const fresh = this.scanNow();
+    const items: AiEditItem[] = [];
+    for (const row of this.rows) {
+      if (row.status === 'blocked' || !this.aiEditable.has(baseKeyOf(row.key))) continue;
+      const target = fresh.target(row.key);
+      if (target === null || target.field.visibility !== 'visible') continue;
+      items.push({ key: row.key, elements: [target.control], busy: this.rewriting === row.key });
+    }
+    ui.setAiEdits(items);
+  }
+
+  /**
+   * Edit with AI (module header), on the person's trusted click on the button in one field: TailorIT rewrites what the
+   * field holds, and the draft is written over it through both Guards. Answers whether a draft was written. Refused
+   * (nothing sent) when the button may not be offered now, another rewrite is on its way, a pause shows, or the field
+   * is no longer offered, visible and writable, or holds a canary.
+   */
+  async rewriteField(key: FieldKey): Promise<boolean> {
+    const refused = (why: Record<string, boolean>): false => {
+      log('content.ai-edit-refused', why);
+      return false;
+    };
+    if (!this.aiEditsOpen || this.rewriting !== null) return refused({ resting: this.aiEditsOpen });
+    if (!this.aiEditable.has(baseKeyOf(key))) return refused({ offered: false });
+    if (this.pauseNow() !== null) return refused({ pause: true });
+    const fresh = this.scanNow();
+    const field = fresh.fields.find((candidate) => candidate.key === key)
+      ?? fresh.fields.find((candidate) => candidate.baseKey === baseKeyOf(key));
+    if (field === undefined || field.visibility !== 'visible' || field.disabled || field.readOnly
+      || (field.kind !== 'text' && field.kind !== 'textarea')) return refused({ field: false });
+    const spec = toFieldSpec(field);
+    if (!checkHoneypot(spec).ok) return refused({ honeypot: true });
+    const text = field.current.kind === 'text' ? field.current.text : '';
+    if (canariesIn([text], this.inMemory).length > 0) return refused({ canary: true });
+    this.rewriting = field.key;
+    this.drawAiEdits();
+    log('content.ai-edit');
+    try {
+      const specs = fresh.fields.map(toFieldSpec);
+      const postingText = this.isTop ? this.postingText() : '';
+      const revealEdges = this.state.revealEdges.slice(0, MAX_REVEAL_EDGES)
+        .map(([parent, child]): [BaseKey, BaseKey] => [parent, child]);
+      const asked = await this.env.channel.request<'draft/rewrite'>({ v: 1, type: 'draft/rewrite', runId: this.runId,
+        fieldKey: field.key, specs, canaries: [...this.sent], ...(postingText === '' ? {} : { postingText }),
+        ...(revealEdges.length > 0 ? { revealEdges } : {}) });
+      this.alive();
+      if (!asked.ok) return refused({ worker: false });
+      let answer: PlanAnswer = asked.data;
+      const pollMs = this.env.options.ai?.pollMs ?? AI_POLL_MS;
+      const capMs = this.env.options.ai?.capMs ?? AI_WAIT_CAP_MS;
+      const started = monotonicNow();
+      while (!answer.writes.some((write) => write.key === field.key) && answer.awaiting.includes(field.key)) {
+        const left = capMs - (monotonicNow() - started);
+        if (left <= 0) return refused({ timedOut: true });
+        if (await deadline(Math.min(pollMs, left), this.controller.signal) === 'aborted') return false;
+        const polled = await this.poll([field.key]);
+        if (polled === 'expired' || polled === 'failed') return refused({ worker: false });
+        answer = polled;
+      }
+      const write = (answer.writes as unknown as PlannedWrite[]).find((candidate) => candidate.key === field.key);
+      const planned = (answer.results as unknown as FillResult[]).find((candidate) => candidate.key === field.key);
+      // No draft (TailorIT refused or failed): what the field holds stays, and so does its row.
+      if (write === undefined || planned === undefined || write.origin.provenance !== 'llm-draft') {
+        return refused({ drafted: false });
+      }
+      if (!this.aiEditsOpen || this.stopRequested) return refused({ resting: false });
+      const now = this.scanNow();
+      const target = now.fields.find((candidate) => candidate.key === field.key);
+      if (target === undefined) return refused({ field: false });
+      const written = await writeField(this.passEnv(), now, target, write, planned, new WeakMap());
+      this.alive();
+      if (written.written === undefined) {
+        log('content.ai-edit-refused', { written: false });
+        // A rewrite the box holds already changes nothing: the box's row stays (the AI's draft, or the person's text),
+        // not the planner's already-correct skip, which carries no provenance.
+        if (written.row.reason !== 'already-correct') this.replaceRow(written.row);
+        return false;
+      }
+      // The draft as written is booked, so the person's later edit makes it theirs (E3, E4).
+      const after = this.scanNow().fields.find((candidate) => candidate.key === field.key);
+      const mac = after === undefined ? undefined : await (await this.valueHasher()).mac(after.current);
+      this.alive();
+      if (mac !== undefined && heldDraftRow(written.row)) this.env.drafts.set(field.baseKey, mac);
+      this.confirmedDrafts.delete(field.baseKey);
+      this.storeDrafts();
+      this.replaceRow(written.row);
+      return true;
+    } catch (failure) {
+      if (failure instanceof RunAborted || failure instanceof Invalidated) return false;
+      return refused({ failed: true });
+    } finally {
+      this.rewriting = null;
+      this.drawAiEdits();
+    }
+  }
+
+  /** What a single write at rest needs (Edit with AI), as the fill loop's writes have it. */
+  private passEnv(): PassEnv {
+    const { env } = this;
+    return {
+      content: env.content, adapter: env.page.adapter, root: this.root, platform: env.page.app.platform,
+      frameId: this.frameId, dryRun: this.request.dryRun, canaries: this.inMemory, signal: this.controller.signal,
+      valid: () => env.channel.valid(), stopped: () => this.stopRequested, runId: () => this.runId,
+      heldBy: () => {
+        const signal = this.pauseNow();
+        return signal === null ? (this.movedOn() !== null ? 'field-disappeared' : null) : pauseCutOf(signal);
+      },
+      ...(env.options.resume ? { resume: env.options.resume } : {}),
+    };
+  }
+
+  /** The run fills from the profile only from now on (module header): the notice says why, and Edit with AI goes. */
+  private profileOnly(why: 'posting' | 'attestation'): void {
+    if (!this.noAi) log('content.profile-only', { posting: why === 'posting', attestation: why === 'attestation' });
+    this.noAi = true;
+    this.notices.add(why === 'posting' ? 'policy-profile-only' : 'ai-attestation');
+    this.showNotices();
+    this.drawAiEdits();
   }
 
   /** A field of the step as a fresh scan reads it now, by its key or its base key; null when it is not there. */
@@ -583,6 +787,7 @@ export class FillRun {
       void this.draftEdited(row.key).catch(() => undefined);
       return;
     }
+    if (aiAnswerRow(row)) this.heldAnswers.delete(baseKeyOf(row.key));
     this.edit(row);
   }
 
@@ -713,10 +918,13 @@ export class FillRun {
     for (const next of changed) {
       const { status } = next;
       this.fieldHighlights = status === 'skipped' ? this.fieldHighlights.filter((item) => item.key !== next.key)
-        : this.fieldHighlights.map((item) => (item.key !== next.key ? item : {
-          ...item, status, draft: next.provenance === 'llm-draft',
-          draftConfirmed: next.provenance === 'llm-draft' && !next.needsUserAction,
-        }));
+        : this.fieldHighlights.map((item) => {
+          if (item.key !== next.key) return item;
+          const { ai: _ai, ...rest } = item;
+          const ai = aiMarkOf(next);
+          return { ...rest, status, draft: next.provenance === 'llm-draft',
+            draftConfirmed: next.provenance === 'llm-draft' && !next.needsUserAction, ...(ai === undefined ? {} : { ai }) };
+        });
     }
     this.drawHighlights();
     this.rowsChanged();
@@ -748,7 +956,8 @@ export class FillRun {
       const own = target === null ? [] : ownElements(target);
       for (const el of own) owners.set(el, row.key);
       const baseKey = baseKeyOf(row.key);
-      let next = this.heldDraft(row, target?.field ?? null, macs) ?? row;
+      let next = this.heldDraft(row, target?.field ?? null, macs) ?? this.heldAnswer(row, target?.field ?? null, macs)
+        ?? row;
       if (next.provenance === 'llm-draft' && this.confirmedDrafts.has(baseKey) && next.status === 'flagged'
         && next.reason === 'llm-draft-needs-confirmation') next = confirmedDraftRow(next);
       if (next.status !== 'flagged' || !this.offerToSave || next.kind === 'file' || this.request.dryRun
@@ -793,16 +1002,45 @@ export class FillRun {
       this.forgetDraft(baseKey);
       return { ...row, status: 'blocked', reason: 'canary-in-value', provenance: null, needsUserAction: true };
     }
+    // Accepted as written unless the person's setting keeps drafts for their confirmation.
+    if (this.llm?.confirmDrafts !== true) {
+      return { ...row, status: 'verified', provenance: 'llm-draft', matcherStage: 'not-applicable', confidence: LLM_DRAFT,
+        reason: 'llm-draft-written', wrote: true, verification: 'verified', needsUserAction: false };
+    }
     return { ...row, status: 'flagged', provenance: 'llm-draft', matcherStage: 'not-applicable', confidence: LLM_DRAFT,
       reason: 'llm-draft-needs-confirmation', wrote: true, verification: 'verified', needsUserAction: true };
+  }
+
+  /** The row of a field that holds an AI answer this document wrote earlier, as written (its value MAC): that answer's
+   *  row again, or blocked when it holds a canary the frame knows; null for any other field. One that no longer holds
+   *  it is forgotten. */
+  private heldAnswer(row: FillResult, field: ScannedField | null, macs: ReadonlyMap<BaseKey, ValueMac>): FillResult | null {
+    if (row.wrote || row.status === 'blocked' || field === null || this.request.dryRun) return null;
+    const baseKey = baseKeyOf(row.key);
+    const held = this.heldAnswers.get(baseKey);
+    if (held === undefined) return null;
+    if (macs.get(baseKey) !== held.mac) {
+      this.heldAnswers.delete(baseKey);
+      return null;
+    }
+    const texts = field.current.kind === 'text' ? [field.current.text]
+      : field.current.kind === 'selected' ? field.current.labels : [];
+    if (canariesIn(texts, this.inMemory).length > 0) {
+      this.heldAnswers.delete(baseKey);
+      return { ...row, status: 'blocked', reason: 'canary-in-value', provenance: null, needsUserAction: true };
+    }
+    return { ...row, status: 'verified', provenance: held.provenance,
+      matcherStage: held.provenance === 'llm-pick' ? 'llm' : 'not-applicable', confidence: LLM_ANSWER,
+      reason: held.reason, wrote: true, verification: 'verified', needsUserAction: false };
   }
 
   /** The value MACs, at the step's last scan, of the fields a draft concerns (E4): this document's drafts, those a
    *  stored RunState names, and the drafts this fill wrote. Memory only. */
   private async draftMacs(fresh: ScanResult, rows: readonly FillResult[]): Promise<Map<BaseKey, ValueMac>> {
-    const drafted = new Set(rows.filter((row) => row.provenance === 'llm-draft' && row.wrote)
+    const drafted = new Set(rows.filter((row) => (row.provenance === 'llm-draft' && row.wrote) || aiAnswerRow(row))
       .map((row) => baseKeyOf(row.key)));
     const wanted = fresh.fields.filter((field) => drafted.has(field.baseKey) || this.env.drafts.has(field.baseKey)
+      || this.heldAnswers.has(field.baseKey)
       || (this.restoredDrafts.size > 0 && this.restoredDrafts.has(storedBaseKey(field.baseKey))));
     if (wanted.length === 0) return new Map();
     return (await this.valueHasher()).macsOf(wanted);
@@ -813,11 +1051,17 @@ export class FillRun {
   private bookDrafts(rows: readonly FillResult[], macs: ReadonlyMap<BaseKey, ValueMac>): void {
     for (const row of rows) {
       const baseKey = baseKeyOf(row.key);
-      const waiting = row.provenance === 'llm-draft' && row.wrote && row.needsUserAction
-        && row.reason === 'llm-draft-needs-confirmation';
+      // A draft waiting for the person, or one accepted as written (the owner's amendments).
+      const waiting = heldDraftRow(row);
       const mac = macs.get(baseKey);
       if (waiting && mac !== undefined) this.env.drafts.set(baseKey, mac);
       else if (this.env.drafts.has(baseKey) && !waiting) this.env.drafts.delete(baseKey);
+      // The AI's answers, in memory only.
+      const answered = aiAnswerRow(row) && mac !== undefined;
+      if (answered) {
+        this.heldAnswers.set(baseKey, { mac, provenance: row.provenance as HeldAnswer['provenance'],
+          reason: row.reason as HeldAnswer['reason'] });
+      } else if (this.heldAnswers.has(baseKey)) this.heldAnswers.delete(baseKey);
     }
     this.storeDrafts();
   }
@@ -863,18 +1107,26 @@ export class FillRun {
   }
 
   private launcher(view: LauncherView): void {
-    if (!this.controller.signal.aborted) this.env.ui()?.setLauncher(view);
+    if (this.controller.signal.aborted) return;
+    // At review, a notice that stands keeps the badge from a tick, as it keeps the report from its all-clear (the Phase F1
+    // review, 3).
+    const notices = this.notices.codes().some((code) => code !== 'policy-stored-copy');
+    this.env.ui()?.setLauncher(view.state === 'review' ? { ...view, notices } : view);
   }
 
-  /** The notices the stack shows: the report's, but the policy notice and its stored-copy line, which the card is. */
+  /** The notices the stack shows: the report's, but the policy notice and its stored-copy line, which the card is (with
+   *  the "Ask me each time" setting; with "Use AI anyway" there is no card, so the stack shows them). */
   private showNotices(): void {
     if (this.controller.signal.aborted) return;
-    this.env.ui()?.setNotices(this.notices.codes().filter((code) => code !== 'policy' && code !== 'policy-stored-copy'));
+    const card = (this.llm?.whenForbidden ?? 'profile-only') === 'ask';
+    this.env.ui()?.setNotices(this.notices.codes().filter((code) => !card
+      || (code !== 'policy' && code !== 'policy-stored-copy')));
   }
 
   private drawHighlights(): void {
     if (this.controller.signal.aborted) return;
     this.env.ui()?.setHighlights([...this.fieldHighlights, ...this.buttonHighlights]);
+    this.drawAiEdits();
   }
 
   private get state(): RunState {
@@ -913,7 +1165,7 @@ export class FillRun {
       this.autoAdvance = answer.data.settings.autoAdvance && (this.pushes === pushes || this.pushedAutoAdvance);
       if (this.pushes === pushes) {
         this.offerToSave = answer.data.settings.offerToSaveAnswers;
-        this.drafts = answer.data.settings.llm.drafts;
+        this.llm = answer.data.settings.llm;
       }
       return;
     }
@@ -961,18 +1213,35 @@ export class FillRun {
     const canaries = [...this.sent];
     const repeatables = this.sections.map((section) => ({ kind: section.kind,
       entries: kept ? this.answers.get(section.kind)?.entries ?? null : null }));
-    // Drafts on (Phase 6): the posting as the person sees it, from the top frame only, for a draft's job text; never
-    // in a dry run, which asks for no draft (E12).
-    const postingText = this.drafts && this.isTop && !this.request.dryRun && planKeys.length > 0 ? this.postingText()
-      : '';
+    // Drafts or answers on (Phase 6; the owner's amendments): the posting as the person sees it, from the top frame
+    // only, for their job text; never in a dry run, which asks for neither (E12), nor in a profile-only run.
+    const aiText = this.llm !== null && (this.llm.drafts || this.llm.answers);
+    const postingText = aiText && this.isTop && !this.request.dryRun && !this.noAi && planKeys.length > 0
+      ? this.postingText() : '';
+    const noAi = this.noAi;
     const answer = await this.call<'plan/request'>((runId) => ({ v: 1, type: 'plan/request', runId, pass, specs,
       planKeys, canaries, notices, ...(repeatables.length > 0 ? { repeatables } : {}),
-      ...(postingText === '' ? {} : { postingText }), ...(revealEdges.length > 0 ? { revealEdges } : {}) }));
+      ...(postingText === '' ? {} : { postingText }), ...(revealEdges.length > 0 ? { revealEdges } : {}),
+      ...(noAi ? { noAi: true as const } : {}) }));
     if ('failed' in answer) throw new RunFailure(answer.failed);
     this.noteSavable(answer);
+    this.noteAiAnswer(answer);
     for (const canary of answer.persistableCanaries) this.checked.add(canary);
     if (!kept) for (const section of answer.repeatables ?? []) this.answers.set(section.kind, section);
     return answer;
+  }
+
+  /** What a plan answer says of its rows' fields for the AI (the owner's amendments): which the page may offer Edit
+   *  with AI on, and whether the frame's scan holds an "I did not use AI" attestation, which makes the run profile-only
+   *  unless the person's setting is to use the AI anyway. */
+  private noteAiAnswer(answer: PlanAnswer): void {
+    const named = new Set<string>(answer.aiEditable ?? []);
+    for (const row of answer.results) {
+      const baseKey = baseKeyOf(row.key as FieldKey);
+      if (named.has(row.key)) this.aiEditable.add(baseKey);
+      else this.aiEditable.delete(baseKey);
+    }
+    if (answer.aiAttestation === true && this.llm?.whenForbidden !== 'use-ai') this.profileOnly('attestation');
   }
 
   /** What a plan answer says of its rows' fields: whether the person may save their answer (T6-1). */
@@ -1000,8 +1269,11 @@ export class FillRun {
   private async poll(keys: FieldKey[]): Promise<PlanAnswer | 'expired' | 'failed'> {
     const answer = await this.env.channel.request<'plan/poll'>({ v: 1, type: 'plan/poll', runId: this.runId, keys });
     this.alive();
-    if (answer.ok) this.noteSavable(answer.data);
-    if (answer.ok) return answer.data;
+    if (answer.ok) {
+      this.noteSavable(answer.data);
+      this.noteAiAnswer(answer.data);
+      return answer.data;
+    }
     return answer.error === 'expired' ? 'expired' : 'failed';
   }
 
@@ -1076,11 +1348,18 @@ export class FillRun {
     const fresh = this.absorbPassages(raw.passages);
     if (this.state.policyDecision !== 'accepted') {
       if (frameHitsOf(env.doc).length > 0) {
-        this.loopCut = { kind: 'policy' };
-        this.showNotices();
-        return 'policy-notice';
+        // What a posting that forbids AI does is the person's setting (module header): only 'ask' shows the card.
+        const mode = this.llm?.whenForbidden ?? 'profile-only';
+        if (mode === 'ask') {
+          this.loopCut = { kind: 'policy' };
+          this.showNotices();
+          return 'policy-notice';
+        }
+        if (mode === 'profile-only') this.profileOnly('posting');
+        else this.notices.add('policy');
+      } else if (hiddenPolicyHits(fresh).length > 0) {
+        this.notices.add('policy-hidden-text');
       }
-      if (hiddenPolicyHits(fresh).length > 0) this.notices.add('policy-hidden-text');
     }
     this.showNotices();
     const paused = this.pauseNow();
@@ -1236,6 +1515,7 @@ export class FillRun {
   private working(): void {
     this.ended = null;
     this.launcher({ state: 'running', action: null });
+    this.drawAiEdits();
   }
 
   private end(how: RunEnd): RunEnd {
@@ -1243,6 +1523,7 @@ export class FillRun {
     const resolve = this.restedOnce;
     this.restedOnce = null;
     resolve?.(how);
+    this.drawAiEdits();
     return how;
   }
 
@@ -1317,6 +1598,15 @@ export class FillRun {
       policyHits = gate.blocked ? Math.max(1, frameHits.length) : 0;
       this.fromStoredCopy = gate.fromStoredCopy;
       if (!gate.blocked && gate.unreadable) this.notices.add('policy-unreadable');
+    }
+    // A posting that forbids AI (module header): the card only with the 'ask' setting; otherwise the run fills on,
+    // from the profile only (the default) or with the AI, and the notice says which.
+    const mode = this.llm?.whenForbidden ?? 'profile-only';
+    if (policyHits > 0 && mode !== 'ask' && this.state.policyDecision !== 'accepted') {
+      if (mode === 'profile-only') this.profileOnly('posting');
+      else this.notices.add('policy');
+      if (first && this.fromStoredCopy) this.notices.add('policy-stored-copy');
+      policyHits = 0;
     }
     if (policyHits > 0) this.notices.add('policy');
     // The card says when only TailorIT's saved copy held the statement, and so does the panel's (Phase 6).

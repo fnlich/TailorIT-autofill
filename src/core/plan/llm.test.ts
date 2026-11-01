@@ -3,6 +3,7 @@ import { MATCH_LLM_PICK } from '../confidence';
 import { guardWriteInFrame } from '../guard/write';
 import type { TiebreakItem, TiebreakVerdict } from '../matcher/types';
 import type { FieldSpec } from '../types/field';
+import { DEFAULT_SETTINGS } from '../types/settings';
 import { fieldOf, inOrder, planOf, settingsWith, specOf } from './plan.testkit';
 import type { AnsweredVerdict, PlanAi } from './types';
 
@@ -99,7 +100,8 @@ describe('planFrame with the LLM tiebreak', () => {
   });
 
   it('asks nothing with the tiebreak off, for a set, or for a self-identification question', () => {
-    const off = settingsWith({ llm: { tiebreak: false, classify: true, drafts: false } });
+    const off = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: false,
+      answers: false } });
     expect(planOf([SOURCE], { settings: off })).toMatchObject({ awaiting: [], writes: [] });
     const specs = inOrder([SKILLS, GENDER]);
     const out = planOf(specs);
@@ -122,13 +124,20 @@ describe('a tiebreak whose pick could never be written (the Phase 4 review, R6)'
   it('is never asked for a field only the LLM classified: 0.70 × 0.75 is below the flag band', () => {
     const spec = specOf('Pick the one that applies', 'select', { optionLabels: ['Select...', 'LinkedIn job post',
       'LinkedIn recruiter message', 'Indeed'] });
-    expect(planOf([spec]).ask?.classify.map((item) => item.key)).toEqual([spec.key]);
+    const noAnswers = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, answers: false } });
+    expect(planOf([spec], { settings: noAnswers }).ask?.classify.map((item) => item.key)).toEqual([spec.key]);
     const classifications = new Map([[spec.key, { key: spec.key, category: 'referral_source' as const, why: 'ok' as const }]]);
-    const out = planOf([spec], { ai: { verdicts: new Map(), classifications } });
-    // No question goes to the LLM: its answer would land at 0.525, which leaves the field blank anyway.
+    const out = planOf([spec], { settings: noAnswers, ai: { verdicts: new Map(), classifications } });
+    // No tiebreak goes to the LLM: its answer would land at 0.525, which leaves the field blank anyway.
     expect(out.awaiting).toEqual([]);
     expect(out.ask).toBeUndefined();
     expect(fieldOf(out, spec)).toMatchObject({ write: undefined, row: { status: 'flagged', provenance: null } });
+    // With answers on (the default since settings version 2), the AI-only tie goes to the answer kind instead: still no
+    // tiebreak, and one of the field's own options is asked for.
+    const answered = planOf([spec], { ai: { verdicts: new Map(), classifications } });
+    expect(answered.ask?.tiebreaks).toEqual([]);
+    expect(answered.ask?.answers?.map((item) => [item.key, item.shape, item.options.map((option) => option.index)]))
+      .toEqual([[spec.key, 'choice', [1, 2, 3]]]);
   });
 
   it('is still asked when the field’s own classification leaves room for the pick in the flag band', () => {

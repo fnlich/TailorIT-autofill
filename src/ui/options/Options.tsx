@@ -10,10 +10,13 @@
  * - Review panel: the side panel (the default) or the in-page panel (src/content/ui/panel.tsx), which opens from the
  *   launcher; a frame too small for it opens the side panel instead.
  * - Filling: auto-advance, off; the final Submit is never pressed.
- * - Consent boxes: the core's closed list of categories, all off; certify carries a warning. Nothing outside the list
- *   can be pre-approved, so AI attestations and unrecognised consent never appear.
- * - AI help: pick (on), classify (on), drafts (off), with the plan's sentence on what never goes to the AI.
- * - Interpretations: both off, each saying what it does and that the field stays flagged.
+ * - Consent boxes: the core's closed list of categories, the usual ones pre-approved since settings version 2 (all but
+ *   marketing and SMS: docs/SPEC-AMENDMENTS.md); certify carries a warning. Nothing outside the list can be
+ *   pre-approved, so AI attestations and unrecognised consent never appear.
+ * - AI help: pick, classify, drafts and answers (all on), the draft confirmation (off), and what a posting that forbids
+ *   AI does (profile only, the default; ask; use the AI anyway), with the plan's sentence on what never goes to the AI.
+ * - Interpretations: all three on (the posting's country, Two or More Races, the decline default for unanswered
+ *   self-identification), each saying what it does.
  * - Your fixes: the offer to save an answer after the person fixed a flagged field (Requirement F), on by default.
  * - Anonymous counters (Phase 6): the opt-in, off, listing the five fields counted and nothing else; the counts kept in
  *   this browser (telemetry/get), exported as a JSON file through an <a download> link (the page builds it from what it
@@ -25,7 +28,7 @@ import { formatConnectCode, normalizeConnectCode } from '../../contract/tailorit
 import { CONSENT_CATEGORIES } from '../../core/enums';
 import { TELEMETRY_FIELDS } from '../../core/telemetry/events';
 import type { TelemetryCount } from '../../core/types/telemetry';
-import type { Settings } from '../../core/types/settings';
+import { AI_FORBIDDEN_MODES, type AiForbiddenMode, type Settings } from '../../core/types/settings';
 import type { ErrorCode } from '../../messaging/envelope';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
@@ -289,6 +292,18 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
           disabled={saving} onChange={(classify) => set({ llm: { ...shown.llm, classify } })} />
         <Toggle setting="llm.drafts" name={TEXT.ai.drafts} help={TEXT.ai.draftsHelp} checked={shown.llm.drafts}
           disabled={saving} onChange={(drafts) => set({ llm: { ...shown.llm, drafts } })} />
+        <Toggle setting="llm.answers" name={TEXT.ai.answers} help={TEXT.ai.answersHelp} checked={shown.llm.answers}
+          disabled={saving} onChange={(answers) => set({ llm: { ...shown.llm, answers } })} />
+        <Toggle setting="llm.confirmDrafts" name={TEXT.ai.confirmDrafts} help={TEXT.ai.confirmDraftsHelp}
+          checked={shown.llm.confirmDrafts} disabled={saving}
+          onChange={(confirmDrafts) => set({ llm: { ...shown.llm, confirmDrafts } })} />
+        <fieldset className="tia-fieldset" data-setting-group="llm.whenForbidden">
+          <legend className="tia-field__name">{TEXT.ai.whenForbidden.heading}</legend>
+          {AI_FORBIDDEN_MODES.map((mode) => (
+            <ForbiddenChoice key={mode} mode={mode} checked={shown.llm.whenForbidden === mode} disabled={saving}
+              onChoose={() => set({ llm: { ...shown.llm, whenForbidden: mode } })} />
+          ))}
+        </fieldset>
         <p className="tia-note" data-ai-never="">{TEXT.ai.never}</p>
       </Card>
 
@@ -306,8 +321,34 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
         <Toggle setting="interpretations.twoOrMoreRaces" name={TEXT.interpretations.twoOrMoreRaces}
           help={TEXT.interpretations.twoOrMoreRacesHelp} checked={shown.interpretations.twoOrMoreRaces} disabled={saving}
           onChange={(twoOrMoreRaces) => set({ interpretations: { ...shown.interpretations, twoOrMoreRaces } })} />
+        <Toggle setting="interpretations.eeoDeclineByDefault" name={TEXT.interpretations.eeoDeclineByDefault}
+          help={TEXT.interpretations.eeoDeclineByDefaultHelp} checked={shown.interpretations.eeoDeclineByDefault}
+          disabled={saving}
+          onChange={(eeoDeclineByDefault) => set({ interpretations: { ...shown.interpretations, eeoDeclineByDefault } })} />
       </Card>
     </>
+  );
+}
+
+/** One choice of what a posting that forbids AI does, with what it means. */
+function ForbiddenChoice({ mode, checked, disabled, onChoose }: {
+  mode: AiForbiddenMode;
+  checked: boolean;
+  disabled: boolean;
+  onChoose(): void;
+}) {
+  const id = useId();
+  const words = TEXT.ai.whenForbidden;
+  const help = mode === 'profile-only' ? words['profile-onlyHelp'] : mode === 'ask' ? words.askHelp : words['use-aiHelp'];
+  return (
+    <div className="tia-field">
+      <input type="radio" id={id} name="when-forbidden" value={mode} data-setting={`llm.whenForbidden.${mode}`}
+        checked={checked} disabled={disabled} aria-describedby={`${id}-help`} onChange={() => onChoose()} />
+      <div>
+        <label htmlFor={id} className="tia-field__name">{words[mode]}</label>
+        <p className="tia-help" id={`${id}-help`}>{help}</p>
+      </div>
+    </div>
   );
 }
 

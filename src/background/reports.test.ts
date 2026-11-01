@@ -73,7 +73,8 @@ describe('reports', () => {
       ok: true; data: { tabId: number; reports: Array<{ frameId: number }> } };
     expect(answer.data.tabId).toBe(7);
     expect(answer.data.reports.map((report) => report.frameId)).toEqual([0, 3]);
-    expect(await worker.deliver({ v: 1, type: 'panel/reports', tabId: 8 }, pageSender())).toEqual({ ok: true, data: { tabId: 8, reports: [] } });
+    expect(await worker.deliver({ v: 1, type: 'panel/reports', tabId: 8 }, pageSender()))
+      .toEqual({ ok: true, data: { tabId: 8, reports: [], page: { support: 'none', platform: null, formKey: null } } });
     expect(await worker.deliver({ v: 1, type: 'panel/reports', tabId: 7 }, contentSender())).toEqual({ ok: false, error: 'bad_sender' });
   });
 
@@ -83,10 +84,42 @@ describe('reports', () => {
       const runId = await beginRun(worker);
       const port = watch(worker, 7);
       await vi.waitFor(() => expect(port.received).toHaveLength(1));
-      expect(port.received[0]).toEqual({ v: 1, type: 'panel/update', tabId: 7, reports: [] });
+      expect(port.received[0]).toEqual({ v: 1, type: 'panel/update', tabId: 7, reports: [], page: { support: 'none', platform: null, formKey: null } });
       await putReport(worker, runId, frameReport(runId));
       await vi.waitFor(() => expect(port.received).toHaveLength(2));
-      expect(port.received[1]).toEqual({ v: 1, type: 'panel/update', tabId: 7, reports: [frameReport(runId)] });
+      expect(port.received[1]).toEqual({ v: 1, type: 'panel/update', tabId: 7, reports: [frameReport(runId)], page: { support: 'none', platform: null, formKey: null } });
+    });
+
+    it("answers and pushes what the tab's page holds: a form with its platform, frames without one, none of ours (v2)", async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      const read = async (tabId: number) => ((await worker.deliver({ v: 1, type: 'panel/reports', tabId }, pageSender())) as {
+        data: { page: unknown } }).data.page;
+      expect(await read(7)).toEqual({ support: 'none', platform: null, formKey: null });
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, contentSender());
+      expect(await read(7)).toEqual({ support: 'no-form', platform: null, formKey: null });
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true }, EMBED);
+      expect(await read(7)).toEqual({ support: 'form', platform: 'greenhouse', formKey: '3:doc-3' });
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
+      // The lowest frame with a form names the page.
+      expect(await read(7)).toEqual({ support: 'form', platform: 'lever', formKey: '0:doc-1' });
+    });
+
+    it('pushes the page state again on a hello, only to a watcher it changed for (v2)', async () => {
+      const worker = await startTestWorker({ token: tokenRecord() });
+      const port = watch(worker, 7);
+      await vi.waitFor(() => expect(port.received).toHaveLength(1));
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
+      await vi.waitFor(() => expect(port.received).toHaveLength(2));
+      expect(port.received[1]).toEqual({ v: 1, type: 'panel/update', tabId: 7, reports: [],
+        page: { support: 'form', platform: 'lever', formKey: '0:doc-1' } });
+      // The same document says hello again (a page back from the cache): nothing changed, nothing is pushed.
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(port.received).toHaveLength(2);
+      // Another document in the frame: a new key, pushed.
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender({ documentId: 'doc-9' }));
+      await vi.waitFor(() => expect(port.received).toHaveLength(3));
+      expect((port.received[2] as { page: { formKey: string } }).page.formKey).toBe('0:doc-9');
     });
 
     it('follows one tab at a time, the latest watched', async () => {

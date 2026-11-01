@@ -59,6 +59,135 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-dashboard__title { margin: 0; font: 800 17px/1.3 var(--tia-font); }
 .tia-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; margin: 4px 0 0; font-size: 13px; }
 
+/* The job card (v2): a white card, the company's tile and the match ring on top, chips, the resume it attaches. */
+.tia-job {
+  display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-card);
+  background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
+}
+.tia-job__top { display: flex; align-items: center; gap: 12px; }
+.tia-job__tile {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; width: 40px; height: 40px;
+  border-radius: var(--tia-r-control); background: var(--tia-brand-container); color: var(--tia-ink);
+  font: 800 17px/1 var(--tia-font);
+}
+.tia-job__tile--unknown { background: var(--tia-track); color: var(--tia-muted); }
+.tia-job__who { display: grid; flex: 1 1 auto; min-width: 0; gap: 2px; }
+.tia-job__company {
+  overflow: hidden; font: 700 14px/1.3 var(--tia-font); text-overflow: ellipsis; white-space: nowrap; color: var(--tia-fg);
+}
+.tia-job__via { font-size: 12px; line-height: 1.3; color: var(--tia-muted); }
+.tia-job__title {
+  display: -webkit-box; margin: 0; overflow: hidden; font: 800 17px/1.3 var(--tia-font); overflow-wrap: anywhere;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.tia-job__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tia-job__chip { padding: 3px 9px; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.tia-job__chip[data-tone="brand"] { color: var(--tia-ink); background: var(--tia-brand-container); }
+.tia-job__chip[data-tone="warning"] { color: var(--tia-tone-warning-fg); background: var(--tia-tone-warning-bg); }
+.tia-job__chip[data-tone="danger"] { color: var(--tia-tone-danger-fg); background: var(--tia-tone-danger-bg); }
+.tia-job__meta { margin: -4px 0 0; font-size: 12px; color: var(--tia-muted); }
+.tia-job__warning {
+  display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control);
+  background: var(--tia-tone-warning-bg); color: var(--tia-fg); font-size: 13px; font-weight: 600;
+}
+.tia-job__warning-icon { flex: none; margin-top: 1px; color: var(--tia-tone-warning-fg); }
+.tia-job__help { margin: 0; font-size: 13px; color: var(--tia-muted); }
+.tia-job__resume { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--tia-line); }
+.tia-job__resume-head { display: flex; align-items: flex-start; gap: 8px; }
+.tia-job__doc { flex: none; margin-top: 1px; color: var(--tia-ink); }
+.tia-job__resume-text { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.tia-job__attaches { color: var(--tia-muted); }
+.tia-job__resume-label { font-weight: 700; }
+.tia-job__kind { padding: 0 7px; font-size: 11px; vertical-align: 1px; }
+.tia-job__change { flex: none; margin: -4px -8px 0 0; }
+.tia-job__why { margin: 0 0 0 26px; font-size: 12px; color: var(--tia-muted); }
+.tia-job__resume-line { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; }
+.tia-job__actions { display: flex; }
+.tia-job__actions .tia-button { flex: 1 1 auto; min-height: 36px; }
+.tia-job__note { margin: 0; padding: 7px 10px; border-radius: var(--tia-r-control); background: var(--tia-subtle); font-size: 13px; }
+.tia-job--slim { padding: 10px 14px; }
+.tia-job__slim { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; }
+.tia-job__slim-icon { flex: none; margin-top: 1px; color: var(--tia-tone-info-fg); }
+
+/* The match: a pill whose outline fills to the percentage, the number in it and "match" under it. */
+.tia-ring { display: inline-flex; flex: none; flex-direction: column; align-items: center; gap: 3px; }
+.tia-ring__pill { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 34px; }
+.tia-ring__svg { position: absolute; top: 0; left: 0; overflow: visible; }
+.tia-ring__track, .tia-ring__arc { fill: none; stroke-width: 3; }
+.tia-ring__track { stroke: var(--tia-ring-track); }
+.tia-ring__arc { stroke: var(--tia-brand); stroke-linecap: round; }
+.tia-ring__value {
+  position: relative; font: 800 16px/1 var(--tia-font); color: var(--tia-ink); font-variant-numeric: tabular-nums;
+}
+.tia-ring__pct { font-size: 11px; }
+.tia-ring__caption { font: 700 10px/1 var(--tia-font); color: var(--tia-muted); }
+
+/* The card while TailorIT is asked: grey blocks that breathe, none with reduced motion. */
+.tia-skeleton { display: block; border-radius: 6px; background: var(--tia-track); animation: tia-breathe 1.1s ease-in-out infinite alternate; }
+.tia-skeleton--line { width: 60%; height: 12px; }
+.tia-skeleton--short { width: 34%; height: 10px; margin-top: 4px; }
+.tia-skeleton--title { width: 82%; height: 18px; }
+.tia-skeleton--chips { width: 56%; height: 20px; border-radius: 8px; }
+@keyframes tia-breathe { to { background: var(--tia-line); } }
+
+/* Change: the account's resumes to choose from. */
+.tia-picker { display: grid; gap: 6px; margin: 6px 0 0; padding: 10px; border-radius: var(--tia-r-control); background: var(--tia-subtle); }
+.tia-picker__heading { margin: 0; font: 700 13px/1.4 var(--tia-font); }
+.tia-picker__note { margin: 0; font-size: 13px; color: var(--tia-muted); }
+.tia-picker__list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.tia-picker__item {
+  display: grid; gap: 1px; width: 100%; padding: 8px 10px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-control);
+  background: var(--tia-bg); color: var(--tia-fg); font: inherit; text-align: left; cursor: pointer;
+}
+.tia-picker__item:hover { border-color: var(--tia-control-hover); }
+.tia-picker__item[aria-pressed="true"] { border-color: var(--tia-ink); background: var(--tia-brand-wash); }
+.tia-picker__item:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-picker__label { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.tia-picker__meta { font-size: 12px; color: var(--tia-muted); }
+.tia-picker__actions { display: flex; justify-content: flex-end; gap: 4px; }
+
+/* Ask a custom question: a fold under the buttons. */
+.tia-ask {
+  border: 1px solid var(--tia-line); border-radius: var(--tia-r-card); background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
+}
+.tia-ask__summary {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px; font: 700 14px/1.3 var(--tia-font); cursor: pointer;
+  list-style: none;
+}
+.tia-ask__summary::-webkit-details-marker { display: none; }
+.tia-ask__summary:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: -2px; border-radius: var(--tia-r-card); }
+.tia-ask__icon { flex: none; color: var(--tia-ink); }
+.tia-ask__heading { flex: 1 1 auto; }
+.tia-ask[open] .tia-chevron--down { display: none; }
+.tia-ask[open] .tia-chevron--up { display: block; }
+.tia-ask__body { display: grid; gap: 8px; padding: 0 16px 16px; }
+.tia-ask__policy {
+  margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control); background: var(--tia-tone-warning-bg); font-size: 13px;
+}
+.tia-ask__why { margin: 0; font-size: 13px; color: var(--tia-muted); }
+.tia-ask__label { font: 600 13px/1.4 var(--tia-font); }
+.tia-ask__input {
+  width: 100%; min-height: 72px; padding: 8px 10px; border: 1px solid var(--tia-input); border-radius: var(--tia-r-control);
+  font: inherit; color: var(--tia-fg); background: var(--tia-bg); resize: vertical;
+}
+.tia-ask__input:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-ask__input:disabled { background: var(--tia-track); }
+.tia-ask__lengths { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; padding: 0; border: 0; font-size: 13px; }
+.tia-ask__legend { float: left; margin: 0 2px 0 0; padding: 0; font-weight: 600; }
+.tia-ask__length { display: inline-flex; align-items: center; gap: 5px; }
+.tia-ask__length input { margin: 0; accent-color: var(--tia-ink); }
+.tia-ask__submit { display: inline-flex; align-items: center; justify-self: start; gap: 6px; min-height: 36px; padding: 0 16px; }
+.tia-ask__refused { margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control); background: var(--tia-subtle); font-size: 13px; }
+.tia-ask__answer {
+  display: grid; gap: 8px; padding: 12px; border: 1px solid var(--tia-line); border-left: 3px solid var(--tia-brand);
+  border-radius: var(--tia-r-row); background: var(--tia-bg);
+}
+.tia-ask__from { margin: 0; font-size: 12px; font-weight: 600; color: var(--tia-muted); }
+.tia-ask__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tia-ask__actions { display: flex; gap: 8px; }
+.tia-ask__actions .tia-button { min-height: 32px; padding: 0 14px; }
+.tia-ask__copied { margin: 0; font-size: 12px; color: var(--tia-muted); }
+
 .tia-options { max-width: 760px; margin: 0 auto; padding: 28px 20px 48px; }
 .tia-options__head { display: flex; align-items: center; gap: 12px; margin: 0 0 20px; }
 .tia-options__title { margin: 0; font: 600 24px/1.2 var(--tia-font); color: var(--tia-fg); }
@@ -107,10 +236,12 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-table__count { text-align: right; font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
-  .tia-spin { animation: none; }
+  .tia-spin, .tia-skeleton { animation: none; }
 }
 @media (forced-colors: active) {
   .tia-cta { border: 1px solid ButtonText; }
+  .tia-ring__arc { stroke: Highlight; }
+  .tia-job, .tia-ask { border: 1px solid CanvasText; }
 }
 `;
 

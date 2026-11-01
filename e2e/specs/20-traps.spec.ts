@@ -112,11 +112,13 @@ test.describe('trap fixtures', () => {
     await expect(page.locator('#first')).toHaveValue(GOLDEN.first);
     await expect(page.locator('#last')).toHaveValue(GOLDEN.last);
     await expect(page.locator('#email')).toHaveValue(GOLDEN.email);
-    // Drafts are off by default: the free-text question is left for the person, and nothing asks the AI.
-    expect(row(report, 'Why do you want to work here?')).toMatchObject({ category: 'freeText.whyCompany', wrote: false });
-    expect(['drafts-disabled', 'free-text-requires-user']).toContain(row(report, 'Why do you want to work here?').reason);
-    await expect(page.locator('#why')).toHaveValue('');
-    await noAiRequest();
+    // Drafts are on by default (the owner's amendments, docs/SPEC-AMENDMENTS.md): the free-text question is drafted and
+    // accepted, and the draft is the only AI request.
+    expect(row(report, 'Why do you want to work here?')).toMatchObject({ category: 'freeText.whyCompany',
+      status: 'verified', provenance: 'llm-draft', reason: 'llm-draft-written', wrote: true, needsUserAction: false });
+    await expect(page.locator('#why')).toHaveValue(CLEAN_DRAFT);
+    expect((await mock.requestsTo('POST /api/autofill/ai/*')).map((request) => request.path))
+      .toEqual(['/api/autofill/ai/draft']);
     const runState = await ext.runState(applicationKeyOf(filled.trap.url)!);
     expect(runState?.canarySet.map((canary) => canary.toLowerCase())).toContain('i am llm');
     expect(await (await PageUi.of(page)).noticeTexts()).toContain(COPY.notices.tripwire);
@@ -286,7 +288,7 @@ test.describe('trap fixtures', () => {
     });
   });
 
-  test('01 with drafts on: the draft request holds the visible marker, neither the hidden one nor the canary in its text, and the clean draft is written flagged', async ({ extContext, connected: ext, routeLog, logs }) => {
+  test('01 with drafts on: the draft request holds the visible marker, neither the hidden one nor the canary in its text, and the clean draft is written accepted', async ({ extContext, connected: ext, routeLog, logs }) => {
     await withDrafts(ext, async () => {
       const run = { extContext, ext, routeLog, logs };
       const filled = await fillTrap('01', run);
@@ -304,8 +306,8 @@ test.describe('trap fixtures', () => {
         expect(JSON.stringify(text).toLowerCase(), hidden).not.toContain(hidden.toLowerCase());
       }
       expect(row(report, 'Why do you want to work here?')).toMatchObject({ category: 'freeText.whyCompany',
-        status: 'flagged', provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', wrote: true,
-        verification: 'verified', needsUserAction: true });
+        status: 'verified', provenance: 'llm-draft', reason: 'llm-draft-written', wrote: true,
+        verification: 'verified', needsUserAction: false });
       await expect(page.locator('#why')).toHaveValue(CLEAN_DRAFT);
       nameAndEmail(report, 'first-last');
       await invariants(filled, run);

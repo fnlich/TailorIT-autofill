@@ -191,6 +191,13 @@ describe('translation: classify', () => {
     expect(classifyItemOfCore(plain)).not.toBeNull();
   });
 
+  it('screens the extension’s own terms again: TailorIT’s server-only ones (resolver/classify.ts)', () => {
+    const own = [classifyItem('k1', 'Are you on probation or parole?', ['Yes', 'No']),
+      classifyItem('k2', 'Current day rate'), { ...classifyItem('k3', 'Please enter'), hint: u('Your SIN') },
+      classifyItem('k4', 'Please select one', ['Under 50k income', '50k income or more'])];
+    for (const item of own) expect(classifyItemOfCore(item), item.key).toBeNull();
+  });
+
   it('reads each answer as a category or why there is none', () => {
     const items = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6'].map((key) => classifyItem(key, 'Where?'));
     const verdicts = classifyVerdicts(items, { items: [
@@ -209,11 +216,12 @@ describe('translation: classify', () => {
 // ── The task client ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** What the task client may call: never a DELETE (the server client has none for a task). */
-type AiServer = Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiTask'>;
+type AiServer = Pick<ServerClient, 'aiPick' | 'aiClassify' | 'aiDraft' | 'aiAnswer' | 'aiTask'>;
 
 /** A scripted AI server: the answers for each call, in order (the last repeats), and what was called. It answers a
  *  cancel too, which the task client must never ask for, so one would show among the calls. */
-function fakeServer(script: { pick?: Array<ServerResult<unknown>>; task?: Array<ServerResult<unknown>> }) {
+function fakeServer(script: { pick?: Array<ServerResult<unknown>>; task?: Array<ServerResult<unknown>>;
+  answer?: Array<ServerResult<unknown>> }) {
   const calls: string[] = [];
   const next = <T>(list: Array<ServerResult<unknown>> | undefined, name: string): Promise<ServerResult<T>> => {
     calls.push(name);
@@ -224,6 +232,7 @@ function fakeServer(script: { pick?: Array<ServerResult<unknown>>; task?: Array<
     aiPick: () => next(script.pick, 'pick'),
     aiClassify: () => next(undefined, 'classify'),
     aiDraft: () => next(undefined, 'draft'),
+    aiAnswer: () => next(script.answer, 'answer'),
     aiTask: (id) => next(script.task, `task ${id}`),
     aiCancel: (id) => next([{ ok: true, value: taskView('autofill_pick', 'cancelled') }], `cancel ${id}`),
   };
@@ -435,7 +444,8 @@ describe('a run’s questions', () => {
     const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds());
     const other = { ...SCHOOL, id: 'lever|main|other|0e7f3a9c5b1d2468|0', intended: 'Rice University' };
     const context = { specs: [], canaries: [] };
-    const llm = { tiebreak: true, classify: true, drafts: false };
+    const llm = { tiebreak: true, classify: true, drafts: false, answers: false, confirmDrafts: false,
+      whenForbidden: 'profile-only' as const };
     ai.ask({ tiebreaks: [SCHOOL], classify: [] }, [SCHOOL.id as FieldKey], context, llm, 1);
     ai.ask({ tiebreaks: [other], classify: [] }, [other.id as FieldKey], context, llm, 1);
     await flush();
@@ -455,7 +465,8 @@ describe('a run’s questions', () => {
     const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds());
     const where = classifyItem('lever|main|where|none|0', 'Where do you work today?');
     ai.ask({ tiebreaks: [SCHOOL], classify: [where] }, [SCHOOL.id as FieldKey, where.key], { specs: [], canaries: [] },
-      { tiebreak: false, classify: false, drafts: false }, 1);
+      { tiebreak: false, classify: false, drafts: false, answers: false, confirmDrafts: false,
+        whenForbidden: 'profile-only' }, 1);
     await ai.idle();
     expect(calls).toEqual([]);
     expect([ai.state(SCHOOL.id as FieldKey), ai.state(where.key)]).toEqual(['done', 'done']);

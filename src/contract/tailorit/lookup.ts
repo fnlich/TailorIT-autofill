@@ -1,10 +1,14 @@
 import { z } from 'zod';
+import { InstantSchema } from './common';
+import { WORK_ARRANGEMENTS } from './profile';
 import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from './resumes';
 
 // The job behind an application page (POST /api/autofill/lookup): which TailorIT job it is, whether the person has
-// already tracked it, and which resume to attach. The page's URL travels in the body, never in the path or the query,
-// because the error handler logs URLs; it is never stored, logged or echoed. `parseAtsUrl` is the shared reading of
-// such an address: the server resolves with it, and the extension reads the same addresses with the same code.
+// already tracked it, which resume to attach and how well that resume matches the job. The page's URL travels in the
+// body, never in the path or the query, because the error handler logs URLs; it is never stored, logged or echoed.
+// `parseAtsUrl` is the shared reading of such an address: the server resolves with it, and the extension reads the
+// same addresses with the same code. Adding a posting TailorIT does not have (POST /api/autofill/jobs) answers the
+// same lookup, once the job is in TailorIT's jobs and in the person's tracker as Saved.
 
 /** The applicant-tracking systems the extension fills. Equals the extension's PLATFORMS. */
 export const ATS_KINDS = ['greenhouse', 'lever', 'ashby', 'workday'] as const;
@@ -15,15 +19,25 @@ export const AUTOFILL_LOOKUP_URL_MAX = 2048;
 /** The most of a posting's stored text a lookup answers. */
 export const AUTOFILL_POSTING_TEXT_MAX = 20_000;
 
+/** A resume's id as a request names it (TailorIT's ids are UUIDs; anything else is a resume that is not there). */
+const RequestResumeIdSchema = z.string().min(1).max(64);
+
 export const AutofillLookupRequestSchema = z.object({
   url: z.string().min(1).max(AUTOFILL_LOOKUP_URL_MAX),
   /** Ask for the job's stored posting text, for the extension's policy check. */
   includePostingText: z.boolean().default(false),
+  /**
+   * The resume the person chose in the extension (its Change button). When it is one of the account's resumes the
+   * extension may attach, it is the suggested resume (reason `chosen`) and the one the match scores; otherwise it is
+   * passed over as if it had not been sent.
+   */
+  resumeId: RequestResumeIdSchema.optional(),
 });
 export type AutofillLookupRequest = z.infer<typeof AutofillLookupRequestSchema>;
 
 /** Why this resume is suggested, in the order the server tries them. */
 export const RESUME_CHOICE_REASONS = [
+  'chosen',
   'application',
   'profile',
   'best_match',
@@ -50,9 +64,48 @@ export const LOOKUP_JOB_MATCHES = ['source_link', 'link_key'] as const;
 export const LOOKUP_APPLICATION_MATCHES = ['job', 'posting_url'] as const;
 
 /**
+ * The tracker's statuses as TailorIT names them (tracker/statuses.ts STATUS_INFO, in its order): the extension names a
+ * tracked application's status with them. A code not listed is one added later.
+ */
+export const AUTOFILL_TRACKER_STATUSES = [
+  { code: 1, label: 'Saved' },
+  { code: 2, label: 'Applied' },
+  { code: 11, label: 'Screen' },
+  { code: 12, label: 'Interviewing' },
+  { code: 13, label: 'Offer' },
+  { code: 21, label: 'Withdrawn' },
+  { code: 22, label: 'Ghosted' },
+  { code: 23, label: 'Rejected' },
+  { code: 24, label: 'Accepted' },
+] as const;
+
+/**
+ * The suggested resume's keyword match to the job (`resumeId` is suggestedResume.id), counted as the Jobs page counts
+ * it ("9 out of 12 required keywords found") and shown as Resume Score and the tracker's resume picker show it ("9 of
+ * 12 keywords · 75%"): percentage = round(matchedCount / total * 100). `no_keywords`: the posting names none, so there
+ * is no number. `unreadable`: an upload with under 50 characters of text (MIN_READABLE_RESUME_TEXT: a scan TailorIT
+ * could not read), whose number would mislead. A new state is a new value the answer may hold: it bumps
+ * AUTOFILL_API_VERSION.
+ */
+export const AutofillLookupMatchSchema = z.discriminatedUnion('state', [
+  z.object({
+    state: z.literal('ok'),
+    resumeId: z.string(),
+    matchedCount: z.number().int().nonnegative(),
+    total: z.number().int().positive(),
+    percentage: z.number().int().min(0).max(100),
+  }),
+  z.object({ state: z.literal('no_keywords'), resumeId: z.string() }),
+  z.object({ state: z.literal('unreadable'), resumeId: z.string() }),
+]);
+export type AutofillLookupMatch = z.infer<typeof AutofillLookupMatchSchema>;
+
+/**
  * `ats` is null when parseAtsUrl does not read the address, `job` and `application` when TailorIT has neither: the
- * extension still fills, without job context. `suggestedResume` still falls back to the profile's choice, the default
- * or the latest, and is null only when the account has no resume to attach.
+ * extension still fills, without job context. `suggestedResume` is the resume the person chose when it can be
+ * attached, else the application's, the profile's choice, TailorIT's best match, the default or the latest; null only
+ * when the account has no resume to attach. `match` scores that resume against the job, read-only. The fields marked
+ * optional are absent from a TailorIT older than them.
  */
 export const AutofillLookupResponseSchema = z.object({
   ats: z
@@ -68,6 +121,12 @@ export const AutofillLookupResponseSchema = z.object({
       matchedBy: z.enum(LOOKUP_JOB_MATCHES),
       /** Only with includePostingText: TailorIT's stored plain text, at most 20,000 characters. Policy check only. */
       postingText: z.string().max(AUTOFILL_POSTING_TEXT_MAX).optional(),
+      /** When it was posted, else when TailorIT first saw it (the Jobs page's "2 days ago"); null when neither reads. */
+      postedAt: InstantSchema.nullable().optional(),
+      /** The pay as the Jobs page writes it ("$120k - $150k/yr"); null when the posting names none. */
+      salary: z.string().nullable().optional(),
+      /** Remote, hybrid or on-site; null when the posting does not say. */
+      workArrangement: z.enum(WORK_ARRANGEMENTS).nullable().optional(),
     })
     .nullable(),
   /** The person's own tracker entry for this posting: the extension warns before a second application. */
@@ -83,8 +142,53 @@ export const AutofillLookupResponseSchema = z.object({
     })
     .nullable(),
   suggestedResume: AutofillResumeChoiceSchema.nullable(),
+  /**
+   * The suggested resume's keyword match to the job. Null without a job or a suggested resume, or when it could not be
+   * computed.
+   */
+  match: AutofillLookupMatchSchema.nullable().optional(),
 });
 export type AutofillLookupResponse = z.infer<typeof AutofillLookupResponseSchema>;
+
+/**
+ * POST /api/autofill/jobs: add the posting this application page shows to TailorIT's jobs, and to the person's
+ * tracker as Saved. A job TailorIT has is found from any address the lookup finds it by; a posting it lacks must be at
+ * an address `addablePosting` reads (400 `unsupported` otherwise). `resumeId` is the lookup's.
+ */
+export const AutofillAddJobRequestSchema = z.object({
+  url: z.string().min(1).max(AUTOFILL_LOOKUP_URL_MAX),
+  resumeId: RequestResumeIdSchema.optional(),
+});
+export type AutofillAddJobRequest = z.infer<typeof AutofillAddJobRequestSchema>;
+
+/**
+ * POST /api/autofill/jobs's answer (200): `created` is true when the job is new to TailorIT (read from its ATS just
+ * now), false when TailorIT had it already (found by the lookup, or the posting read turned out to be a job another
+ * source holds). Either way the person's tracker holds it (Saved, or further along as it was), and `lookup` is the
+ * lookup's answer for the same address, as POST /api/autofill/lookup gives it.
+ */
+export const AutofillAddJobResponseSchema = z.object({
+  created: z.boolean(),
+  lookup: AutofillLookupResponseSchema,
+});
+export type AutofillAddJobResponse = z.infer<typeof AutofillAddJobResponseSchema>;
+
+/**
+ * What POST /api/autofill/jobs refuses with, besides every token route's refusals (401, 403, 409 `conflict` for another
+ * API version, 429), and the status of each: `validation_failed` (no address, or one over 2,048 characters),
+ * `unsupported` (a job TailorIT does not have, at an address it cannot add from: not Greenhouse or Lever, a page that
+ * does not name the board, or Greenhouse's EU boards), `not_found` (the ATS has no such posting: it closed),
+ * `ats_failed` (the ATS answered with something TailorIT cannot read), `ats_unavailable` (it could not be reached in
+ * time; try again later) and `internal` (the posting was read but TailorIT could not save it; try again).
+ */
+export const AUTOFILL_ADD_JOB_REFUSALS = {
+  validation_failed: 400,
+  unsupported: 400,
+  not_found: 404,
+  ats_failed: 502,
+  ats_unavailable: 503,
+  internal: 500,
+} as const;
 
 /** What `parseAtsUrl` reads from an application page's address. */
 export interface ParsedAtsUrl {
@@ -193,4 +297,32 @@ export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   if (region !== undefined) return greenhousePosting(url, region) ?? greenhouseOnCompanyPage(url);
   if (LEVER_HOSTS.has(url.hostname)) return leverPosting(url);
   return greenhouseOnCompanyPage(url);
+}
+
+/** The ATSs POST /api/autofill/jobs can read one posting from (their public job APIs). */
+export const AUTOFILL_ADDABLE_ATS = ['greenhouse', 'lever'] as const;
+export type AddableAtsKind = (typeof AUTOFILL_ADDABLE_ATS)[number];
+
+/** A posting POST /api/autofill/jobs can add: its ATS, board or site, id, and the ATS region it is hosted in. */
+export interface AddablePosting {
+  kind: AddableAtsKind;
+  board: string;
+  externalId: string;
+  region: 'global' | 'eu';
+}
+
+/**
+ * The posting an address lets TailorIT add (the extension offers "Add this job to TailorIT" exactly for these), or
+ * null: Greenhouse needs the board in the address (a company page's ?gh_jid= has none: the embedded form's own address
+ * names it) and is read on its global boards only, as TailorIT's Greenhouse sources are; Lever on either of its hosts.
+ */
+export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | null {
+  if (!parsed || parsed.board === null) return null;
+  // The canonical addresses keep the host's region (job-boards.eu.greenhouse.io, jobs.eu.lever.co).
+  const region = /^https:\/\/[a-z-]+\.eu\./.test(parsed.canonical[0] ?? '') ? 'eu' : 'global';
+  if (parsed.kind === 'greenhouse' && region === 'global') {
+    return { kind: 'greenhouse', board: parsed.board, externalId: parsed.externalId, region };
+  }
+  if (parsed.kind === 'lever') return { kind: 'lever', board: parsed.board, externalId: parsed.externalId, region };
+  return null;
 }

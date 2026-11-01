@@ -1,0 +1,95 @@
+{
+  "workAuthorization": [
+    {
+      "country": "US",
+      "authorized": {
+        "state": "value",
+        "value": true
+      },
+      "sponsorshipNow": {
+        "state": "value",
+        "value": false
+      },
+      "sponsorshipFuture": {
+        "state": "value",
+        "value": false
+      },
+      "status": {
+        "state": "value",
+        "value": "citizen"
+      }
+    },
+    {
+      "country": "CA",
+      "authorized": {
+        "state": "value",
+        "value": false
+      },
+      "sponsorshipNow": {
+        "state": "value",
+        "value": true
+      },
+      "sponsorshipFuture": {
+        "state": "value",
+        "value": true
+      },
+      "status": {
+        "state": "not_provided"
+      }
+    }
+  ],
+  "eeo": {
+    "gender": {
+      "state": "value",
+      "value": {
+        "identity": "female",
+        "selfDescribed": ""
+      }
+    },
+    "hispanicOrLatino": {
+      "state": "value",
+      "value": true
+    },
+    "races": {
+      "state": "value",
+      "value": [
+        "white"
+      ]
+    },
+    "veteran": {
+      "state": "value",
+      "value": {
+        "isVeteran": false,
+        "isProtectedVeteran": false
+      }
+    },
+    "disability": {
+      "state": "declined"
+    },
+    "pronouns": {
+      "state": "value",
+      "value": "she/her"
+    }
+  },
+  "legal": {
+    "atLeast18": {
+      "state": "value",
+      "value": true
+    },
+    "criminalRecord": {
+      "state": "value",
+      "value": "no"
+    }
+  },
+  "compensation": {
+    "expectedSalary": {
+      "state": "value",
+      "value": {
+        "min": 150000,
+        "max": 180000,
+        "currency": "USD",
+        "period": "year"
+      }
+    }
+  }
+}

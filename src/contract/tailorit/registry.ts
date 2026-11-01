@@ -1,5 +1,8 @@
 import type { z } from 'zod';
 import {
+  AutofillAnswerRequestSchema,
+  AutofillAnswerResultSchema,
+  AutofillAnswerTaskSchema,
   AutofillClassifyRequestSchema,
   AutofillClassifyResultSchema,
   AutofillClassifyTaskSchema,
@@ -23,7 +26,12 @@ import {
   AutofillTokenListSchema,
   type ExtensionScope,
 } from './connect';
-import { AutofillLookupRequestSchema, AutofillLookupResponseSchema } from './lookup';
+import {
+  AutofillAddJobRequestSchema,
+  AutofillAddJobResponseSchema,
+  AutofillLookupRequestSchema,
+  AutofillLookupResponseSchema,
+} from './lookup';
 import {
   AutofillProfileEnvelopeSchema,
   AutofillProfileSchema,
@@ -60,6 +68,8 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillSeed: AutofillSeedSchema,
   AutofillLookupRequest: AutofillLookupRequestSchema,
   AutofillLookupResponse: AutofillLookupResponseSchema,
+  AutofillAddJobRequest: AutofillAddJobRequestSchema,
+  AutofillAddJobResponse: AutofillAddJobResponseSchema,
   AutofillResumeList: AutofillResumeListSchema,
   AutofillPickRequest: AutofillPickRequestSchema,
   AutofillPickResult: AutofillPickResultSchema,
@@ -70,6 +80,9 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillDraftRequest: AutofillDraftRequestSchema,
   AutofillDraftResult: AutofillDraftResultSchema,
   AutofillDraftTask: AutofillDraftTaskSchema,
+  AutofillAnswerRequest: AutofillAnswerRequestSchema,
+  AutofillAnswerResult: AutofillAnswerResultSchema,
+  AutofillAnswerTask: AutofillAnswerTaskSchema,
   AutofillTaskAccepted: AutofillTaskAcceptedSchema,
   AutofillTaskView: AutofillTaskViewSchema,
   AutofillSavedAnswer: AutofillSavedAnswerSchema,
@@ -113,7 +126,8 @@ export interface AutofillRoute {
  * `conflict` for another API version, 401 for a dead token, 403 for a missing scope, 429 when rate-limited). The AI
  * routes refuse with AUTOFILL_AI_REFUSALS too; their tasks are polled and cancelled on /api/ai/tasks/:id, the one path
  * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). The
- * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS. The extension reads the saved answers (GET
+ * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS, and adding a job with AUTOFILL_ADD_JOB_REFUSALS
+ * (version 2). The extension reads the saved answers (GET
  * /api/autofill/answers, with profile:read) together with GET /api/autofill/profile, once per run.
  */
 export const AUTOFILL_ROUTES = [
@@ -228,6 +242,16 @@ export const AUTOFILL_ROUTES = [
     accepted: null,
   },
   {
+    method: 'POST',
+    path: '/api/autofill/jobs',
+    caller: 'either',
+    scope: 'jobs:add',
+    request: 'AutofillAddJobRequest',
+    status: 200,
+    response: 'AutofillAddJobResponse',
+    accepted: null,
+  },
+  {
     method: 'GET',
     path: '/api/autofill/resumes',
     caller: 'either',
@@ -275,6 +299,16 @@ export const AUTOFILL_ROUTES = [
     request: 'AutofillDraftRequest',
     status: 200,
     response: 'AutofillDraftTask',
+    accepted: 'AutofillTaskAccepted',
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/ai/answer',
+    caller: 'either',
+    scope: 'ai:run',
+    request: 'AutofillAnswerRequest',
+    status: 200,
+    response: 'AutofillAnswerTask',
     accepted: 'AutofillTaskAccepted',
   },
   {

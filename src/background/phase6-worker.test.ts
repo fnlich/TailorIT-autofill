@@ -125,6 +125,9 @@ describe('drafts', () => {
 
   it('asks nothing with drafts off: the field is drafts-disabled at once', async () => {
     const worker = await startTestWorker({ token: tokenRecord(), core: draftingCore() });
+    // Drafts are on by default since settings version 2 (docs/SPEC-AMENDMENTS.md): turned off here.
+    await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false } } }, PANEL);
     const runId = await beginRun(worker);
     const answer = await request(worker, runId, [WHY], { postingText: 'A posting.' });
     expect(answer).toMatchObject({ ok: true, data: { awaiting: [], results: [expect.objectContaining({ key: WHY.key,

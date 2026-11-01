@@ -13,9 +13,11 @@ export const FIELD_KINDS = ['text', 'textarea', 'select', 'radio', 'checkbox', '
   'multiselect', 'typeahead-remote', 'date', 'file'] as const;
 export type FieldKind = (typeof FIELD_KINDS)[number];
 
-/** Where a value came from. profile, saved and rule are trusted; llm-pick is validated against the visible options;
- *  llm-draft always waits for the user. */
-export const PROVENANCES = ['profile', 'saved', 'rule', 'llm-pick', 'llm-draft'] as const;
+/** Where a value came from. profile, saved and rule are trusted; llm-pick is validated against the visible options
+ *  (a tiebreak's pick, or an answer that chose one of the field's options); llm-draft is a free-text draft (written
+ *  and accepted, or kept for the person's confirmation when settings.llm.confirmDrafts is on); llm-answer is a short
+ *  text TailorIT's AI answered a question with (version 2: docs/SPEC-AMENDMENTS.md). */
+export const PROVENANCES = ['profile', 'saved', 'rule', 'llm-pick', 'llm-draft', 'llm-answer'] as const;
 export type Provenance = (typeof PROVENANCES)[number];
 export const TRUSTED_PROVENANCES: ReadonlySet<Provenance> = new Set<Provenance>(['profile', 'saved', 'rule']);
 

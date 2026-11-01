@@ -39,6 +39,9 @@
   "legal": {
     "atLeast18": {
       "state": "declined"
+    },
+    "criminalRecord": {
+      "state": "declined"
     }
   },
   "compensation": {

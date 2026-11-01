@@ -5,7 +5,7 @@
  * the real planner's half is src/core/plan/llm.test.ts and src/core/resolver/classify.test.ts.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { AUTOFILL_AI_POLL_MS } from '../contract/tailorit';
+import { AUTOFILL_AI_POLL_MS, AUTOFILL_API_VERSION } from '../contract/tailorit';
 import type { FieldSpec } from '../core/types/field';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { AI_TASKS_KEY } from '../shared/stored';
@@ -79,7 +79,7 @@ describe('plan/request and plan/poll with the LLM', () => {
       label: 'How did you hear about us?', options: [{ index: 0, label: 'LinkedIn job post' }, { index: 1, label: 'Indeed' }] }] });
     expect(sent.body).not.toContain('recruiter');
     expect(sent.init).toMatchObject({ credentials: 'omit', redirect: 'error', cache: 'no-store' });
-    expect(sent.headers['x-tailorit-autofill-api']).toBe('1');
+    expect(sent.headers['x-tailorit-autofill-api']).toBe(String(AUTOFILL_API_VERSION));
     expect(worker.timeouts.at(-1)?.ms).toBe(25_000);
     // The task id is kept by the batch's hash, ids only.
     await vi.waitFor(async () => expect(((await worker.platform.storage.session.get(AI_TASKS_KEY)) as unknown[] | undefined)
@@ -190,7 +190,8 @@ describe('plan/request and plan/poll with the LLM', () => {
   it('sends no AI request with the switches off', async () => {
     const worker = await startTestWorker({ token: tokenRecord(), core: askingCore() });
     expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
-      llm: { tiebreak: false, classify: false, drafts: false } } }, pageSender())).toMatchObject({ ok: true });
+      llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: false, drafts: false, answers: false } } }, pageSender()))
+      .toMatchObject({ ok: true });
     const runId = await beginRun(worker);
     const text = fieldSpec(3, { label: 'Where do you work today?' });
     const answer = await request(worker, runId, [sourceSpec(), text]);

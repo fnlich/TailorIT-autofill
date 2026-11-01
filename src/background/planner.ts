@@ -39,6 +39,19 @@
  *   screen), and the frame offers Save on those only.
  * - The accepted-match cache (match-cache.ts): every plan reads it, its stale entries are dropped, and the writes'
  *   candidates go to the accept book, which stores them once the field was unchanged at the run's done.
+ *
+ * The owner's amendments (docs/SPEC-AMENDMENTS.md):
+ * - Answers: a plan that asks for drafts or answers sends them with the same job context (the posting text the frame
+ *   read, the lookup's company and title, the resume the run attaches). Every plan reads the run's lookup for the
+ *   posting's company and location ("Have you worked here before?", interpretation 1's country), from the worker's
+ *   memory: the lookup never reaches the frame.
+ * - Profile only: a request that says its run fills from the profile only (plan/request's noAi) is planned with no LLM
+ *   step, and so are its fields when they are planned again; nothing is asked of TailorIT's AI.
+ * - Edit with AI (draft/rewrite): the one field is planned as a rewrite (PlanInput.rewrite) over the scan the frame
+ *   sent, the run's earlier draft or answer of it forgotten, and its draft asked with what the box holds now; the
+ *   answer is plan/request's (the field awaiting), and plan/poll brings the write. Never in a dry run.
+ * - The answer names the keys the page may offer Edit with AI on (`aiEditable`), and says when the frame's scan holds
+ *   an "I did not use AI" attestation (`aiAttestation`).
  */
 import type { z } from 'zod';
 import type { PlanAsk, PlanOutput, PlanSensitiveState } from '../core/plan/types';
@@ -62,6 +75,7 @@ import type { SettingsStore } from './settings';
 type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
 type PlanRequest = Extract<ContentMessage, { type: 'plan/request' }>;
 type PlanPoll = Extract<ContentMessage, { type: 'plan/poll' }>;
+type DraftRewrite = Extract<ContentMessage, { type: 'draft/rewrite' }>;
 
 /** How many times one message plans keys again whose answers are already in (an item never sent, or a classification
  *  whose tiebreak's answer is in too). What is left waits for the next poll. */
@@ -99,6 +113,10 @@ interface Gathered {
   awaiting: FieldKey[];
   /** The keys whose answer the person may save (T6-1), as the latest plan of each key said. */
   savable: FieldKey[];
+  /** The keys the page may offer Edit with AI on, as the latest plan of each key said. */
+  aiEditable: FieldKey[];
+  /** A plan found an "I did not use AI" attestation in the frame's scan. */
+  aiAttestation?: true;
   repeatables?: RepeatableAnswer[];
 }
 
@@ -135,6 +153,9 @@ export function createPlanner(deps: PlannerDeps) {
     // The company the frame's address names: a free-text saved answer applies only to its own (Phase 6).
     const company = companyOfUrl(url);
     deps.runs.memo(run.runId).company = company;
+    // What the run's lookup knows of the posting: its company and location (the owner's amendments). Memory only.
+    const job = deps.runs.memo(run.runId).lookup?.job ?? null;
+    const posting = job === null ? null : { company: job.companyName, location: job.location };
     const plan = (state: PlanSensitiveState, profile: typeof loaded & { ok: true }) => deps.core.planFrame({
       specs: context.specs,
       planKeys,
@@ -151,6 +172,9 @@ export function createPlanner(deps: PlannerDeps) {
       ai: ai.answers,
       ...(context.repeatables === undefined ? {} : { repeatables: context.repeatables }),
       ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }),
+      ...(posting === null ? {} : { posting }),
+      ...(context.noAi === true ? { noAi: true } : {}),
+      ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }),
     });
     try {
       const memory = loaded.value.sensitiveState;
@@ -182,8 +206,9 @@ export function createPlanner(deps: PlannerDeps) {
   }
 
   /**
-   * The context a plan's drafts are asked with (Phase 6): the posting text the frame read ('' without it), the
-   * lookup's company and job title, and the resume the run attaches. Made once per context.
+   * The context a plan's drafts and answers are asked with (Phase 6; the owner's amendments): the posting text the
+   * frame read ('' without it), the lookup's company and job title, and the resume the run attaches. Made once per
+   * context.
    */
   async function withDraftContext(run: RunRecord, url: string, context: AskContext): Promise<AskContext> {
     if (context.draft !== undefined) return context;
@@ -200,17 +225,23 @@ export function createPlanner(deps: PlannerDeps) {
   async function withAnswers(run: RunRecord, url: string, asked: AskContext, output: PlanOutput, read: number):
     Promise<{ gathered: Gathered } | { refusal: Answer<never> }> {
     const ai = aiOf(run);
-    const { llm } = await deps.settings.get();
+    const settings = await deps.settings.get();
+    // A profile-only request asks nothing; Edit with AI is the person's own request for its one draft.
+    const llm = asked.noAi === true ? { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false }
+      : asked.rewrite !== undefined ? { ...settings.llm, drafts: true } : settings.llm;
     let context = asked;
     const rows = new Map(output.results.map((row) => [row.key, row] as const));
     const writes = new Map(output.writes.map((write) => [write.key, write] as const));
     const savable = new Set<FieldKey>(output.savable ?? []);
+    const aiEditable = new Set<FieldKey>(output.aiEditable ?? []);
+    let aiAttestation = output.aiAttestation === true;
     let awaiting = [...output.awaiting];
     let asking: readonly FieldKey[] = output.awaiting;
     let ask: PlanAsk | undefined = output.ask;
     let revision = read;
     for (let round = 0; ; round += 1) {
-      if (asking.length > 0 && ask !== undefined && (ask.drafts?.length ?? 0) > 0 && llm.drafts) {
+      if (asking.length > 0 && ask !== undefined && (((ask.drafts?.length ?? 0) > 0 && llm.drafts)
+        || ((ask.answers?.length ?? 0) > 0 && llm.answers))) {
         context = await withDraftContext(run, url, context);
       }
       if (asking.length > 0 && ask !== undefined) ai.ask(ask, asking, context, llm, revision);
@@ -222,8 +253,11 @@ export function createPlanner(deps: PlannerDeps) {
       for (const key of ready) {
         writes.delete(key);
         savable.delete(key);
+        aiEditable.delete(key);
       }
       for (const key of again.output.savable ?? []) savable.add(key);
+      for (const key of again.output.aiEditable ?? []) aiEditable.add(key);
+      if (again.output.aiAttestation === true) aiAttestation = true;
       for (const row of again.output.results) rows.set(row.key, row);
       for (const write of again.output.writes) writes.set(write.key, write);
       const done = new Set<string>(ready);
@@ -239,6 +273,8 @@ export function createPlanner(deps: PlannerDeps) {
       results: [...rows.values()],
       awaiting,
       savable: [...rows.keys()].filter((key) => savable.has(key)),
+      aiEditable: [...rows.keys()].filter((key) => aiEditable.has(key)),
+      ...(aiAttestation ? { aiAttestation: true as const } : {}),
     } };
   }
 
@@ -251,6 +287,9 @@ export function createPlanner(deps: PlannerDeps) {
       results: gathered.results,
       awaiting: gathered.awaiting,
       ...(gathered.savable.length > 0 ? { savable: gathered.savable } : {}),
+      // A dry run's page offers no Edit with AI.
+      ...(gathered.aiEditable.length > 0 && !run.dryRun ? { aiEditable: gathered.aiEditable } : {}),
+      ...(gathered.aiAttestation === true ? { aiAttestation: true as const } : {}),
       persistableCanaries,
       ...(gathered.repeatables === undefined ? {} : { repeatables: gathered.repeatables }),
     });
@@ -272,7 +311,8 @@ export function createPlanner(deps: PlannerDeps) {
         ...(message.repeatables === undefined ? {} : { repeatables: message.repeatables }),
         ...(message.postingText === undefined ? {} : { postingText: message.postingText }),
         ...(message.revealEdges === undefined ? {} : {
-          revealEdges: message.revealEdges as unknown as Array<[BaseKey, BaseKey]> }) };
+          revealEdges: message.revealEdges as unknown as Array<[BaseKey, BaseKey]> }),
+        ...(message.noAi === true ? { noAi: true } : {}) };
       const planKeys = message.planKeys as unknown as FieldKey[];
       const planned = await planOnce(run, from.url, asked, planKeys);
       if ('refusal' in planned) return planned.refusal;
@@ -295,7 +335,7 @@ export function createPlanner(deps: PlannerDeps) {
       const keys = message.keys as unknown as FieldKey[];
       const known = ai === undefined ? [] : keys.filter((key) => ai.state(key) !== 'unknown');
       if (ai === undefined || known.length === 0) return refuse('expired');
-      const gathered: Gathered = { writes: [], results: [], savable: [],
+      const gathered: Gathered = { writes: [], results: [], savable: [], aiEditable: [],
         awaiting: known.filter((key) => ai.state(key) === 'waiting') };
       // One plan per context the ready keys were asked from.
       const byContext = new Map<AskContext, FieldKey[]>();
@@ -314,8 +354,33 @@ export function createPlanner(deps: PlannerDeps) {
         gathered.results.push(...answered.gathered.results);
         gathered.awaiting.push(...answered.gathered.awaiting);
         gathered.savable.push(...answered.gathered.savable);
+        gathered.aiEditable.push(...answered.gathered.aiEditable);
+        if (answered.gathered.aiAttestation === true) gathered.aiAttestation = true;
       }
       return answerOf(run, gathered, [], keys.length);
+    },
+
+    /**
+     * Edit with AI (draft/rewrite, module header): the one field planned as a rewrite over the scan the frame sent,
+     * the run's earlier draft or answer of it forgotten first. Answered as plan/request is: the field awaiting its
+     * draft, which plan/poll then brings. `expired` for a run the worker does not know; refused in a dry run.
+     */
+    async rewrite(message: DraftRewrite, from: FrameRef & { url: string }): Promise<Answer<PlanAnswer>> {
+      const run = await deps.runs.find(message.runId, from);
+      if (run === null) return refuse('expired');
+      if (run.dryRun) return refuse('bad_message');
+      const key = message.fieldKey as unknown as FieldKey;
+      const asked: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries,
+        ...(message.postingText === undefined ? {} : { postingText: message.postingText }),
+        ...(message.revealEdges === undefined ? {} : {
+          revealEdges: message.revealEdges as unknown as Array<[BaseKey, BaseKey]> }),
+        rewrite: key };
+      aiOf(run).forget([key]);
+      const planned = await planOnce(run, from.url, asked, [key]);
+      if ('refusal' in planned) return planned.refusal;
+      const answered = await withAnswers(run, from.url, asked, planned.output, planned.revision);
+      if ('refusal' in answered) return answered.refusal;
+      return answerOf(run, answered.gathered, planned.output.persistableCanaries, 1);
     },
   };
 }

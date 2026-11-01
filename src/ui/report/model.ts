@@ -42,6 +42,36 @@ export function sectionsOf(rows: readonly ReportRow[]): Array<{ section: string;
   return [...sections].map(([section, list]) => ({ section, rows: list }));
 }
 
+/** A section's heading as the person reads it: the adapter's own words as they are, or a slug made readable
+ *  ("submit-your-application" reads "Submit your application"); the form's main part when it has none. */
+export function sectionName(section: string): string {
+  const trimmed = section.trim();
+  if (/\s|[A-Z]/.test(trimmed)) return trimmed;
+  const words = trimmed.replace(/[-_]+/g, ' ').trim();
+  return words === '' ? COPY.report.untitledSection : `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
+
+/** The reasons of an answer the AI wrote and the run accepted (the owner's amendments). */
+const AI_WRITTEN: ReadonlySet<ReportRow['reason']> = new Set<ReportRow['reason']>(['llm-draft-written', 'llm-answer-written']);
+
+/**
+ * How a row marks the AI, by E1's rule (src/content/targets.ts aiMarkOf, which the page's highlights use; the UI may not
+ * import the content script, so it is mirrored here): 'guess' for an answer with nothing to go on ("AI guess"),
+ * 'written' for a draft or an answer the AI wrote, verified as written ("AI"); undefined otherwise (a row that needs
+ * the person shows its status).
+ */
+export function aiMarkOf(row: Pick<ReportRow, 'reason' | 'wrote' | 'status'>): 'written' | 'guess' | undefined {
+  if (!row.wrote || row.status !== 'verified') return undefined;
+  if (row.reason === 'ai-guess') return 'guess';
+  return AI_WRITTEN.has(row.reason) ? 'written' : undefined;
+}
+
+/** The answers the AI wrote across the tab's frames (aiMarkOf), and how many of them were its guesses. */
+export function aiCountsOf(reports: readonly FrameReport[]): { written: number; guesses: number } {
+  const marks = reports.flatMap((report) => report.fields).map(aiMarkOf).filter((mark) => mark !== undefined);
+  return { written: marks.length, guesses: marks.filter((mark) => mark === 'guess').length };
+}
+
 /** Run statuses, the one that most needs the person first: a decision, a sign-in, a hand-off, then work in progress. */
 const URGENCY: readonly RunStatus[] = ['policy-notice', 'auth-needed', 'handoff', 'detect', 'scan-step', 'fill-step', 'validate',
   'advance', 'wait-transition', 'review', 'done', 'stopped'];

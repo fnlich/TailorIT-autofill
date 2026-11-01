@@ -1,5 +1,5 @@
 {
-  "apiVersion": 1,
+  "apiVersion": 2,
   "revision": 3,
   "updatedAt": "2026-10-22T12:00:00.000Z",
   "sensitive": {
@@ -79,6 +79,10 @@
       "atLeast18": {
         "state": "value",
         "value": true
+      },
+      "criminalRecord": {
+        "state": "value",
+        "value": false
       }
     },
     "compensation": {

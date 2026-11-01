@@ -13,6 +13,7 @@ import { applicationKeyOf } from '../helpers/extension.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { PageUi } from '../helpers/page-ui.ts';
 import { trap } from '../helpers/traps.ts';
+import { example } from '../mock-server/mock.mjs';
 
 const workerSaid = (entries: readonly ConsoleEntry[], code: string) =>
   entries.filter((entry) => entry.source === 'worker' && entry.text.includes(`[tailorit-autofill] ${code}`)).length;
@@ -48,6 +49,9 @@ test('the in-page panel opens in the frame from the launcher, receives the tabâ€
       .map((row) => [row.attributes['data-field-key'], row.attributes['data-status']])).toEqual(expected);
     const panelText = (await ui.elements('[data-panel="in-page"]'))[0]!.text;
     expect(panelText).toContain(COPY.notices.tripwire);
+    // No job facts in the page's panel (v2): the job card is the side panel's alone.
+    const lookup = example('AutofillLookupResponse') as { job: { title: string; companyName: string } };
+    for (const fact of [lookup.job.companyName, lookup.job.title, COPY.job.region]) expect(panelText).not.toContain(fact);
     expect(workerSaid(logs(), 'panel.shown')).toBe(1);
     expect(workerSaid(logs(), 'panel.updated')).toBeGreaterThanOrEqual(1);
     // The side panel was not asked for.

@@ -270,6 +270,13 @@ export function createPagePlatform(): PagePlatform {
       browser.tabs.onActivated.addListener(listener);
       return () => browser.tabs.onActivated.removeListener(listener);
     },
+    onTabLoaded(cb) {
+      const listener = (tabId: number, change: { status?: string }) => {
+        if (change.status === 'complete') cb(tabId);
+      };
+      browser.tabs.onUpdated.addListener(listener);
+      return () => browser.tabs.onUpdated.removeListener(listener);
+    },
   };
 }
 

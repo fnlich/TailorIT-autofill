@@ -2,6 +2,8 @@
 
 Compiled on 2026-10-31 from the Phase 2-6 notes and review ledgers, including the final review's fixes (items 108-114). Left out: items a later note says were fixed in code, items the owner's approved plan already settles, and the "Gaps" lists (known limits that ask nothing), unless a gap asks for a decision. Answer by number ("23: yes"); an item you don't answer keeps its default.
 
+The owner's amendments of 2026-10-31 and 2026-11-01 (docs/SPEC-AMENDMENTS.md: fill everything, "AI guess", profile only on postings that forbid AI, drafts accepted, the EEO decline default, the consent defaults and the criminal record from the profile) answer items 16, 38, 40, 41, 56 and 110, and in part 45 and 95; each is marked where it stands.
+
 Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owner. **Departure** = differs from the approved plan; tell the owner. **Copy** = wording to review.
 
 ## 1. Filling and matching rules
@@ -21,7 +23,7 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 13. **Departure.** Lever and Greenhouse adapters: Lever declares its location search as a widget and treats "Analyzing resume..." and the location "Loading" as busy; Greenhouse errors come from aria-invalid; Lever names a box by its question only inside custom questions. (Phase 2)
 14. **Departure.** Page events: a forged "started" event is only logged unless it fails validation; a forged pagehide is ignored, and a real one tears down unless the page enters the back-forward cache; the outer page's address comes from location.ancestorOrigins. (Phase 2)
 15. **Departure.** Engine internals: the DOM layer imports core values, not core types only as the plan says; the resume is attached in its own step, not by the profile canonicalizer; canaries are compared case-folded; a value that doesn't fit its field counts as an internal error; placeholders are left out of the option-set hash. (Phase 2)
-16. **Departure.** Deferred: the posting's country (interpretation 1, off) is not passed to the planner yet. (Phase 2)
+16. **Departure.** Deferred: the posting's country (interpretation 1, off) is not passed to the planner yet. (Phase 2) **Answered (2026-11-01, docs/SPEC-AMENDMENTS.md §6): interpretation 1 is on and the posting's country comes from the lookup's location, else the profile's only work-authorization entry.**
 17. **Lead.** Lists that load after a choice: one showing real options while still loading is held until its loading sign clears; one with nothing usable waits for options; one that never loads is flagged; the wait counts from the parent's write; only native dropdowns are awaited. (Phase 3)
 18. **Lead.** A loading row starts with Loading, Fetching, Retrieving or Searching followed by an ellipsis, so "Searching for a new role" stays a real option; English only. A dropdown with a loading row beside real options counts as having a placeholder (rare, safe). (Phase 3)
 19. **Ask.** Only indeterminate progress bars count as "page busy" (a determinate step indicator would hold every settle to the cap). Default: indeterminate only. (Phase 3)
@@ -46,17 +48,17 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 35. **Ask.** A consent box worded like an attention check is never ticked, even when that consent is pre-approved. Default: never. (Phase 2)
 36. **Lead.** A consent box is ticked only when the approved kinds cover everything it names; binding commitments (arbitration, jury waiver, non-compete) always go to you. (Phase 2)
 37. **Lead.** A lone checkbox is ticked only for an affirmative statement; negated or unclear ones ("I am not…", "do not consent", opt-outs) go to you. Saved answers are exempt from this rule. (Phase 2)
-38. **Lead.** Several races on a single-choice question go to you; an EEO lone checkbox is left as an unsupported format. (Phase 2)
+38. **Lead.** Several races on a single-choice question go to you; an EEO lone checkbox is left as an unsupported format. (Phase 2) **Answered (SPEC-AMENDMENTS §5): interpretation 2 is on ("Two or More Races", flagged); the lone EEO checkbox stays yours.**
 39. **Lead.** "Georgia" in a work-authorization question (state or country) goes to you. (Phase 2)
-40. **Departure.** The sensitive part of the profile is fetched only for its own categories; visa type, clearance, sexual orientation, transgender and criminal-history questions show "not in your profile", never "sensitive, not shared"; honeypots and disabled fields never trigger the fetch. (Phase 2)
-41. **Lead.** Employer "don't use AI" statements: a hit is never cleared by a later clean reading; a hit found mid-run stops at the card, and Fill anyway starts a fresh run; such text in collapsed or hidden parts raises its own notice. (Phases 2, 3)
+40. **Departure.** The sensitive part of the profile is fetched only for its own categories; visa type, clearance, sexual orientation, transgender and criminal-history questions show "not in your profile", never "sensitive, not shared"; honeypots and disabled fields never trigger the fetch. (Phase 2) **Answered (SPEC-AMENDMENTS §6): criminal history is now in the sensitive part (`legal.criminalRecord`), answered once in TailorIT and matched by polarity; it shows "sensitive, not shared" like the others.**
+41. **Lead.** Employer "don't use AI" statements: a hit is never cleared by a later clean reading; a hit found mid-run stops at the card, and Fill anyway starts a fresh run; such text in collapsed or hidden parts raises its own notice. (Phases 2, 3) **Answered (SPEC-AMENDMENTS §3): the setting "When a posting says AI is not allowed" decides; the default fills from the profile only with no card, and "Ask me each time" keeps this behaviour.**
 42. **Ask.** A "don't use AI" statement hidden on the posting page (not the form) is not carried to the form, since policy hits have no hidden-text flag. The notes left it for Phase 6, which did not add it. Default: not carried. (Phase 2)
 
 ## 3. AI (pick, classify, drafts)
 
 43. **Ask.** Should a dry run ask the AI at all? Default: picks and classify are asked, sending page text to TailorIT and Claude (the plan: the same path, with a recorder in place of the fillers); drafts are skipped, and no posting text is sent. (Phases 4, 6)
 44. **Ask.** Multi-select and checkbox-group values and typeahead lists never go to the AI. Should multi-select values ever get an AI tiebreak? Default: no. (Phase 4)
-45. **Ask.** A category found only by the AI fills only profile answers; an AI-classified resume upload is left for you. Default: as is. (Phase 4)
+45. **Ask.** A category found only by the AI fills only profile answers; an AI-classified resume upload is left for you. Default: as is. (Phase 4) **Answered in part (SPEC-AMENDMENTS §4): a free-text question only the AI classified now gets a draft; an AI-classified upload is still left for you.**
 46. **Ask.** With classify on, a screened unknown field shows as "needs you" instead of skipped. Default: as is. (Phase 4)
 47. **Ask.** The page-side AI wait cap counts from the last progress (125 s), so a run can wait longer than 120 s in all. Default: as is. (Phase 4)
 48. **Ask.** TailorIT doesn't screen a pick's option labels ("Gender Studies"); and, by the lead's call, school, degree and field-of-study values are screened only for money and for equality with your sensitive answers, not by topic words. Default: as is. (Phase 4)
@@ -67,7 +69,7 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 53. **Lead.** The extension never cancels an AI task on TailorIT (TailorIT prunes them) and asks once more when one comes back cancelled. (Phase 4)
 54. **Departure.** Drafts: TailorIT reads the facts itself (the chosen resume, else the profile's, the default or the latest; work history, education, languages, skills) as plain lines without your name, never contacts or the sensitive part, plus the posting text (up to 20,000 characters) or just company and title. Sensitive and attention questions get no draft. (Phase 6)
 55. **Ask.** Review the heuristics that strip resume lines and contact details from draft facts. Defaults: "born" or a marital word anywhere discards the draft; a domain with a path ("Socket.io/Redis") counts as a contact; "I am an assistant" counts as speaking as an AI; fact lines whose label names a sensitive topic are dropped. (Phase 6)
-56. **Departure.** Drafts are written with a dashed mark and need your Confirm or edit before the form counts as ready; the in-page Confirm acts only in its own frame. (Phase 6)
+56. **Departure.** Drafts are written with a dashed mark and need your Confirm or edit before the form counts as ready; the in-page Confirm acts only in its own frame. (Phase 6) **Answered (SPEC-AMENDMENTS §4): drafts are written and accepted by default; "Wait for me to confirm each draft" keeps this behaviour.**
 
 ## 4. Saved answers and the match cache
 
@@ -94,7 +96,7 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 
 ## 6. Review UI and copy to review
 
-74. **Copy.** The first-run disclosure: rewritten because pick and classify are on by default (the Phase 0 draft said "If you turn on its AI help"), and corrected by the lead: the profile stays in memory until five minutes after last use; the resume goes only when a form asks; picks send the profile answer they match; drafts send the posting text and your profile. (Phase 2)
+74. **Copy.** The first-run disclosure: rewritten because pick and classify are on by default (the Phase 0 draft said "If you turn on its AI help"), and corrected by the lead: the profile stays in memory until five minutes after last use; the resume goes only when a form asks; picks send the profile answer they match; drafts send the posting text and your profile. (Phase 2) **Rewritten for the amendments: drafts and answers on, "AI guess", and the profile-only default on postings that forbid AI (docs/PRIVACY.md quotes it).**
 75. **Copy.** Every reason sentence; display names; consent names and the certify warning; the AI, interpretations and saved-runs sections; panel feedback; the capture words. (Phase 2)
 76. **Copy.** Sentences added later: statement not affirmative; changed by you; the policy and hidden-policy notices; form hidden ("Scroll it into view, then choose Fill again"); final step unknown; the max-steps notice (its own notice, by the lead's call); next hidden (still a draft); CAPTCHA unsolved. (Phases 2, 3, 5)
 77. **Copy.** Phase 6 wording: save outcomes, the draft reasons, the stored-copy notice, "Your fixes", counters, panel strings, field-kind names, confirm and save feedback. (Phase 6)
@@ -121,7 +123,7 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 ## 8. TailorIT server side
 
 94. **Lead.** Pairing: completions run one at a time; a pairing code is single-use even when redeeming fails; a new pairing revokes the token it replaces; pairing is accepted only from the TailorIT origin at /settings/autofill; Disconnect forgets the token before telling TailorIT. (Phase 2)
-95. **Ask.** Rate limits: pick and classify 20 a minute and 200 an hour each; task polls 300 a minute; drafts 6 a minute and 60 a day; saved answers 60 a minute. Default: these. (Phases 4, 6)
+95. **Ask.** Rate limits: pick and classify 20 a minute and 200 an hour each; task polls 300 a minute; drafts 6 a minute and 60 a day; saved answers 60 a minute. Default: these. (Phases 4, 6) **Answered in part (SPEC-AMENDMENTS): TailorIT raised drafts to 20 a minute and 300 a day, and answers take 20 a minute and 200 an hour.**
 96. **Lead.** Three new draft reasons went in without an API version bump: OK, since no client uses them yet. (Phase 6)
 97. **Departure.** Saved answers API: a separate read allowed with profile:read; a stricter contract than planned (scope rules, the answer must fit the field, a 16-hex option hash); attention checks screened too; migration 0803 edited once before it ever ran. (Phase 6)
 
@@ -142,7 +144,7 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 
 108. **Ask.** Your edit is recognised only when a real key press, pointer press, paste or drop on that field came within 1 s before it (a page's own editing command makes a "trusted" input too). Browser autofill and context-menu edits therefore don't count: no Save offer, and a draft stays unconfirmed until you press Confirm. Default: 1 s. (Phase 6)
 109. **Lead.** No draft for a box that shares a named section with an EEO, legal, pay, consent or attention question, or that follows one with wording like "If yes, please explain", "Please provide details" or "Please specify", or that such a question revealed. A "Why us?" box inside such a section gets no draft either. (Phase 6)
-110. **Lead.** A draft is still a draft in a later run: Fill again finds it by its text, and after a reload any text at a stored draft's place counts as an unconfirmed draft. If you edited a draft just before reloading, you confirm your own words once. (Phase 6)
+110. **Lead.** A draft is still a draft in a later run: Fill again finds it by its text, and after a reload any text at a stored draft's place counts as an unconfirmed draft. If you edited a draft just before reloading, you confirm your own words once. (Phase 6) **Answered (SPEC-AMENDMENTS §4): an accepted draft is found again the same way, as an accepted draft; AI answers too, in memory only.**
 111. **Lead.** Confirm draft reads the box again first: changed text becomes "changed by you", and a canary blocks it. (Phase 6)
 112. **Lead.** Before our Next and at your click or Enter at rest, the run re-reads what it wrote; a changed value is flagged as a mismatch (even when you changed it yourself) and dropped from the match cache. (Phase 6)
 113. **Departure.** Saving a free-text answer after the worker restarted takes the company from the frame's own address, not from stored run data: no page address may be stored. (Phase 6)

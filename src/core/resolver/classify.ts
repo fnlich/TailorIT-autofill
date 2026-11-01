@@ -16,11 +16,15 @@
  *   asUntrusted. Fields nothing could be learnt from (a file, a field with no label the LLM may see) are not sent.
  * - SERVER_CATEGORY_MAP maps each of TailorIT's 47 categories onto ours, by the field's section where one needs it: an
  *   employer, a job title, a location, the dates and the role's description in an employment entry are that entry's; a
- *   start date elsewhere is when the person can start. The six needs-user categories map to needs-user.
+ *   start date elsewhere is when the person can start. The six needs-user categories map to needs-user; a free-text
+ *   question among them is read as freeText.other on a box that can hold one (the owner's amendments,
+ *   docs/SPEC-AMENDMENTS.md: it takes the run's draft or AI answer).
  * - judgeClassification accepts a category only when the field's kind can hold it and its class lets an LLM
  *   classification fill (CLASS_POLICIES' llmClassified: only the profile class). A lone checkbox and a field that
- *   offers a decline option never take an LLM-only category. Everything else is needs-user, with the suggested
- *   category shown. An accepted category scores CLASSIFY_LLM (0.70), so the field is always flagged (resolve.ts).
+ *   offers a decline option never take an LLM-only category. A free-text category ('draft-only') stays the person's
+ *   from the profile's side (needs-user, free-text-requires-user) and takes the run's draft or AI answer instead
+ *   (plan/drafts.ts, plan/answers.ts). Everything else is needs-user, with the suggested category shown. An accepted
+ *   category scores CLASSIFY_LLM (0.70), so the field is always flagged (resolve.ts).
  * - The worker keeps the answers for the run only.
  */
 import type { AutofillFieldCategory } from '../../contract/tailorit';
@@ -206,6 +210,35 @@ export const SENSITIVE_ACRONYMS: readonly RegExp[] = [
   /\bNI\s*(?:[Nn][Uu][Mm][Bb][Ee][Rr][Ss]?\b|[Nn][Oo]\b|#)/,
 ];
 
+/**
+ * The extension's own terms beyond the two pinned lists above: the ones TailorIT's server screen holds on its side only
+ * (its stricter terms since API version 2), so a question that names them never leaves the extension for an AI either.
+ * Matched as SENSITIVE_TERMS are (every detection view, in any case, spaced-out letters closed up). Neither the shared
+ * list nor its phrase fixture holds them; classify.test.ts tests them here. A question the rules classify is still
+ * answered from the profile (a criminal-history claim through its polarity, the salary the profile holds): this screen
+ * only keeps text from the AI.
+ */
+export const EXTENSION_SENSITIVE_TERMS: readonly RegExp[] = [
+  // Criminal history.
+  /\bcrimes?\b/, /\bcharged\s+with\b/, /\bpending\s+charges?\b/, /\bprobation\b/, /\bparole\b/, /\bincarcerat/,
+  /\b(?:jail|prison)\b/, /\bsentenced\b/, /\bno\s+contest\b|\bnolo\b/,
+  // Pay ("on-target earnings" is OTE; a package is pay, but never a package manager, registry or version).
+  /\bincome\b/, /\bote\b/, /\b(?:expected|desired|target|minimum|asking)\s+(?:base|rates?|earnings)\b/,
+  /\b(?:current|day|daily|contract|billing)\s+(?:rates?|earnings)\b/,
+  /\b(?:current|expected|desired|target|minimum|asking)\s+(?:salary\s+)?package\b(?!\s+(?:manager|management|registry|version))/,
+  /\bwhat\s+rate\b/,
+  // Identity and tax numbers.
+  /\bsocial\s+insurance\b/, /\btax\s+(?:file|identification|id|reference|registration|payer)\s*(?:numbers?|no\b|#)/,
+];
+
+/** The extension's own acronyms, as SENSITIVE_ACRONYMS are matched (capitals only): SIN, Canada's Social Insurance
+ *  Number, and TFN, Australia's Tax File Number. In any case they would catch "sin" and the like. */
+export const EXTENSION_SENSITIVE_ACRONYMS: readonly RegExp[] = [/\bSIN\b/, /\bTFN\b/];
+
+/** Every term and every acronym the screen reads: the pinned lists, then the extension's own. */
+const SCREENED_TERMS: readonly RegExp[] = [...SENSITIVE_TERMS, ...EXTENSION_SENSITIVE_TERMS];
+const SCREENED_ACRONYMS: readonly RegExp[] = [...SENSITIVE_ACRONYMS, ...EXTENSION_SENSITIVE_ACRONYMS];
+
 /** The text with its case kept: invisible characters deleted, a look-alike letter read as its Latin letter (a capital
  *  as a capital), then decomposed with its combining marks deleted, so "OPT" in Cyrillic or full-width capitals reads
  *  "OPT". */
@@ -227,17 +260,18 @@ function closedUp(view: string): string {
 }
 
 /** Whether page text names a sensitive topic: the terms read in every detection view, in any case, and the acronyms
- *  in capitals, as written and in the case-keeping fold, spaced-out letters closed up in each. */
+ *  in capitals, as written and in the case-keeping fold, spaced-out letters closed up in each (the pinned lists and the
+ *  extension's own). */
 export function namesSensitiveTopic(text: string): boolean {
   if (text.trim() === '') return false;
   const kept = caseKept(text);
   for (const view of new Set([text, kept, closedUp(text), closedUp(kept)])) {
-    if (SENSITIVE_ACRONYMS.some((term) => term.test(view))) return true;
+    if (SCREENED_ACRONYMS.some((term) => term.test(view))) return true;
   }
   return detectionViews(text).some((view) => {
     const lower = view.toLowerCase();
     const closed = closedUp(lower);
-    return SENSITIVE_TERMS.some((term) => term.test(lower) || (closed !== lower && term.test(closed)));
+    return SCREENED_TERMS.some((term) => term.test(lower) || (closed !== lower && term.test(closed)));
   });
 }
 
@@ -430,6 +464,12 @@ export function judgeClassification(spec: Pick<FieldSpec, 'kind' | 'section' | '
     return verdict.why === 'llm-disabled-for-category' ? SCREENED : { kind: 'none', reason: verdict.why };
   }
   const target = mapServerCategory(verdict.category, spec.section);
+  // A free-text question on a box that can hold one is the person's from the profile's side, and takes the run's draft
+  // or AI answer (the owner's amendments: §8.2's "draft only").
+  if (verdict.category === 'free_text_question' && kindAllowed('freeText.other', spec.kind)
+    && !offersDecline(spec, vocab)) {
+    return { kind: 'needs-user', category: 'freeText.other', reason: 'free-text-requires-user' };
+  }
   if (target === 'needs-user') {
     return { kind: 'needs-user', category: 'unknown',
       reason: NEEDS_USER_REASONS[verdict.category] ?? 'llm-disabled-for-category' };

@@ -47,7 +47,10 @@ export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attenti
   'next-hidden', 'captcha-next',
   // Phase 6: the policy notice came only from TailorIT's saved copy of the posting. The page's card says so under its
   // sentence, and the report says it under the panel's, so the two read the same.
-  'policy-stored-copy'] as const;
+  'policy-stored-copy',
+  // The owner's amendments (docs/SPEC-AMENDMENTS.md): the run filled from the profile only, because the posting forbids
+  // AI, or because the form holds an "I did not use AI" attestation.
+  'policy-profile-only', 'ai-attestation'] as const;
 
 /** A step's progress line as the adapter reads it from the page ("Step 2 of 4"), at most this long. */
 export const MAX_STEP_PROGRESS = 120;

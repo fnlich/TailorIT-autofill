@@ -6,7 +6,8 @@
  * - a lookup that never answers in time, or fails: the run carries on without it (no stored copy, so the couldn't-read
  *   notice; no suggested resume, and the profile names none, so the upload is resume-unavailable);
  * - the sensitive part, fetched once when a plan meets a legal or EEO question: answered from its explicit values; and
- *   when TailorIT refuses it (403), those questions are left blank with sensitive-not-shared. TailorIT refuses it to a
+ *   when TailorIT refuses it (403), the legal questions are left blank with sensitive-not-shared and the EEO question
+ *   takes the form's decline option (docs/SPEC-AMENDMENTS.md §5), none of them sent to an AI. TailorIT refuses it to a
  *   token whose connection was made with the sensitive box unticked (a token's scopes never change), so that spec
  *   pairs that way first, and the worker, which keeps a sensitive part it read for the same token and revision, starts
  *   afresh with the new token; it pairs with the box ticked again afterwards.
@@ -69,8 +70,8 @@ test.describe("TailorIT's answers", () => {
     expect(noticeCount(report, 'policy-unreadable')).toBe(1);
     expect(row(report, 'Full name')).toMatchObject({ status: 'verified', provenance: 'profile' });
     await expect(page.locator('#email')).toHaveValue(GOLDEN.email);
-    // The worker gave up on it: the mock never got to answer.
-    expect((await mock.requestsTo('POST /api/autofill/lookup')).map((request) => request.status)).toEqual([0]);
+    // The worker gave up on both (v2: the side panel's job card asked first): the mock never got to answer either.
+    expect((await mock.requestsTo('POST /api/autofill/lookup')).map((request) => request.status)).toEqual([0, 0]);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [],
       labels: SYNTHETIC_LABELS['policy-apply'], applicationKey: applicationKeyOf(url) });
   });
@@ -113,7 +114,7 @@ test.describe("TailorIT's answers", () => {
       labels: SYNTHETIC_LABELS['sensitive-questions'], applicationKey: applicationKeyOf(url) });
   });
 
-  test('when this browser may not read the sensitive part, those questions are left blank: sensitive-not-shared', async ({ extContext, connected: ext, routeLog, logs }) => {
+  test('when this browser may not read the sensitive part, the legal questions are left blank (sensitive-not-shared) and the EEO one declined', async ({ extContext, connected: ext, routeLog, logs }) => {
     // Connected with the sensitive box unticked: the token lacks profile:sensitive, and TailorIT answers it 403.
     await (await pairThroughConnectPage(ext, { includeSensitive: false })).close();
     expect((await ext.authStatus()).scopes).not.toContain('profile:sensitive');
@@ -125,16 +126,24 @@ test.describe("TailorIT's answers", () => {
       const tabId = await ext.fill(page);
       const report = await ext.settled(tabId);
       expect(report.status).toBe('review');
-      for (const label of [AUTHORIZED, SPONSORSHIP, 'Gender']) {
+      for (const label of [AUTHORIZED, SPONSORSHIP]) {
         expect(row(report, label), label).toMatchObject({ reason: 'sensitive-not-shared', wrote: false, provenance: null });
       }
       expect(await checked(page, 'authorized')).toEqual([]);
       expect(await checked(page, 'sponsorship')).toEqual([]);
-      await expect(page.locator('#gender')).toHaveValue('');
+      // The owner's amendments (docs/SPEC-AMENDMENTS.md §5): an EEO question asked while the sensitive part is not
+      // shared takes the form's decline option, by the decline rule; a decline is no guess, and reads nothing.
+      expect(row(report, 'Gender')).toMatchObject({ category: 'eeo.gender', status: 'verified', provenance: 'rule',
+        reason: 'eeo-decline-default', wrote: true });
+      await expect(page.locator('#gender')).toHaveValue('decline');
       expect(row(report, 'Full name')).toMatchObject({ status: 'verified', provenance: 'profile' });
       // Refused once, and not asked again in the run.
       const sensitive = await mock.requestsTo('GET /api/autofill/profile/sensitive');
       expect(sensitive.map((request) => request.status)).toEqual([403]);
+      // None of the three questions reached TailorIT's AI.
+      for (const request of await mock.requestsTo('POST /api/autofill/ai/*')) {
+        for (const label of [AUTHORIZED, SPONSORSHIP, 'Gender']) expect(request.body, label).not.toContain(label);
+      }
       await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [],
         labels: SYNTHETIC_LABELS['sensitive-questions'], applicationKey: applicationKeyOf(url) });
     } finally {

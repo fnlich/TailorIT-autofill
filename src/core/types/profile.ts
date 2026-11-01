@@ -127,7 +127,10 @@ export interface Profile {
     veteran?: Explicit<{ veteran: boolean; protected: boolean }>;
     disability?: Explicit<boolean>;
   };
-  screening: { over18?: Explicit<boolean> };
+  /** From the sensitive part: whether the person is 18 or older, and (version 2) whether they have ever been convicted
+   *  of a crime, answered once in TailorIT and matched to a question by its polarity alone, never guessed and never
+   *  sent to an AI. */
+  screening: { over18?: Explicit<boolean>; criminalRecord?: Explicit<boolean> };
   education: EducationEntry[];
   experience: ExperienceEntry[];
   languages: Array<{ code?: string; name: string; proficiency?: Proficiency }>;
@@ -137,6 +140,8 @@ export interface Profile {
     startDate?: StartDate;
     relocation?: Explicit<boolean>;
     workArrangements?: Array<'remote' | 'hybrid' | 'onsite'>;
+    /** How much of the time the person is willing to travel, 0 to 100 (TailorIT's travelPercent). */
+    travelPercent?: number;
   };
   /** "How did you hear about us": a referral-vocabulary id, or 'other' with text. */
   referralSource?: { id: string; otherText?: string };

@@ -11,7 +11,7 @@ import redeemGolden from '../contract/tailorit/v1/fixtures/AutofillRedeemRespons
 import resumesGolden from '../contract/tailorit/v1/fixtures/AutofillResumeList/valid/golden.json';
 import sensitiveGolden from '../contract/tailorit/v1/fixtures/AutofillSensitiveEnvelope/valid/golden.json';
 import sessionGolden from '../contract/tailorit/v1/fixtures/AutofillSession/valid/golden.json';
-import type { AutofillProfile } from '../contract/tailorit';
+import { AUTOFILL_API_VERSION, type AutofillProfile } from '../contract/tailorit';
 import type { TiebreakItem } from '../core/matcher/types';
 import type { PlanInput, PlanOutput } from '../core/plan/types';
 import type { ClassifyItem } from '../core/resolver/classify';
@@ -176,7 +176,7 @@ export function createFakeTailorIT(): FakeTailorIT {
     const answerHeaders = new Headers(reply.headers ?? {});
     // TailorIT names its version on every answer to a request that presents an extension token.
     if (headers.authorization?.startsWith('Bearer tia_') && !answerHeaders.has('X-TailorIT-Autofill-Api')) {
-      answerHeaders.set('X-TailorIT-Autofill-Api', '1');
+      answerHeaders.set('X-TailorIT-Autofill-Api', String(AUTOFILL_API_VERSION));
     }
     const status = reply.status ?? 200;
     if (reply.bytes) {
@@ -206,7 +206,8 @@ export function createFakeTailorIT(): FakeTailorIT {
 export const TASK_ID = '3f6a2d1e-8b4c-4e7a-9d05-1c2b3a4f5e60';
 
 /** A task view, as TailorIT's AiTaskView shows one. */
-export function taskView(kind: 'autofill_pick' | 'autofill_classify' | 'autofill_draft', status: 'queued' | 'running' | 'succeeded'
+export function taskView(kind: 'autofill_pick' | 'autofill_classify' | 'autofill_draft' | 'autofill_answer',
+  status: 'queued' | 'running' | 'succeeded'
   | 'failed' | 'cancelled', result: unknown = null, id = TASK_ID): Record<string, unknown> {
   const finished = status !== 'queued' && status !== 'running';
   return { id, kind, status, result: status === 'succeeded' ? result : null,
@@ -237,7 +238,16 @@ const AI_DEFAULTS: Record<string, (request: RecordedRequest) => Reply> = {
   // Phase 6: every question drafted with DRAFT_TEXT.
   'POST /api/autofill/ai/draft': (request) => ({ json: taskView('autofill_draft', 'succeeded', { drafts: questionsOf(request)
     .map((question) => ({ key: question.key, text: DRAFT_TEXT, reason: 'drafted' })) }) }),
+  // The owner's amendments: every choice answered with its first option, every text with ANSWER_TEXT, as guesses.
+  'POST /api/autofill/ai/answer': (request) => ({ json: taskView('autofill_answer', 'succeeded', { answers: itemsOf(request)
+    .map((item) => (item.shape === 'choice'
+      ? { key: item.key, optionSetHash: item.optionSetHash, index: (item.options as Array<{ index: number }>)[0]!.index,
+        text: null, basis: 'guess', reason: 'answered' }
+      : { key: item.key, optionSetHash: null, index: null, text: ANSWER_TEXT, basis: 'guess', reason: 'answered' })) }) }),
 };
+
+/** The fake TailorIT's text answer when a test scripts none (the owner's amendments). */
+export const ANSWER_TEXT = 'Four years';
 
 /** The fake TailorIT's draft when a test scripts none (Phase 6). */
 export const DRAFT_TEXT = 'I have built ordering platforms for four years, and I would like to bring that here.';

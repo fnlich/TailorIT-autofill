@@ -34,15 +34,15 @@ import type { SavedAnswer } from '../types/saved';
 import type { Settings } from '../types/settings';
 import type { VisibleText } from '../types/text';
 import type { Vocab } from '../vocab/types';
-import { none, SHAPE_OF_KIND, value, type Candidate, type Choice, type ValueResult } from './candidate';
+import { none, NOTE_REASONS, SHAPE_OF_KIND, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { policyClassOf } from './categories';
 import { screenForClassify, type LlmClassification } from './classify';
 import { classifyByRules, type RuleClassification } from './classifyRules';
 import { dateIso, dateText } from './format';
 import { statementPolarity, type NeedsUserCause } from './labelRules';
-import { consentValue, eeoValue, legalValue, sensitiveGate } from './policy';
+import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
-import { profileValue, type BlockEntries } from './values';
+import { previouslyEmployedValue, profileValue, type BlockEntries } from './values';
 
 /** What the resolver reads besides the field. */
 export interface ResolveContext {
@@ -56,8 +56,11 @@ export interface ResolveContext {
   company?: CompanyScope;
   /** The form has its own control for the phone's country code in this field's section. */
   separatePhoneCountry?: boolean;
-  /** The posting's country (ISO alpha-2), for interpretation 1; absent when unknown, as in every plan request so far. */
+  /** The posting's country (ISO alpha-2), for interpretation 1 (the lookup's location: postingCountryOf); absent when
+   *  unknown. */
   postingCountry?: string;
+  /** The posting's company (the lookup's), for "Have you worked here before?"; absent when unknown. */
+  postingCompany?: string;
   /** The profile entry each block of an assigned repeatable section is filled from (steps/blocks.ts, Phase 5). */
   blockEntries?: BlockEntries;
 }
@@ -231,7 +234,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
     case 'free-text':
       return none('free-text-requires-user', true, true);
     case 'unknown':
-      return none('unknown-field', false);
+      return category === 'screening.previouslyEmployed' ? previouslyEmployedValue(profile, ctx.postingCompany)
+        : none('unknown-field', false);
     default:
       return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: ctx.separatePhoneCountry ?? false,
         ...(ctx.blockEntries ? { blockEntries: ctx.blockEntries } : {}) });
@@ -348,8 +352,14 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
     if (gate === 'fetch') {
       needsSensitive = true;
       result = none('no-profile-value');
+    } else if (gate === 'ready') {
+      result = valueOf(category, rules, spec, ctx);
     } else {
-      result = gate === 'ready' ? valueOf(category, rules, spec, ctx) : gate;
+      // A self-identification question this browser may not read the answer for takes the decline default; one whose
+      // answer could not be read (the fetch failed) stays blank and flagged.
+      const declined = policy === 'eeo' && ctx.sensitiveState === 'not-shared'
+        ? eeoDeclineDefault(category, spec, ctx.settings) : null;
+      result = declined ?? gate;
     }
   }
   if (!result.ok) {
@@ -370,8 +380,10 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   const flag: ReasonCode | undefined = candidate.flag ?? (shaped.guessed ? 'filled-low-confidence' : undefined)
     ?? (rules?.reason === 'classification-conflict' ? 'classification-conflict' : undefined);
   const action = actionFor(confidence, flag !== undefined);
+  // A note names how the value came (the decline default) without flagging it.
+  const note = candidate.note !== undefined && NOTE_REASONS.has(candidate.note) ? candidate.note : undefined;
   return answer({ ...base, confidence, intended: intendedOf(shaped.shaped), origin: candidate.origin,
-    action, reason: action === 'leave-blank' ? 'low-confidence' : flag ?? 'ok' }, action === 'leave-blank'
+    action, reason: action === 'leave-blank' ? 'low-confidence' : flag ?? note ?? 'ok' }, action === 'leave-blank'
     ? null : shaped.shaped);
 }
 

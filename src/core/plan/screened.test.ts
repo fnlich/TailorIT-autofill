@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { normalizeLabel } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import type { SavedAnswer } from '../types/saved';
+import { DEFAULT_SETTINGS } from '../types/settings';
 import { fieldOf, planOf, settingsWith, specOf } from './plan.testkit';
 
 // The Phase 6 review: a saved answer, Save my answer and a draft never reach an EEO, legal or sensitive question, even
 // when its label names no topic (T6-1), and a draft is never asked for a box in such a context (E2).
 
-const DRAFTS_ON = settingsWith({ llm: { tiebreak: true, classify: true, drafts: true } });
+const DRAFTS_ON = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, tiebreak: true, classify: true, drafts: true } });
 
 /** A global saved answer to `spec`, by its exact key. */
 function savedFor(spec: FieldSpec, answer: SavedAnswer['answer']): SavedAnswer {

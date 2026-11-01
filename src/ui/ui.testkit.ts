@@ -11,7 +11,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
 import type { TelemetryCount } from '../core/types/telemetry';
-import type { AuthStatus } from '../messaging/schemas';
+import type { AuthStatus, JobCard, PageState, PanelAskAnswer, ResumeListAnswer } from '../messaging/schemas';
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
 import type { FrameReport } from '../shared/report';
@@ -61,6 +61,26 @@ export function frameReport(frameId: number, overrides: Partial<FrameReport> = {
   };
 }
 
+/** A tab whose page holds a Lever form (v2's page state), as panel/reports and panel/update carry it. */
+export function formPage(overrides: Partial<PageState> = {}): PageState {
+  return { support: 'form', platform: 'lever', formKey: '0:doc-1', ...overrides };
+}
+
+/** The job card panel/job answers (v2): a found job with a tracked Saved entry, the resume it attaches and its match.
+ *  Nothing of the golden profile (PROFILE_SENTINELS). */
+export function jobCard(overrides: Partial<Extract<JobCard, { state: 'answered' }>> = {}): JobCard {
+  return {
+    state: 'answered',
+    job: { title: 'Senior Backend Engineer', company: 'Northwind', location: 'Remote, US', closed: false,
+      postedAt: Date.UTC(2026, 9, 29), salary: '$150k - $185k/yr', workArrangement: 'hybrid' },
+    tracked: { status: 1, archived: false },
+    resume: { label: 'Backend resume', fileKind: 'pdf', reason: 'application' },
+    match: { state: 'ok', matchedCount: 9, total: 12, percentage: 75 },
+    addable: true,
+    ...overrides,
+  };
+}
+
 /** A connected status, as auth/status answers it. */
 export function authStatus(overrides: Partial<AuthStatus> = {}): AuthStatus {
   return {
@@ -85,6 +105,16 @@ export interface WorkerScript {
   frames: number;
   /** The anonymous counts telemetry/get answers (telemetry/clear empties them). */
   counts: TelemetryCount[];
+  /** Each tab's page state (v2), as panel/reports and a watch carry it; none by default (an older worker's answer). */
+  pages: Map<number, PageState>;
+  /** Each tab's job card (v2), as panel/job answers it; null (no card) by default. */
+  cards: Map<number, JobCard | null>;
+  /** What panel/addJob answers (v2). */
+  addOutcome: 'added' | 'saved' | 'closed' | 'unsupported' | 'not-allowed' | 'rate-limited' | 'not-connected' | 'unavailable';
+  /** The resumes panel/resumes lists (v2). */
+  resumes: ResumeListAnswer['items'];
+  /** What panel/ask answers (v2). */
+  askAnswer: PanelAskAnswer;
 }
 
 export interface FakeWorker {
@@ -106,7 +136,12 @@ export interface FakeWorker {
  *  real worker does, with the tab's reports. */
 export function createFakeWorker(options: { activeTabId?: number | null; answerWatches?: boolean } = {}): FakeWorker {
   const script: WorkerScript = { auth: authStatus(), settings: structuredClone(DEFAULT_SETTINGS), reports: new Map(), frames: 1,
-    counts: [] };
+    counts: [], pages: new Map(), cards: new Map(), addOutcome: 'added',
+    resumes: [{ id: 'resume-1', label: 'Backend resume', fileKind: 'pdf', kind: 'built', current: true },
+      { id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }],
+    askAnswer: { outcome: 'answered', text: 'I like building the systems Northwind runs on.', resumeLabel: 'Backend resume' } };
+  /** A tab's page state, when the script names one (an older worker sends none). */
+  const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
   const ports: PortLike[] = [];
   const posted: unknown[] = [];
@@ -115,7 +150,13 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
   const defaults: Record<string, (message: Record<string, unknown>) => unknown> = {
     ping: () => ok({ pong: true }),
     'auth/status': () => ok(script.auth),
-    'panel/reports': (message) => ok({ tabId: message.tabId, reports: script.reports.get(message.tabId as number) ?? [] }),
+    'panel/reports': (message) => ok({ tabId: message.tabId, reports: script.reports.get(message.tabId as number) ?? [],
+      ...pageOf(message.tabId as number) }),
+    'panel/job': (message) => ok({ tabId: message.tabId, card: script.cards.get(message.tabId as number) ?? null }),
+    'panel/addJob': () => ok({ outcome: script.addOutcome }),
+    'panel/resumes': () => ok({ items: script.resumes }),
+    'panel/setResume': () => ok({}),
+    'panel/ask': () => ok(script.askAnswer),
     'panel/fill': () => ok({ frames: script.frames }),
     'panel/continue': () => ok({ frames: script.frames }),
     'panel/cancel': () => ok({ frames: script.frames }),
@@ -148,7 +189,8 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
           posted.push(message);
           const watch = message as { type?: unknown; tabId?: unknown };
           if (answerWatches && watch.type === 'panel/watch' && typeof watch.tabId === 'number') {
-            port.post({ v: 1, type: 'panel/update', tabId: watch.tabId, reports: script.reports.get(watch.tabId) ?? [] });
+            port.post({ v: 1, type: 'panel/update', tabId: watch.tabId, reports: script.reports.get(watch.tabId) ?? [],
+              ...pageOf(watch.tabId) });
           }
         });
       },
@@ -203,9 +245,10 @@ export async function click(element: Element | null | undefined): Promise<void> 
   await settle();
 }
 
-/** Types into an input as React hears it: the prototype's value setter, then an input event. */
-export async function typeInto(input: HTMLInputElement, text: string): Promise<void> {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+/** Types into an input or a textarea as React hears it: the prototype's value setter, then an input event. */
+export async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, text: string): Promise<void> {
+  const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')!.set!;
   await act(async () => {
     setter.call(input, text);
     input.dispatchEvent(new Event('input', { bubbles: true }));

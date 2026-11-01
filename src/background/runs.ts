@@ -36,6 +36,9 @@ export interface RunMemo {
   /** The company the run's frame address names (Phase 6, set at each plan; null: none), for a free-text answer the
    *  person saves. */
   company?: CompanyScope | null;
+  /** The resume the person chose in the side panel for the run's tab when the run began (v2; null: none chosen), which
+   *  its lookup asked for and which the run attaches first (resume-choice.ts). */
+  chosen?: string | null;
 }
 
 /** The runs the worker knows, by id. */
@@ -53,6 +56,9 @@ export interface RunRegistry {
    *  other documents stay: a page restored from the back/forward cache may be running one. */
   forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void>;
   forgetTab(tabId: number): Promise<void>;
+  /** The token changed: every run forgets what it read with the old one (its lookup, its resume and the resume chosen
+   *  for it), so nothing of one connection reaches the next; a run that still needs them reads them again. */
+  dropTokenData(): void;
 }
 
 const keyOf = (runId: string) => `${RUN_PREFIX}${runId}`;
@@ -149,6 +155,13 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
     },
     async forgetTab(tabId) {
       await remove((await all()).filter((run) => run.tabId === tabId).map((run) => run.runId));
+    },
+    dropTokenData() {
+      for (const memo of memos.values()) {
+        memo.lookup = undefined;
+        memo.resume = undefined;
+        memo.chosen = undefined;
+      }
     },
   };
 }

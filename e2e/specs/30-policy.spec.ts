@@ -8,10 +8,16 @@
  * - the same /apply page opened directly, with no posting page seen and no stored copy (the mock's golden lookup holds
  *   no posting text): the couldn't-read notice, which does not block, is there before any write;
  * - TailorIT's stored copy says it (the mock's with-posting-text lookup): the card again, and Cancel writes nothing.
+ * The card is the "Ask me each time" setting's (the owner's amendments, docs/SPEC-AMENDMENTS.md), which these cases
+ * save first; with the default, "Fill from my profile only", the posting page's hit fills the form from the profile
+ * with no card and no AI request, and the notice says so.
  * Each case is its own posting, so no policy record from another reaches it.
  */
+import { readFileSync } from 'node:fs';
+import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
 import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
+import { mock } from '../helpers/mock.ts';
 import { applicationKeyOf, noticeCount, row } from '../helpers/extension.ts';
 import { GOLDEN } from '../helpers/golden.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
@@ -26,8 +32,43 @@ const APPLY_STORED_COPY = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-
 const POSTING_FILE = 'fixtures/synthetic/policy-posting.html';
 const APPLY_FILE = 'fixtures/synthetic/policy-apply.html';
 const LABELS = SYNTHETIC_LABELS['policy-apply'];
+const APPLY_PROFILE_ONLY = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a004';
+
+test.describe('policy notices, the default: fill from the profile only', () => {
+  test('a posting page that says "Do not use AI tools to apply": no card, no AI request, the notice, the profile written', async ({ extContext, connected: ext, routeLog, logs }) => {
+    const apply = `${APPLY_PROFILE_ONLY}/apply`;
+    // The posting page at this case's own posting, its link leading to this posting's /apply.
+    const posting = readFileSync(POSTING_FILE, 'utf8').replaceAll(APPLY_AFTER_POSTING, apply);
+    routeLog.serve({ [APPLY_PROFILE_ONLY]: { body: posting, contentType: 'text/html; charset=utf-8' }, [apply]: APPLY_FILE });
+    const page = await extContext.newPage();
+    await page.goto(APPLY_PROFILE_ONLY);
+    const key = applicationKeyOf(apply)!;
+    await expect.poll(async () => (await ext.session())[`policy:${key}`]).toEqual({ hits: ['do-not-use-ai'], clear: false });
+    await page.getByRole('link', { name: 'Apply for this job' }).click();
+    await page.waitForURL(apply);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(report.status).toBe('review');
+    expect(noticeCount(report, 'policy-profile-only')).toBe(1);
+    expect(await (await PageUi.of(page)).policyCardShown()).toBe(false);
+    expect(row(report, 'Full name')).toMatchObject({ status: 'verified', provenance: 'profile' });
+    await expect(page.locator('#name')).toHaveValue(GOLDEN.full);
+    expect(await mock.requestsTo('POST /api/autofill/ai/*'), 'an AI request').toEqual([]);
+    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
+      applicationKey: key });
+  });
+});
 
 test.describe('policy notices', () => {
+  // The policy card is the "Ask me each time" setting's.
+  test.beforeEach(async ({ connected: ext }) => {
+    await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' } } });
+  });
+  test.afterEach(async ({ connected: ext }) => {
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+  });
+
   test('a posting page that says "Do not use AI tools to apply" stops its /apply page at the card, before any write', async ({ extContext, connected: ext, routeLog, logs }) => {
     routeLog.serve({ [POSTING]: POSTING_FILE, [APPLY_AFTER_POSTING]: APPLY_FILE });
     const page = await extContext.newPage();

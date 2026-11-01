@@ -1,0 +1,20 @@
+{
+  "answers": [
+    {
+      "key": "greenhouse|main|how-do-you-identify|6b1d3f5a7c9e2048|0",
+      "optionSetHash": "6b1d3f5a7c9e2048",
+      "index": null,
+      "text": null,
+      "basis": null,
+      "reason": "sensitive"
+    },
+    {
+      "key": "greenhouse|main|how-many-years-have-you-written-go|none|0",
+      "optionSetHash": null,
+      "index": null,
+      "text": null,
+      "basis": null,
+      "reason": "no_answer"
+    }
+  ]
+}

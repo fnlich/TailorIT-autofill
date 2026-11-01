@@ -80,16 +80,24 @@ export function createPanelHandlers(deps: PanelDeps) {
   }
 
   return {
+    // Each button then checks the tab's frames (v2): a tab that moved on to a page without our script says no hello,
+    // and the check is what tells the panel its strip is stale.
     async fill(message: Of<'panel/fill'>): Promise<Answer<{ frames: number }>> {
       if (!(await deps.connected())) return refuse('not_connected');
       const frames = (await framesOfTab(platform.storage.session, message.tabId)).filter((frame) => frame.hasForm);
-      return ok({ frames: await sendTo(message.tabId, frames, { v: 1, type: 'run/start', dryRun: message.dryRun }) });
+      const reached = await sendTo(message.tabId, frames, { v: 1, type: 'run/start', dryRun: message.dryRun });
+      deps.check?.(message.tabId);
+      return ok({ frames: reached });
     },
     async continue(message: Of<'panel/continue'>): Promise<Answer<{ frames: number }>> {
-      return ok({ frames: await sendTo(message.tabId, await reportingFrames(message.tabId), { v: 1, type: 'run/continue' }) });
+      const reached = await sendTo(message.tabId, await reportingFrames(message.tabId), { v: 1, type: 'run/continue' });
+      deps.check?.(message.tabId);
+      return ok({ frames: reached });
     },
     async cancel(message: Of<'panel/cancel'>): Promise<Answer<{ frames: number }>> {
-      return ok({ frames: await sendTo(message.tabId, await reportingFrames(message.tabId), { v: 1, type: 'run/cancel' }) });
+      const reached = await sendTo(message.tabId, await reportingFrames(message.tabId), { v: 1, type: 'run/cancel' });
+      deps.check?.(message.tabId);
+      return ok({ frames: reached });
     },
     /** The side panel's policy card: the decision for the one named frame, while its report waits at policy-notice.
      *  `expired`: that frame is not registered, its run is not at the card, or the frame says nothing waits there.
@@ -136,10 +144,12 @@ export function createPanelHandlers(deps: PanelDeps) {
       const parsed = FieldDescribeAnswerSchema.safeParse(data);
       return parsed.success ? ok(parsed.data) : refuse('unavailable');
     },
-    /** Answers at once from what is known; the frame check it sets off pushes the pruned state on the panel port. */
+    /** Answers at once from what is known, with the tab's page state; the frame check it sets off pushes the pruned
+     *  state on the panel port. */
     async reports(message: Of<'panel/reports'>) {
       deps.check?.(message.tabId);
-      return ok({ tabId: message.tabId, reports: await deps.reports.ofTab(message.tabId) });
+      const [reports, page] = await Promise.all([deps.reports.ofTab(message.tabId), deps.reports.page(message.tabId)]);
+      return ok({ tabId: message.tabId, reports, page });
     },
   };
 }

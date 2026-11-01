@@ -5,8 +5,8 @@
  *   trusted key presses), the review then offers Save my answer on that row alone, the person clicks it on the report
  *   page, and the worker reads the answer from the frame and PUTs it to TailorIT at once, never keeping it. The next
  *   form asking the same question is filled from it (provenance saved).
- * - Confirm draft: with drafts on, trap 1's free-text question gets the clean draft, flagged; the person's Confirm
- *   draft on the report page makes it verified, an AI draft still.
+ * - Confirm draft: with drafts on and the confirmation setting on, trap 1's free-text question gets the clean draft,
+ *   flagged; the person's Confirm draft on the report page makes it verified, an AI draft still.
  * Each case then runs assertTrapInvariants on a page the person did not type into.
  */
 import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
@@ -72,8 +72,9 @@ test.describe('saved answers and drafts', () => {
   });
 
   test('a draft the person confirms on the report page is theirs: verified, an AI draft still', async ({ extContext, connected: ext, routeLog, logs }) => {
+    // Drafts wait for the person only with "Wait for me to confirm each draft" on (the owner's amendments).
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
-      llm: { ...DEFAULT_SETTINGS.llm, drafts: true } } });
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: true, confirmDrafts: true } } });
     try {
       const served = trap('01');
       routeLog.serve({ [served.url]: served.file });

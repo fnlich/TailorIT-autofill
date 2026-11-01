@@ -12,7 +12,9 @@ import { e2eAdaptersFor, WIZARD_URL } from '../adapters/test';
 import type { Adapter } from '../adapters/types';
 import { MAX_IDLE_TRANSITIONS } from '../core/steps/machine';
 import type { RunState } from '../core/types/run';
-import { DEFAULT_SETTINGS } from '../core/types/settings';
+// The Phase 2-6 behaviour these tests pin: version 1's defaults in version 2's shape (the owner's amendments' new
+// defaults have tests of their own: fill-all.browser.test.ts).
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { loadFixture, logEvents, removeFixtures, type EventLog, type Fixture } from '../dom/fixture.testkit';
 import { deadline } from '../dom/time';
 import type { FrameReport } from '../shared/report';
@@ -20,10 +22,10 @@ import { createFakeWorker, goldenProfile, testVocab, trapUrl, type FakeWorker, t
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 const ADAPTER: Adapter = e2eAdaptersFor(new URL(WIZARD_URL))[0]!;
-const AUTO = { settings: { ...DEFAULT_SETTINGS, autoAdvance: true } } satisfies FakeWorkerOptions;
+const AUTO = { settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } } satisfies FakeWorkerOptions;
 /** The worker's settings/changed push after the person saved auto-advance off in the options page. */
 const SETTING_OFF = { v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
-  llm: { tiebreak: true, classify: true, drafts: false }, offerToSaveAnswers: true } } as const;
+  llm: CAUTIOUS_SETTINGS.llm, offerToSaveAnswers: true } } as const;
 
 let logs: MockInstance;
 beforeAll(() => {

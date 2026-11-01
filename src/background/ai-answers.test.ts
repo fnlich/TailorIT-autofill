@@ -1,0 +1,145 @@
+/*
+ * AI answers' translation (the owner's amendments, docs/SPEC-AMENDMENTS.md; ai-tasks.ts): the core's questions as
+ * TailorIT's answer requests, and TailorIT's answers as the core's verdicts.
+ */
+import { describe, expect, it } from 'vitest';
+import { AUTOFILL_ANSWER_REASONS, AutofillAnswerRequestSchema, AutofillAnswerResultSchema } from '../contract/tailorit';
+import type { AnswerItem } from '../core/plan/answers';
+import type { DraftItem } from '../core/plan/drafts';
+import { sha256Hex } from '../core/text/sha256';
+import type { FieldKey } from '../core/types/field';
+import type { UntrustedText } from '../core/types/text';
+import { answerBatches, answerItemOfCore, answerVerdicts, batchHash, draftBatches } from './ai-tasks';
+
+const u = (text: string) => text as UntrustedText;
+const HASH = '0e7f3a9c5b1d2468';
+const CONTEXT = { jobText: 'We build tools. VISIBLE-MARKER-01', company: 'Northwind', jobTitle: 'Engineer',
+  resumeId: 'resume-1' };
+
+const choice = (at: number, labels = ['Yes', 'No'], question = `Question ${at}?`): AnswerItem => ({
+  key: `lever|main|q${at}|${HASH}|0` as FieldKey, shape: 'choice', kind: 'radio', question: u(question), hint: u(''),
+  section: u(''), optionSetHash: HASH,
+  options: labels.map((label, index) => ({ index: index + 1, label: u(label), labelHash: sha256Hex(label) })),
+  maxLength: null });
+const text = (at: number, maxLength: number | null = 40): AnswerItem => ({ key: `lever|main|t${at}|none|0` as FieldKey,
+  shape: 'text', kind: 'text', question: u(`How many years of Go, ${at}?`), hint: u(''), section: u(''),
+  optionSetHash: null, options: [], maxLength });
+
+describe('answer requests', () => {
+  it('batch at most ten items a task, each request valid as TailorIT reads it, with the job context', () => {
+    const items = Array.from({ length: 12 }, (_, at) => (at % 2 === 0 ? choice(at) : text(at)));
+    const { batches, withheld } = answerBatches(items, CONTEXT, ['I am LLM', 'x']);
+    expect(withheld).toEqual([]);
+    expect(batches.map((batch) => batch.body.items.length)).toEqual([10, 2]);
+    for (const batch of batches) {
+      expect(AutofillAnswerRequestSchema.safeParse(batch.body).success).toBe(true);
+      expect(batch.body).toMatchObject({ jobText: CONTEXT.jobText, company: 'Northwind', jobTitle: 'Engineer',
+        resumeId: 'resume-1', canaries: ['I am LLM'] });
+      expect(batchHash(batch)).toMatch(/^answer:[0-9a-f]{32}$/);
+    }
+    // An option's label hash stays here: TailorIT reads the index and the label only.
+    expect(batches[0]!.body.items[0]).toEqual({ key: choice(0).key, shape: 'choice', kind: 'radio',
+      question: 'Question 0?', hint: '', section: '', optionSetHash: HASH,
+      options: [{ index: 1, label: 'Yes' }, { index: 2, label: 'No' }], maxLength: null });
+  });
+
+  it('never sends an item whose question, hint, section or option names a sensitive topic', () => {
+    // (An EEO answer among the options, "Man" and "Woman", is the core's screen: screenForClassify reads the vocabulary,
+    // and TailorIT screens every item again.)
+    const items = [choice(1, ['Yes', 'No'], 'Will you require visa sponsorship?'), choice(2, ['Yes', 'No, I am a veteran']),
+      { ...text(3), hint: u('Your salary expectations') }, { ...text(4), section: u('eeo') }, choice(5)];
+    const { batches, withheld } = answerBatches(items, CONTEXT, []);
+    expect(withheld.map((verdict) => [verdict.key, verdict.kind === 'none' ? verdict.why : null])).toEqual([
+      [items[0]!.key, 'llm-disabled-for-category'], [items[1]!.key, 'llm-disabled-for-category'],
+      [items[2]!.key, 'llm-disabled-for-category'], [items[3]!.key, 'llm-disabled-for-category']]);
+    expect(batches.flatMap((batch) => batch.items.map((item) => item.key))).toEqual([items[4]!.key]);
+  });
+
+  it('never sends a choice with fewer than two options, nor a text past the cap', () => {
+    expect(answerItemOfCore(choice(1, ['Only']))).toBeNull();
+    expect(answerItemOfCore(text(1, 501))).toBeNull();
+    expect(answerItemOfCore(text(1, null))).toMatchObject({ maxLength: null });
+  });
+});
+
+describe('answer results', () => {
+  const asked = [choice(1, ['Yes', 'No', 'Some']), text(2)];
+
+  it('give a chosen option of the item’s own with its label’s hash as sent, a text, and each basis', () => {
+    const verdicts = answerVerdicts(asked, { answers: [
+      { key: asked[0]!.key, optionSetHash: HASH, index: 3, text: null, basis: 'guess', reason: 'answered' },
+      { key: asked[1]!.key, optionSetHash: null, index: null, text: 'Six years', basis: 'resume', reason: 'answered' },
+    ] }, 'task-1');
+    expect(verdicts.get(asked[0]!.key)).toEqual({ key: asked[0]!.key, kind: 'choice', optionSetHash: HASH, index: 3,
+      labelHash: sha256Hex('Some'), basis: 'guess', taskId: 'task-1' });
+    expect(verdicts.get(asked[1]!.key)).toEqual({ key: asked[1]!.key, kind: 'text', text: 'Six years', basis: 'resume',
+      taskId: 'task-1' });
+  });
+
+  it('read every other reason as why there is none', () => {
+    const expected = { no_answer: 'llm-no-answer', invalid: 'llm-invalid-output', too_long: 'llm-invalid-output',
+      canary: 'canary-in-value', ai_reference: 'llm-invalid-output', wrapper: 'llm-invalid-output',
+      contact: 'llm-invalid-output', sensitive: 'llm-disabled-for-category' } as const;
+    for (const reason of AUTOFILL_ANSWER_REASONS) {
+      if (reason === 'answered') continue;
+      const result = { answers: [{ key: asked[1]!.key, optionSetHash: null, index: null, text: null, basis: null, reason }] };
+      expect(AutofillAnswerResultSchema.safeParse(result).success, reason).toBe(true);
+      expect(answerVerdicts([asked[1]!], result, 't').get(asked[1]!.key), reason)
+        .toEqual({ key: asked[1]!.key, kind: 'none', why: expected[reason] });
+    }
+  });
+
+  it('treat an index the item never sent, another option set, a value of the wrong shape, or an item answered twice or not at all, as invalid', () => {
+    const invalid = (key: FieldKey) => ({ key, kind: 'none', why: 'llm-invalid-output' });
+    const off = answerVerdicts([asked[0]!], { answers: [{ key: asked[0]!.key, optionSetHash: HASH, index: 0, text: null,
+      basis: 'resume', reason: 'answered' }] }, 't');
+    expect(off.get(asked[0]!.key)).toEqual(invalid(asked[0]!.key));
+    const moved = answerVerdicts([asked[0]!], { answers: [{ key: asked[0]!.key, optionSetHash: 'ffffffffffffffff',
+      index: 1, text: null, basis: 'resume', reason: 'answered' }] }, 't');
+    expect(moved.get(asked[0]!.key)).toEqual(invalid(asked[0]!.key));
+    const shape = answerVerdicts([asked[1]!], { answers: [{ key: asked[1]!.key, optionSetHash: HASH, index: 1,
+      text: null, basis: 'resume', reason: 'answered' }] }, 't');
+    expect(shape.get(asked[1]!.key)).toEqual(invalid(asked[1]!.key));
+    const twice = answerVerdicts(asked, { answers: [
+      { key: asked[0]!.key, optionSetHash: HASH, index: 1, text: null, basis: 'resume', reason: 'answered' },
+      { key: asked[0]!.key, optionSetHash: HASH, index: 2, text: null, basis: 'resume', reason: 'answered' },
+    ] }, 't');
+    expect([twice.get(asked[0]!.key), twice.get(asked[1]!.key)]).toEqual([invalid(asked[0]!.key), invalid(asked[1]!.key)]);
+  });
+});
+
+describe('Edit with AI’s draft request', () => {
+  const item: DraftItem = { key: 'lever|main|why|none|0' as FieldKey, question: u('Why do you want to work here?'),
+    maxLength: null, current: u('I like the product.') };
+
+  it('sends what the box holds now as currentAnswer, and nothing naming a sensitive topic', () => {
+    const { batches } = draftBatches([item], CONTEXT, []);
+    expect(batches[0]!.body.questions).toEqual([{ key: item.key, question: item.question, maxLength: null,
+      currentAnswer: 'I like the product.' }]);
+    const { batches: none, withheld } = draftBatches([{ ...item, current: u('My visa sponsorship ends in May.') }],
+      CONTEXT, []);
+    expect(none).toEqual([]);
+    expect(withheld).toEqual([{ key: item.key, text: null, why: 'llm-disabled-for-category' }]);
+  });
+});
+
+describe('the extension’s own sensitive terms (TailorIT’s server-only ones, resolver/classify.ts), screened again here', () => {
+  it('never sends an answer item, a draft question or a box’s current text that names one', () => {
+    const items = [choice(1, ['Yes', 'No'], 'Are you on parole?'), { ...text(2), question: u('What is your OTE?') },
+      { ...text(3), hint: u('Your Tax File Number') }, choice(4, ['Yes', 'No, I have pending charges']), choice(5)];
+    const { batches, withheld } = answerBatches(items, CONTEXT, []);
+    expect(withheld.map((verdict) => [verdict.key, verdict.kind === 'none' ? verdict.why : null]))
+      .toEqual(items.slice(0, 4).map((item) => [item.key, 'llm-disabled-for-category']));
+    expect(batches.flatMap((batch) => batch.items.map((item) => item.key))).toEqual([items[4]!.key]);
+
+    const why: DraftItem = { key: 'lever|main|why|none|0' as FieldKey, question: u('Why do you want to work here?'),
+      maxLength: null };
+    const drafts = [{ ...why, key: 'lever|main|d1|none|0' as FieldKey, question: u('Describe any time spent in prison.') },
+      { ...why, key: 'lever|main|d2|none|0' as FieldKey, current: u('My SIN is on file.') },
+      { ...why, key: 'lever|main|d3|none|0' as FieldKey, current: u('My current day rate suits this role.') }, why];
+    const drafted = draftBatches(drafts, CONTEXT, []);
+    expect(drafted.withheld).toEqual(drafts.slice(0, 3).map((item) => ({ key: item.key, text: null,
+      why: 'llm-disabled-for-category' })));
+    expect(drafted.batches.flatMap((batch) => batch.body.questions.map((question) => question.key))).toEqual([why.key]);
+  });
+});

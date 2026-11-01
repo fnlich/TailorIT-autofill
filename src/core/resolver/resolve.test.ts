@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONSENT_CATEGORIES } from '../enums';
-import { goldenProfile, NOW, specOf, vocab } from '../plan/plan.testkit';
+import { CAUTIOUS_SETTINGS, goldenProfile, NOW, specOf, vocab } from '../plan/plan.testkit';
 import type { PlanSensitiveState } from '../plan/types';
 import type { FieldSpec } from '../types/field';
 import type { SavedAnswer } from '../types/saved';
@@ -26,8 +26,12 @@ describe('the evaluation order (§8.1)', () => {
     expect(resolve(specOf('Attention check: select PURPLE.', 'radio', { optionLabels: ['Red', 'Purple'] }), ctx()))
       .toMatchObject({ category: 'attentionCheck', classifiedBy: 'label-rule', rule: 'attention.attention-check',
         action: 'needs-user', reason: 'attention-check', policy: 'attention' });
-    expect(resolve(specOf('Check this box to confirm you read the privacy policy', 'checkbox'), ctx()))
+    expect(resolve(specOf('Check this box to confirm you read the privacy policy', 'checkbox'),
+      ctx({ settings: CAUTIOUS_SETTINGS })))
       .toMatchObject({ category: 'consent.privacy', action: 'needs-user', reason: 'consent-requires-user' });
+    // Pre-approved by default since settings version 2.
+    expect(resolve(specOf('Check this box to confirm you read the privacy policy', 'checkbox'), ctx()))
+      .toMatchObject({ category: 'consent.privacy', action: 'fill', origin: { ruleId: 'consent.preapproved' } });
   });
 
   it('makes a field the rules hand to the person needs-user, whatever its class would allow', () => {
@@ -68,7 +72,12 @@ describe('the sensitive part', () => {
   it('asks for the part while it is not loaded, and flags the field when it may not be read or failed', () => {
     expect(at('not-loaded').needsSensitive).toBe(true);
     expect(at('loaded').needsSensitive).toBe(false);
-    expect(at('not-shared').resolution).toMatchObject({ action: 'leave-blank', reason: 'sensitive-not-shared' });
+    expect(resolveField(gender, ctx({ sensitiveState: 'not-shared', settings: CAUTIOUS_SETTINGS })).resolution)
+      .toMatchObject({ action: 'leave-blank', reason: 'sensitive-not-shared' });
+    // The decline default (the owner's amendments): an answer this browser may not read declines; one that could not
+    // be read stays blank.
+    expect(at('not-shared').resolution).toMatchObject({ action: 'fill', reason: 'eeo-decline-default',
+      origin: { provenance: 'rule', ruleId: 'eeo.decline-default' }, intended: { kind: 'decline' } });
     expect(at('unavailable').resolution).toMatchObject({ action: 'leave-blank', reason: 'sensitive-unavailable' });
     expect(resolveField(specOf('First name', 'text'), ctx({ sensitiveState: 'not-loaded' })).needsSensitive).toBe(false);
   });

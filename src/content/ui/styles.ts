@@ -19,8 +19,10 @@
  * visibility watch observes (the Phase 6 review, E1).
  *
  * IntersectionObserver v2 judges our controls (visible.ts): no transform, opacity below 1, filter, backdrop-filter or
- * will-change on the anchor, the launcher, a notice, the card, the panel or their buttons, hover included. Animations
- * are paint-only and run on descendants (the launcher's spinner is its ::after); no url() anywhere.
+ * will-change on the anchor, the launcher, a notice, the card, the panel, an Edit with AI button or their buttons,
+ * hover included (an Edit with AI button widens by showing its label). Animations are paint-only and run on
+ * descendants (the launcher's spinner is its ::after); no url() anywhere. A value the AI wrote is outlined in TailorIT's
+ * teal with an "AI" chip, an answer it guessed with an amber "AI guess" chip.
  */
 import { ACCENT, BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, SHADOWS, STATUS_COLOURS, TONES } from '../../shared/palette';
 
@@ -105,6 +107,22 @@ button.action:focus-visible, button.dismiss:focus-visible { outline: 2px solid $
   font: 700 10px/16px ${FONT_STACK}; white-space: nowrap; pointer-events: none; }
 ${STATUS_RULES}
 .hl[data-draft="true"] { border-style: dashed; }
+.hl[data-ai] { border-color: ${BRAND.fill}; }
+.hl[data-ai="written"] .chip { background: ${BRAND.ink}; }
+.hl[data-ai="guess"] .chip { background: ${TONES.warning.bg}; color: ${TONES.warning.fg};
+  box-shadow: inset 0 0 0 1px ${TONES.warning.fg}; }
+.ai-edits { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
+button.ai-edit { pointer-events: auto; position: absolute; box-sizing: border-box; display: flex; align-items: center;
+  gap: 6px; height: ${24}px; min-width: ${24}px; margin: 0; padding: 0; border: 0; border-radius: 8px;
+  background: ${WHITE}; color: ${BRAND.ink}; cursor: pointer; font: 700 12px/24px ${FONT_STACK}; white-space: nowrap;
+  box-shadow: ${IN_PAGE_SHADOWS.launcher}; }
+button.ai-edit svg.mark { width: 24px; height: 24px; }
+button.ai-edit .ai-edit__label { display: none; padding: 0 8px 0 0; }
+button.ai-edit:hover .ai-edit__label, button.ai-edit:focus-visible .ai-edit__label,
+button.ai-edit[aria-busy="true"] .ai-edit__label { display: inline; }
+button.ai-edit:hover { box-shadow: ${IN_PAGE_SHADOWS.launcherHover}; }
+button.ai-edit:focus-visible { outline: 2px solid ${BRAND.ink}; outline-offset: 2px; }
+button.ai-edit[aria-busy="true"] { cursor: progress; }
 .notices.with-panel .notice { display: none; }
 .panel { pointer-events: auto; box-sizing: border-box; display: flex; flex-direction: column; width: 380px;
   max-width: calc(100vw - 16px); max-height: 70vh; margin: 0; overflow: hidden; background: var(--tia-bg);

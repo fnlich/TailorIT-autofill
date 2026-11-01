@@ -1,0 +1,10 @@
+{
+  "items": [],
+  "jobText": "Northwind Traders is hiring a Senior Software Engineer to build the services behind our ordering platform. You will design APIs in TypeScript and Go, own their reliability, and mentor two engineers. The role is based in our Austin office, with travel to customer sites about a quarter of the time.",
+  "company": "Northwind Traders",
+  "jobTitle": "Senior Software Engineer",
+  "resumeId": "c5a3e1f0-6b2d-4c8e-9f17-2a4b6d8e0c13",
+  "canaries": [
+    "I am LLM"
+  ]
+}

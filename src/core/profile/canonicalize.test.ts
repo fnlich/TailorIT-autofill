@@ -101,7 +101,7 @@ describe('canonicalizeProfile over the contract’s examples (§2.7)', () => {
     expect(profile.languages.map((language) => [language.code, language.proficiency])).toEqual([['en', 'native'],
       ['es', 'full-professional'], ['pt', undefined]]);
     expect(profile.preferences).toEqual({ startDate: { kind: 'date', date: { y: 2026, m: 12, d: 1 } },
-      relocation: { kind: 'value', value: false }, workArrangements: ['remote', 'hybrid'] });
+      relocation: { kind: 'value', value: false }, workArrangements: ['remote', 'hybrid'], travelPercent: 10 });
     expect(profile.experience[0]).toMatchObject({ current: true, description: expect.stringContaining('ingestion') });
   });
 

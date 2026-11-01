@@ -13,7 +13,8 @@
  *     current job in the first block, its "I currently work here" ticked and its End date, which the page then
  *     disables, never touched and skipped, not flagged; the earlier job in the second block, its box left alone;
  *   - step 3: "Add education", a typeless button inside the form that ignores untrusted clicks, never clicked and
- *     flagged needs-your-click; the required shift question, which the profile cannot answer, blank and flagged;
+ *     flagged needs-your-click; the required shift question, which the profile cannot answer, asked of TailorIT's AI
+ *     (docs/SPEC-AMENDMENTS.md §1), and with the mock's default no answer, blank and flagged;
  *   - step 4, Review: the final step, at review, and Submit has no event at all;
  *   - after each step RunState holds no value, the step is a new signature, attempted once, and stepIndex one more;
  * - auto-advance on: Next pressed on the two clean steps (1 and 2), each after the step's writes; step 3, which holds
@@ -122,7 +123,12 @@ async function expectEducationFlagged(page: Page, report: FrameReport): Promise<
   expect(report.fields.map((candidate) => candidate.label)).not.toContain(ADD_EDUCATION_LABEL);
   expect(noticeCount(report, 'needs-click')).toBe(1);
 
-  expect(row(report, SHIFT)).toMatchObject({ category: 'unknown', status: 'flagged', reason: 'unknown-field', required: true,
+  // The owner's amendments (docs/SPEC-AMENDMENTS.md §1): the question the profile cannot answer is TailorIT's AI's,
+  // and the mock's answer task has no answer for it by default, so it stays blank and flagged.
+  const asked = (await mock.requestsTo('POST /api/autofill/ai/answer'))
+    .flatMap((request) => (JSON.parse(request.body) as { items: Array<{ question: string }> }).items);
+  expect(asked.map((item) => item.question)).toContain(SHIFT);
+  expect(row(report, SHIFT)).toMatchObject({ category: 'unknown', status: 'flagged', reason: 'llm-no-answer', required: true,
     wrote: false, provenance: null });
   await expect(page.locator('#shift')).toHaveValue('');
 }

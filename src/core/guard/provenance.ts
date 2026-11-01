@@ -8,20 +8,22 @@
  * - checkProvenanceShape, in the content script before each write, without the profile: the origin is present, its
  *   path fits PROFILE_PATH_PATTERN, its rule id is known and an llm-pick's hash has the right shape. With the field's
  *   current options the frame also checks the llm-pick's option (llmPickStillValid).
- * Then the category policy (checkCategoryPolicy): EEO and legal values need `profile` or the decline rule, consent the
- * pre-approval rule, a free text a saved answer or a draft, an upload the profile's resume; an attention check, and
- * every category only the person answers, allow nothing.
+ * Then the category policy (checkCategoryPolicy): EEO and legal values need `profile` or the decline rule (for EEO also
+ * the decline-default rule), consent the pre-approval rule, a free text a saved answer, a draft or an AI answer, an
+ * upload the profile's resume; an attention check, and every category only the person answers, allow nothing. An AI
+ * answer's text (llm-answer, version 2) fills an unknown or free-text field, or one of the profile categories
+ * ANSWERABLE_PROFILE_CATEGORIES lists; never a sensitive, legal, EEO or consent one.
  */
 import { TIEBREAK_LABEL_MAX } from '../confidence';
 import { PROVENANCES } from '../enums';
-import { policyClassOf, USER_ONLY_CATEGORIES } from '../resolver/categories';
+import { ANSWERABLE_PROFILE_CATEGORIES, policyClassOf, USER_ONLY_CATEGORIES } from '../resolver/categories';
 import { normalizeLabel } from '../text/normalize';
 import { sha256Hex } from '../text/sha256';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldSpec } from '../types/field';
 import type { PlannedWrite, ReasonCode } from '../types/fill';
 import {
-  PROFILE_PATH_PATTERN, RULE_IDS, type FieldCategory, type PolicyClass, type RuleId, type ValueOrigin,
+  ANSWER_BASES, PROFILE_PATH_PATTERN, RULE_IDS, type FieldCategory, type PolicyClass, type RuleId, type ValueOrigin,
 } from '../types/intent';
 import type { Profile } from '../types/profile';
 import type { SavedAnswer } from '../types/saved';
@@ -81,6 +83,8 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'other.free-text': (category) => OPEN_FOR_FOLLOW_UP.includes(policyClassOf(category)),
   'guard.revert': () => true,
   'typeahead.query': (category) => policyClassOf(category) === 'profile',
+  'eeo.decline-default': (category) => policyClassOf(category) === 'eeo',
+  'screening.previously-employed': (category) => category === 'screening.previouslyEmployed',
 };
 
 /** The value a profile path names ('contact.email', 'education[0].institution'), or undefined. Only the profile's own
@@ -140,6 +144,11 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
     case 'llm-draft':
       if (!nonEmpty(origin.taskId)) return fail('missing-provenance');
       return write.value.kind === 'text' ? PASS : fail('policy-violation');
+    case 'llm-answer':
+      if (!nonEmpty(origin.taskId) || !(ANSWER_BASES as readonly string[]).includes(origin.basis)) {
+        return fail('missing-provenance');
+      }
+      return write.value.kind === 'text' ? PASS : fail('policy-violation');
     default:
       return fail('missing-provenance');
   }
@@ -183,6 +192,7 @@ export function checkProvenance(write: PlannedWrite, spec: FieldSpec, category: 
     case 'llm-pick':
       return llmPickStillValid(write, spec) ? PASS : fail('llm-pick-rejected');
     case 'llm-draft':
+    case 'llm-answer':
       return PASS;
   }
 }
@@ -192,25 +202,25 @@ const CLASS_RULES: Readonly<Record<PolicyClass, readonly RuleId[] | 'any'>> = {
   profile: 'any',
   sensitive: ['guard.revert'],
   legal: ['legal.decline', 'guard.revert'],
-  eeo: ['eeo.decline', 'guard.revert'],
+  eeo: ['eeo.decline', 'eeo.decline-default', 'guard.revert'],
   consent: ['consent.preapproved', 'consent.signature-preapproved', 'guard.revert'],
   attention: [],
   'free-text': ['other.free-text', 'guard.revert'],
   file: [],
-  unknown: ['other.free-text', 'guard.revert'],
+  unknown: ['other.free-text', 'screening.previously-employed', 'guard.revert'],
 };
 
 /** The provenances each class's values may have (§7.6, §8.2): `rule` is narrowed further by CLASS_RULES. */
 const CLASS_PROVENANCES: Readonly<Record<PolicyClass, readonly ValueOrigin['provenance'][]>> = {
-  profile: ['profile', 'saved', 'rule', 'llm-pick'],
+  profile: ['profile', 'saved', 'rule', 'llm-pick', 'llm-answer'],
   sensitive: ['profile', 'rule'],
   legal: ['profile', 'rule'],
   eeo: ['profile', 'rule'],
   consent: ['rule'],
   attention: [],
-  'free-text': ['saved', 'llm-draft', 'rule'],
+  'free-text': ['saved', 'llm-draft', 'llm-answer', 'rule'],
   file: ['profile'],
-  unknown: ['saved', 'llm-pick', 'rule'],
+  unknown: ['saved', 'llm-pick', 'llm-answer', 'rule'],
 };
 
 /** The category policy (§7.6's last row, §8.2): whether a value of this origin may fill a field of this category. */
@@ -218,6 +228,9 @@ export function checkCategoryPolicy(origin: ValueOrigin, category: FieldCategory
   if (USER_ONLY_CATEGORIES.has(category)) return fail('policy-violation');
   const policy = policyClassOf(category);
   if (!CLASS_PROVENANCES[policy].includes(origin.provenance)) return fail('policy-violation');
+  if (origin.provenance === 'llm-answer' && policy === 'profile' && !ANSWERABLE_PROFILE_CATEGORIES.has(category)) {
+    return fail('policy-violation');
+  }
   if (origin.provenance === 'rule') {
     const rules = CLASS_RULES[policy];
     if (rules !== 'any' && !rules.includes(origin.ruleId)) return fail('policy-violation');

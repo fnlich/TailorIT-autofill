@@ -6,6 +6,8 @@
  * them enters the repo.
  * - The side panel at 400 px: before Autofill, a real form's review, a trap's review that needs the person, a row
  *   opened, the policy card, and the review again under a dark system scheme (it stays light).
+ * - v2: the job card found, not found with Add, already applied, loading, unavailable, a dry run's "Would attach", the
+ *   resume picker, and a custom question answered.
  * - The page's own UI: the launcher at rest and at review, its notices and the policy card, the in-page panel open.
  * - The options page.
  * Every capture is in the light scheme with reduced motion and animations stopped, so a picture is the same each time.
@@ -22,7 +24,8 @@ import { PageUi } from '../helpers/page-ui.ts';
 import { trap } from '../helpers/traps.ts';
 import { routesFile } from '../routes.ts';
 
-const OUT = resolve('e2e/artifacts/shots');
+/** e2e/artifacts/shots, from this file's own folder: never from wherever the run was started (it is emptied first). */
+const OUT = resolve(import.meta.dirname, '..', 'artifacts', 'shots');
 const PANEL_VIEWPORT = { width: 400, height: 860 } as const;
 const SNAPSHOT = 'lever/spotify-ny';
 const STORED_COPY_APPLY = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-0000000a0f01/apply';
@@ -141,24 +144,31 @@ test("the side panel: a trap's review, with what needs the person", async ({ ext
 });
 
 test('the policy card, in the side panel and on the page', async ({ extContext, connected: ext, routeLog, tailorit }) => {
-  await tailorit.scenario('lookup-posting-text');
-  routeLog.serve({ [STORED_COPY_APPLY]: 'fixtures/synthetic/policy-apply.html' });
-  const page = await extContext.newPage();
-  await page.goto(STORED_COPY_APPLY);
-  const tabId = await ext.fill(page);
-  expect((await ext.settled(tabId)).status).toBe('policy-notice');
-  const panel = await sidePanel(ext, tabId);
-  await panel.bringToFront();
-  await expect(panel.locator('[data-notice="policy"] button')).toHaveCount(2);
-  await shoot(panel, '04-side-panel-policy.png', 'Side panel, a run waiting at the policy card');
+  // The card is the "Ask me" choice for a posting that forbids AI (the default fills from the profile only).
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+    llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' } } });
+  try {
+    await tailorit.scenario('lookup-posting-text');
+    routeLog.serve({ [STORED_COPY_APPLY]: 'fixtures/synthetic/policy-apply.html' });
+    const page = await extContext.newPage();
+    await page.goto(STORED_COPY_APPLY);
+    const tabId = await ext.fill(page);
+    expect((await ext.settled(tabId)).status).toBe('policy-notice');
+    const panel = await sidePanel(ext, tabId);
+    await panel.bringToFront();
+    await expect(panel.locator('[data-notice="policy"] button')).toHaveCount(2);
+    await shoot(panel, '04-side-panel-policy.png', 'Side panel, a run waiting at the policy card');
 
-  const ui = await PageUi.of(page);
-  await still(page);
-  await page.bringToFront();
-  await expect.poll(async () => ui.policyCardShown()).toBe(true);
-  await shoot(page, '08b-page-policy-card.png', 'The page’s policy card under the launcher',
-    { clip: await around(page, ui, ['button.launcher', '[role="alertdialog"]']) });
-  await ui.close();
+    const ui = await PageUi.of(page);
+    await still(page);
+    await page.bringToFront();
+    await expect.poll(async () => ui.policyCardShown()).toBe(true);
+    await shoot(page, '08b-page-policy-card.png', 'The page’s policy card under the launcher',
+      { clip: await around(page, ui, ['button.launcher', '[role="alertdialog"]']) });
+    await ui.close();
+  } finally {
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+  }
 });
 
 test('the in-page panel, and the launcher at rest', async ({ extContext, connected: ext, routeLog }) => {
@@ -188,6 +198,70 @@ test('the in-page panel, and the launcher at rest', async ({ extContext, connect
   } finally {
     await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
   }
+});
+
+/** A Lever posting TailorIT can add from, for the card's states (the synthetic form, its posting's title above it). */
+const CARD_APPLY = (id: string) => `https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000c${id}/apply`;
+
+/** The side panel of a fresh tab showing the synthetic form at `url`, once its card is past `state` (or at it). */
+async function cardPanel(ext: Extension, page: Page, routeLog: { serve(routes: Record<string, string>): void }, url: string) {
+  routeLog.serve({ [url]: 'fixtures/synthetic/policy-apply.html' });
+  await page.goto(url);
+  const tabId = await ext.tabIdOf(page);
+  await ext.frameWithForm(tabId);
+  const panel = await sidePanel(ext, tabId);
+  await panel.bringToFront();
+  return { tabId, panel, card: panel.locator('[data-job-card]') };
+}
+
+test('the job card: found, not found with Add, already applied, loading, unavailable', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  const found = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('001'));
+  await expect(found.card).toHaveAttribute('data-job-state', 'found');
+  await shoot(found.panel, '10-job-card-found.png', 'Job card: found, with its match and the resume it attaches');
+  await found.card.getByRole('button', { name: 'Change', exact: true }).click();
+  await expect(found.panel.locator('[data-resume-choice=""]').first()).toBeVisible();
+  await shoot(found.panel, '10b-job-card-change.png', 'Job card: Change, the resumes to choose from');
+
+  await tailorit.scenario('lookup-not-found');
+  const missing = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('002'));
+  await expect(missing.card).toHaveAttribute('data-job-state', 'not-found');
+  await shoot(missing.panel, '11-job-card-not-found.png', 'Job card: not in TailorIT, with Add this job to TailorIT');
+  await tailorit.reset();
+
+  await tailorit.scenario('lookup-applied');
+  const applied = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('003'));
+  await expect(applied.card.locator('[data-job-warning]')).toBeVisible();
+  await shoot(applied.panel, '12-job-card-applied.png', 'Job card: already applied, closed and archived');
+  await tailorit.reset();
+
+  await tailorit.scenario('lookup-slow', { delayMs: 20_000, times: 1 });
+  const loading = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('004'));
+  await expect(loading.card).toHaveAttribute('data-job-state', 'loading');
+  await shoot(loading.panel, '13-job-card-loading.png', 'Job card: loading');
+  await tailorit.reset();
+
+  await tailorit.scenario('lookup-fails');
+  const unavailable = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('005'));
+  await expect(unavailable.card).toHaveAttribute('data-job-state', 'unavailable');
+  await shoot(unavailable.panel, '14-job-card-unavailable.png', 'Job card: TailorIT could not say');
+});
+
+test('the job card in a dry run, and a custom question answered', async ({ extContext, connected: ext, routeLog }) => {
+  const page = await extContext.newPage();
+  const { tabId, panel, card } = await cardPanel(ext, page, routeLog, CARD_APPLY('006'));
+  await ext.fill(page, { dryRun: true });
+  expect((await ext.settled(tabId, { mode: 'dry-run' })).status).toBe('review');
+  await panel.bringToFront();
+  await expect(card).toContainText('Would attach');
+  await shoot(panel, '15-job-card-dry-run.png', 'Job card in a dry run: "Would attach"', { fullPage: true });
+
+  await panel.getByText('Ask a custom question', { exact: true }).click();
+  await panel.getByLabel('Your question').fill('Why do you want to work at Northwind?');
+  await panel.getByRole('button', { name: 'Get answer', exact: true }).click();
+  const answer = panel.locator('[data-ask-answer]');
+  await expect(answer).toBeVisible();
+  await answer.scrollIntoViewIfNeeded();
+  await shoot(panel, '16-custom-question.png', 'Ask a custom question, answered from the resume the card attaches');
 });
 
 test('the options page', async ({ extContext, connected: ext }) => {

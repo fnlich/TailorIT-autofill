@@ -7,6 +7,7 @@
  * never reaches a page, and a hand-off with any other state is refused.
  */
 import type { BrowserContext, Page } from '@playwright/test';
+import { AUTOFILL_API_VERSION } from '../../src/contract/tailorit';
 import { COPY } from '../../src/shared/copy';
 import { expect, extensionIdIn, launchExtension, test } from '../fixtures.ts';
 import { Extension } from '../helpers/extension.ts';
@@ -106,7 +107,7 @@ test.describe('pairing', () => {
     expect(redeem!.headers.cookie).toBeUndefined();
     expect([undefined, `chrome-extension://${ext.id}`]).toContain(redeem!.headers.origin);
     const [session] = await mock.requestsTo('GET /api/autofill/session');
-    expect(session?.headers).toMatchObject({ authorization: 'REDACTED', 'x-tailorit-autofill-api': '1' });
+    expect(session?.headers).toMatchObject({ authorization: 'REDACTED', 'x-tailorit-autofill-api': String(AUTOFILL_API_VERSION) });
     // The token never reached a page: not the connect page's DOM, messages or log, nor the options page's DOM.
     expect(await connect.content()).not.toContain('tia_');
     expect((await spyRecord(connect.mainFrame())).messages.filter((message) => message.includes('tia_'))).toEqual([]);
