@@ -12,7 +12,6 @@
     "dev": "wxt",
     "build": "wxt build",
     "build:edge": "wxt build -b edge",
-    "build:worktree": "node scripts/build-worktree.mjs",
     "zip": "wxt zip",
     "zip:edge": "wxt zip -b edge",
     "typecheck": "wxt prepare && tsc -p tsconfig.json && tsc -p tsconfig.core.json && tsc -p tsconfig.core-tests.json && tsc -p tsconfig.tools.json",

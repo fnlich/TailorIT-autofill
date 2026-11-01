@@ -3,7 +3,7 @@
 The extension talks to TailorIT only over HTTP, from its service worker, with a bearer token. TailorIT owns the contract: zod schemas in `packages/shared/src/autofill/` of the TailorIT repository, version `apiVersion: 1`. The full design (DDL, every route, the rate limits) is [design/tailorit.md](design/tailorit.md).
 
 ## Keeping the copy in step (from Phase 2)
-- `npm run contract:pull -- F:\Develop\TailorIT-wt-autofill` copies the contract's non-test files byte for byte into `src/contract/tailorit/`, its `contract.json` and fixtures into `src/contract/tailorit/v1/`, and records the source commit in `SOURCE.json`. The copied files are never edited by hand.
+- `npm run contract:pull -- F:\Develop\TailorIT` (the owner's checkout, branch `v1.2`; during Phases 2-6, the `autofill` worktree) copies the contract's non-test files byte for byte into `src/contract/tailorit/`, its `contract.json` and fixtures into `src/contract/tailorit/v1/`, and records the source commit in `SOURCE.json`. The copied files are never edited by hand.
 - Both repos' contract tests check that the copy is unedited (file hashes), that the valid fixtures parse and the invalid ones fail, that zod's version matches (4.6.7), and that `AUTOFILL_FIELD_KINDS` and the value lists equal the extension's.
 - Every token request and answer carries `X-TailorIT-Autofill-Api: 1`. The extension decides that versions differ only from that response header, never from a status code.
 - The core may `import type` from `src/contract/tailorit` (erased at build); only `src/contract`, `src/messaging` and `src/shared` import zod at run time.
@@ -27,7 +27,7 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | GET, PUT, DELETE | `/answers`, `/answers/:id` | token (GET `profile:read`; PUT and DELETE `answers:write`) | 6 | saved answers |
 
 ## How the extension calls it (`src/background/server-client.ts`, Phase 2)
-- **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, the mock's `http://localhost:3190` in the e2e build, or the autofill worktree's `http://localhost:3300` in the dry-run build). Content scripts and pages never do.
+- **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, or the mock's `http://localhost:3190` in the e2e build). Content scripts and pages never do.
 - **The allow-list:** `<origin>/api/autofill/*` (lower-case letters, digits, `/` and `-` only, no `//`, the server's own `tokenScope` pattern) and `GET <origin>/api/ai/tasks/<uuid>`. Never a `DELETE` on a task (the Phase 4 review, T-F2: TailorIT gives callers that ask the same one task, and prunes every task itself). Any other path, or method, is refused before a request is made. A resume id goes into a path only when it is `[a-z0-9-]{1,64}`.
 - **Every request:**
   - `credentials: 'omit'` (no cookie, ever), `redirect: 'error'`, `cache: 'no-store'`, `referrerPolicy: 'no-referrer'`;

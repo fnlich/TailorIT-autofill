@@ -4,7 +4,7 @@
 // file is checked against the record's SHA-256 (over the LF text, as TailorIT computes it) before anything is written,
 // and TailorIT may hold no uncommitted change in either folder, so that commit holds exactly these bytes. The copy is
 // never edited by hand: test/contract.test.ts checks it against the same record. With --check nothing is written.
-// Usage: node scripts/contract-pull.mjs <TailorIT folder> [--check]   (npm run contract:pull -- F:\Develop\TailorIT-wt-autofill)
+// Usage: node scripts/contract-pull.mjs <TailorIT folder> [--check]   (npm run contract:pull -- F:\Develop\TailorIT)
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -26,7 +26,7 @@ const args = process.argv.slice(2);
 const check = args.includes('--check');
 const [folder, ...extra] = args.filter((arg) => arg !== '--check');
 if (folder === undefined || extra.length > 0 || folder.startsWith('-')) {
-  fail('name the TailorIT folder once: npm run contract:pull -- F:\\Develop\\TailorIT-wt-autofill [--check]');
+  fail('name the TailorIT folder once: npm run contract:pull -- F:\\Develop\\TailorIT [--check]');
 }
 const TAILORIT = resolve(folder);
 if (!existsSync(join(TAILORIT, RECORD_DIR, 'contract.json'))) fail(`${TAILORIT} holds no ${RECORD_DIR}/contract.json`);

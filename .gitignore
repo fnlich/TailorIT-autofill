@@ -1,7 +1,6 @@
 node_modules/
-.output/
-.output-e2e/
-.output-worktree/
+# The builds (.output, .output-e2e), and any older build folder still on disk.
+.output*/
 .wxt/
 e2e/artifacts/
 test-results/

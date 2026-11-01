@@ -212,7 +212,7 @@ Thumbs.db
 - **ARCHITECTURE.md**: the layers and import rules, the runtime diagram, the message catalogue, data lifetimes, decisions, and a register of every FLAG with its smoke-test status.
 - **CONTRACT.md**:
   - the copied schemas and the endpoint list (owned by the contract agent);
-  - how the contract and its goldens are pulled: `npm run contract:pull -- F:\Develop\TailorIT-wt-autofill` reads TailorIT's `autofill` worktree without changing it, copies `packages/shared/src/autofill/` byte for byte into `src/contract/tailorit/`, and records the commit in `SOURCE.json`;
+  - how the contract and its goldens are pulled: `npm run contract:pull -- F:\Develop\TailorIT` reads TailorIT (the owner's checkout, branch `v1.2`; the `autofill` worktree during Phases 2-6) without changing it, copies `packages/shared/src/autofill/` byte for byte into `src/contract/tailorit/`, and records the commit in `SOURCE.json`;
   - the drift rule: copied files are never hand-edited.
 - **FIXTURES.md**: how snapshots are captured, converted and redacted; naming; the route map; the expectations files; the trap table with its assertions; the synthetic fixtures.
 - **PRIVACY.md**: the data inventory (§4.6), the permission justifications (§2, the same text as the store dashboard), the telemetry fields, the LLM-transfer disclosure, and the first-run disclosure text shown in the UI.
@@ -1424,7 +1424,7 @@ TailorIT delivers the contract, pairing, the profile, the lookup and the resume 
 - the owner's dry run on 2 live postings per platform shows statuses and no values;
 - no console message contains a profile string.
 
-**Needs:** Lever and Greenhouse snapshots (see the Greenhouse question); TailorIT's contract (pairing, profile, lookup, resume), pulled from the `autofill` worktree.
+**Needs:** Lever and Greenhouse snapshots (see the Greenhouse question); TailorIT's contract (pairing, profile, lookup, resume), pulled from the `autofill` worktree (since merged into TailorIT `v1.2`).
 
 ### Phase 3: reactive loop
 **Deliverables:**

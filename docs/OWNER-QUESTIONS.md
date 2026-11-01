@@ -181,6 +181,6 @@ Related notes:
 
 ### Real pages and the dry run
 
-- Phase 4: "The dry run itself, now possible with `npm run build:worktree` plus docs/DRY-RUN.md."
+- Phase 4: "The dry run itself, now possible with `npm run build:worktree` plus docs/DRY-RUN.md." (`build:worktree` went with the worktree: the dry run now uses `npm run build` against your own TailorIT on 3100, docs/DRY-RUN.md.)
 - Phase 2 (DOM): "CAPTCHA markup from vendor docs as known, unverified (Arkose host unconfirmed) — Phase 5 confirms." (The Phase 5 notes do not say it was confirmed.)
 - Phase 2 (UI): "Not verifiable without a build / by hand: dev manifest; whether the shortcut closes a page's open widget (Alt+Shift+D is the way round); background tab keeps the dropdown open; pageCapture includes cross-origin frames; real side panel's active-tab read; reconnect after Chrome stops the idle worker (~30 s)."

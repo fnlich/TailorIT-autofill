@@ -90,10 +90,10 @@ Version rules:
   - that `AUTOFILL_TASK_KINDS ⊆ AI_TASK_KINDS`, the copied statuses equal `AI_TASK_STATUSES`, and `AutofillTaskViewSchema` parses a real `AiTaskView` of each autofill kind.
 
 **Extension side**
-- `npm run contract:pull -- F:\Develop\TailorIT-wt-autofill` reads the `autofill` worktree and copies:
+- `npm run contract:pull -- F:\Develop\TailorIT` reads the owner's checkout (branch `v1.2`; the `autofill` worktree during Phases 2-6) and copies:
   - the folder's non-test `.ts` files to `src/contract/tailorit/`;
   - `contract/autofill/v1/` to `src/contract/tailorit/v1/`.
-- It writes `SOURCE.json` with `{commit, apiVersion, pulledAt}`. The commit comes from `git rev-parse HEAD` in the worktree, which is read-only.
+- It writes `SOURCE.json` with `{commit, apiVersion, pulledAt}`. The commit comes from `git rev-parse HEAD` in that checkout, which is read-only.
 - Its `contract.test.ts` checks four things:
   - the copied files' hashes equal `contract.json.files` (no local edits);
   - the fixtures parse or fail as labelled;
@@ -353,7 +353,7 @@ The answer lists the granted scopes. `originCheck` lets the route through only w
 - The header-override branch of `resolve-routes.js` runs only for requests that pass through `proxy.ts`. Its matcher, `'/((?!api|_next/|…).*)'`, excludes `/api`.
 - `block-cross-site-dev.js`, which runs in dev only, guards just `/_next` and `/__nextjs`. A `chrome-extension://` Origin on `/api` is therefore not blocked in development.
 
-The e2e spec in §9.2 locks this in by sending a bearer through Next on the worktree's test web server (port 3300), never 3100.
+The e2e spec in §9.2 locks this in by sending a bearer through Next on TailorIT's test web server (port 3300), never 3100.
 
 ### 2.5 Why no CORS is needed
 
@@ -1091,7 +1091,7 @@ CREATE INDEX idx_autofill_answers_user ON autofill_saved_answers(user_id, update
   - `mergeSeed.test.ts`: empty fields only, `filled` paths;
   - `extensionBridge.test.ts`: a fake `chrome` object, the timeout, the "Receiving end does not exist" mapping.
 - **`e2e/specs/foundation.spec.ts:68`** must change to `['Settings', 'Autofill', 'Admin', 'Log out']`. Its account-menu check (which uses `/dev/kit`) runs on the same test web server as the spec below, never 3100.
-- `e2e/specs/autofill.spec.ts` (block comment naming work package AF) runs against the worktree's test web server: its own `npm run dev` on 3300/4300 (`E2E_BASE_URL=http://localhost:3300`), with the scratch data folder, the fake CLI and `AUTOFILL_EXTENSION_IDS=''`. It never touches 3100.
+- `e2e/specs/autofill.spec.ts` (block comment naming work package AF) runs against TailorIT's test web server on 3300/4300 (`E2E_BASE_URL=http://localhost:3300`; in Phases 2-6, the worktree's own `npm run dev`), with a scratch data folder, the fake CLI and `AUTOFILL_EXTENSION_IDS=''`. It never touches 3100.
   1. Sign in. Create a built resume through the API. Open `/settings/autofill`; the empty state shows.
   2. **Fill from my resume**: the name is split and the hints show. Save, reload, and the values persist. An EEO choice ("Prefer not to say") survives the reload.
   3. Client validation messages appear for a bad URL and for an end date before the start date.
@@ -1200,7 +1200,7 @@ All are under `/api/autofill` unless stated. "S" is the session cookie (mutating
 | Risk | Mitigation |
 |---|---|
 | A stolen token reads the profile, including sensitive answers if it has that scope. The extension keeps it in its own IndexedDB, which content scripts cannot open. | Scopes; sensitive answers fetched only when needed; 90-day expiry; revocation; last used and user agent shown in Settings; content scripts never touch the token (extension side). |
-| A Next upgrade starts stripping `Authorization` on rewrites. | Next is pinned exactly (16.3.8); the e2e spec sends a bearer through the worktree's test web server (:3300), never 3100. |
+| A Next upgrade starts stripping `Authorization` on rewrites. | Next is pinned exactly (16.3.8); the e2e spec sends a bearer through TailorIT's test web server (:3300), never 3100. |
 | Chrome's 30 s rule for service-worker fetches versus a built PDF print (`PDF_RENDER_TIMEOUT_MS` is 30 s, plus queueing at concurrency 2). | Measure `Server-Timing` in Phase 2. If p95 exceeds 10 s, a prepare step with a two-minute in-memory cache (listed in PRIVACY.md) is adopted before Phase 3 (§5). The extension asks for the file only when a planned write targets a file field. |
 | Claude CLI latency (one process per call, seconds to tens of seconds). | Batching; the 10 s wait, then polling; the extension leaves a field blank and flags it when AI is slow; per-kind model (Q8). |
 | Autofill calls use up the subscription's usage window. | Per-minute and per-day limits; interactive priority only; reuse of an identical recent result (optional). |
@@ -1235,7 +1235,7 @@ All are under `/api/autofill` unless stated. "S" is the session cookie (mutating
 16. **Q16.** Reuse an identical successful AI result within its one-hour retention, to save CLI calls on reloads?
 
 ### Critical Files for Implementation
-In the `autofill` worktree (`F:\Develop\TailorIT-wt-autofill`), not the owner's checkout:
+Built in the `autofill` worktree (`F:\Develop\TailorIT-wt-autofill`), not the owner's checkout, during Phases 2-6; since the merge they are in `F:\Develop\TailorIT` (branch `v1.2`):
 - apps\api\src\app.ts
 - apps\api\src\core\http\middleware.ts
 - apps\api\src\core\auth\session.ts

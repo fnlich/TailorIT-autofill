@@ -1,10 +1,7 @@
 /*
  * The extension's build. The manifest is the narrowest that works (docs/PRIVACY.md justifies each key), and
  * scripts/check-build.mjs fails any build that drifts from it. The e2e variant (TAILORIT_BUILD=e2e, set only by
- * scripts/e2e.mjs) differs only in TailorIT's origin, which points at the mock, and in the compiled-in test events. The
- * worktree variant (TAILORIT_BUILD=worktree, npm run build:worktree; the owner's dry run, docs/DRY-RUN.md) is a
- * production build whose TailorIT is the autofill worktree's servers on 3300: it differs only in that origin and its
- * output folder, with the same key, so the same extension id.
+ * scripts/e2e.mjs) differs only in TailorIT's origin, which points at the mock, and in the compiled-in test events.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -15,16 +12,15 @@ import { CAPTURE_PAGE, captureCommands } from './src/background/capture';
 import { CAPTURE_COPY } from './src/shared/copy';
 
 const E2E = process.env.TAILORIT_BUILD === 'e2e';
-const WORKTREE = process.env.TAILORIT_BUILD === 'worktree';
 /** The fallback when Chromium injects no content script into routed pages: fixtures served from 127.0.0.1 instead. */
 const FIXTURE_FALLBACK = E2E && process.env.TAILORIT_FIXTURE_ORIGIN === '1';
-const TAILORIT_ORIGIN = E2E ? 'http://localhost:3190' : WORKTREE ? 'http://localhost:3300' : 'http://localhost:3100';
+const TAILORIT_ORIGIN = E2E ? 'http://localhost:3190' : 'http://localhost:3100';
 /** The public half of a key pair made once (the private half was never kept), so every local build has one id. */
 const MANIFEST_KEY = readFileSync(resolve('keys/manifest-key.txt'), 'utf8').trim();
 
 export default defineConfig({
   srcDir: 'src',
-  outDir: E2E ? '.output-e2e' : WORKTREE ? '.output-worktree' : '.output',
+  outDir: E2E ? '.output-e2e' : '.output',
   // Explicit imports only, so the lint layer rules see every dependency.
   imports: false,
   vite: () => ({

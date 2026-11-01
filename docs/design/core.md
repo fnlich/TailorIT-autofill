@@ -32,7 +32,7 @@ F:\Develop\TailorIT-autofill\
   eslint.config.mjs  vitest.config.ts  wxt.config.ts
   THIRD_PARTY_NOTICES.md   # Unicode License v3 (CLDR), ROR CC0 courtesy note, NCES source note
   scripts\vocab-build.ts   # node --import tsx; writes src\core\vocab\data\*.json
-  scripts\contract-pull.mjs # npm run contract:pull -- F:\Develop\TailorIT-wt-autofill; copies the contract byte for byte
+  scripts\contract-pull.mjs # npm run contract:pull -- F:\Develop\TailorIT; copies the contract byte for byte
   vocab\sources.json       # pinned downloads: url, release, sha256, licence
   vocab\curated\*.json     # hand-kept tables (section 5.2)
   vocab\.sources\          # git-ignored extracted downloads
@@ -614,7 +614,7 @@ The wire is TailorIT's contract, in two parts:
 
 **Where the schemas live.**
 - TailorIT owns them: `packages/shared/src/autofill/`, zod, `apiVersion: 1`. The full schemas, with their caps, are in `docs/design/tailorit.md`.
-- `npm run contract:pull -- F:\Develop\TailorIT-wt-autofill` copies that folder byte for byte into `src/contract/tailorit/`. Both repositories test the copy against the same hashes and fixtures (`v1/contract.json`, the valid and invalid fixtures), so the two sides cannot drift silently.
+- `npm run contract:pull -- F:\Develop\TailorIT` copies that folder byte for byte into `src/contract/tailorit/`. Both repositories test the copy against the same hashes and fixtures (`v1/contract.json`, the valid and invalid fixtures), so the two sides cannot drift silently.
 - The core reads the contract only through `import type` from `src/contract/tailorit`, which is erased at build. The data is validated with the copied schemas before the core sees it.
 - The value lists are TailorIT's, in kebab case in the core (section 2.1). A test checks they equal the copied contract's.
 

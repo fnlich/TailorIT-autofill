@@ -27,12 +27,11 @@ One question for the Phase 0 stop: legacy `boards.greenhouse.io` pages and embed
 - **The extension:** a new git repository at `F:\Develop\TailorIT-autofill`, with no remote until the owner adds one; nothing is pushed.
   - One npm package, Node 24, exact dependency versions, a committed lockfile, and Windows-first Node scripts (TailorIT's conventions).
   - Its pure core cannot import `@tailorit/shared`; the few pure helpers it needs are rewritten there.
-- **TailorIT:** the branch `autofill`, cut from `v1.1` in its own git worktree, `F:\Develop\TailorIT-wt-autofill` (`git worktree add F:\Develop\TailorIT-wt-autofill -b autofill v1.1`), with its own `npm install`.
-  - The owner's checkout stays on v1.1, so their dev server (`tsx watch`, which migrates the database on every restart) never loads an unreviewed migration.
-  - The worktree gets a git-ignored `.env`: `DATA_DIR=%LOCALAPPDATA%\TailorIT-autofill-dev`, web 3300, API 4300, `APP_ORIGIN=http://localhost:3300`, `API_INTERNAL_URL=http://127.0.0.1:4300`, and the fake Claude CLI. Without it, a server started there would default to the owner's data folder. `AUTH_DEV_FIXED_CODE` is passed by the test launcher's environment, never written to `.env`.
-  - The branch reaches the owner's checkout only after review, with their API stopped and their data folder backed up. If the owner prefers one checkout instead, they stop `npm run dev` before the first file under `apps/api/migrations` is written.
-  - It adds pairing, the profile, the job lookup, the resume file, the AI tasks, saved answers and the settings pages.
-- **The contract between them:** owned by TailorIT (`packages/shared/src/autofill/`, zod, `apiVersion: 1`), and copied byte for byte into the extension's `src/contract/tailorit/` by `npm run contract:pull -- F:\Develop\TailorIT-wt-autofill`. Both repos test the copy against the same hashes and fixtures, so the two sides cannot drift silently.
+- **TailorIT:** the owner's checkout, `F:\Develop\TailorIT` (branch `v1.2`), on 3100 and 4100. Its autofill backend adds pairing, the profile, the job lookup, the resume file, the AI tasks, saved answers and the settings pages.
+  - Phases 2-6 built it on the branch `autofill`, cut from `v1.1` in its own git worktree, `F:\Develop\TailorIT-wt-autofill`, with its own `npm install`. The owner's checkout stayed on v1.1 meanwhile, so their dev server (`tsx watch`, which migrates the database on every restart) never loaded an unreviewed migration.
+  - The worktree had a git-ignored `.env`: `DATA_DIR=%LOCALAPPDATA%\TailorIT-autofill-dev`, web 3300, API 4300, and the fake Claude CLI.
+  - After review the branch was fast-forwarded into the owner's checkout (`v1.2`, `65dc16e`, 2026-10-31), with their dev server stopped, and the worktree was retired. The scratch data folder stays.
+- **The contract between them:** owned by TailorIT (`packages/shared/src/autofill/`, zod, `apiVersion: 1`), and copied byte for byte into the extension's `src/contract/tailorit/` by `npm run contract:pull -- F:\Develop\TailorIT`. Both repos test the copy against the same hashes and fixtures, so the two sides cannot drift silently.
 - **Design reports:** the three reports written during planning (pure core, runtime, TailorIT's side) are saved in Phase 0 as `docs/design/{core,runtime,tailorit}.md`. They hold the full tables: rules, patterns, golden cases, DDL, routes. Where a report and this plan differ, the plan wins. They were corrected to agree with this file when they were saved.
 
 ## How it works at run time
@@ -792,7 +791,7 @@ export interface Profile {
     - **The worker** (`src/background/ai-tasks.ts`, `planner.ts`): each run's questions (`RunAi`, in the run's memory only) go out one task at a time, as TailorIT's pick and classify requests, and come back as the core's verdicts. CONTRACT.md "The AI calls as built" has the translation table, the polling rules and the task ids (`RunState.aiTasks` and storage.session's `aitasks`). A task is never cancelled (TailorIT shares one task between callers that ask the same, and prunes it); one found cancelled is asked once more (the Phase 4 review, T-F2). `plan/poll` answers at once: the content script waits between polls. A field asked again after a restart is read by its task id; TailorIT's dedupe key would reattach a running one.
     - **The content script** (`loop.ts`): fields awaiting the LLM are polled (`plan/poll`) between passes, at once when the pass has other work and every `AI_POLL_MS` (1.5 s) when it has none, and their rows and writes arrive for the next pass, which writes them through the same guards as its own. `expired` (or a key the answer leaves out) puts a field back to pending (`requeueAwaiting`), so the next pass sends it in `plan/request` again; any other refusal, and `AI_WAIT_CAP_MS` (125 s) with no answer coming in, leave what still waits blank and flagged `llm-unavailable`. plan/poll never renews the run. A field the pass wrote anyway (a choice's free text typed into it) stops waiting. A dry run waits for its answers too and shows their rows, writing nothing.
     - **Never sent to the LLM:** EEO, legal, salary, consent, country and region values (no pick category; the worker refuses any item outside the list, whose label names a sensitive topic, or whose value or aliases name a sum or, outside a school, a degree and a field of study, a sensitive topic: "Gender Studies" and "United States Military Academy" are names of a field and a school, the Phase 4 review, T-F4), an injected or hard-conflict option, a label hash or a guard flag, hidden text, an aria-label-only label. The e2e marker and privacy tests read every AI request body the mock logged.
-    - **The dry-run build** (`TAILORIT_BUILD=worktree`): docs/DRY-RUN.md.
+    - **The dry-run build** (`TAILORIT_BUILD=worktree`, `npm run build:worktree`): the production build pointed at the worktree's TailorIT on 3300. It was removed when the worktree merged into TailorIT `v1.2`; the dry run now uses the production build (docs/DRY-RUN.md).
   - **As built (Phase 5, the step driver):** `src/content/orchestrator.ts` runs the core's machine (`core/steps/machine.ts`, docs/design/core.md §10.2) and carries out its effects in order; `repeatables.ts` (sections, Add clicks, "I currently work here"), `transition.ts` (the wait for the next step) and the runtime's resume are new. What follows holds over the Phase 2 and 3 notes where they differ.
     - **A run** is `run/begin`, the frame check, then the machine from the run's RunState: `createRunState` and `DETECTED` for a Fill (the launcher or the panel: always a fresh RunState), the paused run's state and `CONTINUE` for Continue after a pause, `RESUMED` by the person after an offer, `RESUMED` by the load after a reload. Every transition that changes the state stores it first (`persist`: `runstate/put` of report.ts `persistedRunState`, never for a dry run), so the step counts and Add counters survive a reload; `report` marks the frame's report due, and it goes out when the run comes to rest (review, the wait for the person's Next, a pause, the policy card, the end), so the side panel sees what a person can act on and `report/put`'s limit is never the run's pace.
     - **scan** is the policy gate (the posting page's and stored copy's states at the run's first scan, this frame's visible text at every one; a hit is `policy-notice` with the card, Fill anyway or Cancel), the raw scan and the tripwire, `detectPause` (only once no policy statement waits for the person: `AUTH` for sign-in and account creation, `PAUSE` for an email code, an entry choice or a CAPTCHA; nothing on the step is filled), and `SCANNED` with the step's signature (`core/steps/signature.ts` over the adapter's `stepSignature` parts; one signature for every step without the hook), the policy hits, the tripwire hits new since the last count, and the 32 nearest canaries. A new step's notices start afresh; the run's tripwire, policy and policy-state notices stay. A frame inside another page scans a later step only while it is still seen there.
@@ -918,7 +917,7 @@ export interface Profile {
     - **Posting text** (E11, E12): none from a frame inside another page, and none in a dry run; the lookup's stored posting text never reaches a draft (tests: `content/review-p6.browser.test.ts`, `background/review-p6.test.ts`).
     - **Tests:** `src/core/plan/screened.test.ts`; `src/background/review-p6.test.ts`; `src/content/review-p6.browser.test.ts`; `src/content/ui/panel.browser.test.ts` (E1, E7); the setting-off case of `phase6-worker.test.ts` now asserts on the worker it set (E10).
 
-## TailorIT's side (branch `autofill`, in its worktree; the full design, with DDL and route table, becomes `docs/design/tailorit.md`)
+## TailorIT's side (built on the branch `autofill` in its worktree, now in `F:\Develop\TailorIT` on `v1.2`; the full design, with DDL and route table, becomes `docs/design/tailorit.md`)
 - **Contract** (`packages/shared/src/autofill/`, imported as `@tailorit/shared/autofill`, not in the root barrel):
   - zod schemas that import only `zod` and each other (no `node:*`), so the folder is copied byte for byte into the extension.
   - `npm run autofill:contract` writes `contract.json` (file hashes and JSON Schemas) beside hand-written valid and invalid fixtures.
@@ -946,7 +945,7 @@ export interface Profile {
   - `attachBearer` runs before `originCheck`. A request with a `tia_` bearer belongs to the token alone: its cookie is never read, even when the token is bad, and the Origin check skips it, because a page cannot make a browser attach it.
   - `tokenScope` limits token requests to `^/api/autofill/[a-z0-9/-]+$` and `GET`/`DELETE /api/ai/tasks/:uuid` (anchored, case-sensitive), and checks the version header. Another kind's task answers 404.
   - Any other Authorization header (a proxy's Basic auth) leaves the cookie working.
-  - Next 16.3.8's `/api` rewrite forwards `Authorization` (checked in its proxy code); the e2e spec proves it through the worktree's test web server. No CORS is needed: the service worker has host permission.
+  - Next 16.3.8's `/api` rewrite forwards `Authorization` (checked in its proxy code); the e2e spec proves it through TailorIT's test web server (3300, never 3100). No CORS is needed: the service worker has host permission.
 - **Profile** (`autofill_profiles`, one row per user): two JSON columns, each validated on every write.
   - `profile`: names, contact, address, links, education and experience as entities, languages, skills, preferences, and the resume to attach.
   - `sensitive`: work authorization per country, EEO, age, pronouns and pay. Each answer is tri-state: not provided (left blank and flagged), declined (the form's decline option, else blank), or a value.
@@ -1004,7 +1003,7 @@ export interface Profile {
   - Built from kit components; validation runs the contract's own schemas.
   - Tests:
     - supertest API tests for every route (auth and scope, the unticked-box token getting 403 on `/profile/sensitive`, revision conflicts, screening with no CLI call);
-    - an e2e spec that sends a bearer through Next on the worktree's test servers, never 3100.
+    - an e2e spec that sends a bearer through Next on TailorIT's test servers (3300 and 4300, a scratch data folder), never 3100.
 
 ## Manifest (`wxt.config.ts`, narrowest that works)
 - **`permissions`:** `storage` and `sidePanel`, nothing else. WXT adds `tabs` and `scripting` to dev builds only, so no test runs a dev build. Dev builds also get `pageCapture` and two `commands` entries for the snapshot hotkey (Alt+Shift+S captures now, Alt+Shift+D after 3 s); check-build proves both, the capture page and the capture hook are absent from production.
@@ -1014,7 +1013,7 @@ export interface Profile {
   - `https://jobs.ashbyhq.com/*`;
   - `https://*.myworkdayjobs.com/*`, `https://*.myworkdaysite.com/*`.
   - Greenhouse's EU hosts are added once a real posting confirms them; Workable and SmartRecruiters come later.
-- **`host_permissions`:** the same ATS list, so the panel can read the active tab's address on those sites without `tabs`, plus TailorIT's origin, fixed per build: `http://localhost:3100/*` in production, the mock's `http://localhost:3190/*` in the e2e build, and the autofill worktree's `http://localhost:3300/*` in the dry-run build (`npm run build:worktree`, `.output-worktree`, the same key; docs/DRY-RUN.md).
+- **`host_permissions`:** the same ATS list, so the panel can read the active tab's address on those sites without `tabs`, plus TailorIT's origin, fixed per build: `http://localhost:3100/*` in production, and the mock's `http://localhost:3190/*` in the e2e build. (Phases 4-6 also had a dry-run build for the autofill worktree's `http://localhost:3300/*`; it went with the worktree.)
   - An explicit port is narrower than Chrome's port-less pattern, which matches every port.
   - A custom server address is a "Later" item, so there are no `optional_host_permissions`.
 - **`externally_connectable`:** TailorIT's origin only, for pairing: `{matches: [origin]}` and no other key (no `ids`, no `accepts_tls_channel_id`).
@@ -1025,7 +1024,7 @@ export interface Profile {
   - `checkVisibility`'s options need only 121.
 - **Key:** local builds carry a fixed public `key`, so the extension ID is the same on every machine and folder. That ID is the default in TailorIT's `AUTOFILL_EXTENSION_IDS`. A store build would drop it ("Later").
 - **Never present:** `web_accessible_resources`, a CSP override, remote code. LLM output is data (an index, an enum value or capped text) applied by packaged code.
-- **`scripts/check-build.mjs`** asserts on the Chrome, Edge and e2e outputs, and on the dry-run build when it is there (`--worktree` requires it: production but for its origin, none of the e2e hooks), and that no build's bundles name another build's TailorIT:
+- **`scripts/check-build.mjs`** asserts on the Chrome, Edge and e2e outputs, and that no build's bundles name another build's TailorIT:
   - exactly these permissions and hosts;
   - `externally_connectable` exactly `{matches: [TailorIT's origin]}`, compared as a whole object;
   - `key` present and equal to the committed public key;
@@ -1040,7 +1039,7 @@ export interface Profile {
 ## Phase 0 scaffold (after approval; no feature code)
 1. **TailorIT housekeeping.**
    - Restore the v1.1 editor plan to `docs/plans/v1.1-editor.md` on `v1.1` (docs only).
-   - The `autofill` worktree is created when TailorIT work starts (Phase 2).
+   - The `autofill` worktree is created when TailorIT work starts (Phase 2). (It was merged into `v1.2` and retired after Phase 6.)
 2. **New repo `F:\Develop\TailorIT-autofill`.**
    - `git init`, no remote.
    - `.gitignore`: `node_modules`, `.output*`, `.wxt`, `e2e/artifacts`, `test-results`, `fixtures/_incoming` (raw snapshots may hold personal data), `.env*`.
@@ -1213,7 +1212,7 @@ export interface Profile {
   - supertest API tests in its own suite (`npm run verify`);
   - the fake Claude CLI with scenarios for the new kinds, including hostile answers: an out-of-range index, an extra item, a string index, a bad category, a canary or "as an AI" in a draft, an overlong draft;
   - a recorded-input test proving no sensitive value reaches the CLI;
-  - an e2e spec for the settings pages, run against the worktree's test servers.
+  - an e2e spec for the settings pages, run against TailorIT's test servers (3300 and 4300), never 3100.
 - **CI** (`.github/workflows/ci.yml`, written in Phase 0, run locally until the owner adds a remote):
   - Windows and Ubuntu;
   - typecheck, lint, unit, both builds, check-build and zip;
@@ -1225,9 +1224,9 @@ export interface Profile {
   - `npm run verify` runs typecheck, lint, `test`, `test:dom`, `build`, `build:edge`, `check:build` and `test:e2e`, stopping at the first failure, with a summary table.
   - `npm run test:e2e` alone builds both variants, starts the mock on 3190, runs Playwright and cleans up. It never uses 3100, 4100, 3300 or 4300.
   - For a manual run, load `.output/chrome-mv3` (Chrome) or `.output/edge-mv3` (Edge) unpacked. Edge is checked by hand each phase, pairing and a profile fetch included.
-- **TailorIT** (in the worktree):
+- **TailorIT** (`F:\Develop\TailorIT`, branch `v1.2`; the worktree during Phases 2-6):
   - `npm run verify`.
-  - Every Playwright run sets `E2E_BASE_URL=http://localhost:3300`. The test servers are the worktree's own `npm run dev` on 3300/4300 with the scratch data folder and the fake CLI. So `autofill.spec.ts` and the account-menu check in `foundation.spec.ts` (which uses `/dev/kit`) both run, and nothing touches 3100.
+  - Every Playwright run sets `E2E_BASE_URL=http://localhost:3300`. The test servers are TailorIT's own, on 3300/4300 with a scratch data folder and the fake CLI (in Phases 2-6, the worktree's `npm run dev`). So `autofill.spec.ts` and the account-menu check in `foundation.spec.ts` (which uses `/dev/kit`) both run, and nothing touches 3100.
 - Each phase report shows these results, the gaps, and the snapshots needed next. A dry run on two live postings per platform shows statuses and no values.
 
 ## Later (not in phases 0-6; each only on the owner's word)
@@ -1327,7 +1326,7 @@ export interface Profile {
     - Recommended: `0004` brings both databases to one table, with the committed kinds, the bank's kinds and the autofill kinds, and keeps the bank's columns. The bank then drops its own 0003. The cost: usage values already recorded in the dev database cannot be carried over.
     - The alternative normalises to the committed schema, which deletes the bank's task rows.
     - The owner chooses at the Phase 3 stop, before Phase 4 starts. Read-only checks run first on a copy of the database: migrations, table and index definitions, kinds present, usage values, orphans, references, name clashes.
-    - Development runs in the worktree against a scratch data folder, so nothing reaches the owner's database until review.
+    - Development ran in the worktree against a scratch data folder (Phases 2-6), so nothing reached the owner's database until review.
 12. **Calibration.** The fuzzy weights, the 0.88 threshold, the margins and the confidence tiers are design defaults. Phase 1 calibrates them on the owner's real option lists (school, degree and discipline lists from snapshots), and the golden table pins the stages so any change is reviewed.
 13. **Vocabulary scope.**
     - The ROR subset may miss some international schools; those fall back to the person's own spelling plus guarded fuzzy matching.
