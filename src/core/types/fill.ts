@@ -65,6 +65,10 @@ export const REASON_CODES = [
   'cover-letter-attached', 'cover-letter-written', 'cover-letter-would-write', 'cover-letter-waiting',
   'cover-letter-failed', 'cover-letter-none', 'cover-letter-unavailable', 'cover-letter-timed-out',
   'cover-letter-reconnect',
+  // the owner's decisions of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): an optional consent not pre-approved (marketing,
+  // SMS), left unticked and recorded as decided; an "I did not use AI" attestation left for the person because the run
+  // used AI, so ticking it would be untrue
+  'consent-optional-unticked', 'ai-attestation-ai-used',
   // a bug
   'internal-error',
 ] as const;

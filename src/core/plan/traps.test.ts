@@ -9,7 +9,8 @@ import { resolve } from '../resolver/resolve';
 import type { FieldSpec } from '../types/field';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import type { RawPageText } from '../types/text';
-import { fieldOf, goldenProfile, NOW, planOf, specOf, vocab } from './plan.testkit';
+import { sha256Hex } from '../text/sha256';
+import { fieldOf, goldenProfile, NOW, planOf, settingsWith, specOf, vocab } from './plan.testkit';
 import { settleRow } from './settle';
 
 /** The trap table asserts each field's category, classifier and reason: the resolver's verdict, which stays in the
@@ -91,8 +92,37 @@ describe('trap 6: attention checks', () => {
     }
   });
 
-  it('asks no LLM about them', () => {
-    expect(out.awaiting).toEqual([]);
+  // The owner's decision of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): TailorIT's AI answers an attention check as its
+  // own visible question asks, in the `all` scope, marked "AI guess"; never one whose words a person cannot see.
+  it('asks TailorIT\'s answer route about each, in the `all` scope, with its visible words only', () => {
+    expect(out.awaiting).toEqual([human.key, purple.key, scale.key]);
+    expect(out.ask?.answers?.map((item) => [item.key, item.scope, item.question])).toEqual([
+      [human.key, 'all', human.label], [purple.key, 'all', purple.label], [scale.key, 'all', scale.label]]);
+    expect(out.ask?.classify ?? []).toEqual([]);
+    expect(out.ask?.tiebreaks ?? []).toEqual([]);
+  });
+
+  it('asks no LLM about them with the `all` scope off', () => {
+    const standard = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, answerAll: false } });
+    expect(planOf([specOf('First name', 'text'), human, purple, scale], { settings: standard }).awaiting).toEqual([]);
+  });
+
+  it('writes the answer as an "AI guess" pick of the option it names', () => {
+    const answers = new Map([[purple.key as string, { key: purple.key, kind: 'choice' as const,
+      optionSetHash: purple.optionSetHash as string, index: 1, labelHash: sha256Hex('Purple'), basis: 'guess' as const,
+      taskId: 'c3e5a7b9-2d4f-4b6c-8e0a-1f3b5d7e9a20' }]]);
+    expect(fieldOf(planOf([purple], { ai: { verdicts: new Map(), classifications: new Map(), answers } }), purple))
+      .toMatchObject({ write: { value: { kind: 'option', index: 1, cleanLabel: 'Purple' },
+        origin: { provenance: 'llm-pick' } }, row: { status: 'verified', reason: 'ai-guess', category: 'attentionCheck',
+        needsUserAction: false } });
+  });
+
+  it('never asks one whose words only an aria-label carries, or a consent worded as one', () => {
+    const hidden = specOf('Attention check: select PURPLE.', 'radio', { labelSource: 'aria-label', labelVisible: false,
+      optionLabels: ['Red', 'Purple'] });
+    const consent = specOf('To prove you read this, tick the box to agree to the privacy policy.', 'checkbox');
+    const quiet = planOf([hidden, consent]);
+    expect(quiet.ask?.answers ?? []).toEqual([]);
   });
 });
 

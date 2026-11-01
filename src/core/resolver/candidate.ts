@@ -7,6 +7,7 @@
  * format-unsupported rather than filled some other way.
  */
 import type { FieldKind } from '../enums';
+import type { PlaceParts } from '../matcher/place';
 import type { MatchDomain } from '../matcher/types';
 import type { ReasonCode } from '../types/fill';
 import type { FileRef, IntendedValue, ValueOrigin } from '../types/intent';
@@ -24,6 +25,9 @@ export interface Choice {
   hispanicLatino?: boolean;
   /** Typed into the box the chosen option reveals: a self-described gender. */
   freeText?: string;
+  /** For a place (the current location, a job's): its parts, so a list of places is read by them where no text stage
+   *  matches (matcher/place.ts: "Austin, TX" chooses "Austin, Texas, United States"). */
+  place?: PlaceParts;
 }
 
 /** A value in every shape it has. */

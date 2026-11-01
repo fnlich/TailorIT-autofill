@@ -57,8 +57,8 @@ const AI_WRITTEN: ReadonlySet<ReportRow['reason']> = new Set<ReportRow['reason']
   'cover-letter-written']);
 
 /**
- * How a row marks the AI, by E1's rule (src/content/targets.ts aiMarkOf, which the page's highlights use; the UI may not
- * import the content script, so it is mirrored here): 'guess' for an answer with nothing to go on ("AI guess"),
+ * How a row marks the AI, by E1's rule (the review is the one place the marks are shown: nothing is drawn over the
+ * page's fields since the owner's decision of 2026-11-01): 'guess' for an answer with nothing to go on ("AI guess"),
  * 'written' for a draft or an answer the AI wrote, verified as written ("AI"); undefined otherwise (a row that needs
  * the person shows its status).
  */

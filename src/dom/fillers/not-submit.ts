@@ -4,6 +4,8 @@
  * - the adapter's Submit button, anything inside it, and anything that holds it;
  * - the adapter's Next button, anything inside it and anything that holds it, unless the step machine allows Next (an
  *   Add, an option or a box is never the step's Next: the Phase 5 review, X-S7);
+ * - the buttons the adapter names never to press (neverPress: Greenhouse's "Autofill my application", "Locate me",
+ *   Dropbox, Google Drive, "Enter manually", "Clear selections" and a chip's remove button), and anything inside them;
  * - any element whose text is a submit word (submit, apply, send, finish, complete, confirm);
  * - any element whose activation would submit a form: a button with a form owner whose .type is "submit" (a typeless
  *   button included), input[type=submit] and input[type=image], anything inside such a button, and a <label> (or an
@@ -19,7 +21,7 @@ export const SUBMIT_WORDS = /\b(?:submit|apply|send|finish|complete|confirm)\b/i
 
 /** Why a click was refused. */
 export const CLICK_REFUSALS = ['adapter-submit', 'submit-word', 'submits-form', 'adapter-next', 'inside-submit',
-  'label-of-refused'] as const;
+  'label-of-refused', 'adapter-never-press'] as const;
 export type ClickRefusal = (typeof CLICK_REFUSALS)[number];
 
 /** Where the adapter's Submit and Next buttons are looked up, and whether the step machine allows Next. */
@@ -52,6 +54,8 @@ function refusalOf(el: Element, ctx: NotSubmitContext, depth: number): ClickRefu
   // Next itself, on the step machine's word on a step declared not final, is the one click near it that may be made.
   const next = ctx.root !== null ? ctx.adapter?.nextButton?.(ctx.root) ?? null : null;
   if (next !== null && (next.contains(el) || el.contains(next)) && !nextException(el, ctx)) return 'adapter-next';
+  const never = ctx.root !== null ? ctx.adapter?.neverPress?.(ctx.root) ?? [] : [];
+  if (never.some((button) => button.contains(el))) return 'adapter-never-press';
   const button = el.parentElement?.closest('button') ?? null;
   if (button !== null && depth < 4 && refusalOf(button, ctx, depth + 1) !== null) return 'inside-submit';
   const label = el.closest('label');

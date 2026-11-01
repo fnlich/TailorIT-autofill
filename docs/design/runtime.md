@@ -38,7 +38,7 @@ src/
   dom/         thresholds visibility camouflage visible-text raw-scan labels kinds proxy constraints sections values
                pause-detect scan settle time fillers/{text,select,choice,file,date,verify}
   adapters/    types registry generic/ lever/ greenhouse/ ashby/ workday/   (url.ts pure, index.ts DOM)
-  content/     runtime orchestrator pass steps run transfer report ui/{shadow,launcher,highlights,styles,panel.tsx}
+  content/     runtime orchestrator pass steps run transfer report ui/{shadow,launcher,notices,ai-edits,styles,panel.tsx}
   background/  index router senders server-client auth planner profile-cache resume-transfer ai-tasks runstate-store frames reports settings telemetry
                timers (the worker's only timers)
   messaging/   envelope schemas channels ports
@@ -946,7 +946,7 @@ export interface Adapter {
 - Actions: Fill, Continue, Open review (`panel/open`).
 - Every handler starts with `if (!event.isTrusted) return;`, and events stop propagating at the host.
 
-**Highlights.**
+**Highlights.** (Removed by the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11: nothing is drawn over the page's fields, Next or Submit; the review lists every field with its status and AI mark, and Show on page scrolls to a field and focuses it. What follows is the original design.)
 - Outlines with `pointer-events: none`, drawn in the same shadow root at the fields' document rects. Updated with requestAnimationFrame throttling on scroll, on resize and after each settle; at most 200.
 - One colour and one chip per status (verified, filled, flagged, blocked; drafts dashed). Hidden radios and file inputs are highlighted on their proxy element.
 - The page's own DOM is never annotated.

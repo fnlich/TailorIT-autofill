@@ -43,7 +43,7 @@ import type {
 } from '../dom/types';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
-  fillWidget, isActionable, searchTypeahead, type TypeaheadHooks, type WidgetFillContext,
+  fillWidget, isActionable, searchTypeahead, type TypeaheadHooks, type WidgetFillContext, type WidgetReadiness,
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
@@ -65,6 +65,8 @@ export type PlanAnswer = AnswerData<'plan/request'>;
 export interface PassEnv {
   content: ContentPlatform;
   adapter: Adapter;
+  /** The form root, read at each use: the run finds it again by the adapter's hook, so a form the page draws again
+   *  (the whole form, its root included) is the new one. */
   root: Element;
   platform: Platform;
   frameId: number;
@@ -116,6 +118,9 @@ export interface WidgetWriteEnv {
   /** plan/request for one field, with the whole pass's index: a remote typeahead's results go to the worker, which
    *  matches them. */
   plan(specs: FieldSpec[], planKeys: FieldKey[]): Promise<PlanAnswer>;
+  /** The run's readiness for declared activations (dom/widgets' WidgetReadiness): only the run's first one the page
+   *  does not answer waits for its script to attach. */
+  readiness?: WidgetReadiness;
 }
 
 /** What else a write may need. */
@@ -307,7 +312,8 @@ function writtenWidget(field: PlannedField, write: PlannedWrite, planned: FillRe
 async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
   planned: FillResult, target: FieldTarget, widgets: WidgetWriteEnv | undefined): Promise<WriteResult> {
   if (widgets === undefined) return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
-  const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings };
+  const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings,
+    ...(widgets.readiness === undefined ? {} : { readiness: widgets.readiness }) };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
   const outcome = await fillWidget(target, write.value, ctx, write.origin);
   if (env.signal.aborted || !env.valid()) throw new RunAborted();

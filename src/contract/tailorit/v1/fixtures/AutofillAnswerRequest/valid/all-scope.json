@@ -1,0 +1,61 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|main|will-you-now-or-in-the-future-require-sponsorship|5b8d2e7f1a4c6093|0",
+      "shape": "choice",
+      "kind": "radio",
+      "question": "Will you now or in the future require sponsorship for employment visa status?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": "5b8d2e7f1a4c6093",
+      "options": [
+        {
+          "index": 0,
+          "label": "Yes"
+        },
+        {
+          "index": 1,
+          "label": "No"
+        }
+      ],
+      "maxLength": null
+    },
+    {
+      "key": "lever|main|what-are-your-salary-expectations|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "What are your salary expectations?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 40
+    },
+    {
+      "key": "ashby|main|to-show-you-read-this-select-purple|9c1e4a7b2d5f8036|0",
+      "shape": "choice",
+      "kind": "select",
+      "question": "To show you read this, select Purple.",
+      "hint": "",
+      "section": "",
+      "optionSetHash": "9c1e4a7b2d5f8036",
+      "options": [
+        {
+          "index": 1,
+          "label": "Red"
+        },
+        {
+          "index": 2,
+          "label": "Purple"
+        }
+      ],
+      "maxLength": null
+    }
+  ],
+  "scope": "all",
+  "jobText": "Northwind Traders is hiring a Senior Software Engineer in Austin. The base pay range is $140,000 to $170,000.",
+  "company": "Northwind Traders",
+  "jobTitle": "Senior Software Engineer",
+  "resumeId": null,
+  "canaries": []
+}

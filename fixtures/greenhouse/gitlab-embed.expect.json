@@ -34,8 +34,7 @@
       "kind": "combobox",
       "required": false,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#country",
       "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country."
@@ -98,8 +97,7 @@
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#question_38896359002"
     },
@@ -118,8 +116,7 @@
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#question_38896360002"
     },
@@ -138,8 +135,7 @@
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#question_38599929002"
     },
@@ -158,8 +154,7 @@
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#question_38599932002"
     },
@@ -178,8 +173,7 @@
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#question_38599930002"
     },
@@ -206,8 +200,7 @@
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#question_38599933002"
     },
@@ -226,8 +219,7 @@
       "kind": "combobox",
       "required": true,
       "section": "Apply for this job",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#question_38599934002"
     },
@@ -246,8 +238,7 @@
       "kind": "combobox",
       "required": false,
       "section": "Voluntary Self-Identification",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#gender"
     },
@@ -256,8 +247,7 @@
       "kind": "combobox",
       "required": false,
       "section": "Voluntary Self-Identification",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#hispanic_ethnicity",
       "note": "No race question is rendered in this capture."
@@ -267,8 +257,7 @@
       "kind": "combobox",
       "required": false,
       "section": "Voluntary Self-Identification",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "options": "lazy",
       "control": "#veteran_status"
     },

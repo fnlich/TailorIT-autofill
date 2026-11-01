@@ -1,0 +1,61 @@
+<!doctype html>
+<!--
+  Synthetic: Greenhouse's application form with the real react-select v5 inside Greenhouse's wrapper (app.ts says
+  exactly what it does, from the Greenhouse capture of 2026-11-01), built by Vite in memory by its e2e spec
+  (e2e/helpers/greenhouse-fixture.ts) and served at Greenhouse addresses, where the Greenhouse adapter handles it:
+  https://job-boards.greenhouse.io/tailoritfixture/jobs/9100 draws the form at once, .../9101 shows its markup and
+  attaches React 2.5 s later, and .../9102 shows its markup and 2.5 s later draws the whole form again with new nodes,
+  the form element included. The DOM tests mount the same app into this page's form. The form posts to /__submitted. What React holds, and what the
+  page saw, is window.__gh (app.ts, GreenhouseLog).
+  The styles are a few of Greenhouse's own (the visually hidden labels and file inputs, intl-tel-input's hidden
+  dropdown) and plain ones; react-select's are emotion's own, inserted by react-select.
+-->
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <title>Job Application for Software Engineer at TailorIT Fixture</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    .application--container { max-width: 760px; margin: 24px auto 600px; padding: 0 16px; }
+    .application--header { display: flex; justify-content: space-between; align-items: center; }
+    .field-wrapper { margin-top: 16px; }
+    .label { display: block; font-weight: 600; margin-bottom: 4px; }
+    .input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; border-radius: 4px; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .phone-input { display: flex; gap: 16px; border: 0; padding: 0; margin: 0; }
+    .phone-input__country { width: 220px; }
+    .phone-input__phone { flex: 1 1 0%; }
+    .iti__country-container { display: none; }
+    .iti__hide { display: none; }
+    .iti__flag { display: inline-block; width: 16px; height: 11px; margin-right: 8px; background: #c33; }
+    .icon-button { border: 0; background: none; padding: 4px; }
+    .checkbox { border: 0; padding: 0; margin: 0; }
+    .checkbox__wrapper { display: flex; gap: 8px; align-items: center; }
+    .checkbox__input input { appearance: none; width: 16px; height: 16px; border: 1px solid #555; border-radius: 2px; margin: 0; }
+    .checkbox__input input:checked { background: #2b6; }
+    .file-upload .button-container { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn { border: 1px solid #555; border-radius: 16px; background: #fff; padding: 4px 12px; }
+    .btn--tertiary { border: 0; background: none; color: #036; padding: 4px 0; }
+    .education--container, .eeoc__container { margin-top: 24px; }
+    .application--submit { margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div class="application--container">
+    <div class="application--header">
+      <div class="application--header--text">
+        <div class="application--header--title"><h2 class="section-header font-primary">Apply for this job</h2></div>
+      </div>
+      <div class="application--header--buttons">
+        <div class="application--header--autofill-with-greenhouse"><div class="autofill_button autofill_button--filled" id="autofill-host"></div></div>
+      </div>
+    </div>
+    <form method="post" action="/__submitted" id="application-form" class="application--form">
+      <div id="gh-root"></div>
+      <div class="application--submit"><button class="btn btn--pill" type="submit">Submit application</button></div>
+    </form>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

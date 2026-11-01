@@ -88,7 +88,7 @@ describe('the page channel\'s additions', () => {
 
   it('push a saved change of the settings to a frame as its content settings only (the Phase 5 review, C-S2)', () => {
     const changed = { v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
-      llm: { tiebreak: true, classify: true, drafts: false, answers: true, confirmDrafts: false,
+      llm: { tiebreak: true, classify: true, drafts: false, answers: true, answerAll: true, confirmDrafts: false,
         whenForbidden: 'profile-only' }, offerToSaveAnswers: true } };
     expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);
     // Never the rest of the settings, never anything else.

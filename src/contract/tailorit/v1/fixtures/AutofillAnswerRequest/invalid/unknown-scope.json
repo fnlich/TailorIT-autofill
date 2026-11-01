@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "key": "lever|main|what-are-your-salary-expectations|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "What are your salary expectations?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 40
+    }
+  ],
+  "scope": "everything",
+  "jobText": "",
+  "resumeId": null
+}

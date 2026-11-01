@@ -229,6 +229,10 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
             await session.set({ [AI_TASKS_KEY]: AiTaskRecordSchema.parse(next) });
           });
         },
+        async any() {
+          if ((await taskEntries()).some((entry) => entry.applicationKey === applicationKey)) return true;
+          return Object.keys((await store.get(applicationKey, tabId))?.aiTasks ?? {}).length > 0;
+        },
         forget(hash) {
           return queue.run('aitasks', async () => {
             const entries = await taskEntries();

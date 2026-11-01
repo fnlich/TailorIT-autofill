@@ -2,12 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { isInOwnUi } from '../../dom/own-ui';
-import { MAX_HIGHLIGHTS, type HighlightItem } from './highlights';
 import type { LauncherAction } from './launcher';
 import type { PolicyChoice } from './notices';
 import { mountPageUi, type PageUi } from './page-ui';
-import { COPY } from '../../shared/copy';
-import { STATUS_COLOURS } from '../../shared/palette';
 
 /** A trusted click (Playwright's input) at an element of the closed root, aimed through the host's box. */
 async function trustedClick(ui: PageUi, target: Element): Promise<void> {
@@ -165,70 +162,21 @@ describe('the in-page UI', () => {
     expect(ui.host.isConnected).toBe(false);
   });
 
-  it('draws at most 200 highlights, blocked and flagged first, and never touches the page’s elements', async () => {
-    const fixture = await loadFixture(document, '<!doctype html><body><form></form></body>');
+  it('draws nothing over the page’s fields, and never touches the page’s elements (the owner’s decision of 2026-11-01)', async () => {
+    const fixture = await loadFixture(document, '<!doctype html><body><form><input id="a"><input id="b"></form></body>');
     const form = fixture.doc.querySelector('form')!;
-    const fields = Array.from({ length: 250 }, (_, i) => {
-      const input = fixture.doc.createElement('input');
-      input.id = `f${i}`;
-      form.append(input);
-      return input;
-    });
     const changes: MutationRecord[] = [];
     const observer = new fixture.view.MutationObserver((records) => changes.push(...records));
     observer.observe(form, { attributes: true, subtree: true, childList: true });
     const { ui } = mount(fixture.doc);
-    const items: HighlightItem[] = fields.map((input, i) => ({ key: input.id,
-      status: i < 240 ? 'verified' : 'blocked', draft: i === 0, elements: [input] }));
-    ui.setHighlights(items);
-    expect(ui.highlightCount).toBe(MAX_HIGHLIGHTS);
-    const drawn = Array.from(ui.shadow.querySelectorAll<HTMLElement>('.hl:not(.focus)'));
-    expect(drawn.filter((el) => el.dataset.status === 'blocked')).toHaveLength(10);
-    expect(drawn.every((el) => fixture.view.getComputedStyle(el).pointerEvents === 'none')).toBe(true);
-    ui.showFocus([fields[3]!]);
-    expect(ui.focusShown).toBe(true);
+    ui.anchorTo(form);
+    await new Promise((resolve) => fixture.view.requestAnimationFrame(resolve));
+    // The launcher, the notices and the Edit with AI layer only: no outline, no chip, no highlight layer.
+    expect(ui.shadow.querySelectorAll('.highlights, .hl, .chip')).toHaveLength(0);
+    expect(ui.shadow.querySelector('.ai-edits')).not.toBeNull();
+    expect(Object.keys(ui)).not.toContain('setHighlights');
     observer.disconnect();
     expect(changes.length + observer.takeRecords().length).toBe(0);
-  });
-
-  it('gives each status one colour and one chip, the report’s own, and dashes AI drafts', async () => {
-    const fixture = await loadFixture(document, '<!doctype html><body><form></form></body>');
-    const form = fixture.doc.querySelector('form')!;
-    const input = (id: string) => {
-      const el = fixture.doc.createElement('input');
-      el.id = id;
-      form.append(el);
-      return el;
-    };
-    const { ui } = mount(fixture.doc);
-    ui.anchorTo(form);
-    ui.setHighlights([
-      { key: 'v', status: 'verified', draft: false, elements: [input('v')] },
-      { key: 'f', status: 'filled', draft: false, elements: [input('f')] },
-      { key: 'g', status: 'flagged', draft: false, elements: [input('g')] },
-      { key: 'b', status: 'blocked', draft: false, elements: [input('b')] },
-      { key: 'd', status: 'flagged', draft: true, elements: [input('d')] },
-      { key: 'c', status: 'filled', draft: true, draftConfirmed: true, elements: [input('c')] },
-    ]);
-    await new Promise((resolve) => fixture.view.requestAnimationFrame(resolve));
-    const drawn = Array.from(ui.shadow.querySelectorAll<HTMLElement>('.hl:not(.focus)'));
-    const rgb = (hex: string) => `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(', ')})`;
-    const seen = drawn.map((el) => {
-      const style = fixture.view.getComputedStyle(el);
-      const chip = el.querySelector<HTMLElement>('.chip')!;
-      return [el.dataset.status, style.borderTopColor, style.borderTopStyle, chip.textContent,
-        fixture.view.getComputedStyle(chip).backgroundColor];
-    });
-    expect(seen).toEqual([
-      ['blocked', rgb(STATUS_COLOURS.blocked.fg), 'solid', COPY.chips.blocked, rgb(STATUS_COLOURS.blocked.fg)],
-      ['flagged', rgb(STATUS_COLOURS.flagged.fg), 'solid', COPY.chips.flagged, rgb(STATUS_COLOURS.flagged.fg)],
-      ['flagged', rgb(STATUS_COLOURS.flagged.fg), 'dashed', COPY.draftChip, rgb(STATUS_COLOURS.flagged.fg)],
-      ['filled', rgb(STATUS_COLOURS.filled.fg), 'solid', COPY.chips.filled, rgb(STATUS_COLOURS.filled.fg)],
-      ['filled', rgb(STATUS_COLOURS.filled.fg), 'dashed', COPY.chips.filled, rgb(STATUS_COLOURS.filled.fg)],
-      ['verified', rgb(STATUS_COLOURS.verified.fg), 'solid', COPY.chips.verified, rgb(STATUS_COLOURS.verified.fg)],
-    ]);
-    // The outlines repeat the report; assistive technology reads the report.
-    expect(ui.shadow.querySelector('.highlights')?.getAttribute('aria-hidden')).toBe('true');
   });
 });
 

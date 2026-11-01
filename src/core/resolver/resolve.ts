@@ -63,6 +63,9 @@ export interface ResolveContext {
   postingCompany?: string;
   /** The profile entry each block of an assigned repeatable section is filled from (steps/blocks.ts, Phase 5). */
   blockEntries?: BlockEntries;
+  /** The run used no AI at all (a profile-only frame, and no AI asked for its application before): an "I did not use
+   *  AI" attestation is then true, and ticked (the owner's decision of 2026-11-01). */
+  aiFree?: boolean;
 }
 
 /** What decided a field's category, before any value: a tripwire in its label, an attention check, the rules, the
@@ -228,7 +231,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
     case 'eeo':
       return eeoValue(category, spec, profile, settings, vocab);
     case 'consent':
-      return consentValue(category, rules.consentKinds, profile, settings);
+      return consentValue(category, rules.consentKinds, profile, settings,
+        { required: spec.required, aiFree: ctx.aiFree === true });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':

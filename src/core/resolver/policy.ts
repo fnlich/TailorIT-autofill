@@ -18,8 +18,10 @@
  *   and blank otherwise. Criminal history is the person's own answer in the sensitive part (version 2), matched by its
  *   polarity alone; absent or declined, the field is blank and flagged. It answers a generic conviction question; a
  *   narrower one (a felony, a time, unspent) only when it is No; never an arrest or a charge (criminal-not-covered).
- * - Consent: ticked only when every consent kind the label names is pre-approved in settings (§8.7); an AI attestation
- *   and unrecognised consent never can be. A pre-approved signature types the person's full name.
+ * - Consent: ticked when every consent kind the label names is pre-approved in settings (§8.7), else when the form
+ *   requires it (the owner's decision of 2026-11-01: it is needed to apply, a binding clause included); an optional
+ *   one not pre-approved is left unticked, decided. An AI attestation is ticked only when the run used no AI at all. A
+ *   signature types the person's full name on the same terms.
  * - The sensitive part (authorization, EEO, age, criminal record, pronouns, pay): until it is loaded no such field is
  *   answered. While it is 'not-loaded' the plan asks the worker to fetch it (planFrame's needsSensitive); when the
  *   token may not read it ('not-shared') or the fetch failed ('unavailable'), those fields are blank and flagged, but
@@ -419,22 +421,47 @@ function consentCategoryOf(category: FieldCategory): ConsentCategory | null {
   return (CONSENT_CATEGORIES as readonly string[]).includes(kind) ? kind as ConsentCategory : null;
 }
 
-/** The value of a consent field (§8.7): every consent kind the label names must be pre-approved. */
+/** What a consent's answer reads besides its kinds (the owner's decision of 2026-11-01). */
+export interface ConsentContext {
+  /** The form requires it: it is needed to apply. */
+  required: boolean;
+  /** The run used no AI at all (a profile-only frame, and no AI asked for its application before), so an "I did not
+   *  use AI" attestation is true. */
+  aiFree: boolean;
+}
+
+/** A consent's tick (or Yes), by the rule that gives it. */
+const ticked = (ruleId: RuleId): ValueResult => value({ origin: { provenance: 'rule', ruleId },
+  confidence: VALUE_CONSENT_PREAPPROVED,
+  choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' satisfies MatchDomain }, check: true });
+
+/**
+ * The value of a consent field (§8.7; the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11): an AI
+ * attestation (any consent that names AI) is ticked only when the run used no AI at all (consent.no-ai-attestation),
+ * and otherwise left for the person (ai-attestation-ai-used). Every other consent is ticked when each kind it names is
+ * pre-approved in settings (consent.preapproved), else when the form requires it, binding clauses included
+ * (consent.required: it is needed to apply); an optional one not pre-approved (marketing, SMS) is left unticked and
+ * recorded as decided (consent-optional-unticked, never the person's). A signature types the person's full name on
+ * the same terms.
+ */
 export function consentValue(category: FieldCategory, consentKinds: readonly FieldCategory[] | undefined,
-  profile: Profile, settings: Settings): ValueResult {
-  if (USER_ONLY_CATEGORIES.has(category)) return none('consent-requires-user', true, true);
-  const kinds = consentKinds && consentKinds.length > 0 ? consentKinds : [category];
-  const approved = kinds.every((kind) => {
+  profile: Profile, settings: Settings, consent: ConsentContext): ValueResult {
+  const named = consentKinds && consentKinds.length > 0 ? consentKinds : [category];
+  const attests = category === 'consent.aiAttestation' || named.includes('consent.aiAttestation');
+  if (attests && !consent.aiFree) return none('ai-attestation-ai-used', true, true);
+  if (category === 'consent.aiAttestation') return ticked('consent.no-ai-attestation');
+  // A true attestation among the label's kinds asks nothing more: the rest decide.
+  const kinds = named.filter((kind) => kind !== 'consent.aiAttestation');
+  const approved = kinds.length > 0 && kinds.every((kind) => {
     const setting = consentCategoryOf(kind);
     return setting !== null && settings.preapprovedConsent.includes(setting);
   });
-  if (!approved) return none('consent-requires-user', true, true);
+  if (!approved && !consent.required) return none('consent-optional-unticked', false);
   if (category === 'consent.signature') {
     const name = profile.identity.fullName.trim();
     if (name === '') return none('no-profile-value');
-    return value({ origin: byRule('consent.signature-preapproved', 'identity.fullName'),
+    return value({ origin: byRule(approved ? 'consent.signature-preapproved' : 'consent.required', 'identity.fullName'),
       confidence: VALUE_CONSENT_PREAPPROVED, text: name });
   }
-  return value({ origin: { provenance: 'rule', ruleId: 'consent.preapproved' }, confidence: VALUE_CONSENT_PREAPPROVED,
-    choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' satisfies MatchDomain }, check: true });
+  return ticked(approved && !USER_ONLY_CATEGORIES.has(category) ? 'consent.preapproved' : 'consent.required');
 }

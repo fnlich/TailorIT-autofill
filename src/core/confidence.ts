@@ -252,3 +252,13 @@ export const ANSWER_SECTION_MAX = 200;
 /** Edit with AI: what a box holds now is sent with its draft question as at most this many code points
  *  (AUTOFILL_AI_LIMITS.draft.currentAnswer). */
 export const DRAFT_CURRENT_MAX = 5000;
+
+// Places (a location search's results: matcher/place.ts).
+
+/** A place whose city is the person's and whose region (else country) is theirs by the region and country tables, with
+ *  nothing it names conflicting: as sure as a curated alias, so a location search chooses it ("Austin, TX" is "Austin,
+ *  Texas, United States"). */
+export const MATCH_PLACE = 0.97;
+/** A place whose city is the person's and that conflicts with nothing, but names less than their place says (no region
+ *  where they have one): below the fill line, so a list chooses it flagged and a search never does. */
+export const MATCH_PLACE_PARTIAL = 0.85;

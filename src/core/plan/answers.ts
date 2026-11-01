@@ -29,6 +29,22 @@
  *   frame checks the option again: llmPickStillValid), and a text as an llm-answer naming the task and its basis; each
  *   through guardWrite (the canary scan included), never past the field's own cap. Either is accepted as written:
  *   `llm-answer-written`, or `ai-guess` when it rests on nothing, neither needing the person.
+ * - The `all` scope (settings.llm.answerAll, on by default: the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md
+ *   §11): a legal, criminal-history, pay or attention-check question the profile leaves open is asked too, with
+ *   TailorIT's `all` scope (AnswerItem.scope), and its answer is written as any other ("AI guess" unless a fact settles
+ *   it). Which: a category of AI_OPENED_CATEGORIES whose row says the profile holds no answer (legal-not-in-profile,
+ *   criminal-not-covered, no-profile-value), an attention check whose own words name no consent,
+ *   a question the classify screen kept from the LLM, or one an EEO, legal or sensitive context closed, as long as its
+ *   own text names only open topics (classify.ts openAnswerTopics: authorization, age, pay, criminal history; never a
+ *   self-identification, a consent or an identity number, never an EEO answer among its options, a decline option
+ *   only beside an open topic) and its context holds no self-identification, consent or pronoun question
+ *   (drafts.ts inClosedContext, open). A rule hands it to the person only for what an answer can still say (a legal
+ *   question on a text box, one read from its help text, one tying authorization to sponsorship, a time that cannot be
+ *   read, a work permit, a nationality, an age band); never current pay, a source conflict, a self-identification topic
+ *   or a birth date. In this scope a clearance may be named, and so may a number in a pay or attention-check question;
+ *   another person, an identifier, a postal address, a consent topic and an "I did not use AI" attestation (or a
+ *   question whether AI wrote the application) are never sent in any scope. Only the question's text and options
+ *   travel: the profile's values never do, and a question the profile answers is never asked.
  * Pure: no text is logged or kept here; the worker holds the answers for the run only.
  */
 import {
@@ -40,10 +56,12 @@ import { detectionViews } from '../guard/fold';
 import { llmMaySeeLabel } from '../guard/honeypot';
 import { cutInjected } from '../guard/injected';
 import { chooseable, prepareOptions } from '../matcher/prepare';
-import { ANSWERABLE_PROFILE_CATEGORIES, policyClassOf, USER_ONLY_CATEGORIES } from '../resolver/categories';
-import { classifiable, sectionWordsOfKey } from '../resolver/classify';
+import {
+  AI_OPENED_CATEGORIES, ANSWERABLE_PROFILE_CATEGORIES, policyClassOf, USER_ONLY_CATEGORIES,
+} from '../resolver/categories';
+import { classifiable, openAnswerTopics, sectionWordsOfKey, type ScreenTopic } from '../resolver/classify';
 import { namesAnotherPerson } from '../resolver/classifyRules';
-import { namesConsentTopic } from '../resolver/labelRules';
+import { attestsNoAiUse, namesConsentTopic, type NeedsUserCause } from '../resolver/labelRules';
 import type { FieldClassification } from '../resolver/resolve';
 import { capCodePoints } from '../text/fold';
 import { sectionKey } from '../text/keys';
@@ -68,10 +86,16 @@ export interface AnswerOption {
   labelHash: string;
 }
 
+/** Which questions an answer request asks (TailorIT's AUTOFILL_ANSWER_SCOPES): `standard`, or `all`, which also asks
+ *  the legal, criminal-history, pay and attention-check questions the profile leaves open (module header). */
+export type AnswerScope = 'standard' | 'all';
+
 /** One question to answer (TailorIT's AutofillAnswerItem). */
 export interface AnswerItem {
   /** The field's key: the item's identity, repeated in the answer. */
   key: FieldKey;
+  /** The scope it is asked under: `all` only for a question the standard scope would not ask. */
+  scope: AnswerScope;
   shape: AnswerShape;
   kind: FieldKind;
   /** The field's visible label, quotable. */
@@ -112,40 +136,66 @@ const NO_ANSWER_FORMATS: ReadonlySet<FieldFormat> = new Set<FieldFormat>(['email
 /**
  * What an AI answer never states, read in a question's text, its hint, its section's words and its options (the Phase
  * E review, M2): another person's details (an emergency contact, a referee or reference, a manager's, a spouse's), an
- * identifier (a number, an ID, a licence, a passport, a social security or insurance number), a postal address, and a
- * security clearance (TS/SCI, secret, ITAR: the legal class). Lower case, over every detection view.
+ * identifier (a number, an ID, a licence, a passport, a social security or insurance number) and a postal address.
+ * Lower case, over every detection view.
  */
 const UNANSWERABLE: readonly RegExp[] = [
   // Another person.
   /\bemergency\b/, /\breferences?\b/, /\breferees?\b/, /\bnext\s+of\s+kin\b/, /\bspouses?\b/, /\bguardians?\b/,
   /\b(?:manager|supervisor|spouse|partner|parent|guardian)(?:'|’)s\b/,
   /\b(?:managers?|supervisors?)\s+(?:name|e\s?-?mail|phone|contact|title)\b/,
-  // Identifiers ("Number of years" counts, so a number followed by "of" is none).
-  /\bnumbers?\b(?!\s+of\b)/, /\bids?\b/, /\bidentification\b/, /\bidentifier\b/, /\blicen[cs]e[sd]?\b/, /\bpassports?\b/,
+  // Identifiers (a bare "number" is BARE_NUMBER).
+  /\bids?\b/, /\bidentification\b/, /\bidentifier\b/, /\blicen[cs]e[sd]?\b/, /\bpassports?\b/,
   /\bssn\b/, /\bsocial\s+(?:security|insurance)\b/, /\bnational\s+insurance\b/, /\btax\s+(?:id|file|number)\b/,
   // A postal address ("address" as a verb, "How would you address a conflict?", is none).
   /\b(?:home|mailing|postal|street|current|permanent|residential|billing|physical|full|your|e\s?-?mail)\s+address(?:es)?\b/,
   /^\W*address(?:es)?\b/, /\baddress\s+(?:line|1|2|of\s+residence)\b/, /\bstreet\b/, /\bzip\b/, /\bpostal\b/,
   /\bpost\s?codes?\b/, /\bp\.?\s?o\.?\s+box\b/, /\bapartment\b/, /\bwhere\s+do\s+you\s+(?:currently\s+)?live\b/,
-  // A security clearance.
-  /\bclearances?\b/, /\bts\s*[/-]?\s*sci\b/, /\bsecret\b/, /\bitar\b/, /\bpolygraph\b/,
 ];
+
+/** A number the question asks for, which may be an identifier ("Number of years" counts, so a number followed by
+ *  "of" is none). The `all` scope lets it through in a pay or attention-check question ("Enter a number only",
+ *  "Select the number 7"). */
+const BARE_NUMBER = /\bnumbers?\b(?!\s+of\b)/;
+
+/** A security clearance (TS/SCI, secret, ITAR: the legal class), which only the `all` scope may ask about. */
+const CLEARANCE: readonly RegExp[] = [/\bclearances?\b/, /\bts\s*[/-]?\s*sci\b/, /\bsecret\b/, /\bitar\b/, /\bpolygraph\b/];
+
+/** A question whether AI helped write the application ("Did you use AI to complete this application?"), as
+ *  normalizeLabel writes it: its answer is the person's word on how the application was written. */
+const AI_USE_QUESTION = /\b(?:did|have|has|were|was)\s+(?:you|anyone|any\s+(?:part\s+)?of\s+(?:this|your|these|the))\b(?:\s+\w+){0,6}?\s+(?:ai|a\s+i|artificial\s+intelligence|chat\s?gpt|gpt\w*|llms?|large\s+language\s+models?|generative\s+ai|genai|gen\s+ai|copilot)\b(?:\s+\w+){0,6}?\s+(?:this|your|these|the)\s+(?:application|answers?|responses?|submission|essays?|cover\s+letter|resume|cv)\b/;
 
 /** The short identifiers matched in capitals only, as the page wrote them: SIN, NI ("sin" and "ni" are words too). */
 const UNANSWERABLE_ACRONYMS: readonly RegExp[] = [/\bSIN\b/, /\bNI\b/];
 
-/** Whether page text names what an AI answer never states (UNANSWERABLE, the Phase E review, M2), or asks for a
- *  consent (labelRules namesConsentTopic: a newsletter, being contacted about other roles, a talent pool), which only
- *  the person or a pre-approval gives. The worker screens each answer item again with it (ai-tasks.ts
+/** What the `all` scope lets a question name besides what the standard scope does: a clearance, and a number. */
+export interface AnswerAllowance {
+  clearance?: boolean;
+  number?: boolean;
+}
+
+/** Whether page text names what an AI answer never states (UNANSWERABLE, the Phase E review, M2; a bare number and a
+ *  security clearance unless `allow` lets them through), asks for a consent (labelRules namesConsentTopic: a
+ *  newsletter, being contacted about other roles, a talent pool), which only the person or a pre-approval gives, or is
+ *  an "I did not use AI" attestation or a question whether AI wrote the application (the owner's decision of
+ *  2026-11-01: never sent, in any scope). The worker screens each answer item again with it (ai-tasks.ts
  *  answerItemOfCore). */
-export function namesUnanswerableTopic(text: string): boolean {
+export function namesUnanswerableTopic(text: string, allow: AnswerAllowance = {}): boolean {
   if (text.trim() === '') return false;
   if (UNANSWERABLE_ACRONYMS.some((acronym) => acronym.test(text))) return true;
-  if (namesConsentTopic(normalizeLabel(text))) return true;
+  const normalized = normalizeLabel(text);
+  if (namesConsentTopic(normalized) || attestsNoAiUse(normalized) || AI_USE_QUESTION.test(normalized)) return true;
   return detectionViews(text).some((view) => {
     const lower = view.toLowerCase();
-    return UNANSWERABLE.some((pattern) => pattern.test(lower));
+    return UNANSWERABLE.some((pattern) => pattern.test(lower)) || (allow.number !== true && BARE_NUMBER.test(lower))
+      || (allow.clearance !== true && CLEARANCE.some((pattern) => pattern.test(lower)));
   });
+}
+
+/** What an `all` item's own topics let it name (namesUnanswerableTopic): a clearance always, a number in a pay
+ *  question or an attention check. */
+export function allowanceOf(topics: ReadonlySet<ScreenTopic>, attention: boolean): AnswerAllowance {
+  return { clearance: true, number: attention || topics.has('pay') };
 }
 
 /** The reasons a profile field's row gives for a gap an AI answer may fill (ANSWERABLE_PROFILE_CATEGORIES). */
@@ -202,26 +252,90 @@ function choiceOptions(spec: FieldSpec, context: DraftContext): AnswerOption[] |
   return options.some((option) => option.label === '') ? null : options;
 }
 
-/** Whether a field's question is one an AI answer may fill, its options aside (module header): writable, labelled for
- *  the LLM, no tripwire or attention check, no rule or LLM handing it to the person, no saved answer, a gap an answer
- *  may fill, no EEO, legal or sensitive context, and nothing an answer never states (namesUnanswerableTopic, another
- *  person). */
-function answerable(spec: FieldSpec, classification: FieldClassification, resolution: Resolution, row: FillResult,
-  writable: boolean, context: DraftContext): boolean {
-  if (!writable || !classifiable(spec) || !llmMaySeeLabel(spec.labelSource)) return false;
-  if (classification.by === 'tripwire' || classification.by === 'attention') return false;
+/** The texts a field's answer screens read: its label, description, section's words and options, injected text cut. */
+function screenedTexts(spec: FieldSpec): string[] {
+  const options = spec.options === 'lazy' ? [] : spec.options.map((option) => cutInjected(option.label).clean);
+  return [spec.label, spec.description, sectionWordsOfKey(sectionKey(spec.section)), ...options];
+}
+
+/** Whether a field's question is one the standard scope answers (module header): no attention check, no rule or LLM
+ *  handing it to the person, a gap an answer may fill, no EEO, legal or sensitive context, and no clearance or bare
+ *  number named. */
+function standardAnswerable(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
+  row: FillResult, context: DraftContext): boolean {
+  if (classification.by === 'attention') return false;
   if (classification.by === 'rules' && classification.rules.needsUser !== undefined) return false;
   // What the LLM hands to the person (a sensitive, consent or attention-check question) is theirs; a free-text
   // question it names takes a draft, or an answer when its box is short.
   if (classification.by === 'llm' && classification.llm.kind === 'needs-user'
     && policyClassOf(classification.llm.category) !== 'free-text') return false;
-  if (resolution.classifiedBy === 'saved' || row.status === 'blocked' || row.wrote) return false;
   if (!answerableGap(spec, resolution, row)) return false;
   if (inClosedContext(spec, context)) return false;
-  const options = spec.options === 'lazy' ? [] : spec.options.map((option) => cutInjected(option.label).clean);
-  if ([spec.label, spec.description, sectionWordsOfKey(sectionKey(spec.section)), ...options]
-    .some(namesUnanswerableTopic)) return false;
-  return !namesAnotherPerson(spec);
+  return !screenedTexts(spec).some((text) => namesUnanswerableTopic(text));
+}
+
+/** What a rule's hand-off to the person still lets the `all` scope answer: a legal question on a kind its profile
+ *  answer could not be matched into (a yes or no in a text box), one read from its help text, authorization tied to
+ *  sponsorship, a sponsorship time that cannot be read, a work permit, a nationality, an age (never a birth date). */
+const OPENABLE_CAUSES: ReadonlySet<NeedsUserCause> = new Set<NeedsUserCause>(['kind-mismatch', 'description-only',
+  'authorization-and-sponsorship', 'unclear-time', 'work-permit', 'nationality', 'age']);
+
+/** The reasons an opened category's row gives when the profile holds no answer for it. A decline the person gave, a
+ *  value that matched no option, a failed fetch, and a sensitive part this browser may not read (`sensitive-not-shared`:
+ *  the person may hold an answer there, which a guess must never overrule) stay as they are, and so does a country the
+ *  question does not settle, unless the profile holds no work-authorization entry at all (openGap). */
+const OPEN_GAPS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['legal-not-in-profile', 'criminal-not-covered',
+  'no-profile-value', 'attention-check', 'llm-disabled-for-category']);
+
+/** Whether an opened category's row is a gap the `all` scope answers (OPEN_GAPS). */
+const openGap = (reason: ReasonCode, context: DraftContext) => OPEN_GAPS.has(reason)
+  || (reason === 'work-auth-country-unknown' && context.noWorkAuthorization === true);
+
+/** A birth date, which no AI answer ever gives (an identifier the facts do not hold). */
+const BIRTH_DATE = /\b(?:date\s+of\s+birth|birth\s*(?:date|day|year|place)|years?\s+of\s+birth|dob|born)\b/;
+
+/** Whether a field's question is one the `all` scope answers (module header): an attention check with no consent of
+ *  its own, an opened category, a question the classify screen kept from the LLM, or a gap the standard scope only
+ *  left for its context, whose own text names only open topics (at least one, but for an attention check, an opened
+ *  category and a box closed by its context alone, such as "Please provide details" after a felony question), in a
+ *  context of no self-identification, consent or pronoun question. Answers its topics. */
+function openAnswerable(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
+  row: FillResult, context: DraftContext): { topics: ReadonlySet<ScreenTopic>; attention: boolean } | null {
+  const attention = classification.by === 'attention';
+  if (attention && classification.consent !== null) return null;
+  if (classification.by === 'rules' && classification.rules.needsUser !== undefined
+    && !OPENABLE_CAUSES.has(classification.rules.needsUser)) return null;
+  if (classification.by === 'rules' && classification.rules.needsUser === 'age' && !CHOICE_KINDS.has(spec.kind)) {
+    return null;
+  }
+  const opened = attention || AI_OPENED_CATEGORIES.has(resolution.category);
+  // A question the classify screen kept from the LLM is unknown; any other closed only by its context keeps its gap.
+  const screened = resolution.category === 'unknown' && row.reason === 'llm-disabled-for-category';
+  if (!(opened ? openGap(row.reason, context) : screened || answerableGap(spec, resolution, row))) return null;
+  const named = openAnswerTopics(spec, context.vocab, attention);
+  if (named === null) return null;
+  const texts = screenedTexts(spec);
+  const lowered = texts.flatMap((text) => detectionViews(text).map((view) => view.toLowerCase()));
+  // A clearance named with no topic word ("Do you hold an active TS/SCI?") is work authorization.
+  const topics: ReadonlySet<ScreenTopic> = lowered.some((view) => CLEARANCE.some((pattern) => pattern.test(view)))
+    ? new Set<ScreenTopic>([...named, 'authorization']) : named;
+  if (!opened && topics.size === 0 && !inClosedContext(spec, context)) return null;
+  if (lowered.some((view) => BIRTH_DATE.test(view))) return null;
+  if (texts.some((text) => namesUnanswerableTopic(text, allowanceOf(topics, attention)))) return null;
+  return inClosedContext(spec, context, true) ? null : { topics, attention };
+}
+
+/** The scope a field's question is answered under, its options aside (module header), or null for none: writable,
+ *  labelled for the LLM, no tripwire, no saved answer, never about another person; then the standard scope's
+ *  question, or with `answerAll` the `all` scope's. */
+function answerScope(spec: FieldSpec, classification: FieldClassification, resolution: Resolution, row: FillResult,
+  writable: boolean, context: DraftContext, answerAll: boolean): AnswerScope | null {
+  if (!writable || !classifiable(spec) || !llmMaySeeLabel(spec.labelSource)) return null;
+  if (classification.by === 'tripwire') return null;
+  if (resolution.classifiedBy === 'saved' || row.status === 'blocked' || row.wrote) return null;
+  if (namesAnotherPerson(spec)) return null;
+  if (standardAnswerable(spec, classification, resolution, row, context)) return 'standard';
+  return answerAll && openAnswerable(spec, classification, resolution, row, context) !== null ? 'all' : null;
 }
 
 /**
@@ -230,21 +344,23 @@ function answerable(spec: FieldSpec, classification: FieldClassification, resolu
  * waiting-for-options, so the loop reads the widget and the next pass asks with the real options.
  */
 export function answerWaitsForOptions(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
-  row: FillResult, writable: boolean, context: DraftContext): boolean {
+  row: FillResult, writable: boolean, context: DraftContext, answerAll = false): boolean {
   return spec.options === 'lazy' && CHOICE_KINDS.has(spec.kind)
-    && answerable(spec, classification, resolution, row, writable, context);
+    && answerScope(spec, classification, resolution, row, writable, context, answerAll) !== null;
 }
 
 /**
  * The answer item of a field, or null when it gets none (module header). `row` is the row planField gave it (the gap
- * it leaves), `writable` the planner's own check (no honeypot, not disabled or read-only).
+ * it leaves), `writable` the planner's own check (no honeypot, not disabled or read-only), `answerAll` the person's
+ * setting (settings.llm.answerAll: the `all` scope).
  */
 export function answerItemOf(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
-  row: FillResult, writable: boolean, context: DraftContext): AnswerItem | null {
-  if (!answerable(spec, classification, resolution, row, writable, context)) return null;
+  row: FillResult, writable: boolean, context: DraftContext, answerAll = false): AnswerItem | null {
+  const scope = answerScope(spec, classification, resolution, row, writable, context, answerAll);
+  if (scope === null) return null;
   const question = quote(spec.label, ANSWER_QUESTION_MAX);
   if (question === '') return null;
-  const base = { key: spec.key, kind: spec.kind, question, hint: quote(spec.description, ANSWER_HINT_MAX),
+  const base = { key: spec.key, scope, kind: spec.kind, question, hint: quote(spec.description, ANSWER_HINT_MAX),
     section: quote(sectionWordsOfKey(sectionKey(spec.section)), ANSWER_SECTION_MAX) };
   if (CHOICE_KINDS.has(spec.kind)) {
     const options = choiceOptions(spec, context);

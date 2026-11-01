@@ -203,13 +203,28 @@ export const CLASS_POLICIES: Readonly<Record<PolicyClass, ClassPolicy>> = {
 export const OPEN_CLASSES: readonly PolicyClass[] = ['profile', 'free-text', 'unknown'];
 
 /**
- * Categories nothing may ever fill: the person answers them. An attention check is left blank and flagged; an "I did
- * not use AI" attestation and unrecognised consent can never be pre-approved (§8.7). Criminal history was here until
- * the owner's amendments (docs/SPEC-AMENDMENTS.md): it is now answered from the person's own answer in the sensitive
- * part, by its polarity alone, like any legal question, and never by an AI or an inference.
+ * Categories no profile value, saved answer, LLM classification or pre-approval may fill: an attention check, an AI
+ * attestation and unrecognised consent can never be pre-approved (§8.7). Criminal history was here until the owner's
+ * amendments (docs/SPEC-AMENDMENTS.md §6). Since the owner's decisions of 2026-11-01 (§11) each has one way in of its
+ * own: an attention check TailorIT's AI answers while settings.llm.answerAll is on (AI_OPENED_CATEGORIES), a required
+ * unrecognised consent is ticked by the rule consent.required, and an AI attestation by consent.no-ai-attestation, only
+ * when the run used no AI at all (policy.ts consentValue; the Guard allows those and nothing else).
  */
 export const USER_ONLY_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['attentionCheck',
   'consent.aiAttestation', 'consent.other']);
+
+/**
+ * The closed categories TailorIT's AI may answer when the profile holds no value for them, while the person lets it
+ * (settings.llm.answerAll, on by default: the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11): work
+ * authorization, sponsorship (now, in the future, or both), a work status, a visa type, a clearance, being 18 or over,
+ * criminal history, the expected pay and its currency, and attention checks. Never a self-identification (EEO)
+ * question, pronouns, a consent, a contact detail or an identity number. The answer is TailorIT's `all` scope (an
+ * "AI guess" unless a fact settles it); the person's own sensitive answers never reach the AI.
+ */
+export const AI_OPENED_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['workAuth.authorized',
+  'workAuth.sponsorship', 'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture', 'workAuth.status',
+  'workAuth.visaType', 'workAuth.clearance', 'screening.over18', 'screening.criminalHistory', 'salary.expected',
+  'salary.currency', 'attentionCheck']);
 
 /**
  * The profile categories an AI answer may fill when the profile holds no value for them (the owner's amendments): job

@@ -13,8 +13,10 @@
  * - Consent boxes: the core's closed list of categories, the usual ones pre-approved since settings version 2 (all but
  *   marketing and SMS: docs/SPEC-AMENDMENTS.md); certify carries a warning. Nothing outside the list can be
  *   pre-approved, so AI attestations and unrecognised consent never appear.
- * - AI help: pick, classify, drafts and answers (all on), the draft confirmation (off), and what a posting that forbids
- *   AI does (profile only, the default; ask; use the AI anyway), with the plan's sentence on what never goes to the AI.
+ * - AI help: pick, classify, drafts and answers (all on), the answers to legal, pay and attention-check questions the
+ *   profile does not answer (on, settings version 3: the owner's decision of 2026-11-01; it acts only with answers on),
+ *   the draft confirmation (off), and what a posting that forbids AI does (profile only, the default; ask; use the AI
+ *   anyway), with the plan's sentence on what never goes to the AI.
  * - Interpretations: all three on (the posting's country, Two or More Races, the decline default for unanswered
  *   self-identification), each saying what it does.
  * - Your fixes: the offer to save an answer after the person fixed a flagged field (Requirement F), on by default.
@@ -294,6 +296,9 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
           disabled={saving} onChange={(drafts) => set({ llm: { ...shown.llm, drafts } })} />
         <Toggle setting="llm.answers" name={TEXT.ai.answers} help={TEXT.ai.answersHelp} checked={shown.llm.answers}
           disabled={saving} onChange={(answers) => set({ llm: { ...shown.llm, answers } })} />
+        <Toggle setting="llm.answerAll" name={TEXT.ai.answerAll} help={TEXT.ai.answerAllHelp}
+          checked={shown.llm.answerAll} disabled={saving || !shown.llm.answers}
+          onChange={(answerAll) => set({ llm: { ...shown.llm, answerAll } })} />
         <Toggle setting="llm.confirmDrafts" name={TEXT.ai.confirmDrafts} help={TEXT.ai.confirmDraftsHelp}
           checked={shown.llm.confirmDrafts} disabled={saving}
           onChange={(confirmDrafts) => set({ llm: { ...shown.llm, confirmDrafts } })} />

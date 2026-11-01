@@ -1,16 +1,19 @@
 /*
  * The person's settings, in storage.local under `settings:v1`, checked with SettingsSchema on the way in and out. A
  * stored value that no longer parses gives the defaults; a version 1 value (an install from before the owner's
- * amendments, docs/SPEC-AMENDMENTS.md) is migrated to version 2, each choice still on version 1's default taking
- * version 2's (migrateSettings), and stored again. Content scripts get only the part they need (panel
+ * amendments, docs/SPEC-AMENDMENTS.md) is migrated, each choice still on version 1's default taking version 2's
+ * (migrateSettings), and a version 2 value takes version 3's new switch at its default (migrateSettingsV2, §11); either
+ * is stored again. Content scripts get only the part they need (panel
  * placement, auto-advance, the AI switches, the offer to save answers) with frame/hello and run/begin, and again with
  * settings/changed whenever the person saves them (pushSettings: every registered frame with a form, so a run in
  * progress reads auto-advance as it is now: the Phase 5 review, C-S2); they never read storage.
  */
-import { DEFAULT_SETTINGS, migrateSettings, type Settings } from '../core/types/settings';
+import { DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, type Settings } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import { SETTINGS_KEY, SettingsSchema, SettingsV1Schema, type ContentSettings } from '../shared/settings';
+import {
+  SETTINGS_KEY, SettingsSchema, SettingsV1Schema, SettingsV2Schema, type ContentSettings,
+} from '../shared/settings';
 import { frameTarget, type FrameEntry } from './frames';
 
 /** The settings, as the worker reads and saves them. */
@@ -45,19 +48,21 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
         cached = parsed.data;
         return cached;
       }
-      const old = SettingsV1Schema.safeParse(stored);
-      if (!old.success) {
+      const v2 = SettingsV2Schema.safeParse(stored);
+      const v1 = v2.success ? null : SettingsV1Schema.safeParse(stored);
+      if (!v2.success && v1?.success !== true) {
         log('settings.unreadable');
         cached = DEFAULT_SETTINGS;
         return cached;
       }
-      cached = migrateSettings(old.data);
+      const from = v2.success ? 2 : 1;
+      cached = v2.success ? migrateSettingsV2(v2.data) : migrateSettings(v1!.data!);
       try {
         await local.set({ [SETTINGS_KEY]: cached });
-        log('settings.migrated', { from: 1, to: 2 });
+        log('settings.migrated', { from, to: 3 });
       } catch {
         // Kept in memory only: the next start migrates the stored value again.
-        log('settings.migrated', { from: 1, to: 2, stored: false });
+        log('settings.migrated', { from, to: 3, stored: false });
       }
       return cached;
     },

@@ -86,6 +86,7 @@ import { tripwireHits } from '../guard/tripwire';
 import { guardWrite, type GuardContext, type WriteSubject } from '../guard/write';
 import { cacheEntryFor } from '../matcher/cache';
 import { noMatch, matchOne } from '../matcher/cascade';
+import { matchPlace } from '../matcher/place';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { prepareOptions } from '../matcher/prepare';
 import type { MatchInput, PreparedOptions, TiebreakItem } from '../matcher/types';
@@ -257,6 +258,15 @@ function matchValue(input: MatchInput, ctx: FieldPlanContext): Match | 'waiting'
   return 'waiting' in outcome ? 'waiting' : outcome.partial.fallback;
 }
 
+/** A place's match where the text stages chose nothing (Choice.place, matcher/place.ts): the options read as places,
+ *  so a location search's "Austin, Texas, United States" is the person's "Austin, TX". The text stages' answer stands
+ *  when the places give none either, unless they found several (ambiguous-options). */
+function orPlace(match: Match, choice: Choice, options: PreparedOptions, ctx: FieldPlanContext): Match {
+  if (match.stage !== 'none' || choice.place === undefined) return match;
+  const placed = matchPlace(choice.place, options, ctx.input.vocab);
+  return placed.stage !== 'none' || placed.reason === 'ambiguous-options' ? placed : match;
+}
+
 /**
  * A single answer's match with the LLM tiebreak allowed (settings.llm.tiebreak; the domain and the policy class decide
  * the rest: matchOne's stage plan). A field the cascade hands to the LLM completes with the run's verdict for its
@@ -308,6 +318,7 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
     matched = plain === 'waiting' ? { kind: 'waiting' } : { kind: 'match', match: plain };
   }
   if (matched.kind === 'waiting') return blank('flagged', 'waiting-for-options');
+  if (matched.kind === 'match') matched = { ...matched, match: orPlace(matched.match, choice, prepared, ctx) };
   if (matched.kind === 'ask') {
     // Until the LLM answers, the field stands as the cascade left it, blank and flagged.
     return { asked: matched.item, row: blank('flagged', matched.fallback.stage === 'none' ? matched.fallback.reason
@@ -381,7 +392,8 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       // flagged.
       const prepared = prepareOptions(shown.map((label, index) => ({ index, label, disabled: false, selected: false })),
         shaped.choice.domain, ctx.input.vocab);
-      const match = matchValue(matchInputOf(spec, resolution, shaped.choice, prepared), ctx);
+      const plain = matchValue(matchInputOf(spec, resolution, shaped.choice, prepared), ctx);
+      const match = plain === 'waiting' ? plain : orPlace(plain, shaped.choice, prepared, ctx);
       const confidence = resolution.confidence * (match === 'waiting' ? 0 : match.confidence);
       if (match !== 'waiting' && match.optionIndex !== null
         && actionFor(confidence, match.flags.some((item) => FORCING_FLAGS.has(item))) === 'fill') {
@@ -599,7 +611,9 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
     row: {
       key: spec.key, label: spec.label, kind: spec.kind, category: resolution.category, section: sectionKey(spec.section),
       required: spec.required, status, provenance: write.origin.provenance, matcherStage: planned.match.stage,
-      confidence, reason, wrote: false, verification: 'not-checked', needsUserAction: status === 'flagged',
+      // A fill flagged for its confidence is still written: the flag is advisory ("check it"), so it never asks for the
+      // person (SPEC-AMENDMENTS §11, nothing left for them); a write that fails is flagged again where it fails.
+      confidence, reason, wrote: false, verification: 'not-checked', needsUserAction: false,
     },
   };
 }
@@ -724,8 +738,11 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const specs = chosen.map((field) => field.spec);
   const posting = input.posting ?? {};
   const postingCountry = posting.location === undefined ? undefined : postingCountryOf(posting.location, input.vocab);
+  // The run used no AI at all only in a profile-only frame of a run that asked none before (PlanInput.aiUsed): an "I
+  // did not use AI" attestation is then true, and ticked (the owner's decision of 2026-11-01).
+  const aiFree = aiOff && asked.aiUsed !== true;
   const resolveWith = (spec: FieldSpec, classification: FieldClassification) => resolveField(spec, {
-    profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings,
+    profile, sensitiveState: input.sensitiveState, savedAnswers: input.savedAnswers, settings: input.settings, aiFree,
     vocab: input.vocab, now: input.now, separatePhoneCountry: phoneCountrySections.has(sectionKey(spec.section)),
     ...(input.company !== undefined ? { company: input.company } : {}),
     ...(repeatables.length > 0 ? { blockEntries } : {}),
@@ -764,7 +781,8 @@ export function planFrame(asked: PlanInput): PlanOutput {
   }
   // The canaries any label of the frame carries, the context's too: more to scan for is never less safe.
   const guard: GuardContext = { canaries: [...input.canaries, ...input.specs.flatMap(labelCanaries)], profile,
-    profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers };
+    profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers,
+    answerAll: input.settings.llm.answers && input.settings.llm.answerAll };
   const ctx: FieldPlanContext = { input, guard, drops: new Set() };
   // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
   // the run's draft when there is one, and is asked for otherwise. Then answers (the owner's amendments): a question
@@ -772,7 +790,11 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // profile-only run asks neither, and rows what only they could fill as ai-off-for-posting.
   const drafting = input.settings.llm.drafts && !input.dryRun;
   const answering = input.settings.llm.answers && !input.dryRun;
-  const draftContext: DraftContext = { fields: classified, revealEdges: input.revealEdges ?? [], vocab: input.vocab };
+  // The `all` scope (settings.llm.answerAll): the legal, pay and attention-check questions the profile leaves open are
+  // asked too; a profile-only frame rows them ai-off-for-posting, as any question only the AI could answer.
+  const answerAll = wantedLlm.answers && wantedLlm.answerAll;
+  const draftContext: DraftContext = { fields: classified, revealEdges: input.revealEdges ?? [], vocab: input.vocab,
+    noWorkAuthorization: input.sensitiveState === 'loaded' && profile.workAuthorization.length === 0 };
   const drafts: DraftItem[] = [];
   const answers: AnswerItem[] = [];
   const classifying = new Set<string>(classify.map((item) => item.key));
@@ -817,10 +839,12 @@ export function planFrame(asked: PlanInput): PlanOutput {
     if (!wouldAnswer || standing.write !== undefined || standing.asked !== undefined || classifying.has(spec.key)) {
       return { spec, ...standing };
     }
-    const question = answerItemOf(spec, classification, field.resolution, standing.row, canWrite, draftContext);
+    const question = answerItemOf(spec, classification, field.resolution, standing.row, canWrite, draftContext,
+      answerAll);
     if (question === null) {
       // A lazy list it would answer: read first, asked at the next pass with its options (the Phase E review, M7).
-      if (!answerWaitsForOptions(spec, classification, field.resolution, standing.row, canWrite, draftContext)) {
+      if (!answerWaitsForOptions(spec, classification, field.resolution, standing.row, canWrite, draftContext,
+        answerAll)) {
         return { spec, ...standing };
       }
       if (aiOff) return { spec, ...standing, row: offAi(standing.row) };

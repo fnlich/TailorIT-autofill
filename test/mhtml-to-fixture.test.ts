@@ -624,9 +624,11 @@ const CASES = ['lever', 'greenhouse'].flatMap((platform) => readdirSync(join(ROO
   .filter((name) => name.endsWith('.expect.json')).map((name) => `${platform}/${name.slice(0, -'.expect.json'.length)}`));
 
 describe('the committed Lever and Greenhouse fixtures', () => {
-  it('are the six cases from the owner\'s captures', () => {
-    expect(CASES.sort()).toEqual(['greenhouse/discord-job', 'greenhouse/figma-legacy-host', 'greenhouse/gitlab-embed',
-      'greenhouse/gitlab-job', 'lever/spotify-ny', 'lever/zoox-fostercity']);
+  it('are the six cases from the owner\'s captures and the six closed forms of the Greenhouse widget capture', () => {
+    expect(CASES.sort()).toEqual(['greenhouse/affirm-job', 'greenhouse/asana-embed', 'greenhouse/discord-job',
+      'greenhouse/discord-ml-job', 'greenhouse/figma-legacy-host', 'greenhouse/gitlab-embed', 'greenhouse/gitlab-job',
+      'greenhouse/gusto-job', 'greenhouse/twilio-job', 'greenhouse/twitch-job', 'lever/spotify-ny',
+      'lever/zoox-fostercity']);
   });
 
   it.each(CASES)('%s: files, route map, header and expectations agree', (name) => {

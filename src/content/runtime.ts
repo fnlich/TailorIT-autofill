@@ -10,8 +10,10 @@
  * 3. With a form root, the launcher is mounted on it (the in-page UI, ui/page-ui.ts), and runs start from its trusted
  *    clicks (counted only while a person can see it: S5) or from run/start (the side panel's Fill, to every frame with
  *    a form). One run at a time (orchestrator.ts). In a frame inside another page a run fills only while the launcher
- *    can be seen on that page (S1). Fill anyway at a policy card that a later pass of a run showed ends that run and
- *    starts a fresh one, whose gate takes the decision (fillAgain, the Phase 3 review's L-S2).
+ *    can be seen on that page (S1). A form root the page replaces (it drew its whole form again, Twitch's way) is found
+ *    again by the adapter's hook (pageNow; a run tells of one it found, rootMoved), and the launcher moves to it. Fill
+ *    anyway at a policy card that a later pass of a run showed ends that run and starts a fresh one, whose gate takes
+ *    the decision (fillAgain, the Phase 3 review's L-S2).
  * 4. The multi-step machine (Phase 5): with a form root, this tab's RunState for the application is read (runstate/get)
  *    and resumeMode decides. 'auto' (the same tab, within RESUME_AUTO_MS, not at review): a run starts by itself on
  *    the step it was on (trigger 'resume', RESUMED by the load), its attempts counted, so the step after two attempts
@@ -30,7 +32,7 @@
  * a run that waits for the next step, or a paused one); settings/changed (the person saved their settings: the
  * current run reads auto-advance from them, C-S2); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
  * answered `expired` when no run here waits at the card); field/focus (scroll the field or its proxy into view and
- * outline it, at the person's request); field/describe (the visible labels of a row's suggested options, from a fresh
+ * focus it, at the person's request: Show on page draws nothing); field/describe (the visible labels of a row's suggested options, from a fresh
  * scan, never kept); draft/confirm (Phase 6: the run's waiting draft of that field is the person's now; `expired` when
  * none waits); answer/read (Phase 6: the field's answer as it holds it now, for Save my answer, straight to the worker
  * and never kept, with the company this frame's own address names; `expired` when the field is gone); report/update
@@ -87,7 +89,7 @@ import {
 } from './orchestrator';
 import { readPostingPage } from './policy';
 import { createReportLimiter } from './report';
-import { elementsOf } from './targets';
+import { showField } from './targets';
 import { TouchLog } from './touches';
 import { mountPageUi, type PageUi } from './ui/page-ui';
 import { createValueHasher, type ValueHasher } from './values';
@@ -247,12 +249,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // job text.
       case 'job/refresh':
         return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null);
-      case 'job/postingText':
+      case 'job/postingText': {
         // The form's fields too (the Phase G review, MINOR 5): an "I did not use AI" statement on it keeps the side
         // panel's Write it now from writing before a run has said so.
-        return ok(stopped ? { text: '', canaries: [], policy: false }
-          : await postingTextOf(doc, page?.root ?? null, isTop, lifetime.signal, page?.app.platform ?? null,
-            page === null ? [] : scanPage(page).fields.map(toFieldSpec)));
+        if (stopped) return ok({ text: '', canaries: [], policy: false });
+        const now = pageNow();
+        return ok(await postingTextOf(doc, now?.root ?? null, isTop, lifetime.signal, now?.app.platform ?? null,
+          now === null ? [] : scanPage(now).fields.map(toFieldSpec)));
+      }
     }
   });
 
@@ -311,7 +315,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   function startRun(request: RunRequest): FillRun | null {
-    if (stopped || page === null || !channel.valid()) return null;
+    // The form root as the adapter finds it now: a run never starts on one the page replaced.
+    const on = stopped ? null : pageNow();
+    if (on === null || !channel.valid()) return null;
     if (current !== null && current.ended === null) return null;
     // A run that rests and watches the step (review, or the person's Next) gives way to the new one.
     if (current?.watching === true) current.abort();
@@ -325,7 +331,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // Without its launcher (the UI failed, or the page removed it for good) a frame cannot show it is seen: it fills
       // nothing inside another page.
       frameShown: (signal, fresh) => (ui === null ? Promise.resolve(false) : ui.launcherShown(signal, fresh)),
-      page,
+      page: on,
       now: () => platform.now(),
       options,
       onRows(rows) {
@@ -334,6 +340,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // Fill anyway at a policy card a later pass showed: a fresh run, on this run's own ended state (L-S2).
       fillAgain(next) {
         if (current === run) startRun(next);
+      },
+      // The run found the form root again as a new element (the page drew its whole form again): the launcher follows.
+      rootMoved(root) {
+        if (current === run) moveRoot(root);
       },
       touches,
       hasher: () => (documentHasher ??= createValueHasher()),
@@ -376,27 +386,49 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     }
   }
 
+  /** The page with its form root as the adapter finds it now: a root the page replaced (it drew its whole form again,
+   *  as Twitch's Greenhouse form is drawn again once its first render fails) is found again by the adapter's hook, and
+   *  the UI anchored to the new one, so the launcher stays on the form the person sees and a scan reads it. */
+  function pageNow(): RunPage | null {
+    if (page === null || page.root.isConnected) return page;
+    let found: Element | null;
+    try {
+      found = page.adapter.detect(doc)?.formRoot ?? null;
+    } catch {
+      found = null;
+    }
+    if (found !== null && found.isConnected) moveRoot(found);
+    return page;
+  }
+
+  /** The page's form root is `root` from now on: the UI anchors to it. */
+  function moveRoot(root: Element): void {
+    if (page === null || page.root === root) return;
+    page = { ...page, root };
+    ui?.anchorTo(root);
+  }
+
   /** A fresh scan of the page, with what the last run read of its widgets (their keys carry the read options' hash). */
   function scanPage(on: RunPage): ScanResult {
     return scan(on.root, on.adapter, { platform: on.app.platform, frameId: frameId ?? 0,
       ...(current === null ? {} : { widgetReadings: current.widgetReadings }) });
   }
 
-  /** field/focus: the field, or its proxy, scrolled into view and outlined (the person asked). */
+  /** field/focus (Show on page): the field, or its proxy, scrolled into view and focused (the person asked); nothing
+   *  is drawn over it. */
   function focusField(key: FieldKey): void {
-    if (stopped || page === null) return;
-    const target = scanPage(page).target(key);
-    if (target === null) return;
-    const elements = elementsOf(target);
-    elements[0]?.scrollIntoView({ block: 'center', inline: 'nearest' });
-    ui?.showFocus(elements);
+    const now = stopped ? null : pageNow();
+    if (now === null) return;
+    const target = scanPage(now).target(key);
+    if (target !== null) showField(target);
   }
 
   /** field/describe: the visible labels of the row's suggested options, read from a fresh scan. Never kept. */
   function describeField(key: FieldKey): { options: Array<{ index: number; label: string }> } {
     const indices = (lastRows.get(key)?.detail?.suggestions ?? []).map((suggestion) => suggestion.index).slice(0, 3);
-    if (stopped || page === null || indices.length === 0) return { options: [] };
-    const field = scanPage(page).fields.find((candidate) => candidate.key === key);
+    const now = stopped || indices.length === 0 ? null : pageNow();
+    if (now === null) return { options: [] };
+    const field = scanPage(now).fields.find((candidate) => candidate.key === key);
     if (field === undefined || field.options === 'lazy') return { options: [] };
     const options = field.options;
     return { options: indices.flatMap((index) => {
@@ -466,6 +498,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           if (choice === 'accepted') current?.accept();
           else current?.decline();
         },
+        // The form root the launcher stands on left the page (it drew its whole form again): it is found again.
+        rootGone: () => void pageNow(),
         panel: {
           frameId: () => frameId,
           showField: (key) => focusField(key as FieldKey),
@@ -506,7 +540,6 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       lastRows = new Map();
       drafts.clear();
       answers.clear();
-      ui?.setHighlights([]);
       ui?.setNotices([]);
       ui?.hidePolicyCard();
       ui?.setLauncher({ state: 'idle', action: 'fill' });

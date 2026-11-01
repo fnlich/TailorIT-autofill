@@ -38,17 +38,18 @@ import {
 import { hashOfOptions } from './option-hash';
 import { isInOwnUi } from './own-ui';
 import { proxyOf, type Proxy, unrecognisedUploadControl } from './proxy';
-import { newScanCache, type ScanCache } from './scan-cache';
+import { newScanCache, styleOf, type ScanCache } from './scan-cache';
 import { sectionFinder } from './sections';
 import {
-  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN, TEXT_CAP_LABEL,
+  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MIN_OPACITY, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN,
+  TEXT_CAP_LABEL,
 } from './thresholds';
 import type {
   FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload, WidgetKind, WidgetReading, WidgetTarget,
 } from './types';
 import { currentValueOf, type SelectableOption } from './values';
 import { readSelectOptions, visiblePlaceholder, visibleText, type VisibleOption } from './visible-text';
-import { visibilityOf, isUserVisible } from './visibility';
+import { isSubtreeHidden, isUserVisible, visibilityOf, type VisibilityVerdict } from './visibility';
 import {
   ariaWidgetKind, editableOf, isChosen, isMultiselectable, isUnavailable, isWidgetPart, listOf, membersOf, roleOf,
   WIDGET_ROOT_SELECTOR,
@@ -152,7 +153,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     if (!native && declared === null && aria === null) continue;
     const widget = declared !== null ? anatomyOf(el, declared.kind as WidgetKind, declared)
       : aria !== null ? anatomyOf(el, aria, null) : null;
-    const verdict = visibilityOf(el, cache);
+    const verdict = widgetVisibility(el, declared, cache);
     if (!native) {
       // An ARIA widget a person cannot see is no field, and no native control to count.
       if (verdict.visible && widget !== null) {
@@ -436,7 +437,36 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): 
     kind, element: el, input: group ? null : editableOf(el),
     opener: group || roleOf(el) === 'listbox' ? null : declared?.opener ?? (el as HTMLElement),
     members: group ? membersOf(el) : [], activation: declared?.activation ?? [], declared: declared !== null,
+    ...(declared === null ? {} : { expanded: declared.expanded ?? null, box: declared.box ?? null,
+      busy: declared.busy ?? [], ...(declared.shownAnswer ? { shownAnswer: declared.shownAnswer } : {}) }),
   };
+}
+
+/**
+ * Whether a control is visible, as isUserVisible judges it, with one exception for a widget the adapter declares with
+ * the box a person sees as it (WidgetDecl.box): its element sits inside that box, is transparent by its own opacity
+ * alone (nothing else hides it or its parent), and the box is visible. react-select draws its text box transparent
+ * while it shows an answer (the Greenhouse capture of 2026-11-01, which fixtures/synthetic/greenhouse-widgets
+ * reproduces); any other hidden control is judged as it always is, and stays a honeypot.
+ */
+function widgetVisibility(el: Element, declared: WidgetDecl | null, cache: ScanCache): VisibilityVerdict {
+  const own = visibilityOf(el, cache);
+  const box = declared?.box ?? null;
+  if (own.visible || own.deferred || box === null || box === el || !box.contains(el)) return own;
+  return transparentByItself(el, cache) ? visibilityOf(box, cache) : own;
+}
+
+/** An element hidden only by its own opacity: its parent shown (no hiding rule, its opacity product kept), and the
+ *  element itself not display: none, visibility: hidden, hidden, inert or aria-hidden. */
+function transparentByItself(el: Element, cache: ScanCache): boolean {
+  const parent = el.parentElement;
+  const style = styleOf(el, cache);
+  if (parent === null || style === null || isSubtreeHidden(parent, cache)) return false;
+  if (el.hasAttribute('hidden') || el.hasAttribute('inert')
+    || (el.getAttribute('aria-hidden') ?? '').trim().toLowerCase() === 'true') return false;
+  if (style.display === 'none' || style.visibility !== 'visible' || style.filter !== 'none') return false;
+  const opacity = Number(style.opacity);
+  return Number.isFinite(opacity) && opacity < MIN_OPACITY;
 }
 
 /** A widget as a field: its label by the same visible-label rules (a group's from its container), its options a
@@ -495,8 +525,9 @@ function withReading(draft: Draft, base: BaseKey, readings: Map<BaseKey, WidgetR
   if (widget.kind === 'radio' || widget.kind === 'checkbox') return draft;
   const reading = readings?.get(base);
   if (reading?.kind === 'remote') {
-    // A search's results, shown while it types, are no options of the field.
-    if (widget.kind !== 'combobox' && widget.kind !== 'typeahead-remote') return draft;
+    // A search's results, shown while it types, are no options of the field. A combobox its adapter declared stays
+    // one, however its list answered (a Greenhouse Yes/No filters as typed too).
+    if (widget.kind !== 'typeahead-remote' && (widget.kind !== 'combobox' || widget.declared)) return draft;
     return { ...draft, kind: 'typeahead-remote', options: [], widget: { ...widget, kind: 'typeahead-remote' } };
   }
   const read = (kept: WidgetReading & { kind: 'options' }, kind: WidgetKind): Draft => {

@@ -288,54 +288,89 @@ describe('EEO values (§8.7)', () => {
   });
 });
 
-describe('consent values (§8.7)', () => {
+describe('consent values (§8.7; the owner\'s decision of 2026-11-01)', () => {
   const profile = goldenProfile();
+  /** An optional box, and one the form requires, in a run that used AI (the default) or none at all. */
+  const optional = { required: false, aiFree: false };
+  const required = { required: true, aiFree: false };
 
-  it('never ticks Spotify\'s marketing consent under the defaults, but keeps the application on file (the Phase E review, B1)', () => {
+  it('leaves Spotify\'s optional marketing consent unticked under the defaults, as decided, but keeps the application on file (the Phase E review, B1)', () => {
     const spotify = specOf('Spotify has my consent to contact me about future job opportunities.', 'checkbox');
     expect(fieldOf(planOf([spotify]), spotify)).toMatchObject({ write: undefined,
-      row: { category: 'consent.marketing', reason: 'consent-requires-user', wrote: false } });
+      row: { category: 'consent.marketing', reason: 'consent-optional-unticked', status: 'skipped',
+        needsUserAction: false, wrote: false } });
     const onFile = specOf('Keep my information on file for future opportunities', 'checkbox');
     expect(fieldOf(planOf([onFile]), onFile).write?.value).toEqual({ kind: 'check' });
-    // Ticked once the person pre-approves marketing themselves.
+    // Ticked once the person pre-approves marketing themselves, and when the form requires it.
     const marketing = settingsWith({ preapprovedConsent: [...DEFAULT_SETTINGS.preapprovedConsent, 'marketing'] });
     expect(fieldOf(planOf([spotify], { settings: marketing }), spotify).write?.value).toEqual({ kind: 'check' });
+    const needed = { ...spotify, required: true };
+    expect(fieldOf(planOf([needed]), needed).write?.origin).toEqual({ provenance: 'rule', ruleId: 'consent.required' });
   });
 
-  it('ticks a box only when every consent kind its label names is pre-approved', () => {
+  it('ticks an optional box only when every consent kind its label names is pre-approved', () => {
     const settings = settingsWith({ preapprovedConsent: ['privacy'] });
-    expect(candidate(consentValue('consent.privacy', ['consent.privacy'], profile, settings))).toMatchObject({
+    expect(candidate(consentValue('consent.privacy', ['consent.privacy'], profile, settings, optional))).toMatchObject({
       origin: { provenance: 'rule', ruleId: 'consent.preapproved' }, confidence: 0.9, check: true });
-    expect(consentValue('consent.privacy', ['consent.certify', 'consent.privacy'], profile, settings))
-      .toEqual({ ok: false, none: { reason: 'consent-requires-user', flagged: true, needsUser: true } });
-    expect(reason(consentValue('consent.privacy', ['consent.privacy'], profile, CAUTIOUS_SETTINGS)))
-      .toBe('consent-requires-user');
+    expect(consentValue('consent.privacy', ['consent.certify', 'consent.privacy'], profile, settings, optional))
+      .toEqual({ ok: false, none: { reason: 'consent-optional-unticked', flagged: false } });
+    expect(reason(consentValue('consent.privacy', ['consent.privacy'], profile, CAUTIOUS_SETTINGS, optional)))
+      .toBe('consent-optional-unticked');
+  });
+
+  it('ticks a box the form requires whatever its kinds, binding clauses included (consent.required)', () => {
+    for (const [category, kinds] of [['consent.privacy', ['consent.certify', 'consent.privacy']],
+      ['consent.marketing', undefined], ['consent.sms', undefined], ['consent.other', undefined],
+      ['consent.privacy', ['consent.privacy']]] as const) {
+      expect(candidate(consentValue(category, kinds, profile, CAUTIOUS_SETTINGS, required)), category).toMatchObject({
+        origin: { provenance: 'rule', ruleId: 'consent.required' }, check: true });
+    }
+    // A pre-approved kind keeps its own rule; unrecognised consent is never pre-approved.
+    expect(candidate(consentValue('consent.privacy', ['consent.privacy'], profile, DEFAULT_SETTINGS, required))?.origin)
+      .toEqual({ provenance: 'rule', ruleId: 'consent.preapproved' });
+    expect(reason(consentValue('consent.other', undefined, profile, DEFAULT_SETTINGS, optional)))
+      .toBe('consent-optional-unticked');
   });
 
   it('pre-approves the usual consents by default, never marketing or SMS (the owner’s amendments)', () => {
     for (const kind of ['privacy', 'terms', 'dataRetention', 'certify', 'backgroundCheck'] as const) {
       const category = `consent.${kind}` as const;
-      expect(candidate(consentValue(category, [category], profile, DEFAULT_SETTINGS))?.check, kind).toBe(true);
+      expect(candidate(consentValue(category, [category], profile, DEFAULT_SETTINGS, optional))?.check, kind).toBe(true);
     }
     for (const kind of ['marketing', 'sms'] as const) {
       const category = `consent.${kind}` as const;
-      expect(reason(consentValue(category, [category], profile, DEFAULT_SETTINGS)), kind).toBe('consent-requires-user');
+      expect(reason(consentValue(category, [category], profile, DEFAULT_SETTINGS, optional)), kind)
+        .toBe('consent-optional-unticked');
     }
-    expect(candidate(consentValue('consent.signature', ['consent.signature'], profile, DEFAULT_SETTINGS))?.text)
+    expect(candidate(consentValue('consent.signature', ['consent.signature'], profile, DEFAULT_SETTINGS, optional))?.text)
       .toBe('Alex Rivera');
-    expect(reason(consentValue('consent.aiAttestation', undefined, profile, DEFAULT_SETTINGS))).toBe('consent-requires-user');
   });
 
-  it('never ticks an AI attestation or unrecognised consent, whatever the settings', () => {
+  it('ticks an "I did not use AI" attestation only when the run used no AI at all, whatever the settings', () => {
     const all = settingsWith({ preapprovedConsent: ['privacy', 'terms', 'certify', 'dataRetention', 'marketing', 'sms',
       'backgroundCheck', 'signature'] });
-    expect(reason(consentValue('consent.aiAttestation', undefined, profile, all))).toBe('consent-requires-user');
-    expect(reason(consentValue('consent.other', undefined, profile, all))).toBe('consent-requires-user');
+    for (const consent of [optional, required]) {
+      expect(consentValue('consent.aiAttestation', undefined, profile, all, consent))
+        .toEqual({ ok: false, none: { reason: 'ai-attestation-ai-used', flagged: true, needsUser: true } });
+      // A box that also names AI among its kinds is the same statement.
+      expect(reason(consentValue('consent.privacy', ['consent.privacy', 'consent.aiAttestation'], profile, all, consent)))
+        .toBe('ai-attestation-ai-used');
+    }
+    const free = { required: false, aiFree: true };
+    expect(candidate(consentValue('consent.aiAttestation', undefined, profile, CAUTIOUS_SETTINGS, free))).toMatchObject({
+      origin: { provenance: 'rule', ruleId: 'consent.no-ai-attestation' }, check: true });
+    expect(candidate(consentValue('consent.privacy', ['consent.privacy', 'consent.aiAttestation'], profile,
+      DEFAULT_SETTINGS, free))?.origin).toEqual({ provenance: 'rule', ruleId: 'consent.preapproved' });
   });
 
-  it('types the full name for a pre-approved signature', () => {
+  it('types the full name for a pre-approved or required signature', () => {
     expect(candidate(consentValue('consent.signature', ['consent.signature'], profile,
-      settingsWith({ preapprovedConsent: ['signature'] })))).toMatchObject({ text: 'Alex Rivera',
+      settingsWith({ preapprovedConsent: ['signature'] }), optional))).toMatchObject({ text: 'Alex Rivera',
       origin: { provenance: 'rule', ruleId: 'consent.signature-preapproved', path: 'identity.fullName' } });
+    expect(candidate(consentValue('consent.signature', ['consent.signature'], profile, CAUTIOUS_SETTINGS, required)))
+      .toMatchObject({ text: 'Alex Rivera',
+        origin: { provenance: 'rule', ruleId: 'consent.required', path: 'identity.fullName' } });
+    expect(reason(consentValue('consent.signature', ['consent.signature'], profile, CAUTIOUS_SETTINGS, optional)))
+      .toBe('consent-optional-unticked');
   });
 });

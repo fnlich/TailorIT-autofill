@@ -14,7 +14,8 @@
  *    be a control that could submit. Nothing else is excused, and their untrusted events are still checked here and
  *    in 3.
  * 3. The extension's own (untrusted) events are only the fillers' (input, change, focusout, blur, click, and any
- *    single activation event an adapter declares), and none is a click on a control assertNotSubmit refuses.
+ *    single activation event an adapter declares: on a Greenhouse page, the mouseup its react-selects open on, unless
+ *    the spec names the run's own), and none is a click on a control assertNotSubmit refuses.
  * 4. No hidden marker or canary in a request to TailorIT, a report, RunState (its checked canarySet aside, which holds
  *    canaries by design), storage, a console message, or a form control's final value; canaries of 8 or more
  *    characters are also looked for with spaces and punctuation removed, as the Guard does. A draft request (Phase 6)
@@ -71,7 +72,8 @@ export interface TrapRun {
    *  every report row's label must be one of them. */
   labels: readonly string[];
   applicationKey: string | null;
-  /** Single activation events an adapter declared for a widget on the page (none in Phase 2). */
+  /** Single activation events an adapter declared for a widget on the page; by default the page's adapter's
+   *  (declaredActivation). */
   activation?: readonly string[];
   /** The controls the spec clicked as the person (Playwright's trusted click), by their spy identity (#id): a wizard's
    *  Next (Phase 5). Their trusted events are the person's, never a violation; none may be a control that submits. */
@@ -243,6 +245,18 @@ export async function controlValues(page: Page): Promise<string[]> {
   return values;
 }
 
+/** The single activation events the adapter of a page's address declares for its widgets: Greenhouse's react-selects
+ *  open on one bubbling mouseup (src/adapters/greenhouse GREENHOUSE_ACTIVATION, from the capture of 2026-11-01); no
+ *  other adapter declares one. */
+export function declaredActivation(url: string): readonly string[] {
+  try {
+    const { protocol, hostname } = new URL(url);
+    return protocol === 'https:' && ['job-boards.greenhouse.io', 'boards.greenhouse.io'].includes(hostname) ? ['mouseup'] : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   const records = await spyRecords(run.page);
   const events = records.flatMap((record) => record.events);
@@ -263,7 +277,7 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   }
 
   // 3. Only the fillers' events, and no click on a submit control.
-  const allowed = new Set<string>([...ALLOWED_EVENTS, ...(run.activation ?? [])]);
+  const allowed = new Set<string>([...ALLOWED_EVENTS, ...(run.activation ?? declaredActivation(run.page.url()))]);
   const ours = events.filter((event) => !event.trusted);
   expect(ours.filter((event) => !allowed.has(event.type)), 'events the fillers never cause').toEqual([]);
   expect(ours.filter((event) => event.type === 'click' && (event.submits || SUBMIT_WORDS.test(event.words))),

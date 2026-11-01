@@ -5,8 +5,7 @@
  * change: no transform, opacity, filter or will-change, which IntersectionObserver v2 would read as unseen). Its name
  * is "Edit with AI" (aria-label), and the layer is not hidden from assistive technology.
  * - The run decides which boxes get one (the core's aiEditable, while the run rests, not in a dry run or a
- *   profile-only run); this file draws them, re-measured with the highlights on scroll and resize, at most
- *   MAX_AI_EDITS.
+ *   profile-only run); this file draws them, re-measured on scroll and resize, at most MAX_AI_EDITS.
  * - A click counts only when it is trusted (event.isTrusted) and the button is visible where it is drawn: the page UI
  *   watches each button with IntersectionObserver v2 (visible.ts), so a page layer drawn over it that lets clicks
  *   through makes it not visible and the click does nothing. The click stops at the button: it is outside the page's

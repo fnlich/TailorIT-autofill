@@ -113,9 +113,18 @@ export interface WidgetTarget {
   /** A group's option elements in option order (buttons or role=radio): members[i] is field.options[i]. */
   readonly members: readonly HTMLElement[];
   /** The single activation event the adapter declared for opening it, instead of click(); [] for none. */
-  readonly activation: readonly ('mousedown' | 'focus')[];
+  readonly activation: readonly ('mousedown' | 'mouseup' | 'focus')[];
   /** The adapter declared it, from a snapshot. */
   readonly declared: boolean;
+  /** The element whose aria-expanded says whether its list is open (WidgetDecl.expanded): its declared activation
+   *  toggles the list, so it is sent only while this says "false". Absent: open means its list is shown. */
+  readonly expanded?: Element | null;
+  /** What a person sees as the widget, when the adapter names it (WidgetDecl.box). */
+  readonly box?: Element | null;
+  /** The adapter's selectors for the widget's own busy signs (WidgetDecl.busy). */
+  readonly busy?: readonly string[];
+  /** The option it shows chosen when its own text does not name it (WidgetDecl.shownAnswer). */
+  readonly shownAnswer?: (known: readonly string[]) => string | null;
 }
 
 /** One option of a widget's list as it was read: its visible label and whether it can be chosen. */

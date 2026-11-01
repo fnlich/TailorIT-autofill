@@ -190,7 +190,7 @@ describe('auto-advance off: each step filled, then the person moves on', () => {
       // The shift question and the school left to the person: never pressed on.
       expect(state.lastFill).toMatchObject({ flagged: 2 });
 
-      // Step 4: the final step. Review, Submit highlighted, nothing pressed.
+      // Step 4: the final step. Review, Submit the person's, nothing pressed.
       pageNext(fixture);
       state = await nextStep(worker, seen, 'review');
       expect(state.stepIndex).toBe(3);

@@ -40,7 +40,7 @@ import {
 } from '../confidence';
 import { llmMaySeeLabel } from '../guard/honeypot';
 import { policyClassOf } from '../resolver/categories';
-import { namesSensitiveAnswer, screenForClassify } from '../resolver/classify';
+import { namesSensitiveAnswer, openAnswerTopics, screenForClassify } from '../resolver/classify';
 import type { FieldClassification } from '../resolver/resolve';
 import { capCodePoints, foldLetters } from '../text/fold';
 import { asUntrusted } from '../text/untrusted';
@@ -105,6 +105,9 @@ export interface DraftContext {
   fields: readonly DraftNeighbour[];
   revealEdges: ReadonlyArray<readonly [BaseKey, BaseKey]>;
   vocab: Vocab;
+  /** Whether the profile holds no work-authorization entry at all: a question whose country cannot be read is then one
+   *  the profile does not answer, which an `all` answer may (plan/answers.ts). Absent: unknown, never asked. */
+  noWorkAuthorization?: boolean;
 }
 
 /** The category a classification asks about: the rules' (the one they hand to the person included), an attention
@@ -152,23 +155,46 @@ export function questionsOf(spec: FieldSpec, context: DraftContext): DraftNeighb
   return related;
 }
 
+/** The classes a question of an `all` answer's context may not be of (the owner's decision of 2026-11-01): a
+ *  self-identification or consent question. A legal, pay or attention-check question beside it closes nothing. */
+const OPEN_CLOSING_CLASSES: ReadonlySet<PolicyClass> = new Set<PolicyClass>(['eeo', 'consent']);
+
+/** Whether a question closes the context of an AI answer of TailorIT's `all` scope (plan/answers.ts): a tripwire in
+ *  its own text, a self-identification, consent or pronoun question, or text that names a topic the scope never asks
+ *  about or offers an EEO answer (classify.ts openAnswerTopics). */
+export function closesOpenAnswer(field: DraftNeighbour, vocab: Vocab): boolean {
+  const category = askedCategory(field.classification);
+  return field.classification.by === 'tripwire' || OPEN_CLOSING_CLASSES.has(policyClassOf(category))
+    || category === 'identity.pronouns'
+    || openAnswerTopics(field.spec, vocab, field.classification.by === 'attention') === null;
+}
+
 /** Whether a box sits in a block of closed questions only, whose heading the screen does not name ("Voluntary
  *  disclosures", "Legal"): a section of its own, every other question of which (its block's) is one no draft or AI
- *  answer may belong to. A section that also holds questions of the person's own (Greenhouse's one section) is none. */
-function inClosedBlock(spec: FieldSpec, context: DraftContext): boolean {
+ *  answer may belong to (with `open`, one that closes an `all` answer's context). A section that also holds questions
+ *  of the person's own (Greenhouse's one section) is none. */
+function inClosedBlock(spec: FieldSpec, context: DraftContext, open: boolean): boolean {
   if (spec.section.id === 'main') return false;
   const others = context.fields.filter((field) => field.spec.key !== spec.key
     && field.spec.section.id === spec.section.id && field.spec.section.block === spec.section.block);
-  return others.length > 0 && others.every((field) => closedQuestion(field, context.vocab));
+  const closes = (field: DraftNeighbour) => (open ? closesOpenAnswer(field, context.vocab)
+    : closedQuestion(field, context.vocab));
+  return others.length > 0 && others.every(closes);
 }
 
 /** Whether a field sits in an EEO, legal or sensitive context (E2): its own screen (its section's words included),
  *  the questions it belongs to, and a block of closed questions only. A legal, consent or EEO question beside it in a
- *  section that holds other open questions closes nothing else (the Phase E review, M1). */
-export function inClosedContext(spec: FieldSpec, context: DraftContext): boolean {
+ *  section that holds other open questions closes nothing else (the Phase E review, M1). With `open` (an answer of
+ *  TailorIT's `all` scope, whose own text plan/answers.ts screens with openAnswerTopics): only the questions it belongs
+ *  to and its block, by closesOpenAnswer. */
+export function inClosedContext(spec: FieldSpec, context: DraftContext, open = false): boolean {
+  if (open) {
+    return questionsOf(spec, context).some((field) => closesOpenAnswer(field, context.vocab))
+      || inClosedBlock(spec, context, true);
+  }
   return screenForClassify(spec, context.vocab) !== null
     || questionsOf(spec, context).some((field) => closedQuestion(field, context.vocab))
-    || inClosedBlock(spec, context);
+    || inClosedBlock(spec, context, false);
 }
 
 /** Whether the classification says the field is a free-text question a draft may answer: the rules' free-text

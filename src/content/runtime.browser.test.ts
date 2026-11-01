@@ -191,17 +191,18 @@ describe('what the worker asks of a frame', () => {
       .toEqual({ ok: true, data: { options: [] } });
   });
 
-  it('shows a field on request: scrolled into view and outlined, with no event on the field', async () => {
+  it('shows a field on request: scrolled into view and focused, nothing drawn, no click or input on it', async () => {
     const { fixture, fake, runtime } = await startOn(trap07, trapUrl('07'));
     expect(await runtime.fill()).toBe('review');
     const seen: string[] = [];
     const record = (event: Event) => seen.push(event.type);
-    for (const type of ['focus', 'focusin', 'click', 'input']) fixture.doc.addEventListener(type, record, true);
+    for (const type of ['click', 'input', 'change', 'keydown']) fixture.doc.addEventListener(type, record, true);
     const email = fake.reports.at(-1)!.fields.find((row) => row.label === 'Email')!;
     expect(await fake.platform.deliver({ v: 1, type: 'field/focus', fieldKey: email.key })).toEqual({ ok: true, data: {} });
-    expect(runtime.ui!.focusShown).toBe(true);
     expect(seen).toEqual([]);
-    expect(fixture.doc.activeElement).toBe(fixture.doc.body);
+    expect((fixture.doc.activeElement as HTMLInputElement | null)?.type).toBe('email');
+    // The owner's decision of 2026-11-01: no outline drawn over it.
+    expect(runtime.ui!.shadow.querySelectorAll('.highlights, .hl, .chip')).toHaveLength(0);
   });
 
   it('starts a run on run/start, one at a time', async () => {

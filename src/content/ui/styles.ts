@@ -11,29 +11,19 @@
  * and none of these reaches out. Colours are TailorIT's (src/shared/palette.ts, the report's own), written in as
  * values rather than custom properties, which a page could pass in through the host: the launcher is TailorIT's teal
  * tile with its white "T" and a toned badge; notices and the policy card are white cards with a soft shadow, shaped so
- * it never covers another of our controls (palette.ts IN_PAGE_SHADOWS); one colour per status, with a chip, so a
- * status reads the same on the page and in the panel; drafts are dashed. The in-page review panel's frame is here
- * too, a white card with a 20 px radius; the report inside it adds the report's own stylesheet to the same root
- * (src/content/ui/panel.tsx), whose tokens its box carries (.tia-page). Its rows scroll inside its box (a flex column
- * whose body may shrink, the box clipping what overflows): nothing of the panel is ever drawn outside the box its
- * visibility watch observes (the Phase 6 review, E1).
+ * it never covers another of our controls (palette.ts IN_PAGE_SHADOWS). Nothing is drawn over the page's fields (the
+ * owner's decision of 2026-11-01): a field's status and the AI's marks are the review's. The in-page review panel's
+ * frame is here too, a white card with a 20 px radius; the report inside it adds the report's own stylesheet to the
+ * same root (src/content/ui/panel.tsx), whose tokens its box carries (.tia-page). Its rows scroll inside its box (a
+ * flex column whose body may shrink, the box clipping what overflows): nothing of the panel is ever drawn outside the
+ * box its visibility watch observes (the Phase 6 review, E1).
  *
  * IntersectionObserver v2 judges our controls (visible.ts): no transform, opacity below 1, filter, backdrop-filter or
  * will-change on the anchor, the launcher, a notice, the card, the panel, an Edit with AI button or their buttons,
  * hover included (an Edit with AI button widens by showing its label). Animations are paint-only and run on
- * descendants (the launcher's spinner is its ::after); no url() anywhere. A value the AI wrote is outlined in TailorIT's
- * teal with an "AI" chip, an answer it guessed with an amber "AI guess" chip.
+ * descendants (the launcher's spinner is its ::after); no url() anywhere.
  */
-import { ACCENT, BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, SHADOWS, STATUS_COLOURS, TONES } from '../../shared/palette';
-
-/** The statuses a highlight is drawn for (skipped fields get none). */
-const HIGHLIGHTED = ['verified', 'filled', 'flagged', 'blocked'] as const;
-
-/** One colour per status: the outline, and the chip that names it. */
-const STATUS_RULES = HIGHLIGHTED.map((status) => [
-  `.hl[data-status="${status}"] { border-color: ${STATUS_COLOURS[status].fg}; }`,
-  `.hl[data-status="${status}"] .chip { background: ${STATUS_COLOURS[status].fg}; }`,
-].join('\n')).join('\n');
+import { BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, SHADOWS, TONES } from '../../shared/palette';
 
 /** A notice's icon, and the launcher's badge, per tone. */
 const TONE_RULES = (['warning', 'danger', 'info', 'success'] as const).map((tone) => [
@@ -100,17 +90,6 @@ button.dismiss { flex: 0 0 auto; display: flex; align-items: center; justify-con
   margin: -3px -4px 0 0; padding: 0; border: 0; border-radius: 999px; background: transparent; color: ${NEUTRAL.muted}; }
 button.dismiss:hover { background: ${NEUTRAL.track}; color: ${NEUTRAL.fg}; }
 button.action:focus-visible, button.dismiss:focus-visible { outline: 2px solid ${BRAND.ink}; outline-offset: 2px; }
-.highlights { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
-.hl { position: absolute; box-sizing: border-box; border: 2px solid; border-radius: 6px; pointer-events: none; }
-.hl.focus { border-color: ${ACCENT}; box-shadow: 0 0 0 4px rgb(20 161 192 / 0.35); }
-.chip { position: absolute; top: -9px; left: 4px; padding: 0 6px; border-radius: 4px; color: ${WHITE};
-  font: 700 10px/16px ${FONT_STACK}; white-space: nowrap; pointer-events: none; }
-${STATUS_RULES}
-.hl[data-draft="true"] { border-style: dashed; }
-.hl[data-ai] { border-color: ${BRAND.fill}; }
-.hl[data-ai="written"] .chip { background: ${BRAND.ink}; }
-.hl[data-ai="guess"] .chip { background: ${TONES.warning.bg}; color: ${TONES.warning.fg};
-  box-shadow: inset 0 0 0 1px ${TONES.warning.fg}; }
 .ai-edits { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
 button.ai-edit { pointer-events: auto; position: absolute; box-sizing: border-box; display: flex; align-items: center;
   gap: 6px; height: ${24}px; min-width: ${24}px; margin: 0; padding: 0; border: 0; border-radius: 8px;

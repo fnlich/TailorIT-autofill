@@ -178,6 +178,10 @@ export function createPlanner(deps: PlannerDeps) {
     const posting = job === null ? null : { company: job.companyName, location: job.location };
     // The run's cover letter as far as it is known (Phase G): planFrame attaches it once ready.
     const letter = deps.runs.memo(run.runId).letter?.input();
+    // Whether the run, or an earlier one of its application, asked TailorIT's AI anything (a task submitted, a cover
+    // letter written): its "I did not use AI" attestation is then untrue (the owner's decision of 2026-11-01).
+    const aiUsed = ai.used() || run.letterWritten === true
+      || (await deps.aiTaskIds.aiTasks(run.applicationKey, run.tabId).any?.()) === true;
     const plan = (state: PlanSensitiveState, profile: typeof loaded & { ok: true }) => deps.core.planFrame({
       specs: context.specs,
       planKeys,
@@ -196,6 +200,7 @@ export function createPlanner(deps: PlannerDeps) {
       ...(context.revealEdges === undefined ? {} : { revealEdges: context.revealEdges }),
       ...(posting === null ? {} : { posting }),
       ...(aiOffFor(run, context) ? { noAi: true } : {}),
+      ...(aiUsed ? { aiUsed: true } : {}),
       ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }),
       ...(letter === undefined ? {} : { coverLetter: letter }),
     });

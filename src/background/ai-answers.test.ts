@@ -18,12 +18,13 @@ const CONTEXT = { jobText: 'We build tools. VISIBLE-MARKER-01', company: 'Northw
   resumeId: 'resume-1' };
 
 const choice = (at: number, labels = ['Yes', 'No'], question = `Question ${at}?`): AnswerItem => ({
-  key: `lever|main|q${at}|${HASH}|0` as FieldKey, shape: 'choice', kind: 'radio', question: u(question), hint: u(''),
+  key: `lever|main|q${at}|${HASH}|0` as FieldKey, scope: 'standard', shape: 'choice', kind: 'radio',
+  question: u(question), hint: u(''),
   section: u(''), optionSetHash: HASH,
   options: labels.map((label, index) => ({ index: index + 1, label: u(label), labelHash: sha256Hex(label) })),
   maxLength: null });
 const text = (at: number, maxLength: number | null = 40): AnswerItem => ({ key: `lever|main|t${at}|none|0` as FieldKey,
-  shape: 'text', kind: 'text', question: u(`How many years of Go, ${at}?`), hint: u(''), section: u(''),
+  scope: 'standard', shape: 'text', kind: 'text', question: u(`How many years of Go, ${at}?`), hint: u(''), section: u(''),
   optionSetHash: null, options: [], maxLength });
 
 describe('answer requests', () => {
@@ -34,8 +35,8 @@ describe('answer requests', () => {
     expect(batches.map((batch) => batch.body.items.length)).toEqual([10, 2]);
     for (const batch of batches) {
       expect(AutofillAnswerRequestSchema.safeParse(batch.body).success).toBe(true);
-      expect(batch.body).toMatchObject({ jobText: CONTEXT.jobText, company: 'Northwind', jobTitle: 'Engineer',
-        resumeId: 'resume-1', canaries: ['I am LLM'] });
+      expect(batch.body).toMatchObject({ scope: 'standard', jobText: CONTEXT.jobText, company: 'Northwind',
+        jobTitle: 'Engineer', resumeId: 'resume-1', canaries: ['I am LLM'] });
       expect(batchHash(batch)).toMatch(/^answer:[0-9a-f]{32}$/);
     }
     // An option's label hash stays here: TailorIT reads the index and the label only.
@@ -54,6 +55,40 @@ describe('answer requests', () => {
       [items[0]!.key, 'llm-disabled-for-category'], [items[1]!.key, 'llm-disabled-for-category'],
       [items[2]!.key, 'llm-disabled-for-category'], [items[3]!.key, 'llm-disabled-for-category']]);
     expect(batches.flatMap((batch) => batch.items.map((item) => item.key))).toEqual([items[4]!.key]);
+  });
+
+  it('sends the `all` scope\'s items in batches of their own, screened by their topics (the owner\'s decision of 2026-11-01)', () => {
+    const all = (item: AnswerItem): AnswerItem => ({ ...item, scope: 'all' });
+    const items = [
+      all(choice(1, ['Yes', 'No'], 'Will you now or in the future require visa sponsorship?')),
+      all({ ...text(2), question: u('What are your salary expectations?'), hint: u('Enter a number only') }),
+      all(choice(3, ['Yes', 'No'], 'Have you ever been convicted of a felony?')),
+      all(choice(4, ['Red', 'Purple'], 'Attention check: select PURPLE.')),
+      all(choice(5, ['Yes', 'No', 'Prefer not to say'], 'Do you hold an active TS/SCI clearance?')),
+      choice(6),
+    ];
+    const { batches, withheld } = answerBatches(items, CONTEXT, [], vocab);
+    expect(withheld).toEqual([]);
+    expect(batches.map((batch) => [batch.body.scope, batch.items.map((item) => item.key)])).toEqual([
+      ['standard', [items[5]!.key]], ['all', items.slice(0, 5).map((item) => item.key)]]);
+    for (const batch of batches) expect(AutofillAnswerRequestSchema.safeParse(batch.body).success).toBe(true);
+    // The two scopes' batches are named apart.
+    expect(new Set(batches.map(batchHash)).size).toBe(2);
+    // Never in the `all` scope either: a self-identification topic or an EEO answer, an identity number, another
+    // person, an "I did not use AI" attestation, and a decline beside no open topic; nor anything without the vocabulary.
+    const never = [
+      all(choice(11, ['Yes', 'No'], 'Are you a protected veteran?')),
+      all(choice(12, ['Woman', 'Man'], 'Which applies to you?')),
+      all({ ...text(13), question: u('What is your Social Security number?') }),
+      all({ ...text(14), question: u('Emergency contact name') }),
+      all(choice(15, ['Yes', 'No'], 'I certify that I did not use AI to write this application')),
+      all(choice(16, ['Platform', 'Prefer not to say'], 'Which team would you join?')),
+      all(choice(17, ['Yes', 'No'], 'Do you consent to a background check?')),
+    ];
+    const screened = answerBatches(never, CONTEXT, [], vocab);
+    expect(screened.batches).toEqual([]);
+    expect(screened.withheld.map((verdict) => verdict.key)).toEqual(never.map((item) => item.key));
+    expect(answerBatches([items[0]!], CONTEXT, []).batches).toEqual([]);
   });
 
   it('never sends a choice with fewer than two options, nor a text past the cap', () => {
@@ -158,7 +193,7 @@ describe('the extension’s own sensitive terms (TailorIT’s server-only ones, 
   it('never sends an answer item, a draft question or a box’s current text that names one', () => {
     const items = [choice(1, ['Yes', 'No'], 'Are you on parole?'), { ...text(2), question: u('What is your OTE?') },
       { ...text(3), hint: u('Your Tax File Number') }, choice(4, ['Yes', 'No, I have pending charges']), choice(5)];
-    const { batches, withheld } = answerBatches(items, CONTEXT, []);
+    const { batches, withheld } = answerBatches(items, CONTEXT, [], vocab);
     expect(withheld.map((verdict) => [verdict.key, verdict.kind === 'none' ? verdict.why : null]))
       .toEqual(items.slice(0, 4).map((item) => [item.key, 'llm-disabled-for-category']));
     expect(batches.flatMap((batch) => batch.items.map((item) => item.key))).toEqual([items[4]!.key]);

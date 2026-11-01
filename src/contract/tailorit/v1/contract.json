@@ -2,7 +2,7 @@
   "apiVersion": 2,
   "zod": "4.6.7",
   "files": {
-    "ai.ts": "28022ed5313c803da7e185cbe772bae6b474c5b549c31b8a934d67542dfc4223",
+    "ai.ts": "e7f0001bef562607987ba7e99be1d91c705098899a5c80f7833e3c73d6423a9c",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "92eee1fd65c7f7e79026ab88299a8d71e39b524ed30add9eb19a44dac38fc156",
     "connect.ts": "856a13f2327d4ab08b88df598563a93426ab1bb1df14d86d02df69aa5b4f046f",
@@ -36,6 +36,8 @@
     "AutofillAnswerRequest/invalid/text-with-option-set.json": "c886ee5235e7a2a69ce9c6ff27d5e087ba7c8197db856204065076468030a2a2",
     "AutofillAnswerRequest/invalid/text-with-options.json": "a342807645776b2a91a5b705267595110331ffc647cb27d4a55d1f2443a76f53",
     "AutofillAnswerRequest/invalid/thirty-one-options.json": "5648317eaaaf30a436eb6e729ff04f5893f4091ce5a4e49c7f37112d2757c32f",
+    "AutofillAnswerRequest/invalid/unknown-scope.json": "e19f30a117c69d4bd4e037c355e6a9716ec0bbe03f24524bc78f4ca8998021c6",
+    "AutofillAnswerRequest/valid/all-scope.json": "fa26c755d44e15b7beeb05aafd6e30af801a3c3714f22db383822f24db72d6a5",
     "AutofillAnswerRequest/valid/embedded-form.json": "3de37f26bbb87f03af2aae169ad562285f5e26c14301e20e294b582cc7fffd02",
     "AutofillAnswerRequest/valid/golden.json": "733701c61af16b788a5820dabfd8406f74239bc432e10c52c71b8cb6bb366b8f",
     "AutofillAnswerResult/invalid/answered-without-basis.json": "0b4e9b688f9cd776e38777ecdcd1e8a62cd197e1f134e19f61b8f135df2693a0",
@@ -9105,6 +9107,14 @@
             "additionalProperties": false
           }
         },
+        "scope": {
+          "default": "standard",
+          "type": "string",
+          "enum": [
+            "standard",
+            "all"
+          ]
+        },
         "jobText": {
           "type": "string",
           "maxLength": 20000
@@ -9143,6 +9153,7 @@
       },
       "required": [
         "items",
+        "scope",
         "jobText",
         "company",
         "jobTitle",

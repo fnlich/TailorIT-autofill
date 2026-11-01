@@ -229,22 +229,51 @@ test.describe('trap fixtures', () => {
     await invariants(filled, run);
   });
 
-  test('06 attention checks: each left empty and flagged, with no write event and no AI request', async ({ extContext, connected: ext, routeLog, logs }) => {
+  // The owner's decision of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): an attention check gets TailorIT's AI answer, as its
+  // own visible question asks, in the answer route's `all` scope, marked "AI guess". Only its visible words and options
+  // travel: never a profile value, and nothing hidden (the trap invariants check every request).
+  const ATTENTION = ["To confirm you are a human, type the word 'human' below.", 'Attention check: select PURPLE.',
+    "To prove you read this, choose 'Strongly disagree'."];
+
+  test('06 attention checks: asked of the AI in the all scope with their visible words only, left empty and flagged when it has no answer', async ({ extContext, connected: ext, routeLog, logs }) => {
     const run = { extContext, ext, routeLog, logs };
     const filled = await fillTrap('06', run);
     const { report, page } = filled;
     expect(report.status).toBe('review');
     nameAndEmail(report, 'first');
-    for (const label of ["To confirm you are a human, type the word 'human' below.", 'Attention check: select PURPLE.',
-      "To prove you read this, choose 'Strongly disagree'."]) {
-      expect(row(report, label), label).toMatchObject({ category: 'attentionCheck', status: 'flagged', reason: 'attention-check',
+    // The mock's default: no answer for any item, so each stays empty and flagged, with no write event.
+    for (const label of ATTENTION) {
+      expect(row(report, label), label).toMatchObject({ category: 'attentionCheck', status: 'flagged', reason: 'llm-no-answer',
         wrote: false, needsUserAction: true, provenance: null });
     }
     await expect(page.locator('#human')).toHaveValue('');
     expect(await checked(page, 'q2')).toEqual([]);
     await expect(page.locator('#scale')).toHaveValue('');
     expect(await eventsOn(page, '#human', 'q2=red', 'q2=purple', 'q2=green', '#scale')).toEqual([]);
-    await noAiRequest();
+    // One answer request, the all scope, the three questions as the page shows them; no tiebreak, classification or draft.
+    const sent = await mock.requestsTo('POST /api/autofill/ai/*');
+    expect(sent.map((request) => request.path)).toEqual(['/api/autofill/ai/answer']);
+    const body = JSON.parse(sent[0]!.body) as { scope: string; items: Array<{ question: string; options: Array<{ label: string }> }> };
+    expect(body.scope).toBe('all');
+    expect(body.items.map((item) => item.question)).toEqual(ATTENTION);
+    expect(body.items[1]!.options.map((option) => option.label)).toEqual(['Red', 'Purple', 'Green']);
+    for (const value of [GOLDEN.first, GOLDEN.last, GOLDEN.email]) expect(sent[0]!.body).not.toContain(value);
+    await invariants(filled, run);
+  });
+
+  test('06 attention checks: written as the AI answers, each an "AI guess" that needs nothing of the person', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    await tailorit.scenario('ai-answer');
+    const run = { extContext, ext, routeLog, logs };
+    const filled = await fillTrap('06', run);
+    const { report, page } = filled;
+    expect(report.status).toBe('review');
+    for (const label of ATTENTION) {
+      expect(row(report, label), label).toMatchObject({ category: 'attentionCheck', status: 'verified', reason: 'ai-guess',
+        wrote: true, verification: 'verified', needsUserAction: false });
+    }
+    // The mock answers a choice with its first option: the scripted model's word, written as given.
+    expect(await checked(page, 'q2')).toEqual(['red']);
+    await expect(page.locator('#scale')).toHaveValue('5');
     await invariants(filled, run);
   });
 

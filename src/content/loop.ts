@@ -4,7 +4,10 @@
  * (src/core/loop), which decide what each pass plans and when the loop ends. A field is known by its base key, never by
  * a node. Each pass, in order:
  * 1. scan. Every scan of the run, the DOM guard's before each write included, goes through one tap that keeps the
- *    attribution (attribution.ts), and every scan reads the run's heldPlaceholders (DOM-7);
+ *    attribution (attribution.ts), and every scan reads the run's heldPlaceholders (DOM-7). Every scan reads the form
+ *    root as the run finds it then (LoopEnv.root, found again by the adapter's hook): a page that draws its whole form
+ *    again mid-fill (Twitch's Greenhouse form) is scanned anew, and the fields the new form shows empty are resets,
+ *    written again;
  * 2. observeScan, with the keyed hash of each written field's value now (values.ts), the DOM's attribution, the
  *    written fields the person touched since our write (a trusted input, keydown, paste or drop: touches.ts, which the
  *    run keeps for its document, resting included; frozen, never written again) and those that now hold nothing or
@@ -28,7 +31,9 @@
  * 7. recordRows for every planned key. Then the waiting path (Phase 4): each lazy widget whose row waits for options
  *    is opened, read whole and closed (dom/widgets' readWidget), and what it showed is kept as its reading by base key,
  *    which every later scan of the run reads (ScanOptions.widgetReadings), so the next pass plans it with real options;
- *    one that ignores our activation is flagged needs-your-click (a dry run opens nothing). Then the lists still
+ *    one that ignores our activation is flagged needs-your-click (a dry run opens nothing), after the run's one wait
+ *    for a page whose script has not attached yet (WidgetReadiness, one record for the run, which the pass's widget
+ *    writes share); one the page replaced meanwhile is left to the next scan. Then the lists still
  *    waiting for options, the ones held back (until their busy or loading sign clears: LC-8), and the lists a writer
  *    of this pass is known to change (childrenOf, its options edges) are awaited (awaitOptions), each counted from its parent's write, else the pass's last write: ready means
  *    the next scan sees the options, never-loaded flags options-never-loaded, gone is left to the next scan; Cancel ends
@@ -81,7 +86,7 @@ import { deadline, monotonicNow } from '../dom/time';
 import {
   BUSY_SIGNS, type BusySign, type ScannedField, type ScanResult, type SettleResult, type WidgetReading,
 } from '../dom/types';
-import { readWidget } from '../dom/widgets';
+import { newReadiness, readWidget } from '../dom/widgets';
 import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
@@ -263,6 +268,8 @@ class ReactiveLoop {
   private readonly held = new WeakMap<Element, string>();
   /** What the run has read of its lazy widgets, by base key (Phase 4): every scan of the run reads them. */
   private readonly readings: Map<BaseKey, WidgetReading>;
+  /** Whether the page answered a declared activation yet (dom/widgets' WidgetReadiness), for the whole run. */
+  private readonly readiness = newReadiness();
   private readonly attribution = new Attribution();
   /** What was written, by base key: kept when the field goes or its options change, and ours again only while its row
    *  says it wrote (a re-plan that found our value in place). */
@@ -360,16 +367,18 @@ class ReactiveLoop {
 
   // ── Scans ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-  /** A fresh scan of the form root, which the attribution sees, as it sees its rescans. */
+  /** A fresh scan of the form root as the run finds it now (LoopEnv.root: a form the page drew again is the new one),
+   *  which the attribution sees, as it sees its rescans. */
   private scanNow(): ScanResult {
     const { env } = this;
     return this.seen(scan(env.root, env.adapter, { platform: env.platform, frameId: env.frameId,
       heldPlaceholders: this.held, widgetReadings: this.readings }));
   }
 
+  /** A scan the attribution has seen; its rescans scan the form root found then, never the one it was made from. */
   private seen(result: ScanResult): ScanResult {
     this.attribution.saw(result.fields);
-    return { ...result, rescan: () => this.seen(result.rescan()) };
+    return { ...result, rescan: () => this.scanNow() };
   }
 
   /** A list's control by base key, once the page replaced its element (awaitOptions' refind): every list awaited in a
@@ -658,7 +667,8 @@ class ReactiveLoop {
   /** What a widget's write needs: the run's readings, and plan/request for a typeahead's results, at this pass. */
   private widgetWrites(): WidgetWriteEnv {
     const plan = this.env.planSome ?? this.env.plan;
-    return { readings: this.readings, plan: (specs, planKeys) => plan(specs, planKeys, this.state.pass) };
+    return { readings: this.readings, readiness: this.readiness,
+      plan: (specs, planKeys) => plan(specs, planKeys, this.state.pass) };
   }
 
   /**
@@ -680,10 +690,11 @@ class ReactiveLoop {
       const target = fresh.target(tracked.key);
       if (target === null || target.widget === undefined || target.field.options !== 'lazy') continue;
       const result = await readWidget(target, { adapter: env.adapter, root: env.root, signal: env.signal,
-        readings: this.readings });
+        readings: this.readings, readiness: this.readiness });
       this.alive();
       if (result.status === 'aborted') break;
-      if (result.status === 'read') {
+      // Read, or replaced while the run waited for the page to be ready: the next scan sees it either way.
+      if (result.status === 'read' || result.status === 'gone') {
         read = true;
         continue;
       }

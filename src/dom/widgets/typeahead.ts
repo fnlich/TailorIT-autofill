@@ -5,7 +5,9 @@
  * 1. each query is a guarded write (hooks.guard: the DOM guard on a fresh scan, then guardWriteInFrame with provenance
  *    profile and transform typeahead.query), typed with the text filler's setter and its input event
  *    (insertReplacementText). It is never Enter, and no change, focusout or blur follows it while results are awaited,
- *    since those close a widget's list;
+ *    since those close a widget's list. A widget that says it is closed (WidgetDecl.expanded) is opened first, with its
+ *    one declared activation, and its first answer awaited (Greenhouse's School loads its first page then): a closed
+ *    react-select shows no results, and its School search sends nothing;
  * 2. the page's answer is awaited (awaitList: the list's own busy signs cleared and one quiet window, capped at
  *    TYPEAHEAD_QUERY_CAP_MS), then the list is read whole;
  * 3. the results go to the worker, which matches them (hooks.match: the cascade, as for any list); a result is chosen
@@ -28,7 +30,7 @@ import { sameOptionLabel } from '../fillers/verify';
 import { TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
 import type { FieldTarget, WidgetOptionRead } from '../types';
 import { isChosen } from './aria';
-import { afterAction, awaitList, closeList, openListOf, type WidgetContext } from './interact';
+import { activateAndAwait, afterAction, awaitList, closeList, expandedState, openListOf, type WidgetContext } from './interact';
 import { chosenLabels, hashOfRead, readList, revealOption, shownOptions } from './options';
 
 /** What a search needs from the run: each query's Guard, and the worker's match of each result list. */
@@ -118,6 +120,12 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     if (widget === undefined || box === null) return giveUp('element-not-found');
     // A query longer than the box takes is never cut: the next one is tried.
     if (box.maxLength >= 0 && query.length > box.maxLength) continue;
+    if (expandedState(widget) === false) {
+      const opened = await activateAndAwait(widget, ctx);
+      if (opened.status === 'aborted') return none('internal-error');
+      if (opened.status === 'gone') return giveUp('element-not-found');
+      if (opened.status !== 'answered') return giveUp('needs-your-click');
+    }
     const shown = openListOf(widget);
     const prevHash = shown === null ? null : hashOfRead(shownOptions(shown));
     typeQuery(box, query);

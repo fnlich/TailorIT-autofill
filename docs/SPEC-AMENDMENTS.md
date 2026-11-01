@@ -1,6 +1,6 @@
 # The owner's amendments to the specification
 
-`docs/SPEC.md` stays exactly as the owner wrote it on 2026-10-29 (its hash is pinned by `test/docs.test.ts`). The owner amended it on 2026-10-31 and 2026-11-01; this file records those amendments, the specification's lines each one changes, and the hard rules they leave as they were. Where this file and `docs/SPEC.md` differ, this file is the newer word.
+`docs/SPEC.md` stays exactly as the owner wrote it on 2026-10-29 (its hash is pinned by `test/docs.test.ts`). The owner amended it on 2026-10-31 and 2026-11-01; this file records those amendments, the specification's lines each one changes, and the hard rules they leave as they were. Where this file and `docs/SPEC.md` differ, this file is the newer word, and within it a later section is the newer word over an earlier one (§11 amends §§1-4, 6 and 7).
 
 The goal of the amendments, in the owner's words: every answer is filled with no human decision, using TailorIT's backend AI where needed; the person only presses Submit or Next.
 
@@ -81,15 +81,45 @@ Phase G (2026-11-01; the plan's "Fill everything" carried to uploads). Amends AR
 - The side panel's job card shows the cover letter under the resume, with **Write it now** (the person's request) where TailorIT's AI may write one: never in a dry run.
 - The letter's PDF travels as the resume does (its hash checked, released within seconds); its id and its words never reach the page's process, a log or storage, and the upload is the only place its bytes go.
 
+## 11. Determine all by AI, required consents ticked, no boxes on the page
+
+The owner's decisions of 2026-11-01 (the second set that day). Where they differ from an earlier section of this file, they are the newer word: they amend §1 and §2 (what the AI answers, and where its marks show), §3 (when the attestation box is ticked), §4 (how a draft is marked), §6 (legal answers) and §7 (consent), and the hard rules below as noted there. They amend SPEC NON-NEGOTIABLES "Never fabricate…", "Legal and EEO questions … are filled only from explicit profile values", "Consent checkboxes … are the user's click, or a pre-approved category in settings", SECURITY RULES 5 ("Attention checks … leave blank and flag") and 7 (`llm-draft` "highlighted"), and ARCHITECTURE's highlights (docs/design/runtime.md §10.1).
+
+### Decision 1: no question is left for the person
+
+- When the profile, the person's saved answers or the rules give a value, it is used, as before. Otherwise TailorIT's AI answers, now **including** work authorization, sponsorship (now, in the future, or both), a visa type or a work status, a security clearance and export control, age and being 18 or over, criminal history (convictions, arrests, charges, parole), pay (salary expectations and their currency) and attention checks ("select PURPLE to show you read this"). The setting is "Let the AI answer legal, pay and attention-check questions your profile doesn't answer" (`llm.answerAll`, on by default as the owner chose; it acts only while AI answers, `llm.answers`, are on).
+- Such a question is sent in TailorIT's answer `scope: 'all'` (`AutofillAnswerRequest.scope`, additive in API version 2), each in a batch of its own scope, so ordinary questions stay in the standard scope exactly as before. TailorIT answers it as the most likely answer for this person from the resume, the profile's non-sensitive facts and the posting; it is marked "AI guess" (basis `guess`) unless a fact settles it, and an attention check's answer is always a guess.
+- What is sent is the question's visible text, hint, section and visible options only. The person's sensitive profile **values** never reach the AI: when the profile holds an answer, the AI is not asked at all; it is asked only when the profile holds none (`legal-not-in-profile`, `criminal-not-covered`, `no-profile-value`, a question whose country cannot be read while the profile holds no work-authorization entry). A decline the person gave, a value that matched no option, a sensitive part that failed to load, and one this browser may not read (`sensitive-not-shared`: the person may hold an answer there, which a guess must never overrule) are left as they are.
+- Never sent, in either scope, by the extension's screens and again by TailorIT's: a self-identification (EEO) question or one offering an EEO answer, a decline option beside a question that names no open topic, a consent, pronouns, an identity or tax number, a birth date, a contact detail or postal address, another person (a referee, an emergency contact, a manager), an "I did not use AI" statement or a question whether AI wrote the application, current pay, and hidden page text (a question whose words a person cannot see is never asked).
+- **EEO** stays as §5 says: an explicit value, else the form's decline option, never the AI.
+- A profile-only run (§3) asks none of these, and rows them `ai-off-for-posting`, as any question only the AI could answer.
+- The Guard lets an AI pick or answer fill the opened categories (`AI_OPENED_CATEGORIES`) only while the setting is on for the frame; everything else in "Provenance on every value" below stands.
+
+### Decision 2: consent
+
+- A consent box (or Yes/I agree radio) the form **requires** is ticked, since the person cannot apply without it, whatever its kind and whatever is pre-approved, binding clauses included (arbitration, jury waivers, non-competes, unrecognised consent): the rule `consent.required`. A required signature types the person's full name.
+- An **optional** box is ticked only when each kind it names is pre-approved (§7's defaults stand); otherwise, marketing and SMS opt-ins included, it is left unticked and recorded as decided (`consent-optional-unticked`, skipped, never "needs you").
+- An **"I did not use AI"** attestation (any consent that names AI) is ticked only when the run used no AI at all: a profile-only frame (§3) of a run that asked TailorIT's AI nothing before (no task submitted for the application, no cover letter its AI wrote), so the statement is true (`consent.no-ai-attestation`). Otherwise it is left unticked for the person (`ai-attestation-ai-used`). With CAPTCHA, sign-in and email-code handoffs, hidden traps and honeypots, this is the only question still left for the person by design.
+
+### Decision 3: no green or brown boxes
+
+- Nothing is drawn over the page's fields: the on-page outlines and chips are gone (verified and filled green, flagged and needs-you brown, dashed drafts, and the "AI" and "AI guess" outlines), and so are the outlines over Next and Submit. The page shows only the launcher, the notices, the policy card, the in-page panel when chosen, and the Edit with AI button inside a text box.
+- The side panel (and the in-page panel) still lists every field with its status, its "AI" or "AI guess" mark and its reason. **Show on page** scrolls to the field and focuses it, and draws nothing.
+- The visibility and trusted-click machinery the launcher, the card, the panel and Edit with AI need is unchanged.
+
+### Settings version 3
+
+`llm.answerAll` is new (on by default). An install on version 2 keeps every choice and takes the new switch's default; one on version 1 is migrated to version 2's choices first (§9), then the same way.
+
 ## The hard rules that stay
 
-None of the amendments changes these:
+None of the amendments changes these, but as §11 notes in each:
 
 - **Submit:** never submitted. The final Submit is always the person's; Next is pressed only with auto-advance, which stays off by default (SPEC NON-NEGOTIABLES 1).
-- **Handed to the person:** CAPTCHA, email codes, sign-in and account creation (SPEC NON-NEGOTIABLES 2), and attention checks ("select PURPLE to show you read this"): detected by pattern, left blank and flagged, never sent to the AI (SECURITY RULES 5).
+- **Handed to the person:** CAPTCHA, email codes, sign-in and account creation (SPEC NON-NEGOTIABLES 2). Attention checks ("select PURPLE to show you read this") are detected by pattern, and since §11 answered by TailorIT's AI as their own visible question asks, marked "AI guess", while `llm.answerAll` is on (left blank and flagged when it is off, or in a profile-only run).
 - **Never filled:** hidden AI traps (tripwires and canaries), honeypot fields, "check every box" instructions and injected option text (SECURITY RULES 1 to 4 and 6). Hidden page text never reaches the AI. A value holding a canary is blocked at every layer.
-- **Never guessed:** work authorization, sponsorship and criminal history come from the profile only; EEO from an explicit profile value, else the decline default; none of them, nor pay, consent or an attention check, is ever sent to an AI, by the extension's screen and again by TailorIT's.
-- **"I did not use AI"** is never ticked.
-- **Provenance on every value** (SECURITY RULES 7): every AI value names its task, and a pick its option's hash; the Guard checks each write against its category's policy, and an AI answer's text is allowed only for unknown and free-text questions and the job preferences listed above.
+- **Never guessed from a profile value, never sent as one:** EEO comes from an explicit profile value, else the decline default, and is never sent to an AI. Work authorization, sponsorship, criminal history and pay come from the profile when it holds an answer; since §11 a question of theirs the profile does not answer gets TailorIT's best guess ("AI guess"), from the question and its options only. No profile value of theirs, and no consent question, is ever sent to an AI, by the extension's screen and again by TailorIT's.
+- **"I did not use AI"** is ticked only when the run used no AI at all (§11), so it is never untrue.
+- **Provenance on every value** (SECURITY RULES 7): every AI value names its task, and a pick its option's hash; the Guard checks each write against its category's policy, and an AI answer's text is allowed only for unknown and free-text questions, the job preferences listed above and, while `llm.answerAll` is on, the categories §11 opens.
 - **Data:** uploads are never modified; values are never logged; reports carry no values; no remote fonts or images, no web-accessible resources; in-page buttons (the launcher, the policy card, Edit with AI) accept trusted, visible clicks only.
 - **Read-back** after every fill (SPEC NON-NEGOTIABLES 6) and the five statuses.

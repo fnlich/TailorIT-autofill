@@ -10,8 +10,9 @@
  * - finalGuard: guardReady reads back every value in the form, ours and the person's own alike, before the run says it
  *   is ready for review. A value holding a canary that we wrote is blocked: a text is set back to what it held before
  *   our write (a write with provenance rule guard.revert, through both Guards, cleared to empty if that earlier value
- *   holds a canary too, and read back exactly), and a choice keeps its selection, blocked, highlighted with "Remove
- *   this selection". Both rows are settleRow's blocked row (no provenance, nothing verified), whatever the revert did.
+ *   holds a canary too, and read back exactly), and a choice keeps its selection, blocked, for the person to remove
+ *   (the review's row says so; nothing is drawn on the page). Both rows are settleRow's blocked row (no provenance,
+ *   nothing verified), whatever the revert did.
  *   A value the person typed, or the page prefilled, is only flagged, never overwritten. An unconfirmed draft is
  *   flagged; one the person confirmed (Phase 6: FinalGuardEnv.confirmedDrafts) reads back as confirmed.
  * Read-back values stay in memory; nothing here sends or logs one.
@@ -87,10 +88,9 @@ export interface FinalGuardEnv {
   confirmedDrafts?: ReadonlySet<FieldKey>;
 }
 
-/** The final Guard's result: the rows it changed, and the selections the person is asked to remove. */
+/** The final Guard's result: the rows it changed. */
 export interface FinalGuardResult {
   rows: Map<FieldKey, FillResult>;
-  removeSelection: Set<FieldKey>;
   /** The keys whose text was set back to its earlier value. */
   reverted: Set<FieldKey>;
 }
@@ -118,7 +118,6 @@ function revert(env: FinalGuardEnv, fresh: ScanResult, written: WrittenField): b
 export function finalGuard(env: FinalGuardEnv, fresh: ScanResult, rows: Map<FieldKey, FillResult>,
   written: readonly WrittenField[]): FinalGuardResult {
   const out = new Map(rows);
-  const removeSelection = new Set<FieldKey>();
   const reverted = new Set<FieldKey>();
   const readBack: ReadBackValue[] = [];
   for (const field of fresh.fields) {
@@ -144,9 +143,8 @@ export function finalGuard(env: FinalGuardEnv, fresh: ScanResult, rows: Map<Fiel
       }
       const ours = written.find((entry) => entry.key === issue.key);
       const textLike = row.kind === 'text' || row.kind === 'textarea';
-      if (ours !== undefined && textLike && revert(env, fresh, ours)) reverted.add(issue.key);
       // A choice is never unticked or deselected: it stays, blocked, for the person to remove.
-      else if (!textLike) removeSelection.add(issue.key);
+      if (ours !== undefined && textLike && revert(env, fresh, ours)) reverted.add(issue.key);
       // Either way the row is the blocked one settleRow makes: never verified, with no provenance (DOM-14).
       out.set(issue.key, settleRow(row, { kind: 'blocked', reason: issue.reason }));
       continue;
@@ -155,5 +153,5 @@ export function finalGuard(env: FinalGuardEnv, fresh: ScanResult, rows: Map<Fiel
       out.set(issue.key, { ...row, status: 'flagged', reason: issue.reason, needsUserAction: true });
     }
   }
-  return { rows: out, removeSelection, reverted };
+  return { rows: out, reverted };
 }

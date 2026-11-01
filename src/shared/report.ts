@@ -106,9 +106,11 @@ export function latestReport<T extends Pick<FrameReport, 'updatedAt'>>(reports: 
 
 /**
  * Whether a row needs the person: it asks for them (an AI draft to confirm, a question left for them), or the run left
- * it flagged or blocked. One rule for the review's count (src/ui/report/model.ts) and the launcher's (the content
- * orchestrator), so the two never disagree about a row: a blocked row can come without `needsUserAction`.
+ * it blocked, or flagged without writing it. A flagged row whose value was written (a low-confidence fill, a posting
+ * country's answer) only says "check it" and is done (SPEC-AMENDMENTS §11). One rule for the review's count
+ * (src/ui/report/model.ts) and the launcher's (the content orchestrator), so the two never disagree about a row: a
+ * blocked row can come without `needsUserAction`.
  */
-export function needsPerson(row: Pick<FrameReport['fields'][number], 'needsUserAction' | 'status'>): boolean {
-  return row.needsUserAction || row.status === 'flagged' || row.status === 'blocked';
+export function needsPerson(row: Pick<FrameReport['fields'][number], 'needsUserAction' | 'status' | 'wrote'>): boolean {
+  return row.needsUserAction || row.status === 'blocked' || (row.status === 'flagged' && !row.wrote);
 }

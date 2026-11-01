@@ -1,0 +1,399 @@
+{
+  "fixture": "greenhouse/affirm-job",
+  "source": "https://job-boards.greenhouse.io/affirm/jobs/8011375003",
+  "captured": "2026-11-01T14:01:38.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#first_name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#last_name"
+    },
+    {
+      "label": "Preferred First Name",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#preferred_name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#country",
+      "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country. Its options read \"Canada +1\"; chosen, it shows the flag and \"+1\" (the adapter reads it back by the flag)."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#country) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Search",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#iti-0__search-input",
+      "note": "intl-tel-input's own country search, inside its country dropdown, which stays hidden (iti__hide); it says aria-expanded=\"true\" even so."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#phone"
+    },
+    {
+      "label": "Location (City)",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#candidate-location",
+      "note": "Greenhouse's location search: a react-select whose results come from a geocoder as the person types; \"Locate me\" beside it is never pressed."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#candidate-location) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#resume"
+    },
+    {
+      "label": "School",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#school--0",
+      "note": "The education block, named by its own header (div.education--header, a p, not a heading element)."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#school--0) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Degree",
+      "kind": "combobox",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#degree--0"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#degree--0) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Discipline",
+      "kind": "combobox",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#discipline--0"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#discipline--0) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Start date month",
+      "kind": "combobox",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#start-month--0"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#start-month--0) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Start date year",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "control": "#start-year--0"
+    },
+    {
+      "label": "End date month",
+      "kind": "combobox",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#end-month--0"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#end-month--0) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "End date year",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "control": "#end-year--0"
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_32965827003"
+    },
+    {
+      "label": "Current Company",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_32965828003"
+    },
+    {
+      "label": "Preferred Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_32965829003"
+    },
+    {
+      "label": "Name Pronunciation",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_32965830003"
+    },
+    {
+      "label": "Pronouns",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_32965831003"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_32965831003) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Do you require immigration sponsorship to work for Affirm in the United States?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_32965832003"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_32965832003) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Will you require immigration sponsorship at any point in the future to maintain authorization to work in the United States?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_32965833003"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_32965833003) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Which U.S. State or Canadian Province do you reside in?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_32965834003"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_32965834003) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "How did you first learn about Affirm as an employer?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_32965835003"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_32965835003) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "GitHub",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_32965836003"
+    },
+    {
+      "label": "Other Links",
+      "kind": "textarea",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_32965839003"
+    },
+    {
+      "label": "Have you previously been employed at Affirm for any length of time?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_32965840003"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_32965840003) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "How do you identify? (gender identity)",
+      "kind": "combobox",
+      "required": false,
+      "section": "Demographic Survey Statement (US-based roles)",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"4028768003\"]"
+    },
+    {
+      "label": "How do you identify? (race/ethnicity)",
+      "kind": "multiselect",
+      "required": false,
+      "section": "Demographic Survey Statement (US-based roles)",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"4028769003\"]",
+      "note": "A multi-select react-select (select__value-container--is-multi): its menu closes after each pick."
+    }
+  ]
+}

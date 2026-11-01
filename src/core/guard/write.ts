@@ -126,6 +126,9 @@ export interface GuardContext {
   /** The profile's collision index; built from `profile` when absent. */
   profileIndex?: ProfileIndex;
   savedAnswers: readonly SavedAnswer[];
+  /** TailorIT's AI may answer the closed categories AI_OPENED_CATEGORIES lists (settings.llm.answerAll, with answers
+   *  on and the AI allowed for the frame): the category policy then lets its picks and answers fill them. */
+  answerAll?: boolean;
 }
 
 /** The field being written, as the worker knows it. */
@@ -149,7 +152,7 @@ export function guardWrite(write: PlannedWrite, subject: WriteSubject, ctx: Guar
   if (!optionLabelsMatch(write.value, spec)) return { ok: false, reason: 'options-changed' };
   const provenance = checkProvenance(write, spec, category, ctx);
   if (!provenance.ok) return provenance;
-  const policy = checkCategoryPolicy(write.origin, category);
+  const policy = checkCategoryPolicy(write.origin, category, { answerAll: ctx.answerAll === true });
   if (!policy.ok) return policy;
   const canary = canaryVerdict(write, spec, ctx.canaries, ctx.profileIndex ?? profileIndex(ctx.profile));
   if (!canary.ok) return canary;

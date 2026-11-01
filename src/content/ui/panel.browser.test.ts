@@ -111,7 +111,8 @@ describe('the in-page panel', () => {
     ui.updatePanel([
       report(0, { fields: [row('top')] }),
       report(2, { platform: 'greenhouse', adapter: 'greenhouse', step: { index: 1, progress: 'Step 2 of 4' }, fields: [
-        row('degree', { status: 'flagged', provenance: null, matcherStage: 'none', reason: 'ambiguous-options',
+        row('degree', { status: 'flagged', provenance: null, matcherStage: 'none', reason: 'ambiguous-options', wrote: false,
+          verification: 'not-checked', needsUserAction: true,
           detail: { suggestions: [{ index: 1, score: 0.8 }] } }),
       ] }),
     ]);

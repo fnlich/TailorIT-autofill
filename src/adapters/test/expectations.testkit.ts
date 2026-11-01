@@ -7,9 +7,11 @@
  * - every entry's control must be on the page;
  * - an entry the page hides from a person ('not-user-visible') must not be part of any field;
  * - every other entry must be exactly one field, with the entry's label and required, and fillable as the entry says.
- *   A fillable entry must be a field the Phase 2 fillers write, of the entry's kind (kinds are compared only there: a
- *   widget's kind is descriptive), shown with a visible label, neither camouflaged, disabled nor read-only. A
- *   'widget-phase-4' entry must be a field the fillers refuse as widget-unsupported (a lazy combobox or a typeahead);
+ *   A fillable entry must be a field the Phase 2 fillers write, or a widget its adapter declares that the widget
+ *   helpers act on (Greenhouse's react-selects), of the entry's kind (kinds are compared only there: a widget's kind is
+ *   otherwise descriptive), shown with a visible label, neither camouflaged, disabled nor read-only. A
+ *   'widget-phase-4' entry must be a field the fillers refuse as widget-unsupported (a lazy combobox or a typeahead no
+ *   adapter declares, or one it declares that no helper acts on);
  * - its section must be the slug of the entry's heading, and its options the entry's count (or 'lazy');
  * - every field the scan reports must belong to exactly one entry.
  * Differences come back as data, so a test shows them all at once and can name the ones a scanner change is waiting
@@ -21,7 +23,8 @@ import { headingSlug } from '../../core/text/keys';
 import { loadFixture, type Fixture } from '../../dom/fixture.testkit';
 import { scan } from '../../dom/scan';
 import { TEXT_CAP_SECTION } from '../../dom/thresholds';
-import type { ScannedField, ScanResult } from '../../dom/types';
+import type { ScannedField, ScanResult, WidgetTarget } from '../../dom/types';
+import { isActionable } from '../../dom/widgets';
 import { platformOfUrl } from '../../shared/hosts';
 import { adaptersFor } from '../index';
 import type { Adapter } from '../types';
@@ -112,9 +115,12 @@ const FILLED_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['text', 'textar
   'checkbox', 'checkbox-group', 'date', 'file']);
 
 /** Whether the scan makes a field the fillers would write, and if not, why: 'widget-phase-4', 'no-visible-label',
- *  'camouflaged' (the DOM guard refuses it as not-user-visible) or 'disabled-or-readonly'. */
-export function fillabilityOf(field: ScannedField): { fillable: true } | { fillable: false; reason: string } {
-  if (!FILLED_KINDS.has(field.kind)) return { fillable: false, reason: 'widget-phase-4' };
+ *  'camouflaged' (the DOM guard refuses it as not-user-visible) or 'disabled-or-readonly'. A widget its adapter
+ *  declares (`widget`, the scan's) that the widget helpers act on is written by them. */
+export function fillabilityOf(field: ScannedField, widget?: WidgetTarget): { fillable: true } | { fillable: false;
+  reason: string } {
+  const helped = widget !== undefined && widget.declared && widget.kind !== 'checkbox' && isActionable(widget);
+  if (!FILLED_KINDS.has(field.kind) && !helped) return { fillable: false, reason: 'widget-phase-4' };
   if (field.labelSource === 'none' || !field.labelVisible) return { fillable: false, reason: 'no-visible-label' };
   if (field.camouflaged) return { fillable: false, reason: 'camouflaged' };
   if (field.disabled || field.readOnly) return { fillable: false, reason: 'disabled-or-readonly' };
@@ -129,8 +135,8 @@ export function sectionIdOf(heading: string): string {
 const fillableText = (fillable: boolean, reason?: string) => (fillable ? 'fillable' : `not fillable (${reason ?? '?'})`);
 
 /** A field as a mismatch names it. */
-function described(field: ScannedField): string {
-  const verdict = fillabilityOf(field);
+function described(field: ScannedField, widget?: WidgetTarget): string {
+  const verdict = fillabilityOf(field, widget);
   return `a ${field.kind} field "${field.label}", ${fillableText(verdict.fillable, verdict.fillable ? undefined : verdict.reason)}`;
 }
 
@@ -148,6 +154,8 @@ export function compareWithExpectation(doc: Document, result: ScanResult, expect
     for (const el of [target.control, ...target.members]) fieldOf.set(el, field);
   }
 
+  const widgetOf = (field: ScannedField) => result.target(field.key)?.widget;
+
   const claims = new Map<ScannedField, number>();
   for (const entry of expectation.fields) {
     const elements = Array.from(doc.querySelectorAll(entry.control));
@@ -158,7 +166,9 @@ export function compareWithExpectation(doc: Document, result: ScanResult, expect
     const fields = [...new Set(elements.flatMap((el) => fieldOf.get(el) ?? []))];
     for (const field of fields) claims.set(field, (claims.get(field) ?? 0) + 1);
     if (entry.reason === 'not-user-visible') {
-      if (fields.length > 0) push(entry.control, 'fillable', 'no field (not-user-visible)', described(fields[0]!));
+      if (fields.length > 0) {
+        push(entry.control, 'fillable', 'no field (not-user-visible)', described(fields[0]!, widgetOf(fields[0]!)));
+      }
       continue;
     }
     if (fields.length !== 1) {
@@ -166,7 +176,7 @@ export function compareWithExpectation(doc: Document, result: ScanResult, expect
       continue;
     }
     const field = fields[0]!;
-    const verdict = fillabilityOf(field);
+    const verdict = fillabilityOf(field, widgetOf(field));
     if (field.label !== entry.label) push(entry.control, 'label', JSON.stringify(entry.label), JSON.stringify(field.label));
     if (field.required !== entry.required) push(entry.control, 'required', entry.required, field.required);
     const actualReason = verdict.fillable ? undefined : verdict.reason;
@@ -185,7 +195,9 @@ export function compareWithExpectation(doc: Document, result: ScanResult, expect
 
   for (const field of result.fields) {
     const count = claims.get(field) ?? 0;
-    if (count !== 1) push(field.key, 'listed', 'by one entry', count === 0 ? `by none: ${described(field)}` : `by ${count}`);
+    if (count !== 1) {
+      push(field.key, 'listed', 'by one entry', count === 0 ? `by none: ${described(field, widgetOf(field))}` : `by ${count}`);
+    }
   }
   return mismatches;
 }

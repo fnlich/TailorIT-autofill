@@ -35,7 +35,7 @@ import { adoptReportStyles, Report, RunStatusLine, type SuggestionLabel } from '
 
 /** What the panel's buttons ask the runtime for. Each is about one of this frame's own fields. */
 export interface PanelActions {
-  /** Show on page: scroll the field into view and outline it. */
+  /** Show on page: scroll the field into view and focus it (nothing is drawn over it). */
   showField(fieldKey: string): void;
   /** The visible labels of the row's suggested options, from a fresh scan (null: the page could not say). */
   describeField(fieldKey: string): Promise<readonly SuggestionLabel[] | null>;

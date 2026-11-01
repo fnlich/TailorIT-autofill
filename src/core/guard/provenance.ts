@@ -15,10 +15,17 @@
  * attention check, and every category only the person answers, allow nothing. An AI
  * answer's text (llm-answer, version 2) fills an unknown or free-text field, or one of the profile categories
  * ANSWERABLE_PROFILE_CATEGORIES lists; never a sensitive, legal, EEO or consent one.
+ * The owner's decisions of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): with `answerAll` (settings.llm.answerAll, the AI
+ * allowed for the frame) an AI pick or answer may fill a category of AI_OPENED_CATEGORIES (the legal questions, the
+ * expected pay and its currency, an attention check); a required consent may be ticked by consent.required, an
+ * unrecognised one too; and an AI attestation only by consent.no-ai-attestation. Nothing else fills a category only
+ * the person answered before.
  */
 import { TIEBREAK_LABEL_MAX } from '../confidence';
 import { PROVENANCES } from '../enums';
-import { ANSWERABLE_PROFILE_CATEGORIES, policyClassOf, USER_ONLY_CATEGORIES } from '../resolver/categories';
+import {
+  AI_OPENED_CATEGORIES, ANSWERABLE_PROFILE_CATEGORIES, policyClassOf, USER_ONLY_CATEGORIES,
+} from '../resolver/categories';
 import { normalizeLabel } from '../text/normalize';
 import { sha256Hex } from '../text/sha256';
 import { asUntrusted } from '../text/untrusted';
@@ -81,6 +88,9 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'legal.posting-country': (category) => category.startsWith('workAuth.'),
   'consent.preapproved': (category) => PREAPPROVABLE.includes(category),
   'consent.signature-preapproved': (category) => category === 'consent.signature',
+  // A required consent (the owner's decision of 2026-11-01): any but the AI attestation, which has its own rule.
+  'consent.required': (category) => policyClassOf(category) === 'consent' && category !== 'consent.aiAttestation',
+  'consent.no-ai-attestation': (category) => category === 'consent.aiAttestation',
   'numeric.range-bucket': (category) => category === 'salary.expected' || category === 'experience.totalYears'
     || category === 'availability.noticePeriod',
   'other.free-text': (category) => OPEN_FOR_FOLLOW_UP.includes(policyClassOf(category)),
@@ -210,7 +220,8 @@ const CLASS_RULES: Readonly<Record<PolicyClass, readonly RuleId[] | 'any'>> = {
   sensitive: ['guard.revert'],
   legal: ['legal.decline', 'guard.revert'],
   eeo: ['eeo.decline', 'eeo.decline-default', 'guard.revert'],
-  consent: ['consent.preapproved', 'consent.signature-preapproved', 'guard.revert'],
+  consent: ['consent.preapproved', 'consent.signature-preapproved', 'consent.required', 'consent.no-ai-attestation',
+    'guard.revert'],
   attention: [],
   'free-text': ['other.free-text', 'guard.revert'],
   file: [],
@@ -230,9 +241,27 @@ const CLASS_PROVENANCES: Readonly<Record<PolicyClass, readonly ValueOrigin['prov
   unknown: ['saved', 'llm-pick', 'llm-answer', 'rule'],
 };
 
+/** What the category policy reads besides the origin and the category. */
+export interface CategoryPolicyOptions {
+  /** TailorIT's AI may answer the categories of AI_OPENED_CATEGORIES (settings.llm.answerAll, the AI allowed). */
+  answerAll?: boolean;
+}
+
+/** The one rule that may fill each category only the person answered before (USER_ONLY_CATEGORIES): a required
+ *  unrecognised consent's tick, and an AI attestation's when the run used no AI at all. */
+const OWN_RULES: Readonly<Partial<Record<FieldCategory, RuleId>>> = {
+  'consent.other': 'consent.required',
+  'consent.aiAttestation': 'consent.no-ai-attestation',
+};
+
 /** The category policy (§7.6's last row, §8.2): whether a value of this origin may fill a field of this category. */
-export function checkCategoryPolicy(origin: ValueOrigin, category: FieldCategory): GuardVerdict {
-  if (USER_ONLY_CATEGORIES.has(category)) return fail('policy-violation');
+export function checkCategoryPolicy(origin: ValueOrigin, category: FieldCategory, options: CategoryPolicyOptions = {}):
+  GuardVerdict {
+  if ((origin.provenance === 'llm-pick' || origin.provenance === 'llm-answer') && options.answerAll === true
+    && AI_OPENED_CATEGORIES.has(category)) return PASS;
+  if (USER_ONLY_CATEGORIES.has(category)) {
+    return origin.provenance === 'rule' && OWN_RULES[category] === origin.ruleId ? PASS : fail('policy-violation');
+  }
   const policy = policyClassOf(category);
   if (!CLASS_PROVENANCES[policy].includes(origin.provenance)) return fail('policy-violation');
   if (origin.provenance === 'llm-answer' && policy === 'profile' && !ANSWERABLE_PROFILE_CATEGORIES.has(category)) {

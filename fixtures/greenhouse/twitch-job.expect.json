@@ -1,0 +1,515 @@
+{
+  "fixture": "greenhouse/twitch-job",
+  "source": "https://job-boards.greenhouse.io/twitch/jobs/8872835002",
+  "captured": "2026-11-01T14:01:16.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#first_name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#last_name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#country",
+      "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country. Its options read \"Canada +1\"; chosen, it shows the flag and \"+1\" (the adapter reads it back by the flag)."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#country) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Search",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#iti-0__search-input",
+      "note": "intl-tel-input's own country search, inside its country dropdown, which stays hidden (iti__hide); it says aria-expanded=\"true\" even so."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#phone"
+    },
+    {
+      "label": "Location (City)",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#candidate-location",
+      "note": "Greenhouse's location search: a react-select whose results come from a geocoder as the person types; \"Locate me\" beside it is never pressed."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#candidate-location) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#resume"
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#cover_letter"
+    },
+    {
+      "label": "School",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#school--0",
+      "note": "The education block, named by its own header (div.education--header, a p, not a heading element)."
+    },
+    {
+      "label": "Degree",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#degree--0"
+    },
+    {
+      "label": "Discipline",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#discipline--0"
+    },
+    {
+      "label": "Start date month",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#start-month--0"
+    },
+    {
+      "label": "Start date year",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "#start-year--0"
+    },
+    {
+      "label": "End date month",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#end-month--0"
+    },
+    {
+      "label": "End date year",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "#end-year--0"
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_38697183002"
+    },
+    {
+      "label": "Website",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_38697184002"
+    },
+    {
+      "label": "How would you describe your experience with Twitch? (Select one)",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697185002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697185002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "How many years have you been active on the platform?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697186002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697186002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Do you have experience in the Creator Economy beyond Twitch?",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": 6,
+      "control": "[name=\"question_38697187002[]\"]",
+      "note": "fieldset.checkbox with a legend; each box is drawn visible (appearance: none) beside its label[for]."
+    },
+    {
+      "label": "Are you currently a Twitch employee?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697188002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697188002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Are you open to relocation?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697189002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697189002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Are you a current employee with Amazon or any Amazon subsidiary (outside of Twitch)?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697190002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697190002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Have you previously applied to Amazon or any Amazon subsidiary?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697191002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697191002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Have you previously been employed by Amazon or any Amazon subsidiary?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697192002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697192002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Are you subject to a non-competition agreement or other agreement that would preclude or restrict your employment at Amazon?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697193002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697193002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "If offered employment by Amazon, would you be legally eligible to begin employment immediately?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697194002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697194002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Your response is mandatory when applying for a U.S.-based position. Do you need, or will you need in the future, any immigration related support or sponsorship from Amazon in order to begin or continue employment with Amazon?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697195002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697195002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Have you held H-1B status, or had an H-1B petition approved on your behalf, within the preceding 6 years for an employer other than a cap exempt institution?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697196002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697196002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "In which country/region do you have citizenship?",
+      "kind": "multiselect",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"question_38697197002[]\"]",
+      "note": "A multi-select react-select (select__value-container--is-multi): its menu closes after each pick."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"question_38697197002[]\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Since obtaining your most recent citizenship, did you afterwards become a permanent resident in any other country/region? This does not include temporary statuses such as student visas or time-limited work permits.",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697198002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697198002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "For the sole purpose of determining export licensing requirements, please provide your country of citizenship or legal permanent residence, whichever was obtained last.",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697199002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697199002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "What is your expected total base pay compensation for your next role. Please do not disclose current or past compensation.",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_38697200002"
+    },
+    {
+      "label": "Would you like to be considered for future opportunities at Twitch when you apply?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_38697201002"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_38697201002) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#gender"
+    },
+    {
+      "label": "Are you Hispanic/Latino?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#hispanic_ethnicity"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#veteran_status"
+    }
+  ]
+}

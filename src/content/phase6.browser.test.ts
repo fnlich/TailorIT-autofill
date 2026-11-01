@@ -15,7 +15,6 @@ import type { FillResult } from '../core/types/fill';
 import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import type { Settings } from '../core/types/settings';
 import { loadFixture, logEvents, removeFixtures, type Fixture } from '../dom/fixture.testkit';
-import { COPY } from '../shared/copy';
 import type { FrameReport } from '../shared/report';
 import { createFakeWorker, FAKE_DRAFT, FAKE_TASK_ID, testVocab, trapUrl, type FakeWorker,
   type FakeWorkerOptions } from './content.testkit';
@@ -79,21 +78,21 @@ async function personTypes(fixture: Fixture, id: string, keys: string): Promise<
   await userEvent.keyboard(keys);
 }
 
-/** The highlight drawn over a field, by its status and chip. */
-function highlightOf(runtime: ContentRuntime, status: string): Array<{ draft: string | undefined; chip: string }> {
-  return [...runtime.ui!.shadow.querySelectorAll<HTMLElement>(`.hl[data-status="${status}"]`)]
-    .map((el) => ({ draft: el.dataset.draft, chip: el.querySelector('.chip')?.textContent ?? '' }));
+/** Whatever our UI draws over the page's fields: nothing since the owner's decision of 2026-11-01 (no outline, no
+ *  chip; the review marks the draft). */
+function drawnOverFields(runtime: ContentRuntime): Element[] {
+  return [...runtime.ui!.shadow.querySelectorAll('.highlights, .hl, .chip')];
 }
 
 describe('drafts', () => {
-  it('writes the draft dashed, flagged for confirmation, and the run waits for the person at review', async () => {
+  it('writes the draft flagged for confirmation, draws nothing over it, and the run waits for the person at review', async () => {
     const started = await start(FORM, 'p6-draft', { settings: DRAFTS_ON });
     expect(await started.runtime.fill()).toBe('review');
     expect(byId<HTMLTextAreaElement>(started.fixture, 'why').value).toBe(FAKE_DRAFT);
     expect(rowOf(lastReport(started.worker), 'Why do you want to work here?')).toMatchObject({ status: 'flagged',
       provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', wrote: true, verification: 'verified',
       needsUserAction: true });
-    expect(highlightOf(started.runtime, 'flagged')).toContainEqual({ draft: 'true', chip: COPY.draftChip });
+    expect(drawnOverFields(started.runtime)).toEqual([]);
   });
 
   it('carries the posting the person sees from the top frame, never the hidden text, and none with drafts off', async () => {
@@ -125,7 +124,7 @@ describe('drafts', () => {
     }
   });
 
-  it('confirms a waiting draft on draft/confirm: verified, its chip the status’s, reported, and only once', async () => {
+  it('confirms a waiting draft on draft/confirm: verified, reported, nothing drawn, and only once', async () => {
     const started = await start(FORM, 'p6-confirm', { settings: DRAFTS_ON });
     await started.runtime.fill();
     const key = rowOf(lastReport(started.worker), 'Why do you want to work here?').key;
@@ -134,7 +133,7 @@ describe('drafts', () => {
     await vi.waitFor(() => expect(started.worker.reports.length).toBeGreaterThan(reports));
     expect(rowOf(lastReport(started.worker), 'Why do you want to work here?')).toMatchObject({ status: 'verified',
       provenance: 'llm-draft', reason: 'ok', needsUserAction: false });
-    expect(highlightOf(started.runtime, 'verified')).toContainEqual({ draft: 'true', chip: COPY.chips.verified });
+    expect(drawnOverFields(started.runtime)).toEqual([]);
     expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: key }))
       .toEqual({ ok: false, error: 'expired' });
     // Nothing was written by the confirmation.

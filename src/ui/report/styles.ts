@@ -7,9 +7,9 @@
  *
  * Every class starts with "tia-". The tokens sit on .tia-report and .tia-page, so the extension's pages (which add
  * src/ui/page/styles.ts) share them, and a page's own styles cannot reach them inside a shadow root. Every colour is
- * src/shared/palette.ts's, TailorIT's own, light only (color-scheme: light): the page's highlights use the same status
- * colours. What both panels draw lives here: the brand, the strips, notices, buttons, the feedback line, the
- * completion and the rows. The teal fills (the progress bar); text that reads as the brand is its ink.
+ * src/shared/palette.ts's, TailorIT's own, light only (color-scheme: light). What both panels draw lives here: the
+ * brand, the strips, notices, buttons, the feedback line, the completion and the rows. The teal fills (the progress
+ * bar); text that reads as the brand is its ink.
  *
  * The in-page panel's rules (src/content/ui/styles.ts) forbid transform, opacity below 1, filter and will-change on its
  * box and buttons, so a disabled button here is greyed by colour, never faded, and every animation is a descendant's.

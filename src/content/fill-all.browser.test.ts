@@ -74,10 +74,10 @@ const OFFICE = 'Which of our offices would you visit first?';
 const TEAM = 'Which team would you like to meet?';
 const WHY = 'Why do you want to work here?';
 
-/** The chips of the outlines drawn with an AI mark. */
-function aiChips(runtime: ContentRuntime): Array<{ ai: string | undefined; chip: string }> {
-  return [...runtime.ui!.shadow.querySelectorAll<HTMLElement>('.hl[data-ai]')]
-    .map((el) => ({ ai: el.dataset.ai, chip: el.querySelector('.chip')?.textContent ?? '' }));
+/** Whatever our UI draws over the page's fields: nothing since the owner's decision of 2026-11-01 (the review marks
+ *  the AI's answers). */
+function drawnOverFields(runtime: ContentRuntime): Element[] {
+  return [...runtime.ui!.shadow.querySelectorAll('.highlights, .hl, .chip')];
 }
 
 /** The Edit with AI buttons, waiting until the page UI's watch says a person can see them. */
@@ -108,9 +108,8 @@ describe('version 2’s defaults: every question filled', () => {
     expect(byId<HTMLTextAreaElement>(started.fixture, 'why').value).toBe(FAKE_DRAFT);
     expect(rowOf(report, WHY)).toMatchObject({ status: 'verified', provenance: 'llm-draft', reason: 'llm-draft-written',
       wrote: true, needsUserAction: false });
-    // On the page: an amber "AI guess" chip on the guesses, an "AI" chip on the draft.
-    expect(aiChips(started.runtime)).toEqual(expect.arrayContaining([{ ai: 'guess', chip: COPY.aiGuessChip },
-      { ai: 'written', chip: COPY.aiChip }]));
+    // Nothing drawn on the page: the review's rows carry the "AI guess" and "AI" marks (ai-guess, llm-draft-written).
+    expect(drawnOverFields(started.runtime)).toEqual([]);
     // The answers were asked with the posting's visible text, and nothing else of the page.
     const requests = started.worker.of('plan/request');
     expect(requests.some((message) => String(message.postingText ?? '').includes('VISIBLE-MARKER-FA'))).toBe(true);
@@ -195,13 +194,15 @@ describe('a posting that forbids AI', () => {
 });
 
 describe('an "I did not use AI" attestation on the form', () => {
-  it('fills the run from the profile only, says so, and never ticks the box', async () => {
+  it('fills the run from the profile only, says so, and ticks the box, true since the run used no AI (the owner’s decision of 2026-11-01)', async () => {
     const started = await start(ATTESTING, 'fa-attest');
     expect(await started.runtime.fill()).toBe('review');
     const report = lastReport(started.worker);
     expect(report.notices.map((notice) => notice.code)).toContain('ai-attestation');
     expect(started.worker.of('plan/poll')).toEqual([]);
-    expect(byId(started.fixture, 'attest').checked).toBe(false);
+    expect(byId(started.fixture, 'attest').checked).toBe(true);
+    expect(report.fields.find((row) => row.category === 'consent.aiAttestation')).toMatchObject({ status: 'verified',
+      provenance: 'rule', needsUserAction: false });
     expect(byId<HTMLTextAreaElement>(started.fixture, 'why').value).toBe('');
     expect(started.runtime.ui!.aiEditButtons).toHaveLength(0);
   });
@@ -261,7 +262,7 @@ describe('Edit with AI', () => {
     // Still the AI's accepted draft, marked as the AI's: never an already-correct skip with no provenance.
     expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ status: 'verified', provenance: 'llm-draft',
       reason: 'llm-draft-written', wrote: true });
-    expect(aiChips(started.runtime)).toEqual(expect.arrayContaining([{ ai: 'written', chip: COPY.aiChip }]));
+    expect(drawnOverFields(started.runtime)).toEqual([]);
   });
 
   it('is never offered on a hidden box or a honeypot, and refuses a box hidden since (MINOR 9)', async () => {

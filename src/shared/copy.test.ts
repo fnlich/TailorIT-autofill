@@ -37,10 +37,11 @@ describe('the copy', () => {
     expect(COPY.reasons['sensitive-not-shared']).toBe("This browser may not read your work authorization and self-identification "
       + "answers. To allow it, connect the extension again from TailorIT's Settings › Autofill with that box ticked.");
     expect(COPY.reasons['resume-format-unsupported']).toBe('Your resume is an old Word file. Choose a PDF resume in TailorIT.');
-    expect(COPY.options.ai.never).toBe('Your EEO, authorization and sponsorship answers never go to the AI, and questions that '
-      + 'look like them are not sent to it.');
+    // The plan's sentence, as the owner's decision of 2026-11-01 left it: the answers never go, and since then the
+    // legal, pay and attention-check questions the profile does not answer may (docs/SPEC-AMENDMENTS.md §11).
+    expect(COPY.options.ai.never).toBe('Your EEO, authorization, sponsorship, criminal record and pay answers never go to '
+      + 'the AI. Self-identification and consent questions are never sent to it.');
     expect([COPY.policyFillAnyway, COPY.policyCancel]).toEqual(['Fill anyway', 'Cancel']);
-    expect(COPY.removeSelection).toBe('Remove this selection');
     // Phase 6: the page's card and the panel's say the same line when only TailorIT's saved copy held the statement.
     expect(COPY.policyFromStoredCopy).toBe(COPY.notices['policy-stored-copy']);
   });
@@ -51,9 +52,11 @@ describe('the copy', () => {
     expect(Object.keys(COPY.options.telemetry.columns)).toEqual([...TELEMETRY_FIELDS, 'count']);
   });
 
-  it("names the in-page highlights' chips for every status that gets one", () => {
-    expect(Object.keys(COPY.chips).sort()).toEqual(FILL_STATUSES.filter((status) => status !== 'skipped').sort());
+  it("counts the launcher's fields that need the person, and draws nothing on the page (the owner's decision of 2026-11-01)", () => {
     expect([COPY.launcherReview(1), COPY.launcherReview(3)]).toEqual(['Review: 1 field needs you', 'Review: 3 fields need you']);
+    expect(Object.keys(COPY)).not.toContain('chips');
+    expect(Object.keys(COPY)).not.toContain('removeSelection');
+    expect([COPY.aiChip, COPY.aiGuessChip]).toEqual(['AI', 'AI guess']);
   });
 
   it('names every status, provenance, matcher stage, run status, pause, platform and consent category', () => {

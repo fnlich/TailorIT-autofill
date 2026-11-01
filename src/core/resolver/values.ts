@@ -20,6 +20,7 @@ import {
   intendedCountry, intendedDegree, intendedEntity, intendedField, intendedInstitution, intendedRegion, intendedText,
   intendedUnknown,
 } from '../matcher/intended';
+import type { PlaceParts } from '../matcher/place';
 import { DEGREE_LEVEL_RANK } from '../profile/degreeParse';
 import { placeText } from '../profile/canonicalize';
 import { normalize } from '../text/normalize';
@@ -58,6 +59,17 @@ function textValue(text: string | undefined, at: string, confidence = VALUE_EXPL
   if (trimmed === '') return none('no-profile-value', false);
   return value({ origin: fromProfile(at, transform), confidence, text: trimmed,
     choice: { intended: intendedText(trimmed), domain: 'generic' } });
+}
+
+/** A place: typed into a box, or chosen from a list of places by its parts (Choice.place: a location search's "Austin,
+ *  Texas, United States" for the person's "Austin, TX"). */
+function placeValue(place: (PlaceParts & { text?: string }) | undefined, at: string, confidence = VALUE_EXPLICIT,
+  transform?: RuleId): ValueResult {
+  const found = textValue(place?.text, at, confidence, transform);
+  if (place?.city === undefined || !found.ok || found.candidate.choice === undefined) return found;
+  const parts: PlaceParts = { city: place.city, ...(place.region ? { region: place.region } : {}),
+    ...(place.country ? { country: place.country } : {}) };
+  return value({ ...found.candidate, choice: { ...found.candidate.choice, place: parts } });
 }
 
 /** The kinds that take several answers. */
@@ -341,8 +353,7 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     }
     case 'location.current': {
       if (address?.city === undefined) return none('no-profile-value', false);
-      const text = placeText(address, vocab);
-      return textValue(text, 'address', VALUE_TRANSFORM, 'location.compose');
+      return placeValue({ ...address, text: placeText(address, vocab) }, 'address', VALUE_TRANSFORM, 'location.compose');
     }
     case 'links.linkedin':
       return textValue(links.linkedin, 'links.linkedin');
@@ -599,7 +610,7 @@ function experienceValue(category: FieldCategory, ctx: ValueContext): ValueResul
     case 'experience.currentTitle':
       return textValue(entry.title, `${at}.title`);
     case 'experience.location':
-      return textValue(entry.location?.text, `${at}.location`);
+      return placeValue(entry.location, `${at}.location`);
     case 'experience.description':
       return textValue(entry.description, `${at}.description`);
     case 'experience.startDate':

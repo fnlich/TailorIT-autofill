@@ -14,7 +14,10 @@ import { ATS_KINDS } from './lookup';
 // the company and job title), which TailorIT quotes to Claude as data, never as instructions; profile text only in a
 // pick's intended value and its aliases (the facts of a draft or an answer TailorIT reads itself). Nothing sensitive
 // is sent: the extension screens a question before it asks, and TailorIT answers one that still looks sensitive null
-// (reason `sensitive`) without asking Claude.
+// (reason `sensitive`) without asking Claude. An answer request of the `all` scope (the owner's decision of
+// 2026-11-01) also asks the legal, criminal-history, pay and attention-check questions the profile leaves open, by
+// their text and options alone: the person's sensitive answers never travel, and the self-identification questions,
+// the person's own details, another person's and the "I did not use AI" attestations are never asked in any scope.
 //
 // A route waits up to AUTOFILL_AI_WAIT_MS for its task and answers 200 with the finished task, else 202 {taskId}; the
 // extension then polls GET /api/ai/tasks/:id every AUTOFILL_AI_POLL_MS (DELETE on the same path cancels it). The same
@@ -530,17 +533,37 @@ function checkAnswerRequest(request: { items: readonly AutofillAnswerItem[] }, c
 }
 
 /**
+ * Which questions an answer request asks (the owner's decision of 2026-11-01, additive in version 2). `standard`: the
+ * ordinary ones; a legal, criminal-history, pay, consent, self-identification or attention-check question is answered
+ * `sensitive` without asking. `all`: besides them, the legal questions (work authorization, sponsorship now or in the
+ * future, a visa, citizenship or residence status, a security clearance, export control, age and being 18 or over),
+ * criminal history (convictions, arrests, charges), pay (salary expectations; a pay answer may be a sum of money) and
+ * attention checks ("Select PURPLE to show you read this"), each answered as the most likely answer for this person
+ * from the facts, marked `guess` unless a fact settles it (an attention check always `guess`). In every scope: a
+ * self-identification (EEO) question or one offering an EEO answer, a consent (an attention check's own words aside),
+ * one asking for the person's name, contact details, address or an identity or tax number, one about another person
+ * (a referee, an emergency contact, a manager) and an "I did not use AI" attestation are answered `sensitive` without
+ * asking.
+ */
+export const AUTOFILL_ANSWER_SCOPES = ['standard', 'all'] as const;
+export type AutofillAnswerScope = (typeof AUTOFILL_ANSWER_SCOPES)[number];
+
+/**
  * POST /api/autofill/ai/answer (scope ai:run; version 2): at most ten questions of one form. TailorIT answers each as
  * the person would, from their resume and autofill profile (its work history, education, languages, skills and job
  * preferences), which it reads itself (never the sensitive part, and no name, contact details, address or saved
  * answers), and from the job text; when those do not settle a question, with the most likely answer for this person,
- * marked `guess`. A question that looks sensitive (its text, hint, section or an option: a self-identification, legal,
- * pay or consent question, an EEO answer or a decline to self-identify) or like an attention check is answered
- * `sensitive` without asking. 404 `not_found` when `resumeId` is not one of the account's resumes.
+ * marked `guess`. Under the `standard` scope a question that looks sensitive (its text, hint, section or an option: a
+ * self-identification, legal, pay or consent question, an EEO answer or a decline to self-identify) or like an
+ * attention check is answered `sensitive` without asking; the `all` scope asks the legal, criminal-history, pay and
+ * attention-check ones too (AUTOFILL_ANSWER_SCOPES). 404 `not_found` when `resumeId` is not one of the account's
+ * resumes.
  */
 export const AutofillAnswerRequestSchema = z
   .object({
     items: z.array(AutofillAnswerItemSchema).min(1).max(AUTOFILL_AI_LIMITS.answer.items),
+    /** Which questions are asked (AUTOFILL_ANSWER_SCOPES); `standard` when absent, as before it existed. */
+    scope: z.enum(AUTOFILL_ANSWER_SCOPES).default('standard'),
     /** The job description the form's own page shows (page text); '' on an embedded form. Never TailorIT's stored
      *  copy. */
     jobText: z.string().max(AUTOFILL_AI_LIMITS.answer.jobText),

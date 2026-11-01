@@ -1,15 +1,15 @@
 /*
  * The extension's colours, in one place: TailorIT's own (apps/web/src/styles/globals.css, light only). The report's
  * stylesheet (src/ui/report/styles.ts: the side panel and the in-page panel), the pages' layout (src/ui/page/styles.ts)
- * and the page's own UI (src/content/ui/styles.ts: the launcher, notices, policy card and highlights) all draw from
+ * and the page's own UI (src/content/ui/styles.ts: the launcher, notices, policy card and Edit with AI) all draw from
  * here, so a status reads the same wherever it is drawn, and src/shared/palette.test.ts checks that no stylesheet holds
  * a colour from anywhere else.
  *
  * TailorIT's rule holds here too: the brand teal (#14a1c0) is a background and a graphic, never text. Text, icons,
  * links and the focus ring that read as "the brand" are its ink (#08758c): the teal is 3.05:1 on white and 2.97:1 on
  * the canvas, so it carries white text only at the large size of the main button (19px/800). Muted text is #666666,
- * because TailorIT's #7d7d7d is 4.12:1 on white. Each status colour carries white text (a highlight's chip, the
- * launcher's badge) and its own text on its tint (a report's chip) at 4.5:1 or more; the test computes every pair.
+ * because TailorIT's #7d7d7d is 4.12:1 on white. Each status colour carries white text (the launcher's badge) and its
+ * own text on its tint (a report's chip) at 4.5:1 or more; the test computes every pair.
  */
 import type { FillStatus } from '../core/enums';
 import type { FrameReport } from './report';
@@ -100,9 +100,6 @@ export const IN_PAGE_SHADOWS = {
 /** The system's own font: no font file is ever fetched (a closed shadow root cannot use @font-face, and the extension
  *  talks only to TailorIT). */
 export const FONT_STACK = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-
-/** The focus ring and the page's focused highlight. */
-export const ACCENT = BRAND.ink;
 
 /** A report notice's code. */
 type NoticeCode = FrameReport['notices'][number]['code'];

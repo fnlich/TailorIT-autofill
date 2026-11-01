@@ -48,7 +48,7 @@ describe('settings', () => {
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: DEFAULT_SETTINGS } });
   });
 
-  it('migrates version 1 settings still on its defaults to version 2’s, and stores them (the owner’s amendments)', async () => {
+  it('migrates version 1 settings still on its defaults to version 3’s, and stores them (the owner’s amendments)', async () => {
     const worker = await startTestWorker({
       before: async () => fakeBrowser.storage.local.set({ 'settings:v1': V1_DEFAULTS }),
     });
@@ -62,14 +62,27 @@ describe('settings', () => {
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
-      version: 2, panel: 'in-page', autoAdvance: true, preapprovedConsent: ['privacy', 'marketing'],
-      // The AI turned off (tiebreak and classification): answers stay off, drafts as the person set them (MINOR 4).
-      llm: { tiebreak: false, classify: false, drafts: true, answers: false, confirmDrafts: false,
+      version: 3, panel: 'in-page', autoAdvance: true, preapprovedConsent: ['privacy', 'marketing'],
+      // The AI turned off (tiebreak and classification): answers stay off, drafts as the person set them (MINOR 4);
+      // version 3's switch takes its default, and acts only while answers are on.
+      llm: { tiebreak: false, classify: false, drafts: true, answers: false, answerAll: true, confirmDrafts: false,
         whenForbidden: 'profile-only' },
       telemetry: { optIn: true }, offerToSaveAnswers: false,
       // Interpretation 2 was on version 1's default (off), so it takes version 2's.
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
     } } });
+  });
+
+  it('migrates version 2 settings to version 3’s, every choice kept and the `all` answers on (the owner’s decision of 2026-11-01)', async () => {
+    const { llm, ...rest } = CHOSEN;
+    const { answerAll: _answerAll, ...v2llm } = llm;
+    const v2 = { ...rest, version: 2, llm: { ...v2llm, answers: false, whenForbidden: 'ask' } };
+    const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v2 }) });
+    const expected = { ...CHOSEN, llm: { ...CHOSEN.llm, answers: false, answerAll: true, whenForbidden: 'ask' } };
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: expected } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+    expect(DEFAULT_SETTINGS.llm.answerAll).toBe(true);
   });
 
   it('keeps the AI off for a person who turned it off in version 1: no drafts, no answers (the Phase E review, MINOR 4)', async () => {

@@ -350,10 +350,10 @@ describe('the transition table', () => {
       expect(effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'press-next' }]);
     });
 
-    it('no error, not final, auto-advance off: Next highlighted, the person awaited with no timer', () => {
+    it('no error, not final, auto-advance off: Next is the person\'s, awaited with no timer (nothing drawn)', () => {
       const { state, effects } = reduceRun(ready(), validated(), OFF);
       expect(state.status).toBe('wait-transition');
-      expect(effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'highlight-next' },
+      expect(effects).toEqual([{ type: 'persist' }, { type: 'report' },
         { type: 'await-transition', from: S1, capMs: null }]);
     });
 
@@ -364,23 +364,22 @@ describe('the transition table', () => {
       expect(types(effects)).not.toContain('press-next');
     });
 
-    it('no error, final: review with Submit highlighted, never press-next, auto-advance or not', () => {
+    it('no error, final: review, Submit the person\'s, never press-next, auto-advance or not', () => {
       for (const ctx of [OFF, ON]) {
         const { state, effects } = reduceRun(ready(), validated(0, 0, { finality: 'final' }), ctx);
         expect(state.status).toBe('review');
-        expect(effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'highlight-submit' },
+        expect(effects).toEqual([{ type: 'persist' }, { type: 'report' },
           { type: 'show-review', cause: 'final-step', reason: null }]);
       }
     });
 
-    it('no error, finality unknown: treated as final, Next and Submit highlighted, the sentence only with auto-advance on', () => {
+    it('no error, finality unknown: treated as final, nothing pressed, the sentence only with auto-advance on', () => {
       const off = reduceRun(ready(), validated(0, 0, { finality: 'unknown' }), OFF);
       expect(off.state.status).toBe('review');
-      expect(off.effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'highlight-next' },
-        { type: 'highlight-submit' }, { type: 'show-review', cause: 'final-unknown', reason: null }]);
+      expect(off.effects).toEqual([{ type: 'persist' }, { type: 'report' },
+        { type: 'show-review', cause: 'final-unknown', reason: null }]);
       const on = reduceRun(ready(), validated(0, 0, { finality: 'unknown' }), ON);
-      expect(on.effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'highlight-next' },
-        { type: 'highlight-submit' }, { type: 'notify', notice: 'final-unknown' },
+      expect(on.effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'notify', notice: 'final-unknown' },
         { type: 'show-review', cause: 'final-unknown', reason: null }]);
     });
 
@@ -407,7 +406,7 @@ describe('the transition table', () => {
     it('errors on a final step are fixed or surfaced the same way: never Next, never Submit', () => {
       const { effects } = reduceRun(ready(), validated(1, 0, { finality: 'final' }), ON);
       expect(types(effects)).not.toContain('press-next');
-      expect(types(effects)).not.toContain('highlight-submit');
+      expect(effects.at(-1)).not.toEqual({ type: 'show-review', cause: 'final-step', reason: null });
     });
 
     it('ADVANCED by the person before the extension decided: their transition awaited with no timer', () => {
@@ -866,8 +865,7 @@ describe('the Phase 5 review', () => {
     const judged = reduceRun(unchanged.state, validated(), ON);
     expect(types(judged.effects)).not.toContain('press-next');
     expect(judged.state.status).toBe('wait-transition');
-    expect(judged.effects.slice(-2)).toEqual([{ type: 'highlight-next' }, { type: 'await-transition', from: S1,
-      capMs: null }]);
+    expect(judged.effects.slice(-1)).toEqual([{ type: 'await-transition', from: S1, capMs: null }]);
     expect(autoAdvanceVerdict(unchanged.state, { errors: 0, step: facts() }, ON))
       .toEqual({ advance: false, refusal: 'not-filled' });
   });
@@ -876,7 +874,7 @@ describe('the Phase 5 review', () => {
     const { state, effects } = reduceRun(at('advance', { lastFill: CLEAN }), { type: 'NEXT_WITHHELD', reason: 'setting-off' },
       OFF);
     expect(state.status).toBe('wait-transition');
-    expect(effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'highlight-next' },
+    expect(effects).toEqual([{ type: 'persist' }, { type: 'report' },
       { type: 'await-transition', from: S1, capMs: null }]);
     for (const status of ['validate', 'wait-transition', 'review', 'fill-step', 'handoff'] as const) {
       const other = at(status);
@@ -928,7 +926,7 @@ describe('the Phase 5 review', () => {
     const judged = reduceRun(ready, validated(0, 0, { captchaUnsolved: true }), ON);
     expect(types(judged.effects)).not.toContain('press-next');
     expect(judged.state.status).toBe('wait-transition');
-    expect(judged.effects.slice(2)).toEqual([{ type: 'notify', notice: 'captcha-next' }, { type: 'highlight-next' },
+    expect(judged.effects.slice(2)).toEqual([{ type: 'notify', notice: 'captcha-next' },
       { type: 'await-transition', from: S1, capMs: null }]);
     // With auto-advance off nothing would be pressed anyway: no notice.
     expect(reduceRun(ready, validated(0, 0, { captchaUnsolved: true }), OFF).effects)
@@ -937,7 +935,7 @@ describe('the Phase 5 review', () => {
     const withheld = reduceRun(at('advance', { lastFill: CLEAN }), { type: 'NEXT_WITHHELD', reason: 'captcha-unsolved' },
       ON);
     expect(withheld.state.status).toBe('wait-transition');
-    expect(withheld.effects.slice(2)).toEqual([{ type: 'notify', notice: 'captcha-next' }, { type: 'highlight-next' },
+    expect(withheld.effects.slice(2)).toEqual([{ type: 'notify', notice: 'captcha-next' },
       { type: 'await-transition', from: S1, capMs: null }]);
     expect(STEP_NOTICES).toContain('captcha-next');
   });

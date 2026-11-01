@@ -148,7 +148,7 @@ describe('the widgets page', () => {
     expect(country.key).not.toContain('|lazy|');
     expect(await ran.worker.platform.deliver({ v: 1, type: 'field/focus', fieldKey: country.key }))
       .toEqual({ ok: true, data: {} });
-    expect(ran.runtime.ui!.focusShown).toBe(true);
+    expect(ran.runtime.ui!.shadow.querySelectorAll('.highlights, .hl')).toHaveLength(0);
   });
 
   it('opens nothing in a dry run: the lazy widgets wait for their options, and no event reaches the page', async () => {

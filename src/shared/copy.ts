@@ -30,8 +30,8 @@ const NOTICES = {
   'page-busy': 'The page is still busy. When it has settled, choose Continue.',
   auth: 'This step needs you to sign in or create an account. Do that yourself, then choose Continue.',
   captcha: 'This page asks you to prove you are human. Complete it yourself, then choose Continue.',
-  validation: 'The form shows errors. The fields that need you are highlighted.',
-  'needs-click': 'Some controls respond only to your own click. They are highlighted for you.',
+  validation: 'The form shows errors. The review lists the fields that need you.',
+  'needs-click': 'Some controls respond only to your own click. The review lists them for you.',
   'posting-outside-frame': 'This form sits inside another site\'s page, which cannot be read, so that page\'s text was not checked.',
   'deferred-fields': 'Some fields were not rendered yet. Scroll to them and choose Autofill again.',
   'step-retry-limit': 'This step was tried twice already, so nothing more is filled on it.',
@@ -166,6 +166,9 @@ const REASONS = {
   'cover-letter-unavailable': 'Your cover letter could not be brought from TailorIT just now, so this was left for you.',
   'cover-letter-timed-out': 'TailorIT took too long writing your cover letter, so this was left for you. Check it in TailorIT, then attach it.',
   'cover-letter-reconnect': "This connection can't attach cover letters. Connect the extension again from TailorIT's Settings › Autofill.",
+  // The owner's decisions of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): drafts for the owner's review.
+  'consent-optional-unticked': "This box is optional and you haven't allowed it in Settings, so it was left unticked.",
+  'ai-attestation-ai-used': "This fill used AI, so ticking that you didn't use AI would be untrue. It was left for you.",
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;
@@ -248,14 +251,6 @@ const PLATFORM_NAMES = {
   ashby: 'Ashby',
   workday: 'Workday',
 } as const satisfies Record<Platform, string>;
-
-/** The in-page highlight's chip for each status that gets a highlight ('skipped' gets none). */
-const CHIPS = {
-  verified: 'Filled and checked',
-  filled: 'Filled: please check',
-  flagged: 'Needs you',
-  blocked: 'Blocked',
-} as const satisfies Record<Exclude<FillStatus, 'skipped'>, string>;
 
 /** The report's own words (src/ui/report), shared by the side panel and the in-page panel. */
 const REPORT = {
@@ -517,7 +512,7 @@ const OPTIONS = {
     disclosure: [
       'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.',
       'While its side panel shows an application page, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings and notes on each application\'s progress, never your answers.',
-      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
+      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Unless you turn it off below, questions about work authorization, sponsorship, a visa, a clearance, age, criminal history or pay that your profile does not answer, and attention checks, get the AI\'s best guess too, from the question and its options alone. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
     connect: 'Connect to TailorIT',
@@ -559,14 +554,14 @@ const OPTIONS = {
   },
   consent: {
     heading: 'Consent boxes',
-    intro: 'A consent box is ticked for you only when you pre-approve its kind here. The usual ones start on; marketing and text messages start off. A box that names several kinds is ticked only when you approved them all.',
+    intro: 'A box the form requires is ticked for you, since you cannot apply without it. An optional box is ticked only when you pre-approve its kind here; the usual ones start on, marketing and text messages start off, and an optional box you have not allowed is left unticked.',
     categories: CONSENT,
     certifyWarning: 'Certifying states that everything in an application is true and complete. Turn this on only if you check every application before you submit it.',
-    never: 'Statements that you did not use AI, and consent the extension does not recognise, are always left for you.',
+    never: 'A statement that you did not use AI is ticked only when the fill used no AI at all, so it is true. Otherwise it is left for you.',
   },
   ai: {
     heading: 'AI help',
-    intro: 'Through your TailorIT, which asks Claude. Everything the AI writes is marked on the page and in the review, and an answer with nothing to go on is marked "AI guess".',
+    intro: 'Through your TailorIT, which asks Claude. Everything the AI writes is marked in the review, and an answer with nothing to go on is marked "AI guess".',
     tiebreak: 'Pick from a list when unsure',
     tiebreakHelp: 'When your answer could match more than one option, the AI picks among the visible options.',
     classify: 'Work out unusual questions',
@@ -575,8 +570,10 @@ const OPTIONS = {
     draftsHelp: 'Drafts answers to questions like "Why this company?" from your resume and the posting, and writes them in.',
     answers: 'Answer the questions my profile does not',
     answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess, marked "AI guess".',
+    answerAll: "Let the AI answer legal, pay and attention-check questions your profile doesn't answer",
+    answerAllHelp: 'Work authorization, sponsorship, visa, clearance, age, criminal history, pay and "select PURPLE to show you read this" questions get the AI\'s most likely answer for you, marked "AI guess" unless your resume settles it. Only the question and its options are sent, never your profile\'s answers, and a question your profile answers is never asked. Self-identification questions still take your answer or the form\'s decline option.',
     confirmDrafts: 'Wait for me to confirm each draft',
-    confirmDraftsHelp: 'A draft stays highlighted until you edit or confirm it, and the form is not ready until you have.',
+    confirmDraftsHelp: 'A draft waits in the review until you edit or confirm it, and the form is not ready until you have.',
     whenForbidden: {
       heading: 'When a posting says AI is not allowed',
       'profile-only': 'Fill from my profile only',
@@ -586,7 +583,7 @@ const OPTIONS = {
       'use-ai': 'Use AI anyway',
       'use-aiHelp': 'The notice is shown, and filling goes on with the AI.',
     },
-    never: 'Your EEO, authorization and sponsorship answers never go to the AI, and questions that look like them are not sent to it.',
+    never: 'Your EEO, authorization, sponsorship, criminal record and pay answers never go to the AI. Self-identification and consent questions are never sent to it.',
   },
   interpretations: {
     heading: 'Interpretations',
@@ -654,8 +651,8 @@ export const COPY = {
   policyCancel: 'Cancel',
   /** Under the policy sentence when only TailorIT's saved copy of the posting said it (the page's card and the panel's). */
   policyFromStoredCopy: NOTICES['policy-stored-copy'],
-  // The in-page UI (src/content/ui): the launcher's name in each state (its tooltip and accessible name), a notice's
-  // dismiss button, and the highlights' chips. Drafts from the content runtime, for the owner's review.
+  // The in-page UI (src/content/ui): the launcher's name in each state (its tooltip and accessible name) and a
+  // notice's dismiss button. Drafts from the content runtime, for the owner's review.
   launcherFill: 'Autofill this application with TailorIT',
   launcherRunning: 'Filling the application',
   launcherNeedsYou: 'This needs you. Choose to continue.',
@@ -664,18 +661,14 @@ export const COPY = {
   launcherError: 'Something went wrong. Choose to try again.',
   launcherNotConnected: 'Connect TailorIT Autofill to TailorIT in its settings, then try again.',
   dismiss: 'Dismiss',
-  /** The chip of a selection the final check refused, which the extension never unticks (the plan's words). */
-  removeSelection: 'Remove this selection',
-  /** The chip of an AI draft that waits for the person. */
-  draftChip: 'AI draft: please confirm',
-  /** The chips of a field the AI wrote, and of one it answered with nothing to go on (the owner's amendments). */
+  /** The review's marks of a field the AI wrote, and of one it answered with nothing to go on (the owner's
+   *  amendments): its chips beside the row's status. */
   aiChip: 'AI',
   aiGuessChip: 'AI guess',
   /** The button in a text box that asks the AI to rewrite what it holds (its accessible name), and its state while the
    *  rewrite is on its way. */
   editWithAi: 'Edit with AI',
   editingWithAi: 'Rewriting…',
-  chips: CHIPS,
   /** One sentence per reason code. */
   reasons: REASONS,
   statuses: STATUSES,

@@ -167,10 +167,14 @@ describe('planFrame: EEO, legal and consent', () => {
     expect(fieldOf(planOf([SPONSORSHIP], { profile: future }), SPONSORSHIP).write?.value).toMatchObject({ index: 0 });
   });
 
-  it('never ticks consent without pre-approval, and ticks a pre-approved kind', () => {
+  it('ticks an optional consent only with pre-approval, a required one always, and a pre-approved kind', () => {
     const none = settingsWith({ preapprovedConsent: [] });
+    // Optional and not pre-approved: left unticked, decided (the owner's decision of 2026-11-01).
     expect(fieldOf(planOf([PRIVACY], { settings: none }), PRIVACY)).toMatchObject({ write: undefined,
-      row: { status: 'flagged', reason: 'consent-requires-user', needsUserAction: true } });
+      row: { status: 'skipped', reason: 'consent-optional-unticked', needsUserAction: false } });
+    const required = { ...PRIVACY, required: true };
+    expect(fieldOf(planOf([required], { settings: none }), required)).toMatchObject({ write: { value: { kind: 'check' },
+      origin: { provenance: 'rule', ruleId: 'consent.required' } }, row: { status: 'verified', needsUserAction: false } });
     // The standard consents are pre-approved by default since settings version 2 (docs/SPEC-AMENDMENTS.md).
     expect(fieldOf(planOf([PRIVACY]), PRIVACY)).toMatchObject({ write: { value: { kind: 'check' } },
       row: { status: 'verified' } });
@@ -364,6 +368,32 @@ describe('planFrame: uploads and searches', () => {
     expect(fieldOf(planOf([others]), others)).toMatchObject({ write: undefined, row: { status: 'flagged' } });
   });
 
+  it("chooses the person's place among a location search's results by its parts (matcher/place.ts)", () => {
+    const results = (labels: string[]) => specOf('Location (City)', 'typeahead-remote', { optionLabels: labels });
+    const queries = specOf('Location (City)', 'typeahead-remote', { options: [] });
+    expect(fieldOf(planOf([queries]), queries).write).toMatchObject({ value: { kind: 'query', queries: ['Austin, TX'] },
+      origin: { provenance: 'profile', path: 'address', transform: 'typeahead.query' } });
+    // Greenhouse's geocoder for "Austin, TX": Texas, never Minnesota.
+    const geocoded = results(['Austin, Minnesota, United States', 'Austin, Texas, United States',
+      'Austin, Arkansas, United States']);
+    expect(fieldOf(planOf([geocoded]), geocoded)).toMatchObject({
+      write: { value: { kind: 'option', index: 1, cleanLabel: 'Austin, Texas, United States' },
+        origin: { provenance: 'profile', path: 'address' } },
+      row: { status: 'verified', category: 'location.current', matcherStage: 'alias' } });
+    // No Austin in Texas: nothing chosen, and the frame types its next query.
+    const elsewhere = results(['Austin, Minnesota, United States', 'Austin, Indiana, United States']);
+    expect(fieldOf(planOf([elsewhere]), elsewhere)).toMatchObject({ write: undefined,
+      row: { status: 'flagged', reason: 'no-match', provenance: null } });
+    // A result that names no region is below the fill line: never chosen in a search.
+    const vague = results(['Austin, United States']);
+    expect(fieldOf(planOf([vague]), vague)).toMatchObject({ write: undefined, row: { status: 'flagged' } });
+    // A search that already shows the place is left alone.
+    const shown = specOf('Location (City)', 'typeahead-remote', { options: [],
+      current: { kind: 'selected', labels: ['Austin, Texas, United States'] } });
+    expect(fieldOf(planOf([shown]), shown)).toMatchObject({ write: undefined,
+      row: { status: 'skipped', reason: 'already-correct' } });
+  });
+
   it('leaves a remote search alone that already shows the school, and searches over another answer, flagged', () => {
     const shown = (text: string) => specOf('School', 'typeahead-remote', { options: [],
       current: { kind: 'selected', labels: [text] } });
@@ -421,7 +451,7 @@ describe('a widget list read only in part (the Phase 4 review, R9)', () => {
     expect(whole.write?.match.stage).toMatch(/^(?:exact|alias)$/);
     const { write, row } = fieldOf(planOf([spec]), spec);
     expect(write).toMatchObject({ value: { kind: 'option', index: 1 } });
-    expect(row).toMatchObject({ status: 'flagged', reason: 'options-incomplete', needsUserAction: true });
+    expect(row).toMatchObject({ status: 'flagged', reason: 'options-incomplete', needsUserAction: false });
   });
 
   it('chooses no loose match there: the answer may lie past what was read', () => {

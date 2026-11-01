@@ -22,13 +22,18 @@ describe('the evaluation order (§8.1)', () => {
     expect(help).toMatchObject({ action: 'needs-user', reason: 'tripwire-in-label' });
   });
 
-  it('hands an attention check to the person, or a consent-worded one as consent', () => {
+  it('hands an attention check to the person (whose gap the AI may answer: plan/answers.ts), or a consent-worded one as consent', () => {
     expect(resolve(specOf('Attention check: select PURPLE.', 'radio', { optionLabels: ['Red', 'Purple'] }), ctx()))
       .toMatchObject({ category: 'attentionCheck', classifiedBy: 'label-rule', rule: 'attention.attention-check',
         action: 'needs-user', reason: 'attention-check', policy: 'attention' });
+    // An optional box not pre-approved is left unticked, decided (the owner's decision of 2026-11-01); a required one
+    // is ticked.
     expect(resolve(specOf('Check this box to confirm you read the privacy policy', 'checkbox'),
       ctx({ settings: CAUTIOUS_SETTINGS })))
-      .toMatchObject({ category: 'consent.privacy', action: 'needs-user', reason: 'consent-requires-user' });
+      .toMatchObject({ category: 'consent.privacy', action: 'skip', reason: 'consent-optional-unticked' });
+    expect(resolve(specOf('Check this box to confirm you read the privacy policy', 'checkbox', { required: true }),
+      ctx({ settings: CAUTIOUS_SETTINGS })))
+      .toMatchObject({ category: 'consent.privacy', action: 'fill', origin: { ruleId: 'consent.required' } });
     // Pre-approved by default since settings version 2.
     expect(resolve(specOf('Check this box to confirm you read the privacy policy', 'checkbox'), ctx()))
       .toMatchObject({ category: 'consent.privacy', action: 'fill', origin: { ruleId: 'consent.preapproved' } });
@@ -121,16 +126,21 @@ const everything = () => {
     profile: { ...profile, preferences: { ...profile.preferences, relocation: { kind: 'value', value: true } } } });
 };
 
-// CORE-1 (Phase 2 review): a box that binds the person to more than its kinds name is never ticked.
-describe('a consent box is ticked only when the pre-approved kinds cover every object it names', () => {
+// CORE-1 (Phase 2 review): a box that binds the person to more than its kinds name is never pre-approved. Since the
+// owner's decision of 2026-11-01 it is ticked when the form requires it (it is needed to apply), and an optional one is
+// left unticked, decided.
+describe('a consent box is ticked only when the pre-approved kinds cover every object it names, or it is required', () => {
   it.each([
     'I agree to the privacy policy and to binding arbitration',
     'I agree to the Privacy Policy and the Arbitration Agreement',
     'I agree to the privacy policy and jury waiver',
     'I agree to the privacy policy and the non-compete agreement',
-  ])('leaves %j to the person, whatever is pre-approved', (label) => {
+  ])('leaves an optional %j unticked whatever is pre-approved, and ticks a required one', (label) => {
     expect(resolveField(specOf(label, 'checkbox'), everything())).toMatchObject({ shaped: null,
-      resolution: { category: 'consent.other', action: 'needs-user', reason: 'consent-requires-user' } });
+      resolution: { category: 'consent.other', action: 'skip', reason: 'consent-optional-unticked' } });
+    expect(resolveField(specOf(label, 'checkbox', { required: true }), everything())).toMatchObject({
+      shaped: { shape: 'check', check: true },
+      resolution: { category: 'consent.other', action: 'fill', origin: { provenance: 'rule', ruleId: 'consent.required' } } });
   });
 
   it.each([
@@ -162,15 +172,15 @@ describe('a lone checkbox is ticked only for an affirmative statement that equal
     'I do not wish to receive marketing emails',
     'Opt out of SMS',
     'Do not contact me by SMS',
-  ])('never ticks the opt-out %j, though its consent is pre-approved', (label) => {
+  ])('never ticks the optional opt-out %j, though its consent is pre-approved', (label) => {
     expect(resolveField(specOf(label, 'checkbox'), everything())).toMatchObject({ shaped: null,
-      resolution: { category: 'consent.other', action: 'needs-user', reason: 'consent-requires-user' } });
+      resolution: { category: 'consent.other', action: 'skip', reason: 'consent-optional-unticked' } });
   });
 
-  it('never picks Yes on a consent radio that asks about opting out', () => {
+  it('never picks Yes on an optional consent radio that asks about opting out', () => {
     expect(resolveField(specOf('Would you like to opt out of marketing emails?', 'radio', {
       optionLabels: ['Yes', 'No'] }), everything())).toMatchObject({ shaped: null,
-      resolution: { category: 'consent.other', action: 'needs-user' } });
+      resolution: { category: 'consent.other', action: 'skip', reason: 'consent-optional-unticked' } });
   });
 
   it.each([

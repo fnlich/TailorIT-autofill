@@ -153,15 +153,8 @@ export const SHARED_SENSITIVE_TERMS: readonly string[] = [
   'acknowledge', 'certify', 'accept the terms',
 ];
 
-/**
- * The sensitive-question terms: TailorIT's SENSITIVE_LABEL (apps/api/src/features/autofill/ai/screen.ts, as its design
- * lists it in docs/design/tailorit.md §3.5) plus the plan's additions and the Phase 4 review's (SHARED_SENSITIVE_TERMS,
- * on both sides). Matched over every detection view of the text (guard/fold.ts), and over each view with its spaced-out
- * letters closed up ("G e n d e r"), so a look-alike letter, a combining mark, a joiner or a space cannot split a word.
- * The short acronyms are SENSITIVE_ACRONYMS', matched in capitals only. The extension screens at least as widely as
- * TailorIT, which screens every item again.
- */
-export const SENSITIVE_TERMS: readonly RegExp[] = [
+/** Work authorization. */
+const AUTHORIZATION_TERMS: readonly RegExp[] = [
   // Work authorization (the plan's: work permit, eligib*, visa, citizen*, authori[sz]e; the review's: export control,
   // U.S. person, clearance; H-1B, OPT, CPT and TN are SENSITIVE_ACRONYMS').
   /\bauthori[sz]/, /\bsponsor/, /\bvisas?\b/, /\bcitizen/, /\bnationalit(?:y|ies)\b/, /\b(?:in)?eligib/,
@@ -170,6 +163,10 @@ export const SENSITIVE_TERMS: readonly RegExp[] = [
   // Sponsorship with no topic word (the Phase 6 review, T6-1): "Will you now or in the future require us to support
   // your employment?".
   /\bnow\s+or\s+in\s+the\s+future\b/, /\bsupport\s+(?:for\s+)?(?:your|my|their)\s+(?:employment|work)\b/,
+];
+
+/** Self-identification (EEO). */
+const SELF_IDENTIFICATION_TERMS: readonly RegExp[] = [
   // Self-identification (EEO; the review's: Aboriginal, Torres Strait Islander, Indigenous, First Nations, visible
   // minority, LGBTQ and its longer forms, and orientation as the EEO phrase only: "sexual orientation", or orientation
   // within a few words of gender, LGBTQ or identity; "Team orientation" is none).
@@ -182,24 +179,62 @@ export const SENSITIVE_TERMS: readonly RegExp[] = [
   // Disability as the ADA defines it, with no "disab" word ("a condition that substantially limits a major life
   // activity": the review's R4).
   /\bsubstantially\s+limit(?:s|ed|ing)?\b/, /\bmajor\s+life\s+activit(?:y|ies)\b/,
+];
+
+/** Age. */
+const AGE_TERMS: readonly RegExp[] = [
   // Age (the review's: year of birth, birth year, born).
   /\bages?\b/, /\bdate\s+of\s+birth\b/, /\bbirth\s*(?:date|day)\b/, /\bdob\b/, /\bhow\s+old\b/,
   /\b(?:at\s+least|over|under|older\s+than|younger\s+than)\s+(?:the\s+age\s+of\s+)?(?:16|18|19|21)\b/,
   /\b(?:16|18|19|21)\s*(?:years?|yrs?)\s+(?:of\s+age|old|or\s+(?:older|over))\b/, /\byears?\s+of\s+birth\b/,
   /\bbirth\s*years?\b/, /\bborn\b/,
+];
+
+/** Pay. */
+const PAY_TERMS: readonly RegExp[] = [
   // Pay (the review's: hourly rate, rate of pay, CTC, base salary, annual base, bonus, equity, compensation
   // expectations).
   /\bsalar(?:y|ies)\b/, /\bcompensation\b/, /\bpay\b/, /\bwages?\b/, /\bremuneration\b/, /\bhourly\s+rates?\b/,
   /\brates?\s+of\s+pay\b/, /\bctc\b/, /\bannual\s+base\b/, /\bbonus(?:es)?\b/, /\bequity\b/,
+];
+
+/** Consent and agreement. */
+const CONSENT_TERMS: readonly RegExp[] = [
   // Consent and agreement (the plan's: consent, agree, share my/your data or information; the review's: acknowledge,
   // certify, accept the terms).
   /\bconsent/, /\b(?:dis)?agree/, /\bprivacy\b/,
   /\bshare\s+(?:my|your)\s+(?:personal\s+)?(?:data|information|info|details)\b/, /\bbackground\s+(?:check|screening)s?\b/,
   /\backnowledg/, /\bcertif(?:y|ies|ied|ying)\b/, /\baccept(?:s|ed|ing)?\s+(?:all\s+)?(?:the\s+|these\s+|our\s+)?terms\b/,
+];
+
+/** Criminal history. */
+const CRIMINAL_TERMS: readonly RegExp[] = [
   // Criminal history (the review's: guilty, offence, offense).
   /\bcriminal/, /\bconvict/, /\bfelon/, /\bmisdemeano/, /\barrest/, /\bguilty\b/, /\boffen[cs]es?\b/,
+];
+
+/** Identity numbers. */
+const IDENTITY_NUMBER_TERMS: readonly RegExp[] = [
   // Identity numbers (the review's: passport number, National Insurance; NI number is SENSITIVE_ACRONYMS').
   /\bsocial\s+security\b/, /\bssn\b/, /\bpassport\s*(?:numbers?|no\b|#)/, /\bnational\s+insurance\b/,
+];
+
+/**
+ * The sensitive-question terms: TailorIT's SENSITIVE_LABEL (apps/api/src/features/autofill/ai/screen.ts, as its design
+ * lists it in docs/design/tailorit.md §3.5) plus the plan's additions and the Phase 4 review's (SHARED_SENSITIVE_TERMS,
+ * on both sides). Matched over every detection view of the text (guard/fold.ts), and over each view with its spaced-out
+ * letters closed up ("G e n d e r"), so a look-alike letter, a combining mark, a joiner or a space cannot split a word.
+ * The short acronyms are SENSITIVE_ACRONYMS', matched in capitals only. The extension screens at least as widely as
+ * TailorIT, which screens every item again.
+ */
+export const SENSITIVE_TERMS: readonly RegExp[] = [
+  ...AUTHORIZATION_TERMS,
+  ...SELF_IDENTIFICATION_TERMS,
+  ...AGE_TERMS,
+  ...PAY_TERMS,
+  ...CONSENT_TERMS,
+  ...CRIMINAL_TERMS,
+  ...IDENTITY_NUMBER_TERMS,
 ];
 
 /**
@@ -212,6 +247,31 @@ export const SENSITIVE_ACRONYMS: readonly RegExp[] = [
   /\bOPT\b/, /\bCPT\b/, /(?<!,\s*)\bTN\b/, /\bH\s*[-\u2010-\u2015]?\s*1\s*[-\u2010-\u2015]?\s*B\b/,
   /\bNI\s*(?:[Nn][Uu][Mm][Bb][Ee][Rr][Ss]?\b|[Nn][Oo]\b|#)/,
 ];
+/** SENSITIVE_ACRONYMS' work-authorization four (OPT, CPT, TN, H-1B) and its identity number (NI). */
+const AUTHORIZATION_ACRONYMS = SENSITIVE_ACRONYMS.slice(0, 4);
+const IDENTITY_NUMBER_ACRONYMS = SENSITIVE_ACRONYMS.slice(4);
+
+/** The extension's own criminal-history terms. */
+const EXTENSION_CRIMINAL_TERMS: readonly RegExp[] = [
+  // Criminal history.
+  /\bcrimes?\b/, /\bcharged\s+with\b/, /\bpending\s+charges?\b/, /\bprobation\b/, /\bparole\b/, /\bincarcerat/,
+  /\b(?:jail|prison)\b/, /\bsentenced\b/, /\bno\s+contest\b|\bnolo\b/,
+];
+
+/** The extension's own pay terms. */
+const EXTENSION_PAY_TERMS: readonly RegExp[] = [
+  // Pay ("on-target earnings" is OTE; a package is pay, but never a package manager, registry or version).
+  /\bincome\b/, /\bote\b/, /\b(?:expected|desired|target|minimum|asking)\s+(?:base|rates?|earnings)\b/,
+  /\b(?:current|day|daily|contract|billing)\s+(?:rates?|earnings)\b/,
+  /\b(?:current|expected|desired|target|minimum|asking)\s+(?:salary\s+)?package\b(?!\s+(?:manager|management|registry|version))/,
+  /\bwhat\s+rate\b/,
+];
+
+/** The extension's own identity and tax number terms. */
+const EXTENSION_IDENTITY_NUMBER_TERMS: readonly RegExp[] = [
+  // Identity and tax numbers.
+  /\bsocial\s+insurance\b/, /\btax\s+(?:file|identification|id|reference|registration|payer)\s*(?:numbers?|no\b|#)/,
+];
 
 /**
  * The extension's own terms beyond the two pinned lists above: the ones TailorIT's server screen holds on its side only
@@ -222,16 +282,9 @@ export const SENSITIVE_ACRONYMS: readonly RegExp[] = [
  * only keeps text from the AI.
  */
 export const EXTENSION_SENSITIVE_TERMS: readonly RegExp[] = [
-  // Criminal history.
-  /\bcrimes?\b/, /\bcharged\s+with\b/, /\bpending\s+charges?\b/, /\bprobation\b/, /\bparole\b/, /\bincarcerat/,
-  /\b(?:jail|prison)\b/, /\bsentenced\b/, /\bno\s+contest\b|\bnolo\b/,
-  // Pay ("on-target earnings" is OTE; a package is pay, but never a package manager, registry or version).
-  /\bincome\b/, /\bote\b/, /\b(?:expected|desired|target|minimum|asking)\s+(?:base|rates?|earnings)\b/,
-  /\b(?:current|day|daily|contract|billing)\s+(?:rates?|earnings)\b/,
-  /\b(?:current|expected|desired|target|minimum|asking)\s+(?:salary\s+)?package\b(?!\s+(?:manager|management|registry|version))/,
-  /\bwhat\s+rate\b/,
-  // Identity and tax numbers.
-  /\bsocial\s+insurance\b/, /\btax\s+(?:file|identification|id|reference|registration|payer)\s*(?:numbers?|no\b|#)/,
+  ...EXTENSION_CRIMINAL_TERMS,
+  ...EXTENSION_PAY_TERMS,
+  ...EXTENSION_IDENTITY_NUMBER_TERMS,
 ];
 
 /** The extension's own acronyms, as SENSITIVE_ACRONYMS are matched (capitals only): SIN, Canada's Social Insurance
@@ -276,6 +329,51 @@ export function namesSensitiveTopic(text: string): boolean {
     const closed = closedUp(lower);
     return SCREENED_TERMS.some((term) => term.test(lower) || (closed !== lower && term.test(closed)));
   });
+}
+
+/**
+ * What a sensitive term names (the owner's decision of 2026-11-01; TailorIT's SENSITIVE_TOPICS): with
+ * settings.llm.answerAll on, a question of the open topics (OPEN_SCREEN_TOPICS) may be answered by TailorIT's AI,
+ * and one of any other never is.
+ */
+export const SCREEN_TOPICS = ['authorization', 'self_identification', 'age', 'pay', 'consent', 'criminal',
+  'identity_number'] as const;
+export type ScreenTopic = (typeof SCREEN_TOPICS)[number];
+
+/** The topics TailorIT's `all` answer scope asks about (its OPEN_TOPICS): work authorization (sponsorship, a visa,
+ *  citizenship or residence status, a clearance, export control), age, pay and criminal history. */
+export const OPEN_SCREEN_TOPICS: ReadonlySet<ScreenTopic> = new Set<ScreenTopic>(['authorization', 'age', 'pay',
+  'criminal']);
+
+/** Each topic's terms and acronyms, the pinned lists' and the extension's own: together, exactly the screen's. */
+const TOPIC_SCREENS: ReadonlyArray<{ topic: ScreenTopic; terms: readonly RegExp[]; acronyms: readonly RegExp[] }> = [
+  { topic: 'authorization', terms: AUTHORIZATION_TERMS, acronyms: AUTHORIZATION_ACRONYMS },
+  { topic: 'self_identification', terms: SELF_IDENTIFICATION_TERMS, acronyms: [] },
+  { topic: 'age', terms: AGE_TERMS, acronyms: [] },
+  { topic: 'pay', terms: [...PAY_TERMS, ...EXTENSION_PAY_TERMS], acronyms: [] },
+  { topic: 'consent', terms: CONSENT_TERMS, acronyms: [] },
+  { topic: 'criminal', terms: [...CRIMINAL_TERMS, ...EXTENSION_CRIMINAL_TERMS], acronyms: [] },
+  { topic: 'identity_number', terms: [...IDENTITY_NUMBER_TERMS, ...EXTENSION_IDENTITY_NUMBER_TERMS],
+    acronyms: [...IDENTITY_NUMBER_ACRONYMS, ...EXTENSION_SENSITIVE_ACRONYMS] },
+];
+
+/** The topics page text names, read as namesSensitiveTopic reads it (so the set is empty exactly when it is false):
+ *  "Will you now or in the future require sponsorship?" names authorization, "Gender" self-identification. */
+export function sensitiveTopicsOf(text: string): Set<ScreenTopic> {
+  const topics = new Set<ScreenTopic>();
+  if (text.trim() === '') return topics;
+  const kept = caseKept(text);
+  const cased = [...new Set([text, kept, closedUp(text), closedUp(kept)])];
+  const lowered = detectionViews(text).flatMap((view) => {
+    const lower = view.toLowerCase();
+    const closed = closedUp(lower);
+    return closed === lower ? [lower] : [lower, closed];
+  });
+  for (const { topic, terms, acronyms } of TOPIC_SCREENS) {
+    if (cased.some((view) => acronyms.some((term) => term.test(view)))
+      || lowered.some((view) => terms.some((term) => term.test(view)))) topics.add(topic);
+  }
+  return topics;
 }
 
 /** A sum of money ("$120,000", "120k", "USD 95000", "45 per hour"), as TailorIT's screen reads one. */
@@ -453,6 +551,33 @@ export function screenForClassify(spec: Pick<FieldSpec, 'label' | 'description' 
   if ([spec.label, spec.description, sectionWords(spec.section), ...options].some(namesSensitiveTopic)) return 'sensitive';
   if (options.some((label) => isEeoAnswer(label, vocab))) return 'sensitive';
   return options.some((label) => isDeclinePhrase(label, vocab)) ? 'decline' : null;
+}
+
+/**
+ * The topics a field's own text names, for an AI answer of TailorIT's `all` scope (settings.llm.answerAll, the owner's
+ * decision of 2026-11-01), or null when it may get none: its label, description, section's words and options may name
+ * only open topics (OPEN_SCREEN_TOPICS; a consent only in an attention check's own words), none of its options is an
+ * EEO answer the vocabulary knows, and a decline option ("Prefer not to say") stands only beside a question that names
+ * an open topic (a fair answer to a legal or pay question; elsewhere the mark of a self-identification one).
+ */
+export function openAnswerTopics(spec: Pick<FieldSpec, 'label' | 'description' | 'section' | 'options'>, vocab: Vocab,
+  attention: boolean): Set<ScreenTopic> | null {
+  return openTopicsOfTexts([spec.label, spec.description, sectionWords(spec.section)], cleanOptions(spec), vocab,
+    attention);
+}
+
+/** openAnswerTopics over a question's texts (its label, hint and section's words) and its clean option labels, as the
+ *  worker screens an answer item again (ai-tasks.ts answerItemOfCore). */
+export function openTopicsOfTexts(asked: readonly string[], options: readonly string[], vocab: Vocab,
+  attention: boolean): Set<ScreenTopic> | null {
+  const topics = new Set<ScreenTopic>();
+  for (const text of [...asked, ...options]) {
+    for (const topic of sensitiveTopicsOf(text)) topics.add(topic);
+  }
+  if ([...topics].some((topic) => !OPEN_SCREEN_TOPICS.has(topic) && !(attention && topic === 'consent'))) return null;
+  if (options.some((label) => isEeoAnswer(label, vocab))) return null;
+  const opened = [...topics].some((topic) => OPEN_SCREEN_TOPICS.has(topic));
+  return !opened && options.some((label) => isDeclinePhrase(label, vocab)) ? null : topics;
 }
 
 // ── The request ─────────────────────────────────────────────────────────────────────────────────────────────────────

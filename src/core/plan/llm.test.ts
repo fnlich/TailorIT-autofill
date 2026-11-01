@@ -60,7 +60,7 @@ describe('planFrame with the LLM tiebreak', () => {
       origin: { provenance: 'llm-pick', taskId: TASK, pickedCandidate: picked, labelHash: item.candidates[picked]!.labelHash },
       match: { stage: 'llm', rule: 'llm-index' } });
     expect(row).toMatchObject({ status: 'flagged', provenance: 'llm-pick', matcherStage: 'llm',
-      reason: 'llm-pick-needs-review', needsUserAction: true });
+      reason: 'llm-pick-needs-review', needsUserAction: false });
     expect(row.confidence).toBeLessThanOrEqual(MATCH_LLM_PICK);
     // The frame checks the option's text again before it writes: unchanged passes, changed is refused.
     expect(guardWriteInFrame(write!, SOURCE, [])).toEqual({ ok: true });

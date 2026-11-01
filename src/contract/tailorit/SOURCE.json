@@ -1,7 +1,7 @@
 {
   "repository": "TailorIT",
   "branch": "v1.2",
-  "commit": "ac15c30e0b7f06a408bb0057a930b89e6100d0cc",
+  "commit": "524e336401e6c89ae88866b2e4508ef517e4de59",
   "folders": [
     "packages/shared/src/autofill",
     "packages/shared/contract/autofill/v1"

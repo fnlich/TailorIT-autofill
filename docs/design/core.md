@@ -420,7 +420,7 @@ export interface Resolution {
 export const MATCH_RULES = ['raw', 'primary', 'qualifier-ignored', 'compact', 'curated-alias', 'vocab-alias',
   'generated-alias', 'flagship', 'entity-id', 'degree-type', 'degree-level', 'degree-level-fallback',
   'degree-qualifier-types', 'cip-title', 'cip-parent', 'mention', 'polarity', 'numeric-range', 'token-set',
-  'llm-index', 'other-free-text', 'cache-hit'] as const;
+  'llm-index', 'other-free-text', 'cache-hit', 'place'] as const;
 export const MATCH_FLAGS = ['injected-label', 'qualifier-ignored', 'ambiguous-abbreviation', 'level-fallback',
   'same-entity-duplicates', 'small-margin'] as const;
 
@@ -998,6 +998,7 @@ Primary spellings (`scripts/vocab-build.ts`):
 | `polarity` (`polarityHits`, `matcher/polarity.ts`) | see below | 0.93 by a leading yes or no (`MATCH_POLARITY_LEADING`); 0.85 for a statement and its denial (`MATCH_POLARITY_NEGATION`) | EEO, yes/no (legal or not) |
 | `numeric-range` (`rangeHits`, `matcher/range.ts`) | the value lies inside exactly one option's range | 0.95 (`MATCH_RANGE`) | number |
 | decline (`declineHits`) | for the person's explicit decline: the form's decline options, and nothing else, whatever the row | 0.97, reported as `curated-alias`; several decline options are one answer, flagged `same-entity-duplicates` | every row |
+| `place` (`matchPlace`, `matcher/place.ts`) | a place (`Choice.place`) where the text stages chose nothing: the one option whose city is the person's, whose parts conflict with nothing of their place, and that names their region (else their country); section 4.11 | 0.97 (`MATCH_PLACE`); 0.85 when it names less (`MATCH_PLACE_PARTIAL`) | generic (the current location, a job's location) |
 
 - **Proficiency through the crosswalk.** A CEFR level or an everyday word ("B2", "Fluent", stored at the generated tier) only approximates a level. Such a hit is capped at 0.85 (`MATCH_CROSSWALK`), so even the strongest classification leaves it below the fill line, and it is its own variant: two crosswalk words for one level ("Advanced" and "Fluent", "C1" and "C2") are rungs of the form's scale that tie, and the field is left blank. A name of the level itself ("Full professional") still fills at 0.97.
 - **Polarity.** An option whose first word is yes or no ("Yes, I am authorized to work") matches by that word; options starting with the same word are different answers ("Yes, with sponsorship" / "Yes, without"), so they tie. Otherwise, when exactly two answers are offered, neither starting with yes or no, and exactly one denies the statement the other makes, once denying words and auxiliaries (will, do, does, am, is, are, have, has, can) are set aside ("I will require sponsorship" / "I do not require sponsorship"), the one that agrees with the value matches. Only words that deny a statement count ("not", "dont", "never"): "no", "none", "neither", "nor" and "without" deny a thing inside one ("without sponsorship", "None, I am a U.S. citizen"). A pair about restrictions or limits gets no hit, since its negated option is the yes to an authorization question, and so does a pair about the other legal topic (authorization on a sponsorship question, or the reverse).
@@ -1279,6 +1280,8 @@ MatchCacheEntry  = { label /* the chosen option's fullKey */; stage; confidence;
 A text value gives its text and the text without a leading "The"; a degree gives its display; any other value gives none.
 
 Each result list goes through `prepareOptions` and `matchOne`. The first result that reaches the fill band ends the search. The DOM layer owns debounce and the 4-attempt cap.
+
+A place (the current location, a job's location: `Choice.place`) is matched by its parts where the text stages choose nothing (`matcher/place.ts`, `matchPlace`), so a geocoder's "Austin, Texas, United States" is the person's "Austin, TX". Each result's label is split at commas: the first part is the city, compared by its key; each later part is read whole as a region (`regions.json`: USPS and Canada Post codes and names) or a country (`countries.json`), a code of three letters or fewer only in capitals, else left unread (a county, "England", a postal code). A result is the person's place when its city is theirs, no part it reads conflicts with their place (another region, another country, a region of another country; a part that reads as both, "Georgia", conflicts only when both readings do), and it names their region when they have one, else their country: stage `alias`, rule `place`, `MATCH_PLACE` (0.97), so a search chooses it. Several such results are `ambiguous-options` (unless they read the same: the first, flagged `same-entity-duplicates`). A result whose city is theirs that conflicts with nothing but names less (no region where they have one) scores `MATCH_PLACE_PARTIAL` (0.85): a list chooses it flagged, a search never does. "Austin, Minnesota, United States" is never "Austin, TX".
 
 ### 4.12 Injected text in option labels
 
@@ -2489,6 +2492,8 @@ export const REVIEW_CAUSES = ['final-step', 'final-unknown', 'step-retry-limit',
 export type RunEffect =
   | { type: 'persist' } | { type: 'report' } | { type: 'scan' } | { type: 'fill-step'; attempt: number; fix: boolean }
   | { type: 'validate' } | { type: 'press-next' } | { type: 'highlight-next' } | { type: 'highlight-submit' }
+  // highlight-next and highlight-submit were removed by the owner's decision of 2026-11-01 (docs/SPEC-AMENDMENTS.md
+  // §11): nothing is drawn over Next or Submit, and the effects below that name them are not emitted.
   | { type: 'await-transition'; from: string; capMs: number | null }   // null: no timer, the person clicks
   | { type: 'pause'; kind: 'auth' | 'handoff' | 'policy' } | { type: 'notify'; notice: StepNotice }
   | { type: 'show-review'; cause: ReviewCause; reason: ReasonCode | null } | { type: 'offer-continue' };

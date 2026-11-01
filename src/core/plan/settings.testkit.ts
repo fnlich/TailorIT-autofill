@@ -4,12 +4,13 @@
  */
 import { DEFAULT_SETTINGS, type Settings } from '../types/settings';
 
-/** Version 1's defaults in version 2's shape (nothing pre-approved, drafts and answers off, drafts confirmed, the
+/** Version 1's defaults in version 3's shape (nothing pre-approved, drafts and answers off, drafts confirmed, the
  *  policy card, the interpretations off): what a test of each switch's off side, or of the Phase 2-6 behaviour,
  *  reads. */
 export const CAUTIOUS_SETTINGS: Settings = {
   ...DEFAULT_SETTINGS,
   preapprovedConsent: [],
-  llm: { tiebreak: true, classify: true, drafts: false, answers: false, confirmDrafts: true, whenForbidden: 'ask' },
+  llm: { tiebreak: true, classify: true, drafts: false, answers: false, answerAll: false, confirmDrafts: true,
+    whenForbidden: 'ask' },
   interpretations: { postingCountryForLegal: false, twoOrMoreRaces: false, eeoDeclineByDefault: false },
 };

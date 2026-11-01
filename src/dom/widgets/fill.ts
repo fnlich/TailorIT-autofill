@@ -79,7 +79,7 @@ async function openAndRead(target: FieldTarget, ctx: WidgetFillContext):
   const opened = await openList(widget, ctx);
   if (!opened.open) {
     return { failed: refused(opened.reason === 'aborted' ? 'internal-error' : opened.reason === 'no-list'
-      ? 'widget-unsupported' : 'needs-your-click') };
+      ? 'widget-unsupported' : opened.reason === 'gone' ? 'element-not-found' : 'needs-your-click') };
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return { failed: refused('internal-error') };

@@ -84,6 +84,20 @@ describe('the options page', () => {
     }
   });
 
+  it('offers the AI’s answers to legal, pay and attention-check questions, on by default and only with answers on (the owner’s decision of 2026-11-01)', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    const all = setting(root, 'llm.answerAll');
+    expect([all.checked, all.disabled]).toEqual([true, false]);
+    expect(root.textContent).toContain(TEXT.ai.answerAll);
+    expect(root.textContent).toContain(TEXT.ai.answerAllHelp);
+    await click(all);
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, answerAll: false } });
+    // Answers off: the switch has nothing to act on, and cannot be changed.
+    await click(setting(root, 'llm.answers'));
+    expect(setting(root, 'llm.answerAll').disabled).toBe(true);
+  });
+
   it('shows the settings the worker stored, not the ones it was sent, and the old ones when a save is refused', async () => {
     const worker = createFakeWorker();
     // The worker stores something else than asked (as storage would after a schema change): the page shows it.

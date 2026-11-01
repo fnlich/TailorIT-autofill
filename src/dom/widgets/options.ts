@@ -13,10 +13,10 @@
  *   MAX_WIDGET_OPTIONS, and the whole read at WIDGET_READ_CAP_MS: a read a cap stopped is partial (complete false),
  *   and the planner never matches a partial list loosely (R9).
  * - An option is shown again to be chosen by its aria-posinset and label, else by its label and place (revealOption).
- * - What a widget shows chosen: a combobox's text box value, or the text a select-only combobox shows; the chips of a
- *   multiselect (visible text in the widget's own box, outside its list and its text box, that is exactly one of its
- *   options' labels) and the options its open list marks selected; the pressed or checked members of a group. A
- *   placeholder ("Select...") is no answer.
+ * - What a widget shows chosen: what its adapter reads as its answer (WidgetDecl.shownAnswer), else a combobox's text
+ *   box value, or the text a select-only combobox shows; the chips of a multiselect (visible text in the widget's own
+ *   box, outside its list and its text box, that is exactly one of its options' labels) and the options its open list
+ *   marks selected; the pressed or checked members of a group. A placeholder ("Select...") is no answer.
  * Nothing here dispatches an event; reading never changes what is chosen.
  */
 import { capCodePoints } from '../../core/text/fold';
@@ -272,6 +272,29 @@ export function busyScopes(widget: WidgetTarget, listbox: Element | null): Eleme
   return listbox === null ? [box] : [listbox, box];
 }
 
+/** Whether a widget shows a busy sign of its own now: a visible aria-busy or indeterminate progress bar in its list or
+ *  its own box, or one of the busy signs its adapter declared (WidgetDecl.busy: react-select's "Loading..." notice and
+ *  its loading dots) drawn there. */
+export function widgetBusy(widget: WidgetTarget, listbox: Element | null, cache: ScanCache = newScanCache()): boolean {
+  const scopes = busyScopes(widget, listbox);
+  return busyIn(scopes, cache) || declaredBusy(scopes, widget.busy ?? []);
+}
+
+/** One of the adapter's busy signs, drawn in any of `scopes`. A sign only makes a wait longer, never a write, so it
+ *  counts once it has a box and is not hidden by display or visibility: react-select's loading dots are aria-hidden. */
+function declaredBusy(scopes: readonly Element[], selectors: readonly string[]): boolean {
+  if (selectors.length === 0) return false;
+  const selector = selectors.join(', ');
+  return scopes.some((scope) => [scope, ...Array.from(scope.querySelectorAll(selector))]
+    .some((el) => el.matches(selector) && hasBox(el)));
+}
+
+/** An element with a box, not hidden by display or visibility. */
+function hasBox(el: Element): boolean {
+  if (typeof el.checkVisibility === 'function') return el.checkVisibility({ visibilityProperty: true });
+  return el.getClientRects().length > 0;
+}
+
 /** A widget's list right now (OPTIONS_WAITING's order, as optionsState reads a select): ready with the hash of its
  *  options, or what it still waits for. */
 export function listState(widget: WidgetTarget, prevHash: OptionSetHash | null, cache: ScanCache = newScanCache()):
@@ -279,7 +302,7 @@ export function listState(widget: WidgetTarget, prevHash: OptionSetHash | null, 
   const listbox = listOf(widget.element, widget.input);
   if (listbox === null || !listbox.isConnected) return { ready: false, waiting: 'gone' };
   if (!isUserVisible(listbox, cache)) return { ready: false, waiting: 'hidden' };
-  if (busyIn(busyScopes(widget, listbox), cache)) return { ready: false, waiting: 'busy' };
+  if (widgetBusy(widget, listbox, cache)) return { ready: false, waiting: 'busy' };
   const labels = shownOptions(listbox, cache).map((option) => option.label);
   if (labels.some(isLoadingOptionLabel)) return { ready: false, waiting: 'loading' };
   if (!labels.some(isUsableOption)) return { ready: false, waiting: 'placeholders' };
@@ -352,7 +375,9 @@ export function chosenLabels(widget: WidgetTarget, known: readonly string[], cac
       break;
     }
     default: {
-      const shown = shownValueOf(widget, cache);
+      // The answer an adapter reads where the widget draws it (WidgetDecl.shownAnswer: beside an emptied text box, or as
+      // a flag), else the widget's own text.
+      const shown = widget.shownAnswer?.(known) ?? shownValueOf(widget, cache);
       labels = shown !== '' ? [named(shown)] : widget.input === null ? [] : chipsOf(widget, knownAs, cache).slice(0, 1);
     }
   }

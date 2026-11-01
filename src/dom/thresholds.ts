@@ -88,6 +88,12 @@ export const WIDGET_QUIET_MS = 150;
 export const WIDGET_CAP_MS = 2_000;
 /** A widget's list just opened that shows no option, no busy sign and no change for this long is empty. */
 export const WIDGET_EMPTY_AFTER_MS = 1_000;
+/** A run's first declared activation the page did not answer at all waits this long at most for the page's script to
+ *  attach before it is sent once more: Greenhouse's React attaches 1.8 to 3.1 s after its form shows (the capture of
+ *  2026-11-01), and nothing answers before. */
+export const WIDGET_READY_CAP_MS = 4_000;
+/** That wait ends sooner once the form root has changed (the page rebuilt its form) and then been quiet this long. */
+export const WIDGET_READY_QUIET_MS = 400;
 /** A virtualized list, after its scrollTop is set: the page has this long without a mutation to draw its rows. */
 export const WIDGET_SCROLL_QUIET_MS = 40;
 /** A list that does not change after its scrollTop was set (it is drawn whole) is read after this long. */

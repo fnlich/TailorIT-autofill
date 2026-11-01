@@ -374,7 +374,7 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
     </span>
   );
   // The owner's amendments: an answer the AI wrote is marked "AI" (a draft keeps its own mark); one it guessed with
-  // nothing to go on, "AI guess" (E1's rule and words, as the page's highlights draw them).
+  // nothing to go on, "AI guess" (E1's rule and words; the review is the one place they show).
   const mark = aiMarkOf(row);
   const aiMark = mark === 'guess' ? (
     <span className="tia-row__ai tia-row__ai--guess" data-ai-mark="guess">

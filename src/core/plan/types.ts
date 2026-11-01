@@ -61,6 +61,10 @@ export interface PlanInput {
    *  says so (settings.llm.whenForbidden). No tiebreak, classification, draft or answer is asked, and nothing is
    *  editable with AI; a question only the AI could answer is left for the person (ai-off-for-posting). */
   noAi?: boolean;
+  /** The run, or an earlier one of its application, has asked TailorIT's AI something (a task submitted, a cover
+   *  letter written): an "I did not use AI" attestation is then false, and never ticked (the owner's decision of
+   *  2026-11-01). Absent: none known. */
+  aiUsed?: boolean;
   /** Edit with AI: the one field whose text the person asked TailorIT to rewrite (its draft, with what it holds now).
    *  Only that key is planned. */
   rewrite?: FieldKey;

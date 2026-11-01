@@ -72,12 +72,16 @@ import { ANSWER_MAX_ITEMS, DRAFT_MAX_QUESTIONS, TIEBREAK_REQUEST_TEXT_SHARE } fr
 import type { Platform } from '../core/enums';
 import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
-import { namesUnanswerableTopic, type AnswerDiscard, type AnswerItem, type AnswerVerdict } from '../core/plan/answers';
+import { attentionHits } from '../core/guard/attention';
+import {
+  allowanceOf, namesUnanswerableTopic, type AnswerDiscard, type AnswerItem, type AnswerScope, type AnswerVerdict,
+} from '../core/plan/answers';
 import type { DraftDiscard, DraftItem, DraftVerdict } from '../core/plan/drafts';
 import type { AnsweredVerdict, PlanAi, PlanAsk } from '../core/plan/types';
 import type { RepeatableRequest } from '../core/steps/blocks';
 import {
-  namesSensitiveAnswer, namesSensitivePickValue, namesSensitiveTopic, type ClassifyItem, type ClassifyVerdict,
+  namesSensitiveAnswer, namesSensitivePickValue, namesSensitiveTopic, openTopicsOfTexts, type ClassifyItem,
+  type ClassifyVerdict,
 } from '../core/resolver/classify';
 import { sha256Hex } from '../core/text/sha256';
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
@@ -321,15 +325,32 @@ export function draftVerdicts(items: readonly DraftItem[], result: AutofillDraft
 /** An answer request is filled to at most this many characters of text (TailorIT refuses above 100,000). */
 const ANSWER_TEXT_BUDGET = Math.floor(AUTOFILL_AI_LIMITS.requestText * TIEBREAK_REQUEST_TEXT_SHARE);
 
+/** Whether an item of the `all` scope is screened out again (the owner's decision of 2026-11-01): a topic of its
+ *  question, hint, section or options the scope never asks about (a consent only in an attention check's own words),
+ *  an EEO answer among its options, a decline option beside no open topic (classify.ts openTopicsOfTexts), or what an
+ *  answer never states with what its topics let it name (namesUnanswerableTopic, allowanceOf). */
+function openItemWithheld(item: AnswerItem, labels: readonly string[], vocab: Vocab): boolean {
+  const attention = attentionHits(item.question, item.hint).length > 0;
+  const topics = openTopicsOfTexts([item.question, item.hint, item.section], labels, vocab, attention);
+  if (topics === null) return true;
+  const allow = allowanceOf(topics, attention);
+  return [item.question, item.hint, item.section, ...labels].some((text) => namesUnanswerableTopic(text, allow));
+}
+
 /** The answer item TailorIT is sent for a core item, or null when it is never sent: a question, hint, section or option
  *  naming a sensitive topic, or what an answer never states (another person, an identifier, a postal address, a
- *  security clearance: namesUnanswerableTopic, the Phase E review, M2), screened again; a key or a label past
- *  TailorIT's caps; or a shape that does not hold. */
-export function answerItemOfCore(item: AnswerItem): AutofillAnswerItem | null {
+ *  security clearance, an "I did not use AI" attestation: namesUnanswerableTopic, the Phase E review, M2), screened
+ *  again (an item of the `all` scope by openItemWithheld, with `vocab`); a key or a label past TailorIT's caps; or a
+ *  shape that does not hold. */
+export function answerItemOfCore(item: AnswerItem, vocab?: Vocab): AutofillAnswerItem | null {
   const limits = AUTOFILL_AI_LIMITS.answer;
   const labels = item.options.map((option) => option.label as string);
   const texts = [item.question, item.hint, item.section, ...labels];
-  if (texts.some(namesSensitiveTopic) || texts.some(namesUnanswerableTopic)) return null;
+  if (item.scope === 'all') {
+    if (vocab === undefined || openItemWithheld(item, labels, vocab)) return null;
+  } else if (texts.some((text) => namesSensitiveTopic(text)) || texts.some((text) => namesUnanswerableTopic(text))) {
+    return null;
+  }
   if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') return null;
   if (labels.some((label) => codePoints(label) > limits.optionLabel || label.trim() === '')) return null;
   if (item.shape === 'choice'
@@ -349,9 +370,10 @@ const answerTextOf = (item: AutofillAnswerItem) => [item.key, item.shape, item.k
   item.section, ...item.options.map((option) => option.label)].reduce((sum, text) => sum + text.length, 0);
 
 /** A pass's answer items as answer batches (at most ANSWER_MAX_ITEMS each, under the text cap, each with the job
- *  context and the canaries), and the verdicts of those never sent. */
-export function answerBatches(items: readonly AnswerItem[], context: DraftContext, canaries: readonly string[]):
-  { batches: AnswerBatch[]; withheld: AnswerVerdict[] } {
+ *  context and the canaries, the items of each scope in batches of their own: the `all` scope only for the questions
+ *  the standard one would not ask), and the verdicts of those never sent. */
+export function answerBatches(items: readonly AnswerItem[], context: DraftContext, canaries: readonly string[],
+  vocab?: Vocab): { batches: AnswerBatch[]; withheld: AnswerVerdict[] } {
   const limits = AUTOFILL_AI_LIMITS.answer;
   const withheld: AnswerVerdict[] = [];
   const sendable: Array<{ item: AnswerItem; sent: AutofillAnswerItem }> = [];
@@ -359,7 +381,7 @@ export function answerBatches(items: readonly AnswerItem[], context: DraftContex
   for (const item of items) {
     if (seen.has(item.key)) continue;
     seen.add(item.key);
-    const sent = answerItemOfCore(item);
+    const sent = answerItemOfCore(item, vocab);
     if (sent === null) withheld.push({ key: item.key, kind: 'none', why: 'llm-disabled-for-category' });
     else sendable.push({ item, sent });
   }
@@ -374,22 +396,24 @@ export function answerBatches(items: readonly AnswerItem[], context: DraftContex
   const sharedText = shared.jobText.length + shared.company.length + shared.jobTitle.length
     + (shared.resumeId ?? '').length + shared.canaries.reduce((sum, canary) => sum + canary.length, 0);
   const batches: AnswerBatch[] = [];
-  let chunk: typeof sendable = [];
-  let size = sharedText;
-  const flush = () => {
-    if (chunk.length === 0) return;
-    batches.push({ kind: 'answer', body: { items: chunk.map(({ sent }) => sent), ...shared },
-      items: chunk.map(({ item }) => item) });
-    chunk = [];
-    size = sharedText;
-  };
-  for (const entry of sendable) {
-    const text = answerTextOf(entry.sent);
-    if (chunk.length === ANSWER_MAX_ITEMS || (chunk.length > 0 && size + text > ANSWER_TEXT_BUDGET)) flush();
-    chunk.push(entry);
-    size += text;
+  for (const scope of ['standard', 'all'] as const satisfies readonly AnswerScope[]) {
+    let chunk: typeof sendable = [];
+    let size = sharedText;
+    const flush = () => {
+      if (chunk.length === 0) return;
+      batches.push({ kind: 'answer', body: { items: chunk.map(({ sent }) => sent), scope, ...shared },
+        items: chunk.map(({ item }) => item) });
+      chunk = [];
+      size = sharedText;
+    };
+    for (const entry of sendable.filter(({ item }) => item.scope === scope)) {
+      const text = answerTextOf(entry.sent);
+      if (chunk.length === ANSWER_MAX_ITEMS || (chunk.length > 0 && size + text > ANSWER_TEXT_BUDGET)) flush();
+      chunk.push(entry);
+      size += text;
+    }
+    flush();
   }
-  flush();
   return { batches, withheld };
 }
 
@@ -531,6 +555,9 @@ export interface AiTaskIds {
   get(hash: string): Promise<string | null>;
   note(hash: string, taskId: string): Promise<void>;
   forget(hash: string): Promise<void>;
+  /** Whether the application has any task noted (an earlier run of it asked TailorIT's AI): an "I did not use AI"
+   *  attestation is then untrue (the owner's decision of 2026-11-01). Absent: none known. */
+  any?(): Promise<boolean>;
 }
 
 /** How a batch's task ended: its result, or why there is none. */
@@ -763,6 +790,9 @@ export interface RunAi {
   forget(keys: readonly FieldKey[]): void;
   /** Settles when every batch asked so far has ended (for tests and the run's end). */
   idle(): Promise<void>;
+  /** Whether this run has handed TailorIT's AI anything (a batch submitted): its "I did not use AI" attestation is
+   *  then untrue (the owner's decision of 2026-11-01). */
+  used(): boolean;
   /** The run went: nothing more is submitted, and a task in flight is cancelled. */
   stop(): void;
 }
@@ -786,6 +816,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
   const answeredBy = new Map<FieldKey, string>();
   let chain: Promise<void> = Promise.resolve();
   let stopped = false;
+  let submitted = false;
 
   function record(batch: AiBatch, outcome: TaskOutcome): void {
     if (!outcome.ok) {
@@ -820,6 +851,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
     if (batches.has(hash)) return hash;
     const entry = { done: false };
     batches.set(hash, entry);
+    if (!stopped) submitted = true;
     chain = chain.then(async () => {
       const outcome = stopped ? { ok: false as const, why: 'llm-unavailable' as const }
         : await tasks.run(batch, ids, () => !stopped);
@@ -858,7 +890,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
       // Answers (the owner's amendments): only with the setting on and a context to send them with.
       const questions = ask.answers ?? [];
       const answered = llm.answers && context.draft !== undefined
-        ? answerBatches(questions, context.draft, context.canaries)
+        ? answerBatches(questions, context.draft, context.canaries, vocab)
         : { batches: [], withheld: questions.map((item): AnswerVerdict => ({ key: item.key, kind: 'none',
           why: 'llm-disabled-for-category' })) };
       for (const verdict of answered.withheld) {
@@ -902,6 +934,7 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
       }
     },
     idle: () => chain,
+    used: () => submitted,
     stop() {
       stopped = true;
     },

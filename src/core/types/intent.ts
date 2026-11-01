@@ -54,7 +54,7 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   'eeo.self-describe', 'eeo.two-or-more-races', 'legal.decline', 'legal.sponsorship-combined', 'legal.posting-country',
   'consent.preapproved',
   'consent.signature-preapproved', 'numeric.range-bucket', 'other.free-text', 'guard.revert', 'typeahead.query',
-  'eeo.decline-default', 'screening.previously-employed'] as const;
+  'eeo.decline-default', 'screening.previously-employed', 'consent.required', 'consent.no-ai-attestation'] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
 /** A profile location such as 'contact.email' or 'education[0].institution'. The worker checks that it resolves; the

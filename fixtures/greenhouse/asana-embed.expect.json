@@ -1,0 +1,354 @@
+{
+  "fixture": "greenhouse/asana-embed",
+  "source": "https://job-boards.greenhouse.io/embed/job_app?for=asana&token=8194380",
+  "captured": "2026-11-01T14:01:49.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#first_name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#last_name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#country",
+      "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country. Its options read \"Canada +1\"; chosen, it shows the flag and \"+1\" (the adapter reads it back by the flag)."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#country) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Search",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#iti-0__search-input",
+      "note": "intl-tel-input's own country search, inside its country dropdown, which stays hidden (iti__hide); it says aria-expanded=\"true\" even so."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#phone"
+    },
+    {
+      "label": "Location (City)",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#candidate-location",
+      "note": "Greenhouse's location search: a react-select whose results come from a geocoder as the person types; \"Locate me\" beside it is never pressed."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#candidate-location) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#resume"
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#cover_letter"
+    },
+    {
+      "label": "[Optional] Preferred Full Name (The name that you would like to be referred to as. Please input your legal name in the first and last name fields above.)",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69118666"
+    },
+    {
+      "label": "Current Company",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69118667"
+    },
+    {
+      "label": "Current Title",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69118668"
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69118669"
+    },
+    {
+      "label": "Personal Website",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69118670"
+    },
+    {
+      "label": "[Optional] Pronouns - how should we refer to you in the third person?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69118671"
+    },
+    {
+      "label": "[Optional, if \"other\" is selected above] My pronouns are",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69118672"
+    },
+    {
+      "label": "Do you now, or will you in the future, require immigration sponsorship for work authorization to work in this location?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69118673"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69118673) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Have you been employed, or otherwise engaged, by an Asana entity in the past? (Previous independent contractors, select \"Yes.\")",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69118674"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69118674) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Asana is seeking the below information for the exclusive and limited purpose of complying with U.S. export control laws given that the position for which you are applying may require access to technology subject to those laws. We will not use the information that you provide for any other purpose. A",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69118675",
+      "note": "The label runs to 406 characters; a field label is cut at 300 (TEXT_CAP_LABEL)."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69118675) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Do you currently work for or have you ever worked for a U.S. government entity, either as a contractor or employee?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69118676"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69118676) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "If you answered “Yes,” please list the U.S. government entity you worked for. If not applicable, type 'N/A.'",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69118677"
+    },
+    {
+      "label": "By agreeing here: (1) I certify that the information I provided to Asana in connection with my application for employment is accurate and truthful; and (2) I acknowledge and agree that I have carefully read the mutual Applicant Arbitration Agreement set out below and agree to be bound by it",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69118678"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69118678) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Please identify your sex.",
+      "kind": "multiselect",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"1478\"]",
+      "note": "A multi-select react-select (select__value-container--is-multi): its menu closes after each pick."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"1478\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Please identify your race.",
+      "kind": "multiselect",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"1479\"]",
+      "note": "A multi-select react-select (select__value-container--is-multi): its menu closes after each pick."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"1479\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Please identify your ethnicity.",
+      "kind": "multiselect",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"57037\"]",
+      "note": "A multi-select react-select (select__value-container--is-multi): its menu closes after each pick."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"57037\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Please identify your veteran status.",
+      "kind": "combobox",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"57038\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"57038\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "By checking this box, I consent to Asana collecting, storing, and processing my responses to the demographic data surveys above.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "U.S. Equal Opportunity Employment Information",
+      "fillable": true,
+      "control": "#gdpr_demographic_data_consent_given_1"
+    }
+  ]
+}

@@ -20,8 +20,8 @@
  *   final, Next is visible, nothing on the step is flagged, blocked or unresolved, no draft is unconfirmed, no error
  *   shows, no CAPTCHA widget on it is unsolved (as far as can be known: an Arkose widget never is), the step has
  *   settled and it has had fewer than two attempts (autoAdvanceVerdict). A final step goes to
- *   review with Submit highlighted, and a step whose finality is unknown is treated as final: nothing is pressed, Next
- *   and Submit are highlighted ("I can't tell whether this is the last step, so I won't press anything"). The final
+ *   review (the person presses Submit), and a step whose finality is unknown is treated as final: nothing is pressed
+ *   ("I can't tell whether this is the last step, so I won't press anything"). The final
  *   Submit is never pressed: no event leads from a final or unknown step to press-next. The validation that follows the
  *   person's own Next (STEP_UNCHANGED) never presses: lastFill is cleared, so a press needs a fill of the step since
  *   their click (X-S2). press-next itself may find auto-advance turned off since: NEXT_WITHHELD, Next is the person's
@@ -147,8 +147,8 @@ export const STEP_NOTICES = ['tripwire', 'policy', 'auth', 'captcha', 'page-busy
   'step-retry-limit', 'final-unknown', 'max-steps', 'captcha-next'] as const;
 export type StepNotice = (typeof STEP_NOTICES)[number];
 
-/** Why a run is at review. 'final-step': the adapter says the step is the last (Submit highlighted); 'final-unknown':
- *  it cannot tell, so it is treated as final; 'step-retry-limit': the step had its two attempts; 'max-steps': more
+/** Why a run is at review. 'final-step': the adapter says the step is the last (Submit is the person's);
+ *  'final-unknown': it cannot tell, so it is treated as final; 'step-retry-limit': the step had its two attempts; 'max-steps': more
  *  than MAX_STEPS steps (a runaway wizard); 'validation-errors': errors the plan cannot fix; 'error': ERROR's reason. */
 export const REVIEW_CAUSES = ['final-step', 'final-unknown', 'step-retry-limit', 'max-steps', 'validation-errors',
   'error'] as const;
@@ -170,8 +170,6 @@ export type RunEffect =
   /** The one untrusted click on the adapter's Next, through assertNotSubmit's Next exception (then ADVANCED, or PAUSE
    *  needs-click when the click is refused or Next is gone). Never Submit. */
   | { type: 'press-next' }
-  | { type: 'highlight-next' }
-  | { type: 'highlight-submit' }
   /** Watch the step's signature until it differs from `from` and the page is quiet (then TRANSITIONED, or
    *  STEP_UNCHANGED when the person's Next leaves errors instead). `capMs` null: no timer, the person clicks; a number:
    *  TIMED_OUT at the cap. A signature that already differs when the watch starts is a transition at once. */
@@ -179,7 +177,7 @@ export type RunEffect =
   /** Show the pause and wait for the person: 'auth' and 'handoff' for Continue, 'policy' for the policy card. */
   | { type: 'pause'; kind: 'auth' | 'handoff' | 'policy' }
   | { type: 'notify'; notice: StepNotice }
-  /** The run is at review: highlight what needs the person; `reason` is ERROR's (null otherwise). */
+  /** The run is at review: the launcher counts what needs the person; `reason` is ERROR's (null otherwise). */
   | { type: 'show-review'; cause: ReviewCause; reason: ReasonCode | null }
   /** A reload found an active run too old to resume by itself: offer Continue (then RESUMED by the person). */
   | { type: 'offer-continue' };
@@ -374,8 +372,8 @@ function transition(state: RunState, event: RunEvent, ctx: RunContext): Outcome 
     case 'ADVANCED':
       return advanced(state, event.by, ctx);
     case 'NEXT_WITHHELD':
-      return status === 'advance' ? awaitTransition(state, null, [
-        ...(event.reason === 'captcha-unsolved' ? [notify('captcha-next')] : []), { type: 'highlight-next' }]) : null;
+      return status === 'advance' ? awaitTransition(state, null,
+        event.reason === 'captcha-unsolved' ? [notify('captcha-next')] : []) : null;
     case 'TRANSITIONED':
       if (!MAY_TRANSITION.has(status) || !isStepSignature(event.signature) || event.signature === state.stepSignature) {
         return null;
@@ -493,17 +491,17 @@ function validated(state: RunState, event: Extract<RunEvent, { type: 'VALIDATED'
   }
   const { finality } = event.step;
   if (finality === 'final') {
-    return move(enter(state, 'review'), [{ type: 'highlight-submit' }, review('final-step')]);
+    return move(enter(state, 'review'), [review('final-step')]);
   }
   if (finality !== 'not-final') {
-    return move(enter(state, 'review'), [{ type: 'highlight-next' }, { type: 'highlight-submit' },
-      ...(ctx.autoAdvance ? [notify('final-unknown')] : []), review('final-unknown')]);
+    return move(enter(state, 'review'), [...(ctx.autoAdvance ? [notify('final-unknown')] : []),
+      review('final-unknown')]);
   }
   const verdict = autoAdvanceVerdict(state, { errors, step: event.step }, ctx);
   if (verdict.advance) return move(enter(state, 'advance'), [{ type: 'press-next' }]);
   // A CAPTCHA not known solved is the one refusal the person would not expect: the notice says to press Next.
   const why = verdict.refusal === 'captcha-unsolved' ? [notify('captcha-next')] : [];
-  return awaitTransition(state, null, [...why, { type: 'highlight-next' }]);
+  return awaitTransition(state, null, why);
 }
 
 /** Next was pressed: the extension's click is awaited with its cap, the person's without a timer. */

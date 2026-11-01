@@ -22,8 +22,8 @@
  *    and the step's signature from the adapter's parts (SCANNED). A new step's notices start afresh.
  * 5. fill-step: repeatable sections first (repeatables.ts: the worker's entry counts from a plan of nothing, then one
  *    Add click at a time through assertNotSubmit, each counted in RunState before it is made: REPEATABLE), then the
- *    reactive loop (loop.ts), "I currently work here" (planCurrentJob's rows), the final Guard (verify.ts), the rows,
- *    the notices and the highlights (FILLED). A page still busy at a settle's cap pauses (page-busy); a pause or a
+ *    reactive loop (loop.ts), "I currently work here" (planCurrentJob's rows), the final Guard (verify.ts), the rows
+ *    and the notices (FILLED); nothing is drawn over the page's fields (the owner's decision of 2026-11-01). A page still busy at a settle's cap pauses (page-busy); a pause or a
  *    hidden frame a later pass found cuts the loop (the Phase 3 review, L-S2 and L-S4): the pause, or the run ends
  *    stopped; a policy statement a later pass revealed shows the card (Cancel: stopped, policy-declined; Fill anyway:
  *    this run ends and a fresh one starts from its RunState, whose gate takes that decision).
@@ -42,7 +42,7 @@
  * 8. await-transition (transition.ts): the step's signature watched until it changes and the page is quiet, capped
  *    after our own click (TIMED_OUT), with no cap when the person advances: the run then rests ('waiting'), its report
  *    sent, and the person's Next moves it on (TRANSITIONED, or STEP_UNCHANGED when errors showed instead).
- * 9. highlight-next, highlight-submit, notify, show-review, pause, offer-continue: the in-page UI. At review the run
+ * 9. notify, show-review, pause, offer-continue: the in-page UI (notices, the launcher, the card). At review the run
  *    rests and still watches the step (an adapter that tells steps apart): the person's own Next after fixing what
  *    the review showed is a transition. A step change the machine ignores (a step at its limit) moves the watch on to
  *    what the page shows, and after MAX_IDLE_TRANSITIONS step changes in a row that filled nothing the run stops
@@ -63,7 +63,7 @@
  *   document's visible text outside the form root (postingText). An embedded frame sends none, and neither does a dry
  *   run, which asks for no draft (the Phase 6 review, E12). plan/request also carries the loop's reveal edges, so a box
  *   an EEO, legal or sensitive question revealed gets no draft (E2).
- * - A draft (an llm-draft write, guarded like any write, highlighted dashed) waits for the person: confirmDraft (the
+ * - A draft (an llm-draft write, guarded like any write, marked "AI" in the review) waits for the person: confirmDraft (the
  *   side panel's draft/confirm, or the in-page panel's Confirm draft) reads the field again first: it must still hold
  *   the draft as written (its value MAC; else the row is changed-by-you) and no canary (else canary-in-value), and only
  *   then is its row verified, the person's choice (E6). Their own edit makes the text theirs (changed-by-you), unless
@@ -153,13 +153,11 @@ import {
   buildReport, lastFillOf, NoticeBook, persistedRunState, uploadRow, type NoticeCode, type ReportHeader,
   type ReportLimiter,
 } from './report';
-import { aiMarkOf, highlightItems } from './targets';
 import { postingNamesOf } from './job-relay';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
 import type { AiEditItem } from './ui/ai-edits';
-import type { HighlightItem } from './ui/highlights';
 import type { PolicyChoice } from './ui/notices';
 import type { PageUi } from './ui/page-ui';
 import type { ValueHasher } from './values';
@@ -250,6 +248,9 @@ export interface RunEnv {
   onRows(rows: readonly FillResult[]): void;
   /** Starts a fresh run once this one has ended (Fill anyway at a policy card a later pass showed). */
   fillAgain(request: RunRequest): void;
+  /** The adapter's form root is another element now (the page drew its whole form again): the runtime anchors its UI to
+   *  it and reads it from now on. */
+  rootMoved?(root: Element): void;
   /** The person's trusted input on the document, heard all along (touches.ts): what they typed while a run rested. */
   touches: TouchLog;
   /** The document's keyed value hasher, made once (values.ts): every run of the document hashes under its key, so
@@ -409,8 +410,6 @@ export class FillRun {
   private reportDue = false;
   /** The status the report shows instead of the machine's (the policy card a later pass's hit showed). */
   private reportStatus: RunStatus | null = null;
-  private fieldHighlights: HighlightItem[] = [];
-  private buttonHighlights: HighlightItem[] = [];
   /** The step's repeatable sections, and the worker's answers for them (counts, entries, current flags). */
   private sections: SectionView[] = [];
   private readonly answers = new Map<RepeatableKind, RepeatableAnswer>();
@@ -717,8 +716,13 @@ export class FillRun {
   /** What a single write at rest needs (Edit with AI), as the fill loop's writes have it. */
   private passEnv(): PassEnv {
     const { env } = this;
+    const rootNow = () => this.rootNow();
     return {
-      content: env.content, adapter: env.page.adapter, root: this.root, platform: env.page.app.platform,
+      content: env.content, adapter: env.page.adapter, platform: env.page.app.platform,
+      // The form root the adapter finds at each read: a form drawn again is found again.
+      get root() {
+        return rootNow();
+      },
       frameId: this.frameId, dryRun: this.request.dryRun, canaries: this.inMemory, signal: this.controller.signal,
       valid: () => env.channel.valid(), stopped: () => this.stopRequested, runId: () => this.runId,
       heldBy: () => {
@@ -911,28 +915,17 @@ export class FillRun {
     return { optionSetHash: field.optionSetHash === 'none' ? 'none' : field.optionSetHash, answer };
   }
 
-  /** One row changed at rest: the rows, its highlight, the launcher's count, and the report again. */
+  /** One row changed at rest: the rows, the launcher's count, and the report again. */
   private replaceRow(next: FillResult): void {
     this.replaceRows([next]);
   }
 
-  /** Some rows changed at rest, at once: the rows, their highlights, the launcher's count, and one report. */
+  /** Some rows changed at rest, at once: the rows, the Edit with AI buttons, the launcher's count, and one report. */
   private replaceRows(changed: readonly FillResult[]): void {
     if (changed.length === 0) return;
     const byKey = new Map(changed.map((row) => [row.key, row] as const));
     this.rows = this.rows.map((row) => byKey.get(row.key) ?? row);
-    for (const next of changed) {
-      const { status } = next;
-      this.fieldHighlights = status === 'skipped' ? this.fieldHighlights.filter((item) => item.key !== next.key)
-        : this.fieldHighlights.map((item) => {
-          if (item.key !== next.key) return item;
-          const { ai: _ai, ...rest } = item;
-          const ai = aiMarkOf(next);
-          return { ...rest, status, draft: next.provenance === 'llm-draft',
-            draftConfirmed: next.provenance === 'llm-draft' && !next.needsUserAction, ...(ai === undefined ? {} : { ai }) };
-        });
-    }
-    this.drawHighlights();
+    this.drawAiEdits();
     this.rowsChanged();
   }
 
@@ -1127,12 +1120,6 @@ export class FillRun {
     const card = (this.llm?.whenForbidden ?? 'profile-only') === 'ask';
     this.env.ui()?.setNotices(this.notices.codes().filter((code) => !card
       || (code !== 'policy' && code !== 'policy-stored-copy')));
-  }
-
-  private drawHighlights(): void {
-    if (this.controller.signal.aborted) return;
-    this.env.ui()?.setHighlights([...this.fieldHighlights, ...this.buttonHighlights]);
-    this.drawAiEdits();
   }
 
   private get state(): RunState {
@@ -1404,11 +1391,16 @@ export class FillRun {
     return now === this.machine.stepSignature ? null : now;
   }
 
-  /** The form root the adapter finds now, else the one the run had. */
+  /** The form root the adapter finds now, else the one the run had. A new element (the page drew its whole form again,
+   *  as Twitch's Greenhouse form is drawn again once its first render fails) is the run's from now on, and the
+   *  runtime's (RunEnv.rootMoved): every scan, write and wait reads it, never the detached one. */
   private rootNow(): Element {
     try {
       const found = this.env.page.adapter.detect(this.env.doc);
-      if (found !== null && found.formRoot.isConnected) this.root = found.formRoot;
+      if (found !== null && found.formRoot.isConnected && found.formRoot !== this.root) {
+        this.root = found.formRoot;
+        this.env.rootMoved?.(found.formRoot);
+      }
     } catch {
       // The adapter failed on this page: the run's root stands.
     }
@@ -1554,10 +1546,6 @@ export class FillRun {
         return this.validateStep();
       case 'press-next':
         return this.pressNext();
-      case 'highlight-next':
-      case 'highlight-submit':
-        this.highlightButton(effect.type === 'highlight-next' ? 'next' : 'submit');
-        return null;
       case 'await-transition':
         return this.awaitStep(effect.from, effect.capMs);
       case 'pause':
@@ -1584,10 +1572,8 @@ export class FillRun {
     this.notices.forget(STEP_NOTICE_CODES);
     this.rows = [];
     this.counters = NO_COUNTERS;
-    this.fieldHighlights = [];
-    this.buttonHighlights = [];
     this.addsLeft = 0;
-    this.drawHighlights();
+    this.drawAiEdits();
     if (!this.isTop && this.scans > 0) {
       // A frame inside another page: it fills a later step only while it is still seen there (S1).
       const shown = await env.frameShown(this.controller.signal, true);
@@ -1655,12 +1641,10 @@ export class FillRun {
     this.loopCut = null;
     this.fillStartedAt = monotonicNow();
     this.rows = [];
-    this.fieldHighlights = [];
-    this.buttonHighlights = [];
-    this.drawHighlights();
+    this.drawAiEdits();
 
     // 1. Repeatable sections: the worker's entry counts, then the Add clicks (never in a dry run).
-    this.sections = sectionsOf(adapter, this.root);
+    this.sections = sectionsOf(adapter, this.rootNow());
     this.answers.clear();
     let outcomes: Awaited<ReturnType<typeof addBlocks>> = [];
     if (this.sections.length > 0) {
@@ -1692,11 +1676,11 @@ export class FillRun {
     for (const section of this.sections) rows = currentJobRows(rows, last, section, this.answers.get(section.kind));
     // The drafts the person confirmed earlier in the run read back as confirmed (Phase 6).
     const confirmedDrafts = new Set([...rows.keys()].filter((key) => this.confirmedDrafts.has(baseKeyOf(key))));
-    const guarded = finalGuard({ adapter, root: this.root, canaries: this.inMemory, confirmedDrafts }, last, rows,
+    const guarded = finalGuard({ adapter, root: this.rootNow(), canaries: this.inMemory, confirmedDrafts }, last, rows,
       loop.written);
     const after = guarded.reverted.size > 0 ? last.rescan() : last;
 
-    // 3. The rows, notices and highlights.
+    // 3. The rows and notices.
     const busy = loop.busy !== null;
     if (busy) this.notices.add('page-busy');
     // Set by the checks before a later pass (recheck), while the loop ran.
@@ -1718,12 +1702,7 @@ export class FillRun {
     this.rows = all;
     this.settledStep = !busy;
     env.onRows(all);
-    // A dry run wrote nothing, so only what would need the person is outlined.
-    const marked = new Map(all.filter((row) => guarded.rows.has(row.key)).map((row) => [row.key, row] as const));
-    const outlined = this.request.dryRun
-      ? new Map([...marked].filter(([, row]) => row.needsUserAction)) : marked;
-    this.fieldHighlights = highlightItems(after, outlined, guarded.removeSelection);
-    this.drawHighlights();
+    this.drawAiEdits();
     this.showNotices();
     this.recordFindings(loop);
 
@@ -1761,7 +1740,7 @@ export class FillRun {
   /** A fresh scan of the form root, with what the run read of its widgets. */
   private scanNow(): ScanResult {
     const { page } = this.env;
-    return scan(this.root, page.adapter, { platform: page.app.platform, frameId: this.frameId,
+    return scan(this.rootNow(), page.adapter, { platform: page.app.platform, frameId: this.frameId,
       widgetReadings: this.widgetReadings });
   }
 
@@ -1895,21 +1874,6 @@ export class FillRun {
     return this.watchStep(from, null, true);
   }
 
-  /** Outlines the step's Next or Submit for the person (drawn over it, never on it). */
-  private highlightButton(which: 'next' | 'submit'): void {
-    const { adapter } = this.env.page;
-    let button: HTMLElement | null = null;
-    try {
-      button = which === 'next' ? adapter.nextButton?.(this.root) ?? null : adapter.submitButton?.(this.root) ?? null;
-    } catch {
-      button = null;
-    }
-    if (button === null) return;
-    this.buttonHighlights = [...this.buttonHighlights.filter((item) => item.key !== `step:${which}`),
-      { key: `step:${which}`, status: 'flagged', draft: false, elements: [button] }];
-    this.drawHighlights();
-  }
-
   /** pause {policy}: the card, until the person chooses (a run whose request carries Fill anyway takes it at once). */
   private async policyCard(): Promise<RunEvent> {
     // Whether this document read the step: one that only showed the card again (a reload at it) scans first (C-S4).
@@ -1984,10 +1948,11 @@ export class FillRun {
     this.showNotices();
   }
 
-  /** show-review: what needs the person is outlined, Next and Submit included when asked; the launcher says how many. */
+  /** show-review: the launcher says how many rows need the person (the review lists them); nothing is drawn over the
+   *  page. */
   private showReview(cause: ReviewCause): void {
     if (cause === 'error') log('content.step-review-error');
-    this.drawHighlights();
+    this.drawAiEdits();
     this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
   }
 
@@ -2032,8 +1997,6 @@ export class FillRun {
     const ui = env.ui();
     ui?.resetNotices();
     ui?.hidePolicyCard();
-    ui?.setHighlights([]);
-    ui?.showFocus(null);
     this.showNotices();
     this.launcher({ state: 'running', action: null });
     try {
@@ -2099,12 +2062,17 @@ export class FillRun {
   private async fillLoop(carry: LoopCarry | undefined): Promise<LoopResult> {
     const { env } = this;
     const inMemory = () => this.inMemory;
+    const rootNow = () => this.rootNow();
     const hasher = await this.valueHasher();
     this.alive();
     return runLoop({
       content: env.content,
       adapter: env.page.adapter,
-      root: this.root,
+      // The form root the adapter finds at each read: a form the page draws again mid-fill is found again, and the
+      // loop's next scan reads the new one.
+      get root() {
+        return rootNow();
+      },
       platform: env.page.app.platform,
       frameId: this.frameId,
       dryRun: this.request.dryRun,

@@ -1,0 +1,291 @@
+{
+  "fixture": "greenhouse/twilio-job",
+  "source": "https://job-boards.greenhouse.io/twilio/jobs/8249615",
+  "captured": "2026-11-01T14:01:32.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#first_name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#last_name"
+    },
+    {
+      "label": "Preferred First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#preferred_name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#country",
+      "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country. Its options read \"Canada +1\"; chosen, it shows the flag and \"+1\" (the adapter reads it back by the flag)."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#country) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Search",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#iti-0__search-input",
+      "note": "intl-tel-input's own country search, inside its country dropdown, which stays hidden (iti__hide); it says aria-expanded=\"true\" even so."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#phone"
+    },
+    {
+      "label": "Location (City)",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#candidate-location",
+      "note": "Greenhouse's location search: a react-select whose results come from a geocoder as the person types; \"Locate me\" beside it is never pressed."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#candidate-location) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#resume"
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#cover_letter"
+    },
+    {
+      "label": "LinkedIn Profile URL",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_69588778"
+    },
+    {
+      "label": "How did you hear about Twilio?",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": 9,
+      "control": "[name=\"question_69588779[]\"]",
+      "note": "fieldset.checkbox with a legend; each box is drawn visible (appearance: none) beside its label[for]."
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69588780"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69588780) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Will you now or in the future require sponsorship for employment visa status (e.g., H-1B visa status)?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69588781"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69588781) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Please indicate whether you are either a citizen or resident of any of the following countries: Cuba, Iran, North Korea, Syria or Crimea Region of Ukraine.",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "options": "lazy",
+      "control": "#question_69588782"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has(#question_69588782) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Acknowledge",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "[name=\"question_69588783[]\"]",
+      "note": "A question of one box: the box is labelled \"Acknowledge\" (its label[for]); the question is its fieldset legend, \"By clicking the \"Acknowledge\" button, you acknowledge that Twilio processes data in accordance with the Twilio Applicant Privacy Policy.\"."
+    },
+    {
+      "label": "Acknowledge",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "[name=\"question_69588784[]\"]",
+      "note": "A question of one box: the box is labelled \"Acknowledge\" (its label[for]); the question is its fieldset legend, \"By checking this box, I confirm I have read, reviewed and understood the guidelines outlined in the Candidate AI Responsible Use Policy. I affirm that all the information and materials I submit throughout my application and candidacy will reflect my own work and experience.\"."
+    },
+    {
+      "label": "Voluntary Self-Identification of Gender",
+      "kind": "combobox",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"75375\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"75375\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Voluntary Self-Identification of Race/Ethnicity",
+      "kind": "combobox",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"75376\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"75376\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Protected Veteran Status",
+      "kind": "combobox",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"75377\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"75377\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "Voluntary Self-Identification of Sexual Orientation",
+      "kind": "combobox",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"75378\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".select__container:has([id=\"75378\"]) input[aria-hidden=\"true\"]",
+      "note": "react-select's required shim for the question above: opacity 0, aria-hidden, tabindex -1, no label."
+    },
+    {
+      "label": "By checking this box, I consent to Twilio collecting, storing, and processing my responses to the demographic data surveys above.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status",
+      "fillable": true,
+      "control": "#gdpr_demographic_data_consent_given_1"
+    }
+  ]
+}

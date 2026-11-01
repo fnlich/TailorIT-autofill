@@ -7,14 +7,27 @@ import embedExpect from '../../../fixtures/greenhouse/gitlab-embed.expect.json';
 import embedHtml from '../../../fixtures/greenhouse/gitlab-embed.html?raw';
 import gitlabExpect from '../../../fixtures/greenhouse/gitlab-job.expect.json';
 import gitlabHtml from '../../../fixtures/greenhouse/gitlab-job.html?raw';
+import affirmExpect from '../../../fixtures/greenhouse/affirm-job.expect.json';
+import affirmHtml from '../../../fixtures/greenhouse/affirm-job.html?raw';
+import asanaExpect from '../../../fixtures/greenhouse/asana-embed.expect.json';
+import asanaHtml from '../../../fixtures/greenhouse/asana-embed.html?raw';
+import discordMlExpect from '../../../fixtures/greenhouse/discord-ml-job.expect.json';
+import discordMlHtml from '../../../fixtures/greenhouse/discord-ml-job.html?raw';
+import gustoExpect from '../../../fixtures/greenhouse/gusto-job.expect.json';
+import gustoHtml from '../../../fixtures/greenhouse/gusto-job.html?raw';
+import twilioExpect from '../../../fixtures/greenhouse/twilio-job.expect.json';
+import twilioHtml from '../../../fixtures/greenhouse/twilio-job.html?raw';
+import twitchExpect from '../../../fixtures/greenhouse/twitch-job.expect.json';
+import twitchHtml from '../../../fixtures/greenhouse/twitch-job.html?raw';
 import spotifyHtml from '../../../fixtures/lever/spotify-ny.html?raw';
 import trapHtml from '../../../fixtures/traps/01-white-on-white.html?raw';
 import { assertNotSubmit, fill } from '../../dom/fillers';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations } from '../../dom/fixture.testkit';
 import { scan } from '../../dom/scan';
+import { readWidget } from '../../dom/widgets';
 import { compareWithExpectation, readExpectation, scanCase, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { awaitingScanner, DRAWN_BY_WRAPPER } from '../test/findings.testkit';
-import { greenhouseAdapter } from './index';
+import { GREENHOUSE_WIDGET_SNAPSHOTS, greenhouseAdapter } from './index';
 
 const GITLAB = readExpectation(gitlabExpect);
 
@@ -23,6 +36,13 @@ const CASES = [
   { name: 'discord-job', html: discordHtml, expectation: readExpectation(discordExpect) },
   { name: 'figma-legacy-host', html: figmaHtml, expectation: readExpectation(figmaExpect) },
   { name: 'gitlab-embed', html: embedHtml, expectation: readExpectation(embedExpect) },
+  // The widget capture's closed forms (2026-11-01).
+  { name: 'twitch-job', html: twitchHtml, expectation: readExpectation(twitchExpect) },
+  { name: 'discord-ml-job', html: discordMlHtml, expectation: readExpectation(discordMlExpect) },
+  { name: 'gusto-job', html: gustoHtml, expectation: readExpectation(gustoExpect) },
+  { name: 'twilio-job', html: twilioHtml, expectation: readExpectation(twilioExpect) },
+  { name: 'affirm-job', html: affirmHtml, expectation: readExpectation(affirmExpect) },
+  { name: 'asana-embed', html: asanaHtml, expectation: readExpectation(asanaExpect) },
 ] as const;
 
 /** A stand-in for the golden resume, a PDF. */
@@ -64,6 +84,17 @@ describe('the Greenhouse adapter: its hooks on the snapshots', () => {
     const discord = await loadGreenhouse(discordHtml);
     expect(greenhouseAdapter.sections!(discord.root).map((section) => section.label)).toEqual(['Apply for this job',
       'Apply for this job', 'Voluntary Self Identification', 'Voluntary Self-Identification']);
+    removeFixtures(document);
+    // The education block by its own header, as an education section; a company's text with a nearer heading above
+    // its questions (twilio-job.html) names its block by that heading.
+    const twitch = await loadGreenhouse(twitchHtml);
+    expect(greenhouseAdapter.sections!(twitch.root).map((section) => [section.label, section.kind])).toEqual([
+      ['Apply for this job', undefined], ['Apply for this job', undefined], ['Education', 'education'],
+      ['Voluntary Self-Identification', undefined]]);
+    removeFixtures(document);
+    const twilio = await loadGreenhouse(twilioHtml);
+    expect(greenhouseAdapter.sections!(twilio.root).map((section) => section.label)).toEqual(['Apply for this job',
+      'Apply for this job', 'Voluntary Self-Identification of Race & Ethnicity and Protected Veterans Status']);
   });
 
   it("labels an upload group's file input by the group's div#upload-label-*, and no other control", async () => {
@@ -101,16 +132,103 @@ describe('the Greenhouse adapter: its hooks on the snapshots', () => {
     expect(greenhouseAdapter.uploadWidgets!(figma.root).map((widget) => widget.input.id)).toEqual(['resume']);
   });
 
-  it('leaves the react-select widgets to Phase 4: scanned as lazy comboboxes that are not written', async () => {
+  it('declares every react-select input as its widget, and nothing else (the required shim, the hidden country search)', async () => {
+    const gh = await loadGreenhouse(twitchHtml);
+    const inputs = Array.from(gh.root.querySelectorAll<HTMLInputElement>('input.select__input[role="combobox"]'));
+    expect(inputs).toHaveLength(25);
+    for (const input of inputs) {
+      const declared = greenhouseAdapter.widgetFor!(input)!;
+      expect(declared, input.id).toMatchObject({ activation: ['mouseup'],
+        busy: ['.select__menu-notice--loading', '.select__loading-indicator'], snapshot: GREENHOUSE_WIDGET_SNAPSHOTS[0] });
+      expect(declared.opener === input && declared.expanded === input && declared.box === input.closest('.select__control'),
+        input.id).toBe(true);
+      const kind = /^(?:candidate-location|school--0)$/.test(input.id) ? 'typeahead-remote'
+        : input.id === 'question_38697197002[]' ? 'multiselect' : 'combobox';
+      expect(declared.kind, input.id).toBe(kind);
+    }
+    const others = Array.from(gh.root.querySelectorAll('input, textarea')).filter((el) => !inputs.includes(el as HTMLInputElement));
+    expect(others.filter((el) => greenhouseAdapter.widgetFor!(el) !== null)).toEqual([]);
+    expect(others.some((el) => el.id === 'iti-0__search-input')).toBe(true);
+    expect(others.filter((el) => el.matches('input[aria-hidden="true"][tabindex="-1"]'))).toHaveLength(17);
+  });
+
+  it('opens a select on a page that never answers with a mouseup, and flags it needs-your-click: no click, no mousedown', async () => {
     const gh = await loadGreenhouse(discordHtml);
     const result = scan(gh.root, greenhouseAdapter, { platform: 'greenhouse' });
     const location = result.fields.find((field) => field.idAttr === 'candidate-location')!;
-    expect(location).toMatchObject({ kind: 'combobox', options: 'lazy', label: 'Location (City)', required: true });
-    expect(greenhouseAdapter.widgetFor).toBeUndefined();
+    expect(location).toMatchObject({ kind: 'typeahead-remote', options: 'lazy', label: 'Location (City)', required: true });
+    const question = result.fields.find((field) => field.idAttr === 'question_38318892002')!;
     const log = logEvents(gh.doc);
-    expect(fill(result.target(location.key)!, { kind: 'text', text: 'Austin' }, { adapter: greenhouseAdapter, root: gh.root }))
-      .toMatchObject({ wrote: false, reason: 'widget-unsupported' });
-    expect(log.events).toEqual([]);
+    // The run's one wait for the page is spent: the page answers nothing, so the field is the person's.
+    expect(await readWidget(result.target(question.key)!, { adapter: greenhouseAdapter, root: gh.root,
+      readiness: { answered: false, waited: true } })).toEqual({ status: 'unread', reason: 'needs-your-click' });
+    // (The browser's own trusted pointer boundary events, which a page changing under a still cursor causes, aside.)
+    const ours = () => log.events.filter((event) => !event.trusted).map((event) => [event.target, event.type]);
+    expect(ours()).toEqual([['question_38318892002', 'mouseup']]);
+    expect(untrustedViolations(log.events)).toEqual([]);
+    // The declared search is one without being opened: nothing is sent to it.
+    expect(await readWidget(result.target(location.key)!, { adapter: greenhouseAdapter, root: gh.root }))
+      .toEqual({ status: 'read', reading: { kind: 'remote' } });
+    expect(ours()).toHaveLength(1);
+  });
+
+  it('keeps a select that shows an answer a field, its input drawn transparent; never a hidden one', async () => {
+    const gh = await loadGreenhouse(twitchHtml);
+    // twitch.yesno-chosen: the answer beside an emptied input react-select draws with opacity 0.
+    const choose = (id: string, answer: (doc: Document) => Node[]) => {
+      const input = gh.doc.getElementById(id) as HTMLInputElement;
+      const values = input.closest('.select__value-container')!;
+      values.classList.add('select__value-container--has-value');
+      values.querySelector('.select__placeholder')?.remove();
+      const shown = gh.doc.createElement('div');
+      shown.className = 'select__single-value';
+      shown.append(...answer(gh.doc));
+      values.prepend(shown);
+      input.style.opacity = '0';
+      return input;
+    };
+    const fieldOf = (id: string) => scan(gh.root, greenhouseAdapter, { platform: 'greenhouse' }).fields
+      .find((field) => field.idAttr === id);
+    choose('question_38697188002', (doc) => [doc.createTextNode('No')]);
+    expect(fieldOf('question_38697188002')).toMatchObject({ kind: 'combobox', current: { kind: 'selected', labels: ['No'] } });
+    // twitch.phone-country-chosen: a flag and "+1" name "Canada +1", never "United States +1".
+    const flag = (code: string) => (doc: Document) => {
+      const el = doc.createElement('div');
+      el.className = `iti__flag iti__${code}`;
+      const dial = doc.createElement('span');
+      dial.textContent = '+1';
+      return [el, dial];
+    };
+    const country = choose('country', flag('ca'));
+    expect(fieldOf('country')).toMatchObject({ current: { kind: 'selected', labels: ['Canada +1'] } });
+    country.closest('.select__value-container')!.querySelector('.iti__flag')!.className = 'iti__flag iti__us';
+    expect(fieldOf('country')).toMatchObject({ current: { kind: 'selected', labels: ['United States +1'] } });
+    // Hidden any other way, or its box hidden, it is no field.
+    const hidden = choose('question_38697189002', (doc) => [doc.createTextNode('Yes')]);
+    hidden.style.display = 'none';
+    expect(fieldOf('question_38697189002')).toBeUndefined();
+    const boxed = choose('question_38697190002', (doc) => [doc.createTextNode('Yes')]);
+    // (display, not visibility: the control's own transition keeps it visible for 100 ms after a visibility change.)
+    (boxed.closest('.select__control') as HTMLElement).style.display = 'none';
+    expect(fieldOf('question_38697190002')).toBeUndefined();
+  });
+
+  it('names the buttons never pressed, and assertNotSubmit refuses them and anything inside them', async () => {
+    const gh = await loadGreenhouse(twitchHtml);
+    const never = greenhouseAdapter.neverPress!(gh.root);
+    expect(never.map((el) => el.textContent!.replace(/\s+/g, ' ').trim())).toEqual(['Autofill my application', 'Locate me',
+      'Dropbox', 'Google Drive', 'Enter manually', 'Dropbox', 'Google Drive', 'Enter manually']);
+    const ctx = { adapter: greenhouseAdapter, root: gh.root };
+    for (const el of never) {
+      expect(assertNotSubmit(el, ctx)).toEqual({ ok: false, refusal: 'adapter-never-press' });
+      for (const inner of Array.from(el.querySelectorAll('*'))) expect(assertNotSubmit(inner, ctx).ok).toBe(false);
+    }
+    // What the fillers do press stays pressable: a select's input, a checkbox, an upload group's Attach button.
+    for (const selector of ['#question_38697188002', 'input[type="checkbox"]', '.file-upload button']) {
+      expect(assertNotSubmit(gh.root.querySelector(selector)!, ctx), selector).toEqual({ ok: true });
+    }
+    // The other adapters name none.
+    expect(assertNotSubmit(never[1]!, { adapter: null, root: gh.root })).toEqual({ ok: true });
   });
 
   it('needs no proxyFor: the consent box is drawn, only the upload inputs stand behind widgets', async () => {

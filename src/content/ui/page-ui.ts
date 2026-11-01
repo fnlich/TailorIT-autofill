@@ -1,6 +1,6 @@
 /*
  * The in-page UI, put together (docs/design/runtime.md §10.1): the host and its closed shadow root (shadow.ts), the one
- * stylesheet (styles.ts), the launcher, the notices and the policy card, and the highlights, all vanilla DOM; and the
+ * stylesheet (styles.ts), the launcher, the notices, the policy card and the Edit with AI buttons, all vanilla DOM; and the
  * in-page review panel (panel.tsx, the only React in the content script), under the notices in the anchor's column,
  * so it never covers the launcher or the card. While it is open the notice stack hides its plain notices (the panel
  * shows them all); the card stays, since only it has the decision's buttons in the page. In a small embedded frame
@@ -18,14 +18,16 @@
  *   since its choice needs no user gesture.
  * - launcherShown() is the frame's own visibility on its page (S1): a frame the page around it hides (opacity 0,
  *   off-screen, in a zero-height wrapper) has a launcher that is not visible, which no check inside the frame can see.
- * - Edit with AI (the owner's amendments, ai-edits.ts): its buttons sit in their own layer, beside the highlights and
- *   not hidden from assistive technology, each watched like a card button: a trusted click counts only while the
- *   button is visible (a button just drawn waits for the watch's first word, capped).
+ * - Edit with AI (the owner's amendments, ai-edits.ts): its buttons sit in their own layer, not hidden from assistive
+ *   technology, each watched like a card button: a trusted click counts only while the button is visible (a button
+ *   just drawn waits for the watch's first word, capped).
+ * - Nothing is drawn over the page's fields (the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11): no
+ *   outline or chip marks a field's status or the AI's answers; the review lists them, and Show on page scrolls to a
+ *   field and focuses it (runtime.ts).
  */
 import { log } from '../../shared/log';
 import type { FrameReport } from '../../shared/report';
 import { createAiEdits, type AiEditItem } from './ai-edits';
-import { createHighlights, type HighlightItem } from './highlights';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
 import { createNotices, type NoticeCode, type PolicyChoice } from './notices';
 import { createInPagePanel, type InPagePanel, type PanelActions } from './panel';
@@ -47,6 +49,9 @@ export interface PageUiHandlers {
   onPolicyChoice(choice: PolicyChoice): void;
   /** Edit with AI on one field (the owner's amendments): a trusted click on its visible button. */
   onAiEdit?(key: string): void;
+  /** The form root the UI is anchored to has left the page (the page drew its whole form again): the runtime finds the
+   *  new one and anchors the UI to it (anchorTo), else the launcher stays hidden. Asked at a layout, not a click. */
+  rootGone?(): void;
   /** The in-page panel's actions, for this frame's own fields, and this frame's id (none: no panel is made). */
   panel?: PanelActions & { frameId(): number | null };
 }
@@ -59,8 +64,6 @@ export interface PageUi {
   readonly styleMode: StyleMode;
   readonly launcher: { readonly el: HTMLButtonElement; readonly view: LauncherView };
   readonly notices: { readonly shown: readonly NoticeCode[]; readonly cardShown: boolean };
-  readonly highlightCount: number;
-  readonly focusShown: boolean;
   /** The element the launcher and notices are anchored to: the form root (null: nothing to anchor, launcher hidden). */
   anchorTo(root: Element | null): void;
   setLauncher(view: LauncherView): void;
@@ -69,13 +72,10 @@ export interface PageUi {
   resetNotices(): void;
   showPolicyCard(options: { fromStoredCopy: boolean }): void;
   hidePolicyCard(): void;
-  setHighlights(items: readonly HighlightItem[]): void;
   /** The Edit with AI buttons (ai-edits.ts): one per item; [] removes them all. */
   setAiEdits(items: readonly AiEditItem[]): void;
   /** The Edit with AI buttons drawn now (for tests). */
   readonly aiEditButtons: readonly HTMLButtonElement[];
-  /** Outlines one field on request (field/focus), after the caller scrolled it into view; null removes it. */
-  showFocus(elements: readonly Element[] | null): void;
   /** The in-page panel (null when the handlers gave it no actions). */
   readonly panel: InPagePanel | null;
   /** Whether this frame has room for the in-page panel: the top frame always, an embedded one at PANEL_MIN_VIEWPORT. */
@@ -105,8 +105,6 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   const { root } = mounted;
   const layer = doc.createElement('div');
   layer.className = 'layer';
-  const highlightLayer = doc.createElement('div');
-  highlightLayer.className = 'highlights';
   const aiEditLayer = doc.createElement('div');
   aiEditLayer.className = 'ai-edits';
   const anchor = doc.createElement('div');
@@ -130,12 +128,9 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     });
   });
   anchor.append(launcher.el, notices.el);
-  // The outlines repeat what the report says; assistive technology reads the report, not them. The Edit with AI
-  // buttons are controls, so their layer is not hidden.
-  highlightLayer.setAttribute('aria-hidden', 'true');
-  layer.append(highlightLayer, aiEditLayer, anchor);
+  // The Edit with AI buttons are controls, so their layer is not hidden from assistive technology.
+  layer.append(aiEditLayer, anchor);
   root.append(layer);
-  const highlights = createHighlights(doc, highlightLayer);
   const aiEdits = createAiEdits(doc, aiEditLayer, (key, button) => {
     const act = () => handlers.onAiEdit?.(key);
     if (visibility.known(button)) {
@@ -181,6 +176,12 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   function layout(): void {
     frame = null;
     if (!mounted.host.isConnected) return;
+    if (anchorRoot !== null && !anchorRoot.isConnected) {
+      // The form root left the page (the page drew its whole form again; its removal reaches the ResizeObserver): the
+      // runtime anchors to the new one, whose anchorTo has laid everything out already.
+      handlers.rootGone?.();
+      if (anchorRoot.isConnected) return;
+    }
     const hostRect = mounted.host.getBoundingClientRect();
     if (anchorRoot === null || !anchorRoot.isConnected) {
       anchor.hidden = true;
@@ -195,7 +196,6 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       anchor.style.top = `${top}px`;
       anchor.style.transform = 'translateX(-100%)';
     }
-    highlights.render(hostRect);
     aiEdits.render(hostRect);
   }
 
@@ -215,12 +215,6 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     styleMode: mounted.styleMode,
     launcher,
     notices,
-    get highlightCount() {
-      return highlights.count;
-    },
-    get focusShown() {
-      return highlights.focusShown;
-    },
     anchorTo(next) {
       if (anchorRoot !== null) resizes?.unobserve(anchorRoot);
       anchorRoot = next;
@@ -248,20 +242,12 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       notices.hidePolicyCard();
       schedule();
     },
-    setHighlights(items) {
-      highlights.set(items);
-      layout();
-    },
     setAiEdits(items) {
       aiEdits.set(items);
       layout();
     },
     get aiEditButtons() {
       return aiEdits.buttons;
-    },
-    showFocus(elements) {
-      highlights.showFocus(elements);
-      layout();
     },
     panel,
     panelFits,

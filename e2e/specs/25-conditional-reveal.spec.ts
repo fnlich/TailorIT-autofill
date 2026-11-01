@@ -78,9 +78,10 @@ test.describe('conditional fields', () => {
         expect(row(report, label).detail?.revealedBy, `${label} names its parent`).toBe(baseKeyOfRow(authorized));
         await expect(page.locator(control), label).toHaveValue('no');
       }
-      // Revealed too, and nothing in the profile answers it: blank and flagged, never guessed.
+      // Revealed too, and nothing in the profile answers it: asked of TailorIT's AI in the all scope (the owner's
+      // decision of 2026-11-01), which by the mock's default has no answer, so it stays blank and flagged.
       expect(row(report, CLEARANCE)).toMatchObject({ category: 'workAuth.clearance', status: 'flagged',
-        reason: 'legal-not-in-profile', wrote: false, provenance: null });
+        reason: 'llm-no-answer', wrote: false, provenance: null });
       expect(row(report, CLEARANCE).detail?.revealedBy).toBe(baseKeyOfRow(authorized));
       await expect(page.locator('#clearance')).toHaveValue('');
       // Only No reveals the visa question: it stays hidden, with no row and no event.
@@ -179,8 +180,9 @@ test.describe('conditional fields', () => {
       expect(row(report, label).detail?.revealedBy, `${label} names its parent`).toBe(baseKeyOfRow(authorized));
       await expect(page.locator(control), label).toHaveValue('no');
     }
-    // The visa type, which only No reveals: neither part of the profile states one, so blank and flagged.
-    expect(row(report, VISA)).toMatchObject({ category: 'workAuth.visaType', status: 'flagged', reason: 'legal-not-in-profile',
+    // The visa type, which only No reveals: neither part of the profile states one, so it is asked of the AI (all
+    // scope), which by the mock's default has no answer: blank and flagged.
+    expect(row(report, VISA)).toMatchObject({ category: 'workAuth.visaType', status: 'flagged', reason: 'llm-no-answer',
       wrote: false, provenance: null });
     expect(row(report, VISA).detail?.revealedBy).toBe(baseKeyOfRow(authorized));
     await expect(page.locator('#visa-type')).toHaveValue('');

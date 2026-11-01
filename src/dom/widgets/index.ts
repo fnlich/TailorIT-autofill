@@ -5,13 +5,14 @@
  * - searchTypeahead: a remote typeahead's queries, one at a time (typeahead.ts);
  * - readWidget: the reactive loop's waiting path. A lazy widget the planner needs the options of is opened, read whole
  *   and closed, and what it showed is kept as its field's reading, so the next pass plans it with real options; one
- *   that shows nothing until something is typed is read as a remote search; one that ignores our activation is
- *   needs-your-click;
+ *   that shows nothing until something is typed is read as a remote search (a kind its adapter declared stands: a
+ *   declared combobox is never made a search, and a declared search is read as one without being opened); one that
+ *   ignores our activation is needs-your-click;
  * - widgetHolds: the read-back after the pass's settle (hold.ts).
  * A widget is acted on only when standard ARIA says where its list is (or it is a group whose members carry their own
  * state): a widget an adapter declares without that (Lever's location search) is widget-unsupported, never typed into.
- * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown or focus),
- * the text filler's input, change, focusout and blur, and a list's own scrollTop set as a property. Never keys,
+ * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown, mouseup or
+ * focus), the text filler's input, change, focusout and blur, and a list's own scrollTop set as a property. Never keys,
  * pointer moves or hovers.
  */
 import type { ValueOrigin, WriteValue } from '../../core/types/intent';
@@ -27,7 +28,9 @@ import { readList, type ListRead } from './options';
 export { ariaWidgetKind, editableOf, isWidgetPart, listOf, membersOf, WIDGET_ROOT_SELECTOR } from './aria';
 export { keepReading, remember, type WidgetFillContext } from './fill';
 export { widgetHolds } from './hold';
-export { afterAction, closeList, openList, type WidgetContext } from './interact';
+export {
+  afterAction, closeList, expandedState, newReadiness, openList, type WidgetContext, type WidgetReadiness,
+} from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
 export { searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
 
@@ -58,10 +61,12 @@ export async function fillWidget(target: FieldTarget, value: WriteValue, ctx: Wi
   }
 }
 
-/** How the waiting path's read of a lazy widget went. */
+/** How the waiting path's read of a lazy widget went. 'gone': the page replaced the widget while the run waited for it
+ *  to be ready (a form rebuilt), so the next scan finds it again. */
 export type WidgetReadResult =
   | { status: 'read'; reading: WidgetReading }
   | { status: 'unread'; reason: 'needs-your-click' | 'widget-unsupported' | 'options-never-loaded' }
+  | { status: 'gone' }
   | { status: 'aborted' };
 
 /** Opens a lazy widget, reads its list whole and closes it (see the header); the reading is kept in ctx.readings. */
@@ -77,11 +82,16 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
   const keepOptions = (read: ListRead, multiselectable: boolean): WidgetReadResult => ({ status: 'read',
     reading: keepReading(ctx.readings, target.field.baseKey, widget, read.options.map((option) => ({ label: option.label,
       disabled: option.disabled })), multiselectable, read.complete) });
-  // A text box that filters what it suggests, and shows nothing before something is typed, is a remote search.
-  const searches = widget.input !== null && (widget.kind === 'typeahead-remote' || filtersAsTyped(widget.element, widget.input));
+  // A search its adapter declared has nothing to read before something is typed: it is one, unopened.
+  if (widget.declared && widget.kind === 'typeahead-remote' && widget.input !== null) return keep({ kind: 'remote' });
+  // A text box that filters what it suggests, and shows nothing before something is typed, is a remote search; a
+  // combobox its adapter declared stays one (Greenhouse's Yes/No filters as typed too).
+  const searches = widget.input !== null && (widget.kind === 'typeahead-remote'
+    || (!widget.declared && filtersAsTyped(widget.element, widget.input)));
   const opened = await openList(widget, ctx);
   if (!opened.open) {
     if (opened.reason === 'aborted') return { status: 'aborted' };
+    if (opened.reason === 'gone') return { status: 'gone' };
     if (opened.reason !== 'refused' && searches) return keep({ kind: 'remote' });
     return { status: 'unread', reason: opened.reason === 'no-list' ? 'widget-unsupported' : 'needs-your-click' };
   }

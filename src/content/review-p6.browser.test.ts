@@ -85,10 +85,9 @@ async function personClicks(fixture: Fixture, id: string): Promise<void> {
   await userEvent.click(fixture.frame, { position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
 }
 
-/** The highlights drawn over the fields: status, dashed, and chip. */
-function highlights(runtime: ContentRuntime): Array<{ status: string | undefined; draft: string | undefined }> {
-  return [...runtime.ui!.shadow.querySelectorAll<HTMLElement>('.hl')]
-    .map((el) => ({ status: el.dataset.status, draft: el.dataset.draft }));
+/** Whatever our UI draws over the page's fields: nothing since the owner's decision of 2026-11-01. */
+function drawnOverFields(runtime: ContentRuntime): Element[] {
+  return [...runtime.ui!.shadow.querySelectorAll('.highlights, .hl, .chip')];
 }
 
 /** The page's own editing command over a field's whole text (trusted input events, no person). */
@@ -121,7 +120,7 @@ describe('E3: a page’s own editing command is no edit of the person’s', () =
     expect(started.worker.reports.length).toBe(before);
     expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ provenance: 'llm-draft', status: 'flagged',
       reason: 'llm-draft-needs-confirmation', needsUserAction: true });
-    expect(highlights(started.runtime)).toContainEqual({ status: 'flagged', draft: 'true' });
+    expect(drawnOverFields(started.runtime)).toEqual([]);
   });
 
   it('never marks a flagged field userEdited (Save my answer) for the page’s insert', async () => {
@@ -148,7 +147,7 @@ describe('E4: a draft is known across the runs of its document, and after a relo
     const row = rowOf(lastReport(started.worker), WHY);
     expect(row).toMatchObject({ provenance: 'llm-draft', status: 'flagged', reason: 'llm-draft-needs-confirmation',
       wrote: true, needsUserAction: true });
-    expect(highlights(started.runtime)).toContainEqual({ status: 'flagged', draft: 'true' });
+    expect(drawnOverFields(started.runtime)).toEqual([]);
     // Its RunState names it, by key only.
     expect(started.worker.runStates.at(-1)?.drafts).toEqual([storedBaseKey(baseKeyOf(row.key as FieldKey))]);
     expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: row.key }))

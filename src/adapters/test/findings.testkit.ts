@@ -31,6 +31,19 @@ export const DRAWN_BY_WRAPPER: Readonly<Record<string, readonly string[]>> = {
     '#question_12497124004'],
   'greenhouse/gitlab-embed': ['#first_name', '#last_name', '#email', '#phone', '#question_38599927002',
     '#question_38599928002', '#question_38599931002'],
+  // The widget capture's closed forms (2026-11-01): the same wrapper, the education block's years included.
+  'greenhouse/twitch-job': ['#first_name', '#last_name', '#email', '#phone', '#start-year--0', '#end-year--0',
+    '#question_38697183002', '#question_38697184002', '#question_38697200002'],
+  'greenhouse/discord-ml-job': ['#first_name', '#last_name', '#email', '#phone', '#question_37842684002',
+    '#question_37903206002', '#question_37842685002', '#question_37842686002', '#question_37842687002'],
+  'greenhouse/gusto-job': ['#first_name', '#last_name', '#preferred_name', '#email', '#phone', '#question_66549917',
+    '#question_66549918'],
+  'greenhouse/twilio-job': ['#first_name', '#last_name', '#preferred_name', '#email', '#phone', '#question_69588778'],
+  'greenhouse/affirm-job': ['#first_name', '#last_name', '#preferred_name', '#email', '#phone', '#start-year--0',
+    '#end-year--0', '#question_32965827003', '#question_32965828003', '#question_32965829003', '#question_32965830003',
+    '#question_32965836003', '#question_32965839003'],
+  'greenhouse/asana-embed': ['#first_name', '#last_name', '#email', '#phone', '#question_69118666', '#question_69118667',
+    '#question_69118668', '#question_69118669', '#question_69118670', '#question_69118672', '#question_69118677'],
 };
 
 /** The differences a scan of this case's snapshot is known to show until the scanner changes, in the order
