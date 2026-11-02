@@ -90,6 +90,37 @@ describe('planFrame: text fields', () => {
       row: { status: 'flagged', provenance: null } });
   });
 
+  // The live BeyondTrust form (2026-11-01): once a country is chosen in Greenhouse's phone country picker, the page draws
+  // "+1 512 555 0188" as "(512) 555-0188", the "+1" shown by the picker alone; the run took that for another number and
+  // left its own phone a verify-mismatch for the person to fix.
+  it('holds a phone the page draws nationally beside a country control that shows its dial code, and nothing else', () => {
+    const wire = goldenWire();
+    wire.profile.contact.phone = { ...wire.profile.contact.phone, number: '+1 512 555 0188', country: 'CA' };
+    wire.profile.contact.address = { ...wire.profile.contact.address, city: 'Toronto', region: 'ON',
+      postalCode: 'M5V 2T6', country: 'CA' };
+    const { profile } = canonicalizeProfile(wire.profile, wire.sensitive, vocab, NOW);
+    const country = specOf('Country', 'combobox', { optionLabels: ['United States +1', 'Canada +1', 'United Kingdom +44'],
+      current: { kind: 'selected', labels: ['Canada +1'] } });
+    const phone = specOf('Phone', 'text', { current: { kind: 'text', text: '(512) 555-0188' } });
+    const out = planOf([country, phone], { profile });
+    expect(fieldOf(out, phone)).toMatchObject({ write: undefined,
+      row: { status: 'skipped', reason: 'already-correct', provenance: null } });
+    expect(fieldOf(out, country)).toMatchObject({ write: undefined, row: { status: 'skipped', reason: 'already-correct' } });
+    // The picker's "+1" alone (as it shows the country it holds, beside its flag) shows the code too.
+    const dialOnly = { ...country, current: { kind: 'selected' as const, labels: ['+1'] } };
+    expect(fieldOf(planOf([dialOnly, phone], { profile }), phone).row).toMatchObject({ reason: 'already-correct' });
+    // No control showing the number's code, a control showing another code, or another number: the profile's number
+    // replaces what the box shows, as it is written.
+    const typed = { write: { value: { kind: 'text', text: '+1 512 555 0188' } }, row: { reason: 'prefill-conflict' } };
+    expect(fieldOf(planOf([phone], { profile }), phone)).toMatchObject(typed);
+    const british = { ...country, current: { kind: 'selected' as const, labels: ['United Kingdom +44'] } };
+    expect(fieldOf(planOf([british, phone], { profile }), phone)).toMatchObject(typed);
+    const other = { ...phone, current: { kind: 'text' as const, text: '(512) 555-0199' } };
+    expect(fieldOf(planOf([country, other], { profile }), other)).toMatchObject(typed);
+    const elsewhere = { ...country, section: { id: 'other' } };
+    expect(fieldOf(planOf([elsewhere, phone], { profile }), phone)).toMatchObject(typed);
+  });
+
   it('never cuts a text longer than the field takes', () => {
     const short = { ...LINKEDIN, constraints: { maxLength: 20 } };
     const { write, row } = fieldOf(planOf([short]), short);

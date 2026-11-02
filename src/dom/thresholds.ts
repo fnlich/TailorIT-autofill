@@ -109,6 +109,11 @@ export const MAX_WIDGET_SCROLLS = 200;
 export const WIDGET_READ_CAP_MS = 10_000;
 /** A remote typeahead: one query's results arrive within this, or the query found nothing. */
 export const TYPEAHEAD_QUERY_CAP_MS = 3_000;
+/** A combobox its adapter declared, whose text box filters its list as typed, with at least this many options (or a
+ *  list read only in part), has its planned option searched for by its words rather than scrolled to: Greenhouse's
+ *  phone country lists 244 countries, its country questions about 200, its Yes/No, EEO and month lists a dozen at most
+ *  (dom/widgets' searchesList). */
+export const WIDGET_SEARCH_MIN_OPTIONS = 50;
 /** After an auto-advance click, the step transition waits at most this long. */
 export const TRANSITION_CAP_MS = 20_000;
 /** The URL poll, where the Navigation API is missing. */

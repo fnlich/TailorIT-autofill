@@ -367,6 +367,39 @@ describe('the scripted answers', () => {
     expect(await read('/api/autofill/profile/sensitive')).toEqual(golden.sensitive);
   });
 
+  it('profile-phone-no-code, profile-canada and profile-uk: the golden person with another phone (and home), both envelopes at the next revision until the reset', async () => {
+    interface Contact {
+      phone: { number: string; country: string | null; extension: string };
+      address: Record<string, string | null>;
+    }
+    const read = async (path: string) => (await call(path, { headers: asToken() })).json() as Promise<{ revision: number;
+      profile?: { contact: Contact } & Record<string, unknown> }>;
+    const golden = { profile: await read('/api/autofill/profile'), sensitive: await read('/api/autofill/profile/sensitive') };
+    const goldenContact = golden.profile.profile!.contact;
+    const cases = {
+      'profile-phone-no-code': { phone: { ...goldenContact.phone, number: '512 555 0147', country: 'US' },
+        address: goldenContact.address },
+      'profile-canada': { phone: { ...goldenContact.phone, number: '+1 512 555 0188', country: 'CA' },
+        address: { ...goldenContact.address, city: 'Toronto', region: 'ON', postalCode: 'M5V 2T6', country: 'CA' } },
+      'profile-uk': { phone: { ...goldenContact.phone, number: '+44 20 7946 0958', country: 'GB' },
+        address: { ...goldenContact.address, city: 'London', region: '', postalCode: 'SW1A 1AA', country: 'GB' } },
+    } as const;
+    for (const [name, contact] of Object.entries(cases)) {
+      await scenario(name as keyof typeof cases, { times: 1 });
+      for (let round = 0; round < 2; round += 1) {
+        const profile = await read('/api/autofill/profile');
+        const sensitive = await read('/api/autofill/profile/sensitive');
+        expect(AUTOFILL_CONTRACT_SCHEMAS.AutofillProfileEnvelope.safeParse(profile).success, name).toBe(true);
+        expect([profile.revision, sensitive.revision], name).toEqual([golden.profile.revision + 1,
+          golden.sensitive.revision + 1]);
+        expect(profile.profile!.contact, name).toEqual({ ...goldenContact, ...contact });
+        expect({ ...profile.profile, contact: null }, name).toEqual({ ...golden.profile.profile, contact: null });
+      }
+      await mock.reset();
+      expect(await read('/api/autofill/profile'), name).toEqual(golden.profile);
+    }
+  });
+
   it('lookup-slow waits before the golden answer; lookup-fails gets 500; times counts requests', async () => {
     await scenario('lookup-slow', { times: 1, delayMs: 300 });
     const lookup = () => call('/api/autofill/lookup', { method: 'POST', headers: asToken(), json: example('AutofillLookupRequest') });

@@ -19,10 +19,16 @@
  *    back what it held and the field is needs-your-click.
  * When no query finds a result to choose, the text box gets back what it held before our first query (the text
  * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason. A page
- * that does not react at all to the first query (no mutation until the cap) ignores untrusted input: the search stops
- * there, needs-your-click, and is never tried another way. Values stay in memory.
+ * that does not react at all to the first query (no mutation until the cap, and its list shows what it showed before:
+ * react-select filters a local list inside our input event, before any wait watches it) ignores untrusted input: the
+ * search stops there, needs-your-click, and is never tried another way. Values stay in memory.
+ * searchForOption searches a long list its own text box filters (searchesList: Greenhouse's phone country) the same
+ * way, for an option the planner chose already on the list's whole read: one query, the option's own words
+ * (optionQuery: "Canada" for "Canada +1"), a guarded write as each of a typeahead's is, and of what the list then shows
+ * the one result that is that option as the page shows it (searchedOption) is clicked; no worker matches the results.
  */
 import { TYPEAHEAD_MAX_QUERIES } from '../../core/confidence';
+import { searchedOption } from '../../core/matcher/listSearch';
 import type { ReasonCode } from '../../core/types/fill';
 import { fireChange, fireInput, fireLeave, setValue } from '../fillers/events';
 import { assertNotSubmit } from '../fillers/not-submit';
@@ -63,6 +69,12 @@ export interface TypeaheadResult {
 function typeQuery(input: HTMLInputElement | HTMLTextAreaElement, query: string): void {
   setValue(input, query);
   fireInput(input, 'text');
+}
+
+/** The option-set hash of what the widget's list shows now, or null when it shows no list. */
+function shownHash(widget: NonNullable<FieldTarget['widget']>): ReturnType<typeof hashOfRead> | null {
+  const listbox = openListOf(widget);
+  return listbox === null ? null : hashOfRead(shownOptions(listbox));
 }
 
 /** A box's text as compared: white space collapsed, any case. */
@@ -126,14 +138,14 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
       if (opened.status === 'gone') return giveUp('element-not-found');
       if (opened.status !== 'answered') return giveUp('needs-your-click');
     }
-    const shown = openListOf(widget);
-    const prevHash = shown === null ? null : hashOfRead(shownOptions(shown));
+    const prevHash = shownHash(widget);
     typeQuery(box, query);
     typed += 1;
     const wait = await awaitList(widget, ctx, { prevHash, capMs: TYPEAHEAD_QUERY_CAP_MS });
     if (wait.status === 'aborted') return none('internal-error');
-    // A page that does not react at all to a query ignores untrusted input: it is never tried another way.
-    if (!wait.mutated && !reacted) return giveUp('needs-your-click');
+    // A page that does not react at all to a query ignores untrusted input: it is never tried another way. A list the
+    // page filters at once, inside our input event, has changed before the wait watched it: that is an answer too.
+    if (!wait.mutated && !reacted && shownHash(widget) === prevHash) return giveUp('needs-your-click');
     reacted = true;
     const listbox = openListOf(widget);
     if (wait.status !== 'ready' || listbox === null) continue;
@@ -166,4 +178,19 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
       typed };
   }
   return giveUp(reason);
+}
+
+/** Searches a long list for the option planned on it (see the header): `query` typed through `guard`, as a typeahead's
+ *  queries are, and the one result whose label reads as the planned option's `label` clicked, read back as `cleanLabel`.
+ *  Nothing is chosen when no result is that option (no-match). */
+export async function searchForOption(target: FieldTarget, planned: { label: string; cleanLabel: string },
+  query: string, ctx: WidgetContext, guard: TypeaheadHooks['guard']): Promise<TypeaheadResult> {
+  return searchTypeahead(target, [query], ctx, {
+    guard,
+    match: async (results) => {
+      const index = searchedOption(results, planned.label);
+      return index === null ? { choose: null, reason: 'no-match', blocked: false }
+        : { choose: { index, cleanLabel: planned.cleanLabel } };
+    },
+  });
 }

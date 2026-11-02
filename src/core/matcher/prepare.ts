@@ -16,6 +16,7 @@ import { keyWithBrackets, normalize, type NormContext } from '../text/normalize'
 import type { Option } from '../types/field';
 import type { VocabDomain } from '../types/intent';
 import { DOMAIN_CONTEXT, type KeyHit, type PhraseSet, type Vocab } from '../vocab/types';
+import { withoutDialCode } from './dialCode';
 import { bracketsFitEntity, guardSide } from './guardTokens';
 import type { MatchDomain, PreparedOption, PreparedOptions } from './types';
 
@@ -53,16 +54,9 @@ export function substantive(option: PreparedOption): boolean {
   return chooseable(option) && !option.other && !option.exclusive && !option.decline;
 }
 
-/** A dial code before or after a country's name, as a phone country picker (intl-tel-input) shows it: "+1 United
- *  States", "Afghanistan+93", "Canada (+1)", "Jersey +44 1534". No country's name holds a digit. */
-const LEADING_DIAL_CODE = /^\(?\+\d{1,4}(?:[\s-]\d{1,4})?\)?\s*/;
-const TRAILING_DIAL_CODE = /\s*\(?\+\d{1,4}(?:[\s-]\d{1,4})?\)?$/;
-
 /** The text of a clean label that is matched: in the country domain, without a dial code. */
 function matchedText(clean: string, domain: MatchDomain): string {
-  if (domain !== 'country') return clean;
-  const name = clean.trim().replace(LEADING_DIAL_CODE, '').replace(TRAILING_DIAL_CODE, '').trim();
-  return name === '' ? clean : name;
+  return domain === 'country' ? withoutDialCode(clean) : clean;
 }
 
 /** The ids of a list of hits, once each, in order. */

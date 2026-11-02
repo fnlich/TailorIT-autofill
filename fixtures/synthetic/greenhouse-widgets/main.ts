@@ -4,8 +4,9 @@
  */
 import { mountGreenhouseForm, mountHeaderButton, newLog, type MountOptions } from './app';
 
-const JOBS: Record<string, Pick<MountOptions, 'start' | 'form'>> = { 9100: { start: 'now' }, 9101: { start: 'late' },
-  9102: { start: 'rebuild' }, 9103: { start: 'now', form: 'beyondtrust' } };
+const JOBS: Record<string, Pick<MountOptions, 'start' | 'form' | 'phonePicks'>> = { 9100: { start: 'now' },
+  9101: { start: 'late' }, 9102: { start: 'rebuild' }, 9103: { start: 'now', form: 'beyondtrust' },
+  9104: { start: 'now', form: 'phone', phonePicks: true }, 9105: { start: 'now', form: 'phone' } };
 
 const log = newLog();
 (window as unknown as { __gh: unknown }).__gh = log;

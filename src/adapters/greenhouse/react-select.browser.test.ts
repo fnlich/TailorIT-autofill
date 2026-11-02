@@ -4,8 +4,9 @@
  * adapter's widget hooks and the widget helpers, driven only by calling them: open with one bubbling mouseup, choose
  * with click(), close with focusout and blur; a multi-select reopened for each pick; Degree's list waited through its
  * "Loading..."; School opened before its search; Location's geocoder, whose list shows only the results holding the
- * typed text; the phone country read back by its flag; a checkbox question ticked with click(); the page that attaches
- * late or rebuilds its form; and the buttons never pressed. Every select's text box is drawn under 4 px wide, as the
+ * typed text; the phone country read back by its flag, and its 244 countries searched for by a country's name (the
+ * country the phone number picked by itself kept only when it is the profile's); a checkbox question ticked with
+ * click(); the page that attaches late or rebuilds its form; and the buttons never pressed. Every select's text box is drawn under 4 px wide, as the
  * live BeyondTrust form draws it, so each is a field by its control. Every event they cause is untrusted, and is the
  * fillers' or the declared mouseup: never a mousedown, a key, a focus or a pointer event.
  */
@@ -15,6 +16,7 @@ import pageHtml from '../../../fixtures/synthetic/greenhouse-widgets/index.html?
 import {
   mountGreenhouseForm, mountHeaderButton, newLog, type GreenhouseLog, type MountOptions,
 } from '../../../fixtures/synthetic/greenhouse-widgets/app';
+import { optionQuery } from '../../core/matcher/listSearch';
 import type { BaseKey } from '../../core/types/field';
 import { assertNotSubmit, fill } from '../../dom/fillers';
 import { ALLOWED_EVENTS } from '../../dom/fillers/events';
@@ -23,8 +25,8 @@ import { scan } from '../../dom/scan';
 import type { FieldTarget, ScanResult, WidgetReading } from '../../dom/types';
 import { visibilityOf } from '../../dom/visibility';
 import {
-  expandedState, fillWidget, newReadiness, openList, readWidget, searchTypeahead, widgetHolds, type TypeaheadHooks,
-  type WidgetReadiness,
+  expandedState, fillWidget, newReadiness, openList, readWidget, searchesList, searchForOption, searchTypeahead,
+  widgetHolds, type TypeaheadHooks, type WidgetReadiness,
 } from '../../dom/widgets';
 import { closeList } from '../../dom/widgets/interact';
 import { compareWithExpectation, readExpectation } from '../test/expectations.testkit';
@@ -345,6 +347,133 @@ describe("Greenhouse's react-selects, as the adapter declares them", () => {
     expect(performance.now() - started).toBeLessThan(2_000);
     expect(mouseupsOn(page.events, AUTHORIZED)).toBe(2);
     expect(mouseupsOn(page.events, 'gender')).toBe(1);
+    expectOurEventsOnly(page.events);
+  });
+});
+
+describe('the phone country, searched for by its name', () => {
+  /** The phone country's options read whole (the run's waiting path), and its target now. */
+  async function readCountry(page: Page): Promise<FieldTarget> {
+    expect(await readWidget(page.target('country'), page.ctx())).toMatchObject({ status: 'read',
+      reading: { kind: 'options', complete: true } });
+    return page.target('country');
+  }
+
+  /** The phone country's option with this label searched for by its words, through a guard that finds it again. */
+  async function search(page: Page, label: string) {
+    const target = page.target('country');
+    const option = optionOf(target, label);
+    const queries: string[] = [];
+    const result = await searchForOption(target, { label, cleanLabel: option.cleanLabel }, optionQuery(label),
+      page.ctx(), async (query) => {
+        queries.push(query);
+        return { ok: true, target: page.target('country') };
+      });
+    return { result, queries, option };
+  }
+
+  /** The flag the phone country shows. */
+  const flagOf = (page: Page) => page.root.querySelector('#country')!.closest('.select__control')!
+    .querySelector('.select__single-value .iti__flag')?.className ?? null;
+
+  it("lists the live form's 244 countries, and is searched for, as a country question is, while a short list is not", async () => {
+    const page = await open();
+    const target = await readCountry(page);
+    expect(target.field.options === 'lazy' ? 0 : target.field.options.length).toBe(244);
+    expect(target.field.options === 'lazy' ? null : target.field.options[0]!.label).toBe('United States +1');
+    expect(searchesList(target)).toBe(true);
+    await readWidget(page.target(RESIDENCE), page.ctx());
+    expect(searchesList(page.target(RESIDENCE))).toBe(true);
+    await readWidget(page.target(AUTHORIZED), page.ctx());
+    expect(searchesList(page.target(AUTHORIZED))).toBe(false);
+  });
+
+  it('types each country’s name, clicks the one result that is it, and reads it back by its flag', async () => {
+    const page = await open();
+    await readCountry(page);
+    const before = mouseupsOn(page.events, 'country');
+    for (const [label, code, query] of [['United States +1', 'us', 'United States'], ['Canada +1', 'ca', 'Canada'],
+      ['United Kingdom +44', 'gb', 'United Kingdom']] as const) {
+      const { result, queries, option } = await search(page, label);
+      expect(result, label).toMatchObject({ verified: true, reason: 'ok', typed: 1, blocked: false,
+        chosen: { index: 0, cleanLabel: label } });
+      expect(queries, label).toEqual([query]);
+      expect(page.log.values.country, label).toBe(code);
+      expect(flagOf(page), label).toBe(`iti__flag iti__${code}`);
+      const after = page.target('country');
+      expect(after.field.current, label).toEqual({ kind: 'selected', labels: [label] });
+      expect(widgetHolds(after, option), label).toBe(true);
+      expect(page.input('country').value, label).toBe('');
+      expect(page.input('country').getAttribute('aria-expanded'), label).toBe('false');
+    }
+    // What React's filter saw typed: each name once, never a key; one mouseup opened the list for each search.
+    expect(page.log.typed.country).toEqual(['United States', 'Canada', 'United Kingdom']);
+    expect(mouseupsOn(page.events, 'country') - before).toBe(3);
+    expect(page.log.pressed).toEqual([]);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('finds nothing to choose when no result is the planned option, and gives the text box back what it held', async () => {
+    const page = await open();
+    const target = await readCountry(page);
+    const option = optionOf(target, 'Canada +1');
+    const result = await searchForOption(target, { label: 'Canada +1', cleanLabel: option.cleanLabel }, 'Mexico',
+      page.ctx(), async () => ({ ok: true, target: page.target('country') }));
+    expect(result).toMatchObject({ chosen: null, verified: false, reason: 'no-match', typed: 1 });
+    expect(page.log.values.country).toBeUndefined();
+    expect(page.input('country').value).toBe('');
+    expect(page.input('country').getAttribute('aria-expanded')).toBe('false');
+    expectOurEventsOnly(page.events);
+  });
+
+  it("keeps the country the phone number picked only when it is the profile's: the United Kingdom for \"+44 ...\", never the United States for a Canadian's \"+1 512 ...\"", async () => {
+    const page = await open({ phonePicks: true });
+    await readCountry(page);
+    const phone = () => {
+      const result = page.scanned();
+      return result.target(result.fields.find((field) => field.idAttr === 'phone')!.key)!;
+    };
+    // A Briton's number: intl-tel-input picks the United Kingdom, which is the profile's, so nothing is typed.
+    expect(fill(phone(), { kind: 'text', text: '+44 20 7946 0958' }, { adapter: greenhouseAdapter, root: page.root }))
+      .toMatchObject({ wrote: true, verification: 'verified' });
+    expect(page.log.values.country).toBe('gb');
+    const british = page.target('country');
+    expect(british.field.current).toEqual({ kind: 'selected', labels: ['United Kingdom +44'] });
+    expect(widgetHolds(british, optionOf(british, 'United Kingdom +44'))).toBe(true);
+    for (const other of ['Jersey +44', 'Guernsey +44', 'Isle of Man +44']) {
+      expect(widgetHolds(british, optionOf(british, other)), other).toBe(false);
+    }
+    expect(page.log.typed.country).toBeUndefined();
+    // A Canadian's number with a Texas area code: intl-tel-input picks the United States, which shows "+1" as Canada
+    // does; read by its flag it is no Canada, so Canada is typed and chosen.
+    fill(phone(), { kind: 'text', text: '+1 512 555 0188' }, { adapter: greenhouseAdapter, root: page.root });
+    expect(page.log.values.country).toBe('us');
+    const picked = page.target('country');
+    expect(picked.field.current).toEqual({ kind: 'selected', labels: ['United States +1'] });
+    expect(widgetHolds(picked, optionOf(picked, 'Canada +1'))).toBe(false);
+    const { result } = await search(page, 'Canada +1');
+    expect(result).toMatchObject({ verified: true, reason: 'ok', chosen: { cleanLabel: 'Canada +1' } });
+    expect(page.log.values.country).toBe('ca');
+    expect(flagOf(page)).toBe('iti__flag iti__ca');
+    expect(page.log.typed.country).toEqual(['Canada']);
+    // The page then draws the number nationally, its "+1" shown by the country alone (as on the live form).
+    expect(page.input('phone').value).toBe('(512) 555-0188');
+    expect(page.log.pressed).toEqual([]);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('reads a flag the list spells otherwise as the one option of its dial code', async () => {
+    // The capture's list says "Turkey +90"; the browser names the flag's region "Türkiye".
+    expect(new Intl.DisplayNames(['en'], { type: 'region' }).of('TR')).not.toBe('Turkey');
+    const page = await open();
+    const target = await readCountry(page);
+    expect(await fillWidget(target, optionOf(target, 'Turkey +90'), page.ctx())).toMatchObject({ wrote: true,
+      verification: 'verified' });
+    expect(page.log.values.country).toBe('tr');
+    expect(flagOf(page)).toBe('iti__flag iti__tr');
+    const after = page.target('country');
+    expect(after.field.current).toEqual({ kind: 'selected', labels: ['Turkey +90'] });
+    expect(widgetHolds(after, optionOf(after, 'Turkey +90'))).toBe(true);
     expectOurEventsOnly(page.events);
   });
 });

@@ -22,6 +22,9 @@
  *   BeyondTrust form, fixtures/greenhouse/beyondtrust-job.html, whose web font is Roboto), "Loading..."
  *   (.select__menu-notice--loading) and the loading dots (.select__loading-indicator) as its busy signs, and its
  *   .select__single-value as its answer (the phone country's by its flag: it shows "+1" for the option "Canada +1").
+ *   Its input filters the list as typed (aria-autocomplete="list"; react-select's own filter, by substring), so a long
+ *   list, the phone country's 244 countries or a country question's, has its planned option searched for by the
+ *   option's words ("Canada"), then clicked (dom/widgets' searchesList), never scrolled to.
  *   Location (#candidate-location) and School (#school--N) are remote searches (Location's list shows only the
  *   results whose label holds the typed text: the BeyondTrust form); a container marked
  *   select__value-container--is-multi is a multiselect; every other one is a combobox (Yes/No, EEOC and demographic
@@ -38,6 +41,7 @@
  * gusto-job.html) are drawn visible (appearance: none with a border) beside their label[for], and a click() on the box
  * ticks it as React sees it (setting .checked does not).
  */
+import { dialCodeOf } from '../../core/matcher/dialCode';
 import { newScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
@@ -190,8 +194,11 @@ const countryName = (text: string) => text.normalize('NFKD').replace(/\p{M}+/gu,
  * The phone country a react-select shows: twitch.phone-country-chosen shows <div class="select__single-value ..."><div
  * class="iti__flag iti__ca"></div><span>+1</span></div> for the option "Canada +1" (each option carries the same flag:
  * <div class="iti__flag iti__us"></div>United States +1). The flag's region is named in English (Intl.DisplayNames)
- * with the dial code shown, and that is the known option of the same name and code; a name the options spell
- * otherwise reads back as a label no option has, never as another option.
+ * with the dial code shown, and that is the known option of the same name and code. A name the options spell otherwise
+ * (the capture's "Turkey +90", which the browser names "Türkiye") is the one known option that shows that dial code,
+ * when no other does; else it reads back as a label no option has, never as another option. So a country the phone
+ * number picked by itself (intl-tel-input reads "+1 512 ..." as the United States') reads back as that country, by
+ * its flag, never as another country of its dial code: "+1" alone names none of the 25 that share it.
  */
 function phoneCountry(shown: Element, dial: string, known: readonly string[]): string | null {
   if (dial === '') return null;
@@ -207,7 +214,11 @@ function phoneCountry(shown: Element, dial: string, known: readonly string[]): s
   }
   if (name === undefined || name.toUpperCase() === region.toUpperCase()) return dial;
   const wanted = `${name} ${dial}`;
-  return known.find((label) => countryName(label) === countryName(wanted)) ?? wanted;
+  const named = known.find((label) => countryName(label) === countryName(wanted));
+  if (named !== undefined) return named;
+  const code = dialCodeOf(dial);
+  const sharing = code === null ? [] : [...new Set(known.filter((label) => dialCodeOf(label) === code))];
+  return sharing.length === 1 ? sharing[0]! : wanted;
 }
 
 /** The never-pressed buttons' own words, for those the capture marks no other way (Google Drive). */

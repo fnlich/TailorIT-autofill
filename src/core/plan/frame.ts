@@ -23,7 +23,10 @@
  * - A text longer than the field's maxLength is never cut: the field is flagged maxlength-exceeded.
  * - What the field already holds is read first. A value equal to the plan is left alone (already-correct); a page's
  *   own value in a structured field is overwritten and flagged (prefill-conflict), and in a box of prose kept and
- *   flagged (prefill-kept); a box the plan would not tick is never unticked (unexpected-selection).
+ *   flagged (prefill-kept); a box the plan would not tick is never unticked (unexpected-selection). A phone the page
+ *   shows in its national form while a country control in its section shows the number's dial code holds the
+ *   planned number (format.ts phoneShownNationally): Greenhouse draws "+1 512 555 0188" as "(512) 555-0188" once a
+ *   country is chosen beside it, and the number is never typed again with its code (the code would show twice).
  * - A field no visible label names gets no write: with no label at all it is skipped (it may be no question at all),
  *   and one named only by a label nobody sees (an aria-label whose words are not beside it) is flagged, both with the
  *   frame guard's reason, no-visible-label.
@@ -90,11 +93,13 @@ import { cacheEntryFor } from '../matcher/cache';
 import { noMatch, matchOne } from '../matcher/cascade';
 import { matchPlace } from '../matcher/place';
 import { completeTiebreak } from '../matcher/tiebreak';
+import { dialCodeOf } from '../matcher/dialCode';
 import { prepareOptions } from '../matcher/prepare';
 import type { MatchInput, PreparedOptions, TiebreakItem } from '../matcher/types';
 import { parseSelectionHints, selectionLimits } from '../multiselect/hints';
 import { planMultiSelect, type MultiSelectValue } from '../multiselect/plan';
 import { NOTE_REASONS, type Choice } from '../resolver/candidate';
+import { phoneShownNationally } from '../resolver/format';
 import { classifiable, classifyItemOf, judgeClassification, SCREENED, screenForClassify, type ClassifyItem } from
   '../resolver/classify';
 import { actionFor, classifyField, resolveField, type FieldClassification, type ResolvedField, type Shaped } from
@@ -172,6 +177,26 @@ function rowOfResolution(spec: FieldSpec, resolution: Resolution): FillResult {
   return rowWithout(spec, resolution.category, status, resolution.reason, resolution.confidence);
 }
 
+/** The dial codes the frame's country controls show now, by section: a phone's country or a country, chosen (a phone
+ *  country picker's "Canada +1", or its "+1" alone) or typed. */
+function phoneCodesShown(classified: ReadonlyArray<{ spec: FieldSpec; classification: FieldClassification }>):
+  Map<string, Set<string>> {
+  const codes = new Map<string, Set<string>>();
+  for (const { spec, classification } of classified) {
+    const category = categoryOf(classification);
+    if (category !== 'contact.phoneCountry' && category !== 'address.country') continue;
+    const shown = spec.current.kind === 'selected' ? spec.current.labels
+      : spec.current.kind === 'text' ? [spec.current.text] : [];
+    for (const label of shown) {
+      const code = dialCodeOf(cutInjected(label).clean);
+      if (code === null) continue;
+      const section = sectionKey(spec.section);
+      codes.set(section, (codes.get(section) ?? new Set<string>()).add(code));
+    }
+  }
+  return codes;
+}
+
 /** Two texts the field would show alike: digits for a phone, case for an email or a link, spaces and case for the
  *  rest. */
 function sameText(category: FieldCategory, a: string, b: string): boolean {
@@ -198,6 +223,8 @@ interface FieldPlanContext {
   /** What a legal question's country may come from besides its words (interpretation 1, the posting's country), for
    *  the check of an AI pick against the person's own answers (basisPickContradicts). */
   legal: LegalContext;
+  /** The dial codes the frame's country controls show now ("Canada +1": "1"), by section (phoneCodesShown). */
+  phoneCodes: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** A field's write before the Guard: its value, its match, a reason it must be flagged for, if any, and the origin
@@ -363,6 +390,11 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       if (maxLength !== undefined && codePoints(text) > maxLength) return blank('flagged', 'maxlength-exceeded');
       if (current.kind === 'text' && current.text.trim() !== '') {
         if (sameText(category, current.text, text)) return blank('skipped', 'already-correct');
+        // The page drew the number nationally beside a country control that shows its dial code: it holds the number.
+        const codes = category === 'contact.phone' ? ctx.phoneCodes.get(sectionKey(spec.section)) : undefined;
+        if (codes !== undefined && phoneShownNationally(current.text, text, codes)) {
+          return blank('skipped', 'already-correct');
+        }
         // A page's own text in a box of prose is the person's to judge; in a structured field the profile wins.
         if (spec.kind === 'textarea') return blank('flagged', 'prefill-kept');
         return { value: { kind: 'text', text }, match: NOT_APPLICABLE, flag: 'prefill-conflict' };
@@ -793,7 +825,8 @@ export function planFrame(asked: PlanInput): PlanOutput {
     profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers,
     answerAll: input.settings.llm.answers && input.settings.llm.answerAll };
   const ctx: FieldPlanContext = { input, guard, drops: new Set(),
-    legal: { settings: input.settings, ...(postingCountry !== undefined ? { postingCountry } : {}) } };
+    legal: { settings: input.settings, ...(postingCountry !== undefined ? { postingCountry } : {}) },
+    phoneCodes: phoneCodesShown(classified) };
   // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
   // the run's draft when there is one, and is asked for otherwise. Then answers (the owner's amendments): a question
   // nothing else settled, and no tiebreak or classification waits on, takes the run's answer, or is asked. A

@@ -3,6 +3,10 @@
  * fillers for what the scanner recognises from standard ARIA (aria.ts) or an adapter declares (widgetFor).
  * - fillWidget: one planned write into a combobox, a multiselect or a radio or toggle-button group (fill.ts);
  * - searchTypeahead: a remote typeahead's queries, one at a time (typeahead.ts);
+ * - searchesList and searchForOption: a long list its own text box filters as typed (a combobox its adapter declared:
+ *   Greenhouse's phone country, 244 countries) has its planned option searched for, as a remote typeahead is, by the
+ *   option's own words ("Canada" for "Canada +1"), and the one result that is that option clicked; a short list is
+ *   chosen from whole (fillWidget);
  * - readWidget: the reactive loop's waiting path. A lazy widget the planner needs the options of is opened, read whole
  *   and closed, and what it showed is kept as its field's reading, so the next pass plans it with real options; one
  *   that shows nothing until something is typed is read as a remote search (a kind its adapter declared stands: a
@@ -18,7 +22,7 @@
 import type { ValueOrigin, WriteValue } from '../../core/types/intent';
 import { refused } from '../fillers/outcome';
 import { isUsableOption } from '../option-hash';
-import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS } from '../thresholds';
+import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS, WIDGET_SEARCH_MIN_OPTIONS } from '../thresholds';
 import type { FieldTarget, FillOutcome, WidgetReading, WidgetTarget } from '../types';
 import { filtersAsTyped, isMultiselectable, referencesList, roleOf } from './aria';
 import { addOptions, chooseOption, keepReading, pressMember, type WidgetFillContext } from './fill';
@@ -32,7 +36,7 @@ export {
   afterAction, closeList, expandedState, newReadiness, openList, type WidgetContext, type WidgetReadiness,
 } from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
-export { searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
+export { searchForOption, searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
 
 /** Whether standard ARIA tells where a widget's list is, or its members' state: the helpers act on nothing else. */
 export function isActionable(widget: WidgetTarget): boolean {
@@ -40,6 +44,16 @@ export function isActionable(widget: WidgetTarget): boolean {
   if (widget.kind === 'radio') return widget.members.length > 0;
   const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];
   return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input);
+}
+
+/** Whether a combobox's planned option is searched for rather than chosen from its whole list (see the header): its
+ *  adapter declared it, ARIA says where its list is, its text box filters the list as typed (aria-autocomplete list or
+ *  both), and its list is long (WIDGET_SEARCH_MIN_OPTIONS options or more) or was read only in part. */
+export function searchesList(target: FieldTarget): boolean {
+  const { widget, field } = target;
+  if (widget === undefined || !widget.declared || widget.kind !== 'combobox' || widget.input === null) return false;
+  if (!isActionable(widget) || !filtersAsTyped(widget.element, widget.input) || field.options === 'lazy') return false;
+  return field.options.length >= WIDGET_SEARCH_MIN_OPTIONS || field.optionsPartial === true;
 }
 
 /** Writes one planned value into a widget (fill.ts); a query is searchTypeahead's. `origin` is the write's: an

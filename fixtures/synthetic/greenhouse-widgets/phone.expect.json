@@ -1,0 +1,19 @@
+{
+  "fixture": "synthetic/greenhouse-widgets",
+  "source": "https://job-boards.greenhouse.io/tailoritfixture/jobs/9105",
+  "captured": "never: a synthetic page, the 'phone' form of app.ts (also at .../9104, its phone and country answering each other), drawn after the Greenhouse capture of 2026-11-01 and the live BeyondTrust form",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    { "label": "First Name", "kind": "text", "required": true, "section": "Apply for this job", "fillable": true, "control": "#first_name" },
+    { "label": "Last Name", "kind": "text", "required": true, "section": "Apply for this job", "fillable": true, "control": "#last_name" },
+    { "label": "Email", "kind": "text", "required": true, "section": "Apply for this job", "fillable": true, "control": "#email" },
+    { "label": "Country", "kind": "combobox", "required": true, "section": "Apply for this job", "fillable": true, "options": "lazy", "control": "#country",
+      "note": "The phone's country: the live form's 244 countries, \"United States +1\" first; its own text box filters them as typed." },
+    { "label": "", "kind": "text", "required": true, "section": "Apply for this job", "fillable": false, "reason": "not-user-visible",
+      "control": ".select__container:has(#country) input[aria-hidden=\"true\"]", "note": "react-select's required shim: opacity 0, aria-hidden, tabindex -1, no label." },
+    { "label": "Search", "kind": "combobox", "required": false, "section": "Apply for this job", "fillable": false, "reason": "not-user-visible",
+      "control": "#iti-0__search-input", "note": "intl-tel-input's own country search, in its hidden dropdown; it says aria-expanded=\"true\" even so." },
+    { "label": "Phone", "kind": "text", "required": true, "section": "Apply for this job", "fillable": true, "control": "#phone",
+      "note": "At .../9104 a number typed with a dial code picks the country, and a +1 country chosen from the list draws the number nationally." }
+  ]
+}

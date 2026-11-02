@@ -169,6 +169,15 @@ export const MOCK_SCENARIOS = Object.freeze({
     + 'sponsorship now or later, as golden), and both profile routes name the next revision, as sensitive-not-authorized '
     + 'does: a basis-of-right-to-work question is then settled by the profile. It holds until the next reset (times does '
     + 'not apply).',
+  // The phone's country (2026-11-01): the golden person with another phone, and both profile routes at the next
+  // revision, as sensitive-not-authorized does. Each holds until the next reset (times does not apply).
+  'profile-phone-no-code': 'GET /profile answers the golden profile with its phone written without a country code '
+    + '("512 555 0147", its country the United States), at the next revision.',
+  'profile-canada': 'GET /profile answers the golden person living in Toronto, Ontario, Canada, whose phone kept its '
+    + 'Texas area code ("+1 512 555 0188", its country Canada, though intl-tel-input reads +1 512 as a number of the '
+    + 'United States), at the next revision.',
+  'profile-uk': 'GET /profile answers the golden person living in London, United Kingdom, with a British phone ("+44 20 '
+    + '7946 0958", its country the United Kingdom), at the next revision.',
   'profile-unavailable': 'GET /profile gets 500.',
   'lookup-slow': "POST /lookup answers after delayMs (default 30 s, past the worker's 25 s timeout).",
   'lookup-fails': 'POST /lookup gets 500.',
@@ -424,14 +433,28 @@ export function createMock() {
 
   const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
 
-  /** The revision an envelope carries: the contract example's, or the next one under sensitive-not-authorized or
-   *  sensitive-us-citizen, so that both profile routes agree. @param {{ revision: number }} envelope */
-  const revisionOf = (envelope) => (isOn('sensitive-not-authorized') || isOn('sensitive-us-citizen')
-    ? envelope.revision + 1 : envelope.revision);
+  /** The scenarios that change what a profile route answers, which name the next revision. */
+  const REVISED = /** @type {const} */ (['sensitive-not-authorized', 'sensitive-us-citizen', 'profile-phone-no-code',
+    'profile-canada', 'profile-uk']);
+
+  /** The revision an envelope carries: the contract example's, or the next one under a scenario that changes a profile
+   *  route's answer (REVISED), so that both profile routes agree. @param {{ revision: number }} envelope */
+  const revisionOf = (envelope) => (REVISED.some(isOn) ? envelope.revision + 1 : envelope.revision);
 
   function profileEnvelope() {
     const envelope = example('AutofillProfileEnvelope');
-    return { ...envelope, revision: revisionOf(envelope), profile: readJson(PROFILE_FILE) };
+    const profile = readJson(PROFILE_FILE);
+    const { contact } = profile;
+    if (isOn('profile-phone-no-code')) contact.phone = { ...contact.phone, number: '512 555 0147', country: 'US' };
+    if (isOn('profile-canada')) {
+      contact.phone = { ...contact.phone, number: '+1 512 555 0188', country: 'CA' };
+      contact.address = { ...contact.address, city: 'Toronto', region: 'ON', postalCode: 'M5V 2T6', country: 'CA' };
+    }
+    if (isOn('profile-uk')) {
+      contact.phone = { ...contact.phone, number: '+44 20 7946 0958', country: 'GB' };
+      contact.address = { ...contact.address, city: 'London', region: '', postalCode: 'SW1A 1AA', country: 'GB' };
+    }
+    return { ...envelope, revision: revisionOf(envelope), profile };
   }
 
   function sensitiveEnvelope() {

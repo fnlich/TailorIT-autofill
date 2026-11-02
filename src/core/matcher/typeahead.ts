@@ -10,7 +10,8 @@
  * parts, so the city alone never chooses another state's Austin. Each query has at least three characters and none
  * repeats another, ignoring case. Each typed query is a guarded write with provenance `profile` and transform
  * `typeahead.query`; each result list goes through prepareOptions and matchOne, and the first that reaches the fill
- * band ends the search. The DOM layer owns the debounce and the cap.
+ * band ends the search. The DOM layer owns the debounce and the cap. A long list searched for an option already
+ * planned on it is listSearch.ts's.
  */
 import { TYPEAHEAD_MAX_QUERIES, TYPEAHEAD_MIN_QUERY_LENGTH, TYPEAHEAD_TOKEN_MIN_WEIGHT } from '../confidence';
 import { normalize } from '../text/normalize';

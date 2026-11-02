@@ -20,7 +20,16 @@
  *   2026-11-01: the geocoder answers "Austin, TX" with Austin in Texas, which the list never shows, since its label
  *   reads "Austin, Texas, United States"). While a list loads, react-select shows "Loading..."
  *   (.select__menu-notice--loading) and its loading dots;
- * - the phone's country lists "Canada +1" with each country's flag, and shows the flag and "+1" once chosen;
+ * - the phone's country lists the live form's 244 countries ("United States +1" first, then "Afghanistan +93",
+ *   "Åland Islands +358", ... "Canada +1"), each with its flag, and shows the flag and "+1" once chosen; typing a
+ *   country's name filters it (react-select's own filter, which reads each option's label and value), and every text
+ *   typed into a select is logged. With MountOptions.phonePicks the phone and its country answer each other as
+ *   intl-tel-input and Greenhouse make them on the live BeyondTrust form (2026-11-01): a number typed with a dial code
+ *   makes the country the code's main one ("+1 512 555 0147" made it "United States +1"; the United Kingdom for +44),
+ *   unless it is chosen already, intl-tel-input's area codes left out, so a +1 number is never read as another +1
+ *   country's (as one whose area code is no Canadian one is not on the live form); and a +1 country chosen from the
+ *   list draws the number in its national form ("+1 512 555 0188" and "512 555 0147" became "(512) 555-0188" and
+ *   "(512) 555-0147" once Canada and the United States were chosen), the dial code then shown by the country alone;
  * - a checkbox question is a fieldset of native boxes that React holds: a click() ticks a box as React sees it, and
  *   setting .checked does not;
  * - choosing No for "Are you Hispanic/Latino?" reveals the Race question;
@@ -32,7 +41,8 @@
  * review and acknowledge BeyondTrust's" with its one option "Acknowledge/Confirm" and its Candidate Privacy Notice link
  * below (no aria-describedby names it, as on the live page), and the demographic block's gender question with the
  * consent box after it, "By checking this box, I consent to ...", which says aria-required="false" until any
- * demographic answer is chosen and "true" (with its red asterisk) from then on, as the live page does.
+ * demographic answer is chosen and "true" (with its red asterisk) from then on, as the live page does; 'phone' draws
+ * the names, the email and the phone (its country and its number) alone.
  * How it starts (MountOptions.start): 'now' renders at once; 'late' shows the form's markup first, with nothing
  * listening, and React attaches to it (hydrateRoot) `attachMs` later, as Greenhouse's React attaches 1.8 to 3.1 s after
  * its form shows; 'rebuild' shows the markup first and `attachMs` later throws the whole form away, the form element
@@ -52,6 +62,7 @@ import Select, {
   components, type ClearIndicatorProps, type ControlProps, type InputProps, type MultiValue, type MultiValueRemoveProps,
   type SelectComponentsConfig, type GroupBase, type SingleValue, type OptionProps, type SingleValueProps,
 } from 'react-select';
+import phoneList from '../../../src/core/matcher/phone-countries.fixture.json';
 
 /** One option of a select. */
 export interface Choice {
@@ -77,17 +88,21 @@ export interface GreenhouseLog {
   attachedAt: number | null;
   /** How many times the form was drawn from scratch by React (1, or 2 after a rebuild). */
   draws: number;
+  /** Every text typed into a select's own text box (react-select's input-change), by select id. */
+  typed: Record<string, string[]>;
 }
 
 /** How the form starts, and how long its lists take. */
 export interface MountOptions {
   start?: 'now' | 'late' | 'rebuild';
   /** Which questions: the standard ones, or the live BeyondTrust form's (see the header). */
-  form?: 'standard' | 'beyondtrust';
+  form?: 'standard' | 'beyondtrust' | 'phone';
   /** For 'late' and 'rebuild': when React attaches, after the markup shows. */
   attachMs?: number;
   /** Where emotion puts its styles: the document's head by default. */
   styles?: HTMLElement;
+  /** The phone number picks its country, as intl-tel-input does (see the header). */
+  phonePicks?: boolean;
   /** Each list's delay, in ms. */
   degreeMs?: number;
   schoolPageMs?: number;
@@ -99,7 +114,8 @@ const DEBOUNCE_MS = 300;
 
 /** A new log. */
 export function newLog(): GreenhouseLog {
-  return { values: {}, mouseups: {}, schoolRequests: [], locationRequests: [], pressed: [], attachedAt: null, draws: 0 };
+  return { values: {}, mouseups: {}, schoolRequests: [], locationRequests: [], pressed: [], attachedAt: null, draws: 0,
+    typed: {} };
 }
 
 // ── The lists ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -125,19 +141,32 @@ function countries(): Choice[] {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/** The phone's countries: the United States first, then by name, each with its dial code and flag (the capture's
- *  #country list holds 244 of them). */
-const PHONE: Array<[string, string]> = [['us', '1'], ['af', '93'], ['al', '355'], ['dz', '213'], ['ar', '54'],
-  ['au', '61'], ['at', '43'], ['bd', '880'], ['be', '32'], ['br', '55'], ['ca', '1'], ['cl', '56'], ['cn', '86'],
-  ['co', '57'], ['dk', '45'], ['eg', '20'], ['fi', '358'], ['fr', '33'], ['de', '49'], ['gr', '30'], ['in', '91'],
-  ['ie', '353'], ['il', '972'], ['it', '39'], ['jp', '81'], ['mx', '52'], ['nl', '31'], ['nz', '64'], ['ng', '234'],
-  ['no', '47'], ['pk', '92'], ['pe', '51'], ['ph', '63'], ['pl', '48'], ['pt', '351'], ['ro', '40'], ['sg', '65'],
-  ['za', '27'], ['es', '34'], ['se', '46'], ['ch', '41'], ['tr', '90'], ['ua', '380'], ['ae', '971'], ['gb', '44']];
-
+/** The phone's countries: the live form's 244, the United States first, then in the capture's order, each with its
+ *  dial code and flag (src/core/matcher/phone-countries.fixture.json, the items Greenhouse's intl-tel-input list
+ *  showed; the react-select beside the phone labels each "Canada +1"). */
 function phoneCountries(): Choice[] {
-  const names = new Intl.DisplayNames(['en'], { type: 'region' });
-  const all = PHONE.map(([code, dial]) => ({ value: code, flag: code, label: `${names.of(code.toUpperCase()) ?? code} +${dial}` }));
-  return [all[0]!, ...all.slice(1).sort((a, b) => a.label.localeCompare(b.label))];
+  const all = (phoneList as unknown as { options: Array<[name: string, dial: string, code: string]> }).options
+    .map(([name, dial, code]) => ({ value: code.toLowerCase(), flag: code.toLowerCase(), label: `${name} ${dial}` }));
+  const us = all.find((choice) => choice.value === 'us')!;
+  return [us, ...all.filter((choice) => choice !== us)];
+}
+
+/** The country a number's dial code makes the phone's (MountOptions.phonePicks): its main one where several share it,
+ *  as intl-tel-input ranks them, else the only one. */
+const MAIN_COUNTRY: Record<string, string> = { 1: 'us', 44: 'gb', 7: 'ru', 39: 'it', 47: 'no', 61: 'au', 212: 'ma',
+  262: 're', 358: 'fi', 590: 'gp', 599: 'cw' };
+
+/** The country a typed number picks, or null when it carries no dial code the list knows: the longest of its first
+ *  one to four digits that is one. */
+function pickedBy(number: string, options: readonly Choice[]): Choice | null {
+  const digits = /^\s*\+([\d\s().-]*)/.exec(number)?.[1]?.replace(/\D/g, '') ?? '';
+  for (let size = Math.min(4, digits.length); size > 0; size -= 1) {
+    const dial = `+${digits.slice(0, size)}`;
+    const sharing = options.filter((choice) => choice.label.endsWith(` ${dial}`));
+    if (sharing.length === 0) continue;
+    return sharing.find((choice) => choice.value === MAIN_COUNTRY[digits.slice(0, size)]) ?? sharing[0]!;
+  }
+  return null;
 }
 
 /** Schools: the decoys around the one the golden profile names, and enough others for three pages. */
@@ -203,7 +232,16 @@ interface SelectSpec {
 interface Env {
   log: GreenhouseLog;
   timings: { degreeMs: number; schoolPageMs: number; searchMs: number };
+  /** The phone number picks its country (MountOptions.phonePicks). */
+  phonePicks: boolean;
   setValue(id: string, value: unknown): void;
+}
+
+/** How the phone's country and its number answer each other (MountOptions.phonePicks): the number picks the country
+ *  (`pick`), and a country chosen from the list draws the number again (`chosen`). */
+interface PhoneLink {
+  pick: ((choice: Choice) => void) | null;
+  chosen: ((choice: Choice | null) => void) | null;
 }
 
 const svg = () => h('svg', { className: 'svg-icon', fill: 'none', height: '20', width: '20', viewBox: '0 0 24 24',
@@ -211,8 +249,9 @@ const svg = () => h('svg', { className: 'svg-icon', fill: 'none', height: '20', 
 
 const required = (on: boolean) => (on ? h('span', { 'aria-hidden': 'true' }, '*') : null);
 
-/** A Greenhouse select: react-select inside the wrapper that holds menuIsOpen (see the header). */
-function GhSelect({ spec, env }: { spec: SelectSpec; env: Env }): ReactElement {
+/** A Greenhouse select: react-select inside the wrapper that holds menuIsOpen (see the header). `link` lets the
+ *  phone number choose its answer, and hears of a choice from its list. */
+function GhSelect({ spec, env, link }: { spec: SelectSpec; env: Env; link?: PhoneLink }): ReactElement {
   const { id } = spec;
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState<SingleValue<Choice> | MultiValue<Choice>>(spec.multi ? [] : null);
@@ -317,7 +356,15 @@ function GhSelect({ spec, env }: { spec: SelectSpec; env: Env }): ReactElement {
     toggle.current(false);
     env.setValue(id, Array.isArray(next) ? (next as readonly Choice[]).map((option) => option.value)
       : (next as Choice | null)?.value ?? null);
+    link?.chosen?.(next as Choice | null);
   };
+  if (link !== undefined) {
+    link.pick = (next) => {
+      if ((value as Choice | null)?.value === next.value) return;
+      setValue(next);
+      env.setValue(id, next.value);
+    };
+  }
   return h('div', { className: 'select' }, h('div', { className: 'select__container' },
     h('label', { id: `${id}-label`, htmlFor: id, className: 'label select__label' }, spec.label, required(spec.required)),
     h(Select<Choice, boolean>, {
@@ -325,7 +372,11 @@ function GhSelect({ spec, env }: { spec: SelectSpec; env: Env }): ReactElement {
       'aria-errormessage': `${id}-error`, 'aria-invalid': false, isMulti: spec.multi === true, className: 'select-shell',
       classNamePrefix: 'select', isClearable: true, isDisabled: false, options, placeholder: spec.placeholder ?? 'Select...',
       components: parts, isLoading: loading, menuIsOpen: open, value, inputValue: input,
-      onInputChange: (next: string) => setInput(next), onChange: choose, onBlur: () => toggle.current(false),
+      onInputChange: (next: string, meta: { action: string }) => {
+        if (meta.action === 'input-change' && next !== '') (env.log.typed[id] ??= []).push(next);
+        setInput(next);
+      },
+      onChange: choose, onBlur: () => toggle.current(false),
       onMenuOpen: () => undefined, onMenuClose: () => undefined,
       onMenuScrollToBottom: () => {
         if (spec.load !== 'school' || loading || options.length < page * 100) return;
@@ -405,13 +456,31 @@ function GhUpload({ env }: { env: Env }): ReactElement {
       h('label', { className: 'visually-hidden', htmlFor: 'resume_text' }, 'Enter manually')))))));
 }
 
-/** The phone's fieldset: its country select, intl-tel-input's hidden country search, and the number. */
+/** A number as the phone draws it once a +1 country is chosen from the list (MountOptions.phonePicks): its ten national
+ *  digits as "(512) 555-0188", its own "+1" left to the country; any other number as it is. */
+function nationally(number: string, choice: Choice): string {
+  if (!choice.label.endsWith(' +1')) return number;
+  const digits = number.replace(/\D/g, '');
+  const national = /^\s*\+/.test(number) && digits.startsWith('1') ? digits.slice(1) : digits;
+  return national.length === 10 ? `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}` : number;
+}
+
+/** The phone's fieldset: its country select, intl-tel-input's hidden country search, and the number, which answer each
+ *  other when MountOptions.phonePicks says so (see the header). */
 function GhPhone({ env }: { env: Env }): ReactElement {
   const [text, setText] = useState('');
+  const options = useMemo(phoneCountries, []);
+  const link = useRef<PhoneLink>({ pick: null, chosen: null }).current;
+  link.chosen = (choice) => {
+    const shown = env.phonePicks && choice !== null ? nationally(text, choice) : text;
+    if (shown === text) return;
+    setText(shown);
+    env.setValue('phone', shown);
+  };
   return h('div', null, h('fieldset', { className: 'phone-input' },
     h('legend', { className: 'visually-hidden' }, 'Phone'),
-    h('div', { className: 'phone-input__country' }, h(GhSelect, { env, spec: { id: 'country', label: 'Country', required: true,
-      options: phoneCountries(), placeholder: '' } })),
+    h('div', { className: 'phone-input__country' }, h(GhSelect, { env, link, spec: { id: 'country', label: 'Country',
+      required: true, options, placeholder: '' } })),
     h('div', { className: 'phone-input__phone' }, h('div', { className: 'text-input-wrapper' }, h('div', { className: 'input-wrapper' },
       h('label', { id: 'phone-label', htmlFor: 'phone', className: 'label label' }, 'Phone', required(true)),
       h('div', { className: 'iti' }, h('div', { className: 'iti__country-container' },
@@ -425,6 +494,8 @@ function GhPhone({ env }: { env: Env }): ReactElement {
         value: text, onChange: (event: ChangeEvent<HTMLInputElement>) => {
           setText(event.target.value);
           env.setValue('phone', event.target.value);
+          const picked = env.phonePicks ? pickedBy(event.target.value, options) : null;
+          if (picked !== null) link.pick?.(picked);
         } })))))));
 }
 
@@ -540,6 +611,15 @@ function GhBeyondTrustForm({ env }: { env: Env }): ReactElement {
     h(GhDemographicConsent, { required: answered, env }));
 }
 
+/** The names, the email and the phone alone (MountOptions.form 'phone'). */
+function GhPhoneForm({ env }: { env: Env }): ReactElement {
+  return h('div', null, h('div', { className: 'application--questions' },
+    h(GhText, { id: 'first_name', label: 'First Name', required: true, type: 'text', autoComplete: 'given-name', env }),
+    h(GhText, { id: 'last_name', label: 'Last Name', required: true, type: 'text', autoComplete: 'family-name', env }),
+    h(GhText, { id: 'email', label: 'Email', required: true, type: 'text', autoComplete: 'email', env }),
+    h(GhPhone, { env })));
+}
+
 /** The header's "Autofill my application" button, above the form: it records any press. */
 export function mountHeaderButton(host: Element, log: GreenhouseLog): void {
   const button = host.ownerDocument.createElement('button');
@@ -559,12 +639,13 @@ export function mountGreenhouseForm(container: HTMLElement, options: MountOption
   const env: Env = {
     log,
     timings: { degreeMs: options.degreeMs ?? 500, schoolPageMs: options.schoolPageMs ?? 800, searchMs: options.searchMs ?? 600 },
+    phonePicks: options.phonePicks === true,
     setValue: (id, value) => {
       log.values[id] = value;
     },
   };
   const app = () => h(CacheProvider, { value: cache },
-    h(options.form === 'beyondtrust' ? GhBeyondTrustForm : GhForm, { env }));
+    h(options.form === 'beyondtrust' ? GhBeyondTrustForm : options.form === 'phone' ? GhPhoneForm : GhForm, { env }));
   let root: Root | null = null;
   const attach = () => {
     log.attachedAt = view.performance.now();

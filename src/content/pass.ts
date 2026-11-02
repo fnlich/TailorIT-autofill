@@ -17,7 +17,9 @@
  *    dom/widgets): its option chosen, its missing options added, its member pressed, or, for a remote typeahead, each
  *    query a guarded write of its own and each result list matched by the worker (searchField). A widget's options in
  *    the scan may be the run's kept reading of a closed list, so the write's origin goes to the widget filler, which
- *    checks an llm-pick again on what the list shows right before its click (the Phase 4 review, R1);
+ *    checks an llm-pick again on what the list shows right before its click (the Phase 4 review, R1). A long list its
+ *    own text box filters (dom/widgets' searchesList: Greenhouse's phone country) has a profile option searched for by
+ *    the option's words instead, that one query guarded as a typeahead's are (searchOption);
  * 5. the planner's row is settled from what happened (settleRow).
  * A refused write leaves its field untouched, with the guard's reason: blocked for what the Guard forbids (not
  * visible, no visible label, a canary, its provenance, its own UI), flagged for what could not be done (gone, options
@@ -33,7 +35,9 @@ import { capCodePoints } from '../core/text/fold';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { FieldCategory, ValueOrigin, WriteValue } from '../core/types/intent';
+import { optionQuery } from '../core/matcher/listSearch';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
+import { sameOptionLabel } from '../dom/fillers/verify';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
 import { hashOfOptions } from '../dom/option-hash';
 import { toFieldSpec } from '../dom/scan';
@@ -43,7 +47,8 @@ import type {
 } from '../dom/types';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
-  fillWidget, isActionable, searchTypeahead, type TypeaheadHooks, type WidgetFillContext, type WidgetReadiness,
+  fillWidget, isActionable, searchesList, searchForOption, searchTypeahead, widgetHolds, type TypeaheadHooks,
+  type TypeaheadResult, type WidgetFillContext, type WidgetReadiness,
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
@@ -315,6 +320,8 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
   const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings,
     ...(widgets.readiness === undefined ? {} : { readiness: widgets.readiness }) };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
+  const searched = await searchOption(env, last, field, write, planned, target, ctx);
+  if (searched !== null) return searched;
   const outcome = await fillWidget(target, write.value, ctx, write.origin);
   if (env.signal.aborted || !env.valid()) throw new RunAborted();
   const row = rowAfterFill(planned, outcome);
@@ -334,12 +341,72 @@ function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[], 
     current: { kind: 'empty' }, ...(complete ? {} : { optionsPartial: true as const }) };
 }
 
+/** One typed query's Guard (a remote typeahead's, or a long list's search): a pause the page shows or the person's
+ *  Cancel refuses it, then the DOM guard finds the field again on a fresh scan, and guardWriteInFrame checks `write`
+ *  with that one query as its value (its origin the profile's, transform typeahead.query). */
+function queryGuard(env: PassEnv, last: ScanResult, wanted: PlannedField, write: PlannedWrite):
+  TypeaheadHooks['guard'] {
+  return async (query) => {
+    if (env.signal.aborted || !env.valid()) throw new RunAborted();
+    if (env.stopped()) return { ok: false, reason: 'user-stopped', blocked: false };
+    const hold = env.heldBy?.() ?? null;
+    if (hold !== null) return { ok: false, reason: hold, blocked: false };
+    const again = domGuardBeforeWrite(last, wanted);
+    if (!again.ok) return { ok: false, reason: again.reason, blocked: GUARD_BLOCKS.has(again.reason) };
+    const one: PlannedWrite = { ...write, value: { kind: 'query', queries: [query] } };
+    const check = guardWriteInFrame(one, toFieldSpec(again.target.field), env.canaries);
+    if (!check.ok) return { ok: false, reason: check.reason, blocked: !FRAME_GUARD_FLAGS.has(check.reason) };
+    return { ok: true, target: again.target };
+  };
+}
+
+/** Why a long list's search may end with nothing chosen and its list still be chosen from whole: no result was the
+ *  planned option, the page did not answer the typed query (or the click on a result), or what it listed changed. */
+const SEARCH_FALLS_BACK: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['no-match', 'needs-your-click',
+  'options-changed']);
+
 /**
- * A remote typeahead's search (dom/widgets' searchTypeahead): each query a guarded write of its own (the DOM guard on a
- * fresh scan, then guardWriteInFrame on that one query, provenance profile and transform typeahead.query), and each
- * result list matched by the worker (plan/request for this field alone, its results as its options), whose choice
- * passes guardWriteInFrame before it is clicked. The row is the worker's for the chosen result, or the planned one
- * flagged (blocked when a Guard refused) with why nothing was chosen.
+ * A planned option of a long list its own text box filters (dom/widgets' searchesList: a combobox its adapter declared,
+ * with WIDGET_SEARCH_MIN_OPTIONS options or more, or read only in part: Greenhouse's phone country, 244 countries),
+ * from the profile: searched for by the option's words (optionQuery: "Canada" for "Canada +1"), that one query a
+ * guarded write as a typeahead's are (queryGuard, the write's origin with transform typeahead.query), and the one
+ * result that is the planned option, as the page shows it, clicked and read back (dom/widgets' searchForOption). Null
+ * when the option is not searched for (a short list; another origin, such as an llm-pick, which is checked again on the
+ * whole list right before its click; an option the widget shows already, or one no longer at its place; a label too
+ * short to type) or the search fell back (SEARCH_FALLS_BACK: the text box holds what it held before, and its list is
+ * closed): the list is then chosen from whole (fillWidget).
+ */
+async function searchOption(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
+  planned: FillResult, target: FieldTarget, ctx: WidgetFillContext): Promise<WriteResult | null> {
+  const { value, origin } = write;
+  if (value.kind !== 'option' || origin.provenance !== 'profile' || !searchesList(target)) return null;
+  const option = target.field.options === 'lazy' ? undefined : target.field.options[value.index];
+  if (option === undefined || !sameOptionLabel(option.label, value.cleanLabel) || widgetHolds(target, value)) {
+    return null;
+  }
+  const query = optionQuery(option.label);
+  if (query === '') return null;
+  const wanted = plannedFieldOf(field);
+  const asQuery: PlannedWrite = { ...write, origin: { ...origin, transform: 'typeahead.query' } };
+  const result: TypeaheadResult = await searchForOption(target, { label: option.label, cleanLabel: value.cleanLabel },
+    query, ctx, queryGuard(env, last, wanted, asQuery));
+  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  if (result.chosen === null) {
+    if (!result.blocked && SEARCH_FALLS_BACK.has(result.reason)) return null;
+    return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }
+      : { kind: 'not-written', reason: result.reason }) };
+  }
+  const row = result.verified ? settleRow(planned, { kind: 'verified' }) : mismatchRow(planned, 'verify-mismatch');
+  const now = last.rescan().target(write.key) ?? target;
+  return { row, written: writtenWidget(wanted, write, planned, target.field, result.verified), readBack: readBack(now) };
+}
+
+/**
+ * A remote typeahead's search (dom/widgets' searchTypeahead): each query a guarded write of its own (queryGuard: the
+ * DOM guard on a fresh scan, then guardWriteInFrame on that one query, provenance profile and transform
+ * typeahead.query), and each result list matched by the worker (plan/request for this field alone, its results as its
+ * options), whose choice passes guardWriteInFrame before it is clicked. The row is the worker's for the chosen result,
+ * or the planned one flagged (blocked when a Guard refused) with why nothing was chosen.
  */
 async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
   planned: FillResult, target: FieldTarget, widgets: WidgetWriteEnv, ctx: WidgetFillContext): Promise<WriteResult> {
@@ -349,18 +416,7 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
   const wanted = plannedFieldOf(field);
   let chosen: { row: FillResult; write: PlannedWrite } | null = null;
   const hooks: TypeaheadHooks = {
-    guard: async (query) => {
-      if (env.signal.aborted || !env.valid()) throw new RunAborted();
-      if (env.stopped()) return { ok: false, reason: 'user-stopped', blocked: false };
-      const hold = env.heldBy?.() ?? null;
-      if (hold !== null) return { ok: false, reason: hold, blocked: false };
-      const again = domGuardBeforeWrite(last, wanted);
-      if (!again.ok) return { ok: false, reason: again.reason, blocked: GUARD_BLOCKS.has(again.reason) };
-      const one: PlannedWrite = { ...write, value: { kind: 'query', queries: [query] } };
-      const check = guardWriteInFrame(one, toFieldSpec(again.target.field), env.canaries);
-      if (!check.ok) return { ok: false, reason: check.reason, blocked: !FRAME_GUARD_FLAGS.has(check.reason) };
-      return { ok: true, target: again.target };
-    },
+    guard: queryGuard(env, last, wanted, write),
     match: async (results, now, complete) => {
       const spec = resultsSpec(now.field, results, complete);
       const answer = await widgets.plan([spec], [spec.key]);

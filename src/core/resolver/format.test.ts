@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateIso, dateText, phoneText } from './format';
+import { dateIso, dateText, phoneShownNationally, phoneText } from './format';
 
 describe('dateText (date.format)', () => {
   it('lays a date out by the field’s pattern, and refuses one that needs a missing part', () => {
@@ -47,5 +47,30 @@ describe('phoneText (phone.format)', () => {
     expect(phoneText(phone, {}, true)).toBe('512 555 0147');
     expect(phoneText(phone, {}, false)).toBe('+1 512 555 0147');
     expect(phoneText({ text: '512-555-0147', digits: '5125550147' }, {}, true)).toBe('512-555-0147');
+  });
+});
+
+describe('phoneShownNationally', () => {
+  const plus1 = new Set(['1']);
+
+  it('holds a number the page draws nationally beside a country control that shows its dial code', () => {
+    expect(phoneShownNationally('(512) 555-0188', '+1 512 555 0188', plus1)).toBe(true);
+    expect(phoneShownNationally('512-555-0188', '+15125550188', plus1)).toBe(true);
+    // A national form with its trunk prefix.
+    expect(phoneShownNationally('020 7946 0958', '+44 20 7946 0958', new Set(['44']))).toBe(true);
+    expect(phoneShownNationally('20 7946 0958', '+44 20 7946 0958', new Set(['1', '44']))).toBe(true);
+  });
+
+  it('never holds another number, one whose code no country control shows, or a box that shows a code of its own', () => {
+    expect(phoneShownNationally('(512) 555-0199', '+1 512 555 0188', plus1)).toBe(false);
+    expect(phoneShownNationally('(512) 555-0188', '+1 512 555 0188', new Set(['44']))).toBe(false);
+    expect(phoneShownNationally('(512) 555-0188', '+1 512 555 0188', new Set())).toBe(false);
+    expect(phoneShownNationally('+44 512 555 0188', '+1 512 555 0188', plus1)).toBe(false);
+    expect(phoneShownNationally('00 512 555 0188', '+1 512 555 0188', plus1)).toBe(false);
+  });
+
+  it('never holds a number planned without its code: the box must show its own digits', () => {
+    expect(phoneShownNationally('(512) 555-0147', '512 555 0147', plus1)).toBe(false);
+    expect(phoneShownNationally('555-0147', '1 512 555 0147', plus1)).toBe(false);
   });
 });

@@ -104,3 +104,20 @@ export function phoneText(phone: { text: string; digits: string; countryCallingC
   }
   return phone.text;
 }
+
+/**
+ * Whether a phone box shows the number planned for it in its national form, its dial code held by the form's own
+ * country control (one of `codes`, the dial codes the country controls beside it show): Greenhouse draws the number
+ * so once a country is chosen in its phone country picker ("(512) 555-0188" beside "+1" for "+1 512 555 0188"). The
+ * national digits may start with the trunk prefix 0 ("020 7946 0958" for "+44 20 7946 0958"). The planned number must
+ * carry the code, and the box must show none of its own.
+ */
+export function phoneShownNationally(shown: string, planned: string, codes: ReadonlySet<string>): boolean {
+  if (!/^\s*\+/.test(planned) || /^\s*\+/.test(shown)) return false;
+  const digits = planned.replace(/\D/g, '');
+  const now = shown.replace(/\D/g, '');
+  return [...codes].some((code) => {
+    const national = digits.startsWith(code) ? digits.slice(code.length) : '';
+    return national !== '' && (now === national || now === `0${national}`);
+  });
+}
