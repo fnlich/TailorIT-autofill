@@ -68,6 +68,8 @@ export const AUTOFILL_AI_LIMITS = {
     defaultLength: 3000,
     /** A question's current answer, sent for a rewrite ("Edit with AI"). */
     currentAnswer: 5000,
+    /** The person's instruction for a rewrite ("Tell me what to add, change or improve", version 3). */
+    instruction: 750,
     jobText: 20_000,
     company: 200,
     jobTitle: 200,
@@ -393,6 +395,14 @@ export const AutofillDraftQuestionSchema = z.object({
    * or holds a contact detail or a postal address is answered `sensitive` without asking.
    */
   currentAnswer: z.string().max(AUTOFILL_AI_LIMITS.draft.currentAnswer).optional(),
+  /**
+   * The person's own instruction for this answer ("Edit with AI": "Tell me what to add, change or improve", version 3),
+   * as typed, at most 750 characters; absent or blank for none. Quoted to Claude as the applicant's wish about what the
+   * answer says and how, within the drafts' rules (facts from the resume and the profile only). One that names a
+   * sensitive topic, states a sensitive answer, or holds a contact detail or a postal address is answered
+   * `sensitive` without asking, as its question would be.
+   */
+  instruction: z.string().max(AUTOFILL_AI_LIMITS.draft.instruction).optional(),
 });
 export type AutofillDraftQuestion = z.infer<typeof AutofillDraftQuestionSchema>;
 

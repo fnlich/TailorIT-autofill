@@ -95,6 +95,14 @@ export const AutofillCoverLetterStatusSchema = z.object({ state: z.enum(AUTOFILL
 export type AutofillCoverLetterStatus = z.infer<typeof AutofillCoverLetterStatusSchema>;
 
 /**
+ * GET /api/autofill/cover-letters/:id/text (scope letters:write, version 3): a ready letter's words as plain text, for
+ * a form that asks for the letter in a text box: its paragraphs one blank line apart, nothing else (no title, no
+ * markup). Cache-Control: no-store. 409 `conflict` while the letter is not ready, as GET …/file.
+ */
+export const AutofillCoverLetterTextSchema = z.object({ text: z.string().min(1) });
+export type AutofillCoverLetterText = z.infer<typeof AutofillCoverLetterTextSchema>;
+
+/**
  * What the cover-letter routes refuse with, besides every token route's refusals (401, 403, 409 `conflict` for another
  * API version, 429), and the status of each: `validation_failed` (a body over a cap; no company or title without a
  * job), `not_found` (no letter to use, a job or a resume that is not there, another account's letter), `conflict`

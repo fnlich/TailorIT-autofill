@@ -1,5 +1,14 @@
 import type { z } from 'zod';
 import {
+  AutofillAgentClearedSchema,
+  AutofillAgentEnqueueBodySchema,
+  AutofillAgentEnqueueResponseSchema,
+  AutofillAgentNextSchema,
+  AutofillAgentQueueListSchema,
+  AutofillAgentResultBodySchema,
+  AutofillAgentSettingsSchema,
+} from './agent';
+import {
   AutofillAnswerRequestSchema,
   AutofillAnswerResultSchema,
   AutofillAnswerTaskSchema,
@@ -21,7 +30,15 @@ import {
   AutofillCoverLetterRequestSchema,
   AutofillCoverLetterResponseSchema,
   AutofillCoverLetterStatusSchema,
+  AutofillCoverLetterTextSchema,
 } from './cover-letters';
+import {
+  AutofillCredentialQuerySchema,
+  AutofillCredentialSchema,
+  AutofillSignInItemSchema,
+  AutofillSignInListSchema,
+  PutAutofillSignInBodySchema,
+} from './credentials';
 import {
   AutofillConnectBodySchema,
   AutofillConnectResponseSchema,
@@ -48,6 +65,12 @@ import {
   PutAutofillProfileResponseSchema,
 } from './profile';
 import { AutofillResumeListSchema } from './resumes';
+import { AutofillSiteRequestBodySchema, AutofillSiteRequestListSchema } from './sites';
+import {
+  AutofillAppliedRequestSchema,
+  AutofillJobSearchQuerySchema,
+  AutofillJobSearchResponseSchema,
+} from './tracker';
 
 /**
  * Every schema of the autofill API, by name. `npm run autofill:contract` writes each one's JSON Schema into
@@ -96,6 +119,24 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillCoverLetterRequest: AutofillCoverLetterRequestSchema,
   AutofillCoverLetterResponse: AutofillCoverLetterResponseSchema,
   AutofillCoverLetterStatus: AutofillCoverLetterStatusSchema,
+  AutofillCoverLetterText: AutofillCoverLetterTextSchema,
+  AutofillJobSearchQuery: AutofillJobSearchQuerySchema,
+  AutofillJobSearchResponse: AutofillJobSearchResponseSchema,
+  AutofillAppliedRequest: AutofillAppliedRequestSchema,
+  AutofillSiteRequestBody: AutofillSiteRequestBodySchema,
+  AutofillSiteRequestList: AutofillSiteRequestListSchema,
+  AutofillAgentNext: AutofillAgentNextSchema,
+  AutofillAgentResultBody: AutofillAgentResultBodySchema,
+  AutofillAgentEnqueueBody: AutofillAgentEnqueueBodySchema,
+  AutofillAgentEnqueueResponse: AutofillAgentEnqueueResponseSchema,
+  AutofillAgentQueueList: AutofillAgentQueueListSchema,
+  AutofillAgentCleared: AutofillAgentClearedSchema,
+  AutofillAgentSettings: AutofillAgentSettingsSchema,
+  AutofillCredentialQuery: AutofillCredentialQuerySchema,
+  AutofillCredential: AutofillCredentialSchema,
+  AutofillSignInList: AutofillSignInListSchema,
+  AutofillSignInItem: AutofillSignInItemSchema,
+  PutAutofillSignInBody: PutAutofillSignInBodySchema,
 } satisfies Record<string, z.ZodType>;
 export type AutofillContractName = keyof typeof AUTOFILL_CONTRACT_SCHEMAS;
 
@@ -111,8 +152,8 @@ export type AutofillRouteCaller = (typeof AUTOFILL_ROUTE_CALLERS)[number];
 export interface AutofillRoute {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   /**
-   * The whole path; ':id' is a path parameter: a UUID (an AI task's, a connection's, a resume's, a saved answer's or a
-   * cover letter's).
+   * The whole path; ':id' is a path parameter: a UUID (an AI task's, a connection's, a resume's, a saved answer's, a
+   * cover letter's, an auto-apply queue row's or a job-site sign-in's).
    */
   path: string;
   caller: AutofillRouteCaller;
@@ -138,8 +179,11 @@ export interface AutofillRoute {
  * routes refuse with AUTOFILL_AI_REFUSALS too; their tasks are polled and cancelled on /api/ai/tasks/:id, the one path
  * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). The
  * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS, adding a job with AUTOFILL_ADD_JOB_REFUSALS and the
- * cover-letter routes with AUTOFILL_COVER_LETTER_REFUSALS (both version 2). The extension reads the saved answers (GET
- * /api/autofill/answers, with profile:read) together with GET /api/autofill/profile, once per run.
+ * cover-letter routes with AUTOFILL_COVER_LETTER_REFUSALS (both version 2), marking a job Applied with
+ * AUTOFILL_APPLIED_REFUSALS (version 3). The extension reads the saved answers (GET /api/autofill/answers, with
+ * profile:read) together with GET /api/autofill/profile, once per run. A GET's query (the job search's, the
+ * credential's) is named as its request. Version 3's session-only routes (the auto-apply queue, its rule, the job-site
+ * sign-ins and the site requests' list) are the Settings and Auto-apply pages'.
  */
 export const AUTOFILL_ROUTES = [
   {
@@ -225,8 +269,8 @@ export const AUTOFILL_ROUTES = [
   {
     method: 'PUT',
     path: '/api/autofill/profile',
-    caller: 'session',
-    scope: null,
+    caller: 'either',
+    scope: 'profile:write',
     request: 'PutAutofillProfileBody',
     status: 200,
     response: 'PutAutofillProfileResponse',
@@ -260,6 +304,46 @@ export const AUTOFILL_ROUTES = [
     request: 'AutofillAddJobRequest',
     status: 200,
     response: 'AutofillAddJobResponse',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/jobs/search',
+    caller: 'either',
+    scope: 'jobs:lookup',
+    request: 'AutofillJobSearchQuery',
+    status: 200,
+    response: 'AutofillJobSearchResponse',
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/applied',
+    caller: 'either',
+    scope: 'tracker:write',
+    request: 'AutofillAppliedRequest',
+    status: 200,
+    response: 'AutofillLookupResponse',
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/site-requests',
+    caller: 'either',
+    scope: 'jobs:lookup',
+    request: 'AutofillSiteRequestBody',
+    status: 204,
+    response: null,
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/site-requests',
+    caller: 'session',
+    scope: null,
+    request: null,
+    status: 200,
+    response: 'AutofillSiteRequestList',
     accepted: null,
   },
   {
@@ -399,6 +483,136 @@ export const AUTOFILL_ROUTES = [
     scope: 'letters:write',
     request: null,
     status: 200,
+    response: null,
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/cover-letters/:id/text',
+    caller: 'either',
+    scope: 'letters:write',
+    request: null,
+    status: 200,
+    response: 'AutofillCoverLetterText',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/agent/next',
+    caller: 'token',
+    scope: 'agent:run',
+    request: null,
+    status: 200,
+    response: 'AutofillAgentNext',
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/agent/:id/result',
+    caller: 'token',
+    scope: 'agent:run',
+    request: 'AutofillAgentResultBody',
+    status: 204,
+    response: null,
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/agent/queue',
+    caller: 'session',
+    scope: null,
+    request: 'AutofillAgentEnqueueBody',
+    status: 200,
+    response: 'AutofillAgentEnqueueResponse',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/agent/queue',
+    caller: 'session',
+    scope: null,
+    request: null,
+    status: 200,
+    response: 'AutofillAgentQueueList',
+    accepted: null,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/autofill/agent/queue/:id',
+    caller: 'session',
+    scope: null,
+    request: null,
+    status: 204,
+    response: null,
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/agent/queue/clear-finished',
+    caller: 'session',
+    scope: null,
+    request: null,
+    status: 200,
+    response: 'AutofillAgentCleared',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/agent/settings',
+    caller: 'session',
+    scope: null,
+    request: null,
+    status: 200,
+    response: 'AutofillAgentSettings',
+    accepted: null,
+  },
+  {
+    method: 'PUT',
+    path: '/api/autofill/agent/settings',
+    caller: 'session',
+    scope: null,
+    request: 'AutofillAgentSettings',
+    status: 200,
+    response: 'AutofillAgentSettings',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/credentials',
+    caller: 'token',
+    scope: 'credentials:read',
+    request: 'AutofillCredentialQuery',
+    status: 200,
+    response: 'AutofillCredential',
+    accepted: null,
+  },
+  {
+    method: 'GET',
+    path: '/api/autofill/sign-ins',
+    caller: 'session',
+    scope: null,
+    request: null,
+    status: 200,
+    response: 'AutofillSignInList',
+    accepted: null,
+  },
+  {
+    method: 'PUT',
+    path: '/api/autofill/sign-ins',
+    caller: 'session',
+    scope: null,
+    request: 'PutAutofillSignInBody',
+    status: 200,
+    response: 'AutofillSignInItem',
+    accepted: null,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/autofill/sign-ins/:id',
+    caller: 'session',
+    scope: null,
+    request: null,
+    status: 204,
     response: null,
     accepted: null,
   },

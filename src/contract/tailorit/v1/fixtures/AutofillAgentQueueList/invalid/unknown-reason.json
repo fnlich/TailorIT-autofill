@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "id": "7c1e4f2a-9b3d-4a6e-8f50-2d9c1b7e3a64",
+      "jobId": 1042,
+      "title": "Senior Backend Engineer",
+      "company": "Northwind",
+      "location": "Austin, TX, USA",
+      "url": "https://job-boards.greenhouse.io/northwind/jobs/5512345002",
+      "active": true,
+      "state": "needs-you",
+      "reason": "tired",
+      "source": "manual",
+      "attempts": 1,
+      "aiGuesses": null,
+      "createdAt": "2026-11-01T15:00:00.000Z",
+      "startedAt": "2026-11-01T15:02:00.000Z",
+      "finishedAt": "2026-11-01T15:05:30.000Z"
+    }
+  ],
+  "total": 1,
+  "limit": 500
+}

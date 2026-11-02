@@ -7,9 +7,16 @@
  * resume reason `chosen` and the AI task kind `autofill_answer` (new values in response enums), with the lookup's
  * match and job facts, POST /api/autofill/jobs, POST /api/autofill/ai/answer, a draft question's `currentAnswer`, the
  * sensitive part's `legal.criminalRecord` and the cover letters (POST /api/autofill/cover-letters, GET …/:id and
- * …/:id/file, under `letters:write`), all unreleased until version 2 ships, so one version covers them.
+ * …/:id/file, under `letters:write`), all unreleased until version 2 ships, so one version covers them. 3 (Jobright
+ * parity): the scopes `profile:write`, `tracker:write`, `agent:run` and `credentials:read` and the lookup's job match
+ * `chosen` (new values in response enums), and PUT /api/autofill/profile's answer without the sensitive part for a
+ * connection that may not read it (a field that may now be absent), with Ashby's addresses in parseAtsUrl and Add job,
+ * the profile's `anythingElse`, a draft question's `instruction`, the lookup's `jobId`, GET /api/autofill/jobs/search,
+ * GET …/cover-letters/:id/text, POST /api/autofill/site-requests, POST /api/autofill/applied, the auto-apply queue
+ * (/api/autofill/agent/*) and the job-site sign-ins (GET /api/autofill/credentials, /api/autofill/sign-ins): one
+ * version bump, so the person connects the extension again once.
  */
-export const AUTOFILL_API_VERSION = 2;
+export const AUTOFILL_API_VERSION = 3;
 
 /**
  * Sent by the extension on every request, and by the server on every answer to a request that presents a tia_ bearer,

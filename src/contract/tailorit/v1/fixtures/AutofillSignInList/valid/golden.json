@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "id": "9f2c4a6e-1b3d-4e5f-8a7b-0c9d2e4f6a81",
+      "host": "*",
+      "email": "elena.ruiz@example.com",
+      "updatedAt": "2026-10-30T10:00:00.000Z",
+      "lastReadHost": "contoso.wd1.myworkdayjobs.com",
+      "lastReadAt": "2026-11-01T10:15:00.000Z"
+    },
+    {
+      "id": "3a5c7e9f-2b4d-4f6a-8c1e-5d7f9b2a4c63",
+      "host": "northwind.wd5.myworkdayjobs.com",
+      "email": "elena@ruiz.example",
+      "updatedAt": "2026-11-01T09:30:00.000Z",
+      "lastReadHost": null,
+      "lastReadAt": null
+    }
+  ],
+  "total": 2,
+  "limit": 50
+}

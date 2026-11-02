@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "host": "careers.contoso.example",
+      "count": 3,
+      "firstRequestedAt": "2026-10-28T09:15:00.000Z",
+      "lastRequestedAt": "2026-11-01T16:40:00.000Z"
+    }
+  ],
+  "total": 1
+}

@@ -45,7 +45,8 @@ const SPOTIFY_ID = '2a55d6c9-c564-443a-be3e-a3851db5a93b';
 const OPENAI_ID = 'd4780eac-03ad-4dae-861f-99af22b4287e';
 const OPENAI = `https://jobs.ashbyhq.com/openai/${OPENAI_ID}`;
 const ASHBY_EMBED_ID = '7458d4e9-da2e-47bd-98cb-adfda43d42b2';
-const ASHBY_WHY = "TailorIT's parseAtsUrl reads no Ashby address yet (v3 Phase 2's TailorIT side adds it)";
+const ASHBY_WHY = "TailorIT's parseAtsUrl (version 3) reads an Ashby board's name in lower case, as Ashby compares it; " +
+  'the adapter keeps the spelling of the address, and folds it in the canonical URL alone';
 
 const ashbyForm = (org: string, id: string, canonical: string): Ours =>
   ({ platform: 'ashby', board: org, jobId: id, page: 'application', canonical });
@@ -122,21 +123,27 @@ const ROWS: Row[] = [
   { url: 'https://about.gitlab.com/jobs/', ours: null },
 
   // Ashby: the live capture of 2026-11-01 (its overview, form and embed addresses), then the edge cases. TailorIT reads
-  // no Ashby address yet, so every row that reads a posting differs from parseAtsUrl.
-  { url: `${OPENAI}/application`, ours: ashbyForm('openai', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
-  { url: OPENAI, ours: ashbyOverview('openai', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
+  // them since version 3: the same posting, its board in lower case.
+  { url: `${OPENAI}/application`, ours: ashbyForm('openai', OPENAI_ID, `${OPENAI}/application`) },
+  { url: OPENAI, ours: ashbyOverview('openai', OPENAI_ID, `${OPENAI}/application`) },
   { url: 'https://jobs.ashbyhq.com/plaid/5d8abedc-018a-4b42-ae1f-0e70b34f2007/application',
-    ours: ashbyForm('plaid', '5d8abedc-018a-4b42-ae1f-0e70b34f2007', 'https://jobs.ashbyhq.com/plaid/5d8abedc-018a-4b42-ae1f-0e70b34f2007/application'),
-    contract: null, why: ASHBY_WHY },
+    ours: ashbyForm('plaid', '5d8abedc-018a-4b42-ae1f-0e70b34f2007', 'https://jobs.ashbyhq.com/plaid/5d8abedc-018a-4b42-ae1f-0e70b34f2007/application') },
   { url: `https://jobs.ashbyhq.com/Ashby/${ASHBY_EMBED_ID}?embed=js`,
-    ours: ashbyOverview('Ashby', ASHBY_EMBED_ID, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`), contract: null, why: ASHBY_WHY },
+    ours: ashbyOverview('Ashby', ASHBY_EMBED_ID, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`),
+    contract: { kind: 'ashby', board: 'ashby', externalId: ASHBY_EMBED_ID }, why: ASHBY_WHY },
   { url: `https://jobs.ashbyhq.com/Ashby/${ASHBY_EMBED_ID}/application?embed=js`,
-    ours: ashbyForm('Ashby', ASHBY_EMBED_ID, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`), contract: null, why: ASHBY_WHY },
-  { url: `${OPENAI}/application/`, ours: ashbyForm('openai', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
+    ours: ashbyForm('Ashby', ASHBY_EMBED_ID, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`),
+    contract: { kind: 'ashby', board: 'ashby', externalId: ASHBY_EMBED_ID }, why: ASHBY_WHY },
+  { url: `${OPENAI}/application/`, ours: ashbyForm('openai', OPENAI_ID, `${OPENAI}/application`) },
   { url: 'https://jobs.ashbyhq.com/OpenAI/D4780EAC-03AD-4DAE-861F-99AF22B4287E/application?utm_source=x#top',
-    ours: ashbyForm('OpenAI', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
+    ours: ashbyForm('OpenAI', OPENAI_ID, `${OPENAI}/application`),
+    contract: { kind: 'ashby', board: 'openai', externalId: OPENAI_ID }, why: ASHBY_WHY },
   { url: `https://www.ashbyhq.com/careers?ashby_jid=${ASHBY_EMBED_ID}`, ours: null },
   { url: 'https://jobs.ashbyhq.com/openai', ours: null },
+  { url: `https://jobs.ashbyhq.com/openai?ashby_jid=${OPENAI_ID}`, ours: null,
+    contract: { kind: 'ashby', board: 'openai', externalId: OPENAI_ID },
+    why: "the board's own page naming a posting in ?ashby_jid= shows no form in any capture: the extension reads the " +
+      "posting's own pages, where the form is" },
   { url: `${OPENAI}/APPLICATION`, ours: null },
   { url: 'https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting', ours: null },
 ];

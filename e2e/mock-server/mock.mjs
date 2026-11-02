@@ -39,6 +39,13 @@
  *   …/:id/file the golden cover letter beside this file (golden-cover-letter.pdf) with X-TailorIT-File-Kind pdf,
  *   X-TailorIT-Sha256 and a Content-Disposition, 409 conflict until it is ready. The contract's golden letter is always
  *   there, ready. Scenarios: letter-ready, letter-ai-ready, letter-generating-then-ready, letter-failed, letter-none.
+ * - Version 3: every answer names 3. A code grants every scope but profile:sensitive when its sensitive box was
+ *   unticked, and credentials:read only when its sign-in box was ticked (allowSignIn; the stand-in page leaves it
+ *   unticked) or while sign-in-allowed is on. PUT /profile takes a token with profile:write, its sensitive part only
+ *   with profile:sensitive too (403 otherwise; answered only then). A lookup naming `jobId` answers job-chosen.json
+ *   (matchedBy chosen). The version 3 routes the extension does not call yet (the job search, Applied, site requests,
+ *   a letter's text, the auto-apply queue and the job-site sign-in) and their Settings-page twins answer their
+ *   contract examples, with a letter's text read as its file is (404, 409 until ready).
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -66,7 +73,7 @@ export function example(schema, name = 'golden') {
 }
 
 /** The API version TailorIT speaks, as the contract's version.ts names it. */
-export const MOCK_API_VERSION = 2;
+export const MOCK_API_VERSION = 3;
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';
@@ -149,10 +156,19 @@ export function extensionIdOf(publicKeyBase64) {
 /** This repository's extension id, fixed by the committed manifest key: the one /connect offers the code to. */
 export const EXTENSION_ID = extensionIdOf(readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8'));
 
-/** The golden token, and the scopes a code grants with the sensitive box ticked or not. */
+/** The golden token, and every scope in the contract's order (the golden redeem answer holds them all). */
 const GOLDEN_TOKEN = /** @type {string} */ (example('AutofillRedeemResponse').token);
-const ALL_SCOPES = /** @type {string[]} */ (example('AutofillRedeemResponse').scopes);
-const WITHOUT_SENSITIVE = /** @type {string[]} */ (example('AutofillRedeemResponse', 'without-sensitive').scopes);
+const EVERY_SCOPE = /** @type {string[]} */ (example('AutofillRedeemResponse').scopes);
+
+/**
+ * The scopes a code grants, as TailorIT's connectScopes: every one, but profile:sensitive when the sensitive box was
+ * unticked, and credentials:read unless the sign-in box was ticked (version 3: unticked unless a test ticks it).
+ * @param {boolean} includeSensitive @param {boolean} [allowSignIn]
+ */
+export function connectScopes(includeSensitive, allowSignIn = false) {
+  return EVERY_SCOPE.filter((scope) => (includeSensitive || scope !== 'profile:sensitive')
+    && (allowSignIn || scope !== 'credentials:read'));
+}
 
 /**
  * The scripted answers a test can turn on, by name: POST /__mock/scenario {name, times?, delayMs?}. `times` (default:
@@ -160,7 +176,11 @@ const WITHOUT_SENSITIVE = /** @type {string[]} */ (example('AutofillRedeemRespon
  */
 export const MOCK_SCENARIOS = Object.freeze({
   unauthorized: 'Every token request gets 401 not_signed_in: TailorIT no longer knows the token.',
-  'version-mismatch': 'The mock speaks API version 3: every token request gets 409 conflict, its header naming 3.',
+  'version-mismatch': 'The mock speaks API version 4: every token request gets 409 conflict, its header naming 4.',
+  // Version 3.
+  'sign-in-allowed': 'The token holds credentials:read too, as if connected with "Let this browser sign in to job '
+    + 'sites with my saved password" ticked: GET /credentials answers and GET /session names it. It holds until the '
+    + 'next reset (times does not apply).',
   'sensitive-forbidden': 'GET /profile/sensitive gets 403: this connection may not read the sensitive part.',
   'sensitive-not-authorized': 'GET /profile/sensitive answers the golden part with US authorized: false (the rest as '
     + 'golden), and both profile routes name the next revision, so a worker drops a sensitive part it held and fetches '
@@ -412,8 +432,9 @@ export function createMock() {
     /** The cover letters POST /cover-letters made (Phase G), by id: ready at readyAt, failed at failAt (never when null).
      *  @type {Map<string, { id: string; readyAt: number | null; failAt: number | null }>} */
     letters: new Map(),
-    /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes. */
-    token: { value: GOLDEN_TOKEN, scopes: [...ALL_SCOPES], revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
+    /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes
+     *  (at first a code's with the sensitive box ticked and the sign-in box not). */
+    token: { value: GOLDEN_TOKEN, scopes: connectScopes(true), revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
   });
   let state = freshState();
   /** Slow answers still waiting: a reset or a close ends them. @type {Set<{ res: import('node:http').ServerResponse; done: () => void }>} */
@@ -432,6 +453,12 @@ export function createMock() {
   const isOn = (name) => state.scenarios.some((scenario) => scenario.name === name);
 
   const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
+
+  /** The token's scopes now: the last redeemed code's, with credentials:read while sign-in-allowed is on (version 3),
+   *  in the contract's order. */
+  const scopesNow = () => (isOn('sign-in-allowed')
+    ? EVERY_SCOPE.filter((scope) => scope === 'credentials:read' || state.token.scopes.includes(scope))
+    : state.token.scopes);
 
   /** The scenarios that change what a profile route answers, which name the next revision. */
   const REVISED = /** @type {const} */ (['sensitive-not-authorized', 'sensitive-us-citizen', 'profile-phone-no-code',
@@ -494,8 +521,9 @@ export function createMock() {
       fileName: item.fileName, reason: 'chosen' }, match: answer.job === null ? null : { ...chosen.match, resumeId: item.id } };
   }
 
-  /** The lookup's answer to a body (version 2): a scenario's, the job POST /jobs added, or the golden one; then the
-   *  chosen resume. @param {Record<string, unknown>} json @returns {Answer} */
+  /** The lookup's answer to a body (version 2): a scenario's, the job the person chose (`jobId`, version 3:
+   *  job-chosen.json), the job POST /jobs added, or the golden one; then the chosen resume.
+   *  @param {Record<string, unknown>} json @returns {Answer} */
   function lookupOf(json) {
     const slow = take('lookup-slow');
     if (slow !== null) return { ...jsonAnswer(200, withChosen(lookupAnswer('golden'), json.resumeId)), delayMs: slow.delayMs };
@@ -511,7 +539,8 @@ export function createMock() {
     else if (take('lookup-bad-match') !== null) {
       answer = lookupAnswer('golden');
       answer.match = { ...answer.match, percentage: 74.5 };
-    } else answer = state.added === null ? lookupAnswer('golden') : JSON.parse(JSON.stringify(state.added));
+    } else if (json.jobId !== undefined) answer = lookupAnswer('job-chosen');
+    else answer = state.added === null ? lookupAnswer('golden') : JSON.parse(JSON.stringify(state.added));
     if (json.includePostingText !== true && answer.job) delete answer.job.postingText;
     return jsonAnswer(200, withChosen(answer, json.resumeId));
   }
@@ -811,6 +840,17 @@ export function createMock() {
     };
   }
 
+  /** GET /cover-letters/:id/text (version 3): the contract's example text once the letter is ready; 409 before; 404
+   *  for one the mock never made, as the file route. @param {string} id @returns {Answer} */
+  function coverLetterText(id) {
+    const letter = letterOf(id);
+    if (letter === null) return refusal(404, 'not_found', 'That cover letter was not found.');
+    if (letterState(letter) !== 'ready') {
+      return refusal(409, 'conflict', 'This cover letter is still being written. Ask again in a moment.');
+    }
+    return jsonAnswer(200, example('AutofillCoverLetterText'));
+  }
+
   /** GET or DELETE /api/ai/tasks/:id: a task the mock made, or the contract's golden one; else 404.
    *  @param {string} id @param {boolean} cancel @returns {Answer} */
   function taskAnswer(id, cancel) {
@@ -824,15 +864,19 @@ export function createMock() {
 
   /**
    * What each contract route answers once the caller checks have passed. `json` is the parsed body: an object, or {}
-   * for none (or for anything that is not an object).
-   * @type {Record<string, (call: { json: Record<string, unknown>; params: string[] }) => Answer>}
+   * for none (or for anything that is not an object). `scopes` is the token's, or null for the Settings page.
+   * @type {Record<string, (call: { json: Record<string, unknown>; params: string[]; scopes: string[] | null }) => Answer>}
    */
   const handlers = {
     'POST /api/autofill/connect': ({ json }) => {
       if (typeof json.includeSensitive !== 'boolean') return invalid('includeSensitive: Expected a boolean');
+      if (json.allowSignIn !== undefined && typeof json.allowSignIn !== 'boolean') {
+        return invalid('allowSignIn: Expected a boolean');
+      }
       const code = mintCode();
       const expiresAt = Date.now() + CODE_TTL_MS;
-      state.codes.set(code, { scopes: json.includeSensitive ? [...ALL_SCOPES] : [...WITHOUT_SENSITIVE], expiresAt, used: false });
+      state.codes.set(code, { scopes: connectScopes(json.includeSensitive, json.allowSignIn === true), expiresAt,
+        used: false });
       return jsonAnswer(201, { ...example('AutofillConnectResponse'), code: formatCode(code), expiresAt: iso(expiresAt),
         extensionIds: [EXTENSION_ID] });
     },
@@ -850,12 +894,12 @@ export function createMock() {
       }
       minted.used = true;
       state.token = { value: GOLDEN_TOKEN, scopes: minted.scopes, revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS };
-      const golden = example('AutofillRedeemResponse', minted.scopes.includes('profile:sensitive') ? 'golden' : 'without-sensitive');
-      return jsonAnswer(200, { ...golden, expiresAt: iso(state.token.expiresAt) });
+      return jsonAnswer(200, { ...example('AutofillRedeemResponse'), scopes: minted.scopes,
+        expiresAt: iso(state.token.expiresAt) });
     },
     'GET /api/autofill/session': () => {
       const session = example('AutofillSession');
-      return jsonAnswer(200, { ...session, token: { ...session.token, scopes: state.token.scopes,
+      return jsonAnswer(200, { ...session, token: { ...session.token, scopes: scopesNow(),
         expiresAt: iso(state.token.expiresAt) } });
     },
     'DELETE /api/autofill/session': () => {
@@ -868,17 +912,48 @@ export function createMock() {
     'GET /api/autofill/profile/sensitive': () => (take('sensitive-forbidden')
       ? refusal(403, 'forbidden', 'This connection may not do that.')
       : jsonAnswer(200, sensitiveEnvelope())),
-    'PUT /api/autofill/profile': () => jsonAnswer(200, example('PutAutofillProfileResponse')),
+    // Version 3: a token with profile:write saves too; it sends and gets back the sensitive part only when it may read
+    // it (profile:sensitive), as the Settings page always may.
+    'PUT /api/autofill/profile': ({ json, scopes }) => {
+      const sensitive = scopes === null || scopes.includes('profile:sensitive');
+      if (json.sensitive !== undefined && !sensitive) return refusal(403, 'forbidden', 'This connection may not do that.');
+      const answer = example('PutAutofillProfileResponse');
+      if (!sensitive) delete answer.sensitive;
+      return jsonAnswer(200, answer);
+    },
     'GET /api/autofill/profile/seed': () => jsonAnswer(200, example('AutofillSeed')),
     'POST /api/autofill/lookup': ({ json }) => {
       const urlOk = typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048;
       const textOk = json.includePostingText === undefined || typeof json.includePostingText === 'boolean';
       const resumeOk = json.resumeId === undefined || (typeof json.resumeId === 'string' && json.resumeId.length >= 1
         && json.resumeId.length <= 64);
-      if (!urlOk || !textOk || !resumeOk) return invalid('url: Required');
+      const jobOk = json.jobId === undefined || (Number.isInteger(json.jobId) && Number(json.jobId) > 0);
+      if (!urlOk || !textOk || !resumeOk || !jobOk) return invalid('url: Required');
       return lookupOf(json);
     },
     'POST /api/autofill/jobs': ({ json }) => addJob(json),
+    // Version 3's routes the extension does not call yet: their contract examples, as TailorIT's would answer them.
+    'GET /api/autofill/jobs/search': () => jsonAnswer(200, example('AutofillJobSearchResponse')),
+    'POST /api/autofill/applied': ({ json }) => {
+      const urlOk = json.url === undefined || (typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048);
+      const jobOk = json.jobId === undefined || (Number.isInteger(json.jobId) && Number(json.jobId) > 0);
+      if (!urlOk || !jobOk || (json.url === undefined && json.jobId === undefined)) return invalid('url: Name the page or the job');
+      return jsonAnswer(200, withChosen(lookupAnswer(json.jobId === undefined ? 'golden' : 'job-chosen'), json.resumeId));
+    },
+    'POST /api/autofill/site-requests': () => ({ status: 204 }),
+    'GET /api/autofill/site-requests': () => jsonAnswer(200, example('AutofillSiteRequestList')),
+    'GET /api/autofill/agent/next': () => jsonAnswer(200, example('AutofillAgentNext', 'nothing-to-do')),
+    'POST /api/autofill/agent/:id/result': () => ({ status: 204 }),
+    'POST /api/autofill/agent/queue': () => jsonAnswer(200, example('AutofillAgentEnqueueResponse')),
+    'GET /api/autofill/agent/queue': () => jsonAnswer(200, example('AutofillAgentQueueList')),
+    'DELETE /api/autofill/agent/queue/:id': () => ({ status: 204 }),
+    'POST /api/autofill/agent/queue/clear-finished': () => jsonAnswer(200, example('AutofillAgentCleared')),
+    'GET /api/autofill/agent/settings': () => jsonAnswer(200, example('AutofillAgentSettings')),
+    'PUT /api/autofill/agent/settings': () => jsonAnswer(200, example('AutofillAgentSettings')),
+    'GET /api/autofill/credentials': () => jsonAnswer(200, example('AutofillCredential')),
+    'GET /api/autofill/sign-ins': () => jsonAnswer(200, example('AutofillSignInList')),
+    'PUT /api/autofill/sign-ins': () => jsonAnswer(200, example('AutofillSignInItem')),
+    'DELETE /api/autofill/sign-ins/:id': () => ({ status: 204 }),
     'GET /api/autofill/resumes': () => jsonAnswer(200, resumeList()),
     'POST /api/autofill/ai/pick': ({ json }) => aiAnswer('autofill_pick', json),
     'POST /api/autofill/ai/classify': ({ json }) => aiAnswer('autofill_classify', json),
@@ -896,6 +971,7 @@ export function createMock() {
         : jsonAnswer(200, { state: letterState(letter) });
     },
     'GET /api/autofill/cover-letters/:id/file': ({ params }) => coverLetterFile(params[0] ?? ''),
+    'GET /api/autofill/cover-letters/:id/text': ({ params }) => coverLetterText(params[0] ?? ''),
     'GET /api/autofill/resumes/:id/file': ({ params }) => {
       if (params[0] !== GOLDEN_RESUME.id) return refusal(404, 'not_found', 'That resume was not found.');
       if (take('resume-fails') !== null) return serverError();
@@ -918,8 +994,8 @@ export function createMock() {
   }
 
   /** Runs a contract route's handler, parsing its JSON body first. @param {ContractRoute} route @param {string[]} params
-   *  @param {string} raw @returns {Answer} */
-  function run(route, params, raw) {
+   *  @param {string} raw @param {string[] | null} scopes the token's, or null for the Settings page @returns {Answer} */
+  function run(route, params, raw, scopes) {
     /** @type {unknown} */
     let parsed = null;
     if ((route.method === 'POST' || route.method === 'PUT') && raw !== '') {
@@ -931,7 +1007,7 @@ export function createMock() {
     }
     const json = /** @type {Record<string, unknown>} */ (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {});
     const handler = handlers[`${route.method} ${route.path}`];
-    return handler === undefined ? notFound() : handler({ json, params });
+    return handler === undefined ? notFound() : handler({ json, params, scopes });
   }
 
   /** A request that presents a `tia_` bearer: TailorIT's attachBearer, tokenScope and allow(), in that order.
@@ -950,10 +1026,11 @@ export function createMock() {
     const found = findRoute(method, path);
     if (found === null) return named(notFound());
     if (found.route.caller === 'session') return named(refusal(403, 'forbidden', 'Do this on the Settings › Autofill page in TailorIT.'));
-    if (found.route.scope !== null && !token.scopes.includes(found.route.scope)) {
+    const scopes = scopesNow();
+    if (found.route.scope !== null && !scopes.includes(found.route.scope)) {
       return named(refusal(403, 'forbidden', 'This connection may not do that.'));
     }
-    return named(run(found.route, found.params, raw));
+    return named(run(found.route, found.params, raw, scopes));
   }
 
   /** Any other request: the stand-in Settings page's, which is always signed in, or a code's (redeem).
@@ -970,7 +1047,7 @@ export function createMock() {
     if (found.route.caller === 'code' && origin !== undefined && !String(origin).startsWith('chrome-extension://')) {
       return refusal(403, 'forbidden', 'A connect code is redeemed only by the extension.');
     }
-    return run(found.route, found.params, raw);
+    return run(found.route, found.params, raw, null);
   }
 
   /** The test-only routes. @param {string} method @param {string} path @param {string} raw @returns {Answer} */

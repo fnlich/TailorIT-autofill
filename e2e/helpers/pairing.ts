@@ -12,9 +12,10 @@ import type { Extension } from './extension';
 
 /** The stand-in connect page's address (e2e/mock-server/connect-page.html). */
 export const CONNECT_PAGE = `${MOCK_ORIGIN}/settings/autofill`;
-/** The stand-in page's button and its box, in TailorIT's words. */
+/** The stand-in page's button and its sensitive box, in TailorIT's words (its sign-in box, API version 3, is left
+ *  unticked). */
 export const CONNECT_BUTTON = 'Connect the extension';
-export const SENSITIVE_BOX = 'Let this browser read work authorization and self-identification answers';
+export const SENSITIVE_BOX = 'Let this browser read and change work authorization and self-identification answers';
 
 /** What the stand-in page recorded: the extension's replies (value-free). */
 export interface PairingRecord {

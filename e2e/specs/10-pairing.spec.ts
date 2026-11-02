@@ -15,11 +15,12 @@ import { mock } from '../helpers/mock.ts';
 import { CONNECT_PAGE, connectOnPage, nextConnectPage, type PairingRecord } from '../helpers/pairing.ts';
 import { installSpies, spyRecord } from '../helpers/spies.ts';
 import { installRoutes, type RouteLog } from '../routes.ts';
-import { example } from '../mock-server/mock.mjs';
+import { connectScopes, example } from '../mock-server/mock.mjs';
 
 const ACCOUNT = (example('AutofillSession') as { account: { name: string; email: string } }).account;
-const ALL_SCOPES = (example('AutofillRedeemResponse') as { scopes: string[] }).scopes;
-const NO_SENSITIVE = (example('AutofillRedeemResponse', 'without-sensitive') as { scopes: string[] }).scopes;
+/** What the stand-in page's codes grant: the sign-in box stays unticked (credentials:read, API version 3). */
+const ALL_SCOPES = connectScopes(true);
+const NO_SENSITIVE = connectScopes(false);
 
 interface Fresh {
   context: BrowserContext;

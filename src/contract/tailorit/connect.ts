@@ -11,8 +11,14 @@ import { InstantSchema } from './common';
  * What a token may do. `profile:sensitive` (work authorization and self-identification answers) is granted only when
  * the person ticked "Let this browser read work authorization and self-identification answers" at connect time.
  * `jobs:add` adds a posting to TailorIT's jobs and the person's tracker, and `letters:write` finds or writes the
- * person's cover letter for a form and reads it as a PDF (both API version 2). A token keeps the scopes its code
- * carried: one made before a scope existed is refused where it is needed (403, "Connect the extension again").
+ * person's cover letter for a form and reads it as a PDF (both API version 2). Version 3: `profile:write` saves the
+ * autofill profile from the side panel's "Autofill information" (the sensitive part only with `profile:sensitive`
+ * too), `tracker:write` marks a job Applied in the person's tracker, `agent:run` takes jobs from the auto-apply queue
+ * and reports how each went, and `credentials:read` reads the job-site sign-in the person saved in Settings ›
+ * Autofill, for Sign-in mode Auto: granted only when the person ticked "Let this browser sign in to job sites for me"
+ * at connect time (`allowSignIn`), as `profile:sensitive` is. A token keeps the scopes its code carried: one made
+ * before a scope existed, or without the box ticked, is refused where it is needed (403, "Connect the extension
+ * again").
  */
 export const EXTENSION_SCOPES = [
   'profile:read',
@@ -23,6 +29,10 @@ export const EXTENSION_SCOPES = [
   'answers:write',
   'jobs:add',
   'letters:write',
+  'profile:write',
+  'tracker:write',
+  'agent:run',
+  'credentials:read',
 ] as const;
 export type ExtensionScope = (typeof EXTENSION_SCOPES)[number];
 
@@ -55,6 +65,11 @@ export const ConnectCodeSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{4}(?:-[0-
 export const AutofillConnectBodySchema = z.object({
   /** Grant `profile:sensitive`. */
   includeSensitive: z.boolean(),
+  /**
+   * Grant `credentials:read` (version 3): the connection may read the job-site sign-in saved in Settings › Autofill,
+   * for Sign-in mode Auto. Absent: false.
+   */
+  allowSignIn: z.boolean().default(false),
 });
 export type AutofillConnectBody = z.infer<typeof AutofillConnectBodySchema>;
 
@@ -137,6 +152,8 @@ export const AutofillTokenItemSchema = z.object({
   browser: z.enum(EXTENSION_BROWSERS).nullable(),
   extensionVersion: z.string().nullable(),
   scopes: z.array(z.enum(EXTENSION_SCOPES)),
+  /** It may read the job-site sign-in (`credentials:read`, version 3): the person allowed it when connecting. */
+  signIn: z.boolean(),
   createdAt: InstantSchema,
   /** Written at most once a minute; null until first used. */
   lastUsedAt: InstantSchema.nullable(),

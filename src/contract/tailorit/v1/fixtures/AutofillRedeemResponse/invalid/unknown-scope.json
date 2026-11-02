@@ -11,11 +11,15 @@
     "answers:write",
     "jobs:add",
     "letters:write",
+    "profile:write",
+    "tracker:write",
+    "agent:run",
+    "credentials:read",
     "telemetry:write"
   ],
   "account": {
     "name": "Elena Ruiz",
     "email": "elena.ruiz@example.com"
   },
-  "apiVersion": 2
+  "apiVersion": 3
 }

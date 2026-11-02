@@ -19,11 +19,13 @@ import {
   AutofillConnectResponseSchema,
   AutofillCoverLetterResponseSchema,
   AutofillCoverLetterStatusSchema,
+  AutofillCoverLetterTextSchema,
   AutofillDraftTaskSchema,
   AutofillErrorBodySchema,
   AutofillLookupResponseSchema,
   AutofillPickTaskSchema,
   AutofillRedeemResponseSchema,
+  PutAutofillProfileResponseSchema,
   AutofillSavedAnswerListSchema,
   AutofillSavedAnswerSchema,
   AutofillSessionSchema,
@@ -42,6 +44,7 @@ import {
   GOLDEN_RESUME,
   MOCK_API_VERSION,
   MOCK_SCENARIOS,
+  connectScopes,
   example,
   extensionIdOf,
   goldenLetterBytes,
@@ -56,7 +59,7 @@ const repoJson = (path: string): unknown => JSON.parse(repoFile(path).toString('
 
 const TOKEN = (example('AutofillRedeemResponse') as { token: string }).token;
 const API = 'X-TailorIT-Autofill-Api';
-/** The version the mock speaks: the contract's (version 2). */
+/** The version the mock speaks: the contract's (version 3). */
 const V = String(MOCK_API_VERSION);
 const CLIENT = { browser: 'other', extensionVersion: '0.1.0', os: 'windows' };
 const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
@@ -87,9 +90,9 @@ async function errorCode(response: Response): Promise<string> {
   return AutofillErrorBodySchema.parse(await response.json()).error.code;
 }
 
-/** Mints a code on the stand-in Settings page's behalf. */
-async function mintCode(includeSensitive = true): Promise<string> {
-  const response = await call('/api/autofill/connect', { method: 'POST', json: { includeSensitive } });
+/** Mints a code on the stand-in Settings page's behalf (the sign-in box, version 3, unticked unless asked). */
+async function mintCode(includeSensitive = true, allowSignIn?: boolean): Promise<string> {
+  const response = await call('/api/autofill/connect', { method: 'POST', json: { includeSensitive, allowSignIn } });
   expect(response.status).toBe(201);
   return AutofillConnectResponseSchema.parse(await response.json()).code;
 }
@@ -125,6 +128,8 @@ describe('the routes', () => {
           json: example('PutAutofillSavedAnswerBody') });
         path = `/api/autofill/answers/${AutofillSavedAnswerSchema.parse(await put.json()).id}`;
       }
+      // The job-site sign-in needs credentials:read, which the token holds only when the person allowed it (version 3).
+      if (route.scope === 'credentials:read') await scenario('sign-in-allowed');
       const sendsBody = (route.method === 'POST' || route.method === 'PUT') && route.request !== null;
       const response = await call(path, { method: route.method, headers: asToken(),
         json: sendsBody ? example(route.request!) : undefined });
@@ -142,7 +147,7 @@ describe('the routes', () => {
   it.each(settingsRoutes.map((route) => [`${route.method} ${route.path}`, route] as const))(
     "%s answers the signed-in Settings page its contract example, and refuses a token",
     async (_, route) => {
-      const json = route.method === 'PUT' ? example('PutAutofillProfileBody') : undefined;
+      const json = (route.method === 'POST' || route.method === 'PUT') && route.request !== null ? example(route.request) : undefined;
       const page = await call(pathOf(route), { method: route.method, json });
       expect(page.status).toBe(route.status);
       if (route.response !== null) expect(await page.json()).toEqual(example(route.response));
@@ -232,12 +237,13 @@ describe('pairing', () => {
     expect([bad.status, await errorCode(bad)]).toEqual([400, 'validation_failed']);
   });
 
-  it('redeems a code once, from the extension or with no Origin, for the golden token with all its scopes', async () => {
+  it('redeems a code once, from the extension or with no Origin, for the golden token with its scopes', async () => {
     const code = await mintCode();
     const response = await redeem(code);
     expect([response.status, response.headers.get(API)]).toEqual([200, null]);
     const answer = AutofillRedeemResponseSchema.parse(await response.json());
-    expect(answer).toMatchObject({ token: TOKEN, scopes: (example('AutofillRedeemResponse') as { scopes: string[] }).scopes });
+    expect(answer).toMatchObject({ token: TOKEN, scopes: connectScopes(true) });
+    expect(answer.scopes).not.toContain('credentials:read');
     expect(Date.parse(answer.expiresAt) - Date.now()).toBeGreaterThan(80 * 24 * 60 * 60 * 1000);
     const again = await redeem(code);
     expect([again.status, await errorCode(again)]).toEqual([401, 'not_signed_in']);
@@ -267,9 +273,26 @@ describe('pairing', () => {
     const sensitive = await call('/api/autofill/profile/sensitive', { headers: asToken() });
     expect([sensitive.status, sensitive.headers.get(API), await errorCode(sensitive)]).toEqual([403, V, 'forbidden']);
     const session = AutofillSessionSchema.parse(await (await call('/api/autofill/session', { headers: asToken() })).json());
-    expect(session.token.scopes).toEqual((example('AutofillRedeemResponse', 'without-sensitive') as { scopes: string[] }).scopes);
+    expect(session.token.scopes).toEqual(connectScopes(false));
     mock.reset();
     expect((await call('/api/autofill/profile/sensitive', { headers: asToken() })).status).toBe(200);
+  });
+
+  it('grants credentials:read only to a code minted with the sign-in box ticked, or under sign-in-allowed (version 3)', async () => {
+    const credentials = () => call('/api/autofill/credentials?host=acme.wd5.myworkdayjobs.com', { headers: asToken() });
+    const scopes = async () => AutofillSessionSchema.parse(await (await call('/api/autofill/session', { headers: asToken() }))
+      .json()).token.scopes;
+    const refused = await credentials();
+    expect([refused.status, refused.headers.get(API), await errorCode(refused)]).toEqual([403, V, 'forbidden']);
+    expect((await redeem(await mintCode(false, true))).status).toBe(200);
+    expect(await scopes()).toEqual(connectScopes(false, true));
+    expect((await credentials()).status).toBe(200);
+    mock.reset();
+    expect((await credentials()).status).toBe(403);
+    await scenario('sign-in-allowed');
+    expect([(await credentials()).status, await scopes()]).toEqual([200, connectScopes(true, true)]);
+    const bad = await call('/api/autofill/connect', { method: 'POST', json: { includeSensitive: true, allowSignIn: 'yes' } });
+    expect([bad.status, await errorCode(bad)]).toEqual([400, 'validation_failed']);
   });
 
   it('revokes the token on DELETE /session, until a code is redeemed again', async () => {
@@ -288,7 +311,8 @@ describe('the stand-in connect page', () => {
       expect([path, response.status, response.headers.get('content-type')]).toEqual([path, 200, 'text/html; charset=utf-8']);
       const page = await response.text();
       expect(page).toContain('Connect the extension');
-      expect(page).toContain('Let this browser read work authorization and self-identification answers');
+      expect(page).toContain('Let this browser read and change work authorization and self-identification answers');
+      expect(page).toContain('Let this browser sign in to job sites with my saved password');
     }
     expect((await call('/settings/other')).status).toBe(404);
   });
@@ -738,6 +762,44 @@ describe('version 2: the job card, adding a job and AI answers', () => {
     const answered = await ask();
     expect(answered.result?.answers.every((answer) => answer.reason === 'answered' && answer.basis === 'resume')).toBe(true);
     expect(answered.result?.answers.find((answer) => answer.optionSetHash === null)?.text).toBe(CLEAN_ANSWER);
+  });
+});
+
+describe('version 3: the profile from a token, the chosen job and a letter as text', () => {
+  it('saves the profile for a token with profile:write, its sensitive part only with profile:sensitive', async () => {
+    const body = example('PutAutofillProfileBody') as Record<string, unknown>;
+    const put = (json: unknown) => call('/api/autofill/profile', { method: 'PUT', headers: asToken(), json });
+    expect(PutAutofillProfileResponseSchema.parse(await (await put(body)).json()).sensitive).toBeDefined();
+    expect((await redeem(await mintCode(false))).status).toBe(200);
+    const refused = await put(body);
+    expect([refused.status, refused.headers.get(API), await errorCode(refused)]).toEqual([403, V, 'forbidden']);
+    const { sensitive: _sensitive, ...withoutSensitive } = body;
+    const saved = PutAutofillProfileResponseSchema.parse(await (await put(withoutSensitive)).json());
+    expect([saved.sensitive, saved.anythingElseFlaggedLines]).toEqual([undefined, []]);
+  });
+
+  it('answers a lookup naming jobId with the chosen job (matchedBy chosen), and refuses a jobId that is not one', async () => {
+    const lookup = (jobId: unknown) => call('/api/autofill/lookup', { method: 'POST', headers: asToken(),
+      json: { url: 'https://jobs.lever.co/x/y/apply', jobId } });
+    const chosen = AutofillLookupResponseSchema.parse(await (await lookup(1042)).json());
+    expect(chosen.job).toMatchObject({ id: 1042, matchedBy: 'chosen' });
+    expect(chosen.suggestedResume).toMatchObject({ id: GOLDEN_RESUME.id });
+    for (const jobId of [0, 1.5, '1042']) {
+      const refused = await lookup(jobId);
+      expect([jobId, refused.status, await errorCode(refused)]).toEqual([jobId, 400, 'validation_failed']);
+    }
+  });
+
+  it("reads a letter's text as its file: 409 until it is ready, 404 for one it never made", async () => {
+    const text = (id: string) => call(`/api/autofill/cover-letters/${id}/text`, { headers: asToken() });
+    expect(AutofillCoverLetterTextSchema.parse(await (await text(GOLDEN_LETTER.id)).json()))
+      .toEqual(example('AutofillCoverLetterText'));
+    const made = AutofillCoverLetterResponseSchema.parse(await (await call('/api/autofill/cover-letters', { method: 'POST',
+      headers: asToken(), json: example('AutofillCoverLetterRequest') })).json());
+    const early = await text(made.letterId);
+    expect([early.status, await errorCode(early)]).toEqual([409, 'conflict']);
+    const other = await text('0b3c5d7e-9f1a-4b2c-8d4e-6f8a0b2c4d6e');
+    expect([other.status, await errorCode(other)]).toEqual([404, 'not_found']);
   });
 });
 

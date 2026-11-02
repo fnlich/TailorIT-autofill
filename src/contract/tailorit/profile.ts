@@ -45,6 +45,9 @@ export type WorkArrangement = (typeof WORK_ARRANGEMENTS)[number];
 /** A repeatable entry's id, kept across edits so the page can tell the entries apart (a UUID will do). */
 const EntryIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,40}$/);
 
+/** The longest note the profile's `anythingElse` holds ("Anything else we should know?"). */
+export const AUTOFILL_ANYTHING_ELSE_MAX = 2000;
+
 /** Where a school or a job is; '' or null for what is not known. */
 export const AutofillPlaceSchema = z.object({
   city: textOf(100),
@@ -161,6 +164,14 @@ export const AutofillProfileSchema = z.object({
    * each job. The extension attaches the lookup's suggestedResume.
    */
   documents: z.object({ resumeId: z.string().max(64).nullable() }),
+  /**
+   * "Anything else we should know?" (version 3): the person's standing note to TailorIT's AI, which reads it beside
+   * the profile's facts when it drafts or answers a question as the applicant; '' for none. Not a place for the
+   * sensitive answers: a line of it that states one (a visa, a salary, an age...) is left out of what the AI reads, and
+   * it never reaches the AI with a sensitive or attention-check question. Optional in what is sent: a save without it
+   * (a page or a copy older than version 3) keeps the note already stored.
+   */
+  anythingElse: textOf(AUTOFILL_ANYTHING_ELSE_MAX).default(''),
 });
 export type AutofillProfile = z.infer<typeof AutofillProfileSchema>;
 
@@ -329,7 +340,8 @@ export const AutofillSensitiveSaveSchema = AutofillSensitiveSchema.superRefine(c
 /**
  * GET /api/autofill/profile. With no row yet: the empty profile, revision 0 and updatedAt null. An empty
  * `contact.email` is answered as the account's sign-in address when the email rule above takes it, else it stays ''.
- * It never carries the sensitive part.
+ * It never carries the sensitive part. `anythingElseFlaggedLines` (version 3): as PUT's answer has it, the note's lines
+ * that state a sensitive answer, so a page loaded later can say so too.
  */
 export const AutofillProfileEnvelopeSchema = z.object({
   apiVersion: z.number().int(),
@@ -337,6 +349,7 @@ export const AutofillProfileEnvelopeSchema = z.object({
   revision: z.number().int().nonnegative(),
   updatedAt: InstantSchema.nullable(),
   profile: AutofillProfileSchema,
+  anythingElseFlaggedLines: z.array(z.number().int().nonnegative()),
 });
 export type AutofillProfileEnvelope = z.infer<typeof AutofillProfileEnvelopeSchema>;
 
@@ -350,22 +363,31 @@ export const AutofillSensitiveEnvelopeSchema = z.object({
 export type AutofillSensitiveEnvelope = z.infer<typeof AutofillSensitiveEnvelopeSchema>;
 
 /**
- * PUT /api/autofill/profile (the Settings page only): both parts in one save, from the revision the page loaded (0
- * before the first save). A stale revision is refused (409 `revision_conflict`).
+ * PUT /api/autofill/profile (the Settings page, and since version 3 a token with profile:write: the side panel's
+ * "Autofill information"): both parts in one save, from the revision the page or the panel loaded (0 before the first
+ * save; GET /profile's `revision`). A stale revision is refused (409 `revision_conflict`). `sensitive` absent keeps
+ * the stored sensitive part as it is; only the Settings session and a token that also holds profile:sensitive may send
+ * it (403 otherwise).
  */
 export const PutAutofillProfileBodySchema = z.object({
   revision: z.number().int().nonnegative(),
   profile: AutofillProfileSaveSchema,
-  sensitive: AutofillSensitiveSaveSchema,
+  sensitive: AutofillSensitiveSaveSchema.optional(),
 });
 export type PutAutofillProfileBody = z.infer<typeof PutAutofillProfileBodySchema>;
 
-/** PUT's answer: the row as saved. */
+/**
+ * PUT's answer: the row as saved. `sensitive` is absent for a token without profile:sensitive (version 3), which never
+ * reads the sensitive part. `anythingElseFlaggedLines` (version 3): the 0-based indexes, in `profile.anythingElse`
+ * split at its line breaks, of the lines that state a sensitive answer (a visa, a salary, an age...); they are saved,
+ * but never reach the AI, so the page can say so. [] when none.
+ */
 export const PutAutofillProfileResponseSchema = z.object({
   revision: z.number().int().nonnegative(),
   updatedAt: InstantSchema,
   profile: AutofillProfileSchema,
-  sensitive: AutofillSensitiveSchema,
+  sensitive: AutofillSensitiveSchema.optional(),
+  anythingElseFlaggedLines: z.array(z.number().int().nonnegative()),
 });
 export type PutAutofillProfileResponse = z.infer<typeof PutAutofillProfileResponseSchema>;
 
@@ -408,6 +430,7 @@ export const EMPTY_AUTOFILL_PROFILE: AutofillProfile = {
     referralSource: '',
   },
   documents: { resumeId: null },
+  anythingElse: '',
 };
 
 /** Every answer not provided, and no country. */

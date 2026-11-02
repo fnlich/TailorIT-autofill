@@ -24,6 +24,19 @@ export const WebUrlSchema = z.union([
 ]);
 export const textOf = (max: number) => z.string().max(max, `Use at most ${max} characters`);
 
+/**
+ * A site's host name as `location.hostname` writes it (version 3): lower-case letters, digits and hyphens in labels of
+ * at most 63 characters, joined by dots, at most 253 in all ("acme.wd5.myworkdayjobs.com"). No scheme, port, path or
+ * query: a request that names a site never carries more of its address.
+ */
+export const HostNameSchema = z
+  .string()
+  .max(253, 'Use at most 253 characters')
+  .regex(
+    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/,
+    "Enter the site's host name in lower case, like acme.wd5.myworkdayjobs.com",
+  );
+
 /** The three states of a sensitive answer; see `sensitive()`. */
 export const SENSITIVE_ANSWER_STATES = ['not_provided', 'declined', 'value'] as const;
 export type SensitiveAnswerState = (typeof SENSITIVE_ANSWER_STATES)[number];

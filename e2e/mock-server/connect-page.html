@@ -2,10 +2,11 @@
 <!--
   The TailorIT mock's stand-in for Settings › Autofill › Extension (docs/design/tailorit.md §2.3), served at
   /settings/autofill, the only address the extension's worker accepts pair/complete from. Its account is always signed
-  in. "Connect the extension" calls the mock's POST /api/autofill/connect with the sensitive box's choice; then, with a
-  state in the address, chrome.runtime available (the extension lists this origin in externally_connectable) and an
-  extension id in the answer, it sends {v: 1, type: 'pair/complete', state, code} to each id, 3 s at most each. Without
-  a state, or when the hand-off fails, it shows the code with a countdown, for the options page's code fallback.
+  in. "Connect the extension" calls the mock's POST /api/autofill/connect with the sensitive box's choice (ticked by
+  default) and, since version 3, the sign-in box's (unticked by default, as TailorIT's); then, with a state in the
+  address, chrome.runtime available (the extension lists this origin in externally_connectable) and an extension id in
+  the answer, it sends {v: 1, type: 'pair/complete', state, code} to each id, 3 s at most each. Without a state, or
+  when the hand-off fails, it shows the code with a countdown, for the options page's code fallback.
   For the e2e suite it records each step on <html data-pairing="..."> and the extension's replies in
   window.__pairing (value-free: {ok, error}); the code itself is shown in #code.
 -->
@@ -27,7 +28,8 @@
     <section aria-labelledby="extension-heading">
       <h2 id="extension-heading">Extension</h2>
       <p>Connect TailorIT Autofill in this browser to fill job applications from your profile.</p>
-      <label><input type="checkbox" id="include-sensitive" checked> Let this browser read work authorization and self-identification answers</label>
+      <label><input type="checkbox" id="include-sensitive" checked> Let this browser read and change work authorization and self-identification answers</label>
+      <label><input type="checkbox" id="allow-sign-in"> Let this browser sign in to job sites with my saved password</label>
       <button type="button" id="connect">Connect the extension</button>
       <p id="status" role="status"></p>
       <div id="code-dialog" role="dialog" aria-labelledby="code-title" hidden>
@@ -45,6 +47,7 @@
       const root = document.documentElement;
       const button = document.getElementById('connect');
       const sensitive = document.getElementById('include-sensitive');
+      const signIn = document.getElementById('allow-sign-in');
       const status = document.getElementById('status');
       const dialog = document.getElementById('code-dialog');
       const shown = document.getElementById('code');
@@ -90,7 +93,7 @@
         const answer = await fetch('/api/autofill/connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ includeSensitive: sensitive.checked }),
+          body: JSON.stringify({ includeSensitive: sensitive.checked, allowSignIn: signIn.checked }),
         });
         if (answer.status !== 201) {
           status.textContent = 'TailorIT could not make a connection code. Try again.';

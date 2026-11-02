@@ -1,0 +1,13 @@
+{
+  "queued": [],
+  "skipped": [
+    {
+      "jobId": 1077,
+      "reason": "unsupported_site"
+    },
+    {
+      "jobId": 1078,
+      "reason": "posting_closed"
+    }
+  ]
+}

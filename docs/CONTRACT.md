@@ -1,26 +1,30 @@
 # The TailorIT contract
 
-The extension talks to TailorIT only over HTTP, from its service worker, with a bearer token. TailorIT owns the contract: zod schemas in `packages/shared/src/autofill/` of the TailorIT repository, version `apiVersion: 2` (version 1 until the v2 pull: the scopes `jobs:add` and `letters:write`, the resume reason `chosen`, the lookup's `match` and job facts, `POST /jobs`, `POST /ai/answer`, a draft question's `currentAnswer`, and (Phase G, TailorIT v1.2 `3b049ce`; the answer's `aiWritten`, `ac15c30`) the cover letters). The full design (DDL, every route, the rate limits) is [design/tailorit.md](design/tailorit.md).
+The extension talks to TailorIT only over HTTP, from its service worker, with a bearer token. TailorIT owns the contract: zod schemas in `packages/shared/src/autofill/` of the TailorIT repository, version `apiVersion: 3` since the v3 pull (TailorIT v1.2 `70706b2`: the scopes `profile:write`, `tracker:write`, `agent:run` and `credentials:read`, the lookup's job match `chosen` and its `jobId`, Ashby's addresses in `parseAtsUrl` and `addablePosting`, the profile's `anythingElse` and its envelopes' `anythingElseFlaggedLines`, a draft question's `instruction`, `PUT /profile` from a token, and the routes below marked v3). Version 2 (the v2 pull: the scopes `jobs:add` and `letters:write`, the resume reason `chosen`, the lookup's `match` and job facts, `POST /jobs`, `POST /ai/answer`, a draft question's `currentAnswer`, and (Phase G, TailorIT v1.2 `3b049ce`; the answer's `aiWritten`, `ac15c30`) the cover letters) and version 1 before it are no longer spoken: a server and an extension of different versions refuse each other (409), and the person connects the extension again once after each bump. The full design (DDL, every route, the rate limits) is [design/tailorit.md](design/tailorit.md).
 
 ## Keeping the copy in step (from Phase 2)
 - `npm run contract:pull -- F:\Develop\TailorIT` (the owner's checkout, branch `v1.2`; during Phases 2-6, the `autofill` worktree) copies the contract's non-test files byte for byte into `src/contract/tailorit/`, its `contract.json` and fixtures into `src/contract/tailorit/v1/`, and records the source commit in `SOURCE.json`. The copied files are never edited by hand.
 - Both repos' contract tests check that the copy is unedited (file hashes), that the valid fixtures parse and the invalid ones fail, that zod's version matches (4.6.7), and that `AUTOFILL_FIELD_KINDS` and the value lists equal the extension's.
-- Every token request and answer carries `X-TailorIT-Autofill-Api: 2` (`AUTOFILL_API_VERSION`). The extension decides that versions differ only from that response header, never from a status code.
+- Every token request and answer carries `X-TailorIT-Autofill-Api: 3` (`AUTOFILL_API_VERSION`). The extension decides that versions differ only from that response header, never from a status code.
 - The core may `import type` from `src/contract/tailorit` (erased at build); only `src/contract`, `src/messaging` and `src/shared` import zod at run time.
 
 ## Endpoints (all under `/api/autofill` unless stated)
 
 | Method | Path | Who | Phase | Purpose |
 |---|---|---|---|---|
-| POST | `/connect` `{includeSensitive}` | the Settings page (session) | 2 | mint a one-time connect code with its scopes |
+| POST | `/connect` `{includeSensitive, allowSignIn?}` | the Settings page (session) | 2; v3 adds `allowSignIn` | mint a one-time connect code with its scopes: every scope but `profile:sensitive` without the sensitive box, and `credentials:read` only with the sign-in box ("Let this browser sign in to job sites with my saved password", unticked by default) |
 | POST | `/connect/redeem` `{code, client}` | the extension's worker (no cookie) | 2 | exchange the code for a token |
 | GET, DELETE | `/session` | token | 2 | who is connected; disconnect |
-| GET, DELETE | `/tokens`, `/tokens/:id` | session | 2 | list and revoke connections |
-| GET | `/profile` | token (`profile:read`) | 2 | the profile, never the sensitive part |
+| GET, DELETE | `/tokens`, `/tokens/:id` | session | 2; v3 adds each connection's `signIn` | list and revoke connections |
+| GET | `/profile` | token (`profile:read`) | 2; v3 adds `profile.anythingElse` and `anythingElseFlaggedLines` | the profile, never the sensitive part |
 | GET | `/profile/sensitive` | token (`profile:sensitive`) | 2 | work authorization, self-identification, age, pronouns, pay |
-| PUT, GET | `/profile`, `/profile/seed` | session | 2 | edit the profile; seed it from a resume |
-| POST | `/lookup` `{url, includePostingText, resumeId?}` | token (`jobs:lookup`) | 2 (Greenhouse, Lever), 4 (Ashby), 5 (Workday); v2 adds `resumeId`, `match` and the job's facts | the job, the application, the resume to attach and its keyword match |
-| POST | `/jobs` `{url, resumeId?}` | token (`jobs:add`) | v2 | add the page's posting (Greenhouse and Lever) to TailorIT's jobs and the person's tracker as Saved; answers `{created, lookup}` |
+| PUT | `/profile` | session; v3 also a token (`profile:write`; its `sensitive` only with `profile:sensitive` too) | 2, v3 | save the profile; `sensitive` absent keeps the stored part, and is answered only to a caller that may read it |
+| GET | `/profile/seed` | session | 2 | seed the profile from a resume |
+| POST | `/lookup` `{url, includePostingText, resumeId?, jobId?}` | token (`jobs:lookup`) | 2 (Greenhouse, Lever), v3 (Ashby), later (Workday); v2 adds `resumeId`, `match` and the job's facts; v3 `jobId` (the job the person chose, `matchedBy: 'chosen'`) | the job, the application, the resume to attach and its keyword match |
+| POST | `/jobs` `{url, resumeId?}` | token (`jobs:add`) | v2; v3 adds Ashby | add the page's posting (Greenhouse, Lever, Ashby) to TailorIT's jobs and the person's tracker as Saved; answers `{created, lookup}` |
+| GET | `/jobs/search?q=` | token (`jobs:lookup`) | v3 | at most 10 jobs to fill a form for ("Autofill for another job"); not called yet |
+| POST | `/applied` `{url?, jobId?, resumeId?}` | token (`tracker:write`) | v3 | mark the job Applied in the tracker; answers the lookup; not called yet |
+| POST | `/site-requests` `{host}` | token (`jobs:lookup`) | v3 | ask TailorIT to support a site (a host name alone); not called yet |
 | GET | `/resumes`, `/resumes/:id/file` | token (`resumes:read`) | 2 | the resume list; the file's bytes with `X-TailorIT-File-Kind` and `X-TailorIT-Sha256` |
 | POST | `/ai/pick`, `/ai/classify` | token (`ai:run`) | 4 | an option index or a category, validated on the server |
 | POST | `/ai/draft` | token (`ai:run`) | 6; v2 adds `currentAnswer` and the side panel's custom question | a capped draft for a free-text question |
@@ -29,6 +33,10 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | GET, PUT, DELETE | `/answers`, `/answers/:id` | token (GET `profile:read`; PUT and DELETE `answers:write`) | 6 | saved answers |
 | POST | `/cover-letters` `{jobId?, company, jobTitle, jobText?, resumeId, generate, canaries?}` | token (`letters:write`) | v2 (Phase G) | the person's letter for the application, written now by TailorIT's cover-letter AI when `generate` and there is none; answers `{letterId, state: ready \| generating \| failed, aiWritten}` (`aiWritten`: being written, or the AI's and never edited), 404 with `generate` false and no letter the person wrote |
 | GET | `/cover-letters/:id`, `/cover-letters/:id/file` | token (`letters:write`) | v2 (Phase G) | where a letter stands (polled, 120 a minute); its PDF with `X-TailorIT-File-Kind: pdf`, `X-TailorIT-Sha256` and a Content-Disposition name (409 until ready, 413 over 10 MiB) |
+| GET | `/cover-letters/:id/text` | token (`letters:write`) | v3 | a ready letter's words as plain text, for a text box (409 until ready); not called yet |
+| GET, POST | `/agent/next`, `/agent/:id/result` | token (`agent:run`) | v3 | take the next auto-apply job; report how it went; not called yet |
+| GET | `/credentials?host=` | token (`credentials:read`) | v3 | the job-site sign-in for that host (`no-store`, 30 an hour); not called yet |
+| GET, POST, PUT, DELETE | `/site-requests` (GET), `/agent/queue`, `/agent/queue/:id`, `/agent/queue/clear-finished`, `/agent/settings`, `/sign-ins`, `/sign-ins/:id` | session | v3 | TailorIT's own pages: the site requests, the auto-apply queue and its rule, the job-site sign-ins |
 
 ## How the extension calls it (`src/background/server-client.ts`, Phase 2)
 - **Only the worker calls TailorIT**, at the build's origin (`__TAILORIT_ORIGIN__`: `http://localhost:3100`, or the mock's `http://localhost:3190` in the e2e build). Content scripts and pages never do.
@@ -36,12 +44,12 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 - **Every request:**
   - `credentials: 'omit'` (no cookie, ever), `redirect: 'error'`, `cache: 'no-store'`, `referrerPolicy: 'no-referrer'`;
   - `signal: AbortSignal.timeout(25_000)`, the resume file included;
-  - `X-TailorIT-Autofill-Api: 2`.
+  - `X-TailorIT-Autofill-Api: 3`.
 - **Token requests** add `Authorization: Bearer tia_…`. `POST /connect/redeem` carries no Authorization header and no cookie, even while a token is held.
 - **Answers:**
   - Every JSON answer is parsed with the contract's schema; one that does not parse is a failure (`bad-answer`), never used.
   - The resume file is read with a 10 MiB cap, from `Content-Length` first, then while reading. Its `X-TailorIT-File-Kind` and `X-TailorIT-Sha256` are kept with the bytes.
-- **Versions** differ only when an answer's `X-TailorIT-Autofill-Api` header names another version, whatever its status. The options page shows it (`auth/status`'s `versionMismatch`), and nothing is filled. A 409 with this version's header is an ordinary conflict (`ai_busy`, `revision_conflict`); its error code is kept for decisions, never logged or shown.
+- **Versions** differ only when an answer's `X-TailorIT-Autofill-Api` header names another version, whatever its status. The options page shows it (`auth/status`'s `versionMismatch`: update the older one, then connect again), and nothing is filled. A token made before version 3 still works against a version 3 TailorIT for what it did before; the version 3 routes refuse it (403, "Connect the extension again"), so the person connects again once. A 409 with this version's header is an ordinary conflict (`ai_busy`, `revision_conflict`); its error code is kept for decisions, never logged or shown.
 - **Statuses:**
   - 401 to a token request drops the token: the extension is disconnected, and the options page says TailorIT revoked it. A 401 to redeem means the code was wrong, used or expired.
   - 403 on `/profile/sensitive` means this browser's token may not read the sensitive part (`not-shared`).
@@ -52,13 +60,13 @@ The extension talks to TailorIT only over HTTP, from its service worker, with a 
 | Route | When the worker calls it | What it uses |
 |---|---|---|
 | `POST /connect/redeem` | `pair/complete` from TailorIT's page, or `auth/redeemCode` | the token record (IndexedDB), the account (memory) |
-| `GET /session` | after a redeem, and for `auth/status` when the account is not in memory | the account's name and email |
+| `GET /session` | after a redeem, and for `auth/status` when the account is not in memory | the account's name and email; the token's scopes (version 3's four new ones are kept with the token and used nowhere yet: the options page says only whether `profile:sensitive` is held) |
 | `DELETE /session` | `auth/disconnect` (the token is already forgotten), and when a new pairing replaces an older token | none |
-| `GET /profile` | every `run/begin`; `plan/request` or `runstate/put` when the profile is no longer in memory | the canonical profile (memory, 5 idle minutes) |
+| `GET /profile` | every `run/begin`; `plan/request` or `runstate/put` when the profile is no longer in memory | the canonical profile (memory, 5 idle minutes). Version 3's `anythingElse` and `anythingElseFlaggedLines` are parsed and left unused |
 | `GET /profile/sensitive` | once per run, when a plan needs it | the same profile, with its sensitive part |
 | `POST /lookup {url, includePostingText: true, resumeId?}` | every `run/begin`, with the frame's own address and (v2) the resume chosen for the tab | `postingText` for the policy check only; `suggestedResume` for the resume port; (v2) the rest, without the posting text, as the frame document's job card |
 | `POST /lookup {url, includePostingText: false, resumeId?}` (v2) | the side panel's job card (`panel/job`, through the form frame's `job/lookup`), when no card is held for that document; the resume chooser after a worker restart | the card: the job's facts, the tracker entry, the resume and its match. A `match` that breaks the contract is dropped alone (`server.lookup-match-dropped`) |
-| `POST /jobs {url, resumeId?}` (v2) | `panel/addJob` (Add this job to TailorIT, Save to tracker), through the form frame's `job/add`, only for an address `addablePosting` reads | its `lookup` becomes the card; `created` says added or saved; 404 closed, 400 `unsupported`, 403 a connection made before `jobs:add` |
+| `POST /jobs {url, resumeId?}` (v2) | `panel/addJob` (Add this job to TailorIT, Save to tracker), through the form frame's `job/add`, only for an address `addablePosting` reads (an Ashby posting's too since the v3 pull) | its `lookup` becomes the card; `created` says added or saved; 404 closed, 400 `unsupported`, 403 a connection made before `jobs:add` |
 | `POST /ai/draft` (v2, one question) | `panel/ask`: the person's custom question, with the active resume's id and a cap of 600, 1,500 or 3,000 | the draft, checked again for the page's canaries and its cap |
 | `GET /resumes` | the resume port, when the lookup suggests no resume and the profile (or, v2, the person's choice) names one; (v2) the card's Change, `panel/resumes`; a custom question's resume title when no card names it | that resume's file kind and name; the picker's ids, titles and kinds (never a file name) |
 | `GET /resumes/:id/file` | the resume port | the bytes, released within 60 s |
@@ -83,7 +91,7 @@ The contract at TailorIT `autofill` `eefe2e4` (`answers.ts`, and `POST /api/auto
 
 ## The mock (e2e)
 
-`e2e/mock-server/server.mjs` stands in for TailorIT on `http://localhost:3190`. In Phase 0 it answers `/__mock/health`, `/__mock/requests` (Authorization redacted) and `/__mock/reset`. From Phase 2 it answers each route with `src/contract/tailorit/v1/fixtures/<ResponseSchema>/valid/golden.json`, and every answer to a request that presents a `tia_` bearer carries `X-TailorIT-Autofill-Api: 1`, as TailorIT's do:
+`e2e/mock-server/server.mjs` stands in for TailorIT on `http://localhost:3190`. In Phase 0 it answers `/__mock/health`, `/__mock/requests` (Authorization redacted) and `/__mock/reset`. From Phase 2 it answers each route with `src/contract/tailorit/v1/fixtures/<ResponseSchema>/valid/golden.json`, and every answer to a request that presents a `tia_` bearer carries `X-TailorIT-Autofill-Api` with the contract's version (3 now), as TailorIT's do:
 
 | Route | Status | Body |
 |---|---|---|
@@ -96,7 +104,8 @@ The contract at TailorIT `autofill` `eefe2e4` (`answers.ts`, and `POST /api/auto
 | `GET /api/autofill/resumes` | 200 | `AutofillResumeList/valid/golden.json` |
 | `GET /api/autofill/resumes/:id/file` | 200 | the golden resume's bytes, with `X-TailorIT-File-Kind` and `X-TailorIT-Sha256` (the hex SHA-256 of exactly those bytes) |
 | `POST /api/autofill/connect` | 201 | `AutofillConnectResponse/valid/golden.json` with a freshly minted single-use code, its `expiresAt` and this repository's extension id in `extensionIds` (the stand-in connect page calls it) |
-| `GET /api/autofill/tokens`, `DELETE /api/autofill/tokens/:id`, `PUT /api/autofill/profile`, `GET /api/autofill/profile/seed` | 200, 204, 200, 200 | their schemas' `valid/golden.json`, to the stand-in Settings page only; a token gets 403, as from TailorIT |
+| `GET /api/autofill/tokens`, `DELETE /api/autofill/tokens/:id`, `GET /api/autofill/profile/seed` | 200, 204, 200 | their schemas' `valid/golden.json`, to the stand-in Settings page only; a token gets 403, as from TailorIT |
+| `PUT /api/autofill/profile` | 200 | `PutAutofillProfileResponse/valid/golden.json`, to the Settings page and (v3) a token with `profile:write`: without `sensitive` for a token that lacks `profile:sensitive`, which may not send it (403) |
 | `GET /settings/autofill` | 200 | the stand-in connect page, `e2e/mock-server/connect-page.html` |
 
 The worker's own tests use the same answers (`src/background/worker.testkit.ts`, `createFakeTailorIT`).
@@ -107,7 +116,7 @@ The worker's own tests use the same answers (`src/background/worker.testkit.ts`,
 - **Where an answer differs from the plain example:**
   - `GET /profile` and `GET /profile/sensitive` wrap the golden profile, `fixtures/profiles/alex-rivera.profile.json` and `alex-rivera.sensitive.json`, in their envelopes' examples;
   - the lookup's `suggestedResume`, and the resume list's item with the same id, name the golden PDF `e2e/mock-server/golden-resume.pdf` as "Alex Rivera Resume.pdf" (the golden profile's `resumeId` is null);
-  - a token's expiry is 90 days from its redeem and a code's 10 minutes from its minting, so the examples' fixed dates never lapse mid-run; `GET /session` names the scopes of the last code redeemed.
+  - a token's expiry is 90 days from its redeem and a code's 10 minutes from its minting, so the examples' fixed dates never lapse mid-run; `GET /session` names the scopes of the last code redeemed (`connectScopes`: every scope but `profile:sensitive` when the sensitive box was unticked, and `credentials:read` only when the sign-in box was ticked or `sign-in-allowed` is on).
 - **Tokens, in the order TailorIT's middleware checks them:** a dead `tia_` token gets 401 (`AutofillErrorBody/valid/golden.json`); a path outside the token routes 403; a missing or other `X-TailorIT-Autofill-Api` 409 `conflict`; a session-only route or a missing scope 403. Every answer to a `tia_` bearer names the version, refusals included. `DELETE /session` revokes the token until the next redeem or reset.
 - **Everything else** is the stand-in Settings page's, which is always signed in. Redeem needs an Origin that is absent or `chrome-extension://` (else 403) and a code the mock minted, used once within its 10 minutes (else 401 `not_signed_in`).
 
@@ -116,13 +125,14 @@ The worker's own tests use the same answers (`src/background/worker.testkit.ts`,
 | `GET /__mock/health` | `{ok: true}` |
 | `GET /__mock/requests` | every request since the last reset: method, path, query, headers (Authorization `REDACTED`), body and status (0 while a slow answer waits, and when its client left first) |
 | `GET /__mock/resume` | the golden resume's id, name, kind, type, size and SHA-256 |
-| `POST /__mock/reset` | forgets requests, scenarios, codes and AI tasks, ends slow answers still waiting, and makes the golden token valid with all its scopes again |
+| `POST /__mock/reset` | forgets requests, scenarios, codes and AI tasks, ends slow answers still waiting, and makes the golden token valid again with a code's scopes when the sensitive box is ticked and the sign-in box is not (no `credentials:read`) |
 | `POST /__mock/scenario {name, times?, delayMs?, value?}` | turns on a scripted answer for `times` matching requests (default: until the next reset); `value` is what an AI scenario answers with |
 
 | Scenario | Effect |
 |---|---|
 | `unauthorized` | every token request gets 401 `not_signed_in` |
-| `version-mismatch` | the mock speaks version 3: every token request gets 409 `conflict`, its header naming 3 |
+| `version-mismatch` | the mock speaks the next version (4): every token request gets 409 `conflict`, its header naming 4 |
+| `sign-in-allowed` (v3) | the token holds `credentials:read` too, as if connected with the sign-in box ticked: `GET /credentials` answers and `GET /session` names it, until the reset |
 | `sensitive-forbidden` | `GET /profile/sensitive` gets 403 |
 | `profile-unavailable` | `GET /profile` gets 500 |
 | `lookup-slow` | `POST /lookup` answers after `delayMs` (default 30 s, past the worker's 25 s timeout) |
@@ -152,6 +162,11 @@ The worker's own tests use the same answers (`src/background/worker.testkit.ts`,
 - **A lookup naming `resumeId`** that is one of the listed resumes suggests that resume (reason `chosen`) and scores it with `chosen.json`'s match; any other id is passed over, as TailorIT does. Every lookup's match names the resume it suggests.
 - **`POST /ai/answer`** makes an `autofill_answer` task as the other AI routes do (1 to 10 items, each `choice` or `text`); by default every item is `no_answer`, so a form fills as it did before version 2, and `ai-answer` answers them all.
 - The mock still refuses to start when a route of the contract's table has no answer.
+
+### The mock's version 3 routes
+- Every answer to a `tia_` bearer names version 3. The stand-in connect page has TailorIT's two boxes: "Let this browser read and change work authorization and self-identification answers" (ticked) and "Let this browser sign in to job sites with my saved password" (unticked); `POST /connect` takes `allowSignIn` (a boolean, else 400).
+- **`PUT /profile`** answers a token with `profile:write` as it answers the Settings page (above). **A lookup naming `jobId`** (a positive integer, else 400) answers `job-chosen.json` (`matchedBy: 'chosen'`), its resume the golden PDF.
+- The routes the extension does not call yet answer their examples: `GET /jobs/search`, `POST /applied` (the golden lookup, or `job-chosen.json` for a `jobId`; 400 without either), `POST /site-requests` (204), `GET /cover-letters/:id/text` (`AutofillCoverLetterText`'s example once the letter is ready; 409 before, 404 for one the mock never made, as the file), `GET /agent/next` (`nothing-to-do.json`), `POST /agent/:id/result` (204) and `GET /credentials` (its example, under `credentials:read` only); the Settings page's site requests, auto-apply queue and settings and job-site sign-ins answer theirs to the stand-in page, 403 to a token.
 
 ### The mock's cover letters (Phase G)
 - **`POST /cover-letters`** checks its body as TailorIT does in brief (`generate` a boolean, a resume id, a company and a title of at most 200, both needed without a `jobId`, `jobText` at most 20,000, at most 50 canaries of 2 to 200 characters; else 400). By default `generate` false is 404 `not_found` (the person has no letter for the job), and `generate` true makes a letter `generating` that reads `ready` half a second later (before the worker's first poll).

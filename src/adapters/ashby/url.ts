@@ -12,7 +12,7 @@
  * to read), so no address is the page after submitting. The org slug is case-insensitive and a posting's UUID unique,
  * so the canonical URL folds both to lower case and drops the query (?embed=js) and the fragment: the overview, the
  * form and the embed's spelling of one posting share one application key. The contract's parseAtsUrl is never called
- * here: src/adapters/url.test.ts runs both over one table (TailorIT reads no Ashby address yet).
+ * here: src/adapters/url.test.ts runs both over one table (TailorIT reads Ashby's addresses since API version 3).
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 

@@ -1,5 +1,5 @@
 {
-  "apiVersion": 2,
+  "apiVersion": 3,
   "token": {
     "id": "e4b7c2a9-1f3d-4e6b-8a50-c9d2f1b3a786",
     "label": "Chrome on Windows",
@@ -11,7 +11,11 @@
       "ai:run",
       "answers:write",
       "jobs:add",
-      "letters:write"
+      "letters:write",
+      "profile:write",
+      "tracker:write",
+      "agent:run",
+      "credentials:read"
     ],
     "expiresAt": "2027-01-20T12:00:00.000Z"
   },

@@ -32,6 +32,12 @@ export const AutofillLookupRequestSchema = z.object({
    * passed over as if it had not been sent.
    */
   resumeId: RequestResumeIdSchema.optional(),
+  /**
+   * The TailorIT job this form is for, when the person chose one (the side panel's "Autofill for another job", version
+   * 3; a job GET /api/autofill/jobs/search or a lookup answered): it is the job (`matchedBy` `chosen`) whatever the
+   * address names, and its tracker entry is the application. 404 `not_found` when TailorIT has no such job.
+   */
+  jobId: z.number().int().positive().optional(),
 });
 export type AutofillLookupRequest = z.infer<typeof AutofillLookupRequestSchema>;
 
@@ -58,8 +64,11 @@ export const AutofillResumeChoiceSchema = z.object({
 });
 export type AutofillResumeChoice = z.infer<typeof AutofillResumeChoiceSchema>;
 
-/** How the job was found: the ATS's own posting id (a source TailorIT ingests), or the posting's link. */
-export const LOOKUP_JOB_MATCHES = ['source_link', 'link_key'] as const;
+/**
+ * How the job was found: the ATS's own posting id (a source TailorIT ingests), the posting's link, or (version 3) the
+ * request's `jobId`, the job the person chose.
+ */
+export const LOOKUP_JOB_MATCHES = ['source_link', 'link_key', 'chosen'] as const;
 /** How the application was found: by its job, or by the posting link saved on it. */
 export const LOOKUP_APPLICATION_MATCHES = ['job', 'posting_url'] as const;
 
@@ -176,8 +185,8 @@ export type AutofillAddJobResponse = z.infer<typeof AutofillAddJobResponseSchema
 /**
  * What POST /api/autofill/jobs refuses with, besides every token route's refusals (401, 403, 409 `conflict` for another
  * API version, 429), and the status of each: `validation_failed` (no address, or one over 2,048 characters),
- * `unsupported` (a job TailorIT does not have, at an address it cannot add from: not Greenhouse or Lever, a page that
- * does not name the board, or Greenhouse's EU boards), `not_found` (the ATS has no such posting: it closed),
+ * `unsupported` (a job TailorIT does not have, at an address it cannot add from: not Greenhouse, Lever or Ashby, a page
+ * that does not name the board, or Greenhouse's EU boards), `not_found` (the ATS has no such posting: it closed),
  * `ats_failed` (the ATS answered with something TailorIT cannot read), `ats_unavailable` (it could not be reached in
  * time; try again later) and `internal` (the posting was read but TailorIT could not save it; try again).
  */
@@ -193,7 +202,10 @@ export const AUTOFILL_ADD_JOB_REFUSALS = {
 /** What `parseAtsUrl` reads from an application page's address. */
 export interface ParsedAtsUrl {
   kind: AtsKind;
-  /** The Greenhouse board or the Lever site, as the address writes it; null when the address does not name it. */
+  /**
+   * The Greenhouse board or the Lever site, as the address writes it, or the Ashby job board in lower case; null when
+   * the address does not name it.
+   */
   board: string | null;
   /** The posting's id on that ATS. */
   externalId: string;
@@ -224,6 +236,11 @@ const GREENHOUSE_BOARD = /^[A-Za-z0-9_-]+$/;
 const GREENHOUSE_JOB_ID = /^\d+$/;
 const LEVER_SITE = /^[A-Za-z0-9_.-]+$/;
 const LEVER_POSTING_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ASHBY_HOST = 'jobs.ashbyhq.com';
+/** An Ashby job board's name as its address writes it, percent-decoded: letters, digits, '.', '_', '-' and spaces. */
+const ASHBY_BOARD = /^[A-Za-z0-9_. -]{1,100}$/;
+/** Ashby's posting ids are UUIDs, as Lever's are. */
+const ASHBY_POSTING_ID = LEVER_POSTING_ID;
 
 /** The first value of a query parameter, its name compared in lower case. */
 function queryValue(url: UrlLike, name: string): string | null {
@@ -269,6 +286,35 @@ function leverPosting(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'lever', board: site, externalId: id, canonical: [page, `${page}/apply`] };
 }
 
+/** A path segment percent-decoded, or null when it is not percent-encoding after all ("acme%"). */
+function decodedSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * jobs.ashbyhq.com/{board}/{posting id}, then /application or not, or the board's page naming the posting in
+ * ?ashby_jid= (the embedded board's own address). The board's name is case-insensitive: it is read in lower case. The
+ * query (?embed=js, tracking parameters) never matters.
+ */
+function ashbyPosting(url: UrlLike): ParsedAtsUrl | null {
+  const [segment, posting, ...rest] = segmentsOf(url);
+  const named = segment === undefined ? null : decodedSegment(segment);
+  if (named === null || !ASHBY_BOARD.test(named)) return null;
+  const board = named.toLowerCase();
+  let id: string | null = null;
+  if (posting === undefined) id = queryValue(url, 'ashby_jid');
+  else if (rest.length === 0 || (rest.length === 1 && rest[0] === 'application')) id = posting;
+  if (id === null || !ASHBY_POSTING_ID.test(id)) return null;
+  const externalId = id.toLowerCase();
+  // The board's page in lower case first (the API's jobUrl), then as the address wrote it.
+  const pages = [...new Set([board, segment!])].map((name) => `https://${ASHBY_HOST}/${name}/${externalId}`);
+  return { kind: 'ashby', board, externalId, canonical: pages.flatMap((page) => [page, `${page}/application`]) };
+}
+
 /** A company's own careers page that embeds a Greenhouse form names the posting in ?gh_jid=. */
 function greenhouseOnCompanyPage(url: UrlLike): ParsedAtsUrl | null {
   const id = queryValue(url, 'gh_jid');
@@ -281,8 +327,10 @@ function greenhouseOnCompanyPage(url: UrlLike): ParsedAtsUrl | null {
 /**
  * The ATS posting an application page's address names, or null. Greenhouse: its boards and job boards (and their
  * .eu. twins) at /{board}/jobs/{id}, the embedded form at /embed/job_app?for={board}&token={id}, and a company page
- * with ?gh_jid={id}. Lever: jobs.lever.co and jobs.eu.lever.co at /{site}/{id}, with /apply or /thanks. Hosts and
- * query parameter names are compared in lower case; the fragment never matters. Ashby and Workday come later.
+ * with ?gh_jid={id}. Lever: jobs.lever.co and jobs.eu.lever.co at /{site}/{id}, with /apply or /thanks. Ashby (version
+ * 3): jobs.ashbyhq.com at /{board}/{id}, with /application or not, and /{board}?ashby_jid={id}; a company page with
+ * ?ashby_jid= names no board, so it is not read (its job is found by its link, as any page's). Hosts and query
+ * parameter names are compared in lower case; the fragment never matters. Workday comes later.
  */
 export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   if (!runtime.URL) return null;
@@ -296,14 +344,18 @@ export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   const region = GREENHOUSE_REGIONS.get(url.hostname);
   if (region !== undefined) return greenhousePosting(url, region) ?? greenhouseOnCompanyPage(url);
   if (LEVER_HOSTS.has(url.hostname)) return leverPosting(url);
+  if (url.hostname === ASHBY_HOST) return ashbyPosting(url);
   return greenhouseOnCompanyPage(url);
 }
 
-/** The ATSs POST /api/autofill/jobs can read one posting from (their public job APIs). */
-export const AUTOFILL_ADDABLE_ATS = ['greenhouse', 'lever'] as const;
+/** The ATSs POST /api/autofill/jobs can read one posting from (their public job APIs; Ashby since version 3). */
+export const AUTOFILL_ADDABLE_ATS = ['greenhouse', 'lever', 'ashby'] as const;
 export type AddableAtsKind = (typeof AUTOFILL_ADDABLE_ATS)[number];
 
-/** A posting POST /api/autofill/jobs can add: its ATS, board or site, id, and the ATS region it is hosted in. */
+/**
+ * A posting POST /api/autofill/jobs can add: its ATS, board or site, id, and the ATS region it is hosted in (Ashby's
+ * is always `global`).
+ */
 export interface AddablePosting {
   kind: AddableAtsKind;
   board: string;
@@ -314,7 +366,8 @@ export interface AddablePosting {
 /**
  * The posting an address lets TailorIT add (the extension offers "Add this job to TailorIT" exactly for these), or
  * null: Greenhouse needs the board in the address (a company page's ?gh_jid= has none: the embedded form's own address
- * names it) and is read on its global boards only, as TailorIT's Greenhouse sources are; Lever on either of its hosts.
+ * names it) and is read on its global boards only, as TailorIT's Greenhouse sources are; Lever on either of its hosts;
+ * Ashby from its job board's addresses (one read of the board's API, which lists the posting).
  */
 export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | null {
   if (!parsed || parsed.board === null) return null;
@@ -324,5 +377,8 @@ export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | nu
     return { kind: 'greenhouse', board: parsed.board, externalId: parsed.externalId, region };
   }
   if (parsed.kind === 'lever') return { kind: 'lever', board: parsed.board, externalId: parsed.externalId, region };
+  if (parsed.kind === 'ashby') {
+    return { kind: 'ashby', board: parsed.board, externalId: parsed.externalId, region: 'global' };
+  }
   return null;
 }
