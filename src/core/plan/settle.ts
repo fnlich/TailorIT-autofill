@@ -42,9 +42,11 @@ export const STATUS_PRECEDENCE: readonly FillStatus[] = [...FILL_STATUSES].sort(
 export function settleRow(planned: FillResult, outcome: FillOutcome): FillResult {
   switch (outcome.kind) {
     case 'verified': {
+      // A flagged row whose value was written and read back only says "check it" (SPEC-AMENDMENTS §11): it needs the
+      // person only when its plan asked for them (a draft to confirm).
       const status = strongerStatus(planned.status, 'verified');
       return { ...planned, status, wrote: true, verification: 'verified',
-        needsUserAction: status === 'flagged' || status === 'blocked' };
+        needsUserAction: planned.needsUserAction || status === 'blocked' };
     }
     case 'mismatch': {
       // A row planned as verified becomes filled; flagged and blocked are stronger and stay.

@@ -28,6 +28,7 @@ import {
   type FakeWorker, type FakeWorkerOptions,
 } from './content.testkit';
 import type { RunEnd } from './orchestrator';
+import { POSTING_READ_MIN } from './policy';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 /** The test-only adapter of trap 9 (d): it declares the visible Attach button as its hidden input's upload widget. */
@@ -536,6 +537,20 @@ describe('the policy gate, before anything is filled', () => {
     expect(ran.report.notices.map((notice) => notice.code)).toContain('policy-unreadable');
     expect(ran.runtime.ui!.notices.shown).toContain('policy-unreadable');
     expect(ran.row('Email')).toMatchObject({ status: 'verified' });
+  });
+
+  // A job board shows the posting above its form (the Greenhouse snapshots' descriptions): its own visible text, read
+  // clean, is the posting read. The live BeyondTrust page shows only its form and a job alert, so nothing is read there.
+  it('reads the posting a page shows beside its form, clean, so it says nothing of an unread posting', async () => {
+    const description = `<section><h2>About the role</h2><p>${'You will design, build and run the services our '
+      + 'security platform rests on, review designs with the team and help on call. '.repeat(6)}</p></section><form`;
+    const shown = plain.replace('<form', description);
+    const ran = await fillTrap(shown, 'policy-g', { worker: { policy: { postingPage: 'unseen', storedCopy: 'unavailable' } } });
+    expectInvariants(ran);
+    expect(ran.report.notices.map((notice) => notice.code)).not.toContain('policy-unreadable');
+    expect(ran.row('Email')).toMatchObject({ status: 'verified' });
+    // A short header is no posting: still nothing read.
+    expect(POSTING_READ_MIN).toBeGreaterThan('Security Engineer Find the holes before anyone else does.'.length * 4);
   });
 
   it('adds posting-outside-frame in a frame whose top page runs none of our scripts', async () => {

@@ -15,9 +15,12 @@
  *   posting's country, flagged: the country the lookup's location names (postingCountryOf), else the profile's only
  *   work-authorization entry's. A combined "now or in the future" sponsorship question is Yes when either answer is an
  *   explicit yes, No only when both are an explicit no, the decline option when either is declined and neither is yes,
- *   and blank otherwise. Criminal history is the person's own answer in the sensitive part (version 2), matched by its
- *   polarity alone; absent or declined, the field is blank and flagged. It answers a generic conviction question; a
- *   narrower one (a felony, a time, unspent) only when it is No; never an arrest or a charge (criminal-not-covered).
+ *   and blank otherwise. A question whose options state the basis of the right to work (workBasis.ts: permanent, a
+ *   permit needing no sponsorship, sponsorship) takes the option the entry's answers state (basisOfEntry), and is left
+ *   to the `all` scope's AI, with every option, when they do not settle it. Criminal history is the person's own
+ *   answer in the sensitive part (version 2), matched by its polarity alone; absent or declined, the field is blank
+ *   and flagged. It answers a generic conviction question; a narrower one (a felony, a time, unspent) only when it is
+ *   No; never an arrest or a charge (criminal-not-covered).
  * - Consent: ticked when every consent kind the label names is pre-approved in settings (§8.7), else when the form
  *   requires it (the owner's decision of 2026-11-01: it is needed to apply, a binding clause included); an optional
  *   one not pre-approved is left unticked, decided. An AI attestation is ticked only when the run used no AI at all. A
@@ -31,17 +34,18 @@ import {
   POSTING_COUNTRY_FACTOR, VALUE_CONSENT_PREAPPROVED, VALUE_EXPLICIT, VALUE_TRANSFORM, VALUE_TWO_OR_MORE_RACES,
 } from '../confidence';
 import { CONSENT_CATEGORIES, type ConsentCategory, type FieldKind } from '../enums';
-import { intendedDecline, intendedEntity } from '../matcher/intended';
+import { intendedDecline, intendedEntity, intendedText } from '../matcher/intended';
 import type { MatchDomain } from '../matcher/types';
 import type { PlanSensitiveState } from '../plan/types';
 import { normalize } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import type { FieldCategory, ProfilePath, RuleId, ValueOrigin, VocabDomain } from '../types/intent';
-import type { Explicit, Profile } from '../types/profile';
+import type { Explicit, Profile, WorkAuthorization } from '../types/profile';
 import type { Settings } from '../types/settings';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { USER_ONLY_CATEGORIES } from './categories';
+import { basisClassAt, readBasisOptions, type BasisClass } from './workBasis';
 
 const path = (text: string) => text as ProfilePath;
 const fromProfile = (at: string, transform?: RuleId): ValueOrigin => (transform === undefined
@@ -237,6 +241,89 @@ function legalAnswer(answer: Explicit<boolean> | undefined, at: string, transfor
   return yesNo(answer.value, fromProfile(at, own), (own === undefined ? VALUE_EXPLICIT : VALUE_TRANSFORM) * factor, extra);
 }
 
+/** The work-authorization questions a basis set may answer (workBasis.ts): authorization, sponsorship at any time, and
+ *  a work status. */
+const BASIS_CATEGORIES: ReadonlySet<FieldCategory> = new Set<FieldCategory>(['workAuth.authorized',
+  'workAuth.sponsorship', 'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture', 'workAuth.status']);
+
+/**
+ * The basis of the person's right to work an entry states (workBasis.ts): sponsorship when they need it now or later;
+ * else, when they are explicitly authorized, a permanent right as a citizen or permanent resident, or a permit or a
+ * visa needing no sponsorship (a work-visa, student-visa or other status with both sponsorship answers an explicit
+ * no); a decline when the answer that decides it is declined; null when the entry does not settle it (no authorization
+ * answer, a no, no status, or a visa status with a sponsorship answer missing). Authorization is never read from a
+ * status (types/profile.ts).
+ */
+function basisOfEntry(entry: WorkAuthorization): BasisClass | 'decline' | null {
+  const sponsorship = combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture);
+  if (sponsorship?.kind === 'value' && sponsorship.value) return 'sponsorship';
+  if (entry.authorized?.kind === 'decline') return 'decline';
+  if (entry.authorized?.kind !== 'value' || !entry.authorized.value) return null;
+  const status = entry.status;
+  if (status?.kind === 'decline') return 'decline';
+  if (status === undefined) return null;
+  if (status.value === 'citizen' || status.value === 'permanent-resident') return 'permanent';
+  if (sponsorship?.kind === 'decline') return 'decline';
+  return sponsorship === undefined ? null : 'permit';
+}
+
+/**
+ * A work-authorization question asked as a basis set (workBasis.ts), answered from the entry's basis: its option chosen
+ * by its own words (legal.work-basis; the posting's country's entry under interpretation 1 is legal.posting-country,
+ * flagged), the form's decline option for a declined answer (legal.decline). An entry that does not settle it is
+ * legal-not-in-profile, which the `all` scope asks TailorIT's AI about with every option the form shows (plan/answers.ts;
+ * no profile value, and no list narrowed by one, is ever sent); a basis the form offers no option for is no-match, left
+ * as it is. Null when the options are no basis set (or not read yet), so the question is read as before.
+ */
+function workBasisValue(spec: FieldSpec, entry: WorkAuthorization, at: string, fromPosting: boolean, vocab: Vocab):
+  ValueResult | null {
+  const options = readBasisOptions(spec, vocab);
+  if (options === null) return null;
+  const basis = basisOfEntry(entry);
+  if (basis === null) return none('legal-not-in-profile');
+  const factor = fromPosting ? POSTING_COUNTRY_FACTOR : 1;
+  const extra: Partial<Candidate> = fromPosting ? { flag: 'filled-low-confidence' } : {};
+  if (basis === 'decline') {
+    return value({ origin: byRule('legal.decline', at), confidence: VALUE_EXPLICIT * factor,
+      choice: { intended: intendedDecline('generic'), domain: 'generic' }, ...extra });
+  }
+  const option = options.get(basis);
+  if (option === undefined) return none('no-match');
+  return value({ origin: fromProfile(at, fromPosting ? 'legal.posting-country' : 'legal.work-basis'),
+    confidence: VALUE_TRANSFORM * factor, choice: { intended: intendedText(option.clean), domain: 'generic' }, ...extra });
+}
+
+/**
+ * Whether TailorIT's AI answer to a basis set (an `all` question the entry did not settle: workBasisValue) states what
+ * the person's own answers deny: the sponsorship option when both sponsorship answers are an explicit no, an option
+ * needing none when either is a yes, the permanent option when they are not authorized or hold a visa or another
+ * status, the permit option when they are a citizen or permanent resident. Such a pick is refused (planFrame
+ * planAnswer: llm-pick-rejected) and the field left flagged: a guess never overrules the person's answer. Only the pick
+ * is compared here; nothing of the person's answers was sent. False for any other field or option.
+ */
+export function basisPickContradicts(category: FieldCategory, spec: FieldSpec, index: number, profile: Profile,
+  vocab: Vocab, legal: LegalContext): boolean {
+  if (!BASIS_CATEGORIES.has(category)) return false;
+  const options = readBasisOptions(spec, vocab);
+  const picked = options === null ? null : basisClassAt(options, index);
+  if (picked === null) return false;
+  const found = authorizationEntry(spec, profile, vocab, legal);
+  if ('reason' in found) return false;
+  const entry = profile.workAuthorization[found.index]!;
+  const sponsorship = combinedSponsorship(entry.sponsorshipNow, entry.sponsorshipFuture);
+  const status = entry.status?.kind === 'value' ? entry.status.value : null;
+  const permanentStatus = status === 'citizen' || status === 'permanent-resident';
+  switch (picked) {
+    case 'sponsorship':
+      return sponsorship?.kind === 'value' && !sponsorship.value;
+    case 'permanent':
+      return (sponsorship?.kind === 'value' && sponsorship.value)
+        || (entry.authorized?.kind === 'value' && !entry.authorized.value) || (status !== null && !permanentStatus);
+    case 'permit':
+      return (sponsorship?.kind === 'value' && sponsorship.value) || permanentStatus;
+  }
+}
+
 /** How a work status is written, for a list that offers statuses by name. */
 const WORK_STATUS_TEXT: Readonly<Record<string, string>> = {
   citizen: 'Citizen', 'permanent-resident': 'Permanent resident', 'work-visa': 'Work visa',
@@ -284,6 +371,10 @@ export function legalValue(category: FieldCategory, spec: FieldSpec, profile: Pr
   const entry = profile.workAuthorization[found.index]!;
   const at = `workAuthorization[${found.index}]`;
   const { fromPosting } = found;
+  // A status is never read for a country the question does not name (below), as a basis set or by name.
+  const basis = BASIS_CATEGORIES.has(category) && !(category === 'workAuth.status' && fromPosting)
+    ? workBasisValue(spec, entry, at, fromPosting, vocab) : null;
+  if (basis !== null) return basis;
   switch (category) {
     case 'workAuth.authorized':
       return legalAnswer(entry.authorized, `${at}.authorized`, undefined, fromPosting);
@@ -428,12 +519,17 @@ export interface ConsentContext {
   /** The run used no AI at all (a profile-only frame, and no AI asked for its application before), so an "I did not
    *  use AI" attestation is true. */
   aiFree: boolean;
+  /** For a consent asked as a choice (classifyRules consentChoiceOption): the clean label of its one option that
+   *  plainly agrees, which its tick chooses; 'pending' while its options are not read; null or absent for a box, or a
+   *  radio group of Yes and No (its Yes chosen by polarity). */
+  choice?: string | 'pending' | null;
 }
 
-/** A consent's tick (or Yes), by the rule that gives it. */
-const ticked = (ruleId: RuleId): ValueResult => value({ origin: { provenance: 'rule', ruleId },
+/** A consent's tick (or Yes, or its one option that agrees: `option`), by the rule that gives it. */
+const ticked = (ruleId: RuleId, option?: string | null): ValueResult => value({ origin: { provenance: 'rule', ruleId },
   confidence: VALUE_CONSENT_PREAPPROVED,
-  choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' satisfies MatchDomain }, check: true });
+  choice: typeof option === 'string' ? { intended: intendedText(option), domain: 'generic' satisfies MatchDomain }
+    : { intended: { kind: 'boolean', value: true }, domain: 'polarity' satisfies MatchDomain }, check: true });
 
 /**
  * The value of a consent field (§8.7; the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11): an AI
@@ -442,14 +538,18 @@ const ticked = (ruleId: RuleId): ValueResult => value({ origin: { provenance: 'r
  * pre-approved in settings (consent.preapproved), else when the form requires it, binding clauses included
  * (consent.required: it is needed to apply); an optional one not pre-approved (marketing, SMS) is left unticked and
  * recorded as decided (consent-optional-unticked, never the person's). A signature types the person's full name on
- * the same terms.
+ * the same terms. A consent asked as a choice ticks by choosing its one option that agrees (ConsentContext.choice), and
+ * waits for its options while they are not read (waiting-for-options: the loop opens the list), so it is decided on
+ * what the list really offers.
  */
 export function consentValue(category: FieldCategory, consentKinds: readonly FieldCategory[] | undefined,
   profile: Profile, settings: Settings, consent: ConsentContext): ValueResult {
   const named = consentKinds && consentKinds.length > 0 ? consentKinds : [category];
   const attests = category === 'consent.aiAttestation' || named.includes('consent.aiAttestation');
   if (attests && !consent.aiFree) return none('ai-attestation-ai-used', true, true);
-  if (category === 'consent.aiAttestation') return ticked('consent.no-ai-attestation');
+  if (consent.choice === 'pending') return none('waiting-for-options');
+  const option = consent.choice;
+  if (category === 'consent.aiAttestation') return ticked('consent.no-ai-attestation', option);
   // A true attestation among the label's kinds asks nothing more: the rest decide.
   const kinds = named.filter((kind) => kind !== 'consent.aiAttestation');
   const approved = kinds.length > 0 && kinds.every((kind) => {
@@ -463,5 +563,5 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
     return value({ origin: byRule(approved ? 'consent.signature-preapproved' : 'consent.required', 'identity.fullName'),
       confidence: VALUE_CONSENT_PREAPPROVED, text: name });
   }
-  return ticked(approved && !USER_ONLY_CATEGORIES.has(category) ? 'consent.preapproved' : 'consent.required');
+  return ticked(approved && !USER_ONLY_CATEGORIES.has(category) ? 'consent.preapproved' : 'consent.required', option);
 }

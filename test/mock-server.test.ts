@@ -348,6 +348,25 @@ describe('the scripted answers', () => {
     expect(await read('/api/autofill/profile/sensitive')).toEqual(golden.sensitive);
   });
 
+  it('sensitive-us-citizen: the US status citizen, the rest golden, both envelopes at the next revision until the reset', async () => {
+    const read = async (path: string) => (await call(path, { headers: asToken() })).json() as Promise<{ revision: number;
+      sensitive?: { workAuthorization: Array<{ country: string; status: unknown }> } }>;
+    const golden = { profile: await read('/api/autofill/profile'), sensitive: await read('/api/autofill/profile/sensitive') };
+    await scenario('sensitive-us-citizen', { times: 1 });
+    for (let round = 0; round < 2; round += 1) {
+      const profile = await read('/api/autofill/profile');
+      const sensitive = await read('/api/autofill/profile/sensitive');
+      expect(AUTOFILL_CONTRACT_SCHEMAS.AutofillSensitiveEnvelope.safeParse(sensitive).success).toBe(true);
+      expect([profile.revision, sensitive.revision]).toEqual([golden.profile.revision + 1, golden.sensitive.revision + 1]);
+      const [us, ...others] = sensitive.sensitive!.workAuthorization;
+      const [goldenUs, ...goldenOthers] = golden.sensitive.sensitive!.workAuthorization;
+      expect(us).toEqual({ ...goldenUs, status: { state: 'value', value: 'citizen' } });
+      expect(others).toEqual(goldenOthers);
+    }
+    await mock.reset();
+    expect(await read('/api/autofill/profile/sensitive')).toEqual(golden.sensitive);
+  });
+
   it('lookup-slow waits before the golden answer; lookup-fails gets 500; times counts requests', async () => {
     await scenario('lookup-slow', { times: 1, delayMs: 300 });
     const lookup = () => call('/api/autofill/lookup', { method: 'POST', headers: asToken(), json: example('AutofillLookupRequest') });

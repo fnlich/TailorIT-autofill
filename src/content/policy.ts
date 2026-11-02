@@ -12,7 +12,11 @@
  *   all has not been read, and says nothing.
  * - Before a run fills: a hit on the posting page (the worker's record), in TailorIT's stored copy (the worker read it
  *   at run/begin), or in this frame's own visible text stops the run at policy-notice until the person chooses. With
- *   the posting page unseen, no stored copy and no hit here, the couldn't-read notice shows; it does not block.
+ *   the posting page unseen, no stored copy and no hit here, the couldn't-read notice shows; it does not block. A top
+ *   frame whose page shows the posting itself beside the form (a job board's description above it: at least
+ *   POSTING_READ_MIN characters of visible text outside the form root) has read it here, clean, so the notice does not
+ *   show; a page that shows only the form (the live BeyondTrust job-boards page, 2026-11-01, whose description lives
+ *   on the company's site) still has nothing read.
  * - A frame inside a page that runs no content script of ours (a company site embedding the form) cannot read the
  *   posting around it: the report says so (posting-outside-frame).
  */
@@ -36,15 +40,21 @@ export interface PolicyGate {
   unreadable: boolean;
 }
 
-/** The gate over the worker's policy states and this frame's own hits. */
-export function policyGateOf(view: PolicyView, frameHits: readonly string[]): PolicyGate {
+/** The fewest characters of visible text outside the form root that are the posting itself, shown where the form is:
+ *  a header, a job alert and a footer hold fewer (the live BeyondTrust page some 250, a Greenhouse description
+ *  thousands). */
+export const POSTING_READ_MIN = 400;
+
+/** The gate over the worker's policy states and this frame's own hits. `readHere`: this frame's page showed the
+ *  posting itself (POSTING_READ_MIN), so its visible text, read for the hits, was the posting's. */
+export function policyGateOf(view: PolicyView, frameHits: readonly string[], readHere = false): PolicyGate {
   const posting = view.postingPage === 'hit';
   const stored = view.storedCopy === 'hit';
   const here = frameHits.length > 0;
   return {
     blocked: posting || stored || here,
     fromStoredCopy: stored && !posting && !here,
-    unreadable: view.postingPage === 'unseen' && view.storedCopy === 'unavailable' && !here,
+    unreadable: view.postingPage === 'unseen' && view.storedCopy === 'unavailable' && !here && !readHere,
   };
 }
 

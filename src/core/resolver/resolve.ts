@@ -4,8 +4,10 @@
  * answers, LLM classification, unknown) is read as the evaluation order:
  *   0. a tripwire in the field's own label or description blocks it, and an attention check is the person's; both
  *      pre-empt everything;
- *   1-3. the rules decide the category (classifyByRules, Phase 1); one that hands the field to the person (a needsUser
- *      cause) makes it needs-user, whatever its topic's class would allow;
+ *   1-3. the rules decide the category (classifyByRules, Phase 1), and where they leave a list, a combobox or a radio
+ *      group open, its one option that agrees makes it a consent asked as a choice (classifyRules consentChoice, the
+ *      owner's decisions of 2026-11-01); one that hands the field to the person (a needsUser cause) makes it
+ *      needs-user, whatever its topic's class would allow;
  *   4. a saved answer with the exact key, in a scope the category's policy allows, supplies the value: that is how
  *      saved answers beat the profile and the rules. Never for a field the classify screen withholds
  *      (screenForClassify: a sensitive topic in its label, description, section or options, an EEO answer or a decline
@@ -37,7 +39,7 @@ import type { Vocab } from '../vocab/types';
 import { none, NOTE_REASONS, SHAPE_OF_KIND, value, type Candidate, type Choice, type ValueResult } from './candidate';
 import { policyClassOf } from './categories';
 import { screenForClassify, type LlmClassification } from './classify';
-import { classifyByRules, type RuleClassification } from './classifyRules';
+import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassification } from './classifyRules';
 import { dateIso, dateText } from './format';
 import { statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
@@ -78,8 +80,10 @@ export type FieldClassification =
   | { by: 'llm'; llm: LlmClassification }
   | { by: 'none' };
 
-/** Step 0 and steps 1 to 3 (§8.1): the tripwire in the field's own text, then attention checks, then the rules. */
-export function classifyField(spec: FieldSpec): FieldClassification {
+/** Step 0 and steps 1 to 3 (§8.1): the tripwire in the field's own text, then attention checks, then the rules; with
+ *  the vocabulary, a consent asked as a choice where the rules leave it open (classifyRules consentChoice: one
+ *  option that plainly agrees, as the live BeyondTrust form's "Acknowledge/Confirm"). */
+export function classifyField(spec: FieldSpec, vocab?: Vocab): FieldClassification {
   if (hasTripwire(spec.label as VisibleText) || hasTripwire(spec.description as VisibleText)) {
     return { by: 'tripwire', rules: classifyByRules(spec) };
   }
@@ -94,6 +98,8 @@ export function classifyField(spec: FieldSpec): FieldClassification {
     return { by: 'attention', patternId: attention[0]!, consent };
   }
   const rules = classifyByRules(spec);
+  const choice = vocab === undefined ? null : consentChoice(spec, rules, vocab);
+  if (choice !== null) return { by: 'rules', rules: choice };
   return rules === null ? { by: 'none' } : { by: 'rules', rules };
 }
 
@@ -232,7 +238,7 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       return eeoValue(category, spec, profile, settings, vocab);
     case 'consent':
       return consentValue(category, rules.consentKinds, profile, settings,
-        { required: spec.required, aiFree: ctx.aiFree === true });
+        { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab) });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':
@@ -311,7 +317,7 @@ function answerFromLlm(spec: FieldSpec, ctx: ResolveContext, llm: LlmClassificat
 }
 
 /** The resolver's full answer for one field (§8.1). `classification` is classifyField's, when the caller has it. */
-export function resolveField(spec: FieldSpec, ctx: ResolveContext, classification = classifyField(spec)):
+export function resolveField(spec: FieldSpec, ctx: ResolveContext, classification = classifyField(spec, ctx.vocab)):
   ResolvedField {
   const answer = (resolution: Resolution, shaped: Shaped | null = null, needsSensitive = false): ResolvedField =>
     ({ resolution, shaped, needsSensitive });

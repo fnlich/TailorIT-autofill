@@ -127,7 +127,7 @@
       "fillable": true,
       "options": "lazy",
       "control": "#question_70199751",
-      "note": "Three sentences that tie the right to work to sponsorship (\"I have the right to work in the country of employment on a permanent basis\", ...)."
+      "note": "Three sentences that state the basis of the right to work: a permanent one (\"I have the right to work in the country of employment on a permanent basis\"), a work permit needing no sponsorship, sponsorship needed. No yes among them: each is read by its meaning (resolver/workBasis.ts)."
     },
     {
       "label": "",
@@ -147,7 +147,7 @@
       "fillable": true,
       "options": "lazy",
       "control": "#question_70199752",
-      "note": "Its one option is \"Acknowledge/Confirm\"; the link \"Candidate Privacy Notice\" below it is the question's description (#question_70199752-description)."
+      "note": "Its one option is \"Acknowledge/Confirm\": a required consent asked as a choice. The link \"Candidate Privacy Notice\" below it (#question_70199752-description) is named by no aria-describedby, so it is no description the scanner reads."
     },
     {
       "label": "",
@@ -211,7 +211,7 @@
       "section": "International Standard Demographic Questions",
       "fillable": true,
       "control": "#gdpr_demographic_data_consent_given_1",
-      "note": "Consent: never ticked unless the person pre-approved it. A visible native checkbox with a visible label[for] after the demographic block's divider, with no heading of its own; aria-required=\"false\" while nothing is answered."
+      "note": "Consent: optional, so left unticked, while nothing is answered (aria-required=\"false\"); the page marks it required (aria-required=\"true\", a red asterisk) once a demographic answer is chosen, and a required consent is ticked. A visible native checkbox with a visible label[for] after the demographic block's divider, with no heading of its own."
     },
     {
       "label": "",

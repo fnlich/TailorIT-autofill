@@ -70,7 +70,9 @@ const TYPED_NAME: readonly FieldKind[] = ['text', 'typeahead-remote'];
 const DATE: readonly FieldKind[] = ['text', 'date', 'select', 'combobox'];
 /** A self-identification answer: chosen from the form's options, never typed. A lone box covers "I am a veteran". */
 const EEO: readonly FieldKind[] = ['select', 'radio', 'combobox', 'checkbox', 'checkbox-group', 'multiselect'];
-/** A consent: a box to tick, or a Yes/I agree radio (the comment above the design's consent rules). */
+/** A consent: a box to tick, or a Yes/I agree radio (the comment above the design's consent rules). A list or a
+ *  combobox whose one option agrees ("Acknowledge/Confirm") is read as consent by its options, beside the label rules
+ *  (classifyRules consentChoice), never through these kinds. */
 const CONSENT: readonly FieldKind[] = ['checkbox', 'radio'];
 /** Anything that holds an answer. */
 const ANY: readonly FieldKind[] = FIELD_KINDS;

@@ -19,6 +19,13 @@ const PAGE = `<!doctype html><body>
     <button id="next-submit" type="button">Submit and continue</button>
     <label><input type="checkbox" id="confirm-box" aria-label="I confirm"> I confirm the above is true</label>
     <a href="#top" id="link">Continue</a>
+    <div role="listbox">
+      <div role="option" id="confirm-option">Acknowledge/Confirm</div>
+      <div role="option" id="submit-option">I confirm and submit my application</div>
+      <div role="option" id="option-holding"><span role="button">Submit</span></div>
+      <button type="button" role="option" id="button-option">Submit</button>
+    </div>
+    <div role="option" id="loose-option">Confirm</div>
   </form>
   <button id="orphan">Add</button>
   <button id="owned" form="f">Owned from outside</button>
@@ -60,6 +67,13 @@ describe('assertNotSubmit', () => {
       ['next', 'submits-form'],
       ['confirm-box', null],
       ['link', null],
+      // "Confirm" in a list's option chooses a value (the live BeyondTrust form's one option); any other submit word in
+      // it still counts, and an option that holds a control, is a button, or sits in no list keeps all its words.
+      ['confirm-option', null],
+      ['submit-option', 'submit-word'],
+      ['option-holding', 'submit-word'],
+      ['button-option', 'submit-word'],
+      ['loose-option', 'submit-word'],
       ['orphan', null],
       ['owned', 'submits-form'],
     ];

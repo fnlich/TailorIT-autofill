@@ -22,7 +22,7 @@ export interface SpyEvent {
    *  or a label whose control is one. */
   submits: boolean;
   /** The words it shows, as assertNotSubmit reads them (aria-label and text, a button input's value or an image's
-   *  alt); '' for a checkbox or radio. */
+   *  alt); '' for a checkbox or a radio, and "confirm" left out in an option of an open list. */
   words: string;
   /** It is, or is inside, an element marked data-honeypot. */
   honeypot: boolean;
@@ -85,9 +85,18 @@ function spy({ types }: { types: readonly string[] }): void {
     const input = el as HTMLInputElement;
     return el.localName === 'input' && (input.type === 'checkbox' || input.type === 'radio') ? `${name}=${input.value}` : name;
   };
+  // An option of an open list chooses a value (assertNotSubmit's listOption): "confirm" in it does not count, any other
+  // submit word does.
+  const listOption = (el: Element): boolean => el.getAttribute('role') === 'option'
+    && el.parentElement?.closest('[role="listbox"]') !== null && !['button', 'input', 'a'].includes(el.localName)
+    && el.querySelector('button, input, a[href], [role="button"], [role="link"]') === null;
   const words = (el: Element): string => {
     const input = el as HTMLInputElement;
     if (el.localName === 'input' && (input.type === 'checkbox' || input.type === 'radio')) return '';
+    if (listOption(el)) {
+      return [el.getAttribute('aria-label') ?? '', (el.textContent ?? '').slice(0, 200)].join(' ')
+        .replace(/\bconfirm\w*/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    }
     const parts = [el.getAttribute('aria-label') ?? ''];
     if (el.localName === 'input') {
       if (['submit', 'button', 'reset'].includes(input.type)) parts.push(input.value);

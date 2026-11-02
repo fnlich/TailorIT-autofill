@@ -19,7 +19,9 @@
  *    this frame's visible text at every scan: a hit stops at policy-notice, Fill anyway or Cancel), the raw scan and
  *    the tripwire (every canary in memory for the frame's own scans; the 32 nearest to plan/request and RunState),
  *    detectPause (sign-in and account: AUTH; email code, entry choice, CAPTCHA: PAUSE; nothing on the step is filled),
- *    and the step's signature from the adapter's parts (SCANNED). A new step's notices start afresh.
+ *    and the step's signature from the adapter's parts (SCANNED). A new step's notices start afresh. The couldn't-read
+ *    notice shows only when nothing was read: a top frame whose page shows the posting beside its form (a job board's
+ *    description, policy.ts POSTING_READ_MIN) read it with its own visible text.
  * 5. fill-step: repeatable sections first (repeatables.ts: the worker's entry counts from a plan of nothing, then one
  *    Add click at a time through assertNotSubmit, each counted in RunState before it is made: REPEATABLE), then the
  *    reactive loop (loop.ts), "I currently work here" (planCurrentJob's rows), the final Guard (verify.ts), the rows
@@ -147,7 +149,9 @@ import { Invalidated, type AnsweredType, type AnswerData, type Channel, type Mes
 import { AI_POLL_MS, AI_WAIT_CAP_MS, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
   type SettleTimings } from './loop';
 import { RunAborted, writeField, type PassEnv, type PlanAnswer } from './pass';
-import { frameHitsOf, hiddenPolicyHits, policyGateOf, postingOutsideFrame, type PolicyView } from './policy';
+import {
+  frameHitsOf, hiddenPolicyHits, policyGateOf, POSTING_READ_MIN, postingOutsideFrame, type PolicyView,
+} from './policy';
 import { addBlocks, currentJobRows, needsClicks, sectionsOf, type SectionView } from './repeatables';
 import {
   buildReport, lastFillOf, NoticeBook, persistedRunState, uploadRow, type NoticeCode, type ReportHeader,
@@ -1591,7 +1595,10 @@ export class FillRun {
     const frameHits = frameHitsOf(env.doc);
     let policyHits = frameHits.length;
     if (first) {
-      const gate = policyGateOf(this.policy ?? { postingPage: 'unseen', storedCopy: 'unavailable' }, frameHits);
+      // A top frame whose page shows the posting beside the form read it here (policy.ts POSTING_READ_MIN).
+      const readHere = this.isTop && [...this.postingText()].length >= POSTING_READ_MIN;
+      const gate = policyGateOf(this.policy ?? { postingPage: 'unseen', storedCopy: 'unavailable' }, frameHits,
+        readHere);
       policyHits = gate.blocked ? Math.max(1, frameHits.length) : 0;
       this.fromStoredCopy = gate.fromStoredCopy;
       if (!gate.blocked && gate.unreadable) this.notices.add('policy-unreadable');

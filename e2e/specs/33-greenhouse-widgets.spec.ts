@@ -24,12 +24,18 @@
  * adapter's form root, included) is rebuilt with new nodes, are filled too: the run's first unanswered mouseup waits
  * once for the page, the run finds the new form root by the adapter's hook and scans it, and on the new form the Yes/No
  * questions are written and read back and the text boxes the rebuild emptied are written again and verified.
+ * And the three questions the live BeyondTrust form left for the person (2026-11-01; .../jobs/9103, the golden part with
+ * the US status citizen): the right to work's basis is chosen by its meaning, "Acknowledge/Confirm" is chosen as the
+ * required consent it is, and the demographic consent box, which the page makes required only once the gender answer is
+ * chosen, is planned again and ticked with click(): nothing is left for the person.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf, row } from '../helpers/extension.ts';
 import { GOLDEN } from '../helpers/golden.ts';
-import { GREENHOUSE_WIDGETS, GREENHOUSE_WIDGETS_EXPECTATIONS, greenhouseWidgetRoutes } from '../helpers/greenhouse-fixture.ts';
+import {
+  GREENHOUSE_BEYONDTRUST_EXPECTATIONS, GREENHOUSE_WIDGETS, GREENHOUSE_WIDGETS_EXPECTATIONS, greenhouseWidgetRoutes,
+} from '../helpers/greenhouse-fixture.ts';
 import { assertTrapInvariants, declaredActivation } from '../helpers/invariants.ts';
 import { pageValue, syntheticLabels } from '../helpers/reactive.ts';
 import { spyRecords } from '../helpers/spies.ts';
@@ -41,6 +47,12 @@ const HEARD = 'How did you hear about this opportunity? (select all that apply)'
 const SKILLS = 'Which of these skills have you used?';
 const RESIDENCE = 'What is your current country of residence?';
 const LABELS = syntheticLabels(GREENHOUSE_WIDGETS_EXPECTATIONS);
+/** The live BeyondTrust form's three questions (.../jobs/9103). */
+const RIGHT_TO_WORK = 'Please confirm the basis of your right to work in the country of employment';
+const ACKNOWLEDGE = "Please review and acknowledge BeyondTrust's";
+const CONSENT = 'By checking this box, I consent to BeyondTrust collecting, storing, and processing my responses to the '
+  + 'demographic data surveys above.';
+const CONSENT_BOX = 'gdpr_demographic_data_consent_given_1';
 /** The skills the page offers, by the value React holds for each. */
 const SKILL_VALUES: Record<string, string> = { TypeScript: '900400', Ruby: '900401', PostgreSQL: '900402',
   Kubernetes: '900403', Scala: '900404', Go: '900405' };
@@ -153,6 +165,45 @@ test.describe("Greenhouse's react-selects", () => {
     expect((await ourEvents(page, ['mouseup'])).length).toBeGreaterThan(0);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.now) });
+  });
+
+  test("the live BeyondTrust form's three questions: the right to work by its meaning, the acknowledgment chosen, and the consent box ticked once the demographic answer makes it required", async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    test.setTimeout(150_000);
+    // The golden part with the US status citizen: the right to work is the profile's to settle.
+    await tailorit.scenario('sensitive-us-citizen');
+    routeLog.serve(routes);
+    const page = await extContext.newPage();
+    await page.goto(GREENHOUSE_WIDGETS.beyondtrust);
+    await expect(page.locator('#question_70199751')).toBeVisible();
+    const box = page.locator(`#${CONSENT_BOX}`);
+    await expect(box).toHaveAttribute('aria-required', 'false');
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId, { timeout: 90_000 });
+    expect(report.status).toBe('review');
+    const log = await pageValue<Log>(page, '__gh');
+    const read = { wrote: true, verification: 'verified' };
+
+    // "I have the right to work ... on a permanent basis", by its meaning; flagged for a look only because the question
+    // names no country (the posting's, interpretation 1), as SPONSORED is.
+    expect(row(report, RIGHT_TO_WORK)).toMatchObject({ ...SPONSORED, category: 'workAuth.authorized' });
+    expect(log.values.question_70199751).toBe('70199750');
+    // "Acknowledge/Confirm": a required consent asked as a choice.
+    expect(row(report, ACKNOWLEDGE)).toMatchObject({ ...read, status: 'verified', category: 'consent.other',
+      provenance: 'rule', needsUserAction: false });
+    expect(log.values.question_70199752).toBe('70199752');
+    // The gender question's decline makes the box required; the run plans it again and ticks it with click().
+    expect(row(report, 'How would you describe your gender identity?')).toMatchObject({ ...read, status: 'verified' });
+    await expect(box).toHaveAttribute('aria-required', 'true');
+    expect(row(report, CONSENT)).toMatchObject({ ...read, status: 'verified', category: 'consent.other',
+      provenance: 'rule', required: true, needsUserAction: false });
+    await expect(box).toBeChecked();
+    expect(log.values.gdpr_demographic_data_consent_given).toBe(true);
+
+    expect(log.pressed).toEqual([]);
+    expect(await ourEvents(page, ['mousedown', 'pointerdown', 'keydown', 'focus', 'focusin'])).toEqual([]);
+    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [],
+      labels: syntheticLabels(GREENHOUSE_BEYONDTRUST_EXPECTATIONS),
+      applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.beyondtrust) });
   });
 
   for (const start of ['late', 'rebuild'] as const) {

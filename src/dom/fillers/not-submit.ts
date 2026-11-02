@@ -6,7 +6,9 @@
  *   Add, an option or a box is never the step's Next: the Phase 5 review, X-S7);
  * - the buttons the adapter names never to press (neverPress: Greenhouse's "Autofill my application", "Locate me",
  *   Dropbox, Google Drive, "Enter manually", "Clear selections" and a chip's remove button), and anything inside them;
- * - any element whose text is a submit word (submit, apply, send, finish, complete, confirm);
+ * - any element whose text is a submit word (submit, apply, send, finish, complete, confirm), but a checkbox or a
+ *   radio, which toggle and never submit, and "confirm" in an option of an open list, which chooses a value (a
+ *   consent's one option "Acknowledge/Confirm"; "I confirm and submit" is still refused);
  * - any element whose activation would submit a form: a button with a form owner whose .type is "submit" (a typeless
  *   button included), input[type=submit] and input[type=image], anything inside such a button, and a <label> (or an
  *   element inside one) whose control is refused.
@@ -66,11 +68,26 @@ function refusalOf(el: Element, ctx: NotSubmitContext, depth: number): ClickRefu
   return null;
 }
 
+/** An option of an open list (role="option" inside a role="listbox"), no button, link or input itself and holding
+ *  none: choosing it picks a value (the live BeyondTrust form's one option "Acknowledge/Confirm"). */
+function listOption(el: Element): boolean {
+  return el.getAttribute('role') === 'option' && el.parentElement?.closest('[role="listbox"]') !== null
+    && !['button', 'input', 'a'].includes(el.localName)
+    && el.querySelector('button, input, a[href], [role="button"], [role="link"]') === null;
+}
+
+/** The one submit word that is also how a consent agrees ("Acknowledge/Confirm", "I confirm"). */
+const CONSENT_SUBMIT_WORD = /\bconfirm\w*/gi;
+
 /** The words a control shows or announces: its text, its aria-label and, for button inputs, its value or alt. A
- *  checkbox or radio toggles a state and never submits, so its words (a consent box's "I confirm ...") do not
- *  count. */
+ *  checkbox or radio toggles a state and never submits, so its words (a consent box's "I confirm ...") do not count; a
+ *  list's option (listOption) chooses a value, so "confirm" does not count in it, but any other submit word does ("I
+ *  confirm and submit"). */
 function shownText(el: Element): string {
   if (el.localName === 'input' && ['checkbox', 'radio'].includes((el as HTMLInputElement).type)) return '';
+  if (listOption(el)) {
+    return [el.getAttribute('aria-label') ?? '', el.textContent ?? ''].join(' ').replace(CONSENT_SUBMIT_WORD, ' ');
+  }
   const parts = [el.getAttribute('aria-label') ?? ''];
   if (el.localName === 'input') {
     const input = el as HTMLInputElement;

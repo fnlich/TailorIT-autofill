@@ -48,13 +48,15 @@ export type PolicyClass = (typeof POLICY_CLASSES)[number];
  *  'legal.posting-country' and 'eeo.decline-default' apply only while the matching interpretation is on in settings
  *  (on by default since settings version 2). 'eeo.decline-default' chooses the form's decline option for a
  *  self-identification question the profile does not answer (it names no profile path); 'screening.previously-employed'
- *  answers "Have you worked here before?" from the profile's employers and the posting's company. */
+ *  answers "Have you worked here before?" from the profile's employers and the posting's company; 'legal.work-basis'
+ *  chooses the option of a basis-of-right-to-work list the entry's answers state (resolver/workBasis.ts). */
 export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.compose', 'years.from-experience',
   'availability.from-notice', 'education.highest-completed', 'experience.current-checkbox', 'eeo.decline',
   'eeo.self-describe', 'eeo.two-or-more-races', 'legal.decline', 'legal.sponsorship-combined', 'legal.posting-country',
   'consent.preapproved',
   'consent.signature-preapproved', 'numeric.range-bucket', 'other.free-text', 'guard.revert', 'typeahead.query',
-  'eeo.decline-default', 'screening.previously-employed', 'consent.required', 'consent.no-ai-attestation'] as const;
+  'eeo.decline-default', 'screening.previously-employed', 'consent.required', 'consent.no-ai-attestation',
+  'legal.work-basis'] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
 /** A profile location such as 'contact.email' or 'education[0].institution'. The worker checks that it resolves; the

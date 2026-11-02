@@ -10,7 +10,10 @@
  *   once (MAX_RETRIES) when its write could not happen because the page moved it under us (element-not-found,
  *   options-changed) and the next scan finds it as it was. When a re-plan finds our value in place (already-correct),
  *   the row of our write stays, whatever its options or its comings and goings did meanwhile (the Phase 3 review,
- *   LC-9).
+ *   LC-9). A field planned as optional that the page makes required after our writes (BeyondTrust's demographic
+ *   consent box, required once a demographic answer is chosen), and that we did not write, is planned again ('required'),
+ *   so it is decided as the required question it now is: a required consent is ticked. Its new row records that it is
+ *   required, so the page's turning it off and on again plans it no more; only another plan's optional row could.
  * - Our value changed (the Phase 3 review, LC-3 and LC-4). A field the person touched after our write (a trusted
  *   input, keydown, paste or drop: ScanInput.touched) is frozen: never planned or written again, and once its value is
  *   no longer ours its row is the person's (changed-by-you). Otherwise a value is written again only after the page
@@ -78,8 +81,10 @@ export const TRACKED_STATUSES = ['pending', 'awaiting-llm', 'waiting-options', '
 export type TrackedStatus = (typeof TRACKED_STATUSES)[number];
 
 /** Why a field is pending. 'value-changed': the page reset our value (it is written again); 'replaced': the page put
- *  another value in place of ours (planned for its row only, never written). */
-export const PENDING_CAUSES = ['new', 'reappeared', 'options-changed', 'value-changed', 'replaced', 'retry'] as const;
+ *  another value in place of ours (planned for its row only, never written); 'required': the page made a field we
+ *  left unwritten as optional required after our writes (decided again as a required question). */
+export const PENDING_CAUSES = ['new', 'reappeared', 'options-changed', 'value-changed', 'replaced', 'retry',
+  'required'] as const;
 export type PendingCause = (typeof PENDING_CAUSES)[number];
 
 /** How the loop ended: nothing left to do, the passes ran out, the page stopped changing, or the content script cut it
@@ -379,6 +384,14 @@ function fileTaken(field: TrackedField): boolean {
   return field.kind === 'file' && field.ourRow !== null && field.ourRow.wrote;
 }
 
+/** Whether the page made a field required after our writes (the module header): its row was planned for an optional
+ *  field and wrote nothing, nothing of ours is in it, it is required now, and something was written since the scan
+ *  before. Bounded: the next plan's row records it as required. */
+function madeRequired(old: TrackedField, spec: LoopField, state: LoopState): boolean {
+  return spec.required && old.row !== null && !old.row.required && !old.row.wrote && !old.wrote
+    && state.writers.length > 0;
+}
+
 /** Folds one scan in: new, returning, changed and missing fields, flips, reveal edges, cycles and follow-ups. `scanned`
  *  is the scan's fields (FieldSpecs will do); the first scan is pass 0. */
 export function observeScan(state: LoopState, scanned: readonly LoopField[], input: ScanInput = {}): ScanObservation {
@@ -499,6 +512,8 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
     } else if (field.status === 'resolved' && field.row !== null && RETRY_REASONS.has(field.row.reason)
       && field.retries < MAX_RETRIES) {
       field = { ...field, status: 'pending', cause: 'retry', retries: field.retries + 1 };
+    } else if (field.status === 'resolved' && madeRequired(old, spec, state)) {
+      field = { ...field, status: 'pending', cause: 'required' };
     }
     fields.set(spec.baseKey, field);
   }

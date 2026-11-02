@@ -28,6 +28,13 @@ describe('settleRow', () => {
       verification: 'verified', reason: 'filled-low-confidence', needsUserAction: true });
   });
 
+  it("leaves a written flagged row that read back as a note to check, unless its plan asked for the person (SPEC-AMENDMENTS §11)", () => {
+    // planFrame plans a fill-and-flag row with needsUserAction false (a posting country's legal answer, a low-confidence
+    // match): once written and read back it needs nobody.
+    expect(settleRow(planned('flagged', { needsUserAction: false }), { kind: 'verified' })).toMatchObject({
+      status: 'flagged', wrote: true, verification: 'verified', needsUserAction: false });
+  });
+
   it('marks a value that read back differently filled, flagged staying flagged, for the person to check', () => {
     expect(settleRow(planned('verified'), { kind: 'mismatch' })).toMatchObject({ status: 'filled', wrote: true,
       verification: 'mismatch', reason: 'verify-mismatch', provenance: 'profile', needsUserAction: true });

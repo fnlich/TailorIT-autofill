@@ -26,6 +26,13 @@
  * - choosing No for "Are you Hispanic/Latino?" reveals the Race question;
  * - the buttons the extension must never press ("Autofill my application", "Locate me", Dropbox, Google Drive, "Enter
  *   manually", "Clear selections", a chip's remove button) record every press.
+ * Which questions (MountOptions.form): 'standard' draws the ones above; 'beyondtrust' draws the three the live
+ * BeyondTrust form (2026-11-01, fixtures/greenhouse/beyondtrust-job) left for the person, beside the names and email:
+ * "Please confirm the basis of your right to work in the country of employment" with its three sentences, "Please
+ * review and acknowledge BeyondTrust's" with its one option "Acknowledge/Confirm" and its Candidate Privacy Notice link
+ * below (no aria-describedby names it, as on the live page), and the demographic block's gender question with the
+ * consent box after it, "By checking this box, I consent to ...", which says aria-required="false" until any
+ * demographic answer is chosen and "true" (with its red asterisk) from then on, as the live page does.
  * How it starts (MountOptions.start): 'now' renders at once; 'late' shows the form's markup first, with nothing
  * listening, and React attaches to it (hydrateRoot) `attachMs` later, as Greenhouse's React attaches 1.8 to 3.1 s after
  * its form shows; 'rebuild' shows the markup first and `attachMs` later throws the whole form away, the form element
@@ -75,6 +82,8 @@ export interface GreenhouseLog {
 /** How the form starts, and how long its lists take. */
 export interface MountOptions {
   start?: 'now' | 'late' | 'rebuild';
+  /** Which questions: the standard ones, or the live BeyondTrust form's (see the header). */
+  form?: 'standard' | 'beyondtrust';
   /** For 'late' and 'rebuild': when React attaches, after the markup shows. */
   attachMs?: number;
   /** Where emotion puts its styles: the document's head by default. */
@@ -474,6 +483,63 @@ function GhForm({ env }: { env: Env }): ReactElement {
           .map((label, at) => ({ value: `${at + 1}`, label })) } }))));
 }
 
+/** The live BeyondTrust form's right-to-work sentences (its question 70199751). */
+export const RIGHT_TO_WORK: Choice[] = [
+  'I have the right to work in the country of employment on a permanent basis',
+  'I have or will obtain a work permit not requiring sponsorship/immigration support from BeyondTrust',
+  'I will require sponsorship or other immigration support to obtain the right to work in the country of employment',
+].map((label, at) => ({ value: `7019975${at}`, label }));
+
+/** The demographic consent box (BeyondTrust's gdpr_demographic_data_consent_given): a native box React holds, which
+ *  says aria-required="true", with its red asterisk, only once `required`. */
+function GhDemographicConsent({ required: needed, env }: { required: boolean; env: Env }): ReactElement {
+  const [ticked, setTicked] = useState(false);
+  const id = 'gdpr_demographic_data_consent_given_1';
+  return h('div', { className: 'checkbox--full-width checkbox', id: 'gdpr_demographic_data_consent_given' },
+    h('div', { className: 'checkbox__wrapper' },
+      h('div', { className: 'checkbox__input' }, h('input', { type: 'checkbox', id, className: 'checkbox--full-width',
+        name: 'gdpr_demographic_data_consent_given', value: '1', 'aria-required': needed ? 'true' : 'false',
+        checked: ticked, onChange: () => {
+          setTicked(!ticked);
+          env.setValue('gdpr_demographic_data_consent_given', !ticked);
+        } })),
+      h('label', { htmlFor: id }, 'By checking this box, I consent to BeyondTrust collecting, storing, and processing my '
+        + 'responses to the demographic data surveys above.', required(needed))));
+}
+
+/** The live BeyondTrust form's three questions it left for the person (see the header), beside the names and email. */
+function GhBeyondTrustForm({ env }: { env: Env }): ReactElement {
+  const [answered, setAnswered] = useState(false);
+  const field = (spec: SelectSpec, after: ReactElement | null = null) => h('div', { key: spec.id,
+    className: 'field-wrapper' }, h(GhSelect, { spec, env }), after);
+  // One object for the form's life (GhForm's eeo): a demographic answer makes the consent box required.
+  const demographic = useMemo(() => ({ ...env, setValue: (id: string, value: unknown) => {
+    env.setValue(id, value);
+    if (value !== null) setAnswered(true);
+  } }), [env]);
+  return h('div', null,
+    h('div', { className: 'application--questions' },
+      h(GhText, { id: 'first_name', label: 'First Name', required: true, type: 'text', autoComplete: 'given-name', env }),
+      h(GhText, { id: 'last_name', label: 'Last Name', required: true, type: 'text', autoComplete: 'family-name', env }),
+      h(GhText, { id: 'email', label: 'Email', required: true, type: 'text', autoComplete: 'email', env }),
+      field({ id: 'question_70199751', label: 'Please confirm the basis of your right to work in the country of employment',
+        required: true, options: RIGHT_TO_WORK }),
+      field({ id: 'question_70199752', label: "Please review and acknowledge BeyondTrust's", required: true,
+        options: [{ value: '70199752', label: 'Acknowledge/Confirm' }] },
+      h('div', { className: 'body body__secondary' }, h('div', { id: 'question_70199752-description',
+        className: 'question-description' }, h('p', null, h('a', { href: '/__privacy', target: '_blank' },
+        'Candidate Privacy Notice')))))),
+    h('hr'),
+    h('div', { id: 'demographic-section', className: 'demographic--container' },
+      h('h3', { className: 'section-header font-primary' }, 'International Standard Demographic Questions'),
+      h('div', { className: 'field-wrapper' }, h(GhSelect, { env: demographic, spec: { id: '31771',
+        label: 'How would you describe your gender identity?', required: false,
+        options: ['Male', 'Female', 'Non-binary/third gender', 'Transgender', 'I prefer to self-describe',
+          "I don't wish to self-identify"].map((label, at) => ({ value: `3177${at}`, label })) } }))),
+    h('hr'),
+    h(GhDemographicConsent, { required: answered, env }));
+}
+
 /** The header's "Autofill my application" button, above the form: it records any press. */
 export function mountHeaderButton(host: Element, log: GreenhouseLog): void {
   const button = host.ownerDocument.createElement('button');
@@ -497,7 +563,8 @@ export function mountGreenhouseForm(container: HTMLElement, options: MountOption
       log.values[id] = value;
     },
   };
-  const app = () => h(CacheProvider, { value: cache }, h(GhForm, { env }));
+  const app = () => h(CacheProvider, { value: cache },
+    h(options.form === 'beyondtrust' ? GhBeyondTrustForm : GhForm, { env }));
   let root: Root | null = null;
   const attach = () => {
     log.attachedAt = view.performance.now();

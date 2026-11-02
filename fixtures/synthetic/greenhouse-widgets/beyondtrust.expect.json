@@ -1,0 +1,27 @@
+{
+  "fixture": "synthetic/greenhouse-widgets",
+  "source": "https://job-boards.greenhouse.io/tailoritfixture/jobs/9103",
+  "captured": "never: a synthetic page, the 'beyondtrust' form of app.ts, drawn after the live BeyondTrust form of 2026-11-01",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    { "label": "First Name", "kind": "text", "required": true, "section": "Apply for this job", "fillable": true, "control": "#first_name" },
+    { "label": "Last Name", "kind": "text", "required": true, "section": "Apply for this job", "fillable": true, "control": "#last_name" },
+    { "label": "Email", "kind": "text", "required": true, "section": "Apply for this job", "fillable": true, "control": "#email" },
+    { "label": "Please confirm the basis of your right to work in the country of employment", "kind": "combobox", "required": true,
+      "section": "Apply for this job", "fillable": true, "options": "lazy", "control": "#question_70199751",
+      "note": "The live form's three sentences: a permanent right, a permit needing no sponsorship, sponsorship needed." },
+    { "label": "", "kind": "text", "required": true, "section": "Apply for this job", "fillable": false, "reason": "not-user-visible",
+      "control": ".select__container:has(#question_70199751) input[aria-hidden=\"true\"]", "note": "react-select's required shim." },
+    { "label": "Please review and acknowledge BeyondTrust's", "kind": "combobox", "required": true, "section": "Apply for this job",
+      "fillable": true, "options": "lazy", "control": "#question_70199752",
+      "note": "Its one option is \"Acknowledge/Confirm\"; the Candidate Privacy Notice link below it is named by no aria-describedby, as on the live page." },
+    { "label": "", "kind": "text", "required": true, "section": "Apply for this job", "fillable": false, "reason": "not-user-visible",
+      "control": ".select__container:has(#question_70199752) input[aria-hidden=\"true\"]", "note": "react-select's required shim." },
+    { "label": "How would you describe your gender identity?", "kind": "combobox", "required": false,
+      "section": "International Standard Demographic Questions", "fillable": true, "options": "lazy", "control": "[id=\"31771\"]" },
+    { "label": "By checking this box, I consent to BeyondTrust collecting, storing, and processing my responses to the demographic data surveys above.",
+      "kind": "checkbox", "required": false, "section": "International Standard Demographic Questions", "fillable": true,
+      "control": "#gdpr_demographic_data_consent_given_1",
+      "note": "aria-required=\"false\" while no demographic answer is chosen; \"true\", with its red asterisk, once one is." }
+  ]
+}

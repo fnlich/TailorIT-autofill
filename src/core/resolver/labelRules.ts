@@ -819,6 +819,37 @@ export function attestsNoAiUse(text: string): boolean {
   return AI_CONSENT_RULE.re.test(text) || AI_ATTESTATION.test(text);
 }
 
+/** The rule a consent asked as a choice is read by (consentChoiceHit). */
+const CONSENT_CHOICE_RULE = { id: 'label.consent-choice', strength: 'strong' } as const;
+
+/**
+ * The hit for a consent asked as a choice (classifyRules consentChoice; the owner's decision of 2026-11-01): every
+ * consent kind `text` (the normalized label, with the one option's words once they are read) reads as, strictest first
+ * (consentEntries: unrecognised consent for an object no kind names, an AI attestation whenever it names AI), with the
+ * kinds the field's description adds, which only make it stricter (withDescriptionConsent). A signature is typed, never
+ * chosen, so a choice that names one is unrecognised consent. Null when the text is no consent wording.
+ */
+export function consentChoiceHit(text: string, description = ''): LabelRuleHit | null {
+  const entries = consentEntries(text);
+  if (entries.length === 0) return null;
+  const extra = description === '' ? [] : consentEntries(description)
+    .filter((entry) => !entries.some((own) => own.category === entry.category));
+  const chosen = [...entries, ...extra].filter((entry) => entry.category !== 'consent.signature')
+    .sort((a, b) => consentRank(a.category) - consentRank(b.category));
+  const kinds = chosen.length > 0 ? chosen.map((entry) => entry.category) : ['consent.other' as const];
+  return { ...hitOf(CONSENT_CHOICE_RULE, kinds[0]!), consentKinds: kinds };
+}
+
+/** An option that plainly agrees (normalizeLabel: no apostrophes, parentheticals left out): it starts with yes, an OK,
+ *  "I do", "I will", a consent verb ("Acknowledge/Confirm", "I agree", "I accept", "Understood") or "I have read". */
+const AFFIRMATIVE_OPTION = /^(?:yes|y|ok|okay|i\s+(?:do|will)|(?:i\s+)?(?:(?:hereby|fully|also)\s+)?(?:acknowledge[ds]?|confirm(?:ed|s)?|agree[ds]?|accept(?:ed|s)?|consent(?:ed|s)?|certif(?:y|ies|ied)|attest(?:ed|s)?|understand|understood)|(?:i\s+)?(?:have|ive)\s+(?:fully\s+|carefully\s+)?read|read\s+and\s+(?:understood|agreed|accepted|acknowledged))\b/;
+
+/** Whether a normalized option is plainly affirmative: an AFFIRMATIVE_OPTION start, and nothing that denies it or makes
+ *  it hold only sometimes (statementPolarity: "I do not agree", "I agree unless", "Decline"). */
+export function affirmativeOption(text: string): boolean {
+  return AFFIRMATIVE_OPTION.test(text) && statementPolarity(text) === 'affirmative';
+}
+
 /** Marketing and contact wordings a question can carry with no consent verb ("Receive our newsletter?", "Can we text
  *  you?"). */
 const CONTACT_TOPIC = /\bnewsletters?\b|\bjob\s+alerts?\b|\bmarketing\s+(?:e\s?mails?|communications?|messages?|materials?|updates?|offers?|lists?)\b|\btext\s+messages?\b|\bsms\b|\b(?:un)?subscribe\b|\bopt\s+(?:in|out)\b|\b(?:text|sms|call|e\s?mail|contact|message)\s+(?:you|me)\b/;

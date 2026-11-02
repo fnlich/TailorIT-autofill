@@ -93,6 +93,59 @@ describe('pending fields', () => {
   });
 });
 
+// BeyondTrust's demographic consent box (2026-11-01): optional, so left unticked, until a demographic answer is chosen;
+// then the page marks it required, and the run never read it again.
+describe('a field the page makes required after our writes', () => {
+  const gender = field('How would you describe your gender identity?', 'combobox', { options: ['Man', 'Woman'] });
+  const consent = field('By checking this box, I consent to the demographic data surveys above.', 'checkbox',
+    { domOrder: 1 });
+  const required = { ...consent, required: true };
+  const skipped = (spec: LoopField) => unwrittenRow(spec, 'consent-optional-unticked', { status: 'skipped',
+    needsUserAction: false });
+  /** The first pass: the gender answer written, the box left optional and unticked. */
+  function firstPass(): LoopState {
+    const first = observeScan(createLoop(), [gender, consent]).state;
+    const written = recordWrite(first, gender.key, { valueMac: mac('Man') });
+    return recordRows(written, [rowOf(gender), skipped(consent)]);
+  }
+
+  it('is planned again once, as the required question it now is', () => {
+    const seen = observeScan(firstPass(), [gender, required], { valueMacs: macsOf({ [gender.label]: 'Man' },
+      [gender]) });
+    expect(seen.pending).toEqual([consent.key]);
+    expect(seen.state.fields.get(consent.baseKey)).toMatchObject({ status: 'pending', cause: 'required' });
+    expect(seen.verdict.done).toBe(false);
+    // Its new row records it as required: the page turning it off and on again plans it no more.
+    const ticked = recordRows(recordWrite(seen.state, consent.key, { valueMac: mac('on') }),
+      [rowOf(required, { required: true })]);
+    const off = observeScan(ticked, [gender, consent], { valueMacs: macsOf({ [gender.label]: 'Man',
+      [consent.label]: 'on' }, [gender, consent]) });
+    expect(off.pending).toEqual([]);
+    const left = recordRows(seen.state, [skipped(required)].map((row) => ({ ...row, required: true })));
+    const again = observeScan(recordWrite(left, gender.key, { valueMac: mac('Man') }), [gender, required],
+      { valueMacs: macsOf({ [gender.label]: 'Man' }, [gender]) });
+    expect(again.pending).toEqual([]);
+  });
+
+  it('is not planned again when nothing was written since, when it was required already, or when we wrote it', () => {
+    // Nothing written since the scan before: the page's own doing, not our writes'.
+    const quiet = observeScan(observeScan(firstPass(), [gender, consent], { valueMacs: macsOf({ [gender.label]: 'Man' },
+      [gender]) }).state, [gender, required], { valueMacs: macsOf({ [gender.label]: 'Man' }, [gender]) });
+    expect(quiet.pending).toEqual([]);
+    // Planned as required already.
+    const first = observeScan(createLoop(), [gender, required]).state;
+    const planned = recordRows(recordWrite(first, gender.key, { valueMac: mac('Man') }),
+      [rowOf(gender), { ...unwrittenRow(required, 'consent-requires-user'), required: true }]);
+    expect(observeScan(planned, [gender, required], { valueMacs: macsOf({ [gender.label]: 'Man' }, [gender]) }).pending)
+      .toEqual([]);
+    // A field we wrote keeps its row.
+    const ours = recordRows(recordWrite(recordWrite(observeScan(createLoop(), [gender, consent]).state, gender.key,
+      { valueMac: mac('Man') }), consent.key, { valueMac: mac('on') }), [rowOf(gender), rowOf(consent)]);
+    expect(observeScan(ours, [gender, required], { valueMacs: macsOf({ [gender.label]: 'Man', [consent.label]: 'on' },
+      [gender, consent]) }).pending).toEqual([]);
+  });
+});
+
 describe('disappearances', () => {
   const referral = field('Do you have a referral?', 'radio', { options: ['Yes', 'No'] });
   const referrer = field("Referrer's name", 'text');

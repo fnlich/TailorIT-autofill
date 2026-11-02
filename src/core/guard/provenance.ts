@@ -86,6 +86,7 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'legal.decline': (category) => policyClassOf(category) === 'legal' && category !== 'screening.criminalHistory',
   'legal.sponsorship-combined': (category) => category === 'workAuth.sponsorship',
   'legal.posting-country': (category) => category.startsWith('workAuth.'),
+  'legal.work-basis': (category) => category.startsWith('workAuth.'),
   'consent.preapproved': (category) => PREAPPROVABLE.includes(category),
   'consent.signature-preapproved': (category) => category === 'consent.signature',
   // A required consent (the owner's decision of 2026-11-01): any but the AI attestation, which has its own rule.

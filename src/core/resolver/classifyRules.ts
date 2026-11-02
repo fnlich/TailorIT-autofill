@@ -17,16 +17,19 @@
 import {
   CLASSIFY_AGREE_BONUS, CLASSIFY_AGREE_CAP, CLASSIFY_CONFLICT_FACTOR, LABEL_RULE_CONFIDENCE,
 } from '../confidence';
+import type { FieldKind } from '../enums';
+import { prepareOptions } from '../matcher/prepare';
 import type { FieldSpec } from '../types/field';
 import type { ReasonCode } from '../types/fill';
 import type { FieldCategory, PolicyClass } from '../types/intent';
 import type { Classifier } from '../types/match';
 import { normalize, normalizeLabel } from '../text/normalize';
+import type { Vocab } from '../vocab/types';
 import { autocompleteRule } from './autocomplete';
 import { policyClassOf } from './categories';
 import {
-  attestsNoAiUse, matchLabelRules, sectionKindOf, unlabelledTextarea, unrecognisedField, withDescriptionConsent,
-  type LabelContext, type LabelRuleHit, type NeedsUserCause,
+  affirmativeOption, attestsNoAiUse, consentChoiceHit, matchLabelRules, sectionKindOf, unlabelledTextarea,
+  unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit, type NeedsUserCause,
 } from './labelRules';
 import { nameIdRule, nameIdText } from './nameId';
 
@@ -310,4 +313,71 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   const inBlock = spec.kind === 'textarea' && sectionKindOf(spec.section.id) !== 'other';
   const fallback = unlabelledTextarea(label, spec.kind) ?? (inBlock ? null : unrecognisedField(spec.kind));
   return fallback === null ? null : combine([labelVote(fallback, 'label')]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A consent asked as a choice
+
+/** The kinds a consent may be asked as a choice on: a list, a combobox, a radio group (a lone box is consent's own). */
+const CONSENT_CHOICE_KINDS: readonly FieldKind[] = ['select', 'combobox', 'radio'];
+
+/** The consent words SENSITIVE_TOPIC's fallback reads: a label that names no sensitive topic but these is consent. */
+const CONSENT_WORDS = /\b(?:consent\w*|agree\w*|share\s+(?:my|your)\s+(?:data|information))\b/g;
+
+/**
+ * The one option a consent asked as a choice offers (the owner's decision of 2026-11-01): on a list, a combobox or a
+ * radio group read whole, the only option that can be chosen (a placeholder aside), when it plainly agrees
+ * (labelRules affirmativeOption: "Acknowledge/Confirm", "I agree", "Yes"), as its clean label; 'pending' while the
+ * options are not read (a combobox shows them only when opened); null for any other field: several options a person
+ * can choose (a Yes and a No, a list of answers: no consent but a question), one that does not agree, one disabled, one
+ * read only in part, or any option with injected text cut.
+ */
+export function consentChoiceOption(spec: Pick<FieldSpec, 'kind' | 'options' | 'optionsPartial'>, vocab: Vocab):
+  string | 'pending' | null {
+  if (!CONSENT_CHOICE_KINDS.includes(spec.kind)) return null;
+  if (spec.options === 'lazy') return 'pending';
+  if (spec.optionsPartial === true) return null;
+  const list = prepareOptions(spec.options, 'generic', vocab).list;
+  if (list.some((option) => option.injected)) return null;
+  const usable = list.filter((option) => !option.unusable);
+  const only = usable.length === 1 ? usable[0]! : null;
+  if (only === null || only.disabled || !affirmativeOption(normalizeLabel(only.clean))) return null;
+  return only.clean;
+}
+
+/** Whether the rules leave a field to a consent read as a choice: they classify nothing, they hand a consent to the
+ *  person only because its kind holds no box (kind-mismatch), or they hand it over for a sensitive topic that is only
+ *  its consent wording ("Consent to processing"). A field the rules read as anything else keeps that reading. */
+function opensToConsentChoice(spec: FieldSpec, rules: RuleClassification | null, label: string): boolean {
+  if (rules === null) return true;
+  const asks = rules.category ?? rules.asks;
+  if (policyClassOf(asks) === 'consent') return rules.needsUser === 'kind-mismatch';
+  return rules.needsUser === 'sensitive-topic' && rules.rule === 'label.sensitive-topic'
+    && !SENSITIVE_TOPIC.test(`${label} ${normalizeLabel(spec.description)}`.replace(CONSENT_WORDS, ' '));
+}
+
+/**
+ * A consent asked as a choice (the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11; the live BeyondTrust
+ * form's "Please review and acknowledge BeyondTrust's" with its one option "Acknowledge/Confirm"): a list, a combobox
+ * or a radio group the rules leave open (opensToConsentChoice) whose one option plainly agrees (consentChoiceOption),
+ * and whose label, with that option's words, is consent wording (labelRules consentChoiceHit): its consent kinds,
+ * strictest first, so the consent policy decides it as it decides a box (policy.ts consentValue: a required one is
+ * chosen, an optional one only when pre-approved, an AI attestation only in a run that used no AI). A combobox whose
+ * options are not read yet is read so by its label alone, and waits for them (consentValue). Null for anything else:
+ * the field is read as before. A tripwire, an attention check, a honeypot and a hidden field are refused before this
+ * (resolve.ts classifyField, planFrame).
+ */
+export function consentChoice(spec: FieldSpec, rules: RuleClassification | null, vocab: Vocab): RuleClassification | null {
+  if (!CONSENT_CHOICE_KINDS.includes(spec.kind)) return null;
+  const normalized = normalize(spec.label, 'label');
+  const label = [ruleText(normalized.key), ...normalized.qualifiers.map((qualifier) => qualifier.tokens.join(' '))]
+    .join(' ').trim();
+  if (label === '' || !opensToConsentChoice(spec, rules, label)) return null;
+  const option = consentChoiceOption(spec, vocab);
+  if (option === null) return null;
+  const asked = option === 'pending' ? label : `${label} ${normalizeLabel(option)}`;
+  const hit = consentChoiceHit(asked, ruleText(normalizeLabel(spec.description)));
+  if (hit === null) return null;
+  return { category: hit.category, confidence: hit.confidence, classifiedBy: 'label-rule', rule: hit.rule,
+    reason: 'ok', matchedOn: 'label', consentKinds: hit.consentKinds! };
 }

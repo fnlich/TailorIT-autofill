@@ -4,8 +4,9 @@
   exactly what it does, from the Greenhouse capture of 2026-11-01), built by Vite in memory by its e2e spec
   (e2e/helpers/greenhouse-fixture.ts) and served at Greenhouse addresses, where the Greenhouse adapter handles it:
   https://job-boards.greenhouse.io/tailoritfixture/jobs/9100 draws the form at once, .../9101 shows its markup and
-  attaches React 2.5 s later, and .../9102 shows its markup and 2.5 s later draws the whole form again with new nodes,
-  the form element included. The DOM tests mount the same app into this page's form. The form posts to /__submitted. What React holds, and what the
+  attaches React 2.5 s later, .../9102 shows its markup and 2.5 s later draws the whole form again with new nodes,
+  the form element included, and .../9103 draws at once the three questions the live BeyondTrust form left for the
+  person (app.ts, MountOptions.form 'beyondtrust'). The DOM tests mount the same app into this page's form. The form posts to /__submitted. What React holds, and what the
   page saw, is window.__gh (app.ts, GreenhouseLog).
   The styles are a few of Greenhouse's own (the visually hidden labels and file inputs, intl-tel-input's hidden
   dropdown) and plain ones; react-select's are emotion's own, inserted by react-select. One rule draws every

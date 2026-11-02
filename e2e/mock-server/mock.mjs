@@ -165,6 +165,10 @@ export const MOCK_SCENARIOS = Object.freeze({
   'sensitive-not-authorized': 'GET /profile/sensitive answers the golden part with US authorized: false (the rest as '
     + 'golden), and both profile routes name the next revision, so a worker drops a sensitive part it held and fetches '
     + 'this one. It holds until the next reset (times does not apply).',
+  'sensitive-us-citizen': 'GET /profile/sensitive answers the golden part with the US status citizen (authorized, no '
+    + 'sponsorship now or later, as golden), and both profile routes name the next revision, as sensitive-not-authorized '
+    + 'does: a basis-of-right-to-work question is then settled by the profile. It holds until the next reset (times does '
+    + 'not apply).',
   'profile-unavailable': 'GET /profile gets 500.',
   'lookup-slow': "POST /lookup answers after delayMs (default 30 s, past the worker's 25 s timeout).",
   'lookup-fails': 'POST /lookup gets 500.',
@@ -420,9 +424,10 @@ export function createMock() {
 
   const iso = (/** @type {number} */ ms) => new Date(ms).toISOString();
 
-  /** The revision an envelope carries: the contract example's, or the next one under sensitive-not-authorized, so
-   *  that both profile routes agree. @param {{ revision: number }} envelope */
-  const revisionOf = (envelope) => (isOn('sensitive-not-authorized') ? envelope.revision + 1 : envelope.revision);
+  /** The revision an envelope carries: the contract example's, or the next one under sensitive-not-authorized or
+   *  sensitive-us-citizen, so that both profile routes agree. @param {{ revision: number }} envelope */
+  const revisionOf = (envelope) => (isOn('sensitive-not-authorized') || isOn('sensitive-us-citizen')
+    ? envelope.revision + 1 : envelope.revision);
 
   function profileEnvelope() {
     const envelope = example('AutofillProfileEnvelope');
@@ -435,6 +440,10 @@ export function createMock() {
     if (isOn('sensitive-not-authorized')) {
       sensitive.workAuthorization = sensitive.workAuthorization.map((/** @type {{ country: string }} */ entry) =>
         (entry.country === 'US' ? { ...entry, authorized: { state: 'value', value: false } } : entry));
+    }
+    if (isOn('sensitive-us-citizen')) {
+      sensitive.workAuthorization = sensitive.workAuthorization.map((/** @type {{ country: string }} */ entry) =>
+        (entry.country === 'US' ? { ...entry, status: { state: 'value', value: 'citizen' } } : entry));
     }
     return { ...envelope, revision: revisionOf(envelope), sensitive };
   }

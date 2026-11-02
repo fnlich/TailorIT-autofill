@@ -81,8 +81,9 @@ describe('fields that wait for the LLM', () => {
     expect((polls[0]!.keys as string[]).length).toBe(2);
     expect(ran.worker.messages.indexOf(first)).toBeLessThan(ran.worker.messages.indexOf(polls[0]!));
     expect(ran.control('source').value).toBe('post');
+    // Written and read back, the AI's pick is flagged for a look and needs nobody (SPEC-AMENDMENTS §11).
     expect(ran.row(SOURCE)).toMatchObject({ provenance: 'llm-pick', matcherStage: 'llm', status: 'flagged',
-      reason: 'llm-pick-needs-review', wrote: true, needsUserAction: true });
+      reason: 'llm-pick-needs-review', wrote: true, needsUserAction: false });
     expect(ran.row(SOURCE).confidence).toBeLessThanOrEqual(0.75);
     expect(ran.control('work').value).toBe('Quillfeather Labs');
     expect(ran.row(WORK)).toMatchObject({ provenance: 'profile', category: 'experience.currentCompany', status: 'flagged',

@@ -62,7 +62,9 @@
  *   location: "Have you worked here before?" and interpretation 1's country.
  *   A lazy list such an answer would fill is rowed waiting-for-options, so the loop reads it and the next pass asks with
  *   its options (answers.ts answerWaitsForOptions). Only a real "I did not use AI" statement makes the frame
- *   profile-only; a consent that only names AI is never ticked, and switches nothing (the Phase E review, M5, M7).
+ *   profile-only; a consent that only names AI is never ticked, and switches nothing (the Phase E review, M5, M7). An
+ *   AI pick of a basis-of-right-to-work option the person's own answers deny is refused (llm-pick-rejected,
+ *   policy.ts basisPickContradicts): a guess never overrules them.
  * - Edit with AI: `aiEditable` names the planned text boxes the page may offer the button on (drafts.ts
  *   aiEditableField; never in a dry run, a profile-only run, or with settings.llm.drafts off). A request with
  *   PlanInput.rewrite plans that one field: its draft is asked with what it holds now (unless that names a sensitive
@@ -108,7 +110,7 @@ import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../typ
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
-import { postingCountryOf } from '../resolver/policy';
+import { basisPickContradicts, postingCountryOf, type LegalContext } from '../resolver/policy';
 import { withCoverLetter } from '../profile/canonicalize';
 import { answerItemOf, answerRefusal, answerWaitsForOptions, type AnswerItem, type AnswerVerdict } from './answers';
 import { holdsNoAiAttestation } from './attestation';
@@ -193,6 +195,9 @@ interface FieldPlanContext {
   guard: GuardContext;
   /** Cache entries a match found stale (matchOne's cacheDrop), for the worker to delete. */
   drops: Set<string>;
+  /** What a legal question's country may come from besides its words (interpretation 1, the posting's country), for
+   *  the check of an AI pick against the person's own answers (basisPickContradicts). */
+  legal: LegalContext;
 }
 
 /** A field's write before the Guard: its value, its match, a reason it must be flagged for, if any, and the origin
@@ -539,6 +544,10 @@ function planAnswer(spec: FieldSpec, resolution: Resolution, standing: FillResul
     if (cut.injected || cut.clean === '' || sha256Hex(sentLabelOf(option.label)) !== verdict.labelHash) {
       return left('llm-pick-rejected');
     }
+    // A basis of the right to work the person's own answers deny is never written: a guess never overrules them.
+    if (basisPickContradicts(category, spec, option.index, ctx.guard.profile, ctx.input.vocab, ctx.legal)) {
+      return left('llm-pick-rejected');
+    }
     write = { key: spec.key, value: { kind: 'option', index: option.index, cleanLabel: cut.clean },
       origin: { provenance: 'llm-pick', taskId: verdict.taskId, pickedCandidate: option.index,
         labelHash: verdict.labelHash },
@@ -729,7 +738,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const sections = repeatables.length > 0 ? { repeatables } : {};
   // Every spec is read across the frame; only the planned ones are resolved, written and rowed.
   const wanted = input.planKeys === undefined ? null : new Set<string>(input.planKeys);
-  const classified = input.specs.map((spec) => ({ spec, classification: classifyField(spec) }));
+  const classified = input.specs.map((spec) => ({ spec, classification: classifyField(spec, input.vocab) }));
   // A phone number is written without its country code when the section has its own control for the code.
   const phoneCountrySections = new Set(classified
     .filter((field) => categoryOf(field.classification) === 'contact.phoneCountry')
@@ -783,7 +792,8 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const guard: GuardContext = { canaries: [...input.canaries, ...input.specs.flatMap(labelCanaries)], profile,
     profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers,
     answerAll: input.settings.llm.answers && input.settings.llm.answerAll };
-  const ctx: FieldPlanContext = { input, guard, drops: new Set() };
+  const ctx: FieldPlanContext = { input, guard, drops: new Set(),
+    legal: { settings: input.settings, ...(postingCountry !== undefined ? { postingCountry } : {}) } };
   // Drafts (Phase 6): a free-text question no saved answer fills, with the setting on and never in a dry run, takes
   // the run's draft when there is one, and is asked for otherwise. Then answers (the owner's amendments): a question
   // nothing else settled, and no tiebreak or classification waits on, takes the run's answer, or is asked. A
