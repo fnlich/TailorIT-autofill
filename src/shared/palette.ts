@@ -104,11 +104,11 @@ export const FONT_STACK = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", 
 /** A report notice's code. */
 type NoticeCode = FrameReport['notices'][number]['code'];
 
-/** Each notice's tone, in the panels and on the page: the tripwire is a danger, the frame inside another site's page
- *  and a new page left for Continue are information, and every other notice asks for care. */
+/** Each notice's tone, in the panels and on the page: the tripwire is a danger, the frame inside another site's page,
+ *  a new page left for Continue and Sign-in Auto signing in are information, and every other notice asks for care. */
 export function noticeToneOf(code: NoticeCode): 'danger' | 'info' | 'warning' {
   if (code === 'tripwire') return 'danger';
-  if (code === 'posting-outside-frame' || code === 'page-turned') return 'info';
+  if (code === 'posting-outside-frame' || code === 'page-turned' || code === 'sign-in-auto') return 'info';
   return 'warning';
 }
 

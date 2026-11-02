@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 5): the synthetic Greenhouse form of fixtures/synthetic/submit/greenhouse.html with a visible
+  reCAPTCHA container in the form (.g-recaptcha with a data-sitekey, the vendor's documented explicit-render markup,
+  holding no response token): a check that the person is human. The auto-apply agent leaves the job for the person
+  (needs-you, captcha) and never presses Submit. Served at https://job-boards.greenhouse.io/tailoritfixture/jobs/<id>.
+  The page's script counts submissions on the body (data-submitted) and posts nothing.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Application for Platform Engineer at Northwind</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    .g-recaptcha { width: 304px; height: 78px; margin-top: 16px; border: 1px solid #d3d3d3; background: #f9f9f9; }
+    .application--submit button { margin-top: 20px; padding: 10px 20px; }
+  </style>
+</head>
+<body data-submitted="0">
+  <main class="main">
+    <h1>Platform Engineer</h1>
+    <form id="application-form" class="application--form">
+      <div class="field-wrapper"><label for="first_name">First Name<span aria-hidden="true">*</span></label>
+        <input id="first_name" name="first_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="last_name">Last Name<span aria-hidden="true">*</span></label>
+        <input id="last_name" name="last_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="email">Email<span aria-hidden="true">*</span></label>
+        <input id="email" name="email" type="email" aria-required="true"></div>
+      <div class="g-recaptcha" data-sitekey="6Lc-synthetic-not-a-real-site-key"></div>
+      <div class="application--submit"><button class="btn btn--pill" type="submit">Submit application</button></div>
+    </form>
+  </main>
+  <script>
+    (() => {
+      document.getElementById('application-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        document.body.dataset.submitted = String(Number(document.body.dataset.submitted) + 1);
+      });
+    })();
+  </script>
+</body>
+</html>

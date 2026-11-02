@@ -79,6 +79,23 @@ export interface PrefillEntryView {
   filled: boolean;
 }
 
+/** The account pages Sign-in mode Auto fills (v3 Phase 5). */
+export type SignInWall = 'sign-in' | 'create-account';
+
+/** A sign-in or create-account form (v3 Phase 5, Sign-in mode Auto), as an adapter declares it, or as the standard
+ *  rule reads one (dom/sign-in-form.ts standardSignInForm). Elements only: nothing is read from them here. */
+export interface SignInForm {
+  /** The email or user-name box; null when the page asks for the password alone. */
+  email: HTMLInputElement | null;
+  password: HTMLInputElement;
+  /** On a create-account page, the password typed again; null when the page asks for it once. */
+  confirm: HTMLInputElement | null;
+  /** The account's required terms boxes still unticked. */
+  terms: HTMLInputElement[];
+  /** Sign in, or Create account: the one control pressed. */
+  button: HTMLElement;
+}
+
 export interface Adapter {
   id: AdapterId;
   /** Pure (url.ts): does this adapter handle this address? */
@@ -147,6 +164,18 @@ export interface Adapter {
   }>;
   prefill?: { readEntries?(kind: string, blocks: Element[]): PrefillEntryView[] };
   authState?(doc: Document): 'sign-in' | 'create-account' | 'email-code' | 'entry-choice' | null;
+  /** v3 Phase 5, Sign-in mode Auto: the platform's own sign-in or create-account form on this page, or null. Without
+   *  this hook the standard rule reads it (autocomplete username/email and current-password/new-password, in one form
+   *  with one submit button: dom/sign-in-form.ts). */
+  signInForm?(doc: Document, wall: SignInWall): SignInForm | null;
+  /** v3 Phase 5, the auto-apply agent: on a posting page that shows no form, the one control that opens the
+   *  application (Greenhouse's and Lever's Apply, Ashby's Application tab), or null. Pressed only by
+   *  the entry door of dom/fillers/not-submit.ts, for the agent alone. */
+  entryControl?(doc: Document): HTMLElement | null;
+  /** v3 Phase 5 review: the entry control is one of this adapter's own never-pressed controls (neverPress: Ashby's
+   *  Application tab, which no run presses), and the entry door may press that one element, nothing beside it. Without
+   *  this mark an entry control neverPress lists, holds or sits in is refused. */
+  entryNeverPressed?: true;
   quirks?: {
     settleCapMs?: number;
     transitionCapMs?: number;

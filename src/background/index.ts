@@ -16,7 +16,9 @@ import { ExternalMessageSchema } from '../messaging/schemas';
 import { createWorkerPlatform } from '../platform/chrome';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
+import { AGENT_ALARM, createAgent, type Agent } from './agent';
 import { createAuth, createTokenKeeper } from './auth';
+import { toBase64Url } from './bytes';
 import { createAiTasks } from './ai-tasks';
 import { ASK_LIMIT, createAsk } from './ask';
 import { createPanelLetters, LETTER_LIMIT } from './cover-letters';
@@ -48,6 +50,7 @@ import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage } from './senders';
 import { createServerClient } from './server-client';
 import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
+import { createSignIn } from './sign-in';
 import { createTelemetry } from './telemetry';
 import { systemTimers, type Timers } from './timers';
 import { bundledVocab } from './vocab';
@@ -80,6 +83,9 @@ export interface WorkerOptions {
 /** The real core. */
 const CORE: CoreFunctions = { planFrame, canonicalizeProfile, attachResume, persistableCanaries, policyHits, vocab: bundledVocab };
 
+/** The e2e build only: how long the agent's new window rests on its empty page (agent.ts windowSettleMs). */
+const AGENT_E2E_SETTLE_MS = 750;
+
 /** Content messages that skip the access-level wait. */
 const UNGATED: ReadonlySet<string> = new Set(['ping', 'panel/open']);
 
@@ -102,12 +108,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let panelReports: Reports | null = null;
   let letterRows: ReturnType<typeof createPanelLetters> | null = null;
   let submissions: Submissions | null = null;
+  let agentRef: Agent | null = null;
   const keeper = createTokenKeeper(platform, () => {
     profiles?.drop();
     runRegistry?.dropTokenData();
     jobCards?.dropTokenData();
     letterRows?.dropTokenData();
     submissions?.dropTokenData();
+    // v3 Phase 5: the agent's job closes; its result waits for a connection to tell it.
+    void agentRef?.tokenChanged().catch(() => undefined);
     // Every side panel reads the connection again and drops the card it holds, whichever window the change came from.
     panelReports?.tellPanels('connection');
   });
@@ -197,7 +206,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     recordOwn: async () => (await settings.get()).modes.recordOwn === 'on',
     frameKey: async (tabId, frameId) => (await frameEntry(session, tabId, frameId))?.applicationKey ?? null,
     disclosed: () => auth.disclosed(),
-    changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined) });
+    changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined),
+    // v3 Phase 5: the agent's own tab's sign finishes its job (its result records Applied).
+    agentSubmitted: (tabId, applicationKey) => agent.submitted(tabId, applicationKey) });
   submissions = submitted;
   /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
    *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
@@ -210,9 +221,54 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     const item = list.ok ? list.value.items.find((entry) => entry.id === id) : undefined;
     return item === undefined ? null : { id: item.id, fileKind: item.fileKind, fileName: item.fileName };
   }
-  /** The content settings as they act now: Submit stays Manual until the person acknowledged the disclosure as it
-   *  reads now (the v3 Phase 4 review). */
-  const contentSettings = async () => contentSettingsOf(await settings.get(), { holdSubmit: !(await auth.disclosed()) });
+  /** Whether Sign-in mode may act as Auto (v3 Phase 5): the connection holds credentials:read and the person
+   *  acknowledged the disclosure as it reads now. */
+  const signInAllowed = async () => ((await keeper.current())?.scopes ?? []).includes('credentials:read')
+    && (await auth.disclosed());
+  /** What holds a mode at Manual now: Submit until the disclosure was acknowledged (the v3 Phase 4 review); Sign-in
+   *  unless it is allowed (v3 Phase 5). */
+  const holds = async () => ({ holdSubmit: !(await auth.disclosed()), holdSignIn: !(await signInAllowed()) });
+  /** The content settings as they act now for a frame of `tabId` showing `applicationKey` in document `documentId`: in
+   *  the auto-apply agent's window, for its task's application and while it may run, the agent's (v3 Phase 5: Next and
+   *  Submit on Auto; Submit on Manual in a document but the one the job's Submit was pressed in, once it was). */
+  const contentSettingsFor = async (tabId: number, applicationKey: string | null | undefined,
+    documentId: string | null | undefined) => {
+    const task = await agent.task(tabId, applicationKey, documentId);
+    return contentSettingsOf(await settings.get(), { ...(await holds()), agent: task !== null,
+      agentSubmitHeld: task?.submitHeld === true });
+  };
+  /** v3 Phase 5: the auto-apply agent. Its alarm's listener is registered below, with the others. */
+  const agent = createAgent({ server, local, session, windows: platform.windows, alarms: platform.alarms, timers, now,
+    scopes: async () => (await keeper.current())?.scopes ?? null,
+    disclosed: () => auth.disclosed(),
+    reports: (tabId) => reports.ofTab(tabId),
+    topFrame: (tabId) => topFrameOf(tabId),
+    send: (tabId, message, target) => platform.tabs.sendToFrame(tabId, message, target),
+    nonce: () => toBase64Url(platform.randomBytes(16)),
+    // The tab it lets go of: every frame of ours there stops its run and hears the person's own settings.
+    release: async (tabId) => {
+      const frames = await framesOfTab(session, tabId);
+      await Promise.all(frames.map(async (frame) => {
+        try {
+          await platform.tabs.sendToFrame(tabId, { v: 1, type: 'run/cancel' }, frameTarget(frame));
+          await platform.tabs.sendToFrame(tabId, { v: 1, type: 'settings/changed',
+            settings: await contentSettingsFor(tabId, frame.applicationKey, frame.documentId) }, frameTarget(frame));
+        } catch {
+          log('frame.unreachable');
+        }
+      }));
+    },
+    assign: (tabId, applicationKey, task) => jobs.assign(tabId, applicationKey, task.jobId, task.resumeId),
+    changed: () => reports.tellPanels('agent'),
+    // The e2e build: its test browser routes the agent's new window before the job's address opens in it.
+    windowSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0 });
+  agentRef = agent;
+  /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
+  const signIn = createSignIn({ server, session, now,
+    signInAuto: async () => (await settings.get()).modes.signIn === 'auto' && (await signInAllowed()) });
+  /** Every frame with a form hears the settings as they act now (settings/changed), the agent's tab the agent's. */
+  const pushNow = async (saved?: Awaited<ReturnType<typeof settings.get>>) => pushSettings({ session, tabs: platform.tabs },
+    saved ?? await settings.get(), { ...(await holds()), agentTab: await agent.tab() });
   const beginDeps = {
     jobs,
     generation: () => keeper.generation,
@@ -224,7 +280,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     runs,
     runStates,
     policy,
-    settings: { ...settings, content: contentSettings },
+    settings,
     core,
   };
   const ownId = platform.runtime.id;
@@ -350,6 +406,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // The side panel's strip and card follow what the tab holds now (v2).
           void reports.pageChanged(from.tabId).catch(() => undefined);
           log('frame.registered', { frameId: entry.frameId, top: entry.isTop });
+          // v3 Phase 5: the agent's window: a form's document gets the agent's run, a posting's its entry.
+          void agent.hello(from.tabId, entry).catch(() => undefined);
           const connected = await auth.connected();
           // v3 Phase 3: a recognised job page (an application form of ours) is looked up as it loads, so the side
           // panel's card and match show at once; the card's own path, with its merge, rate limit and token checks.
@@ -361,11 +419,23 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           }
           // A top frame that loads beside an open side panel keeps its launcher hidden (v3 Phase 3 review): the panel's
           // panel/side came to the document before, and none comes now.
-          return ok({ frameId: from.frameId, connected, settings: await contentSettings(),
+          return ok({ frameId: from.frameId, connected,
+            settings: await contentSettingsFor(from.tabId, entry.applicationKey, from.documentId),
             launcher: await launchers.prefsFor(from.url),
             ...(from.frameId === 0 && reports.sideShows(from.tabId) ? { side: true as const } : {}) });
         },
-        'run/begin': (message, from) => beginRun(beginDeps, message, from),
+        'run/begin': async (message, from) => {
+          // v3 Phase 5: the agent's run only in the agent's own window, for its task's application, while it may run;
+          // and every run there with the agent's settings, and the task's job and resume.
+          const task = await agent.task(from.tabId, message.applicationKey);
+          if (message.trigger === 'agent' && task === null) {
+            log('agent.refused', { tab: false });
+            return refuse('bad_message');
+          }
+          if (task !== null) jobs.assign(from.tabId, message.applicationKey, task.jobId, task.resumeId);
+          return beginRun({ ...beginDeps, settings: { ...settings,
+            content: () => contentSettingsFor(from.tabId, message.applicationKey, from.documentId) } }, message, from);
+        },
         'plan/request': (message, from) => planner.request(message, from),
         'plan/poll': (message, from) => planner.poll(message, from),
         // Edit with AI (the owner's amendments): one field's rewrite, then plan/poll.
@@ -393,9 +463,14 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           return ok({});
         },
         // v3 Phase 3: a run's progress while it fills, for the panels only (no counters, no match cache).
-        'report/live': (message, from) => reports.put(message, from),
+        'report/live': async (message, from) => {
+          const answer = await reports.put(message, from);
+          if (answer.ok) void agent.reported(from.tabId).catch(() => undefined);
+          return answer;
+        },
         'report/put': async (message, from) => {
           const answer = await reports.put(message, from);
+          if (answer.ok) void agent.reported(from.tabId).catch(() => undefined);
           // Which of the application's written fields still hold our value, for the accepted-match cache.
           const run = answer.ok ? await runs.find(message.runId, from) : null;
           if (run !== null) accepts.reported(run.applicationKey, message.report);
@@ -429,8 +504,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           return ok({});
         },
         // v3 Phase 4: a Submit pressed in the frame, and the platform's confirmation after it (submissions.ts).
-        'submit/armed': (message, from) => submitted.armed(message, from),
+        'submit/armed': async (message, from) => {
+          const answer = await submitted.armed(message, from);
+          // v3 Phase 5: the agent's job's one Submit (agent.ts pressed).
+          if (answer.ok) await agent.pressed(from.tabId, message.applicationKey, from.documentId).catch(() => undefined);
+          return answer;
+        },
         'submit/detected': (message, from) => submitted.detected(message, from),
+        // v3 Phase 5: Sign-in mode Auto's credential, to the asking top frame alone (sign-in.ts).
+        'signin/credential': (message, from) => signIn.credential(message, from),
         'launcher/hide': async (message, from) => {
           if (from.frameId !== 0) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);
@@ -511,7 +593,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'settings/save': async (message) => {
           const saved = await settings.save(message.settings);
           // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
-          await pushSettings({ session, tabs: platform.tabs }, saved, { holdSubmit: !(await auth.disclosed()) });
+          await pushNow(saved);
           // And every side panel (v2): the custom question follows the AI drafts switch.
           reports.tellPanels('settings');
           return ok({ settings: saved });
@@ -522,13 +604,18 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'auth/disconnect': () => auth.disconnect(),
         'auth/acknowledgeDisclosure': async () => {
           const answer = await auth.acknowledgeDisclosure();
-          // A run in progress reads Submit mode as it acts now.
-          await pushSettings({ session, tabs: platform.tabs }, await settings.get());
+          // A run in progress reads Submit and Sign-in modes as they act now.
+          await pushNow();
           reports.tellPanels('connection');
+          reports.tellPanels('agent');
           return answer;
         },
         'runs/clear': async () => ok({ cleared: await runStates.clearAll() }),
         'telemetry/get': async () => ok({ counts: await telemetry.read() }),
+        // v3 Phase 5: the auto-apply agent's switch, status and Stop (the options page and the side panel).
+        'agent/status': async () => ok(await agent.status()),
+        'agent/set': (message) => agent.set(message.on, message.confirmed === true),
+        'agent/stop': () => agent.stop(),
         'telemetry/clear': async () => {
           await telemetry.clear();
           return ok({ counts: [] });
@@ -582,7 +669,14 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     void platform.sidePanel.openOnActionClick(true).catch(() => undefined);
   });
 
+  // v3 Phase 5: the agent's alarm wakes the worker while Run auto-apply is on.
+  platform.alarms.onAlarm((name) => {
+    if (name === AGENT_ALARM) void agent.tick().catch(() => undefined);
+  });
+
   platform.tabs.onRemoved((tabId) => {
+    void agent.tabRemoved(tabId).catch(() => undefined);
+    void signIn.forgetTab(tabId).catch(() => undefined);
     beginLimit.forget(`${tabId}/`);
     launcherLimit.forget(`${tabId}/`);
     void session.remove([visitKey(tabId)]).catch(() => undefined);
@@ -618,6 +712,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   }
   accessReady = restrict();
   state.ready = accessReady.then(() => runStates.prune().catch(() => undefined));
+  // v3 Phase 5: the agent picks up where it was (its job, a result still to tell, the queue).
+  void state.ready.then(() => agent.start()).catch(() => undefined);
   log('worker.started');
   return state;
 }

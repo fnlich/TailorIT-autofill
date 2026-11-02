@@ -150,6 +150,9 @@ export interface JobCards {
   /** v3 Phase 3b: the job the person chose for the tab's application `applicationKey` (TailorIT's id; memory only):
    *  null when none, or one chosen for another application. */
   chosenJob(tabId: number, applicationKey: string | null): number | null;
+  /** v3 Phase 5: the auto-apply agent's task names its job (for the task's application) and, when set, its resume, as
+   *  a person's "Autofill for another job" and Change would: the lookup, the card and the attach use them. */
+  assign(tabId: number, applicationKey: string, jobId: number, resumeId: string | null): void;
   /** v3 Phase 3b: "Apply without resume" for the tab's card frame's application. */
   setWithout(message: Of<'panel/withoutResume'>): Promise<Answer<Record<string, never>>>;
   /** Whether the person chose to apply without a resume for the tab's application `applicationKey`. */
@@ -537,6 +540,13 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     },
     chosenJob(tabId, applicationKey) {
       return jobFor(tabId, applicationKey);
+    },
+    assign(tabId, applicationKey, jobId, resumeId) {
+      chosenJobs.set(tabId, { app: applicationKey, jobId });
+      if (resumeId !== null) {
+        choices.set(tabId, resumeId);
+        withouts.delete(tabId);
+      }
     },
     async setWithout({ tabId, without }) {
       if (!without) {

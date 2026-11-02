@@ -5,7 +5,9 @@
  *
  * Each test starts from the smoke routes and adds its own with serve(): a converted snapshot's .routes.json (its page
  * and its frames' stand-ins), a trap at its trap address, or a page built in memory (the React fixture's bundle). An
- * entry may carry its own response headers, such as the strict-CSP fixture's Content-Security-Policy.
+ * entry may carry its own response headers, such as the strict-CSP fixture's Content-Security-Policy. A list of entries
+ * answers the address's requests in turn, its last one from then on (v3 Phase 5 review: Lever's /apply sending the
+ * agent to the posting first). There is no HTTP redirect: Chrome follows one without routing its new request.
  */
 import { readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
@@ -27,8 +29,11 @@ export const SMOKE_ROUTES: Record<string, string> = {
   'https://example.com/': 'fixtures/smoke/form.html',
 };
 
-/** What a routed URL is answered with: a repo-relative file, or a body (or file) with its own type and headers. */
-export type RouteEntry = string | { file?: string; body?: string | Buffer; contentType?: string; headers?: Record<string, string> };
+/** One answer: a repo-relative file, or a body (or file) with its own type and headers. */
+export type RouteAnswer = string | { file?: string; body?: string | Buffer; contentType?: string;
+  headers?: Record<string, string> };
+/** What a routed URL is answered with: one answer, or answers in turn (the last one from then on). */
+export type RouteEntry = RouteAnswer | readonly RouteAnswer[];
 /** URL (without fragment) to its answer. */
 export type RouteMap = Record<string, RouteEntry>;
 
@@ -56,7 +61,7 @@ export function routesFile(path: string): RouteMap {
   return JSON.parse(readFileSync(resolve(path), 'utf8')) as Record<string, string>;
 }
 
-function fulfilmentOf(entry: RouteEntry): { status: number; contentType: string; body: string | Buffer; headers?: Record<string, string> } {
+function fulfilmentOf(entry: RouteAnswer): { status: number; contentType: string; body: string | Buffer; headers?: Record<string, string> } {
   const spec = typeof entry === 'string' ? { file: entry } : entry;
   const body = spec.body ?? (spec.file !== undefined ? readFileSync(resolve(spec.file)) : null);
   if (body === null) throw new Error('a route entry needs a file or a body');
@@ -66,17 +71,27 @@ function fulfilmentOf(entry: RouteEntry): { status: number; contentType: string;
 
 export async function installRoutes(context: BrowserContext, routes: RouteMap = SMOKE_ROUTES): Promise<RouteLog> {
   const table = new Map<string, RouteEntry>(Object.entries(routes));
+  /** How many times each address with answers in turn was answered. */
+  const answered = new Map<string, number>();
   const log: RouteLog = {
     submitted: [],
     unexpected: [],
     serve(more) {
-      for (const [url, entry] of Object.entries(more)) table.set(url, entry);
+      for (const [url, entry] of Object.entries(more)) {
+        table.set(url, entry);
+        answered.delete(url);
+      }
     },
   };
   await context.route('**/*', async (route) => {
     const url = route.request().url();
     const entry = table.get(url);
-    if (entry !== undefined) return route.fulfill(fulfilmentOf(entry));
+    if (entry !== undefined) {
+      if (!Array.isArray(entry)) return route.fulfill(fulfilmentOf(entry as RouteAnswer));
+      const turn = answered.get(url) ?? 0;
+      answered.set(url, turn + 1);
+      return route.fulfill(fulfilmentOf(entry[Math.min(turn, entry.length - 1)]!));
+    }
     // The extension's own pages and scripts, and the mock TailorIT, are the only things allowed through; and (v3 Phase
     // 3b) the browser's own PDF viewer's resources, which it loads to show the side panel's resume preview from a blob:
     // address (chrome://resources: inside the browser, never the network).

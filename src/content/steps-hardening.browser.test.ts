@@ -25,7 +25,7 @@ const ADAPTER: Adapter = e2eAdaptersFor(new URL(WIZARD_URL))[0]!;
 const AUTO = { settings: { ...CAUTIOUS_SETTINGS, modes: { ...CAUTIOUS_SETTINGS.modes, next: 'auto' as const } } } satisfies FakeWorkerOptions;
 /** The worker's settings/changed push after the person saved auto-advance off in the options page. */
 const SETTING_OFF = { v: 1, type: 'settings/changed', settings: { panel: 'side',
-  modes: { next: CAUTIOUS_SETTINGS.modes.next, afterPageTurn: CAUTIOUS_SETTINGS.modes.afterPageTurn, submit: CAUTIOUS_SETTINGS.modes.submit, agentSkip: CAUTIOUS_SETTINGS.modes.agentSkip },
+  modes: { next: CAUTIOUS_SETTINGS.modes.next, afterPageTurn: CAUTIOUS_SETTINGS.modes.afterPageTurn, submit: CAUTIOUS_SETTINGS.modes.submit, agentSkip: CAUTIOUS_SETTINGS.modes.agentSkip, signIn: CAUTIOUS_SETTINGS.modes.signIn },
   llm: CAUTIOUS_SETTINGS.llm, offerToSaveAnswers: true } } as const;
 
 let logs: MockInstance;

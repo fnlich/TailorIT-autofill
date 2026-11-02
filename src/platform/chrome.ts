@@ -6,6 +6,8 @@
 import { browser } from 'wxt/browser';
 import { platformOfUrl } from '../shared/hosts';
 import type {
+  AgentAlarms,
+  AgentWindows,
   ClientInfo,
   ContentPlatform,
   FrameSendFailure,
@@ -177,6 +179,71 @@ function frameSendFailure(error: unknown): FrameSendFailure {
   return NO_RECEIVER.test(message) ? 'gone' : 'unanswered';
 }
 
+/** The auto-apply agent's windows (v3 Phase 5): chrome.windows, tabs.get and tabs.update, no permission needed. An
+ *  unfocused window is asked for, on an empty page (the job's address follows with navigate); a browser that cannot
+ *  make one unfocused (some headless builds) gets a normal one instead. */
+function agentWindows(): AgentWindows {
+  return {
+    async open() {
+      let made: { id?: number; tabs?: Array<{ id?: number }> } | undefined;
+      try {
+        made = await browser.windows.create({ url: 'about:blank', focused: false, type: 'normal' });
+      } catch {
+        try {
+          made = await browser.windows.create({ url: 'about:blank', type: 'normal' });
+        } catch {
+          return null;
+        }
+      }
+      const tabId = made?.tabs?.[0]?.id;
+      return made?.id === undefined || tabId === undefined ? null : { windowId: made.id, tabId };
+    },
+    async navigate(tabId, url) {
+      try {
+        await browser.tabs.update(tabId, { url });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    async closeTab(tabId) {
+      try {
+        await browser.tabs.remove(tabId);
+      } catch {
+        // Gone already.
+      }
+    },
+    async tabExists(tabId) {
+      try {
+        return (await browser.tabs.get(tabId)) !== undefined;
+      } catch {
+        return false;
+      }
+    },
+    async othersOpen(except) {
+      try {
+        const open = await browser.windows.getAll({ windowTypes: ['normal'] });
+        return open.some((window) => window.id !== except);
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+/** The auto-apply agent's alarm (v3 Phase 5). */
+function agentAlarms(): AgentAlarms {
+  return {
+    async start(name, periodMinutes) {
+      await browser.alarms.create(name, { periodInMinutes: periodMinutes, delayInMinutes: periodMinutes });
+    },
+    async stop(name) {
+      await browser.alarms.clear(name);
+    },
+    onAlarm: (cb) => browser.alarms.onAlarm.addListener((alarm) => cb(alarm.name)),
+  };
+}
+
 export function createWorkerPlatform(): WorkerPlatform {
   return {
     runtime: {
@@ -230,6 +297,8 @@ export function createWorkerPlatform(): WorkerPlatform {
       open: (tabId) => browser.sidePanel.open({ tabId }),
       openOnActionClick: (on) => browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: on }),
     },
+    windows: agentWindows(),
+    alarms: agentAlarms(),
     secrets: indexedDbSecrets(),
     // The global is read at call time, so a test can stub it.
     fetch: (url, init) => fetch(url, init),

@@ -65,7 +65,10 @@ export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attenti
   'submit-unconfirmed',
   // The v3 Phase 4 review: the page refused a Submit pressed (its errors, its failure message; `count` of them), and
   // Submit mode Auto submitted a posting whose AI rule could not be read.
-  'submit-errors', 'submit-auto-unchecked'] as const;
+  'submit-errors', 'submit-auto-unchecked',
+  // v3 Phase 5, Sign-in mode Auto: the run signs in with the person's saved job-site sign-in; it could not (no sign-in
+  // for this site, a field it may not fill, Sign-in Auto not allowed); or the site did not take it.
+  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed'] as const;
 
 /** A step's progress line as the adapter reads it from the page ("Step 2 of 4"), at most this long. */
 export const MAX_STEP_PROGRESS = 120;

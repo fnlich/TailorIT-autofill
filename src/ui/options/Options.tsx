@@ -7,11 +7,15 @@
  * - Connection: the first-run disclosure, always above Connect while not connected; Connect (auth/startPairing) and
  *   the pairing's countdown; the typed code (auth/redeemCode); "Connected as …" and Disconnect (auth/disconnect);
  *   expired, revoked, a version mismatch and refused storage access, each said in plain words.
- * - Modes (v3 Phase 3, settings version 4: src/ui/page/modes.tsx, also in the side panel's gear menu): Next page
- *   (Manual), Autofill after page turn (Automatically), Consent boxes (All agreements), AI answers (All: the answers to
- *   legal, pay and attention-check questions the profile does not answer, version 3's switch) and the side panel's
- *   view (Expanded); the final Submit is never pressed. Sign-in, Submit and the agent's skip rules are stored and shown
- *   once they exist (Phases 4 and 5).
+ * - Modes (v3 Phase 3, settings version 4: src/ui/page/modes.tsx, also in the side panel's gear menu): Sign-in
+ *   (Manual; Auto only while the connection may read sign-ins and the disclosure was acknowledged, v3 Phase 5), Next
+ *   page (Manual), Autofill after page turn (Automatically), Submit (Manual, v3 Phase 4), Record applications I submit
+ *   myself (On), Consent boxes (All agreements), AI answers (All: the answers to legal, pay and attention-check
+ *   questions the profile does not answer, version 3's switch), the side panel's view (Expanded) and the skip rules.
+ * - Auto-apply (v3 Phase 5, src/ui/page/agent.tsx): Run auto-apply, off; turning it on the first time asks the person
+ *   to confirm that applications go out unattended with AI-guessed answers (agent/set {on, confirmed}); it can be
+ *   turned on only while connected with agent:run and the disclosure acknowledged, and says why not otherwise. Its
+ *   status line, Stop and a link to TailorIT's Auto-apply page.
  * - Review panel: the side panel (the default) or the in-page panel (src/content/ui/panel.tsx), which opens from the
  *   launcher; a frame too small for it opens the side panel instead.
  * - Consent boxes: the core's closed list of categories, for Consent boxes: Required only; the usual ones pre-approved
@@ -39,7 +43,8 @@ import { COPY } from '../../shared/copy';
 import { LogoMark, Wordmark } from '../brand/Logo';
 import { DisclosureChanged } from '../page/disclosure';
 import { request } from '../page/request';
-import { ModesFields } from '../page/modes';
+import { AgentStatusLine, useAgentStatus, type AgentState } from '../page/agent';
+import { ModesFields, signInAvailability } from '../page/modes';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
 import { useSettings, type SettingsState } from './settings';
@@ -70,7 +75,7 @@ export function Options({ platform, now = Date.now, frames = animationFrames }: 
         </h1>
       </header>
       <Connection platform={platform} auth={auth} now={now} frames={frames} />
-      <SettingsCards settings={settings} />
+      <SettingsCards platform={platform} settings={settings} auth={auth} />
       <Counters platform={platform} settings={settings} />
       <SavedRuns platform={platform} />
       {settings.note !== null && <p className="tia-save-note" role="status">{settings.note}</p>}
@@ -263,7 +268,7 @@ function Connection({ platform, auth, now, frames }: {
 
 // ── The settings ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-function SettingsCards({ settings }: { settings: SettingsState }) {
+function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; settings: SettingsState; auth: AuthState }) {
   const { shown, saving, failed, save } = settings;
   if (shown === null) return <p className={failed ? 'tia-error' : 'tia-note'}>{failed ? TEXT.unreadable : TEXT.loading}</p>;
   const set = (patch: Partial<Settings>) => save({ ...shown, ...patch });
@@ -271,8 +276,11 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
     <>
       <Card title={TEXT.modes.heading} name="modes">
         <p className="tia-help">{TEXT.modes.intro}</p>
-        <ModesFields settings={shown} disabled={saving} onChange={save} idPrefix="options" />
+        <ModesFields settings={shown} disabled={saving} onChange={save} idPrefix="options"
+          signIn={signInAvailability(auth.status)} />
       </Card>
+
+      <AutoApply platform={platform} auth={auth} />
 
       <Card title={TEXT.panel.heading} name="panel">
         <fieldset className="tia-fieldset">
@@ -350,6 +358,72 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
           onChange={(eeoDeclineByDefault) => set({ interpretations: { ...shown.interpretations, eeoDeclineByDefault } })} />
       </Card>
     </>
+  );
+}
+
+// ── Auto-apply (v3 Phase 5) ───────────────────────────────────────────────────────────────────────────────────────
+
+/** Run auto-apply, its one-time confirmation, why it cannot be turned on, its status, Stop and TailorIT's page. */
+function AutoApply({ platform, auth }: { platform: PagePlatform; auth: AuthState }) {
+  const anchor = useRef<HTMLDivElement>(null);
+  const agent: AgentState = useAgentStatus(platform, anchor, { listen: true });
+  const { status, refresh } = agent;
+  const [asking, setAsking] = useState(false);
+  const [working, setWorking] = useState(false);
+  /** The switch as the person just set it, until the worker answered. */
+  const [pending, setPending] = useState<boolean | null>(null);
+  const words = TEXT.agent;
+  const connection = auth.status?.connection;
+  const disclosure = auth.status?.disclosure;
+  // The connection, or the disclosure's acknowledgement, changed on this page: read the agent again.
+  useEffect(() => {
+    refresh();
+  }, [refresh, connection, disclosure]);
+
+  const turn = async (on: boolean, confirmed: boolean) => {
+    setWorking(true);
+    setPending(on);
+    const answer = await request(platform, { v: 1, type: 'agent/set', on, ...(confirmed ? { confirmed: true as const } : {}) });
+    setWorking(false);
+    setPending(null);
+    setAsking(false);
+    if (answer.ok) agent.accept(answer.data);
+    else refresh();
+  };
+  const toggle = (on: boolean) => {
+    if (on && status?.confirmed !== true) {
+      setAsking(true);
+      return;
+    }
+    void turn(on, false);
+  };
+
+  return (
+    <Card title={words.heading} name="agent">
+      <div ref={anchor}>
+        <p className="tia-help">{words.intro}</p>
+        {status === null ? <p className="tia-note">{TEXT.loading}</p> : (
+          <>
+            <Toggle setting="agent.on" name={words.run} help={words.runHelp} checked={pending ?? (status.on || asking)}
+              disabled={working || (!status.on && !status.allowed)} onChange={toggle} />
+            {status.blocked !== null && <p className="tia-note" data-agent-blocked={status.blocked}>{words.blocked[status.blocked]}</p>}
+            {asking && (
+              <div className="tia-confirm" role="alertdialog" aria-labelledby="agent-confirm-heading" data-agent-confirm="">
+                <h3 className="tia-disclosure__title" id="agent-confirm-heading">{words.confirmHeading}</h3>
+                <p>{words.confirm}</p>
+                <div className="tia-row-of-buttons">
+                  <button type="button" className="tia-button tia-button--primary" data-action="agent-confirm" disabled={working}
+                    onClick={() => void turn(true, true)}>{words.confirmYes}</button>
+                  <button type="button" className="tia-button" data-action="agent-cancel" disabled={working}
+                    onClick={() => setAsking(false)}>{words.confirmNo}</button>
+                </div>
+              </div>
+            )}
+            <AgentStatusLine platform={platform} agent={agent} className="tia-agent tia-agent--options" />
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
 

@@ -202,6 +202,30 @@ export const LOG_CODES = [
   'content.step-press-refused',
   'content.submit-armed',
   'content.submit-detected',
+  // v3 Phase 5: the auto-apply agent (turned on or off, a job claimed, given back after a restart, its window opened or
+  // not, a run started or retried in it, its entry pressed, its result reported or not: states and reasons as their
+  // places in the contract's lists, never a job, an address or anything the form held), and Sign-in mode Auto (the
+  // credential read for a frame or refused, why as flags; the content script's outcome as flags: never a host, an
+  // email or a password).
+  'agent.switched',
+  'agent.blocked',
+  'agent.claimed',
+  'agent.empty',
+  'agent.next-failed',
+  'agent.opened',
+  'agent.open-failed',
+  'agent.run-started',
+  'agent.entered',
+  'agent.retried',
+  'agent.finished',
+  'agent.report-failed',
+  'agent.refused',
+  'signin.credential',
+  'signin.refused',
+  'content.agent-refused',
+  'content.agent-entry',
+  'content.sign-in',
+  'content.sign-in-refused',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

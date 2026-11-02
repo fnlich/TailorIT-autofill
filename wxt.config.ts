@@ -36,7 +36,9 @@ export default defineConfig({
     // activeTab (v3 Phase 3b, docs/PRIVACY.md): the host of the tab the person invokes the extension on with the toolbar
     // icon, for "Ask TailorIT to support this site" on a page outside the applicant-tracking hosts. Chrome keeps the
     // grant across the tab's same-origin moves and takes it back on another origin or when the tab closes.
-    permissions: ['storage', 'sidePanel', 'activeTab', ...(mode === 'development' ? ['pageCapture'] : [])],
+    // alarms (v3 Phase 5, docs/PRIVACY.md): wakes the worker every 30 seconds while Run auto-apply is on, so the agent
+    // looks at its running job and the queue after the browser stopped an idle worker. No install warning.
+    permissions: ['storage', 'sidePanel', 'activeTab', 'alarms', ...(mode === 'development' ? ['pageCapture'] : [])],
     host_permissions: [...ATS_MATCHES, `${TAILORIT_ORIGIN}/*`],
     externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
     // TailorIT's mark (apps/web/public/logo-mark.svg), rendered by scripts/icons.mjs; check-build checks each size.

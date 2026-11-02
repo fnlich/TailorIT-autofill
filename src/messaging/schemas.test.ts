@@ -89,7 +89,8 @@ describe('the page channel\'s additions', () => {
   it('push a saved change of the settings to a frame as its content settings only (the Phase 5 review, C-S2)', () => {
     const changed = { v: 1, type: 'settings/changed', settings: { panel: 'side',
       modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
-        submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip },
+        submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
+        signIn: DEFAULT_SETTINGS.modes.signIn },
       llm: { tiebreak: true, classify: true, drafts: false, answers: true, confirmDrafts: false,
         whenForbidden: 'profile-only' }, offerToSaveAnswers: true } };
     expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);
@@ -97,7 +98,8 @@ describe('the page channel\'s additions', () => {
     expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings, preapprovedConsent: [] } }).success)
       .toBe(false);
     expect(WorkerToContentSchema.safeParse({ ...changed, tabId: 7 }).success).toBe(false);
-    // Only the modes a frame acts on (v3 Phase 3 review): never Consent boxes, AI answers, Sign-in, Submit or the skips.
+    // Only the modes a frame acts on (v3 Phase 3 review): never Consent boxes, AI answers or Record my own (Sign-in, v3
+    // Phase 5, as it acts).
     expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings,
       modes: DEFAULT_SETTINGS.modes } }).success).toBe(false);
     expect(WorkerToContentSchema.safeParse({ v: 1, type: 'settings/changed' }).success).toBe(false);

@@ -16,6 +16,9 @@ export const CONNECT_PAGE = `${MOCK_ORIGIN}/settings/autofill`;
  *  unticked). */
 export const CONNECT_BUTTON = 'Connect the extension';
 export const SENSITIVE_BOX = 'Let this browser read and change work authorization and self-identification answers';
+/** The stand-in page's sign-in box (API version 3): ticked, the code grants credentials:read (v3 Phase 5's Sign-in
+ *  Auto specs tick it). */
+export const SIGN_IN_BOX = 'Let this browser sign in to job sites with my saved password';
 
 /** What the stand-in page recorded: the extension's replies (value-free). */
 export interface PairingRecord {
@@ -37,9 +40,11 @@ export async function nextConnectPage(context: BrowserContext): Promise<Page> {
 
 /** Clicks "Connect the extension" on a stand-in connect page (with the sensitive box as asked) and waits for the
  *  outcome. */
-export async function connectOnPage(page: Page, options: { includeSensitive?: boolean } = {}): Promise<string> {
+export async function connectOnPage(page: Page, options: { includeSensitive?: boolean; allowSignIn?: boolean } = {}):
+  Promise<string> {
   const box = page.getByRole('checkbox', { name: SENSITIVE_BOX });
   if (options.includeSensitive === false) await box.uncheck();
+  if (options.allowSignIn === true) await page.getByRole('checkbox', { name: SIGN_IN_BOX }).check();
   await page.getByRole('button', { name: CONNECT_BUTTON }).click();
   await expect(page.locator('html')).toHaveAttribute('data-pairing', /^(?:connected|code-shown|failed)$/);
   return (await pairingState(page))!;
@@ -47,7 +52,8 @@ export async function connectOnPage(page: Page, options: { includeSensitive?: bo
 
 /** Pairs through the hand-off: auth/startPairing (what the options page's Connect sends), then the person's click on
  *  the connect page it opens. Answers the connect page, left open. */
-export async function pairThroughConnectPage(ext: Extension, options: { includeSensitive?: boolean } = {}): Promise<Page> {
+export async function pairThroughConnectPage(ext: Extension, options: { includeSensitive?: boolean; allowSignIn?: boolean } = {}):
+  Promise<Page> {
   // The page messages go from is open first, so the next page to open is the connect page.
   await ext.page();
   const opened = nextConnectPage(ext.context);

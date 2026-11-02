@@ -80,7 +80,7 @@ function files(dir) {
 function checkManifest(build, manifest) {
   const fallback = !build.production && process.env.TAILORIT_FIXTURE_ORIGIN === '1';
   if (manifest.manifest_version !== 3) fail(build, 'manifest_version is not 3');
-  if (!sameSet(manifest.permissions ?? [], ['storage', 'sidePanel', 'activeTab'])) fail(build, `permissions are ${JSON.stringify(manifest.permissions)}`);
+  if (!sameSet(manifest.permissions ?? [], ['storage', 'sidePanel', 'activeTab', 'alarms'])) fail(build, `permissions are ${JSON.stringify(manifest.permissions)}`);
   if (!sameSet(manifest.host_permissions ?? [], [...ATS_MATCHES, `${build.origin}/*`])) fail(build, 'host_permissions differ from the ATS list plus TailorIT');
   for (const key of ['optional_permissions', 'optional_host_permissions', 'web_accessible_resources', 'content_security_policy', 'commands', 'update_url']) {
     if (key in manifest) fail(build, `${key} must be absent`);

@@ -1,0 +1,110 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 5, Sign-in mode Auto): a job site's sign-in page, served at a Workday tenant's candidate host
+  (https://tailoritfixture.wd5.myworkdayjobs.com/en-US/careers/login), read by the generic adapter's standard rule: an
+  email box marked autocomplete="username", a password box marked autocomplete="current-password" and a required terms
+  box in one form posting to the page's own origin, with one submit button, "Sign In". Beside them, two boxes that must
+  never get the password: a honeypot password box drawn off the page, out of the tab order, and a hidden password box
+  (display: none).
+  The page's own script stands for the site's: on the form's submit it posts nothing, records on the body whether the
+  email and the password typed are the test's dummies (data-email-ok, data-password-ok), whether the terms box was
+  ticked (data-terms) and whether every other password box is still empty (data-traps-empty), and shows the signed-in
+  page: "Welcome back" and an application form with no password box. With ?wrong it shows "That email or password isn't
+  right." instead, keeps the form and empties the password box. It also tries, as a hostile page would, to reach the
+  extension: it posts the extension's message names to the window, dispatches them as events, and calls
+  chrome.runtime.sendMessage where the browser offers it; what it got back is recorded in data-steal (always "nothing").
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sign In - Northwind Careers</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 520px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input[type="email"], input[type="password"], input[type="text"] { display: block; width: 100%; box-sizing: border-box;
+      padding: 6px; border: 1px solid #888; }
+    .terms { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+    .trap { position: absolute; left: -9999px; top: -9999px; }
+    button { margin-top: 16px; padding: 10px 20px; }
+    [role="alert"] { color: #a00; font-weight: 600; }
+  </style>
+</head>
+<body data-email-ok="" data-password-ok="" data-terms="" data-traps-empty="" data-steal="nothing" data-submits="0">
+  <main>
+    <h1>Sign In</h1>
+    <p id="error" role="alert" hidden></p>
+    <form id="sign-in" action="/en-US/careers/login" method="post">
+      <label for="email">Email Address</label>
+      <input id="email" name="email" type="email" autocomplete="username">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password">
+      <input id="trap-offscreen" class="trap" name="password2" type="password" tabindex="-1" autocomplete="off">
+      <input id="trap-hidden" name="password3" type="password" style="display: none">
+      <label class="terms"><input id="terms" name="terms" type="checkbox" required> I agree to the terms of use</label>
+      <button type="submit">Sign In</button>
+    </form>
+  </main>
+  <script>
+    (() => {
+      const EMAIL = 'alex.rivera@example.com';
+      const PASSWORD = 'e2e-dummy-password-not-real';
+      const form = document.getElementById('sign-in');
+      const body = document.body;
+      // A hostile page's tries to reach the extension: nothing answers any of them.
+      const names = ['signin/credential', 'agent/set', 'agent/enter', 'run/start', 'run/press', 'agent/status'];
+      for (const type of names) {
+        window.postMessage({ v: 1, type, wall: 'sign-in', on: true, confirmed: true, agent: true, dryRun: false,
+          target: 'submit' }, '*');
+        document.dispatchEvent(new CustomEvent('tailorit:bridge', { detail: JSON.stringify({ v: 1, id: 'x', op: type }) }));
+      }
+      const runtime = globalThis.chrome && globalThis.chrome.runtime;
+      if (runtime && typeof runtime.sendMessage === 'function') {
+        try {
+          runtime.sendMessage({ v: 1, type: 'signin/credential', wall: 'sign-in' }, (answer) => {
+            if (answer !== undefined) body.dataset.steal = 'answered';
+          });
+        } catch {
+          // No extension listens to this page.
+        }
+      }
+      window.addEventListener('message', (event) => {
+        if (event.data && typeof event.data === 'object' && 'password' in event.data) body.dataset.steal = 'password';
+      });
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        body.dataset.submits = String(Number(body.dataset.submits) + 1);
+        const password = document.getElementById('password');
+        body.dataset.emailOk = String(document.getElementById('email').value === EMAIL);
+        body.dataset.passwordOk = String(password.value === PASSWORD);
+        body.dataset.terms = String(document.getElementById('terms').checked);
+        body.dataset.trapsEmpty = String(['trap-offscreen', 'trap-hidden']
+          .every((id) => document.getElementById(id).value === ''));
+        if (location.search.includes('wrong')) {
+          const error = document.getElementById('error');
+          error.textContent = "That email or password isn't right.";
+          error.hidden = false;
+          password.value = '';
+          return;
+        }
+        const main = document.querySelector('main');
+        const heading = document.createElement('h1');
+        heading.textContent = 'Welcome back';
+        const next = document.createElement('form');
+        next.id = 'application';
+        for (const [id, words, type] of [['first', 'First Name', 'text'], ['last', 'Last Name', 'text'],
+          ['mail', 'Email', 'email']]) {
+          const label = document.createElement('label');
+          label.htmlFor = id;
+          label.textContent = words;
+          const input = document.createElement('input');
+          input.id = id;
+          input.type = type;
+          next.append(label, input);
+        }
+        main.replaceChildren(heading, next);
+      });
+    })();
+  </script>
+</body>
+</html>

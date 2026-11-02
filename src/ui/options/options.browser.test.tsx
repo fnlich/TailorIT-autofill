@@ -100,23 +100,29 @@ describe('the options page', () => {
     }
   });
 
-  it('shows the modes in their own card, each saved at once, Submit since v3 Phase 4, Sign-in and the agent’s rules not yet', async () => {
+  it('shows the modes in their own card, each saved at once, Submit since v3 Phase 4, Sign-in and the skip rules since v3 Phase 5', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);
     const card = root.querySelector<HTMLElement>('[data-card="modes"]')!;
     expect(card.id).toBe('settings-modes');
     expect(card.querySelector('h2')?.textContent).toBe(TEXT.modes.heading);
     expect([...card.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => [group.dataset.settingGroup,
-      group.querySelector('legend')?.textContent])).toEqual([['modes.next', TEXT.modes.next.name],
+      group.querySelector('legend')?.textContent])).toEqual([['modes.signIn', TEXT.modes.signIn.name],
+      ['modes.next', TEXT.modes.next.name],
       ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['modes.submit', TEXT.modes.submit.name],
-      ['modes.recordOwn', TEXT.modes.recordOwn.name], ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name], ['view', TEXT.modes.view.name]]);
-    expect(root.querySelector('[data-setting-group="modes.signIn"]')).toBeNull();
+      ['modes.recordOwn', TEXT.modes.recordOwn.name], ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name], ['view', TEXT.modes.view.name],
+      ['modes.agentSkip', TEXT.modes.agentSkip.name]]);
     // Submit is Manual unless the person sets it to Auto.
     expect(setting(root, 'modes.submit.manual').checked).toBe(true);
     await click(setting(root, 'modes.submit.auto'));
     expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, submit: 'auto' } });
     await click(setting(root, 'modes.submit.manual'));
-    expect(root.querySelector('input[data-setting^="modes.agentSkip"]')).toBeNull();
+    // The skip rules (v3 Phase 5), each a box saved at once.
+    expect(setting(root, 'modes.agentSkip.legalGuess').checked).toBe(false);
+    await click(setting(root, 'modes.agentSkip.legalGuess'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes,
+      agentSkip: { ...DEFAULT_SETTINGS.modes.agentSkip, legalGuess: true } } });
+    await click(setting(root, 'modes.agentSkip.legalGuess'));
     // The AI's answers to legal, pay and attention-check questions (version 3's switch) are the AI answers mode.
     expect(root.querySelector('input[data-setting="llm.answerAll"]')).toBeNull();
     await click(setting(root, 'modes.ai.profile'));
@@ -322,3 +328,64 @@ describe('the options page', () => {
     expect(root.textContent).toContain(TEXT.data.cleared(3));
   });
 });
+
+describe('Options › Auto-apply and Sign-in (v3 Phase 5)', () => {
+  it('turns Run auto-apply on only after the person confirms, once; shows the status, Stop and TailorIT’s page', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    const card = root.querySelector<HTMLElement>('[data-card="agent"]')!;
+    expect(card.querySelector('h2')?.textContent).toBe(TEXT.agent.heading);
+    const run = setting(card, 'agent.on');
+    expect(run.checked).toBe(false);
+    expect(card.querySelector('[data-agent-line]')?.textContent).toBe(COPY.agent.line(worker.script.agent));
+    expect(card.querySelector<HTMLAnchorElement>('a[data-tailorit-link="auto-apply"]')?.href)
+      .toMatch(/\/auto-apply$/);
+    // The first time: the confirmation, and nothing sent until the person confirms.
+    await click(run);
+    expect(card.querySelector('[data-agent-confirm]')?.textContent).toContain(TEXT.agent.confirm);
+    expect(worker.sentOfType('agent/set')).toEqual([]);
+    await click(card.querySelector<HTMLButtonElement>('button[data-action="agent-cancel"]')!);
+    expect(card.querySelector('[data-agent-confirm]')).toBeNull();
+    expect(setting(card, 'agent.on').checked).toBe(false);
+    await click(setting(card, 'agent.on'));
+    await click(card.querySelector<HTMLButtonElement>('button[data-action="agent-confirm"]')!);
+    expect(worker.sentOfType('agent/set')).toEqual([{ v: 1, type: 'agent/set', on: true, confirmed: true }]);
+    expect(setting(card, 'agent.on').checked).toBe(true);
+    // Stop: off, the job running left for the person.
+    await click(card.querySelector<HTMLButtonElement>('button[data-action="agent-stop"]')!);
+    expect(worker.sentOfType('agent/stop')).toHaveLength(1);
+    expect(setting(card, 'agent.on').checked).toBe(false);
+    // Confirmed once: on again at a click, with no question.
+    await click(setting(card, 'agent.on'));
+    expect(card.querySelector('[data-agent-confirm]')).toBeNull();
+    expect(worker.sentOfType('agent/set').at(-1)).toEqual({ v: 1, type: 'agent/set', on: true });
+  });
+
+  it('cannot be turned on while not allowed, and says why', async () => {
+    const worker = createFakeWorker();
+    worker.script.agent = { ...worker.script.agent, allowed: false, blocked: 'no-scope' };
+    const root = await open(worker);
+    const card = root.querySelector<HTMLElement>('[data-card="agent"]')!;
+    expect(setting(card, 'agent.on').disabled).toBe(true);
+    expect(card.querySelector('[data-agent-blocked]')?.textContent).toBe(TEXT.agent.blocked['no-scope']);
+  });
+
+  it('offers Sign-in’s Auto only with credentials:read and the disclosure acknowledged, saying how otherwise', async () => {
+    const worker = createFakeWorker();
+    worker.script.auth = authStatus({ scopes: ['profile:read', 'agent:run'] });
+    const root = await open(worker);
+    expect(setting(root, 'modes.signIn.manual').checked).toBe(true);
+    expect(setting(root, 'modes.signIn.auto').disabled).toBe(true);
+    expect(root.querySelector('[data-setting-group="modes.signIn"] [data-mode-blocked]')?.textContent)
+      .toBe(TEXT.modes.signIn.needsScope);
+    unmountAll();
+    const allowed = createFakeWorker();
+    allowed.script.auth = authStatus({ scopes: ['profile:read', 'agent:run', 'credentials:read'] });
+    const again = await open(allowed);
+    expect(setting(again, 'modes.signIn.auto').disabled).toBe(false);
+    expect(again.querySelector('[data-setting-group="modes.signIn"] [data-mode-blocked]')).toBeNull();
+    await click(setting(again, 'modes.signIn.auto'));
+    expect(saves(allowed).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } });
+  });
+});
+

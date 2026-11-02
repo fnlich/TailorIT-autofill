@@ -1,0 +1,47 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 5): a Greenhouse job page whose description, shown beside its form, says "Please do not use AI
+  tools to apply for this role." A run fills it from the profile only (policy-profile-only), and Submit mode Auto, with
+  the skip rule "the posting says AI-assisted applications are not allowed" on (the default), holds the Submit: the
+  auto-apply agent skips the job (posting_forbids_ai). The form is fixtures/synthetic/submit/greenhouse.html's. Served
+  at https://job-boards.greenhouse.io/tailoritfixture/jobs/<id>; the script counts submissions and posts nothing.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Application for Data Engineer at Northwind</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    .application--submit button { margin-top: 20px; padding: 10px 20px; }
+  </style>
+</head>
+<body data-submitted="0">
+  <main class="main">
+    <h1>Data Engineer</h1>
+    <div class="job__description body">
+      <p>Northwind's data team builds the pipelines behind every order. You will own them end to end.</p>
+      <p>Please do not use AI tools to apply for this role. We want to hear from you in your own words.</p>
+    </div>
+    <form id="application-form" class="application--form">
+      <div class="field-wrapper"><label for="first_name">First Name<span aria-hidden="true">*</span></label>
+        <input id="first_name" name="first_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="last_name">Last Name<span aria-hidden="true">*</span></label>
+        <input id="last_name" name="last_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="email">Email<span aria-hidden="true">*</span></label>
+        <input id="email" name="email" type="email" aria-required="true"></div>
+      <div class="application--submit"><button class="btn btn--pill" type="submit">Submit application</button></div>
+    </form>
+  </main>
+  <script>
+    (() => {
+      document.getElementById('application-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        document.body.dataset.submitted = String(Number(document.body.dataset.submitted) + 1);
+      });
+    })();
+  </script>
+</body>
+</html>

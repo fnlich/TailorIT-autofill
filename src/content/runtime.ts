@@ -72,6 +72,11 @@
  * on, goes to the worker as submit/detected, which takes it only for an application this tab armed (never page text
  * alone); then the run is done (SUBMITTED), or the stored RunState is. A press of ours that nothing confirmed within
  * SUBMIT_CONFIRM_MS leaves the review's submit-unconfirmed notice.
+ * v3 Phase 5: run/start {agent} (the auto-apply agent's run, in the window the worker opened for it) and agent/enter
+ * (press a posting page's declared entry control: press.ts pressEntry) are taken from the worker's own script alone,
+ * like run/press; a page, a frame or an extension page can send neither. The agent's one retry (run/start {agent,
+ * retry}) lets Submit mode Auto press the step once more. Sign-in mode Auto: a run that rests at a sign-in pause signs in
+ * through content/sign-in.ts (the top frame only), and the site taking it continues the run.
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -94,13 +99,13 @@ import type { FillResult } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
 import { scan, toFieldSpec } from '../dom/scan';
-import { monotonicNow, startDeadline, type Cancel } from '../dom/time';
+import { deadline, monotonicNow, startDeadline, type Cancel } from '../dom/time';
 import { visibleText } from '../dom/visible-text';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
 import {
-  WorkerToContentSchema, type LauncherPrefs, type PolicyDecision, type PressAnswer, type StepTarget, type SubmitEvidence,
-  type SubmitPresser,
+  WorkerToContentSchema, type EntryAnswer, type LauncherPrefs, type PolicyDecision, type PressAnswer, type StepTarget,
+  type SubmitEvidence, type SubmitPresser,
 } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
@@ -116,7 +121,8 @@ import {
 } from './orchestrator';
 import { readPostingPage } from './policy';
 import { newSuccessSign, signsOf, SUBMIT_CONFIRM_MS, type PressSnapshot } from './submitted';
-import { refusalAfter } from './press';
+import { pressEntry, refusalAfter } from './press';
+import { signIn } from './sign-in';
 import { createReportLimiter } from './report';
 import { showField } from './targets';
 import { TouchLog } from './touches';
@@ -126,6 +132,8 @@ import { createValueHasher, type ValueHasher } from './values';
 /** The worker's script, as the built extension names it (wxt: entrypoints/background.ts): run/press is taken only from
  *  a sender at that address. */
 const WORKER_SCRIPT_PATH = '/background.js';
+/** v3 Phase 5 review: how long the agent's run/start waits for a run the page's load resumed by itself to rest. */
+export const AGENT_RESUMED_WAIT_MS = 30_000;
 
 /** How the runtime is set up; every part defaults to the real one. */
 export interface RuntimeOptions extends RunOptions {
@@ -209,6 +217,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let nav = 0;
   /** Where the person wants the review: frame/hello's settings, then each settings/changed. */
   let placement: 'side' | 'in-page' = 'side';
+  /** Sign-in mode as it acts (v3 Phase 5): frame/hello's settings, then each settings/changed. */
+  let signInMode: 'manual' | 'auto' = 'manual';
   /** The launcher's place and hiding for this site (v3 Phase 3): frame/hello's answer, then launcher/prefs. */
   let launcherPrefs: LauncherPrefs = { top: null, hidden: false };
   /** The browser's side panel shows this tab (panel/side): the launcher's tab hides meanwhile. */
@@ -250,8 +260,26 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'frame/ping':
         return ok({ pong: true as const });
       case 'run/start':
+        if (msg.agent === true) {
+          // v3 Phase 5: the auto-apply agent's run, from the worker's own script alone.
+          if (!fromWorker(sender)) {
+            log('content.agent-refused', { start: true });
+            return refuse('bad_sender');
+          }
+          return (await startAgentRun(msg.retry === true)) ? ok({}) : refuse('expired');
+        }
         startRun({ trigger: 'panel', dryRun: msg.dryRun });
         return ok({});
+      case 'agent/enter': {
+        // v3 Phase 5: the agent's press on a posting page's entry control, from the worker's own script alone.
+        if (!fromWorker(sender)) {
+          log('content.agent-refused', { enter: true });
+          return refuse('bad_sender');
+        }
+        const entered = await enterForAgent();
+        log('content.agent-entry', { pressed: entered.outcome === 'pressed' });
+        return ok(entered);
+      }
       case 'run/continue':
         continueRun('panel');
         return ok({});
@@ -261,6 +289,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'settings/changed':
         current?.settingsChanged(msg.settings);
         placementChanged(msg.settings.panel);
+        signInMode = msg.settings.modes.signIn;
         return ok({});
       case 'run/policyDecision':
         return decidePolicy(msg.decision) ? ok({}) : refuse('expired');
@@ -325,6 +354,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     told = hasForm;
     frameId = answer.data.frameId;
     placementChanged(answer.data.settings.panel);
+    signInMode = answer.data.settings.modes.signIn;
     if (answer.data.launcher !== undefined) {
       launcherPrefs = answer.data.launcher;
       ui?.setLauncherPrefs(launcherPrefs);
@@ -607,6 +637,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       beforePress: () => (app === null || page === null ? null : { applicationKey: app.applicationKey,
         platform: app.platform, root: page.root, adapter: page.adapter, signs: new Set(signsOf(doc, app.platform)) }),
       autoPressed,
+      // v3 Phase 5, Sign-in mode Auto: once, on the page this run paused at, until the run stops or is cancelled; the
+      // site taking it continues the run.
+      signIn: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop,
+        signal: AbortSignal.any([signal, lifetime.signal]) }),
+      afterSignIn: () => {
+        if (current === run) continueRun(run.trigger);
+      },
     }, request);
     current = run;
     lastRows = new Map();
@@ -622,6 +659,50 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const carry = current.carryOut(true);
     startRun(state === null ? { trigger, dryRun: false, carry }
       : { trigger, dryRun: false, from: { state, event: continueEventOf(state) }, carry });
+  }
+
+  /** v3 Phase 5: the auto-apply agent's run (run/start {agent}): from the tab's stored RunState when it holds one for
+   *  this application (Continue's way), so its steps' attempts, the runaway-wizard count and what it carries go on
+   *  across documents; a fresh run otherwise. `retry`: the agent's one retry after the page refused its Submit, which
+   *  lets Submit mode Auto press the step once more. Answers whether a run started (not while one works). A run the
+   *  page's load resumed by itself (resumeStored), still on its way, is waited for (AGENT_RESUMED_WAIT_MS at most): the
+   *  agent's goes on from where it rests. */
+  async function startAgentRun(retry: boolean): Promise<boolean> {
+    const on = stopped ? null : pageNow();
+    if (on === null || app === null || !channel.valid()) return false;
+    if (current !== null && current.ended === null && current.trigger === 'resume') {
+      const resumed = current;
+      await Promise.race([resumed.start(), deadline(AGENT_RESUMED_WAIT_MS, lifetime.signal)]);
+      if (current !== resumed) return false;
+    }
+    if (current !== null && current.ended === null) return false;
+    const key = app.applicationKey;
+    const ours = current !== null && current.runState?.applicationKey === key ? current : null;
+    const held = ours?.runState ?? await storedRunState(key);
+    if (stopped || (current !== null && current.ended === null) || app?.applicationKey !== key) return false;
+    if (held !== null && held.status === 'done') return false;
+    if (retry) {
+      for (const pressed of [...autoPressed]) if (pressed.startsWith(`${key}|`)) autoPressed.delete(pressed);
+    }
+    const carry = ours !== null && ours === current ? ours.carryOut(true) : undefined;
+    const from = held !== null && held.status !== 'stopped' ? { state: held, event: continueEventOf(held) } : undefined;
+    return startRun({ trigger: 'agent', dryRun: false, ...(from === undefined ? {} : { from }),
+      ...(carry === undefined ? {} : { carry }) }) !== null;
+  }
+
+  /** v3 Phase 5: agent/enter, in the top frame with no form: the adapter's declared entry control (press.ts
+   *  pressEntry); a sign-in page before any form is signed in to with Sign-in mode Auto (sign-in.ts), else it blocks. */
+  async function enterForAgent(): Promise<EntryAnswer> {
+    const at = urlOf(readHref());
+    if (stopped || page !== null || at === null || !isTop) return { outcome: 'not-offered' };
+    const own = adapters(at);
+    const entered = await pressEntry(doc, own, lifetime.signal);
+    if (entered.outcome !== 'blocked' || entered.block !== 'sign-in' || signInMode !== 'auto' || own.length === 0) {
+      return entered;
+    }
+    const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, signal: lifetime.signal });
+    if (outcome === 'continue' || outcome === 'left') return { outcome: 'pressed' };
+    return { outcome: 'blocked', block: outcome === 'failed' ? 'sign-in-failed' : 'sign-in' };
   }
 
   /** run/policyDecision: the side panel's policy card, for this frame. Answers whether a run here waited at the card. */

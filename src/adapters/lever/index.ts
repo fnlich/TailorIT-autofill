@@ -26,9 +26,10 @@ import { tiedLabels } from '../../dom/labels';
 import { newScanCache } from '../../dom/scan-cache';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
+import { applicationLinkOf } from '../entry';
 import { genericAdapter } from '../generic';
 import type { Adapter, WidgetDecl } from '../types';
-import { canonicalApplicationUrl, matchesUrl } from './url';
+import { canonicalApplicationUrl, matchesUrl, parseLeverUrl } from './url';
 
 /** The snapshots the Lever hooks were read from. */
 export const LEVER_SNAPSHOTS = ['fixtures/lever/spotify-ny.html', 'fixtures/lever/zoox-fostercity.html'] as const;
@@ -161,4 +162,7 @@ export const leverAdapter: Adapter = {
   isFinalStep,
   errors,
   isBusy,
+  // v3 Phase 5, the agent's entry: no snapshot shows Lever's posting page, so its Apply is the link a person sees whose
+  // address the Lever parser reads as this posting's /apply (adapters/entry.ts), never a class name.
+  entryControl: (doc) => applicationLinkOf(doc, parseLeverUrl),
 };

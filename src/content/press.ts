@@ -22,17 +22,24 @@
  * After a press, refusalAfter reads whether the page refused it (PRESS_REFUSAL_MS later): the adapter's visible
  * errors, the controls the form marked invalid, Ashby's failure message. The runtime ends a Submit's wait with it, and
  * the run answers a Next the page did not take.
+ *
+ * v3 Phase 5: pressEntry, the auto-apply agent's agent/enter (from the worker's own script alone: runtime.ts), presses
+ * a posting page's declared entry control (Adapter.entryControl: Greenhouse's and Lever's Apply, Ashby's Application
+ * tab) through not-submit.ts clickAdapterEntry, the third door this module alone may open: never while a form, a
+ * CAPTCHA, a sign-in or a code shows, never anything but that one control. A page that draws it late is watched for it
+ * for ENTRY_WAIT_MS.
  */
 import type { Adapter } from '../adapters/types';
-import type { StepTarget, PressAnswer } from '../messaging/schemas';
+import type { EntryAnswer, EntryBlock, StepTarget, PressAnswer } from '../messaging/schemas';
 import type { FrameReport } from '../shared/report';
 import { clickIfAllowed } from '../dom/fillers';
-import { clickAdapterSubmit } from '../dom/fillers/not-submit';
-import { detectPause, unsolvedCaptchas } from '../dom/pause-detect';
+import { clickAdapterEntry, clickAdapterSubmit } from '../dom/fillers/not-submit';
+import { detectPause, unsolvedCaptchas, type PauseKind } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
 import { deadline } from '../dom/time';
 import type { ScanResult } from '../dom/types';
 import { isUserVisible } from '../dom/visibility';
+import { watchForLateForm } from './late-form';
 
 /** How long after a press the page's refusal is read (its errors drawn, its failure message shown). */
 export const PRESS_REFUSAL_MS = 2_000;
@@ -199,4 +206,57 @@ export async function refusalAfter(page: Pick<PressPage, 'doc' | 'adapter' | 'ro
     page.doc.removeEventListener('invalid', onInvalid, true);
   }
   return refusalNow(page, marked.size);
+}
+
+/** How long the agent's entry waits for its control to be drawn (Ashby draws its overview's tabs seconds after load). */
+export const ENTRY_WAIT_MS = 8_000;
+
+/** What blocked an entry, by the pause the page shows. */
+function blockOf(kind: PauseKind): EntryBlock {
+  switch (kind) {
+    case 'sign-in':
+    case 'create-account':
+      return 'sign-in';
+    case 'email-code':
+      return 'email-code';
+    case 'captcha':
+      return 'captcha';
+    default:
+      return 'other';
+  }
+}
+
+/** The agent's press on a posting page's entry control (module header): 'pressed'; 'blocked' with what blocked it (a
+ *  sign-in or account page, an email code, a CAPTCHA, another choice); or 'not-offered' (no adapter of the address
+ *  declares one, a form shows, or none was drawn within `waitMs`). Nothing is pressed but that one control. */
+export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: AbortSignal, waitMs = ENTRY_WAIT_MS):
+  Promise<EntryAnswer> {
+  const own = adapters.filter((adapter) => adapter.entryControl !== undefined);
+  if (own.length === 0 || signal.aborted) return Promise.resolve({ outcome: 'not-offered' });
+  const attempt = (): EntryAnswer | null => {
+    for (const adapter of own) {
+      let shown: Element | null = null;
+      try {
+        shown = adapter.detect(doc)?.formRoot ?? null;
+      } catch {
+        shown = null;
+      }
+      if (shown !== null) return { outcome: 'not-offered' };
+    }
+    const pause = detectPause(doc, null, own[0]!);
+    if (pause !== null) return { outcome: 'blocked', block: blockOf(pause.kind) };
+    for (const adapter of own) if (clickAdapterEntry(adapter, doc) !== null) return { outcome: 'pressed' };
+    return null;
+  };
+  const now = attempt();
+  if (now !== null) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    watchForLateForm(doc, waitMs, () => {
+      const outcome = attempt();
+      if (outcome === null) return false;
+      resolve(outcome);
+      return true;
+    }, signal, () => resolve({ outcome: 'not-offered' }));
+    signal.addEventListener('abort', () => resolve({ outcome: 'not-offered' }), { once: true });
+  });
 }

@@ -384,6 +384,19 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-disclosure-changed p { margin: 0; font-size: 13px; }
 .tia-disclosure-changed__heading { margin: 0; font: 800 15px/1.3 var(--tia-font); }
 .tia-disclosure-changed .tia-button { justify-self: start; }
+/* v3 Phase 5: the skip rules' boxes, the auto-apply agent's status line (the side panel's strip and the options
+   page's card) and its one-time confirmation. */
+.tia-mode__rules { display: grid; gap: 6px; }
+.tia-mode__rules .tia-mode__choice { justify-self: start; border-radius: var(--tia-r-row); }
+.tia-agent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.tia-agent__actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tia-agent__actions .tia-button { margin-left: 0; }
+.tia-agent--options { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-row);
+  font: 600 13px/1.35 var(--tia-font); }
+.tia-agent--options a { color: var(--tia-ink); font-weight: 700; }
+.tia-confirm { display: grid; gap: 8px; margin-top: 10px; padding: 14px 16px; border: 1px solid var(--tia-line);
+  border-radius: var(--tia-r-card); background: var(--tia-tone-warning-bg); color: var(--tia-fg); }
+.tia-confirm p { margin: 0; font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   .tia-spin, .tia-skeleton { animation: none; }

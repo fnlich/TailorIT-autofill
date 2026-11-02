@@ -109,6 +109,10 @@ export interface WorkerPlatform {
   /** open() must be called before any await in the handler of the message that carries the click, or the browser no
    *  longer counts the click as the person's gesture. */
   sidePanel: { open(tabId: number): Promise<void>; openOnActionClick(on: boolean): Promise<void> };
+  /** v3 Phase 5: the auto-apply agent's windows (chrome.windows, no permission needed). */
+  windows: AgentWindows;
+  /** v3 Phase 5: the auto-apply agent's wake-ups (chrome.alarms, the `alarms` permission: no install warning). */
+  alarms: AgentAlarms;
   /** The token's home (extension-origin IndexedDB). */
   secrets: SecretStore;
   fetch: FetchLike;
@@ -118,6 +122,34 @@ export interface WorkerPlatform {
   sha256(bytes: Uint8Array): Promise<string>;
   now(): number;
   randomBytes(count: number): Uint8Array;
+}
+
+/**
+ * The windows the auto-apply agent opens (v3 Phase 5): one unfocused, normal window per job, closed when the job is
+ * over. No address is ever read back from a tab: the agent knows its tab by id alone.
+ */
+export interface AgentWindows {
+  /** Opens a new normal window that does not take the focus, on an empty page; answers the window and its one tab, or
+   *  null when the browser would not open it. The job's address follows with navigate(), once the tab exists. */
+  open(): Promise<{ windowId: number; tabId: number } | null>;
+  /** Sends the agent's tab to `url`; false when the tab is gone. */
+  navigate(tabId: number, url: string): Promise<boolean>;
+  /** Closes the agent's own tab (and with it its window, when nothing else is in it); a tab already gone is no
+   *  error. Never a window: the person may have moved tabs of their own into it. */
+  closeTab(tabId: number): Promise<void>;
+  /** Whether a tab is still there. */
+  tabExists(tabId: number): Promise<boolean>;
+  /** Whether a normal browser window other than `except` is open: the agent works only while the person's browser is. */
+  othersOpen(except: number | null): Promise<boolean>;
+}
+
+/** The auto-apply agent's alarm (v3 Phase 5): a periodic wake-up that outlives a stopped worker. */
+export interface AgentAlarms {
+  /** Starts (or restarts) the alarm `name`, every `periodMinutes` (Chrome's floor is 0.5). */
+  start(name: string, periodMinutes: number): Promise<void>;
+  stop(name: string): Promise<void>;
+  /** Calls `cb` with an alarm's name each time one fires. Registered synchronously at start-up. */
+  onAlarm(cb: (name: string) => void): void;
 }
 
 /** Why a message to the worker could not be delivered. */

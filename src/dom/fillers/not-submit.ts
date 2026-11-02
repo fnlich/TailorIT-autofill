@@ -24,6 +24,10 @@
  * adapter names never to press: the exception is that one element, so anything inside it, anything holding it, another
  * submit control and every submit word elsewhere stay refused. A refused click leaves the field flagged
  * needs-your-click; it is never retried another way.
+ * v3 Phase 5 opens two more doors, each in this file, each finding its one element itself, each named by one module
+ * alone (eslint.config.mjs, test/allow-submit.test.ts): clickAdapterEntry, the auto-apply agent's press of a posting
+ * page's declared Apply (src/content/press.ts), and clickAdapterSignIn, Sign-in mode Auto's press of a sign-in form's
+ * button (src/content/sign-in.ts). Neither opens assertNotSubmit or clickIfAllowed for anyone.
  * A choice made through the page-world bridge (docs/SPEC-AMENDMENTS.md §12) clicks nothing, and the option it names
  * may not be drawn yet (a closed list): its text box goes through assertNotSubmit, and the option's label, as the
  * frame read it, through optionWordsRefusal, the word rule an option of an open list gets here ("confirm" chooses a
@@ -31,7 +35,9 @@
  * refused control) are for elements, and a list's option is none of those (listOption: it holds no button, link or
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
-import type { Adapter } from '../../adapters/types';
+import type { Adapter, SignInWall } from '../../adapters/types';
+import { signInFormOf, signInRefusal } from '../sign-in-form';
+import { isUserVisible } from '../visibility';
 
 /** The words that make a control a submit control (the plan's list). */
 export const SUBMIT_WORDS = /\b(?:submit|apply|send|finish|complete|confirm)\b/i;
@@ -88,6 +94,88 @@ export function clickAdapterSubmit(adapter: Adapter, root: Element): HTMLElement
   if (refusalOf(submit, ctx, 0) !== null) return null;
   submit.click();
   return submit;
+}
+
+/** Whether `el` is the application form's own Submit, Next or a button the adapter names never to press, or holds or
+ *  sits inside one, on the form the adapter finds in `doc` now (none shown: none of them). */
+function nearApplicationButtons(el: Element, adapter: Adapter, doc: Document): boolean {
+  let root: Element | null = null;
+  try {
+    root = adapter.detect(doc)?.formRoot ?? null;
+  } catch {
+    return true;
+  }
+  if (root === null) return false;
+  const near = (other: Element | null | undefined) => other != null && (other === el || other.contains(el) || el.contains(other));
+  try {
+    return near(adapter.submitButton?.(root)) || near(adapter.nextButton?.(root))
+      || (adapter.neverPress?.(root) ?? []).some((button) => near(button));
+  } catch {
+    return true;
+  }
+}
+
+/** Whether a control can be pressed by a person now: connected, visible, enabled. */
+function pressableNow(el: HTMLElement): boolean {
+  return el.isConnected && isUserVisible(el) && (el as HTMLButtonElement).disabled !== true
+    && el.getAttribute('aria-disabled') !== 'true';
+}
+
+/**
+ * v3 Phase 5, the auto-apply agent: on a posting page that shows no application form, presses the adapter's declared
+ * entry control once (Adapter.entryControl: Greenhouse's and Lever's Apply, Ashby's Application tab), with an untrusted
+ * click(). It finds the control itself (a caller names no element); never one that submits a form, never while the
+ * adapter finds an application form on the page (its Submit, Next and never-pressed buttons stay refused), never one a
+ * person cannot see or press, and never one of the adapter's never-pressed controls (neverPress, read over the whole
+ * page), or one holding or inside one, unless the adapter marks its entry as that one (entryNeverPressed: Ashby's
+ * Application tab), and then that element alone. Its words ("Apply") are submit words, which is why it has a door of its
+ * own: that one element, and nothing near it. Answers the element clicked, or null. Only src/content/press.ts may call
+ * it (eslint.config.mjs), for the agent's agent/enter alone.
+ */
+export function clickAdapterEntry(adapter: Adapter, doc: Document): HTMLElement | null {
+  let control: HTMLElement | null = null;
+  try {
+    control = adapter.entryControl?.(doc) ?? null;
+  } catch {
+    return null;
+  }
+  if (control === null || control.ownerDocument !== doc || !pressableNow(control) || submitsForm(control)) return null;
+  let formShown: Element | null = null;
+  try {
+    formShown = adapter.detect(doc)?.formRoot ?? null;
+  } catch {
+    return null;
+  }
+  if (formShown !== null) return null;
+  let never: Element[] = [];
+  try {
+    never = adapter.neverPress?.(doc.documentElement) ?? [];
+  } catch {
+    return null;
+  }
+  const exempt = (other: Element) => adapter.entryNeverPressed === true && other === control;
+  if (never.some((other) => !exempt(other) && (other === control || other.contains(control) || control!.contains(other)))) {
+    return null;
+  }
+  control.click();
+  return control;
+}
+
+/**
+ * v3 Phase 5, Sign-in mode Auto: presses the sign-in or create-account form's one button (Sign in, Create account), as
+ * the adapter declares it or the standard rule reads it (dom/sign-in-form.ts signInFormOf), with an untrusted click().
+ * It finds the button itself; never while signInRefusal refuses the form at `address` (a field hidden, a honeypot, http,
+ * a form posting to another origin), never the application form's own Submit, Next or a never-pressed button, never one
+ * a person cannot see or press. Answers the element clicked, or null. Only src/content/sign-in.ts may call it
+ * (eslint.config.mjs), after it filled the form.
+ */
+export function clickAdapterSignIn(adapter: Adapter, doc: Document, wall: SignInWall, address: URL): HTMLElement | null {
+  const form = signInFormOf(adapter, doc, wall);
+  if (form === null || signInRefusal(form, address) !== null) return null;
+  const button = form.button;
+  if (button.ownerDocument !== doc || !pressableNow(button) || nearApplicationButtons(button, adapter, doc)) return null;
+  button.click();
+  return button;
 }
 
 /** Whether the Submit exception would let `el` through (for the tests and the checks that read it; it clicks

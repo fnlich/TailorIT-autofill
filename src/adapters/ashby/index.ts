@@ -74,9 +74,10 @@ import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
+import { applicationLinkOf } from '../entry';
 import { genericAdapter } from '../generic';
 import type { Adapter, UploadState, WidgetDecl } from '../types';
-import { canonicalApplicationUrl, matchesUrl } from './url';
+import { canonicalApplicationUrl, matchesUrl, parseAshbyUrl } from './url';
 
 /** The closed forms of the capture (2026-11-01), which the hooks name. */
 export const ASHBY_SNAPSHOTS = ['fixtures/ashby/openai-closed.html', 'fixtures/ashby/plaid-closed.html',
@@ -491,4 +492,9 @@ export const ashbyAdapter: Adapter = {
   isFinalStep,
   errors: (root) => genericAdapter.errors?.(root) ?? [],
   quirks: { formLateMs: ASHBY_FORM_LATE_MS },
+  // v3 Phase 5, the agent's entry on the overview: fixtures/ashby/openai-closed.html's tabs, <a id="job-application-form"
+  // role="tab" href=".../<posting>/application">, read by the address it opens (adapters/entry.ts).
+  entryControl: (doc) => applicationLinkOf(doc, parseAshbyUrl, 'a[role="tab"][href]'),
+  // That tab is never pressed by a run (neverPress): the entry door presses it, that element alone, for the agent.
+  entryNeverPressed: true,
 };

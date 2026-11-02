@@ -258,12 +258,13 @@ test.describe('Submit mode Auto (v3 Phase 4)', () => {
     await expect(panel.locator('button[data-step-action="submit"]')).toBeVisible();
   });
 
-  test('Modes shows Submit, Manual by default, and keeps Sign-in hidden', async ({ ext }) => {
+  test('Modes shows Submit, Manual by default, and (since v3 Phase 5) Sign-in, Manual by default', async ({ ext }) => {
     const options = await ext.page();
     await options.goto(ext.url('options.html'));
     const group = options.locator('[data-setting-group="modes.submit"]');
     await expect(group).toBeVisible();
     await expect(group.locator('input[data-setting="modes.submit.manual"]')).toBeChecked();
-    await expect(options.locator('[data-setting-group="modes.signIn"]')).toHaveCount(0);
+    await expect(options.locator('[data-setting-group="modes.signIn"] input[data-setting="modes.signIn.manual"]'))
+      .toBeChecked();
   });
 });

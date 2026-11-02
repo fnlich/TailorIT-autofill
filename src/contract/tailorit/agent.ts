@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { InstantSchema } from './common';
-import { parseAtsUrl, type AtsKind } from './lookup';
+import { greenhouseBoardPage, parseAtsUrl, type AtsKind, type ParsedAtsUrl } from './lookup';
 
 // The auto-apply agent's queue (version 3). The person queues jobs from TailorIT's Jobs and Tracker pages ("Auto-apply")
 // and may turn on a rule ("auto-apply to new jobs of at least N% match", off until they turn it on); there is no daily
@@ -72,15 +72,39 @@ export const AUTOFILL_AGENT_ATS = ['greenhouse', 'lever', 'ashby'] as const sati
 export const AUTOFILL_AGENT_URL_MAX = 2048;
 
 /**
- * The application form's address for a posting at `url`, or null when the agent cannot fill it: Greenhouse's job page
- * (the form is on it; a company page naming the posting in ?gh_jid= is that page), Lever's `…/apply`, Ashby's
- * `…/application`. Read with parseAtsUrl, so the extension and TailorIT agree.
+ * The application form's address for a posting at `url`, on a host the extension's agent opens, or null when the agent
+ * cannot fill it. Greenhouse: the posting's job page on job-boards.greenhouse.io (the form is on it), from its job page
+ * on either global host, the embedded form naming its board, or a board's own page naming it in ?gh_jid=; never from a
+ * company's own page naming it in ?gh_jid= (its form is a frame of the company's page, which the agent never opens), an
+ * embed naming no board, or an EU board (the extension works on no EU Greenhouse host yet). Lever: `…/apply`, on either
+ * of its hosts. Ashby: `…/application`, the board in lower case (percent-encoded), from the posting, its form or the
+ * board naming it in ?ashby_jid=. Read with parseAtsUrl, so the extension and TailorIT agree: the answer reads as
+ * itself again.
  */
 export function agentApplicationUrl(url: string): string | null {
-  const parsed = url.length <= AUTOFILL_AGENT_URL_MAX ? parseAtsUrl(url) : null;
-  if (!parsed || !(AUTOFILL_AGENT_ATS as readonly AtsKind[]).includes(parsed.kind)) return null;
-  const address = parsed.kind === 'greenhouse' ? parsed.canonical[0] : parsed.canonical[1];
-  return address !== undefined && address.length <= AUTOFILL_AGENT_URL_MAX ? address : null;
+  const read = url.length <= AUTOFILL_AGENT_URL_MAX ? parseAtsUrl(url) : null;
+  // parseAtsUrl reads any page naming the posting in ?gh_jid= with no board; a Greenhouse board's own page names one.
+  const posting = read?.kind === 'greenhouse' && read.board === null ? greenhouseBoardPage(url) : read;
+  const address = posting ? formAddress(posting) : null;
+  return address !== null && address.length <= AUTOFILL_AGENT_URL_MAX ? address : null;
+}
+
+/** The application form's address of a posting on a platform the agent fills, when its board is known; else null. */
+function formAddress({ kind, board, externalId, canonical }: ParsedAtsUrl): string | null {
+  if (board === null) return null;
+  switch (kind) {
+    case 'greenhouse': {
+      // One of the posting's own addresses, unless it is on an EU board.
+      const page = `https://job-boards.greenhouse.io/${board}/jobs/${externalId}`;
+      return canonical.includes(page) ? page : null;
+    }
+    case 'lever':
+      return canonical[1] ?? null;
+    case 'ashby':
+      return `https://jobs.ashbyhq.com/${encodeURIComponent(board)}/${externalId}/application`;
+    default:
+      return null;
+  }
 }
 
 /** True when the agent can apply to the posting at `url` (the Jobs and Tracker pages' `autoApply`). */
@@ -100,7 +124,7 @@ export const AutofillAgentIdSchema = z
 
 /**
  * The job the agent applies to now: open `url`, the application form's address (agentApplicationUrl: Greenhouse's job
- * page, Lever's `…/apply`, Ashby's `…/application`), and attach `resumeId` when set.
+ * page on job-boards.greenhouse.io, Lever's `…/apply`, Ashby's `…/application`), and attach `resumeId` when set.
  */
 export const AutofillAgentTaskSchema = z.object({
   id: AutofillAgentIdSchema,
@@ -132,9 +156,10 @@ export type AutofillAgentNext = z.infer<typeof AutofillAgentNextSchema>;
  * row's state, from any of the account's browsers, so a sent form is never lost (a run left `needs-you`, `timed_out`
  * included): the job is marked Applied in the tracker (POST /api/autofill/applied's way, with the run's resume as the
  * entry's when it is made or restored now); again for a submitted row, it changes nothing. Any other state needs a
- * reason, and the row `running` for this browser (409 `conflict` otherwise, but the same result again, which changes
- * nothing). 404 for another account's row or one removed since. `aiGuesses`: how many answers were AI guesses, a count
- * only (shown on TailorIT's Auto-apply page). Answers 204.
+ * reason, and the row `running` for this browser, or for a connection that no longer works (revoked, expired or
+ * deleted: a browser that connected again during the run reports it with its new token); 409 `conflict` otherwise, but
+ * the same result again, which changes nothing. 404 for another account's row or one removed since. `aiGuesses`: how
+ * many answers were AI guesses, a count only (shown on TailorIT's Auto-apply page). Answers 204.
  */
 export const AutofillAgentResultBodySchema = z
   .object({
@@ -160,9 +185,10 @@ export type AutofillAgentEnqueueBody = z.infer<typeof AutofillAgentEnqueueBodySc
 
 /**
  * Why a job was not queued: `already_queued` (queued or running now), `already_applied` (its tracker entry is past
- * Saved, or the agent submitted it), `posting_closed` (the posting has closed), `unsupported_site` (its posting is not
- * on a platform the agent fills: agentCanApply), `not_found` (TailorIT has no such job). `timed_out` is never answered
- * by POST …/queue; it is listed so one set of words labels both these skips and the rows' reasons.
+ * Saved, or the agent submitted it), `posting_closed` (the posting has closed), `unsupported_site` (the agent cannot
+ * open its posting's form: not on a platform the agent fills, or a company's own page naming a Greenhouse posting in
+ * ?gh_jid=: agentCanApply), `not_found` (TailorIT has no such job). `timed_out` is never answered by POST …/queue; it
+ * is listed so one set of words labels both these skips and the rows' reasons.
  */
 export const AUTOFILL_AGENT_SKIPS = [
   'already_queued',

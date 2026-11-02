@@ -28,20 +28,41 @@ export interface SettingsStore {
   content(): Promise<ContentSettings>;
 }
 
-/** What a content script may know of the settings. */
-export function contentSettingsOf(settings: Settings, options: { holdSubmit?: boolean } = {}): ContentSettings {
-  return { panel: settings.panel, modes: { next: settings.modes.next, afterPageTurn: settings.modes.afterPageTurn,
-    // The v3 Phase 4 review: until the person acknowledged the disclosure as it reads now, Submit stays Manual.
-    submit: options.holdSubmit === true ? 'manual' : settings.modes.submit, agentSkip: { ...settings.modes.agentSkip } },
-    llm: { ...settings.llm }, offerToSaveAnswers: settings.offerToSaveAnswers };
+/** How the settings act now, beside what the person chose: Submit stays Manual until the person acknowledged the
+ *  disclosure as it reads now (the v3 Phase 4 review); Sign-in stays Manual unless the connection may read sign-ins
+ *  (credentials:read) and the disclosure was acknowledged (v3 Phase 5); `agent`: the frame is in the auto-apply agent's
+ *  window, whose runs press Next and Submit by themselves (v3 Phase 5). */
+export interface ContentHolds {
+  holdSubmit?: boolean;
+  holdSignIn?: boolean;
+  agent?: boolean;
+  /** The agent's job's Submit was pressed in another document of its tab: Submit stays on Manual in this one. */
+  agentSubmitHeld?: boolean;
 }
 
-/** The settings as they act now (v3 Phase 3 review): Sign-in is Manual whatever was stored, until the phase that ships
- *  it (v3 Phase 5) gives it something to do. Submit shipped with v3 Phase 4: until then this kept it Manual on every
- *  read and save, so no install holds an Auto chosen before it acted, and none needed a reset. */
+/** What a content script may know of the settings. In the agent's window Next and Submit are Auto (Submit on Manual in
+ *  any document but the one the job's Submit was pressed in, once it was) and every new page fills as it appears, with
+ *  the person's own skip rules and Sign-in mode; a posting that forbids AI under "Ask me each
+ *  time" is filled from the profile only there (nobody is there to answer its card), so the agent's "the posting forbids
+ *  AI" skip rule decides at the Submit. */
+export function contentSettingsOf(settings: Settings, options: ContentHolds = {}): ContentSettings {
+  const agent = options.agent === true;
+  return { panel: settings.panel, modes: {
+    next: agent ? 'auto' : settings.modes.next,
+    afterPageTurn: agent ? 'auto' : settings.modes.afterPageTurn,
+    submit: agent ? (options.agentSubmitHeld === true ? 'manual' : 'auto')
+      : options.holdSubmit === true ? 'manual' : settings.modes.submit,
+    agentSkip: { ...settings.modes.agentSkip },
+    signIn: options.holdSignIn === true ? 'manual' : settings.modes.signIn },
+    llm: { ...settings.llm, ...(agent && settings.llm.whenForbidden === 'ask' ? { whenForbidden: 'profile-only' as const } : {}) },
+    offerToSaveAnswers: settings.offerToSaveAnswers };
+}
+
+/** The settings as they act now (v3 Phase 3 review): every mode has shipped since v3 Phase 5 (Sign-in), so a stored
+ *  value is taken as it is. Until then this kept Sign-in, and before v3 Phase 4 Submit, Manual on every read and save,
+ *  so no install holds an Auto chosen before it acted. */
 export function withShippedModes(settings: Settings): Settings {
-  if (settings.modes.signIn === 'manual') return settings;
-  return { ...settings, modes: { ...settings.modes, agentSkip: { ...settings.modes.agentSkip }, signIn: 'manual' } };
+  return settings;
 }
 
 /** The store over storage.local, read once and kept in memory. */
@@ -96,19 +117,23 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       return checked;
     },
     async content() {
-      return contentSettingsOf(await store.get());
+      // Without the connection's word, Sign-in acts as Manual (index.ts passes the holds it knows).
+      return contentSettingsOf(await store.get(), { holdSignIn: true });
     },
   };
   return store;
 }
 
 /** Tells every registered frame with a form the content settings just saved (settings/changed). A frame that cannot be
- *  reached is skipped: its next run reads them at run/begin. Answers how many frames received them. */
+ *  reached is skipped: its next run reads them at run/begin. Answers how many frames received them. `agentTab`: the
+ *  auto-apply agent's tab, whose frames get the agent's settings (v3 Phase 5). */
 export async function pushSettings(deps: { session: StorageArea; tabs: Pick<WorkerPlatform['tabs'], 'sendToFrame'> },
-  settings: Settings, options: { holdSubmit?: boolean } = {}): Promise<number> {
-  const message = { v: 1, type: 'settings/changed', settings: contentSettingsOf(settings, options) } as const;
+  settings: Settings, options: Omit<ContentHolds, 'agent'> & { agentTab?: number | null } = {}): Promise<number> {
+  const { agentTab = null, ...holds } = options;
   const frames = (Object.values(await deps.session.getMany('frames:')) as FrameEntry[]).filter((frame) => frame.hasForm);
   const reached = await Promise.all(frames.map(async (frame) => {
+    const message = { v: 1, type: 'settings/changed',
+      settings: contentSettingsOf(settings, { ...holds, agent: frame.tabId === agentTab }) } as const;
     try {
       await deps.tabs.sendToFrame(frame.tabId, message, frameTarget(frame));
       return true;

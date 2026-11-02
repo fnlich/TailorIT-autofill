@@ -46,6 +46,19 @@
  *   (matchedBy chosen). The version 3 routes the extension does not call yet (the job search, Applied, site requests,
  *   a letter's text, the auto-apply queue and the job-site sign-in) and their Settings-page twins answer their
  *   contract examples, with a letter's text read as its file is (404, 409 until ready).
+ * - v3 Phase 5: the auto-apply agent's queue and the job-site sign-ins, as TailorIT keeps them (apps/api agent/queue.ts
+ *   ownRun, claimQueued, resultEffect). POST /__mock/agent {items} queues tasks (AutofillAgentTask, in order); GET
+ *   /agent/next answers the row running for this connection again (a worker that restarted asks anew), else takes the
+ *   oldest queued one (now running, claimed by this connection), else {item: null}. POST /agent/:id/result: 404 for a
+ *   row it does not hold; `submitted` taken whatever the row's state (204; again for a submitted row, unchanged); any
+ *   other result takes a running row claimed by this connection, or by one that no longer works (revoked, expired, or
+ *   replaced by a newer connection), 409 while its claimant works; for a row no longer running, the same result again is
+ *   unchanged (204) and any other 409. Each connection the mock mints is a new claimant (its `generation`). GET
+ *   /__mock/agent lists the queue, the running task, every row and the results taken (204: {id, body}) and refused
+ *   ({id, body, status}). POST /__mock/credentials {items} replaces the saved sign-ins ({host, email,
+ *   password}; by default the contract's example for every site, `*`, every-site.json); GET /credentials?host= answers the host's
+ *   own, else `*` on a host signInHostCovered covers (its patterns, copied below), else 404 not_found; without a host it
+ *   answers the golden example, as the route table's check reads it.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -384,6 +397,17 @@ const versionMessage = (theirs, ours) =>
   `This TailorIT extension speaks autofill API ${typeof theirs === 'string' && theirs !== '' ? theirs : 'none'}; ` +
   `this server speaks ${ours}. Update the extension or TailorIT.`;
 
+/** The candidate sign-in hosts the every-site sign-in covers: a copy of the contract's SIGN_IN_HOSTS (credentials.ts
+ *  signInHostCovered), which this plain-JavaScript mock cannot import. */
+const SIGN_IN_HOSTS = [
+  /^(?!www\.)[a-z0-9-]+(?:\.wd\d{1,3})?\.myworkday(?:jobs|site)\.com$/,
+  /^(?!(?:www|api|login)\.)[a-z0-9-]+\.icims\.com$/,
+  /^(?!www\.)[a-z0-9-]+\.taleo\.net$/,
+  /^career\d{0,3}\.successfactors\.(?:com|eu)$/,
+  /^[a-z0-9-]+\.fa\.[a-z0-9-]+\.oraclecloud\.com$/,
+  /^(?:jobs|careers)\.smartrecruiters\.com$/,
+];
+
 /** The token routes, as TailorIT's tokenScope allows them: anchored, case-sensitive, no dot segments or encoding. */
 const TOKEN_PATH = /^\/api\/autofill\/[a-z0-9/-]+$/;
 const AI_TASK_PATH = /^\/api\/ai\/tasks\/[0-9a-f-]{36}$/;
@@ -455,9 +479,19 @@ export function createMock() {
     siteRequests: [],
     /** v3 Phase 4: the bodies POST /applied took; every later lookup says Applied. @type {Array<Record<string, unknown>>} */
     applied: [],
+    /** v3 Phase 5: the agent's queue: its rows (the task, its state and reason, the connection that claimed it), every
+     *  result taken and every one refused.
+     *  @type {{ rows: Array<{ task: Record<string, unknown>; state: string; reason: string | null;
+     *    claimedBy: number | null }>; results: Array<{ id: string; body: unknown }>;
+     *    refused: Array<{ id: string; body: unknown; status: number }> }} */
+    agent: { rows: [], results: [], refused: [] },
+    /** v3 Phase 5: the job-site sign-ins saved, the golden one for every site by default.
+     *  @type {Array<{ host: string; email: string; password: string }>} */
+    credentials: [/** @type {{ host: string; email: string; password: string }} */ (example('AutofillCredential', 'every-site'))],
     /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes
      *  (at first a code's with the sensitive box ticked and the sign-in box not). */
-    token: { value: GOLDEN_TOKEN, scopes: connectScopes(true), revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
+    token: { value: GOLDEN_TOKEN, scopes: connectScopes(true), revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS,
+      generation: 1 },
   });
   let state = freshState();
   /** The query string of the request being answered (GET /jobs/search's q). */
@@ -964,7 +998,9 @@ export function createMock() {
         return refusal(401, 'not_signed_in', 'That code has expired or was already used. Get a new one from Settings › Autofill.');
       }
       minted.used = true;
-      state.token = { value: GOLDEN_TOKEN, scopes: minted.scopes, revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS };
+      // A new connection: the one before it no longer works (its rows' claims with it).
+      state.token = { value: GOLDEN_TOKEN, scopes: minted.scopes, revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS,
+        generation: state.token.generation + 1 };
       return jsonAnswer(200, { ...example('AutofillRedeemResponse'), scopes: minted.scopes,
         expiresAt: iso(state.token.expiresAt) });
     },
@@ -1027,15 +1063,55 @@ export function createMock() {
       return { status: 204 };
     },
     'GET /api/autofill/site-requests': () => jsonAnswer(200, example('AutofillSiteRequestList')),
-    'GET /api/autofill/agent/next': () => jsonAnswer(200, example('AutofillAgentNext', 'nothing-to-do')),
-    'POST /api/autofill/agent/:id/result': () => ({ status: 204 }),
+    'GET /api/autofill/agent/next': () => {
+      const rows = state.agent.rows;
+      const own = rows.find((row) => row.state === 'running' && row.claimedBy === state.token.generation);
+      if (own !== undefined) return jsonAnswer(200, { item: own.task });
+      const queued = rows.find((row) => row.state === 'queued');
+      if (queued === undefined) return jsonAnswer(200, { item: null });
+      queued.state = 'running';
+      queued.claimedBy = state.token.generation;
+      return jsonAnswer(200, { item: queued.task });
+    },
+    'POST /api/autofill/agent/:id/result': ({ json, params }) => {
+      const id = params[0] ?? '';
+      const row = state.agent.rows.find((each) => each.task.id === id);
+      const refuse = (/** @type {number} */ status, /** @type {Answer} */ answer) => {
+        state.agent.refused.push({ id, body: json, status });
+        return answer;
+      };
+      if (row === undefined) return refuse(404, notFound());
+      const conflict = () => refuse(409, refusal(409, 'conflict', 'That auto-apply job no longer takes this result.'));
+      if (json.state === 'submitted') {
+        if (row.state !== 'submitted') Object.assign(row, { state: 'submitted', reason: null });
+      } else if (row.state === 'running') {
+        // Claimed by another connection that still works: 409. The mock holds one connection at a time (the bearer
+        // checked above is it), so a claimant of an earlier generation no longer works, and the requester reports it.
+        const works = (/** @type {number} */ claimant) => claimant === state.token.generation && !state.token.revoked
+          && state.token.expiresAt > Date.now();
+        if (row.claimedBy !== null && row.claimedBy !== state.token.generation && works(row.claimedBy)) return conflict();
+        Object.assign(row, { state: json.state, reason: json.reason ?? null });
+      } else if (row.state !== json.state || row.reason !== (json.reason ?? null)) {
+        return conflict();
+      }
+      state.agent.results.push({ id, body: json });
+      return { status: 204 };
+    },
     'POST /api/autofill/agent/queue': () => jsonAnswer(200, example('AutofillAgentEnqueueResponse')),
     'GET /api/autofill/agent/queue': () => jsonAnswer(200, example('AutofillAgentQueueList')),
     'DELETE /api/autofill/agent/queue/:id': () => ({ status: 204 }),
     'POST /api/autofill/agent/queue/clear-finished': () => jsonAnswer(200, example('AutofillAgentCleared')),
     'GET /api/autofill/agent/settings': () => jsonAnswer(200, example('AutofillAgentSettings')),
     'PUT /api/autofill/agent/settings': () => jsonAnswer(200, example('AutofillAgentSettings')),
-    'GET /api/autofill/credentials': () => jsonAnswer(200, example('AutofillCredential')),
+    'GET /api/autofill/credentials': ({ query }) => {
+      const host = query.get('host');
+      if (host === null) return jsonAnswer(200, example('AutofillCredential'));
+      const own = state.credentials.find((saved) => saved.host === host);
+      const any = SIGN_IN_HOSTS.some((pattern) => pattern.test(host))
+        ? state.credentials.find((saved) => saved.host === '*') : undefined;
+      const found = own ?? any;
+      return found === undefined ? refusal(404, 'not_found', 'No sign-in is saved for that site.') : jsonAnswer(200, found);
+    },
     'GET /api/autofill/sign-ins': () => jsonAnswer(200, example('AutofillSignInList')),
     'PUT /api/autofill/sign-ins': () => jsonAnswer(200, example('AutofillSignInItem')),
     'DELETE /api/autofill/sign-ins/:id': () => ({ status: 204 }),
@@ -1141,6 +1217,29 @@ export function createMock() {
     if (path === '/__mock/requests' && method === 'GET') return jsonAnswer(200, state.requests);
     if (path === '/__mock/resume' && method === 'GET') return jsonAnswer(200, GOLDEN_RESUME);
     if (path === '/__mock/letter' && method === 'GET') return jsonAnswer(200, GOLDEN_LETTER);
+    if (path === '/__mock/agent' && method === 'GET') {
+      const { rows, results, refused } = state.agent;
+      return jsonAnswer(200, { queue: rows.filter((row) => row.state === 'queued').map((row) => row.task),
+        running: rows.find((row) => row.state === 'running')?.task ?? null, rows, results, refused });
+    }
+    if ((path === '/__mock/agent' || path === '/__mock/credentials') && method === 'POST') {
+      /** @type {unknown} */
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return invalid('The body is not JSON.');
+      }
+      const items = /** @type {{ items?: unknown }} */ (parsed ?? {}).items;
+      if (!Array.isArray(items) || items.some((item) => typeof item !== 'object' || item === null)) {
+        return invalid('items: A list of objects');
+      }
+      if (path === '/__mock/agent') {
+        state.agent.rows.push(...items.map((item) => ({ task: { ...item }, state: 'queued', reason: null, claimedBy: null })));
+      }
+      else state.credentials = items.map((item) => ({ ...item }));
+      return { status: 204 };
+    }
     if (path === '/__mock/reset' && method === 'POST') {
       reset();
       return { status: 204 };
@@ -1293,11 +1392,12 @@ function listen(server, port, host) {
 }
 
 /**
- * Starts a mock. The e2e build calls http://localhost:3190, and localhost may resolve to either loopback address, so by
- * default it listens on both, at one port (port 0 picks a free one for the first host and reuses it).
+ * Starts a mock. The e2e build calls http://localhost:3190; the e2e browser resolves localhost to 127.0.0.1 alone
+ * (e2e/fixtures.ts noNetwork), so by default the mock listens there only (port 0 picks a free port for the first host
+ * and reuses it for any other).
  * @param {{ port?: number; hosts?: string[] }} [options]
  */
-export async function startMock({ port = 3190, hosts = ['127.0.0.1', '::1'] } = {}) {
+export async function startMock({ port = 3190, hosts = ['127.0.0.1'] } = {}) {
   for (const host of hosts) if (!LOOPBACK.has(host)) throw new Error(`the mock listens on loopback only, not ${host}`);
   const mock = createMock();
   /** @type {import('node:http').Server[]} */

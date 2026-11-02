@@ -31,8 +31,8 @@ interface Fresh {
 }
 
 /** A browser of its own with the extension not yet connected, its options page open. */
-async function freshExtension(extensionPath: string): Promise<Fresh> {
-  const launched = await launchExtension(extensionPath);
+async function freshExtension(extensionPath: string, build: 'e2e' | 'production'): Promise<Fresh> {
+  const launched = await launchExtension(extensionPath, build);
   const routes = await installRoutes(launched.context);
   await installSpies(launched.context);
   const ext = new Extension(launched.context, await extensionIdIn(launched.context));
@@ -63,9 +63,9 @@ async function tokenRecord(page: Page): Promise<{ hasToken: boolean; scopes: str
 
 test.describe('pairing', () => {
   let fresh: Fresh;
-  test.beforeEach(async ({ extensionPath, tailorit }) => {
+  test.beforeEach(async ({ extensionPath, build, tailorit }) => {
     expect(tailorit).toBe(mock);
-    fresh = await freshExtension(extensionPath);
+    fresh = await freshExtension(extensionPath, build);
   });
   test.afterEach(async () => {
     expect(fresh.routes.unexpected, 'requests no route answers').toEqual([]);

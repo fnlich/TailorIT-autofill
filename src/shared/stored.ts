@@ -25,9 +25,10 @@ export type TokenRecord = z.infer<typeof TokenRecordSchema>;
 export const DISCLOSURE_KEY = 'disclosure';
 /** The disclosure's version (shared/copy.ts COPY.options.connection.disclosure): 1, the wording up to v3 Phase 3 (an
  *  install connected before it was kept holds none, read as 1); 2, v3 Phases 3b and 4 (Submit pressed for the person,
- *  Applied recorded, a posting's address told as it loads, the profile editor, the resume's preview). Raise it whenever
- *  the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 2;
+ *  Applied recorded, a posting's address told as it loads, the profile editor, the resume's preview); 3, v3 Phase 5 (the
+ *  auto-apply agent, which submits unattended, and Sign-in mode Auto, which reads the job-site password). Raise it
+ *  whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 3;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

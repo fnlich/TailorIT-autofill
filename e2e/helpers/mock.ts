@@ -45,6 +45,24 @@ export const mock = {
   async requests(): Promise<MockRequest[]> {
     return (await (await control('/__mock/requests')).json()) as MockRequest[];
   },
+  /** v3 Phase 5: queues tasks for the auto-apply agent (AutofillAgentTask, in order). */
+  async queueAgent(items: ReadonlyArray<Record<string, unknown>>): Promise<void> {
+    await control('/__mock/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }) });
+  },
+  /** v3 Phase 5: the agent's queue as the mock holds it: waiting, running, every row, the results taken (204) and those
+   *  refused (404, 409). */
+  async agent(): Promise<{ queue: unknown[]; running: { id: string } | null;
+    rows: Array<{ task: { id: string }; state: string; reason: string | null; claimedBy: number | null }>;
+    refused: Array<{ id: string; body: unknown; status: number }>;
+    results: Array<{ id: string; body: { state: string; reason: string | null; aiGuesses?: number } }> }> {
+    return (await (await control('/__mock/agent')).json()) as Awaited<ReturnType<typeof mock.agent>>;
+  },
+  /** v3 Phase 5: replaces the job-site sign-ins the mock holds ({host, email, password}; `*` for every site). */
+  async credentials(items: ReadonlyArray<{ host: string; email: string; password: string }>): Promise<void> {
+    await control('/__mock/credentials', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }) });
+  },
   /** The requests to one route ("POST /api/autofill/lookup"); a path ending in * matches its prefix. */
   async requestsTo(route: string): Promise<MockRequest[]> {
     const [method, path] = route.split(' ') as [string, string];

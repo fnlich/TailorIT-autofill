@@ -129,6 +129,14 @@ describe('the routes', () => {
           json: example('PutAutofillSavedAnswerBody') });
         path = `/api/autofill/answers/${AutofillSavedAnswerSchema.parse(await put.json()).id}`;
       }
+      // A result is for a row the queue holds, running for this connection (v3 Phase 5: TailorIT's rules).
+      if (route.path === '/api/autofill/agent/:id/result') {
+        const id = '7c1e4f2a-9b3d-4a6e-8f50-2d9c1b7e3a64';
+        await call('/__mock/agent', { method: 'POST', json: { items: [{ id, jobId: 1, company: 'Northwind', title: 'Engineer',
+          url: 'https://job-boards.greenhouse.io/northwind/jobs/1', resumeId: null }] } });
+        await call('/api/autofill/agent/next', { headers: asToken() });
+        path = `/api/autofill/agent/${id}/result`;
+      }
       // The job-site sign-in needs credentials:read, which the token holds only when the person allowed it (version 3).
       if (route.scope === 'credentials:read') await scenario('sign-in-allowed');
       const sendsBody = (route.method === 'POST' || route.method === 'PUT') && route.request !== null;
@@ -661,6 +669,47 @@ describe('saved answers (Phase 6)', () => {
     expect((await put(GOLDEN_BODY)).status).toBe(400);
     await scenario('answers-unavailable', { times: 1 });
     expect((await call('/api/autofill/answers', { headers: asToken() })).status).toBe(500);
+  });
+});
+
+describe('the auto-apply queue (v3 Phase 5), as TailorIT keeps it', () => {
+  const task = (n: number) => ({ id: `0000000${n}-aaaa-4bbb-8ccc-00000000000${n}`, jobId: 100 + n,
+    url: `https://job-boards.greenhouse.io/northwind/jobs/55${n}`, company: 'Northwind', title: `Engineer ${n}`,
+    resumeId: null });
+  const next = async () => ((await (await call('/api/autofill/agent/next', { headers: asToken() })).json()) as {
+    item: { id: string } | null }).item?.id ?? null;
+  const result = async (id: string, state: string, reason: string | null) => (await call(`/api/autofill/agent/${id}/result`,
+    { method: 'POST', headers: asToken(), json: { state, reason, aiGuesses: 0 } })).status;
+
+  it('hands a connection its own running row again, takes a result as TailorIT does, and refuses what it refuses', async () => {
+    expect((await call('/__mock/agent', { method: 'POST', json: { items: [task(1), task(2), task(3)] } })).status).toBe(204);
+    expect(await next()).toBe(task(1).id);
+    // A worker that restarted asks again: the same row, nothing new taken.
+    expect(await next()).toBe(task(1).id);
+    // A row it does not hold: 404.
+    expect(await result('0000000f-aaaa-4bbb-8ccc-00000000000f', 'failed', 'page_error')).toBe(404);
+    expect(await result(task(1).id, 'needs-you', 'captcha')).toBe(204);
+    // The same result again changes nothing (204); another, for a row no longer running, is 409.
+    expect(await result(task(1).id, 'needs-you', 'captcha')).toBe(204);
+    expect(await result(task(1).id, 'failed', 'page_error')).toBe(409);
+    // A submission is taken whatever the row's state; again, unchanged.
+    expect(await result(task(1).id, 'submitted', null)).toBe(204);
+    expect(await result(task(1).id, 'submitted', null)).toBe(204);
+    // A row still queued (never claimed) takes no other result.
+    expect(await result(task(3).id, 'needs-you', 'cancelled')).toBe(409);
+    expect(await next()).toBe(task(2).id);
+    // Connected again: the earlier connection's running row is not handed back; it reports it (its claimant no longer
+    // works), and takes the next.
+    expect((await redeem(await mintCode())).status).toBe(200);
+    expect(await next()).toBe(task(3).id);
+    expect(await result(task(2).id, 'needs-you', 'cancelled')).toBe(204);
+    const held = (await (await call('/__mock/agent')).json()) as { rows: Array<{ state: string; reason: string | null }>;
+      refused: Array<{ status: number }>; results: unknown[]; running: { id: string } | null };
+    expect(held.rows.map((row) => [row.state, row.reason])).toEqual([['submitted', null], ['needs-you', 'cancelled'],
+      ['running', null]]);
+    expect(held.running?.id).toBe(task(3).id);
+    expect(held.refused.map((each) => each.status)).toEqual([404, 409, 409]);
+    expect(held.results).toHaveLength(5);
   });
 });
 

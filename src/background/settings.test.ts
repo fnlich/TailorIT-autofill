@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
+import { contentSettingsOf } from './settings';
 import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent } from './worker.testkit';
 
 const OPTIONS = pageSender('options.html');
@@ -10,7 +11,8 @@ const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, view: 'minimize
   offerToSaveAnswers: false };
 /** CHOSEN as a frame receives it: its content settings. */
 const CHOSEN_CONTENT = { panel: 'in-page', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn,
-  submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip }, llm: CHOSEN.llm, offerToSaveAnswers: false };
+  submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip, signIn: CHOSEN.modes.signIn }, llm: CHOSEN.llm,
+  offerToSaveAnswers: false };
 
 /** Version 1's settings as an install stored them before the owner's amendments, on its defaults. */
 const V1_DEFAULTS = { version: 1, panel: 'side', autoAdvance: false, preapprovedConsent: [],
@@ -42,16 +44,40 @@ describe('settings', () => {
       data: { settings: off } });
   });
 
-  it('keeps Sign-in on Manual, stored or saved, until its phase ships; Submit shipped with v3 Phase 4', async () => {
-    const worker = await startTestWorker();
-    const early = { ...CHOSEN, modes: { ...CHOSEN.modes, signIn: 'auto' as const, submit: 'auto' as const } };
-    const kept = { ...CHOSEN, modes: { ...CHOSEN.modes, submit: 'auto' as const } };
-    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: early }, OPTIONS)).toEqual({ ok: true,
-      data: { settings: kept } });
-    // A value stored some other way reads Sign-in Manual too.
-    const stored = await startTestWorker();
-    await fakeBrowser.storage.local.set({ 'settings:v1': early });
-    expect(await stored.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: kept } });
+  it('keeps Sign-in Auto as chosen (v3 Phase 5), and a frame gets it only while the connection may read sign-ins', async () => {
+    const chosen = { ...CHOSEN, modes: { ...CHOSEN.modes, signIn: 'auto' as const, submit: 'auto' as const } };
+    const allowed = await startTestWorker({ token: tokenRecord() });
+    expect(await allowed.deliver({ v: 1, type: 'settings/save', settings: chosen }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: chosen } });
+    expect(await allowed.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender()))
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto', submit: 'auto' } } } });
+    // A connection without credentials:read (the sign-in box unticked when connecting): Manual, as it acts.
+    const scopes = tokenRecord().scopes.filter((scope) => scope !== 'credentials:read');
+    const unticked = await startTestWorker({ token: tokenRecord({ scopes }),
+      before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
+    expect(await unticked.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: chosen } });
+    expect(await unticked.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender()))
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual', submit: 'auto' } } } });
+    // The disclosure not acknowledged as it reads now: Sign-in and Submit both Manual, as they act.
+    const older = await startTestWorker({ token: tokenRecord(), disclosure: 2,
+      before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
+    expect(await older.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender()))
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual', submit: 'manual' } } } });
+  });
+
+  it('gives the agent’s tab Next and Submit on Auto, and "Ask me each time" at a no-AI posting as the profile only (v3 Phase 5 review)', () => {
+    const ask = { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' as const } };
+    // Nobody is in the agent's window to answer the policy card: the profile only, so its noAi skip rule decides.
+    expect(contentSettingsOf(ask, { agent: true })).toMatchObject({ modes: { next: 'auto', afterPageTurn: 'auto',
+      submit: 'auto' }, llm: { whenForbidden: 'profile-only' } });
+    // Anywhere else the person's own choice, the card included.
+    expect(contentSettingsOf(ask).llm.whenForbidden).toBe('ask');
+    expect(contentSettingsOf(ask, { agent: false, holdSubmit: true }).modes.submit).toBe('manual');
+    // Any other choice is the person's in the agent's window too.
+    for (const whenForbidden of ['use-ai', 'profile-only'] as const) {
+      expect(contentSettingsOf({ ...ask, llm: { ...ask.llm, whenForbidden } }, { agent: true }).llm.whenForbidden)
+        .toBe(whenForbidden);
+    }
   });
 
   it('refuses settings that do not parse, and keeps what was stored', async () => {

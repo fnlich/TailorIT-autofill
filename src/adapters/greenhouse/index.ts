@@ -52,6 +52,7 @@ import { dialCodeOf } from '../../core/matcher/dialCode';
 import { newScanCache } from '../../dom/scan-cache';
 import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
+import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl } from './url';
@@ -266,6 +267,17 @@ function isFinalStep(doc: Document): 'final' | 'unknown' {
   return root !== null && submitButton(root) !== null ? 'final' : 'unknown';
 }
 
+/** v3 Phase 5, the agent's entry, pressed only while the page shows no form: the job post's header button,
+ *  fixtures/greenhouse/affirm-job.html (and discord-job, discord-ml-job, figma-legacy-host, gitlab-embed, gitlab-job,
+ *  gusto-job, twilio-job, twitch-job): <button type="button" class="btn btn--pill" aria-label="Apply">Apply</button>.
+ *  The one a person sees, else none. */
+function entryControl(doc: Document): HTMLElement | null {
+  const cache = newScanCache();
+  const shown = Array.from(doc.querySelectorAll<HTMLElement>('button[type="button"][aria-label="Apply"]'))
+    .filter((button) => isUserVisible(button, cache));
+  return shown.length === 1 ? shown[0]! : null;
+}
+
 /** The Greenhouse adapter. */
 export const greenhouseAdapter: Adapter = {
   id: 'greenhouse',
@@ -284,4 +296,5 @@ export const greenhouseAdapter: Adapter = {
   isFinalStep,
   // fixtures/greenhouse/*.html: every input carries aria-invalid="false" and aria-describedby="<id>-error ...".
   errors: (root) => genericAdapter.errors?.(root) ?? [],
+  entryControl,
 };

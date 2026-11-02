@@ -18,6 +18,8 @@
  *   "Apply without resume"; "Your autofill information"; a posting page's card; Edit with AI's instruction box; and
  *   "Ask TailorIT to support this site" answered on an unsupported page; the review: the disclosure shown again.
  * - The page's own UI: the launcher at rest and at review, its notices and the policy card, the in-page panel open.
+ * - v3 Phase 5: the options page's Auto-apply card (off, its one-time confirmation, running a job), the side panel's
+ *   status line with Stop, Sign-in Auto signing in on a sign-in page, and Modes with Sign-in and the skip rules.
  * - The options page.
  * Every capture is in the light scheme with reduced motion and animations stopped, so a picture is the same each time.
  */
@@ -26,8 +28,10 @@ import { extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Page } from '@playwright/test';
 import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
+import { DISCLOSURE_VERSION } from '../../src/shared/stored';
 import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
+import { mock } from '../helpers/mock.ts';
 import { expectation } from '../helpers/labels.ts';
 import { PageUi } from '../helpers/page-ui.ts';
 import { trap } from '../helpers/traps.ts';
@@ -214,6 +218,8 @@ test('the in-page panel, and the launcher at rest', async ({ extContext, connect
 
 /** A Lever posting TailorIT can add from, for the card's states (the synthetic form, its posting's title above it). */
 const CARD_APPLY = (id: string) => `https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000c${id}/apply`;
+/** The review's notice at a sign-in the person makes. */
+const COPY_AUTH = 'This step needs you to sign in or create an account. Do that yourself, then choose Continue.';
 
 /** The side panel of a fresh tab showing the synthetic form at `url`, once its card is past `state` (or at it). */
 async function cardPanel(ext: Extension, page: Page, routeLog: { serve(routes: Record<string, string>): void }, url: string) {
@@ -486,7 +492,67 @@ test('the v3 Phase 4 review: the disclosure shown again when it changed', async 
   const shown = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('120'));
   await expect(shown.panel.locator('[data-disclosure-changed]')).toBeVisible();
   await shoot(shown.panel, '50-side-panel-disclosure-changed.png', 'Side panel: the disclosure shown again, with I understand');
-  await setDisclosure(2);
+  await setDisclosure(DISCLOSURE_VERSION);
+});
+
+test('v3 Phase 5: Auto-apply in the options page and the side panel', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  expect(tailorit).toBe(mock);
+  const options = await extContext.newPage();
+  await options.setViewportSize({ width: 1000, height: 900 });
+  await still(options);
+  await options.goto(ext.url('options.html'));
+  const card = options.locator('[data-card="agent"]');
+  await card.scrollIntoViewIfNeeded();
+  await expect(card.locator('[data-agent-line]')).toBeVisible();
+  await shoot(options, '51-options-auto-apply-off.png', 'Options › Auto-apply: off',
+    { clip: (await card.boundingBox()) ?? undefined });
+  // A job whose page never shows a form keeps the agent running while the pictures are taken.
+  const job = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/5101';
+  routeLog.serve({ [job]: { body: '<!doctype html><title>Loading</title><p>Loading…</p>', contentType: 'text/html; charset=utf-8' } });
+  await mock.queueAgent([{ id: '00000051-aaaa-4bbb-8ccc-000000005101', jobId: 5101, url: job, company: 'Northwind',
+    title: 'Senior Backend Engineer', resumeId: null }]);
+  await card.locator('input[data-setting="agent.on"]').click();
+  const confirm = card.locator('[data-agent-confirm]');
+  if (await confirm.isVisible()) {
+    await shoot(options, '52-options-auto-apply-confirm.png', 'Options › Auto-apply: the one-time confirmation',
+      { clip: (await card.boundingBox()) ?? undefined });
+    await card.locator('button[data-action="agent-confirm"]').click();
+  }
+  await expect(card.locator('[data-agent="running"]')).toBeVisible({ timeout: 30_000 });
+  await options.bringToFront();
+  await shoot(options, '53-options-auto-apply-running.png', 'Options › Auto-apply: running a job, with Stop',
+    { clip: (await card.boundingBox()) ?? undefined });
+  const shown = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('151'));
+  await expect(shown.panel.locator('[data-agent="running"]')).toBeVisible();
+  await shoot(shown.panel, '54-side-panel-auto-apply.png', 'Side panel: "Auto-apply: running … · N done today", Stop');
+  await shown.panel.locator('button[data-action="agent-stop"]').click();
+  await expect(shown.panel.locator('[data-agent]')).toHaveCount(0);
+  await options.close();
+});
+
+test('v3 Phase 5: Sign-in Auto signing in on a sign-in page, and Modes with Sign-in and the skip rules', async ({ extContext, connected: ext, routeLog }) => {
+  const options = await extContext.newPage();
+  await options.setViewportSize({ width: 1000, height: 1400 });
+  await still(options);
+  await options.goto(ext.url('options.html'));
+  const signIn = options.locator('[data-setting-group="modes.signIn"]');
+  await signIn.scrollIntoViewIfNeeded();
+  await shoot(options, '55-options-sign-in-blocked.png', 'Modes › Sign-in: Auto needs the sign-in permission',
+    { clip: (await signIn.boundingBox()) ?? undefined });
+  const skips = options.locator('[data-setting-group="modes.agentSkip"]');
+  await skips.scrollIntoViewIfNeeded();
+  await shoot(options, '56-options-skip-rules.png', 'Modes › Auto-apply leaves a job for you when',
+    { clip: (await skips.boundingBox()) ?? undefined });
+  // A run paused at a sign-in with Sign-in on Manual: the review says it is the person's.
+  const page = await extContext.newPage();
+  const url = 'https://tailoritfixture.wd5.myworkdayjobs.com/en-US/careers/login';
+  routeLog.serve({ [url]: 'fixtures/synthetic/signin/sign-in.html' });
+  await page.goto(url);
+  const tabId = await ext.fill(page);
+  await ext.settled(tabId);
+  const panel = await sidePanel(ext, tabId);
+  await expect(panel.getByText(COPY_AUTH)).toBeVisible();
+  await shoot(panel, '57-side-panel-sign-in-manual.png', 'Side panel: a sign-in page, Sign-in on Manual');
 });
 
 test('v3 Phase 3b: Edit with AI’s instruction box, on the page', async ({ extContext, connected: ext, routeLog }) => {

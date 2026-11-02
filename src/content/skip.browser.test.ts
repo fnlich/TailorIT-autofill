@@ -219,7 +219,7 @@ describe('the launcher’s tab beside the browser’s side panel (v3 Phase 3 rev
   it('stays hidden in a page that loads while the side panel shows its tab, and shows once the panel leaves it', async () => {
     const fixture = await loadFixture(document, PAGE);
     const settings = { panel: DEFAULT_SETTINGS.panel, llm: DEFAULT_SETTINGS.llm,
-      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn, submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip },
+      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn, submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip, signIn: DEFAULT_SETTINGS.modes.signIn },
       offerToSaveAnswers: DEFAULT_SETTINGS.offerToSaveAnswers };
     // The worker's answer to this document's hello: the side panel shows the tab (it told the page before this one).
     const worker = createFakeWorker({ script: { 'frame/hello': [{ ok: true, data: { frameId: 0, connected: true, settings,

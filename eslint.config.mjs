@@ -20,9 +20,42 @@ const SUBMIT_PRESS_RULE = {
   message: 'Only src/content/press.ts presses the page\'s Submit (the person\'s Submit application, Submit mode Auto).',
 };
 
+/** v3 Phase 5: the auto-apply agent's press on a posting page's declared entry control (Apply, Application), named
+ *  nowhere but src/content/press.ts, as clickAdapterSubmit is. */
+const ENTRY_PRESS_RULE = {
+  selector: "ImportSpecifier[imported.name='clickAdapterEntry'], ExportSpecifier[local.name='clickAdapterEntry'], "
+    + "MemberExpression[property.name='clickAdapterEntry']",
+  message: "Only src/content/press.ts presses a posting's entry control (the auto-apply agent's agent/enter).",
+};
+
+/** v3 Phase 5: Sign-in mode Auto's press on a sign-in form's button, named nowhere but src/content/sign-in.ts. */
+const SIGN_IN_PRESS_RULE = {
+  selector: "ImportSpecifier[imported.name='clickAdapterSignIn'], ExportSpecifier[local.name='clickAdapterSignIn'], "
+    + "MemberExpression[property.name='clickAdapterSignIn']",
+  message: "Only src/content/sign-in.ts presses a sign-in form's button (Sign-in mode Auto).",
+};
+
+/** v3 Phase 5 review: the wrappers around those two doors, press.ts pressEntry and sign-in.ts signIn, are called by
+ *  src/content/runtime.ts alone (the agent's agent/enter from the worker, a run's sign-in pause), so no other module can
+ *  reach a door through them. */
+const ENTRY_WRAPPER_RULE = {
+  selector: "ImportSpecifier[imported.name='pressEntry'], ExportSpecifier[local.name='pressEntry'], "
+    + "MemberExpression[property.name='pressEntry']",
+  message: "Only src/content/runtime.ts calls press.ts's pressEntry (the agent's agent/enter, from the worker alone).",
+};
+const SIGN_IN_WRAPPER_RULE = {
+  selector: "ImportDeclaration[source.value=/(^|\\/)sign-in$/] > ImportSpecifier[imported.name='signIn'], "
+    + "ImportDeclaration[source.value=/(^|\\/)sign-in$/] > ImportNamespaceSpecifier, ExportSpecifier[local.name='signIn']",
+  message: "Only src/content/runtime.ts calls sign-in.ts's signIn (Sign-in mode Auto at a run's pause, or the agent's entry).",
+};
+
 /** Raw HTML, eval and form submission, banned everywhere in src: nothing may submit, and nothing parses markup. */
 const UNSAFE_SYNTAX = [
   SUBMIT_PRESS_RULE,
+  ENTRY_PRESS_RULE,
+  SIGN_IN_PRESS_RULE,
+  ENTRY_WRAPPER_RULE,
+  SIGN_IN_WRAPPER_RULE,
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
   { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Build DOM nodes; never insert markup.' },
   { selector: "CallExpression[callee.object.name='document'][callee.property.name=/^write(ln)?$/]", message: 'No document.write.' },
@@ -163,9 +196,19 @@ export default tseslint.config(
       ]),
     },
   },
-  // The one module that presses the page's Submit for the person (content/press.ts's header).
-  { files: ['src/content/press.ts'],
-    rules: { 'no-restricted-syntax': ['error', ...UNSAFE_SYNTAX.filter((rule) => rule !== SUBMIT_PRESS_RULE)] } },
+  // The one module that presses the page's Submit for the person, and (v3 Phase 5) a posting's entry control for the
+  // agent (content/press.ts's header).
+  { files: ['src/content/press.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== SUBMIT_PRESS_RULE && rule !== ENTRY_PRESS_RULE)] } },
+  // v3 Phase 5: the one module that presses a sign-in form's button (content/sign-in.ts's header).
+  { files: ['src/content/sign-in.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...UNSAFE_SYNTAX.filter((rule) => rule !== SIGN_IN_PRESS_RULE)] } },
+  // v3 Phase 5 review: the one module that calls the doors' wrappers (the agent's entry, a run's sign-in).
+  { files: ['src/content/runtime.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== ENTRY_WRAPPER_RULE && rule !== SIGN_IN_WRAPPER_RULE)] } },
+  // Tests drive the wrappers directly (never the doors).
+  { files: ['src/**/*.test.{ts,tsx}'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== ENTRY_WRAPPER_RULE && rule !== SIGN_IN_WRAPPER_RULE)] } },
   {
     files: ['src/ui/**/*.{ts,tsx}'],
     rules: {

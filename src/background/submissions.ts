@@ -21,6 +21,9 @@
  * - The tab's page state says where recording stands (PageState.submitted): 'recording', 'recorded', 'not-recorded'
  *   or 'not-allowed' (a connection made before tracker:write), kept in storage.session (SUBMITTED_PREFIX) until the
  *   document that saw it goes, the frame moves to another posting, or the tab closes.
+ * - The auto-apply agent's tab (v3 Phase 5): its sign finishes the agent's job instead (agent.ts: POST
+ *   /api/autofill/agent/:id/result {state: submitted}, which marks the job Applied in TailorIT), so POST /applied is not
+ *   called for it.
  * - Both messages are counted (SUBMIT_MESSAGE_LIMIT a minute per tab), and the application key must fit the frame.
  * No log line names the job, the address or the person; storage holds ids, keys and times, never an address.
  */
@@ -70,6 +73,10 @@ export interface SubmissionsDeps {
   disclosed(): Promise<boolean>;
   /** The tab's page state changed (the side panel's "Application submitted"). */
   changed(tabId: number): void;
+  /** v3 Phase 5: the auto-apply agent takes the sign of its own tab for its task's application ('not-ours' for any
+   *  other tab, or another posting's sign, which is recorded the normal way), and says whether TailorIT took its
+   *  result. */
+  agentSubmitted?(tabId: number, applicationKey: string): Promise<'not-ours' | 'recorded' | 'not-recorded'>;
 }
 
 /** A Submit armed, as storage.session keeps it: ids, keys and times only. */
@@ -149,6 +156,13 @@ export function createSubmissions(deps: SubmissionsDeps) {
     const { tabId } = from;
     const key = armKey(tabId, applicationKey);
     await set(tabId, { state: 'recording', docKey, applicationKey });
+    // The agent's own job (v3 Phase 5): its result records Applied; POST /applied is not called for it.
+    const agent = (await deps.agentSubmitted?.(tabId, applicationKey)) ?? 'not-ours';
+    if (agent !== 'not-ours') {
+      await dropArm(key);
+      await set(tabId, { state: agent, docKey, applicationKey });
+      return;
+    }
     const generation = deps.generation();
     const epoch = deps.jobs.epoch(from);
     const url = urls.get(key) ?? null;

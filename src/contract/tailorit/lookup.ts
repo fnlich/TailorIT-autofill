@@ -324,6 +324,18 @@ function greenhouseOnCompanyPage(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'greenhouse', board: null, externalId: id, canonical: [page] };
 }
 
+/** An address over https or http, read; null for anything else. */
+function webUrl(address: string): UrlLike | null {
+  if (!runtime.URL) return null;
+  let url: UrlLike;
+  try {
+    url = new runtime.URL(address.trim());
+  } catch {
+    return null;
+  }
+  return url.protocol === 'https:' || url.protocol === 'http:' ? url : null;
+}
+
 /**
  * The ATS posting an application page's address names, or null. Greenhouse: its boards and job boards (and their
  * .eu. twins) at /{board}/jobs/{id}, the embedded form at /embed/job_app?for={board}&token={id}, and a company page
@@ -333,19 +345,31 @@ function greenhouseOnCompanyPage(url: UrlLike): ParsedAtsUrl | null {
  * parameter names are compared in lower case; the fragment never matters. Workday comes later.
  */
 export function parseAtsUrl(address: string): ParsedAtsUrl | null {
-  if (!runtime.URL) return null;
-  let url: UrlLike;
-  try {
-    url = new runtime.URL(address.trim());
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  const url = webUrl(address);
+  if (!url) return null;
   const region = GREENHOUSE_REGIONS.get(url.hostname);
   if (region !== undefined) return greenhousePosting(url, region) ?? greenhouseOnCompanyPage(url);
   if (LEVER_HOSTS.has(url.hostname)) return leverPosting(url);
   if (url.hostname === ASHBY_HOST) return ashbyPosting(url);
   return greenhouseOnCompanyPage(url);
+}
+
+/**
+ * A Greenhouse board's own page naming a posting in ?gh_jid= (job-boards.greenhouse.io/{board}?gh_jid={id}, or
+ * boards.greenhouse.io's, or their .eu. twins'), read with its board: its canonical addresses are the posting's job
+ * pages. parseAtsUrl reads such a page as it reads any page naming a posting in ?gh_jid= (no board, the page itself the
+ * posting's address), as the extension's adapters do (no capture shows a form there); the auto-apply agent opens the
+ * posting's job page instead (agentApplicationUrl). Null for any other address.
+ */
+export function greenhouseBoardPage(address: string): ParsedAtsUrl | null {
+  const url = webUrl(address);
+  const region = url ? GREENHOUSE_REGIONS.get(url.hostname) : undefined;
+  if (!url || region === undefined) return null;
+  const [board, ...rest] = segmentsOf(url);
+  if (!board || rest.length > 0 || board === 'embed' || !GREENHOUSE_BOARD.test(board)) return null;
+  const id = queryValue(url, 'gh_jid');
+  if (id === null || !GREENHOUSE_JOB_ID.test(id)) return null;
+  return { kind: 'greenhouse', board, externalId: id, canonical: greenhouseJobUrls(region, board, id) };
 }
 
 /** The ATSs POST /api/autofill/jobs can read one posting from (their public job APIs; Ashby since version 3). */

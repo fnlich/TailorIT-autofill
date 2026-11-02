@@ -42,6 +42,10 @@
  * - v3 Phase 4: under the lists, the dock's "Continue to the next page" or "Submit application" (Report's StepDock:
  *   panel/press for the frame whose step offers it, on the person's click here); once the platform confirmed the
  *   application, "Application submitted" with where the tracker stands and "Open tracker" (PageState.submitted).
+ * - v3 Phase 5: while Run auto-apply is on, the agent's status line under the head ("Auto-apply: running <job> · N done
+ *   today · last: …"), with Stop and a link to TailorIT's Auto-apply page (src/ui/page/agent.tsx), read again whenever
+ *   the worker says the agent changed (panel/changed {what: 'agent'}); the gear's modes show Sign-in, its Auto offered
+ *   only while the connection may read sign-ins, and the skip rules.
  * - At the foot: "Connected as …", and the link to the person's TailorIT jobs.
  * When the worker says the connection or the settings changed (panel/changed, perhaps from another window), they are
  * read again, and the job card read with the old connection is dropped at once.
@@ -61,7 +65,8 @@ import { COPY } from '../../shared/copy';
 import { fillsFromProfileOnly, saysNoAi, type FrameReport } from '../../shared/report';
 import { Brand } from '../brand/Logo';
 import { Icon } from '../brand/Icon';
-import { ModesFields } from '../page/modes';
+import { AgentStatusLine, useAgentStatus } from '../page/agent';
+import { ModesFields, signInAvailability } from '../page/modes';
 import { request } from '../page/request';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { isWorking } from '../report/model';
@@ -152,6 +157,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const tabId = useFollowedTab(platform, pinnedTabId);
   const { reports, page, link, reconnect, changes } = useTabReports(platform, tabId, now, { side: pinnedTabId === null });
   const auth = useAuthStatus(platform, root);
+  // v3 Phase 5: the auto-apply agent's status, read again at each change the worker announces.
+  const agent = useAgentStatus(platform, root, { changes: changes.agent });
   const [busy, setBusy] = useState(false);
   /** What the last button did. A run button's line holds only until a report newer than its click arrives (`newest`:
    *  the newest report's time at the click), which says more (the Phase F1 review, 7); a row action's stays. */
@@ -398,7 +405,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         <section className="tia-menu" id={menuId} aria-label={COPY.panel.menu} data-menu="">
           <h2 className="tia-menu__title">{COPY.panel.modes}</h2>
           {settings === null ? <p className="tia-help">{COPY.options.loading}</p> : (
-            <ModesFields settings={settings} disabled={savingModes} onChange={saveModes} idPrefix="panel" />
+            <ModesFields settings={settings} disabled={savingModes} onChange={saveModes} idPrefix="panel"
+              signIn={signInAvailability(auth.status)} />
           )}
           <a className="tia-menu__all" href={`${settingsUrl}#settings-modes`} target="_blank" rel="noreferrer"
             data-open-settings="">
@@ -412,6 +420,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         <DisclosureChanged onUnderstand={acknowledge} />
       )}
       <LinkProblem link={link} onReconnect={reconnect} />
+      {(agent.status?.on === true || agent.status?.pending === true) && <AgentStatusLine platform={platform} agent={agent} />}
       {tabId !== null && hidden !== 'none' && (
         <div className="tia-strip tia-launcher-hidden" data-tone="neutral" data-launcher-hidden={hidden}>
           <span>{COPY.panel.launcherHidden[hidden]}</span>{' '}

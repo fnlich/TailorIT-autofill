@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 5, Sign-in mode Auto): a job site's create-account page, served at a Workday tenant's candidate
+  host (https://tailoritfixture.wd5.myworkdayjobs.com/en-US/careers/create-account), read by the generic adapter's
+  standard rule: an email box marked autocomplete="email", two password boxes marked autocomplete="new-password" (the
+  second "Verify New Password") and a required terms box in one form, with one submit button, "Create Account". The
+  page's script stands for the site's: on submit it posts nothing, records on the body whether the email and both
+  passwords typed are the test's dummies (data-email-ok, data-password-ok, data-confirm-ok) and whether the terms box was
+  ticked (data-terms), and shows "Account created" with no password box.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Create Account - Northwind Careers</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 520px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input[type="email"], input[type="password"] { display: block; width: 100%; box-sizing: border-box; padding: 6px;
+      border: 1px solid #888; }
+    .terms { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+    button { margin-top: 16px; padding: 10px 20px; }
+  </style>
+</head>
+<body data-email-ok="" data-password-ok="" data-confirm-ok="" data-terms="">
+  <main>
+    <h1>Create Account</h1>
+    <form id="create" method="post">
+      <label for="email">Email Address</label>
+      <input id="email" name="email" type="email" autocomplete="email">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="new-password">
+      <label for="confirm">Verify New Password</label>
+      <input id="confirm" name="confirm" type="password" autocomplete="new-password">
+      <label class="terms"><input id="terms" name="terms" type="checkbox" aria-required="true"> Yes, I have read and consent to the terms and conditions</label>
+      <button type="submit">Create Account</button>
+    </form>
+  </main>
+  <script>
+    (() => {
+      const EMAIL = 'alex.rivera@example.com';
+      const PASSWORD = 'e2e-dummy-password-not-real';
+      const body = document.body;
+      document.getElementById('create').addEventListener('submit', (event) => {
+        event.preventDefault();
+        body.dataset.emailOk = String(document.getElementById('email').value === EMAIL);
+        body.dataset.passwordOk = String(document.getElementById('password').value === PASSWORD);
+        body.dataset.confirmOk = String(document.getElementById('confirm').value === PASSWORD);
+        body.dataset.terms = String(document.getElementById('terms').checked);
+        const heading = document.createElement('h1');
+        heading.textContent = 'Account created';
+        document.querySelector('main').replaceChildren(heading);
+      });
+    })();
+  </script>
+</body>
+</html>

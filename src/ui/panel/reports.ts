@@ -42,10 +42,12 @@ function watch(port: PortLike | null, tabId: number, side: boolean): void {
   }
 }
 
-/** How many times the worker said the connection or the settings changed since the panel opened. */
+/** How many times the worker said the connection, the settings or (v3 Phase 5) the auto-apply agent changed since the
+ *  panel opened. */
 export interface PanelChanges {
   connection: number;
   settings: number;
+  agent: number;
 }
 
 /** The tab's reports and page state as last read or pushed, the link's state, a way to reconnect by hand, and the
@@ -60,7 +62,7 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
 } {
   const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[]; page: PageState | null }>(
     { tabId: null, reports: NO_REPORTS, page: null });
-  const [changes, setChanges] = useState<PanelChanges>({ connection: 0, settings: 0 });
+  const [changes, setChanges] = useState<PanelChanges>({ connection: 0, settings: 0, agent: 0 });
   const [link, setLink] = useState<LinkState>('live');
   const [generation, setGeneration] = useState(0);
   const port = useRef<PortLike | null>(null);

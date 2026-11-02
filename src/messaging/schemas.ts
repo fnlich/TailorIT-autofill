@@ -14,6 +14,8 @@ import { AUTOFILL_AI_LIMITS } from '../contract/tailorit/ai';
 import { AutofillProfileSchema, AutofillSensitiveSchema, WORK_ARRANGEMENTS } from '../contract/tailorit/profile';
 import { AUTOFILL_JOB_SEARCH_MAX, AUTOFILL_JOB_SEARCH_QUERY_MAX } from '../contract/tailorit/tracker';
 import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from '../contract/tailorit/resumes';
+import { AUTOFILL_AGENT_FINISHED_STATES, AUTOFILL_AGENT_REASONS } from '../contract/tailorit/agent';
+import { AutofillSignInHostSchema, AUTOFILL_SIGN_IN_LIMITS } from '../contract/tailorit/credentials';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
 import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
@@ -239,6 +241,25 @@ export type SubmitEvidence = (typeof SUBMIT_EVIDENCE)[number];
 export const STEP_TARGETS = ['next', 'submit'] as const;
 export type StepTarget = (typeof STEP_TARGETS)[number];
 
+/** What starts a run: the launcher's trusted click, the side panel's Fill, a reload resuming one, or (v3 Phase 5) the
+ *  auto-apply agent, from the worker alone, in the window it opened. */
+export const RUN_TRIGGERS = ['launcher', 'panel', 'resume', 'agent'] as const;
+export type RunTrigger = (typeof RUN_TRIGGERS)[number];
+
+/** The account pages Sign-in mode Auto fills (v3 Phase 5): a sign-in, or an account's creation. */
+export const SIGN_IN_WALLS = ['sign-in', 'create-account'] as const;
+export type SignInWall = (typeof SIGN_IN_WALLS)[number];
+
+/** What came of the agent's press on a posting page's entry control (v3 Phase 5; agent/enter): 'pressed' (the
+ *  adapter's declared Apply or Application, that one element), 'not-offered' (none shows, or a form shows already),
+ *  'blocked' (a CAPTCHA, a sign-in or a code shows). */
+export const ENTRY_OUTCOMES = ['pressed', 'not-offered', 'blocked'] as const;
+export type EntryOutcome = (typeof ENTRY_OUTCOMES)[number];
+/** What blocked an entry (v3 Phase 5 review): a sign-in or account page (Sign-in mode Manual, or none to use), a sign-in
+ *  the site did not take, an email code, a CAPTCHA or bot check, or another choice (Workday's entry choice). */
+export const ENTRY_BLOCKS = ['sign-in', 'sign-in-failed', 'email-code', 'captcha', 'other'] as const;
+export type EntryBlock = (typeof ENTRY_BLOCKS)[number];
+
 // ── Content script → worker (one-shot messages) ───────────────────────────────────────────────────────────────────
 
 const v = z.literal(MESSAGE_VERSION);
@@ -255,7 +276,8 @@ const contentMessages = [
     letter: z.literal(true).optional() }),
   /** Answers a run id and the content settings; never the profile. */
   z.strictObject({ v, type: z.literal('run/begin'), applicationKey: z.string().max(80),
-    trigger: z.enum(['launcher', 'panel', 'resume']), dryRun: z.boolean() }),
+    /** 'agent' (v3 Phase 5): the auto-apply agent's run, which the worker takes only from the tab it opened. */
+    trigger: z.enum(RUN_TRIGGERS), dryRun: z.boolean() }),
   /** The frame's whole scan (`specs`, context for planning across the frame), the keys this pass plans (`planKeys`,
    *  each one a spec's key: the worker answers them only), and the page's canaries and notices (the Phase 3 review,
    *  LC-2); the repeatable sections the step shows (`repeatables`, Phase 5, each kind once). */
@@ -346,6 +368,12 @@ const contentMessages = [
    *  when this tab armed the same application within SUBMIT_ARM_MS. */
   z.strictObject({ v, type: z.literal('submit/detected'), applicationKey: z.string().max(80),
     evidence: z.enum(SUBMIT_EVIDENCE) }),
+  /** v3 Phase 5, Sign-in mode Auto: the top frame's run paused at a sign-in (`sign-in`) or create-account
+   *  (`create-account`) page and asks for the job-site sign-in of its own host. The worker reads the host from Chrome's
+   *  sender address, never from a payload, fetches GET /credentials?host= only while the person chose Auto, the
+   *  connection may read sign-ins and the disclosure was acknowledged, and answers it to this frame alone, once per
+   *  tab, host and wall: the one message that ever carries the password. */
+  z.strictObject({ v, type: z.literal('signin/credential'), wall: z.enum(SIGN_IN_WALLS) }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -459,6 +487,14 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** v3 Phase 4 review: Try again, when TailorIT's tracker could not be told of a submitted application (offline, or a
    *  server failure): the worker asks once more for the same submission. */
   z.strictObject({ v, type: z.literal('panel/retryApplied'), tabId: TabId }),
+  /** v3 Phase 5: the auto-apply agent, as the options page and the side panel show it (value-free). */
+  z.strictObject({ v, type: z.literal('agent/status') }),
+  /** Options › "Run auto-apply": on or off. Turning it on needs the person's one-time confirmation (`confirmed`, once:
+   *  the worker keeps it), a connection with agent:run and the disclosure acknowledged. */
+  z.strictObject({ v, type: z.literal('agent/set'), on: z.boolean(), confirmed: z.literal(true).optional() }),
+  /** The status's Stop: the job running now is left for the person (needs-you, cancelled), its window closed, and
+   *  Run auto-apply turned off. */
+  z.strictObject({ v, type: z.literal('agent/stop') }),
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -499,7 +535,7 @@ const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(
 
 /** What changed for every side panel (v2): the connection (a token stored or dropped, perhaps from another window) or
  *  the settings. */
-export const PANEL_CHANGES = ['connection', 'settings'] as const;
+export const PANEL_CHANGES = ['connection', 'settings', 'agent'] as const;
 
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
   /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). `side` (v3 Phase 3):
@@ -524,7 +560,13 @@ export type ExternalMessage = z.infer<typeof ExternalMessageSchema>;
 // ── Worker → content script ───────────────────────────────────────────────────────────────────────────────────────
 
 export const WorkerToContentSchema = z.discriminatedUnion('type', [
-  z.strictObject({ v, type: z.literal('run/start'), dryRun: z.boolean() }),
+  z.strictObject({ v, type: z.literal('run/start'), dryRun: z.boolean(),
+    /** v3 Phase 5: the auto-apply agent's run (taken from the worker's own script alone): Next and Submit on Auto, the
+     *  person's skip rules. `retry`: its one retry after the page refused its Submit. */
+    agent: z.literal(true).optional(), retry: z.literal(true).optional() }),
+  /** v3 Phase 5: the agent's tab shows a posting, not its form: press the adapter's declared entry control (Greenhouse's
+   *  and Lever's Apply, Ashby's Application tab), that one element and nothing else. The worker's own script alone. */
+  z.strictObject({ v, type: z.literal('agent/enter') }),
   /** Continue after a pause; it never answers the policy card (run/policyDecision does). */
   z.strictObject({ v, type: z.literal('run/continue') }),
   z.strictObject({ v, type: z.literal('run/cancel') }),
@@ -882,6 +924,49 @@ export type PressOutcome = (typeof PRESS_OUTCOMES)[number];
 export const PressAnswerSchema = z.strictObject({ outcome: z.enum(PRESS_OUTCOMES), count: Count.optional() });
 export type PressAnswer = z.infer<typeof PressAnswerSchema>;
 
+/** agent/enter's answer (v3 Phase 5). */
+export const EntryAnswerSchema = z.strictObject({ outcome: z.enum(ENTRY_OUTCOMES), block: z.enum(ENTRY_BLOCKS).optional() });
+export type EntryAnswer = z.infer<typeof EntryAnswerSchema>;
+
+/** signin/credential's answer (v3 Phase 5): the job-site sign-in for the frame's own host, to that frame alone. The one
+ *  message that carries a password: never logged, stored or put in a report. `host`: the sign-in's own host, or `*`
+ *  (the one for every site, used only on a host signInHostCovered covers), which the frame checks against its own. */
+export const SignInCredentialAnswerSchema = z.strictObject({
+  host: AutofillSignInHostSchema,
+  email: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.email),
+  password: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.password).regex(/^[^\r\n]*$/),
+});
+export type SignInCredential = z.infer<typeof SignInCredentialAnswerSchema>;
+
+/** Why the auto-apply agent cannot run now (v3 Phase 5): not connected, a connection without agent:run (made before
+ *  version 3), the disclosure not acknowledged as it reads now, or no browser window of the person's open. */
+export const AGENT_BLOCKS = ['not-connected', 'no-scope', 'disclosure', 'no-window'] as const;
+export type AgentBlock = (typeof AGENT_BLOCKS)[number];
+/** Where the agent stands: off; on and waiting for a job (the queue empty, or its next look); on and running one; on
+ *  but blocked (AGENT_BLOCKS). */
+export const AGENT_PHASES = ['off', 'waiting', 'running', 'blocked'] as const;
+export type AgentPhase = (typeof AGENT_PHASES)[number];
+
+/** agent/status, agent/set and agent/stop's answer (v3 Phase 5): value-free. `job` is the queued job's company and
+ *  title as TailorIT named them; `doneToday` the jobs it finished today (this browser's day); `last` the latest result's
+ *  state and reason. */
+export const AgentStatusSchema = z.strictObject({
+  on: z.boolean(),
+  /** The person confirmed, once, that applications will be submitted unattended with AI-guessed answers. */
+  confirmed: z.boolean(),
+  phase: z.enum(AGENT_PHASES),
+  blocked: z.enum(AGENT_BLOCKS).nullable(),
+  /** Run auto-apply may be turned on now: connected with agent:run, the disclosure acknowledged. */
+  allowed: z.boolean(),
+  /** A result is kept that TailorIT has not taken yet (offline, its failure): it is sent again (the review). */
+  pending: z.boolean(),
+  job: z.strictObject({ company: Text(200), title: Text(300) }).nullable(),
+  doneToday: Count,
+  last: z.strictObject({ state: z.enum(AUTOFILL_AGENT_FINISHED_STATES), reason: z.enum(AUTOFILL_AGENT_REASONS).nullable() })
+    .nullable(),
+});
+export type AgentStatus = z.infer<typeof AgentStatusSchema>;
+
 /** runs/clear: how many stored runs were removed. */
 export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
 
@@ -927,6 +1012,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'launcher/hide': DoneAnswerSchema,
   'submit/armed': DoneAnswerSchema,
   'submit/detected': DoneAnswerSchema,
+  'signin/credential': SignInCredentialAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. */
@@ -968,6 +1054,9 @@ export const PAGE_ANSWER_SCHEMAS = {
   'runs/clear': RunsClearAnswerSchema,
   'telemetry/get': TelemetryAnswerSchema,
   'telemetry/clear': TelemetryAnswerSchema,
+  'agent/status': AgentStatusSchema,
+  'agent/set': AgentStatusSchema,
+  'agent/stop': AgentStatusSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. */
@@ -989,6 +1078,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   'launcher/prefs': DoneAnswerSchema,
   'panel/side': DoneAnswerSchema,
   'run/press': PressAnswerSchema,
+  'agent/enter': EntryAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

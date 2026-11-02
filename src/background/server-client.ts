@@ -10,6 +10,13 @@
 import { z } from 'zod';
 import {
   AutofillAddJobResponseSchema,
+  AutofillAgentIdSchema,
+  AutofillAgentNextSchema,
+  type AutofillAgentNext,
+  type AutofillAgentResultBody,
+  AutofillCredentialQuerySchema,
+  AutofillCredentialSchema,
+  type AutofillCredential,
   type AutofillAppliedRequest,
   AUTOFILL_COVER_LETTER_MAX_BYTES,
   AutofillCoverLetterTextSchema,
@@ -189,6 +196,17 @@ export interface ServerClient {
    *  "Your autofill information". A stale revision is a conflict (409 `revision_conflict`), a body TailorIT refuses
    *  bad-request (400), a token without the scope forbidden (403). */
   putProfile(body: PutAutofillProfileBody): Promise<ServerResult<PutAutofillProfileResponse>>;
+  /** GET /agent/next (version 3, scope agent:run, v3 Phase 5): this browser's own running job again (after a worker
+   *  restart), else the next queued one, now running for this browser; `item` null: nothing to do. */
+  agentNext(): Promise<ServerResult<AutofillAgentNext>>;
+  /** POST /agent/:id/result (version 3, scope agent:run): how a run went (204). A row of another account, or removed
+   *  since, is not-found (404); a result the row no longer takes is a conflict (409). An id that is not a queue id is
+   *  refused before any request. */
+  agentResult(id: string, body: AutofillAgentResultBody): Promise<ServerResult<null>>;
+  /** GET /credentials?host= (version 3, scope credentials:read, v3 Phase 5): the job-site sign-in for that host, else
+   *  the one for every site on a host signInHostCovered covers; none is not-found (404). The answer holds a password:
+   *  it is never logged, and a host that is not a host name is refused before any request. */
+  credential(host: string): Promise<ServerResult<AutofillCredential>>;
 }
 
 /** What the server client needs. */
@@ -516,6 +534,24 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     },
     putProfile: (body) =>
       json({ method: 'PUT', path: '/api/autofill/profile', token: 'current', json: body }, PutAutofillProfileResponseSchema),
+    agentNext: () => json({ method: 'GET', path: '/api/autofill/agent/next', token: 'current' }, AutofillAgentNextSchema),
+    async agentResult(id, body) {
+      if (!AutofillAgentIdSchema.safeParse(id).success) {
+        log('server.path-refused');
+        return failure('refused-path');
+      }
+      const raw = await send({ method: 'POST', path: `/api/autofill/agent/${id}/result`, token: 'current', json: body,
+        answer: { kind: 'none' } });
+      return raw.ok ? { ok: true, value: null } : raw;
+    },
+    credential(host) {
+      if (!AutofillCredentialQuerySchema.safeParse({ host }).success) {
+        log('server.path-refused');
+        return Promise.resolve(failure('refused-path'));
+      }
+      return json({ method: 'GET', path: '/api/autofill/credentials', token: 'current', query: { host } },
+        AutofillCredentialSchema);
+    },
     async coverLetterFile(id, maxBytes = AUTOFILL_COVER_LETTER_MAX_BYTES) {
       if (!AutofillCoverLetterIdSchema.safeParse(id).success) {
         log('server.path-refused');

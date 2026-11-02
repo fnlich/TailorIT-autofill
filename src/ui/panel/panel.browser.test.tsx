@@ -10,7 +10,7 @@ import { pinnedTabOf } from './tab';
 const keysShown = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('li[data-field-key]')].map((each) => each.dataset.fieldKey);
 /** What the page sent other than its reads: the messages its buttons sent. */
 const actions = (worker: FakeWorker) => worker.platform.sent.filter((message) =>
-  !['panel/reports', 'auth/status', 'settings/get'].includes(String((message as { type?: unknown }).type)));
+  !['panel/reports', 'auth/status', 'settings/get', 'agent/status'].includes(String((message as { type?: unknown }).type)));
 const watches = (worker: FakeWorker) => worker.posted.filter((message) => (message as { type?: unknown }).type === 'panel/watch');
 
 async function open(worker: FakeWorker, pinnedTabId: number | null, now?: () => number): Promise<HTMLElement> {
@@ -300,3 +300,36 @@ describe('the review panel', () => {
     await vi.waitFor(() => expect(noTab.sentOfType('panel/reports')).toEqual([]));
   });
 });
+
+describe('the auto-apply agent’s status in the side panel (v3 Phase 5)', () => {
+  it('shows nothing while off; while on, its value-free line with Stop and TailorIT’s page, read again at each change', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker, 5);
+    expect(root.querySelector('[data-agent]')).toBeNull();
+    worker.script.agent = { on: true, confirmed: true, phase: 'running', blocked: null, allowed: true, pending: false,
+      job: { company: 'Northwind', title: 'Senior Backend Engineer' }, doneToday: 2,
+      last: { state: 'needs-you', reason: 'captcha' } };
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'agent' }));
+    await settle();
+    const strip = root.querySelector<HTMLElement>('[data-agent="running"]')!;
+    expect(strip.querySelector('[data-agent-line]')?.textContent).toBe('Auto-apply: running Senior Backend Engineer at '
+      + 'Northwind · 2 done today · last: Needs you (a check that you are human)');
+    expect(strip.querySelector('a[data-tailorit-link="auto-apply"]')?.textContent).toBe(COPY.agent.open);
+    await click(strip.querySelector<HTMLButtonElement>('button[data-action="agent-stop"]')!);
+    expect(worker.sentOfType('agent/stop')).toEqual([{ v: 1, type: 'agent/stop' }]);
+    expect(root.querySelector('[data-agent]')).toBeNull();
+  });
+
+  it('stays, off, while a result waits to be told TailorIT, and says so (the v3 Phase 5 review)', async () => {
+    const worker = createFakeWorker();
+    worker.script.agent = { on: false, confirmed: true, phase: 'off', blocked: null, allowed: true, pending: true,
+      job: null, doneToday: 0, last: null };
+    const root = await open(worker, 5);
+    await settle();
+    const strip = root.querySelector<HTMLElement>('[data-agent="off"]')!;
+    expect(strip.querySelector('[data-agent-line]')?.textContent)
+      .toBe('Auto-apply: off · 0 done today · a result not yet told TailorIT');
+    expect(strip.querySelector('button[data-action="agent-stop"]')).toBeNull();
+  });
+});
+

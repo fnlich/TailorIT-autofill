@@ -9,15 +9,15 @@
  * - The development build's capture tool has its own export, CAPTURE_COPY, so no production bundle carries its words.
  */
 import type {
-  AutofillFileKind, DegreeLevel, ExpectedSalaryPeriod, GenderIdentity, RaceCategory, ResumeChoiceReason, WorkArrangement,
-  WorkStatus,
+  AutofillAgentFinishedState, AutofillAgentReason, AutofillFileKind, DegreeLevel, ExpectedSalaryPeriod, GenderIdentity,
+  RaceCategory, ResumeChoiceReason, WorkArrangement, WorkStatus,
 } from '../contract/tailorit';
 import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
 import type { ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunStatus } from '../core/types/run';
 import type {
-  AddJobOutcome, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome, ProfileSaveRefusal, SaveAnswerOutcome,
-  SiteRequestOutcome, SubmittedState,
+  AddJobOutcome, AgentBlock, AgentStatus, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome,
+  ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
 } from '../messaging/schemas';
 import type { FrameReport } from './report';
 
@@ -68,6 +68,10 @@ const NOTICES = {
   // a posting whose AI rule couldn't be read. Drafts for the owner's review.
   'submit-errors': "Submit was pressed, but the page didn't accept the application: it shows what to fix. Fix it, then submit again.",
   'submit-auto-unchecked': "I couldn't read this posting to check whether it allows AI tools, and Submit is on Auto, so the application was submitted anyway.",
+  // v3 Phase 5 (Sign-in mode Auto): drafts for the owner's review.
+  'sign-in-auto': 'Sign-in is on Auto: signing you in with the job-site sign-in you saved in TailorIT.',
+  'sign-in-unavailable': 'Sign-in is on Auto, but no job-site sign-in you saved in TailorIT can be used on this page. Sign in yourself, then choose Continue.',
+  'sign-in-failed': "Signing in with your saved job-site sign-in didn't work, and it won't be tried again here. Check it in TailorIT's Settings › Autofill, then sign in yourself.",
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -472,9 +476,9 @@ const PANEL = {
   /** The v3 Phase 4 review: the disclosure changed since the person connected. Drafts for the owner's review. */
   disclosureChanged: {
     heading: 'What TailorIT Autofill does has changed',
-    intro: 'Read what changed before Autofill submits for you or tells your TailorIT about pages as they load.',
+    intro: 'Read what changed before Autofill submits for you, signs in for you, applies by itself or tells your TailorIT about pages as they load.',
     understand: 'I understand',
-    held: 'Until you choose I understand, Submit stays Manual, submitted applications are not recorded, and pages are looked up only when you open the side panel.',
+    held: 'Until you choose I understand, Submit and Sign-in stay Manual, auto-apply stays off, submitted applications are not recorded, and pages are looked up only when you open the side panel.',
   },
   /** The links at the panel's foot, to the person's TailorIT. */
   autofillInfo: 'Your autofill information',
@@ -868,7 +872,7 @@ const OPTIONS = {
     /** The first-run disclosure, shown before Connect (the store's "prominent disclosure"). A draft for the owner. */
     disclosureHeading: 'Before you connect',
     disclosure: [
-      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It submits an application only when you choose Submit application in its side panel, or set Submit to Auto under Modes; once the site confirms it, it tells your TailorIT tracker the job is Applied. Unless you choose Required only under Modes, it ticks every agreement box a form shows, news, job alerts and text messages included, except a binding clause the form does not require (an arbitration agreement, say) and a box saying you did not use AI, which it ticks only when the fill used no AI. Some sites (Ashby) send a text message consent to the employer the moment it is ticked.',
+      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It submits an application only when you choose Submit application in its side panel, set Submit to Auto under Modes, or turn on Run auto-apply; once the site confirms it, it tells your TailorIT tracker the job is Applied. With Run auto-apply on, it takes the jobs you queue in TailorIT one at a time, opens each in a window of its own while this browser is open, fills it, and submits it without you watching, AI guesses included, unless the rules under Modes leave it for you; it tells your TailorIT how each one went, never what it filled in. With Sign-in on Auto (only if you allowed it when connecting), it reads the job-site email and password you saved in TailorIT for the site you are on, types them into that site\'s own sign-in or new-account form, and keeps them in memory only for that sign-in; checks that you are human and email codes stay yours. Unless you choose Required only under Modes, it ticks every agreement box a form shows, news, job alerts and text messages included, except a binding clause the form does not require (an arbitration agreement, say) and a box saying you did not use AI, which it ticks only when the fill used no AI. Some sites (Ashby) send a text message consent to the employer the moment it is ticked.',
       'When an application page or a job posting on those sites loads, and again while its side panel shows one, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match before you open the panel; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job, or mark it Applied after you submit. Its side panel can show and change your autofill information in your TailorIT, and preview the resume it attaches. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings, where you put or hid its button on each site, and notes on each application\'s progress, never your answers.',
       'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Unless you choose Profile only for AI answers under Modes, questions about work authorization, sponsorship, a visa, a clearance, age, criminal history or pay that your profile does not answer, and attention checks, get the AI\'s best guess too, from the question and its options alone. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
@@ -923,6 +927,23 @@ const OPTIONS = {
       auto: 'Auto',
       help: 'Auto presses Submit once the last page of the application is filled and checked, unless a required field is still empty, the posting says AI is not allowed, or the page asks you to prove you are human: then the review says why, and you submit. Manual: you submit, on the page or with Submit application in the side panel.',
     },
+    signIn: {
+      name: 'Sign-in',
+      manual: 'Manual',
+      auto: 'Auto',
+      help: "Auto signs in to a job site that asks you to (Workday and others), or creates your account there, with the email and password you saved in TailorIT's Settings › Autofill › Job-site sign-in, then presses Sign in or Create account. A check that you are human and an email code stay yours, and a password the site does not take is not tried again. Manual: you sign in.",
+      /** Why Auto cannot be chosen now. */
+      needsScope: "Sign-in Auto needs this browser's permission to read your saved job-site sign-in. Disconnect, then connect again with \"Let this browser sign in to job sites with my saved password\" ticked on TailorIT's page.",
+      needsDisclosure: 'Sign-in Auto can be chosen once you choose I understand on the updated notice.',
+      needsConnection: 'Sign-in Auto can be chosen once this browser is connected to TailorIT.',
+    },
+    agentSkip: {
+      name: 'Auto-apply leaves a job for you when',
+      help: 'Auto-apply and Submit on Auto leave the application unsubmitted, and auto-apply lists it for you in TailorIT, when one of these is true. A check that you are human, a sign-in it cannot do and an email code always stop it.',
+      requiredEmpty: 'A required field is still empty',
+      noAi: 'The posting says AI-assisted applications are not allowed',
+      legalGuess: "A work authorization, sponsorship or other legal answer is the AI's guess",
+    },
     recordOwn: {
       name: 'Record applications I submit myself',
       on: 'On',
@@ -953,6 +974,24 @@ const OPTIONS = {
       minimized: 'Minimized',
       help: 'Minimized folds the review to its progress line: choose the line to see the fields.',
     },
+  },
+  /** v3 Phase 5: Options › Auto-apply. Drafts for the owner's review. */
+  agent: {
+    heading: 'Auto-apply',
+    intro: 'Auto-apply applies to the jobs you queue in TailorIT (Jobs or Job Tracker › Auto-apply), one at a time, in a window of its own, while this browser is open. It fills each application, presses Next and Submit by itself, and tells your TailorIT how each one went. Jobs it leaves for you stay listed there.',
+    run: 'Run auto-apply',
+    runHelp: 'Off until you turn it on. Leave the window it opens alone: closing it leaves that job for you.',
+    confirmHeading: 'Submit applications without you?',
+    confirm: 'With auto-apply on, applications are submitted without you watching, with the answers Autofill fills in, the AI\'s guesses included, unless the rules under Modes leave a job for you. You can stop it at any time.',
+    confirmYes: 'Turn on auto-apply',
+    confirmNo: 'Cancel',
+    open: 'Open Auto-apply in TailorIT',
+    blocked: {
+      'not-connected': 'Connect to TailorIT to use auto-apply.',
+      'no-scope': "This browser's connection was made before auto-apply. Disconnect, then connect again.",
+      disclosure: 'Choose I understand on the updated notice to use auto-apply.',
+      'no-window': 'Auto-apply waits until a browser window of yours is open.',
+    } satisfies Record<AgentBlock, string>,
   },
   consent: {
     heading: 'Consent boxes',
@@ -1038,6 +1077,49 @@ const OPTIONS = {
   },
 } as const;
 
+/** v3 Phase 5: the auto-apply agent's status line, in the side panel and the options page. Drafts for the owner's
+ *  review. Value-free: the job's title and company as TailorIT named them, counts, states and reasons. */
+const AGENT_STATES = {
+  submitted: 'Submitted', skipped: 'Skipped', 'needs-you': 'Needs you', failed: 'Failed',
+} as const satisfies Record<AutofillAgentFinishedState, string>;
+const AGENT_REASONS = {
+  required_field_empty: 'a required field was empty',
+  posting_forbids_ai: 'the posting forbids AI',
+  ai_guess_legal: "a legal answer was the AI's guess",
+  captcha: 'a check that you are human',
+  sign_in: 'a sign-in',
+  sign_in_failed: 'the sign-in failed',
+  email_code: 'an email code',
+  validation_error: 'the page showed errors',
+  unsupported_site: "a page Autofill can't finish",
+  posting_closed: 'the posting closed',
+  page_error: "the page didn't load",
+  timed_out: 'it took too long',
+  already_applied: 'already applied',
+  cancelled: 'stopped',
+  other: 'something to check',
+} as const satisfies Record<AutofillAgentReason, string>;
+
+const AGENT = {
+  label: 'Auto-apply',
+  stop: 'Stop',
+  open: 'Open Auto-apply in TailorIT',
+  states: AGENT_STATES,
+  reasons: AGENT_REASONS,
+  /** "Auto-apply: running Senior Backend Engineer at Northwind · 2 done today · last: Needs you (a check that you are
+   *  human)". */
+  line(status: Pick<AgentStatus, 'phase' | 'job' | 'doneToday' | 'last'> & Partial<Pick<AgentStatus, 'pending'>>): string {
+    const job = status.job === null ? '' : status.job.company === '' ? status.job.title
+      : status.job.title === '' ? status.job.company : `${status.job.title} at ${status.job.company}`;
+    const phase = status.phase === 'running' ? (job === '' ? 'running' : `running ${job}`)
+      : status.phase === 'waiting' ? 'waiting for a job' : status.phase === 'blocked' ? 'paused' : 'off';
+    const last = status.last === null ? '' : ` · last: ${AGENT_STATES[status.last.state]}${status.last.reason === null
+      ? '' : ` (${AGENT_REASONS[status.last.reason]})`}`;
+    const pending = status.pending === true ? ' · a result not yet told TailorIT' : '';
+    return `Auto-apply: ${phase} · ${status.doneToday} done today${last}${pending}`;
+  },
+} as const;
+
 export const COPY = {
   appName: 'TailorIT Autofill',
   /** The name as the headers draw it: "Tailor", then "IT" in TailorIT's ink, then the product's word. */
@@ -1112,6 +1194,7 @@ export const COPY = {
   profile: PROFILE,
   inPage: IN_PAGE,
   options: OPTIONS,
+  agent: AGENT,
 } as const;
 
 /**

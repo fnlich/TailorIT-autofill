@@ -45,14 +45,28 @@ interface TestFixtures {
   closePages: void;
 }
 
+/**
+ * No host name resolves in the e2e browser (v3 Phase 5), and no proxy is asked: a request the routes do not catch can
+ * never reach a real site. Playwright's routes answer the fixtures before any name is resolved; the requests they never
+ * see (the worker's own, and the first navigation of a window the extension opens itself) are what this guards. The e2e
+ * build's TailorIT, http://localhost:3190, is the mock, which listens on 127.0.0.1 alone: its localhost is that
+ * address (and 127.0.0.1 stays itself). The production build's, http://localhost:3100, is the owner's own TailorIT:
+ * there localhost resolves to nothing too (the v3 Phase 5 review: no smoke path may reach it).
+ */
+export function noNetwork(build: 'e2e' | 'production'): string[] {
+  const rules = build === 'e2e' ? 'MAP localhost 127.0.0.1 , MAP * ~NOTFOUND , EXCLUDE 127.0.0.1' : 'MAP * ~NOTFOUND';
+  return [`--host-resolver-rules=${rules}`, '--no-proxy-server'];
+}
+
 /** A browser of its own with the built extension loaded, in a fresh profile; close() removes the profile. */
-export async function launchExtension(extensionPath: string): Promise<{ context: BrowserContext; close(): Promise<void> }> {
+export async function launchExtension(extensionPath: string, build: 'e2e' | 'production'):
+  Promise<{ context: BrowserContext; close(): Promise<void> }> {
   const dir = resolve(extensionPath);
   const profile = mkdtempSync(join(tmpdir(), 'tailorit-autofill-e2e-'));
   const context = await chromium.launchPersistentContext(profile, {
     channel: 'chromium',
     headless: true,
-    args: [`--disable-extensions-except=${dir}`, `--load-extension=${dir}`],
+    args: [`--disable-extensions-except=${dir}`, `--load-extension=${dir}`, ...noNetwork(build)],
   });
   return {
     context,
@@ -73,8 +87,8 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   extensionPath: ['.output-e2e/chrome-mv3', { option: true, scope: 'worker' }],
   build: ['e2e', { option: true, scope: 'worker' }],
   extContext: [
-    async ({ extensionPath }, use) => {
-      const launched = await launchExtension(extensionPath);
+    async ({ extensionPath, build }, use) => {
+      const launched = await launchExtension(extensionPath, build);
       await use(launched.context);
       await launched.close();
     },

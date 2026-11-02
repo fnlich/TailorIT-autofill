@@ -73,6 +73,15 @@
  *   SUBMITTED: the run is done, at once when it rests or watches, else as soon as it comes to rest. None within the
  *   runtime's wait: the submit-unconfirmed notice (submitUnconfirmed); the page refusing it: submit-errors with its
  *   count (submitRefused); a watch that ended any other way clears the wait (submitWatchEnded).
+ * v3 Phase 5 (docs/SPEC-AMENDMENTS.md §12 Decisions 9 and 10):
+ * - The auto-apply agent's run (trigger 'agent', started by the worker alone in the window it opened) is a fill like
+ *   any other: the worker answers its run/begin, and the settings it pushes to that tab, with Next and Submit on Auto
+ *   and the person's skip rules, so the machine presses Next and Submit by itself where their checks pass.
+ * - Sign-in mode Auto: a run that pauses at a sign-in or create-account page (AUTH) with Sign-in acting as Auto says so
+ *   (sign-in-auto) and, once at rest, signs in once through RunEnv.signIn (content/sign-in.ts). The site taking it (the
+ *   form gone, or a code or a CAPTCHA shown) continues the run (RunEnv.afterSignIn: the runtime's Continue, which scans
+ *   again); none to use is sign-in-unavailable; the site refusing it is sign-in-failed. Either leaves the pause the
+ *   person's, as before.
  * A run that fails (RunFailure) gives the machine ERROR before it rests, so RunState is at review and a reload offers
  * Continue rather than filling by itself (C-S7).
  * An 'expired' answer to run/begin, plan/request or report/put begins the run again, once; a second one ends the run in
@@ -166,7 +175,7 @@ import { visibleTextWithout } from '../dom/visible-text';
 import { isUserVisible } from '../dom/visibility';
 import type { ErrorCode } from '../messaging/envelope';
 import {
-  MAX_EDIT_INSTRUCTION, MAX_POSTING_TEXT, type AnswerReadAnswerSchema, type PressAnswer, type StepTarget,
+  MAX_EDIT_INSTRUCTION, MAX_POSTING_TEXT, type AnswerReadAnswerSchema, type PressAnswer, type RunTrigger, type StepTarget,
 } from '../messaging/schemas';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
@@ -186,6 +195,7 @@ import {
 } from './report';
 import { postingNamesOf } from './job-relay';
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
+import type { SignInOutcome } from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
@@ -214,8 +224,9 @@ export type RunEnd = (typeof RUN_ENDS)[number];
 
 /** What a run started with. */
 export interface RunRequest {
-  /** 'resume': the runtime resumed this tab's RunState after a reload (run/begin's trigger). */
-  trigger: 'launcher' | 'panel' | 'resume';
+  /** 'resume': the runtime resumed this tab's RunState after a reload (run/begin's trigger). 'agent' (v3 Phase 5): the
+   *  auto-apply agent's run, from the worker's own run/start alone. */
+  trigger: RunTrigger;
   dryRun: boolean;
   /** The person chose Fill anyway at the policy card a run ago, on this page (the card a later pass's hit showed):
    *  this run's gate takes that decision instead of asking again. Set by the runtime only. */
@@ -309,6 +320,11 @@ export interface RunEnv {
   /** The review: the steps Submit mode Auto pressed in this document (application key, step index and signature),
    *  shared by every run of the document, so Auto presses a step at most once whatever starts the run again. */
   autoPressed?: Set<string>;
+  /** v3 Phase 5, Sign-in mode Auto: signs in once on the page the run paused at (content/sign-in.ts), until `signal`
+   *  (the run stopped, cancelled at its pause, or gone) aborts. */
+  signIn?(signal: AbortSignal): Promise<SignInOutcome>;
+  /** v3 Phase 5: the site took the sign-in in this document: the run goes on (the runtime's Continue). */
+  afterSignIn?(): void;
 }
 
 /** An AI answer written in the document (RunEnv.answers): its value MAC as written, and its row's provenance and
@@ -337,7 +353,7 @@ export const LEFT_REFRESH_MS = 150;
 const STEP_NOTICE_CODES: readonly NoticeCode[] = ['attention-check', 'needs-click', 'deferred-fields', 'validation',
   'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps', 'next-hidden', 'captcha-next',
   'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
-  'submit-unconfirmed', 'submit-errors', 'submit-auto-unchecked'];
+  'submit-unconfirmed', 'submit-errors', 'submit-auto-unchecked', 'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed'];
 
 /** The notices that say the posting itself forbids AI (v3 Phase 4: Submit mode Auto's skip rule), whichever way the
  *  run went on: profile only, AI anyway, or the saved copy's word; and (the v3 Phase 4 review) a statement only text a
@@ -448,6 +464,12 @@ export class FillRun {
   /** v3 Phase 4: Submit mode Auto (modes.submit) and the skip rules it reads (modes.agentSkip). */
   private autoSubmitOn = false;
   private skipRules: SubmitSkipRules = { requiredEmpty: true, noAi: true, legalGuess: false };
+  /** v3 Phase 5: Sign-in mode as it acts (modes.signIn, held Manual by the worker unless allowed). */
+  private signInAuto = false;
+  /** The run paused at a sign-in and signs in once it rests (sign-in-auto). */
+  private signInDue = false;
+  /** Aborted when the person cancels the run at its pause (cancelPause): a sign-in on its way types nothing. */
+  private readonly cancelled = new AbortController();
   /** A Submit this run pressed waits for the platform's confirmation (the report's buttons.pressed). */
   private submitPending = false;
   /** The steps Submit mode Auto pressed when the runtime keeps none (RunEnv.autoPressed). */
@@ -600,6 +622,11 @@ export class FillRun {
     return this.id;
   }
 
+  /** What started the run (v3 Phase 5: a Continue after a sign-in keeps the agent's trigger). */
+  get trigger(): RunTrigger {
+    return this.request.trigger;
+  }
+
   /** The machine's state, for the run that continues this one (null before it began). */
   get runState(): RunState | null {
     return this.machine;
@@ -627,6 +654,7 @@ export class FillRun {
 
   /** run/cancel while the run writes or watches: nothing more is written, and the run ends stopped. */
   stop(): void {
+    this.cancelled.abort();
     if (this.decline()) return;
     this.stopRequested = true;
     this.stopping.abort();
@@ -653,6 +681,7 @@ export class FillRun {
     this.fillAfterTurn = settings.modes.afterPageTurn === 'auto';
     this.autoSubmitOn = settings.modes.submit === 'auto';
     this.skipRules = { ...settings.modes.agentSkip };
+    this.signInAuto = settings.modes.signIn === 'auto';
     this.llm = settings.llm;
     // AI-written answers turned off (or on) at rest: Edit with AI goes (or comes back) at once.
     this.drawAiEdits();
@@ -1338,6 +1367,7 @@ export class FillRun {
    *  so neither Continue nor a reload resumes it (the Phase 5 review, C-S6). */
   async cancelPause(): Promise<void> {
     if (this.ended !== 'paused' || this.machine === null) return;
+    this.cancelled.abort();
     this.ended = 'stopped';
     log('content.pause-cancelled');
     this.env.ui()?.hidePolicyCard();
@@ -1425,6 +1455,7 @@ export class FillRun {
         this.fillAfterTurn = answer.data.settings.modes.afterPageTurn === 'auto';
         this.autoSubmitOn = answer.data.settings.modes.submit === 'auto';
         this.skipRules = { ...answer.data.settings.modes.agentSkip };
+        this.signInAuto = answer.data.settings.modes.signIn === 'auto';
       }
       return;
     }
@@ -1818,6 +1849,8 @@ export class FillRun {
     if (this.offered || status === 'handoff' || status === 'auth-needed') {
       this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause' });
       this.end('paused');
+      // v3 Phase 5: Sign-in mode Auto signs in now that the pause is reported (module header).
+      if (status === 'auth-needed' && this.signInDue) void this.signInNow().catch(() => undefined);
       return null;
     }
     if (status === 'stopped' || status === 'done') {
@@ -2355,6 +2388,10 @@ export class FillRun {
   /** pause {auth, handoff}: the person acts; their Continue starts the next run (the runtime). At a CAPTCHA pause the
    *  widgets the step shows now are what the person is handed (carryOut, X-S4). */
   private paused(): null {
+    // v3 Phase 5: a sign-in or account page, with Sign-in acting as Auto: the run signs in once it rests.
+    this.signInDue = this.state.status === 'auth-needed' && this.signInAuto && !this.request.dryRun
+      && this.env.signIn !== undefined && this.isTop;
+    if (this.signInDue) this.notices.add('sign-in-auto');
     if (this.state.pauseReason === 'captcha') {
       const signature = this.signatureNow();
       const before = this.handed !== null && this.handed.signature === signature ? [...this.handed.elements] : [];
@@ -2369,6 +2406,25 @@ export class FillRun {
     else if (notice === 'validation') this.notices.add('validation', this.lastErrors);
     else this.notices.add(notice, count);
     this.showNotices();
+  }
+
+  /** Sign-in mode Auto, once the run rests at its sign-in pause (module header): the site took it, and the run goes on;
+   *  or the notice says why the sign-in is the person's, and the report goes out again. */
+  private async signInNow(): Promise<void> {
+    this.signInDue = false;
+    const signIn = this.env.signIn;
+    if (signIn === undefined) return;
+    const outcome = await signIn(AbortSignal.any([this.controller.signal, this.stopping.signal, this.cancelled.signal]));
+    if (this.controller.signal.aborted || this.cancelled.signal.aborted || this.ended !== 'paused'
+      || outcome === 'left') return;
+    this.notices.forget(['sign-in-auto']);
+    if (outcome === 'continue') {
+      this.env.afterSignIn?.();
+      return;
+    }
+    this.notices.add(outcome === 'failed' ? 'sign-in-failed' : 'sign-in-unavailable');
+    this.showNotices();
+    await this.report();
   }
 
   /** The report's `buttons` now (v3 Phase 4): at rest (review, or waiting for the person's Next), not in a dry run. */

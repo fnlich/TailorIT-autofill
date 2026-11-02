@@ -303,7 +303,7 @@ describe('Edit with AI', () => {
     await started.runtime.fill();
     await editButtons(started.runtime, 2);
     await started.worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
-      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn, submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip },
+      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn, submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip, signIn: DEFAULT_SETTINGS.modes.signIn },
       llm: { ...DEFAULT_SETTINGS.llm, drafts: false }, offerToSaveAnswers: true } });
     await vi.waitFor(() => expect(started.runtime.ui!.aiEditButtons).toHaveLength(0));
     const key = rowOf(lastReport(started.worker), WHY).key;

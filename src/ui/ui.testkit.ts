@@ -11,7 +11,9 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
 import type { TelemetryCount } from '../core/types/telemetry';
-import type { AuthStatus, JobCard, LetterOutcome, PageState, PanelAskAnswer, ResumeListAnswer } from '../messaging/schemas';
+import type {
+  AgentStatus, AuthStatus, JobCard, LetterOutcome, PageState, PanelAskAnswer, ResumeListAnswer,
+} from '../messaging/schemas';
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
 import type { FrameReport } from '../shared/report';
@@ -119,6 +121,8 @@ export interface WorkerScript {
   letter: { check: LetterOutcome; write: LetterOutcome };
   /** Where panel/launcher says the launcher is hidden (v3 Phase 3); panel/showLauncher sets it back to 'none'. */
   launcherHidden: 'none' | 'visit' | 'site' | 'everywhere';
+  /** The auto-apply agent's status (v3 Phase 5), as agent/status answers it; agent/set and agent/stop change it. */
+  agent: AgentStatus;
 }
 
 export interface FakeWorker {
@@ -145,7 +149,9 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       { id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }],
     askAnswer: { outcome: 'answered', text: 'I like building the systems Northwind runs on.', resumeLabel: 'Backend resume',
       policy: false },
-    letter: { check: 'none', write: 'written' }, launcherHidden: 'none' };
+    letter: { check: 'none', write: 'written' }, launcherHidden: 'none',
+    agent: { on: false, confirmed: false, phase: 'off', blocked: null, allowed: true, pending: false, job: null,
+      doneToday: 0, last: null } };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
@@ -182,6 +188,17 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       return ok({ settings: script.settings });
     },
     'runs/clear': () => ok({ cleared: 0 }),
+    'agent/status': () => ok(script.agent),
+    'agent/set': (message) => {
+      const confirmed = script.agent.confirmed || message.confirmed === true;
+      const on = message.on === true && script.agent.allowed && confirmed;
+      script.agent = { ...script.agent, on, confirmed, phase: on ? 'waiting' : 'off' };
+      return ok(script.agent);
+    },
+    'agent/stop': () => {
+      script.agent = { ...script.agent, on: false, phase: 'off', job: null };
+      return ok(script.agent);
+    },
     'telemetry/get': () => ok({ counts: script.counts }),
     'telemetry/clear': () => {
       script.counts = [];

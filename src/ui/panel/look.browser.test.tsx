@@ -40,11 +40,11 @@ describe('the side panel in TailorIT’s look', () => {
     await click(gear);
     const menu = root.querySelector<HTMLElement>('[data-menu]')!;
     expect(menu.querySelector('h2')?.textContent).toBe(COPY.panel.modes);
-    // The modes shown now, as the options page shows them; Submit since v3 Phase 4; Sign-in and the agent's rules are
-    // not (Phase 5).
+    // The modes shown now, as the options page shows them; Submit since v3 Phase 4; Sign-in and the skip rules since
+    // v3 Phase 5.
     expect([...menu.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
-      .toEqual(['modes.next', 'modes.afterPageTurn', 'modes.submit', 'modes.recordOwn', 'modes.consents', 'modes.ai',
-        'view']);
+      .toEqual(['modes.signIn', 'modes.next', 'modes.afterPageTurn', 'modes.submit', 'modes.recordOwn', 'modes.consents',
+        'modes.ai', 'view', 'modes.agentSkip']);
     const all = menu.querySelector<HTMLAnchorElement>('a[data-open-settings]')!;
     expect([all.getAttribute('href'), all.target, all.textContent])
       .toEqual(['chrome-extension://memory-extension/options.html#settings-modes', '_blank', COPY.panel.allSettings]);

@@ -81,9 +81,11 @@ export const SettingsV1Schema = z.strictObject({
 }) satisfies z.ZodType<SettingsV1>;
 
 /** The modes a content script acts on (v3 Phase 3 review): Next, and whether a new step fills as it appears; since v3
- *  Phase 4, Submit and the skip rules it reads. The rest (Consent boxes and AI answers, the planner's; Sign-in, not yet
- *  shipped) stay in the worker. */
-export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: true, submit: true, agentSkip: true });
+ *  Phase 4, Submit and the skip rules it reads; since v3 Phase 5, Sign-in (as it acts: Manual unless the connection may
+ *  read sign-ins and the disclosure was acknowledged). The rest (Consent boxes and AI answers, the planner's) stay in
+ *  the worker. */
+export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: true, submit: true, agentSkip: true,
+  signIn: true });
 
 /** What a content script needs to know of the settings for a run: panel placement, the modes it acts on
  *  (ContentModesSchema), the AI switches (what a posting that forbids AI does among them), and whether to offer saving

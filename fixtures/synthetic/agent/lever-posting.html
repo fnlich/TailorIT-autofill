@@ -1,0 +1,39 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 5): a Lever posting page (the posting alone, no form), served at
+  https://jobs.lever.co/tailorit-fixture/<posting>. Its "Apply for this job" is a link to the posting's own /apply, the
+  entry control the Lever adapter finds by the address it opens (adapters/entry.ts); a second link, to another posting's
+  /apply, and a link inside a form, are never the entry. The page's script counts the clicks on each link on the body
+  (data-entry, data-other); it dispatches no event, and clicks, focuses or submits nothing itself.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Northwind - Senior Backend Engineer</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    .postings-btn { display: inline-block; margin-top: 16px; padding: 10px 20px; border: 1px solid #333; color: #111; }
+  </style>
+</head>
+<body data-entry="0" data-other="0">
+  <main>
+    <h1>Senior Backend Engineer</h1>
+    <p>Northwind builds the ordering services a million restaurants rely on. You will design and run them.</p>
+    <a id="entry" class="postings-btn" href="apply">Apply for this job</a>
+    <p><a id="other" href="/tailorit-fixture/00000000-0000-4000-8000-0000000038ff/apply">Another role: Data Engineer</a></p>
+  </main>
+  <script>
+    (() => {
+      // The posting's own /apply, relative to this page's address.
+      const here = location.pathname.replace(/\/$/, '');
+      document.getElementById('entry').setAttribute('href', `${here}/apply`);
+      for (const [id, key] of [['entry', 'entry'], ['other', 'other']]) {
+        document.getElementById(id).addEventListener('click', () => {
+          document.body.dataset[key] = String(Number(document.body.dataset[key]) + 1);
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

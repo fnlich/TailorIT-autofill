@@ -335,7 +335,7 @@ describe('the in-page panel', () => {
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(runtime.ui!.panel?.open).toBe(true);
     await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
-      modes: { next: CAUTIOUS_SETTINGS.modes.next, afterPageTurn: CAUTIOUS_SETTINGS.modes.afterPageTurn, submit: CAUTIOUS_SETTINGS.modes.submit, agentSkip: CAUTIOUS_SETTINGS.modes.agentSkip },
+      modes: { next: CAUTIOUS_SETTINGS.modes.next, afterPageTurn: CAUTIOUS_SETTINGS.modes.afterPageTurn, submit: CAUTIOUS_SETTINGS.modes.submit, agentSkip: CAUTIOUS_SETTINGS.modes.agentSkip, signIn: CAUTIOUS_SETTINGS.modes.signIn },
       llm: CAUTIOUS_SETTINGS.llm, offerToSaveAnswers: true } });
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }, { v: 1, type: 'panel/shown', open: false }]);

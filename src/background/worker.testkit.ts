@@ -406,6 +406,8 @@ export interface TestWorkerOptions {
    *  default (a connection made now, through pairing), an older one, or none (an install connected before it was
    *  kept). */
   disclosure?: number | null;
+  /** v3 Phase 5: the auto-apply agent's windows (WXT's fake browser opens windows without tabs). */
+  windows?: WorkerPlatform['windows'];
 }
 
 /** Resets the fake browser, installs the hand fakes and starts the real worker over them. */
@@ -460,6 +462,7 @@ async function launch(
       return controller.signal;
     },
     now: () => clock.now,
+    ...(options.windows === undefined ? {} : { windows: options.windows }),
   };
   const state = startWorker({ platform, core, timers, origin: ORIGIN, lookupOnLoad: options.lookupOnLoad === true });
   if (options.awaitStartUp !== false) await state.ready;

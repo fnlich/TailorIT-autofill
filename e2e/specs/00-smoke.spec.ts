@@ -103,6 +103,16 @@ test.describe('smoke', () => {
     expect(status).toBe(200);
   });
 
+  test('the browser resolves no name the routes do not answer: on the production build not even localhost', async ({
+    worker, build }) => {
+    // The production build's TailorIT origin is http://localhost:3100, the owner's own TailorIT: its browser resolves
+    // localhost to nothing (fixtures.ts noNetwork), probed here at the mock's port, never at 3100. The e2e build's
+    // localhost is the mock's 127.0.0.1. The worker's requests are the ones Playwright's routes never see.
+    const probe = await worker.evaluate(async (url) => fetch(url, { mode: 'no-cors', cache: 'no-store' })
+      .then(() => 'reached', () => 'unreachable'), `${MOCK_ORIGIN}/__mock/health`);
+    expect(probe).toBe(build === 'e2e' ? 'reached' : 'unreachable');
+  });
+
   test('a content script is refused storage.local', async ({ extContext, worker, build }) => {
     test.skip(build !== 'e2e', 'the probe is compiled into the e2e build only');
     const page = await extContext.newPage();
