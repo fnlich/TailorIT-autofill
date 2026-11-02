@@ -40,4 +40,22 @@ describe('typeaheadQueries (§4.11)', () => {
     expect(typeaheadQueries(intendedText('The Blue Team'), vocab)).toEqual(['The Blue Team', 'Blue Team']);
     expect(typeaheadQueries({ kind: 'boolean', value: true }, vocab)).toEqual([]);
   });
+
+  it("types a place as written, then with its region's name, then by its city alone", () => {
+    // Greenhouse's Location lists only the geocoder's results whose label holds the typed text, and spells the region
+    // out ("Austin, Texas, United States"), so "Austin, TX" lists nothing there (the live BeyondTrust form, 2026-11-01).
+    const austin = { city: 'Austin', region: { code: 'TX', name: 'Texas' }, country: 'US' };
+    expect(typeaheadQueries(intendedText('Austin, TX'), vocab, austin)).toEqual(['Austin, TX', 'Austin, Texas', 'Austin']);
+    // A region the table does not hold keeps the name the person wrote; a place with no region gives its city alone.
+    expect(typeaheadQueries(intendedText('Munich, Bavaria, Germany'), vocab,
+      { city: 'Munich', region: { name: 'Bavaria' }, country: 'DE' }))
+      .toEqual(['Munich, Bavaria, Germany', 'Munich, Bavaria', 'Munich']);
+    expect(typeaheadQueries(intendedText('London, United Kingdom'), vocab, { city: 'London', country: 'GB' }))
+      .toEqual(['London, United Kingdom', 'London']);
+    // At most four, none repeated; a place with no city adds nothing.
+    expect(typeaheadQueries(intendedText('The Woodlands, TX'), vocab,
+      { city: 'The Woodlands', region: { code: 'TX', name: 'Texas' } }))
+      .toEqual(['The Woodlands, TX', 'Woodlands, TX', 'The Woodlands, Texas', 'The Woodlands']);
+    expect(typeaheadQueries(intendedText('Texas'), vocab, { region: { code: 'TX', name: 'Texas' } })).toEqual(['Texas']);
+  });
 });

@@ -1271,13 +1271,13 @@ MatchCacheEntry  = { label /* the chosen option's fullKey */; stage; confidence;
 
 ### 4.11 Remote typeahead query variants
 
-`typeaheadQueries(intended, vocab): string[]` returns at most 4 distinct queries (case-insensitive), each at least 3 characters, in this order:
+`typeaheadQueries(intended, vocab, place?): string[]` returns at most 4 distinct queries (case-insensitive), each at least 3 characters, in this order:
 1. the canonical full name;
 2. the same without a leading "The";
 3. the best unambiguous alias (curated acronym first, else the shortest unambiguous alias with at least 2 tokens);
 4. the first two words of the name, as written, whose tokens weigh at least 0.3, stopwords and other languages' name particles left out ("Texas Austin"; "Universidad Buenos", never "Universidad de").
 
-A text value gives its text and the text without a leading "The"; a degree gives its display; any other value gives none.
+A text value gives its text and the text without a leading "The"; a degree gives its display; any other value gives none. A place (`Choice.place`, the current location) then gives its city with its region's name ("Austin, Texas"), then its city alone ("Austin"): a geocoder spells a region out ("Austin, Texas, United States"), and a search that lists only the results whose label holds the typed text (Greenhouse's Location (City) on the live BeyondTrust form, 2026-11-01) lists none for "Austin, TX". The place match below reads whatever results come, so the city alone never chooses another state's Austin.
 
 Each result list goes through `prepareOptions` and `matchOne`. The first result that reaches the fill band ends the search. The DOM layer owns debounce and the 4-attempt cap.
 

@@ -44,6 +44,9 @@ export const DRAWN_BY_WRAPPER: Readonly<Record<string, readonly string[]>> = {
     '#question_32965836003', '#question_32965839003'],
   'greenhouse/asana-embed': ['#first_name', '#last_name', '#email', '#phone', '#question_69118666', '#question_69118667',
     '#question_69118668', '#question_69118669', '#question_69118670', '#question_69118672', '#question_69118677'],
+  // The live BeyondTrust form (2026-11-01).
+  'greenhouse/beyondtrust-job': ['#first_name', '#last_name', '#email', '#phone', '#question_70199750',
+    '#question_70213332'],
 };
 
 /** The differences a scan of this case's snapshot is known to show until the scanner changes, in the order

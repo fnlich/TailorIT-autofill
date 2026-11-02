@@ -3,10 +3,11 @@
  * greenhouse-widgets, whose app.ts says what it reproduces from the capture of 2026-11-01), through the Greenhouse
  * adapter's widget hooks and the widget helpers, driven only by calling them: open with one bubbling mouseup, choose
  * with click(), close with focusout and blur; a multi-select reopened for each pick; Degree's list waited through its
- * "Loading..."; School opened before its search; Location's geocoder; the phone country read back by its flag; a
- * checkbox question ticked with click(); the page that attaches late or rebuilds its form; and the buttons never
- * pressed. Every event they cause is untrusted, and is the fillers' or the declared mouseup: never a mousedown, a key,
- * a focus or a pointer event.
+ * "Loading..."; School opened before its search; Location's geocoder, whose list shows only the results holding the
+ * typed text; the phone country read back by its flag; a checkbox question ticked with click(); the page that attaches
+ * late or rebuilds its form; and the buttons never pressed. Every select's text box is drawn under 4 px wide, as the
+ * live BeyondTrust form draws it, so each is a field by its control. Every event they cause is untrusted, and is the
+ * fillers' or the declared mouseup: never a mousedown, a key, a focus or a pointer event.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import pageExpect from '../../../fixtures/synthetic/greenhouse-widgets/index.expect.json';
@@ -20,6 +21,7 @@ import { ALLOWED_EVENTS } from '../../dom/fillers/events';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations, type EventLog, type Fixture } from '../../dom/fixture.testkit';
 import { scan } from '../../dom/scan';
 import type { FieldTarget, ScanResult, WidgetReading } from '../../dom/types';
+import { visibilityOf } from '../../dom/visibility';
 import {
   expandedState, fillWidget, newReadiness, openList, readWidget, searchTypeahead, widgetHolds, type TypeaheadHooks,
   type WidgetReadiness,
@@ -132,6 +134,15 @@ describe("Greenhouse's react-selects, as the adapter declares them", () => {
       label: 'How did you hear about this opportunity? (select all that apply)' });
     expect(fields.some((field) => field.idAttr === 'iti-0__search-input' || field.label === 'Search')).toBe(false);
     expect(fields.filter((field) => field.label === '').map((field) => field.key)).toEqual([]);
+    // Every text box is drawn as narrow as the live BeyondTrust form draws it (index.html), under the 4 px a box needs
+    // on its own, and nothing else hides it: each select is a field by the control a person sees around it.
+    const inputs = Array.from(page.root.querySelectorAll<HTMLInputElement>('input.select__input'));
+    expect(inputs.length).toBeGreaterThan(10);
+    for (const input of inputs) {
+      expect(input.getBoundingClientRect().width, input.id).toBeLessThan(4);
+      expect(visibilityOf(input), input.id).toMatchObject({ visible: false, rule: 'box-size' });
+      expect(fields.some((field) => field.idAttr === input.id), input.id).toBe(true);
+    }
     const target = page.target(AUTHORIZED);
     // DOM nodes are compared by identity (toBe): a deep comparison of a frame's nodes walks its whole document.
     expect(target.widget).toMatchObject({ declared: true, activation: ['mouseup'] });
@@ -242,12 +253,17 @@ describe("Greenhouse's react-selects, as the adapter declares them", () => {
     expectOurEventsOnly(page.events);
   });
 
-  it("searches Location's geocoder once its list is open, and chooses the place", async () => {
+  it("searches Location's geocoder once its list is open, and chooses the place its list shows for the region's name", async () => {
     const page = await open();
-    const result = await searchTypeahead(page.target('candidate-location'), ['Austin, TX'], page.ctx(),
-      hooks(page, 'candidate-location', 'Austin, Texas, United States'));
-    expect(result).toMatchObject({ verified: true, typed: 1, chosen: { cleanLabel: 'Austin, Texas, United States' } });
-    expect(page.log.locationRequests).toEqual(['Austin, TX']);
+    // The planner's queries for "Austin, TX" (core typeaheadQueries). The list shows only the results whose label holds
+    // the typed text, as on the live BeyondTrust form: the geocoder's Austin in Texas reads "Austin, Texas, United
+    // States", so "Austin, TX" lists nothing and "Austin, Texas" lists it.
+    const used = hooks(page, 'candidate-location', 'Austin, Texas, United States');
+    const result = await searchTypeahead(page.target('candidate-location'), ['Austin, TX', 'Austin, Texas', 'Austin'],
+      page.ctx(), used);
+    expect(result).toMatchObject({ verified: true, typed: 2, chosen: { cleanLabel: 'Austin, Texas, United States' } });
+    expect(page.log.locationRequests).toEqual(['Austin, TX', 'Austin, Texas']);
+    expect(used.seen).toEqual([['Austin, Texas, United States']]);
     expect(page.log.values['candidate-location']).toBe('Austin, Texas, United States');
     expect(mouseupsOn(page.events, 'candidate-location')).toBe(1);
     const after = page.target('candidate-location');

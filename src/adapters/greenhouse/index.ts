@@ -18,13 +18,15 @@
  *   input.select__input[role=combobox] inside a .select__container's .select-shell is declared with its input as the
  *   opener, one bubbling mouseup as its activation (a click() opens nothing, a second mouseup closes it), its
  *   aria-expanded as whether it is open, its .select__control as the box a person sees (react-select draws the input
- *   transparent while it shows an answer), "Loading..." (.select__menu-notice--loading) and the loading dots
- *   (.select__loading-indicator) as its busy signs, and its .select__single-value as its answer (the phone country's
- *   by its flag: it shows "+1" for the option "Canada +1"). Location (#candidate-location) and School (#school--N) are
- *   remote searches; a container marked select__value-container--is-multi is a multiselect; every other one is a
- *   combobox (Yes/No, EEOC and demographic questions, months, Degree, Discipline, the phone country). react-select's
- *   required shim (an aria-hidden input with no id) and intl-tel-input's hidden country search are no fields: neither
- *   is declared, and neither is visible.
+ *   transparent while it shows an answer, and an empty one as wide as a space of the page's font: 3.97 px on the live
+ *   BeyondTrust form, fixtures/greenhouse/beyondtrust-job.html, whose web font is Roboto), "Loading..."
+ *   (.select__menu-notice--loading) and the loading dots (.select__loading-indicator) as its busy signs, and its
+ *   .select__single-value as its answer (the phone country's by its flag: it shows "+1" for the option "Canada +1").
+ *   Location (#candidate-location) and School (#school--N) are remote searches (Location's list shows only the
+ *   results whose label holds the typed text: the BeyondTrust form); a container marked
+ *   select__value-container--is-multi is a multiselect; every other one is a combobox (Yes/No, EEOC and demographic
+ *   questions, months, Degree, Discipline, the phone country). react-select's required shim (an aria-hidden input with
+ *   no id) and intl-tel-input's hidden country search are no fields: neither is declared, and neither is visible.
  * - Buttons never pressed (neverPress, all type="button", so assertNotSubmit alone would allow them): the header's
  *   "Autofill my application", "Locate me", each upload group's Dropbox, Google Drive and "Enter manually", a chosen
  *   select's "Clear selections" and a chip's remove button.

@@ -41,7 +41,7 @@ import { proxyOf, type Proxy, unrecognisedUploadControl } from './proxy';
 import { newScanCache, styleOf, type ScanCache } from './scan-cache';
 import { sectionFinder } from './sections';
 import {
-  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MIN_OPACITY, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN,
+  MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MIN_BOX_PX, MIN_OPACITY, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN,
   TEXT_CAP_LABEL,
 } from './thresholds';
 import type {
@@ -444,16 +444,30 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): 
 
 /**
  * Whether a control is visible, as isUserVisible judges it, with one exception for a widget the adapter declares with
- * the box a person sees as it (WidgetDecl.box): its element sits inside that box, is transparent by its own opacity
- * alone (nothing else hides it or its parent), and the box is visible. react-select draws its text box transparent
- * while it shows an answer (the Greenhouse capture of 2026-11-01, which fixtures/synthetic/greenhouse-widgets
- * reproduces); any other hidden control is judged as it always is, and stays a honeypot.
+ * the box a person sees as it (WidgetDecl.box): its element sits inside that box, is hidden by nothing but its own
+ * opacity (transparentByItself) or its own narrow width (narrowWithin), and the box is visible. react-select draws its
+ * text box transparent while it shows an answer (the Greenhouse capture of 2026-11-01, which
+ * fixtures/synthetic/greenhouse-widgets reproduces), and sizes an empty one to a space of the page's font: 3.97 px in
+ * Roboto at 16 px, under MIN_BOX_PX, so every select of the live BeyondTrust form (fixtures/greenhouse/beyondtrust-job,
+ * 2026-11-01) was taken for a hidden control. Any other hidden control is judged as it always is, and stays a honeypot.
  */
 function widgetVisibility(el: Element, declared: WidgetDecl | null, cache: ScanCache): VisibilityVerdict {
   const own = visibilityOf(el, cache);
   const box = declared?.box ?? null;
   if (own.visible || own.deferred || box === null || box === el || !box.contains(el)) return own;
-  return transparentByItself(el, cache) ? visibilityOf(box, cache) : own;
+  return transparentByItself(el, cache) || narrowWithin(el, own, box) ? visibilityOf(box, cache) : own;
+}
+
+/** An element hidden only by its own width: every rule before the box's size passed (nothing hides it or an ancestor,
+ *  its opacity product and visibility kept), it stands at least MIN_BOX_PX tall and is some width wide, and its box
+ *  lies wholly inside `box`'s, so it is drawn where the box shows, which every visibility rule then judges (a narrow
+ *  element moved off the page, or out of its box, stays hidden). */
+function narrowWithin(el: Element, own: VisibilityVerdict, box: Element): boolean {
+  if (own.rule !== 'box-size' || el.getClientRects().length === 0) return false;
+  const inner = el.getBoundingClientRect();
+  const outer = box.getBoundingClientRect();
+  return inner.width > 0 && inner.height >= MIN_BOX_PX && inner.left >= outer.left && inner.right <= outer.right
+    && inner.top >= outer.top && inner.bottom <= outer.bottom;
 }
 
 /** An element hidden only by its own opacity: its parent shown (no hiding rule, its opacity product kept), and the

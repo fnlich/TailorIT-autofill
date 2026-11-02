@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import beyondtrustExpect from '../../../fixtures/greenhouse/beyondtrust-job.expect.json';
+import beyondtrustHtml from '../../../fixtures/greenhouse/beyondtrust-job.html?raw';
 import discordExpect from '../../../fixtures/greenhouse/discord-job.expect.json';
 import discordHtml from '../../../fixtures/greenhouse/discord-job.html?raw';
 import figmaExpect from '../../../fixtures/greenhouse/figma-legacy-host.expect.json';
@@ -24,6 +26,7 @@ import trapHtml from '../../../fixtures/traps/01-white-on-white.html?raw';
 import { assertNotSubmit, fill } from '../../dom/fillers';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations } from '../../dom/fixture.testkit';
 import { scan } from '../../dom/scan';
+import { visibilityOf } from '../../dom/visibility';
 import { readWidget } from '../../dom/widgets';
 import { compareWithExpectation, readExpectation, scanCase, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { awaitingScanner, DRAWN_BY_WRAPPER } from '../test/findings.testkit';
@@ -43,7 +46,21 @@ const CASES = [
   { name: 'twilio-job', html: twilioHtml, expectation: readExpectation(twilioExpect) },
   { name: 'affirm-job', html: affirmHtml, expectation: readExpectation(affirmExpect) },
   { name: 'asana-embed', html: asanaHtml, expectation: readExpectation(asanaExpect) },
+  // The live BeyondTrust form whose selects went unfilled (2026-11-01).
+  { name: 'beyondtrust-job', html: beyondtrustHtml, expectation: readExpectation(beyondtrustExpect) },
 ] as const;
+
+/** The width the live BeyondTrust form draws an empty react-select's text box: a space of Roboto at 16 px, a web font
+ *  the fixture has not got (its fallback draws the box 4.45 px wide). */
+const LIVE_TEXT_BOX_PX = 3.96875;
+
+/** Draws every react-select's text box at the live page's width (react-select sizes the box by the grid column its
+ *  container's ::after holds open with a space). */
+function liveTextBoxes(doc: Document): void {
+  const style = doc.createElement('style');
+  style.textContent = `.select-shell .select__input-container { grid-template-columns: 0 ${LIVE_TEXT_BOX_PX}px; }`;
+  doc.head.append(style);
+}
 
 /** A stand-in for the golden resume, a PDF. */
 function goldenResume(view: Window & typeof globalThis): File {
@@ -211,6 +228,46 @@ describe('the Greenhouse adapter: its hooks on the snapshots', () => {
     // (display, not visibility: the control's own transition keeps it visible for 100 ms after a visibility change.)
     (boxed.closest('.select__control') as HTMLElement).style.display = 'none';
     expect(fieldOf('question_38697190002')).toBeUndefined();
+  });
+
+  it('keeps a select whose empty text box is under 4 px wide a field, by its control (the live BeyondTrust form); never one hidden any other way', async () => {
+    const gh = await loadGreenhouse(beyondtrustHtml);
+    liveTextBoxes(gh.doc);
+    // The live page's geometry: each select's text box 3.97 px wide inside its visible control, and nothing else
+    // hiding it. The scanner took every one for a hidden control (hiddenControlsIgnored 14), so none was filled.
+    const selects = ['country', 'candidate-location', 'question_70199749', 'question_70199751', 'question_70199752',
+      '31771', '31772', '31774', '41756'];
+    for (const id of selects) {
+      const input = gh.doc.getElementById(id)!;
+      expect(input.getBoundingClientRect().width, id).toBeCloseTo(LIVE_TEXT_BOX_PX, 3);
+      expect(visibilityOf(input), id).toMatchObject({ visible: false, rule: 'box-size' });
+      expect(visibilityOf(input.closest('.select__control')!), id).toMatchObject({ visible: true });
+    }
+    const result = scan(gh.root, greenhouseAdapter, { platform: 'greenhouse' });
+    // Each select is the field its expectations name, of its declared kind; only the four required shims and the hidden
+    // country search are hidden controls.
+    expect(compareWithExpectation(gh.doc, result, readExpectation(beyondtrustExpect))).toEqual([]);
+    expect(result.fields.filter((field) => selects.includes(field.idAttr)).map((field) => [field.idAttr, field.kind,
+      field.visibility])).toEqual(selects.map((id) => [id, id === 'candidate-location' ? 'typeahead-remote' : 'combobox',
+      'visible']));
+    expect(result.counters.hiddenControlsIgnored).toBe(5);
+    const fieldOf = (id: string) => scan(gh.root, greenhouseAdapter, { platform: 'greenhouse' }).fields
+      .find((field) => field.idAttr === id);
+    const input = (id: string) => gh.doc.getElementById(id) as HTMLInputElement;
+    // Narrow and drawn outside its control (moved off the page), too short to see, aria-hidden, or inside a control
+    // that is hidden: no field.
+    input('question_70199749').style.position = 'relative';
+    input('question_70199749').style.left = '-3000px';
+    expect(visibilityOf(input('question_70199749')).rule).toBe('box-size');
+    expect(fieldOf('question_70199749')).toBeUndefined();
+    input('question_70199751').style.height = '2px';
+    expect(fieldOf('question_70199751')).toBeUndefined();
+    input('31771').setAttribute('aria-hidden', 'true');
+    expect(fieldOf('31771')).toBeUndefined();
+    (input('31772').closest('.select__control') as HTMLElement).style.display = 'none';
+    expect(fieldOf('31772')).toBeUndefined();
+    // The others stay fields.
+    expect(['31774', '41756'].map((id) => fieldOf(id)?.kind)).toEqual(['combobox', 'combobox']);
   });
 
   it('names the buttons never pressed, and assertNotSubmit refuses them and anything inside them', async () => {

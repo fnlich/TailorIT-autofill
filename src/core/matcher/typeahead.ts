@@ -2,10 +2,15 @@
  * Remote typeahead query variants (docs/design/core.md §4.11; the spec's Requirement A.5). A school search that
  * queries a server as the person types is tried with at most four queries, in this order: the canonical full name,
  * the same without a leading "The", the best unambiguous alias (a curated acronym first, else the shortest alias of at
- * least two words), and the first two words that weigh at least 0.3, as the name writes them ("Texas Austin"). Each
- * query has at least three characters and none repeats another, ignoring case. Each typed query is a guarded write
- * with provenance `profile` and transform `typeahead.query`; each result list goes through prepareOptions and
- * matchOne, and the first that reaches the fill band ends the search. The DOM layer owns the debounce and the cap.
+ * least two words), and the first two words that weigh at least 0.3, as the name writes them ("Texas Austin"). A place
+ * (the current location: Choice.place) is tried as the profile writes it ("Austin, TX"), then with its region's name
+ * ("Austin, Texas"), then by its city alone ("Austin"): a geocoder spells a region out ("Austin, Texas, United
+ * States"), and a search that lists only the results whose label holds the typed text (Greenhouse's Location (City) on
+ * the live BeyondTrust form, 2026-11-01) lists none for "Austin, TX"; the place matcher reads the results by their
+ * parts, so the city alone never chooses another state's Austin. Each query has at least three characters and none
+ * repeats another, ignoring case. Each typed query is a guarded write with provenance `profile` and transform
+ * `typeahead.query`; each result list goes through prepareOptions and matchOne, and the first that reaches the fill
+ * band ends the search. The DOM layer owns the debounce and the cap.
  */
 import { TYPEAHEAD_MAX_QUERIES, TYPEAHEAD_MIN_QUERY_LENGTH, TYPEAHEAD_TOKEN_MIN_WEIGHT } from '../confidence';
 import { normalize } from '../text/normalize';
@@ -14,6 +19,7 @@ import type { IntendedValue } from '../types/intent';
 import { isAcronym } from '../vocab/lookup';
 import type { Vocab } from '../vocab/types';
 import { tokenWeight } from './fuzzy';
+import type { PlaceParts } from './place';
 import { domainContext } from './prepare';
 import type { MatchDomain } from './types';
 
@@ -51,8 +57,16 @@ function bestAlias(intended: Extract<IntendedValue, { kind: 'entity' }>): string
   return long[0]?.text ?? '';
 }
 
-/** The queries to type, in order, at most four. */
-export function typeaheadQueries(intended: IntendedValue, vocab: Vocab): string[] {
+/** A place's own queries, after its text: its city with its region's name, then its city alone (see the header). */
+function placeQueries(place: PlaceParts | undefined): string[] {
+  const city = place?.city?.trim() ?? '';
+  if (city === '') return [];
+  const region = place?.region?.name.trim() ?? '';
+  return [region === '' ? '' : `${city}, ${region}`, city];
+}
+
+/** The queries to type, in order, at most four; `place` is the value's place, when it is one (Choice.place). */
+export function typeaheadQueries(intended: IntendedValue, vocab: Vocab, place?: PlaceParts): string[] {
   let candidates: string[];
   switch (intended.kind) {
     case 'entity': {
@@ -62,7 +76,7 @@ export function typeaheadQueries(intended: IntendedValue, vocab: Vocab): string[
       break;
     }
     case 'text':
-      candidates = [intended.text.trim(), intended.text.trim().replace(LEADING_THE, '')];
+      candidates = [intended.text.trim(), intended.text.trim().replace(LEADING_THE, ''), ...placeQueries(place)];
       break;
     case 'degree':
       candidates = [intended.display.trim()];

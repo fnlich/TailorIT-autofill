@@ -2,17 +2,20 @@
  * Greenhouse's "Select..." questions end to end, on the real react-select v5 in Greenhouse's wrapper
  * (fixtures/synthetic/greenhouse-widgets, bundled in memory by helpers/greenhouse-fixture.ts and served at Greenhouse
  * addresses, so the Greenhouse adapter's widget hooks drive it: one bubbling mouseup opens a list, click() chooses,
- * focusout and blur close). One fill with the golden profile, then React's own state (window.__gh.values) must hold
- * what the report says was verified:
+ * focusout and blur close). Every select's text box is drawn under 4 px wide, as the live BeyondTrust form draws it
+ * (2026-11-01, where no select was filled: each was taken for a hidden control), so each is a field by the control a
+ * person sees around it. One fill with the golden profile, then React's own state (window.__gh.values) must hold what
+ * the report says was verified:
  * - the Yes/No questions (authorized Yes; sponsorship No, the profile's answer for the posting's country, so filled and
  *   flagged for a look), the EEOC answers (the decline options for what the profile declined, "I am not a protected
  *   veteran"), the country of residence from a scrolling list of 197, the skills multi-select (each pick a mouseup of
  *   its own), the School search (opened before its query, so its first page loads, then the profile's school chosen),
  *   the phone's country ("United States +1", read back by its flag) and the "How did you hear about this opportunity?"
  *   checkbox question (LinkedIn, ticked with click());
- * - the Location search is opened and searched with the profile's "Austin, TX", and its results read as places (the
- *   core's matcher/place.ts: the city theirs, Texas by its code, nothing conflicting), so "Austin, Texas, United
- *   States" is chosen among the geocoder's Austins in other states, and verified;
+ * - the Location search is opened and searched with the profile's "Austin, TX", whose results it never lists (its list
+ *   shows only the results whose label holds the typed text, as the live BeyondTrust form's does), then with "Austin,
+ *   Texas", and its results read as places (the core's matcher/place.ts: the city theirs, Texas by its name, nothing
+ *   conflicting), so "Austin, Texas, United States" is chosen, and verified;
  * - no button Greenhouse shows beside the fields was pressed ("Autofill my application", "Locate me", Dropbox, Google
  *   Drive, "Enter manually", "Clear selections", a chip's remove button): the page records every press;
  * - every event on a control is untrusted, the fillers' or the declared mouseup, never a mousedown (the spies), and
@@ -78,6 +81,11 @@ test.describe("Greenhouse's react-selects", () => {
     const page = await extContext.newPage();
     await page.goto(GREENHOUSE_WIDGETS.now);
     await expect(page.locator('#question_9001')).toBeVisible();
+    // The live BeyondTrust geometry: every select's empty text box narrower than the 4 px a box needs on its own.
+    const widths = await page.locator('input.select__input').evaluateAll((inputs) =>
+      inputs.map((input) => input.getBoundingClientRect().width));
+    expect(widths.length).toBeGreaterThan(10);
+    expect(widths.every((width) => width > 0 && width < 4), widths.join(', ')).toBe(true);
     const tabId = await ext.fill(page);
     const report = await ext.settled(tabId, { timeout: 90_000 });
     expect(report.status).toBe('review');
@@ -123,12 +131,12 @@ test.describe("Greenhouse's react-selects", () => {
     await expect(page.locator('#school--0').locator('xpath=ancestor::div[contains(@class,"select__control")]')
       .locator('.select__single-value')).toHaveText('University of Texas at Austin');
 
-    // Location: opened with its one mouseup, then the profile's place typed; its results read as places, so Austin in
-    // Texas is chosen, never the Austins of Minnesota, Indiana or Arkansas listed beside it.
+    // Location: opened with its one mouseup, then the profile's place typed as written, which lists nothing, then with
+    // Texas spelled out; its results read as places, so Austin in Texas is chosen.
     expect(row(report, 'Location (City)')).toMatchObject({ ...verified, kind: 'typeahead-remote',
       category: 'location.current', provenance: 'profile', matcherStage: 'alias' });
     expect(log.mouseups['candidate-location']).toBeGreaterThanOrEqual(1);
-    expect(log.locationRequests).toContain('Austin, TX');
+    expect(log.locationRequests).toEqual(['Austin, TX', 'Austin, Texas']);
     expect(log.values['candidate-location']).toBe('Austin, Texas, United States');
 
     // The checkbox question: LinkedIn, ticked with click(), as React holds it.

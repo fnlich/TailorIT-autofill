@@ -8,7 +8,10 @@
   the form element included. The DOM tests mount the same app into this page's form. The form posts to /__submitted. What React holds, and what the
   page saw, is window.__gh (app.ts, GreenhouseLog).
   The styles are a few of Greenhouse's own (the visually hidden labels and file inputs, intl-tel-input's hidden
-  dropdown) and plain ones; react-select's are emotion's own, inserted by react-select.
+  dropdown) and plain ones; react-select's are emotion's own, inserted by react-select. One rule draws every
+  react-select's text box as the live BeyondTrust form does (2026-11-01): react-select sizes it to a space of the page's
+  font, 3.97 px of Roboto at 16 px there, under the scanner's 4 px, so the box is pinned to that width (this page has
+  no web font); the select is seen by its control around it.
 -->
 <html lang="en" dir="ltr">
 <head>
@@ -39,6 +42,8 @@
     .btn--tertiary { border: 0; background: none; color: #036; padding: 4px 0; }
     .education--container, .eeoc__container { margin-top: 24px; }
     .application--submit { margin-top: 24px; }
+    /* react-select's text box at the live BeyondTrust width (see the header). */
+    .select-shell .select__input-container { grid-template-columns: 0 3.96875px; }
   </style>
 </head>
 <body>

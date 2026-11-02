@@ -194,7 +194,7 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       const choice = candidate.choice ?? (candidate.text !== undefined
         ? { intended: intendedText(candidate.text), domain: 'generic' as const } : undefined);
       if (!choice) return null;
-      const queries = typeaheadQueries(choice.intended, vocab);
+      const queries = typeaheadQueries(choice.intended, vocab, choice.place);
       return queries.length === 0 ? null : plain({ shape: 'search', queries, choice });
     }
   }

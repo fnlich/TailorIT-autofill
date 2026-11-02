@@ -371,7 +371,10 @@ describe('planFrame: uploads and searches', () => {
   it("chooses the person's place among a location search's results by its parts (matcher/place.ts)", () => {
     const results = (labels: string[]) => specOf('Location (City)', 'typeahead-remote', { optionLabels: labels });
     const queries = specOf('Location (City)', 'typeahead-remote', { options: [] });
-    expect(fieldOf(planOf([queries]), queries).write).toMatchObject({ value: { kind: 'query', queries: ['Austin, TX'] },
+    // As the profile writes it, then with its region's name, then the city alone: Greenhouse's Location lists only the
+    // results whose label holds the typed text, and its geocoder spells Texas out (the live BeyondTrust form).
+    expect(fieldOf(planOf([queries]), queries).write).toMatchObject({
+      value: { kind: 'query', queries: ['Austin, TX', 'Austin, Texas', 'Austin'] },
       origin: { provenance: 'profile', path: 'address', transform: 'typeahead.query' } });
     // Greenhouse's geocoder for "Austin, TX": Texas, never Minnesota.
     const geocoded = results(['Austin, Minnesota, United States', 'Austin, Texas, United States',

@@ -15,8 +15,11 @@
  * - the lists that load: Degree loads its ten options when it opens; School loads its first page of 100 schools when
  *   it opens, the next page when its list is scrolled to the end, and a search (debounced 300 ms) when something is
  *   typed into it while it is open (typing while it is closed sends nothing); Location (City) asks a geocoder
- *   (debounced 300 ms) whenever something is typed, open or not, and shows the results only while it is open. While
- *   a list loads, react-select shows "Loading..." (.select__menu-notice--loading) and its loading dots;
+ *   (debounced 300 ms) whenever something is typed, open or not, and shows the results only while it is open, and of
+ *   them only those whose label holds the typed text (react-select's own filter, as on the live BeyondTrust form of
+ *   2026-11-01: the geocoder answers "Austin, TX" with Austin in Texas, which the list never shows, since its label
+ *   reads "Austin, Texas, United States"). While a list loads, react-select shows "Loading..."
+ *   (.select__menu-notice--loading) and its loading dots;
  * - the phone's country lists "Canada +1" with each country's flag, and shows the flag and "+1" once chosen;
  * - a checkbox question is a fieldset of native boxes that React holds: a click() ticks a box as React sees it, and
  *   setting .checked does not;
@@ -306,7 +309,6 @@ function GhSelect({ spec, env }: { spec: SelectSpec; env: Env }): ReactElement {
     env.setValue(id, Array.isArray(next) ? (next as readonly Choice[]).map((option) => option.value)
       : (next as Choice | null)?.value ?? null);
   };
-  const searches = spec.load === 'school' || spec.load === 'location';
   return h('div', { className: 'select' }, h('div', { className: 'select__container' },
     h('label', { id: `${id}-label`, htmlFor: id, className: 'label select__label' }, spec.label, required(spec.required)),
     h(Select<Choice, boolean>, {
@@ -328,7 +330,10 @@ function GhSelect({ spec, env }: { spec: SelectSpec; env: Env }): ReactElement {
           setLoading(false);
         }, env.timings.schoolPageMs);
       },
-      filterOption: searches ? null : undefined, noOptionsMessage: () => (spec.load === 'location' ? null : 'No options'),
+      // School shows its server's results as they come; every other list (Location's geocoder results included) only
+      // the options whose label holds the typed text, react-select's own filter.
+      filterOption: spec.load === 'school' ? null : undefined,
+      noOptionsMessage: () => (spec.load === 'location' ? null : 'No options'),
       loadingMessage: () => 'Loading...', maxMenuHeight: 300, minMenuHeight: 140, menuPlacement: 'bottom',
       menuPosition: 'absolute', menuShouldScrollIntoView: true, menuShouldBlockScroll: false, captureMenuScroll: true,
       closeMenuOnSelect: true, blurInputOnSelect: false, backspaceRemovesValue: true, escapeClearsValue: false,

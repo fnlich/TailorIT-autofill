@@ -22,8 +22,9 @@ export interface WidgetDecl {
    *  so it is sent only while this says "false" (a second one would close it). */
   expanded?: Element;
   /** What a person sees as the widget (react-select's control). The widget is visible when its element is, or when its
-   *  element sits inside this box, transparent by its own opacity only, and this box is visible: react-select draws its
-   *  text box transparent while it shows an answer. */
+   *  element sits inside this box, hidden only by its own opacity or by its own width (drawn wholly inside the box), and
+   *  this box is visible: react-select draws its text box transparent while it shows an answer, and sizes an empty one
+   *  to a space of the page's font, under 4 px wide in a narrow font. */
   box?: Element;
   /** CSS selectors of the widget's own busy signs, looked for in its own box and its list (a "Loading..." notice, a
    *  spinner): while one shows, its list is still loading. */
