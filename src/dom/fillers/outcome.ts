@@ -12,7 +12,7 @@ export function done(wrote: boolean, reason: Extract<FillOutcomeReason, 'ok' | '
 
 /** Written, but it reads back differently: the row is filled, not verified. */
 export function mismatch(reason: Extract<FillOutcomeReason, 'verify-mismatch' | 'unexpected-selection'
-  | 'value-rejected-by-site'>): FillOutcome {
+  | 'value-rejected-by-site' | 'upload-failed' | 'upload-not-confirmed'>): FillOutcome {
   return { wrote: true, verification: 'mismatch', reason, needsUserAction: false };
 }
 

@@ -63,6 +63,7 @@ const REASONS = {
   'llm-classified-needs-review': 'The AI worked out what this question asks, and it was filled from your profile. Check it.',
   'options-incomplete': 'Only part of this long list could be read, so check the choice, or choose it yourself.',
   'llm-draft-needs-confirmation': 'The AI drafted this answer. Edit or confirm it before you submit.',
+  'llm-draft-held': 'The AI drafted this answer. This site saves each answer the moment it is filled in, so the draft goes in only when you confirm it.',
   'other-option-with-free-text': 'No option fit, so "Other" was chosen and your answer typed in. Check it.',
   'other-without-free-text': 'No option fit, so "Other" was chosen. Add any details the form asks for yourself.',
   'option-label-had-injected-text': 'An option held words aimed at AI tools. They were ignored, but check the choice.',
@@ -127,6 +128,8 @@ const REASONS = {
   'resume-unavailable': 'Your resume could not be fetched from TailorIT.',
   'resume-transfer-failed': 'Your resume could not be attached. Attach it yourself.',
   'resume-format-unsupported': 'Your resume is an old Word file. Choose a PDF resume in TailorIT.',
+  'upload-failed': 'The file was attached, but the site says it failed to upload. Attach it again yourself.',
+  'upload-not-confirmed': 'The file was attached, but the site never showed it uploaded. Check it before you submit.',
   // The fill loop and the steps.
   'field-disappeared': 'The field disappeared while filling.',
   'value-oscillated': 'The page kept changing this answer, so filling stopped here.',

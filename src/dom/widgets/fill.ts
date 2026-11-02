@@ -103,7 +103,7 @@ async function openAndRead(target: FieldTarget, ctx: WidgetFillContext):
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return { failed: refused('internal-error') };
-  const read = await readList(opened.listbox, { signal: ctx.signal });
+  const read = await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel });
   remember(ctx, target.field.baseKey, read, opened.listbox, widget);
   return { listbox: opened.listbox, read, activated: opened.activated };
 }
@@ -223,7 +223,7 @@ async function chooseByEvents(target: FieldTarget, value: Extract<WriteValue, { 
     await closeList(widget, ctx, opened);
     return refused('llm-pick-rejected');
   }
-  const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal });
+  const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal, labelOf: widget.optionLabel });
   if (option === null || option.disabled) {
     await closeList(widget, ctx, opened);
     return refused('options-changed');
@@ -312,7 +312,7 @@ export async function addOptions(target: FieldTarget, value: Extract<WriteValue,
       stopped = refused('options-changed');
       break;
     }
-    const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal });
+    const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal, labelOf: widget.optionLabel });
     if (option === null || option.disabled) {
       stopped = refused('options-changed');
       break;

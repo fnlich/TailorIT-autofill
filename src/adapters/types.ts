@@ -4,7 +4,7 @@
  * and the Lever and Greenhouse ones come in Phase 2, Ashby's in Phase 4 and Workday's in Phase 5. Every DOM hook is
  * written from the owner's snapshots and names the snapshot it came from; no selector is ever guessed.
  */
-import type { Platform } from '../core/enums';
+import type { FieldFormat, Platform } from '../core/enums';
 import type { DeclaredKey } from '../dom/fillers/events';
 
 export type AdapterId = Platform | 'generic';
@@ -43,9 +43,35 @@ export interface WidgetDecl {
   /** The option a widget shows chosen when its own text does not name it (a flag and "+1" for "Canada +1"): one of
    *  `known`, else a label the page does not offer, else null when it shows none. */
   shownAnswer?: (known: readonly string[]) => string | null;
+  /** A 'radio' widget's members, in option order, for a group of toggle buttons standard ARIA does not make one
+   *  (Ashby's Yes/No: two buttons with aria-pressed in a div beside a hidden checkbox). Each is pressed with click()
+   *  and read back by its aria-pressed or aria-checked, as an ARIA group's members are. */
+  members?: readonly HTMLElement[];
+  /** Native controls that are this widget's own (Ashby's Yes/No's display:none checkbox): never a field, and counted
+   *  among the hidden controls the scan ignored. Each must sit inside the widget's element. */
+  parts?: readonly Element[];
+  /** The page marks the rest of the form aria-hidden while this widget's list is open (floating-ui's markOthers: Ashby's
+   *  lists), so a scan then finds no other field, and this one by its placeholder: a search closes its list before
+   *  each later query is guarded, which scans the form afresh. */
+  hidesFormWhileOpen?: boolean;
+  /** The part of one option of this widget's list that is its label, where the option shows more than the answer it
+   *  stands for (Ashby's School: its name beside its country and its domain, while the box then holds the name alone):
+   *  that element's visible text is the option's label, as it is matched and read back. Null: the whole option. */
+  optionLabel?: (option: Element) => Element | null;
+  /** A search whose list shows no option, no busy sign and no change this long after a query is taken to have found
+   *  nothing (Ashby's "No results", which also shows while its search runs, about 0.8 s): sooner than the query's
+   *  cap. */
+  emptyAfterMs?: number;
+  /** The list marks its first result aria-selected (or names it as the box's active descendant) as soon as it shows,
+   *  before anything is chosen (Ashby's): a result's mark counts as the page's answer to a click only when the click
+   *  set it. */
+  highlightIsNoChoice?: boolean;
   /** The snapshot this declaration was written from. */
   snapshot: string;
 }
+
+/** What the page shows of a file the extension put into a file input (Adapter.uploadState). */
+export type UploadState = 'confirmed' | 'failed' | 'pending';
 
 /** A prefilled repeatable block, read into memory only for reconciliation. */
 export interface PrefillEntryView {
@@ -64,6 +90,40 @@ export interface Adapter {
   detect(doc: Document): { formRoot: Element } | null;
   sections?(root: Element): Array<{ el: Element; label: string; kind?: 'experience' | 'education' | 'language' }>;
   labelFor?(control: Element): Element | null;
+  /** Words added after the adapter's label (labelFor) for a control that shares its label element with others
+   *  (Ashby's month and year lists under one "Start Date"): "month", "year". */
+  labelSuffix?(control: Element): string | null;
+  /** The visible help text of a control, or of a group's container, that no aria-describedby names. */
+  descriptionFor?(control: Element): Element[];
+  /** Whether the page marks a control, or a group's container, required where no attribute says so (a mark drawn by
+   *  CSS after its label). */
+  requiredFor?(control: Element): boolean;
+  /** The layout the page reads a text control's value in, where neither its type nor a visible placeholder says it
+   *  (Ashby's date box, whose placeholder is "Pick date..."): the core lays a date out by it. */
+  formatFor?(control: Element): { format: FieldFormat; pattern?: string } | null;
+  /** Whether the page shows a native radio or checkbox chosen, where its own checked property may not say it (Ashby
+   *  draws the answer on the span beside an opacity-0 input, and setting .checked changes only the input); null for
+   *  the input's own state. */
+  checkedOf?(input: HTMLInputElement): boolean | null;
+  /** Elements the scanner takes as widget candidates besides its own ARIA roles (Ashby's Yes/No groups), each asked of
+   *  widgetFor; a native control inside one widgetFor declares is that widget's part, never a field nor a hidden
+   *  control counted. */
+  widgetRoots?(root: Element): Element[];
+  /** Parts of the form root that hold none of the application's questions (Ashby's "Autofill from resume" uploader,
+   *  which rewrites the form on Ashby's server): nothing inside one is a field, a flagged row or a counted control
+   *  (still counted among the hidden controls the scan ignored). */
+  excluded?(root: Element): Element[];
+  /** The page saves every change to its own server as it is made, before Submit (Ashby's, about 0.5 s after each
+   *  write): an AI draft is then held back until the person confirms it, while their setting asks for that. */
+  autosaves?: boolean;
+  /** Whether the page's own upload of the file named `fileName`, which the extension put into `input`, is done, failed
+   *  or still under way, as the page shows it; null when the adapter reads no upload for this input (the input's own
+   *  files decide, as for any page). */
+  uploadState?(input: HTMLInputElement, fileName: string): UploadState | null;
+  /** The element that shows the posting's own text (its description), or null while the page shows none. With this
+   *  hook a posting page is read once it shows it (a page that draws it late), and on a page with a form only it counts
+   *  as the posting read there: the rest of the page (a pane of facts, a header) is no posting. */
+  postingText?(doc: Document): Element | null;
   /** The visible element standing in for a hidden native radio or checkbox. */
   proxyFor?(input: HTMLInputElement): Element | null;
   uploadWidgets?(root: Element): Array<{ control: Element; input: HTMLInputElement }>;
@@ -87,5 +147,11 @@ export interface Adapter {
   }>;
   prefill?: { readEntries?(kind: string, blocks: Element[]): PrefillEntryView[] };
   authState?(doc: Document): 'sign-in' | 'create-account' | 'email-code' | 'entry-choice' | null;
-  quirks?: { settleCapMs?: number; transitionCapMs?: number };
+  quirks?: {
+    settleCapMs?: number;
+    transitionCapMs?: number;
+    /** The form root is drawn by the page's own script this long after the page loads, or after an address change,
+     *  at most (Ashby's: 4.8 to 6.8 s live): the content runtime looks for it again as the page changes until then. */
+    formLateMs?: number;
+  };
 }

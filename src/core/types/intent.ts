@@ -20,7 +20,7 @@ export const FIELD_CATEGORIES = [
   'eeo.gender', 'eeo.hispanicLatino', 'eeo.race', 'eeo.veteran', 'eeo.disability', 'eeo.sexualOrientation',
   'eeo.transgender',
   'education.school', 'education.degree', 'education.highestLevel', 'education.field', 'education.minor',
-  'education.startDate', 'education.endDate', 'education.gpa',
+  'education.startDate', 'education.endDate', 'education.gpa', 'education.current',
   'experience.company', 'experience.title', 'experience.location', 'experience.startDate', 'experience.endDate',
   'experience.current', 'experience.description', 'experience.currentCompany', 'experience.currentTitle',
   'experience.totalYears',
@@ -51,7 +51,8 @@ export type PolicyClass = (typeof POLICY_CLASSES)[number];
  *  answers "Have you worked here before?" from the profile's employers and the posting's company; 'legal.work-basis'
  *  chooses the option of a basis-of-right-to-work list the entry's answers state (resolver/workBasis.ts). */
 export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.compose', 'years.from-experience',
-  'availability.from-notice', 'education.highest-completed', 'experience.current-checkbox', 'eeo.decline',
+  'availability.from-notice', 'education.highest-completed', 'experience.current-checkbox', 'education.current-checkbox',
+  'eeo.decline',
   'eeo.self-describe', 'eeo.two-or-more-races', 'legal.decline', 'legal.sponsorship-combined', 'legal.posting-country',
   'consent.preapproved',
   'consent.signature-preapproved', 'numeric.range-bucket', 'other.free-text', 'guard.revert', 'typeahead.query',

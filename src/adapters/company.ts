@@ -1,11 +1,12 @@
 /*
  * The company a form's address names, for answers saved for one company (Phase 6; docs/ARCHITECTURE.md "Saved
- * answers"): its platform and its board (a Greenhouse board, a Lever site) as the extension's own URL parsers read it,
- * in lower case. The worker reads it at each plan from the frame's address; the frame reads it from its own at Save my
- * answer, so a worker stopped meanwhile still knows it (the Phase 6 review, E5). Nothing stores it: it goes to TailorIT
- * only as a free-text answer's scope.
+ * answers"): its platform and its board (a Greenhouse board, a Lever site, an Ashby org) as the extension's own URL
+ * parsers read it, in lower case. The worker reads it at each plan from the frame's address; the frame reads it from
+ * its own at Save my answer, so a worker stopped meanwhile still knows it (the Phase 6 review, E5). Nothing stores it:
+ * it goes to TailorIT only as a free-text answer's scope.
  */
 import type { CompanyScope } from '../core/resolver/saved';
+import { parseAshbyUrl } from './ashby/url';
 import { parseGreenhouseUrl } from './greenhouse/url';
 import { parseLeverUrl } from './lever/url';
 
@@ -20,7 +21,7 @@ export function companyOfUrl(address: string): CompanyScope | null {
   } catch {
     return null;
   }
-  const parsed = parseLeverUrl(url) ?? parseGreenhouseUrl(url);
+  const parsed = parseLeverUrl(url) ?? parseGreenhouseUrl(url) ?? parseAshbyUrl(url);
   if (parsed === null || parsed.board === null || parsed.board === '' || /\s/.test(parsed.board)) return null;
   return { platform: parsed.platform, board: parsed.board.toLowerCase() };
 }

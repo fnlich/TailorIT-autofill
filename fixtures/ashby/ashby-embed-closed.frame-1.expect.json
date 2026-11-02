@@ -1,0 +1,152 @@
+{
+  "fixture": "ashby/ashby-embed-closed.frame-1",
+  "source": "https://jobs.ashbyhq.com/Ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2/application?embed=js",
+  "captured": "2026-11-02T02:39:51.000Z",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".ashby-application-form-autofill-input-root input[type=\"file\"]",
+      "note": "The \"Autofill from resume\" uploader's file input (Ashby parses the file on its server and overwrites the form): the adapter excludes the uploader, so it is never a field nor a flagged row."
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_name\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_email\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_resume\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"2f73c135-4c72-40cf-84bc-ba7700192f2f\"]"
+    },
+    {
+      "label": "Do you currently live in the EMEA timezone? If not, please explain why you're applying to this role",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"c96f681c-a8cf-4bf2-b6cf-fc08420a01d8\"]"
+    },
+    {
+      "label": "Which country do you intend to work from?",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"_systemfield_location\"] input[role=\"combobox\"]",
+      "note": "Location: a remote search (ApiAutocompleteGeoLocation, typing opens and searches), labelled by the entry's title (labelFor): its placeholder \"Start typing...\" is no label."
+    },
+    {
+      "label": "Will you now or in the future require sponsorship for employment visa status to work in this location?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"9dbddae8-2594-40be-b4b9-92420e945f18\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"9dbddae8-2594-40be-b4b9-92420e945f18\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Describe the best engineer you've worked with, someone else in your top 5, and the difference between the two.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"f890254e-5bf6-483d-87cb-a8cb9ec59a83\"]"
+    },
+    {
+      "label": "What is something you've built that you're particularly proud of? Something with technical depth and real user impact.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"5668eabe-daee-426a-bfac-e22ee07a4a5e\"]"
+    },
+    {
+      "label": "How do you typically communicate a difficult decision or a change in direction to your team? Give us a specific example.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"2fc5a8e3-79e3-447d-8247-e5a75116f47b\"]"
+    },
+    {
+      "label": "What is your current age?",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 6,
+      "control": "[data-field-path=\"cf0f1bc7-7ce6-4eb3-aebc-b6562141cb68\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "What is your gender identity?",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 5,
+      "control": "[data-field-path=\"8d7dcc65-3a0b-476a-b679-574b869780bb\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Which ethnicity(ies) do you identify with? Please select all that apply.",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 8,
+      "control": "[data-field-path=\"1e21d43f-548e-481a-aa5f-f048c73f3de3\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "Which of the following communities do you belong to? Please select all that apply.",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 7,
+      "control": "[data-field-path=\"a76e67f9-eeb8-4d06-a9a5-b1596a9726e7\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    }
+  ]
+}

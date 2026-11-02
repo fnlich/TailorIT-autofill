@@ -5,7 +5,7 @@ import type { PlanSensitiveState } from '../plan/types';
 import type { FieldSpec } from '../types/field';
 import type { SavedAnswer } from '../types/saved';
 import { DEFAULT_SETTINGS } from '../types/settings';
-import { actionFor, resolve, resolveField, type ResolveContext } from './resolve';
+import { actionFor, datePartChoice, monthOfLabel, resolve, resolveField, type ResolveContext } from './resolve';
 
 const ctx = (extra: Partial<ResolveContext> = {}): ResolveContext => ({ profile: goldenProfile(),
   sensitiveState: 'loaded', savedAnswers: [], settings: DEFAULT_SETTINGS, vocab, now: NOW, ...extra });
@@ -197,5 +197,63 @@ describe('a lone checkbox is ticked only for an affirmative statement that equal
     const spec = specOf('I am not willing to relocate', 'checkbox');
     expect(resolveField(spec, { ...everything(), savedAnswers: [saved(spec, { kind: 'checked', checked: true })] }))
       .toMatchObject({ shaped: { shape: 'check', check: true }, resolution: { origin: { provenance: 'saved' } } });
+  });
+});
+
+describe("a date's part, for a list of months or of years", () => {
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
+    'November', 'December'];
+  const years = Array.from({ length: 30 }, (_, at) => String(2027 - at));
+
+  it("answers an education block's month and year lists from the entry's start and end dates", () => {
+    const section = { id: 'education', block: 0 };
+    for (const [label, options, text] of [['Start Date month', months, 'August'], ['Start Date year', years, '2015'],
+      ['End Date month', months, 'May'], ['End date year', years, '2019']] as const) {
+      expect(resolve(specOf(label, 'select', { optionLabels: [...options], section }), ctx()), label).toMatchObject({
+        category: label.startsWith('Start') ? 'education.startDate' : 'education.endDate', action: 'fill',
+        intended: { kind: 'text', text }, origin: { provenance: 'profile' } });
+    }
+  });
+
+  it('gives none for a list its label names no part of, or a month the date lacks', () => {
+    expect(datePartChoice('Start Date', { y: 2015, m: 8 })).toBeUndefined();
+    expect(datePartChoice('Graduation month', { y: 2019 })).toBeUndefined();
+    expect(datePartChoice('Graduation month', { y: 2019, m: 13 })).toBeUndefined();
+    expect(datePartChoice(' Start date  Year ', { y: 2015 })).toEqual({ intended: { kind: 'text', text: '2015' },
+      domain: 'generic' });
+    expect(resolve(specOf('Start Date', 'select', { optionLabels: months, section: { id: 'education', block: 0 } }), ctx()))
+      .toMatchObject({ reason: 'format-unsupported' });
+  });
+
+  it('reads a month by its name, its abbreviation, its number, or both (the Phase 2 review)', () => {
+    for (const [label, month] of [['January', 1], ['Jan', 1], ['jan.', 1], ['Sept.', 9], ['Sep', 9], ['1', 1], ['01', 1],
+      ['12', 12], ['01 - January', 1], ['8. Aug', 8], ['August (08)', 8]] as const) {
+      expect(monthOfLabel(label), label).toBe(month);
+    }
+    for (const label of ['', 'Month...', '13', '0', '2015', 'Ja', 'Janu', '01 - February', 'Spring', 'January 2015']) {
+      expect(monthOfLabel(label), label).toBeNull();
+    }
+  });
+
+  it("chooses the option a read month list shows for the month, and nothing from a list that does not show it", () => {
+    const listOf = (labels: readonly string[]) => specOf('Start Date month', 'select', { optionLabels: [...labels] }).options;
+    const chosen = (labels: readonly string[]) => datePartChoice('Start Date month', { y: 2015, m: 8 }, listOf(labels));
+    expect(chosen(['Month...', ...months])).toEqual({ intended: { kind: 'text', text: 'August' }, domain: 'generic' });
+    expect(chosen(months.map((month) => month.slice(0, 3)))?.intended).toEqual({ kind: 'text', text: 'Aug' });
+    expect(chosen(months.map((_, at) => String(at + 1).padStart(2, '0')))?.intended).toEqual({ kind: 'text', text: '08' });
+    expect(chosen(months.map((month, at) => `${String(at + 1).padStart(2, '0')} - ${month}`))?.intended)
+      .toEqual({ kind: 'text', text: '08 - August' });
+    // A list of months without August, or with it twice: no answer, so the field is flagged.
+    expect(chosen(months.slice(0, 6))).toBeUndefined();
+    expect(chosen([...months, 'Aug'])).toBeUndefined();
+    // A list that names no month at all, or one not read yet: the English name, for the matcher.
+    expect(chosen(['Spring', 'Summer', 'Fall'])?.intended).toEqual({ kind: 'text', text: 'August' });
+    expect(datePartChoice('Start Date month', { y: 2015, m: 8 }, 'lazy')?.intended).toEqual({ kind: 'text', text: 'August' });
+  });
+
+  it('writes a year box its four digits', () => {
+    const section = { id: 'education', block: 0 };
+    expect(resolve(specOf('Start date year', 'text', { section }), ctx())).toMatchObject({ category: 'education.startDate',
+      action: 'fill', intended: { kind: 'text', text: '2015' } });
   });
 });

@@ -69,6 +69,10 @@ export const REASON_CODES = [
   // SMS), left unticked and recorded as decided; an "I did not use AI" attestation left for the person because the run
   // used AI, so ticking it would be untrue
   'consent-optional-unticked', 'ai-attestation-ai-used',
+  // v3 Phase 2 (Ashby): a file the page's own upload rejected (its failure message names it), or whose upload the page
+  // never showed done within the wait; an AI draft held back from a page that saves every answer at once, while the
+  // person's setting keeps drafts for their confirmation (written only when they confirm it)
+  'upload-failed', 'upload-not-confirmed', 'llm-draft-held',
   // a bug
   'internal-error',
 ] as const;

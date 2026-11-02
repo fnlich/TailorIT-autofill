@@ -1,0 +1,116 @@
+<!doctype html>
+<!--
+  Synthetic: Ashby's application page (app.ts says exactly what it does, from the Ashby capture of 2026-11-01), built by
+  Vite in memory by its e2e spec (e2e/helpers/ashby-fixture.ts) and served at Ashby addresses, where the Ashby adapter
+  handles it: https://jobs.ashbyhq.com/tailorit-fixture/00000000-0000-4000-8000-00000000a5b1/application draws its form
+  1.5 s after it loads (the live page draws it 4.8 to 6.8 s after), .../00000000-0000-4000-8000-00000000a5b2/application
+  at once, .../00000000-0000-4000-8000-00000000a5b3/application at once with every upload failing; each posting's
+  address without /application draws its Overview tab instead (its description, 1.5 s after it loads), the a5b4
+  posting's saying "Please do not use AI tools to apply." The page's saves, uploads and searches go to
+  https://jobs.ashbyhq.com/api/non-user-graphql?op=<operation>, which the e2e routes answer (its searches with every
+  place and school; the page lists those holding the typed text). The DOM tests mount the same app into this page's
+  div#ashby-panel, with an in-memory server. What React holds, and what the page saw and saved, is window.__ashby (app.ts,
+  AshbyLog). The left pane holds the posting's facts, as long as the live ones (about 2,000 characters): no posting
+  text, though the page shows it beside the form.
+  The styles are a few of Ashby's own (the required mark drawn ::after its title, the radios and checkboxes at opacity 0
+  inside their spans, the Yes/No's hidden checkbox, the clipped file inputs) and plain ones.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Software Engineer @ TailorIT Fixture</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    .ashby-job-posting-brief-list { display: flex; gap: 32px; max-width: 1100px; margin: 24px auto 600px; padding: 0 16px; }
+    .ashby-job-posting-left-pane { width: 260px; flex: none; }
+    .ashby-job-posting-right-pane { flex: 1 1 0%; min-width: 0; }
+    nav[role="tablist"] { display: flex; gap: 24px; border-bottom: 1px solid #ddd; margin-bottom: 16px; }
+    nav[role="tablist"] a { color: #036; text-decoration: none; padding: 8px 0; }
+    .ashby-application-form-autofill-uploader { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+    .ashby-application-form-section-container { margin-top: 24px; }
+    .ashby-application-form-field-entry, [data-field-path] { margin-top: 16px; }
+    .ashby-application-form-question-title { display: block; font-weight: 600; margin-bottom: 4px; }
+    [class*="_required_"]::after { content: "*"; color: #c00; margin-left: 2px; }
+    .ashby-application-form-input-text, .ashby-application-form-input-textarea, .ashby-application-form-input-date,
+    .ashby-application-form-input-autocomplete { box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid #888;
+      border-radius: 6px; font: inherit; }
+    ._inputContainer_d7ago_28 { position: relative; display: flex; }
+    ._toggleButton_d7ago_32 { border: 0; background: none; margin-left: -40px; width: 40px; }
+    .ashby-visually-hidden-file { border: 0; clip: rect(0px, 0px, 0px, 0px); clip-path: inset(50%); height: 1px;
+      margin: 0px -1px -1px 0px; overflow: hidden; padding: 0px; position: absolute; width: 1px; white-space: nowrap; }
+    .ashby-application-form-input-file-dropzone { display: flex; gap: 12px; align-items: center; }
+    button { font: inherit; border: 1px solid #555; border-radius: 6px; background: #fff; padding: 8px 14px; }
+    .ashby-application-form-input-yesno { display: flex; gap: 8px; }
+    .ashby-application-form-input-yesno-option { width: 80px; height: 55px; }
+    .ashby-application-form-input-yesno-option[aria-pressed="true"] { background: #2b6; color: #fff; }
+    ._input_1svni_78 { display: none; }
+    fieldset { border: 0; padding: 0; margin: 0; }
+    .ashby-application-form-input-radio-group-option, .ashby-application-form-input-checkbox-group-option {
+      display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+    ._container_132c8_28, ._container_1danv_28 { position: relative; display: inline-block; width: 24px; height: 24px;
+      border: 1px solid #555; border-radius: 4px; flex: none; }
+    ._container_132c8_28 { border-radius: 12px; }
+    [data-checked]._container_132c8_28, [data-checked]._container_1danv_28 { background: #2b6; }
+    ._container_132c8_28 input, ._container_1danv_28 input { position: absolute; inset: 0; width: 24px; height: 24px;
+      margin: 0; opacity: 0; }
+    ._container_1rwuy_1 label { display: flex; gap: 8px; align-items: center; }
+    .ashby-application-form-input-education-entry { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+    .ashby-application-form-input-education-entry-header { display: flex; justify-content: space-between; }
+    ._stack_b7xpf_1._horizontal_b7xpf_7 { display: flex; gap: 12px; }
+    ._educationFlexField_1e3gg_171 { flex: 1 1 0%; }
+    .ashby-application-form-input-dropdown-select { padding: 8px; }
+    .ashby-floating-dismiss { border: 0; clip: rect(0px, 0px, 0px, 0px); height: 1px; margin: -1px; overflow: hidden;
+      padding: 0px; position: fixed; white-space: nowrap; width: 1px; top: 0px; left: 0px; }
+    .ashby-application-form-input-autocomplete-popup-result { padding: 8px 12px; }
+    ._active_d7ago_88 { background: #eef; }
+    ._canonicalSchoolResultCountry_1e3gg_209, ._canonicalSchoolResultDomain_1e3gg_218 { color: #666; }
+    .ashby-application-form-submit-button { margin-top: 24px; width: 100%; }
+    .ashby-application-form-input-file-item { display: flex; gap: 8px; align-items: center; }
+    ._toasts_1bmj4_58 { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; }
+    ._toast_1bmj4_28 { background: #fee; border: 1px solid #c00; border-radius: 6px; padding: 8px 12px; display: grid; }
+  </style>
+</head>
+<body>
+  <div class="ashby-job-posting-brief-list">
+    <div class="_left_5yu8i_421 ashby-job-posting-left-pane">
+      <h1 class="ashby-job-posting-heading">Software Engineer</h1>
+      <h2 class="_heading_f7cvd_52">Location</h2><p>Austin, Texas</p>
+      <h2 class="_heading_f7cvd_52">Employment Type</h2><p>Full time</p>
+      <h2 class="_heading_f7cvd_52">Location Type</h2><p>Hybrid</p>
+      <h2 class="_heading_f7cvd_52">Department</h2><p>Engineering &bull; Platform &bull; Developer Experience</p>
+      <h2 class="_heading_f7cvd_52">Compensation</h2>
+      <p>$150K &ndash; $190K &bull; Offers Equity &bull; Offers Bonus</p>
+      <p>The base salary range for this role is set by level, location and experience. The range shown is the range for
+        the Austin office; other offices have their own ranges, which the recruiter shares on the first call. Every
+        offer includes equity, an annual bonus target and the benefits listed below, reviewed every year.</p>
+      <h2 class="_heading_f7cvd_52">Benefits</h2>
+      <ul>
+        <li>Medical, dental and vision insurance for you and your dependants, with premiums fully covered</li>
+        <li>Sixteen weeks of paid parental leave for every new parent, and flexible return-to-work schedules</li>
+        <li>A yearly learning budget for courses, books and conferences, and paid time to use it</li>
+        <li>Flexible paid time off, with a recommended minimum of four weeks every year, and company-wide rest days</li>
+        <li>A home office stipend when you join and a monthly allowance for internet and phone costs</li>
+        <li>Retirement savings plan with a company match, vested from your first day</li>
+        <li>Commuter benefits for transit and parking, and a wellness allowance for gyms, classes or therapy</li>
+      </ul>
+      <h2 class="_heading_f7cvd_52">Hiring process</h2>
+      <p>A thirty minute call with a recruiter, a technical conversation with an engineer from the team, a short
+        take-home exercise reviewed together, and a final round of conversations with the people you would work with.
+        We aim to share a decision within two weeks of your first call, and every candidate hears back from us.</p>
+      <p>TailorIT Fixture is an equal opportunity employer. We welcome people of every background, and we provide
+        reasonable accommodations at every stage of the process: tell your recruiter what you need.</p>
+    </div>
+    <div class="ashby-job-posting-right-pane">
+      <nav class="_tabs_5yu8i_29" role="tablist">
+        <a class="_tab_5yu8i_29" id="job-overview" aria-controls="overview" tabindex="-1" aria-selected="false" role="tab"
+          href="./"><span class="ashby-job-posting-right-pane-overview-tab">Overview</span></a>
+        <a aria-current="page" class="_tab_5yu8i_29 _active_5yu8i_56" id="job-application-form" aria-controls="form"
+          tabindex="0" aria-selected="true" role="tab" href="./application"><span
+          class="ashby-job-posting-right-pane-application-tab">Application</span></a>
+      </nav>
+      <div id="ashby-panel"></div>
+    </div>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

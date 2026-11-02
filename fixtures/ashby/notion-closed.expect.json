@@ -1,0 +1,166 @@
+{
+  "fixture": "ashby/notion-closed",
+  "source": "https://jobs.ashbyhq.com/notion/05e14247-17c4-4e98-9a13-53828a4e2f13/application",
+  "captured": "2026-11-02T02:35:22.000Z",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".ashby-application-form-autofill-input-root input[type=\"file\"]",
+      "note": "The \"Autofill from resume\" uploader's file input (Ashby parses the file on its server and overwrites the form): the adapter excludes the uploader, so it is never a field nor a flagged row."
+    },
+    {
+      "label": "Full Name",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_name\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"1e6fee4b-a07e-4dc8-986d-ed3e78a28794\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"_systemfield_location\"] input[role=\"combobox\"]",
+      "note": "Location: a remote search (ApiAutocompleteGeoLocation, typing opens and searches), labelled by the entry's title (labelFor): its placeholder \"Start typing...\" is no label."
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_resume\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"c8940bac-0b61-4acf-a4aa-6580c71ccb20\"]"
+    },
+    {
+      "label": "What pronouns would you like our team to use when addressing you?",
+      "kind": "radio",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "options": 5,
+      "control": "[data-field-path=\"35f8cca8-b9d4-4db8-8d34-49021dbdfc27\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "We work from our offices on Mondays, Tuesdays, and Thursdays (Anchor Days). If you need an accommodation, we’ll partner with you and explore reasonable options consistent with applicable law. Are you able to commit to working from one of our offices on Anchor Days each week?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"fc359033-3856-407e-b8c2-f1e5fe6c6cff\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"fc359033-3856-407e-b8c2-f1e5fe6c6cff\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Will you now or in the future require Notion to sponsor an immigration case in order to employ you?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"c3a81556-73ce-4deb-bdf9-e314212fe507\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"c3a81556-73ce-4deb-bdf9-e314212fe507\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "How did you hear about this opportunity? (select all that apply)",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "options": 7,
+      "control": "[data-field-path=\"253adf0f-8a45-4860-adee-63ed1a7c3550\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "Tell us about why you want to be in sales at Notion",
+      "kind": "textarea",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"81ddc26b-515d-4277-ab01-d7536cf56505\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "radio",
+      "required": false,
+      "section": "U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"_systemfield_eeoc_gender\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Race",
+      "kind": "radio",
+      "required": false,
+      "section": "U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 8,
+      "control": "[data-field-path=\"_systemfield_eeoc_race\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "radio",
+      "required": false,
+      "section": "SELF-IDENTIFICATION OF VETERAN STATUS (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"_systemfield_eeoc_veteran_status\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    }
+  ]
+}

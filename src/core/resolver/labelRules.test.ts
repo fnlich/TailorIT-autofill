@@ -29,15 +29,15 @@ describe('LABEL_RULES (§8.3)', () => {
   it('are the design’s, verbatim and in its order', () => {
     const lines = designRuleLines();
     const source = readFileSync(new URL('./labelRules.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n').split('\n');
-    expect(lines.length).toBe(75);
+    expect(lines.length).toBe(76);
     for (const line of lines) expect(source, line).toContain(line);
     const ids = lines.flatMap((line) => /\{ id: '([^']+)'/.exec(line)?.[1] ?? []);
     expect(LABEL_RULES.map((rule) => rule.id)).toEqual(ids);
   });
 
-  it('has 74 rules with distinct ids, known strengths and known categories', () => {
-    expect(LABEL_RULES.length).toBe(74);
-    expect(new Set(LABEL_RULES.map((rule) => rule.id)).size).toBe(74);
+  it('has 75 rules with distinct ids, known strengths and known categories', () => {
+    expect(LABEL_RULES.length).toBe(75);
+    expect(new Set(LABEL_RULES.map((rule) => rule.id)).size).toBe(75);
     for (const rule of LABEL_RULES) {
       expect(RULE_STRENGTHS, rule.id).toContain(rule.strength);
       expect(rule.re.flags, rule.id).toBe('');
@@ -93,6 +93,8 @@ const RULE_EXAMPLES: Array<[string, string, FieldKind, SectionKind, FieldCategor
   ['label.start-date', 'Date started', 'date', 'experience', 'experience.startDate'],
   ['label.end-date', 'Expected graduation date', 'text', 'other', 'education.endDate'],
   ['label.current-job', 'This is my current role', 'checkbox', 'experience', 'experience.current'],
+  // The Phase 2 review: Ashby's Education block (plaid, 2026-11-01).
+  ['label.current-study', 'Still Student?', 'checkbox', 'education', 'education.current'],
   ['label.company', 'Employer', 'text', 'experience', 'experience.company'],
   ['label.title', 'Job title', 'text', 'experience', 'experience.title'],
   ['label.years', 'How many years of relevant experience do you have?', 'text', 'other', 'experience.totalYears'],

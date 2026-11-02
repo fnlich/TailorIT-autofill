@@ -80,6 +80,7 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'education.highest-completed': (category) => category === 'education.highestLevel'
     || category === 'education.degree',
   'experience.current-checkbox': (category) => category === 'experience.current',
+  'education.current-checkbox': (category) => category === 'education.current',
   'eeo.decline': (category) => policyClassOf(category) === 'eeo',
   'eeo.self-describe': (category) => category === 'eeo.gender',
   'eeo.two-or-more-races': (category) => category === 'eeo.race',

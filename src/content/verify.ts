@@ -4,9 +4,13 @@
  *   for phones, case-folded email, the option's identity, the file's name and size, no aria-invalid). A multi-select's
  *   selection must also be exactly what it held before plus what we added (verifyOptionsWrite): a missing option is
  *   verify-mismatch, one the site added is unexpected-selection, and nothing is ever unticked. A field that is gone is
- *   field-disappeared; a list whose options changed during the settle is found by its base key (LC-9). A file input that read back our file at the fill and is empty now was emptied by its upload
- *   widget, which took the file: verified, and never written again (the Phase 3 review, LC-3; a widget's text chips
- *   that clear themselves are Phase 4's).
+ *   field-disappeared; a list whose options changed during the settle is found by its base key (LC-9), and its
+ *   planned option read back at its place in the list as it is now: the one option that shows exactly the label it
+ *   showed at the write (Ashby's start year, whose years end at the end year chosen after it). A file input that read
+ *   back our file at the fill and is empty now was emptied by its upload widget, which took the file: verified, and
+ *   never written again (the Phase 3 review, LC-3; a widget's text chips that clear themselves are Phase 4's). A file
+ *   whose page says its upload failed (Adapter.uploadState, waited for at the write and read again now) is
+ *   upload-failed, one it never showed done upload-not-confirmed: written, never verified.
  * - finalGuard: guardReady reads back every value in the form, ours and the person's own alike, before the run says it
  *   is ready for review. A value holding a canary that we wrote is blocked: a text is set back to what it held before
  *   our write (a write with provenance rule guard.revert, through both Guards, cleared to empty if that earlier value
@@ -29,13 +33,19 @@ import { fill, verifyAfterSettle } from '../dom/fillers';
 import { domGuardBeforeWrite } from '../dom/guard';
 import { toFieldSpec } from '../dom/scan';
 import type { ScannedField, ScanResult } from '../dom/types';
-import { mismatchRow, selectedOf, type WrittenField } from './pass';
+import { shownIdentity } from '../dom/widgets/options';
+import { mismatchRow, selectedOf, uploadRow, type WrittenField } from './pass';
 
 /** Reasons the final Guard gives a value holding a canary. */
 const CANARY_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['canary-in-value', 'canary-equals-profile-value']);
 
 /** A written field's row after the settle, from a fresh scan. */
 export function verifyWritten(fresh: ScanResult, written: WrittenField): FillResult {
+  if (written.value.kind === 'file' && written.upload !== null) {
+    const now = written.uploadNow?.() ?? written.upload;
+    if (written.upload === 'failed' || now === 'failed') return uploadRow(written.planned, 'failed');
+    if (written.upload === 'pending') return uploadRow(written.planned, 'pending');
+  }
   if (written.value.kind === 'file' && written.readBackVerified) {
     // Upload widgets empty their input once they have the file: the upload taken, not a mismatch (LC-3).
     const now = fresh.target(written.key)?.field.current;
@@ -48,7 +58,7 @@ export function verifyWritten(fresh: ScanResult, written: WrittenField): FillRes
   // read-back checks the chosen option's place and label (LC-9).
   const key = fresh.target(written.key) !== null ? written.key
     : fresh.fields.find((field) => field.baseKey === written.field.baseKey)?.key ?? written.key;
-  const verdict = verifyAfterSettle(fresh, key, written.value, options);
+  const verdict = verifyAfterSettle(fresh, key, movedOption(fresh, key, written), options);
   if (verdict.verification === 'verified') {
     if (written.value.kind === 'options') {
       const after = selectedOf(fresh.target(key)?.field);
@@ -60,6 +70,19 @@ export function verifyWritten(fresh: ScanResult, written: WrittenField): FillRes
   if (verdict.verification === 'mismatch') return mismatchRow(written.planned, verdict.reason);
   return { ...settleRow(written.planned, { kind: 'mismatch' }), reason: 'field-disappeared',
     verification: 'not-checked' };
+}
+
+/** A native list's single write as it reads back in the list as it is now: when the list's options changed during the
+ *  settle (a new key), its planned option is at the place of the one option that shows exactly the label it showed at
+ *  the write; the write as it was otherwise (no such option, or two). */
+function movedOption(fresh: ScanResult, key: FieldKey, written: WrittenField): WrittenField['value'] {
+  const value = written.value;
+  if (key === written.key || value.kind !== 'option' || written.optionShown === null) return value;
+  const options = fresh.target(key)?.field.options;
+  if (options === undefined || options === 'lazy') return value;
+  const shown = shownIdentity(written.optionShown);
+  const places = options.flatMap((option, index) => (shownIdentity(option.label) === shown ? [index] : []));
+  return places.length === 1 ? { ...value, index: places[0]! } : value;
 }
 
 /** The texts a field holds now, as guardReady reads them: its text, each selected option's label, or a ticked lone

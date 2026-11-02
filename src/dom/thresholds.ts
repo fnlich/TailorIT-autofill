@@ -114,6 +114,10 @@ export const TYPEAHEAD_QUERY_CAP_MS = 3_000;
  *  phone country lists 244 countries, its country questions about 200, its Yes/No, EEO and month lists a dozen at most
  *  (dom/widgets' searchesList). */
 export const WIDGET_SEARCH_MIN_OPTIONS = 50;
+/** A file's upload, as the page shows it (fillers/upload.ts): waited for at most this long after the file went in. */
+export const UPLOAD_CONFIRM_CAP_MS = 10_000;
+/** A page that shows a file's upload done counts once it has been quiet this long: its failure message may follow. */
+export const UPLOAD_QUIET_MS = 1_000;
 /** After an auto-advance click, the step transition waits at most this long. */
 export const TRANSITION_CAP_MS = 20_000;
 /** The URL poll, where the Navigation API is missing. */

@@ -17,8 +17,10 @@ export interface SelectableOption {
 }
 
 /** The current value of a field. `control` is the control (or a group's first member); `options` are its visible
- *  options with their selection read now (select options, or a group's members). */
-export function currentValueOf(kind: FieldKind, control: Element, options: readonly SelectableOption[]): CurrentValue {
+ *  options with their selection read now (select options, or a group's members); `checked` reads whether a lone
+ *  checkbox shows ticked (its adapter's reading, else its own checked). */
+export function currentValueOf(kind: FieldKind, control: Element, options: readonly SelectableOption[],
+  checked: (input: HTMLInputElement) => boolean = (input) => input.checked): CurrentValue {
   switch (kind) {
     case 'text':
     case 'textarea':
@@ -27,7 +29,7 @@ export function currentValueOf(kind: FieldKind, control: Element, options: reado
       return value === '' ? { kind: 'empty' } : { kind: 'text', text: capCodePoints(value, TEXT_CAP_CURRENT) };
     }
     case 'checkbox':
-      return { kind: 'checked', checked: (control as HTMLInputElement).checked };
+      return { kind: 'checked', checked: checked(control as HTMLInputElement) };
     case 'file': {
       const count = (control as HTMLInputElement).files?.length ?? 0;
       return count === 0 ? { kind: 'empty' } : { kind: 'files', count };

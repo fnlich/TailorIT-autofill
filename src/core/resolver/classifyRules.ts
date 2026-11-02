@@ -257,6 +257,9 @@ export function statesNoAiUse(spec: Pick<FieldSpec, 'label' | 'description'>): b
 const isOwnDetail = (vote: RuleVote) => policyClassOf(vote.category) === 'profile'
   && !vote.category.startsWith('referral.');
 
+/** A telephone box that is not the applicant's own number: a fax, an extension, a country or area code alone. */
+const NOT_OWN_PHONE = /\bfax\b|\bext(?:ension)?\b|\b(?:country|area|dial(?:ing)?)\s+code\b|\bpager\b/;
+
 /**
  * What the screen catches in a field no rule classifies (the design's classify screen runs only at LLM classification,
  * after saved answers): self-identification, authorization, criminal history, age, pay, and consent wording. Such a
@@ -304,7 +307,15 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   }
   const combined = combine(votes);
   if (combined !== null) return combined;
-  if (SENSITIVE_TOPIC.test(`${label} ${normalizeLabel(spec.description)}`)) {
+  const sensitive = SENSITIVE_TOPIC.test(`${label} ${normalizeLabel(spec.description)}`);
+  // A telephone box (input type=tel) whose label no rule reads ("Best Contact Number", multiverse 2026-11-01) is a
+  // phone, weakly (filled and flagged for a look): never another person's, a fax or an extension.
+  if (!sensitive && spec.kind === 'text' && spec.constraints.format === 'tel' && otherPerson === null
+    && !NOT_OWN_PHONE.test(label)) {
+    return classification('contact.phone', { confidence: LABEL_RULE_CONFIDENCE.weak, classifiedBy: 'label-rule',
+      rule: 'format.tel', reason: 'ok', matchedOn: 'label' });
+  }
+  if (sensitive) {
     return classification('unknown', { confidence: LABEL_RULE_CONFIDENCE.weak, classifiedBy: 'label-rule',
       rule: 'label.sensitive-topic', reason: 'ok', matchedOn: 'label' }, 'sensitive-topic');
   }

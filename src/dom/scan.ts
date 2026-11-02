@@ -17,6 +17,16 @@
  *   carries their hash; a combobox read as a remote search is a 'typeahead-remote' with no options (hash 'none'). A
  *   group's options are its members. A native control inside a widget's list, or the text box inside an ARIA 1.1
  *   combobox, is part of the widget and never a field of its own. Only the widget helpers (widgets/) write a widget.
+ * - An adapter may name more widget candidates (widgetRoots: Ashby's Yes/No, a div of toggle buttons beside a hidden
+ *   checkbox), each asked of widgetFor as any candidate is; the native controls a declaration names as its own (its
+ *   parts: the Yes/No's display:none checkbox), inside its element, are that widget's and never fields. It may name
+ *   parts of the form root that hold none of the application's questions (excluded: Ashby's "Autofill from resume"
+ *   uploader): nothing inside one, an open shadow root of it included, is a field or a flagged upload row. Both are
+ *   still counted among the hidden controls ignored. The generic adapter names neither, so no trap page changes.
+ * - What an adapter reads where no attribute says it: a group's question (labelFor, on a fieldset no legend names),
+ *   which also lets a fieldset of checkboxes it labels be one checkbox group; a mark drawn after a label (requiredFor);
+ *   help text no aria-describedby names (descriptionFor); a date box's layout (formatFor); whether an opacity-0 radio or
+ *   checkbox shows chosen (checkedOf, kept on the field's target for the fillers' read-back).
  * - Keys come from the core's keys.ts (labelSlug, optionSetHash, assignOrdinals, baseKey, fieldKey), so the worker and
  *   every frame build the same strings.
  * - A field's element is never cached across a write: ScanResult.rescan() scans afresh and target(key) finds the
@@ -33,7 +43,8 @@ import {
   autocompleteTokens, CONTROL_SELECTOR, isDisabled, isReadOnly, isTextLike, kindOf, type NativeKind,
 } from './kinds';
 import {
-  descriptionOf, labelOfControl, labelOfGroup, legendOf, optionLabelOf, type LabelContext, type ResolvedLabel,
+  adapterLabelOf, descriptionOf, labelOfControl, labelOfGroup, legendOf, optionLabelOf, type LabelContext,
+  type ResolvedLabel,
 } from './labels';
 import { hashOfOptions } from './option-hash';
 import { isInOwnUi } from './own-ui';
@@ -42,7 +53,7 @@ import { newScanCache, styleOf, type ScanCache } from './scan-cache';
 import { sectionFinder } from './sections';
 import {
   MAX_AUTOCOMPLETE_TOKENS, MAX_SCAN_FIELDS, MIN_BOX_PX, MIN_OPACITY, TEXT_CAP_ATTRIBUTE, TEXT_CAP_AUTOCOMPLETE_TOKEN,
-  TEXT_CAP_LABEL,
+  TEXT_CAP_LABEL, TEXT_CAP_PATTERN,
 } from './thresholds';
 import type {
   FieldTarget, ScanCounters, ScannedField, ScanResult, UnrecognisedUpload, WidgetKind, WidgetReading, WidgetTarget,
@@ -132,7 +143,24 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   const candidates: Candidate[] = [];
   const unrecognised: Array<{ input: HTMLInputElement; control: Element }> = [];
 
-  const found = collectFields(root);
+  const excluded = adapterParts(adapter?.excluded, root);
+  const outside = (el: Element) => excluded.some((part) => holdsComposed(part, el));
+  const extraRoots = adapterParts(adapter?.widgetRoots, root).filter((el) => !outside(el));
+  // The native controls a widget the adapter declares on one of its roots names as its own (WidgetDecl.parts).
+  const absorbed = new Set<Element>();
+  for (const el of extraRoots) {
+    for (const part of adapter?.widgetFor?.(el)?.parts ?? []) {
+      if (part !== el && holdsComposed(el, part) && part.matches(CONTROL_SELECTOR)) absorbed.add(part);
+    }
+  }
+  const collected = collectFields(root);
+  const all = extraRoots.length === 0 ? collected : inDocumentOrder([...collected, ...extraRoots]);
+  const found = excluded.length === 0 && absorbed.size === 0 ? all : all.filter((el) => {
+    if (!outside(el) && !absorbed.has(el)) return true;
+    // A control the adapter keeps out of the fields is still one the scan ignored.
+    if (el.matches(CONTROL_SELECTOR) && kindOf(el).field) counters.hiddenControlsIgnored += 1;
+    return false;
+  });
   // Every combobox's list, so a listbox that is one is not taken for a field of its own.
   const lists = new Set(found.filter((el) => roleOf(el) === 'combobox').map((el) => listOf(el))
     .filter((list): list is Element => list !== null));
@@ -189,7 +217,8 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
   }
 
   const sections = sectionFinder(root, adapter, cache);
-  const drafts = group(candidates, root).map((entry) => draftOf(entry, ctx, cache, sections));
+  const drafts = group(candidates, root, ctx).map((entry) => draftOf(entry, ctx, cache, sections));
+  const checkedOf = checkedReader(adapter);
   const truncated = drafts.length > MAX_SCAN_FIELDS;
   const kept = drafts.slice(0, MAX_SCAN_FIELDS);
   const frameId = options.frameId ?? 0;
@@ -207,7 +236,7 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
         : hashOfOptions(draft.options.map((option) => option.label));
     const key = fieldKey({ ...parts, optionSetHash });
     const current: CurrentValue = draft.widget !== null ? widgetCurrent(draft, cache)
-      : currentValueOf(draft.kind, draft.control, draft.selectable);
+      : currentValueOf(draft.kind, draft.control, draft.selectable, checkedOf);
     const field: ScannedField = {
       key, baseKey: base, platform: options.platform, section: draft.section, kind: draft.kind,
       label: draft.label.text, labelSource: draft.label.source, labelVisible: draft.label.visible,
@@ -219,7 +248,8 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
       el: { key, frameId }, proxy: draft.proxy?.kind ?? null, camouflaged: draft.camouflaged,
     };
     targets.set(key, { field, control: draft.control, members: draft.members, options: draft.selectOptions,
-      proxy: draft.proxy?.el ?? null, ...(draft.widget !== null ? { widget: draft.widget } : {}) });
+      proxy: draft.proxy?.el ?? null, ...(draft.widget !== null ? { widget: draft.widget } : {}),
+      ...(adapter?.checkedOf !== undefined ? { checkedOf } : {}) });
     return field;
   });
 
@@ -292,6 +322,54 @@ function collectFields(root: Element): Element[] {
   return collect(root, `${CONTROL_SELECTOR}, ${WIDGET_ROOT_SELECTOR}`);
 }
 
+/** The elements an adapter's hook names inside the form root (its widget roots, its excluded parts), the extension's
+ *  own UI left out; none when it names none or its hook fails. */
+function adapterParts(hook: ((root: Element) => Element[]) | undefined, root: Element): Element[] {
+  if (hook === undefined) return [];
+  let parts: Element[];
+  try {
+    parts = hook(root);
+  } catch {
+    return [];
+  }
+  return [...new Set(parts)].filter((el) => (el === root || root.contains(el)) && !isInOwnUi(el));
+}
+
+/** Whether `el` is `container` or inside it, open shadow roots crossed (Node.contains stops at a shadow root). */
+function holdsComposed(container: Element, el: Element): boolean {
+  let at: Node | null = el;
+  while (at !== null) {
+    if (at === container) return true;
+    const parent: Node | null = at.parentNode;
+    // A shadow root's parent is its host (a document fragment of any other kind has none).
+    const host: Element | null = parent !== null && parent.nodeType === 11 ? (parent as Partial<ShadowRoot>).host ?? null : null;
+    at = host ?? parent;
+  }
+  return false;
+}
+
+/** Elements without repeats, in document order. */
+function inDocumentOrder(elements: readonly Element[]): Element[] {
+  return [...new Set(elements)].sort((a, b) => (a === b ? 0 : (a.compareDocumentPosition(b) & FOLLOWING) !== 0 ? -1 : 1));
+}
+
+/** Node.DOCUMENT_POSITION_FOLLOWING, without reaching for a page global. */
+const FOLLOWING = 4;
+
+/** Whether a native radio or checkbox shows chosen: as its adapter reads it (checkedOf), else its own checked. A hook
+ *  that fails reads as the input's own state. */
+export function checkedReader(adapter: Adapter | null): (input: HTMLInputElement) => boolean {
+  return (input) => {
+    let shown: boolean | null | undefined;
+    try {
+      shown = adapter?.checkedOf?.(input);
+    } catch {
+      shown = null;
+    }
+    return typeof shown === 'boolean' ? shown : input.checked;
+  };
+}
+
 interface Entry {
   kind: FieldKind;
   members: Candidate[];
@@ -301,9 +379,11 @@ interface Entry {
 /**
  * Radios are grouped by form and name (nameless ones by their fieldset or radiogroup). Checkboxes form a group when
  * two or more share a form and name, or when two or more sit in one fieldset (or role=group) that has a label and
- * holds no other kind of field; any other checkbox is a lone checkbox. Each group sits at its first member's place.
+ * holds no other kind of field; any other checkbox is a lone checkbox. A fieldset with no legend that its adapter
+ * labels groups its own boxes before any name does, and makes its only box a lone checkbox (Ashby's). Each group sits
+ * at its first member's place.
  */
-function group(candidates: readonly Candidate[], root: Element): Entry[] {
+function group(candidates: readonly Candidate[], root: Element, ctx: LabelContext): Entry[] {
   const entries: Entry[] = [];
   const byKey = new Map<string, Entry>();
   const ids = new Map<object | null, number>();
@@ -322,7 +402,7 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
   const boxContainers = new Map<Element, number>();
   for (const candidate of candidates) {
     if (candidate.kind !== 'checkbox' || candidate.widget !== null) continue;
-    const container = checkboxContainer(candidate.el, root);
+    const container = checkboxContainer(candidate.el, root, ctx);
     if (container !== null) boxContainers.set(container, (boxContainers.get(container) ?? 0) + 1);
   }
   for (const candidate of candidates) {
@@ -340,9 +420,15 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
       if (input.name === '' && input.closest('fieldset, [role="radiogroup"]') === null) id = null;
     } else if (candidate.kind === 'checkbox') {
       const named = input.name === '' ? 0 : nameCount.get(`${idOf(input.form)}|${input.name}`) ?? 0;
-      const container = checkboxContainer(input, root);
-      if (named >= 2) id = `checkbox|${idOf(input.form)}|${input.name}`;
-      else if (container !== null && (boxContainers.get(container) ?? 0) >= 2) id = `checkbox-box|${idOf(container)}`;
+      const container = checkboxContainer(input, root, ctx);
+      const boxed = container !== null && (boxContainers.get(container) ?? 0) >= 2;
+      // A fieldset its adapter labels is one question, whatever its boxes are named, and its only box a question of
+      // its own: Ashby names each box by its option's label, so one "Prefer not to say" in each of three questions, or
+      // one "I agree" in each of two one-box questions, with no form, would be one name.
+      if (container !== null && legendOf(container) === null && adapterLabelOf(container, ctx) !== null) {
+        id = boxed ? `checkbox-box|${idOf(container)}` : null;
+      } else if (named >= 2) id = `checkbox|${idOf(input.form)}|${input.name}`;
+      else if (boxed) id = `checkbox-box|${idOf(container)}`;
       kind = id === null ? 'checkbox' : 'checkbox-group';
     }
     if (id === null) {
@@ -364,13 +450,13 @@ function group(candidates: readonly Candidate[], root: Element): Entry[] {
   return entries;
 }
 
-/** The fieldset or role=group around a checkbox that can hold a checkbox group: it has a label and holds no field of
- *  another kind. */
-function checkboxContainer(input: Element, root: Element): Element | null {
+/** The fieldset or role=group around a checkbox that can hold a checkbox group: it has a label (its legend, an ARIA
+ *  label, or the adapter's visible label for it: Ashby's question title) and holds no field of another kind. */
+function checkboxContainer(input: Element, root: Element, ctx: LabelContext): Element | null {
   const container = input.closest('fieldset, [role="group"]');
   if (container === null || !root.contains(container)) return null;
   const labelled = legendOf(container) !== null || container.hasAttribute('aria-labelledby')
-    || container.hasAttribute('aria-label');
+    || container.hasAttribute('aria-label') || adapterLabelOf(container, ctx) !== null;
   if (!labelled) return null;
   const fields = Array.from(container.querySelectorAll(CONTROL_SELECTOR)).filter((el) => kindOf(el).field);
   return fields.every((el) => el.localName === 'input' && (el as HTMLInputElement).type === 'checkbox') ? container : null;
@@ -416,9 +502,9 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
     section: sections.sectionOf(control, label.element),
     description: descriptionOf(control, ctx),
     constraints: entry.kind === 'select' || entry.kind === 'multiselect' ? {}
-      : constraintsOf(control, format, placeholder),
+      : withAdapterFormat(constraintsOf(control, format, placeholder), control, ctx.adapter),
     visibility: first.visibility, proxy: first.proxy,
-    required: label.required || isRequired(control),
+    required: label.required || isRequired(control) || adapterRequires(control, ctx.adapter),
     disabled: isDisabled(control), readOnly: isReadOnly(control),
     camouflaged: first.visibility === 'visible' && isControlCamouflaged(control, placeholder !== null, cache),
     nameAttr: attribute(control, 'name'), idAttr: attribute(control, 'id'),
@@ -432,14 +518,23 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
 
 /** A widget's parts as this scan finds them: by ARIA, or as the adapter declared them. */
 function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): WidgetTarget {
-  const group = kind === 'radio' && declared === null;
+  // A group: an ARIA radio group or Yes/No group, or a 'radio' its adapter declares with its members, each inside its
+  // element and none the extension's own.
+  const group = kind === 'radio' && (declared === null || declared.members !== undefined);
+  const members = declared?.members === undefined ? membersOf(el)
+    : declared.members.filter((member) => member !== el && el.contains(member) && !isInOwnUi(member));
   return {
     kind, element: el, input: group ? null : editableOf(el),
     opener: group || roleOf(el) === 'listbox' ? null : declared?.opener ?? (el as HTMLElement),
-    members: group ? membersOf(el) : [], activation: declared?.activation ?? [], declared: declared !== null,
+    members: group ? [...members] : [], activation: declared?.activation ?? [],
+    declared: declared !== null,
     ...(declared === null ? {} : { expanded: declared.expanded ?? null, box: declared.box ?? null,
       busy: declared.busy ?? [], bridge: declared.bridge ?? null, keys: declared.keys ?? [],
-      ...(declared.shownAnswer ? { shownAnswer: declared.shownAnswer } : {}) }),
+      ...(declared.shownAnswer ? { shownAnswer: declared.shownAnswer } : {}),
+      ...(declared.hidesFormWhileOpen === true ? { hidesFormWhileOpen: true } : {}),
+      ...(declared.optionLabel ? { optionLabel: declared.optionLabel } : {}),
+      ...(declared.emptyAfterMs !== undefined ? { emptyAfterMs: declared.emptyAfterMs } : {}),
+      ...(declared.highlightIsNoChoice === true ? { highlightIsNoChoice: true } : {}) }),
   };
 }
 
@@ -507,14 +602,15 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     // one that scrolls (perhaps drawn a part at a time) waits to be read whole.
     const list = listOf(el, widget.input);
     if (list !== null && isUserVisible(list, cache) && !scrolls(list)) {
-      const shown = readShownList(list, cache);
+      const shown = readShownList(list, cache, widget.optionLabel);
       if (shown.options.length > 0) {
         options = shown.options.map((option, index) => optionOf(index, option.label, '', option.disabled, false));
         partial = !shown.complete;
       }
     }
   }
-  const required = label.required || isRequired(el) || (widget.input !== null && isRequired(widget.input));
+  const required = label.required || isRequired(el) || (widget.input !== null && isRequired(widget.input))
+    || adapterRequires(el, ctx.adapter);
   return {
     kind: widget.kind, control: el, members: [], selectOptions: [], container: null, label, options, selectable: [],
     section: sections.sectionOf(el, label.element), description: descriptionOf(el, ctx), constraints: {},
@@ -574,6 +670,7 @@ function widgetCurrent(draft: Draft, cache: ScanCache): CurrentValue {
 function groupDraft(entry: Entry, ctx: LabelContext, sections: ReturnType<typeof sectionFinder>): Draft {
   const all = entry.members.map((member) => member.el as HTMLInputElement);
   const label = labelOfGroup(all, entry.container, ctx);
+  const checked = checkedReader(ctx.adapter);
   const members: HTMLInputElement[] = [];
   const options: Option[] = [];
   const selectable: SelectableOption[] = [];
@@ -583,8 +680,8 @@ function groupDraft(entry: Entry, ctx: LabelContext, sections: ReturnType<typeof
     const shown = optionLabelOf(input, ctx);
     if (shown.text === '') continue;
     members.push(input);
-    options.push(optionOf(options.length, shown.text, input.value, isDisabled(input), input.checked));
-    selectable.push({ label: shown.text, selected: input.checked });
+    options.push(optionOf(options.length, shown.text, input.value, isDisabled(input), checked(input)));
+    selectable.push({ label: shown.text, selected: checked(input) });
     proxy ??= member.proxy;
   }
   const first = all[0]!;
@@ -598,7 +695,8 @@ function groupDraft(entry: Entry, ctx: LabelContext, sections: ReturnType<typeof
     constraints: {},
     visibility: hiddenMember ? 'hidden-native-with-visible-label' : 'visible',
     proxy,
-    required: label.required || all.some(isRequired) || (entry.container !== null && isRequired(entry.container)),
+    required: label.required || all.some(isRequired) || (entry.container !== null && isRequired(entry.container))
+      || adapterRequires(entry.container ?? first, ctx.adapter),
     disabled: all.every(isDisabled), readOnly: false, camouflaged: false, widget: null,
     nameAttr: attribute(first, 'name'), idAttr: attribute(entry.container ?? first, 'id'),
     autocomplete: [],
@@ -616,6 +714,31 @@ function optionOf(index: number, label: string, value: string, disabled: boolean
 function isRequired(el: Element): boolean {
   if ((el as HTMLInputElement).required === true) return true;
   return (el.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true';
+}
+
+/** Whether the adapter reads a required mark the page draws for this control (requiredFor); false when its hook
+ *  fails. */
+function adapterRequires(el: Element, adapter: Adapter | null): boolean {
+  try {
+    return adapter?.requiredFor?.(el) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** A text control's constraints with the layout its adapter reads (formatFor), where neither its type nor a visible
+ *  placeholder gave one: a format the control's own type gives, or a placeholder's pattern, stands. */
+function withAdapterFormat(constraints: Constraints, control: Element, adapter: Adapter | null): Constraints {
+  if (constraints.format !== undefined || constraints.pattern !== undefined) return constraints;
+  let declared: ReturnType<NonNullable<Adapter['formatFor']>> | undefined;
+  try {
+    declared = adapter?.formatFor?.(control);
+  } catch {
+    declared = null;
+  }
+  if (declared === null || declared === undefined) return constraints;
+  return { ...constraints, format: declared.format,
+    ...(declared.pattern !== undefined ? { pattern: capCodePoints(declared.pattern, TEXT_CAP_PATTERN) } : {}) };
 }
 
 function attribute(el: Element, name: 'name' | 'id'): string {

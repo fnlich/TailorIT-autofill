@@ -31,7 +31,7 @@
  * worker, and writes nothing. The verification after the pass's settle (verify.ts) has the last word on every written
  * field.
  */
-import type { Adapter } from '../adapters/types';
+import type { Adapter, UploadState } from '../adapters/types';
 import type { Platform } from '../core/enums';
 import { guardWriteInFrame } from '../core/guard/write';
 import { settleRow, type FillOutcome } from '../core/plan/settle';
@@ -41,6 +41,7 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { FieldCategory, ValueOrigin, WriteValue } from '../core/types/intent';
 import { optionQuery } from '../core/matcher/listSearch';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
+import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
 import { sameOptionLabel } from '../dom/fillers/verify';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
 import { hashOfOptions } from '../dom/option-hash';
@@ -118,6 +119,14 @@ export interface WrittenField {
   selectedBefore: number[];
   /** The fill's own read-back, right after the write, found what was written. */
   readBackVerified: boolean;
+  /** A native list's planned option, its label as the list showed it at the write (injected text and all), so a list
+   *  whose options change during the settle is read back at that option's place in the list as it is then (LC-9);
+   *  null for any other write. */
+  optionShown: string | null;
+  /** A file's upload as the page showed it after the write (Adapter.uploadState, fillers/upload.ts), and how to read it
+   *  again; null for any other write, and for a page whose adapter reads no upload. */
+  upload: UploadState | null;
+  uploadNow: (() => UploadState | null) | null;
 }
 
 /** What a widget's write needs from its loop (Phase 4). */
@@ -168,7 +177,7 @@ function frameGuardRefusal(reason: ReasonCode): FillOutcome {
 }
 /** Mismatch reasons a row keeps instead of settleRow's verify-mismatch. */
 const MISMATCH_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'unexpected-selection',
-  'value-rejected-by-site', 'disabled-or-readonly']);
+  'value-rejected-by-site', 'disabled-or-readonly', 'upload-failed', 'upload-not-confirmed']);
 
 /** A refusal before the write, as settleRow takes it. */
 function refusal(reason: ReasonCode, blocks: ReadonlySet<ReasonCode>): FillOutcome {
@@ -179,6 +188,13 @@ function refusal(reason: ReasonCode, blocks: ReadonlySet<ReasonCode>): FillOutco
 export function mismatchRow(planned: FillResult, reason: ReasonCode): FillResult {
   const row = settleRow(planned, { kind: 'mismatch' });
   return MISMATCH_REASONS.has(reason) ? { ...row, reason } : row;
+}
+
+/** A file the page says it failed to upload, or never showed uploaded (Adapter.uploadState): written, never verified,
+ *  and flagged for the person, since the page's own copy of it may be missing. */
+export function uploadRow(planned: FillResult, state: 'failed' | 'pending'): FillResult {
+  const row = mismatchRow(planned, state === 'failed' ? 'upload-failed' : 'upload-not-confirmed');
+  return { ...row, status: row.status === 'blocked' ? 'blocked' : 'flagged', needsUserAction: true };
 }
 
 /** A field that already held the planned value when the write came: nothing written, as the planner rows it. */
@@ -294,17 +310,32 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   const selectedBefore = selectedOf(target.field);
   const rule = readBackOf(planned.category);
   const file = resume?.file ?? undefined;
+  const listed = target.field.options;
+  const optionShown = write.value.kind === 'option' && listed !== 'lazy'
+    ? listed[write.value.index]?.label ?? null : null;
   const outcome = fill(target, write.value, { adapter: env.adapter, root: env.root, file, readBack: rule });
-  const row = rowAfterFill(planned, outcome);
+  let row = rowAfterFill(planned, outcome);
   if (!outcome.wrote) {
     resume?.release();
     return { row };
   }
+  // A page that uploads a file the moment it goes in says whether its upload worked (Adapter.uploadState): waited for,
+  // and a failed or unconfirmed upload is never verified.
+  const input = target.control as HTMLInputElement;
+  const upload = write.value.kind === 'file' && file !== undefined ? await awaitUpload(env.adapter, input, file.name,
+    env.signal) : null;
+  if (env.signal.aborted || !env.valid()) {
+    resume?.release();
+    throw new RunAborted();
+  }
+  if (upload === 'failed' || upload === 'pending') row = uploadRow(planned, upload);
+  const named = file?.name;
   return {
     row,
     written: { key: write.key, field: wanted, value: write.value, origin: write.origin, planned, rule,
       file: file === undefined ? null : { name: file.name, size: file.size }, resume, textBefore, selectedBefore,
-      readBackVerified: outcome.verification === 'verified' },
+      readBackVerified: outcome.verification === 'verified', optionShown, upload,
+      uploadNow: upload === null || named === undefined ? null : () => uploadStateOf(env.adapter, input, named) },
     readBack: readBack(target),
   };
 }
@@ -315,7 +346,8 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
 function writtenWidget(field: PlannedField, write: PlannedWrite, planned: FillResult, before: ScannedField,
   verified: boolean): WrittenField {
   return { key: write.key, field, value: write.value, origin: write.origin, planned, rule: undefined, file: null,
-    resume: null, textBefore: null, selectedBefore: selectedOf(before), readBackVerified: verified };
+    resume: null, textBefore: null, selectedBefore: selectedOf(before), readBackVerified: verified, optionShown: null,
+    upload: null, uploadNow: null };
 }
 
 /** One write into an ARIA widget, through the widget helpers (dom/widgets): a combobox's option, a multiselect's

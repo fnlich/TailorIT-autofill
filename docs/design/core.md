@@ -212,8 +212,8 @@ export type VocabDomain = (typeof VOCAB_DOMAINS)[number];
 
 /** Rules that produce or transform a value; every 'rule' provenance names one. */
 export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.compose', 'years.from-experience',
-  'availability.from-notice', 'education.highest-completed', 'experience.current-checkbox', 'eeo.decline',
-  'eeo.two-or-more-races', 'eeo.self-describe', 'legal.decline', 'legal.sponsorship-combined', 'legal.posting-country',
+  'availability.from-notice', 'education.highest-completed', 'experience.current-checkbox', 'education.current-checkbox',
+  'eeo.decline', 'eeo.two-or-more-races', 'eeo.self-describe', 'legal.decline', 'legal.sponsorship-combined', 'legal.posting-country',
   'consent.preapproved',
   'consent.signature-preapproved', 'numeric.range-bucket', 'other.free-text', 'guard.revert', 'typeahead.query'] as const;
 export type RuleId = (typeof RULE_IDS)[number];
@@ -1618,7 +1618,7 @@ The scan runs in `guardWrite` before every write and in `guardReady` over all re
 | `llm-pick` whose write is not one option, or whose option is not among the field's **current** options, is disabled, had injected text cut, or whose clean text, as the tiebreak sends it (`asUntrusted`, 300 code points), no longer hashes to `labelHash` | `llm-pick-rejected` |
 | `llm-draft` on anything but a text | `policy-violation` |
 
-`RULE_SCOPES` gives each rule id the categories it may produce or transform a value for: `name.split` the names; `phone.format` the phone and its country code; `date.format` the start and end dates; `location.compose` the current location and a job's place; `years.from-experience` total years; `availability.from-notice` the start date; `education.highest-completed` the highest level and the degree; `experience.current-checkbox` "I currently work here"; `eeo.decline` every EEO category; `eeo.self-describe` gender; `eeo.two-or-more-races` race; `legal.decline` every legal category but criminal history; `legal.sponsorship-combined` the combined sponsorship question; `legal.posting-country` work authorization; `legal.work-basis` (2026-11-01) work authorization; `consent.preapproved` the pre-approvable consent kinds; `consent.signature-preapproved` the signature; `numeric.range-bucket` pay, total years and notice; `other.free-text` the open classes; `guard.revert` any category; `typeahead.query` the profile class.
+`RULE_SCOPES` gives each rule id the categories it may produce or transform a value for: `name.split` the names; `phone.format` the phone and its country code; `date.format` the start and end dates; `location.compose` the current location and a job's place; `years.from-experience` total years; `availability.from-notice` the start date; `education.highest-completed` the highest level and the degree; `experience.current-checkbox` "I currently work here"; `education.current-checkbox` (the Phase 2 review, 2026-11-02) "Still Student?", ticked for an entry the person still studies at; `eeo.decline` every EEO category; `eeo.self-describe` gender; `eeo.two-or-more-races` race; `legal.decline` every legal category but criminal history; `legal.sponsorship-combined` the combined sponsorship question; `legal.posting-country` work authorization; `legal.work-basis` (2026-11-01) work authorization; `consent.preapproved` the pre-approvable consent kinds; `consent.signature-preapproved` the signature; `numeric.range-bucket` pay, total years and notice; `other.free-text` the open classes; `guard.revert` any category; `typeahead.query` the profile class.
 
 **The structural check** the content script runs before each write, without the profile: `checkProvenanceShape(write)`. The origin is present with a known provenance; a profile path fits `PROFILE_PATH_PATTERN` (at most 200 characters) and its transform is a known rule; a saved answer has an id; a rule id is known and its path, if any, fits the pattern; an llm-pick has a task id, a non-negative candidate and a 64-hex `labelHash`, on an option write; a draft has a task id, on a text. With the field's current options, `llmPickStillValid(write, spec)` checks the option's text as the full check does; `guardWriteInFrame` (section 7.12) runs both.
 
@@ -1813,7 +1813,7 @@ export const FIELD_CATEGORIES = [
   'workAuth.status', 'workAuth.visaType', 'workAuth.clearance', 'screening.over18', 'screening.criminalHistory',
   'eeo.gender', 'eeo.hispanicLatino', 'eeo.race', 'eeo.veteran', 'eeo.disability', 'eeo.sexualOrientation', 'eeo.transgender',
   'education.school', 'education.degree', 'education.highestLevel', 'education.field', 'education.minor',
-  'education.startDate', 'education.endDate', 'education.gpa',
+  'education.startDate', 'education.endDate', 'education.gpa', 'education.current',
   'experience.company', 'experience.title', 'experience.location', 'experience.startDate', 'experience.endDate',
   'experience.current', 'experience.description', 'experience.currentCompany', 'experience.currentTitle', 'experience.totalYears',
   'languages.language', 'languages.proficiency', 'skills.list',
@@ -1843,7 +1843,7 @@ export type FieldCategory = (typeof FIELD_CATEGORIES)[number];
 | file | file.* | the profile's resume | no | no | no | n/a |
 | unknown | unknown, screening.previouslyEmployed, screening.other | a saved answer only | yes | yes | n/a | generic |
 
-`CATEGORY_KINDS` lists the field kinds each category allows. For example, `file.*` allows only `file`; `contact.email` only `text`; `experience.current` only `checkbox`; `consent.signature` only `text`. The resolver checks both rule output and LLM output against it.
+`CATEGORY_KINDS` lists the field kinds each category allows. For example, `file.*` allows only `file`; `contact.email` only `text`; `experience.current` and `education.current` only `checkbox`; `consent.signature` only `text`. The resolver checks both rule output and LLM output against it.
 
 **A field handed to the person.** When the rules find that only the person may answer a field, `classifyByRules` gives it a `needsUser` cause (`NEEDS_USER_CAUSES` in `labelRules.ts`: a closed-class question on a kind that cannot hold its answer, one read from the help text alone or contradicted by another source, a sensitive topic outside a self-identification question, authorization tied to sponsorship, a sponsorship question whose time cannot be read, a work or residence permit, nationality, age, current pay). Such a classification has no `category`, only what the field `asks` about, for the panel: no policy can be looked up for it, and the resolver gives it the action `needs-user` (blank, flagged) whatever the topic's class would allow.
 
@@ -1949,6 +1949,7 @@ export const LABEL_RULES: ReadonlyArray<{ id: string; re: RegExp; category: Fiel
   { id: 'label.start-date', re: /start\s+date|^from$|date\s+started/, category: (c) => c.section === 'experience' ? 'experience.startDate' : c.section === 'education' ? 'education.startDate' : 'availability.startDate', strength: 'normal' },
   { id: 'label.end-date', re: /end\s+date|^to$|graduation\s+date|date\s+(?:ended|graduated)|expected\s+graduation/, category: (c) => c.section === 'experience' ? 'experience.endDate' : 'education.endDate', strength: 'normal' },
   { id: 'label.current-job', re: /currently\s+(?:work|working)\s+here|i\s+currently\s+work|current\s+(?:role|position|job)$/, category: 'experience.current', strength: 'strong' },
+  { id: 'label.current-study', re: /\bstill\s+(?:a\s+)?(?:student|studying|enrolled|attending)\b|\bcurrently\s+(?:a\s+student|studying|enrolled|attending)\b|\bi\s+(?:currently\s+)?(?:study|attend)\s+here\b/, category: 'education.current', strength: 'strong' },
   { id: 'label.company', re: /\bcompany\b|\bemployer\b|\borgani[sz]ation\b/, category: (c) => /current/.test(c.label) ? 'experience.currentCompany' : 'experience.company', strength: 'normal' },
   { id: 'label.title', re: /(?:job\s+)?title|\bposition\b|\brole\b/, category: (c) => /current/.test(c.label) ? 'experience.currentTitle' : 'experience.title', strength: 'normal' },
   { id: 'label.years', re: /years\s+of\s+(?:professional\s+|relevant\s+)?experience|how\s+many\s+years/, category: 'experience.totalYears', strength: 'normal' },

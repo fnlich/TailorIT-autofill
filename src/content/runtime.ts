@@ -5,8 +5,13 @@
  * 1. The worker's messages are listened for first, then frame/hello {isTop, hasForm} goes out: the worker pings a
  *    tab's registered frames (frame/ping) when another frame says hello, and forgets one where nothing listens.
  * 2. The adapter is the registry's first whose detect() finds a form root (adaptersFor). No form root: no launcher and
- *    no run. A posting page with no form (applicationOf(...).page 'posting', as on Lever) is read for policy text and
- *    tells the worker the pattern ids (policy/hit); nothing else happens there.
+ *    no run, unless an adapter of the address says its page draws the form late (quirks.formLateMs: Ashby's React
+ *    draws it seconds after the page loads, and after its Application tab changes the address): the document is then
+ *    watched for it until that wait is over (late-form.ts), only the adapters that say so may claim it meanwhile (the
+ *    generic one only after it), and once found the launcher is mounted, the worker told (frame/hello) and a stored
+ *    run resumed, as at start-up. A posting page with no form (applicationOf(...).page 'posting', as on Lever) is read
+ *    for policy text and tells the worker the pattern ids (policy/hit); nothing else happens there. Where an adapter
+ *    names the posting's own text (Adapter.postingText: Ashby's overview, drawn late too), that is read, once drawn.
  * 3. With a form root, the launcher is mounted on it (the in-page UI, ui/page-ui.ts), and runs start from its trusted
  *    clicks (counted only while a person can see it: S5) or from run/start (the side panel's Fill, to every frame with
  *    a form). One run at a time (orchestrator.ts). In a frame inside another page a run fills only while the launcher
@@ -73,6 +78,8 @@ import type { FillResult } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
 import { scan, toFieldSpec } from '../dom/scan';
+import type { Cancel } from '../dom/time';
+import { visibleText } from '../dom/visible-text';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
 import { WorkerToContentSchema, type PolicyDecision } from '../messaging/schemas';
@@ -82,6 +89,7 @@ import { COPY } from '../shared/copy';
 import { log } from '../shared/log';
 import { createChannel, Invalidated } from './channel';
 import { watchWxtEvents } from './forged';
+import { LATE_FORM_CAP_MS, lateAdapters, lateFormMs, watchForLateForm } from './late-form';
 import { watchLocation } from './location';
 import { postingTextOf, relayJob } from './job-relay';
 import {
@@ -471,8 +479,50 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function resolvePage(href: string): void {
     const url = urlOf(href);
     app = url === null ? null : applicationOf(url);
-    const picked = url !== null && app !== null && app.page === 'application' ? pickAdapter(doc, url, adapters) : null;
+    // While the page's own adapter waits for a form it draws late, only the adapters that say so may claim the page.
+    const claim = (at: URL) => (lateClosed === href ? adapters(at) : lateAdapters(adapters(at)));
+    const picked = url !== null && app !== null && app.page === 'application' ? pickAdapter(doc, url, claim) : null;
     page = picked === null || app === null ? null : { app, adapter: picked.adapter, root: picked.root };
+  }
+
+  /** The watch for a form root, or a posting's text, drawn late (module header, 2), while one runs. */
+  let lateWatch: Cancel | null = null;
+  /** The address whose wait for a late form is over: every adapter may claim its page from then on. */
+  let lateClosed: string | null = null;
+  /** The watch for a posting's own text drawn late (readPosting), while one runs. */
+  let postingWatch: Cancel | null = null;
+
+  /** The form was found: the launcher, the worker told, a stored run resumed (as at start-up). */
+  function formFound(): void {
+    mountUi();
+    void hello().catch(() => undefined);
+    void resumeStored().catch(() => undefined);
+  }
+
+  /** Watches for the form root of an application page that shows none yet, when an adapter of its address says its
+   *  page draws it late; at the end of that wait every adapter may claim the page. A new address ends the watch
+   *  (onAddress starts the next one). */
+  function watchLateForm(): void {
+    lateWatch?.();
+    lateWatch = null;
+    if (stopped || page !== null || app?.page !== 'application') return;
+    const href = readHref();
+    const url = urlOf(href);
+    const capMs = url === null ? 0 : lateFormMs(adapters(url));
+    if (capMs === 0) return;
+    lateWatch = watchForLateForm(doc, capMs, () => {
+      if (stopped || readHref() !== href) return true;
+      resolvePage(href);
+      if (page === null) return false;
+      formFound();
+      return true;
+    }, lifetime.signal, () => {
+      // The wait is over: any adapter may claim the page now (the generic one a page with another form).
+      if (stopped || readHref() !== href || page !== null) return;
+      lateClosed = href;
+      resolvePage(href);
+      if (page !== null) formFound();
+    });
   }
 
   function mountUi(): void {
@@ -522,11 +572,44 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   async function readPosting(): Promise<void> {
     if (app?.page !== 'posting') return;
-    try {
-      await readPostingPage(channel, doc, app.applicationKey);
-    } catch (failure) {
-      if (!(failure instanceof Invalidated)) throw failure;
+    const key = app.applicationKey;
+    const href = readHref();
+    const url = urlOf(href);
+    const named = url === null ? undefined : adapters(url).find((adapter) => adapter.postingText !== undefined);
+    const read = async (scope?: Element) => {
+      try {
+        await readPostingPage(channel, doc, key, scope);
+      } catch (failure) {
+        if (!(failure instanceof Invalidated)) throw failure;
+      }
+    };
+    if (named === undefined) {
+      await read();
+      return;
     }
+    // The posting's own text, once the page draws it (Ashby's overview, seconds after the page loads).
+    const shown = (): Element | null => {
+      let scope: Element | null;
+      try {
+        scope = named.postingText!(doc);
+      } catch {
+        scope = null;
+      }
+      return scope !== null && visibleText(scope).trim() !== '' ? scope : null;
+    };
+    const now = shown();
+    if (now !== null) {
+      await read(now);
+      return;
+    }
+    postingWatch?.();
+    postingWatch = watchForLateForm(doc, lateFormMs([named]) || LATE_FORM_CAP_MS, () => {
+      if (stopped || readHref() !== href) return true;
+      const scope = shown();
+      if (scope === null) return false;
+      void read(scope).catch(() => undefined);
+      return true;
+    }, lifetime.signal);
   }
 
   /** A new address (a single-page application's route): the same application keeps its run; another one ends it. */
@@ -551,6 +634,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     nav += 1;
     if (told !== (page !== null) || page !== null) void hello().catch(() => undefined);
     void readPosting().catch(() => undefined);
+    watchLateForm();
   }
 
   function handle(): ContentRuntime {
@@ -614,6 +698,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       mountUi();
       await readPosting();
       if (view !== null) watchLocation(view, readHref, onAddress, lifetime.signal);
+      watchLateForm();
       await resumeStored();
       await markSubmitted();
     }

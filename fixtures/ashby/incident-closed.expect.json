@@ -1,0 +1,133 @@
+{
+  "fixture": "ashby/incident-closed",
+  "source": "https://jobs.ashbyhq.com/incident/3273dd8c-b333-4cf1-859a-431fba8e7f17/application",
+  "captured": "2026-11-02T02:37:38.000Z",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".ashby-application-form-autofill-input-root input[type=\"file\"]",
+      "note": "The \"Autofill from resume\" uploader's file input (Ashby parses the file on its server and overwrites the form): the adapter excludes the uploader, so it is never a field nor a flagged row."
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_name\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_email\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_resume\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "LinkedIn",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"7b78a27f-ae73-4bb1-a8c8-8bd23c929253\"]"
+    },
+    {
+      "label": "What are your salary expectations?",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"1adc1cfd-4c38-415c-9ea1-7c55aac86e45\"]"
+    },
+    {
+      "label": "What is your location?",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"_systemfield_location\"] input[role=\"combobox\"]",
+      "note": "Location: a remote search (ApiAutocompleteGeoLocation, typing opens and searches), labelled by the entry's title (labelFor): its placeholder \"Start typing...\" is no label."
+    },
+    {
+      "label": "Are you happy to work from our office at least 3 days a week?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"195641db-0ecc-444a-b9f8-f9aab0619df7\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"195641db-0ecc-444a-b9f8-f9aab0619df7\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Do you require visa sponsorship to work in the United States?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"c70591a9-2970-4acf-93ce-22cb36620e1e\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"c70591a9-2970-4acf-93ce-22cb36620e1e\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "What is your notice period?",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"e724b5a6-da85-4e42-b18f-74b67245fe93\"]"
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"e3a1a628-672a-4b23-a139-5dc3822c10cb\"]"
+    },
+    {
+      "label": "I agree",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[data-field-path=\"_systemfield_data_consent_ack\"] input[type=\"checkbox\"]",
+      "note": "A question of one box: a lone checkbox named by its own label[for]; the question's title is its help text (the adapter's descriptionFor), its _required_ mark its required (requiredFor)."
+    }
+  ]
+}

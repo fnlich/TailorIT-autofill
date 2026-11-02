@@ -377,6 +377,7 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     case 'education.startDate':
     case 'education.endDate':
     case 'education.gpa':
+    case 'education.current':
       return educationValue(category, ctx);
     case 'education.highestLevel': {
       const index = highestCompleted(profile.education);
@@ -588,6 +589,11 @@ function educationValue(category: FieldCategory, ctx: ValueContext): ValueResult
     }
     case 'education.gpa':
       return entry.gpa === undefined ? none('no-profile-value', false) : textValue(String(entry.gpa.value), `${at}.gpa`);
+    case 'education.current':
+      // "Still Student?" (Ashby's Education block), as "I currently work here" is a job's: ticked for an entry the
+      // person still studies at.
+      return value({ origin: byRule('education.current-checkbox', `${at}.inProgress`), confidence: VALUE_EXPLICIT,
+        check: entry.inProgress });
     default:
       return none('no-profile-value', false);
   }

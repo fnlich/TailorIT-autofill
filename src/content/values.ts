@@ -49,9 +49,12 @@ export function readBack(target: FieldTarget): CurrentValue {
   if (target.options.length > 0) {
     selectable = target.options.map((option, at) => ({ label: labels[at] ?? '', selected: option.selected }));
   } else if (target.members.length > 0) {
-    selectable = target.members.map((member, at) => ({ label: labels[at] ?? '', selected: member.checked }));
+    // A radio's or a box's chosen state as its adapter reads it (FieldTarget.checkedOf), as the scan reads it.
+    const checked = (input: HTMLInputElement) => target.checkedOf?.(input) ?? input.checked;
+    selectable = target.members.map((member, at) => ({ label: labels[at] ?? '', selected: checked(member) }));
   }
-  return currentValueOf(field.kind, control, selectable);
+  return currentValueOf(field.kind, control, selectable,
+    (input) => target.checkedOf?.(input) ?? input.checked);
 }
 
 /** Keyed hashes of values under one run's key. */

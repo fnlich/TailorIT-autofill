@@ -1,6 +1,6 @@
 /*
  * The scanner-versus-expectation comparison for the platform adapters' browser tests (docs/FIXTURES.md
- * "Expectations"). A converted Lever or Greenhouse snapshot loads through the DOM testkit, with its captured frames
+ * "Expectations"). A converted Lever, Greenhouse or Ashby snapshot loads through the DOM testkit, with its captured frames
  * blanked so nothing reaches the network, at the size the converter checked it (1280 x 900). Its form root comes from
  * the first adapter the registry offers for the snapshot's address whose detect() finds one, and the scan runs with
  * that adapter. The scan is then held against the case's hand-written <case>.expect.json:
@@ -151,7 +151,10 @@ export function compareWithExpectation(doc: Document, result: ScanResult, expect
   for (const field of result.fields) {
     const target = result.target(field.key);
     if (target === null) continue;
-    for (const el of [target.control, ...target.members]) fieldOf.set(el, field);
+    // A widget's own parts are its field too: its text box, and a declared group's members (Ashby's Yes/No buttons).
+    const widget = target.widget;
+    const parts = widget === undefined ? [] : [widget.element, ...(widget.input === null ? [] : [widget.input]), ...widget.members];
+    for (const el of [target.control, ...target.members, ...parts]) fieldOf.set(el, field);
   }
 
   const widgetOf = (field: ScannedField) => result.target(field.key)?.widget;

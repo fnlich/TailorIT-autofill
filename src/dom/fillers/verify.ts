@@ -76,6 +76,7 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
   const { field, control } = target;
   // A widget shows what it holds in its own way (its value, chips, pressed members): the widget helpers read it.
   if (target.widget !== undefined) return widgetHolds(target, value);
+  const checked = (input: HTMLInputElement | undefined) => input !== undefined && (target.checkedOf?.(input) ?? input.checked);
   switch (value.kind) {
     case 'text':
       return sameText((control as HTMLInputElement).value, value.text, rule);
@@ -84,11 +85,11 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
       return expected !== null && (control as HTMLInputElement).value === expected;
     }
     case 'check':
-      return (control as HTMLInputElement).checked;
+      return checked(control as HTMLInputElement);
     case 'option': {
       const option = field.options === 'lazy' ? undefined : field.options[value.index];
       if (option === undefined || !sameOptionLabel(option.label, value.cleanLabel)) return false;
-      if (field.kind === 'radio') return target.members[value.index]?.checked ?? false;
+      if (field.kind === 'radio') return checked(target.members[value.index]);
       return target.options[value.index]?.selected ?? false;
     }
     case 'options': {
@@ -96,7 +97,7 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
       return value.indices.length === value.cleanLabels.length && value.indices.every((index, at) => {
         const option = options[index];
         if (option === undefined || !sameOptionLabel(option.label, value.cleanLabels[at]!)) return false;
-        return (field.kind === 'checkbox-group' ? target.members[index]?.checked : target.options[index]?.selected) ?? false;
+        return field.kind === 'checkbox-group' ? checked(target.members[index]) : target.options[index]?.selected ?? false;
       });
     }
     case 'file': {

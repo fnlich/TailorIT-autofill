@@ -12,6 +12,7 @@ import { parseAtsUrl } from '../contract/tailorit/lookup';
 import type { Platform } from '../core/enums';
 import { platformOfUrl } from '../shared/hosts';
 import { applicationKey, type ApplicationPage, type ApplicationUrl } from './application-key';
+import * as ashby from './ashby/url';
 import * as greenhouse from './greenhouse/url';
 import * as lever from './lever/url';
 
@@ -23,7 +24,7 @@ interface Ours {
   page: ApplicationPage;
   /** canonicalApplicationUrl's answer: null on a page that holds no form. */
   canonical: string | null;
-  /** The application URL the key is hashed from, when it differs from `canonical` (a Lever posting page). */
+  /** The application URL the key is hashed from, when it differs from `canonical` (a Lever or Ashby posting page). */
   applicationUrl?: string;
 }
 
@@ -41,6 +42,15 @@ const GITLAB = 'https://job-boards.greenhouse.io/gitlab/jobs/8857185002';
 const EU = 'https://jobs.eu.lever.co/tailorit-fixture/00000000-0000-4000-8000-000000000001';
 const SPOTIFY_ID = '2a55d6c9-c564-443a-be3e-a3851db5a93b';
 
+const OPENAI_ID = 'd4780eac-03ad-4dae-861f-99af22b4287e';
+const OPENAI = `https://jobs.ashbyhq.com/openai/${OPENAI_ID}`;
+const ASHBY_EMBED_ID = '7458d4e9-da2e-47bd-98cb-adfda43d42b2';
+const ASHBY_WHY = "TailorIT's parseAtsUrl reads no Ashby address yet (v3 Phase 2's TailorIT side adds it)";
+
+const ashbyForm = (org: string, id: string, canonical: string): Ours =>
+  ({ platform: 'ashby', board: org, jobId: id, page: 'application', canonical });
+const ashbyOverview = (org: string, id: string, applicationUrl: string): Ours =>
+  ({ platform: 'ashby', board: org, jobId: id, page: 'posting', canonical: null, applicationUrl });
 const leverApply = (site: string, id: string, canonical: string): Ours =>
   ({ platform: 'lever', board: site, jobId: id, page: 'application', canonical });
 const greenhouseJob = (board: string | null, id: string, canonical: string): Ours =>
@@ -110,6 +120,25 @@ const ROWS: Row[] = [
     contract: { kind: 'greenhouse', board: 'gitlab', externalId: '8857185002' },
     why: 'the EU hosts are not matched until a real posting confirms them (src/shared/hosts.ts)' },
   { url: 'https://about.gitlab.com/jobs/', ours: null },
+
+  // Ashby: the live capture of 2026-11-01 (its overview, form and embed addresses), then the edge cases. TailorIT reads
+  // no Ashby address yet, so every row that reads a posting differs from parseAtsUrl.
+  { url: `${OPENAI}/application`, ours: ashbyForm('openai', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
+  { url: OPENAI, ours: ashbyOverview('openai', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
+  { url: 'https://jobs.ashbyhq.com/plaid/5d8abedc-018a-4b42-ae1f-0e70b34f2007/application',
+    ours: ashbyForm('plaid', '5d8abedc-018a-4b42-ae1f-0e70b34f2007', 'https://jobs.ashbyhq.com/plaid/5d8abedc-018a-4b42-ae1f-0e70b34f2007/application'),
+    contract: null, why: ASHBY_WHY },
+  { url: `https://jobs.ashbyhq.com/Ashby/${ASHBY_EMBED_ID}?embed=js`,
+    ours: ashbyOverview('Ashby', ASHBY_EMBED_ID, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`), contract: null, why: ASHBY_WHY },
+  { url: `https://jobs.ashbyhq.com/Ashby/${ASHBY_EMBED_ID}/application?embed=js`,
+    ours: ashbyForm('Ashby', ASHBY_EMBED_ID, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`), contract: null, why: ASHBY_WHY },
+  { url: `${OPENAI}/application/`, ours: ashbyForm('openai', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
+  { url: 'https://jobs.ashbyhq.com/OpenAI/D4780EAC-03AD-4DAE-861F-99AF22B4287E/application?utm_source=x#top',
+    ours: ashbyForm('OpenAI', OPENAI_ID, `${OPENAI}/application`), contract: null, why: ASHBY_WHY },
+  { url: `https://www.ashbyhq.com/careers?ashby_jid=${ASHBY_EMBED_ID}`, ours: null },
+  { url: 'https://jobs.ashbyhq.com/openai', ours: null },
+  { url: `${OPENAI}/APPLICATION`, ours: null },
+  { url: 'https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting', ours: null },
 ];
 
 /** What the two adapters read: their parse, their canonical URL, and which of them matched. */
@@ -127,6 +156,11 @@ function readOurs(address: string): { ours: Ours | null; matched: Platform[] } {
     matched.push('greenhouse');
     parsed = greenhouse.parseGreenhouseUrl(url);
     canonical = greenhouse.canonicalApplicationUrl(url);
+  }
+  if (ashby.matchesUrl(url)) {
+    matched.push('ashby');
+    parsed = ashby.parseAshbyUrl(url);
+    canonical = ashby.canonicalApplicationUrl(url);
   }
   if (!parsed) return { ours: null, matched };
   const ours: Ours = { platform: parsed.platform, board: parsed.board, jobId: parsed.jobId, page: parsed.page, canonical };
@@ -153,7 +187,7 @@ describe('the URL table', () => {
     // At most one adapter takes an address, and exactly the one the shared host list names.
     expect(matched.length).toBeLessThanOrEqual(1);
     const host = platformOfUrl(row.url);
-    expect(matched[0] ?? null).toBe(host === 'lever' || host === 'greenhouse' ? host : null);
+    expect(matched[0] ?? null).toBe(host === 'lever' || host === 'greenhouse' || host === 'ashby' ? host : null);
     const contract = readContract(row.url);
     if (row.contract !== undefined) {
       expect(contract).toEqual(row.contract);
@@ -186,6 +220,11 @@ describe('applicationKey', () => {
       'https://boards.greenhouse.io/embed/job_app?for=gitlab&token=8857185002', 'https://job-boards.greenhouse.io/embed/job_app?Token=8857185002&FOR=gitlab'];
     expect(new Set(gitlab.map(keyOf))).toEqual(new Set([applicationKey('greenhouse', GITLAB)]));
     expect(keyOf('https://boards.greenhouse.io/figma/jobs/5426468004')).toBe(keyOf('https://job-boards.greenhouse.io/figma/jobs/5426468004'));
+    // Ashby: the overview, the form and the embed's spelling (its org as the company writes it, ?embed=js) of one posting.
+    const embed = [`https://jobs.ashbyhq.com/Ashby/${ASHBY_EMBED_ID}?embed=js`,
+      `https://jobs.ashbyhq.com/Ashby/${ASHBY_EMBED_ID}/application?embed=js`, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`];
+    expect(new Set(embed.map(keyOf))).toEqual(new Set([applicationKey('ashby', `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`)]));
+    expect(keyOf(OPENAI)).toBe(keyOf(`${OPENAI}/application`));
   });
 
   it('is a different key for every other application', () => {

@@ -91,6 +91,9 @@ export interface FieldTarget {
   readonly proxy: Element | null;
   /** An ARIA widget's parts (Phase 4), which only the widget helpers act on; absent for a native control. */
   readonly widget?: WidgetTarget;
+  /** Whether a native radio or checkbox of the field shows chosen, as its adapter reads it (Adapter.checkedOf: Ashby
+   *  draws the answer beside an opacity-0 input); absent: its own checked property. */
+  readonly checkedOf?: (input: HTMLInputElement) => boolean;
 }
 
 /** The widget kinds a scan can report (Phase 4), as their fields' kinds: the first four from standard ARIA, and a
@@ -129,7 +132,18 @@ export interface WidgetTarget {
   readonly busy?: readonly string[];
   /** The option it shows chosen when its own text does not name it (WidgetDecl.shownAnswer). */
   readonly shownAnswer?: (known: readonly string[]) => string | null;
+  /** The page hides the rest of the form while its list is open (WidgetDecl.hidesFormWhileOpen). */
+  readonly hidesFormWhileOpen?: boolean;
+  /** The part of an option that is its label (WidgetDecl.optionLabel). */
+  readonly optionLabel?: OptionLabel;
+  /** A search's list found nothing after this long quiet with no option (WidgetDecl.emptyAfterMs). */
+  readonly emptyAfterMs?: number;
+  /** The list's first result carries its mark before anything is chosen (WidgetDecl.highlightIsNoChoice). */
+  readonly highlightIsNoChoice?: boolean;
 }
+
+/** The part of a list's option that is its label, or null for the whole option (WidgetDecl.optionLabel). */
+export type OptionLabel = (option: Element) => Element | null;
 
 /** One option of a widget's list as it was read: its visible label and whether it can be chosen. */
 export interface WidgetOptionRead {
@@ -180,6 +194,7 @@ export const FILL_OUTCOME_REASONS = ['ok', 'already-correct', 'verify-mismatch',
   'unexpected-selection', 'element-not-found', 'disabled-or-readonly', 'not-user-visible', 'maxlength-exceeded',
   'pdf-only-input', 'resume-format-unsupported', 'resume-unavailable', 'format-unsupported', 'value-rejected-by-site',
   'options-changed', 'widget-unsupported', 'max-selections-reached', 'llm-pick-rejected', 'internal-error',
+  'upload-failed', 'upload-not-confirmed',
 ] as const satisfies readonly ReasonCode[];
 export type FillOutcomeReason = (typeof FILL_OUTCOME_REASONS)[number];
 

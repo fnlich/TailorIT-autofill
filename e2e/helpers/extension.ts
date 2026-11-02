@@ -12,6 +12,7 @@
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 import { applicationKey } from '../../src/adapters/application-key';
 import { genericCanonicalUrl } from '../../src/adapters/generic/url';
+import { parseAshbyUrl } from '../../src/adapters/ashby/url';
 import { parseGreenhouseUrl } from '../../src/adapters/greenhouse/url';
 import { parseLeverUrl } from '../../src/adapters/lever/url';
 import type { RunState } from '../../src/core/types/run';
@@ -39,7 +40,8 @@ export function applicationKeyOf(address: string): string | null {
   const url = new URL(address);
   const platform = platformOfUrl(url.href);
   if (platform === null) return null;
-  const parsed = platform === 'lever' ? parseLeverUrl(url) : platform === 'greenhouse' ? parseGreenhouseUrl(url) : null;
+  const parsed = platform === 'lever' ? parseLeverUrl(url) : platform === 'greenhouse' ? parseGreenhouseUrl(url)
+    : platform === 'ashby' ? parseAshbyUrl(url) : null;
   const canonical = parsed?.applicationUrl ?? genericCanonicalUrl(url);
   return canonical === null ? null : applicationKey(platform, canonical);
 }

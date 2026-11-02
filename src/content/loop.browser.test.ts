@@ -702,6 +702,22 @@ describe('the Phase 3 review: what the books keep', () => {
     expectInvariants(ran);
   });
 
+  it("reads back a list we wrote whose options a later write narrowed, at its option's place now (LC-9, Ashby's years)", async () => {
+    // Ashby's start year lists only the years up to the end year chosen after it: our option moves up its list.
+    const ran = await fill(page(`<label for="name">Full name</label><input id="name" name="name">
+      <label for="country">Country</label><select id="country" name="country"><option value="">Select...</option>
+      <option value="CA">Canada</option><option value="US">United States</option></select>
+      <label for="email">Email</label><input id="email" name="email" type="email">`,
+    `<script>(() => { const email = document.getElementById('email');
+      email.addEventListener('change', () => setTimeout(() => {
+        document.querySelector('#country option[value="CA"]').remove(); }, 50), { once: true }); })();</script>`), 'narrowed');
+    expect(ran.value('country')).toBe('US');
+    expect(ran.writes('country')).toBe(1);
+    expect(ran.row('Country')).toMatchObject({ status: 'verified', wrote: true, provenance: 'profile',
+      verification: 'verified' });
+    expectInvariants(ran);
+  });
+
   it('rows what a pass revealed before a Cancel during its settle cuts the loop (LC-11)', async () => {
     const started = await start(page(`<label for="name">Full name</label><input id="name" name="name"><div id="more"></div>`,
       `<script>(() => { const name = document.getElementById('name'); const more = document.getElementById('more');

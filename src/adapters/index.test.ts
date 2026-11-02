@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ashbyAdapter } from './ashby';
 import { genericAdapter } from './generic';
 import { greenhouseAdapter } from './greenhouse';
 import { adaptersFor, applicationOf } from './index';
@@ -26,8 +27,12 @@ describe('adaptersFor', () => {
       'https://job-boards.greenhouse.io/embed/job_app?for=gitlab&token=8857185002', 'https://boards.greenhouse.io/figma/jobs/5426468004']) {
       expect(adaptersFor(new URL(address)), address).toEqual([greenhouseAdapter, genericAdapter]);
     }
-    for (const address of ['https://jobs.ashbyhq.com/acme/1b2c', 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/x',
-      'https://example.com/careers/apply', 'http://jobs.lever.co/acme/x/apply']) {
+    for (const address of ['https://jobs.ashbyhq.com/openai/d4780eac-03ad-4dae-861f-99af22b4287e/application',
+      'https://jobs.ashbyhq.com/Ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2?embed=js', 'https://jobs.ashbyhq.com/acme/1b2c']) {
+      expect(adaptersFor(new URL(address)), address).toEqual([ashbyAdapter, genericAdapter]);
+    }
+    for (const address of ['https://acme.wd5.myworkdayjobs.com/en-US/careers/job/x',
+      'https://example.com/careers/apply', 'http://jobs.lever.co/acme/x/apply', 'http://jobs.ashbyhq.com/acme/x']) {
       expect(adaptersFor(new URL(address)), address).toEqual([genericAdapter]);
     }
   });
@@ -81,6 +86,18 @@ describe('applicationOf', () => {
     const embed = applicationOf(new URL('https://job-boards.greenhouse.io/embed/job_app?for=gitlab&token=8857185002'))!;
     expect(embed.applicationKey).toBe(job.applicationKey);
     expect(job.applicationKey).toMatch(/^greenhouse:[0-9a-f]{16}$/);
+  });
+
+  it("gives an Ashby posting's overview, its form and its embed's spelling one key", () => {
+    const form = applicationOf(new URL('https://jobs.ashbyhq.com/ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2/application'))!;
+    const overview = applicationOf(new URL('https://jobs.ashbyhq.com/Ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2?embed=js'))!;
+    const embedded = applicationOf(new URL('https://jobs.ashbyhq.com/Ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2/application?embed=js'))!;
+    expect([form.page, overview.page, embedded.page]).toEqual(['application', 'posting', 'application']);
+    expect(new Set([form.applicationKey, overview.applicationKey, embedded.applicationKey])).toEqual(new Set([form.applicationKey]));
+    expect(form.applicationKey).toMatch(/^ashby:[0-9a-f]{16}$/);
+    // An org's board, or an address with no posting, is no application.
+    expect(applicationOf(new URL('https://jobs.ashbyhq.com/openai'))).toBeNull();
+    expect(applicationOf(new URL('https://jobs.ashbyhq.com/acme/1b2c'))).toBeNull();
   });
 
   it('knows no application on a host outside the ATS list', () => {

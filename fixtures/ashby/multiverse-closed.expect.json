@@ -1,0 +1,286 @@
+{
+  "fixture": "ashby/multiverse-closed",
+  "source": "https://jobs.ashbyhq.com/multiverse/f3db4b2b-346c-46a4-8084-2eb3d9a483e4/application",
+  "captured": "2026-11-02T02:37:31.000Z",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".ashby-application-form-autofill-input-root input[type=\"file\"]",
+      "note": "The \"Autofill from resume\" uploader's file input (Ashby parses the file on its server and overwrites the form): the adapter excludes the uploader, so it is never a field nor a flagged row."
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"_systemfield_name\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"_systemfield_email\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"_systemfield_resume\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"1e68a3c6-1709-40e3-ad14-379c7f5bb56d\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "Best Contact Number",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"569d6217-f421-453e-b860-49a3c33c0359\"]"
+    },
+    {
+      "label": "Check Yes or No to indicate your agreement to receive WhatsApp message updates from Multiverse Group Ltd regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging. View our privacy policy here: Privacy Policy and our terms and con",
+      "kind": "radio",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"whatsAppConsent\"]",
+      "note": "The WhatsApp consent beside the phone (the SMS consent's markup, named whatsAppConsent): two visible native radios in wrapping labels, no fieldset, named by the consent text (the adapter's labelFor). A click saves the consent at once (as the SMS consent's does)."
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"28412d74-aaaa-41c2-9cee-7305e6e4d496\"]"
+    },
+    {
+      "label": "Please share your preferred pronouns.",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"a46e0f80-7b7d-4125-8edd-b17be1c967f9\"]"
+    },
+    {
+      "label": "Please share your preferred name (if applicable).",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "[id=\"42fb1f5b-4a09-4039-aafe-ae7ec9ae57fd\"]"
+    },
+    {
+      "label": "Why Multiverse?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"457eb7ca-14cf-4c02-9332-7a4b31cc4623\"]"
+    },
+    {
+      "label": "Do you require any reasonable adjustments to be made throughout our hiring process? (If you would prefer to share over email, please reach out to REDACTED and we would be happy to assist)",
+      "kind": "textarea",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"3195b1dd-b981-434f-a7dd-7a57f4c62419\"]"
+    },
+    {
+      "label": "Can you work in our Paddington office for 3 days per week?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"9a11c827-18b3-40bd-94fc-ee3bcf1bbcbc\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Details",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"9a11c827-18b3-40bd-94fc-ee3bcf1bbcbc\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Where did you hear about us?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"9b73492f-1411-4863-8883-cf426cf197f0\"]"
+    },
+    {
+      "label": "Notice Period",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 7,
+      "control": "[data-field-path=\"d3544ef3-a5ce-4e3f-85ec-c2e6395b4d5f\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Please confirm your right to work status?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"2481891d-467e-4aba-8e42-1ba00b5e1fc5\"] input[role=\"combobox\"]",
+      "note": "A ValueSelect of 9 options or more, drawn as a combobox: opened by its toggle button, its list in a floating-ui portal named by aria-controls; labelled by the entry's title (labelFor)."
+    },
+    {
+      "label": "Will you now or in the future require sponsorship to work within the UK?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"2c1cc015-c579-4c80-954a-b10e627abbb9\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Details",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"2c1cc015-c579-4c80-954a-b10e627abbb9\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "What is your current age?",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 6,
+      "control": "[data-field-path=\"cf0f1bc7-7ce6-4eb3-aebc-b6562141cb68\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "What is your gender identity?",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 5,
+      "control": "[data-field-path=\"8d7dcc65-3a0b-476a-b679-574b869780bb\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Is the gender you identify with the same as the sex you were assigned at birth?",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"0a90dc7e-908c-449f-9151-95612d844b10\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "How do you identify your sexual orientation? Please select all that apply.",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 9,
+      "control": "[data-field-path=\"a63b6f87-d090-40f0-a462-bf5bb03f5e45\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "Which ethnicity do you identify with?",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 32,
+      "control": "[data-field-path=\"1e21d43f-548e-481a-aa5f-f048c73f3de3\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "Do you identify as disabled, or as having a disability?",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"425ffaa2-f458-4327-84dc-1d65cd7622a7\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Do you identify as neurodivergent?",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"32982dc1-743e-417d-832c-a8d13bd40091\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "Have you spent time in the armed forces? (This includes reserves)",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"8869ac83-51af-43c9-a1f9-d0f43db306d8\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Do you identify as a caregiver?",
+      "kind": "radio",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"4ece9e72-c191-4c97-98dc-cc23b006799d\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "What is the highest level of educational qualification you have achieved?",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "options": 8,
+      "control": "[data-field-path=\"6c8190e7-604a-4750-aa52-b21a6f4e5c83\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "I agree",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Diversity Survey",
+      "fillable": true,
+      "control": "[data-field-path=\"_systemfield_data_consent_ack\"] input[type=\"checkbox\"]",
+      "note": "A question of one box: a lone checkbox named by its own label[for]; the question's title is its help text (the adapter's descriptionFor), its _required_ mark its required (requiredFor)."
+    }
+  ]
+}

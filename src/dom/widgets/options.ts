@@ -13,6 +13,8 @@
  *   MAX_WIDGET_OPTIONS, and the whole read at WIDGET_READ_CAP_MS: a read a cap stopped is partial (complete false),
  *   and the planner never matches a partial list loosely (R9).
  * - An option is shown again to be chosen by its aria-posinset and label, else by its label and place (revealOption).
+ * - An option's label is its visible text, or the visible text of the part of it its adapter names (WidgetDecl
+ *   .optionLabel: Ashby's School result, its name beside its country and domain), by the same rules.
  * - What a widget shows chosen: what its adapter reads as its answer (WidgetDecl.shownAnswer), else a combobox's text
  *   box value, or the text a select-only combobox shows; the chips of a multiselect (visible text in the widget's own
  *   box, outside its list and its text box, that is exactly one of its options' labels) and the options its open list
@@ -31,7 +33,7 @@ import {
   WIDGET_SCROLL_CAP_MS, WIDGET_SCROLL_QUIET_MS, WIDGET_SCROLL_SETTLE_MS,
 } from '../thresholds';
 import { monotonicNow } from '../time';
-import type { WidgetKind, WidgetOptionRead, WidgetTarget } from '../types';
+import type { OptionLabel, WidgetKind, WidgetOptionRead, WidgetTarget } from '../types';
 import { readVisibleText, visibleText, visibleTextWithout } from '../visible-text';
 import { isUserVisible } from '../visibility';
 import { isChosen, isUnavailable, listOf, optionElementsOf, widgetBox } from './aria';
@@ -82,14 +84,17 @@ function positionOf(el: Element): number | null {
   return value >= 1 ? value : null;
 }
 
-/** The options of a list a person can see now, in document order. */
-export function shownOptions(listbox: Element, cache: ScanCache = newScanCache()): ShownOption[] {
+/** The options of a list a person can see now, in document order, each labelled by its visible text (or its part's
+ *  that `labelOf` names). */
+export function shownOptions(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel): ShownOption[] {
   if (!isUserVisible(listbox, cache)) return [];
   const shown: ShownOption[] = [];
   const top = listbox.getBoundingClientRect().top - listbox.scrollTop;
   for (const el of optionElementsOf(listbox)) {
     if (!isUserVisible(el, cache)) continue;
-    const label = capCodePoints(visibleText(el, { singleLine: true, cap: TEXT_CAP_LABEL, cache }), TEXT_CAP_LABEL);
+    const part = labelOf?.(el) ?? null;
+    const named = part !== null && el.contains(part) ? part : el;
+    const label = capCodePoints(visibleText(named, { singleLine: true, cap: TEXT_CAP_LABEL, cache }), TEXT_CAP_LABEL);
     if (label === '') continue;
     shown.push({ el, label, disabled: isUnavailable(el), selected: isChosen(el), position: positionOf(el),
       offset: Math.round(el.getBoundingClientRect().top - top) });
@@ -109,10 +114,10 @@ function sameOption(known: Pick<ReadOption, 'label' | 'position' | 'offset'>,
 
 /** Takes the options of the view shown now into `found`, those an earlier view took aside; false once the option cap
  *  stops it. */
-function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache): boolean {
+function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache, labelOf?: OptionLabel): boolean {
   const at = listbox.scrollTop;
   const earlier = found.length;
-  for (const option of shownOptions(listbox, cache)) {
+  for (const option of shownOptions(listbox, cache, labelOf)) {
     let seen = false;
     for (let index = 0; index < earlier && !seen; index += 1) seen = sameOption(found[index]!, option);
     if (seen) continue;
@@ -133,9 +138,9 @@ function ordered(found: ReadOption[]): ReadOption[] {
 
 /** A list shown whole read as it is now, exactly as readList takes its first view: what the scanner gives a widget
  *  whose list shows whole, so its options' places are the ones a fill reads again. */
-export function readShownList(listbox: Element, cache: ScanCache = newScanCache()): ListRead {
+export function readShownList(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel): ListRead {
   const found: ReadOption[] = [];
-  const complete = takeView(listbox, found, cache);
+  const complete = takeView(listbox, found, cache, labelOf);
   return { options: ordered(found), complete };
 }
 
@@ -173,8 +178,8 @@ export function scrollListTo(listbox: Element, top: number): void {
  * its top to its end, within `capMs` (WIDGET_READ_CAP_MS) in all: a hostile list could otherwise hold a read for a
  * minute and more. A list the page empties or removes while it is read ends the read where it is.
  */
-export async function readList(listbox: Element, options: { signal?: AbortSignal; capMs?: number } = {}):
-  Promise<ListRead> {
+export async function readList(listbox: Element,
+  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel } = {}): Promise<ListRead> {
   const started = monotonicNow();
   const capMs = options.capMs ?? WIDGET_READ_CAP_MS;
   const found: ReadOption[] = [];
@@ -183,7 +188,7 @@ export async function readList(listbox: Element, options: { signal?: AbortSignal
     scrollListTo(listbox, 0);
     await drawn(listbox, options.signal);
   }
-  complete = takeView(listbox, found);
+  complete = takeView(listbox, found, undefined, options.labelOf);
   for (let steps = 0; complete && scrolls(listbox) && listbox.isConnected; steps += 1) {
     if (options.signal?.aborted) break;
     const before = listbox.scrollTop;
@@ -197,7 +202,7 @@ export async function readList(listbox: Element, options: { signal?: AbortSignal
     scrollListTo(listbox, Math.min(end, before + Math.max(1, listbox.clientHeight - 8)));
     await drawn(listbox, options.signal);
     if (listbox.scrollTop <= before) break;
-    complete = takeView(listbox, found);
+    complete = takeView(listbox, found, undefined, options.labelOf);
   }
   return { options: ordered(found), complete };
 }
@@ -213,8 +218,8 @@ export function hashOfRead(options: readonly WidgetOptionRead[]): OptionSetHash 
  * list back to where the read saw it. Null when it is not there any more.
  */
 export async function revealOption(listbox: Element, wanted: Pick<ReadOption, 'label' | 'position' | 'scrollTop' | 'offset'>,
-  options: { signal?: AbortSignal } = {}): Promise<ShownOption | null> {
-  const find = () => shownOptions(listbox).find((option) => sameOption(wanted, option)) ?? null;
+  options: { signal?: AbortSignal; labelOf?: OptionLabel } = {}): Promise<ShownOption | null> {
+  const find = () => shownOptions(listbox, undefined, options.labelOf).find((option) => sameOption(wanted, option)) ?? null;
   const now = find();
   if (now !== null || !scrolls(listbox)) return now;
   scrollListTo(listbox, wanted.scrollTop);
@@ -303,7 +308,7 @@ export function listState(widget: WidgetTarget, prevHash: OptionSetHash | null, 
   if (listbox === null || !listbox.isConnected) return { ready: false, waiting: 'gone' };
   if (!isUserVisible(listbox, cache)) return { ready: false, waiting: 'hidden' };
   if (widgetBusy(widget, listbox, cache)) return { ready: false, waiting: 'busy' };
-  const labels = shownOptions(listbox, cache).map((option) => option.label);
+  const labels = shownOptions(listbox, cache, widget.optionLabel).map((option) => option.label);
   if (labels.some(isLoadingOptionLabel)) return { ready: false, waiting: 'loading' };
   if (!labels.some(isUsableOption)) return { ready: false, waiting: 'placeholders' };
   const hash = hashOfOptions(labels);
@@ -369,7 +374,7 @@ export function chosenLabels(widget: WidgetTarget, known: readonly string[], cac
       break;
     case 'multiselect': {
       const listbox = listOf(widget.element, widget.input);
-      const selected = listbox === null ? [] : shownOptions(listbox, cache).filter((option) => option.selected)
+      const selected = listbox === null ? [] : shownOptions(listbox, cache, widget.optionLabel).filter((option) => option.selected)
         .map((option) => named(option.label));
       labels = [...new Set([...chipsOf(widget, knownAs, cache), ...selected])];
       break;

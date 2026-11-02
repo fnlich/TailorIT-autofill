@@ -9,14 +9,16 @@
  *   any fill.
  * - A posting page with no form (Lever's posting page): its visibleText is read once, and each hit is sent as
  *   policy/hit {applicationKey, patternId}, or one {patternId: null} for a clean reading. A page that shows no text at
- *   all has not been read, and says nothing.
+ *   all has not been read, and says nothing. Where the adapter names the posting's own text (Adapter.postingText:
+ *   Ashby's overview, drawn seconds after the page loads), that element is read once it is drawn (runtime.ts).
  * - Before a run fills: a hit on the posting page (the worker's record), in TailorIT's stored copy (the worker read it
  *   at run/begin), or in this frame's own visible text stops the run at policy-notice until the person chooses. With
  *   the posting page unseen, no stored copy and no hit here, the couldn't-read notice shows; it does not block. A top
  *   frame whose page shows the posting itself beside the form (a job board's description above it: at least
  *   POSTING_READ_MIN characters of visible text outside the form root) has read it here, clean, so the notice does not
  *   show; a page that shows only the form (the live BeyondTrust job-boards page, 2026-11-01, whose description lives
- *   on the company's site) still has nothing read.
+ *   on the company's site) still has nothing read. Where the adapter names the posting's own text, only that counts
+ *   (Ashby's Application tab shows none: its left pane of facts and its header are no posting).
  * - A frame inside a page that runs no content script of ours (a company site embedding the form) cannot read the
  *   posting around it: the report says so (posting-outside-frame).
  */
@@ -77,9 +79,11 @@ export function hiddenPolicyHits(passages: readonly RawPassage[], visibleHits: r
   return [...found].filter((id) => !visibleHits.includes(id));
 }
 
-/** Reads a posting page with no form and tells the worker what it found: each pattern id, or one clean reading. */
-export async function readPostingPage(channel: Channel, doc: Document, applicationKey: string): Promise<void> {
-  const body = doc.body;
+/** Reads a posting page with no form and tells the worker what it found: each pattern id, or one clean reading.
+ *  `scope`: the posting's own text, where the adapter names it; the whole page otherwise. */
+export async function readPostingPage(channel: Channel, doc: Document, applicationKey: string, scope?: Element):
+  Promise<void> {
+  const body = scope ?? doc.body;
   if (body === null) return;
   const text = visibleText(body);
   if (text.trim() === '') return;

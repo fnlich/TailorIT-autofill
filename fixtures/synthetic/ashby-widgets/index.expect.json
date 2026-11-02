@@ -1,0 +1,264 @@
+{
+  "fixture": "synthetic/ashby-widgets",
+  "source": "https://jobs.ashbyhq.com/tailorit-fixture/00000000-0000-4000-8000-00000000a5b2/application",
+  "captured": "never: a synthetic page, drawn after the Ashby capture of 2026-11-01",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".ashby-application-form-autofill-input-root input[type=\"file\"]",
+      "note": "The \"Autofill from resume\" uploader's file input: the adapter excludes the uploader, so it is never a field nor a flagged row, and a file put in is recorded as a press."
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_name\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_email\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_resume\"]",
+      "note": "Its label[for] is the visible title (the label proxy); \"Upload File\" beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"6f1b584f-0006-4000-8000-000000000006\"]"
+    },
+    {
+      "label": "Check Yes or No to indicate your agreement to receive text message updates from TailorIT Fixture regarding your job application. Message and data rates may apply.",
+      "kind": "radio",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"communicationConsent\"]",
+      "note": "The SMS consent beside the phone, named by its consent text (labelFor); a click saves the consent at once."
+    },
+    {
+      "label": "LinkedIn",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"6f1b584f-0007-4000-8000-000000000007\"]"
+    },
+    {
+      "label": "Where are you currently located?",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"_systemfield_location\"] input[role=\"combobox\"]",
+      "note": "Location: a remote search, labelled by its title (labelFor), never by its placeholder \"Start typing...\"."
+    },
+    {
+      "label": "When can you start a new role?",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[data-field-path=\"6f1b584f-0008-4000-8000-000000000008\"] input.ashby-application-form-input-date",
+      "note": "The date box, its layout MM/DD/YYYY (formatFor)."
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"6f1b584f-0001-4000-8000-000000000001\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: its two buttons the declared group's members."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"6f1b584f-0001-4000-8000-000000000001\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own display:none checkbox: part of the widget."
+    },
+    {
+      "label": "Will you now or in the future require sponsorship for employment visa status?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"6f1b584f-0002-4000-8000-000000000002\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: its two buttons the declared group's members."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"6f1b584f-0002-4000-8000-000000000002\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own display:none checkbox: part of the widget."
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "radio",
+      "required": true,
+      "section": "Background",
+      "fillable": true,
+      "options": 5,
+      "control": "[data-field-path=\"6f1b584f-0003-4000-8000-000000000003\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Which of these skills have you used?",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Background",
+      "fillable": true,
+      "options": 6,
+      "control": "[data-field-path=\"6f1b584f-0004-4000-8000-000000000004\"] input[type=\"checkbox\"]"
+    },
+    {
+      "label": "What is the highest level of education you have completed?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Background",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"6f1b584f-0005-4000-8000-000000000005\"] input[role=\"combobox\"]",
+      "note": "A ValueSelect of 10 options drawn as a combobox, opened by its toggle."
+    },
+    {
+      "label": "School",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"_systemfield_education_history\"] input[role=\"combobox\"]"
+    },
+    {
+      "label": "Degree",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[id=\"_systemfield_education_history-degree\"]"
+    },
+    {
+      "label": "Field of Study",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[id=\"_systemfield_education_history-major\"]"
+    },
+    {
+      "label": "Start Date month",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 13,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-startDate\"] .ashby-application-form-input-dropdown:nth-child(1) select",
+      "note": "A native select with no label of its own, its placeholder (\"Month...\" or \"Year...\") first: the block's \"Start Date\" label and \"month\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "Start Date year",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 41,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-startDate\"] .ashby-application-form-input-dropdown:nth-child(2) select",
+      "note": "A native select with no label of its own, its placeholder (\"Month...\" or \"Year...\") first: the block's \"Start Date\" label and \"year\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "End Date month",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 13,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-endDate\"] .ashby-application-form-input-dropdown:nth-child(1) select",
+      "note": "A native select with no label of its own, its placeholder (\"Month...\" or \"Year...\") first: the block's \"End Date\" label and \"month\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "End Date year",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 41,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-endDate\"] .ashby-application-form-input-dropdown:nth-child(2) select",
+      "note": "A native select with no label of its own, its placeholder (\"Month...\" or \"Year...\") first: the block's \"End Date\" label and \"year\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "Still Student?",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[data-field-path=\"_systemfield_education_history\"] input[id$=\"-isCurrent\"]"
+    },
+    {
+      "label": "Why do you want to join TailorIT Fixture?",
+      "kind": "textarea",
+      "required": false,
+      "section": "Background",
+      "fillable": true,
+      "control": "[id=\"6f1b584f-0009-4000-8000-000000000009\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "radio",
+      "required": false,
+      "section": "U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"_systemfield_eeoc_gender\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "radio",
+      "required": false,
+      "section": "U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"_systemfield_eeoc_veteran_status\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "I agree",
+      "kind": "checkbox",
+      "required": true,
+      "section": "U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "control": "[data-field-path=\"_systemfield_data_consent_ack\"] input[type=\"checkbox\"]",
+      "note": "A question of one box: a lone checkbox named by its own label; its title and help text are its description."
+    }
+  ]
+}

@@ -10,6 +10,10 @@
  * label (the page re-ordered or re-labelled the list while the plan was out), the whole write is refused as
  * options-changed and nothing is ticked. After the clicks the labels are read once more, so a list that changed under
  * our clicks never reads back as verified.
+ *
+ * Whether a box or radio is chosen is read as its adapter reads it where the page draws the answer beside the input
+ * (FieldTarget.checkedOf: Ashby's span beside an opacity-0 input), else from its checked property, before and after
+ * every click: a chosen radio is never clicked again (that clears Ashby's answer), and nothing ever sets .checked.
  */
 import type { WriteValue } from '../../core/types/intent';
 import { optionLabelOf } from '../labels';
@@ -22,6 +26,11 @@ import { sameOptionLabel } from './verify';
 /** An options write, as the multi-option fillers take it. */
 export type OptionsValue = Extract<WriteValue, { kind: 'options' }>;
 
+/** Whether a radio or checkbox of the field shows chosen now (see the header). */
+function isOn(target: FieldTarget, input: HTMLInputElement): boolean {
+  return target.checkedOf?.(input) ?? input.checked;
+}
+
 /** Checks the planned radio of a group. */
 export function fillRadio(target: FieldTarget, index: number, cleanLabel: string, ctx: NotSubmitContext): FillOutcome {
   const planned = target.field.options === 'lazy' ? undefined : target.field.options[index];
@@ -30,19 +39,19 @@ export function fillRadio(target: FieldTarget, index: number, cleanLabel: string
     return refused('options-changed');
   }
   if (radio.disabled || !radio.isConnected) return refused('options-changed');
-  if (radio.checked) return done(false, 'already-correct');
+  if (isOn(target, radio)) return done(false, 'already-correct');
   if (!assertNotSubmit(radio, ctx).ok) return refused('needs-your-click');
   radio.click();
-  return radio.checked ? done(true, 'ok') : refused('needs-your-click');
+  return isOn(target, radio) ? done(true, 'ok') : refused('needs-your-click');
 }
 
 /** Ticks a lone checkbox. */
 export function fillCheckbox(target: FieldTarget, ctx: NotSubmitContext): FillOutcome {
   const box = target.control as HTMLInputElement;
-  if (box.checked) return done(false, 'already-correct');
+  if (isOn(target, box)) return done(false, 'already-correct');
   if (!assertNotSubmit(box, ctx).ok) return refused('needs-your-click');
   box.click();
-  return box.checked ? done(true, 'ok') : refused('needs-your-click');
+  return isOn(target, box) ? done(true, 'ok') : refused('needs-your-click');
 }
 
 /** Whether each box shows, now, the clean label planned for it (read as the scanner reads a member's label). */
@@ -58,19 +67,20 @@ export function fillCheckboxGroup(target: FieldTarget, value: OptionsValue, ctx:
   if (planned.some((box) => box === undefined || box.disabled || !box.isConnected)) return refused('options-changed');
   const boxes = planned as HTMLInputElement[];
   if (!boxesShow(boxes, value.cleanLabels, ctx)) return refused('options-changed');
-  const missing = boxes.filter((box) => !box.checked);
+  const on = (box: HTMLInputElement) => isOn(target, box);
+  const missing = boxes.filter((box) => !on(box));
   if (missing.length === 0) return done(false, 'already-correct');
   if (missing.some((box) => !assertNotSubmit(box, ctx).ok)) return refused('needs-your-click');
-  const checkedBefore = target.members.filter((box) => box.checked);
+  const checkedBefore = target.members.filter(on);
   for (const box of missing) {
     // Read again right before the click: the page may have ticked this box itself in answer to our last one, and a
     // click now would untick it (DOM-9).
-    if (!box.checked) box.click();
+    if (!on(box)) box.click();
   }
-  if (checkedBefore.some((box) => !box.checked)) return mismatch('unexpected-selection');
-  if (boxes.every((box) => box.checked)) {
+  if (checkedBefore.some((box) => !on(box))) return mismatch('unexpected-selection');
+  if (boxes.every(on)) {
     return boxesShow(boxes, value.cleanLabels, ctx) ? done(true, 'ok') : mismatch('verify-mismatch');
   }
-  if (missing.every((box) => !box.checked)) return refused('needs-your-click');
+  if (missing.every((box) => !on(box))) return refused('needs-your-click');
   return mismatch('verify-mismatch');
 }

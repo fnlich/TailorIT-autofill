@@ -1,0 +1,275 @@
+{
+  "fixture": "ashby/plaid-closed",
+  "source": "https://jobs.ashbyhq.com/plaid/5d8abedc-018a-4b42-ae1f-0e70b34f2007/application",
+  "captured": "2026-11-02T02:35:15.000Z",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".ashby-application-form-autofill-input-root input[type=\"file\"]",
+      "note": "The \"Autofill from resume\" uploader's file input (Ashby parses the file on its server and overwrites the form): the adapter excludes the uploader, so it is never a field nor a flagged row."
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_resume\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_name\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_email\"]"
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"b6586651-4b41-475f-9ad6-8295bc68d14c\"]"
+    },
+    {
+      "label": "Check Yes or No to indicate your agreement to receive text message updates from Plaid regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging. View our privacy policy here: Privacy Policy and our terms and conditions here: Terms",
+      "kind": "radio",
+      "required": false,
+      "section": "General Application",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"communicationConsent\"]",
+      "note": "The SMS consent beside the phone: two visible native radios in wrapping labels, no fieldset, named by the consent text (the adapter's labelFor). A click saves the consent at once (ApiSubmitCandidateTextingConsent)."
+    },
+    {
+      "label": "Location",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"_systemfield_location\"] input[role=\"combobox\"]",
+      "note": "Location: a remote search (ApiAutocompleteGeoLocation, typing opens and searches), labelled by the entry's title (labelFor): its placeholder \"Start typing...\" is no label."
+    },
+    {
+      "label": "School",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[data-field-path=\"_systemfield_education_history\"] input.ashby-application-form-input-autocomplete[placeholder=\"Search schools...\"]",
+      "note": "School: a remote search (ApiSearchSchoolByCanonicalName), labelled by its own sub-label in the Education block (labelFor); the block is the adapter's repeatable education section."
+    },
+    {
+      "label": "Degree",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[id=\"_systemfield_education_history-degree\"]"
+    },
+    {
+      "label": "Field of Study",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[id=\"_systemfield_education_history-major\"]"
+    },
+    {
+      "label": "Start Date month",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 12,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-startDate\"] .ashby-application-form-input-dropdown:nth-child(1) select",
+      "note": "A native select with no label: the block's \"Start Date\" label (for= names the div around both lists) and \"month\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "Start Date year",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 120,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-startDate\"] .ashby-application-form-input-dropdown:nth-child(2) select",
+      "note": "A native select with no label: the block's \"Start Date\" label (for= names the div around both lists) and \"year\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "End Date month",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 12,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-endDate\"] .ashby-application-form-input-dropdown:nth-child(1) select",
+      "note": "A native select with no label: the block's \"End Date\" label (for= names the div around both lists) and \"month\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "End Date year",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 120,
+      "control": "[data-field-path=\"_systemfield_education_history\"] [id$=\"-endDate\"] .ashby-application-form-input-dropdown:nth-child(2) select",
+      "note": "A native select with no label: the block's \"End Date\" label (for= names the div around both lists) and \"year\" (the adapter's labelFor and labelSuffix)."
+    },
+    {
+      "label": "Still Student?",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[data-field-path=\"_systemfield_education_history\"] input[id$=\"-isCurrent\"]",
+      "note": "Still Student?: its wrapping label[for]."
+    },
+    {
+      "label": "Current/Last Company",
+      "kind": "text",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"687b3361-536e-425d-81dd-ff7fd90d0a42\"]"
+    },
+    {
+      "label": "LinkedIn",
+      "kind": "text",
+      "required": false,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"a62b9b56-1667-44cf-91c4-cded3b03ec25\"]"
+    },
+    {
+      "label": "GitHub",
+      "kind": "text",
+      "required": false,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"ef4889bc-55bc-4eec-819d-04751b9806c1\"]"
+    },
+    {
+      "label": "Portfolio",
+      "kind": "text",
+      "required": false,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"d437b29e-57a4-45ce-a828-e8fdc36153fe\"]"
+    },
+    {
+      "label": "Other URL",
+      "kind": "text",
+      "required": false,
+      "section": "General Application",
+      "fillable": true,
+      "control": "[id=\"564f5ebb-59e7-403e-8cdf-7d96e4daa3ef\"]"
+    },
+    {
+      "label": "Have you ever been previously employed by Plaid, Quovo or Cognito?",
+      "kind": "radio",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"cf26d652-4890-489c-b5ec-7f7e8538d1d5\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "General Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"cf26d652-4890-489c-b5ec-7f7e8538d1d5\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Will you now or in the future require Plaid to provide immigration-related support or sponsorship in order to employ you?",
+      "kind": "radio",
+      "required": true,
+      "section": "General Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"fce0d060-0d2d-4ae5-9832-1b1010adb270\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "General Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"fce0d060-0d2d-4ae5-9832-1b1010adb270\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Why are you interested in working at Plaid? Select all that apply.",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "AI & Interest in Working at Plaid",
+      "fillable": true,
+      "options": 5,
+      "control": "[data-field-path=\"55cd0838-aa7a-43cd-b808-ecfda77608fc\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "Based on your current impression, how would you rate Plaid’s position in AI compared to other tech companies?",
+      "kind": "radio",
+      "required": true,
+      "section": "AI & Interest in Working at Plaid",
+      "fillable": true,
+      "options": 5,
+      "control": "[data-field-path=\"2c83a2e9-7f71-4b7a-a719-63da27a1748b\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Working from the office at least 3 days per week is a requirement for this role. Will you be able to work from the Plaid office associated with this role at least 3 days per week, with or without a reasonable accommodation?",
+      "kind": "radio",
+      "required": false,
+      "section": "AI & Interest in Working at Plaid",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"3a208fae-425b-4044-8a98-bee4714ea58a\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "AI & Interest in Working at Plaid",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"3a208fae-425b-4044-8a98-bee4714ea58a\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Preferred Location (In Office)",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "AI & Interest in Working at Plaid",
+      "fillable": true,
+      "options": 9,
+      "control": "[data-field-path=\"f0bd3613-0432-4194-8895-ae16d30feac9\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Smoke fixture: an Ashby application form</title>
+  </head>
+  <body>
+    <!-- Ashby's page as its adapter knows it (src/adapters/ashby/index.ts): the Application tab's panel holding the
+         form container and a question's entry. While the Ashby adapter waits for a form drawn late, no other adapter
+         may claim an Ashby page, so the plain form.html would show no form here for 30 s. -->
+    <h1>Software Engineer</h1>
+    <p>VISIBLE-MARKER-SMOKE</p>
+    <div tabindex="0" role="tabpanel" aria-labelledby="job-application-form" id="form">
+      <div class="ashby-application-form-container">
+        <div class="ashby-application-form-section-container">
+          <div class="ashby-application-form-field-entry" data-field-path="_systemfield_name">
+            <label class="ashby-application-form-question-title" for="_systemfield_name">Name</label>
+            <input id="_systemfield_name" name="_systemfield_name" type="text" />
+          </div>
+        </div>
+        <button class="ashby-application-form-submit-button">Submit Application</button>
+      </div>
+    </div>
+  </body>
+</html>

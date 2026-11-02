@@ -52,11 +52,13 @@ describe("TailorIT's saved answers, as the core reads them", () => {
     expect(savedAnswerOf(asked('How did you hear about this job?'))).not.toBeNull();
   });
 
-  it('names the company of a Lever or Greenhouse address by its board, in lower case; none for the rest', () => {
+  it('names the company of a Lever, Greenhouse or Ashby address by its board, in lower case; none for the rest', () => {
     expect(companyOfUrl('https://jobs.lever.co/Northwind/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00/apply'))
       .toEqual({ platform: 'lever', board: 'northwind' });
     expect(companyOfUrl('https://job-boards.greenhouse.io/acme/jobs/4012345')).toEqual({ platform: 'greenhouse', board: 'acme' });
     expect(scopeOf({ platform: 'greenhouse', board: 'acme' })).toBe('greenhouse:acme');
+    expect(companyOfUrl('https://jobs.ashbyhq.com/OpenAI/d4780eac-03ad-4dae-861f-99af22b4287e/application?embed=js'))
+      .toEqual({ platform: 'ashby', board: 'openai' });
     for (const address of ['https://job-boards.greenhouse.io/embed/job_app?token=4012345',
       'https://jobs.lever.co/tailorit-fixture/trap-01/apply', 'https://jobs.ashbyhq.com/acme/1', 'not an address']) {
       expect(companyOfUrl(address), address).toBeNull();

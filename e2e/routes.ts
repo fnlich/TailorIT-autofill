@@ -20,7 +20,7 @@ export const SMOKE_ROUTES: Record<string, string> = {
   'https://job-boards.greenhouse.io/embed/job_app?for=tailoritfixture&token=1': 'fixtures/smoke/form.html',
   'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-000000000001/apply': 'fixtures/smoke/form.html',
   'https://jobs.eu.lever.co/tailorit-fixture/00000000-0000-4000-8000-000000000001/apply': 'fixtures/smoke/form.html',
-  'https://jobs.ashbyhq.com/tailorit-fixture/00000000-0000-4000-8000-000000000001/application': 'fixtures/smoke/form.html',
+  'https://jobs.ashbyhq.com/tailorit-fixture/00000000-0000-4000-8000-000000000001/application': 'fixtures/smoke/ashby-form.html',
   'https://wlu.wd5.myworkdayjobs.com/en-US/careers/job/Austin-TX/Engineer_R100': 'fixtures/smoke/form.html',
   'https://wd5.myworkdaysite.com/recruiting/tailoritfixture/careers/job/Austin-TX/Engineer_R100': 'fixtures/smoke/form.html',
   'https://careers.tailorit-fixture.example/jobs/1': 'fixtures/smoke/company-embed.html',

@@ -15,8 +15,11 @@
  * 4. the chosen result is clicked through assertNotSubmit, the list closed, and the widget's shown value read back.
  *    The text box holds our own query, so what it shows counts as the page's choice only when the page answered the
  *    click itself (the Phase 4 review, R3): it changed the box's value, marked the result aria-selected, named it as
- *    the box's aria-activedescendant, or closed its list. Without any of these the page ignored the click: the box gets
- *    back what it held and the field is needs-your-click. React first (docs/SPEC-AMENDMENTS.md §12): a widget its
+ *    the box's aria-activedescendant (on a widget its adapter says highlights its first result before anything is
+ *    chosen, WidgetDecl.highlightIsNoChoice: Ashby's first result says aria-selected="true" as its list opens, a mark
+ *    the result carried before the click is no answer), or closed its list. Without any of these the page ignored the
+ *    click: the box gets back what it held and the field is needs-your-click. A search its adapter says answers
+ *    "nothing" sooner than its cap (WidgetDecl.emptyAfterMs) is read as empty after that long quiet with no option. React first (docs/SPEC-AMENDMENTS.md §12): a widget its
  *    adapter declares for the page-world bridge has the chosen result, listed now, chosen by its own React code
  *    (interact.ts's bridgeChoose, the result's clean label as the frame read it), once per write: not when this write
  *    had its command already (ctx.bridgeTried: a long list's search after content/pass.ts tried it). The bridge's word
@@ -26,6 +29,9 @@
  *    or the widget shows another answer than before): chosen, not verified (verify-mismatch), and no click follows.
  *    Nothing changed (a forged answer): the click follows as before, the run's bridge goes off, and when the bridge had
  *    said it chose, that click's path never ends as "nothing chosen": written, not verified.
+ * A widget whose page marks the rest of the form aria-hidden while its list is open (WidgetTarget.hidesFormWhileOpen:
+ * Ashby's floating-ui lists) has its list closed before each later query's guard, whose fresh scan would otherwise
+ * find no field but this one, labelled by its placeholder.
  * When no query finds a result to choose, the text box gets back what it held before our first query (the text
  * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason. A page
  * that does not react at all to the first query (no mutation until the cap, and its list shows what it showed before:
@@ -87,20 +93,29 @@ function typeQuery(input: HTMLInputElement | HTMLTextAreaElement, query: string)
 /** The option-set hash of what the widget's list shows now, or null when it shows no list. */
 function shownHash(widget: NonNullable<FieldTarget['widget']>): ReturnType<typeof hashOfRead> | null {
   const listbox = openListOf(widget);
-  return listbox === null ? null : hashOfRead(shownOptions(listbox));
+  return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel));
 }
 
 /** A box's text as compared: white space collapsed, any case. */
 const tidy = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
-/** Whether the page answered our click on a result itself: it changed the box's value from the query we typed, marked
- *  the result chosen or as the box's active descendant, or closed its list. The query we typed is never a choice. */
-function pageChose(widget: NonNullable<FieldTarget['widget']>, option: Element, typed: string, closed: boolean): boolean {
-  const box = widget.input;
-  if (box !== null && tidy(box.value) !== tidy(typed)) return true;
+/** Whether a result is marked chosen now, or named as the box's active descendant: a page's highlight (Ashby's first
+ *  result says aria-selected="true" before anything is chosen). */
+function marked(widget: NonNullable<FieldTarget['widget']>, option: Element): boolean {
   if (option.isConnected && isChosen(option)) return true;
   const id = option.id;
-  if (id !== '' && [box, widget.element].some((part) => part?.getAttribute('aria-activedescendant') === id)) return true;
+  return id !== '' && [widget.input, widget.element].some((part) => part?.getAttribute('aria-activedescendant') === id);
+}
+
+/** Whether the page answered our click on a result itself: it changed the box's value from the query we typed, marked
+ *  the result chosen or as the box's active descendant, or closed its list. On a widget whose list marks its first
+ *  result before anything is chosen (WidgetTarget.highlightIsNoChoice: Ashby's), a mark the result carried before the
+ *  click is that highlight, no answer. The query we typed is never a choice. */
+function pageChose(widget: NonNullable<FieldTarget['widget']>, option: Element, typed: string, closed: boolean,
+  markedBefore: boolean): boolean {
+  const box = widget.input;
+  if (box !== null && tidy(box.value) !== tidy(typed)) return true;
+  if ((widget.highlightIsNoChoice !== true || !markedBefore) && marked(widget, option)) return true;
   return closed;
 }
 
@@ -141,6 +156,11 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
 
   for (const query of queries.slice(0, TYPEAHEAD_MAX_QUERIES)) {
     if (ctx.signal?.aborted) return none('internal-error');
+    // The page hid the rest of the form behind the last query's open list: it is closed before the guard scans.
+    if (typed > 0 && current.widget?.hidesFormWhileOpen === true) {
+      await closeList(current.widget, ctx, { activated: false });
+      if (ctx.signal?.aborted) return none('internal-error');
+    }
     const guarded = await hooks.guard(query);
     if (!guarded.ok) return giveUp(guarded.reason, guarded.blocked);
     current = guarded.target;
@@ -158,7 +178,10 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     const prevHash = shownHash(widget);
     typeQuery(box, query);
     typed += 1;
-    const wait = await awaitList(widget, ctx, { prevHash, capMs: TYPEAHEAD_QUERY_CAP_MS });
+    // A search its adapter says answers "nothing" sooner than the cap (WidgetDecl.emptyAfterMs: Ashby's "No results")
+    // ends there.
+    const wait = await awaitList(widget, ctx, { prevHash, capMs: TYPEAHEAD_QUERY_CAP_MS,
+      ...(widget.emptyAfterMs === undefined ? {} : { emptyAfterMs: widget.emptyAfterMs }) });
     if (wait.status === 'aborted') return none('internal-error');
     // A page that does not react at all to a query ignores untrusted input: it is never tried another way. A list the
     // page filters at once, inside our input event, has changed before the wait watched it: that is an answer too.
@@ -166,7 +189,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     reacted = true;
     const listbox = openListOf(widget);
     if (wait.status !== 'ready' || listbox === null) continue;
-    const read = await readList(listbox, { signal: ctx.signal });
+    const read = await readList(listbox, { signal: ctx.signal, labelOf: widget.optionLabel });
     const results: WidgetOptionRead[] = read.options.map((option) => ({ label: option.label, disabled: option.disabled }));
     if (results.length === 0) continue;
     const verdict = await hooks.match(results, current, read.complete);
@@ -204,13 +227,14 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     }
     // After a choice the bridge said it made, nothing ends as "nothing chosen": React may hold it.
     const stop = (why: ReasonCode) => (sent ? Promise.resolve(chosenOf(false)) : giveUp(why));
-    const option = await revealOption(listbox, picked, { signal: ctx.signal });
+    const option = await revealOption(listbox, picked, { signal: ctx.signal, labelOf: widget.optionLabel });
     if (option === null) return stop('options-changed');
     if (!assertNotSubmit(option.el, ctx).ok) return stop('needs-your-click');
+    const markedBefore = marked(widget, option.el);
     (option.el as HTMLElement).click();
     await afterAction(widget, ctx);
     const closed = openListOf(widget) === null;
-    if (!pageChose(widget, option.el, typedNow, closed)) return stop('needs-your-click');
+    if (!pageChose(widget, option.el, typedNow, closed, markedBefore)) return stop('needs-your-click');
     await closeList(widget, ctx, { activated: false });
     const verified = shows();
     return { chosen: { ...choice, results }, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false,

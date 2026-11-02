@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { genericAdapter } from '../adapters/generic';
 import type { Adapter } from '../adapters/types';
 import { FIELD_KINDS } from '../core/enums';
 import { FieldSpecSchema } from '../messaging/schemas';
 import { fill } from './fillers';
 import { loadFixture, logEvents, removeFixtures } from './fixture.testkit';
+import { registerOwnUiHost } from './own-ui';
 import { countVisibleControls, findField, scan, toFieldSpec } from './scan';
 import type { ScannedField } from './types';
 
@@ -345,5 +347,67 @@ describe('scan: re-finding and handing over', () => {
     expect(result.fields.map((field) => field.label)).toEqual(['Shown']);
     expect(result.counters).toEqual({ hiddenControlsIgnored: 0, deferredFields: 1 });
     expect(countVisibleControls(root)).toBe(1);
+  });
+});
+
+describe('scan: what an adapter declares (the Phase 2 review)', () => {
+  afterEach(() => removeFixtures(document));
+
+  // A Yes/No its adapter declares on a widget root: two buttons, its own display:none checkbox (a declared part), and a
+  // text box a person can see; a button outside it and one in the extension's UI, which the adapter also names as
+  // members; a part the adapter keeps out (excluded), whose open shadow root holds a labelled input; and a name box.
+  const PAGE = `<!doctype html><body><form>
+    <div id="yn"><span id="q">Authorized?</span><button type="button">Yes</button><button type="button">No</button>
+      <input type="checkbox" id="own" style="display:none"><label for="notes">Notes</label><input id="notes"></div>
+    <button type="button" id="stray">Maybe</button>
+    <div id="ui"><button type="button" id="ours">Ours</button></div>
+    <div id="out"><span id="host"></span></div>
+    <label for="n">Name</label><input id="n">
+  </form></body>`;
+
+  async function declared() {
+    const fixture = await loadFixture(document, PAGE);
+    const doc = fixture.doc;
+    const shadow = doc.getElementById('host')!.attachShadow({ mode: 'open' });
+    const label = doc.createElement('label');
+    label.htmlFor = 's';
+    label.textContent = 'Shadowed';
+    const inner = doc.createElement('input');
+    inner.id = 's';
+    shadow.append(label, inner);
+    registerOwnUiHost(doc.getElementById('ui')!);
+    const yn = doc.getElementById('yn')!;
+    const adapter: Adapter = {
+      ...genericAdapter,
+      widgetRoots: () => [yn],
+      widgetFor: (el) => (el === yn ? { kind: 'radio', opener: yn,
+        members: [...Array.from(yn.querySelectorAll<HTMLElement>('button')), doc.getElementById('stray')!,
+          doc.getElementById('ours')!],
+        parts: [doc.getElementById('own')!], snapshot: 'the test page' } : null),
+      labelFor: (el) => (el === yn ? doc.getElementById('q') : null),
+      excluded: () => [doc.getElementById('out')!],
+    };
+    return { fixture, doc, adapter, result: scan(doc.querySelector('form')!, adapter, OPTIONS) };
+  }
+
+  it('takes in only the parts a widget declares, and counts them; a control a person can see inside it stays a field', async () => {
+    const { result } = await declared();
+    expect(result.fields.map((field) => [field.label, field.kind])).toEqual([['Authorized?', 'radio'], ['Notes', 'text'],
+      ['Name', 'text']]);
+    // The declared part, and the excluded part's shadowed input: no field, both counted.
+    expect(result.counters.hiddenControlsIgnored).toBe(2);
+  });
+
+  it("keeps a widget's members to those inside it, never the extension's UI", async () => {
+    const { result, doc } = await declared();
+    const field = result.fields.find((candidate) => candidate.label === 'Authorized?')!;
+    expect(result.target(field.key)!.widget!.members.map((member) => member.textContent)).toEqual(['Yes', 'No']);
+    expect(result.target(field.key)!.widget!.members).not.toContain(doc.getElementById('stray'));
+  });
+
+  it('leaves out an input inside an open shadow root of an excluded part', async () => {
+    const { result } = await declared();
+    expect(result.fields.some((field) => field.label === 'Shadowed')).toBe(false);
+    expect(result.unrecognisedUploads).toEqual([]);
   });
 });

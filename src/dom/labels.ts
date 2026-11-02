@@ -18,6 +18,10 @@
  *
  * Groups (radios, checkbox groups) take their question from the container: its aria-labelledby, its legend, the
  * adapter's label, then its aria-label. Each member's own visible label is the option's label.
+ *
+ * The adapter's label is the visible text of the element its labelFor names, with the words its labelSuffix adds for a
+ * control that shares that element with others (Ashby's month and year lists under one "Start Date"). Help text is
+ * the visible aria-describedby targets, else the elements the adapter's descriptionFor names.
  */
 import type { LabelSource } from '../core/enums';
 import type { Adapter } from '../adapters/types';
@@ -153,7 +157,7 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   if (byWrapping) return byWrapping;
   const legend = soleFieldLegend(control, ctx);
   if (legend) return legend;
-  const byAdapter = adapterLabel(control, ctx);
+  const byAdapter = adapterLabelOf(control, ctx);
   if (byAdapter) return byAdapter;
   // A control we wrote into keeps the placeholder that showed then, while the page still shows the same text: our own
   // write hid it, and the field, with its key, is the same one. Any other filled control's placeholder is out of sight
@@ -185,7 +189,7 @@ export function labelOfGroup(members: readonly HTMLInputElement[], container: El
     }
   }
   const first = members[0];
-  const byAdapter = (container ? adapterLabel(container, ctx) : null) ?? (first ? adapterLabel(first, ctx) : null);
+  const byAdapter = (container ? adapterLabelOf(container, ctx) : null) ?? (first ? adapterLabelOf(first, ctx) : null);
   if (byAdapter) return byAdapter;
   return (container ? ariaLabel(container, ctx) : null) ?? NONE;
 }
@@ -199,13 +203,22 @@ export function optionLabelOf(input: HTMLInputElement, ctx: LabelContext): { tex
     const { text } = cleanLabel(joined.text);
     if (text !== '') return { text, element: joined.first };
   }
-  const adapter = adapterLabel(input, ctx);
+  const adapter = adapterLabelOf(input, ctx);
   return adapter ? { text: adapter.text, element: adapter.element } : { text: '', element: null };
 }
 
-/** Visible help text: the aria-describedby targets a person can see, joined. */
+/** Visible help text: the aria-describedby targets a person can see, joined; else the adapter's (descriptionFor). */
 export function descriptionOf(el: Element, ctx: LabelContext): string {
-  const text = joinedText(referenced(el, 'aria-describedby'), ctx).text;
+  let text = joinedText(referenced(el, 'aria-describedby'), ctx).text;
+  if (text === '' && ctx.adapter?.descriptionFor !== undefined) {
+    let declared: Element[];
+    try {
+      declared = ctx.adapter.descriptionFor(el);
+    } catch {
+      declared = [];
+    }
+    text = joinedText(declared, ctx).text;
+  }
   return capCodePoints(text.replace(/\s+/g, ' ').trim(), TEXT_CAP_DESCRIPTION);
 }
 
@@ -229,10 +242,15 @@ function soleFieldLegend(control: Element, ctx: LabelContext): ResolvedLabel | n
   return fromText(textOf(legend, ctx), 'legend', legend);
 }
 
-function adapterLabel(el: Element, ctx: LabelContext): ResolvedLabel | null {
+/** The adapter's visible label for a control or a group's container (labelFor, with its labelSuffix), or null. */
+export function adapterLabelOf(el: Element, ctx: LabelContext): ResolvedLabel | null {
   const labelEl = ctx.adapter?.labelFor?.(el) ?? null;
   if (labelEl === null || !isUserVisible(labelEl, ctx.cache)) return null;
-  return fromText(textOf(labelEl, ctx), 'adapter', labelEl);
+  const cleaned = cleanLabel(textOf(labelEl, ctx));
+  if (cleaned.text === '') return null;
+  const suffix = (ctx.adapter?.labelSuffix?.(el) ?? '').replace(/\s+/g, ' ').trim();
+  const text = suffix === '' ? cleaned.text : capCodePoints(`${cleaned.text} ${suffix}`, TEXT_CAP_LABEL);
+  return { text, source: 'adapter', visible: true, required: cleaned.required, element: labelEl };
 }
 
 /** An aria-label: it may drive the rules, and counts as visible only when its words are visible beside the control

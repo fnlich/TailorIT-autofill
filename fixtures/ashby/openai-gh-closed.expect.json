@@ -1,0 +1,237 @@
+{
+  "fixture": "ashby/openai-gh-closed",
+  "source": "https://jobs.ashbyhq.com/openai/240d459b-696d-43eb-8497-fab3e56ecd9b/application",
+  "captured": "2026-11-02T02:35:37.000Z",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": ".ashby-application-form-autofill-input-root input[type=\"file\"]",
+      "note": "The \"Autofill from resume\" uploader's file input (Ashby parses the file on its server and overwrites the form): the adapter excludes the uploader, so it is never a field nor a flagged row."
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_name\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_email\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"_systemfield_resume\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"phone\"]"
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"cover_letter\"]",
+      "note": "Its label[for] is the visible title (the label proxy); the \"Upload File\" button beside it is the adapter's upload widget, never pressed."
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174608004\"]"
+    },
+    {
+      "label": "Website",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174609004\"]"
+    },
+    {
+      "label": "What is your most significant technical achievement?",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174610004\"]"
+    },
+    {
+      "label": "Please provide an example or evidence of your exceptional ability.",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174611004\"]"
+    },
+    {
+      "label": "Where can we find samples of your code?",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174612004\"]"
+    },
+    {
+      "label": "Where can we find your publications, papers or research?",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174613004\"]"
+    },
+    {
+      "label": "Are there areas of research you are particularly interested in? If so, please let us know which areas.",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174614004\"]"
+    },
+    {
+      "label": "How many years of relevant experience do you have outside internships/academia?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 4,
+      "control": "[data-field-path=\"question_10174615004\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "How did you hear about OpenAI?",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "options": 23,
+      "control": "[data-field-path=\"question_10174616004[]\"] input[type=\"checkbox\"]",
+      "note": "A MultiValueSelect: a fieldset of checkboxes with no legend, each named by its option's label, labelled by its title (labelFor), which makes it one group (checkboxContainer); each input at opacity 0 behind its label[for]."
+    },
+    {
+      "label": "Are you authorized to work lawfully in the US?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"question_10174617004\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "When can you start a new role?",
+      "kind": "text",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174618004\"]"
+    },
+    {
+      "label": "Are you able to work from our San Francisco HQ 3 days per week?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-field-path=\"question_10174619004\"] button.ashby-application-form-input-yesno-option",
+      "note": "A Yes/No: two typeless buttons with aria-pressed in a div with no role (the adapter's widgetRoots and widgetFor declare it, its members the buttons), labelled by the entry's title, which no for= ties."
+    },
+    {
+      "label": "",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Application",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-field-path=\"question_10174619004\"] .ashby-application-form-input-yesno input[type=\"checkbox\"]",
+      "note": "The Yes/No's own checkbox (display: none, no label): part of the declared widget, never a field nor a counted hidden control."
+    },
+    {
+      "label": "Where can we learn more about you?",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174620004\"]"
+    },
+    {
+      "label": "Additional Information",
+      "kind": "text",
+      "required": false,
+      "section": "Application",
+      "fillable": true,
+      "control": "[id=\"question_10174621004\"]"
+    },
+    {
+      "label": "I acknowledge that I have opened, read, and understood the Arbitration Agreement. I understand that by submitting my application, I am agreeing to be bound by the terms of the Arbitration Agreement.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[data-field-path=\"a90e16d2-baaf-4c31-b3e5-70b53f261040\"] input[type=\"checkbox\"]",
+      "note": "A question of one box: a lone checkbox named by its own label[for]; the question's title is its help text (the adapter's descriptionFor), its _required_ mark its required (requiredFor)."
+    },
+    {
+      "label": "I confirm I have read the above.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Application",
+      "fillable": true,
+      "control": "[data-field-path=\"7fe82de7-a1d7-4d8a-95a5-e5cc9adc84ea\"] input[type=\"checkbox\"]",
+      "note": "A question of one box: a lone checkbox named by its own label[for]; the question's title is its help text (the adapter's descriptionFor), its _required_ mark its required (requiredFor)."
+    },
+    {
+      "label": "Gender",
+      "kind": "radio",
+      "required": false,
+      "section": "U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"_systemfield_eeoc_gender\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Race",
+      "kind": "radio",
+      "required": false,
+      "section": "U.S. EQUAL EMPLOYMENT OPPORTUNITY INFORMATION (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 8,
+      "control": "[data-field-path=\"_systemfield_eeoc_race\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "radio",
+      "required": false,
+      "section": "SELF-IDENTIFICATION OF VETERAN STATUS (Completion is voluntary and will not subject you to adverse treatment)",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-field-path=\"_systemfield_eeoc_veteran_status\"] input[type=\"radio\"]",
+      "note": "A ValueSelect drawn as radios: a fieldset with no legend, labelled by the title inside it (the adapter's labelFor); each input is 24 px at opacity 0 inside a visible span, tied to its option's label[for] (the label proxy)."
+    }
+  ]
+}

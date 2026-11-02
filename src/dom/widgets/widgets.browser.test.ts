@@ -477,3 +477,42 @@ describe('the Phase 4 review', () => {
     expect(toFieldSpec(page.target(QUESTION).field).optionsPartial).toBeUndefined();
   });
 });
+
+describe('a result marked before the click (the Phase 2 review)', () => {
+  // A list that marks every result aria-selected="true" as it shows it, and a click on a result that keeps the box's
+  // text and leaves the list open: only the mark says the page took the click.
+  const marking = typeaheadHtml.replace("option.setAttribute('aria-selected', 'false');",
+    "option.setAttribute('aria-selected', 'true');")
+    .replace(/input\.value = label;\s*list\.replaceChildren\(\);\s*show\(false\);/, '');
+  const AUSTIN = 'University of Texas at Austin';
+  /** Hooks that choose Austin, on the page's fresh target, as `adjust` declares its widget. */
+  function choosing(page: Page, adjust: (target: FieldTarget) => FieldTarget): TypeaheadHooks {
+    return {
+      guard: async () => ({ ok: true, target: adjust(page.target('School')) }),
+      match: async (results) => {
+        const index = results.findIndex((result) => result.label === AUSTIN);
+        return index < 0 ? { choose: null, reason: 'no-match', blocked: false } : { choose: { index, cleanLabel: AUSTIN } };
+      },
+    };
+  }
+
+  it('takes the mark as the page’s answer on a widget whose adapter says nothing of its highlight', async () => {
+    expect(marking).not.toBe(typeaheadHtml);
+    const page = await open(marking);
+    await readWidget(page.target('School'), page.ctx());
+    const result = await searchTypeahead(page.target('School'), [AUSTIN], page.ctx(), choosing(page, (target) => target));
+    expect(page.counter<string | null>('__chosen')).toBe(AUSTIN);
+    expect(result).toMatchObject({ chosen: { cleanLabel: AUSTIN }, reason: 'ok' });
+  });
+
+  it('never takes a mark the result carried before the click where the adapter says its highlight is no choice', async () => {
+    const page = await open(marking);
+    await readWidget(page.target('School'), page.ctx());
+    const highlighting = (target: FieldTarget): FieldTarget => ({ ...target,
+      widget: { ...target.widget!, highlightIsNoChoice: true } });
+    const result = await searchTypeahead(highlighting(page.target('School')), [AUSTIN], page.ctx(),
+      choosing(page, highlighting));
+    expect(page.counter<string | null>('__chosen')).toBe(AUSTIN);
+    expect(result).toMatchObject({ chosen: null, verified: false, reason: 'needs-your-click' });
+  });
+});

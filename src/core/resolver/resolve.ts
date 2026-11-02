@@ -22,6 +22,7 @@
  */
 import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE } from '../confidence';
 import { attentionHits, namesConsentTopic } from '../guard/attention';
+import { cutInjected } from '../guard/injected';
 import { hasTripwire } from '../guard/tripwire';
 import { intendedText } from '../matcher/intended';
 import { typeaheadQueries } from '../matcher/typeahead';
@@ -40,7 +41,7 @@ import { none, NOTE_REASONS, SHAPE_OF_KIND, value, type Candidate, type Choice, 
 import { policyClassOf } from './categories';
 import { screenForClassify, type LlmClassification } from './classify';
 import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassification } from './classifyRules';
-import { dateIso, dateText } from './format';
+import { dateIso, dateText, type DateParts } from './format';
 import { statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
@@ -168,19 +169,73 @@ function savedCandidate(answer: SavedAnswer): Candidate {
   }
 }
 
+/** The months, by their English names, as a list of months shows them. */
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
+  'November', 'December'] as const;
+
+/** Which part of a date a field asks for, by its label's last word: "Start Date month" and "Start date year", as
+ *  Ashby's Education block (its adapter's suffixes) and Greenhouse's education fields name them; null otherwise. */
+export function datePartOf(label: string): 'month' | 'year' | null {
+  const last = label.trim().toLowerCase().split(/\s+/).at(-1);
+  return last === 'month' || last === 'year' ? last : null;
+}
+
+/** The month an option's label names: its English name or abbreviation ("January", "Jan", "Sept."), its number ("1",
+ *  "01"), or both ("01 - January", "1. Jan"); null for any other label, and for a label whose parts name two months. */
+export function monthOfLabel(label: string): number | null {
+  const words = label.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word !== '');
+  if (words.length === 0 || words.length > 2) return null;
+  let month: number | null = null;
+  for (const word of words) {
+    let named: number | null = null;
+    if (/^\d{1,2}$/.test(word)) {
+      const number = Number(word);
+      named = number >= 1 && number <= 12 ? number : null;
+    } else {
+      const at = MONTH_NAMES.findIndex((name) => name.toLowerCase() === word
+        || (word.length >= 3 && name.toLowerCase().startsWith(word) && (word.length === 3 || word === 'sept')));
+      named = at < 0 ? null : at + 1;
+    }
+    if (named === null || (month !== null && month !== named)) return null;
+    month = named;
+  }
+  return month;
+}
+
+/** A date's part as a list of months or of years answers it (datePartOf). The year is its four digits. The month is the
+ *  option the list itself shows for it, read by monthOfLabel ("Aug", "08", "08 - August"), when the list is read and
+ *  exactly one option names it; a list whose options name months but none or several of them this one has no answer
+ *  (flagged); otherwise its English name, which the matcher then finds among the options. Undefined for any other
+ *  label, and for a month the date lacks. */
+export function datePartChoice(label: string, date: DateParts, options: FieldSpec['options'] = 'lazy'): Choice | undefined {
+  const part = datePartOf(label);
+  if (part === 'year') return { intended: intendedText(String(date.y)), domain: 'generic' };
+  if (part !== 'month' || date.m === undefined || date.m < 1 || date.m > 12) return undefined;
+  if (options !== 'lazy') {
+    const read = options.map((option) => cutInjected(option.label).clean.trim());
+    const named = read.filter((label) => monthOfLabel(label) === date.m);
+    if (named.length === 1) return { intended: intendedText(named[0]!), domain: 'generic' };
+    if (named.length > 1 || read.some((label) => monthOfLabel(label) !== null)) return undefined;
+  }
+  return { intended: intendedText(MONTH_NAMES[date.m - 1]!), domain: 'generic' };
+}
+
 /** The value in the shape the field's kind takes (candidate.ts), and whether its layout was guessed; null when the
- *  value has no such shape. */
+ *  value has no such shape. A date for a list of months or of years is its part (datePartChoice), and for a text box
+ *  that asks for its year (Greenhouse's "Start date year") its four digits. */
 export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): { shaped: Shaped; guessed: boolean } | null {
   const plain = (shaped: Shaped) => ({ shaped, guessed: false });
   switch (SHAPE_OF_KIND[spec.kind]) {
     case 'text': {
       if (candidate.text !== undefined) return plain({ shape: 'text', text: candidate.text });
       if (candidate.date === undefined) return null;
+      if (datePartOf(spec.label) === 'year') return plain({ shape: 'text', text: String(candidate.date.y) });
       const laid = dateText(candidate.date, spec.constraints);
       return laid === null ? null : { shaped: { shape: 'text', text: laid.text }, guessed: laid.guessed };
     }
     case 'choice': {
-      const choice = candidate.choice ?? (candidate.set?.length === 1 ? candidate.set[0] : undefined);
+      const choice = candidate.choice ?? (candidate.set?.length === 1 ? candidate.set[0] : undefined)
+        ?? (candidate.date === undefined ? undefined : datePartChoice(spec.label, candidate.date, spec.options));
       return choice ? plain({ shape: 'choice', choice }) : null;
     }
     case 'set': {

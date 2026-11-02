@@ -23,9 +23,11 @@ import {
   IMAGE_INLINE_MAX,
   PHONE_DIGITS,
   PHONE_SOURCE,
+  ashbyRenderId,
   checkedForms,
   convertMhtml,
   imageSize,
+  normaliseAshby,
   onAtsHost,
   parseMhtml,
   readRedactList,
@@ -594,6 +596,31 @@ describe('mhtml-to-fixture helpers', () => {
     }
   });
 
+  it("normalises Ashby's per-load ids: each form's render id wherever it stands, in the order first named, and the CSP nonce", () => {
+    const application = '0513f5fb-8aae-4048-940a-6d47266a985e';
+    const survey = 'f575a297-f052-48fa-a651-98a61e7ff792';
+    const html = `<meta name="csp-nonce" id="csp-nonce" content="Lp7cAcoyl3XMaoSiuDAT4ngp">`
+      + `<div data-field-path="_systemfield_name" data-field-entry-id="${application}__systemfield_name"></div>`
+      + `<div data-field-path="x" data-field-entry-id="${application}_x"><input type="radio" id="${application}_x-labeled-radio-0" `
+      + `name="${application}_x"><label for="${application}_x-labeled-radio-0">A</label></div>`
+      + `<div data-field-path="_systemfield_eeoc_gender" data-field-entry-id="${survey}__systemfield_eeoc_gender"></div>`
+      + '<p>d4780eac-03ad-4dae-861f-99af22b4287e stays: no data-field-entry-id names it</p>';
+    const { text, renderIds, nonces } = normaliseAshby(html);
+    expect(renderIds).toEqual([application, survey]);
+    expect(nonces).toBe(1);
+    expect(text).not.toContain(application);
+    expect(text).not.toContain(survey);
+    expect(text).not.toContain('Lp7cAcoyl3XMaoSiuDAT4ngp');
+    expect(text).toContain(`data-field-entry-id="${ashbyRenderId(0)}__systemfield_name"`);
+    expect(text).toContain(`<input type="radio" id="${ashbyRenderId(0)}_x-labeled-radio-0" name="${ashbyRenderId(0)}_x">`);
+    expect(text).toContain(`data-field-entry-id="${ashbyRenderId(1)}__systemfield_eeoc_gender"`);
+    expect(text).toContain('content="REDACTED"');
+    expect(text).toContain('d4780eac-03ad-4dae-861f-99af22b4287e stays');
+    expect(ashbyRenderId(0)).toBe('00000000-0000-4000-8000-000000000001');
+    // Any other page is left as it is: the converter normalises only --platform ashby.
+    expect(normaliseAshby('<div id="a"></div>')).toEqual({ text: '<div id="a"></div>', renderIds: [], nonces: 0 });
+  });
+
   it('checks the written text with encodings undone, but not inside stylesheets or base64 payloads', () => {
     const [raw, entities, percents] = checkedForms('<a href="?q=Jane%20Roe" title="O&#39;Brien &amp; Co">' +
       '<style>.Jane-Roe{}</style><img src="data:image/png;base64,SmFuZSBSb2U=">');
@@ -620,27 +647,58 @@ interface Expectation {
 /** The reasons a control is not fillable (docs/FIXTURES.md). */
 const NOT_FILLABLE = ['widget-phase-4', 'not-user-visible'];
 const CHOICE_KINDS = ['select', 'radio', 'checkbox-group', 'combobox', 'multiselect', 'typeahead-remote'];
-const CASES = ['lever', 'greenhouse'].flatMap((platform) => readdirSync(join(ROOT, 'fixtures', platform))
+const CASES = ['lever', 'greenhouse', 'ashby'].flatMap((platform) => readdirSync(join(ROOT, 'fixtures', platform))
   .filter((name) => name.endsWith('.expect.json')).map((name) => `${platform}/${name.slice(0, -'.expect.json'.length)}`));
+/** A frame's case (ashby/ashby-embed-closed.frame-1: the form inside a company's page) is served by its page's route
+ *  map. */
+const routesOf = (name: string) => join(ROOT, 'fixtures', `${name.replace(/\.frame-\d+$/, '')}.routes.json`);
+/** The Ashby captures of a list open, which have no expectations: floating-ui marks the rest of the page aria-hidden
+ *  while a list is open, and no scan runs then (docs/FIXTURES.md, "The Ashby capture"). */
+const LIST_STATES = ['ashby/multiverse-select-open', 'ashby/openai-location-results', 'ashby/plaid-school-results'];
 
-describe('the committed Lever and Greenhouse fixtures', () => {
-  it('are the six cases from the owner\'s captures, the six closed forms of the Greenhouse widget capture and the BeyondTrust form', () => {
-    expect(CASES.sort()).toEqual(['greenhouse/affirm-job', 'greenhouse/asana-embed', 'greenhouse/beyondtrust-job',
-      'greenhouse/discord-job', 'greenhouse/discord-ml-job', 'greenhouse/figma-legacy-host', 'greenhouse/gitlab-embed',
-      'greenhouse/gitlab-job', 'greenhouse/gusto-job', 'greenhouse/twilio-job', 'greenhouse/twitch-job', 'lever/spotify-ny',
-      'lever/zoox-fostercity']);
+describe('the committed Lever, Greenhouse and Ashby fixtures', () => {
+  it('are the six cases from the owner\'s captures, the six closed forms of the Greenhouse widget capture, the BeyondTrust form and the Ashby capture', () => {
+    expect(CASES.sort()).toEqual(['ashby/ashby-embed-closed.frame-1', 'ashby/cohere-closed', 'ashby/incident-closed',
+      'ashby/multiverse-closed', 'ashby/notion-closed', 'ashby/openai-checkbox-ticked',
+      'ashby/openai-closed', 'ashby/openai-datepicker-open', 'ashby/openai-gh-closed',
+      'ashby/openai-radio-chosen', 'ashby/openai-yesno-chosen', 'ashby/plaid-closed', 'greenhouse/affirm-job',
+      'greenhouse/asana-embed', 'greenhouse/beyondtrust-job', 'greenhouse/discord-job', 'greenhouse/discord-ml-job',
+      'greenhouse/figma-legacy-host', 'greenhouse/gitlab-embed', 'greenhouse/gitlab-job', 'greenhouse/gusto-job',
+      'greenhouse/twilio-job', 'greenhouse/twitch-job', 'lever/spotify-ny', 'lever/zoox-fostercity']);
+    // Every other Ashby fixture is one of the open-list captures, or a page around a form.
+    const ashby = readdirSync(join(ROOT, 'fixtures', 'ashby')).filter((name) => name.endsWith('.html'))
+      .map((name) => `ashby/${name.slice(0, -'.html'.length)}`).filter((name) => !CASES.includes(name));
+    expect(ashby.sort()).toEqual(['ashby/ashby-embed-closed', ...LIST_STATES]);
+  });
+
+  it.each(LIST_STATES)('%s: its files, route map and header agree, and it holds the Ashby page with its list open', (name) => {
+    const routes = JSON.parse(readFileSync(routesOf(name), 'utf8')) as Record<string, string>;
+    const html = readFileSync(join(ROOT, 'fixtures', `${name}.html`), 'utf8');
+    const header = JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html)?.[1] ?? '{}');
+    expect(header).toMatchObject({ fixture: name, normalised: { renderIds: expect.any(Number), nonces: 1 } });
+    expect(routes[header.source]).toBe(`fixtures/${name}.html`);
+    const body = html.slice(html.indexOf('-->') + 3);
+    expect(body).not.toMatch(/<script|<noscript|<base|http-equiv|javascript:|\son[a-z]+=|<link[^>]*stylesheet|\r/i);
+    expect(body).toMatch(/data-floating-ui-portal[^>]*>\s*<div[^>]*role="listbox"/);
+    expect(body).toContain('data-aria-hidden="true" aria-hidden="true"');
   });
 
   it.each(CASES)('%s: files, route map, header and expectations agree', (name) => {
     const file = (suffix: string) => join(ROOT, 'fixtures', `${name}${suffix}`);
     const expectation = JSON.parse(readFileSync(file('.expect.json'), 'utf8')) as Expectation;
-    const routes = JSON.parse(readFileSync(file('.routes.json'), 'utf8')) as Record<string, string>;
+    const routes = JSON.parse(readFileSync(routesOf(name), 'utf8')) as Record<string, string>;
     const html = readFileSync(file('.html'), 'utf8');
     expect(expectation.fixture).toBe(name);
     expect(routes[expectation.source]).toBe(`fixtures/${name}.html`);
     for (const [url, path] of Object.entries(routes)) {
       expect(new URL(url).hash, url).toBe('');
-      expect(path.startsWith(`fixtures/${name}.`) && existsSync(join(ROOT, path)), path).toBe(true);
+      expect(path.startsWith(`fixtures/${name.replace(/\.frame-\d+$/, '')}.`) && existsSync(join(ROOT, path)), path).toBe(true);
+    }
+    // An Ashby page's per-load ids are normalised: no render id but the fixed ones, and the CSP nonce redacted.
+    if (name.startsWith('ashby/')) {
+      const ids = new Set([...html.matchAll(/data-field-entry-id="([0-9a-f-]{36})_/g)].map((match) => match[1]));
+      expect([...ids].every((id) => /^00000000-0000-4000-8000-0000000000\d\d$/.test(id ?? '')), name).toBe(true);
+      expect(html).not.toMatch(/name="csp-nonce"[^>]*content="(?!REDACTED")/);
     }
     const header = JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html)?.[1] ?? '{}');
     expect(header).toMatchObject({ fixture: name, source: expectation.source, captured: expectation.captured });
@@ -659,7 +717,7 @@ describe('the committed Lever and Greenhouse fixtures', () => {
 
   it.each(CASES)('%s: every control on the page is listed once, and each entry matches the page', async (name) => {
     const expectation = JSON.parse(readFileSync(join(ROOT, 'fixtures', `${name}.expect.json`), 'utf8')) as Expectation;
-    const routes = JSON.parse(readFileSync(join(ROOT, 'fixtures', `${name}.routes.json`), 'utf8')) as Record<string, string>;
+    const routes = JSON.parse(readFileSync(routesOf(name), 'utf8')) as Record<string, string>;
     const context = await browser.newContext({ viewport: VIEWPORT });
     await context.route('**/*', (route) => {
       const path = routes[route.request().url()];
@@ -668,7 +726,7 @@ describe('the committed Lever and Greenhouse fixtures', () => {
     });
     const page = await context.newPage();
     await page.goto(expectation.source);
-    const problems = await page.evaluate((fields) => {
+    const problems = await page.evaluate(({ fields, ashby }) => {
       const found: string[] = [];
       const rendered = (element: Element) => {
         const rect = element.getBoundingClientRect();
@@ -691,17 +749,24 @@ describe('the committed Lever and Greenhouse fixtures', () => {
         if (field.kind === 'select' && (first as HTMLSelectElement).options.length !== field.options) {
           found.push(`option count for ${where}`);
         }
-        // Fillable native controls render; hidden ones do not. A file input renders behind its widget instead.
-        if (field.fillable && field.kind !== 'file' && !elements.some(rendered)) found.push(`not rendered: ${where}`);
+        // Fillable native controls render; hidden ones do not. A file input renders behind its widget instead, and on
+        // an Ashby page a radio or checkbox drawn at opacity 0 behind its label.
+        const shownByLabel = (element: Element) => ashby
+          && Array.from((element as HTMLInputElement).labels ?? []).some(rendered);
+        if (field.fillable && field.kind !== 'file' && !elements.some((element) => rendered(element) || shownByLabel(element))) {
+          found.push(`not rendered: ${where}`);
+        }
         if (field.kind === 'file' && elements.some(rendered)) found.push(`file input rendered: ${where}`);
         if (field.reason === 'not-user-visible' && elements.some(rendered)) found.push(`rendered: ${where}`);
-        if (field.fillable && !visibleText.includes(field.label)) found.push(`label not shown: ${where}`);
+        // An Ashby month or year list's label is its block's "Start Date" with the adapter's "month" or "year".
+        const shownLabel = ashby && field.kind === 'select' ? field.label.replace(/ (?:month|year)$/, '') : field.label;
+        if (field.fillable && !visibleText.includes(shownLabel)) found.push(`label not shown: ${where}`);
       }
       const controls = [...document.querySelectorAll('input, select, textarea')].filter((element) =>
         !['hidden', 'submit', 'button', 'reset', 'image'].includes((element.getAttribute('type') ?? '').toLowerCase()));
       for (const control of controls) if (!listed.has(control)) found.push(`unlisted: ${control.outerHTML.slice(0, 120)}`);
       return found;
-    }, expectation.fields);
+    }, { fields: expectation.fields, ashby: name.startsWith('ashby/') });
     await context.close();
     expect(problems).toEqual([]);
   }, 60_000);

@@ -88,6 +88,10 @@
  *   reported, so the accepted-match cache never takes a match the page or a widget changed at rest (E9).
  *
  * The owner's amendments (docs/SPEC-AMENDMENTS.md):
+ * - On a page that saves every answer to its own server as it is written (Adapter.autosaves: Ashby's), while
+ *   settings.llm.confirmDrafts is on, an AI draft is not written at all until the person confirms it: its row waits
+ *   (llm-draft-held, with Confirm draft), the text kept in this run's memory only, and the person's Confirm writes it
+ *   through both Guards (a field they have typed into meanwhile is theirs, and is never written over).
  * - Drafts are accepted as written (llm-draft-written) unless settings.llm.confirmDrafts keeps the Phase 6
  *   confirmation: an accepted draft reads back as confirmed in the final Guard, is no unconfirmed draft at validation,
  *   and is booked in the document like a waiting one, so a later run rows a field still holding it as the accepted draft
@@ -465,6 +469,9 @@ export class FillRun {
   private readonly edited = new Set<BaseKey>();
   /** The drafts the person confirmed or made their own, by base key: never unconfirmed again in this run. */
   private readonly confirmedDrafts = new Set<BaseKey>();
+  /** The AI drafts held back from a page that saves as it is filled (module header), by base key, with their planned
+   *  rows: written only at the person's Confirm. Memory only, never sent, stored or logged. */
+  private readonly heldDrafts = new Map<BaseKey, { write: PlannedWrite; planned: FillResult }>();
   /** Each row's field elements at the step's last fill, for the person's edits at rest. */
   private owners = new WeakMap<Element, FieldKey>();
   /** When the step's fill began (monotonicNow): an edit after it may mark a flagged row userEdited. */
@@ -566,6 +573,7 @@ export class FillRun {
    * whether a draft waited and was confirmed.
    */
   async confirmDraft(key: FieldKey): Promise<boolean> {
+    if (this.heldDrafts.has(baseKeyOf(key))) return this.confirmHeldDraft(key);
     const waiting = (candidate: FillResult | undefined): candidate is FillResult => candidate !== undefined
       && candidate.provenance === 'llm-draft' && candidate.wrote && candidate.needsUserAction
       && candidate.status === 'flagged' && candidate.reason === 'llm-draft-needs-confirmation';
@@ -595,6 +603,58 @@ export class FillRun {
     this.forgetDraft(baseKey);
     log('draft.confirmed');
     this.replaceRow(confirmedDraftRow(row));
+    return true;
+  }
+
+  /** Whether an AI draft is held back from the page rather than written (module header): the person's setting keeps
+   *  drafts for their confirmation, and the page saves every answer the moment it is written. */
+  private holdsDrafts(): boolean {
+    return this.llm?.confirmDrafts === true && this.env.page.adapter.autosaves === true && !this.request.dryRun;
+  }
+
+  /** The loop's draft about to be written (LoopEnv.holdDraft): held back, with the row that says so, on a page that
+   *  saves as it is filled while drafts wait for the person; null to write it. */
+  private holdDraft(write: PlannedWrite, planned: FillResult): FillResult | null {
+    if (write.origin.provenance !== 'llm-draft' || write.value.kind !== 'text' || !this.holdsDrafts()) return null;
+    this.heldDrafts.set(baseKeyOf(write.key), { write, planned });
+    return { ...planned, status: 'flagged', provenance: 'llm-draft', matcherStage: 'not-applicable',
+      reason: 'llm-draft-held', wrote: false, verification: 'not-applicable', needsUserAction: true };
+  }
+
+  /** Confirm draft on a draft held back (module header): written now, through both Guards, unless the person has
+   *  typed into the field meanwhile (then it is theirs: changed-by-you, and the draft is dropped). */
+  private async confirmHeldDraft(key: FieldKey): Promise<boolean> {
+    const baseKey = baseKeyOf(key);
+    const held = this.heldDrafts.get(baseKey)!;
+    const row = this.rows.find((candidate) => baseKeyOf(candidate.key) === baseKey && candidate.reason === 'llm-draft-held');
+    if (row === undefined || (this.ended !== 'review' && this.ended !== 'waiting') || this.stopRequested) return false;
+    if (this.pauseNow() !== null) return false;
+    const now = this.scanNow();
+    const target = now.fields.find((candidate) => candidate.key === key)
+      ?? now.fields.find((candidate) => candidate.baseKey === baseKey);
+    if (target === undefined) return false;
+    if (target.current.kind === 'text' && target.current.text.trim() !== '') {
+      log('draft.confirm-refused', { changed: true });
+      this.heldDrafts.delete(baseKey);
+      this.replaceRow(unresolvedRow(row, 'changed-by-you'));
+      return false;
+    }
+    const write: PlannedWrite = { ...held.write, key: target.key };
+    const written = await writeField(this.passEnv(), now, target, write, { ...held.planned, key: target.key },
+      new WeakMap());
+    this.alive();
+    if (written.written === undefined || written.row.wrote !== true || written.row.status === 'blocked') {
+      log('draft.confirm-refused', { written: false });
+      if (written.row.status === 'blocked') {
+        this.heldDrafts.delete(baseKey);
+        this.replaceRow(written.row);
+      }
+      return false;
+    }
+    this.heldDrafts.delete(baseKey);
+    this.confirmedDrafts.add(baseKey);
+    log('draft.confirmed');
+    this.replaceRow(confirmedDraftRow({ ...written.row, provenance: 'llm-draft' }));
     return true;
   }
 
@@ -1263,6 +1323,21 @@ export class FillRun {
     return body === null ? '' : visibleTextWithout(body, [this.root], { cap: MAX_POSTING_TEXT }).trim();
   }
 
+  /** The posting this page shows beside its form, as the policy gate counts it: the posting's own text where the
+   *  adapter names it (Adapter.postingText), outside the form; else every visible text outside the form. */
+  private postingReadHere(): string {
+    const { adapter } = this.env.page;
+    if (adapter.postingText === undefined) return this.postingText();
+    let scope: Element | null;
+    try {
+      scope = adapter.postingText(this.env.doc);
+    } catch {
+      scope = null;
+    }
+    if (scope === null || this.root.contains(scope) || scope.contains(this.root)) return '';
+    return visibleTextWithout(scope, [], { cap: MAX_POSTING_TEXT }).trim();
+  }
+
   /**
    * plan/poll for fields that wait for the LLM (Phase 4). Sent as it is, never renewing the run: 'expired' means the
    * worker knows none of them (it restarted), and the loop sends them in plan/request again, which renews the run when
@@ -1595,8 +1670,9 @@ export class FillRun {
     const frameHits = frameHitsOf(env.doc);
     let policyHits = frameHits.length;
     if (first) {
-      // A top frame whose page shows the posting beside the form read it here (policy.ts POSTING_READ_MIN).
-      const readHere = this.isTop && [...this.postingText()].length >= POSTING_READ_MIN;
+      // A top frame whose page shows the posting beside the form read it here (policy.ts POSTING_READ_MIN): only the
+      // posting's own text where the adapter names it (Adapter.postingText).
+      const readHere = this.isTop && [...this.postingReadHere()].length >= POSTING_READ_MIN;
       const gate = policyGateOf(this.policy ?? { postingPage: 'unseen', storedCopy: 'unavailable' }, frameHits,
         readHere);
       policyHits = gate.blocked ? Math.max(1, frameHits.length) : 0;
@@ -2097,6 +2173,8 @@ export class FillRun {
       // Profile-only from now on (a later pass's policy hit, an attestation found): what still waits for the AI is
       // given up (the Phase E review, security MINOR 4).
       aiOff: () => this.noAi,
+      // A draft for a page that saves as it is filled, while drafts wait for the person: held back (module header).
+      holdDraft: (write, planned) => this.holdDraft(write, planned),
       recheck: () => this.recheck(),
       heldBy: () => {
         // Never a write on a step other than the one being filled (the page moved on, or went back, mid-fill).

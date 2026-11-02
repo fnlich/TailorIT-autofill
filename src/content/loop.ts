@@ -136,6 +136,9 @@ export interface LoopEnv extends PassEnv {
    *  AI, or an "I did not use AI" attestation): the fields still waiting for the LLM are given up, ai-off-for-posting,
    *  and an AI write that came in is never written (the Phase E review, security MINOR 4). */
   aiOff?(): boolean;
+  /** A draft about to be written: the row it rests with instead when the run holds it back (an AI draft on a page
+   *  that saves every answer as it is written, while drafts wait for the person: orchestrator.ts), else null. */
+  holdDraft?(write: PlannedWrite, planned: FillResult): FillResult | null;
   /** The poll interval and the caps on waiting for the LLM and for a cover letter (Phase G), overridable for tests. */
   ai?: { pollMs?: number; capMs?: number; letterCapMs?: number };
   /** The run's checks before a pass after the first: null to go on, or the reason that cuts the loop (form-hidden,
@@ -526,6 +529,12 @@ class ReactiveLoop {
         continue;
       }
       const field = fields.get(write.key)!;
+      // An AI draft the run holds back until the person confirms it (LoopEnv.holdDraft) is not written.
+      const held = env.holdDraft?.(write, planned) ?? null;
+      if (held !== null) {
+        rows.set(write.key, held);
+        continue;
+      }
       // What the page put in a field before our first write (a resume parse, browser autofill) is reconciled.
       const prefill = keep === undefined ? this.prefillOf(field, write, planned) : null;
       if (prefill !== null && !prefill.write) {

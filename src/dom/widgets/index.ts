@@ -110,7 +110,8 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return { status: 'aborted' };
-  const read = wait.status === 'ready' ? await readList(opened.listbox, { signal: ctx.signal }) : null;
+  const read = wait.status === 'ready' ? await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel })
+    : null;
   const multiselectable = isMultiselectable(opened.listbox);
   await closeList(widget, ctx, opened);
   if (ctx.signal?.aborted) return { status: 'aborted' };

@@ -6,12 +6,12 @@
  * - applicationOf(url) reads the address with the platform's pure url.ts, so a posting page and its application form
  *   share one applicationKey (RunState and the posting's policy hits are kept under it). On a host whose platform has
  *   a parser (Lever, Greenhouse), an address the parser does not read is no application (W2: a board, a page after
- *   submitting, a ?gh_jid board, an upper-case /APPLY): null, so the content runtime shows no launcher and runs
- *   nothing there. The one exception is the reserved `tailorit-fixture` Lever board (FIXTURE_BOARD), which the trap
- *   and synthetic fixtures are served on, in every build: it is read by the generic rule, the page's origin and path,
- *   as is any address on an ATS host with no parser yet (Ashby, Workday).
- * The Lever and Greenhouse adapters joined PLATFORM_ADAPTERS in Phase 2; Ashby's joins in Phase 4 and Workday's in
- * Phase 5. In e2e builds only, the e2e-only test adapters (./test: trap 09's) come before them for their own address.
+ *   submitting, a ?gh_jid board, an upper-case /APPLY, an Ashby org's board): null, so the content runtime shows no
+ *   launcher and runs nothing there. The one exception is the reserved `tailorit-fixture` Lever board
+ *   (FIXTURE_BOARD), which the trap and synthetic fixtures are served on, in every build: it is read by the generic
+ *   rule, the page's origin and path, as is any address on an ATS host with no parser yet (Workday).
+ * The Lever and Greenhouse adapters joined PLATFORM_ADAPTERS in Phase 2, Ashby's in v3 Phase 2 (its overview, its form
+ * and its embed's spelling of one posting share one application key); Workday's comes later. In e2e builds only, the e2e-only test adapters (./test: trap 09's) come before them for their own address.
  * A production build replaces __E2E__ with false, which leaves ./test unreferenced, so it is compiled out
  * (scripts/check-build.mjs checks for its marker). Vitest's Node projects keep __E2E__ a global, so a test can turn
  * the switch on with vi.stubGlobal.
@@ -19,6 +19,8 @@
 import type { Platform } from '../core/enums';
 import { platformOfUrl } from '../shared/hosts';
 import { applicationKey, type ApplicationPage, type ApplicationUrl } from './application-key';
+import { ashbyAdapter } from './ashby';
+import { parseAshbyUrl } from './ashby/url';
 import { genericAdapter } from './generic';
 import { genericCanonicalUrl } from './generic/url';
 import { greenhouseAdapter } from './greenhouse';
@@ -29,11 +31,13 @@ import { e2eAdaptersFor } from './test';
 import type { Adapter } from './types';
 
 /** The platform adapters built so far. */
-const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = { greenhouse: greenhouseAdapter, lever: leverAdapter };
+const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
+  greenhouse: greenhouseAdapter, lever: leverAdapter, ashby: ashbyAdapter,
+};
 
 /** The platforms whose addresses are read by a parser of their own (each platform's url.ts). */
 const URL_PARSERS: Partial<Record<Platform, (url: URL) => ApplicationUrl | null>> = {
-  greenhouse: parseGreenhouseUrl, lever: parseLeverUrl,
+  greenhouse: parseGreenhouseUrl, lever: parseLeverUrl, ashby: parseAshbyUrl,
 };
 
 /** The reserved Lever board the trap and synthetic fixtures are served on (https://jobs.lever.co/tailorit-fixture/...).

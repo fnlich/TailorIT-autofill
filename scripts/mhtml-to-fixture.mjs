@@ -13,6 +13,10 @@
 // - redacts: typed values are cleared (text inputs, textareas, contenteditable, a widget's value mirror), checked and
 //   selected are dropped, hidden-input values and the text of listbox and combobox triggers and chips become REDACTED;
 //   emails, phone numbers and every string in the --redact file become REDACTED.
+// - Ashby (--platform ashby): the per-load ids are normalised (normaliseAshby), so a fixture is the same whenever its
+//   page was captured: each form's render id, which prefixes every data-field-entry-id and every radio's and checkbox's
+//   id, name and for, becomes 00000000-0000-4000-8000-00000000000N in the order the page first names it, and the
+//   per-load CSP nonce of meta[name=csp-nonce] becomes REDACTED.
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string or a found
 // email remains (also percent- or entity-encoded), if the page still finds an email or phone number, if the page
 // requests anything the route map does not answer, or if any element's visibility changed. Leftover suspicious tokens
@@ -63,6 +67,38 @@ export const PHONE_ATTRIBUTES = ['value', 'placeholder', 'title', 'alt', 'aria-l
   'aria-placeholder', 'aria-valuetext', 'aria-roledescription', 'content', 'label'];
 /** File extensions an email-looking match may end in when it is really an image name (logo@2x.png). */
 export const NOT_EMAIL_SOURCE = '\\.(?:png|jpe?g|gif|svg|webp|avif|ico|bmp|css|js)$';
+
+/** A form render id of Ashby's: a UUID new on every load, before "_<path>" in each data-field-entry-id. */
+const ASHBY_RENDER_ID = /\bdata-field-entry-id="([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_/g;
+
+/** The fixed id Ashby's `index`-th form render id (0-based, in the order the page first names it) becomes.
+ *  @param {number} index */
+export const ashbyRenderId = (index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+
+/**
+ * Ashby's per-load ids, normalised in a converted frame's HTML (see the header): every render id a data-field-entry-id
+ * names is replaced wherever it stands (the radios' and checkboxes' id, name and for embed it), and the CSP nonce's
+ * content becomes REDACTED. Answers the text, the ids replaced (never their values) and the nonces redacted.
+ * @param {string} html @returns {{ text: string; renderIds: string[]; nonces: number }}
+ */
+export function normaliseAshby(html) {
+  /** @type {string[]} */
+  const renderIds = [];
+  for (const match of html.matchAll(ASHBY_RENDER_ID)) {
+    const id = match[1] ?? '';
+    if (!renderIds.includes(id)) renderIds.push(id);
+  }
+  let text = html;
+  renderIds.forEach((id, index) => {
+    text = text.split(id).join(ashbyRenderId(index));
+  });
+  let nonces = 0;
+  text = text.replace(/<meta\b[^>]*\bname="csp-nonce"[^>]*>/gi, (meta) => meta.replace(/\bcontent="[^"]*"/i, () => {
+    nonces += 1;
+    return `content="${REDACTED}"`;
+  }));
+  return { text, renderIds, nonces };
+}
 
 /** @param {string} message @returns {never} */
 function fail(message) {
@@ -901,8 +937,14 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
       for (const value of outcome.found) found.add(value);
       result.notes.push(...outcome.notes.map((note) => `${basename(path)}: ${note}`));
-      result.tokens.push(...outcome.tokens.map((token) => ({ ...token, file: basename(path) })));
-      const { doctype, html } = JSON.parse(await frame.evaluate(serializeInPage));
+      const serialized = JSON.parse(await frame.evaluate(serializeInPage));
+      const { doctype } = serialized;
+      const normalised = platform === 'ashby' ? normaliseAshby(serialized.html) : null;
+      const html = normalised?.text ?? serialized.html;
+      // A token the normalisation replaced (a render id, the CSP nonce) is gone from the files: it is not listed.
+      result.tokens.push(...outcome.tokens.filter(({ token }) => normalised === null
+        || !normalised.renderIds.some((id) => token.includes(id)) && !(normalised.nonces > 0 && !html.includes(token)))
+        .map((token) => ({ ...token, file: basename(path) })));
       const { counts } = outcome;
       const header = {
         fixture: `${platform}/${basename(path, '.html')}`,
@@ -919,6 +961,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
           missing: counts.missing },
         frames: { linked: counts.frames, blanked: counts.framesDropped },
         forms: counts.forms,
+        ...(normalised === null ? {} : { normalised: { renderIds: normalised.renderIds.length, nonces: normalised.nonces } }),
       };
       result.counts[basename(path)] = { ...counts };
       const comment = `<!-- TailorIT fixture, converted by scripts/mhtml-to-fixture.mjs: convert the capture again ` +
