@@ -229,6 +229,8 @@ export interface FakeResume {
   refuse?: 'resume-unavailable' | 'resume-format-unsupported';
   /** Disconnects after sending this many chunks of the first transfer, as a stopped worker would. */
   dropAfterChunks?: number;
+  /** Never answers a request (v3 Phase 3's Skip: a write that waits on its file). */
+  hang?: boolean;
 }
 
 /** A PDF of `size` bytes (it starts with %PDF-). */
@@ -262,6 +264,9 @@ export interface FakeWorkerOptions {
   connected?: boolean;
   /** Called when a message arrives, before it is answered. */
   onMessage?(message: { type: string }): void;
+  /** The LLM's answers never come: every plan/poll says the keys asked still wait (v3 Phase 3 review: Skip on the
+   *  AI's wait). */
+  aiHold?: boolean;
   /** The profile it plans with (the golden one by default). */
   profile?: Profile;
   /** The platform's extension id. */
@@ -332,6 +337,8 @@ export interface FakeWorker {
   /** Every message, in order. */
   readonly messages: Array<{ type: string } & Record<string, unknown>>;
   readonly reports: FrameReport[];
+  /** The run's live reports (v3 Phase 3, report/live), in order. */
+  readonly liveReports: FrameReport[];
   readonly runStates: RunState[];
   /** Every message posted on a resume port, both ways. */
   readonly portLog: Array<{ from: 'content' | 'worker'; message: { type: string } & Record<string, unknown> }>;
@@ -343,6 +350,7 @@ export interface FakeWorker {
 export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const messages: FakeWorker['messages'] = [];
   const reports: FrameReport[] = [];
+  const liveReports: FrameReport[] = [];
   const runStates: RunState[] = [];
   const portLog: FakeWorker['portLog'] = [];
   const runs = new Map<string, { dryRun: boolean; ai: FakeRunAi }>();
@@ -351,8 +359,8 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   let nextRun = 1;
   let transfers = 0;
   const planned = options.settings ?? CAUTIOUS_SETTINGS;
-  const settings = { panel: planned.panel, autoAdvance: planned.autoAdvance, llm: { ...planned.llm },
-    offerToSaveAnswers: planned.offerToSaveAnswers };
+  const settings = { panel: planned.panel, modes: { next: planned.modes.next, afterPageTurn: planned.modes.afterPageTurn },
+    llm: { ...planned.llm }, offerToSaveAnswers: planned.offerToSaveAnswers };
 
   const scripted = (type: string): unknown => {
     const queue = options.script?.[type as ContentMessage['type']];
@@ -462,6 +470,10 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         if (run === undefined) return { ok: false, error: 'expired' };
         const keys = (message.keys as FieldKey[]).filter((key) => run.ai.waiting.has(key));
         if (keys.length === 0) return { ok: false, error: 'expired' };
+        if (options.aiHold === true) {
+          return { ok: true, data: { writes: [], results: [], awaiting: keys, persistableCanaries: [], savable: [],
+            aiEditable: [] } };
+        }
         // The LLM's answers come in now: the keys they answer are planned again over the scan they were asked from.
         const byContext = new Map<AskContext, FieldKey[]>();
         const still: FieldKey[] = [];
@@ -496,6 +508,11 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       case 'report/put':
         if (!runs.has(message.runId as string)) return { ok: false, error: 'expired' };
         reports.push(message.report as FrameReport);
+        return { ok: true, data: {} };
+      case 'report/live':
+        // v3 Phase 3: the run's progress while it fills, kept apart from its reports.
+        if (!runs.has(message.runId as string)) return { ok: false, error: 'expired' };
+        liveReports.push(message.report as FrameReport);
         return { ok: true, data: {} };
       case 'runstate/put': {
         const runState = message.runState as RunState;
@@ -539,6 +556,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       if (message.type === 'resume/request') {
         // Phase G: the run's cover letter, when the request names it.
         if (message.document === 'cover-letter') resume = options.letter?.file;
+        if (resume?.hang === true) return;
         if (resume === undefined || resume.refuse !== undefined) {
           post({ v: 1, type: 'resume/error', reason: resume?.refuse ?? 'resume-unavailable' });
           port.disconnect();
@@ -578,6 +596,7 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
     platform,
     messages,
     reports,
+    liveReports,
     runStates,
     portLog,
     of: (type) => messages.filter((message) => message.type === type),

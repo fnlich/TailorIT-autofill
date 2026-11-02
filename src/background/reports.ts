@@ -17,6 +17,8 @@
  * - Each report/put also feeds the anonymous counters (telemetry.ts), with the report it replaces, so a row is counted
  *   once per run.
  *
+ * v3 Phase 3: a side panel's watch says it is the browser's side panel (`side`), and the tab it shows hears it
+ * (sideShown: panel/side {open}), so the tab's launcher hides while a side panel shows it, and comes back when none does.
  * v2: every read and push also carries the tab's page state (frames.ts pageOfTab: a form found and its platform, frames
  * of ours with no form, or none), so the side panel says where the tab stands before any run. It is pushed again when a
  * frame says hello or a sweep forgets one (pageChanged), only to a watcher it changed for. Every push for a tab goes
@@ -55,7 +57,7 @@ interface PanelFrame {
   documentId: string | null;
 }
 
-type ReportPut = Extract<ContentMessage, { type: 'report/put' }>;
+type ReportPut = Extract<ContentMessage, { type: 'report/put' | 'report/live' }>;
 
 /** The tab reports and the panels that follow them. */
 export interface Reports {
@@ -76,6 +78,9 @@ export interface Reports {
   pageChanged(tabId: number): Promise<void>;
   /** The connection or the settings changed (v2): every open panel port is told what, and nothing more. */
   tellPanels(what: PanelChange): void;
+  /** Whether a side panel shows the tab now (v3 Phase 3 review): a top frame's hello hears it, so a page reloaded or
+   *  navigated beside an open side panel keeps its launcher hidden. */
+  sideShows(tabId: number): boolean;
 }
 
 type PanelChange = (typeof PANEL_CHANGES)[number];
@@ -94,6 +99,9 @@ export interface ReportsDeps {
   /** Checks, in the background, that the tab's frames are still there (the frame sweep); a report it removes is
    *  pushed to the watchers like any other change. */
   check?(tabId: number): void;
+  /** v3 Phase 3: the browser's side panel began (or stopped) showing a tab, so its launcher hides while it does. Told
+   *  once per change: when the first side panel watches the tab, and when the last one leaves it. */
+  sideShown?(tabId: number, open: boolean): void;
 }
 
 /** The reports over storage.session, with no panel watching yet. */
@@ -101,6 +109,28 @@ export function createReports(deps: ReportsDeps): Reports {
   const { session } = deps;
   /** Each watching port, the tab it follows and the page state it was last sent (as JSON). */
   const watchers = new Map<PortLike, { tabId: number; page: string | null }>();
+  /** The side panels (not the report page) and the tab each shows (v3 Phase 3). */
+  const sides = new Map<PortLike, number>();
+
+  /** The tab's page state (pageOfTab), and whether a page on an applicant-tracking host waits for a reload: no frame of
+   *  ours said hello there. */
+  async function pageNow(tabId: number): Promise<PageState> {
+    const page = await pageOfTab(session, tabId);
+    if (page.support !== 'none' || deps.tabs.onAtsHost === undefined) return page;
+    return (await deps.tabs.onAtsHost(tabId).catch(() => false)) ? { ...page, reload: true } : page;
+  }
+
+  /** A side panel shows `tabId` now (or nothing): the tab it left and the tab it shows hear of it when that changes
+   *  whether any side panel shows them. */
+  function sideMoved(port: PortLike, tabId: number | null): void {
+    const before = sides.get(port) ?? null;
+    if (before === tabId) return;
+    if (tabId === null) sides.delete(port);
+    else sides.set(port, tabId);
+    const showing = (tab: number) => [...sides.values()].includes(tab);
+    if (before !== null && !showing(before)) deps.sideShown?.(before, false);
+    if (tabId !== null && [...sides.entries()].filter(([, tab]) => tab === tabId).length === 1) deps.sideShown?.(tabId, true);
+  }
   /** Every open panel port, watching a tab or not yet (v2: told of a connection or settings change). */
   const ports = new Set<PortLike>();
   /** One queue per report key: a put and a document's forget never interleave. */
@@ -131,7 +161,7 @@ export function createReports(deps: ReportsDeps): Reports {
   /** Runs a push for a tab after the ones before it, reading its reports and page state inside. */
   function push(tabId: number, task: (reports: FrameReport[], page: PageState) => Promise<void> | void): Promise<void> {
     return pushes.run(`push:${tabId}`, async () => {
-      const [reports, page] = await Promise.all([ofTab(tabId), pageOfTab(session, tabId)]);
+      const [reports, page] = await Promise.all([ofTab(tabId), pageNow(tabId)]);
       await task(reports, page);
     });
   }
@@ -192,7 +222,8 @@ export function createReports(deps: ReportsDeps): Reports {
 
   return {
     async put(message, from) {
-      const retry = deps.limit.take(`${from.tabId}/${from.frameId}`);
+      // A live report (v3 Phase 3) has its own budget, so a run's progress never holds back the report it rests with.
+      const retry = deps.limit.take(`${from.tabId}/${from.frameId}${message.type === 'report/live' ? '/live' : ''}`);
       if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
       const run = await deps.runs.find(message.runId, from);
       if (run === null) return refuse('expired');
@@ -201,17 +232,36 @@ export function createReports(deps: ReportsDeps): Reports {
         return refuse('bad_message');
       }
       const key = keyOf(from.tabId, from.frameId);
-      const previous = await writes.run(key, async () => {
+      const live = message.type === 'report/live';
+      const stored = await writes.run(key, async () => {
         const before = FrameReportSchema.safeParse(await session.get(key));
+        const held = before.success ? before.data : null;
+        // A live report built before the one stored (it was on its way while the run's own report went) never
+        // replaces it: the review would go back to "Autofilling" (v3 Phase 3 review).
+        if (live && held !== null && (message.report.updatedAt < held.updatedAt
+          || (message.report.updatedAt === held.updatedAt && held.filling === undefined))) {
+          return { previous: held, kept: true };
+        }
         await session.set({ [key]: message.report });
-        return before.success ? before.data : null;
+        return { previous: held, kept: false };
       });
+      if (stored.kept) {
+        log('report.stale-live');
+        return ok({});
+      }
+      const previous = stored.previous;
       log('report.stored', { fields: message.report.fields.length, notices: message.report.notices.length });
-      await deps.telemetry?.record(message.report, previous).catch(() => undefined);
+      // A live report (v3 Phase 3: report/live) is the panels' alone: its rows may still wait for their writes, so it
+      // counts nothing, and a report after it is counted against the run's own bookkeeping, never against it.
+      if (!live) {
+        await deps.telemetry?.record(message.report, previous?.filling === undefined ? previous : null)
+          .catch(() => undefined);
+      }
       await changed(from.tabId);
       return ok({});
     },
     ofTab,
+    sideShows: (tabId) => [...sides.values()].includes(tabId),
     async forgetDocument(tabId, frameId, documentId) {
       await forgetPanelFrame(tabId, frameId, documentId);
       if (await removeIfFrom(tabId, frameId, documentId)) await changed(tabId);
@@ -223,7 +273,7 @@ export function createReports(deps: ReportsDeps): Reports {
       await session.remove(keys);
       await changed(tabId);
     },
-    page: (tabId) => pageOfTab(session, tabId),
+    page: (tabId) => pageNow(tabId),
     pageChanged(tabId) {
       return push(tabId, (reports, page) => {
         const now = JSON.stringify(page);
@@ -269,6 +319,7 @@ export function createReports(deps: ReportsDeps): Reports {
         }
         const tabId = parsed.data.tabId;
         watchers.set(port, { tabId, page: null });
+        if (parsed.data.side === true) sideMoved(port, tabId);
         void push(tabId, (reports, page) => {
           if (watchers.get(port)?.tabId === tabId) post(port, tabId, reports, page);
         }).catch(() => undefined);
@@ -277,6 +328,7 @@ export function createReports(deps: ReportsDeps): Reports {
       port.onDisconnect(() => {
         watchers.delete(port);
         ports.delete(port);
+        sideMoved(port, null);
       });
     },
   };

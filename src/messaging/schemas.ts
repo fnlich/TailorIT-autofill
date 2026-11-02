@@ -213,6 +213,11 @@ export const RepeatableAnswerSchema = z.strictObject({
   current: z.array(z.boolean()).max(MAX_REPEATABLE_BLOCKS),
 });
 
+/** The launcher's place and hiding for one site (v3 Phase 3): `top` its place down the right edge as a fraction of the
+ *  window's height (null: the default), `hidden` whether the person hid it on this site or everywhere. Value-free. */
+export const LauncherPrefsSchema = z.strictObject({ top: z.number().min(0).max(1).nullable(), hidden: z.boolean() });
+export type LauncherPrefs = z.infer<typeof LauncherPrefsSchema>;
+
 // ── Content script → worker (one-shot messages) ───────────────────────────────────────────────────────────────────
 
 const v = z.literal(MESSAGE_VERSION);
@@ -223,7 +228,10 @@ const contentMessages = [
    *  address changes of a single-page application within this document (v2): the frame says hello again at each one
    *  while it shows a form, so the worker reads the side panel's job card again for the new posting. A count, never an
    *  address. */
-  z.strictObject({ v, type: z.literal('frame/hello'), isTop: z.boolean(), hasForm: z.boolean(), nav: Count.optional() }),
+  z.strictObject({ v, type: z.literal('frame/hello'), isTop: z.boolean(), hasForm: z.boolean(), nav: Count.optional(),
+    /** v3 Phase 3: the frame's form asks for a cover letter (a file or text box its label names one), so the side panel
+     *  shows the card's cover-letter row. A flag, never a label. */
+    letter: z.literal(true).optional() }),
   /** Answers a run id and the content settings; never the profile. */
   z.strictObject({ v, type: z.literal('run/begin'), applicationKey: z.string().max(80),
     trigger: z.enum(['launcher', 'panel', 'resume']), dryRun: z.boolean() }),
@@ -268,6 +276,12 @@ const contentMessages = [
   z.strictObject({ v, type: z.literal('runstate/put'), runState: RunStateSchema }),
   z.strictObject({ v, type: z.literal('runstate/clear'), applicationKey: z.string().max(80) }),
   z.strictObject({ v, type: z.literal('report/put'), runId: Id, report: FrameReportSchema }),
+  /** v3 Phase 3: the run's progress while it fills (its live report: `filling` always set), for the panels only. The
+   *  worker stores and shows it like report/put's, under the same limit, but it feeds neither the anonymous counters
+   *  nor the accepted-match cache: its rows may still be waiting for their writes. */
+  z.strictObject({ v, type: z.literal('report/live'), runId: Id, report: FrameReportSchema })
+    .refine((message) => message.report.filling !== undefined, { message: 'a live report says how far it is',
+      path: ['report', 'filling'] }),
   /** A posting page with no form saw a "do not use AI" pattern: its id only, never the text. */
   z.strictObject({ v, type: z.literal('policy/hit'), applicationKey: z.string().max(80), patternId: Text(40).nullable() }),
   /** Sent from the launcher's trusted click. */
@@ -285,6 +299,13 @@ const contentMessages = [
    *  action waits for this document. */
   z.strictObject({ v, type: z.literal('job/lookup') }),
   z.strictObject({ v, type: z.literal('job/add') }),
+  /** v3 Phase 3: the person dragged the launcher (a trusted drag of its grip) to `top`, its place down the right edge
+   *  as a fraction of the window's height. The worker keeps it for the frame's site (storage.local). A number only. */
+  z.strictObject({ v, type: z.literal('launcher/place'), top: z.number().min(0).max(1) }),
+  /** v3 Phase 3: the person hid the launcher from its menu (a trusted click): on the frame's site, or everywhere
+   *  (storage.local); "until next visit" only in the worker's memory, for the tab's page now, so the side panel can
+   *  offer it back. Frame 0 only. */
+  z.strictObject({ v, type: z.literal('launcher/hide'), scope: z.enum(['next-visit', 'site', 'everywhere']) }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -357,6 +378,13 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** The job card's cover letter (Phase G): whether the person has a letter for the tab's job (`write` false: TailorIT
    *  writes nothing), or Write it now (`write` true: TailorIT's AI writes one when there is none). States only. */
   z.strictObject({ v, type: z.literal('panel/letter'), tabId: TabId, write: z.boolean() }),
+  /** v3 Phase 3: Skip on the field the run in that frame writes now (the side panel's, after 2 s on it). The frame gives
+   *  that one write up and goes on; a key, never a value, and never a guard. */
+  z.strictObject({ v, type: z.literal('panel/skip'), ...FrameRef }),
+  /** v3 Phase 3: whether the launcher is hidden on the tab's site, or everywhere (the panel offers to show it again). */
+  z.strictObject({ v, type: z.literal('panel/launcher'), tabId: TabId }),
+  /** v3 Phase 3: "Show the TailorIT button again": the site's and the everywhere flag cleared, the tab's frames told. */
+  z.strictObject({ v, type: z.literal('panel/showLauncher'), tabId: TabId }),
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -371,6 +399,11 @@ export const PageStateSchema = z.strictObject({
   support: z.enum(PAGE_SUPPORT),
   platform: z.enum(PLATFORMS).nullable(),
   formKey: Text(120).nullable(),
+  /** v3 Phase 3: the form frame's form asks for a cover letter (its frame/hello said so). */
+  letter: z.boolean().optional(),
+  /** v3 Phase 3 review: no frame of ours is there, but the tab shows a page on an applicant-tracking host (one opened
+   *  before the extension was installed or updated): reloading it brings Autofill. */
+  reload: z.literal(true).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
 
@@ -383,8 +416,9 @@ const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(
 export const PANEL_CHANGES = ['connection', 'settings'] as const;
 
 export const PanelPortMessageSchema = z.discriminatedUnion('type', [
-  /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). */
-  z.strictObject({ v, type: z.literal('panel/watch'), tabId: TabId }),
+  /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). `side` (v3 Phase 3):
+   *  the browser's side panel, not the report page, so the tab's launcher hides while it is open. */
+  z.strictObject({ v, type: z.literal('panel/watch'), tabId: TabId, side: z.literal(true).optional() }),
   /** Worker → page: the watched tab's reports, once at the watch and again on every change. */
   z.strictObject({ v, type: z.literal('panel/update'), ...TabReportsShape }),
   /** Worker → page (v2): the connection or the settings changed. The panel reads them again, and drops a job card it
@@ -433,6 +467,16 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   /** A custom question's job text (v2): the posting's visible text outside the form root ('' in a frame inside another
    *  page) and the page's canaries. Page text, passed on and never kept. */
   z.strictObject({ v, type: z.literal('job/postingText') }),
+  /** v3 Phase 3: the side panel's Skip, for the field this frame's run writes now. Answered `expired` when it writes
+   *  another one, or none. */
+  z.strictObject({ v, type: z.literal('run/skip'), fieldKey: Key }),
+  /** v3 Phase 3: the launcher's place and whether the person hid it, for this frame's site (the worker's storage.local),
+   *  sent when the person shows it again from the side panel. */
+  z.strictObject({ v, type: z.literal('launcher/prefs'), launcher: LauncherPrefsSchema,
+    /** The person asked for it back from the side panel: "Hide until next visit" is undone too. */
+    shown: z.literal(true).optional() }),
+  /** v3 Phase 3: the browser's side panel shows this tab (or no longer does): the launcher hides while it does. */
+  z.strictObject({ v, type: z.literal('panel/side'), open: z.boolean() }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -443,6 +487,11 @@ export const FrameHelloAnswerSchema = z.strictObject({
   frameId: Count,
   connected: z.boolean(),
   settings: ContentSettingsSchema,
+  /** v3 Phase 3: the launcher's place and hiding for the frame's site (absent from an older worker). */
+  launcher: LauncherPrefsSchema.optional(),
+  /** v3 Phase 3 review: the browser's side panel shows the tab now (a top frame's hello only), so a page that loads
+   *  beside it keeps its launcher hidden. */
+  side: z.literal(true).optional(),
 });
 export const RunBeginAnswerSchema = z.strictObject({
   runId: Id,
@@ -669,6 +718,11 @@ export type LetterOutcome = (typeof LETTER_OUTCOMES)[number];
 export const PanelLetterAnswerSchema = z.strictObject({ outcome: z.enum(LETTER_OUTCOMES) });
 export type PanelLetterAnswer = z.infer<typeof PanelLetterAnswerSchema>;
 
+/** panel/launcher (v3 Phase 3): where the person hid the launcher of the tab's site: nowhere, on that site, or on every
+ *  site. */
+export const PanelLauncherAnswerSchema = z.strictObject({ hidden: z.enum(['none', 'visit', 'site', 'everywhere']) });
+export type PanelLauncherAnswer = z.infer<typeof PanelLauncherAnswerSchema>;
+
 /** runs/clear: how many stored runs were removed. */
 export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
 
@@ -703,12 +757,15 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'runstate/put': RunStatePutAnswerSchema,
   'runstate/clear': DoneAnswerSchema,
   'report/put': DoneAnswerSchema,
+  'report/live': DoneAnswerSchema,
   'policy/hit': DoneAnswerSchema,
   'panel/open': DoneAnswerSchema,
   'panel/shown': DoneAnswerSchema,
   'answer/save': SaveAnswerAnswerSchema,
   'job/lookup': DoneAnswerSchema,
   'job/add': DoneAnswerSchema,
+  'launcher/place': DoneAnswerSchema,
+  'launcher/hide': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. */
@@ -729,6 +786,9 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/setResume': DoneAnswerSchema,
   'panel/ask': PanelAskAnswerSchema,
   'panel/letter': PanelLetterAnswerSchema,
+  'panel/skip': DoneAnswerSchema,
+  'panel/launcher': PanelLauncherAnswerSchema,
+  'panel/showLauncher': DoneAnswerSchema,
   'settings/get': SettingsAnswerSchema,
   'settings/save': SettingsAnswerSchema,
   'auth/status': AuthStatusSchema,
@@ -755,6 +815,9 @@ export const FRAME_ANSWER_SCHEMAS = {
   'frame/ping': PingAnswerSchema,
   'job/refresh': DoneAnswerSchema,
   'job/postingText': JobPostingTextAnswerSchema,
+  'run/skip': DoneAnswerSchema,
+  'launcher/prefs': DoneAnswerSchema,
+  'panel/side': DoneAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

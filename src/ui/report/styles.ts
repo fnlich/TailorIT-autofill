@@ -8,8 +8,8 @@
  * Every class starts with "tia-". The tokens sit on .tia-report and .tia-page, so the extension's pages (which add
  * src/ui/page/styles.ts) share them, and a page's own styles cannot reach them inside a shadow root. Every colour is
  * src/shared/palette.ts's, TailorIT's own, light only (color-scheme: light). What both panels draw lives here: the
- * brand, the strips, notices, buttons, the feedback line, the completion and the rows. The teal fills (the progress
- * bar); text that reads as the brand is its ink.
+ * brand, the strips, notices, buttons, the feedback line, the progress (v3 Phase 3: its line, its bar, the field lists
+ * and their rows). The teal fills (the progress bar, a filled row's tick); text that reads as the brand is its ink.
  *
  * The in-page panel's rules (src/content/ui/styles.ts) forbid transform, opacity below 1, filter and will-change on its
  * box and buttons, so a disabled button here is greyed by colour, never faded, and every animation is a descendant's.
@@ -25,10 +25,9 @@ const STATUS_TOKENS = FILL_STATUSES.map((status) =>
 const TONE_TOKENS = Object.entries(TONES).map(([name, tone]) =>
   Object.entries(tone).map(([part, colour]) => `  --tia-tone-${name}-${part}: ${colour};`).join('\n')).join('\n');
 
-/** Each status's own colour on what it marks: a card's edge, an icon, a chip, a tally. */
+/** Each status's own colour on what it marks: an unfolded row's edge (a row that needs the person), a chip, a tag. */
 const STATUS_RULES = FILL_STATUSES.map((status) => [
-  `.tia-row--card[data-status="${status}"] { border-left-color: var(--tia-${status}); }`,
-  `.tia-row__icon--${status} { color: var(--tia-${status}); }`,
+  `.tia-row--card[data-status="${status}"] .tia-row__body { border-left-color: var(--tia-${status}); }`,
   `.tia-chip--${status}, .tia-tag--${status} { color: var(--tia-${status}); background: var(--tia-${status}-bg); }`,
 ].join('\n')).join('\n');
 
@@ -90,6 +89,8 @@ ${TONE_TOKENS}
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 .tia-icon { display: block; flex: none; }
+.tia-spin { animation: tia-spin 0.8s linear infinite; }
+@keyframes tia-spin { to { transform: rotate(360deg); } }
 
 .tia-brand { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--tia-fg); }
 .tia-mark { display: block; flex: none; }
@@ -113,6 +114,9 @@ ${TONE_TOKENS}
 .tia-button--quiet:hover { border-color: transparent; background: var(--tia-brand-wash); }
 .tia-button:disabled, .tia-button:disabled:hover { border-color: var(--tia-track); background: var(--tia-track);
   color: var(--tia-muted); box-shadow: none; cursor: default; }
+/* A quiet button that cannot act now (Continue with nothing paused) stays a word, never a grey box louder than the
+   buttons that can. */
+.tia-button--quiet:disabled, .tia-button--quiet:disabled:hover { border-color: transparent; background: transparent; }
 
 .tia-strip {
   position: relative; display: block; margin: 0; padding: 9px 12px 9px 28px; border-radius: var(--tia-r-row);
@@ -151,54 +155,102 @@ ${NOTICE_TONES}
 .tia-notice__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
 .tia-empty { margin: 0; color: var(--tia-muted); }
 
-.tia-completion { display: grid; gap: 8px; }
-.tia-completion__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.tia-completion__label { font-weight: 700; }
-.tia-completion__value { font-size: 13px; font-weight: 700; color: var(--tia-ink); font-variant-numeric: tabular-nums; }
-.tia-progress { height: 10px; border-radius: 999px; background: var(--tia-track); overflow: hidden; }
+.tia-progress-block { display: grid; gap: 10px; }
+.tia-progress-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
+.tia-progress-line__toggle {
+  display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 0; margin: 0 0 0 -6px; padding: 4px 6px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--tia-fg); font: 700 14px/1.35 var(--tia-font);
+  text-align: left; cursor: pointer;
+}
+.tia-progress-line__toggle:hover { background: var(--tia-hover); }
+.tia-progress-line__toggle:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 0; }
+.tia-progress-line__static, .tia-progress-line__static:hover { cursor: default; background: transparent; }
+.tia-progress-line__title { display: inline-flex; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.tia-progress-line__rule { flex: none; align-self: center; width: 1px; height: 14px; background: var(--tia-control); }
+.tia-progress-line__percent { flex: none; font-weight: 800; color: var(--tia-ink); font-variant-numeric: tabular-nums; }
+.tia-progress-line__chevron { color: var(--tia-muted); }
+.tia-dots { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; align-self: center; }
+.tia-dots span { display: block; width: 3px; height: 3px; border-radius: 50%; background: currentColor;
+  animation: tia-dot 1.2s ease-in-out infinite; }
+.tia-dots span:nth-child(2) { animation-delay: 0.2s; }
+.tia-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes tia-dot { 0%, 80%, 100% { background: var(--tia-control); } 40% { background: var(--tia-fg); } }
+.tia-linkbutton {
+  flex: none; margin: 0; padding: 2px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tia-ink);
+  font: 600 13px/1.4 var(--tia-font); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.tia-linkbutton:hover { color: var(--tia-ink-hover); background: var(--tia-brand-wash); }
+.tia-linkbutton:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-linkbutton:disabled, .tia-linkbutton:disabled:hover { color: var(--tia-muted); background: transparent; cursor: default; }
+.tia-progress { position: relative; height: 8px; border-radius: 999px; background: var(--tia-track); overflow: hidden; }
 .tia-progress__fill { height: 100%; min-width: 0; border-radius: 999px; background: var(--tia-brand); }
-.tia-completion__needs, .tia-allclear {
+.tia-progress[data-indeterminate] .tia-progress__fill { width: 36%; animation: tia-slide 1.3s ease-in-out infinite; }
+@keyframes tia-slide { from { margin-left: -36%; } to { margin-left: 100%; } }
+.tia-scanning { display: grid; justify-items: center; gap: 2px; padding: 18px 8px 6px; text-align: center; }
+.tia-scanning__icon { color: var(--tia-ink); }
+.tia-scanning__title { margin: 8px 0 0; font: 700 15px/1.3 var(--tia-font); }
+.tia-scanning__help { margin: 0; font-size: 13px; color: var(--tia-muted); }
+.tia-progress-notes { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--tia-line); }
+.tia-progress-notes__needs, .tia-allclear {
   display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600;
 }
-.tia-completion__needs { color: var(--tia-tone-warning-fg); }
+.tia-progress-notes__needs { color: var(--tia-tone-warning-fg); }
 .tia-allclear { color: var(--tia-tone-success-fg); }
-.tia-completion__needs .tia-icon, .tia-allclear .tia-icon { flex: none; }
-.tia-completion__ai { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--tia-ink); }
-.tia-completion__ai .tia-icon { flex: none; }
-.tia-completion__required { margin: 0; font-size: 13px; color: var(--tia-muted); font-variant-numeric: tabular-nums; }
-.tia-tally { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tia-progress-notes__needs .tia-icon, .tia-allclear .tia-icon { flex: none; }
+.tia-progress-notes__ai { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--tia-ink); }
+.tia-progress-notes__ai .tia-icon { flex: none; }
 .tia-tag {
   display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; background: var(--tia-chip);
   color: var(--tia-fg); font: 600 12px/1.4 var(--tia-font); font-variant-numeric: tabular-nums;
 }
 
-.tia-frame { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--tia-line); }
-.tia-frame__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
-.tia-frame__name { margin: 0; font: 800 15px/1.3 var(--tia-font); color: var(--tia-fg); }
-.tia-frame__status { font-size: 12px; font-weight: 600; color: var(--tia-muted); }
+.tia-frames { display: grid; gap: 6px; }
+.tia-frame { display: grid; gap: 6px; }
+.tia-frame__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0; font-size: 13px; }
+.tia-frame__name { font-weight: 700; color: var(--tia-fg); }
+.tia-frame__status { font-weight: 600; color: var(--tia-muted); }
 .tia-frame__note { margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control); background: var(--tia-subtle); font-size: 13px; }
 .tia-frame__note--pause { background: var(--tia-tone-warning-bg); }
 .tia-frame__note--dry-run { background: var(--tia-brand-tint); }
-.tia-section { display: grid; gap: 6px; }
-.tia-section__name {
-  margin: 4px 0 0; font: 700 11px/1.4 var(--tia-font); letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--tia-muted); overflow-wrap: anywhere;
-}
-.tia-rows { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 
-.tia-row { margin: 0; border-radius: var(--tia-r-row); background: var(--tia-bg); }
-.tia-row--card {
-  margin: 2px 0; padding: 12px 12px 12px 10px; border: 1px solid var(--tia-line); border-left: 3px solid var(--tia-muted);
-  box-shadow: var(--tia-shadow-control);
+.tia-lists { display: grid; gap: 12px; }
+.tia-group { display: grid; gap: 2px; }
+.tia-group + .tia-group { padding-top: 12px; border-top: 1px solid var(--tia-line); }
+.tia-group__name { margin: 0 0 2px; font: 700 13px/1.4 var(--tia-font); color: var(--tia-fg); }
+.tia-rows { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.tia-rows--sections { padding-bottom: 10px; border-bottom: 1px solid var(--tia-line); }
+
+.tia-row { margin: 0 -6px; padding: 0 6px; border-radius: var(--tia-r-control); }
+.tia-row[data-current] { background: var(--tia-brand-wash); }
+.tia-row__line { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; }
+.tia-row__state { display: inline-flex; flex: none; padding-top: 1px; }
+.tia-row__state--filled { color: var(--tia-ink); }
+.tia-row__state--missing { color: var(--tia-tone-warning-fg); }
+.tia-row__state--working { color: var(--tia-ink); }
+.tia-row__state--none, .tia-row__state--optional { color: var(--tia-muted); }
+.tia-progress-details { margin: 0; font: 400 12px/1.4 var(--tia-font); color: var(--tia-muted); }
+.tia-progress-details__summary { cursor: pointer; font-weight: 600; }
+.tia-progress-details__summary:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-progress-details__line { margin: 4px 0 0; }
+.tia-row__go {
+  display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; margin: 0; padding: 0;
+  border: 0; border-radius: 4px; background: transparent; color: var(--tia-fg); font: 400 14px/1.45 var(--tia-font);
+  text-align: left; cursor: pointer;
 }
-.tia-row--line { border-left: 2px solid transparent; }
-.tia-row[data-draft="true"] { border-left: 2px dashed var(--tia-ink); }
-.tia-row__head, .tia-row__line { display: flex; align-items: flex-start; gap: 8px; }
-.tia-row__icon { margin-top: 1px; color: var(--tia-muted); }
+.tia-row__go:hover .tia-row__label { text-decoration: underline; text-underline-offset: 2px; }
+.tia-row__go:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-row__go--static { cursor: default; }
+.tia-row__go--static:hover .tia-row__label { text-decoration: none; }
+.tia-row__label { overflow-wrap: anywhere; }
+.tia-row--card .tia-row__label { font-weight: 600; }
+.tia-row__toggle {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; width: 24px; height: 24px; margin: -1px 0 0;
+  padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tia-muted); cursor: pointer;
+}
+.tia-row__toggle:hover { background: var(--tia-track); color: var(--tia-fg); }
+.tia-row__toggle:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 0; }
+.tia-row__skip { margin-top: -1px; }
 ${STATUS_RULES}
-.tia-row__title { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.tia-row__label { font-weight: 600; overflow-wrap: anywhere; }
-.tia-row__required { margin-left: 2px; color: var(--tia-blocked); }
 .tia-row__draft {
   display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 999px;
   background: var(--tia-brand-container); color: var(--tia-ink); font: 700 11px/1.6 var(--tia-font); white-space: nowrap;
@@ -209,37 +261,30 @@ ${STATUS_RULES}
   background: var(--tia-brand-container); color: var(--tia-ink); font: 700 11px/1.6 var(--tia-font); white-space: nowrap;
 }
 .tia-row__ai--guess { background: var(--tia-tone-warning-bg); color: var(--tia-tone-warning-fg); }
-.tia-row__source { font-size: 12px; color: var(--tia-muted); }
 .tia-chip {
-  flex: none; padding: 1px 8px; border-radius: 999px; font: 600 12px/1.5 var(--tia-font); white-space: nowrap;
+  display: inline-block; padding: 0 8px; border-radius: 999px; font: 600 12px/1.6 var(--tia-font); white-space: nowrap;
 }
-.tia-row__body { display: grid; gap: 8px; margin: 8px 0 0 26px; }
+.tia-row__body {
+  display: grid; gap: 8px; margin: 0 0 8px 26px; padding: 10px 12px; border-left: 3px solid var(--tia-control);
+  border-radius: var(--tia-r-control); background: var(--tia-subtle);
+}
+.tia-row[data-draft="true"] .tia-row__body { border-left-style: dashed; border-left-color: var(--tia-ink); }
 .tia-row__reason { margin: 0; font-size: 13px; }
 .tia-row__facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; font-size: 12px; color: var(--tia-muted); }
-.tia-row__fact { display: flex; gap: 4px; padding: 1px 8px; border-radius: 8px; background: var(--tia-subtle); }
+.tia-row__fact { display: flex; gap: 4px; padding: 1px 8px; border-radius: 8px; background: var(--tia-bg); }
 .tia-row__fact dt { font-weight: 600; }
 .tia-row__fact dd { margin: 0; }
 .tia-row__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 0 -8px; }
 .tia-row__actions .tia-button--primary { margin-left: 8px; }
-.tia-row__more { margin: 0; }
-.tia-row__line {
-  align-items: center; padding: 7px 8px; border-radius: var(--tia-r-control); cursor: pointer; list-style: none;
-}
-.tia-row__line::-webkit-details-marker { display: none; }
-.tia-row__line:hover { background: var(--tia-hover); }
-.tia-row__line:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: -2px; }
-.tia-row__line .tia-row__icon { margin-top: 0; }
-.tia-row__chevron { flex: none; color: var(--tia-muted); }
-.tia-chevron--up, .tia-row__more[open] .tia-chevron--down { display: none; }
-.tia-row__more[open] .tia-chevron--up { display: block; }
-.tia-row--line .tia-row__body { margin: 2px 8px 10px 34px; }
+.tia-row--section .tia-row__go { font-weight: 600; }
 .tia-suggestions { padding: 8px 10px; border-radius: var(--tia-r-control); background: var(--tia-subtle); font-size: 13px; }
 .tia-suggestions__heading { margin: 0; font-weight: 600; }
 .tia-suggestions__list { margin: 4px 0 0; padding-left: 20px; }
 .tia-suggestions__score { color: var(--tia-muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  .tia-strip[data-tone="working"]::before { animation: none; }
+  .tia-strip[data-tone="working"]::before, .tia-spin, .tia-dots span { animation: none; }
+  .tia-progress[data-indeterminate] .tia-progress__fill { width: 100%; margin-left: 0; animation: none; }
 }
 @media (forced-colors: active) {
   .tia-button { border: 1px solid ButtonText; }

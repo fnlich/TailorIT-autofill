@@ -57,6 +57,11 @@
  * and closest options act on this frame's own fields, as field/focus and field/describe do; its Confirm draft confirms
  * the run's draft here, and its Save my answer asks the worker (answer/save), which reads the answer back with
  * answer/read and sends it to TailorIT (Phase 6, wave 2). Each says what came of it.
+ * v3 Phase 3: run/skip (the side panel's Skip: the current run gives up its write of that field, if it is the one it
+ * writes now; `expired` otherwise); the launcher's tab at the window's right edge in the top frame (ui/edge.ts), its
+ * place and hiding from frame/hello's answer and launcher/prefs, the person's drag and hide sent as launcher/place and
+ * launcher/hide, and panel/side (the browser's side panel shows this tab: the tab hides meanwhile). frame/hello also says
+ * whether the form asks for a cover letter (a file or text box its label names one), so the side panel shows that row.
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -82,7 +87,7 @@ import type { Cancel } from '../dom/time';
 import { visibleText } from '../dom/visible-text';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
-import { WorkerToContentSchema, type PolicyDecision } from '../messaging/schemas';
+import { WorkerToContentSchema, type LauncherPrefs, type PolicyDecision } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
 import { COPY } from '../shared/copy';
@@ -182,6 +187,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   let nav = 0;
   /** Where the person wants the review: frame/hello's settings, then each settings/changed. */
   let placement: 'side' | 'in-page' = 'side';
+  /** The launcher's place and hiding for this site (v3 Phase 3): frame/hello's answer, then launcher/prefs. */
+  let launcherPrefs: LauncherPrefs = { top: null, hidden: false };
+  /** The browser's side panel shows this tab (panel/side): the launcher's tab hides meanwhile. */
+  let sideOpen = false;
   let lastRows = new Map<FieldKey, FillResult>();
 
   const channel = createChannel(platform, () => teardown('invalidated'));
@@ -257,6 +266,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // job text.
       case 'job/refresh':
         return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null);
+      case 'run/skip':
+        return current?.skipField(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
+      case 'launcher/prefs':
+        launcherPrefs = msg.launcher;
+        ui?.setLauncherPrefs(launcherPrefs, msg.shown === true);
+        return ok({});
+      case 'panel/side':
+        sideOpen = msg.open;
+        ui?.setSidePanel(sideOpen);
+        return ok({});
       case 'job/postingText': {
         // The form's fields too (the Phase G review, MINOR 5): an "I did not use AI" statement on it keeps the side
         // panel's Write it now from writing before a run has said so.
@@ -271,11 +290,37 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   // ── Runs ────────────────────────────────────────────────────────────────────────────────────────────────────────
   async function hello(): Promise<void> {
     const hasForm = page !== null;
-    const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }) });
+    const letter = hasForm && asksForLetter();
+    const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }),
+      ...(letter ? { letter: true as const } : {}) });
     if (!answer.ok) return;
     told = hasForm;
     frameId = answer.data.frameId;
     placementChanged(answer.data.settings.panel);
+    if (answer.data.launcher !== undefined) {
+      launcherPrefs = answer.data.launcher;
+      ui?.setLauncherPrefs(launcherPrefs);
+    }
+    // A side panel that shows the tab as this document loads (v3 Phase 3 review): its panel/side came to the page
+    // before this one, so the hello says it.
+    if (isTop && answer.data.side === true && !sideOpen) {
+      sideOpen = true;
+      ui?.setSidePanel(true);
+    }
+  }
+
+  /** Whether the form asks for a cover letter (v3 Phase 3): a file or text box its label names one. A flag only. */
+  function asksForLetter(): boolean {
+    const now = page;
+    if (now === null) return false;
+    try {
+      // A field a person can see and read as asking for one (v3 Phase 3 review): its label shown, never a control the
+      // page draws unseen.
+      return scanPage(now).fields.some((field) => (field.kind === 'file' || field.kind === 'textarea')
+        && field.labelVisible && !field.camouflaged && /\bcover[\s_-]*letter\b/i.test(field.label));
+    } catch {
+      return false;
+    }
   }
 
   // ── The in-page panel (Phase 6) ─────────────────────────────────────────────────────────────────────────────────
@@ -550,6 +595,16 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         },
         // The form root the launcher stands on left the page (it drew its whole form again): it is found again.
         rootGone: () => void pageNow(),
+        // v3 Phase 3: the top frame's launcher sits at the window's right edge; where the person drops it, and where
+        // they hide it, the worker keeps for the site.
+        ...(isTop ? { edge: {
+          placed: (top: number) => {
+            if (channel.valid()) channel.fire({ v: 1, type: 'launcher/place', top });
+          },
+          hidden: (scope: 'next-visit' | 'site' | 'everywhere') => {
+            if (channel.valid()) channel.fire({ v: 1, type: 'launcher/hide', scope });
+          },
+        } } : {}),
         panel: {
           frameId: () => frameId,
           showField: (key) => focusField(key as FieldKey),
@@ -563,6 +618,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       });
       ui.anchorTo(page.root);
       ui.setLauncher({ state: 'idle', action: 'fill' });
+      ui.setLauncherPrefs(launcherPrefs);
+      ui.setSidePanel(sideOpen);
     } catch {
       // Without its UI the top frame still fills from the side panel's Fill; a frame inside another page cannot show
       // its launcher is seen there, so it fills nothing (FillRun's frame check, S1).

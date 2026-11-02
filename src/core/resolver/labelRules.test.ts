@@ -602,6 +602,9 @@ describe('consent first, on a lone checkbox and on a radio that asks for it', ()
     ['I understand that former employees must be eligible for rehire', 'checkbox', 'consent.other'],
     ['I authorize a criminal background check', 'checkbox', 'consent.backgroundCheck'],
     ['Would you like to receive marketing emails?', 'radio', 'consent.marketing'],
+    // Ashby's SMS consent beside a phone, a Yes and a No (v3 Phase 3: Consent boxes: All agreements chooses its Yes).
+    ['Check Yes or No to indicate your agreement to receive text message updates from Acme regarding your job '
+      + 'application. Message and data rates may apply.', 'radio', 'consent.sms'],
     ['Resume', 'checkbox', 'consent.other'],
   ])('%j (%s) is %s', (label, kind, category) => {
     expect(labelHit(label, kind)).toMatchObject({ category, consentKinds: [category] });

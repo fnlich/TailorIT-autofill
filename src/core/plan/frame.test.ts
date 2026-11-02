@@ -198,18 +198,22 @@ describe('planFrame: EEO, legal and consent', () => {
     expect(fieldOf(planOf([SPONSORSHIP], { profile: future }), SPONSORSHIP).write?.value).toMatchObject({ index: 0 });
   });
 
-  it('ticks an optional consent only with pre-approval, a required one always, and a pre-approved kind', () => {
-    const none = settingsWith({ preapprovedConsent: [] });
+  it('ticks an optional consent only with pre-approval under Required only, a required one always, and a pre-approved kind', () => {
+    const requiredOnly = { ...DEFAULT_SETTINGS.modes, consents: 'required' as const };
+    const none = settingsWith({ preapprovedConsent: [], modes: requiredOnly });
     // Optional and not pre-approved: left unticked, decided (the owner's decision of 2026-11-01).
     expect(fieldOf(planOf([PRIVACY], { settings: none }), PRIVACY)).toMatchObject({ write: undefined,
       row: { status: 'skipped', reason: 'consent-optional-unticked', needsUserAction: false } });
     const required = { ...PRIVACY, required: true };
     expect(fieldOf(planOf([required], { settings: none }), required)).toMatchObject({ write: { value: { kind: 'check' },
       origin: { provenance: 'rule', ruleId: 'consent.required' } }, row: { status: 'verified', needsUserAction: false } });
-    // The standard consents are pre-approved by default since settings version 2 (docs/SPEC-AMENDMENTS.md).
+    // Every consent is ticked by default since v3 Phase 3 (Consents: All), and so is a standard one under Required only
+    // (pre-approved since settings version 2, docs/SPEC-AMENDMENTS.md).
     expect(fieldOf(planOf([PRIVACY]), PRIVACY)).toMatchObject({ write: { value: { kind: 'check' } },
       row: { status: 'verified' } });
-    const settings = settingsWith({ preapprovedConsent: ['privacy'] });
+    expect(fieldOf(planOf([PRIVACY], { settings: settingsWith({ modes: requiredOnly }) }), PRIVACY)).toMatchObject({
+      write: { value: { kind: 'check' } }, row: { status: 'verified' } });
+    const settings = settingsWith({ preapprovedConsent: ['privacy'], modes: requiredOnly });
     expect(fieldOf(planOf([PRIVACY], { settings }), PRIVACY)).toMatchObject({ write: { value: { kind: 'check' },
       origin: { provenance: 'rule', ruleId: 'consent.preapproved' } }, row: { status: 'verified' } });
     // A box that also certifies needs that kind pre-approved too.

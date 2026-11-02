@@ -4,6 +4,7 @@
  * strings all stay here; the rest of the extension sees platform/types.ts.
  */
 import { browser } from 'wxt/browser';
+import { platformOfUrl } from '../shared/hosts';
 import type {
   ClientInfo,
   ContentPlatform,
@@ -23,7 +24,7 @@ type RawSender = {
   id?: string;
   url?: string;
   origin?: string;
-  tab?: { id?: number; url?: string };
+  tab?: { id?: number; url?: string; incognito?: boolean };
   frameId?: number;
   documentId?: string;
   documentLifecycle?: string;
@@ -39,6 +40,7 @@ function toSender(raw: RawSender | undefined): Sender {
     frameId: raw?.frameId,
     documentId: raw?.documentId,
     documentLifecycle: raw?.documentLifecycle,
+    incognito: raw?.tab?.incognito,
   };
 }
 
@@ -204,6 +206,14 @@ export function createWorkerPlatform(): WorkerPlatform {
         return tab.id ?? null;
       },
       onRemoved: (cb) => browser.tabs.onRemoved.addListener((tabId) => cb(tabId)),
+      async onAtsHost(tabId) {
+        try {
+          const url = (await browser.tabs.get(tabId)).url;
+          return url !== undefined && platformOfUrl(url) !== null;
+        } catch {
+          return false;
+        }
+      },
     },
     storage: { local: area(browser.storage.local), session: area(browser.storage.session) },
     sidePanel: {

@@ -334,10 +334,13 @@ describe('the in-page panel', () => {
     await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(runtime.ui!.panel?.open).toBe(true);
-    await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
+    await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
+      modes: { next: CAUTIOUS_SETTINGS.modes.next, afterPageTurn: CAUTIOUS_SETTINGS.modes.afterPageTurn },
       llm: CAUTIOUS_SETTINGS.llm, offerToSaveAnswers: true } });
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }, { v: 1, type: 'panel/shown', open: false }]);
+    // v3 Phase 3: the launcher's tab hid while the panel was open; shown again, it is clicked once it is seen.
+    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(fake.of('panel/open')).toHaveLength(1);
     expect(runtime.ui!.panel?.open).toBe(false);

@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobCard as Card, PageMessage } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
 import { authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, mount, PROFILE_SENTINELS, row, settle,
-  typeInto, unmountAll, type FakeWorker } from '../ui.testkit';
+  typeInto, unfoldRows, unmountAll, type FakeWorker } from '../ui.testkit';
+import { adoptPageStyles } from '../page/styles';
 import { JobCard, type JobCardProps } from './JobCard';
 import type { LetterView } from './letter';
 import { Panel } from './Panel';
@@ -25,10 +26,11 @@ async function open(worker: FakeWorker, tabId: number | null = 5, copyText?: (te
   return root;
 }
 
-/** A worker whose tab 5 shows a Lever form, with `card` as its job card. */
+/** A worker whose tab 5 shows a Lever form that asks for a cover letter (v3 Phase 3: its hello said so), with `card` as
+ *  its job card. */
 function withForm(card: Card | null = jobCard()): FakeWorker {
   const worker = createFakeWorker();
-  worker.script.pages.set(5, formPage());
+  worker.script.pages.set(5, formPage({ letter: true }));
   worker.script.cards.set(5, card);
   return worker;
 }
@@ -41,22 +43,25 @@ async function drawCard(card: Card, props: Partial<JobCardProps> = {}): Promise<
 afterEach(() => unmountAll());
 
 describe('the page strip (v2)', () => {
-  it("shows the page's state before a run from panel/reports and panel/update, and the run's once one reports", async () => {
-    const worker = withForm();
+  it("shows the page's state before a run from panel/reports and panel/update when no card says more, and the run's progress once one reports", async () => {
+    const worker = withForm(null);
     const root = await open(worker);
-    const strip = () => root.querySelector<HTMLElement>('.tia-strip[data-strip], .tia-strip[data-run-status]');
+    const strip = () => root.querySelector<HTMLElement>('.tia-strip[data-strip]');
     expect(strip()?.dataset.strip).toBe('form');
     expect(strip()?.textContent).toBe(COPY.strip.form('Lever'));
     expect(strip()?.dataset.tone).toBe('brand');
     await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [],
       page: { support: 'no-form', platform: null, formKey: null } }));
     expect(strip()?.textContent).toBe(COPY.strip.noForm);
+    // v3 Phase 3: a page Autofill does not work on says so, with the sites it works on.
     await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [],
       page: { support: 'none', platform: null, formKey: null } }));
-    expect(strip()?.textContent).toBe(COPY.strip.none);
-    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { status: 'fill-step' })],
-      page: formPage() }));
-    expect(strip()?.dataset.runStatus).toBe('fill-step');
+    expect(strip()).toBeNull();
+    expect(root.querySelector('[data-unsupported] h2')?.textContent).toBe(COPY.panel.unsupported.heading);
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { status: 'fill-step',
+      filling: { current: null, pending: [] } })], page: formPage() }));
+    expect(strip()).toBeNull();
+    expect(root.querySelector('[data-progress]')?.getAttribute('data-progress')).toBe('scanning');
   });
 
   it('reads its tab again when the tab finishes loading, and not for another tab', async () => {
@@ -192,8 +197,14 @@ describe('the job card states (v2)', () => {
       COPY.job.arrangements.hybrid, '$150k - $185k/yr', 'Saved']);
     expect(card.querySelector('[data-job-posted]')?.textContent).toBe(COPY.job.posted(2));
     const ring = card.querySelector('[role="img"][data-job-match]')!;
-    expect(ring.getAttribute('aria-label')).toBe('75% match');
+    expect(ring.getAttribute('aria-label')).toBe(COPY.job.matchLabel(75, COPY.job.bands.good));
     expect(ring.getAttribute('data-match')).toBe('75');
+    // v3 Phase 3: Jobright's band under the number, and a tip saying what the score counts.
+    expect(ring.querySelector('.tia-ring__caption')?.textContent).toBe(COPY.job.bands.good);
+    const tip = card.querySelector<HTMLElement>('[role="tooltip"][data-match-tip]')!;
+    expect(tip.textContent).toBe(COPY.job.matchTip(9, 12));
+    expect(ring.getAttribute('aria-describedby')).toBe(tip.id);
+    expect(card.querySelector('[data-job-applied]')).toBeNull();
     expect(card.querySelector('[data-job-resume]')?.textContent).toContain(`${COPY.job.attaches} Backend resume PDF`);
     expect(card.textContent).toContain(`${COPY.job.resumeReasons.application} · ${COPY.job.keywords(9, 12)}`);
     expect(card.querySelector('[data-job-warning]')).toBeNull();
@@ -206,6 +217,8 @@ describe('the job card states (v2)', () => {
       tracked: { status: 2, archived: true }, match: { state: 'unreadable' } }));
     const card = cardOf(root)!;
     expect(card.querySelector('[data-job-warning="applied"]')?.textContent).toBe(COPY.job.alreadyApplied('Applied'));
+    // v3 Phase 3: the Applied badge beside the title, from the tracker's Applied on.
+    expect(card.querySelector('.tia-job__title [data-job-applied]')?.textContent).toBe(COPY.job.applied);
     expect([...card.querySelectorAll('.tia-job__chip')].map((chip) => chip.textContent)).toEqual(expect.arrayContaining(['Applied',
       COPY.job.closed, COPY.job.archived]));
     expect(card.querySelector('[data-job-match]')).toBeNull();
@@ -415,6 +428,7 @@ describe("the run buttons' line (the Phase F1 review, 7)", () => {
         needsUserAction: true })] })] }));
     expect(root.querySelector('.tia-feedback')).toBeNull();
     worker.on('panel/confirmDraft', () => ({ ok: true, data: {} }));
+    await unfoldRows(root);
     await click(button(root, COPY.report.confirmDraft));
     await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { updatedAt: 30 })] }));
     expect(root.querySelector('.tia-feedback')?.textContent).toBe(COPY.panel.draftConfirmed);
@@ -518,6 +532,35 @@ describe('the cover letter on the job card (Phase G)', () => {
     const askingRoot = await open(asking);
     expect(letterRow(askingRoot)!.dataset.letterMode).toBe('ai');
     expect(writeButton(askingRoot)).not.toBeNull();
+  });
+
+  it('folds what the fill uses away while a run works, as Jobright’s sidebar does, the job and Autofill still shown (v3 Phase 3)', async () => {
+    adoptPageStyles(document);
+    const resting = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), autofillInfoUrl: 'http://localhost:3100/settings/autofill' });
+    const docs = resting.querySelector<HTMLElement>('[data-job-docs]')!;
+    expect(docs.checkVisibility()).toBe(true);
+    expect(docs.querySelector<HTMLAnchorElement>('a[data-tailorit-link="autofill"]')?.textContent).toBe(COPY.job.autofillInfo);
+    const working = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), working: true,
+      children: <button type="button" className="tia-cta">{COPY.panel.fill}</button> });
+    expect(working.querySelector<HTMLElement>('[data-job-docs]')!.checkVisibility()).toBe(false);
+    expect(working.querySelector<HTMLElement>('.tia-job')!.checkVisibility()).toBe(true);
+    expect(working.querySelector<HTMLElement>('button.tia-cta')!.checkVisibility()).toBe(true);
+  });
+
+  it('shows the cover-letter row only when the form asks for a letter: its hello, or a report’s row (v3 Phase 3)', async () => {
+    const plain = withForm();
+    plain.script.pages.set(5, formPage());
+    const root = await open(plain);
+    expect(cardOf(root)!.dataset.jobState).toBe('found');
+    expect(letterRow(root)).toBeNull();
+    const reported = withForm();
+    reported.script.pages.set(5, formPage());
+    reported.script.reports.set(5, [frameReport(0, { fields: [row('letter', { kind: 'file', category: 'file.coverLetter',
+      reason: 'cover-letter-attached', wrote: true, status: 'verified' })] })]);
+    expect(letterRow(await open(reported))).not.toBeNull();
+    // The card drawn alone shows it by default.
+    expect(letterRow(await drawCard(jobCard(), { letter: view({ outcome: 'none' }) }))).not.toBeNull();
+    expect(letterRow(await drawCard(jobCard(), { letter: view({ outcome: 'none' }), letterAsked: false }))).toBeNull();
   });
 
   it('in the panel: a fill’s own letter says more than an earlier answer', async () => {

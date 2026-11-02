@@ -1,16 +1,19 @@
 /*
- * The side panel's job card (v2): what TailorIT knows of the job in the tab's form, laid out as a job-autofill side card
- * in TailorIT's look. Presentational: the view comes in (job.ts), and Add/Save and the resume picker go out as
- * callbacks.
+ * The side panel's job card (v2; v3 Phase 3 in Jobright's layout): what TailorIT knows of the job in the tab's form,
+ * then the panel's Autofill (the `children` the panel passes: Autofill, Dry run and Continue), then what the fill uses.
+ * Presentational: the view comes in (job.ts), and Add/Save and the resume picker go out as callbacks.
  *
- * - Found: the company's initial on a tile, the company and "Lever application", the match ring on the right ("75%"
- *   above "match", named "75% match"); the title; chips for the location, arrangement, pay, the tracker status, Closed
- *   and Archived, then "Posted 2 days ago"; "Already in your tracker as Applied" from Applied on; then the resume a fill
- *   attaches ("Would attach" in a dry run), why, and its keywords, with Change (also when there is none to attach, so
- *   one of the account's resumes can be chosen); then (Phase G) the cover letter: the person's letter for this job, or
- *   that TailorIT's AI writes one when the form asks for one, with Write it now (Writing…, then Ready or Couldn't write
- *   it; never in a dry run), or why only a letter the person wrote is attached (a posting that forbids AI, AI-written
- *   answers off); and Save to tracker when the job is not tracked yet.
+ * - The job: the company's initial on a tile, the company and "Lever application", the match ring on the right ("75%",
+ *   its band under it: Excellent, Good, Fair or Poor by MATCH_BANDS, and a tip saying "9 of 12 keywords in this posting
+ *   are in your resume"); the title, with an "Applied" badge from the tracker's Applied on; chips for the location,
+ *   arrangement, pay, the tracker status, Closed and Archived, then "Posted 2 days ago"; "Already in your tracker as
+ *   Applied" from Applied on; Save to tracker when the job is not tracked yet.
+ * - What the fill uses (hidden while a run works, as Jobright's is): "Your autofill information" (TailorIT's Settings ›
+ *   Autofill), the resume a fill attaches ("Would attach" in a dry run), why, and its keywords, with Change (also when
+ *   there is none to attach, so one of the account's resumes can be chosen); then (Phase G), only when the form asks
+ *   for one (`letterAsked`), the cover letter: the person's letter for this job, or that TailorIT's AI writes one, with
+ *   Write it now (Writing…, then Ready or Couldn't write it; never in a dry run), or why only a letter the person wrote
+ *   is attached (a posting that forbids AI, AI-written answers off).
  * - Not found: "Not in your TailorIT jobs", Add this job to TailorIT where TailorIT can add from this site (else why
  *   not), help that never contradicts a tracker entry (none when one exists), and the resume.
  * - Loading (a busy skeleton), unavailable, and a card asking to connect.
@@ -18,7 +21,7 @@
  * It never shows an id, an address, the posting text or a file name: the card holds none. The resume's title is the
  * person's own and may be their name; it is shown on purpose, as the resume the fill attaches.
  */
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { AUTOFILL_TRACKER_STATUSES } from '../../contract/tailorit/lookup';
 import type { Platform } from '../../core/enums';
 import type { AddJobOutcome, JobCard as Card, LetterOutcome, ResumeListAnswer } from '../../messaging/schemas';
@@ -33,6 +36,23 @@ type ResumeItem = ResumeListAnswer['items'][number];
 /** A tracked application's status as the tracker names it, or null for a code added later. */
 export function trackerLabel(status: number): string | null {
   return AUTOFILL_TRACKER_STATUSES.find((entry) => entry.code === status)?.label ?? null;
+}
+
+/** The tracker's Applied, and every status after it (Interviewing, Offer, …): the job is applied for. */
+export const APPLIED_STATUS = 2;
+
+/** The match's bands by its percentage, highest first (v3 Phase 3, Jobright's wording on TailorIT's keyword match). */
+export const MATCH_BANDS = [
+  { band: 'excellent', from: 80 },
+  { band: 'good', from: 60 },
+  { band: 'fair', from: 40 },
+  { band: 'poor', from: 0 },
+] as const;
+export type MatchBand = (typeof MATCH_BANDS)[number]['band'];
+
+/** The band of a match percentage. */
+export function matchBandOf(percentage: number): MatchBand {
+  return MATCH_BANDS.find((entry) => percentage >= entry.from)?.band ?? 'poor';
 }
 
 /** What the card's buttons ask the panel to do. */
@@ -66,36 +86,49 @@ export interface JobCardProps extends JobCardActions {
   /** The cover-letter row (Phase G); absent: no row. */
   letter?: LetterView;
   letterMode?: LetterMode;
+  /** Whether the form asks for a cover letter (v3 Phase 3): the row shows only then. */
+  letterAsked?: boolean;
+  /** A run works: what the fill uses folds away, as Jobright's does, so the progress sits under Autofill. */
+  working?: boolean;
+  /** The person's TailorIT Settings › Autofill, for "Your autofill information". */
+  autofillInfoUrl?: string;
+  /** The panel's Autofill, Dry run and Continue, drawn between the job and what the fill uses. */
+  children?: ReactNode;
 }
 
 export function JobCard(props: JobCardProps) {
-  const { view } = props;
+  const { view, children } = props;
   if (view.state === 'hidden') return null;
   if (view.state === 'loading') {
     return (
-      <section className="tia-job tia-job--loading" data-job-card="" data-job-state="loading" aria-label={COPY.job.region}
-        aria-busy="true">
-        <span className="tia-visually-hidden">{COPY.job.loading}</span>
-        <div className="tia-job__top" aria-hidden="true">
-          <span className="tia-job__tile tia-skeleton" />
-          <span className="tia-job__who">
-            <span className="tia-skeleton tia-skeleton--line" />
-            <span className="tia-skeleton tia-skeleton--short" />
-          </span>
+      <section className="tia-jobcol" data-job-card="" data-job-state="loading" aria-label={COPY.job.region} aria-busy="true">
+        <div className="tia-job tia-job--loading">
+          <span className="tia-visually-hidden">{COPY.job.loading}</span>
+          <div className="tia-job__top" aria-hidden="true">
+            <span className="tia-job__tile tia-skeleton" />
+            <span className="tia-job__who">
+              <span className="tia-skeleton tia-skeleton--line" />
+              <span className="tia-skeleton tia-skeleton--short" />
+            </span>
+          </div>
+          <span className="tia-skeleton tia-skeleton--title" aria-hidden="true" />
+          <span className="tia-skeleton tia-skeleton--chips" aria-hidden="true" />
         </div>
-        <span className="tia-skeleton tia-skeleton--title" aria-hidden="true" />
-        <span className="tia-skeleton tia-skeleton--chips" aria-hidden="true" />
+        {children}
       </section>
     );
   }
   if (view.state === 'disconnected' || view.card.state === 'unavailable') {
     const state = view.state === 'disconnected' ? 'disconnected' : 'unavailable';
     return (
-      <section className="tia-job tia-job--slim" data-job-card="" data-job-state={state} aria-label={COPY.job.region}>
-        <p className="tia-job__slim">
-          <Icon name="info" size={18} className="tia-icon tia-job__slim-icon" />
-          {state === 'disconnected' ? COPY.job.disconnected : COPY.job.unavailable}
-        </p>
+      <section className="tia-jobcol" data-job-card="" data-job-state={state} aria-label={COPY.job.region}>
+        <div className="tia-job tia-job--slim">
+          <p className="tia-job__slim">
+            <Icon name="info" size={18} className="tia-icon tia-job__slim-icon" />
+            {state === 'disconnected' ? COPY.job.disconnected : COPY.job.unavailable}
+          </p>
+        </div>
+        {children}
       </section>
     );
   }
@@ -103,49 +136,76 @@ export function JobCard(props: JobCardProps) {
 }
 
 function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loadResumes, chooseResume, letter,
-  letterMode = 'ai', onWriteLetter }: JobCardProps & { card: Answered }) {
+  letterMode = 'ai', onWriteLetter, letterAsked = true, working = false, autofillInfoUrl, children }: JobCardProps
+  & { card: Answered }) {
   const { job, tracked } = card;
   const via = platform === null ? null : COPY.job.via(COPY.platforms[platform]);
   const status = tracked === null ? null : trackerLabel(tracked.status);
-  const applied = tracked !== null && tracked.status >= 2;
+  const applied = tracked !== null && tracked.status >= APPLIED_STATUS;
   const ok = card.match?.state === 'ok' ? card.match : null;
   return (
-    <section className="tia-job" data-job-card="" data-job-state={job === null ? 'not-found' : 'found'} aria-label={COPY.job.region}>
-      <div className="tia-job__top">
-        <span className={`tia-job__tile${job === null ? ' tia-job__tile--unknown' : ''}`} aria-hidden="true">
-          {job === null ? '?' : [...job.company.trim()][0]?.toUpperCase() ?? '?'}
-        </span>
-        <span className="tia-job__who">
-          <span className="tia-job__company" title={job?.company}>{job === null ? COPY.job.notFound : job.company}</span>
-          {via !== null && <span className="tia-job__via">{via}</span>}
-        </span>
-        {ok !== null && <MatchRing percentage={ok.percentage} />}
-      </div>
-      {job !== null && <p className="tia-job__title">{job.title}</p>}
-      <JobChips card={card} status={status} />
-      {job !== null && job.postedAt !== null && (
-        <p className="tia-job__meta" data-job-posted="">
-          {COPY.job.posted(Math.max(0, Math.floor((now - job.postedAt) / 86_400_000)))}
-        </p>
-      )}
-      {applied && (
-        <p className="tia-job__warning" data-job-warning="applied">
-          <Icon name="alert" size={16} className="tia-icon tia-job__warning-icon" />
-          {COPY.job.alreadyApplied(status)}
-        </p>
-      )}
-      {job === null && tracked === null && <p className="tia-job__help">{card.addable ? COPY.job.notFoundHelp : COPY.job.cannotAdd}</p>}
-      <ResumeRow card={card} dryRun={dryRun} loadResumes={loadResumes} chooseResume={chooseResume} />
-      {letter !== undefined && <LetterRow letter={letter} mode={letterMode} dryRun={dryRun} onWrite={onWriteLetter} />}
-      {(job === null ? card.addable : tracked === null) && (
-        <div className="tia-job__actions">
-          <button type="button" className={`tia-button ${job === null ? 'tia-button--primary' : ''}`} disabled={adding}
-            data-job-action={job === null ? 'add' : 'save'} onClick={onAdd}>
-            {adding ? COPY.job.adding : job === null ? COPY.job.add : COPY.job.save}
-          </button>
+    <section className="tia-jobcol" data-job-card="" data-job-state={job === null ? 'not-found' : 'found'}
+      aria-label={COPY.job.region}>
+      <div className="tia-job">
+        <div className="tia-job__top">
+          <span className={`tia-job__tile${job === null ? ' tia-job__tile--unknown' : ''}`} aria-hidden="true">
+            {job === null ? '?' : [...job.company.trim()][0]?.toUpperCase() ?? '?'}
+          </span>
+          <span className="tia-job__who">
+            <span className="tia-job__company" title={job?.company}>{job === null ? COPY.job.notFound : job.company}</span>
+            {via !== null && <span className="tia-job__via">{via}</span>}
+          </span>
+          {ok !== null && <MatchRing percentage={ok.percentage} matched={ok.matchedCount} total={ok.total} />}
         </div>
-      )}
-      {outcome !== null && <p className="tia-job__note" role="status" data-job-outcome={outcome}>{COPY.job.addOutcomes[outcome]}</p>}
+        {job !== null && (
+          <p className="tia-job__title">
+            {job.title}
+            {applied && (
+              <span className="tia-job__applied" data-job-applied="">
+                <Icon name="tick" size={12} className="tia-icon" />
+                {COPY.job.applied}
+              </span>
+            )}
+          </p>
+        )}
+        <JobChips card={card} status={status} />
+        {job !== null && job.postedAt !== null && (
+          <p className="tia-job__meta" data-job-posted="">
+            {COPY.job.posted(Math.max(0, Math.floor((now - job.postedAt) / 86_400_000)))}
+          </p>
+        )}
+        {applied && (
+          <p className="tia-job__warning" data-job-warning="applied">
+            <Icon name="alert" size={16} className="tia-icon tia-job__warning-icon" />
+            {COPY.job.alreadyApplied(status)}
+          </p>
+        )}
+        {job === null && tracked === null && <p className="tia-job__help">{card.addable ? COPY.job.notFoundHelp : COPY.job.cannotAdd}</p>}
+        {(job === null ? card.addable : tracked === null) && (
+          <div className="tia-job__actions">
+            <button type="button" className={`tia-button ${job === null ? 'tia-button--primary' : ''}`} disabled={adding}
+              data-job-action={job === null ? 'add' : 'save'} onClick={onAdd}>
+              {adding ? COPY.job.adding : job === null ? COPY.job.add : COPY.job.save}
+            </button>
+          </div>
+        )}
+        {outcome !== null && <p className="tia-job__note" role="status" data-job-outcome={outcome}>{COPY.job.addOutcomes[outcome]}</p>}
+      </div>
+      {children}
+      <div className="tia-docs" data-job-docs="" hidden={working}>
+        {autofillInfoUrl !== undefined && (
+          <a className="tia-docs__row tia-docs__link" href={autofillInfoUrl} target="_blank" rel="noreferrer"
+            data-tailorit-link="autofill">
+            <Icon name="person" size={18} className="tia-icon tia-job__doc" />
+            <span className="tia-docs__label">{COPY.job.autofillInfo}</span>
+            <Icon name="chevron-right" size={16} className="tia-icon tia-docs__chevron" />
+          </a>
+        )}
+        <ResumeRow card={card} dryRun={dryRun} loadResumes={loadResumes} chooseResume={chooseResume} />
+        {letter !== undefined && letterAsked && (
+          <LetterRow letter={letter} mode={letterMode} dryRun={dryRun} onWrite={onWriteLetter} />
+        )}
+      </div>
     </section>
   );
 }
@@ -172,22 +232,33 @@ function JobChips({ card, status }: { card: Answered; status: string | null }) {
   );
 }
 
-/** The match: a pill whose outline fills to the percentage, "75%" in it and "match" under it, named "75% match". */
-export function MatchRing({ percentage }: { percentage: number }) {
+/**
+ * The match: a pill whose outline fills to the percentage, "75%" in it and its band under it ("Good"), named "75% match:
+ * Good"; focusing or pointing at it shows the tip ("9 of 12 keywords in this posting are in your resume…"), which also
+ * describes it to a screen reader.
+ */
+export function MatchRing({ percentage, matched, total }: { percentage: number; matched?: number; total?: number }) {
+  const tipId = useId();
   const shown = Math.min(100, Math.max(0, Math.round(percentage)));
+  const band = matchBandOf(shown);
+  const tip = matched === undefined || total === undefined ? null : COPY.job.matchTip(matched, total);
   return (
-    <span className="tia-ring" role="img" aria-label={COPY.job.matchLabel(shown)} data-job-match="" data-match={shown}>
-      <span className="tia-ring__pill" aria-hidden="true">
-        <svg className="tia-ring__svg" viewBox="0 0 64 34" width="64" height="34" focusable="false">
-          <rect className="tia-ring__track" x="1.5" y="1.5" width="61" height="31" rx="15.5" />
-          {shown > 0 && (
-            <rect className="tia-ring__arc" x="1.5" y="1.5" width="61" height="31" rx="15.5" pathLength="100"
-              strokeDasharray={`${shown} 100`} />
-          )}
-        </svg>
-        <span className="tia-ring__value">{shown}<span className="tia-ring__pct">%</span></span>
+    <span className="tia-ringwrap" data-match-band={band}>
+      <span className="tia-ring" role="img" aria-label={COPY.job.matchLabel(shown, COPY.job.bands[band])} data-job-match=""
+        data-match={shown} tabIndex={tip === null ? undefined : 0} aria-describedby={tip === null ? undefined : tipId}>
+        <span className="tia-ring__pill" aria-hidden="true">
+          <svg className="tia-ring__svg" viewBox="0 0 64 34" width="64" height="34" focusable="false">
+            <rect className="tia-ring__track" x="1.5" y="1.5" width="61" height="31" rx="15.5" />
+            {shown > 0 && (
+              <rect className="tia-ring__arc" x="1.5" y="1.5" width="61" height="31" rx="15.5" pathLength="100"
+                strokeDasharray={`${shown} 100`} />
+            )}
+          </svg>
+          <span className="tia-ring__value">{shown}<span className="tia-ring__pct">%</span></span>
+        </span>
+        <span className="tia-ring__caption" aria-hidden="true">{COPY.job.bands[band]}</span>
       </span>
-      <span className="tia-ring__caption" aria-hidden="true">{COPY.job.match}</span>
+      {tip !== null && <span className="tia-ring__tip" role="tooltip" id={tipId} data-match-tip="">{tip}</span>}
     </span>
   );
 }

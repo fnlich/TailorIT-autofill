@@ -220,7 +220,7 @@
       "section": "Demographic Survey",
       "fillable": true,
       "control": "input[name=\"consent[marketing]\"]",
-      "note": "Marketing consent: never ticked unless the person pre-approved it. It sits in an untitled part of the form (div[data-qa=consent-section]) after the surveys, so the nearest visible heading above it is Demographic Survey's. The label's text comes before the box inside its wrapping label."
+      "note": "Marketing consent: ticked under Consent boxes: All agreements (the default since v3 Phase 3); under Required only, never ticked unless the person pre-approved it. It sits in an untitled part of the form (div[data-qa=consent-section]) after the surveys, so the nearest visible heading above it is Demographic Survey's. The label's text comes before the box inside its wrapping label."
     }
   ]
 }

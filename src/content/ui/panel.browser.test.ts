@@ -74,6 +74,16 @@ function mount(doc: Document = document, frameId = 2, options: { confirm?: boole
 }
 
 const panelOf = (ui: PageUi) => ui.shadow.querySelector<HTMLElement>('[data-panel="in-page"]')!;
+
+/** Unfolds a row with the person's own click: rows are folded at first, their icon and label shown (v3 Phase 3
+ *  review). */
+async function unfold(ui: PageUi, key: string): Promise<void> {
+  const toggle = panelOf(ui).querySelector<HTMLButtonElement>(`li[data-field-key="${key}"] button.tia-row__toggle`)!;
+  if (toggle.getAttribute('aria-expanded') === 'true') return;
+  await vi.waitFor(() => expect(ui.visibleNow(panelOf(ui))).toBe(true));
+  await trustedClick(ui, toggle);
+  await vi.waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
+}
 const buttonIn = (root: ParentNode, text: string) =>
   [...root.querySelectorAll('button')].find((each) => each.textContent?.trim() === text) ?? null;
 
@@ -121,7 +131,9 @@ describe('the in-page panel', () => {
     expect(panel.querySelector('.tia-run-status')?.textContent).toBe(`${COPY.runStatuses.review} · Step 2 of 4`);
     const top = panel.querySelector('li[data-field-key="top"]')!;
     const degree = panel.querySelector('li[data-field-key="degree"]')!;
-    expect(top.querySelector('button')).toBeNull();
+    // Another frame's row has no action: its label shows nothing and its detail holds no button but its fold (v3 Phase 3).
+    expect(top.querySelector('button.tia-row__go, [data-action]')).toBeNull();
+    await unfold(ui, 'degree');
 
     await trustedClick(ui, buttonIn(degree, COPY.report.showOnPage)!);
     expect(calls.shown).toEqual(['degree']);
@@ -134,7 +146,8 @@ describe('the in-page panel', () => {
     const { ui, calls } = mount();
     ui.openPanel();
     ui.updatePanel([report(2, { fields: [row('own')] })]);
-    const show = buttonIn(panelOf(ui), COPY.report.showOnPage)!;
+    // v3 Phase 3: the row's label is its Show on page.
+    const show = panelOf(ui).querySelector<HTMLButtonElement>('li[data-field-key="own"] button.tia-row__go')!;
     const close = panelOf(ui).querySelector<HTMLButtonElement>('button.panel__close')!;
     show.click();
     show.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
@@ -152,6 +165,7 @@ describe('the in-page panel', () => {
       provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', needsUserAction: true })] })]);
     const panel = panelOf(ui);
     const confirm = () => buttonIn(panel, COPY.report.confirmDraft)!;
+    await unfold(ui, 'why');
     await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
     await trustedClick(ui, confirm());
     expect(calls.confirmed).toEqual(['why']);
@@ -180,6 +194,9 @@ describe('the in-page panel', () => {
     ui.updatePanel([report(2, { fields: [...Array.from({ length: 40 }, (_, at) => row(`r${at}`)), draft] })]);
     const panel = panelOf(ui);
     const body = panel.querySelector<HTMLElement>('.panel__body')!;
+    // Its detail unfolded (rows are folded at first), then the list back at its top.
+    await unfold(ui, 'why');
+    body.scrollTop = 0;
     const box = panel.getBoundingClientRect();
     expect(box.height).toBeLessThanOrEqual(innerHeight * 0.7 + 1);
     expect(body.scrollHeight).toBeGreaterThan(body.clientHeight);
@@ -201,12 +218,35 @@ describe('the in-page panel', () => {
     expect(calls.confirmed).toEqual(['why']);
   });
 
+  it('follows the row being written inside its own box, never scrolling the page around it (v3 Phase 3 review)', async () => {
+    const { ui } = mount();
+    // A page taller than the window, scrolled on past the form: the panel at the form's corner is out of view.
+    const tall = document.createElement('div');
+    tall.dataset.testRoot = '';
+    tall.style.height = '4000px';
+    document.body.append(tall);
+    ui.openPanel();
+    window.scrollTo(0, 2000);
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+    const rows = Array.from({ length: 40 }, (_, at) => row(`r${at}`, { wrote: false, verification: 'not-checked' }));
+    ui.updatePanel([report(2, { status: 'fill-step', fields: rows, filling: { current: 'r0', pending: ['r0'] } })]);
+    ui.updatePanel([report(2, { status: 'fill-step', fields: rows, filling: { current: 'r39', pending: ['r39'] } })]);
+    const body = panelOf(ui).querySelector<HTMLElement>('.panel__body')!;
+    const current = panelOf(ui).querySelector<HTMLElement>('li[data-field-key="r39"]')!;
+    await vi.waitFor(() => expect(current.getBoundingClientRect().bottom)
+      .toBeLessThanOrEqual(body.getBoundingClientRect().bottom + 1));
+    expect(window.scrollY).toBe(2000);
+  });
+
   it('refuses a click outside the box it watches, even if a row were drawn there', async () => {
     const { ui, calls } = mount(document, 2, { confirm: true });
     ui.openPanel();
     const draft = row('why', { kind: 'textarea', category: 'freeText.whyCompany', status: 'flagged',
       provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', needsUserAction: true });
     const panel = panelOf(ui);
+    // The draft's detail unfolded first (rows are folded at first).
+    ui.updatePanel([report(2, { fields: [draft] })]);
+    await unfold(ui, 'why');
     // As the panel drew before the fix: nothing clipped, the rows spilling past its box.
     const spill = document.createElement('style');
     spill.textContent = '.panel, .panel__body { overflow: visible !important; } .panel__root { display: block !important; }';

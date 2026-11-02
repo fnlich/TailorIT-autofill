@@ -1,11 +1,11 @@
 /*
  * The report page (the side panel opened as a tab, sidepanel.html?tabId=N: docs/ARCHITECTURE.md "UI") after a trap run
- * (Phase 6): every row the worker holds is drawn, by frame and section, with its status, provenance, matcher stage,
- * confidence and reason sentence, the notices on top in the plan's words, and no value anywhere on the page: not a
- * profile value, not a hidden marker, not a canary.
+ * (Phase 6): every row the worker holds is drawn, Required then Optional (v3 Phase 3, Jobright's lists), with its status,
+ * provenance, matcher stage, confidence and reason sentence folded under it, the progress as a percent, the notices on
+ * top in the plan's words, and no value anywhere on the page: not a profile value, not a hidden marker, not a canary.
  */
 import { COPY } from '../../src/shared/copy';
-import type { FrameReport } from '../../src/shared/report';
+import { progressOf, type FrameReport } from '../../src/shared/report';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf } from '../helpers/extension.ts';
 import { GOLDEN_RESUME } from '../helpers/mock.ts';
@@ -32,16 +32,19 @@ test('the report page shows a trap run’s rows as the worker holds them, its no
   await panel.bringToFront();
   const rows = panel.locator('li[data-field-key]');
   await expect(rows).toHaveCount(report.fields.length);
-  await expect(panel.locator('[data-run-status]').first()).toHaveText(COPY.runStatuses.review);
+  await expect(panel.locator('section[data-progress]')).toHaveAttribute('data-progress', 'rest');
+  // The percent the run's report gives, by the panels' one rule.
+  await expect(panel.locator('.tia-progress-line__percent')).toHaveText(COPY.report.percent(progressOf([report]).percent));
 
-  // Each row in the report's order within its section, with the report's own words.
-  const sections = [...new Set(report.fields.map((each) => each.section))];
-  const ordered: Row[] = sections.flatMap((section) => report.fields.filter((each) => each.section === section));
+  // Each row in the report's order, the required ones first, with the report's own words once its detail unfolds.
+  const ordered: Row[] = [...report.fields.filter((each) => each.required), ...report.fields.filter((each) => !each.required)];
   for (const [index, expected] of ordered.entries()) {
     const drawn = rows.nth(index);
     await expect(drawn).toHaveAttribute('data-field-key', expected.key);
     await expect(drawn).toHaveAttribute('data-status', expected.status);
     await expect(drawn).toHaveAttribute('data-provenance', expected.provenance ?? 'none');
+    const fold = drawn.locator('button.tia-row__toggle');
+    if ((await fold.getAttribute('aria-expanded')) === 'false') await fold.click();
     const text = (await drawn.textContent()) ?? '';
     for (const word of [expected.label || COPY.report.noLabel, COPY.statuses[expected.status], COPY.reasons[expected.reason],
       COPY.stages[expected.matcherStage], percent(expected.confidence),
@@ -49,8 +52,8 @@ test('the report page shows a trap run’s rows as the worker holds them, its no
       expect(text, `${expected.label}: ${word}`).toContain(word);
     }
   }
-  const frame = panel.locator(`[data-frame-id="${report.frameId}"]`);
-  await expect(frame.locator('h2')).toHaveText(COPY.report.frame(COPY.platforms[report.platform], false));
+  // One form on its own page: no form's name to tell it from another.
+  await expect(panel.locator('.tia-frame__name')).toHaveCount(0);
 
   // The trap's tripwire notice, in the plan's exact words, above every row.
   const notice = panel.locator('[data-notice="tripwire"]');
@@ -78,7 +81,7 @@ test('the report page shows a trap run’s rows as the worker holds them, its no
   const cardText = ((await card.textContent()) ?? '').toLowerCase();
   const lookup = example('AutofillLookupResponse') as { job: { title: string; companyName: string; location: string } };
   const said = [lookup.job.title, lookup.job.companyName, lookup.job.location, GOLDEN_RESUME.label, COPY.job.keywords(9, 12),
-    '75%', COPY.job.match].map((word) => word.toLowerCase());
+    '75%', COPY.job.bands.good, COPY.job.matchTip(9, 12)].map((word) => word.toLowerCase());
   for (const word of said) expect(cardText, `the card's ${word}`).toContain(word);
   for (const value of [GOLDEN.email, GOLDEN.first, GOLDEN.last, ...profileSentinels()].map((each) => each.toLowerCase())) {
     if (cardText.includes(value)) expect(said.some((word) => word.includes(value)), `${value} on the card`).toBe(true);

@@ -191,6 +191,9 @@ export interface RunContext {
   now: number;
   /** The adapter's longer transition cap (quirks.transitionCapMs); TRANSITION_CAP_MS otherwise. */
   transitionCapMs?: number;
+  /** The person's Autofill after page turn (settings modes.afterPageTurn 'auto'; absent: true). False: a reload never
+   *  fills a step by itself, it offers Continue (the runtime leaves a new step to Continue the same way). */
+  fillAfterPageTurn?: boolean;
 }
 
 export interface RunStep {
@@ -529,8 +532,11 @@ function resumed(state: RunState, event: Extract<RunEvent, { type: 'RESUMED' }>,
   if (status === 'handoff') {
     return quiet([{ type: 'pause', kind: 'handoff' }, notify(noticeOfPause(state.pauseReason ?? 'needs-click'))]);
   }
-  // Review is the person's turn: a reload never fills that step again by itself.
-  if (status === 'review' || ctx.now - state.updatedAt > RESUME_AUTO_MS) return quiet([{ type: 'offer-continue' }]);
+  // Review is the person's turn: a reload never fills that step again by itself; nor any step, with Autofill after page
+  // turn: Manually (v3 Phase 3).
+  if (status === 'review' || ctx.fillAfterPageTurn === false || ctx.now - state.updatedAt > RESUME_AUTO_MS) {
+    return quiet([{ type: 'offer-continue' }]);
+  }
   return rescan(state);
 }
 

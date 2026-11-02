@@ -54,4 +54,7 @@ test('sidePanel.open keeps the launcher click’s gesture, and again when the cl
   await ui.close();
   await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [],
     labels: SYNTHETIC_LABELS['policy-apply'], applicationKey: applicationKeyOf(URL_) });
+  // The side panel opened stays open for the specs after this one, and would show whichever tab is in front (whose
+  // launcher then hides, v3 Phase 3): close it.
+  await closeSidePanelViews(extContext, api, extensionId);
 });

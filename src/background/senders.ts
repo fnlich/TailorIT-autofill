@@ -15,7 +15,9 @@ const ATS_PATTERNS = ATS_MATCHES.map((pattern) => new MatchPattern(pattern));
  *  application's pushState since then does not move. */
 export type Channel =
   | { kind: 'content'; tabId: number; frameId: number; documentId: string | undefined; url: string;
-    addressFrom?: 'tab' | 'document' }
+    addressFrom?: 'tab' | 'document';
+    /** The tab is a private (incognito) one: nothing is looked up as its pages load (v3 Phase 3 review). */
+    incognito?: true }
   | { kind: 'page' };
 
 function isAtsAddress(url: string): boolean {
@@ -60,7 +62,8 @@ export function channelOf(sender: Sender, ownId: string, ownPagesPrefix: string)
   if (typeof sender.frameId !== 'number' || !isAtsAddress(sender.url)) return null;
   if (sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return null;
   const { url, addressFrom } = addressOf({ ...sender, url: sender.url });
-  return { kind: 'content', tabId: sender.tabId, frameId: sender.frameId, documentId: sender.documentId, url, addressFrom };
+  return { kind: 'content', tabId: sender.tabId, frameId: sender.frameId, documentId: sender.documentId, url, addressFrom,
+    ...(sender.incognito === true ? { incognito: true as const } : {}) };
 }
 
 /** TailorIT's page that hands over a connect code (Settings › Autofill), at exactly TailorIT's origin. */

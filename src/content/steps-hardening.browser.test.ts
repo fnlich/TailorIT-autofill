@@ -22,9 +22,10 @@ import { createFakeWorker, goldenProfile, testVocab, trapUrl, type FakeWorker, t
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 const ADAPTER: Adapter = e2eAdaptersFor(new URL(WIZARD_URL))[0]!;
-const AUTO = { settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } } satisfies FakeWorkerOptions;
+const AUTO = { settings: { ...CAUTIOUS_SETTINGS, modes: { ...CAUTIOUS_SETTINGS.modes, next: 'auto' as const } } } satisfies FakeWorkerOptions;
 /** The worker's settings/changed push after the person saved auto-advance off in the options page. */
-const SETTING_OFF = { v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
+const SETTING_OFF = { v: 1, type: 'settings/changed', settings: { panel: 'side',
+  modes: { next: CAUTIOUS_SETTINGS.modes.next, afterPageTurn: CAUTIOUS_SETTINGS.modes.afterPageTurn },
   llm: CAUTIOUS_SETTINGS.llm, offerToSaveAnswers: true } } as const;
 
 let logs: MockInstance;
@@ -214,6 +215,9 @@ describe('C-S2: auto-advance is read afresh', () => {
     expect(pushed).toBe(true);
     expect(wizard(loaded.fixture).next).toEqual([]);
     expect(lastState(worker)).toMatchObject({ status: 'wait-transition', stepIndex: 0 });
+    // It rests there, waiting for the person's own Next: the report says so (v3 Phase 3 review), so no panel says
+    // "Autofilling" meanwhile.
+    await vi.waitFor(() => expect(lastReport(worker)).toMatchObject({ status: 'wait-transition', resting: true }));
   });
 });
 

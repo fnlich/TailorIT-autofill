@@ -13,6 +13,11 @@
  *   Chrome's sender.url stays the document's first address after a single-page application's pushState); a subframe a
  *   single-page application has moved since its script started, whose address now Chrome does not give, is not looked
  *   up at all ('unavailable', never the previous posting's card).
+ * - The lookup as a page loads (v3 Phase 3: loadCard, from frame/hello) goes the same way, for a document whose address
+ *   a platform's parser reads as an application or a posting (recognisedPosting: not Workday, which has none yet), never
+ *   in an incognito tab, at most LOOKUP_ON_LOAD_LIMIT a minute across every tab (a restored session's tabs never ask at
+ *   once) and never out of the panel's own JOB_RELAY_LIMIT; it sends the posting's canonical address, without the
+ *   page's query string where the posting needs none (lookupAddressOf).
  * - panel/addJob {tabId} ("Add this job to TailorIT", "Save to tracker") goes the same way with action 'add' and job/add:
  *   POST /api/autofill/jobs with the sender's address, only for an address TailorIT can add from (addablePosting); its
  *   lookup becomes the card, and its outcome is answered.
@@ -32,6 +37,7 @@
  *   card's lookup, run/begin and Add pass as `resumeId`.
  * Memory only: nothing here is stored, and no log line names the job, the address, the resume or the person.
  */
+import { applicationOf } from '../adapters';
 import {
   addablePosting, AUTOFILL_LOOKUP_URL_MAX, cutAtWord, parseAtsUrl, type AutofillLookupResponse,
 } from '../contract/tailorit';
@@ -53,6 +59,35 @@ export const JOB_RELAY_LIMIT = { count: 6, windowMs: 60_000 } as const;
 export const JOB_CARD_TTL_MS = 10 * 60_000;
 /** How long a lookup that failed is answered as 'unavailable' before the next read asks again. */
 export const JOB_CARD_FAILED_TTL_MS = 60_000;
+/** Lookups as pages load (v3 Phase 3), across every tab: a session restored with many job tabs asks a few at a time,
+ *  and the rest when their panel opens. */
+export const LOOKUP_ON_LOAD_LIMIT = { count: 4, windowMs: 60_000 } as const;
+
+/** Whether an address names an application or a posting a platform's parser reads (parseAtsUrl, or the application
+ *  parsers of adapters/index.ts): a lookup as the page loads asks only for one. The reserved fixture board, read by
+ *  the generic rule, and Workday, which has no parser yet, are not. */
+export function recognisedPosting(url: string): boolean {
+  if (parseAtsUrl(url) !== null) return true;
+  try {
+    const ref = applicationOf(new URL(url));
+    return ref !== null && ref.platform !== 'workday' && !new URL(url).pathname.includes('/tailorit-fixture/');
+  } catch {
+    return false;
+  }
+}
+
+/** The address a lookup as a page loads sends: the posting's canonical one (no query string where the posting needs
+ *  none: a Lever posting, a Greenhouse board's; a company page's ?gh_jid= stays), else the application's canonical
+ *  address, else the page's own. */
+export function lookupAddressOf(url: string): string {
+  const parsed = parseAtsUrl(url);
+  if (parsed !== null && parsed.canonical.length > 0) return parsed.canonical[0]!;
+  try {
+    return applicationOf(new URL(url))?.applicationUrl ?? url;
+  } catch {
+    return url;
+  }
+}
 
 type Of<T extends PageMessage['type']> = Extract<PageMessage, { type: T }>;
 
@@ -67,6 +102,8 @@ export interface JobCardsDeps {
   now(): number;
   /** JOB_RELAY_LIMIT, keyed `${tabId}/${frameId}`. */
   limit: ReturnType<typeof createRateLimit>;
+  /** LOOKUP_ON_LOAD_LIMIT, one key for every tab: the lookups as pages load have their own budget. */
+  onLoadLimit?: ReturnType<typeof createRateLimit>;
 }
 
 /** What the card a document's lookup gives the active resume and a custom question. */
@@ -85,6 +122,8 @@ export interface TabJob {
 /** The job cards, their relay and the tab's resume choice. */
 export interface JobCards {
   card(message: Of<'panel/job'>): Promise<Answer<PanelJobAnswer>>;
+  /** The lookup as a recognised posting's page loads (v3 Phase 3; see the header): `from` is the frame's hello. */
+  loadCard(tabId: number, from: Pick<ContentChannel, 'frameId' | 'url' | 'incognito'>): Promise<void>;
   add(message: Of<'panel/addJob'>): Promise<Answer<{ outcome: AddJobOutcome }>>;
   resumes(message: Of<'panel/resumes'>): Promise<Answer<ResumeListAnswer>>;
   setResume(message: Of<'panel/setResume'>): Promise<Answer<Record<string, never>>>;
@@ -132,6 +171,8 @@ interface CardEntry {
 /** A refresh in flight: what it was asked with, whether the frame relayed it, and an add's outcome. */
 interface Relay extends CardRead {
   taken: boolean;
+  /** Asked as the page loaded (loadCard): its own budget, and the posting's canonical address. */
+  onLoad: boolean;
   outcome: AddJobOutcome | null;
   /** `limited`: the frame said its relay was over JOB_RELAY_LIMIT. */
   done: Promise<{ relayed: boolean; limited: boolean; outcome: AddJobOutcome | null }>;
@@ -247,13 +288,13 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
   }
 
   /** Asks the frame to relay `action` and waits for its answer; one at a time per document and action. */
-  function refresh(tabId: number, frame: FrameEntry, action: JobRelayAction): Relay['done'] {
+  function refresh(tabId: number, frame: FrameEntry, action: JobRelayAction, onLoad = false): Relay['done'] {
     const docKey = docKeyOf(tabId, frame.frameId, frame.documentId);
     const key = `${docKey}|${action}`;
     const held = relays.get(key);
     if (held !== undefined) return held.done;
     const relay: Relay = { generation: deps.generation(), epoch: epochOf(tabId, docKey), chosen: chosenFor(tabId),
-      taken: false, outcome: null, done: Promise.resolve({ relayed: false, limited: false, outcome: null }) };
+      taken: false, onLoad, outcome: null, done: Promise.resolve({ relayed: false, limited: false, outcome: null }) };
     relay.done = (async () => {
       let relayed = false;
       let limited = false;
@@ -292,7 +333,7 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
 
   async function lookUp(from: ContentChannel, relay: Relay): Promise<void> {
     if (from.url.length > AUTOFILL_LOOKUP_URL_MAX || (await addressStale(from)) || !stillCurrent(from, relay)) return;
-    const answer = await deps.server.lookup({ url: from.url, includePostingText: false,
+    const answer = await deps.server.lookup({ url: relay.onLoad ? lookupAddressOf(from.url) : from.url, includePostingText: false,
       ...(relay.chosen === null ? {} : { resumeId: relay.chosen }) });
     log('job.looked-up', { status: answer.ok ? 200 : answer.status ?? 0, job: answer.ok && answer.value.job !== null });
     keep(from, answer.ok ? answer.value : null, relay);
@@ -347,6 +388,22 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       const lookup = read.entry?.lookup ?? null;
       return ok({ tabId, card: lookup === null ? { state: 'unavailable' } : jobCardOf(lookup, read.entry!.addable) });
     },
+    async loadCard(tabId, from) {
+      if (from.incognito === true || !recognisedPosting(from.url) || from.url.length > AUTOFILL_LOOKUP_URL_MAX) return;
+      if (!(await deps.connected())) return;
+      const frame = await formFrame(tabId);
+      if (frame === null || frame.frameId !== from.frameId) return;
+      // A card held for the document already, or one on its way, is enough.
+      const key = docKeyOf(tabId, frame.frameId, frame.documentId);
+      if (usable(tabId, key) !== null || relays.has(`${key}|lookup`)) return;
+      const retry = deps.onLoadLimit === undefined ? null : deps.onLoadLimit.take('on-load');
+      if (retry !== null) {
+        log('job.lookup-on-load-deferred');
+        return;
+      }
+      log('job.lookup-on-load');
+      await refresh(tabId, frame, 'lookup', true);
+    },
     async add({ tabId }) {
       if (!(await deps.connected())) return ok({ outcome: 'not-connected' });
       const frame = await formFrame(tabId);
@@ -373,9 +430,12 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       return ok({});
     },
     async relay(action, from) {
-      const retry = deps.limit.take(`${from.tabId}/${from.frameId}`);
-      if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
       const relay = relays.get(`${docKeyOf(from.tabId, from.frameId, from.documentId)}|${action}`);
+      // A lookup asked as the page loaded never spends the panel's own budget (it was counted when it was asked).
+      if (relay === undefined || !relay.onLoad) {
+        const retry = deps.limit.take(`${from.tabId}/${from.frameId}`);
+        if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+      }
       if (relay === undefined || relay.taken) {
         log('job.relay-refused');
         return refuse('expired');

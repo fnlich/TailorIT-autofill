@@ -25,6 +25,11 @@
  *    and the events follow only when nothing the frame can see changed; after a choice the bridge said it made, the
  *    list is not searched, and the events' path never ends as "nothing written";
  * 5. the planner's row is settled from what happened (settleRow).
+ * The person's Skip of the write (v3 Phase 3: PassEnv.runSignal) ends its waits. A write that has not touched the page
+ * yet throws RunAborted, and the loop flags the field skipped-by-you; once the page was touched (a file put into its
+ * input, an option clicked, a query typed and then a result chosen) Skip only ends the wait, and the write's result
+ * stands: written, read back after the settle, and seen by the final Guard (an upload not confirmed yet is
+ * upload-not-confirmed). What a widget write opened or typed and did not keep is put back (dom/widgets).
  * A refused write leaves its field untouched, with the guard's reason: blocked for what the Guard forbids (not
  * visible, no visible label, a canary, its provenance, its own UI), flagged for what could not be done (gone, options
  * changed, disabled, an auth field on the step, the site ignored our events). A dry run gets no writes from the
@@ -41,6 +46,7 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { FieldCategory, ValueOrigin, WriteValue } from '../core/types/intent';
 import { optionQuery } from '../core/matcher/listSearch';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
+import { mismatch } from '../dom/fillers/outcome';
 import { awaitUpload, uploadStateOf } from '../dom/fillers/upload';
 import { sameOptionLabel } from '../dom/fillers/verify';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
@@ -85,6 +91,9 @@ export interface PassEnv {
    *  carries): every outgoing value is scanned for them before it is written (CORE-15). */
   canaries: readonly string[];
   signal: AbortSignal;
+  /** While the person may Skip this write (v3 Phase 3, content/loop.ts CurrentWrite): the run's own signal, which only
+   *  the run's end aborts; `signal` then aborts on the Skip too. */
+  runSignal?: AbortSignal;
   /** Whether the platform still holds the extension, asked before every write (false tears the runtime down). */
   valid(): boolean;
   /** Whether the person stopped the run (run/cancel): nothing more is written. */
@@ -178,6 +187,36 @@ function frameGuardRefusal(reason: ReasonCode): FillOutcome {
 /** Mismatch reasons a row keeps instead of settleRow's verify-mismatch. */
 const MISMATCH_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'unexpected-selection',
   'value-rejected-by-site', 'disabled-or-readonly', 'upload-failed', 'upload-not-confirmed']);
+
+/** `work`'s answer, or null as soon as `signal` aborts (the answer, when it comes, is unused). */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T | null> {
+  if (signal.aborted) {
+    work.catch(() => undefined);
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => resolve(null);
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then((value) => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(value);
+    }, (failure: unknown) => {
+      signal.removeEventListener('abort', onAbort);
+      reject(failure);
+    });
+  });
+}
+
+/** The run itself ended (aborted, or the extension went away): never the person's Skip of one write. */
+function runOver(env: PassEnv): boolean {
+  return (env.runSignal ?? env.signal).aborted || !env.valid();
+}
+
+/** After a wait the run's end or the person's Skip may cut short (see the header): the run's end throws; a Skip throws
+ *  too (the loop flags the field skipped-by-you) unless the write already touched the page, whose result stands. */
+function afterWait(env: PassEnv, touched: boolean): void {
+  if (runOver(env) || (env.signal.aborted && !touched)) throw new RunAborted();
+}
 
 /** A refusal before the write, as settleRow takes it. */
 function refusal(reason: ReasonCode, blocks: ReadonlySet<ReasonCode>): FillOutcome {
@@ -324,7 +363,9 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   const input = target.control as HTMLInputElement;
   const upload = write.value.kind === 'file' && file !== undefined ? await awaitUpload(env.adapter, input, file.name,
     env.signal) : null;
-  if (env.signal.aborted || !env.valid()) {
+  // The file is in its input: the person's Skip only ends the wait for the page's word (still pending, so
+  // upload-not-confirmed); the run's end throws.
+  if (runOver(env)) {
     resume?.release();
     throw new RunAborted();
   }
@@ -356,6 +397,7 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
   planned: FillResult, target: FieldTarget, widgets: WidgetWriteEnv | undefined): Promise<WriteResult> {
   if (widgets === undefined) return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
   const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings,
+    ...(env.runSignal === undefined ? {} : { runSignal: env.runSignal }),
     ...(widgets.readiness === undefined ? {} : { readiness: widgets.readiness }),
     ...(widgets.bridge === undefined ? {} : { bridge: widgets.bridge }) };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
@@ -367,20 +409,23 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
   };
   if (write.value.kind !== 'option') {
     const outcome = await fillWidget(target, write.value, ctx, write.origin);
-    if (env.signal.aborted || !env.valid()) throw new RunAborted();
+    afterWait(env, outcome.wrote);
     return settled(outcome);
   }
   // React first: the write's one command to the bridge, before a long list's search too; neither the search nor
   // fillWidget sends another (bridgeTried).
   const attempt = await chooseThroughBridge(target, write.value, ctx, write.origin);
-  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  afterWait(env, attempt.kind === 'done' ? attempt.outcome.wrote : attempt.sent);
   if (attempt.kind === 'done') return settled(attempt.outcome);
+  // A Skip after the bridge said it chose: React may hold the choice, so it is written, not verified, and no event
+  // follows it.
+  if (env.signal.aborted) return settled(mismatch('verify-mismatch'));
   const tried: WidgetFillContext = { ...ctx, bridgeTried: { sent: attempt.sent, before: attempt.before } };
   // After a choice the bridge said it made, the list is not searched: typing into it would add to what React holds.
   const searched = attempt.sent ? null : await searchOption(env, last, field, write, planned, target, tried);
   if (searched !== null) return searched;
   const outcome = await fillWidget(target, write.value, tried, write.origin);
-  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  afterWait(env, outcome.wrote);
   return settled(outcome);
 }
 
@@ -401,7 +446,9 @@ function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[], 
 function queryGuard(env: PassEnv, last: ScanResult, wanted: PlannedField, write: PlannedWrite):
   TypeaheadHooks['guard'] {
   return async (query) => {
-    if (env.signal.aborted || !env.valid()) throw new RunAborted();
+    if (runOver(env)) throw new RunAborted();
+    // The person's Skip: the search ends there (dom/widgets puts back what it typed).
+    if (env.signal.aborted) return { ok: false, reason: 'internal-error', blocked: false };
     if (env.stopped()) return { ok: false, reason: 'user-stopped', blocked: false };
     const hold = env.heldBy?.() ?? null;
     if (hold !== null) return { ok: false, reason: hold, blocked: false };
@@ -444,7 +491,7 @@ async function searchOption(env: PassEnv, last: ScanResult, field: ScannedField,
   const asQuery: PlannedWrite = { ...write, origin: { ...origin, transform: 'typeahead.query' } };
   const result: TypeaheadResult = await searchForOption(target, { label: option.label, cleanLabel: value.cleanLabel },
     query, ctx, queryGuard(env, last, wanted, asQuery));
-  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  afterWait(env, result.chosen !== null);
   if (result.chosen === null) {
     if (!result.blocked && SEARCH_FALLS_BACK.has(result.reason)) return null;
     return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }
@@ -473,8 +520,10 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
     guard: queryGuard(env, last, wanted, write),
     match: async (results, now, complete) => {
       const spec = resultsSpec(now.field, results, complete);
-      const answer = await widgets.plan([spec], [spec.key]);
-      if (env.signal.aborted || !env.valid()) throw new RunAborted();
+      // The worker's match may wait on the AI: the person's Skip ends that wait (its answer, when it comes, is unused).
+      const answer = await untilAborted(widgets.plan([spec], [spec.key]), env.signal);
+      if (runOver(env)) throw new RunAborted();
+      if (answer === null) return { choose: null, reason: 'internal-error', blocked: false };
       // The answer's strings are the core's branded keys (messaging/schemas.check.ts proves the shapes equal).
       const row = (answer.results as unknown as FillResult[]).find((candidate) => candidate.key === spec.key);
       const pick = (answer.writes as unknown as PlannedWrite[]).find((candidate) => candidate.key === spec.key);
@@ -488,7 +537,7 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
     },
   };
   const result = await searchTypeahead(target, write.value.queries, ctx, hooks);
-  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  afterWait(env, result.chosen !== null);
   const picked = chosen as { row: FillResult; write: PlannedWrite } | null;
   if (result.chosen === null || picked === null) {
     return { row: settleRow(planned, result.blocked ? { kind: 'blocked', reason: result.reason }

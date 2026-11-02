@@ -11,7 +11,8 @@
  *   a late form is drawn;
  * - while Ashby's own adapter waits for its late form, the generic adapter never claims the page; after, it may;
  * - the start date planned from the profile's date is written MM/DD/YYYY, as Ashby's date box reads it;
- * - the SMS consent beside the phone is never touched (a click saves it on Ashby's server at once).
+ * - the SMS consent beside the phone (a click saves it on Ashby's server at once) follows Consent boxes (v3 Phase 3):
+ *   under All agreements, the default, its Yes is chosen and Ashby has it once; under Required only it is never touched.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import pageHtml from '../../fixtures/synthetic/ashby-widgets/index.html?raw';
@@ -101,20 +102,32 @@ async function until(ready: () => boolean, timeout = 8_000): Promise<void> {
 }
 
 const withLlm = (llm: Partial<Settings['llm']>): Settings => ({ ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, ...llm } });
+/** Consent boxes: Required only: an optional agreement is ticked only when pre-approved. */
+const REQUIRED_ONLY: Settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } };
 
 describe('the resume on Ashby, as the page shows its upload', () => {
-  it('is verified once Ashby shows it uploaded, and its SMS consent is never touched', async () => {
-    const started = await start(await open(), { resume: RESUME });
+  it('is verified once Ashby shows it uploaded, and its SMS consent is never touched under Required only', async () => {
+    const started = await start(await open(), { resume: RESUME, settings: REQUIRED_ONLY });
     expect(await started.runtime.fill()).toBe('review');
     const report = lastReport(started.worker);
     expect(rowOf(report, 'Resume')).toMatchObject({ category: 'file.resume', status: 'verified', wrote: true,
       verification: 'verified' });
     expect(started.log.uploads).toEqual([{ name: GOLDEN_RESUME.fileName, ok: true }]);
     expect(started.log.saves.filter((save) => save.op === 'ApiSetFormValueToFile')).toHaveLength(1);
-    // The SMS consent: one click saves it on Ashby's server, so it is never clicked.
+    // The SMS consent: one click saves it on Ashby's server, so under Required only it is never clicked.
     expect(started.log.saves.filter((save) => save.op === 'ApiSubmitCandidateTextingConsent')).toEqual([]);
     expect(started.log.values.communicationConsent).toBeUndefined();
     expect(sentinelsIn(JSON.stringify(started.worker.reports))).toEqual([]);
+  });
+
+  it('chooses its SMS consent’s Yes under Consent boxes: All agreements, the default, and Ashby has it once', async () => {
+    const started = await start(await open(), { resume: RESUME });
+    expect(await started.runtime.fill()).toBe('review');
+    const report = lastReport(started.worker);
+    const sms = report.fields.find((row) => row.category === 'consent.sms');
+    expect(sms).toMatchObject({ kind: 'radio', required: false, provenance: 'rule', wrote: true, verification: 'verified' });
+    expect(started.log.values.communicationConsent).toBe('given');
+    expect(started.log.saves.filter((save) => save.op === 'ApiSubmitCandidateTextingConsent')).toHaveLength(1);
   });
 
   it('is flagged upload-failed, written and never verified, when Ashby says it failed to upload', async () => {

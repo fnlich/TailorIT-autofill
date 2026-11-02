@@ -55,9 +55,10 @@ async function withSettings<T>(ext: Extension, llm: Settings['llm'], body: () =>
   }
 }
 
-/** Phase 4's settings in version 2's shape (the owner's amendments): the tiebreak and classification on, no drafts or
- *  answers, no consent pre-approved. */
+/** Phase 4's settings in version 4's shape (the owner's amendments; v3 Phase 3's modes): the tiebreak and classification
+ *  on, no drafts or answers, no consent pre-approved (Consent boxes: Required only, nothing allowed). */
 const PHASE4: Settings = { ...DEFAULT_SETTINGS, preapprovedConsent: [],
+  modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' },
   llm: { ...DEFAULT_SETTINGS.llm, drafts: false, answers: false } };
 const withPhase4 = <T>(ext: Extension, body: () => Promise<T>): Promise<T> => withSettings(ext, PHASE4.llm, body, PHASE4);
 

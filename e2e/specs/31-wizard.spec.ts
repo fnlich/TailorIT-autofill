@@ -156,7 +156,8 @@ function expectStepCounted(runState: RunAt['runState'], index: number, steps: nu
 }
 
 async function withAutoAdvance<T>(ext: Extension, body: () => Promise<T>): Promise<T> {
-  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, autoAdvance: true } });
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+    modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' } } });
   try {
     return await body();
   } finally {

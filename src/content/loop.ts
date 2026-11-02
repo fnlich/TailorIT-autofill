@@ -62,6 +62,11 @@
  * keep their value hashes under the run's one key (LoopEnv.hasher), what was written (for the final Guard) and when, so
  * a value still ours keeps our verified row and is not written again, a value the person changed since is theirs
  * (changed-by-you, never written), and one the page reset is written again. Its passes add to the earlier ones'.
+ * v3 Phase 3: the loop tells its run how far it is (LoopEnv.progress: the rows known now, the keys the pass still
+ * writes, the one it writes now), so the side panel spins the current row and counts only what is done; and the write
+ * being made can be given up at the person's Skip (CurrentWrite): that one write's waits end at once, its field is
+ * flagged skipped-by-you and never planned or written again in the run, and the pass goes on. Skip never passes a
+ * guard: it only ever writes less.
  * Values, free text and hashes stay in this frame's memory; nothing here sends or logs one (plan/request carries the
  * scan's FieldSpecs, as every pass's always did). The waits are settle()'s and awaitOptions()', on dom/time.ts's
  * timers: there is no fixed sleep.
@@ -91,7 +96,9 @@ import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
 import { boxBeforeEndDate } from './repeatables';
-import { RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WrittenField } from './pass';
+import {
+  RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WriteResult, type WrittenField,
+} from './pass';
 import type { ReceivedResume } from './transfer';
 import { TouchLog } from './touches';
 import { createValueHasher, type ValueHasher } from './values';
@@ -116,6 +123,34 @@ export const AI_WAIT_CAP_MS = 125_000;
 export const LETTER_WAIT_CAP_MS = 185_000;
 /** A dry run plans one pass, and asks again at most this many times for fields the worker forgot (it restarted). */
 const DRY_RUN_ASKS = 2;
+
+/** The write the loop makes now, and the person's Skip of it (v3 Phase 3): the run holds one and the loop fills it in
+ *  around each write. Keys only. */
+export class CurrentWrite {
+  private now: { key: FieldKey; skip: AbortController } | null = null;
+
+  /** A write of `key` begins: answers the signal its Skip aborts. */
+  begin(key: FieldKey): AbortSignal {
+    this.now = { key, skip: new AbortController() };
+    return this.now.skip.signal;
+  }
+
+  end(): void {
+    this.now = null;
+  }
+
+  /** The key being written now, or null. */
+  get key(): FieldKey | null {
+    return this.now?.key ?? null;
+  }
+
+  /** Gives up the write of `key` when it is the one being made now; answers whether it was. */
+  skip(key: FieldKey): boolean {
+    if (this.now === null || this.now.key !== key) return false;
+    this.now.skip.abort();
+    return true;
+  }
+}
 
 
 /** What the loop needs from its run. */
@@ -158,6 +193,11 @@ export interface LoopEnv extends PassEnv {
   touches?: TouchLog;
   /** An earlier attempt's books on this step, in this run (LoopResult.carry): the Phase 5 review, C-S3. */
   carry?: LoopCarry;
+  /** How far the fill is (v3 Phase 3): the rows known now in DOM order, the keys the pass still writes (the one being
+   *  written among them) and the one written now (null between writes). Called often and never awaited. */
+  progress?(rows: readonly FillResult[], pending: readonly FieldKey[], current: FieldKey | null): void;
+  /** Where the loop names the write it makes now, so the person's Skip can give it up (CurrentWrite). */
+  writing?: CurrentWrite;
 }
 
 /** What a later attempt on the same step starts from (LoopEnv.carry): the books of the fields written or taken over,
@@ -168,6 +208,9 @@ export interface LoopCarry {
   /** When each was last written (monotonicNow): a touch counts only after it. */
   lastWriteAt: ReadonlyMap<BaseKey, number>;
   passes: number;
+  /** The fields the person skipped (v3 Phase 3), with their skipped-by-you row (null: the write stood). Optional, so an
+   *  older carry reads as none skipped. */
+  skipped?: ReadonlyMap<BaseKey, FillResult | null>;
 }
 
 /** What the loop leaves for the final Guard and the report. Memory only: `written` holds values. */
@@ -275,6 +318,10 @@ class ReactiveLoop {
   private readonly readiness = newReadiness();
   /** The run's page-world bridge (dom/widgets' BridgeRun): once its word did not hold, no command is sent this run. */
   private readonly bridge = newBridgeRun();
+  /** The fields the person skipped while they were written (v3 Phase 3): never planned or written again on this step,
+   *  this attempt or a later one (LoopCarry.skipped). Each with its skipped-by-you row, or null when the write had
+   *  touched the page and its own row stands. */
+  private readonly skipped = new Map<BaseKey, FillResult | null>();
   private readonly attribution = new Attribution();
   /** What was written, by base key: kept when the field goes or its options change, and ours again only while its row
    *  says it wrote (a re-plan that found our value in place). */
@@ -311,6 +358,9 @@ class ReactiveLoop {
   /** When the wait for the LLM last made progress (a field began waiting, or an answer came): its cap runs from it. */
   private aiProgressAt: number | null = null;
   private aiPolls = 0;
+  /** This pass's fields still to come besides its writes (v3 Phase 3 review): those that began to wait for the AI and
+   *  those whose list's options it waits for. The progress counts them as being filled, never as left for the person. */
+  private waitingNow: FieldKey[] = [];
 
   constructor(private readonly env: LoopEnv, private readonly hasher: ValueHasher) {
     this.readings = env.widgetReadings ?? new Map();
@@ -321,6 +371,7 @@ class ReactiveLoop {
       // What was written stays ours to verify; its resume was released when its own attempt ended.
       for (const [baseKey, entry] of carry.written) this.written.set(baseKey, { ...entry, resume: null });
       for (const [baseKey, at] of carry.lastWriteAt) this.lastWriteAt.set(baseKey, at);
+      for (const [baseKey, row] of carry.skipped ?? []) this.skipped.set(baseKey, row);
     }
   }
 
@@ -486,7 +537,8 @@ class ReactiveLoop {
     const arrived = new Map([...this.arrived].filter(([key]) => fields.has(key)
       && this.state.fields.get(baseKeyOf(key))?.status === 'awaiting-llm'));
     this.arrived = new Map();
-    const order = orderPending(this.state, [...pending, ...arrived.keys()]).filter((key) => fields.has(key));
+    const order = orderPending(this.state, [...pending, ...arrived.keys()]).filter((key) => fields.has(key)
+      && !this.skipped.has(baseKeyOf(key)));
     const holding = new Set(env.dryRun ? [] : order.filter((key) => !arrived.has(key)
       && loadingWithOptions(current, fields.get(key)!)));
     const asked = order.filter((key) => !holding.has(key) && !arrived.has(key));
@@ -510,8 +562,18 @@ class ReactiveLoop {
       rows.set(key, dropped ? aiOffRow(entry.row) : entry.row);
       if (!dropped && entry.write !== undefined) writes.push(entry.write);
     }
+    // A field the person skipped on an earlier attempt of this step keeps its skipped-by-you row (LoopCarry.skipped);
+    // it is never planned again.
+    for (const field of current.fields) {
+      const row = this.skipped.get(field.baseKey);
+      if (row === undefined || row === null || this.state.fields.get(field.baseKey)?.row?.reason === 'skipped-by-you') {
+        continue;
+      }
+      rows.set(field.key, { ...row, key: field.key });
+    }
     // A field that begins to wait means a task was asked for: the wait's cap runs from now.
     if (awaiting.length > 0) this.aiProgressAt = monotonicNow();
+    this.waitingNow = [...awaiting, ...holding];
     if (env.dryRun) {
       if (awaiting.length > 0 && env.poll !== undefined) await this.dryRunAnswers(current, rows, awaiting);
       for (const [key, row] of rows) rows.set(key, settleRow(row, { kind: 'dry-run' }));
@@ -522,12 +584,16 @@ class ReactiveLoop {
 
     const done: WrittenField[] = [];
     const writtenAt = new Map<BaseKey, number>();
-    for (const { write, planned, keep } of this.queue(order, rows, writes, fields)) {
+    const queued = this.queue(order, rows, writes, fields);
+    const left = queued.map((entry) => entry.write.key);
+    this.progress(rows, left, null);
+    for (const [at, { write, planned, keep }] of queued.entries()) {
       if (env.signal.aborted || !env.valid()) throw new RunAborted();
       if (env.stopped()) {
         rows.set(write.key, settleRow(planned, { kind: 'not-written', reason: 'user-stopped' }));
         continue;
       }
+      this.progress(rows, left.slice(at), write.key);
       const field = fields.get(write.key)!;
       // An AI draft the run holds back until the person confirms it (LoopEnv.holdDraft) is not written.
       const held = env.holdDraft?.(write, planned) ?? null;
@@ -541,14 +607,14 @@ class ReactiveLoop {
         rows.set(write.key, prefill.row);
         continue;
       }
-      const result = await writeField(env, current, field, write, prefill?.row ?? planned, this.held,
-        { ...(keep === undefined ? {} : { keep }), widgets: this.widgetWrites() });
+      const result = await this.writeSkippable(current, field, write, prefill?.row ?? planned, keep);
       rows.set(write.key, result.row);
       if (result.written === undefined || result.readBack === undefined) continue;
       done.push(result.written);
       writtenAt.set(result.written.field.baseKey, monotonicNow());
       await this.recordWritten(result.written, result.readBack, planned);
     }
+    this.progress(rows, [], null);
     // What the pass's last write revealed at once is that write's.
     if (this.attribution.awaitingScan) this.scanNow();
 
@@ -578,7 +644,78 @@ class ReactiveLoop {
     const read = await this.readWidgets(fresh);
     if (env.stopped()) return { kind: 'stopped', scan: read ? this.scanNow() : fresh };
     const waited = await this.awaitLists(fresh, holding, writtenAt);
+    // The lists' waits are over; the AI's are in the books (awaitingKeys) now.
+    this.waitingNow = [];
+    this.progress(new Map(), [], null);
     return { kind: 'next', scan: waited || read ? this.scanNow() : fresh };
+  }
+
+  /**
+   * One write, which the person's Skip may give up (v3 Phase 3, CurrentWrite): the write sees a signal its Skip aborts
+   * and a stop its Skip turns on, so its waits (a resume on its way, a list's options, an AI pick, an upload) end at
+   * once and it writes nothing more. A write that had touched the page stands (pass.ts: written, read back after the
+   * settle, seen by the final Guard); one given up is flagged skipped-by-you. Either way the field is never planned or
+   * written again on this step, in this attempt or a later one (LoopCarry.skipped). The run's own abort still ends the
+   * run.
+   */
+  private async writeSkippable(current: ScanResult, field: ScannedField, write: PlannedWrite, planned: FillResult,
+    keep: FillResult | undefined): Promise<WriteResult> {
+    const { env } = this;
+    const options = { ...(keep === undefined ? {} : { keep }), widgets: this.widgetWrites() };
+    const slot = env.writing;
+    if (slot === undefined) return writeField(env, current, field, write, planned, this.held, options);
+    const skip = slot.begin(write.key);
+    // The run's own env underneath, its getters (the form root, the canaries) read at each use.
+    const skippable: PassEnv = Object.create(env, {
+      signal: { value: AbortSignal.any([env.signal, skip]) },
+      runSignal: { value: env.signal },
+      stopped: { value: () => env.stopped() || skip.aborted },
+    }) as PassEnv;
+    const skipped = (): WriteResult => {
+      const row = settleRow(planned, { kind: 'not-written', reason: 'skipped-by-you' });
+      this.skipped.set(field.baseKey, row);
+      log('content.field-skipped', { wrote: false });
+      return { row };
+    };
+    try {
+      const result = await writeField(skippable, current, field, write, planned, this.held, options);
+      if (skip.aborted && result.written !== undefined) {
+        // Touched before the Skip came: the write stands, and is never made again.
+        this.skipped.set(field.baseKey, null);
+        log('content.field-skipped', { wrote: true });
+        return result;
+      }
+      // A Guard's block stays as it is: Skip never stands in for a guard's word.
+      return skip.aborted && result.written === undefined && result.row.status !== 'blocked' && !env.stopped()
+        ? skipped() : result;
+    } catch (failure) {
+      if (failure instanceof RunAborted && skip.aborted && !env.signal.aborted && env.valid()) return skipped();
+      throw failure;
+    } finally {
+      slot.end();
+    }
+  }
+
+  /** Tells the run how far the pass is (LoopEnv.progress): the rows known now, those of this pass over the books', in
+   *  DOM order; still to come, the pass's writes, the fields waiting for the AI (asked this pass, in the books, or
+   *  arrived and written next pass) and those waiting for their list's options. */
+  private progress(rows: ReadonlyMap<FieldKey, FillResult>, writes: readonly FieldKey[], current: FieldKey | null): void {
+    const tell = this.env.progress;
+    if (tell === undefined) return;
+    const pending = [...new Set([...writes, ...this.waitingNow, ...awaitingKeys(this.state), ...this.arrived.keys()])];
+    const known = new Map<BaseKey, { order: number; row: FillResult }>();
+    for (const field of this.state.fields.values()) {
+      if (field.present && field.row !== null) known.set(field.baseKey, { order: field.domOrder, row: field.row });
+    }
+    for (const [key, row] of rows) {
+      const baseKey = baseKeyOf(key);
+      known.set(baseKey, { order: this.state.fields.get(baseKey)?.domOrder ?? Number.MAX_SAFE_INTEGER, row });
+    }
+    try {
+      tell([...known.values()].sort((a, b) => a.order - b.order).map((entry) => entry.row), pending, current);
+    } catch {
+      // The progress is the panel's: a failure there never stops a fill.
+    }
   }
 
   /** The pass's writes in its order: the worker's, except that a box named for a choice's free text takes that text
@@ -590,7 +727,7 @@ class ReactiveLoop {
     this.typing = new Set();
     for (const key of order) {
       const row = rows.get(key);
-      if (row === undefined || !mayWrite(this.state, key)) continue;
+      if (row === undefined || !mayWrite(this.state, key) || this.skipped.has(baseKeyOf(key))) continue;
       const source = this.boxes.get(key);
       const followUp = source === undefined ? null : followUpWrite(source, row, fields.get(key)!);
       if (followUp !== null) {
@@ -776,20 +913,41 @@ class ReactiveLoop {
         }
         const requeue = requeueAwaiting(this.state, forgotten);
         this.state = requeue.state;
+        // The field the wait is on, while nothing else is left to do (v3 Phase 3 review): the panels spin its row and,
+        // after a while on it, offer its Skip, which gives up that one field's answer (skipAwaiting).
+        const on = block ? awaitingKeys(this.state).find((key) => !this.arrived.has(key)) ?? null : null;
+        // What came in shows at once: an answer arrived is still to be written, a field asked again still waits.
+        this.progress(new Map(), [], on);
         if (!block || this.arrived.size > 0 || requeue.requeued.length > 0) return requeue.requeued;
         const left = capMs() - (monotonicNow() - this.aiProgressAt);
         if (left <= 0) {
           this.giveUp(awaitingKeys(this.state), 'llm-unavailable', 'cover-letter-timed-out');
           return [];
         }
-        const stop = env.stopSignal === undefined ? env.signal : AbortSignal.any([env.signal, env.stopSignal]);
+        const skip = on === null || env.writing === undefined ? null : env.writing.begin(on);
+        const stop = AbortSignal.any([env.signal, ...(env.stopSignal === undefined ? [] : [env.stopSignal]),
+          ...(skip === null ? [] : [skip])]);
         const waited = await deadline(Math.min(pollMs, left), stop);
+        env.writing?.end();
         this.alive();
+        if (skip?.aborted === true && on !== null && !env.stopped()) {
+          this.skipAwaiting(on);
+          continue;
+        }
         if (waited === 'aborted' || env.stopped()) return [];
       }
     } finally {
       if (block) log('content.ai-waited', { polls: this.aiPolls, ms: Math.round(monotonicNow() - started) });
     }
+  }
+
+  /** The person's Skip of a field whose AI answer the run waits for (v3 Phase 3 review): its answer, when it comes, is
+   *  never used; its row is flagged skipped-by-you, and it is never planned or written again on this step. */
+  private skipAwaiting(key: FieldKey): void {
+    this.giveUp([key], 'skipped-by-you');
+    const entry = this.arrived.get(key);
+    if (entry !== undefined) this.skipped.set(baseKeyOf(key), entry.row);
+    log('content.field-skipped', { wrote: false, waiting: true });
   }
 
   /** The run fills from the profile only now (LoopEnv.aiOff): the fields still waiting for the LLM are given up, and an
@@ -973,7 +1131,8 @@ class ReactiveLoop {
     const kept = new Set(fields.map((tracked) => tracked.baseKey));
     return { fields, passes,
       written: new Map([...this.written].filter(([baseKey]) => kept.has(baseKey))),
-      lastWriteAt: new Map([...this.lastWriteAt].filter(([baseKey]) => kept.has(baseKey))) };
+      lastWriteAt: new Map([...this.lastWriteAt].filter(([baseKey]) => kept.has(baseKey))),
+      skipped: new Map(this.skipped) };
   }
 
   /** A dry run's one pass: the plan's rows, as the fill would leave them, and nothing written. */

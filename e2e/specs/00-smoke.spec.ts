@@ -80,7 +80,8 @@ test.describe('smoke', () => {
   test('the panel page renders as a normal tab', async ({ extContext, extensionId }) => {
     const page = await extContext.newPage();
     await page.goto(`chrome-extension://${extensionId}/sidepanel.html?tabId=1`);
-    await expect(page.getByRole('heading', { name: 'Review' })).toBeVisible();
+    // v3 Phase 3 (Jobright's layout): the brand heads it; the review shows once a run reports.
+    await expect(page.getByRole('heading', { name: 'TailorIT Autofill', level: 1 })).toBeVisible();
     await page.close();
   });
 

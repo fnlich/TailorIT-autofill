@@ -47,8 +47,12 @@ describe('the options page', () => {
   it('shows the stored settings, saves each change through the worker, and shows what the worker answered', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);
-    // Version 2's defaults (the owner's amendments, docs/SPEC-AMENDMENTS.md).
-    expect(setting(root, 'autoAdvance').checked).toBe(false);
+    // Version 2's defaults (the owner's amendments, docs/SPEC-AMENDMENTS.md), and version 4's modes (v3 Phase 3).
+    expect(setting(root, 'modes.next.manual').checked).toBe(true);
+    expect(setting(root, 'modes.afterPageTurn.auto').checked).toBe(true);
+    expect(setting(root, 'modes.consents.all').checked).toBe(true);
+    expect(setting(root, 'modes.ai.all').checked).toBe(true);
+    expect(setting(root, 'view.expanded').checked).toBe(true);
     expect(setting(root, 'llm.tiebreak').checked).toBe(true);
     expect(setting(root, 'llm.classify').checked).toBe(true);
     expect(setting(root, 'llm.drafts').checked).toBe(true);
@@ -57,11 +61,22 @@ describe('the options page', () => {
     expect(setting(root, 'llm.whenForbidden.profile-only').checked).toBe(true);
     expect(setting(root, 'interpretations.eeoDeclineByDefault').checked).toBe(true);
     expect(setting(root, 'panel.side').checked).toBe(true);
+    // Under Consent boxes: All agreements every kind is ticked: each toggle shows so, fixed, and a line says where the
+    // choice is (v3 Phase 3 review).
     for (const category of CONSENT_CATEGORIES) {
-      expect(setting(root, `consent.${category}`).checked, category).toBe(category !== 'marketing' && category !== 'sms');
+      expect([setting(root, `consent.${category}`).checked, setting(root, `consent.${category}`).disabled], category)
+        .toEqual([true, true]);
+    }
+    expect(root.querySelector('[data-consents-all]')?.textContent).toBe(TEXT.consent.allMode);
+    // Required only: the kinds pre-approved, each the person's to change.
+    await click(setting(root, 'modes.consents.required'));
+    expect(root.querySelector('[data-consents-all]')).toBeNull();
+    for (const category of CONSENT_CATEGORIES) {
+      expect([setting(root, `consent.${category}`).checked, setting(root, `consent.${category}`).disabled], category)
+        .toEqual([category !== 'marketing' && category !== 'sms', false]);
     }
 
-    await click(setting(root, 'autoAdvance'));
+    await click(setting(root, 'modes.next.auto'));
     await click(setting(root, 'consent.marketing'));
     await click(setting(root, 'consent.privacy'));
     await click(setting(root, 'llm.drafts'));
@@ -69,14 +84,15 @@ describe('the options page', () => {
     await click(setting(root, 'llm.whenForbidden.ask'));
     await click(setting(root, 'interpretations.twoOrMoreRaces'));
     await click(setting(root, 'panel.in-page'));
-    expect(saves(worker)).toHaveLength(8);
+    expect(saves(worker)).toHaveLength(9);
     // Each save is the whole settings, built on the last answer; consent stays in the closed list's order.
-    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, autoAdvance: true,
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto',
+      consents: 'required' },
       preapprovedConsent: ['terms', 'certify', 'dataRetention', 'marketing', 'backgroundCheck', 'signature'],
       llm: { ...DEFAULT_SETTINGS.llm, drafts: false, confirmDrafts: true, whenForbidden: 'ask' }, panel: 'in-page',
       interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } });
     expect(root.textContent).toContain(TEXT.saved);
-    for (const name of ['autoAdvance', 'consent.marketing', 'llm.confirmDrafts', 'llm.whenForbidden.ask', 'panel.in-page']) {
+    for (const name of ['modes.next.auto', 'consent.marketing', 'llm.confirmDrafts', 'llm.whenForbidden.ask', 'panel.in-page']) {
       expect(setting(root, name).checked, name).toBe(true);
     }
     for (const name of ['consent.privacy', 'llm.drafts', 'interpretations.twoOrMoreRaces', 'llm.whenForbidden.profile-only']) {
@@ -84,18 +100,28 @@ describe('the options page', () => {
     }
   });
 
-  it('offers the AI’s answers to legal, pay and attention-check questions, on by default and only with answers on (the owner’s decision of 2026-11-01)', async () => {
+  it('shows the modes in their own card, each saved at once, Sign-in, Submit and the agent’s rules not yet (v3 Phase 3)', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);
-    const all = setting(root, 'llm.answerAll');
-    expect([all.checked, all.disabled]).toEqual([true, false]);
-    expect(root.textContent).toContain(TEXT.ai.answerAll);
-    expect(root.textContent).toContain(TEXT.ai.answerAllHelp);
-    await click(all);
-    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, answerAll: false } });
-    // Answers off: the switch has nothing to act on, and cannot be changed.
-    await click(setting(root, 'llm.answers'));
-    expect(setting(root, 'llm.answerAll').disabled).toBe(true);
+    const card = root.querySelector<HTMLElement>('[data-card="modes"]')!;
+    expect(card.id).toBe('settings-modes');
+    expect(card.querySelector('h2')?.textContent).toBe(TEXT.modes.heading);
+    expect([...card.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => [group.dataset.settingGroup,
+      group.querySelector('legend')?.textContent])).toEqual([['modes.next', TEXT.modes.next.name],
+      ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['modes.consents', TEXT.modes.consents.name],
+      ['modes.ai', TEXT.modes.ai.name], ['view', TEXT.modes.view.name]]);
+    expect(root.querySelector('[data-setting-group="modes.signIn"], [data-setting-group="modes.submit"]')).toBeNull();
+    expect(root.querySelector('input[data-setting^="modes.agentSkip"]')).toBeNull();
+    // The AI's answers to legal, pay and attention-check questions (version 3's switch) are the AI answers mode.
+    expect(root.querySelector('input[data-setting="llm.answerAll"]')).toBeNull();
+    await click(setting(root, 'modes.ai.profile'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, ai: 'profile' } });
+    await click(setting(root, 'modes.consents.required'));
+    await click(setting(root, 'modes.afterPageTurn.manual'));
+    await click(setting(root, 'view.minimized'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, view: 'minimized', modes: { ...DEFAULT_SETTINGS.modes,
+      ai: 'profile', consents: 'required', afterPageTurn: 'manual' } });
+    for (const help of [TEXT.modes.next.help, TEXT.modes.consents.help, TEXT.modes.ai.help]) expect(card.textContent).toContain(help);
   });
 
   it('shows the settings the worker stored, not the ones it was sent, and the old ones when a save is refused', async () => {
@@ -104,8 +130,8 @@ describe('the options page', () => {
     worker.on('settings/save', () => ({ ok: true, data: { settings: { ...DEFAULT_SETTINGS,
       llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: false } } } }));
     const root = await open(worker);
-    await click(setting(root, 'autoAdvance'));
-    expect(setting(root, 'autoAdvance').checked).toBe(false);
+    await click(setting(root, 'modes.next.auto'));
+    expect(setting(root, 'modes.next.auto').checked).toBe(false);
     expect(setting(root, 'llm.tiebreak').checked).toBe(false);
 
     worker.on('settings/save', () => ({ ok: false, error: 'bad_message' }));
@@ -121,9 +147,10 @@ describe('the options page', () => {
       answer = () => resolve({ ok: true, data: { settings: message.settings } });
     }));
     const root = await open(worker);
-    await click(setting(root, 'autoAdvance'));
-    expect(setting(root, 'autoAdvance').checked).toBe(true);
+    await click(setting(root, 'modes.next.auto'));
+    expect(setting(root, 'modes.next.auto').checked).toBe(true);
     expect(setting(root, 'llm.drafts').disabled).toBe(true);
+    expect(setting(root, 'modes.consents.required').disabled).toBe(true);
     await act(async () => answer(undefined));
     await settle();
     expect(setting(root, 'llm.drafts').disabled).toBe(false);
@@ -136,7 +163,7 @@ describe('the options page', () => {
     expect(root.querySelector('[data-warning="certify"]')?.textContent).toBe(TEXT.consent.certifyWarning);
     expect(root.textContent).toContain(TEXT.consent.never);
     expect(root.querySelector('[data-ai-never]')?.textContent).toBe(TEXT.ai.never);
-    expect(root.textContent).toContain(TEXT.filling.autoAdvanceHelp);
+    expect(root.textContent).toContain(TEXT.modes.next.help);
     expect(root.textContent).toContain(TEXT.panel.inPageHelp);
   });
 

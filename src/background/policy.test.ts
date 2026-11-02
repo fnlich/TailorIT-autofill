@@ -96,5 +96,6 @@ describe('policy/hit', () => {
     expect(await recorded()).toHaveLength(MAX_POLICY_RECORDS);
     const order = (await fakeBrowser.storage.session.get('policy-order'))['policy-order'] as string[];
     expect([...order].sort()).toEqual(await recorded());
-  });
+    // Two thousand hits through the router: over a second alone, near the default 5 s when the whole suite runs at once.
+  }, 15_000);
 });

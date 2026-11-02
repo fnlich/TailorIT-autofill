@@ -7,7 +7,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
-import { button, click, frameReport, mount, row, settle, unmountAll } from '../ui.testkit';
+import { button, click, frameReport, mount, row, settle, unfoldRows, unmountAll } from '../ui.testkit';
 import { sectionName } from './model';
 import { Report } from './Report';
 
@@ -23,6 +23,7 @@ describe('the report rows (Phase F1 review, owner amendments)', () => {
     const root = createRoot(container);
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     await act(async () => root.render(<Report reports={[frameReport(0, { fields: [flagged] })]} describeField={describeField} />));
+    await unfoldRows(container);
     await click(button(container, COPY.report.showSuggestions(1)));
     expect(container.textContent).toContain('Bachelor of Science');
     const verified = { ...flagged, status: 'verified' as const, provenance: 'profile' as const, reason: 'ok' as const,
@@ -42,8 +43,9 @@ describe('the report rows (Phase F1 review, owner amendments)', () => {
     expect(sectionName('EEO')).toBe('EEO');
     expect(sectionName('')).toBe(COPY.report.untitledSection);
     expect(sectionName('--')).toBe(COPY.report.untitledSection);
+    // v3 Phase 3: the lists group the rows Required and Optional, as Jobright's; the section names stay the model's.
     const root = await mount(<Report reports={[frameReport(0, { fields: [row('a', { section: 'additional-information' })] })]} />);
-    expect(root.querySelector('h3')?.textContent).toBe('Additional information');
+    expect(root.querySelector('h3')?.textContent).toBe(COPY.report.optionalGroup);
   });
 
   it('marks an answer the AI wrote "AI", one it guessed "AI guess", and keeps the AI draft mark for drafts (E1\'s rule)', async () => {

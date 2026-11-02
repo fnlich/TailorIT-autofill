@@ -57,6 +57,8 @@ export const LOG_CODES = [
   'runstate.refused',
   'runstate.too-large',
   'report.stored',
+  // v3 Phase 3 review: a live report older than the report stored, dropped.
+  'report.stale-live',
   'report.refused',
   'policy.recorded',
   'policy.evicted',
@@ -139,6 +141,8 @@ export const LOG_CODES = [
   'answer.refused',
   'draft.confirmed',
   'content.person-edited',
+  // v3 Phase 3 review: the fields left for the person read again after their input at rest (how many flipped).
+  'content.left-reread',
   // The Phase 6 review: Confirm draft refused for a field that no longer holds the draft as written, or holds a canary
   // (E6); values of ours found changed before the step was left (E9, a count).
   'draft.confirm-refused',
@@ -165,6 +169,17 @@ export const LOG_CODES = [
   'letter.limited',
   'letter.timed-out',
   'job.letter-answered',
+  // v3 Phase 3: a field the person skipped while it was written, the side panel's Skip sent to its frame (reached or
+  // not, as a flag), a new step left for Continue (Autofill after page turn: Manually), the launcher placed, hidden or
+  // shown again (its scope as a flag, never a site), and the lookup a recognised job page sets off as it loads.
+  'content.field-skipped',
+  'panel.skip-sent',
+  'content.page-turned',
+  'launcher.placed',
+  'launcher.hidden',
+  'launcher.shown',
+  'job.lookup-on-load',
+  'job.lookup-on-load-deferred',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

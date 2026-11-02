@@ -21,10 +21,11 @@
  *   answer in the sensitive part (version 2), matched by its polarity alone; absent or declined, the field is blank
  *   and flagged. It answers a generic conviction question; a narrower one (a felony, a time, unspent) only when it is
  *   No; never an arrest or a charge (criminal-not-covered).
- * - Consent: ticked when every consent kind the label names is pre-approved in settings (§8.7), else when the form
- *   requires it (the owner's decision of 2026-11-01: it is needed to apply, a binding clause included); an optional
- *   one not pre-approved is left unticked, decided. An AI attestation is ticked only when the run used no AI at all. A
- *   signature types the person's full name on the same terms.
+ * - Consent: ticked when every consent kind the label names is approved (§8.7: under Consents: All, every kind the
+ *   extension recognises, marketing and SMS included, v3 Phase 3; under Required only, those pre-approved in
+ *   settings), else when the form requires it (the owner's decision of 2026-11-01: it is needed to apply, a binding
+ *   clause included); an optional one not approved is left unticked, decided. An AI attestation is ticked only when
+ *   the run used no AI at all. A signature types the person's full name on the same terms.
  * - The sensitive part (authorization, EEO, age, criminal record, pronouns, pay): until it is loaded no such field is
  *   answered. While it is 'not-loaded' the plan asks the worker to fetch it (planFrame's needsSensitive); when the
  *   token may not read it ('not-shared') or the fetch failed ('unavailable'), those fields are blank and flagged, but
@@ -534,13 +535,17 @@ const ticked = (ruleId: RuleId, option?: string | null): ValueResult => value({ 
 /**
  * The value of a consent field (§8.7; the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11): an AI
  * attestation (any consent that names AI) is ticked only when the run used no AI at all (consent.no-ai-attestation),
- * and otherwise left for the person (ai-attestation-ai-used). Every other consent is ticked when each kind it names is
- * pre-approved in settings (consent.preapproved), else when the form requires it, binding clauses included
- * (consent.required: it is needed to apply); an optional one not pre-approved (marketing, SMS) is left unticked and
- * recorded as decided (consent-optional-unticked, never the person's). A signature types the person's full name on
- * the same terms. A consent asked as a choice ticks by choosing its one option that agrees (ConsentContext.choice), and
- * waits for its options while they are not read (waiting-for-options: the loop opens the list), so it is decided on
- * what the list really offers.
+ * and otherwise left for the person (ai-attestation-ai-used), whatever the Consents mode. Every other consent is ticked
+ * when each kind it names is approved (consent.preapproved), else when the form requires it, binding clauses included
+ * (consent.required: it is needed to apply). Approved means, under Consents: All (settings.modes.consents, the
+ * default since v3 Phase 3: the owner's decision of 2026-11-01, SPEC-AMENDMENTS §12), that every kind it names is one
+ * the extension recognises, marketing, text messages and future jobs included, like Jobright; under Required only, that
+ * each is pre-approved in settings. An unrecognised consent (a binding clause) is never approved: it is ticked only when
+ * the form requires it. An optional one not approved is left unticked and recorded as decided
+ * (consent-optional-unticked, never the person's). A signature types the person's full name on the same terms. A
+ * consent asked as a choice ticks by choosing its one option that agrees (ConsentContext.choice), and waits for its
+ * options while they are not read (waiting-for-options: the loop opens the list), so it is decided on what the list
+ * really offers.
  */
 export function consentValue(category: FieldCategory, consentKinds: readonly FieldCategory[] | undefined,
   profile: Profile, settings: Settings, consent: ConsentContext): ValueResult {
@@ -552,9 +557,10 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
   if (category === 'consent.aiAttestation') return ticked('consent.no-ai-attestation', option);
   // A true attestation among the label's kinds asks nothing more: the rest decide.
   const kinds = named.filter((kind) => kind !== 'consent.aiAttestation');
+  const all = settings.modes.consents === 'all';
   const approved = kinds.length > 0 && kinds.every((kind) => {
     const setting = consentCategoryOf(kind);
-    return setting !== null && settings.preapprovedConsent.includes(setting);
+    return setting !== null && (all || settings.preapprovedConsent.includes(setting));
   });
   if (!approved && !consent.required) return none('consent-optional-unticked', false);
   if (category === 'consent.signature') {

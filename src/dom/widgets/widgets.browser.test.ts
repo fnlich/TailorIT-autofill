@@ -19,6 +19,7 @@ import { ALLOWED_EVENTS } from '../fillers/events';
 import { assertNotSubmit } from '../fillers/not-submit';
 import { loadFixture, logEvents, removeFixtures, untrustedViolations, type EventLog, type Fixture } from '../fixture.testkit';
 import { scan, toFieldSpec } from '../scan';
+import { deadline } from '../time';
 import type { FieldTarget, ScanResult, WidgetReading } from '../types';
 import { fillWidget, openList, readList, readWidget, searchTypeahead, widgetHolds, type TypeaheadHooks } from './index';
 import { labelIdentity } from './options';
@@ -514,5 +515,81 @@ describe('a result marked before the click (the Phase 2 review)', () => {
       choosing(page, highlighting));
     expect(page.counter<string | null>('__chosen')).toBe(AUSTIN);
     expect(result).toMatchObject({ chosen: null, verified: false, reason: 'needs-your-click' });
+  });
+});
+
+describe('the person’s Skip ends a widget’s wait and puts back what the write did (v3 Phase 3 review)', () => {
+  /** A remote search that shows its list busy on every query and never answers, and a list its click opens busy that
+   *  never fills: each list hides on a focusout of its box, and the combobox's toggles on a click. */
+  const HANGING = `<!doctype html><html><head><style>[role=listbox]{min-height:40px;margin:0;border:1px solid #888}
+    [role=listbox][hidden]{display:none}</style></head><body><form>
+    <label for="s">School</label>
+    <input id="s" role="combobox" aria-autocomplete="list" aria-controls="sl" aria-expanded="false">
+    <ul id="sl" role="listbox" hidden><li>Searching...</li></ul>
+    <span id="q">Country</span>
+    <div id="cb" role="combobox" tabindex="0" aria-labelledby="q" aria-controls="cl" aria-expanded="false">Select...</div>
+    <ul id="cl" role="listbox" hidden><li>Loading...</li></ul>
+    <script>
+      const s = document.getElementById('s');
+      const sl = document.getElementById('sl');
+      const searching = (open) => { sl.hidden = !open; s.setAttribute('aria-expanded', String(open));
+        sl.setAttribute('aria-busy', String(open)); };
+      s.addEventListener('input', () => searching(s.value !== ''));
+      s.addEventListener('focusout', () => searching(false));
+      const cb = document.getElementById('cb');
+      const cl = document.getElementById('cl');
+      const loading = (open) => { cl.hidden = !open; cb.setAttribute('aria-expanded', String(open));
+        cl.setAttribute('aria-busy', String(open)); };
+      cb.addEventListener('click', () => loading(cl.hidden));
+      cb.addEventListener('focusout', () => loading(false));
+    </script></form></body></html>`;
+
+  /** A write's context whose Skip comes after `ms`: the run's own signal never aborts. */
+  function skipping(page: Page, ms = 300) {
+    const run = new AbortController();
+    const skip = new AbortController();
+    void deadline(ms).then(() => skip.abort());
+    return { ...page.ctx(), signal: AbortSignal.any([run.signal, skip.signal]), runSignal: run.signal };
+  }
+
+  it('a hanging search: what was typed is put back and its list closed', async () => {
+    const page = await open(HANGING);
+    page.readings.set(page.target('School').field.baseKey, { kind: 'remote' });
+    const box = page.fixture.doc.getElementById('s') as HTMLInputElement;
+    const result = await searchTypeahead(page.target('School'), ['University of Texas'], skipping(page), {
+      guard: async () => ({ ok: true, target: page.target('School') }),
+      match: async () => ({ choose: null, reason: 'no-match', blocked: false }),
+    });
+    expect(result).toMatchObject({ chosen: null, reason: 'internal-error', typed: 1 });
+    expect(box.value).toBe('');
+    expect(page.fixture.doc.getElementById('sl')!.hidden).toBe(true);
+    expect(box.getAttribute('aria-expanded')).toBe('false');
+    expectOurEventsOnly(page.events);
+  });
+
+  it('a list whose options never load: the list our click opened is closed, and nothing is chosen', async () => {
+    const page = await open(HANGING);
+    page.readings.set(page.target('Country').field.baseKey, { kind: 'options', multiselectable: false, complete: true,
+      options: [{ label: 'Canada', disabled: false }, { label: 'Mexico', disabled: false }] });
+    const outcome = await fillWidget(page.target('Country'), { kind: 'option', index: 0, cleanLabel: 'Canada' },
+      skipping(page));
+    expect(outcome).toMatchObject({ wrote: false, reason: 'internal-error' });
+    expect(page.fixture.doc.getElementById('cl')!.hidden).toBe(true);
+    expect(page.fixture.doc.getElementById('cb')!.getAttribute('aria-expanded')).toBe('false');
+    expectOurEventsOnly(page.events);
+  });
+
+  it('the run’s own end tidies nothing: no event follows the abort', async () => {
+    const page = await open(HANGING);
+    page.readings.set(page.target('School').field.baseKey, { kind: 'remote' });
+    const run = new AbortController();
+    void deadline(300).then(() => run.abort());
+    const result = await searchTypeahead(page.target('School'), ['University of Texas'],
+      { ...page.ctx(), signal: run.signal, runSignal: run.signal }, {
+        guard: async () => ({ ok: true, target: page.target('School') }),
+        match: async () => ({ choose: null, reason: 'no-match', blocked: false }),
+      });
+    expect(result).toMatchObject({ chosen: null, reason: 'internal-error' });
+    expect((page.fixture.doc.getElementById('s') as HTMLInputElement).value).toBe('University of Texas');
   });
 });

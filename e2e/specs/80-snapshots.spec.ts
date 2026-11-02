@@ -4,8 +4,9 @@
  * real adapters, in a dry run and then in a fill, each in a tab of its own.
  * - Dry run: nothing is written (no row wrote, every row not-checked, no write event, every value as the page had it).
  * - Fill: the identity fields the golden profile answers are verified from the profile; every control the
- *   expectations mark not fillable keeps its value; Spotify's marketing consent stays unticked under the defaults (the
- *   Phase E review, B1); and each row the dry run promised ends with the dry run's status,
+ *   expectations mark not fillable keeps its value; Spotify's marketing consent is ticked under the defaults (Consent
+ *   boxes: All agreements, v3 Phase 3, which supersedes the Phase E review's B1); and each row the dry run promised
+ *   ends with the dry run's status,
  *   unless what happened was the filler's or the page's to say (a read-back that differed, a widget that ignored us),
  *   or the AI's: a dry run asks for no draft or answer (the owner's amendments), so a row a draft or an answer wrote
  *   in the fill is the AI's to say.
@@ -13,6 +14,7 @@
  */
 import type { Page } from '@playwright/test';
 import type { ReasonCode } from '../../src/core/types/fill';
+import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf, row } from '../helpers/extension.ts';
 import { GOLDEN } from '../helpers/golden.ts';
@@ -106,12 +108,13 @@ for (const name of CASES) {
         else expect(value, identity.label).toBe(identity.value);
       }
       expect(await notFillableValues(page, snapshot.fields)).toEqual(untouched);
-      // Spotify's marketing consent ("contact me about future job opportunities") is never ticked under the defaults,
-      // which pre-approve data retention but not marketing (the Phase E review, B1).
+      // Spotify's marketing consent ("contact me about future job opportunities") is ticked under the defaults:
+      // Consent boxes: All agreements ticks every agreement, marketing included, like Jobright (v3 Phase 3; under
+      // Required only it stays unticked, as the Phase E review's B1 had it: policy.test.ts).
       if (name === 'lever/spotify-ny') {
-        expect(row(report, SPOTIFY_MARKETING)).toMatchObject({ category: 'consent.marketing', wrote: false,
-          provenance: null });
-        await expect(page.locator('input[name="consent[marketing]"]')).not.toBeChecked();
+        expect(row(report, SPOTIFY_MARKETING)).toMatchObject({ category: 'consent.marketing', wrote: true,
+          provenance: 'rule' });
+        await expect(page.locator('input[name="consent[marketing]"]')).toBeChecked();
       }
       // The dry run's promise, kept: each row it planned ends with its status, but where only a fill could tell.
       const planByKey = new Map(planned.fields.map((field) => [field.key, field] as const));
@@ -125,3 +128,22 @@ for (const name of CASES) {
     });
   });
 }
+
+test('lever/spotify-ny under Consent boxes: Required only leaves its marketing consent unticked (v3 Phase 3 review)', async ({ extContext, connected: ext, routeLog }) => {
+  const snapshot = caseOf('lever/spotify-ny');
+  routeLog.serve(snapshot.routes);
+  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+    modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } } });
+  try {
+    const page = await extContext.newPage();
+    await page.goto(snapshot.url);
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    expect(report.status).toBe('review');
+    // Optional and not pre-approved: left unticked and recorded as decided (the Phase E review, B1).
+    expect(row(report, SPOTIFY_MARKETING)).toMatchObject({ category: 'consent.marketing', wrote: false, provenance: null });
+    await expect(page.locator('input[name="consent[marketing]"]')).not.toBeChecked();
+  } finally {
+    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+  }
+});

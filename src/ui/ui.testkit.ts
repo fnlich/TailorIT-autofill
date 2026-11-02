@@ -117,6 +117,8 @@ export interface WorkerScript {
   askAnswer: PanelAskAnswer;
   /** What panel/letter answers (Phase G): asked whether there is one (`check`), and Write it now (`write`). */
   letter: { check: LetterOutcome; write: LetterOutcome };
+  /** Where panel/launcher says the launcher is hidden (v3 Phase 3); panel/showLauncher sets it back to 'none'. */
+  launcherHidden: 'none' | 'visit' | 'site' | 'everywhere';
 }
 
 export interface FakeWorker {
@@ -143,7 +145,7 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       { id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }],
     askAnswer: { outcome: 'answered', text: 'I like building the systems Northwind runs on.', resumeLabel: 'Backend resume',
       policy: false },
-    letter: { check: 'none', write: 'written' } };
+    letter: { check: 'none', write: 'written' }, launcherHidden: 'none' };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
@@ -168,6 +170,12 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     'panel/policyDecision': () => ok({}),
     'panel/focus': () => ok({}),
     'panel/describe': () => ok({ options: [] }),
+    'panel/skip': () => ok({}),
+    'panel/launcher': () => ok({ hidden: script.launcherHidden }),
+    'panel/showLauncher': () => {
+      script.launcherHidden = 'none';
+      return ok({});
+    },
     'settings/get': () => ok({ settings: script.settings }),
     'settings/save': (message) => {
       script.settings = message.settings as Settings;
@@ -248,6 +256,15 @@ export async function click(element: Element | null | undefined): Promise<void> 
   if (!element) throw new Error('nothing to click');
   await act(async () => (element as HTMLElement).click());
   await settle();
+}
+
+/** Unfolds every row of the field lists, or the row of `key`: rows are folded at first, their icon and label shown
+ *  (v3 Phase 3 review). */
+export async function unfoldRows(root: ParentNode, key?: string): Promise<void> {
+  const rows = key === undefined ? 'li[data-field-key]' : `li[data-field-key="${key}"]`;
+  for (const toggle of [...root.querySelectorAll<HTMLButtonElement>(`${rows} button.tia-row__toggle[aria-expanded="false"]`)]) {
+    await click(toggle);
+  }
 }
 
 /** Types into an input or a textarea as React hears it: the prototype's value setter, then an input event. */

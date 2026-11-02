@@ -576,6 +576,19 @@ describe('the transition table', () => {
       expect(reduceRun(at('review', { updatedAt: T0 }), person, later(1)).state.status).toBe('scan-step');
     });
 
+    it('by the load with Autofill after page turn: Manually (v3 Phase 3): never filled by itself, Continue is offered', () => {
+      const manual: RunContext = { ...later(1), fillAfterPageTurn: false };
+      for (const status of ['detect', 'scan-step', 'fill-step', 'wait-transition'] as const) {
+        const state = at(status, { updatedAt: T0 });
+        expect(reduceRun(state, load, manual), status).toEqual({ state,
+          effects: [{ type: 'report' }, { type: 'offer-continue' }] });
+      }
+      // The person's Continue fills it, as at review; and Automatically (the default) changes nothing of before.
+      expect(reduceRun(at('fill-step', { updatedAt: T0 }), person, manual).state.status).toBe('scan-step');
+      expect(reduceRun(at('fill-step', { updatedAt: T0 }), load, { ...later(1), fillAfterPageTurn: true }).state.status)
+        .toBe('scan-step');
+    });
+
     it('by the load, later than that: nothing changes and Continue is offered', () => {
       const state = at('fill-step', { updatedAt: T0 });
       expect(reduceRun(state, load, later(RESUME_AUTO_MS + 1))).toEqual({ state,

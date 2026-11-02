@@ -29,7 +29,7 @@
  *   frame checks the option again: llmPickStillValid), and a text as an llm-answer naming the task and its basis; each
  *   through guardWrite (the canary scan included), never past the field's own cap. Either is accepted as written:
  *   `llm-answer-written`, or `ai-guess` when it rests on nothing, neither needing the person.
- * - The `all` scope (settings.llm.answerAll, on by default: the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md
+ * - The `all` scope (settings.modes.ai 'all', the default: the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md
  *   §11): a legal, criminal-history, pay or attention-check question the profile leaves open is asked too, with
  *   TailorIT's `all` scope (AnswerItem.scope), and its answer is written as any other ("AI guess" unless a fact settles
  *   it). Which: a category of AI_OPENED_CATEGORIES whose row says the profile holds no answer (legal-not-in-profile,
@@ -352,7 +352,7 @@ export function answerWaitsForOptions(spec: FieldSpec, classification: FieldClas
 /**
  * The answer item of a field, or null when it gets none (module header). `row` is the row planField gave it (the gap
  * it leaves), `writable` the planner's own check (no honeypot, not disabled or read-only), `answerAll` the person's
- * setting (settings.llm.answerAll: the `all` scope).
+ * setting (settings.modes.ai 'all': the `all` scope).
  */
 export function answerItemOf(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
   row: FillResult, writable: boolean, context: DraftContext, answerAll = false): AnswerItem | null {

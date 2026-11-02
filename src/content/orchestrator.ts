@@ -129,7 +129,7 @@ import {
   type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice,
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
-import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
+import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import { MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus } from '../core/types/run';
@@ -147,10 +147,10 @@ import type { ErrorCode } from '../messaging/envelope';
 import { MAX_POSTING_TEXT, type AnswerReadAnswerSchema } from '../messaging/schemas';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import { needsPerson } from '../shared/report';
+import { leftForPerson, needsPerson, progressOf } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
-import { AI_POLL_MS, AI_WAIT_CAP_MS, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
+import { AI_POLL_MS, AI_WAIT_CAP_MS, CurrentWrite, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
   type SettleTimings } from './loop';
 import { RunAborted, writeField, type PassEnv, type PlanAnswer } from './pass';
 import {
@@ -158,8 +158,8 @@ import {
 } from './policy';
 import { addBlocks, currentJobRows, needsClicks, sectionsOf, type SectionView } from './repeatables';
 import {
-  buildReport, lastFillOf, NoticeBook, persistedRunState, uploadRow, type NoticeCode, type ReportHeader,
-  type ReportLimiter,
+  buildReport, createReportLimiter, lastFillOf, NoticeBook, persistedRunState, REPORT_PUTS_PER_SECOND, uploadRow,
+  type NoticeCode, type ReportHeader, type ReportLimiter,
 } from './report';
 import { postingNamesOf } from './job-relay';
 import type { Heard, HeardType, TouchLog } from './touches';
@@ -168,7 +168,7 @@ import type { LauncherView } from './ui/launcher';
 import type { AiEditItem } from './ui/ai-edits';
 import type { PolicyChoice } from './ui/notices';
 import type { PageUi } from './ui/page-ui';
-import type { ValueHasher } from './values';
+import { readBack, type ValueHasher } from './values';
 import { finalGuard } from './verify';
 
 /** Why a run could not go on: a refusal from the worker, or a second 'expired'. */
@@ -288,6 +288,13 @@ const ANSWER_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['llm-answer
 /** A report's counters before anything was scanned for the fill. */
 const NO_COUNTERS: ReportHeader['counters'] = { passes: 0, hiddenControlsIgnored: 0, deferredFields: 0 };
 
+/** While a step fills, its progress goes to the side panel at most this often (v3 Phase 3): two and a half reports a
+ *  second, under report/put's four, so a report the run rests with always has its slot within the second. */
+export const LIVE_REPORT_MS = 400;
+/** How long after the person's input at rest the fields left for them are read again (refreshLeft): a page's own
+ *  dropdown draws its pick after the click. */
+export const LEFT_REFRESH_MS = 150;
+
 /** The notices of one step: a new step's scan forgets them. The run's own (tripwire, policy and the policy states)
  *  stay. */
 const STEP_NOTICE_CODES: readonly NoticeCode[] = ['attention-check', 'needs-click', 'deferred-fields', 'validation',
@@ -336,14 +343,13 @@ function ownElements(target: FieldTarget): Element[] {
   return [target.control, ...target.members, ...(target.proxy === null ? [] : [target.proxy])];
 }
 
-/** Whether a field holds an answer at all (not empty, not only its placeholder). */
-function holdsAnswer(field: ScannedField): boolean {
-  const { current } = field;
+/** Whether a field holds an answer at all (not empty, not only its placeholder; a box only while it is ticked). */
+function holdsAnswer(current: CurrentValue): boolean {
   switch (current.kind) {
     case 'text':
       return current.text.trim() !== '';
     case 'checked':
-      return true;
+      return current.checked;
     case 'selected':
       return current.labels.some((label) => label.trim() !== '');
     case 'files':
@@ -391,6 +397,8 @@ export class FillRun {
   private restedOnce: ((how: RunEnd) => void) | null = null;
   private isTop = true;
   private autoAdvance = false;
+  /** Autofill after page turn (modes.afterPageTurn): a new step is filled as it appears; off: Continue fills it. */
+  private fillAfterTurn = true;
   /** The machine's state (null until the run has begun). */
   private machine: RunState | null = null;
   /** Every canary this frame holds in memory (at most 1024, nearest their hit first): every write is scanned for them. */
@@ -416,6 +424,16 @@ export class FillRun {
   private rows: readonly FillResult[] = [];
   private counters: ReportHeader['counters'] = NO_COUNTERS;
   private reportDue = false;
+  /** The run rests at wait-transition, waiting for the person's own Next (FrameReport.resting). */
+  private resting = false;
+  /** The scan kept while the run rests, read field by field (currentOf); made again only when a field's elements left
+   *  the page. */
+  private restScan: ScanResult | null = null;
+  /** Whether the batch of reads now has made its one fresh scan (refreshLeft). */
+  private restScanned = false;
+  /** A read of the fields left for the person waits (scheduleLeftRefresh), and when the person's input last came. */
+  private leftRefreshing = false;
+  private lastHeardAt = 0;
   /** The status the report shows instead of the machine's (the policy card a later pass's hit showed). */
   private reportStatus: RunStatus | null = null;
   /** The step's repeatable sections, and the worker's answers for them (counts, entries, current flags). */
@@ -482,6 +500,20 @@ export class FillRun {
   private readonly restoredDrafts: ReadonlySet<string>;
   /** A look at what was written before the step is left (E9) is on its way. */
   private looking = false;
+  /** How far the step's fill is (v3 Phase 3: the loop's progress), while it fills; null otherwise. Rows and keys only. */
+  private live: { rows: readonly FillResult[]; pending: readonly FieldKey[]; current: FieldKey | null } | null = null;
+  /** A progress report is waiting for its time (LIVE_REPORT_MS since the last). */
+  private liveWaiting = false;
+  private liveSentAt = Number.NEGATIVE_INFINITY;
+  /** Moves whenever the progress a live report would carry ends (the step's fill ends, the run rests): one built for an
+   *  earlier gate is never sent. */
+  private liveGate = 0;
+  /** The live reports' own limit (report/live has its own budget at the worker): they never hold back report/put. */
+  private readonly liveLimiter = createReportLimiter({ perSecond: REPORT_PUTS_PER_SECOND });
+  /** The write being made now, which the person's Skip gives up (the loop fills it in). */
+  private readonly writing = new CurrentWrite();
+  /** The step's repeatable sections as the report counts them: entries the profile has, and blocks the form shows. */
+  private repeatableCounts: NonNullable<ReportHeader['repeatables']> = [];
 
   constructor(private readonly env: RunEnv, readonly request: RunRequest) {
     this.root = env.page.root;
@@ -543,12 +575,20 @@ export class FillRun {
     this.controller.abort();
   }
 
-  /** settings/changed: the person saved their settings. Auto-advance is read from them from now on: a validation, and
-   *  press-next right before its click, take it as it is (the Phase 5 review, C-S2). */
+  /** The person's Skip (v3 Phase 3, run/skip): gives up the write of `key` when it is the one being made now, and the
+   *  run goes on without it. Answers whether it was. Never a guard: a write given up only writes less. */
+  skipField(key: FieldKey): boolean {
+    if (this.ended !== null) return false;
+    return this.writing.skip(key);
+  }
+
+  /** settings/changed: the person saved their settings. The Next mode is read from them from now on: a validation, and
+   *  press-next right before its click, take it as it is (the Phase 5 review, C-S2); so is Autofill after page turn. */
   settingsChanged(settings: ContentSettings): void {
     this.pushes += 1;
-    this.pushedAutoAdvance = settings.autoAdvance;
-    this.autoAdvance = settings.autoAdvance;
+    this.pushedAutoAdvance = settings.modes.next === 'auto';
+    this.autoAdvance = settings.modes.next === 'auto';
+    this.fillAfterTurn = settings.modes.afterPageTurn === 'auto';
     this.llm = settings.llm;
     // AI-written answers turned off (or on) at rest: Edit with AI goes (or comes back) at once.
     this.drawAiEdits();
@@ -808,6 +848,74 @@ export class FillRun {
     this.drawAiEdits();
   }
 
+  /** A row left for the person with detail.filledByYou as what its field holds now says (v3 Phase 3): a flag only,
+   *  which claims nothing about who filled it. Any other row as it is. `scanned`: a fresh scan was made in this batch
+   *  already (currentOf makes at most one). */
+  private withFilledByYou(row: FillResult, scanned: boolean): FillResult {
+    if (!needsPerson(row) || row.wrote) return row;
+    const current = this.currentOf(row.key, scanned);
+    const holds = current !== null && holdsAnswer(current);
+    if (holds === (row.detail?.filledByYou === true)) return row;
+    const { filledByYou: _, ...rest } = row.detail ?? {};
+    return { ...row, detail: holds ? { ...rest, filledByYou: true } : rest };
+  }
+
+  /** What a field holds now, by its key, read from the live elements of the scan kept at rest (readBack), never a whole
+   *  scan per keystroke: a fresh scan only when the field's elements left the page (the page drew it again), and not
+   *  when `scanned` says one was made in this batch. Null when the field is not there. */
+  private currentOf(key: FieldKey, scanned = false): CurrentValue | null {
+    const find = (from: ScanResult): FieldTarget | null => {
+      const field = from.fields.find((candidate) => candidate.key === key)
+        ?? from.fields.find((candidate) => candidate.baseKey === baseKeyOf(key));
+      const target = field === undefined ? null : from.target(field.key);
+      return target !== null && ownElements(target).every((el) => el.isConnected) ? target : null;
+    };
+    let target = this.restScan === null ? null : find(this.restScan);
+    if (target === null && !scanned) {
+      this.restScan = this.scanNow();
+      this.restScanned = true;
+      target = find(this.restScan);
+    }
+    return target === null ? null : readBack(target);
+  }
+
+  /** The fields left for the person, read again after their trusted input anywhere on the page while the run rests
+   *  (v3 Phase 3 review): a pick in a page's own dropdown, a file chosen through a page's button, a box ticked or
+   *  unticked, a field cleared again. Read LEFT_REFRESH_MS after the input, again while more comes; one report. */
+  private scheduleLeftRefresh(): void {
+    this.lastHeardAt = monotonicNow();
+    if (this.leftRefreshing) return;
+    this.leftRefreshing = true;
+    const run = () => {
+      const since = monotonicNow();
+      void deadline(LEFT_REFRESH_MS, this.controller.signal).then((how) => {
+        if (how === 'aborted') {
+          this.leftRefreshing = false;
+          return;
+        }
+        // More input came while it waited: read once it has settled.
+        if (this.lastHeardAt > since) {
+          run();
+          return;
+        }
+        this.leftRefreshing = false;
+        this.refreshLeft();
+      });
+    };
+    run();
+  }
+
+  private refreshLeft(): void {
+    if (this.ended === null || this.request.dryRun) return;
+    this.restScanned = false;
+    const changed = this.rows.flatMap((row) => {
+      const next = this.withFilledByYou(row, this.restScanned);
+      return next === row ? [] : [next];
+    });
+    if (changed.length > 0) log('content.left-reread', { flipped: changed.length });
+    this.replaceRows(changed);
+  }
+
   /** A field of the step as a fresh scan reads it now, by its key or its base key; null when it is not there. */
   private fieldNow(key: FieldKey): ScannedField | null {
     const fresh = this.scanNow();
@@ -849,6 +957,9 @@ export class FillRun {
   personInput(type: HeardType, path: readonly Element[], heard: Heard): void {
     if (this.ended === null || this.request.dryRun || this.rows.length === 0) return;
     if (heard.activation) this.lookBeforeLeaving();
+    // Any trusted input, click or change may have answered a field left for the person, wherever it landed (a page's
+    // own dropdown list, a button that opens a file picker): those fields are read again (v3 Phase 3 review).
+    if (this.rows.some((row) => needsPerson(row) && !row.wrote)) this.scheduleLeftRefresh();
     if (type !== 'input' || !heard.edit) return;
     let key: FieldKey | undefined;
     for (const el of path) {
@@ -868,9 +979,10 @@ export class FillRun {
   /** The person's edit of a draft that waits (E3): theirs only once its text is no longer the draft as written. */
   private async draftEdited(key: FieldKey): Promise<void> {
     const baseKey = baseKeyOf(key);
-    const field = this.fieldNow(key);
+    // Read from the field's own elements (currentOf): never a whole scan per keystroke.
+    const current = this.currentOf(key);
     const written = this.env.drafts.get(baseKey);
-    const mac = field === null || written === undefined ? null : await (await this.valueHasher()).mac(field.current);
+    const mac = current === null || written === undefined ? null : await (await this.valueHasher()).mac(current);
     const row = this.rows.find((candidate) => candidate.key === key);
     if (this.ended === null || row === undefined || row.provenance !== 'llm-draft' || !row.wrote) return;
     if (mac !== null && mac === written) return;
@@ -897,6 +1009,9 @@ export class FillRun {
       this.edited.add(baseKey);
       next = { ...next, detail: { ...next.detail, userEdited: true } };
     }
+    // v3 Phase 3: a field left for the person flips in the review's lists the moment their input leaves an answer in it
+    // (and back when they clear it): a flag from what the field holds, never its value.
+    next = this.withFilledByYou(next, false);
     if (next === row) return;
     log('content.person-edited', { flagged, wrote: row.wrote });
     this.replaceRow(next);
@@ -1014,6 +1129,8 @@ export class FillRun {
   private markedRows(rows: readonly FillResult[], fresh: ScanResult, lastWriteAt: ReadonlyMap<BaseKey, number>,
     macs: ReadonlyMap<BaseKey, ValueMac>): FillResult[] {
     const owners = new WeakMap<Element, FieldKey>();
+    // Kept for reading the fields left for the person at rest, one by one (currentOf).
+    this.restScan = fresh;
     const marked = rows.map((row) => {
       const target = fresh.target(row.key);
       const own = target === null ? [] : ownElements(target);
@@ -1027,7 +1144,7 @@ export class FillRun {
         || !this.savable.has(baseKey)) return next;
       const since = Math.max(this.fillStartedAt, lastWriteAt.get(baseKey) ?? Number.NEGATIVE_INFINITY);
       // A value of ours the person changed during the fill (changed-by-you) is theirs, but no fix of a flagged field.
-      const editedNow = next.reason !== 'changed-by-you' && target !== null && holdsAnswer(target.field)
+      const editedNow = next.reason !== 'changed-by-you' && target !== null && holdsAnswer(target.field.current)
         && own.some((el) => this.env.touches.editedSince(el, since));
       if (editedNow) this.edited.add(baseKey);
       if (!this.edited.has(baseKey)) return next;
@@ -1202,9 +1319,10 @@ export class FillRun {
   }
 
   /** How many rows (and Add buttons left to the person) need the person, for the launcher's review: the rows by the
-   *  review's own rule (needsPerson), so the badge and the panel count a row alike. */
+   *  review's own rule (leftForPerson: needing them, and not filled by them since), so the badge and the panel count a
+   *  row alike. */
   private needing(): number {
-    return this.rows.filter(needsPerson).length + this.addsLeft;
+    return this.rows.filter(leftForPerson).length + this.addsLeft;
   }
 
   // ── The run's messages ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1219,10 +1337,11 @@ export class FillRun {
       this.id = answer.data.runId;
       this.policy ??= answer.data.policy;
       // A settings/changed that arrived meanwhile may be newer than the answer: both must say on.
-      this.autoAdvance = answer.data.settings.autoAdvance && (this.pushes === pushes || this.pushedAutoAdvance);
+      this.autoAdvance = answer.data.settings.modes.next === 'auto' && (this.pushes === pushes || this.pushedAutoAdvance);
       if (this.pushes === pushes) {
         this.offerToSave = answer.data.settings.offerToSaveAnswers;
         this.llm = answer.data.settings.llm;
+        this.fillAfterTurn = answer.data.settings.modes.afterPageTurn === 'auto';
       }
       return;
     }
@@ -1354,21 +1473,74 @@ export class FillRun {
     return answer.error === 'expired' ? 'expired' : 'failed';
   }
 
+  /** The report's header now: the run, its status, notices and counters, its step, and the repeatables' counts. */
+  private header(runId: string): ReportHeader {
+    const { page } = this.env;
+    return { runId, frameId: this.frameId, platform: page.app.platform, adapter: page.adapter.id,
+      dryRun: this.request.dryRun, status: this.status, pauseReason: this.machine?.pauseReason ?? null,
+      notices: this.notices, counters: this.counters, now: this.env.now(),
+      ...(this.repeatableCounts.length > 0 ? { repeatables: this.repeatableCounts } : {}),
+      // Resting at wait-transition: the person's own Next is awaited, and nothing runs (v3 Phase 3 review).
+      ...(this.resting ? { resting: true } : {}),
+      ...(this.stepped && this.machine !== null
+        ? { step: { index: this.machine.stepIndex, progress: this.stepProgress ?? undefined } } : {}) };
+  }
+
   /** report/put: the step's rows and the run's notices, never a value. A refusal other than a second 'expired' is
    *  logged. */
   private async report(): Promise<void> {
-    const { page } = this.env;
     const rows = this.rows;
     const answer = await this.call<'report/put'>((runId) => {
-      const report = buildReport({ runId, frameId: this.frameId, platform: page.app.platform, adapter: page.adapter.id,
-        dryRun: this.request.dryRun, status: this.status, pauseReason: this.machine?.pauseReason ?? null,
-        notices: this.notices, counters: this.counters, now: this.env.now(),
-        ...(this.stepped && this.machine !== null
-          ? { step: { index: this.machine.stepIndex, progress: this.stepProgress ?? undefined } } : {}) }, rows);
+      const report = buildReport(this.header(runId), rows);
       if (report === null) throw new RunFailure('internal');
       return { v: 1, type: 'report/put', runId, report };
     }, () => this.env.limiter.turn(this.controller.signal));
     if ('failed' in answer) log('content.report-refused');
+  }
+
+  /** The loop's progress (v3 Phase 3): kept, and sent within LIVE_REPORT_MS (liveReport). */
+  private liveProgress(rows: readonly FillResult[], pending: readonly FieldKey[], current: FieldKey | null): void {
+    if (this.request.dryRun || this.controller.signal.aborted) return;
+    this.live = { rows, pending, current };
+    // The launcher's badge says how far the fill is, by the side panel's own rule (shared/report.ts progressOf).
+    const progress = progressOf([{ fields: rows, filling: { current, pending } }]);
+    this.launcher({ state: 'running', action: null, ...(progress.of > 0 ? { percent: progress.percent } : {}) });
+    this.scheduleLive();
+  }
+
+  /** A progress report once LIVE_REPORT_MS have passed since the last; one waits at a time, and it reads the progress
+   *  as it is when it goes. */
+  private scheduleLive(): void {
+    if (this.liveWaiting) return;
+    this.liveWaiting = true;
+    const wait = Math.max(0, LIVE_REPORT_MS - (monotonicNow() - this.liveSentAt));
+    const gate = this.liveGate;
+    void deadline(wait, this.controller.signal).then((how) => {
+      this.liveWaiting = false;
+      if (how === 'aborted' || this.live === null || gate !== this.liveGate) return;
+      this.liveSentAt = monotonicNow();
+      void this.liveReport(gate).catch(() => undefined);
+    });
+  }
+
+  /**
+   * A report while the run works (v3 Phase 3): "Scanning the page" before any row, then each row the loop knows with the
+   * field being written now and those still to be written (`filling`), so the side panel shows "Autofilling… NN%" and
+   * spins the current row. It never renews the run and nothing waits for it: a refusal is dropped. It is built when its
+   * slot comes, and not sent once the step's fill has ended (its own report says more, and goes after it).
+   */
+  private async liveReport(gate: number): Promise<void> {
+    if (this.id === null) return;
+    await this.liveLimiter.turn(this.controller.signal);
+    const runId = this.id;
+    const live = this.live;
+    // Built and sent in one go, after the gate's check: a step whose fill ended meanwhile sends nothing more of it.
+    if (this.controller.signal.aborted || runId === null || this.ended !== null || gate !== this.liveGate) return;
+    const report = buildReport({ ...this.header(runId), filling: live === null ? { current: null, pending: [] }
+      : { current: live.current, pending: [...live.pending] } }, live?.rows ?? []);
+    if (report === null) return;
+    const answer = await this.env.channel.request({ v: 1, type: 'report/live', runId, report });
+    if (!answer.ok) log('content.report-refused');
   }
 
   /** The report, when a transition asked for one since the last went out. */
@@ -1505,7 +1677,7 @@ export class FillRun {
     const capMs = this.env.options.transition?.capMs
       ?? (typeof quirk === 'number' && quirk > TRANSITION_CAP_MS ? quirk : undefined);
     return { autoAdvance: this.autoAdvance && !this.request.dryRun, now: this.env.now(),
-      ...(capMs === undefined ? {} : { transitionCapMs: capMs }) };
+      fillAfterPageTurn: this.fillAfterTurn, ...(capMs === undefined ? {} : { transitionCapMs: capMs }) };
   }
 
   /** The machine takes one event: its state, then each of its effects in order. Answers the event an effect produced
@@ -1525,11 +1697,19 @@ export class FillRun {
     return produced;
   }
 
-  /** Feeds the machine from `first` until the run ends, resting where the person or the page must act. */
+  /** Feeds the machine from `first` until the run ends, resting where the person or the page must act. With Autofill
+   *  after page turn: Manually, a new step (the person's Next, or ours) is not scanned or filled: the run offers
+   *  Continue on it (pageTurned). */
   private async drive(first: RunEvent): Promise<void> {
     let event: RunEvent | null = first;
     for (;;) {
       while (event !== null) {
+        if (event.type === 'TRANSITIONED' && !this.fillAfterTurn && this.stepped && !this.request.dryRun
+          && event.signature !== this.state.stepSignature) {
+          this.pageTurned();
+          event = null;
+          break;
+        }
         event = await this.step(event);
         if (this.halted) return;
       }
@@ -1554,8 +1734,11 @@ export class FillRun {
       return null;
     }
     if (status === 'wait-transition') {
-      // A wait the run could not keep (a dry run, or the watch ended): the person's turn.
+      // A wait the run could not keep (a dry run, or the watch ended): the person's turn, reported as a rest.
+      this.resting = true;
       this.end('waiting');
+      this.reportDue = true;
+      await this.flushReport();
       return null;
     }
     this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
@@ -1593,15 +1776,38 @@ export class FillRun {
     }
   }
 
+  /** A new step under Autofill after page turn: Manually (the person's mode, docs/SPEC-AMENDMENTS.md §12): its fields
+   *  are not read or filled; the review says so (page-turned) and the run rests offering Continue, which fills it. */
+  private pageTurned(): void {
+    this.notices.forget(STEP_NOTICE_CODES);
+    this.notices.add('page-turned');
+    this.rows = [];
+    this.counters = NO_COUNTERS;
+    this.addsLeft = 0;
+    // Nothing of the step left behind is said of the new one: its sections and its progress line go too.
+    this.repeatableCounts = [];
+    this.stepProgress = null;
+    this.live = null;
+    this.liveGate += 1;
+    this.reportStatus = 'review';
+    this.offered = true;
+    this.reportDue = true;
+    this.showNotices();
+    log('content.page-turned');
+  }
+
   /** The run works again (the step moved on under it). */
   private working(): void {
     this.ended = null;
+    this.resting = false;
+    this.restScan = null;
     this.launcher({ state: 'running', action: null });
     this.drawAiEdits();
   }
 
   private end(how: RunEnd): RunEnd {
     this.ended = how;
+    this.liveGate += 1;
     const resolve = this.restedOnce;
     this.restedOnce = null;
     resolve?.(how);
@@ -1652,7 +1858,11 @@ export class FillRun {
     this.rows = [];
     this.counters = NO_COUNTERS;
     this.addsLeft = 0;
+    this.repeatableCounts = [];
     this.drawAiEdits();
+    // The side panel says "Scanning the page" at once (v3 Phase 3).
+    this.liveGate += 1;
+    if (!this.request.dryRun) void this.liveReport(this.liveGate).catch(() => undefined);
     if (!this.isTop && this.scans > 0) {
       // A frame inside another page: it fills a later step only while it is still seen there (S1).
       const shown = await env.frameShown(this.controller.signal, true);
@@ -1748,11 +1958,22 @@ export class FillRun {
       }
     }
     this.addsLeft = needsClicks(outcomes);
+    // "Education · 2 of 3 added" (v3 Phase 3): the profile's entries, and the blocks the form shows for them now.
+    this.repeatableCounts = outcomes.map((outcome) => ({ kind: outcome.kind,
+      added: Math.min(outcome.counter.rendered, outcome.counter.profile), of: outcome.counter.profile }))
+      .filter((count) => count.of > 0);
 
     // 2. The reactive loop, "I currently work here", then the final Guard over its rows and its latest scan. The loop
     // starts from this step's books in this run, and leaves its own for the step's next attempt (C-S3, C-S5).
     const signature = this.state.stepSignature;
-    const loop = await this.fillLoop(signature === null ? undefined : this.carries.get(signature));
+    let loop: LoopResult;
+    try {
+      loop = await this.fillLoop(signature === null ? undefined : this.carries.get(signature));
+    } finally {
+      // The step's own report says more than its progress from here on.
+      this.live = null;
+      this.liveGate += 1;
+    }
     if (signature !== null && !this.request.dryRun) this.carries.set(signature, loop.carry);
     const last = loop.scan;
     let rows = new Map(loop.rows.map((row) => [row.key, row]));
@@ -1950,6 +2171,9 @@ export class FillRun {
    *  8). A dry run never waits. */
   private async awaitStep(from: string, capMs: number | null): Promise<RunEvent | null> {
     if (capMs !== null) return this.watchStep(from, capMs, false);
+    // It rests from here (resting): the report says so, and the panels show the review, not "Autofilling".
+    this.resting = true;
+    this.reportDue = true;
     await this.flushReport();
     this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
     this.end('waiting');
@@ -2190,6 +2414,9 @@ export class FillRun {
       },
       hasher,
       touches: env.touches,
+      // v3 Phase 3: the side panel's progress, and the person's Skip of the write being made.
+      progress: (rows, pending, current) => this.liveProgress(rows, pending, current),
+      writing: this.writing,
       ...(carry === undefined ? {} : { carry }),
       widgetReadings: this.widgetReadings,
       runId: () => this.runId,

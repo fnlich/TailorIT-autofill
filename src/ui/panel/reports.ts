@@ -10,6 +10,8 @@
  * Every message is parsed with the catalogue's strict schema, so an update carrying anything a report may not hold
  * (a value, a row of the wrong shape) is dropped whole and never rendered.
  *
+ * v3 Phase 3: the browser's side panel (no ?tabId) says so in its watch, so the worker can hide the tab's launcher
+ * while it shows the tab; the report page does not.
  * v2: each read and push also carries the tab's page state (a form found, frames with none, none of ours), null until
  * known or from an older worker. When the followed tab finishes loading a page (tabs.onUpdated, status 'complete'),
  * the tab is read again: a page without our script says no hello, and the read's frame check prunes what went. The
@@ -30,10 +32,11 @@ export const RECONNECTS = { count: 5, windowMs: 10_000 } as const;
 
 const NO_REPORTS: readonly FrameReport[] = [];
 
-/** Asks the worker to follow `tabId` on `port`. A port that closed under us reconnects through its onDisconnect. */
-function watch(port: PortLike | null, tabId: number): void {
+/** Asks the worker to follow `tabId` on `port` (`side`: as the browser's side panel, v3 Phase 3: the tab's launcher
+ *  hides while it shows). A port that closed under us reconnects through its onDisconnect. */
+function watch(port: PortLike | null, tabId: number, side: boolean): void {
   try {
-    port?.post({ v: 1, type: 'panel/watch', tabId });
+    port?.post({ v: 1, type: 'panel/watch', tabId, ...(side ? { side: true as const } : {}) });
   } catch {
     // Closed: the reconnect watches again.
   }
@@ -47,7 +50,8 @@ export interface PanelChanges {
 
 /** The tab's reports and page state as last read or pushed, the link's state, a way to reconnect by hand, and the
  *  connection and settings changes the worker announced. */
-export function useTabReports(platform: PagePlatform, tabId: number | null, now: () => number): {
+export function useTabReports(platform: PagePlatform, tabId: number | null, now: () => number,
+  options: { side?: boolean } = {}): {
   reports: readonly FrameReport[];
   page: PageState | null;
   link: LinkState;
@@ -64,6 +68,8 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
   /** Updates the port delivered for the watched tab since it was chosen: a one-shot read older than them is dropped. */
   const pushes = useRef(0);
   const clock = useEffectEvent(() => now());
+  // The panel is the side panel or the report page for its whole life (its address says which).
+  const sideNow = useRef(options.side === true);
 
   useEffect(() => {
     let closed = false;
@@ -103,7 +109,7 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
         }
         open(true);
       });
-      if (rewatch && watched.current !== null) watch(next, watched.current);
+      if (rewatch && watched.current !== null) watch(next, watched.current, sideNow.current);
     };
     // The first port's watch comes from the tab effect below; a reconnect (by hand, or after a drop) watches again.
     open(generation > 0);
@@ -119,7 +125,7 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
     watched.current = tabId;
     pushes.current = 0;
     if (tabId === null) return undefined;
-    watch(port.current, tabId);
+    watch(port.current, tabId, sideNow.current);
     let live = true;
     /** One read of the tab; an answer older than a push that came after it was sent is dropped. */
     const read = () => {

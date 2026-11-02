@@ -103,7 +103,7 @@ describe('trap 6: attention checks', () => {
   });
 
   it('asks no LLM about them with the `all` scope off', () => {
-    const standard = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, answerAll: false } });
+    const standard = settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, ai: 'profile' } });
     expect(planOf([specOf('First name', 'text'), human, purple, scale], { settings: standard }).awaiting).toEqual([]);
   });
 

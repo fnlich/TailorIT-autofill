@@ -37,7 +37,9 @@
  * A widget that ignores our events (nothing opens, nothing is chosen) is needs-your-click and is never tried another
  * way. Each whole read of a list is kept as the field's reading (WidgetReading), with any option it no longer shows but
  * the widget shows chosen kept in place (withChosenKept), so the next scan sees what it now shows and still knows its
- * chips. Nothing here logs or reports a value.
+ * chips. The person's Skip (v3 Phase 3: interact.ts's skipTidyContext) ends a wait: a list opened for the write is
+ * closed on the tidy context and nothing is chosen; an option already clicked stands, read back as the widget shows
+ * it, its list closed the same way. Nothing here logs or reports a value.
  */
 import { llmPickStillValid } from '../../core/guard/provenance';
 import type { BaseKey, Option } from '../../core/types/field';
@@ -52,7 +54,8 @@ import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS } from '../thresholds';
 import type { FieldTarget, FillOutcome, WidgetOptionRead, WidgetReading, WidgetTarget } from '../types';
 import { isActionable, isChosen, isMultiselectable, isUnavailable } from './aria';
 import {
-  afterAction, afterBridge, awaitList, bridgeChoose, closeList, openList, type WidgetContext,
+  afterAction, afterBridge, awaitList, bridgeChoose, closeList, closingContext, openList, skipTidyContext,
+  type WidgetContext,
 } from './interact';
 import {
   chosenLabels, memberLabel, readList, revealOption, shownIdentity, withChosenKept, type ListRead, type ReadOption,
@@ -96,14 +99,22 @@ function knownLabels(target: FieldTarget): string[] {
 async function openAndRead(target: FieldTarget, ctx: WidgetFillContext):
   Promise<{ listbox: Element; read: ListRead; activated: boolean } | { failed: FillOutcome }> {
   const widget = target.widget!;
+  // A Skip that ended a wait here closes what our activation opened (see the header).
+  const skipped = async (activated: boolean): Promise<{ failed: FillOutcome }> => {
+    const tidy = skipTidyContext(ctx);
+    if (tidy !== null) await closeList(widget, tidy, { activated });
+    return { failed: refused('internal-error') };
+  };
   const opened = await openList(widget, ctx);
   if (!opened.open) {
-    return { failed: refused(opened.reason === 'aborted' ? 'internal-error' : opened.reason === 'no-list'
-      ? 'widget-unsupported' : opened.reason === 'gone' ? 'element-not-found' : 'needs-your-click') };
+    if (opened.reason === 'aborted') return skipped(true);
+    return { failed: refused(opened.reason === 'no-list' ? 'widget-unsupported' : opened.reason === 'gone'
+      ? 'element-not-found' : 'needs-your-click') };
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
-  if (wait.status === 'aborted') return { failed: refused('internal-error') };
+  if (wait.status === 'aborted') return skipped(opened.activated);
   const read = await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel });
+  if (ctx.signal?.aborted) return skipped(opened.activated);
   remember(ctx, target.field.baseKey, read, opened.listbox, widget);
   return { listbox: opened.listbox, read, activated: opened.activated };
 }
@@ -224,6 +235,10 @@ async function chooseByEvents(target: FieldTarget, value: Extract<WriteValue, { 
     return refused('llm-pick-rejected');
   }
   const option = await revealOption(opened.listbox, fresh, { signal: ctx.signal, labelOf: widget.optionLabel });
+  if (ctx.signal?.aborted) {
+    await closeList(widget, closingContext(ctx), opened);
+    return refused('internal-error');
+  }
   if (option === null || option.disabled) {
     await closeList(widget, ctx, opened);
     return refused('options-changed');
@@ -234,7 +249,8 @@ async function chooseByEvents(target: FieldTarget, value: Extract<WriteValue, { 
   }
   (option.el as HTMLElement).click();
   await afterAction(widget, ctx);
-  await closeList(widget, ctx, opened);
+  // Clicked: the choice stands even when the person's Skip ended the wait, its list closed on the tidy context.
+  await closeList(widget, closingContext(ctx), opened);
   const after = chosenLabels(widget, [...known, fresh.label]);
   if (after.some((label) => shownIdentity(label) === shownIdentity(fresh.label))) return done(true, 'ok');
   if (after.length === before.length && after.every((label, at) => label === before[at])) return refused('needs-your-click');
@@ -330,8 +346,10 @@ export async function addOptions(target: FieldTarget, value: Extract<WriteValue,
       break;
     }
     added += 1;
+    // The person's Skip: what was added stands, and no more is.
+    if (ctx.signal?.aborted) break;
   }
-  await closeList(widget, ctx, { activated });
+  await closeList(widget, closingContext(ctx), { activated });
   const after = chosenLabels(widget, known);
   const isChosenNow = (label: string) => after.some((chosen) => shownIdentity(chosen) === shownIdentity(label));
   if (before.some((label) => !isChosenNow(label))) return mismatch('unexpected-selection');

@@ -1,6 +1,7 @@
 /*
  * The optional accessibility check (Phase 6; docs/design/runtime.md §12): @axe-core/playwright 4.13.0 over the report
- * page after a trap run (in TailorIT's look: its brand, the strip, Autofill, the completion and the folded rows), over
+ * page after a trap run (in TailorIT's look: its brand, Autofill, the progress and the field lists, every fold and the gear's
+ * menu of modes opened, v3 Phase 3), over
  * the report page while a run waits at the policy card, and over the options page with the anonymous counters showing,
  * none with a serious or critical violation; every fold is opened first, since axe skips a closed one (the Phase F1
  * review). v2: also the job card with its resume picker open, the custom question, and a problem strip.
@@ -22,6 +23,9 @@ async function seriousViolations(page: Page): Promise<Array<{ id: string; impact
   await page.locator('details').evaluateAll((all) => all.forEach((each) => {
     (each as HTMLDetailsElement).open = true;
   }));
+  // v3 Phase 3: every row's fold, and the gear's menu of modes, opened too.
+  await page.locator('button.tia-row__toggle[aria-expanded="false"], button[data-panel-menu][aria-expanded="false"]')
+    .evaluateAll((all) => all.forEach((each) => (each as HTMLButtonElement).click()));
   const results = await new AxeBuilder({ page }).analyze();
   return results.violations
     .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')

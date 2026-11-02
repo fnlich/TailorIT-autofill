@@ -1,8 +1,8 @@
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COPY } from '../../shared/copy';
-import { authStatus, button, click, createFakeWorker, frameReport, mount, PROFILE_SENTINELS, row, settle, unmountAll,
-  type FakeWorker } from '../ui.testkit';
+import { authStatus, button, click, createFakeWorker, frameReport, mount, PROFILE_SENTINELS, row, settle, unfoldRows,
+  unmountAll, type FakeWorker } from '../ui.testkit';
 import { Panel } from './Panel';
 import { RECONNECTS } from './reports';
 import { pinnedTabOf } from './tab';
@@ -36,14 +36,16 @@ describe('the review panel', () => {
     worker.script.reports.set(4, [frameReport(0, { fields: [row('on-four')] })]);
     const root = await open(worker, null);
     expect(worker.sentOfType('panel/reports')).toEqual([{ v: 1, type: 'panel/reports', tabId: 3 }]);
-    expect(watches(worker)).toEqual([{ v: 1, type: 'panel/watch', tabId: 3 }]);
+    // The browser's side panel says so in its watch (v3 Phase 3: the tab's launcher hides while it shows the tab).
+    expect(watches(worker)).toEqual([{ v: 1, type: 'panel/watch', tabId: 3, side: true }]);
     expect(keysShown(root)).toEqual(['on-three']);
     expect(root.querySelector('main')?.dataset.tabId).toBe('3');
 
     await act(async () => worker.platform.activate(4));
     await settle();
     expect(worker.sentOfType('panel/reports').map((message) => message.tabId)).toEqual([3, 4]);
-    expect(watches(worker)).toEqual([{ v: 1, type: 'panel/watch', tabId: 3 }, { v: 1, type: 'panel/watch', tabId: 4 }]);
+    expect(watches(worker)).toEqual([{ v: 1, type: 'panel/watch', tabId: 3, side: true },
+      { v: 1, type: 'panel/watch', tabId: 4, side: true }]);
     expect(keysShown(root)).toEqual(['on-four']);
 
     // A tab chosen in another window leaves this panel where it is.
@@ -73,8 +75,15 @@ describe('the review panel', () => {
     expect([button(before, COPY.panel.continue)!.disabled, button(before, COPY.panel.cancel)!.disabled]).toEqual([true, true]);
     expect([button(before, COPY.panel.fill)!.disabled, button(before, COPY.panel.dryRun)!.disabled]).toEqual([false, false]);
     unmountAll();
+    // A run at review waits for no Continue: it is offered only to a run that waits for it (v3 Phase 3 review).
     worker.script.reports.set(5, [frameReport(0, { status: 'review' })]);
+    const resting = await open(worker, 5);
+    expect([button(resting, COPY.panel.continue)!.disabled, button(resting, COPY.panel.cancel)!.disabled])
+      .toEqual([true, false]);
+    unmountAll();
+    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'page-busy' })]);
     const root = await open(worker, 5);
+    expect(button(root, COPY.panel.continue)!.dataset.emphasis).toBe('');
     await click(button(root, COPY.panel.fill));
     expect(root.textContent).toContain(COPY.panel.started(2));
     await click(button(root, COPY.panel.dryRun));
@@ -98,7 +107,9 @@ describe('the review panel', () => {
         detail: { suggestions: [{ index: 1, score: 0.8 }] } }),
     ] })]);
     const root = await open(worker, 5);
-    await click(button(root, COPY.report.showOnPage));
+    // v3 Phase 3: the row's label shows the field on the page; its fold holds the closest options.
+    await click(root.querySelector('li[data-field-key="degree"] button.tia-row__go'));
+    await click(root.querySelector('li[data-field-key="degree"] button.tia-row__toggle'));
     await click(button(root, COPY.report.showSuggestions(1)));
     expect(root.textContent).toContain('Bachelor of Science (80%)');
     const card = root.querySelector('[data-notice="policy"]')!;
@@ -125,6 +136,7 @@ describe('the review panel', () => {
         needsUserAction: true, wrote: false, detail: { userEdited: true } }),
     ] })]);
     const root = await open(worker, 5);
+    await unfoldRows(root);
     // A refusal: the panel says they did not work.
     await click(button(root, COPY.report.confirmDraft));
     expect(root.textContent).toContain(COPY.panel.confirmFailed);
@@ -188,8 +200,8 @@ describe('the review panel', () => {
   it('says why a button did nothing, and reads the connection again when it was not connected', async () => {
     const worker = createFakeWorker();
     worker.on('panel/fill', () => ({ ok: false, error: 'not_connected' }));
-    // A run that reported and waits for nothing: Continue reaches no frame.
-    worker.script.reports.set(5, [frameReport(0, { status: 'review' })]);
+    // A run that waits for the person's Continue, which by then reaches no frame.
+    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'page-busy' })]);
     const root = await open(worker, 5);
     const reads = worker.sentOfType('auth/status').length;
     await click(button(root, COPY.panel.fill));
@@ -198,6 +210,17 @@ describe('the review panel', () => {
     worker.on('panel/continue', () => ({ ok: true, data: { frames: 0 } }));
     await click(button(root, COPY.panel.continue));
     expect(root.textContent).toContain(COPY.panel.continued(0));
+  });
+
+  it('offers and marks Continue on a new step the run rests on under Autofill after page turn: Manually', async () => {
+    const worker = createFakeWorker();
+    worker.script.reports.set(5, [frameReport(0, { status: 'review', fields: [], notices: [{ code: 'page-turned' }] })]);
+    const root = await open(worker, 5);
+    const resume = button(root, COPY.panel.continue)!;
+    expect([resume.disabled, resume.dataset.emphasis]).toEqual([false, '']);
+    // No "0 of 0 fields filled · 0%" for a step nothing was read on.
+    expect(root.querySelector('.tia-progress-line')).toBeNull();
+    expect(root.textContent).not.toContain('0%');
   });
 
   it('reconnects when the port drops, as a worker restart does, and watches its tab again', async () => {

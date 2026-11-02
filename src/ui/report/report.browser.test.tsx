@@ -18,7 +18,7 @@ describe('the report', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows each frame, then its rows by section, each row with its key, status and provenance', async () => {
+  it('names each form of the tab, then lists Required and Optional, each row with its key, status, provenance and progress (v3 Phase 3)', async () => {
     const reports = [
       frameReport(4, { platform: 'greenhouse', adapter: 'greenhouse', fields: [
         row('gh|main|email|none|0', { label: 'Email', section: 'Apply for this job', required: true }),
@@ -33,27 +33,36 @@ describe('the report', () => {
     ];
     const root = await mount(<Report reports={reports} />);
 
+    // Two forms: each says which it is and where its run stands.
     const frames = [...root.querySelectorAll<HTMLElement>('[data-frame-id]')];
     expect(frames.map((frame) => frame.dataset.frameId)).toEqual(['0', '4']);
-    expect(frames.map((frame) => frame.querySelector('h2')!.textContent))
+    expect(frames.map((frame) => frame.querySelector('.tia-frame__name')!.textContent))
       .toEqual(['Lever form', 'Greenhouse form, embedded in this page']);
-    expect([...frames[0]!.querySelectorAll('h3')].map((heading) => heading.textContent)).toEqual(['Contact', 'Education']);
-
-    expect(rowsOf(root).map((each) => [each.dataset.fieldKey, each.dataset.status, each.dataset.provenance])).toEqual([
-      ['lever|main|first|none|0', 'verified', 'profile'],
-      ['lever|main|phone|none|0', 'skipped', 'none'],
-      ['lever|main|school|abc|0', 'flagged', 'llm-pick'],
-      ['gh|main|email|none|0', 'verified', 'profile'],
+    expect([...root.querySelectorAll('h3')].map((heading) => heading.textContent))
+      .toEqual([COPY.report.requiredGroup, COPY.report.optionalGroup]);
+    const groupOf = (name: string) => [...root.querySelectorAll<HTMLElement>(`[data-group="${name}"] li[data-field-key]`)]
+      .map((each) => [each.dataset.fieldKey, each.dataset.status, each.dataset.provenance, each.dataset.progress]);
+    expect(groupOf('required')).toEqual([['gh|main|email|none|0', 'verified', 'profile', 'filled']]);
+    expect(groupOf('optional')).toEqual([
+      ['lever|main|first|none|0', 'verified', 'profile', 'filled'],
+      ['lever|main|school|abc|0', 'flagged', 'llm-pick', 'filled'],
+      ['lever|main|phone|none|0', 'skipped', 'none', 'none'],
     ]);
-    const school = rowsOf(root)[2]!;
+    // A row's detail folds under it: its status, reason, source, stage and confidence.
+    const school = root.querySelector<HTMLElement>('li[data-field-key="lever|main|school|abc|0"]')!;
+    expect(school.textContent).not.toContain(COPY.reasons['llm-pick-needs-review']);
+    await click(school.querySelector<HTMLButtonElement>('button.tia-row__toggle'));
     for (const text of ['School', COPY.statuses.flagged, COPY.provenances['llm-pick'], COPY.stages.llm, '75%',
       COPY.reasons['llm-pick-needs-review']]) {
       expect(school.textContent).toContain(text);
     }
-    expect(rowsOf(root)[1]!.textContent).toContain(COPY.report.noSource);
-    // The star is drawn for the eye; the word is there for a screen reader.
-    expect(rowsOf(root)[3]!.querySelector('.tia-row__required')?.getAttribute('aria-hidden')).toBe('true');
-    expect(rowsOf(root)[3]!.querySelector('.tia-visually-hidden')?.textContent).toBe(` (${COPY.report.required})`);
+    const phone = root.querySelector<HTMLElement>('li[data-field-key="lever|main|phone|none|0"]')!;
+    await click(phone.querySelector<HTMLButtonElement>('button.tia-row__toggle'));
+    expect(phone.textContent).toContain(COPY.report.noSource);
+    // The progress: one required field, filled.
+    expect(root.querySelector('[data-progress]')?.getAttribute('data-progress')).toBe('rest');
+    expect(root.querySelector('.tia-progress-line__title')?.textContent).toBe(COPY.report.progressFilled(1, 1, true));
+    expect(root.querySelector('.tia-progress-line__percent')?.textContent).toBe('100%');
   });
 
   it('draws no value, whatever else a row object carries', async () => {
@@ -98,10 +107,15 @@ describe('the report', () => {
 
   it('asks for "Show on page" with the row\'s frame and key', async () => {
     const shown: Array<[number, string]> = [];
-    const root = await mount(<Report reports={[frameReport(3, { fields: [row('k1')] })]}
+    const root = await mount(<Report reports={[frameReport(3, { fields: [row('k1', { label: 'Email' })] })]}
       onShowField={(frameId, key) => shown.push([frameId, key])} />);
+    // v3 Phase 3: the row's label is the button, as Jobright's; the detail keeps its own.
+    const label = root.querySelector<HTMLButtonElement>('li[data-field-key="k1"] button.tia-row__go')!;
+    expect(label.title).toBe(COPY.report.goTo('Email'));
+    await click(label);
+    await click(root.querySelector<HTMLButtonElement>('li[data-field-key="k1"] button.tia-row__toggle'));
     await click(button(root, COPY.report.showOnPage));
-    expect(shown).toEqual([[3, 'k1']]);
+    expect(shown).toEqual([[3, 'k1'], [3, 'k1']]);
   });
 
   it('asks for a row\'s suggested options when it opens, shows them only while it is open, and forgets them', async () => {
@@ -115,8 +129,10 @@ describe('the report', () => {
       detail: { suggestions: [{ index: 7, score: 0.91 }, { index: 2, score: 0.62 }] } });
     const root = await mount(<Report reports={[frameReport(0, { fields: [flagged, row('plain')] })]} describeField={describe} />);
     // Only a row with suggestions offers them.
-    expect(rowsOf(root)[1]!.querySelector('button')).toBeNull();
+    await click(rowsOf(root)[1]!.querySelector<HTMLButtonElement>('button.tia-row__toggle'));
+    expect(rowsOf(root)[1]!.querySelector('[data-action]')).toBeNull();
 
+    await click(rowsOf(root)[0]!.querySelector<HTMLButtonElement>('button.tia-row__toggle'));
     await click(button(root, COPY.report.showSuggestions(2)));
     expect(asked).toEqual([[0, 'school']]);
     const items = [...root.querySelectorAll('[data-option-index]')].map((item) => item.textContent);
@@ -143,6 +159,10 @@ describe('the report', () => {
     expect(text).toContain(COPY.pauseReasons.captcha);
     expect(text).toContain(COPY.report.dryRun);
     expect(text).toContain('6 hidden fields were left alone.');
+    // Under the lists, folded in their details, never among the frame's lines (v3 Phase 3 review).
+    expect(root.querySelector('details[data-progress-details] [data-hidden-ignored="6"]')?.textContent)
+      .toBe('6 hidden fields were left alone.');
+    expect(root.querySelector('.tia-frames')?.textContent ?? '').not.toContain('hidden fields');
   });
 
   it('says there is nothing to review without a report', async () => {

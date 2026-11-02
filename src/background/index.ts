@@ -22,8 +22,11 @@ import { ASK_LIMIT, createAsk } from './ask';
 import { createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
-import { createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, navOf, registerFrame } from './frames';
-import { createJobCards, JOB_RELAY_LIMIT, type JobCards } from './job-cards';
+import {
+  createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, framesOfTab, frameTarget, navOf, registerFrame,
+} from './frames';
+import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
+import { createLauncherStore, LAUNCHER_LIMIT } from './launcher';
 import { createKeyedQueue, createRateLimit } from './locks';
 import { createAcceptBook, createMatchCache } from './match-cache';
 import { createPanelHandlers, openSidePanel } from './panel';
@@ -65,6 +68,9 @@ export interface WorkerOptions {
   origin?: string;
   /** Development builds only: the snapshot hotkeys' commands and background tab (capture.ts). */
   capture?: CaptureWorkerPlatform;
+  /** v3 Phase 3: whether a form's hello looks its job up as the page loads (true by default; the worker's tests of
+   *  other messages turn it off, so they see only the messages those set off). */
+  lookupOnLoad?: boolean;
 }
 
 /** The real core. */
@@ -78,6 +84,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const core = options.core ?? CORE;
   const timers = options.timers ?? systemTimers;
   const origin = options.origin ?? __TAILORIT_ORIGIN__;
+  const lookupOnLoad = options.lookupOnLoad !== false;
   const { local, session } = platform.storage;
   const now = () => platform.now();
   const state: WorkerState = { storageAccess: 'pending', ready: Promise.resolve() };
@@ -128,10 +135,17 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const telemetry = createTelemetry({ local, session, settings });
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, shownLimit, telemetry,
-    check: (tabId) => checkTab(tabId) });
+    check: (tabId) => checkTab(tabId), sideShown: (tabId, open) => void tellTopFrame(tabId, { v: 1, type: 'panel/side', open }) });
+  // The launcher's place and hiding per site (v3 Phase 3): storage.local, a hash of the host only.
+  const launchers = createLauncherStore(local);
+  const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
+  /** "Hide until next visit" for a tab's page (v3 Phase 3 review), in storage.session: the top frame's document it was
+   *  chosen in, so the side panel can offer it back; a later page of the tab never reads as hidden. */
+  const visitKey = (tabId: number) => `launcher-visit:${tabId}`;
   panelReports = reports;
   // The side panel's job card and custom question (v2): read through the tab's form frame, kept in memory only.
   const jobs = createJobCards({ session, tabs: platform.tabs, server, connected: () => auth.connected(),
+    onLoadLimit: createRateLimit(LOOKUP_ON_LOAD_LIMIT.count, LOOKUP_ON_LOAD_LIMIT.windowMs, now),
     generation: () => keeper.generation, now, limit: relayLimit });
   jobCards = jobs;
   // One chooser for the planner and the resume port: it follows the token and the tab's resume choice (v2: a Change
@@ -221,6 +235,37 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** Whether a frame may speak for this application (its key's platform is the frame host's). */
   const fits = (applicationKey: string, from: ContentChannel) => keyFitsFrame(applicationKey, from.url);
 
+  /** The tab's top frame, when it is one of ours: the one that draws the launcher at the page's edge (v3 Phase 3). */
+  /** The tab's top frame of ours: frame 0, whatever a frame's hello said of itself. */
+  async function topFrameOf(tabId: number) {
+    return (await framesOfTab(session, tabId)).find((frame) => frame.frameId === 0) ?? null;
+  }
+
+  /** Sends one message to the tab's top frame of ours, if there is one; a frame that cannot be reached is skipped. */
+  async function tellTopFrame(tabId: number, message: unknown): Promise<void> {
+    const top = await topFrameOf(tabId);
+    if (top === null) return;
+    try {
+      await platform.tabs.sendToFrame(tabId, message, frameTarget(top));
+    } catch {
+      log('frame.unreachable');
+    }
+  }
+
+  /** The launcher's prefs changed for the tab's top frame's site: every frame of the tab hears them. `shown`: the
+   *  person asked for it back, which undoes "Hide until next visit" too. */
+  async function tellLauncherPrefs(tabId: number, shown = false): Promise<void> {
+    const frames = await framesOfTab(session, tabId);
+    await Promise.all(frames.map(async (frame) => {
+      try {
+        await platform.tabs.sendToFrame(tabId, { v: 1, type: 'launcher/prefs', launcher: await launchers.prefsFor(frame.origin),
+          ...(shown ? { shown: true as const } : {}) }, frameTarget(frame));
+      } catch {
+        log('frame.unreachable');
+      }
+    }));
+  }
+
   // ── Listeners, registered synchronously ─────────────────────────────────────────────────────────────────────────
   platform.runtime.onMessage(
     createRouter({
@@ -232,8 +277,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'frame/hello': async (message, from) => {
           const { previous, entry } = await lockTab(from.tabId, async () => ({
             previous: await frameEntry(session, from.tabId, from.frameId),
-            entry: await registerFrame(session, { ...from, isTop: message.isTop, hasForm: message.hasForm, nav: message.nav },
-              now()),
+            entry: await registerFrame(session, { ...from, isTop: message.isTop, hasForm: message.hasForm, nav: message.nav,
+              ...(message.letter === true ? { letter: true } : {}) }, now()),
           }));
           const newDocument = previous === null || previous.documentId !== entry.documentId;
           // The document it left goes; anything this document began before its hello stays.
@@ -250,7 +295,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // The side panel's strip and card follow what the tab holds now (v2).
           void reports.pageChanged(from.tabId).catch(() => undefined);
           log('frame.registered', { frameId: entry.frameId, top: entry.isTop });
-          return ok({ frameId: from.frameId, connected: await auth.connected(), settings: await settings.content() });
+          const connected = await auth.connected();
+          // v3 Phase 3: a recognised job page (an application form of ours) is looked up as it loads, so the side
+          // panel's card and match show at once; the card's own path, with its merge, rate limit and token checks.
+          if (lookupOnLoad && entry.hasForm && connected) void jobs.loadCard(from.tabId, from).catch(() => undefined);
+          // A top frame that loads beside an open side panel keeps its launcher hidden (v3 Phase 3 review): the panel's
+          // panel/side came to the document before, and none comes now.
+          return ok({ frameId: from.frameId, connected, settings: await settings.content(),
+            launcher: await launchers.prefsFor(from.url),
+            ...(from.frameId === 0 && reports.sideShows(from.tabId) ? { side: true as const } : {}) });
         },
         'run/begin': (message, from) => beginRun(beginDeps, message, from),
         'plan/request': (message, from) => planner.request(message, from),
@@ -279,6 +332,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           accepts.forget(message.applicationKey);
           return ok({});
         },
+        // v3 Phase 3: a run's progress while it fills, for the panels only (no counters, no match cache).
+        'report/live': (message, from) => reports.put(message, from),
         'report/put': async (message, from) => {
           const answer = await reports.put(message, from);
           // Which of the application's written fields still hold our value, for the accepted-match cache.
@@ -302,6 +357,29 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // The job card's relay (v2): the frame a job/refresh asked, with its own address as Chrome reports it.
         'job/lookup': (_message, from) => jobs.relay('lookup', from),
         'job/add': (_message, from) => jobs.relay('add', from),
+        // The launcher (v3 Phase 3): its place and hiding for the sending frame's site, from the person's trusted drag
+        // and click.
+        // Only the top frame draws the tab (an embedded form's launcher has neither), and a person's drags and hides
+        // come at a person's pace (LAUNCHER_LIMIT, per tab).
+        'launcher/place': async (message, from) => {
+          if (from.frameId !== 0) return refuse('bad_sender');
+          const retry = launcherLimit.take(`${from.tabId}/`);
+          if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          await launchers.place(from.url, message.top);
+          return ok({});
+        },
+        'launcher/hide': async (message, from) => {
+          if (from.frameId !== 0) return refuse('bad_sender');
+          const retry = launcherLimit.take(`${from.tabId}/`);
+          if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          if (message.scope === 'next-visit') {
+            await session.set({ [visitKey(from.tabId)]: from.documentId ?? '' });
+            log('launcher.hidden', { everywhere: false, visit: true });
+            return ok({});
+          }
+          await launchers.hide(from.url, message.scope);
+          return ok({});
+        },
         ...(__E2E__
           ? {
               'e2e/probe': async (message: { storageLocal: 'refused' | 'allowed' }) => {
@@ -331,6 +409,24 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/letter': (message) => panelLetters.letter(message),
         'panel/confirmDraft': (message) => answers.confirmDraft(message),
         'panel/saveAnswer': (message) => answers.saveAnswer(message),
+        // v3 Phase 3: Skip on the field a frame's run writes now; the launcher hidden, and shown again.
+        'panel/skip': (message) => panel.skip(message),
+        'panel/launcher': async (message) => {
+          const top = await topFrameOf(message.tabId);
+          const stored = await launchers.hiddenFor(top?.origin ?? null);
+          if (stored !== 'none') return ok({ hidden: stored });
+          // Hidden until next visit, on the page the tab shows now.
+          const visit = await session.get(visitKey(message.tabId));
+          const onThisPage = top !== null && typeof visit === 'string' && visit === (top.documentId ?? '');
+          return ok({ hidden: onThisPage ? 'visit' : 'none' });
+        },
+        'panel/showLauncher': async (message) => {
+          const top = await topFrameOf(message.tabId);
+          await launchers.show(top?.origin ?? null);
+          await session.remove([visitKey(message.tabId)]);
+          await tellLauncherPrefs(message.tabId, true);
+          return ok({});
+        },
         'settings/get': async () => ok({ settings: await settings.get() }),
         'settings/save': async (message) => {
           const saved = await settings.save(message.settings);
@@ -396,6 +492,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
 
   platform.tabs.onRemoved((tabId) => {
     beginLimit.forget(`${tabId}/`);
+    launcherLimit.forget(`${tabId}/`);
+    void session.remove([visitKey(tabId)]).catch(() => undefined);
     reportLimit.forget(`${tabId}/`);
     policyLimit.forget(`${tabId}/`);
     shownLimit.forget(`${tabId}/`);

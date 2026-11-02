@@ -1,16 +1,21 @@
 /*
  * What the report shows, worked out from the tab's frame reports: the notices of every frame once each, each frame's
- * rows by section, the one run status that most needs the person, and the completion: how many rows are ready and how
- * many need the person. Plain functions over the reports, which hold labels, codes and counts and never a value.
+ * rows by section, the one run status that most needs the person, the progress (v3 Phase 3, shared/report.ts
+ * progressOf: the percent of the required fields filled, one rule for both panels and the launcher) and the field
+ * lists (Required, then Optional, each row filled, missing or being filled). Plain functions over the reports, which
+ * hold labels, codes and counts and never a value.
  */
 import { FILL_STATUSES, type FillStatus } from '../../core/enums';
 import { CLASS_POLICIES, policyClassOf } from '../../core/resolver/categories';
 import type { RunStatus } from '../../core/types/run';
 import { COPY } from '../../shared/copy';
 import type { IconName } from '../../shared/icons';
-import { needsPerson, NOTICE_CODES, type FrameReport } from '../../shared/report';
+import {
+  filledByPerson, isReady, leftForPerson, needsPerson, NOTICE_CODES, progressOf, rowProgressOf, type FrameReport,
+  type Progress, type RowProgress,
+} from '../../shared/report';
 
-export { needsPerson };
+export { isReady, needsPerson, progressOf, rowProgressOf, type Progress, type RowProgress };
 
 /** A report notice's code. */
 export type NoticeCode = (typeof NOTICE_CODES)[number];
@@ -122,12 +127,10 @@ export function policyFromStoredCopy(report: FrameReport): boolean {
 export const WORKING_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>(['detect', 'scan-step', 'fill-step', 'validate',
   'advance', 'wait-transition']);
 
-/** Whether a row is done for the person: written (verified or filled), or a question that already held its answer or
- *  needed none (an end date for a job they still hold). A row that needs the person never is. */
-export function isReady(row: ReportRow): boolean {
-  if (needsPerson(row)) return false;
-  return row.status === 'verified' || row.status === 'filled' || row.reason === 'already-correct'
-    || row.reason === 'end-date-not-applicable';
+/** Whether a frame's run works now: a working status, unless it rests there (FrameReport.resting: at wait-transition,
+ *  waiting for the person's own Next). */
+export function isWorking(report: Pick<FrameReport, 'status' | 'resting'>): boolean {
+  return WORKING_STATUSES.has(report.status) && report.resting !== true;
 }
 
 /** The tab's rows counted: per status, ready, needing the person, the required ones among both, and whether every
@@ -152,8 +155,8 @@ export function tallyOf(reports: readonly FrameReport[]): Tally | null {
   const required = { ready: 0, of: 0 };
   for (const row of rows) {
     byStatus[row.status] += 1;
-    const done = isReady(row);
-    const waiting = needsPerson(row);
+    const done = isReady(row) || filledByPerson(row);
+    const waiting = leftForPerson(row);
     if (done) ready += 1;
     if (waiting) needsYou += 1;
     if (row.required && (done || waiting)) {
@@ -162,7 +165,7 @@ export function tallyOf(reports: readonly FrameReport[]): Tally | null {
     }
   }
   return { byStatus, ready, needsYou, required, dryRun: reports.every((report) => report.mode === 'dry-run'),
-    working: reports.some((report) => WORKING_STATUSES.has(report.status)) };
+    working: reports.some(isWorking) };
 }
 
 /** A strip's tone: its tint, and the colour of its dot. */
@@ -185,4 +188,46 @@ export function rowIconOf(row: ReportRow): IconName {
   if (row.status === 'verified') return 'check-circle';
   if (row.status === 'filled' || isReady(row)) return 'check';
   return 'minus-circle';
+}
+
+/** Where the progress stands (v3 Phase 3): no report; a run reading the form (no row counted yet, "Scanning the
+ *  page"); a run filling ("Autofilling… 78%"); or every run at rest ("9 of 12 required fields filled · 75%"). */
+export type ProgressState = 'empty' | 'scanning' | 'filling' | 'rest';
+
+export function progressStateOf(reports: readonly FrameReport[]): ProgressState {
+  if (reports.length === 0) return 'empty';
+  if (!reports.some(isWorking)) return 'rest';
+  return progressOf(reports).of === 0 ? 'scanning' : 'filling';
+}
+
+/** One row of the field lists: its frame, its row, where it stands, and whether it is being written now. */
+export interface ListRow {
+  frameId: number;
+  row: ReportRow;
+  progress: RowProgress;
+  current: boolean;
+}
+
+/** The field lists (v3 Phase 3, Jobright's): the required rows, then the optional ones, each frame's in its report's
+ *  order (the form's), frames by id. */
+export function fieldListsOf(reports: readonly FrameReport[]): { required: ListRow[]; optional: ListRow[] } {
+  const rows = [...reports].sort((a, b) => a.frameId - b.frameId).flatMap((report) => report.fields.map((row) => ({
+    frameId: report.frameId, row, progress: rowProgressOf(row, report.filling),
+    current: report.filling?.current === row.key })));
+  return { required: rows.filter((entry) => entry.row.required), optional: rows.filter((entry) => !entry.row.required) };
+}
+
+/** The field being written now across the tab's frames (its frame and key), or null. */
+export function currentFieldOf(reports: readonly FrameReport[]): { frameId: number; key: string } | null {
+  for (const report of reports) {
+    const key = report.filling?.current ?? null;
+    if (key !== null) return { frameId: report.frameId, key };
+  }
+  return null;
+}
+
+/** The repeatable sections' counts across the tab's frames ("Education · 2 of 3 added"). */
+export function repeatablesOf(reports: readonly FrameReport[]): Array<NonNullable<FrameReport['repeatables']>[number] & {
+  frameId: number }> {
+  return reports.flatMap((report) => (report.repeatables ?? []).map((count) => ({ ...count, frameId: report.frameId })));
 }

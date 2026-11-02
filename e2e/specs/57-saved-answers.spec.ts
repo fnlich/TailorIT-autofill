@@ -45,8 +45,11 @@ test.describe('saved answers and drafts', () => {
     // The review offers Save my answer on that row alone, and the person clicks it.
     const panel = await ext.reportPage(tabId);
     await panel.bringToFront();
+    // Its row unfolded first: rows are folded at first, their icon and label shown (v3 Phase 3 review).
+    const fixedRow = panel.locator(`li[data-field-key="${row(fixed, QUESTION).key}"]`);
+    await fixedRow.locator('button.tia-row__toggle').click();
     await expect(panel.locator('[data-action="save-answer"]')).toHaveCount(1);
-    await panel.locator(`li[data-field-key="${row(fixed, QUESTION).key}"] [data-action="save-answer"]`).click();
+    await fixedRow.locator('[data-action="save-answer"]').click();
     await expect(panel.locator('.tia-feedback')).toHaveText(COPY.panel.answerSaved);
 
     // What went to TailorIT: the question's key, no option set, every company, the answer as the person typed it.
@@ -87,6 +90,7 @@ test.describe('saved answers and drafts', () => {
 
       const panel = await ext.reportPage(tabId);
       await panel.bringToFront();
+      await panel.locator(`li[data-field-key="${why.key}"] button.tia-row__toggle`).click();
       await panel.locator(`li[data-field-key="${why.key}"] [data-action="confirm-draft"]`).click();
       await expect(panel.locator('.tia-feedback')).toHaveText(COPY.panel.draftConfirmed);
       const confirmed = await ext.settled(tabId, { until: (each) => rowOf(each, why.label)?.status === 'verified' });

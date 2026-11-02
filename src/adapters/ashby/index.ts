@@ -177,9 +177,10 @@ function sections(root: Element): Array<{ el: Element; label: string }> {
  *  consent's radios answer its consent text; an Education block's controls their own sub-labels.
  *  The SMS consent's radios are no ordinary question: one click sends the consent to Ashby at once
  *  (ApiSubmitCandidateTextingConsent, the capture's logs), before any Submit. They are labelled by the consent's own
- *  words so the core reads them as the SMS consent it is (consent.privacy or an unrecognised consent), which the
- *  current settings leave unticked (consent-optional-unticked); e2e 34 holds that nothing ever sends the consent.
- *  v3 Phase 3's "Consents: All" mode is the only one meant to tick it, deliberately. */
+ *  words so the core reads them as the SMS consent it is. Under Consent boxes: All agreements (v3 Phase 3, the owner's
+ *  default: every agreement is ticked, like Jobright) its Yes ("given") is chosen, deliberately, and Ashby has it at
+ *  once (docs/PRIVACY.md); under Required only it is optional and not pre-approved, so it is left unticked
+ *  (consent-optional-unticked) and nothing is sent. e2e 34 holds both. */
 function questionOf(control: Element): Element | null {
   // plaid-closed.html: <input ... type="tel" ...><div class="... ashby-application-form-texting-consent-description">
   // <div class="_consentBody_q1pga_8"> ... <p>Check <strong>Yes</strong> or <strong>No</strong> to indicate your

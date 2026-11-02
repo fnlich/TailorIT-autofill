@@ -126,6 +126,29 @@ function expectInvariants(worker: FakeWorker, loaded: Loaded, personClicks: stri
   expect(loaded.events.on('submit')).toEqual([]);
 }
 
+describe('Autofill after page turn: Manually (v3 Phase 3)', () => {
+  it('leaves a new step for the person’s Continue: the review says so, nothing on it is written, and Continue fills it', async () => {
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS,
+      modes: { ...CAUTIOUS_SETTINGS.modes, afterPageTurn: 'manual' as const } } });
+    const loaded = await load(worker);
+    const { fixture, runtime } = loaded;
+    expect(await runtime.fill({ trigger: 'panel' })).toBe('waiting');
+    expect(lastReport(worker).fields.length).toBeGreaterThan(0);
+    // The person's Next: step 2 shows, and is not read or filled.
+    pageNext(fixture);
+    await vi.waitFor(() => expect(codes(lastReport(worker))).toContain('page-turned'), { timeout: 10_000 });
+    expect(lastReport(worker)).toMatchObject({ status: 'review', fields: [] });
+    await vi.waitFor(() => expect(runtime.run!.ended).toBe('paused'));
+    expect(runtime.ui!.launcher.view).toMatchObject({ state: 'needs-you', action: 'continue' });
+    expect(record(fixture).added).toEqual({ experience: 0, education: 0 });
+    expect(byId(fixture, 'company-0').value).toBe('');
+    // The person's Continue fills it, as the run would have by itself with Automatically.
+    await worker.platform.deliver({ v: 1, type: 'run/continue' });
+    await vi.waitFor(() => expect(byId(fixture, 'company-0').value).toBe(CURRENT_JOB.company), { timeout: 10_000 });
+    await vi.waitFor(() => expect(codes(lastReport(worker))).not.toContain('page-turned'));
+  });
+});
+
 describe('auto-advance off: each step filled, then the person moves on', () => {
   it('fills the four steps, adds a position, refuses the typeless Add, and stops at review on the final step',
     async () => {
@@ -227,7 +250,7 @@ describe('auto-advance off: each step filled, then the person moves on', () => {
 
 describe('auto-advance on', () => {
   it('presses Next on the clean steps only, after their writes, and never on the Review step or Submit', async () => {
-    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, modes: { ...CAUTIOUS_SETTINGS.modes, next: 'auto' as const } } });
     const loaded = await load(worker);
     const { fixture, runtime } = loaded;
     // Steps 1 and 2 are clean, so the run presses their Next; step 3 holds flagged fields, so it waits there.
@@ -261,7 +284,7 @@ describe('auto-advance on', () => {
     const page = html.replace("wireCurrent(byId('experience-0'));",
       "byId('phone').addEventListener('change', () => byId('next-details').click());\n      wireCurrent(byId('experience-0'));");
     expect(page).not.toBe(html);
-    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, modes: { ...CAUTIOUS_SETTINGS.modes, next: 'auto' as const } } });
     const loaded = await load(worker, page);
     expect(await loaded.runtime.fill()).toBe('waiting');
     // Step 2 was filled (its Add and its positions) before anything was pressed on it.
@@ -278,7 +301,7 @@ describe('auto-advance on', () => {
     const page = html.replace("button.addEventListener('click', (event) => {\n          wizard.next.push(",
       "button.addEventListener('click', (event) => {\n          if (wizard.next.length === 0) { wizard.next.push({ step: 0, trusted: event.isTrusted }); return; }\n          wizard.next.push(");
     expect(page).not.toBe(html);
-    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, modes: { ...CAUTIOUS_SETTINGS.modes, next: 'auto' as const } } });
     const fixture = await loadFixture(document, page, { width: 900, height: 1400 });
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WIZARD_URL, isTop: true,
       adapters: () => [ADAPTER], settle: { quietMs: 60 }, transition: { capMs: 600 } });
@@ -321,7 +344,8 @@ describe('across reloads', () => {
       expect(lastState(worker).stepAttempts).toEqual({ [signature]: 2 });
       expect(codes(lastReport(worker))).toContain('step-retry-limit');
       expect(lastReport(worker).fields).toEqual([]);
-      expect(third.events.events.filter((event) => !['scroll'].includes(event.type))).toEqual([]);
+      // Nothing of ours: the browser's own events (the test runner's pointer resting over the new page) are no write.
+      expect(third.events.events.filter((event) => !event.trusted && !['scroll'].includes(event.type))).toEqual([]);
       expect(['name', 'email', 'phone'].map((id) => byId(third.fixture, id).value)).toEqual(['', '', '']);
       expect(third.runtime.ui!.launcher.view).toMatchObject({ state: 'review' });
       expectInvariants(worker, third);
@@ -391,7 +415,7 @@ describe('validation', () => {
   it('surfaces an error the plan cannot fix at review, never pauses on it, and presses nothing', async () => {
     // The page marks the required shift question invalid as soon as step 3 shows.
     const page = html.replace('<select id="shift" name="shift" required>', '<select id="shift" name="shift" required aria-invalid="true">');
-    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, autoAdvance: true } });
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS, modes: { ...CAUTIOUS_SETTINGS.modes, next: 'auto' as const } } });
     const loaded = await load(worker, page);
     expect(await loaded.runtime.fill()).toBe('review');
     expect(lastState(worker).status).toBe('review');

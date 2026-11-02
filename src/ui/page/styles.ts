@@ -46,20 +46,93 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-cta:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
 .tia-cta:disabled { opacity: 0.55; cursor: default; }
 .tia-cta:disabled:hover { background: var(--tia-brand); }
-.tia-spin { animation: tia-spin 0.8s linear infinite; }
-@keyframes tia-spin { to { transform: rotate(360deg); } }
-.tia-toolbar__more { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.tia-toolbar__more .tia-button { min-height: 36px; padding: 0 8px; }
-.tia-button[data-emphasis] { border-color: var(--tia-ink); background: var(--tia-brand-wash); color: var(--tia-ink); }
+/* v3 Phase 3 (Jobright's layout): under Autofill, Dry run, Continue and Cancel on a tinted strip, as Jobright's credits
+   row sits under its button. */
+.tia-toolbar { gap: 0; }
+.tia-toolbar .tia-cta { position: relative; z-index: 1; }
+.tia-toolbar__more {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: -10px 0 0; padding: 14px 6px 4px;
+  border-radius: 0 0 var(--tia-r-row) var(--tia-r-row); background: var(--tia-brand-wash);
+  box-shadow: inset 0 0 0 1px var(--tia-ring-track);
+}
+.tia-toolbar__more .tia-button { min-height: 30px; padding: 0 6px; }
+.tia-button[data-emphasis] { border-color: var(--tia-ink); background: var(--tia-bg); color: var(--tia-ink); }
 
 .tia-dashboard {
-  display: grid; gap: 14px; margin: 4px 0 0; padding: 16px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-card);
-  background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
+  display: grid; gap: 14px; margin: 0; padding: 12px 16px 14px; border: 1px solid var(--tia-line);
+  border-radius: var(--tia-r-card); background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
 }
 .tia-dashboard__title { margin: 0; font: 800 17px/1.3 var(--tia-font); }
 .tia-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; margin: 4px 0 0; font-size: 13px; }
 
-/* The job card (v2): a white card, the company's tile and the match ring on top, chips, the resume it attaches. */
+/* v3 Phase 3: the gear's menu (the modes), the launcher brought back, a page Autofill does not work on, the foot. */
+.tia-iconbutton {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; width: 32px; height: 32px; margin: 0;
+  padding: 0; border: 0; border-radius: 999px; background: var(--tia-track); color: var(--tia-fg); cursor: pointer;
+}
+.tia-iconbutton:hover, .tia-iconbutton[aria-expanded="true"] { background: var(--tia-line); }
+.tia-iconbutton:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-menu {
+  display: grid; gap: 10px; margin: -4px 0 0; padding: 14px 16px; border: 1px solid var(--tia-line);
+  border-radius: var(--tia-r-card); background: var(--tia-bg); box-shadow: var(--tia-shadow-pop);
+}
+.tia-menu__title { margin: 0; font: 800 15px/1.3 var(--tia-font); }
+.tia-page a.tia-menu__all { display: inline-flex; align-items: center; gap: 2px; justify-self: start; font-size: 13px;
+  font-weight: 600; }
+.tia-modes { display: grid; gap: 12px; }
+.tia-mode { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.tia-mode__name { padding: 0; font: 700 13px/1.4 var(--tia-font); }
+.tia-mode__choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.tia-mode__choice {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--tia-control);
+  border-radius: 999px; background: var(--tia-bg); font: 600 13px/1.3 var(--tia-font); cursor: pointer;
+}
+.tia-mode__choice:has(input:checked) { border-color: var(--tia-ink); background: var(--tia-brand-wash); color: var(--tia-ink); }
+.tia-mode__choice:has(input:focus-visible) { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-mode__choice input { margin: 0; accent-color: var(--tia-ink); }
+.tia-mode__help { margin: 0; }
+.tia-launcher-hidden { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.tia-launcher-hidden .tia-button { margin-left: 0; }
+.tia-unsupported {
+  display: grid; gap: 8px; padding: 16px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-card);
+  background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
+}
+.tia-unsupported__head { display: flex; align-items: center; gap: 8px; }
+.tia-unsupported__icon { color: var(--tia-tone-info-fg); }
+.tia-unsupported__title { margin: 0; font: 800 16px/1.3 var(--tia-font); }
+.tia-unsupported__intro { margin: 0; font-size: 13px; }
+.tia-unsupported__sites { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.tia-unsupported__site {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 8px 10px; border-radius: var(--tia-r-control);
+  background: var(--tia-subtle);
+}
+.tia-unsupported__name { font-weight: 700; }
+.tia-unsupported__hosts { font-size: 12px; color: var(--tia-muted); overflow-wrap: anywhere; }
+.tia-panel__foot { display: grid; justify-items: center; gap: 2px; margin-top: 4px; }
+.tia-panel__foot .tia-connection { margin: 0; }
+
+/* The job card (v2; v3 Phase 3 in Jobright's layout): the job in a white card, then Autofill, then what the fill uses in a
+   second card. */
+.tia-jobcol { display: grid; gap: 12px; }
+.tia-docs {
+  display: grid; gap: 0; padding: 4px 16px 12px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-card);
+  background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
+}
+.tia-docs > * + * { margin-top: 10px; }
+.tia-docs[hidden] { display: none; }
+.tia-page a.tia-docs__link {
+  display: flex; align-items: center; gap: 8px; margin: 0 -16px; padding: 10px 16px; color: var(--tia-fg);
+  font-size: 13px; font-weight: 700; text-decoration: none;
+}
+.tia-page a.tia-docs__link:hover { background: var(--tia-hover); color: var(--tia-fg); }
+.tia-docs__label { flex: 1 1 auto; }
+.tia-docs__chevron { color: var(--tia-muted); }
+.tia-job__applied {
+  display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  background: var(--tia-tone-success-bg); color: var(--tia-tone-success-fg); font: 700 11px/1.6 var(--tia-font);
+  vertical-align: 3px; white-space: nowrap;
+}
+.tia-job__applied .tia-icon { display: inline-block; }
 .tia-job {
   display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-card);
   background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
@@ -93,6 +166,7 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-job__warning-icon { flex: none; margin-top: 1px; color: var(--tia-tone-warning-fg); }
 .tia-job__help { margin: 0; font-size: 13px; color: var(--tia-muted); }
 .tia-job__resume { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--tia-line); }
+.tia-docs > .tia-job__resume:first-child { padding-top: 8px; border-top: 0; }
 .tia-job__resume-head { display: flex; align-items: flex-start; gap: 8px; }
 .tia-job__doc { flex: none; margin-top: 1px; color: var(--tia-ink); }
 .tia-job__resume-text { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
@@ -117,8 +191,17 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-job__slim { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; }
 .tia-job__slim-icon { flex: none; margin-top: 1px; color: var(--tia-tone-info-fg); }
 
-/* The match: a pill whose outline fills to the percentage, the number in it and "match" under it. */
-.tia-ring { display: inline-flex; flex: none; flex-direction: column; align-items: center; gap: 3px; }
+/* The match: a pill whose outline fills to the percentage, the number in it and its band under it; its tip on hover or
+   focus (v3 Phase 3). */
+.tia-ringwrap { position: relative; display: inline-flex; flex: none; }
+.tia-ring { display: inline-flex; flex: none; flex-direction: column; align-items: center; gap: 3px; border-radius: 10px; }
+.tia-ring:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-ring__tip {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 2; display: none; width: 220px; padding: 8px 10px;
+  border-radius: var(--tia-r-control); background: var(--tia-fg); color: var(--tia-on-ink);
+  font: 400 12px/1.45 var(--tia-font); box-shadow: var(--tia-shadow-pop);
+}
+.tia-ringwrap:hover .tia-ring__tip, .tia-ring:focus-visible + .tia-ring__tip { display: block; }
 .tia-ring__pill { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 34px; }
 .tia-ring__svg { position: absolute; top: 0; left: 0; overflow: visible; }
 .tia-ring__track, .tia-ring__arc { fill: none; stroke-width: 3; }
@@ -166,7 +249,8 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-ask__summary:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: -2px; border-radius: var(--tia-r-card); }
 .tia-ask__icon { flex: none; color: var(--tia-ink); }
 .tia-ask__heading { flex: 1 1 auto; }
-.tia-ask[open] .tia-chevron--down { display: none; }
+/* One chevron at a time: down while folded, up while open. */
+.tia-ask .tia-chevron--up, .tia-ask[open] .tia-chevron--down { display: none; }
 .tia-ask[open] .tia-chevron--up { display: block; }
 .tia-ask__body { display: grid; gap: 8px; padding: 0 16px 16px; }
 .tia-ask__policy {

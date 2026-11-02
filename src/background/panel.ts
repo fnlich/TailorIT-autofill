@@ -4,6 +4,9 @@
  * the field. describe's option labels pass straight through to the panel: never stored, never logged. panel/open, sent
  * from a content script's trusted launcher click, opens the side panel for that tab (see openSidePanel).
  *
+ * v3 Phase 3: Skip (panel/skip) goes to the one frame that holds the field, as run/skip, and that frame gives up the
+ * write it is making of that field, if it is; a key, never a value.
+ *
  * The policy card's decision has its own message, addressed to one frame: panel/policyDecision becomes
  * run/policyDecision for that frame only, and only while its report says its run waits at policy-notice. Continue
  * never stands in for Fill anyway: with one frame at the policy card and another at a CAPTCHA pause, the toolbar's
@@ -121,6 +124,24 @@ export function createPanelHandlers(deps: PanelDeps) {
       log('panel.sent', { frames: parsed.data.ok ? 1 : 0 });
       if (parsed.data.ok) return ok({});
       return refuse(parsed.data.error === 'expired' ? 'expired' : 'unavailable');
+    },
+    /** v3 Phase 3: Skip on the field one frame's run writes now (the side panel's, after 2 s on it): run/skip to that
+     *  frame alone, which gives that one write up. `expired`: the frame is gone, or writes another field, or none. */
+    async skip(message: Of<'panel/skip'>): Promise<Answer<Record<string, never>>> {
+      const frame = await frameOf(message.tabId, message.frameId);
+      if (frame === null) return refuse('expired');
+      let answer: unknown;
+      try {
+        answer = await platform.tabs.sendToFrame(message.tabId, { v: 1, type: 'run/skip', fieldKey: message.fieldKey },
+          targetOf(frame));
+      } catch {
+        log('frame.unreachable');
+        return refuse('unavailable');
+      }
+      const parsed = answerSchema(DoneAnswerSchema).safeParse(answer);
+      log('panel.skip-sent', { reached: parsed.success && parsed.data.ok });
+      if (!parsed.success) return refuse('unavailable');
+      return parsed.data.ok ? ok({}) : refuse('expired');
     },
     async focus(message: Of<'panel/focus'>): Promise<Answer<Record<string, never>>> {
       const frame = await frameOf(message.tabId, message.frameId);

@@ -73,6 +73,9 @@ export const REASON_CODES = [
   // never showed done within the wait; an AI draft held back from a page that saves every answer at once, while the
   // person's setting keeps drafts for their confirmation (written only when they confirm it)
   'upload-failed', 'upload-not-confirmed', 'llm-draft-held',
+  // v3 Phase 3: the person chose Skip on the field being written (the side panel's, after 2 s on it): its write was
+  // given up, and the run went on without it
+  'skipped-by-you',
   // a bug
   'internal-error',
 ] as const;
@@ -114,6 +117,9 @@ export interface FillResult {
    * Suggestions by index and score only; the panel asks the frame for their labels when a row is expanded.
    * `userEdited`: the person changed this field with their own (trusted) input after the run left it flagged, so the
    * review may offer "Save my answer" (Requirement F; the content runtime sets it, Phase 6 wave 2). Never a value.
+   * `filledByYou` (v3 Phase 3): the person's own input left an answer in a field the run left for them, so the review's
+   * lists show it filled at once, as Jobright's flip; a flag, never the answer.
    */
-  detail?: { suggestions?: Array<{ index: number; score: number }>; revealedBy?: BaseKey; userEdited?: true };
+  detail?: { suggestions?: Array<{ index: number; score: number }>; revealedBy?: BaseKey; userEdited?: true;
+    filledByYou?: true };
 }

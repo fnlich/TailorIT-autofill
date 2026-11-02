@@ -178,6 +178,11 @@ describe('the page’s own UI in TailorIT’s look', () => {
     expect([strip.dataset.tone, getComputedStyle(strip).borderRadius, getComputedStyle(strip).backgroundColor])
       .toEqual(['attention', '12px', 'rgb(248, 244, 229)']);
     await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    // The row unfolded first, by the person's own click (rows are folded at first, v3 Phase 3 review).
+    const toggle = panel.querySelector<HTMLButtonElement>('li[data-field-key="why"] button.tia-row__toggle')!;
+    const fold = toggle.getBoundingClientRect();
+    await trustedClickAt(ui, fold.left + fold.width / 2, fold.top + fold.height / 2);
+    await vi.waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
     const confirm = [...panel.querySelectorAll('button')].find((each) => each.textContent === COPY.report.confirmDraft)!;
     const box = confirm.getBoundingClientRect();
     await trustedClickAt(ui, box.left + box.width / 2, box.top + box.height / 2);

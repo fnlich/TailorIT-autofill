@@ -13,7 +13,11 @@ const SENTENCE = /^["A-Z(].*[.]$/s;
 describe('the v2 copy', () => {
   it('words the job card: its match, keywords, posting date, tracker warning and every reason and kind', () => {
     expect(COPY.job.keywords(9, 12)).toBe('9 of 12 keywords');
-    expect(COPY.job.matchLabel(75)).toBe('75% match');
+    expect(COPY.job.matchLabel(75, COPY.job.bands.good)).toBe('75% match: Good');
+    // v3 Phase 3: Jobright's bands, and the tip saying what the score counts.
+    expect(Object.values(COPY.job.bands)).toEqual(['Excellent', 'Good', 'Fair', 'Poor']);
+    expect(COPY.job.matchTip(9, 12)).toMatch(/^9 of 12 keywords in this posting are in your resume\. /);
+    expect(COPY.job.applied).toBe('Applied');
     expect([0, 1, 2, 13, 21, 90].map(COPY.job.posted)).toEqual(['Posted today', 'Posted yesterday', 'Posted 2 days ago',
       'Posted 13 days ago', 'Posted 3 weeks ago', 'Posted 3 months ago']);
     expect(COPY.job.alreadyApplied('Applied')).toBe('Already in your tracker as Applied. Check before you apply again.');
@@ -45,7 +49,9 @@ describe('the v2 copy', () => {
 
   it('tells the person, before they connect, when TailorIT is asked which job page they are on', () => {
     const [, lookups] = COPY.options.connection.disclosure;
-    expect(lookups).toContain('side panel shows an application page');
+    // v3 Phase 3: as an application page loads, not only while the side panel shows it.
+    expect(lookups).toContain('When an application page on those sites loads');
+    expect(lookups).toContain('side panel shows one');
     expect(lookups).toContain('Autofill or Dry run');
     expect(lookups).toContain('does not keep the page\'s address');
   });

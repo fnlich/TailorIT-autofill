@@ -6,6 +6,9 @@
  * them enters the repo.
  * - The side panel at 400 px: before Autofill, a real form's review, a trap's review that needs the person, a row
  *   opened, the policy card, and the review again under a dark system scheme (it stays light).
+ * - v3 Phase 3 (Jobright's layout): "Autofilling… NN%" with the row being written and Skip (a slow resume), the
+ *   Minimized view, the gear's menu of modes, a page Autofill does not work on, the launcher's tab at the page's edge
+ *   with its hide menu, and the panel offering it back.
  * - v2: the job card found, not found with Add, already applied, loading, unavailable, a dry run's "Would attach", the
  *   resume picker, and a custom question answered.
  * - Phase G: the job card's cover-letter row: "Written by AI when the form asks for one" with Write it now, Writing…,
@@ -108,10 +111,12 @@ test("the side panel: before Autofill, a real form's review, a row opened, and t
   await ext.fill(page);
   expect((await ext.settled(tabId)).status).toBe('review');
   await panel.bringToFront();
-  await expect(panel.locator('[data-completion]')).toBeVisible();
+  await expect(panel.locator('[data-progress="rest"]')).toBeVisible();
   await shoot(panel, '02-side-panel-review.png', 'Side panel, a real form reviewed (top)');
   await shoot(panel, '02b-side-panel-review-full.png', 'Side panel, a real form reviewed (whole page)', { fullPage: true });
-  const folded = panel.locator('li[data-layout="line"] summary').first();
+  await panel.locator('[data-group="required"]').scrollIntoViewIfNeeded();
+  await shoot(panel, '02d-side-panel-required-optional.png', 'Side panel, the Required and Optional lists');
+  const folded = panel.locator('li[data-layout="line"] button.tia-row__toggle').first();
   await folded.click();
   await folded.scrollIntoViewIfNeeded();
   await shoot(panel, '02c-side-panel-row-open.png', 'Side panel, a folded row opened');
@@ -308,6 +313,77 @@ test('the cover letter on the job card, and attached in a review', async ({ extC
   await shoot(filled.panel, '17e-cover-letter-review.png', 'Review: the cover letter attached, marked "AI"');
 });
 
+test('v3 Phase 3: Autofilling with a percent, the row being written and Skip; Minimized; the gear’s modes', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  test.setTimeout(120_000);
+  // A real form with required fields (v3 Phase 3 review), its resume slow to arrive: the Required list shows while it
+  // fills.
+  const snapshot = expectation(SNAPSHOT);
+  routeLog.serve(routesFile(`fixtures/${SNAPSHOT}.routes.json`));
+  await tailorit.scenario('resume-slow', { times: 1, delayMs: 30_000 });
+  const page = await extContext.newPage();
+  await page.goto(snapshot.source);
+  const tabId = await ext.tabIdOf(page);
+  await ext.frameWithForm(tabId);
+  const panel = await sidePanel(ext, tabId);
+  await panel.bringToFront();
+  await shoot(panel, '20-side-panel-ready.png', 'Side panel before Autofill: the job, Autofill, what the fill uses');
+  await panel.getByRole('button', { name: 'Autofill', exact: true }).click();
+  await expect(panel.locator('li[data-current="true"]')).toBeVisible({ timeout: 20_000 });
+  await shoot(panel, '21-side-panel-autofilling.png', 'Side panel: "Autofilling… NN%", the row being written');
+  await expect(panel.locator('button[data-action="skip"]')).toBeVisible({ timeout: 10_000 });
+  await shoot(panel, '22-side-panel-skip.png', 'Side panel: Skip on the field written for 2 s');
+  await panel.locator('button[data-action="skip"]').click();
+  expect((await ext.settled(tabId, { timeout: 30_000 })).status).toBe('review');
+  await panel.bringToFront();
+  await shoot(panel, '23-side-panel-after-skip.png', 'Side panel: the review after Skip, "N of M required fields filled · NN%"');
+
+  await panel.locator('button[data-panel-menu]').click();
+  await expect(panel.locator('[data-menu]')).toBeVisible();
+  await shoot(panel, '24-side-panel-modes.png', 'Side panel: the gear’s menu, the modes');
+  await panel.locator('input[data-setting="view.minimized"]').check();
+  await panel.locator('button[data-panel-menu]').click();
+  await expect(panel.locator('button[data-action="toggle-fields"]')).toHaveAttribute('aria-expanded', 'false');
+  await shoot(panel, '25-side-panel-minimized.png', 'Side panel: the Minimized view, the review folded to its line');
+  await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
+});
+
+test('v3 Phase 3: the launcher’s tab at the page’s edge, its hide menu, an unsupported page, and the panel offering it back', async ({ extContext, connected: ext, routeLog }) => {
+  const url = 'https://jobs.lever.co/tailorit-fixture/shots-edge/apply';
+  routeLog.serve({ [url]: 'fixtures/synthetic/resume-upload.html' });
+  const page = await extContext.newPage();
+  await page.goto(url);
+  const tabId = await ext.tabIdOf(page);
+  await ext.frameWithForm(tabId);
+  await still(page);
+  const ui = await PageUi.of(page);
+  await expect.poll(async () => (await ui.launcher())?.shown ?? false).toBe(true);
+  await shoot(page, '26-launcher-edge.png', 'The launcher’s tab at the page’s right edge', {
+    clip: await around(page, ui, ['[data-edge]'], 24) });
+  await ui.clickButton('Hide the TailorIT button');
+  await expect.poll(async () => (await ui.elements('[data-hide]')).filter((item) => item.shown).length).toBe(3);
+  await shoot(page, '27-launcher-hide-menu.png', 'The launcher’s hide menu', {
+    clip: await around(page, ui, ['[data-edge]', '[role="menu"]'], 24) });
+  await ui.clickButton('Hide on this site');
+  await ui.close();
+  const panel = await sidePanel(ext, tabId);
+  await expect(panel.locator('[data-launcher-hidden="site"]')).toBeVisible();
+  await shoot(panel, '28-side-panel-launcher-hidden.png', 'Side panel: "Show the TailorIT button again"');
+  await panel.getByRole('button', { name: 'Show the TailorIT button again', exact: true }).click();
+
+  // A site the extension has no access to: the browser does not tell it the tab's address, so the tab is the new one.
+  const tabIds = async () => (await ext.page()).evaluate(async () => (await (globalThis as unknown as {
+    chrome: { tabs: { query(query: object): Promise<Array<{ id?: number }>> } } }).chrome.tabs.query({}))
+    .flatMap((tab) => (tab.id === undefined ? [] : [tab.id])));
+  const before = await tabIds();
+  const elsewhere = await extContext.newPage();
+  routeLog.serve({ 'https://www.example.org/careers': 'fixtures/synthetic/resume-upload.html' });
+  await elsewhere.goto('https://www.example.org/careers');
+  const otherTab = (await tabIds()).find((id) => !before.includes(id))!;
+  const unsupported = await sidePanel(ext, otherTab);
+  await expect(unsupported.locator('[data-unsupported]')).toBeVisible();
+  await shoot(unsupported, '29-side-panel-unsupported.png', 'Side panel: "Autofill isn’t supported on this page"');
+});
+
 test('the options page', async ({ extContext, connected: ext }) => {
   const options = await extContext.newPage();
   await options.setViewportSize({ width: 1000, height: 900 });
@@ -316,4 +392,7 @@ test('the options page', async ({ extContext, connected: ext }) => {
   await expect(options.locator('h1')).toBeVisible();
   await expect(options.locator('[data-card="panel"]')).toBeVisible();
   await shoot(options, '07-options.png', 'The options page', { fullPage: true });
+  await options.locator('[data-card="modes"]').scrollIntoViewIfNeeded();
+  await shoot(options, '07b-options-modes.png', 'The options page: Modes', {
+    clip: (await options.locator('[data-card="modes"]').boundingBox()) ?? undefined });
 });

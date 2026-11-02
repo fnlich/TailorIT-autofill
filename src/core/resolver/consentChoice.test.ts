@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fieldOf, inOrder, planOf, specOf, vocab } from '../plan/plan.testkit';
+import { fieldOf, inOrder, planOf, settingsWith, specOf, vocab } from '../plan/plan.testkit';
 import type { FieldSpec } from '../types/field';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import { consentChoice, consentChoiceOption } from './classifyRules';
@@ -100,13 +100,19 @@ describe('the BeyondTrust question planned', () => {
       origin: { provenance: 'rule', ruleId: 'consent.preapproved' } });
   });
 
-  it('never chooses an optional marketing opt-in, and asks no AI about it', () => {
+  it('chooses an optional marketing opt-in only under Consents: All, and asks no AI about it', () => {
     const marketing = specOf('I agree to receive marketing emails and job alerts', 'select',
       { optionLabels: ['Select...', 'I agree'] });
-    const out = planOf([marketing]);
+    const requiredOnly = settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } });
+    const out = planOf([marketing], { settings: requiredOnly });
     expect(fieldOf(out, marketing)).toMatchObject({ write: undefined,
       row: { status: 'skipped', category: 'consent.marketing', reason: 'consent-optional-unticked' } });
     expect(out.ask).toBeUndefined();
+    // The default (v3 Phase 3): every agreement is chosen, by the rule's own option, with no AI.
+    const all = planOf([marketing]);
+    expect(fieldOf(all, marketing).write).toMatchObject({ value: { kind: 'option', index: 1 },
+      origin: { provenance: 'rule', ruleId: 'consent.preapproved' } });
+    expect(all.ask).toBeUndefined();
   });
 
   it('chooses an "I did not use AI" attestation only in a run that used no AI', () => {

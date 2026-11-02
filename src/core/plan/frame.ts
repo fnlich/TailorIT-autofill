@@ -823,7 +823,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // The canaries any label of the frame carries, the context's too: more to scan for is never less safe.
   const guard: GuardContext = { canaries: [...input.canaries, ...input.specs.flatMap(labelCanaries)], profile,
     profileIndex: profileIndex(profile), savedAnswers: input.savedAnswers,
-    answerAll: input.settings.llm.answers && input.settings.llm.answerAll };
+    answerAll: input.settings.llm.answers && input.settings.modes.ai === 'all' };
   const ctx: FieldPlanContext = { input, guard, drops: new Set(),
     legal: { settings: input.settings, ...(postingCountry !== undefined ? { postingCountry } : {}) },
     phoneCodes: phoneCodesShown(classified) };
@@ -833,9 +833,9 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // profile-only run asks neither, and rows what only they could fill as ai-off-for-posting.
   const drafting = input.settings.llm.drafts && !input.dryRun;
   const answering = input.settings.llm.answers && !input.dryRun;
-  // The `all` scope (settings.llm.answerAll): the legal, pay and attention-check questions the profile leaves open are
+  // The `all` scope (settings.modes.ai 'all'): the legal, pay and attention-check questions the profile leaves open are
   // asked too; a profile-only frame rows them ai-off-for-posting, as any question only the AI could answer.
-  const answerAll = wantedLlm.answers && wantedLlm.answerAll;
+  const answerAll = wantedLlm.answers && input.settings.modes.ai === 'all';
   const draftContext: DraftContext = { fields: classified, revealEdges: input.revealEdges ?? [], vocab: input.vocab,
     noWorkAuthorization: input.sensitiveState === 'loaded' && profile.workAuthorization.length === 0 };
   const drafts: DraftItem[] = [];

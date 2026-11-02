@@ -15,7 +15,7 @@
  * attention check, and every category only the person answers, allow nothing. An AI
  * answer's text (llm-answer, version 2) fills an unknown or free-text field, or one of the profile categories
  * ANSWERABLE_PROFILE_CATEGORIES lists; never a sensitive, legal, EEO or consent one.
- * The owner's decisions of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): with `answerAll` (settings.llm.answerAll, the AI
+ * The owner's decisions of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): with `answerAll` (settings.modes.ai 'all', the AI
  * allowed for the frame) an AI pick or answer may fill a category of AI_OPENED_CATEGORIES (the legal questions, the
  * expected pay and its currency, an attention check); a required consent may be ticked by consent.required, an
  * unrecognised one too; and an AI attestation only by consent.no-ai-attestation. Nothing else fills a category only
@@ -245,7 +245,7 @@ const CLASS_PROVENANCES: Readonly<Record<PolicyClass, readonly ValueOrigin['prov
 
 /** What the category policy reads besides the origin and the category. */
 export interface CategoryPolicyOptions {
-  /** TailorIT's AI may answer the categories of AI_OPENED_CATEGORIES (settings.llm.answerAll, the AI allowed). */
+  /** TailorIT's AI may answer the categories of AI_OPENED_CATEGORIES (settings.modes.ai 'all', the AI allowed). */
   answerAll?: boolean;
 }
 

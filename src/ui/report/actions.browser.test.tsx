@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
-import { button, click, frameReport, mount, row, unmountAll } from '../ui.testkit';
+import { button, click, frameReport, mount, row, unfoldRows, unmountAll } from '../ui.testkit';
 import { Report, RunStatusLine } from './Report';
 
 const rowOf = (root: ParentNode, key: string) => root.querySelector<HTMLElement>(`li[data-field-key="${key}"]`)!;
@@ -50,6 +50,9 @@ describe('the report (Phase 6)', () => {
     const confirmed: Array<[number, string]> = [];
     const root = await mount(<Report reports={[frameReport(2, { fields: [waitingDraft, confirmedDraft, row('plain')] })]}
       onConfirmDraft={(frameId, key) => confirmed.push([frameId, key])} />);
+    // Folded at first (v3 Phase 3 review): its actions are in its detail.
+    expect(action(root, 'why', 'confirm-draft')).toBeNull();
+    await unfoldRows(root);
     expect(rowOf(root, 'why').dataset.draft).toBe('true');
     expect(rowOf(root, 'why').textContent).toContain(COPY.report.draftMark);
     expect(rowOf(root, 'plain').dataset.draft).toBe('false');
@@ -64,6 +67,7 @@ describe('the report (Phase 6)', () => {
     const saved: Array<[number, string]> = [];
     const root = await mount(<Report reports={[frameReport(0, { fields: [fixed, untouched, eeo, consent, upload, verifiedEdited] })]}
       onSaveAnswer={(frameId, key) => saved.push([frameId, key])} />);
+    await unfoldRows(root);
     expect(action(root, 'notice', 'save-answer')?.textContent).toBe(COPY.report.saveAnswer);
     for (const key of ['relocate', 'gender', 'privacy', 'portfolio', 'email']) {
       expect(action(root, key, 'save-answer'), key).toBeNull();
@@ -74,9 +78,13 @@ describe('the report (Phase 6)', () => {
 
   it('draws neither action without its callback, and holds them while a request is on its way', async () => {
     const plain = await mount(<Report reports={[frameReport(0, { fields: [waitingDraft, fixed] })]} />);
-    expect(plain.querySelectorAll('button')).toHaveLength(0);
+    await unfoldRows(plain);
+    // Only the rows' folds and the progress line's (v3 Phase 3): no action.
+    expect(plain.querySelectorAll('button[data-action]:not([data-action="toggle-fields"]), button.tia-row__go'))
+      .toHaveLength(0);
     const busy = await mount(<Report reports={[frameReport(0, { fields: [waitingDraft, fixed] })]} busy
       onConfirmDraft={() => undefined} onSaveAnswer={() => undefined} />);
+    await unfoldRows(busy);
     expect(action(busy, 'why', 'confirm-draft')?.hasAttribute('disabled')).toBe(true);
     expect(action(busy, 'notice', 'save-answer')?.hasAttribute('disabled')).toBe(true);
   });
@@ -87,10 +95,13 @@ describe('the report (Phase 6)', () => {
       frameReport(4, { platform: 'greenhouse', adapter: 'greenhouse', fields: [row('embed-email')] })];
     const root = await mount(<Report reports={reports} actionsFrameId={4} onShowField={(frameId, key) => shown.push([frameId, key])}
       onConfirmDraft={() => undefined} />);
-    expect(rowOf(root, 'top-email').querySelector('button')).toBeNull();
+    await click(rowOf(root, 'top-email').querySelector<HTMLButtonElement>('button.tia-row__toggle'));
+    expect(rowOf(root, 'top-email').querySelector('button[data-action], button.tia-row__go')).toBeNull();
     expect(action(root, 'why', 'confirm-draft')).toBeNull();
+    await click(rowOf(root, 'embed-email').querySelector<HTMLButtonElement>('button.tia-row__toggle'));
     await click(action(root, 'embed-email', 'show-field'));
-    expect(shown).toEqual([[4, 'embed-email']]);
+    await click(rowOf(root, 'embed-email').querySelector<HTMLButtonElement>('button.tia-row__go'));
+    expect(shown).toEqual([[4, 'embed-email'], [4, 'embed-email']]);
   });
 
   it('says under the policy notice when only TailorIT’s saved copy of the posting said it, as the page’s card does', async () => {

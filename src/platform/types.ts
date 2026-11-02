@@ -16,6 +16,8 @@ export interface Sender {
   frameId?: number;
   documentId?: string;
   documentLifecycle?: string;
+  /** The sender's tab is a private (incognito) one (`sender.tab.incognito`). */
+  incognito?: boolean;
 }
 
 /** An async message handler; the wrapper answers with sendResponse and keeps the channel open. */
@@ -93,6 +95,10 @@ export interface WorkerPlatform {
     /** Opens a tab in front; resolves with its id. */
     create(url: string): Promise<number | null>;
     onRemoved(cb: (tabId: number) => void): void;
+    /** Whether a tab shows a page on one of the applicant-tracking hosts (v3 Phase 3 review: the side panel says
+     *  "Reload the page" when it does and no frame of ours said hello). Chrome gives a tab's address only on the hosts
+     *  the extension may read, so false for any other; never the address itself. */
+    onAtsHost?(tabId: number): Promise<boolean>;
   };
   storage: { local: StorageArea; session: StorageArea };
   /** open() must be called before any await in the handler of the message that carries the click, or the browser no

@@ -18,8 +18,8 @@ import type { PlanAi } from './types';
 
 const TASK = 'c3e5a7b9-2d4f-4b6c-8e0a-1f3b5d7e9a20';
 const NO_ANSWERS = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, answers: false } });
-/** Answers on, but not the `all` scope (settings.llm.answerAll off): the standard scope alone. */
-const STANDARD_ONLY = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, answerAll: false } });
+/** Answers on, but not the `all` scope (the AI answers mode Profile only): the standard scope alone. */
+const STANDARD_ONLY = settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, ai: 'profile' } });
 /** Each asked item's key and scope. */
 const scopes = (out: ReturnType<typeof planOf>) => (out.ask?.answers ?? []).map((item) => [item.key, item.scope]);
 

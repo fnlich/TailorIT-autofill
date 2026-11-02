@@ -292,7 +292,8 @@ describe('Edit with AI', () => {
     const started = await start(FORM, 'fa-edit-off', rewriting);
     await started.runtime.fill();
     await editButtons(started.runtime, 2);
-    await started.worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side', autoAdvance: false,
+    await started.worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
+      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn },
       llm: { ...DEFAULT_SETTINGS.llm, drafts: false }, offerToSaveAnswers: true } });
     await vi.waitFor(() => expect(started.runtime.ui!.aiEditButtons).toHaveLength(0));
     const key = rowOf(lastReport(started.worker), WHY).key;

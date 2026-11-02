@@ -33,7 +33,10 @@
  * Ashby's floating-ui lists) has its list closed before each later query's guard, whose fresh scan would otherwise
  * find no field but this one, labelled by its placeholder.
  * When no query finds a result to choose, the text box gets back what it held before our first query (the text
- * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason. A page
+ * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason. So it is
+ * when the person's Skip ends a wait before anything was chosen (v3 Phase 3: interact.ts's skipTidyContext): the text
+ * put back and the list closed on a fresh, short-capped signal; a result already clicked stands, its list closed the
+ * same way. A page
  * that does not react at all to the first query (no mutation until the cap, and its list shows what it showed before:
  * react-select filters a local list inside our input event, before any wait watches it) ignores untrusted input: the
  * search stops there, needs-your-click, and is never tried another way. Values stay in memory.
@@ -53,8 +56,8 @@ import type { FieldTarget, WidgetOptionRead } from '../types';
 import { isChosen } from './aria';
 import { cleanOptionLabel } from '../option-hash';
 import {
-  activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, closeList, expandedState, openListOf,
-  type WidgetContext,
+  activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, closeList, closingContext, expandedState,
+  openListOf, skipTidyContext, type WidgetContext,
 } from './interact';
 import { chosenLabels, hashOfRead, readList, revealOption, shownOptions } from './options';
 
@@ -146,22 +149,28 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
   let current = target;
   const giveUp = async (why: ReasonCode, blocked = false): Promise<TypeaheadResult> => {
     const widget = current.widget!;
+    const closing = closingContext(ctx);
     if (typed > 0) {
       restore(widget.input ?? input, before);
-      await afterAction(widget, ctx);
+      await afterAction(widget, closing);
     }
-    await closeList(widget, ctx, { activated: false });
+    await closeList(widget, closing, { activated: false });
     return none(why, blocked);
   };
+  // A wait ended early: by the person's Skip, what was typed is put back and the list closed (giveUp on its tidy
+  // context); by the run's own end, nothing more is done.
+  const ended = (): Promise<TypeaheadResult> => (skipTidyContext(ctx) === null ? Promise.resolve(none('internal-error'))
+    : giveUp('internal-error'));
 
   for (const query of queries.slice(0, TYPEAHEAD_MAX_QUERIES)) {
-    if (ctx.signal?.aborted) return none('internal-error');
+    if (ctx.signal?.aborted) return ended();
     // The page hid the rest of the form behind the last query's open list: it is closed before the guard scans.
     if (typed > 0 && current.widget?.hidesFormWhileOpen === true) {
       await closeList(current.widget, ctx, { activated: false });
-      if (ctx.signal?.aborted) return none('internal-error');
+      if (ctx.signal?.aborted) return ended();
     }
     const guarded = await hooks.guard(query);
+    if (ctx.signal?.aborted) return ended();
     if (!guarded.ok) return giveUp(guarded.reason, guarded.blocked);
     current = guarded.target;
     const widget = current.widget;
@@ -171,7 +180,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     if (box.maxLength >= 0 && query.length > box.maxLength) continue;
     if (expandedState(widget) === false) {
       const opened = await activateAndAwait(widget, ctx);
-      if (opened.status === 'aborted') return none('internal-error');
+      if (opened.status === 'aborted') return ended();
       if (opened.status === 'gone') return giveUp('element-not-found');
       if (opened.status !== 'answered') return giveUp('needs-your-click');
     }
@@ -182,7 +191,7 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     // ends there.
     const wait = await awaitList(widget, ctx, { prevHash, capMs: TYPEAHEAD_QUERY_CAP_MS,
       ...(widget.emptyAfterMs === undefined ? {} : { emptyAfterMs: widget.emptyAfterMs }) });
-    if (wait.status === 'aborted') return none('internal-error');
+    if (wait.status === 'aborted') return ended();
     // A page that does not react at all to a query ignores untrusted input: it is never tried another way. A list the
     // page filters at once, inside our input event, has changed before the wait watched it: that is an answer too.
     if (!wait.mutated && !reacted && shownHash(widget) === prevHash) return giveUp('needs-your-click');
@@ -190,9 +199,12 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     const listbox = openListOf(widget);
     if (wait.status !== 'ready' || listbox === null) continue;
     const read = await readList(listbox, { signal: ctx.signal, labelOf: widget.optionLabel });
+    if (ctx.signal?.aborted) return ended();
     const results: WidgetOptionRead[] = read.options.map((option) => ({ label: option.label, disabled: option.disabled }));
     if (results.length === 0) continue;
     const verdict = await hooks.match(results, current, read.complete);
+    // The worker's match can take a while (an AI pick): a Skip meanwhile ends the search as any wait's does.
+    if (ctx.signal?.aborted) return ended();
     if (verdict.choose === null) {
       if (verdict.blocked) return giveUp(verdict.reason, true);
       reason = verdict.reason;
@@ -220,22 +232,35 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
         const held = await afterBridge(widget, ctx, () => answered() && shows());
         const changed = answered() || !sameLabels(chosenLabels(widget, known), before);
         if (held || changed) {
-          await closeList(widget, ctx, { activated: false });
+          await closeList(widget, closingContext(ctx), { activated: false });
           return chosenOf(held && shows());
+        }
+        // A Skip during the bridge's wait: React may hold the choice, so it is written, not verified.
+        if (ctx.signal?.aborted) {
+          await closeList(widget, closingContext(ctx), { activated: false });
+          return chosenOf(false);
         }
       }
     }
     // After a choice the bridge said it made, nothing ends as "nothing chosen": React may hold it.
     const stop = (why: ReasonCode) => (sent ? Promise.resolve(chosenOf(false)) : giveUp(why));
     const option = await revealOption(listbox, picked, { signal: ctx.signal, labelOf: widget.optionLabel });
+    if (ctx.signal?.aborted) return sent ? stop('internal-error') : ended();
     if (option === null) return stop('options-changed');
     if (!assertNotSubmit(option.el, ctx).ok) return stop('needs-your-click');
     const markedBefore = marked(widget, option.el);
     (option.el as HTMLElement).click();
     await afterAction(widget, ctx);
+    // The person's Skip cut the wait for the page's answer short: the click was made, so it stands, read back as it
+    // shows now, and the list is closed.
+    if (ctx.signal?.aborted && skipTidyContext(ctx) !== null) {
+      await closeList(widget, closingContext(ctx), { activated: false });
+      return chosenOf(shows());
+    }
     const closed = openListOf(widget) === null;
     if (!pageChose(widget, option.el, typedNow, closed, markedBefore)) return stop('needs-your-click');
-    await closeList(widget, ctx, { activated: false });
+    // Clicked and answered: the choice stands.
+    await closeList(widget, closingContext(ctx), { activated: false });
     const verified = shows();
     return { chosen: { ...choice, results }, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false,
       typed };

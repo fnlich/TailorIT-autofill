@@ -6,15 +6,9 @@
  * clock.
  */
 import { useEffect, useEffectEvent, useState } from 'react';
+import { animationFrames, type FrameScheduler } from '../page/frames';
 
-/** Calls `callback` before the next repaint, and returns a function that cancels it. */
-export type FrameScheduler = (callback: () => void) => () => void;
-
-/** The browser's animation frames. */
-export const animationFrames: FrameScheduler = (callback) => {
-  const id = requestAnimationFrame(() => callback());
-  return () => cancelAnimationFrame(id);
-};
+export { animationFrames, type FrameScheduler };
 
 /** Whole seconds from `now` until `until` (ms), never below zero. */
 export function secondsLeft(until: number, now: number): number {

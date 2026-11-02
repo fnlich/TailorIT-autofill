@@ -4,8 +4,13 @@ import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { contentSender, pageSender, sentToFrames, startTestWorker, tokenRecord, typeOfSent } from './worker.testkit';
 
 const OPTIONS = pageSender('options.html');
-const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, autoAdvance: true, preapprovedConsent: ['privacy' as const],
-  llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: true }, offerToSaveAnswers: false };
+const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, view: 'minimized' as const,
+  modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' as const, consents: 'required' as const },
+  preapprovedConsent: ['privacy' as const], llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: true },
+  offerToSaveAnswers: false };
+/** CHOSEN as a frame receives it: its content settings. */
+const CHOSEN_CONTENT = { panel: 'in-page', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn },
+  llm: CHOSEN.llm, offerToSaveAnswers: false };
 
 /** Version 1's settings as an install stored them before the owner's amendments, on its defaults. */
 const V1_DEFAULTS = { version: 1, panel: 'side', autoAdvance: false, preapprovedConsent: [],
@@ -25,6 +30,17 @@ describe('settings', () => {
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: CHOSEN } });
   });
 
+  it('keeps Sign-in and Submit on Manual, stored or saved, until their phase ships (v3 Phase 3 review)', async () => {
+    const worker = await startTestWorker();
+    const early = { ...CHOSEN, modes: { ...CHOSEN.modes, signIn: 'auto' as const, submit: 'auto' as const } };
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: early }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: CHOSEN } });
+    // A value stored some other way reads Manual too.
+    const stored = await startTestWorker();
+    await fakeBrowser.storage.local.set({ 'settings:v1': early });
+    expect(await stored.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: CHOSEN } });
+  });
+
   it('refuses settings that do not parse, and keeps what was stored', async () => {
     const worker = await startTestWorker();
     await worker.deliver({ v: 1, type: 'settings/save', settings: CHOSEN }, OPTIONS);
@@ -33,6 +49,12 @@ describe('settings', () => {
       { ...CHOSEN, preapprovedConsent: ['i-did-not-use-ai'] },
       { ...CHOSEN, extra: true },
       { ...CHOSEN, version: 1 },
+      { ...CHOSEN, version: 3 },
+      { ...CHOSEN, autoAdvance: true },
+      { ...CHOSEN, view: 'folded' },
+      { ...CHOSEN, modes: { ...CHOSEN.modes, consents: 'some' } },
+      { ...CHOSEN, modes: { ...CHOSEN.modes, agentSkip: undefined } },
+      { ...CHOSEN, llm: { ...CHOSEN.llm, answerAll: true } },
       { ...CHOSEN, llm: { ...CHOSEN.llm, whenForbidden: 'sometimes' } },
       { ...CHOSEN, llm: { tiebreak: true, classify: true, drafts: true } },
     ]) {
@@ -48,7 +70,7 @@ describe('settings', () => {
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: DEFAULT_SETTINGS } });
   });
 
-  it('migrates version 1 settings still on its defaults to version 3’s, and stores them (the owner’s amendments)', async () => {
+  it('migrates version 1 settings still on its defaults to version 4’s, and stores them (the owner’s amendments)', async () => {
     const worker = await startTestWorker({
       before: async () => fakeBrowser.storage.local.set({ 'settings:v1': V1_DEFAULTS }),
     });
@@ -62,10 +84,13 @@ describe('settings', () => {
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
-      version: 3, panel: 'in-page', autoAdvance: true, preapprovedConsent: ['privacy', 'marketing'],
-      // The AI turned off (tiebreak and classification): answers stay off, drafts as the person set them (MINOR 4);
-      // version 3's switch takes its default, and acts only while answers are on.
-      llm: { tiebreak: false, classify: false, drafts: true, answers: false, answerAll: true, confirmDrafts: false,
+      version: 4, panel: 'in-page', view: 'expanded',
+      // Auto-advance became the Next mode; version 3's `all` answers took their default (All), and act only while
+      // answers are on; the other modes take theirs.
+      modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' },
+      preapprovedConsent: ['privacy', 'marketing'],
+      // The AI turned off (tiebreak and classification): answers stay off, drafts as the person set them (MINOR 4).
+      llm: { tiebreak: false, classify: false, drafts: true, answers: false, confirmDrafts: false,
         whenForbidden: 'profile-only' },
       telemetry: { optIn: true }, offerToSaveAnswers: false,
       // Interpretation 2 was on version 1's default (off), so it takes version 2's.
@@ -73,16 +98,32 @@ describe('settings', () => {
     } } });
   });
 
-  it('migrates version 2 settings to version 3’s, every choice kept and the `all` answers on (the owner’s decision of 2026-11-01)', async () => {
-    const { llm, ...rest } = CHOSEN;
-    const { answerAll: _answerAll, ...v2llm } = llm;
-    const v2 = { ...rest, version: 2, llm: { ...v2llm, answers: false, whenForbidden: 'ask' } };
+  it('migrates version 2 settings to version 4’s, every choice kept and the `all` answers on (the owner’s decision of 2026-11-01)', async () => {
+    const { modes: _modes, view: _view, version: _version, ...rest } = CHOSEN;
+    const v2 = { ...rest, version: 2, autoAdvance: true, llm: { ...CHOSEN.llm, answers: false, whenForbidden: 'ask' } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v2 }) });
-    const expected = { ...CHOSEN, llm: { ...CHOSEN.llm, answers: false, answerAll: true, whenForbidden: 'ask' } };
+    const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes, next: 'auto', ai: 'all' },
+      llm: { ...CHOSEN.llm, answers: false, whenForbidden: 'ask' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
       data: { settings: expected } });
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
-    expect(DEFAULT_SETTINGS.llm.answerAll).toBe(true);
+  });
+
+  it('migrates version 3 settings to version 4’s: auto-advance is the Next mode, the `all` answers the AI answers mode (v3 Phase 3)', async () => {
+    const { modes: _modes, view: _view, ...rest } = CHOSEN;
+    for (const [autoAdvance, answerAll] of [[true, false], [false, true]] as const) {
+      const v3 = { ...rest, version: 3, autoAdvance, llm: { ...CHOSEN.llm, answerAll } };
+      const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v3 }) });
+      // Every other choice kept; the consents take the owner's default (All); the view its default (Expanded).
+      const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes,
+        next: autoAdvance ? 'auto' : 'manual', ai: answerAll ? 'all' : 'profile' } };
+      expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+        data: { settings: expected } });
+      expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+    }
+    expect(DEFAULT_SETTINGS.modes).toEqual({ signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual',
+      consents: 'all', ai: 'all', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
+    expect(DEFAULT_SETTINGS.view).toBe('expanded');
   });
 
   it('keeps the AI off for a person who turned it off in version 1: no drafts, no answers (the Phase E review, MINOR 4)', async () => {
@@ -113,8 +154,7 @@ describe('settings', () => {
       .toEqual({ ok: true, data: { settings: CHOSEN } });
     const pushed = sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'settings/changed')
       .sort((a, b) => a.tabId - b.tabId);
-    const message = { v: 1, type: 'settings/changed', settings: { panel: 'in-page', autoAdvance: true, llm: CHOSEN.llm,
-      offerToSaveAnswers: false } };
+    const message = { v: 1, type: 'settings/changed', settings: CHOSEN_CONTENT };
     expect(pushed).toEqual([
       { tabId: 7, message, options: { frameId: 0, documentId: 'doc-1' } },
       { tabId: 8, message, options: { frameId: 3, documentId: 'doc-3' } },
@@ -134,8 +174,7 @@ describe('settings', () => {
     const offline = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': CHOSEN }) });
     expect(await offline.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender())).toEqual({
       ok: true,
-      data: { frameId: 0, connected: false, settings: { panel: 'in-page', autoAdvance: true, llm: CHOSEN.llm,
-        offerToSaveAnswers: false } },
+      data: { frameId: 0, connected: false, settings: CHOSEN_CONTENT, launcher: { top: null, hidden: false } },
     });
     const connected = await startTestWorker({ token: tokenRecord() });
     expect(await connected.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: false }, contentSender({ frameId: 2 })))

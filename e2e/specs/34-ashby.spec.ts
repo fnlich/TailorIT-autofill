@@ -16,8 +16,9 @@
  * - the resume uploaded by the page (its ApiCreateFileUploadHandle) and verified once Ashby shows it uploaded;
  * - every change saved by the page (its ApiSetFormValue), the date's calendar never opened, nothing Ashby shows beside
  *   the fields pressed (Submit, the uploads, Delete, the autofill uploader, the tabs); the SMS consent beside the phone
- *   never touched, so its ApiSubmitCandidateTextingConsent is never sent (one click saves it at once; Phase 3's
- *   Consents: All mode is the one that will tick it, deliberately);
+ *   follows the Consent boxes mode (v3 Phase 3): under All agreements, the default, its Yes ("given") is chosen like
+ *   every agreement, and its ApiSubmitCandidateTextingConsent goes to Ashby at once; under Required only it is never
+ *   touched, so never sent;
  * - every event untrusted, the fillers' or the declared Escape (a keydown and a keyup on a combobox's input only), never
  *   a mousedown, a pointer event or a focus; nothing submitted (assertTrapInvariants).
  * A dry run on the same page (.../a5b2) writes nothing: the page saves nothing, and every row is planned only.
@@ -27,6 +28,7 @@
  * the application before its form is opened.
  */
 import type { Page } from '@playwright/test';
+import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf, row, type Extension } from '../helpers/extension.ts';
 import { GOLDEN } from '../helpers/golden.ts';
@@ -170,10 +172,11 @@ test.describe("Ashby's application form", () => {
     }
     expect(log.calendars).toBe(0);
     expect(log.pressed).toEqual([]);
-    // The SMS consent: never touched, so never sent (a click saves it on Ashby's server at once).
-    expect(ops).not.toContain('ApiSubmitCandidateTextingConsent');
-    expect(log.saves.filter((save) => save.op === 'ApiSubmitCandidateTextingConsent')).toEqual([]);
-    expect(log.values.communicationConsent).toBeUndefined();
+    // The SMS consent under Consent boxes: All agreements (the default, v3 Phase 3): its Yes chosen like every agreement,
+    // which the page sends Ashby at once (once).
+    expect(log.values.communicationConsent).toBe('given');
+    expect(log.saves.filter((save) => save.op === 'ApiSubmitCandidateTextingConsent')).toHaveLength(1);
+    expect(ops).toContain('ApiSubmitCandidateTextingConsent');
 
     // No mouse, pointer or focus event; the only keys a keydown and a keyup on a combobox's input (Escape).
     expect(await ourEvents(page, ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'focus', 'focusin'])).toEqual([]);
@@ -181,6 +184,23 @@ test.describe("Ashby's application form", () => {
     expect(keys.every((event) => event.endsWith(' input')), keys.join(', ')).toBe(true);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(ASHBY_WIDGETS.late), activation: ['keydown', 'keyup'] });
+  });
+
+  test('under Consent boxes: Required only, the SMS consent is never touched, so never sent (v3 Phase 3)', async ({ extContext, connected: ext, routeLog }) => {
+    test.setTimeout(120_000);
+    routeLog.serve(routes);
+    await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } } });
+    const page = await extContext.newPage();
+    const ops = apiOps(page);
+    await openForm(ext, page, ASHBY_WIDGETS.now);
+    const tabId = await ext.fill(page);
+    expect((await ext.settled(tabId, { timeout: 90_000 })).status).toBe('review');
+    const log = await pageValue<Log>(page, '__ashby');
+    expect(log.values._systemfield_name).toBe(GOLDEN.full);
+    expect(ops).not.toContain('ApiSubmitCandidateTextingConsent');
+    expect(log.saves.filter((save) => save.op === 'ApiSubmitCandidateTextingConsent')).toEqual([]);
+    expect(log.values.communicationConsent).toBeUndefined();
   });
 
   test('a dry run writes nothing: no answer saved, nothing pressed', async ({ extContext, connected: ext, routeLog }) => {

@@ -89,7 +89,8 @@ describe('plan/request', () => {
 
   it('plans with the settings as saved', async () => {
     const worker = await startTestWorker({ token: tokenRecord() });
-    const settings = { ...DEFAULT_SETTINGS, autoAdvance: true, preapprovedConsent: ['privacy'] };
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto', consents: 'required' },
+      preapprovedConsent: ['privacy'] };
     await worker.deliver({ v: 1, type: 'settings/save', settings }, pageSender('options.html'));
     await planRequest(worker, await beginRun(worker));
     expect(worker.core.calls.planFrame[0]!.settings).toEqual(settings);

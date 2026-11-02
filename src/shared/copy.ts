@@ -49,6 +49,8 @@ const NOTICES = {
   // for the owner's review.
   'policy-profile-only': 'This posting says AI-assisted applications are not allowed, so only your TailorIT profile was used. Nothing was sent to the AI.',
   'ai-attestation': 'This form asks you to confirm you did not use AI, so only your TailorIT profile was used and nothing was sent to the AI. That box is left for you.',
+  // v3 Phase 3 (Autofill after page turn: Manually): a draft for the owner's review.
+  'page-turned': 'This is a new page of the application. Choose Continue to fill it.',
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -172,6 +174,8 @@ const REASONS = {
   // The owner's decisions of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): drafts for the owner's review.
   'consent-optional-unticked': "This box is optional and you haven't allowed it in Settings, so it was left unticked.",
   'ai-attestation-ai-used': "This fill used AI, so ticking that you didn't use AI would be untrue. It was left for you.",
+  // v3 Phase 3: the side panel's Skip. A draft for the owner's review.
+  'skipped-by-you': 'You skipped this field while it was being filled, so it was left for you.',
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;
@@ -284,20 +288,49 @@ const REPORT = {
   step: (index: number, of?: number) => (of === undefined ? `Step ${index + 1}` : `Step ${index + 1} of ${of}`),
   dryRun: 'Dry run: nothing was written.',
   hiddenIgnored: (count: number) => (count === 1 ? '1 hidden field was left alone.' : `${count} hidden fields were left alone.`),
-  // The review's completion: counts, never a percent. Ready rows over ready and waiting ones; a skipped row that needed
-  // nothing counts in neither. Drafts for the owner's review.
-  completion: 'Completion',
-  completionValue: (ready: number, of: number) => `${ready} of ${of} ready`,
-  completionValueDryRun: (ready: number, of: number) => `${ready} of ${of} would be filled`,
-  completionText: (ready: number, of: number) => `${ready} of ${of} fields ready`,
-  completionTextDryRun: (ready: number, of: number) => `${ready} of ${of} fields would be filled`,
+  // The progress (v3 Phase 3, the owner's choice of Jobright's percent; it was counts only): "Scanning the page…" while
+  // the form is read, "Autofilling… 78%" while it fills, then "9 of 12 required fields filled · 75%". The percent is of
+  // the required fields filled (shared/report.ts progressOf), of every field when none is required. Drafts for the
+  // owner's review.
+  scanning: 'Scanning the page',
+  scanningTitle: 'Reading the form',
+  scanningHelp: 'TailorIT is checking this page for what the application asks.',
+  autofilling: 'Autofilling',
+  percent: (value: number) => `${value}%`,
+  progressFilled: (filled: number, of: number, requiredOnly: boolean) =>
+    `${filled} of ${of} ${requiredOnly ? 'required fields' : 'fields'} filled`,
+  progressDryRun: (filled: number, of: number, requiredOnly: boolean) =>
+    `${filled} of ${of} ${requiredOnly ? 'required fields' : 'fields'} would be filled`,
+  progressLabel: 'Progress',
+  progressText: (filled: number, of: number, requiredOnly: boolean, percent: number) =>
+    `${filled} of ${of} ${requiredOnly ? 'required fields' : 'fields'} filled, ${percent}%`,
+  progressWorking: (percent: number, requiredOnly: boolean) =>
+    `Autofilling, ${percent}% of the ${requiredOnly ? 'required ' : ''}fields filled`,
+  /** The progress line's toggle: the field lists shown or folded. */
+  showFields: 'Show the fields',
+  hideFields: 'Hide the fields',
+  /** The field lists' two groups, as Jobright names them. */
+  requiredGroup: 'Required',
+  optionalGroup: 'Optional',
+  /** A row's state, said to a screen reader beside its icon. */
+  rowStates: { filled: 'Filled', missing: 'Needs you', working: 'Being filled', none: 'Left alone' },
+  /** The row's label is a button that shows the field on the page; its chevron folds the details. */
+  goTo: (label: string) => `Show "${label}" on the page`,
+  details: (label: string) => `Details of "${label}"`,
+  /** What the run left aside, under the lists (v3 Phase 3 review): the hidden fields left alone. */
+  moreDetails: 'More details',
+  /** Skip, offered on the field being filled after 2 s on it. */
+  skip: 'Skip',
+  skipLabel: (label: string) => `Skip "${label}"`,
+  /** A repeatable section's row: "Education · 2 of 3 added". */
+  sectionAdded: (name: string, added: number, of: number) => `${name} · ${added} of ${of} added`,
+  repeatables: { experience: 'Work experience', education: 'Education', language: 'Languages' },
   /** Worded apart from the launcher's "Review: N fields need you", which also counts the Add buttons left. */
   needsYou: (count: number) => (count === 1 ? '1 field is left for you' : `${count} fields are left for you`),
   needsYouDryRun: (count: number) => (count === 1 ? '1 field would be left for you' : `${count} fields would be left for you`),
-  requiredReady: (ready: number, of: number) => `Required: ${ready} of ${of} ready`,
-  requiredReadyDryRun: (ready: number, of: number) => `Required: ${ready} of ${of} would be filled`,
   allClear: 'Nothing needs you. Check the form, then submit it yourself.',
-  tally: (count: number, status: string) => `${count} ${status}`,
+  /** A form among several, under its own name, when the tab holds more than one or one embedded in its page. */
+  frameLine: (name: string, status: string) => `${name} · ${status}`,
 } as const;
 
 /** The side panel (src/ui/panel). */
@@ -330,6 +363,36 @@ const PANEL = {
   extensionGone: 'The extension was updated or removed. Close this panel and open it again.',
   /** The header's gear: the extension's own settings. */
   settings: 'Settings',
+  /** The gear's menu (v3 Phase 3): the modes, then a link to every setting. Drafts for the owner's review. */
+  menu: 'Settings and modes',
+  modes: 'Modes',
+  allSettings: 'All settings',
+  /** The launcher hidden by the person (v3 Phase 3): the toolbar icon opens this panel, which shows it again. */
+  launcherHidden: {
+    visit: 'The TailorIT button is hidden on this page until you visit it again.',
+    site: 'The TailorIT button is hidden on this site.',
+    everywhere: 'The TailorIT button is hidden on every site.',
+  },
+  showLauncher: 'Show the TailorIT button again',
+  /** After Show: the report page (a tab of its own) has it back at once; the browser's side panel keeps it hidden on
+   *  the page it shows until the panel closes. */
+  launcherShown: 'The TailorIT button is back on the page.',
+  launcherShownAfterPanel: 'The TailorIT button shows on the page again once you close this panel.',
+  /** A page Autofill does not work on (v3 Phase 3). Drafts for the owner's review. */
+  unsupported: {
+    heading: "Autofill isn't supported on this page",
+    intro: 'TailorIT Autofill fills job applications on these sites:',
+    // Workday joins the list once it has an adapter of its own (v3 Phase 3 review).
+    sites: [
+      { name: 'Greenhouse', hosts: 'job-boards.greenhouse.io, boards.greenhouse.io' },
+      { name: 'Lever', hosts: 'jobs.lever.co' },
+      { name: 'Ashby', hosts: 'jobs.ashbyhq.com' },
+    ],
+    embedded: 'A company page that shows one of these forms inside it works too.',
+    /** A page on one of those sites that opened before the extension could read it (installed or updated since). */
+    reloadHeading: 'Reload this page to use Autofill',
+    reloadIntro: 'This page opened before TailorIT Autofill could read it. Reload it, and Autofill works here.',
+  },
   /** The links at the panel's foot, to the person's TailorIT. */
   autofillInfo: 'Your autofill information',
   openJobs: 'Open TailorIT Jobs',
@@ -390,9 +453,19 @@ const JOB = {
     unavailable: "TailorIT couldn't add the job just now. Try again.",
   } satisfies Record<AddJobOutcome, string>,
   via: (platform: string) => `${platform} application`,
-  match: 'match',
-  matchLabel: (percentage: number) => `${percentage}% match`,
+  /** The match's band by its percentage (v3 Phase 3, Jobright's wording): MATCH_BANDS. Drafts for the owner's review. */
+  bands: { excellent: 'Excellent', good: 'Good', fair: 'Fair', poor: 'Poor' },
+  bandLine: { excellent: 'Excellent match', good: 'Good match', fair: 'Fair match', poor: 'Low match' },
+  matchLabel: (percentage: number, band: string) => `${percentage}% match: ${band}`,
+  matchTip: (matched: number, total: number) =>
+    `${matched} of ${total} keywords in this posting are in your resume. The score is how well your resume covers what the job asks for.`,
+  matchTipLabel: 'About the match score',
   keywords: (matched: number, total: number) => `${matched} of ${total} keywords`,
+  /** The badge on a job the tracker holds as Applied or later. */
+  applied: 'Applied',
+  /** The documents box (v3 Phase 3, Jobright's "Your Autofill Information" box). */
+  documents: 'What the fill uses',
+  autofillInfo: 'Your autofill information',
   noKeywords: 'This posting names no keywords to match.',
   unreadable: "This resume's text couldn't be read, so it has no match score.",
   attaches: 'Attaches',
@@ -513,9 +586,9 @@ const OPTIONS = {
     /** The first-run disclosure, shown before Connect (the store's "prominent disclosure"). A draft for the owner. */
     disclosureHeading: 'Before you connect',
     disclosure: [
-      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do.',
-      'While its side panel shows an application page, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings and notes on each application\'s progress, never your answers.',
-      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Unless you turn it off below, questions about work authorization, sponsorship, a visa, a clearance, age, criminal history or pay that your profile does not answer, and attention checks, get the AI\'s best guess too, from the question and its options alone. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
+      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do. Unless you choose Required only under Modes, it ticks every agreement box a form shows, news, job alerts and text messages included, except a binding clause the form does not require (an arbitration agreement, say) and a box saying you did not use AI, which it ticks only when the fill used no AI. Some sites (Ashby) send a text message consent to the employer the moment it is ticked.',
+      'When an application page on those sites loads, and again while its side panel shows one, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match before you open the panel; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings, where you put or hid its button on each site, and notes on each application\'s progress, never your answers.',
+      'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Unless you choose Profile only for AI answers under Modes, questions about work authorization, sponsorship, a visa, a clearance, age, criminal history or pay that your profile does not answer, and attention checks, get the AI\'s best guess too, from the question and its options alone. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
     connect: 'Connect to TailorIT',
@@ -550,14 +623,47 @@ const OPTIONS = {
     inPage: 'A panel on the application page',
     inPageHelp: "The panel on the page opens from the launcher beside the form. On a form inside another site's page that is too small for it, the side panel opens instead.",
   },
-  filling: {
-    heading: 'Filling',
-    autoAdvance: 'Go to the next step for me',
-    autoAdvanceHelp: 'On applications with several steps, press Next once a step is complete, settled and has nothing flagged. The final Submit is never pressed: you always submit yourself.',
+  /** Options › Modes (v3 Phase 3): each behaviour the person chooses, also in the side panel's gear menu. Sign-in,
+   *  Submit and the agent's skip rules are stored and shown once they exist (Phases 4 and 5). Drafts for the owner's
+   *  review. */
+  modes: {
+    heading: 'Modes',
+    intro: 'How much TailorIT Autofill does by itself. The gear in the side panel shows these too.',
+    next: {
+      name: 'Next page',
+      manual: 'Manual',
+      auto: 'Auto',
+      help: 'Auto presses Next once a page of the application is filled, settled and has nothing flagged. The final Submit is never pressed: you always submit yourself.',
+    },
+    afterPageTurn: {
+      name: 'Autofill after page turn',
+      auto: 'Automatically',
+      manual: 'Manually',
+      help: 'On applications with several pages, fill each new page as it appears, or wait until you choose Continue on it.',
+    },
+    consents: {
+      name: 'Consent boxes',
+      all: 'All agreements',
+      required: 'Required only',
+      help: 'All ticks every agreement box the form shows: privacy, terms, accuracy, keeping your application on file and future jobs, background checks, news and job alerts, and text messages. Required only ticks a box the form requires, and an optional one only when you pre-approve its kind on the options page, under Consent boxes. A box saying you did not use AI is ticked only when the fill used no AI, in either.',
+    },
+    ai: {
+      name: 'AI answers',
+      all: 'All',
+      profile: 'Profile only',
+      help: 'All lets the AI answer work authorization, sponsorship, visa, clearance, age, criminal history, pay and "select PURPLE to show you read this" questions your profile doesn\'t answer, marked "AI guess" unless your resume settles it: only the question and its options are sent. Profile only answers them from your profile, and leaves the rest for you. It acts while "Answer the questions my profile does not" is on.',
+    },
+    view: {
+      name: 'Side panel view',
+      expanded: 'Expanded',
+      minimized: 'Minimized',
+      help: 'Minimized folds the review to its progress line: choose the line to see the fields.',
+    },
   },
   consent: {
     heading: 'Consent boxes',
-    intro: 'A box the form requires is ticked for you, since you cannot apply without it. An optional box is ticked only when you pre-approve its kind here; the usual ones start on, marketing and text messages start off, and an optional box you have not allowed is left unticked.',
+    intro: 'Under Consent boxes: Required only (Modes, above), a box the form requires is ticked for you, since you cannot apply without it, and an optional box only when you pre-approve its kind here; the usual ones start on, marketing and text messages start off. Under All agreements every kind is ticked.',
+    allMode: 'Consent boxes is set to All agreements, so every kind below is ticked. To choose kind by kind, set Consent boxes to Required only under Modes, above.',
     categories: CONSENT,
     certifyWarning: 'Certifying states that everything in an application is true and complete. Turn this on only if you check every application before you submit it.',
     never: 'A statement that you did not use AI is ticked only when the fill used no AI at all, so it is true. Otherwise it is left for you.',
@@ -573,8 +679,6 @@ const OPTIONS = {
     draftsHelp: 'Drafts answers to questions like "Why this company?" from your resume and the posting, and writes them in.',
     answers: 'Answer the questions my profile does not',
     answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess, marked "AI guess".',
-    answerAll: "Let the AI answer legal, pay and attention-check questions your profile doesn't answer",
-    answerAllHelp: 'Work authorization, sponsorship, visa, clearance, age, criminal history, pay and "select PURPLE to show you read this" questions get the AI\'s most likely answer for you, marked "AI guess" unless your resume settles it. Only the question and its options are sent, never your profile\'s answers, and a question your profile answers is never asked. Self-identification questions still take your answer or the form\'s decline option.',
     confirmDrafts: 'Wait for me to confirm each draft',
     confirmDraftsHelp: 'A draft waits in the review until you edit or confirm it, and the form is not ready until you have.',
     whenForbidden: {
@@ -663,6 +767,17 @@ export const COPY = {
   launcherReview: (count: number) => (count === 1 ? 'Review: 1 field needs you' : `Review: ${count} fields need you`),
   launcherError: 'Something went wrong. Choose to try again.',
   launcherNotConnected: 'Connect TailorIT Autofill to TailorIT in its settings, then try again.',
+  /** The launcher at the page's right edge (v3 Phase 3): its progress while it fills, its grip and its hide menu.
+   *  Drafts for the owner's review. */
+  launcherFilling: (percent: number) => `Autofilling, ${percent}%`,
+  launcherMove: 'Drag up or down to move the TailorIT button',
+  launcherHide: {
+    open: 'Hide the TailorIT button',
+    nextVisit: 'Hide until next visit',
+    site: 'Hide on this site',
+    everywhere: 'Hide everywhere',
+    note: 'The TailorIT Autofill icon in the toolbar brings it back.',
+  },
   dismiss: 'Dismiss',
   /** The review's marks of a field the AI wrote, and of one it answered with nothing to go on (the owner's
    *  amendments): its chips beside the row's status. */

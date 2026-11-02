@@ -126,7 +126,7 @@ export interface GuardContext {
   /** The profile's collision index; built from `profile` when absent. */
   profileIndex?: ProfileIndex;
   savedAnswers: readonly SavedAnswer[];
-  /** TailorIT's AI may answer the closed categories AI_OPENED_CATEGORIES lists (settings.llm.answerAll, with answers
+  /** TailorIT's AI may answer the closed categories AI_OPENED_CATEGORIES lists (settings.modes.ai 'all', with answers
    *  on and the AI allowed for the frame): the category policy then lets its picks and answers fill them. */
   answerAll?: boolean;
 }

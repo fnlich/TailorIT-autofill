@@ -333,7 +333,7 @@ export function namesSensitiveTopic(text: string): boolean {
 
 /**
  * What a sensitive term names (the owner's decision of 2026-11-01; TailorIT's SENSITIVE_TOPICS): with
- * settings.llm.answerAll on, a question of the open topics (OPEN_SCREEN_TOPICS) may be answered by TailorIT's AI,
+ * settings.modes.ai 'all', a question of the open topics (OPEN_SCREEN_TOPICS) may be answered by TailorIT's AI,
  * and one of any other never is.
  */
 export const SCREEN_TOPICS = ['authorization', 'self_identification', 'age', 'pay', 'consent', 'criminal',
@@ -554,7 +554,7 @@ export function screenForClassify(spec: Pick<FieldSpec, 'label' | 'description' 
 }
 
 /**
- * The topics a field's own text names, for an AI answer of TailorIT's `all` scope (settings.llm.answerAll, the owner's
+ * The topics a field's own text names, for an AI answer of TailorIT's `all` scope (settings.modes.ai 'all', the owner's
  * decision of 2026-11-01), or null when it may get none: its label, description, section's words and options may name
  * only open topics (OPEN_SCREEN_TOPICS; a consent only in an attention check's own words), none of its options is an
  * EEO answer the vocabulary knows, and a decline option ("Prefer not to say") stands only beside a question that names

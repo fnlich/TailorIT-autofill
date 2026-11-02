@@ -84,6 +84,12 @@ export interface ReportHeader {
    *  that cannot (the generic adapter). `progress`: the adapter's progress line ("Step 2 of 4"), visible page text. */
   step?: { index: number; progress?: string | undefined };
   now: number;
+  /** While the run fills (v3 Phase 3): the field written now and those still to be written. Keys only. */
+  filling?: FrameReport['filling'];
+  /** The step's repeatable sections, counted (v3 Phase 3). */
+  repeatables?: FrameReport['repeatables'];
+  /** The run rests in a working status (FrameReport.resting): waiting for the person's own Next. */
+  resting?: boolean;
 }
 
 /** A progress line as a report carries it: whitespace collapsed, at most MAX_STEP_PROGRESS characters, none when
@@ -112,6 +118,11 @@ export function buildReport(header: ReportHeader, rows: readonly FillResult[]): 
     pauseReason: header.status === 'handoff' ? header.pauseReason : null,
     ...(header.step === undefined ? {} : { step: stepOf(header.step) }),
     fields: rows.slice(0, MAX_REPORT_ROWS),
+    ...(header.filling === undefined ? {} : { filling: { current: header.filling.current,
+      pending: header.filling.pending.slice(0, MAX_REPORT_ROWS) } }),
+    ...(header.repeatables === undefined || header.repeatables.length === 0 ? {}
+      : { repeatables: header.repeatables.map((count) => ({ ...count })) }),
+    ...(header.resting === true ? { resting: true as const } : {}),
     notices: header.notices.forReport(),
     counters: header.counters,
     updatedAt: Math.max(0, Math.floor(header.now)),

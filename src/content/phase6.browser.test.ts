@@ -15,7 +15,7 @@ import type { FillResult } from '../core/types/fill';
 import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import type { Settings } from '../core/types/settings';
 import { loadFixture, logEvents, removeFixtures, type Fixture } from '../dom/fixture.testkit';
-import type { FrameReport } from '../shared/report';
+import { leftForPerson, rowProgressOf, type FrameReport } from '../shared/report';
 import { createFakeWorker, FAKE_DRAFT, FAKE_TASK_ID, testVocab, trapUrl, type FakeWorker,
   type FakeWorkerOptions } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
@@ -155,6 +155,80 @@ describe('drafts', () => {
   });
 });
 
+/** A form whose fields the run leaves for the person (v3 Phase 3 review): a question no rule knows, a security
+ *  clearance box (legal, never from the profile), and a page's own dropdown (an ARIA combobox: its pick a click on an
+ *  option of a list outside the box). */
+const LEFT = `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
+  body { font: 16px/1.5 system-ui, sans-serif; color: #222; background: #fff; }
+  label, #q { display: block; margin-top: 12px; } input[type=text], #cb { display: block; width: 320px; }
+  #cb { border: 1px solid #888; padding: 4px; } [role=listbox] { margin: 0; padding: 0; list-style: none; border: 1px solid #888; }
+  [role=listbox][hidden] { display: none; } [role=option] { padding: 4px; }
+  </style></head><body><main><h1>Engineer</h1><form action="/__submitted" method="post">
+    <label for="first">First name</label><input type="text" id="first" name="first">
+    <label for="office">Which of our offices would you visit first? *</label><input type="text" id="office" name="office" required>
+    <label><input type="checkbox" id="clearance" name="clearance" required> I hold a security clearance *</label>
+    <span id="q">Which team would you like to meet? *</span>
+    <div id="cb" role="combobox" tabindex="0" aria-labelledby="q" aria-controls="lb" aria-expanded="false" aria-required="true">Select...</div>
+    <ul id="lb" role="listbox" hidden><li role="option" id="o1">Platform</li><li role="option" id="o2">Data</li></ul>
+    <button type="submit">Submit application</button>
+  </form>
+  <script>
+    const cb = document.getElementById('cb');
+    const lb = document.getElementById('lb');
+    const show = (open) => { lb.hidden = !open; cb.setAttribute('aria-expanded', String(open)); };
+    cb.addEventListener('click', () => show(lb.hidden));
+    for (const option of lb.querySelectorAll('[role=option]')) {
+      option.addEventListener('click', () => { cb.textContent = option.textContent; show(false); });
+    }
+  </script></main></body></html>`;
+
+/** The person's own click at an element. */
+async function personClicks(fixture: Fixture, id: string): Promise<void> {
+  const el = byId(fixture, id);
+  el.scrollIntoView({ block: 'center' });
+  const box = el.getBoundingClientRect();
+  await userEvent.click(fixture.frame, { position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
+}
+
+describe('the review’s lists flip a field left for the person as they fill it, and back (v3 Phase 3 review)', () => {
+  const flipped = (worker: FakeWorker, label: string) => rowOf(lastReport(worker), label).detail?.filledByYou === true;
+
+  it('flips a field back when the person clears it again', async () => {
+    const started = await start(LEFT, 'p3-clear-back');
+    expect(await started.runtime.fill()).toBe('review');
+    const office = 'Which of our offices would you visit first?';
+    await personTypes(started.fixture, 'office', 'Lisbon');
+    await vi.waitFor(() => expect(flipped(started.worker, office)).toBe(true));
+    await userEvent.keyboard('{Backspace>6/}');
+    await vi.waitFor(() => expect(flipped(started.worker, office)).toBe(false));
+    expect(rowProgressOf(rowOf(lastReport(started.worker), office))).toBe('missing');
+  });
+
+  it('flips a box when the person ticks it, and back when they untick it', async () => {
+    const started = await start(LEFT, 'p3-untick');
+    expect(await started.runtime.fill()).toBe('review');
+    const clearance = 'I hold a security clearance';
+    expect(rowOf(lastReport(started.worker), clearance)).toMatchObject({ kind: 'checkbox', needsUserAction: true,
+      wrote: false });
+    await personClicks(started.fixture, 'clearance');
+    await vi.waitFor(() => expect(flipped(started.worker, clearance)).toBe(true));
+    await personClicks(started.fixture, 'clearance');
+    await vi.waitFor(() => expect(flipped(started.worker, clearance)).toBe(false));
+  });
+
+  it('flips a page’s own dropdown once the person picks an option in its list', async () => {
+    const started = await start(LEFT, 'p3-dropdown');
+    expect(await started.runtime.fill()).toBe('review');
+    const team = 'Which team would you like to meet?';
+    expect(rowOf(lastReport(started.worker), team)).toMatchObject({ needsUserAction: true, wrote: false });
+    await personClicks(started.fixture, 'cb');
+    await vi.waitFor(() => expect(byId(started.fixture, 'lb').hidden).toBe(false));
+    await personClicks(started.fixture, 'o2');
+    await vi.waitFor(() => expect(flipped(started.worker, team)).toBe(true));
+    expect(JSON.stringify(lastReport(started.worker))).not.toContain('"Data"');
+  });
+});
+
 describe('the person’s fix of a flagged field (Requirement F)', () => {
   it('marks the row userEdited once, at rest, and reports it again', async () => {
     const started = await start(FORM, 'p6-fix');
@@ -167,7 +241,11 @@ describe('the person’s fix of a flagged field (Requirement F)', () => {
     await vi.waitFor(() => expect(started.worker.reports.length).toBeGreaterThan(reports));
     expect(started.worker.reports.length).toBe(reports + 1);
     expect(rowOf(lastReport(started.worker), 'Which of our offices would you visit first?')).toMatchObject({
-      status: 'flagged', detail: { userEdited: true } });
+      status: 'flagged', detail: { userEdited: true, filledByYou: true } });
+    // v3 Phase 3: the review's lists flip it to filled at once (a flag, never the answer), and it is no longer left.
+    const office = rowOf(lastReport(started.worker), 'Which of our offices would you visit first?');
+    expect([rowProgressOf(office), leftForPerson(office)]).toEqual(['filled', false]);
+    expect(JSON.stringify(lastReport(started.worker))).not.toContain('Lisbon');
     // A field the run wrote (verified) the person changed is theirs, and no fix of a flagged field.
     await personTypes(started.fixture, 'first', 'y');
     await vi.waitFor(() => expect(rowOf(lastReport(started.worker), 'First name').reason).toBe('changed-by-you'));

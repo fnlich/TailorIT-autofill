@@ -21,12 +21,15 @@
  * IntersectionObserver v2 judges our controls (visible.ts): no transform, opacity below 1, filter, backdrop-filter or
  * will-change on the anchor, the launcher, a notice, the card, the panel, an Edit with AI button or their buttons,
  * hover included (an Edit with AI button widens by showing its label). Animations are paint-only and run on
- * descendants (the launcher's spinner is its ::after); no url() anywhere.
+ * descendants (the launcher's spinner is its ::after); no url() anywhere. The top frame's launcher sits in a white tab
+ * at the window's right edge (v3 Phase 3, edge.ts), its close button above it and its grip under it, 8 px apart and the
+ * launcher without its own shadow there, so neither it nor its badge is ever painted over them; the hide menu opens to
+ * its left with a shadow too small to reach the tab.
  */
 import { BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, SHADOWS, TONES } from '../../shared/palette';
 
 /** A notice's icon, and the launcher's badge, per tone. */
-const TONE_RULES = (['warning', 'danger', 'info', 'success'] as const).map((tone) => [
+const TONE_RULES = (['warning', 'danger', 'info', 'success', 'brand'] as const).map((tone) => [
   `.notice[data-tone="${tone}"] .icon { color: ${TONES[tone].fg}; }`,
   `.badge[data-tone="${tone}"] { background: ${TONES[tone].fg}; }`,
 ].join('\n')).join('\n');
@@ -59,6 +62,31 @@ svg.icon, svg.mark { display: block; flex: none; }
 .badge svg { display: block; }
 @keyframes tailorit-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .launcher[data-state="running"]::after { animation: none; } }
+.edge { pointer-events: auto; position: fixed; top: 120px; right: 0; box-sizing: border-box; display: flex;
+  flex-direction: column; align-items: center; gap: 8px; width: 46px; margin: 0; padding: 4px 0 6px 2px;
+  border: 1px solid ${NEUTRAL.line}; border-right: 0; border-radius: 14px 0 0 14px; background: ${WHITE};
+  box-shadow: ${IN_PAGE_SHADOWS.card}; font: 13px/1.45 ${FONT_STACK}; color: ${NEUTRAL.fg}; }
+.edge .launcher, .edge .launcher:hover { box-shadow: none; }
+button.edge__close, button.edge__grip { pointer-events: auto; display: flex; align-items: center; justify-content: center;
+  box-sizing: border-box; margin: 0; padding: 0; border: 0; background: transparent; color: ${NEUTRAL.muted};
+  cursor: pointer; }
+button.edge__close { width: 20px; height: 20px; border-radius: 999px; }
+button.edge__close:hover, button.edge__close[aria-expanded="true"] { background: ${NEUTRAL.track}; color: ${NEUTRAL.fg}; }
+button.edge__grip { width: 30px; height: 16px; border-radius: 6px; cursor: grab; touch-action: none; }
+button.edge__grip:hover { background: ${NEUTRAL.track}; color: ${NEUTRAL.fg}; }
+.edge[data-dragging] button.edge__grip { cursor: grabbing; background: ${NEUTRAL.track}; }
+button.edge__close:focus-visible, button.edge__grip:focus-visible, button.edge__item:focus-visible {
+  outline: 2px solid ${BRAND.ink}; outline-offset: 1px; }
+.edge__menu { position: absolute; top: 0; right: calc(100% + 10px); box-sizing: border-box; width: 232px; margin: 0;
+  padding: 6px; border: 1px solid ${NEUTRAL.line}; border-radius: 12px; background: ${WHITE};
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08); text-align: left; }
+.edge__menu[data-up] { top: auto; bottom: 0; }
+.edge__menu[hidden], .launcher[hidden] { display: none; }
+button.edge__item { pointer-events: auto; display: block; box-sizing: border-box; width: 100%; margin: 0;
+  padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: ${NEUTRAL.fg};
+  font: 600 13px/1.3 ${FONT_STACK}; text-align: left; cursor: pointer; }
+button.edge__item:hover { background: ${NEUTRAL.track}; }
+.edge__note { margin: 4px 10px 2px; font: 400 12px/1.4 ${FONT_STACK}; color: ${NEUTRAL.muted}; }
 .notices { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 320px; max-width: 90vw; }
 .notice, .card { pointer-events: auto; box-sizing: border-box; margin: 0; padding: 12px; border-radius: 12px;
   background: ${WHITE}; color: ${NEUTRAL.fg}; border: 1px solid ${NEUTRAL.line};

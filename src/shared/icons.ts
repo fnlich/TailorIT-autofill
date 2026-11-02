@@ -58,10 +58,19 @@ export const ICONS = {
   alert: { viewBox: GRID, stroked: true, parts: [ring(), line('M10 5.9v5'), dot('10', '13.9')] },
   /** Blocked: a ring with a cross. */
   'x-circle': { viewBox: GRID, stroked: true, parts: [ring(), line('M7.4 7.4l5.2 5.2M12.6 7.4l-5.2 5.2')] },
+  /** An optional field left alone (v3 Phase 3 review, Jobright's grey dash): a dash alone. */
+  dash: { viewBox: GRID, stroked: true, parts: [line('M6.25 10h7.5')] },
   /** Skipped: a ring with a dash. */
   'minus-circle': { viewBox: GRID, stroked: true, parts: [ring(), line('M6.75 10h6.5')] },
   'chevron-down': { viewBox: GRID, stroked: true, parts: [line('M5.5 8l4.5 4.5 4.5-4.5')] },
   'chevron-up': { viewBox: GRID, stroked: true, parts: [line('M5.5 12l4.5-4.5 4.5 4.5')] },
+  'chevron-right': { viewBox: GRID, stroked: true, parts: [line('M8 5.5l4.5 4.5L8 14.5')] },
+  /** The person's own information: a head and shoulders (v3 Phase 3's "Your autofill information"). */
+  person: { viewBox: GRID, stroked: true, parts: [{ tag: 'circle', attrs: { cx: '10', cy: '6.75', r: '3.25' } },
+    line('M3.75 17.25a6.25 6.25 0 0 1 12.5 0')] },
+  /** Something to drag: two columns of three dots (the launcher's grip). */
+  grip: { viewBox: GRID, stroked: false, parts: [dot('7.5', '5.5'), dot('12.5', '5.5'), dot('7.5', '10'), dot('12.5', '10'),
+    dot('7.5', '14.5'), dot('12.5', '14.5')] },
   /** Written by the AI: a four-pointed star. */
   sparkle: { viewBox: GRID, stroked: false, parts: [line('M10 2l1.6 4.8a2.4 2.4 0 0 0 1.6 1.6L18 10l-4.8 1.6a2.4 2.4 0 0 0-1.6 '
     + '1.6L10 18l-1.6-4.8a2.4 2.4 0 0 0-1.6-1.6L2 10l4.8-1.6a2.4 2.4 0 0 0 1.6-1.6z')] },

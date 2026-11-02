@@ -15,7 +15,8 @@
  * INTENT_WINDOW_MS before it: none of those can be made by a page. A paste or a drop is an edit itself. The looser
  * record (touchedSince: any trusted input, keydown, paste or drop) only keeps the loop from writing over the field.
  * Pointerdowns are heard too, for that intent and for the run's look at what it wrote before the person moves on (E9),
- * but are no touch.
+ * but are no touch; so are changes and clicks (v3 Phase 3 review), after which a resting run reads the fields left for
+ * the person again.
  * Elements and times only (monotonicNow), in a WeakMap: nothing here reads, keeps or logs a value.
  */
 import { monotonicNow } from '../dom/time';
@@ -24,8 +25,12 @@ import { monotonicNow } from '../dom/time';
 export const TOUCH_EVENTS = ['input', 'keydown', 'paste', 'drop'] as const;
 /** One of TOUCH_EVENTS. */
 export type TouchType = (typeof TOUCH_EVENTS)[number];
-/** What a listener hears: a touch, or a pointerdown (the person's intent, and their move to act: E3, E9). */
-export type HeardType = TouchType | 'pointerdown';
+/** What a listener hears: a touch, a pointerdown (the person's intent, and their move to act: E3, E9), or a change or a
+ *  click (v3 Phase 3 review: a resting run reads the fields left for the person again after either; neither is a
+ *  touch). */
+export type HeardType = TouchType | 'pointerdown' | 'change' | 'click';
+/** Heard for the listeners only, never recorded as a touch. */
+const HEARD_ONLY: ReadonlySet<string> = new Set(['pointerdown', 'change', 'click']);
 /** The events that show the person's intent to edit the element they reach: none of them can be made by a page. */
 const INTENT_EVENTS: ReadonlySet<string> = new Set(['keydown', 'pointerdown', 'paste', 'drop']);
 /** Of the touches, those that change a field's value on their own (a keydown alone may only move the focus; an input
@@ -67,7 +72,7 @@ export class TouchLog {
 
   /** Listens on `target` until `signal` aborts. */
   constructor(target: EventTarget, signal: AbortSignal) {
-    for (const type of [...TOUCH_EVENTS, 'pointerdown']) {
+    for (const type of [...TOUCH_EVENTS, ...HEARD_ONLY]) {
       target.addEventListener(type, this.onTouch, { capture: true, signal });
     }
   }
@@ -88,7 +93,7 @@ export class TouchLog {
     const target = elements[0];
     const edit = EDIT_EVENTS.has(event.type) || (event.type === 'input' && target !== undefined
       && at - (this.intents.get(target) ?? Number.NEGATIVE_INFINITY) <= INTENT_WINDOW_MS);
-    if (!pointer) {
+    if (!HEARD_ONLY.has(event.type)) {
       for (const el of elements) {
         this.latest.set(el, at);
         if (edit) this.edits.set(el, at);

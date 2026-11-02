@@ -4,44 +4,79 @@
  * shadow root, so nothing here touches the global document: the stylesheet is adopted into the root the report is
  * mounted in.
  *
- * Layout: the notices on top (a policy card among them for each frame whose run waits for that decision; its buttons
- * decide for that frame alone, so another frame's pause or card is never answered by them; under its sentence, the
- * line saying when only TailorIT's saved copy of the posting said it, as the page's own card says), unless the
- * container draws them itself (ReportNotices: the side panel puts them above its main button); then the completion
- * (the rows ready of those ready or waiting for the person, as counts and never a percent, the required ones, a count
- * per status, and a line saying nothing needs the person only when no run works and no notice stands); then one block
- * per frame, with its run status and step (the adapter's progress line where the report has one), then its rows by
- * section, in report order.
+ * Layout (v3 Phase 3, Jobright's sidebar in TailorIT's look): the notices on top (a policy card among them for each
+ * frame whose run waits for that decision; its buttons decide for that frame alone, so another frame's pause or card is
+ * never answered by them; under its sentence, the line saying when only TailorIT's saved copy of the posting said it,
+ * as the page's own card says), unless the container draws them itself (ReportNotices: the side panel puts them above
+ * its main button); then the progress, then the field lists.
  *
- * A row that needs the person (needsPerson: it asks for them, or it is flagged or blocked) is an open card: its label,
- * status, a reason sentence (COPY), its provenance, matcher stage and confidence, then its actions. Every other row
- * folds into one line (details/summary) that keeps its label, provenance and status in view, the rest a click away;
- * an AI draft keeps its mark and its dashed edge either way. No button ever sits in a summary. Each row carries
- * data-field-key, data-status, data-provenance, data-draft and data-layout for tests.
+ * The progress: "Scanning the page…" with a moving bar while the form is read; "Autofilling… 78%" with Cancel while a
+ * run fills; at rest "9 of 12 required fields filled · 75%" (shared/report.ts progressOf: the percent of the required
+ * fields filled, of every field when none is required, one rule with the in-page panel and the launcher's badge). Its
+ * line folds the lists (Minimized: folded at first). Under it, where a run waits for the person, its status and why
+ * (the pause's sentence); a dry run says it wrote nothing; with several forms, or one embedded in its page, each says
+ * where it stands.
+ *
+ * The field lists: the repeatable sections ("Education · 2 of 3 added"), then "Required", then "Optional", each row a
+ * line: its state's icon (filled, needs you, being filled with a spinner, left alone), its label as a button that shows
+ * the field on the page (Show on page: scrolled into view and focused, nothing drawn), the AI's marks, and a chevron
+ * that unfolds the detail: its status chip, the reason sentence (COPY), its provenance, matcher stage and confidence,
+ * then its actions. Every row is folded at first, its icon and label shown (Jobright's list); an optional field left
+ * empty shows a grey dash, a required one the alert. The row being written scrolls into view, and
+ * after SKIP_AFTER_MS on the same field it offers Skip, which gives up that one write (never a guard).
  *
  * Row actions, each drawn only when the container passes its callback (and, with actionsFrameId, only on that frame's
  * rows: the in-page panel acts on its own frame alone):
- * - Show on page;
+ * - Show on page (the label, and a button in the detail);
  * - the closest options, asked for when the row opens;
- * - Confirm draft, on an AI draft that still waits for the person (Phase 6 wave 2 wires what it does);
+ * - Confirm draft, on an AI draft that still waits for the person;
  * - Save my answer, only on a row the run left flagged that the person then changed with their own input
- *   (detail.userEdited), and never on a question a saved answer may not answer (model.ts offersSave).
+ *   (detail.userEdited), and never on a question a saved answer may not answer (model.ts offersSave);
+ * - Skip, on the row being written (the side panel only).
+ * Each row carries data-field-key, data-status, data-provenance, data-draft, data-layout and data-progress for tests.
  *
  * No value is ever shown: a report holds none, and a row renders only the fields named above, whatever else an object
  * might carry. The one page text beyond labels and progress lines is a row's suggested options, asked for when the row
- * is opened (describeField) and held in the open row's state only, never stored or logged: a folded row that closes
- * forgets them.
+ * is opened (describeField) and held in the open row's state only, never stored or logged: a row that folds forgets
+ * them.
  */
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { COPY } from '../../shared/copy';
+import type { IconName } from '../../shared/icons';
 import { noticeToneOf } from '../../shared/palette';
 import type { FrameReport } from '../../shared/report';
 import { Icon } from '../brand/Icon';
+import { afterFrames, animationFrames, type FrameScheduler } from '../page/frames';
 import {
-  aiCountsOf, aiMarkOf, awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, needsPerson, offersSave, overallStatus,
-  percent, policyFromStoredCopy, rowIconOf, sectionName, sectionsOf, stepText, stripToneOf, tallyOf, type ReportRow,
+  aiCountsOf, aiMarkOf, awaitsDraftConfirmation, combinedNotices, fieldListsOf, framesAtPolicyCard, needsPerson,
+  offersSave, overallStatus, percent, policyFromStoredCopy, progressOf, progressStateOf, repeatablesOf, stepText,
+  stripToneOf, tallyOf, type ListRow, type ReportRow, type RowProgress,
 } from './model';
 import { adoptReportStyles } from './styles';
+
+/** Brings a row into view where the report is drawn: on an extension page of its own (the side panel), as the page
+ *  scrolls; inside a shadow root (the in-page panel on the site's page), only within its nearest scrolling ancestor in
+ *  that root, so the site's page never moves. */
+function reveal(el: HTMLElement): void {
+  const root = el.getRootNode();
+  if (root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+    el.scrollIntoView?.({ block: 'nearest' });
+    return;
+  }
+  const view = el.ownerDocument.defaultView;
+  for (let at = el.parentElement; at !== null; at = at.parentElement) {
+    const overflow = view?.getComputedStyle(at).overflowY ?? 'visible';
+    if ((overflow !== 'auto' && overflow !== 'scroll') || at.scrollHeight <= at.clientHeight) continue;
+    const box = el.getBoundingClientRect();
+    const port = at.getBoundingClientRect();
+    if (box.top < port.top) at.scrollTop -= port.top - box.top;
+    else if (box.bottom > port.bottom) at.scrollTop += box.bottom - port.bottom;
+    return;
+  }
+}
+
+/** Skip shows on the field being written once the run has been on it this long (Jobright's 2 s). */
+export const SKIP_AFTER_MS = 2_000;
 
 /** The visible label of one suggested option, by its index among the field's options. */
 export interface SuggestionLabel {
@@ -66,10 +101,16 @@ export interface ReportActions {
   /** A policy card's buttons, for the frame whose run waits at it: Fill anyway is 'fill', Cancel is 'cancel' (the side
    *  panel sends panel/policyDecision for that frame). */
   onPolicyDecision?(frameId: number, decision: PolicyCardDecision): void;
+  /** Cancel on the progress line while a run works (the side panel sends panel/cancel). */
+  onCancel?(): void;
+  /** Skip on the field being written, after SKIP_AFTER_MS on it (the side panel sends panel/skip). */
+  onSkip?(frameId: number, fieldKey: string): void;
   /** While true, the policy card's and the rows' buttons that change something wait (a request is on its way). */
   busy?: boolean;
   /** When set, the row actions apply to this frame's rows only (the in-page panel can act on its own frame alone). */
   actionsFrameId?: number;
+  /** Skip's clock: the time (ms) and the frames it is checked on; the browser's by default (tests pass their own). */
+  clock?: { now(): number; frames: FrameScheduler };
 }
 
 export interface ReportProps extends ReportActions {
@@ -78,10 +119,12 @@ export interface ReportProps extends ReportActions {
   /** Whether the report draws the notices on top (the default). The side panel draws them itself, above its main
    *  button, with ReportNotices. */
   notices?: boolean;
+  /** The field lists folded at first, the progress line alone in view (the person's default view: Minimized). */
+  minimized?: boolean;
 }
 
-/** The whole report: notices, the completion, then each frame's rows. */
-export function Report({ reports, notices = true, ...actions }: ReportProps) {
+/** The whole report: notices, the progress, then the field lists. */
+export function Report({ reports, notices = true, minimized = false, ...actions }: ReportProps) {
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (root.current) adoptReportStyles(root.current.getRootNode());
@@ -93,18 +136,15 @@ export function Report({ reports, notices = true, ...actions }: ReportProps) {
       {frames.length === 0 ? (
         <p className="tia-empty">{COPY.panelEmpty}</p>
       ) : (
-        <>
-          <Completion reports={frames} />
-          {frames.map((report) => <Frame key={report.frameId} report={report} actions={actions} />)}
-        </>
+        <Progress reports={frames} actions={actions} minimized={minimized} />
       )}
     </div>
   );
 }
 
 /** The run status that most needs the person across the tab's frames, with its step ("Ready for your review · Step 2
- *  of 4"), as a strip toned by where the run stands; nothing without a report. The side panel and the in-page panel
- *  show it above the report. Its dot is drawn by the stylesheet, so its text is exactly the status and step. */
+ *  of 4"), as a strip toned by where the run stands; nothing without a report. The in-page panel shows it above the
+ *  report. Its dot is drawn by the stylesheet, so its text is exactly the status and step. */
 export function RunStatusLine({ reports, className = 'tia-status' }: { reports: readonly FrameReport[]; className?: string }) {
   const status = overallStatus(reports);
   if (status === null) return null;
@@ -188,114 +228,232 @@ export function ReportNotices({ reports, onPolicyDecision, busy = false }: {
   );
 }
 
+/** The run statuses whose frame line says more than the progress does: a decision, a sign-in, a pause, a stop. */
+const TELLING_STATUSES: ReadonlySet<FrameReport['status']> = new Set<FrameReport['status']>(['policy-notice',
+  'auth-needed', 'handoff', 'stopped']);
+
 /**
- * How far the tab's forms are: the rows ready of those ready or waiting for the person, as counts and a bar; how many
- * wait; the required ones; a count per status. "Nothing needs you" only when nothing waits, something is ready, no run
- * still works and no notice stands (a notice can ask the person to check something, such as a posting the extension
- * could not read), and never in a dry run, which wrote nothing.
+ * How far the tab's forms are (module header): the line ("Scanning the page…", "Autofilling… 78%", "9 of 12 required
+ * fields filled · 75%"), its bar, Cancel while a run works, what each frame waits for, then the field lists, which the
+ * line folds, and under them what needs the person, the AI's answers, and "Nothing needs you" only when nothing waits,
+ * something is ready, no run works and no notice stands (never in a dry run, which wrote nothing).
  */
-function Completion({ reports }: { reports: readonly FrameReport[] }) {
-  const labelId = useId();
+function Progress({ reports, actions, minimized }: { reports: readonly FrameReport[]; actions: ReportActions;
+  minimized: boolean }) {
+  const titleId = useId();
+  const listsId = useId();
+  const [open, setOpen] = useState(!minimized);
+  // The view chosen in the gear's menu applies at once, with no new report (the report is never mounted again for it).
+  const lastView = useRef(minimized);
+  useEffect(() => {
+    if (lastView.current === minimized) return;
+    lastView.current = minimized;
+    setOpen(!minimized);
+  }, [minimized]);
+  const state = progressStateOf(reports);
+  const progress = progressOf(reports);
   const tally = tallyOf(reports);
-  if (tally === null) return null;
-  const { ready, needsYou, required, dryRun, working } = tally;
-  const of = ready + needsYou;
+  const dryRun = reports.every((report) => report.mode === 'dry-run');
+  const working = state === 'scanning' || state === 'filling';
   const words = COPY.report;
+  const lists = fieldListsOf(reports);
+  const sections = repeatablesOf(reports);
+  const hasRows = lists.required.length + lists.optional.length + sections.length > 0;
+  // What is left for the person is said once the run rests: while it works, a field may still be on its way.
+  const needsYou = working ? 0 : tally?.needsYou ?? 0;
   const ai = aiCountsOf(reports);
-  const allClear = needsYou === 0 && ready > 0 && !working && !dryRun && combinedNotices(reports).length === 0
-    && framesAtPolicyCard(reports).length === 0;
-  return (
-    <div className="tia-completion" data-completion="" data-ready={ready} data-needs={needsYou}>
-      {of > 0 && (
+  const allClear = !working && needsYou === 0 && (tally?.ready ?? 0) > 0 && !dryRun
+    && combinedNotices(reports).length === 0 && framesAtPolicyCard(reports).length === 0;
+  const title = state === 'scanning' ? words.scanning : state === 'filling' ? words.autofilling
+    : dryRun ? words.progressDryRun(progress.filled, progress.of, progress.requiredOnly)
+      : words.progressFilled(progress.filled, progress.of, progress.requiredOnly);
+  const head = (
+    <>
+      <span className="tia-progress-line__title" id={titleId}>
+        {title}
+        {working && <span className="tia-dots" aria-hidden="true"><span /><span /><span /></span>}
+      </span>
+      {state !== 'scanning' && (
         <>
-          <div className="tia-completion__head">
-            <span className="tia-completion__label" id={labelId}>{words.completion}</span>
-            <span className="tia-completion__value">
-              {dryRun ? words.completionValueDryRun(ready, of) : words.completionValue(ready, of)}
-            </span>
+          <span className="tia-progress-line__rule" aria-hidden="true" />
+          <span className="tia-progress-line__percent" data-percent={progress.percent}>{words.percent(progress.percent)}</span>
+        </>
+      )}
+    </>
+  );
+  const named = reports.length > 1 || reports.some((report) => report.frameId !== 0);
+  // The hidden fields left alone are no part of the lists: a detail under them (v3 Phase 3 review).
+  const hidden = reports.reduce((sum, report) => sum + report.counters.hiddenControlsIgnored, 0);
+  // A run at rest with nothing counted and no row (a new step it has not read: page-turned) says no "0 of 0 · 0%":
+  // only what each frame waits for, and the notices above.
+  const counted = state !== 'rest' || progress.of > 0 || hasRows;
+  return (
+    <section className="tia-progress-block" data-progress={state} data-filled={progress.filled} data-of={progress.of}
+      {...(counted ? { 'aria-labelledby': titleId } : { 'aria-label': words.progressLabel })}>
+      {counted && (
+        <>
+          <div className="tia-progress-line">
+            {hasRows ? (
+              <button type="button" className="tia-progress-line__toggle" aria-expanded={open} aria-controls={listsId}
+                data-action="toggle-fields" title={open ? words.hideFields : words.showFields}
+                onClick={() => setOpen((was) => !was)}>
+                {head}
+                <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} className="tia-icon tia-progress-line__chevron" />
+              </button>
+            ) : (
+              <p className="tia-progress-line__toggle tia-progress-line__static">{head}</p>
+            )}
+            {working && actions.onCancel && (
+              <button type="button" className="tia-linkbutton" data-action="cancel" onClick={actions.onCancel}>
+                {COPY.panel.cancel}
+              </button>
+            )}
           </div>
-          <div className="tia-progress" role="progressbar" aria-labelledby={labelId} aria-valuemin={0} aria-valuemax={of}
-            aria-valuenow={ready} aria-valuetext={dryRun ? words.completionTextDryRun(ready, of) : words.completionText(ready, of)}>
+          <div className="tia-progress" role="progressbar" aria-labelledby={titleId} aria-valuemin={0} aria-valuemax={100}
+            data-indeterminate={state === 'scanning' ? '' : undefined}
+            {...(state === 'scanning' ? {} : { 'aria-valuenow': progress.percent,
+              'aria-valuetext': working ? words.progressWorking(progress.percent, progress.requiredOnly)
+                : words.progressText(progress.filled, progress.of, progress.requiredOnly, progress.percent) })}>
             {/* The width goes through the CSSOM (React's style property), which a page's style-src does not govern. */}
-            <div className="tia-progress__fill" style={{ width: `${(ready / of) * 100}%` }} />
+            <div className="tia-progress__fill" style={state === 'scanning' ? undefined : { width: `${progress.percent}%` }} />
           </div>
         </>
       )}
-      {needsYou > 0 && (
-        <p className="tia-completion__needs">
-          <Icon name="alert" size={16} />
-          {dryRun ? words.needsYouDryRun(needsYou) : words.needsYou(needsYou)}
-        </p>
+      {state === 'scanning' && (
+        <div className="tia-scanning">
+          <Icon name="sparkle" size={28} className="tia-icon tia-scanning__icon" />
+          <p className="tia-scanning__title">{words.scanningTitle}</p>
+          <p className="tia-scanning__help">{words.scanningHelp}</p>
+        </div>
       )}
-      {ai.written > 0 && (
-        <p className="tia-completion__ai" data-ai-answers={ai.written} data-ai-guesses={ai.guesses}>
-          <Icon name="sparkle" size={14} />
-          {words.aiAnswers(ai.written, ai.guesses)}
-        </p>
+      <FrameLines reports={reports} named={named} />
+      {hasRows && open && (
+        <div className="tia-lists" id={listsId}>
+          {sections.length > 0 && (
+            <ul className="tia-rows tia-rows--sections">
+              {sections.map((section) => {
+                const done = section.added >= section.of ? 'filled' : 'missing';
+                return (
+                  <li key={`${section.frameId}:${section.kind}`} className="tia-row tia-row--section"
+                    data-section-kind={section.kind} data-progress={done}>
+                    <div className="tia-row__line">
+                      <StateIcon progress={done} />
+                      <span className="tia-row__go tia-row__go--static">
+                        {words.sectionAdded(words.repeatables[section.kind], section.added, section.of)}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <FieldGroup name={words.requiredGroup} group="required" rows={lists.required} actions={actions} />
+          <FieldGroup name={words.optionalGroup} group="optional" rows={lists.optional} actions={actions} />
+        </div>
       )}
-      {allClear && (
-        <p className="tia-allclear">
-          <Icon name="check-circle" size={16} />
-          {words.allClear}
-        </p>
+      {hidden > 0 && (
+        <details className="tia-progress-details" data-progress-details="">
+          <summary className="tia-progress-details__summary">{words.moreDetails}</summary>
+          <p className="tia-progress-details__line" data-hidden-ignored={hidden}>{words.hiddenIgnored(hidden)}</p>
+        </details>
       )}
-      {required.of > 0 && (
-        <p className="tia-completion__required">
-          {dryRun ? words.requiredReadyDryRun(required.ready, required.of) : words.requiredReady(required.ready, required.of)}
-        </p>
+      {(needsYou > 0 || ai.written > 0 || allClear) && (
+        <div className="tia-progress-notes">
+          {needsYou > 0 && (
+            <p className="tia-progress-notes__needs" data-needs={needsYou}>
+              <Icon name="alert" size={16} />
+              {dryRun ? words.needsYouDryRun(needsYou) : words.needsYou(needsYou)}
+            </p>
+          )}
+          {ai.written > 0 && (
+            <p className="tia-progress-notes__ai" data-ai-answers={ai.written} data-ai-guesses={ai.guesses}>
+              <Icon name="sparkle" size={14} />
+              {words.aiAnswers(ai.written, ai.guesses)}
+            </p>
+          )}
+          {allClear && (
+            <p className="tia-allclear">
+              <Icon name="check-circle" size={16} />
+              {words.allClear}
+            </p>
+          )}
+        </div>
       )}
-      <ul className="tia-tally">
-        {TALLY_ORDER.filter((status) => tally.byStatus[status] > 0).map((status) => (
-          <li key={status} className={`tia-tag tia-tag--${status}`} data-tally={status}>
-            {words.tally(tally.byStatus[status], COPY.statuses[status])}
-          </li>
-        ))}
-      </ul>
+    </section>
+  );
+}
+
+/** What each frame waits for, when that says more than the progress: a decision, a sign-in, a pause and why, a stop, a
+ *  step; that a dry run wrote nothing; hidden fields left alone. With several forms, or one embedded in its page, each
+ *  names its form, its own run status beside it. */
+function FrameLines({ reports, named }: { reports: readonly FrameReport[]; named: boolean }) {
+  const lines = reports.map((report) => {
+    const status = `${COPY.runStatuses[report.status]}${report.step ? ` · ${stepText(report.step)}` : ''}`;
+    const notes: Array<{ key: string; text: string; tone: string }> = [];
+    if (report.status === 'handoff' && report.pauseReason !== null) {
+      notes.push({ key: 'pause', text: COPY.pauseReasons[report.pauseReason], tone: 'pause' });
+    }
+    if (report.mode === 'dry-run') notes.push({ key: 'dry-run', text: COPY.report.dryRun, tone: 'dry-run' });
+    return { report, status, notes, telling: TELLING_STATUSES.has(report.status) || report.step !== undefined };
+  }).filter((line) => named || line.telling || line.notes.length > 0);
+  if (lines.length === 0) return null;
+  return (
+    <div className="tia-frames">
+      {lines.map(({ report, status, notes, telling }) => (
+        <section key={report.frameId} className="tia-frame" data-frame-id={report.frameId}>
+          {(named || telling) && (
+            <p className="tia-frame__head">
+              {named && <span className="tia-frame__name">{COPY.report.frame(COPY.platforms[report.platform],
+                report.frameId !== 0)}</span>}
+              <span className="tia-frame__status" data-run-status={report.status}>{status}</span>
+            </p>
+          )}
+          {notes.map((note) => (
+            <p key={note.key} className={`tia-frame__note tia-frame__note--${note.tone}`}>{note.text}</p>
+          ))}
+        </section>
+      ))}
     </div>
   );
 }
 
-/** The tally's order: what is done, then what waits, then what was left alone. */
-const TALLY_ORDER = ['verified', 'filled', 'flagged', 'blocked', 'skipped'] as const;
-
-/** One frame: what it is, where its run stands, then its rows by section. */
-function Frame({ report, actions }: { report: FrameReport; actions: ReportActions }) {
-  const titleId = useId();
-  const platform = COPY.platforms[report.platform];
-  const acts = actions.actionsFrameId === undefined || actions.actionsFrameId === report.frameId;
+/** One of the two lists: its heading and its rows; nothing when it has none. */
+function FieldGroup({ name, group, rows, actions }: { name: string; group: 'required' | 'optional';
+  rows: readonly ListRow[]; actions: ReportActions }) {
+  const headingId = useId();
+  if (rows.length === 0) return null;
   return (
-    <section className="tia-frame" data-frame-id={report.frameId} aria-labelledby={titleId}>
-      <header className="tia-frame__head">
-        <h2 className="tia-frame__name" id={titleId}>{COPY.report.frame(platform, report.frameId !== 0)}</h2>
-        <span className="tia-frame__status" data-run-status={report.status}>
-          {COPY.runStatuses[report.status]}
-          {report.step && ` · ${stepText(report.step)}`}
-        </span>
-      </header>
-      {report.status === 'handoff' && report.pauseReason !== null && (
-        <p className="tia-frame__note tia-frame__note--pause">{COPY.pauseReasons[report.pauseReason]}</p>
-      )}
-      {report.mode === 'dry-run' && <p className="tia-frame__note tia-frame__note--dry-run">{COPY.report.dryRun}</p>}
-      {report.counters.hiddenControlsIgnored > 0 && (
-        <p className="tia-frame__note">{COPY.report.hiddenIgnored(report.counters.hiddenControlsIgnored)}</p>
-      )}
-      {sectionsOf(report.fields).map(({ section, rows }) => (
-        <section className="tia-section" key={section}>
-          <h3 className="tia-section__name">{sectionName(section)}</h3>
-          <ul className="tia-rows">
-            {/* Keyed by layout too: a row that turns from a card into a line starts afresh, its suggestions forgotten. */}
-            {rows.map((row) => (
-              <Row key={`${row.key}:${needsPerson(row) ? 'card' : 'line'}`} row={row} frameId={report.frameId}
-                actions={acts ? actions : NO_ACTIONS} />
-            ))}
-          </ul>
-        </section>
-      ))}
+    <section className="tia-group" data-group={group} aria-labelledby={headingId}>
+      <h3 className="tia-group__name" id={headingId}>{name}</h3>
+      <ul className="tia-rows">
+        {/* Keyed by layout too: a row that turns from a card into a line starts afresh, its suggestions forgotten. */}
+        {rows.map((entry) => {
+          const acts = actions.actionsFrameId === undefined || actions.actionsFrameId === entry.frameId;
+          return (
+            <Row key={`${entry.frameId}:${entry.row.key}:${needsPerson(entry.row) ? 'card' : 'line'}`} entry={entry}
+              actions={acts ? actions : NO_ACTIONS} />
+          );
+        })}
+      </ul>
     </section>
   );
 }
 
 const NO_ACTIONS: ReportActions = {};
+
+/** A row's state icon (Jobright's three, and a dash for a question left alone), with its words for a screen reader. */
+function StateIcon({ progress, required = true }: { progress: RowProgress; required?: boolean }) {
+  // An optional field left for the person is no alarm: a grey dash, as Jobright's list draws it (v3 Phase 3 review).
+  const optionalLeft = progress === 'missing' && !required;
+  const icon: IconName = progress === 'filled' ? 'check-circle' : optionalLeft ? 'dash' : progress === 'missing' ? 'alert'
+    : progress === 'working' ? 'spinner' : 'minus-circle';
+  return (
+    <span className={`tia-row__state tia-row__state--${optionalLeft ? 'optional' : progress}`}>
+      <Icon name={icon} size={18} className={`tia-icon${progress === 'working' ? ' tia-spin' : ''}`} />
+      <span className="tia-visually-hidden">{COPY.report.rowStates[progress]}</span>
+    </span>
+  );
+}
 
 /** A row's suggested options: closed, being asked for, unavailable, or shown (held while the row is open, nowhere else). */
 type Suggestions =
@@ -305,23 +463,40 @@ type Suggestions =
   | { state: 'shown'; labels: readonly SuggestionLabel[] };
 
 /**
- * One field's row: an open card when it needs the person, else folded into a line. It renders only the fields it
- * names: never a value, whatever the object carries.
+ * One field's row (module header): folded at first, its icon and label shown. It renders only the fields it names:
+ * never a value, whatever the object carries.
  */
-function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actions: ReportActions }) {
+function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
+  const { row, frameId, progress, current } = entry;
+  const card = needsPerson(row);
+  const [open, setOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestions>({ state: 'closed' });
   const asked = useRef(0);
+  const item = useRef<HTMLLIElement>(null);
+  const bodyId = useId();
   const panelId = useId();
   const scores = row.detail?.suggestions ?? [];
   const { describeField, onShowField, onConfirmDraft, onSaveAnswer } = actions;
   const busy = actions.busy ?? false;
   const draft = row.provenance === 'llm-draft';
   const describe = describeField !== undefined && scores.length > 0;
+  const label = row.label || COPY.report.noLabel;
 
-  /** Forgets the labels: they live only while the row is open (a folded row's line too). */
+  // The row being written comes into view (Jobright's list follows the fill): in the side panel, its own page; in the
+  // in-page panel, only the panel's own scrolling list, never the page around it (v3 Phase 3 review).
+  useEffect(() => {
+    if (current && item.current !== null) reveal(item.current);
+  }, [current]);
+
+  /** Forgets the labels: they live only while the row is open. */
   const forget = () => {
     asked.current += 1;
     setSuggestions({ state: 'closed' });
+  };
+
+  const fold = () => {
+    if (open && suggestions.state !== 'closed') forget();
+    setOpen((was) => !was);
   };
 
   const toggle = () => {
@@ -356,17 +531,6 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
     </button>
   );
 
-  const label = (
-    <span className="tia-row__label">
-      {row.label || COPY.report.noLabel}
-      {row.required && (
-        <>
-          <span className="tia-row__required" aria-hidden="true">*</span>
-          <span className="tia-visually-hidden">{` (${COPY.report.required})`}</span>
-        </>
-      )}
-    </span>
-  );
   const draftMark = draft && (
     <span className="tia-row__draft">
       <Icon name="sparkle" size={12} />
@@ -387,15 +551,24 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
       {COPY.aiChip}
     </span>
   ) : null;
-  const chip = <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>;
-  const icon = <Icon name={rowIconOf(row)} size={18} className={`tia-icon tia-row__icon tia-row__icon--${row.status}`} />;
   // A cover letter (Phase G) comes from the person's TailorIT letters, whoever wrote it (the AI's has its mark).
   const source = row.provenance === null ? COPY.report.noSource
     : row.category === 'file.coverLetter' ? COPY.report.coverLetterSource : COPY.provenances[row.provenance];
+  const title = (
+    <>
+      <span className="tia-row__label">{label}</span>
+      {draftMark}
+      {aiMark}
+    </>
+  );
 
   const body: ReactNode = (
-    <div className="tia-row__body">
-      <p className="tia-row__reason">{COPY.reasons[row.reason]}</p>
+    <div className="tia-row__body" id={bodyId}>
+      <p className="tia-row__reason">
+        <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>
+        {' '}
+        {COPY.reasons[row.reason]}
+      </p>
       <dl className="tia-row__facts">
         <div className="tia-row__fact">
           <dt>{COPY.report.source}</dt>
@@ -453,46 +626,55 @@ function Row({ row, frameId, actions }: { row: ReportRow; frameId: number; actio
     </div>
   );
 
-  const hooks = { 'data-field-key': row.key, 'data-status': row.status, 'data-provenance': row.provenance ?? 'none',
-    'data-draft': draft ? 'true' : 'false' };
-  if (needsPerson(row)) {
-    return (
-      <li className={`tia-row tia-row--card tia-row--${row.status}`} {...hooks} data-layout="card">
-        <div className="tia-row__head">
-          {icon}
-          <span className="tia-row__title">
-            {label}
-            {draftMark}
-            {aiMark}
-          </span>
-          {chip}
-        </div>
-        {body}
-      </li>
-    );
-  }
   return (
-    <li className={`tia-row tia-row--line tia-row--${row.status}`} {...hooks} data-layout="line">
-      <details className="tia-row__more" onToggle={(event) => {
-        // Folded again, the row forgets the options it asked for.
-        if (!event.currentTarget.open && suggestions.state !== 'closed') forget();
-      }}>
-        <summary className="tia-row__line">
-          {icon}
-          <span className="tia-row__title">
-            {label}
-            {draftMark}
-            {aiMark}
-            <span className="tia-row__source">{source}</span>
-          </span>
-          {chip}
-          <span className="tia-row__chevron">
-            <Icon name="chevron-down" size={16} className="tia-icon tia-chevron tia-chevron--down" />
-            <Icon name="chevron-up" size={16} className="tia-icon tia-chevron tia-chevron--up" />
-          </span>
-        </summary>
-        {body}
-      </details>
+    <li ref={item} className={`tia-row tia-row--${card ? 'card' : 'line'} tia-row--${row.status}`}
+      data-field-key={row.key} data-status={row.status} data-provenance={row.provenance ?? 'none'}
+      data-draft={draft ? 'true' : 'false'} data-layout={card ? 'card' : 'line'} data-progress={progress}
+      data-current={current ? 'true' : undefined}>
+      <div className="tia-row__line">
+        <StateIcon progress={progress} required={row.required} />
+        {onShowField ? (
+          <button type="button" className="tia-row__go" title={COPY.report.goTo(label)}
+            onClick={() => onShowField(frameId, row.key)}>
+            {title}
+          </button>
+        ) : (
+          <span className="tia-row__go tia-row__go--static">{title}</span>
+        )}
+        {current && actions.onSkip !== undefined && (
+          <SkipButton frameId={frameId} row={row} onSkip={actions.onSkip} clock={actions.clock ?? BROWSER_CLOCK} />
+        )}
+        <button type="button" className="tia-row__toggle" aria-expanded={open} aria-controls={bodyId}
+          aria-label={COPY.report.details(label)} title={COPY.report.details(label)} onClick={fold}>
+          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} className="tia-icon" />
+        </button>
+      </div>
+      {open && body}
     </li>
+  );
+}
+
+/** The browser's clock for Skip: the time and its animation frames, which run only while the panel is visible. */
+const BROWSER_CLOCK = { now: () => Date.now(), frames: animationFrames };
+
+/** Skip on the field being written, once the run has been on it SKIP_AFTER_MS (Jobright's 2 s): it gives up that one
+ *  write. Its clock starts with the row's turn (the button is mounted only on the current row), and starts afresh for
+ *  the next field; it ticks on animation frames, never a timer. */
+function SkipButton({ frameId, row, onSkip, clock }: { frameId: number; row: ReportRow;
+  onSkip(frameId: number, key: string): void; clock: NonNullable<ReportActions['clock']> }) {
+  const [shown, setShown] = useState(false);
+  const [sent, setSent] = useState(false);
+  const { now, frames } = clock;
+  useEffect(() => afterFrames(SKIP_AFTER_MS, () => setShown(true), now, frames), [now, frames]);
+  if (!shown) return null;
+  const label = row.label || COPY.report.noLabel;
+  return (
+    <button type="button" className="tia-linkbutton tia-row__skip" data-action="skip" disabled={sent}
+      aria-label={COPY.report.skipLabel(label)} onClick={() => {
+        setSent(true);
+        onSkip(frameId, row.key);
+      }}>
+      {COPY.report.skip}
+    </button>
   );
 }

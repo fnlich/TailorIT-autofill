@@ -29,6 +29,8 @@ export interface FrameEntry {
   /** How many times a single-page application changed the frame's address within this document, as its hello said
    *  (v2; absent: none). A count, never an address. */
   nav?: number;
+  /** v3 Phase 3: the frame's form asks for a cover letter (its hello said so; absent: it does not). */
+  letter?: true;
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
@@ -37,7 +39,7 @@ const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
 export async function registerFrame(
   session: StorageArea,
   frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean;
-    nav?: number },
+    nav?: number; letter?: true },
   now: number,
 ): Promise<FrameEntry> {
   const entry: FrameEntry = {
@@ -50,6 +52,7 @@ export async function registerFrame(
     hasForm: frame.hasForm,
     registeredAt: now,
     ...(frame.nav === undefined || frame.nav === 0 ? {} : { nav: frame.nav }),
+    ...(frame.letter === true && frame.hasForm ? { letter: true as const } : {}),
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
@@ -81,7 +84,8 @@ export async function pageOfTab(session: StorageArea, tabId: number): Promise<Pa
   const document = (form.documentId ?? `at-${form.registeredAt}`).slice(0, 96);
   const nav = navOf(form);
   return { support: 'form', platform: form.platform,
-    formKey: `${form.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120) };
+    formKey: `${form.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120),
+    ...(frames.some((frame) => frame.hasForm && frame.letter === true) ? { letter: true } : {}) };
 }
 
 /** One registered frame, or null. */

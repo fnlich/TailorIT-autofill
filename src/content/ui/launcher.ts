@@ -1,7 +1,9 @@
 /*
- * The launcher (docs/design/runtime.md §10.1): a 32 px button the page UI anchors to the form root's top-right corner,
+ * The launcher (docs/design/runtime.md §10.1): a 32 px button the page UI puts in the tab at the window's right edge in
+ * the top frame (v3 Phase 3, edge.ts), and anchors to the form root's top-right corner in a frame inside another page,
  * drawn as TailorIT's tile (the teal square with its white "T", src/shared/icons.ts LOGO_GLYPH on the button's own teal
- * background). It shows the run's state (idle, running, needs you, review N, error) in a toned badge on its corner and
+ * background). It shows the run's state (idle, running with its percent, needs you, review N, error) in a toned badge on
+ * its corner and
  * offers the one action that state allows: Autofill, Continue or Open review (the runtime picks it; at the policy card
  * it is Open review, since the side panel mirrors the card). The badge takes no pointer events, so a click on it is
  * no click on the launcher, whose own box is what the visibility watch judges. It accepts trusted clicks only, so a
@@ -33,6 +35,9 @@ export interface LauncherView {
   notices?: boolean;
   /** Why it is in 'needs-you' or 'error'. */
   reason?: 'policy' | 'pause' | 'not-connected' | 'failed';
+  /** While 'running' (v3 Phase 3): how far the fill is, the percent of its required fields filled (shared/report.ts
+   *  progressOf, the side panel's rule), shown in the badge once a row is counted. */
+  percent?: number;
 }
 
 /** The launcher's element and its state. */
@@ -46,8 +51,9 @@ export interface Launcher {
 function badgeOf(view: LauncherView): { tone: ToneName; text: string | null } | null {
   switch (view.state) {
     case 'idle':
-    case 'running':
       return null;
+    case 'running':
+      return view.percent === undefined ? null : { tone: 'brand', text: `${Math.max(0, Math.min(100, view.percent))}%` };
     case 'needs-you':
       return { tone: 'warning', text: '!' };
     case 'review': {
@@ -65,7 +71,7 @@ function titleOf(view: LauncherView): string {
     case 'idle':
       return COPY.launcherFill;
     case 'running':
-      return COPY.launcherRunning;
+      return view.percent === undefined ? COPY.launcherRunning : COPY.launcherFilling(view.percent);
     case 'needs-you':
       return view.reason === 'policy' ? COPY.launcherPolicy : COPY.launcherNeedsYou;
     case 'review':

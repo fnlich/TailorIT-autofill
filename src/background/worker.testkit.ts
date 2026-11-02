@@ -399,6 +399,9 @@ export interface TestWorkerOptions {
   /** false: answer as soon as the worker's listeners are registered, without waiting for its start-up (the storage
    *  access level, then the prune), so a test can deliver while Chrome has not answered. True by default. */
   awaitStartUp?: boolean;
+  /** v3 Phase 3: a form's hello looks the job up as the page loads (the worker's default). Off by default here, so a
+   *  test of anything else sees only the messages it sets off; a test of the lookup on load turns it on. */
+  lookupOnLoad?: boolean;
 }
 
 /** Resets the fake browser, installs the hand fakes and starts the real worker over them. */
@@ -450,7 +453,7 @@ async function launch(
     },
     now: () => clock.now,
   };
-  const state = startWorker({ platform, core, timers, origin: ORIGIN });
+  const state = startWorker({ platform, core, timers, origin: ORIGIN, lookupOnLoad: options.lookupOnLoad === true });
   if (options.awaitStartUp !== false) await state.ready;
   const answerOf = (event: { trigger(...args: never[]): unknown }, message: unknown, sender: RawSender) =>
     new Promise<unknown>((resolve) => {

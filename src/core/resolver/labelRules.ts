@@ -406,9 +406,10 @@ const AI_ATTESTATION = new RegExp(String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+$
 const AI_NAMED = new RegExp(String.raw`\b${AI_TERM}\b`);
 /** Unrecognised-consent wordings beyond §8.3's "I agree, consent, acknowledge, accept, understand". */
 const CONSENT_WIDE = /\bi\s+(?:(?:hereby|also|further|expressly|fully)\s+)*(?:confirm|declare|have\s+read|give\s+(?:my\s+)?(?:permission|consent)|authori[sz]e|grant|allow)\b|\byou\s+(?:also\s+)?(?:agree|consent|acknowledge|accept|confirm|authori[sz]e)\b|\bby\s+(?:checking|ticking|clicking|selecting|submitting)\b|\bi\s+would\s+like\s+to\s+(?:receive|be\s+(?:contacted|considered|notified|added|kept))\b/;
-/** A radio that asks for consent: a first-person consent verb, or "Do you consent", "Would you like to receive". On a
- *  radio without one, a consent topic word ("experience in marketing") is not consent. */
-const CONSENT_ASK = /\bi\s+(?:(?:hereby|also|further|expressly|fully|do)\s+)*(?:agree|consent|acknowledge|accept|understand|certify|attest|confirm|declare|authori[sz]e|give|grant|allow|have\s+read)\b|\b(?:do|would|will|can|may)\s+(?:you|we)\s+(?:\w+\s+){0,2}?(?:consent|agree|accept|acknowledge|authori[sz]e|allow|permit|opt|subscribe|receive|join|store|keep|retain|contact|share|use|send|text|email)\b|\b(?:would|do)\s+you\s+(?:like|want|wish)\s+to\b|\bopt\s+(?:in|out)\b|\bsign\s+up\b|\bsubscribe\b|\bby\s+(?:checking|ticking|clicking|selecting|submitting)\b/;
+/** A radio that asks for consent: a first-person consent verb, or "Do you consent", "Would you like to receive", or
+ *  "Check Yes or No to indicate your agreement to receive text message updates" (Ashby's SMS consent). On a radio
+ *  without one, a consent topic word ("experience in marketing") is not consent. */
+const CONSENT_ASK = /\bindicate\s+your\s+(?:agreement|consent)\b|\bi\s+(?:(?:hereby|also|further|expressly|fully|do)\s+)*(?:agree|consent|acknowledge|accept|understand|certify|attest|confirm|declare|authori[sz]e|give|grant|allow|have\s+read)\b|\b(?:do|would|will|can|may)\s+(?:you|we)\s+(?:\w+\s+){0,2}?(?:consent|agree|accept|acknowledge|authori[sz]e|allow|permit|opt|subscribe|receive|join|store|keep|retain|contact|share|use|send|text|email)\b|\b(?:would|do)\s+you\s+(?:like|want|wish)\s+to\b|\bopt\s+(?:in|out)\b|\bsign\s+up\b|\bsubscribe\b|\bby\s+(?:checking|ticking|clicking|selecting|submitting)\b/;
 /** Where a consent clause starts: a consent verb, with its "I". */
 const CONSENT_VERB = /(?:\bi\s+(?:(?:hereby|also|further|expressly|fully|do)\s+)*)?\b(?:agree|consent|acknowledge|accept|understand|certify|attest|confirm|declare|authori[sz]e|give|grant|allow)\b/g;
 /** Words that carry no object of their own, so a clause of only these after its verb ("I acknowledge that I have read

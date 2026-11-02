@@ -49,15 +49,22 @@ test.describe('the job card', () => {
     const url = at('a1');
     const page = await extContext.newPage();
     const { tabId, panel, card } = await openPanel(ext, page, routeLog, url);
-    await expect(panel.locator('[data-strip="form"]')).toHaveText(COPY.strip.form('Lever'));
+    // v3 Phase 3: the card says more than the "form found" strip, which goes; the page's own load looked it up.
     await expect(card).toHaveAttribute('data-job-state', 'found');
+    await expect(panel.locator('[data-strip="form"]')).toHaveCount(0);
     await expect(card.locator('.tia-job__company')).toHaveText(GOLDEN.job.companyName);
     await expect(card.locator('.tia-job__title')).toHaveText(GOLDEN.job.title);
-    await expect(card.getByRole('img', { name: COPY.job.matchLabel(75) })).toBeVisible();
+    await expect(card.getByRole('img', { name: COPY.job.matchLabel(75, COPY.job.bands.good) })).toBeVisible();
     await expect(card).toContainText(COPY.job.keywords(9, 12));
     await expect(card).toContainText(GOLDEN_RESUME.label);
     await expect(card).toContainText(GOLDEN.job.location);
-    expect(await bodies(LOOKUP)).toEqual([{ url, includePostingText: false }]);
+    // One lookup: the page's own load asked (with the posting's canonical address, no /apply and no query string: v3
+    // Phase 3 review), or, once this run's lookups on load are used up (four a minute across every tab), the panel did
+    // (with the page's address).
+    const looked = await bodies(LOOKUP);
+    expect(looked).toHaveLength(1);
+    expect(looked[0]).toMatchObject({ includePostingText: false });
+    expect([url, url.replace(/\/apply$/, '')]).toContain(looked[0]!.url);
 
     await ext.fill(page);
     expect((await ext.settled(tabId)).status).toBe('review');
@@ -152,7 +159,10 @@ test.describe('the job card', () => {
     const second = at('b2');
     await page.evaluate((next) => history.pushState({}, '', next), second);
     await expect(card).toHaveAttribute('data-job-state', 'not-found');
-    expect(await bodies(LOOKUP)).toEqual([{ url: first, includePostingText: false }, { url: second, includePostingText: false }]);
+    // The first may be the page's own load's, with its posting's canonical address (no /apply).
+    const posting = (address: unknown) => String(address).replace(/\/apply$/, '');
+    expect((await bodies(LOOKUP)).map((body) => [posting(body.url), body.includePostingText]))
+      .toEqual([[posting(first), false], [posting(second), false]]);
     // The count that told the worker is no address: neither one is kept.
     const kept = JSON.stringify(await ext.storage());
     for (const url of [first, second]) expect(kept).not.toContain(url);
@@ -185,7 +195,7 @@ test.describe('the job card', () => {
     const page = await extContext.newPage();
     const { tabId, card } = await openPanel(ext, page, routeLog, at('a8'));
     await expect(card).toHaveAttribute('data-job-state', 'unavailable');
-    await expect(card).toHaveText(COPY.job.unavailable);
+    await expect(card.locator('.tia-job')).toHaveText(COPY.job.unavailable);
     await ext.fill(page);
     expect((await ext.settled(tabId)).status).toBe('review');
   });

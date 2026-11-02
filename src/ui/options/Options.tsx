@@ -7,16 +7,18 @@
  * - Connection: the first-run disclosure, always above Connect while not connected; Connect (auth/startPairing) and
  *   the pairing's countdown; the typed code (auth/redeemCode); "Connected as …" and Disconnect (auth/disconnect);
  *   expired, revoked, a version mismatch and refused storage access, each said in plain words.
+ * - Modes (v3 Phase 3, settings version 4: src/ui/page/modes.tsx, also in the side panel's gear menu): Next page
+ *   (Manual), Autofill after page turn (Automatically), Consent boxes (All agreements), AI answers (All: the answers to
+ *   legal, pay and attention-check questions the profile does not answer, version 3's switch) and the side panel's
+ *   view (Expanded); the final Submit is never pressed. Sign-in, Submit and the agent's skip rules are stored and shown
+ *   once they exist (Phases 4 and 5).
  * - Review panel: the side panel (the default) or the in-page panel (src/content/ui/panel.tsx), which opens from the
  *   launcher; a frame too small for it opens the side panel instead.
- * - Filling: auto-advance, off; the final Submit is never pressed.
- * - Consent boxes: the core's closed list of categories, the usual ones pre-approved since settings version 2 (all but
- *   marketing and SMS: docs/SPEC-AMENDMENTS.md); certify carries a warning. Nothing outside the list can be
- *   pre-approved, so AI attestations and unrecognised consent never appear.
- * - AI help: pick, classify, drafts and answers (all on), the answers to legal, pay and attention-check questions the
- *   profile does not answer (on, settings version 3: the owner's decision of 2026-11-01; it acts only with answers on),
- *   the draft confirmation (off), and what a posting that forbids AI does (profile only, the default; ask; use the AI
- *   anyway), with the plan's sentence on what never goes to the AI.
+ * - Consent boxes: the core's closed list of categories, for Consent boxes: Required only; the usual ones pre-approved
+ *   since settings version 2 (all but marketing and SMS: docs/SPEC-AMENDMENTS.md); certify carries a warning. Nothing
+ *   outside the list can be pre-approved, so AI attestations and unrecognised consent never appear.
+ * - AI help: pick, classify, drafts and answers (all on), the draft confirmation (off), and what a posting that forbids
+ *   AI does (profile only, the default; ask; use the AI anyway), with the plan's sentence on what never goes to the AI.
  * - Interpretations: all three on (the posting's country, Two or More Races, the decline default for unanswered
  *   self-identification), each saying what it does.
  * - Your fixes: the offer to save an answer after the person fixed a flagged field (Requirement F), on by default.
@@ -36,6 +38,7 @@ import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { LogoMark, Wordmark } from '../brand/Logo';
 import { request } from '../page/request';
+import { ModesFields } from '../page/modes';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
 import { animationFrames, clockText, useSecondsLeft, type FrameScheduler } from './countdown';
 import { useSettings, type SettingsState } from './settings';
@@ -78,7 +81,7 @@ export function Options({ platform, now = Date.now, frames = animationFrames }: 
 function Card({ title, children, name }: { title: string; children: ReactNode; name: string }) {
   const id = useId();
   return (
-    <section className="tia-card" aria-labelledby={id} data-card={name}>
+    <section className="tia-card" aria-labelledby={id} data-card={name} id={`settings-${name}`}>
       <h2 className="tia-card__title" id={id}>{title}</h2>
       {children}
     </section>
@@ -255,6 +258,11 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
   const set = (patch: Partial<Settings>) => save({ ...shown, ...patch });
   return (
     <>
+      <Card title={TEXT.modes.heading} name="modes">
+        <p className="tia-help">{TEXT.modes.intro}</p>
+        <ModesFields settings={shown} disabled={saving} onChange={save} idPrefix="options" />
+      </Card>
+
       <Card title={TEXT.panel.heading} name="panel">
         <fieldset className="tia-fieldset">
           <legend className="tia-help">{TEXT.panel.intro}</legend>
@@ -266,16 +274,18 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
         <p className="tia-help">{TEXT.panel.inPageHelp}</p>
       </Card>
 
-      <Card title={TEXT.filling.heading} name="filling">
-        <Toggle setting="autoAdvance" name={TEXT.filling.autoAdvance} help={TEXT.filling.autoAdvanceHelp}
-          checked={shown.autoAdvance} disabled={saving} onChange={(autoAdvance) => set({ autoAdvance })} />
-      </Card>
-
       <Card title={TEXT.consent.heading} name="consent">
         <p className="tia-help">{TEXT.consent.intro}</p>
+        {/* Under All agreements every kind is ticked, whatever its toggle: each shows ticked and cannot be changed, and
+            the line says where the choice is (v3 Phase 3 review). The kinds pre-approved are kept for Required only. */}
+        {shown.modes.consents === 'all' && (
+          <p className="tia-note" data-consents-all="">{TEXT.consent.allMode}</p>
+        )}
         {CONSENT_CATEGORIES.map((category) => (
           <Toggle key={category} setting={`consent.${category}`} name={TEXT.consent.categories[category].name}
-            help={TEXT.consent.categories[category].help} checked={shown.preapprovedConsent.includes(category)} disabled={saving}
+            help={TEXT.consent.categories[category].help}
+            checked={shown.modes.consents === 'all' || shown.preapprovedConsent.includes(category)}
+            disabled={saving || shown.modes.consents === 'all'}
             onChange={(checked) => set({
               preapprovedConsent: CONSENT_CATEGORIES.filter((each) =>
                 (each === category ? checked : shown.preapprovedConsent.includes(each))),
@@ -296,9 +306,6 @@ function SettingsCards({ settings }: { settings: SettingsState }) {
           disabled={saving} onChange={(drafts) => set({ llm: { ...shown.llm, drafts } })} />
         <Toggle setting="llm.answers" name={TEXT.ai.answers} help={TEXT.ai.answersHelp} checked={shown.llm.answers}
           disabled={saving} onChange={(answers) => set({ llm: { ...shown.llm, answers } })} />
-        <Toggle setting="llm.answerAll" name={TEXT.ai.answerAll} help={TEXT.ai.answerAllHelp}
-          checked={shown.llm.answerAll} disabled={saving || !shown.llm.answers}
-          onChange={(answerAll) => set({ llm: { ...shown.llm, answerAll } })} />
         <Toggle setting="llm.confirmDrafts" name={TEXT.ai.confirmDrafts} help={TEXT.ai.confirmDraftsHelp}
           checked={shown.llm.confirmDrafts} disabled={saving}
           onChange={(confirmDrafts) => set({ llm: { ...shown.llm, confirmDrafts } })} />

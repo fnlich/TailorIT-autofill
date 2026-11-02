@@ -25,7 +25,9 @@
  * focused. A widget that does not answer untrusted events is reported as such (the caller flags it needs-your-click)
  * and is never tried another way.
  * Every wait is settle.ts's quietWait on dom/time.ts's timers: it ends on a DOM condition, its cap or the run's
- * signal, never a fixed sleep.
+ * signal, never a fixed sleep. While the person may Skip the write (v3 Phase 3: WidgetContext.runSignal), its Skip
+ * ends the waits too; what the write had done to its widget is then put back (its typed text, its open list) through
+ * skipTidyContext: a fresh, short-capped signal that only the run's own end aborts.
  */
 import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
@@ -35,7 +37,7 @@ import { fireLeave, windowOf, type DeclaredKey } from '../fillers/events';
 import { assertNotSubmit, optionWordsRefusal } from '../fillers/not-submit';
 import { quietWait, type QuietWait } from '../settle';
 import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET_MS } from '../thresholds';
-import { monotonicNow } from '../time';
+import { monotonicNow, startDeadline } from '../time';
 import type { WidgetTarget } from '../types';
 import { isUserVisible } from '../visibility';
 import { listOf } from './aria';
@@ -48,6 +50,9 @@ export interface WidgetContext {
   root: Element;
   /** The run's signal: aborting it ends every wait at once. */
   signal?: AbortSignal;
+  /** While the person may Skip this write (v3 Phase 3): the run's own signal, which only the run's end aborts; `signal`
+   *  then aborts on the Skip too. A wait `signal` ended while this did not was ended by the Skip (skipTidyContext). */
+  runSignal?: AbortSignal;
   /** The run's readiness for declared activations, one record for the whole run, so only its first unanswered
    *  activation waits for the page; a record of the call's own without it. */
   readiness?: WidgetReadiness;
@@ -57,6 +62,27 @@ export interface WidgetContext {
    *  second one is sent for it. `sent`: the bridge said it chose, and nothing read back; `before`: what the widget
    *  showed chosen before that command. */
   bridgeTried?: { sent: boolean; before: readonly string[] };
+}
+
+/** How long putting back what a skipped write did to its widget may take (its typed text, its open list). */
+export const SKIP_TIDY_CAP_MS = 1_500;
+
+/** A context to put back what a write the person skipped had done to its widget (see the header): its signal fresh,
+ *  capped at SKIP_TIDY_CAP_MS, and aborted by the run's own end. Null when no Skip ended the wait (the run itself ended,
+ *  or nothing aborted): nothing is tidied then. */
+export function skipTidyContext<T extends WidgetContext>(ctx: T): T | null {
+  const run = ctx.runSignal;
+  if (run === undefined || run.aborted || ctx.signal?.aborted !== true) return null;
+  const capped = new AbortController();
+  startDeadline(SKIP_TIDY_CAP_MS, () => capped.abort(), run);
+  const { runSignal: _, ...rest } = ctx;
+  return { ...rest, signal: AbortSignal.any([run, capped.signal]) } as T;
+}
+
+/** The context to close a list with: the skip's tidy context when the person's Skip ended the write's waits (an
+ *  aborted signal would close nothing: closeList stops at its first wait), else the write's own. */
+export function closingContext<T extends WidgetContext>(ctx: T): T {
+  return skipTidyContext(ctx) ?? ctx;
 }
 
 /** Whether the run's page-world bridge is off: after a command nothing answered within its dispatch (no bridge, or a
