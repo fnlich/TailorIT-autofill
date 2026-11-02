@@ -115,6 +115,20 @@ export default tseslint.config(
   },
   { files: ['src/dom/time.ts'], rules: { 'no-restricted-globals': 'off' } },
   {
+    // The page-world bridge runs in the page's own world (docs/SPEC-AMENDMENTS.md §12): it imports its protocol and
+    // nothing else of the app, no framework and no browser API, so it stays tiny and can hold no data.
+    files: ['src/page/**/*.ts'],
+    ignores: ['src/page/**/*.test.ts'],
+    rules: {
+      'no-restricted-globals': ['error', ...TIMERS, ...['chrome', 'browser', 'window', 'document', 'postMessage', 'fetch',
+        'XMLHttpRequest', 'localStorage', 'sessionStorage', 'indexedDB'].map((name) => ({
+        name, message: 'The page-world bridge works from the document it is given, and reaches no extension or network API.' }))],
+      '@typescript-eslint/no-restricted-imports': restrictImports([
+        { regex: String.raw`^(?!\.\./dom/bridge-protocol$)`, message: 'The page-world bridge imports only its protocol.' },
+      ]),
+    },
+  },
+  {
     files: ['src/background/**/*.ts'],
     ignores: ['src/background/**/*.test.ts'],
     rules: {

@@ -12,39 +12,38 @@
  *   that shows nothing until something is typed is read as a remote search (a kind its adapter declared stands: a
  *   declared combobox is never made a search, and a declared search is read as one without being opened); one that
  *   ignores our activation is needs-your-click;
- * - widgetHolds: the read-back after the pass's settle (hold.ts).
+ * - widgetHolds: the read-back after the pass's settle (hold.ts);
+ * - chooseThroughBridge: React first (docs/SPEC-AMENDMENTS.md §12): a combobox its adapter declares for the page-world
+ *   bridge has its planned option chosen by its own React code, then read back (fill.ts); fillWidget tries it first,
+ *   and content/pass.ts before a long list's search, once per write (WidgetContext.bridgeTried).
  * A widget is acted on only when standard ARIA says where its list is (or it is a group whose members carry their own
  * state): a widget an adapter declares without that (Lever's location search) is widget-unsupported, never typed into.
  * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown, mouseup or
- * focus), the text filler's input, change, focusout and blur, and a list's own scrollTop set as a property. Never keys,
- * pointer moves or hovers.
+ * focus), the text filler's input, change, focusout and blur, a key the adapter declares for the widget, and a list's
+ * own scrollTop set as a property; before any of them, for a widget declared for it, one command to the page-world
+ * bridge (dom/bridge.ts). Never an undeclared key, a pointer move or a hover.
  */
 import type { ValueOrigin, WriteValue } from '../../core/types/intent';
 import { refused } from '../fillers/outcome';
 import { isUsableOption } from '../option-hash';
 import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS, WIDGET_SEARCH_MIN_OPTIONS } from '../thresholds';
-import type { FieldTarget, FillOutcome, WidgetReading, WidgetTarget } from '../types';
-import { filtersAsTyped, isMultiselectable, referencesList, roleOf } from './aria';
+import type { FieldTarget, FillOutcome, WidgetReading } from '../types';
+import { filtersAsTyped, isActionable, isMultiselectable } from './aria';
 import { addOptions, chooseOption, keepReading, pressMember, type WidgetFillContext } from './fill';
 import { awaitList, closeList, openList } from './interact';
 import { readList, type ListRead } from './options';
 
-export { ariaWidgetKind, editableOf, isWidgetPart, listOf, membersOf, WIDGET_ROOT_SELECTOR } from './aria';
-export { keepReading, remember, type WidgetFillContext } from './fill';
+export {
+  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, WIDGET_ROOT_SELECTOR,
+} from './aria';
+export { chooseThroughBridge, keepReading, remember, type BridgeAttempt, type WidgetFillContext } from './fill';
 export { widgetHolds } from './hold';
 export {
-  afterAction, closeList, expandedState, newReadiness, openList, type WidgetContext, type WidgetReadiness,
+  afterAction, afterBridge, bridgeChoose, closeList, expandedState, newBridgeRun, newReadiness, openList,
+  pressDeclaredKey, type BridgeChoice, type BridgeRun, type WidgetContext, type WidgetReadiness,
 } from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
 export { searchForOption, searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
-
-/** Whether standard ARIA tells where a widget's list is, or its members' state: the helpers act on nothing else. */
-export function isActionable(widget: WidgetTarget): boolean {
-  if (widget.kind === 'checkbox') return false;
-  if (widget.kind === 'radio') return widget.members.length > 0;
-  const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];
-  return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input);
-}
 
 /** Whether a combobox's planned option is searched for rather than chosen from its whole list (see the header): its
  *  adapter declared it, ARIA says where its list is, its text box filters the list as typed (aria-autocomplete list or

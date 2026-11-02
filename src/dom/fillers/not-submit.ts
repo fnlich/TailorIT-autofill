@@ -15,6 +15,12 @@
  * The only exception is the adapter's Next button, and only when the caller passes allowNext: the step machine does
  * so on a step the adapter declared not final, after the auto-advance checks. Even then the Submit button and the
  * submit words stay refused. A refused click leaves the field flagged needs-your-click; it is never retried another way.
+ * A choice made through the page-world bridge (docs/SPEC-AMENDMENTS.md §12) clicks nothing, and the option it names
+ * may not be drawn yet (a closed list): its text box goes through assertNotSubmit, and the option's label, as the
+ * frame read it, through optionWordsRefusal, the word rule an option of an open list gets here ("confirm" chooses a
+ * value; any other submit word refuses it). The element rules (Submit, Next, the never-pressed buttons, a label of a
+ * refused control) are for elements, and a list's option is none of those (listOption: it holds no button, link or
+ * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
 import type { Adapter } from '../../adapters/types';
 
@@ -79,15 +85,23 @@ function listOption(el: Element): boolean {
 /** The one submit word that is also how a consent agrees ("Acknowledge/Confirm", "I confirm"). */
 const CONSENT_SUBMIT_WORD = /\bconfirm\w*/gi;
 
+/** A list option's words with "confirm" left out: it chooses a value there. */
+const optionWords = (text: string) => text.replace(CONSENT_SUBMIT_WORD, ' ');
+
+/** Why an option of a list, by its label alone, may not be chosen: 'submit-word' when its words, "confirm" left out,
+ *  hold a submit word ("I confirm and submit"), as an open list's option's click is refused (see the header); null
+ *  otherwise ("Acknowledge/Confirm"). Pure: the bridge's choices, whose option may not be drawn, are checked so. */
+export function optionWordsRefusal(label: string): Extract<ClickRefusal, 'submit-word'> | null {
+  return SUBMIT_WORDS.test(optionWords(label)) ? 'submit-word' : null;
+}
+
 /** The words a control shows or announces: its text, its aria-label and, for button inputs, its value or alt. A
  *  checkbox or radio toggles a state and never submits, so its words (a consent box's "I confirm ...") do not count; a
  *  list's option (listOption) chooses a value, so "confirm" does not count in it, but any other submit word does ("I
  *  confirm and submit"). */
 function shownText(el: Element): string {
   if (el.localName === 'input' && ['checkbox', 'radio'].includes((el as HTMLInputElement).type)) return '';
-  if (listOption(el)) {
-    return [el.getAttribute('aria-label') ?? '', el.textContent ?? ''].join(' ').replace(CONSENT_SUBMIT_WORD, ' ');
-  }
+  if (listOption(el)) return optionWords([el.getAttribute('aria-label') ?? '', el.textContent ?? ''].join(' '));
   const parts = [el.getAttribute('aria-label') ?? ''];
   if (el.localName === 'input') {
     const input = el as HTMLInputElement;

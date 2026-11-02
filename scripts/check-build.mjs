@@ -1,11 +1,15 @@
 // Fails any build that drifts from the narrowest manifest the plan allows (docs/PRIVACY.md justifies each key).
 // Checks .output/chrome-mv3, .output/edge-mv3 and .output-e2e/chrome-mv3; pass --all to require all three.
 // Every build's bundles hold no other build's TailorIT origin, and every build ships TailorIT's mark as its icons, each
-// a PNG of the size its key names (scripts/icons.mjs renders them).
+// a PNG of the size its key names (scripts/icons.mjs renders them). There are exactly two content scripts: ours, in the
+// isolated world, and the page-world bridge (world MAIN, docs/SPEC-AMENDMENTS.md §12), on the same hosts, with no CSS,
+// each within its own size budget. The bridge's bundle is read too: one anonymous function called at once, naming no
+// chrome., browser. or postMessage, and run in a bare context it must add no global and listen for its command only.
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import vm from 'node:vm';
 import { paint } from './proc.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -15,6 +19,14 @@ const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8'
 /** The content script, React included once the in-page panel lands, must stay under this: every file the manifest's
  *  content script lists, together. */
 const CONTENT_SCRIPT_BUDGET = 1024 * 1024;
+/** The page-world bridge (src/page/bridge.ts and its protocol, nothing else of the app) must stay under this. */
+const BRIDGE_BUDGET = 12 * 1024;
+/** What the bridge's bundle may never name: the extension's APIs (it runs in the page's world, which has none of
+ *  them, and must not look for any) and window messaging. */
+const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
+/** Keys a content script never has: CSS, and every way to reach more frames or other addresses than its matches. */
+const NEVER_IN_A_CONTENT_SCRIPT = ['css', 'match_about_blank', 'match_origin_as_fallback', 'include_globs',
+  'exclude_globs', 'exclude_matches'];
 
 const BUILDS = [
   { dir: '.output/chrome-mv3', origin: 'http://localhost:3100', production: true },
@@ -49,6 +61,15 @@ const failures = [];
 const fail = (build, message) => failures.push(`${build.dir}: ${message}`);
 const sameSet = (a, b) => a.length === b.length && [...a].sort().join('\n') === [...b].sort().join('\n');
 
+/** The manifest's two content scripts: ours, with no world key (the isolated world), and the page-world bridge, the
+ *  one whose world is MAIN. A script in any other world, or a second one of either, is neither. */
+function contentScripts(manifest) {
+  const scripts = manifest.content_scripts ?? [];
+  const isolated = scripts.filter((script) => !('world' in script));
+  const main = scripts.filter((script) => script.world === 'MAIN');
+  return { ours: isolated.length === 1 ? isolated[0] : undefined, bridge: main.length === 1 ? main[0] : undefined };
+}
+
 function files(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
@@ -68,16 +89,24 @@ function checkManifest(build, manifest) {
   if (manifest.minimum_chrome_version !== '144') fail(build, 'minimum_chrome_version is not 144');
   if (!manifest.action) fail(build, 'action is missing');
   const scripts = manifest.content_scripts ?? [];
-  if (scripts.length !== 1) fail(build, `expected one content script, found ${scripts.length}`);
-  const [script] = scripts;
-  if (script) {
-    const expected = fallback ? [...ATS_MATCHES, 'http://127.0.0.1/*'] : [...ATS_MATCHES];
-    if (!sameSet(script.matches ?? [], expected)) fail(build, 'content script matches differ from the ATS list');
-    if (script.all_frames !== true) fail(build, 'content script is not all_frames');
-    if (script.run_at !== 'document_idle') fail(build, 'content script does not run at document_idle');
-    for (const key of ['css', 'world', 'match_about_blank', 'match_origin_as_fallback']) {
-      if (key in script) fail(build, `content script has ${key}`);
-    }
+  const { ours, bridge } = contentScripts(manifest);
+  if (scripts.length !== 2 || ours === undefined || bridge === undefined) {
+    fail(build, `expected two content scripts, ours and the page-world bridge (world MAIN), found ${scripts.length}: `
+      + JSON.stringify(scripts.map((script) => script.world ?? 'isolated')));
+  }
+  const expected = fallback ? [...ATS_MATCHES, 'http://127.0.0.1/*'] : [...ATS_MATCHES];
+  if (ours) {
+    if (!sameSet(ours.matches ?? [], expected)) fail(build, 'content script matches differ from the ATS list');
+    if (ours.all_frames !== true) fail(build, 'content script is not all_frames');
+    if (ours.run_at !== 'document_idle') fail(build, 'content script does not run at document_idle');
+    for (const key of ['world', ...NEVER_IN_A_CONTENT_SCRIPT]) if (key in ours) fail(build, `content script has ${key}`);
+  }
+  if (bridge) {
+    if (!sameSet(bridge.matches ?? [], expected)) fail(build, "the page-world bridge's matches differ from the ATS list");
+    if (bridge.all_frames !== true) fail(build, 'the page-world bridge is not all_frames');
+    if (bridge.run_at !== 'document_start') fail(build, 'the page-world bridge does not run at document_start');
+    if (!Array.isArray(bridge.js) || bridge.js.length !== 1) fail(build, 'the page-world bridge is not one script file');
+    for (const key of NEVER_IN_A_CONTENT_SCRIPT) if (key in bridge) fail(build, `the page-world bridge has ${key}`);
   }
   // The whole object: `ids` would let other extensions connect, `accepts_tls_channel_id` adds a channel.
   if (!isDeepStrictEqual(manifest.externally_connectable, { matches: [`${build.origin}/*`] })) {
@@ -116,25 +145,67 @@ function checkIcons(build, dir, manifest) {
   if (!isDeepStrictEqual(action, expected)) fail(build, "the action's icons are not the 16 and 32 px icons");
 }
 
-/** The budget over every file the manifest's content script lists, wherever the build put them; a listed file that is
- *  not there fails, and so does a content script that lists none. */
-function checkContentScriptSize(build, dir, manifest) {
-  const listed = manifest.content_scripts?.[0]?.js;
+/** A budget over every file a content script lists, wherever the build put them; a listed file that is not there
+ *  fails, and so does a script that lists none. `name` is how the failures name it. */
+function checkScriptSize(build, dir, script, name, budget) {
+  const listed = script?.js;
   if (!Array.isArray(listed) || listed.length === 0) {
-    fail(build, 'the content script lists no file');
+    fail(build, `${name} lists no file`);
     return;
   }
   let total = 0;
   for (const path of listed) {
     const file = typeof path === 'string' ? join(dir, path) : null;
     if (file === null || !existsSync(file) || !statSync(file).isFile()) {
-      fail(build, `the content script ${String(path)} is missing`);
+      fail(build, `${name} ${String(path)} is missing`);
       continue;
     }
     total += statSync(file).size;
   }
-  if (total > CONTENT_SCRIPT_BUDGET) {
-    fail(build, `the content script is ${total} bytes (${listed.join(', ')}), over the ${CONTENT_SCRIPT_BUDGET}-byte budget`);
+  if (total > budget) fail(build, `${name} is ${total} bytes (${listed.join(', ')}), over the ${budget}-byte budget`);
+}
+
+/**
+ * The page-world bridge's bundle (src/entrypoints/page-bridge.content.ts): WXT's anonymous wrapper, `(function(){...})();`,
+ * naming none of BRIDGE_NEVER_NAMES; and, run in a bare context whose document only records its listeners, it adds no
+ * global, throws nothing, and listens for exactly one event on the document, its command (src/dom/bridge-protocol.ts),
+ * in the capture phase. The page's world is the page's: a global there would be the page's to read and to change.
+ */
+function checkBridgeBundle(build, dir, bridge) {
+  const [path] = Array.isArray(bridge?.js) ? bridge.js : [];
+  const file = typeof path === 'string' ? join(dir, path) : null;
+  if (file === null || !existsSync(file)) return;
+  const text = readFileSync(file, 'utf8').trim();
+  if (!text.startsWith('(function(){') || !text.endsWith('})();')) {
+    fail(build, 'the page-world bridge is not one anonymous function called at once');
+  }
+  for (const name of BRIDGE_NEVER_NAMES) if (text.includes(name)) fail(build, `the page-world bridge names "${name}"`);
+  const listeners = [];
+  const document = { addEventListener: (type, _listener, capture) => listeners.push([type, capture === true]),
+    removeEventListener: () => undefined };
+  document.defaultView = { document };
+  const sandbox = { document };
+  const before = new Set(Object.getOwnPropertyNames(sandbox));
+  try {
+    vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
+  } catch (error) {
+    fail(build, `the page-world bridge throws on its own: ${String(error).slice(0, 120)}`);
+    return;
+  }
+  const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
+  if (added.length > 0) fail(build, `the page-world bridge adds globals: ${added.join(', ')}`);
+  if (!isDeepStrictEqual(listeners, [['tailorit:bridge', true]])) {
+    fail(build, `the page-world bridge listens for ${JSON.stringify(listeners)}, not its command alone`);
+  }
+}
+
+/** Each content script's budget: ours (React included) and the page-world bridge's. */
+function checkContentScriptSize(build, dir, manifest) {
+  const { ours, bridge } = contentScripts(manifest);
+  if (ours) checkScriptSize(build, dir, ours, 'the content script', CONTENT_SCRIPT_BUDGET);
+  if (bridge) {
+    checkScriptSize(build, dir, bridge, 'the page-world bridge', BRIDGE_BUDGET);
+    checkBridgeBundle(build, dir, bridge);
   }
 }
 

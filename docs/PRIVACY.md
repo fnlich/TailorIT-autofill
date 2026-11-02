@@ -35,6 +35,14 @@ TailorIT Autofill fills job applications from a profile the person keeps in thei
 
 Nothing is logged except closed codes with numbers or flags (`src/shared/log.ts`: its types make it impossible to log a string a page or a profile supplied).
 
+## The page-world bridge
+
+To choose an option in a page's React dropdown as the page's own code does (docs/SPEC-AMENDMENTS.md §12), the extension runs one small script in the page's own world on the ATS hosts, beside the content script, which runs apart from the page. It holds nothing: no profile, no answer, no token, no setting, no state but the one listener it waits on, and it reaches no part of the extension (no messaging, no storage, no browser API, no network).
+- **The page sees everything it is told.** The page's own scripts fully control the world the bridge runs in: they can read every request, change how the bridge behaves and answer in its place. So nothing is sent there that the page should not read.
+- **What it is told:** for each dropdown answer, which option to choose (its label, as the extension read it from the page), whether the dropdown takes several answers, what kind of request it is, and a random id. The label reveals the answer the fill is choosing exactly as the filled form will show it to the page, a moment earlier. Asked about a field, the bridge answers that field's type and path as the page's own code names them (two short strings), never a value.
+- **What it never gets:** any profile value, typed answer or anything else of the person's. The content script writes those as before, and a remote search's typed query still goes into the page's text box as before; the bridge only chooses an option the page lists.
+- **What the page can do with it:** read its requests, send it requests of its own (which can only make it choose one of the page's own options on that page), and tell, from the moment it loads, that the extension is installed, since the bridge acknowledges a request. Its answers are never trusted: the content script reads the page back itself.
+
 ## What reaches an AI model
 
 Only through the person's own TailorIT, which runs the Claude CLI, and only when the AI settings allow it:
@@ -67,6 +75,7 @@ When a posting says AI-assisted applications are not allowed, or its form asks t
 | `action` | a title, and TailorIT's mark at 16 and 32 px (`default_icon`) | The toolbar button opens the panel | none |
 | `icons` | TailorIT's mark at 16, 32, 48 and 128 px, PNGs packaged with the extension (`public/icon`) | The extensions page and the store show it; nothing is fetched, and the files are not web-accessible | remote images |
 | `side_panel`, `options_ui` | the panel and settings pages | none | none |
+| `content_scripts` | two, on the ATS hosts only: the content script, apart from the page, and the page-world bridge (above), in the page's own world, which holds nothing | The content script reads and fills the form; the bridge chooses a React dropdown's option as the page's own code does | a script injected on demand, which needs `scripting` |
 | Absent by design | `tabs`, `scripting`, `activeTab`, `cookies`, `webRequest`, `debugger`, `alarms`, `offscreen`, `downloads`, `web_accessible_resources`, a CSP override, remote code | | |
 
 Development builds alone add, for saving page snapshots as test fixtures ([FIXTURES.md](FIXTURES.md)):

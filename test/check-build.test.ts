@@ -2,8 +2,11 @@
  * scripts/check-build.mjs's assertions: no build it checks (chrome, edge and e2e, all production mode) may hold the
  * capture page, the capture hotkeys' code or a `commands` key; a production bundle may hold none of the e2e build's
  * hooks; no bundle names another build's TailorIT; `externally_connectable` is exactly TailorIT's origin; every file
- * the content script lists exists and stays within the size budget; and every build ships its four icons as PNGs of
- * their sizes. The script runs as it is, copied with what it reads (proc.mjs, the host list, the public key) into a
+ * the content script lists exists and stays within the size budget; there are exactly two content scripts, ours and
+ * the page-world bridge (world MAIN, the same matches, from document_start, one file and no CSS, within its own
+ * budget: docs/SPEC-AMENDMENTS.md §12), whose bundle is one anonymous function that names no extension API and no
+ * window messaging, adds no global and listens for its command alone, and no web-accessible resource; and every
+ * build ships its four icons as PNGs of their sizes. The script runs as it is, copied with what it reads (proc.mjs, the host list, the public key) into a
  * temporary folder that holds three fixture builds, and each case breaks the builds in one way.
  */
 import { spawnSync } from 'node:child_process';
@@ -51,9 +54,13 @@ function manifest(origin: string): Record<string, unknown> {
     background: { service_worker: 'background.js' },
     options_ui: { open_in_tab: true, page: 'options.html' },
     side_panel: { default_path: 'sidepanel.html' },
-    content_scripts: [{ matches: [...ATS_MATCHES], all_frames: true, run_at: 'document_idle', js: ['content-scripts/content.js'] }],
+    content_scripts: [{ matches: [...ATS_MATCHES], all_frames: true, run_at: 'document_idle', js: ['content-scripts/content.js'] },
+      { ...BRIDGE_SCRIPT, matches: [...ATS_MATCHES] }],
   };
 }
+
+/** The page-world bridge's entry in a manifest, as WXT writes it (src/entrypoints/page-bridge.content.ts). */
+const BRIDGE_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['content-scripts/page-bridge.js'], world: 'MAIN' };
 
 const folders: string[] = [];
 
@@ -73,6 +80,7 @@ function project(change: (write: (path: string, text: string | Uint8Array) => vo
     write(`${dir}/manifest.json`, JSON.stringify(manifest(name === 'e2e' ? 'http://localhost:3190' : 'http://localhost:3100')));
     write(`${dir}/background.js`, 'var background=(function(){return {}})();');
     write(`${dir}/content-scripts/content.js`, 'var content=(function(){return {}})();');
+    write(`${dir}/content-scripts/page-bridge.js`, '(function(){document.addEventListener("tailorit:bridge",()=>{},!0)})();');
     write(`${dir}/chunks/options-abc.js`, 'export const options = 1;');
     write(`${dir}/options.html`, '<!doctype html><title>Settings</title>');
     write(`${dir}/sidepanel.html`, '<!doctype html><title>Review</title>');
@@ -146,6 +154,8 @@ function everyManifest(write: (path: string, text: string | Uint8Array) => void,
 
 /** The content script's entry in a manifest. */
 const contentScript = (changed: Record<string, unknown>) => (changed.content_scripts as Array<Record<string, unknown>>)[0]!;
+/** The page-world bridge's entry in a manifest. */
+const bridgeScript = (changed: Record<string, unknown>) => (changed.content_scripts as Array<Record<string, unknown>>)[1]!;
 
 /** A script just past the content script's budget (scripts/check-build.mjs's CONTENT_SCRIPT_BUDGET, 1 MiB). */
 const OVER_BUDGET = `var big="${'a'.repeat(1024 * 1024)}";`;
@@ -262,5 +272,108 @@ describe("check-build's manifest and bundle assertions", () => {
     expect(keys.output).toContain('.output/chrome-mv3: icons are ["16","32","48"], not 16, 32, 48 and 128');
     expect(keys.output).toContain(".output/chrome-mv3: the action's icons are not the 16 and 32 px icons");
     expect(keys.status).toBe(1);
+  });
+});
+
+describe("check-build's two content scripts: ours and the page-world bridge", () => {
+  afterEach(() => {
+    for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
+  });
+
+  it('pass ours and the bridge in either order', () => {
+    const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+      (changed.content_scripts as unknown[]).reverse();
+    })));
+    expect(output).toContain('3 build(s) match the manifest the plan allows');
+    expect(status).toBe(0);
+  });
+
+  it('fail a build with our content script alone, a third script, or two in the isolated world', () => {
+    const alone = checkBuild(project((write) => everyManifest(write, (changed) => {
+      changed.content_scripts = [contentScript(changed)];
+    })));
+    expect(alone.output).toContain('.output/chrome-mv3: expected two content scripts, ours and the page-world bridge '
+      + '(world MAIN), found 1: ["isolated"]');
+    expect(alone.status).toBe(1);
+
+    const third = checkBuild(project((write) => everyManifest(write, (changed) => {
+      (changed.content_scripts as unknown[]).push({ ...BRIDGE_SCRIPT, matches: [...ATS_MATCHES], js: ['content-scripts/more.js'] });
+    })));
+    expect(third.output).toContain('found 3: ["isolated","MAIN","MAIN"]');
+    expect(third.status).toBe(1);
+
+    const isolated = checkBuild(project((write) => everyManifest(write, (changed) => {
+      delete bridgeScript(changed).world;
+    })));
+    expect(isolated.output).toContain('found 2: ["isolated","isolated"]');
+    expect(isolated.status).toBe(1);
+  });
+
+  it('fail a page-world bridge with other matches, CSS, about:blank frames, another start or more files', () => {
+    const cases: Array<[(bridge: Record<string, unknown>) => void, string]> = [
+      [(bridge) => { bridge.matches = [...ATS_MATCHES, 'https://*/*']; }, "the page-world bridge's matches differ from the ATS list"],
+      [(bridge) => { bridge.matches = ATS_MATCHES.slice(1); }, "the page-world bridge's matches differ from the ATS list"],
+      [(bridge) => { bridge.css = ['content-scripts/page-bridge.css']; }, 'the page-world bridge has css'],
+      [(bridge) => { bridge.match_about_blank = true; }, 'the page-world bridge has match_about_blank'],
+      [(bridge) => { bridge.match_origin_as_fallback = true; }, 'the page-world bridge has match_origin_as_fallback'],
+      [(bridge) => { bridge.exclude_matches = ['https://jobs.lever.co/*']; }, 'the page-world bridge has exclude_matches'],
+      [(bridge) => { bridge.all_frames = false; }, 'the page-world bridge is not all_frames'],
+      [(bridge) => { bridge.run_at = 'document_idle'; }, 'the page-world bridge does not run at document_start'],
+      [(bridge) => { bridge.js = ['content-scripts/page-bridge.js', 'content-scripts/content.js']; },
+        'the page-world bridge is not one script file'],
+    ];
+    for (const [change, message] of cases) {
+      const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => change(bridgeScript(changed)))));
+      expect(output, message).toContain(`.output/chrome-mv3: ${message}`);
+      expect(status, message).toBe(1);
+    }
+  });
+
+  it("fail a page-world bridge over its 12 KiB budget, or one whose file is missing", () => {
+    const big = checkBuild(project((write) => {
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(12 * 1024)}";`);
+    }));
+    expect(big.output).toContain('.output/chrome-mv3: the page-world bridge is');
+    expect(big.output).toContain('over the 12288-byte budget');
+    expect(big.status).toBe(1);
+
+    const missing = checkBuild(project((write) => everyManifest(write, (changed) => {
+      bridgeScript(changed).js = ['content-scripts/elsewhere.js'];
+    })));
+    expect(missing.output).toContain('.output/chrome-mv3: the page-world bridge content-scripts/elsewhere.js is missing');
+    expect(missing.status).toBe(1);
+  });
+
+  it('fail a build with web-accessible resources, which a page-world script never needs', () => {
+    const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+      changed.web_accessible_resources = [{ resources: ['content-scripts/page-bridge.js'], matches: [...ATS_MATCHES] }];
+    })));
+    expect(output).toContain('.output/chrome-mv3: web_accessible_resources must be absent');
+    expect(status).toBe(1);
+  });
+
+  it("fail a page-world bridge bundle that adds a global, names an extension API or window messaging, or listens elsewise", () => {
+    const listen = 'document.addEventListener("tailorit:bridge",()=>{},!0)';
+    const cases: Array<[string, string]> = [
+      [`var pageBridge=(function(){${listen}})();`, 'the page-world bridge is not one anonymous function called at once'],
+      [`var pageBridge=(function(){${listen}})();`, 'the page-world bridge adds globals: pageBridge'],
+      [`(function(){globalThis.__tailorit=1;${listen}})();`, 'the page-world bridge adds globals: __tailorit'],
+      [`(function(){chrome.runtime;${listen}})();`, 'the page-world bridge names "chrome."'],
+      [`(function(){browser.runtime;${listen}})();`, 'the page-world bridge names "browser."'],
+      [`(function(){document.defaultView.postMessage;${listen}})();`, 'the page-world bridge names "postMessage"'],
+      ['(function(){})();', 'the page-world bridge listens for [], not its command alone'],
+      [`(function(){${listen};document.addEventListener("message",()=>{},!0)})();`,
+        'the page-world bridge listens for [["tailorit:bridge",true],["message",true]], not its command alone'],
+      ['(function(){document.addEventListener("tailorit:bridge",()=>{})})();',
+        'the page-world bridge listens for [["tailorit:bridge",false]], not its command alone'],
+      ['(function(){window.x=1})();', 'the page-world bridge throws on its own: ReferenceError: window is not defined'],
+    ];
+    for (const [bundle, message] of cases) {
+      const { status, output } = checkBuild(project((write) => {
+        for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, bundle);
+      }));
+      expect(output, bundle).toContain(`.output/chrome-mv3: ${message}`);
+      expect(status, bundle).toBe(1);
+    }
   });
 });

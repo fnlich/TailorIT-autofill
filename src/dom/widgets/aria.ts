@@ -16,7 +16,7 @@
  * ARIA 1.1 combobox is part of that widget, never a field of its own.
  */
 import { CONTROL_SELECTOR, isTextLike } from '../kinds';
-import type { WidgetKind } from '../types';
+import type { WidgetKind, WidgetTarget } from '../types';
 
 /** The roles a widget's element can carry, and the containers a toggle-button group can be. */
 export const WIDGET_ROOT_SELECTOR = '[role], fieldset';
@@ -176,4 +176,12 @@ function isFieldLike(el: Element): boolean {
 export function isWidgetPart(control: Element): boolean {
   if (control.closest('[role~="listbox" i], [role~="option" i]') !== null) return true;
   return control.parentElement?.closest('[role~="combobox" i]') != null;
+}
+
+/** Whether standard ARIA tells where a widget's list is, or its members' state: the helpers act on nothing else. */
+export function isActionable(widget: WidgetTarget): boolean {
+  if (widget.kind === 'checkbox') return false;
+  if (widget.kind === 'radio') return widget.members.length > 0;
+  const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];
+  return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input);
 }

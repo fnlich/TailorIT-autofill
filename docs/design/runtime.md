@@ -254,7 +254,7 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {
-      if (FIXTURE_FALLBACK) manifest.content_scripts?.[0]?.matches?.push('http://127.0.0.1/*');
+      if (FIXTURE_FALLBACK) for (const script of manifest.content_scripts ?? []) script.matches?.push('http://127.0.0.1/*');
       assertManifestInvariants(manifest);   // throws on web_accessible_resources, content_scripts[].css, or any extra permission
     },
     // 'entrypoints:resolved' drops src/entrypoints/capture/ unless mode === 'development' (FLAG: hook shape checked in Phase 2)
@@ -265,6 +265,7 @@ export default defineConfig({
 **Content script.**
 - `src/entrypoints/content.ts` declares `defineContentScript({ matches: ATS_MATCHES, allFrames: true, runAt: 'document_idle', noScriptStartedPostMessage: true, main })` (§8.1).
 - There is no `world` key: the isolated world is the default.
+- The one exception to the isolation rule (docs/SPEC-AMENDMENTS.md §12, React first): the page-world bridge, `src/entrypoints/page-bridge.content.ts`, declares `defineContentScript({ matches: ATS_MATCHES, world: 'MAIN', allFrames: true, runAt: 'document_start', main })`. It runs `src/page/bridge.ts` in the page's own world, holds no data, keeps no state but one capture listener on the document, and answers only the commands of `src/dom/bridge-protocol.ts`, inside their dispatch: a react-select's own `selectOption` for an option named by its label, and a React field's type and path. The page fully controls that world, so nothing reaches it that the page should not read: the op, whether a multi-select's, a random id and the chosen option's clean label as the frame read it from the page; the content script never trusts its answer and reads the widget back itself (§6). check-build allows exactly these two content scripts, the bridge on the same matches, one file, no CSS, within 12 KiB.
 - There is no CSS import anywhere in content code; styles are a TS string (§10.1).
 - `matchAboutBlank` and `matchOriginAsFallback` stay off, because the Greenhouse and Ashby embeds use real iframe URLs.
 - No `registration: 'runtime'`, which would need `scripting`.
@@ -680,12 +681,14 @@ The descriptor records `proxy: 'label'|'adapter'`, and highlights point at the p
 
 **Events the extension may cause on page elements** (a fixed list):
 - `input`, `change`, `focusout`, `blur` and `click`;
-- single activation events that an adapter's widget hook declares and names its snapshot for (for example one `mousedown` to open a listbox).
+- single activation events that an adapter's widget hook declares and names its snapshot for (for example one `mousedown` to open a listbox);
+- untrusted `keydown` and `keyup` for Escape or ArrowDown, each only on a widget whose adapter declares that key (`WidgetDecl.keys`, docs/SPEC-AMENDMENTS.md §12), never to a control `assertNotSubmit` refuses, Escape only while the widget says it is open (Enter only once a snapshot needs it);
+- one `tailorit:bridge` CustomEvent, the page-world bridge's command (§2), for a widget its adapter declares for the bridge (`WidgetDecl.bridge`). React first: such a widget's planned option is chosen by its own React code before any event above. The command goes only after the frame's own checks: the planned option at its place and enabled, an llm-pick's R1 check on the reading the frame holds (then an exact `getOptionLabel` match in the bridge), `assertNotSubmit` on its text box and the open-list option's word rule on the option's label (`optionWordsRefusal`; the option's element may not be drawn, so the click's element rules do not apply to it). Then it is read back: shown, written; something else shown, written but not verified, and no event follows; nothing changed, the events above run as before, never ending as "nothing written" after the bridge said it chose. One command per write; the run's bridge goes off after a command nothing answered or a claimed choice that never read back.
 
 **Hard prohibitions:**
 - Never pointer moves, hovers, touches or typed keystrokes.
 - No focus or scrolling, unless an adapter declares that a widget needs it.
-- Never a keydown for Enter or Space (that could trigger implicit submission or page handlers).
+- Never a keydown for Space or Enter (Enter becomes a key a widget may declare only once a snapshot shows one that needs it: an untrusted Enter triggers no implicit submission, but a page handler may).
 - Never `form.submit()` or `requestSubmit()` (both are lint-banned).
 - Every untrusted `click()` goes through `assertNotSubmit(el)`, which refuses:
   - the adapter's Submit button;

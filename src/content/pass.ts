@@ -19,7 +19,11 @@
  *    the scan may be the run's kept reading of a closed list, so the write's origin goes to the widget filler, which
  *    checks an llm-pick again on what the list shows right before its click (the Phase 4 review, R1). A long list its
  *    own text box filters (dom/widgets' searchesList: Greenhouse's phone country) has a profile option searched for by
- *    the option's words instead, that one query guarded as a typeahead's are (searchOption);
+ *    the option's words instead, that one query guarded as a typeahead's are (searchOption). React first
+ *    (docs/SPEC-AMENDMENTS.md §12): a combobox its adapter declares for the page-world bridge has its option chosen
+ *    by its own React code before either (dom/widgets' chooseThroughBridge: the write's one command), and the search
+ *    and the events follow only when nothing the frame can see changed; after a choice the bridge said it made, the
+ *    list is not searched, and the events' path never ends as "nothing written";
  * 5. the planner's row is settled from what happened (settleRow).
  * A refused write leaves its field untouched, with the guard's reason: blocked for what the Guard forbids (not
  * visible, no visible label, a canary, its provenance, its own UI), flagged for what could not be done (gone, options
@@ -47,8 +51,8 @@ import type {
 } from '../dom/types';
 import { visiblePlaceholder } from '../dom/visible-text';
 import {
-  fillWidget, isActionable, searchesList, searchForOption, searchTypeahead, widgetHolds, type TypeaheadHooks,
-  type TypeaheadResult, type WidgetFillContext, type WidgetReadiness,
+  chooseThroughBridge, fillWidget, isActionable, searchesList, searchForOption, searchTypeahead, widgetHolds,
+  type BridgeRun, type TypeaheadHooks, type TypeaheadResult, type WidgetFillContext, type WidgetReadiness,
 } from '../dom/widgets';
 import type { ContentPlatform } from '../platform/types';
 import type { AnswerData } from './channel';
@@ -126,6 +130,8 @@ export interface WidgetWriteEnv {
   /** The run's readiness for declared activations (dom/widgets' WidgetReadiness): only the run's first one the page
    *  does not answer waits for its script to attach. */
   readiness?: WidgetReadiness;
+  /** The run's page-world bridge (dom/widgets' BridgeRun): off for the rest of the run once its word did not hold. */
+  bridge?: BridgeRun;
 }
 
 /** What else a write may need. */
@@ -318,16 +324,32 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
   planned: FillResult, target: FieldTarget, widgets: WidgetWriteEnv | undefined): Promise<WriteResult> {
   if (widgets === undefined) return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
   const ctx: WidgetFillContext = { adapter: env.adapter, root: env.root, signal: env.signal, readings: widgets.readings,
-    ...(widgets.readiness === undefined ? {} : { readiness: widgets.readiness }) };
+    ...(widgets.readiness === undefined ? {} : { readiness: widgets.readiness }),
+    ...(widgets.bridge === undefined ? {} : { bridge: widgets.bridge }) };
   if (write.value.kind === 'query') return searchField(env, last, field, write, planned, target, widgets, ctx);
-  const searched = await searchOption(env, last, field, write, planned, target, ctx);
-  if (searched !== null) return searched;
-  const outcome = await fillWidget(target, write.value, ctx, write.origin);
+  const settled = (outcome: DomFillOutcome): WriteResult => {
+    const row = rowAfterFill(planned, outcome);
+    if (!outcome.wrote) return { row };
+    return { row, written: writtenWidget(plannedFieldOf(field), write, planned, target.field,
+      outcome.verification === 'verified'), readBack: readBack(target) };
+  };
+  if (write.value.kind !== 'option') {
+    const outcome = await fillWidget(target, write.value, ctx, write.origin);
+    if (env.signal.aborted || !env.valid()) throw new RunAborted();
+    return settled(outcome);
+  }
+  // React first: the write's one command to the bridge, before a long list's search too; neither the search nor
+  // fillWidget sends another (bridgeTried).
+  const attempt = await chooseThroughBridge(target, write.value, ctx, write.origin);
   if (env.signal.aborted || !env.valid()) throw new RunAborted();
-  const row = rowAfterFill(planned, outcome);
-  if (!outcome.wrote) return { row };
-  return { row, written: writtenWidget(plannedFieldOf(field), write, planned, target.field,
-    outcome.verification === 'verified'), readBack: readBack(target) };
+  if (attempt.kind === 'done') return settled(attempt.outcome);
+  const tried: WidgetFillContext = { ...ctx, bridgeTried: { sent: attempt.sent, before: attempt.before } };
+  // After a choice the bridge said it made, the list is not searched: typing into it would add to what React holds.
+  const searched = attempt.sent ? null : await searchOption(env, last, field, write, planned, target, tried);
+  if (searched !== null) return searched;
+  const outcome = await fillWidget(target, write.value, tried, write.origin);
+  if (env.signal.aborted || !env.valid()) throw new RunAborted();
+  return settled(outcome);
 }
 
 /** A typeahead's results as the worker matches them: the field's spec with the results as its options (their hash its

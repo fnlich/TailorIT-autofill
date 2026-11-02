@@ -1,18 +1,22 @@
 /*
  * Greenhouse's "Select..." questions end to end, on the real react-select v5 in Greenhouse's wrapper
  * (fixtures/synthetic/greenhouse-widgets, bundled in memory by helpers/greenhouse-fixture.ts and served at Greenhouse
- * addresses, so the Greenhouse adapter's widget hooks drive it: one bubbling mouseup opens a list, click() chooses,
- * focusout and blur close). Every select's text box is drawn under 4 px wide, as the live BeyondTrust form draws it
+ * addresses, so the Greenhouse adapter's widget hooks drive it: one bubbling mouseup opens a list to read it, focusout
+ * and blur close it). React first (docs/SPEC-AMENDMENTS.md §12): every planned option is then chosen by react-select's
+ * own selectOption, through the extension's page-world bridge (its MAIN-world content script), and read back: the page
+ * sees one bridge command and the bridge's ok for each select chosen, no option is clicked, and no select gets a
+ * mouseup beyond the one that read its list (or, for a search, opened it before its query); the events' path (click()
+ * on the option) stays the fallback. Every select's text box is drawn under 4 px wide, as the live BeyondTrust form draws it
  * (2026-11-01, where no select was filled: each was taken for a hidden control), so each is a field by the control a
  * person sees around it. One fill with the golden profile, then React's own state (window.__gh.values) must hold what
  * the report says was verified:
  * - the Yes/No questions (authorized Yes; sponsorship No, the profile's answer for the posting's country, so filled and
  *   flagged for a look), the EEOC answers (the decline options for what the profile declined, "I am not a protected
  *   veteran"), the country of residence from a list of 197 and the phone's country from the live form's 244 (each
- *   searched for by the country's name typed into its own text box, then clicked: "United States +1", read back by
- *   its flag), the skills multi-select (each pick a mouseup of its own), the School search (opened before its query,
- *   so its first page loads, then the profile's school chosen) and the "How did you hear about this opportunity?"
- *   checkbox question (LinkedIn, ticked with click());
+ *   chosen by its label, nothing typed into its text box: "United States +1", read back by its flag), the skills
+ *   multi-select (one command for each pick), the School search (opened before its query, so its first page loads,
+ *   then the profile's school chosen) and the "How did you hear about this opportunity?" checkbox question (LinkedIn,
+ *   ticked with click());
  * - the Location search is opened and searched with the profile's "Austin, TX", whose results it never lists (its list
  *   shows only the results whose label holds the typed text, as the live BeyondTrust form's does), then with "Austin,
  *   Texas", and its results read as places (the core's matcher/place.ts: the city theirs, Texas by its name, nothing
@@ -20,7 +24,10 @@
  * - no button Greenhouse shows beside the fields was pressed ("Autofill my application", "Locate me", Dropbox, Google
  *   Drive, "Enter manually", "Clear selections", a chip's remove button): the page records every press;
  * - every event on a control is untrusted, the fillers' or the declared mouseup, never a mousedown (the spies), and
- *   nothing is submitted (assertTrapInvariants, with the activation the adapter declares).
+ *   nothing is submitted (assertTrapInvariants, with the activation the adapter declares); no option is clicked.
+ * The same page, whose own script stops every bridge command at its window before the bridge sees it: the run sends
+ * its first command only (the bridge did not answer, so it is off for the run), and the events' path fills every
+ * select as it did before the bridge: the declared mouseups, the clicks on options, the countries typed and clicked.
  * The same page whose React attaches 2.5 s after its markup shows, and the one whose whole form (the form element, the
  * adapter's form root, included) is rebuilt with new nodes, are filled too: the run's first unanswered mouseup waits
  * once for the page, the run finds the new form root by the adapter's hook and scans it, and on the new form the Yes/No
@@ -31,14 +38,14 @@
  * chosen, is planned again and ticked with click(): nothing is left for the person.
  * And the phone's country for three other people (the mock's profile-* parts), on the names, the email and the phone
  * alone (.../9104, its phone and country answering each other as intl-tel-input and Greenhouse make them on the live
- * BeyondTrust form, and .../9105, left to themselves): each country is typed by its name and chosen, a country the
- * phone number picked by itself stands only when it is the profile's, and the number the page then draws nationally
- * ("(512) 555-0188") still holds the profile's own, never typed again with its code:
- * - a phone with no country code ("512 555 0147"): "United States" typed;
+ * BeyondTrust form, and .../9105, left to themselves): each country is chosen through the bridge by its label, nothing
+ * typed, a country the phone number picked by itself stands only when it is the profile's, and the number the page
+ * then draws nationally ("(512) 555-0188") still holds the profile's own, never typed again with its code:
+ * - a phone with no country code ("512 555 0147"): "United States +1" chosen;
  * - a Canadian whose "+1 512 555 0188" intl-tel-input reads as the United States': the United States it picked
- *   replaced by "Canada", typed (flagged prefill-conflict, as any answer the page held is);
- * - a Briton's "+44 20 7946 0958": "United Kingdom" typed where the number picks nothing, and the United Kingdom it
- *   picked kept, nothing typed, where it does.
+ *   replaced by "Canada +1" (flagged prefill-conflict, as any answer the page held is);
+ * - a Briton's "+44 20 7946 0958": "United Kingdom +44" chosen where the number picks nothing, and the United Kingdom
+ *   it picked kept, nothing sent, where it does.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures.ts';
@@ -102,6 +109,41 @@ async function ourEvents(page: Page, types: readonly string[]): Promise<string[]
     .map((event) => `${event.type} ${event.control}`);
 }
 
+/** The untrusted clicks on a react-select's options (react-select-<id>-option-<n>): the events' path's choices. */
+async function optionClicks(page: Page): Promise<string[]> {
+  return (await ourEvents(page, ['click'])).filter((event) => /^click #react-select-.+-option-\d+$/.test(event));
+}
+
+/** What the page's own world saw of the page-world bridge (docs/SPEC-AMENDMENTS.md §12), by the id of the element each
+ *  event was on: each command's label, and each answer's ok. Any page script could see as much. */
+interface BridgeSeen {
+  commands: Array<{ target: string; label: string | null }>;
+  results: Array<{ target: string; ok: boolean | null }>;
+}
+
+/** Records, from the page's main world before its scripts run, every bridge command and answer (BridgeSeen). */
+async function watchBridge(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const seen = { commands: [] as unknown[], results: [] as unknown[] };
+    Object.defineProperty(window, '__bridgeSeen', { value: seen });
+    const read = (event: Event, key: string): unknown => {
+      try {
+        return (JSON.parse(String((event as CustomEvent).detail)) as Record<string, unknown>)[key] ?? null;
+      } catch {
+        return null;
+      }
+    };
+    window.addEventListener('tailorit:bridge', (event) => seen.commands.push({ target: (event.target as Element).id,
+      label: read(event, 'label') }), true);
+    window.addEventListener('tailorit:bridge-result', (event) => seen.results.push({ target: (event.target as Element).id,
+      ok: read(event, 'ok') }), true);
+  });
+}
+
+/** The ids of the selects the bridge said it chose in. */
+const bridged = (seen: BridgeSeen) => [...new Set(seen.results.filter((result) => result.ok === true)
+  .map((result) => result.target))].sort();
+
 test.describe("Greenhouse's react-selects", () => {
   test('the Yes/No, EEOC, country, multi-select, School, Location and checkbox questions, filled and verified', async ({ extContext, connected: ext, routeLog, logs }) => {
     test.setTimeout(150_000);
@@ -109,6 +151,7 @@ test.describe("Greenhouse's react-selects", () => {
     expect(declaredActivation(GREENHOUSE_WIDGETS.now)).toEqual(['mouseup']);
     routeLog.serve(routes);
     const page = await extContext.newPage();
+    await watchBridge(page);
     await page.goto(GREENHOUSE_WIDGETS.now);
     await expect(page.locator('#question_9001')).toBeVisible();
     // The live BeyondTrust geometry: every select's empty text box narrower than the 4 px a box needs on its own.
@@ -143,16 +186,16 @@ test.describe("Greenhouse's react-selects", () => {
       expect(log.values[id], label).toBe(value);
     }
 
-    // A list of 197 countries, read whole for the plan, then searched for by the country's name and chosen.
+    // A list of 197 countries, read whole for the plan, then chosen through the bridge by its label: nothing typed.
     expect(row(report, RESIDENCE)).toMatchObject({ ...verified, category: 'address.country' });
     expect(log.values.question_9005).toBe('US');
-    expect(log.typed.question_9005).toEqual(['United States']);
+    expect(log.typed.question_9005).toBeUndefined();
 
-    // The multi-select: each profile skill it offers, each pick opened with a mouseup of its own.
+    // The multi-select: each profile skill it offers, each pick a command of its own, its list opened once, to read it.
     const skills = GOLDEN.skills.filter((skill) => skill in SKILL_VALUES);
     expect(row(report, SKILLS)).toMatchObject({ category: 'skills.list', wrote: true, verification: 'verified' });
     expect([...(log.values['question_9004[]'] as string[])].sort()).toEqual(skills.map((skill) => SKILL_VALUES[skill]).sort());
-    expect(log.mouseups['question_9004[]']).toBeGreaterThanOrEqual(skills.length);
+    expect(log.mouseups['question_9004[]']).toBe(1);
 
     // School: opened (its first page loads), then searched; the profile's school chosen.
     expect(row(report, 'School')).toMatchObject({ ...verified, kind: 'typeahead-remote', category: 'education.school',
@@ -174,16 +217,68 @@ test.describe("Greenhouse's react-selects", () => {
     expect(row(report, HEARD)).toMatchObject({ ...verified, kind: 'checkbox-group' });
     expect(log.values['question_9003[]']).toEqual(['900300']);
 
-    // The phone's country, from the live form's 244: "United States" typed, then "United States +1" clicked and read
+    // The phone's country, from the live form's 244: "United States +1" chosen by its label, nothing typed, and read
     // back by its flag (the answer shows the flag and "+1").
     expect(row(report, 'Country')).toMatchObject(verified);
     expect(log.values.country).toBe('us');
-    expect(log.typed.country).toEqual(['United States']);
+    expect(log.typed.country).toBeUndefined();
+
+    // React first: every select chosen was chosen through the bridge, which said so on each, and no option was
+    // clicked; no select got a mouseup beyond its read (or a search's opening).
+    const seen = await pageValue<BridgeSeen>(page, '__bridgeSeen');
+    expect(bridged(seen)).toEqual(expect.arrayContaining(['candidate-location', 'country', 'disability_status', 'gender',
+      'hispanic_ethnicity', 'question_9001', 'question_9002', 'question_9004[]', 'question_9005', 'school--0',
+      'veteran_status']));
+    expect(seen.results.filter((result) => result.ok !== true)).toEqual([]);
+    expect(seen.commands.filter((command) => command.target === 'question_9004[]').length).toBe(skills.length);
+    expect(await optionClicks(page)).toEqual([]);
+    for (const [id, count] of Object.entries(log.mouseups)) expect(count, id).toBe(1);
 
     // Nothing Greenhouse shows beside the fields was pressed, and no mouse event but the declared mouseup was sent.
     expect(log.pressed).toEqual([]);
     expect(await ourEvents(page, ['mousedown', 'pointerdown', 'pointerup', 'keydown', 'keyup', 'focus', 'focusin'])).toEqual([]);
     expect((await ourEvents(page, ['mouseup'])).length).toBeGreaterThan(0);
+    await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
+      applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.now) });
+  });
+
+  test("on a page that stops the bridge's commands, the events' path fills as before: the declared mouseup, the option clicks, the typed country searches", async ({ extContext, connected: ext, routeLog, logs }) => {
+    test.setTimeout(150_000);
+    routeLog.serve(routes);
+    const page = await extContext.newPage();
+    await watchBridge(page);
+    // A page script that takes every command at its window, before the bridge on the document ever sees one.
+    await page.addInitScript(() => {
+      window.addEventListener('tailorit:bridge', (event) => event.stopImmediatePropagation(), true);
+    });
+    await page.goto(GREENHOUSE_WIDGETS.now);
+    await expect(page.locator('#question_9001')).toBeVisible();
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId, { timeout: 90_000 });
+    expect(report.status).toBe('review');
+    const log = await pageValue<Log>(page, '__gh');
+    const verified = { status: 'verified', wrote: true, verification: 'verified' };
+    expect(row(report, AUTHORIZED)).toMatchObject(verified);
+    expect(log.values.question_9001).toBe('1');
+    expect(row(report, RESIDENCE)).toMatchObject(verified);
+    expect(log.values.question_9005).toBe('US');
+    expect(row(report, 'Country')).toMatchObject(verified);
+    expect(log.values.country).toBe('us');
+    expect(row(report, 'Location (City)')).toMatchObject(verified);
+    expect(log.values['candidate-location']).toBe('Austin, Texas, United States');
+    const skills = GOLDEN.skills.filter((skill) => skill in SKILL_VALUES);
+    expect(row(report, SKILLS)).toMatchObject({ wrote: true, verification: 'verified' });
+    expect([...(log.values['question_9004[]'] as string[])].sort()).toEqual(skills.map((skill) => SKILL_VALUES[skill]).sort());
+    // The bridge never answered: the run sent its first command only, and chose everything by its events.
+    const seen = await pageValue<BridgeSeen>(page, '__bridgeSeen');
+    expect(seen.commands).toHaveLength(1);
+    expect(seen.results).toEqual([]);
+    expect(log.typed.question_9005).toEqual(['United States']);
+    expect(log.typed.country).toEqual(['United States']);
+    expect(log.mouseups['question_9004[]']).toBeGreaterThanOrEqual(skills.length + 1);
+    expect((await optionClicks(page)).length).toBeGreaterThan(5);
+    expect(log.pressed).toEqual([]);
+    expect(await ourEvents(page, ['mousedown', 'pointerdown', 'pointerup', 'keydown', 'keyup', 'focus', 'focusin'])).toEqual([]);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.now) });
   });
@@ -194,6 +289,7 @@ test.describe("Greenhouse's react-selects", () => {
     await tailorit.scenario('sensitive-us-citizen');
     routeLog.serve(routes);
     const page = await extContext.newPage();
+    await watchBridge(page);
     await page.goto(GREENHOUSE_WIDGETS.beyondtrust);
     await expect(page.locator('#question_70199751')).toBeVisible();
     const box = page.locator(`#${CONSENT_BOX}`);
@@ -222,6 +318,9 @@ test.describe("Greenhouse's react-selects", () => {
 
     expect(log.pressed).toEqual([]);
     expect(await ourEvents(page, ['mousedown', 'pointerdown', 'keydown', 'focus', 'focusin'])).toEqual([]);
+    expect(bridged(await pageValue<BridgeSeen>(page, '__bridgeSeen'))).toEqual(['31771', 'question_70199751',
+      'question_70199752']);
+    expect(await optionClicks(page)).toEqual([]);
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [],
       labels: syntheticLabels(GREENHOUSE_BEYONDTRUST_EXPECTATIONS),
       applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.beyondtrust) });
@@ -233,6 +332,7 @@ test.describe("Greenhouse's react-selects", () => {
       routeLog.serve(routes);
       const page = await extContext.newPage();
       const url = GREENHOUSE_WIDGETS[start];
+      await watchBridge(page);
       await page.goto(url);
       await expect(page.locator('#question_9001')).toBeVisible();
       // The form element the page shows first, kept in the page's own world to ask later whether it is still there.
@@ -258,6 +358,10 @@ test.describe("Greenhouse's react-selects", () => {
       expect(log.values.question_9001).toBe('1');
       expect(row(report, SPONSORSHIP)).toMatchObject(SPONSORED);
       expect(log.values.question_9002).toBe('0');
+      // Chosen through the bridge once React answers (the new form's React, after a rebuild); no option clicked.
+      expect(bridged(await pageValue<BridgeSeen>(page, '__bridgeSeen'))).toEqual(expect.arrayContaining(['question_9001',
+        'question_9002']));
+      expect(await optionClicks(page)).toEqual([]);
       expect(log.pressed).toEqual([]);
       expect(await ourEvents(page, ['mousedown', 'pointerdown', 'keydown', 'focus', 'focusin'])).toEqual([]);
       await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
@@ -265,9 +369,10 @@ test.describe("Greenhouse's react-selects", () => {
     });
   }
 
-  test.describe("the phone's country, typed by its name", () => {
+  test.describe("the phone's country, chosen by its label", () => {
     /** One fill of the phone form at `url`, settled, and what the page shows and holds afterwards. */
     async function fillPhoneForm(page: Page, url: string, ext: Extension) {
+      await watchBridge(page);
       await page.goto(url);
       await expect(page.locator('#country')).toBeAttached();
       const tabId = await ext.fill(page);
@@ -276,20 +381,22 @@ test.describe("Greenhouse's react-selects", () => {
       const flag = page.locator('#country').locator('xpath=ancestor::div[contains(@class,"select__control")]')
         .locator('.select__single-value .iti__flag');
       return { tabId, report, log: await pageValue<Log>(page, '__gh'), phone: await page.locator('#phone').inputValue(),
-        flag: await flag.getAttribute('class') };
+        flag: await flag.getAttribute('class'), seen: await pageValue<BridgeSeen>(page, '__bridgeSeen') };
     }
     const verified = { status: 'verified', wrote: true, verification: 'verified' } as const;
 
-    test('a phone with no country code: "United States" typed and chosen; the number, drawn nationally, still its own', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    test('a phone with no country code: "United States +1" chosen; the number, drawn nationally, still its own', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
       test.setTimeout(150_000);
       await tailorit.scenario('profile-phone-no-code');
       routeLog.serve(routes);
       const page = await extContext.newPage();
-      const { tabId, report, log, phone, flag } = await fillPhoneForm(page, GREENHOUSE_WIDGETS.phonePicks, ext);
+      const { tabId, report, log, phone, flag, seen } = await fillPhoneForm(page, GREENHOUSE_WIDGETS.phonePicks, ext);
       expect(row(report, 'Country')).toMatchObject({ ...verified, kind: 'combobox', provenance: 'profile' });
       expect(log.values.country).toBe('us');
       expect(flag).toBe('iti__flag iti__us');
-      expect(log.typed.country).toEqual(['United States']);
+      expect(log.typed.country).toBeUndefined();
+      expect(seen.commands).toEqual([{ target: 'country', label: 'United States +1' }]);
+      expect(bridged(seen)).toEqual(['country']);
       expect(row(report, 'Phone')).toMatchObject({ ...verified, category: 'contact.phone' });
       expect(phone).toBe('(512) 555-0147');
       expect(log.pressed).toEqual([]);
@@ -298,18 +405,19 @@ test.describe("Greenhouse's react-selects", () => {
         applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.phonePicks) });
     });
 
-    test('a Canadian\'s "+1 512 ...": the United States the number picked replaced by "Canada", typed; the number drawn nationally holds the profile\'s', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    test('a Canadian\'s "+1 512 ...": the United States the number picked replaced by "Canada +1"; the number drawn nationally holds the profile\'s', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
       test.setTimeout(150_000);
       await tailorit.scenario('profile-canada');
       routeLog.serve(routes);
       const page = await extContext.newPage();
-      const { tabId, report, log, phone, flag } = await fillPhoneForm(page, GREENHOUSE_WIDGETS.phonePicks, ext);
+      const { tabId, report, log, phone, flag, seen } = await fillPhoneForm(page, GREENHOUSE_WIDGETS.phonePicks, ext);
       // The United States the number picked was the page's answer: the profile's Canada replaced it, flagged for a look.
       expect(row(report, 'Country')).toMatchObject({ kind: 'combobox', provenance: 'profile', wrote: true,
         verification: 'verified', status: 'flagged', reason: 'prefill-conflict' });
       expect(log.values.country).toBe('ca');
       expect(flag).toBe('iti__flag iti__ca');
-      expect(log.typed.country).toEqual(['Canada']);
+      expect(log.typed.country).toBeUndefined();
+      expect(seen.commands).toEqual([{ target: 'country', label: 'Canada +1' }]);
       // Typed "+1 512 555 0188", then drawn "(512) 555-0188" once Canada was chosen: verified, never typed again.
       expect(row(report, 'Phone')).toMatchObject({ ...verified, category: 'contact.phone' });
       expect(phone).toBe('(512) 555-0188');
@@ -319,7 +427,7 @@ test.describe("Greenhouse's react-selects", () => {
         applicationKey: applicationKeyOf(GREENHOUSE_WIDGETS.phonePicks) });
     });
 
-    test('a Briton\'s "+44 20 ...": "United Kingdom" typed where the number picks nothing, and kept, nothing typed, where it picked it', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+    test('a Briton\'s "+44 20 ...": "United Kingdom +44" chosen where the number picks nothing, and kept, nothing sent, where it picked it', async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
       test.setTimeout(240_000);
       await tailorit.scenario('profile-uk');
       routeLog.serve(routes);
@@ -328,7 +436,8 @@ test.describe("Greenhouse's react-selects", () => {
       expect(row(typed.report, 'Country')).toMatchObject({ ...verified, kind: 'combobox', provenance: 'profile' });
       expect(typed.log.values.country).toBe('gb');
       expect(typed.flag).toBe('iti__flag iti__gb');
-      expect(typed.log.typed.country).toEqual(['United Kingdom']);
+      expect(typed.log.typed.country).toBeUndefined();
+      expect(typed.seen.commands).toEqual([{ target: 'country', label: 'United Kingdom +44' }]);
       expect(row(typed.report, 'Phone')).toMatchObject(verified);
       expect(typed.phone).toBe('+44 20 7946 0958');
       expect(typed.log.pressed).toEqual([]);
@@ -343,6 +452,7 @@ test.describe("Greenhouse's react-selects", () => {
       expect(picked.log.values.country).toBe('gb');
       expect(picked.flag).toBe('iti__flag iti__gb');
       expect(picked.log.typed.country).toBeUndefined();
+      expect(picked.seen.commands).toEqual([]);
       expect(row(picked.report, 'Phone')).toMatchObject(verified);
       expect(picked.phone).toBe('+44 20 7946 0958');
       expect(picked.log.pressed).toEqual([]);

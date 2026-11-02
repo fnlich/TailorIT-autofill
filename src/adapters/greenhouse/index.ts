@@ -25,6 +25,13 @@
  *   Its input filters the list as typed (aria-autocomplete="list"; react-select's own filter, by substring), so a long
  *   list, the phone country's 244 countries or a country question's, has its planned option searched for by the
  *   option's words ("Canada"), then clicked (dom/widgets' searchesList), never scrolled to.
+ *   React first (docs/SPEC-AMENDMENTS.md §12): each is declared for the page-world bridge ('react-select', page/
+ *   bridge.ts), so a planned option is chosen by react-select's own selectOption, from the input's React fiber (the
+ *   capture's props log: the Select sits 16 fibers above its input, with selectOption, its options and a
+ *   getOptionLabel), and read back as above; only when nothing the frame can see changed is it searched for, or
+ *   opened and clicked, as above (dom/widgets' fill.ts says what the bridge's word decides). A remote
+ *   search's result is chosen through it once the typed query lists it. Nothing else changes: the lists are still read
+ *   through the page, opened with the one mouseup, so what the planner sees is what a person sees.
  *   Location (#candidate-location) and School (#school--N) are remote searches (Location's list shows only the
  *   results whose label holds the typed text: the BeyondTrust form); a container marked
  *   select__value-container--is-multi is a multiselect; every other one is a combobox (Yes/No, EEOC and demographic
@@ -168,8 +175,9 @@ function widgetFor(control: Element): WidgetDecl | null {
   }
   const kind = SEARCH_ID.test(control.id) ? 'typeahead-remote'
     : control.closest('.select__value-container--is-multi') !== null ? 'multiselect' : 'combobox';
-  return { kind, opener: control as HTMLElement, activation: [...GREENHOUSE_ACTIVATION], expanded: control, box,
-    busy: BUSY_SIGNS, shownAnswer: answerOf(box, control), snapshot: GREENHOUSE_WIDGET_SNAPSHOTS[0] };
+  return { kind, opener: control as HTMLElement, activation: [...GREENHOUSE_ACTIVATION], bridge: 'react-select',
+    expanded: control, box, busy: BUSY_SIGNS, shownAnswer: answerOf(box, control),
+    snapshot: GREENHOUSE_WIDGET_SNAPSHOTS[0] };
 }
 
 /** What a react-select shows chosen, beside its emptied input (twitch.yesno-chosen: <div class="select__value-container

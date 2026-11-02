@@ -114,6 +114,10 @@ export interface WidgetTarget {
   readonly members: readonly HTMLElement[];
   /** The single activation event the adapter declared for opening it, instead of click(); [] for none. */
   readonly activation: readonly ('mousedown' | 'mouseup' | 'focus')[];
+  /** The page-world bridge's code the adapter declared for it (WidgetDecl.bridge), tried before any event. */
+  readonly bridge?: 'react-select' | null;
+  /** The untrusted keys the adapter declared for it (WidgetDecl.keys); none for any other widget. */
+  readonly keys?: readonly ('Escape' | 'ArrowDown')[];
   /** The adapter declared it, from a snapshot. */
   readonly declared: boolean;
   /** The element whose aria-expanded says whether its list is open (WidgetDecl.expanded): its declared activation

@@ -86,7 +86,7 @@ import { deadline, monotonicNow } from '../dom/time';
 import {
   BUSY_SIGNS, type BusySign, type ScannedField, type ScanResult, type SettleResult, type WidgetReading,
 } from '../dom/types';
-import { newReadiness, readWidget } from '../dom/widgets';
+import { newBridgeRun, newReadiness, readWidget } from '../dom/widgets';
 import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
@@ -270,6 +270,8 @@ class ReactiveLoop {
   private readonly readings: Map<BaseKey, WidgetReading>;
   /** Whether the page answered a declared activation yet (dom/widgets' WidgetReadiness), for the whole run. */
   private readonly readiness = newReadiness();
+  /** The run's page-world bridge (dom/widgets' BridgeRun): once its word did not hold, no command is sent this run. */
+  private readonly bridge = newBridgeRun();
   private readonly attribution = new Attribution();
   /** What was written, by base key: kept when the field goes or its options change, and ours again only while its row
    *  says it wrote (a re-plan that found our value in place). */
@@ -667,7 +669,7 @@ class ReactiveLoop {
   /** What a widget's write needs: the run's readings, and plan/request for a typeahead's results, at this pass. */
   private widgetWrites(): WidgetWriteEnv {
     const plan = this.env.planSome ?? this.env.plan;
-    return { readings: this.readings, readiness: this.readiness,
+    return { readings: this.readings, readiness: this.readiness, bridge: this.bridge,
       plan: (specs, planKeys) => plan(specs, planKeys, this.state.pass) };
   }
 

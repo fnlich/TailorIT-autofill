@@ -5,7 +5,9 @@
  * adopted by the closed root, or a <style> element in it as the fallback; its host's own styles are set through the
  * CSSOM. Either way the launcher must look the same on both pages, and the page must report no violation. The in-page
  * panel opens there too, styled as TailorIT's card, and its completion bar takes its width (set through the CSSOM, by
- * React's style property) under the policy.
+ * React's style property) under the policy. And the page-world bridge (docs/SPEC-AMENDMENTS.md §12), a MAIN-world
+ * content script the browser injects whatever the page's policy, is there on a page whose CSP is script-src 'none':
+ * a command a page script sends is acknowledged and answered.
  */
 import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
 import { COPY } from '../../src/shared/copy';
@@ -79,4 +81,26 @@ test("the in-page panel opens on that page in TailorIT's look, and its completio
   } finally {
     await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
   }
+});
+
+test("the page-world bridge is in a page whose CSP is script-src 'none', and answers a command there", async ({ extContext, connected: _ext, routeLog }) => {
+  routeLog.serve({ [STRICT]: { file: PAGE_FILE, headers: { 'Content-Security-Policy': "script-src 'none'; style-src 'none'" } } });
+  const page = await extContext.newPage();
+  await page.goto(STRICT);
+  // Asked as any page script could ask (Playwright evaluates in the page's own world, past its policy): the field
+  // reading of a text box no React drew, which the bridge answers 'no-react'.
+  const ask = () => page.evaluate(() => {
+    const box = document.getElementById('name')!;
+    let detail: string | null = null;
+    box.addEventListener('tailorit:bridge-result', (event) => {
+      detail = String((event as CustomEvent).detail);
+    }, { once: true });
+    const handled = !box.dispatchEvent(new CustomEvent('tailorit:bridge', { cancelable: true,
+      detail: JSON.stringify({ v: 1, id: 'csp-probe-0001', op: 'react.field' }) }));
+    return { handled, answer: detail === null ? null : JSON.parse(detail) as unknown };
+  });
+  await expect.poll(async () => (await ask()).handled, { message: 'the bridge never answered' }).toBe(true);
+  expect(await ask()).toEqual({ handled: true, answer: { v: 1, id: 'csp-probe-0001', ok: false, reason: 'no-react' } });
+  expect((await spyRecord(page.mainFrame())).cspViolations, 'violations the page reported').toEqual([]);
+  await page.close();
 });

@@ -9,19 +9,30 @@
  *   to attach (a bounded wait, WIDGET_READY_CAP_MS) and is sent once more (Greenhouse's React attaches seconds after its
  *   form shows, and nothing answers before: the capture of 2026-11-01);
  * - close: focusout and blur on the widget (the text filler's leave events), and only if its list is still open
- *   after them, one more click() on a select-only combobox that a click opened (it toggles);
+ *   after them, an Escape its adapter declared (WidgetDecl.keys: a list that ignores focusout and blur), sent only
+ *   while the widget says it is open (WidgetDecl.expanded), then one more click() on a select-only combobox that a
+ *   click opened (it toggles);
  * - wait for a list's options: a quiet window with the list's own busy signs cleared, capped (awaitOptions' rule,
- *   applied to the widget's list); the adapter's declared busy signs (WidgetDecl.busy) count as its own.
- * Never a key, a pointer move, a hover, a touch, Enter or Space; never a mouse event the adapter did not declare;
- * nothing is focused. A widget that does not answer untrusted events is reported as such (the caller flags it
- * needs-your-click) and is never tried another way.
+ *   applied to the widget's list); the adapter's declared busy signs (WidgetDecl.busy) count as its own;
+ * - React first (docs/SPEC-AMENDMENTS.md §12): a widget its adapter declares for the page-world bridge
+ *   (WidgetDecl.bridge) has an option chosen by its own React code (bridgeChoose: one command, dom/bridge.ts), its
+ *   text box first passed by assertNotSubmit and the option's label, as the frame read it, by optionWordsRefusal.
+ *   What the bridge says comes back to the caller as it is (BridgeChoice): nothing done (absent, refused), chosen
+ *   already, or sent. The answer is a claim, so the caller reads the widget back (afterBridge: one more bounded wait
+ *   when it does not show the choice yet). The run's bridge goes off for the rest of the run (BridgeRun) after a command
+ *   nothing answered within its dispatch, or a choice it said it made that never read back.
+ * Never a pointer move, a hover, a touch or Space; never a key or a mouse event the adapter did not declare; nothing is
+ * focused. A widget that does not answer untrusted events is reported as such (the caller flags it needs-your-click)
+ * and is never tried another way.
  * Every wait is settle.ts's quietWait on dom/time.ts's timers: it ends on a DOM condition, its cap or the run's
  * signal, never a fixed sleep.
  */
 import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
-import { fireLeave, windowOf } from '../fillers/events';
-import { assertNotSubmit } from '../fillers/not-submit';
+import { askBridge } from '../bridge';
+import type { BridgeReason } from '../bridge-protocol';
+import { fireLeave, windowOf, type DeclaredKey } from '../fillers/events';
+import { assertNotSubmit, optionWordsRefusal } from '../fillers/not-submit';
 import { quietWait, type QuietWait } from '../settle';
 import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET_MS } from '../thresholds';
 import { monotonicNow } from '../time';
@@ -40,6 +51,23 @@ export interface WidgetContext {
   /** The run's readiness for declared activations, one record for the whole run, so only its first unanswered
    *  activation waits for the page; a record of the call's own without it. */
   readiness?: WidgetReadiness;
+  /** The run's page-world bridge (BridgeRun), one record for the whole run; a record of the call's own without it. */
+  bridge?: BridgeRun;
+  /** This write has had its one command to the bridge already (content/pass.ts, before a long list's search): no
+   *  second one is sent for it. `sent`: the bridge said it chose, and nothing read back; `before`: what the widget
+   *  showed chosen before that command. */
+  bridgeTried?: { sent: boolean; before: readonly string[] };
+}
+
+/** Whether the run's page-world bridge is off: after a command nothing answered within its dispatch (no bridge, or a
+ *  page that swallows commands), or a choice it said it made that never read back, no more is sent this run. */
+export interface BridgeRun {
+  off: boolean;
+}
+
+/** A run's bridge record, before any command. */
+export function newBridgeRun(): BridgeRun {
+  return { off: false };
 }
 
 /** Whether the page has answered a declared activation yet, and whether the run's one wait for it is spent. */
@@ -188,6 +216,25 @@ export async function openList(widget: WidgetTarget, ctx: WidgetContext): Promis
   return { open: false, reason: answer.status === 'answered' ? 'no-list' : 'ignored', mutated: answer.mutated };
 }
 
+/** The `code` of each declared key, as a keyboard's own event carries it. */
+const KEY_CODES: Record<DeclaredKey, string> = { Escape: 'Escape', ArrowDown: 'ArrowDown' };
+
+/** Sends one key the widget's adapter declared (WidgetDecl.keys) to its text box, else its element: an untrusted
+ *  keydown and keyup, bubbling, built with the element's own window. False, and nothing sent, when the widget does not
+ *  declare the key, assertNotSubmit refuses its target, or the key is Escape and the widget does not say, right now,
+ *  that its list is open (WidgetDecl.expanded): an Escape to a closed widget is the page's to read as it likes. */
+export function pressDeclaredKey(widget: WidgetTarget, key: DeclaredKey, ctx: WidgetContext): boolean {
+  if (!(widget.keys ?? []).includes(key)) return false;
+  if (key === 'Escape' && expandedState(widget) !== true) return false;
+  const target = widget.input ?? widget.element;
+  if (!assertNotSubmit(target, ctx).ok) return false;
+  const view = windowOf(target);
+  const init = { key, code: KEY_CODES[key], bubbles: true, cancelable: true, composed: true };
+  target.dispatchEvent(new view.KeyboardEvent('keydown', init));
+  target.dispatchEvent(new view.KeyboardEvent('keyup', init));
+  return true;
+}
+
 /** Closes a widget's list if it is open (see the header). Answers whether it is closed now. */
 export async function closeList(widget: WidgetTarget, ctx: WidgetContext, opened: { activated: boolean }):
   Promise<boolean> {
@@ -196,6 +243,11 @@ export async function closeList(widget: WidgetTarget, ctx: WidgetContext, opened
   fireLeave(widget.input ?? widget.element);
   const answer = await afterAction(widget, ctx);
   if (answer.aborted || closed()) return closed();
+  // A list that ignores focusout and blur, whose adapter declares Escape for it.
+  if (pressDeclaredKey(widget, 'Escape', ctx)) {
+    const escaped = await afterAction(widget, ctx);
+    if (escaped.aborted || closed()) return closed();
+  }
   const opener = widget.opener ?? (widget.element as HTMLElement);
   // A select-only combobox that our click opened toggles shut on a second click; a text box does not.
   if (opened.activated && widget.input === null && widget.activation.length === 0 && assertNotSubmit(opener, ctx).ok) {
@@ -255,4 +307,45 @@ export async function awaitList(widget: WidgetTarget, ctx: WidgetContext,
   const listbox = listOf(widget.element, widget.input);
   if (listbox !== null && !ctx.root.contains(listbox)) wait.observe(listbox);
   return { status: await wait.done, mutated };
+}
+
+/** How one choice through the page-world bridge went (see the header), as the bridge said it:
+ * - 'absent': nothing was sent or nothing answered (no bridge declared, the run's bridge off, no bridge in the frame);
+ * - 'refused': nothing was done: our own checks held the command back, or the bridge declined (`reason`);
+ * - 'chosen': the bridge says the option is chosen already, and did nothing (a multi-select's must not be clicked:
+ *   that would remove it);
+ * - 'sent': the bridge says it chose, and the page's answer has been awaited, as after a click. A claim: read back. */
+export type BridgeChoice =
+  | { status: 'absent' }
+  | { status: 'refused'; reason: BridgeReason | 'not-allowed' }
+  | { status: 'chosen' }
+  | { status: 'sent' };
+
+/** Asks the page-world bridge to choose the option `label` in a widget its adapter declares for it (see the header).
+ *  `label` is the option's clean label as the frame read it from the page; `shown` its label with what the frame cut
+ *  from it, which optionWordsRefusal reads. A command nothing answers turns the run's bridge off. */
+export async function bridgeChoose(widget: WidgetTarget, option: { label: string; shown: string }, multi: boolean,
+  ctx: WidgetContext): Promise<BridgeChoice> {
+  const input = widget.input;
+  if (widget.bridge !== 'react-select' || input === null || ctx.bridge?.off === true) return { status: 'absent' };
+  if (!assertNotSubmit(input, ctx).ok || optionWordsRefusal(option.shown) !== null
+    || optionWordsRefusal(option.label) !== null) return { status: 'refused', reason: 'not-allowed' };
+  const answer = askBridge(input, { op: 'react-select.choose', label: option.label, multi }, ctx.signal);
+  if (answer === null) {
+    if (ctx.bridge !== undefined) ctx.bridge.off = true;
+    return { status: 'absent' };
+  }
+  if (!answer.ok) return answer.reason === 'chosen' ? { status: 'chosen' } : { status: 'refused', reason: answer.reason };
+  await afterAction(widget, ctx);
+  return { status: 'sent' };
+}
+
+/** After the bridge said it chose: whether the widget shows the choice (`shows`), with one more bounded wait for the
+ *  page when it does not yet. When it never does, the run's bridge goes off: its word did not hold. */
+export async function afterBridge(widget: WidgetTarget, ctx: WidgetContext, shows: () => boolean): Promise<boolean> {
+  if (shows()) return true;
+  await afterAction(widget, ctx);
+  if (shows()) return true;
+  if (ctx.bridge !== undefined) ctx.bridge.off = true;
+  return false;
 }

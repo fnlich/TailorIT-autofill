@@ -438,7 +438,8 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): 
     opener: group || roleOf(el) === 'listbox' ? null : declared?.opener ?? (el as HTMLElement),
     members: group ? membersOf(el) : [], activation: declared?.activation ?? [], declared: declared !== null,
     ...(declared === null ? {} : { expanded: declared.expanded ?? null, box: declared.box ?? null,
-      busy: declared.busy ?? [], ...(declared.shownAnswer ? { shownAnswer: declared.shownAnswer } : {}) }),
+      busy: declared.busy ?? [], bridge: declared.bridge ?? null, keys: declared.keys ?? [],
+      ...(declared.shownAnswer ? { shownAnswer: declared.shownAnswer } : {}) }),
   };
 }
 

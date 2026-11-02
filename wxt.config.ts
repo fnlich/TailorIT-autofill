@@ -46,7 +46,8 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {
-      if (FIXTURE_FALLBACK) manifest.content_scripts?.[0]?.matches?.push('http://127.0.0.1/*');
+      // Both content scripts, ours and the page-world bridge, which check-build holds to the same matches.
+      if (FIXTURE_FALLBACK) for (const script of manifest.content_scripts ?? []) script.matches?.push('http://127.0.0.1/*');
     },
     // The capture page is a development tool: every other build (chrome, edge and e2e are all production mode) leaves
     // it out, and scripts/check-build.mjs fails one that holds it.

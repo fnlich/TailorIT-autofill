@@ -16,7 +16,16 @@
  *    The text box holds our own query, so what it shows counts as the page's choice only when the page answered the
  *    click itself (the Phase 4 review, R3): it changed the box's value, marked the result aria-selected, named it as
  *    the box's aria-activedescendant, or closed its list. Without any of these the page ignored the click: the box gets
- *    back what it held and the field is needs-your-click.
+ *    back what it held and the field is needs-your-click. React first (docs/SPEC-AMENDMENTS.md §12): a widget its
+ *    adapter declares for the page-world bridge has the chosen result, listed now, chosen by its own React code
+ *    (interact.ts's bridgeChoose, the result's clean label as the frame read it), once per write: not when this write
+ *    had its command already (ctx.bridgeTried: a long list's search after content/pass.ts tried it). The bridge's word
+ *    is never taken. What the widget shows counts only once the page answered the choice itself, as a click's (the box
+ *    no longer holds our query, or its list closed: R3); it is read back with one more bounded wait when it does not
+ *    show yet. Shown: verified. Anything the frame can see changed but the result not shown (the page answered,
+ *    or the widget shows another answer than before): chosen, not verified (verify-mismatch), and no click follows.
+ *    Nothing changed (a forged answer): the click follows as before, the run's bridge goes off, and when the bridge had
+ *    said it chose, that click's path never ends as "nothing chosen": written, not verified.
  * When no query finds a result to choose, the text box gets back what it held before our first query (the text
  * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason. A page
  * that does not react at all to the first query (no mutation until the cap, and its list shows what it showed before:
@@ -36,7 +45,11 @@ import { sameOptionLabel } from '../fillers/verify';
 import { TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
 import type { FieldTarget, WidgetOptionRead } from '../types';
 import { isChosen } from './aria';
-import { activateAndAwait, afterAction, awaitList, closeList, expandedState, openListOf, type WidgetContext } from './interact';
+import { cleanOptionLabel } from '../option-hash';
+import {
+  activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, closeList, expandedState, openListOf,
+  type WidgetContext,
+} from './interact';
 import { chosenLabels, hashOfRead, readList, revealOption, shownOptions } from './options';
 
 /** What a search needs from the run: each query's Guard, and the worker's match of each result list. */
@@ -90,6 +103,10 @@ function pageChose(widget: NonNullable<FieldTarget['widget']>, option: Element, 
   if (id !== '' && [box, widget.element].some((part) => part?.getAttribute('aria-activedescendant') === id)) return true;
   return closed;
 }
+
+/** Whether two readings of what a widget shows chosen are the same labels, in the same order. */
+const sameLabels = (a: readonly string[], b: readonly string[]) => a.length === b.length
+  && a.every((label, at) => label === b[at]);
 
 /** Puts back what the text box held before our first query, with the text filler's events, if it holds another text. */
 function restore(input: HTMLInputElement | HTMLTextAreaElement, text: string): void {
@@ -163,18 +180,40 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     if (picked === undefined || picked.disabled || !sameOptionLabel(picked.label, choice.cleanLabel)) {
       return giveUp('options-changed');
     }
-    const option = await revealOption(listbox, picked, { signal: ctx.signal });
-    if (option === null) return giveUp('options-changed');
-    if (!assertNotSubmit(option.el, ctx).ok) return giveUp('needs-your-click');
     const typedNow = box.value;
+    const known = results.map((result) => result.label);
+    const shows = () => chosenLabels(widget, known).some((label) => sameOptionLabel(label, choice.cleanLabel));
+    const chosenOf = (verified: boolean): TypeaheadResult => ({ chosen: { ...choice, results }, verified,
+      reason: verified ? 'ok' : 'verify-mismatch', blocked: false, typed });
+    // React first, once per write (see the header).
+    let sent = false;
+    if (ctx.bridgeTried === undefined) {
+      const before = chosenLabels(widget, known);
+      const bridged = await bridgeChoose(widget, { label: cleanOptionLabel(picked.label), shown: picked.label }, false,
+        ctx);
+      if (bridged.status === 'sent' || bridged.status === 'chosen') {
+        sent = true;
+        const answered = () => tidy(box.value) !== tidy(typedNow) || openListOf(widget) === null;
+        const held = await afterBridge(widget, ctx, () => answered() && shows());
+        const changed = answered() || !sameLabels(chosenLabels(widget, known), before);
+        if (held || changed) {
+          await closeList(widget, ctx, { activated: false });
+          return chosenOf(held && shows());
+        }
+      }
+    }
+    // After a choice the bridge said it made, nothing ends as "nothing chosen": React may hold it.
+    const stop = (why: ReasonCode) => (sent ? Promise.resolve(chosenOf(false)) : giveUp(why));
+    const option = await revealOption(listbox, picked, { signal: ctx.signal });
+    if (option === null) return stop('options-changed');
+    if (!assertNotSubmit(option.el, ctx).ok) return stop('needs-your-click');
     (option.el as HTMLElement).click();
     await afterAction(widget, ctx);
     const closed = openListOf(widget) === null;
-    if (!pageChose(widget, option.el, typedNow, closed)) return giveUp('needs-your-click');
+    if (!pageChose(widget, option.el, typedNow, closed)) return stop('needs-your-click');
     await closeList(widget, ctx, { activated: false });
-    const shows = chosenLabels(widget, results.map((result) => result.label))
-      .some((label) => sameOptionLabel(label, choice.cleanLabel));
-    return { chosen: { ...choice, results }, verified: shows, reason: shows ? 'ok' : 'verify-mismatch', blocked: false,
+    const verified = shows();
+    return { chosen: { ...choice, results }, verified, reason: verified ? 'ok' : 'verify-mismatch', blocked: false,
       typed };
   }
   return giveUp(reason);

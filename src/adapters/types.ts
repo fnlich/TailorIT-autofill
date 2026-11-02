@@ -5,11 +5,16 @@
  * written from the owner's snapshots and names the snapshot it came from; no selector is ever guessed.
  */
 import type { Platform } from '../core/enums';
+import type { DeclaredKey } from '../dom/fillers/events';
 
 export type AdapterId = Platform | 'generic';
 
 /** A single activation event a widget hook may declare instead of click() (docs/ARCHITECTURE.md "Filler"). */
 export type WidgetActivation = 'mousedown' | 'mouseup' | 'focus';
+
+/** The page-world bridge's widget code a widget hook may declare (docs/SPEC-AMENDMENTS.md §12): its choice is made by
+ *  the widget's own React code first, and read back; the declared events are the fallback. */
+export type WidgetBridge = 'react-select';
 
 /** A custom widget the adapter recognises (Phase 4). */
 export interface WidgetDecl {
@@ -18,6 +23,12 @@ export interface WidgetDecl {
   opener: HTMLElement;
   /** Single activation events this widget needs beyond click() (for example one mousedown), each named in the snapshot. */
   activation?: WidgetActivation[];
+  /** The page-world bridge's code for this widget (docs/SPEC-AMENDMENTS.md §12): 'react-select', whose own selectOption
+   *  chooses a planned option (a remote search's only once its typed query lists it), read back, before any event. */
+  bridge?: WidgetBridge;
+  /** Untrusted keys this widget needs (docs/SPEC-AMENDMENTS.md §12), each a keydown and a keyup on its text box (else
+   *  its element), never one it does not declare: Escape closes a list that ignores focusout and blur. */
+  keys?: readonly DeclaredKey[];
   /** The element whose aria-expanded says whether the widget's list is open. Its declared activation toggles the list,
    *  so it is sent only while this says "false" (a second one would close it). */
   expanded?: Element;
