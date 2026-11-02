@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 4): an Ashby application form, as its adapter reads one (div#form[role=tabpanel] holding the form
+  container, its Submit button.ashby-application-form-submit-button), with two questions the golden profile answers.
+  Served at https://jobs.ashbyhq.com/tailorit-fixture/<posting>/application. The page's own script stands for Ashby's:
+  a click on its Submit shows Ashby's message after submitting, .ashby-application-form-success-container, in the form's
+  place at the same address (the Ashby capture; adapters/ashby ashbySubmitted), and counts the clicks on the body
+  (data-submitted). It posts nothing, dispatches no event, and clicks, focuses or submits nothing itself.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Senior Backend Engineer @ Northwind</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    .ashby-application-form-submit-button { margin-top: 20px; padding: 10px 20px; }
+  </style>
+</head>
+<body data-submitted="0">
+  <main>
+    <h1>Senior Backend Engineer</h1>
+    <div tabindex="0" role="tabpanel" aria-labelledby="job-application-form" id="form">
+      <div class="ashby-application-form-container">
+        <div class="ashby-application-form-section-container">
+          <div class="ashby-application-form-field-entry" data-field-path="_systemfield_name">
+            <label class="ashby-application-form-question-title" for="_systemfield_name">Name</label>
+            <input id="_systemfield_name" name="_systemfield_name" type="text">
+          </div>
+          <div class="ashby-application-form-field-entry" data-field-path="_systemfield_email">
+            <label class="ashby-application-form-question-title" for="_systemfield_email">Email</label>
+            <input id="_systemfield_email" name="_systemfield_email" type="email">
+          </div>
+        </div>
+        <button class="ashby-application-form-submit-button" type="button">Submit Application</button>
+      </div>
+    </div>
+  </main>
+  <script>
+    (() => {
+      document.querySelector('.ashby-application-form-submit-button').addEventListener('click', () => {
+        document.body.dataset.submitted = String(Number(document.body.dataset.submitted) + 1);
+        const done = document.createElement('div');
+        done.className = 'ashby-application-form-success-container';
+        const words = document.createElement('p');
+        words.textContent = 'Thank you for applying! We received your application.';
+        done.append(words);
+        document.getElementById('form').replaceWith(done);
+      });
+    })();
+  </script>
+</body>
+</html>

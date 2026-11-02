@@ -33,10 +33,11 @@
  *   word, capped). A frame inside another page keeps its launcher at the form's corner, never hidden: it is how its
  *   run knows the frame is seen (S1).
  */
+import { COPY } from '../../shared/copy';
 import { log } from '../../shared/log';
 import type { FrameReport } from '../../shared/report';
 import type { LauncherPrefs } from '../../messaging/schemas';
-import { createAiEdits, type AiEditItem } from './ai-edits';
+import { createAiEdits, type AiEditItem, type AiPrompt } from './ai-edits';
 import { createEdge, type Edge, type HideScope } from './edge';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
 import { createNotices, type NoticeCode, type PolicyChoice } from './notices';
@@ -62,8 +63,10 @@ export const PANEL_MIN_VIEWPORT = { width: 420, height: 360 } as const;
 export interface PageUiHandlers {
   onLauncher(action: LauncherAction): void;
   onPolicyChoice(choice: PolicyChoice): void;
-  /** Edit with AI on one field (the owner's amendments): a trusted click on its visible button. */
-  onAiEdit?(key: string): void;
+  /** Edit with AI on one field (the owner's amendments): a trusted click on its visible button opens its instruction
+   *  box (v3 Phase 3b), whose trusted Generate on a visible button asks for the rewrite with what the person typed
+   *  (possibly nothing). Answers what to say in the box (null: it was rewritten, and the box closes). */
+  onAiEdit?(key: string, instruction: string): Promise<string | null> | void;
   /** The form root the UI is anchored to has left the page (the page drew its whole form again): the runtime finds the
    *  new one and anchors the UI to it (anchorTo), else the launcher stays hidden. Asked at a layout, not a click. */
   rootGone?(): void;
@@ -94,6 +97,8 @@ export interface PageUi {
   setAiEdits(items: readonly AiEditItem[]): void;
   /** The Edit with AI buttons drawn now (for tests). */
   readonly aiEditButtons: readonly HTMLButtonElement[];
+  /** v3 Phase 3b: Edit with AI's instruction box open now (for tests), or null. */
+  readonly aiPrompt: AiPrompt | null;
   /** The in-page panel (null when the handlers gave it no actions). */
   readonly panel: InPagePanel | null;
   /** The launcher's tab at the window's right edge (v3 Phase 3; null in a frame inside another page). */
@@ -195,8 +200,25 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   // comes before the anchor's column, whose layout keeps it left of the tab (edgeLimit), so neither covers the other.
   layer.append(aiEditLayer, ...(edge === null ? [] : [edge.el]), anchor);
   root.append(layer);
+  /** A trusted click on one of the layer's controls counts only while it is seen (a control just drawn waits for the
+   *  watch's first word, capped). */
+  const whenSeen = (button: HTMLButtonElement, act: () => void) => {
+    if (visibility.known(button)) {
+      if (visibility.shown(button)) act();
+      else log('content.ui-click-refused', { launcher: false, known: true });
+      return;
+    }
+    void visibility.settled(button, lifetime.signal).then((shown) => {
+      if (shown && button.isConnected && !button.disabled) act();
+      else log('content.ui-click-refused', { launcher: false, known: visibility.known(button) });
+    });
+  };
   const aiEdits = createAiEdits(doc, aiEditLayer, (key, button) => {
-    const act = () => handlers.onAiEdit?.(key);
+    // v3 Phase 3b: the button opens the field's instruction box; its Generate asks for the rewrite.
+    const act = () => {
+      aiEdits.openPrompt(key);
+      layout();
+    };
     if (visibility.known(button)) {
       if (visibility.shown(button)) act();
       else log('content.ui-click-refused', { launcher: false, known: true });
@@ -210,6 +232,13 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   }, (added, removed) => {
     for (const button of removed) visibility.unobserve(button);
     for (const button of added) visibility.observe(button);
+  }, (key, instruction, generate) => whenSeen(generate, () => {
+    aiEdits.promptSaid(key, COPY.editingWithAi);
+    void Promise.resolve(handlers.onAiEdit?.(key, instruction)).then((said) => aiEdits.promptSaid(key, said ?? null),
+      () => aiEdits.promptSaid(key, COPY.aiEdit.outcomes.failed));
+  }), (shown, hidden) => {
+    if (hidden !== null) visibility.unobserve(hidden);
+    if (shown !== null) visibility.observe(shown);
   });
   visibility.observe(launcher.el);
   if (edge !== null) for (const control of [edge.close, edge.grip]) visibility.observe(control);
@@ -362,6 +391,9 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     },
     get aiEditButtons() {
       return aiEdits.buttons;
+    },
+    get aiPrompt() {
+      return aiEdits.prompt;
     },
     panel,
     edge,

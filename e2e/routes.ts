@@ -77,8 +77,12 @@ export async function installRoutes(context: BrowserContext, routes: RouteMap = 
     const url = route.request().url();
     const entry = table.get(url);
     if (entry !== undefined) return route.fulfill(fulfilmentOf(entry));
-    // The extension's own pages and scripts, and the mock TailorIT, are the only things allowed through.
-    if (url.startsWith('chrome-extension://') || url.startsWith(MOCK_ORIGIN)) return route.continue();
+    // The extension's own pages and scripts, and the mock TailorIT, are the only things allowed through; and (v3 Phase
+    // 3b) the browser's own PDF viewer's resources, which it loads to show the side panel's resume preview from a blob:
+    // address (chrome://resources: inside the browser, never the network).
+    if (url.startsWith('chrome-extension://') || url.startsWith(MOCK_ORIGIN) || url.startsWith('chrome://resources/')) {
+      return route.continue();
+    }
     if (new URL(url).pathname === '/__submitted') {
       log.submitted.push(url);
       return route.fulfill({ status: 204, body: '' });

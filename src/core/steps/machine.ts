@@ -21,11 +21,19 @@
  *   shows, no CAPTCHA widget on it is unsolved (as far as can be known: an Arkose widget never is), the step has
  *   settled and it has had fewer than two attempts (autoAdvanceVerdict). A final step goes to
  *   review (the person presses Submit), and a step whose finality is unknown is treated as final: nothing is pressed
- *   ("I can't tell whether this is the last step, so I won't press anything"). The final
- *   Submit is never pressed: no event leads from a final or unknown step to press-next. The validation that follows the
+ *   ("I can't tell whether this is the last step, so I won't press anything"). Auto-advance
+ *   never presses the final Submit: no event leads from a final or unknown step to press-next (Submit mode Auto's
+ *   press-submit, below, is its own effect, off by default). The validation that follows the
  *   person's own Next (STEP_UNCHANGED) never presses: lastFill is cleared, so a press needs a fill of the step since
  *   their click (X-S2). press-next itself may find auto-advance turned off since: NEXT_WITHHELD, Next is the person's
  *   (C-S2).
+ * - Submit mode Auto (v3 Phase 4, docs/SPEC-AMENDMENTS.md §12 Decision 6; off by default): a final step validated
+ *   clean goes to review with press-submit after it, when autoSubmitVerdict passes: Submit visible, the step filled,
+ *   settled, no draft waiting for its confirmation, no CAPTCHA not known solved, and the skip rules the person keeps
+ *   (RunContext.autoSubmit: a required field still empty, a posting that forbids AI, a legal answer that was an AI
+ *   guess). Otherwise it rests at review, its notice saying why (submit-held-*). The content script makes the press
+ *   (src/content/press.ts, assertNotSubmit's Submit exception); a confirmation seen after it is SUBMITTED. An unknown
+ *   step is never submitted, nor a step whose finality only the person's own Next could tell.
  * - After the extension's click the transition is awaited at most TRANSITION_CAP_MS: at the cap an unchanged step
  *   pauses with needs-click, a changed but still busy page with page-busy. When the person is the one to press Next
  *   (auto-advance off, or a check failed), the wait has no timer.
@@ -88,6 +96,14 @@ export interface StepFacts {
   /** The step shows a CAPTCHA widget not known to be solved (dom/pause-detect.ts unsolvedCaptchas): a token-bearing
    *  one whose token is empty, or one whose vendor holds none (Arkose). Next is then the person's. */
   captchaUnsolved: boolean;
+  /** v3 Phase 4, for Submit mode Auto: the adapter's Submit is there, visible and enabled (absent: no). */
+  submitVisible?: boolean;
+  /** Required fields the step leaves empty for the person (absent: 0). */
+  requiredEmpty?: number;
+  /** The run fills from the profile only because the posting forbids AI (absent: no). */
+  noAi?: boolean;
+  /** A legal question's answer on the step was an AI guess (absent: no). */
+  legalGuess?: boolean;
 }
 
 /** What the content script tells the machine. Counts, keys and hashes only: no event carries a value. */
@@ -144,7 +160,9 @@ export type RunEventType = RunEvent['type'];
  *  whether this is the last step, so I won't press anything.") is asked for only with auto-advance on, the one time it
  *  explains something nobody would expect; 'max-steps' when a wizard has more steps than MAX_STEPS. */
 export const STEP_NOTICES = ['tripwire', 'policy', 'auth', 'captcha', 'page-busy', 'needs-click', 'validation',
-  'step-retry-limit', 'final-unknown', 'max-steps', 'captcha-next'] as const;
+  'step-retry-limit', 'final-unknown', 'max-steps', 'captcha-next',
+  // v3 Phase 4: Submit mode Auto held the final Submit back, and why (its notice says so; the person submits).
+  'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check'] as const;
 export type StepNotice = (typeof STEP_NOTICES)[number];
 
 /** Why a run is at review. 'final-step': the adapter says the step is the last (Submit is the person's);
@@ -176,7 +194,11 @@ export type RunEffect =
   | { type: 'await-transition'; from: string; capMs: number | null }
   /** Show the pause and wait for the person: 'auth' and 'handoff' for Continue, 'policy' for the policy card. */
   | { type: 'pause'; kind: 'auth' | 'handoff' | 'policy' }
-  | { type: 'notify'; notice: StepNotice }
+  | { type: 'notify'; notice: StepNotice; count?: number }
+  /** v3 Phase 4, Submit mode Auto: the one untrusted click on the adapter's Submit, through assertNotSubmit's Submit
+   *  exception (src/content/press.ts), on a final step autoSubmitVerdict passed. It produces no event: the platform's
+   *  confirmation, seen after it, is SUBMITTED. */
+  | { type: 'press-submit' }
   /** The run is at review: the launcher counts what needs the person; `reason` is ERROR's (null otherwise). */
   | { type: 'show-review'; cause: ReviewCause; reason: ReasonCode | null }
   /** A reload found an active run too old to resume by itself: offer Continue (then RESUMED by the person). */
@@ -194,6 +216,38 @@ export interface RunContext {
   /** The person's Autofill after page turn (settings modes.afterPageTurn 'auto'; absent: true). False: a reload never
    *  fills a step by itself, it offers Continue (the runtime leaves a new step to Continue the same way). */
   fillAfterPageTurn?: boolean;
+  /** v3 Phase 4: Submit mode Auto, with the skip rules it reads (settings modes.agentSkip); absent or null: Manual, the
+   *  person submits. Never in a dry run. */
+  autoSubmit?: SubmitSkipRules | null;
+}
+
+/** The skip rules Submit mode Auto reads (settings modes.agentSkip): which of these leave the Submit to the person. */
+export interface SubmitSkipRules {
+  requiredEmpty: boolean;
+  noAi: boolean;
+  legalGuess: boolean;
+}
+
+/** Why Submit mode Auto would not press Submit, in the order they are checked (v3 Phase 4). */
+export const SUBMIT_REFUSALS = ['setting-off', 'not-final', 'no-submit', 'errors', 'not-filled', 'required-empty',
+  'no-ai', 'legal-guess', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled'] as const;
+export type SubmitRefusal = (typeof SUBMIT_REFUSALS)[number];
+export type SubmitVerdict = { submit: true } | { submit: false; refusal: SubmitRefusal };
+
+/** The notice that says why Submit mode Auto held a Submit back. */
+export function noticeOfSubmitRefusal(refusal: Exclude<SubmitRefusal, 'setting-off' | 'not-final'>): StepNotice {
+  switch (refusal) {
+    case 'required-empty':
+      return 'submit-held-required';
+    case 'no-ai':
+      return 'submit-held-no-ai';
+    case 'legal-guess':
+      return 'submit-held-guess';
+    case 'captcha-unsolved':
+      return 'submit-held-captcha';
+    default:
+      return 'submit-held-check';
+  }
 }
 
 export interface RunStep {
@@ -308,6 +362,31 @@ export function autoAdvanceVerdict(state: RunState, check: { errors: number; ste
   return { advance: true };
 }
 
+/**
+ * Whether Submit mode Auto may press Submit on the final step being validated (v3 Phase 4): the mode on, the step
+ * declared final, Submit visible, no error, the step filled, then the skip rules the person keeps (a required field
+ * still empty, a posting that forbids AI, a legal answer that was an AI guess), no draft waiting for confirmation, no
+ * CAPTCHA not known solved, and the step settled. The first rule that fails is the refusal.
+ */
+export function autoSubmitVerdict(state: RunState, check: { errors: number; step: StepFacts },
+  ctx: Pick<RunContext, 'autoSubmit'>): SubmitVerdict {
+  const refuse = (refusal: SubmitRefusal): SubmitVerdict => ({ submit: false, refusal });
+  const { step } = check;
+  const rules = ctx.autoSubmit ?? null;
+  if (rules === null) return refuse('setting-off');
+  if (step.finality !== 'final') return refuse('not-final');
+  if (step.submitVisible !== true) return refuse('no-submit');
+  if (check.errors > 0) return refuse('errors');
+  if (state.lastFill === null) return refuse('not-filled');
+  if (rules.requiredEmpty && (step.requiredEmpty ?? 0) > 0) return refuse('required-empty');
+  if (rules.noAi && step.noAi === true) return refuse('no-ai');
+  if (rules.legalGuess && step.legalGuess === true) return refuse('legal-guess');
+  if (step.unconfirmedDrafts > 0) return refuse('unconfirmed-draft');
+  if (step.captchaUnsolved) return refuse('captcha-unsolved');
+  if (!step.settled) return refuse('not-settled');
+  return { submit: true };
+}
+
 /** The machine: the next RunState and what the content script does, in order (module header). */
 export function reduceRun(state: RunState, event: RunEvent, ctx: RunContext): RunStep {
   const outcome = transition(state, event, ctx);
@@ -335,7 +414,8 @@ type Outcome =
 const move = (state: RunState, effects: RunEffect[] = [], silent = false): Outcome =>
   ({ kind: 'move', state, effects, silent });
 const quiet = (effects: RunEffect[]): Outcome => ({ kind: 'quiet', effects });
-const notify = (notice: StepNotice): RunEffect => ({ type: 'notify', notice });
+const notify = (notice: StepNotice, count?: number): RunEffect =>
+  (count === undefined ? { type: 'notify', notice } : { type: 'notify', notice, count });
 const review = (cause: ReviewCause, reason: ReasonCode | null = null): RunEffect =>
   ({ type: 'show-review', cause, reason });
 
@@ -494,7 +574,14 @@ function validated(state: RunState, event: Extract<RunEvent, { type: 'VALIDATED'
   }
   const { finality } = event.step;
   if (finality === 'final') {
-    return move(enter(state, 'review'), [review('final-step')]);
+    // Submit mode Auto (v3 Phase 4): the press follows the review, or the notice says why the person submits.
+    const verdict = autoSubmitVerdict(state, { errors, step: event.step }, ctx);
+    if (verdict.submit) return move(enter(state, 'review'), [review('final-step'), { type: 'press-submit' }]);
+    if (verdict.refusal === 'setting-off' || verdict.refusal === 'not-final') {
+      return move(enter(state, 'review'), [review('final-step')]);
+    }
+    const count = verdict.refusal === 'required-empty' ? event.step.requiredEmpty : undefined;
+    return move(enter(state, 'review'), [notify(noticeOfSubmitRefusal(verdict.refusal), count), review('final-step')]);
   }
   if (finality !== 'not-final') {
     return move(enter(state, 'review'), [...(ctx.autoAdvance ? [notify('final-unknown')] : []),

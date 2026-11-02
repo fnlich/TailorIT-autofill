@@ -7,13 +7,21 @@
  * v3 Phase 3: Skip (panel/skip) goes to the one frame that holds the field, as run/skip, and that frame gives up the
  * write it is making of that field, if it is; a key, never a value.
  *
+ * v3 Phase 4: the side panel's "Continue to the next page" and "Submit application" (panel/press, sent from the
+ * person's click in the side panel, an extension page no page can script) go to the one frame whose report offers that
+ * button, as run/press; the frame presses its adapter's own Next or Submit, and nothing else, if its step still offers
+ * it (src/content/press.ts). Never to a frame whose report does not offer it: a report the run sent at rest says what
+ * its step offers (FrameReport.buttons). The frame's answer (its outcome) passes through.
+ *
  * The policy card's decision has its own message, addressed to one frame: panel/policyDecision becomes
  * run/policyDecision for that frame only, and only while its report says its run waits at policy-notice. Continue
  * never stands in for Fill anyway: with one frame at the policy card and another at a CAPTCHA pause, the toolbar's
  * Continue resumes the pause and leaves the card waiting for the person's own decision.
  */
 import { answerSchema, ok, refuse, type Answer } from '../messaging/envelope';
-import { DoneAnswerSchema, FieldDescribeAnswerSchema, type PageMessage } from '../messaging/schemas';
+import {
+  DoneAnswerSchema, FieldDescribeAnswerSchema, PressAnswerSchema, type PageMessage, type PressAnswer,
+} from '../messaging/schemas';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { framesOfTab, type FrameEntry } from './frames';
@@ -142,6 +150,28 @@ export function createPanelHandlers(deps: PanelDeps) {
       log('panel.skip-sent', { reached: parsed.success && parsed.data.ok });
       if (!parsed.success) return refuse('unavailable');
       return parsed.data.ok ? ok({}) : refuse('expired');
+    },
+    /** v3 Phase 4: the panel's Next or Submit for one frame (module header), while that frame's report offers it. */
+    async press(message: Of<'panel/press'>): Promise<Answer<PressAnswer>> {
+      const frame = await frameOf(message.tabId, message.frameId);
+      if (frame === null) return ok({ outcome: 'gone' });
+      const report = (await deps.reports.ofTab(message.tabId)).find((candidate) => candidate.frameId === message.frameId);
+      const buttons = report?.buttons;
+      const offered = buttons !== undefined && (message.target === 'next'
+        ? buttons.final === 'not-final' && buttons.next : buttons.final === 'final' && buttons.submit);
+      if (!offered) return ok({ outcome: 'not-offered' });
+      let answer: unknown;
+      try {
+        answer = await platform.tabs.sendToFrame(message.tabId, { v: 1, type: 'run/press', target: message.target,
+          confirmed: message.confirmed }, targetOf(frame));
+      } catch {
+        log('frame.unreachable');
+        return ok({ outcome: 'gone' });
+      }
+      const parsed = answerSchema(PressAnswerSchema).safeParse(answer);
+      if (!parsed.success) return refuse('unavailable');
+      if (!parsed.data.ok) return ok({ outcome: parsed.data.error === 'expired' ? 'gone' : 'refused' });
+      return ok(parsed.data.data);
     },
     async focus(message: Of<'panel/focus'>): Promise<Answer<Record<string, never>>> {
       const frame = await frameOf(message.tabId, message.frameId);

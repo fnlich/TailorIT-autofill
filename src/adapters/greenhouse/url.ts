@@ -6,7 +6,10 @@
  * - job-boards.greenhouse.io/embed/job_app?for=<board>&token=<id> is the same form, embedded in a company's own page
  *   through an iframe;
  * - the legacy boards.greenhouse.io answers both with a redirect to job-boards (the figma capture shows it), and stays
- *   a host so a page still served there is read the same way.
+ *   a host so a page still served there is read the same way;
+ * - job-boards.greenhouse.io/<board>/jobs/<id>/confirmation is the page after submitting (v3 Phase 4: a read-only GET of
+ *   a live posting's address, 2026-11-02, answers it with "Thank you for applying to <company>!"): the confirmation
+ *   page of that posting's application, which holds no form.
  * A company's own page with ?gh_jid= is not a Greenhouse host: the extension runs only in the form's frame inside it.
  * The EU hosts wait for a real posting (src/shared/hosts.ts). Greenhouse job ids are global, so the canonical URL folds
  * the board's case, and the embed and the job page share one canonical URL; an embed that names no board is keyed by
@@ -52,12 +55,16 @@ export function parseGreenhouseUrl(url: URL): ApplicationUrl | null {
     const board = named !== null && BOARD.test(named) ? named : null;
     return { platform: 'greenhouse', board, jobId, page: 'application', applicationUrl: canonical(board, jobId) };
   }
-  const [board, jobs, jobId] = parts;
-  if (parts.length !== 3 || jobs !== 'jobs' || !board || !jobId || !BOARD.test(board) || !JOB_ID.test(jobId)) return null;
-  return { platform: 'greenhouse', board, jobId, page: 'application', applicationUrl: canonical(board, jobId) };
+  const [board, jobs, jobId, tail] = parts;
+  if ((parts.length !== 3 && !(parts.length === 4 && tail === 'confirmation')) || jobs !== 'jobs' || !board || !jobId
+    || !BOARD.test(board) || !JOB_ID.test(jobId)) return null;
+  return { platform: 'greenhouse', board, jobId, page: parts.length === 4 ? 'confirmation' : 'application',
+    applicationUrl: canonical(board, jobId) };
 }
 
-/** The canonical application URL of the posting an address shows, or null when it shows none. */
+/** The canonical application URL of the posting an address shows, or null when it shows none (a confirmation page
+ *  holds no form). */
 export function canonicalApplicationUrl(url: URL): string | null {
-  return parseGreenhouseUrl(url)?.applicationUrl ?? null;
+  const parsed = parseGreenhouseUrl(url);
+  return parsed === null || parsed.page !== 'application' ? null : parsed.applicationUrl;
 }

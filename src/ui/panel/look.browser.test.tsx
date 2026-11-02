@@ -40,9 +40,11 @@ describe('the side panel in TailorIT’s look', () => {
     await click(gear);
     const menu = root.querySelector<HTMLElement>('[data-menu]')!;
     expect(menu.querySelector('h2')?.textContent).toBe(COPY.panel.modes);
-    // The modes shown now, as the options page shows them; Sign-in, Submit and the agent's rules are not (Phases 4, 5).
+    // The modes shown now, as the options page shows them; Submit since v3 Phase 4; Sign-in and the agent's rules are
+    // not (Phase 5).
     expect([...menu.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
-      .toEqual(['modes.next', 'modes.afterPageTurn', 'modes.consents', 'modes.ai', 'view']);
+      .toEqual(['modes.next', 'modes.afterPageTurn', 'modes.submit', 'modes.recordOwn', 'modes.consents', 'modes.ai',
+        'view']);
     const all = menu.querySelector<HTMLAnchorElement>('a[data-open-settings]')!;
     expect([all.getAttribute('href'), all.target, all.textContent])
       .toEqual(['chrome-extension://memory-extension/options.html#settings-modes', '_blank', COPY.panel.allSettings]);
@@ -50,8 +52,10 @@ describe('the side panel in TailorIT’s look', () => {
     await click(menu.querySelector<HTMLInputElement>('input[data-setting="modes.consents.required"]'));
     expect(worker.sentOfType('settings/save').at(-1)?.settings).toMatchObject({ modes: { consents: 'required', next: 'manual' } });
     expect(menu.querySelector<HTMLInputElement>('input[data-setting="modes.consents.required"]')!.checked).toBe(true);
+    // v3 Phase 3b: "Your autofill information" opens the panel's own editor; the jobs link goes to TailorIT.
     expect([...root.querySelectorAll<HTMLAnchorElement>('a[data-tailorit-link]')].map((link) => [link.textContent, link.href]))
-      .toEqual([[COPY.panel.autofillInfo, 'http://localhost:3100/settings/autofill'], [COPY.panel.openJobs, 'http://localhost:3100/jobs']]);
+      .toEqual([[COPY.panel.openJobs, 'http://localhost:3100/jobs']]);
+    expect(root.querySelector('.tia-panel__foot button[data-open-profile]')?.textContent).toBe(COPY.panel.autofillInfo);
     expect(root.querySelector('[data-connection="connected"]')?.textContent).toBe(COPY.panel.connectedAs('Morgan Lee'));
     // Light only, on TailorIT's canvas, whatever the system's scheme.
     expect(getComputedStyle(root.querySelector('main')!).backgroundColor).toBe('rgb(252, 252, 252)');

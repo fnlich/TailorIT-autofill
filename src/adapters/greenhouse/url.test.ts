@@ -66,12 +66,18 @@ describe('parseGreenhouseUrl', () => {
   it.each([
     'https://job-boards.greenhouse.io/gitlab', 'https://job-boards.greenhouse.io/gitlab?gh_jid=8857185002',
     'https://job-boards.greenhouse.io/gitlab/jobs/abc', 'https://job-boards.greenhouse.io/gitlab/jobs',
-    `${GITLAB}/confirmation`, 'https://job-boards.greenhouse.io/gitlab/job/8857185002',
+    `${GITLAB}/confirmation/x`, 'https://job-boards.greenhouse.io/gitlab/job/8857185002',
     'https://job-boards.greenhouse.io/embed/job_app?for=gitlab', 'https://job-boards.greenhouse.io/embed/job_app?for=gitlab&token=12a',
     'https://job-boards.greenhouse.io/embed/job_board?for=gitlab', 'https://job-boards.greenhouse.io/git.lab/jobs/1',
     'https://about.gitlab.com/jobs/apply/?gh_jid=8857185002', 'https://job-boards.eu.greenhouse.io/gitlab/jobs/8857185002',
   ])('reads no posting from %s', (address) => {
     expect(parseGreenhouseUrl(at(address))).toBeNull();
+  });
+
+  it('reads the page after submitting as its posting\'s confirmation page, which holds no form (v3 Phase 4)', () => {
+    expect(parseGreenhouseUrl(at(`${GITLAB}/confirmation`))).toEqual({ platform: 'greenhouse', board: 'gitlab',
+      jobId: '8857185002', page: 'confirmation', applicationUrl: GITLAB });
+    expect(canonicalApplicationUrl(at(`${GITLAB}/confirmation`))).toBeNull();
   });
 });
 

@@ -124,6 +124,10 @@ export type FileRef = (typeof FILE_REFS)[number];
 /** The profile path each document is attached at (the worker attaches it: attachResume, withCoverLetter). */
 export const FILE_PATHS: Readonly<Record<FileRef, string>> = { resume: 'resume', 'cover-letter': 'coverLetter' };
 
+/** The profile path of the run's cover letter as text (v3 Phase 3b): a cover-letter text box takes its words, and no
+ *  other field may (the Guard's category policy). */
+export const COVER_LETTER_TEXT_PATH = 'coverLetter.text';
+
 /** What the filler writes. Indices point into the field's visible options as scanned; each choice also carries the
  *  clean label (injected text cut) of the option it means, so a list the page re-ordered or re-labelled since the plan
  *  is refused as options-changed instead of choosing whatever now sits at that place. */

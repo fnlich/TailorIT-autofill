@@ -9,8 +9,8 @@ const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, view: 'minimize
   preapprovedConsent: ['privacy' as const], llm: { ...DEFAULT_SETTINGS.llm, tiebreak: false, classify: true, drafts: true },
   offerToSaveAnswers: false };
 /** CHOSEN as a frame receives it: its content settings. */
-const CHOSEN_CONTENT = { panel: 'in-page', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn },
-  llm: CHOSEN.llm, offerToSaveAnswers: false };
+const CHOSEN_CONTENT = { panel: 'in-page', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn,
+  submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip }, llm: CHOSEN.llm, offerToSaveAnswers: false };
 
 /** Version 1's settings as an install stored them before the owner's amendments, on its defaults. */
 const V1_DEFAULTS = { version: 1, panel: 'side', autoAdvance: false, preapprovedConsent: [],
@@ -30,15 +30,28 @@ describe('settings', () => {
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: CHOSEN } });
   });
 
-  it('keeps Sign-in and Submit on Manual, stored or saved, until their phase ships (v3 Phase 3 review)', async () => {
+  it('reads a version 4 value stored before "Record applications I submit myself" as on, keeping every choice (the v3 Phase 4 review)', async () => {
+    const { recordOwn: _added, ...before } = CHOSEN.modes;
+    const worker = await startTestWorker({ before: async () => {
+      await fakeBrowser.storage.local.set({ 'settings:v1': { ...CHOSEN, modes: before } });
+    } });
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: { ...CHOSEN, modes: { ...CHOSEN.modes, recordOwn: 'on' } } } });
+    const off = { ...CHOSEN, modes: { ...CHOSEN.modes, recordOwn: 'off' as const } };
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: off }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: off } });
+  });
+
+  it('keeps Sign-in on Manual, stored or saved, until its phase ships; Submit shipped with v3 Phase 4', async () => {
     const worker = await startTestWorker();
     const early = { ...CHOSEN, modes: { ...CHOSEN.modes, signIn: 'auto' as const, submit: 'auto' as const } };
+    const kept = { ...CHOSEN, modes: { ...CHOSEN.modes, submit: 'auto' as const } };
     expect(await worker.deliver({ v: 1, type: 'settings/save', settings: early }, OPTIONS)).toEqual({ ok: true,
-      data: { settings: CHOSEN } });
-    // A value stored some other way reads Manual too.
+      data: { settings: kept } });
+    // A value stored some other way reads Sign-in Manual too.
     const stored = await startTestWorker();
     await fakeBrowser.storage.local.set({ 'settings:v1': early });
-    expect(await stored.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: CHOSEN } });
+    expect(await stored.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: kept } });
   });
 
   it('refuses settings that do not parse, and keeps what was stored', async () => {
@@ -122,7 +135,7 @@ describe('settings', () => {
       expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
     }
     expect(DEFAULT_SETTINGS.modes).toEqual({ signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual',
-      consents: 'all', ai: 'all', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
+      recordOwn: 'on', consents: 'all', ai: 'all', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
     expect(DEFAULT_SETTINGS.view).toBe('expanded');
   });
 

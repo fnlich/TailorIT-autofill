@@ -207,7 +207,9 @@ export function createTestPlatform(worker: (message: unknown) => Promise<unknown
       isValid: () => valid,
     },
     now: () => 0,
-    deliver: (message) => (handler ? handler(message, { id }) : Promise.resolve(undefined)),
+    // As Chrome gives the worker's own messages: the extension's id and its script's address (run/press needs it).
+    deliver: (message) => (handler ? handler(message, { id, url: `chrome-extension://${id}/background.js` })
+      : Promise.resolve(undefined)),
     deliverFrom: (message, sender) => (handler ? handler(message, sender) : Promise.resolve(undefined)),
     invalidate() {
       valid = false;
@@ -356,10 +358,12 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   const runs = new Map<string, { dryRun: boolean; ai: FakeRunAi }>();
   /** The latest RunState put for each application (one tab's store). */
   const stored = new Map<string, RunState>();
+  /** The applications a Submit was armed for (v3 Phase 4), until their confirmation is taken. */
+  const armed = new Set<string>();
   let nextRun = 1;
   let transfers = 0;
   const planned = options.settings ?? CAUTIOUS_SETTINGS;
-  const settings = { panel: planned.panel, modes: { next: planned.modes.next, afterPageTurn: planned.modes.afterPageTurn },
+  const settings = { panel: planned.panel, modes: { next: planned.modes.next, afterPageTurn: planned.modes.afterPageTurn, submit: planned.modes.submit, agentSkip: planned.modes.agentSkip },
     llm: { ...planned.llm }, offerToSaveAnswers: planned.offerToSaveAnswers };
 
   const scripted = (type: string): unknown => {
@@ -529,6 +533,16 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         return { ok: true, data: {} };
       case 'answer/save':
         return { ok: true, data: { outcome: 'saved' } };
+      // v3 Phase 4: a Submit armed for an application (the worker's submissions.ts, in brief: one tab), and the sign
+      // of its confirmation taken once, only after one.
+      case 'submit/armed':
+        armed.add(message.applicationKey as string);
+        return { ok: true, data: {} };
+      case 'submit/detected': {
+        const key = message.applicationKey as string;
+        if (!armed.delete(key)) return { ok: false, error: 'expired' };
+        return { ok: true, data: {} };
+      }
       case 'ping':
         return { ok: true, data: { pong: true } };
       default:

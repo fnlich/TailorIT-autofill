@@ -6,9 +6,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
+import { deadline } from '../../dom/time';
 import { COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
 import { mountPageUi, type PageUi } from './page-ui';
+import { DOCK_SEEN_MS } from './panel';
 
 type Row = FrameReport['fields'][number];
 
@@ -44,11 +46,12 @@ interface Calls {
   described: string[];
   confirmed: string[];
   closed: number;
+  pressed: Array<[string, boolean]>;
 }
 
 const mounted: PageUi[] = [];
 function mount(doc: Document = document, frameId = 2, options: { confirm?: boolean } = {}) {
-  const calls: Calls = { shown: [], described: [], confirmed: [], closed: 0 };
+  const calls: Calls = { shown: [], described: [], confirmed: [], closed: 0, pressed: [] };
   const ui = mountPageUi(doc, {
     onLauncher: () => undefined,
     onPolicyChoice: () => undefined,
@@ -65,6 +68,11 @@ function mount(doc: Document = document, frameId = 2, options: { confirm?: boole
       } } : {}),
       closed: () => {
         calls.closed += 1;
+      },
+      // v3 Phase 4: the dock's Next and Submit, for this frame's own run.
+      press: async (target, confirmed) => {
+        calls.pressed.push([target, confirmed]);
+        return { outcome: 'pressed' as const };
       },
     },
   });
@@ -156,6 +164,38 @@ describe('the in-page panel', () => {
     await trustedClick(ui, close);
     expect(calls.closed).toBe(1);
     expect(close.getAttribute('aria-label')).toBe(COPY.inPage.close);
+  });
+
+  it('presses the page’s own Submit only for the person’s visible click on its dock: a page can never trigger it (v3 Phase 4)', async () => {
+    const { ui, calls } = mount();
+    ui.openPanel();
+    ui.updatePanel([report(2, { status: 'review', fields: [row('own')],
+      buttons: { final: 'final', next: false, submit: true } })]);
+    const panel = panelOf(ui);
+    const submit = panel.querySelector<HTMLButtonElement>('button[data-step-action="submit"]')!;
+    expect(submit.textContent).toContain(COPY.panel.step.submit);
+    // A page's script: click(), a dispatched click, a click on the host the closed root hangs from.
+    submit.click();
+    submit.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+    ui.host.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+    await deadline(50);
+    expect(calls.pressed).toEqual([]);
+    // Another frame's step offers nothing here: the panel acts on its own frame alone.
+    ui.updatePanel([report(5, { status: 'review', buttons: { final: 'final', next: false, submit: true } })]);
+    expect(panel.querySelector('button[data-step-action]')).toBeNull();
+    ui.updatePanel([report(2, { status: 'review', fields: [row('own')],
+      buttons: { final: 'final', next: false, submit: true } })]);
+    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    // The dock's button itself must have been seen for DOCK_SEEN_MS (the review, 12): a click on it the moment it is
+    // drawn does not count.
+    const dock = () => panel.querySelector<HTMLButtonElement>('button[data-step-action="submit"]')!;
+    await trustedClick(ui, dock());
+    await deadline(50);
+    expect(calls.pressed).toEqual([]);
+    await vi.waitFor(() => expect(ui.visibleNow(dock())).toBe(true));
+    await deadline(DOCK_SEEN_MS + 50);
+    await trustedClick(ui, dock());
+    await vi.waitFor(() => expect(calls.pressed).toEqual([['submit', false]]));
   });
 
   it('confirms a draft only for a click made while the panel could be seen', async () => {

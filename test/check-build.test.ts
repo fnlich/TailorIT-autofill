@@ -46,7 +46,7 @@ function manifest(origin: string): Record<string, unknown> {
     version: '0.1.0',
     key: KEY,
     minimum_chrome_version: '144',
-    permissions: ['storage', 'sidePanel'],
+    permissions: ['storage', 'sidePanel', 'activeTab'],
     host_permissions: [...ATS_MATCHES, `${origin}/*`],
     externally_connectable: { matches: [`${origin}/*`] },
     icons: { ...ICONS },
@@ -129,7 +129,7 @@ describe("check-build's development-only assertions", () => {
   });
 
   it("fail a development manifest: its commands and pageCapture", () => {
-    const development = { ...manifest('http://localhost:3100'), permissions: ['storage', 'sidePanel', 'pageCapture'],
+    const development = { ...manifest('http://localhost:3100'), permissions: ['storage', 'sidePanel', 'activeTab', 'pageCapture'],
       commands: { 'tailorit-dev-capture-now': { suggested_key: { default: 'Alt+Shift+S' }, description: 'Save' } } };
     const { status, output } = checkBuild(project((write) => write(`${BUILDS.chrome}/manifest.json`, JSON.stringify(development))));
     expect(output).toContain('.output/chrome-mv3: commands must be absent');

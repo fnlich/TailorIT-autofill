@@ -29,7 +29,7 @@ import { installHandFakes, type FakePortPeer, type HandFakes, type RawSender, ty
 import { createMemorySecrets } from '../platform/memory';
 import type { FetchLike, WorkerPlatform } from '../platform/types';
 import type { FrameReport } from '../shared/report';
-import type { TokenRecord } from '../shared/stored';
+import { DISCLOSURE_KEY, DISCLOSURE_VERSION, type TokenRecord } from '../shared/stored';
 import type { CoreFunctions } from './core';
 import { startWorker, type WorkerState } from './index';
 import { manualTimers } from './timers';
@@ -402,13 +402,21 @@ export interface TestWorkerOptions {
   /** v3 Phase 3: a form's hello looks the job up as the page loads (the worker's default). Off by default here, so a
    *  test of anything else sees only the messages it sets off; a test of the lookup on load turns it on. */
   lookupOnLoad?: boolean;
+  /** The v3 Phase 4 review: the disclosure the person acknowledged, as storage.local keeps it: the current version by
+   *  default (a connection made now, through pairing), an older one, or none (an install connected before it was
+   *  kept). */
+  disclosure?: number | null;
 }
 
 /** Resets the fake browser, installs the hand fakes and starts the real worker over them. */
 export async function startTestWorker(options: TestWorkerOptions = {}): Promise<TestWorker> {
   const secrets = createMemorySecrets();
   if (options.token) await secrets.set(options.token);
-  return launch(options, { secrets, clock: { now: START_MS }, tailorit: options.tailorit ?? createFakeTailorIT() });
+  const disclosure = options.disclosure === undefined ? DISCLOSURE_VERSION : options.disclosure;
+  return launch({ ...options, before: async (fakes) => {
+    if (disclosure !== null) await fakeBrowser.storage.local.set({ [DISCLOSURE_KEY]: { version: disclosure } });
+    await options.before?.(fakes);
+  } }, { secrets, clock: { now: START_MS }, tailorit: options.tailorit ?? createFakeTailorIT() });
 }
 
 /**

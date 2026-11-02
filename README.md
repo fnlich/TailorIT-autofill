@@ -1,6 +1,6 @@
 # TailorIT Autofill
 
-A Manifest V3 browser extension that fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in [TailorIT](../TailorIT). One click fills what it is sure of, with TailorIT's AI answering what your profile does not; everything is listed for you to review in the side panel. It never submits an application.
+A Manifest V3 browser extension that fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in [TailorIT](../TailorIT). One click fills what it is sure of, with TailorIT's AI answering what your profile does not; everything is listed for you to review in the side panel. It submits an application only when you press Submit application in its panel, or turn Submit mode to Auto (Manual by default).
 
 The specification is [docs/SPEC.md](docs/SPEC.md); the design is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Work proceeds in phases 0-6, each ending with a report.
 

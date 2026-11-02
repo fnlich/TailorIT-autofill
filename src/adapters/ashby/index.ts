@@ -65,7 +65,8 @@
  *   fires): the autofill uploader and everything in it, "Upload File", "Delete file", an Education block's Delete, the
  *   Overview and Application tabs and "Apply for this Job". Submit is identified (submitButton), so it is never clicked
  *   either; the form is one step, so a page showing it is the final step.
- * - After Submit the same address shows .ashby-application-form-success-container (ashbySubmitted, for v3 Phase 4).
+ * - After Submit the same address shows .ashby-application-form-success-container (ashbySubmitted, read by
+ *   content/submitted.ts after a Submit was pressed).
  * The SMS consent's radios save the consent the moment one is clicked. Nothing here reads, logs or sends a value.
  */
 import { askBridge } from '../../dom/bridge';
@@ -455,8 +456,8 @@ function isFinalStep(doc: Document): 'final' | 'unknown' {
 }
 
 /** Whether the page shows Ashby's message after Submit (.ashby-application-form-success-container, at the form's own
- *  address, as Jobright 1.25.2 reads it: not seen live, since nothing was submitted). For v3 Phase 4's submission
- *  detection; nothing calls it yet. */
+ *  address, as Jobright 1.25.2 reads it: not seen live, since nothing was submitted). v3 Phase 4's submission
+ *  detection reads it (content/submitted.ts), only after a Submit was pressed. */
 export function ashbySubmitted(doc: Document): boolean {
   return doc.querySelector('.ashby-application-form-success-container') !== null;
 }

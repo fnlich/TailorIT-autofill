@@ -12,9 +12,18 @@
  * - any element whose activation would submit a form: a button with a form owner whose .type is "submit" (a typeless
  *   button included), input[type=submit] and input[type=image], anything inside such a button, and a <label> (or an
  *   element inside one) whose control is refused.
- * The only exception is the adapter's Next button, and only when the caller passes allowNext: the step machine does
- * so on a step the adapter declared not final, after the auto-advance checks. Even then the Submit button and the
- * submit words stay refused. A refused click leaves the field flagged needs-your-click; it is never retried another way.
+ * The only exceptions are the adapter's Next button, and only when the caller passes allowNext: the step machine does
+ * so on a step the adapter declared not final, after the auto-advance checks; even then the Submit button and the
+ * submit words stay refused. And (v3 Phase 4, docs/SPEC-AMENDMENTS.md §12 Decision 6) the adapter's Submit button
+ * itself, through clickAdapterSubmit alone: no flag a caller can pass opens it. That function finds the adapter's own
+ * Submit itself (a caller names no element) and passes this module's unexported SUBMIT_PRESS key to the check, so
+ * nothing outside this file can make assertNotSubmit or clickIfAllowed let Submit through. One module alone may call
+ * it (src/content/press.ts: the panel's "Submit application" on the person's trusted click, and Submit mode Auto): a
+ * lint rule bans its name everywhere else (eslint.config.mjs), it is not exported from fillers/index.ts, and
+ * test/allow-submit.test.ts holds both. It presses only on a step the adapter declares final, and never an element the
+ * adapter names never to press: the exception is that one element, so anything inside it, anything holding it, another
+ * submit control and every submit word elsewhere stay refused. A refused click leaves the field flagged
+ * needs-your-click; it is never retried another way.
  * A choice made through the page-world bridge (docs/SPEC-AMENDMENTS.md §12) clicks nothing, and the option it names
  * may not be drawn yet (a closed list): its text box goes through assertNotSubmit, and the option's label, as the
  * frame read it, through optionWordsRefusal, the word rule an option of an open list gets here ("confirm" chooses a
@@ -32,6 +41,9 @@ export const CLICK_REFUSALS = ['adapter-submit', 'submit-word', 'submits-form', 
   'label-of-refused', 'adapter-never-press'] as const;
 export type ClickRefusal = (typeof CLICK_REFUSALS)[number];
 
+/** The Submit exception's key: unexported, so only clickAdapterSubmit in this file can hold it. */
+const SUBMIT_PRESS: unique symbol = Symbol('submit-press');
+
 /** Where the adapter's Submit and Next buttons are looked up, and whether the step machine allows Next. */
 export interface NotSubmitContext {
   adapter: Adapter | null;
@@ -39,6 +51,11 @@ export interface NotSubmitContext {
   root: Element | null;
   /** The step machine's Next exception. Never set by a filler. */
   allowNext?: boolean;
+}
+
+/** The context clickAdapterSubmit checks with: SUBMIT_PRESS, which no caller outside this file can name. */
+interface SubmitPressContext extends NotSubmitContext {
+  [SUBMIT_PRESS]?: true;
 }
 
 /** Whether `el` may receive an untrusted click. */
@@ -54,7 +71,34 @@ export function clickIfAllowed(el: HTMLElement, ctx: NotSubmitContext): boolean 
   return true;
 }
 
+/**
+ * v3 Phase 4: presses the adapter's own Submit button once, with an untrusted click(), when the Submit exception allows
+ * it (module header): the step declared final, that one element, never a Next or a never-pressed button. Answers the
+ * element clicked, or null when nothing was. Only src/content/press.ts may call it (eslint.config.mjs).
+ */
+export function clickAdapterSubmit(adapter: Adapter, root: Element): HTMLElement | null {
+  let submit: HTMLElement | null = null;
+  try {
+    submit = adapter.submitButton?.(root) ?? null;
+  } catch {
+    return null;
+  }
+  if (submit === null) return null;
+  const ctx: SubmitPressContext = { adapter, root, [SUBMIT_PRESS]: true };
+  if (refusalOf(submit, ctx, 0) !== null) return null;
+  submit.click();
+  return submit;
+}
+
+/** Whether the Submit exception would let `el` through (for the tests and the checks that read it; it clicks
+ *  nothing): exactly the adapter's own Submit, on a final step, and nothing near it. */
+export function submitPressAllowed(el: Element, adapter: Adapter, root: Element): boolean {
+  const ctx: SubmitPressContext = { adapter, root, [SUBMIT_PRESS]: true };
+  return refusalOf(el, ctx, 0) === null;
+}
+
 function refusalOf(el: Element, ctx: NotSubmitContext, depth: number): ClickRefusal | null {
+  if (depth === 0 && submitException(el, ctx)) return null;
   const submitButton = ctx.root !== null ? ctx.adapter?.submitButton?.(ctx.root) ?? null : null;
   if (submitButton !== null && (submitButton.contains(el) || el.contains(submitButton))) return 'adapter-submit';
   if (SUBMIT_WORDS.test(shownText(el))) return 'submit-word';
@@ -124,6 +168,19 @@ function submitsForm(el: Element): boolean {
     return type === 'submit' || type === 'image';
   }
   return false;
+}
+
+/** The adapter's Submit button itself on a step it declared final, for clickAdapterSubmit alone (v3 Phase 4): never
+ *  one the adapter names never to press, never a Next button, and never anything but that one element. */
+function submitException(el: Element, ctx: SubmitPressContext): boolean {
+  if (ctx[SUBMIT_PRESS] !== true || ctx.root === null || ctx.adapter === null) return false;
+  const submit = ctx.adapter.submitButton?.(ctx.root) ?? null;
+  if (submit === null || submit !== el) return false;
+  const next = ctx.adapter.nextButton?.(ctx.root) ?? null;
+  if (next !== null && (next.contains(el) || el.contains(next))) return false;
+  const never = ctx.adapter.neverPress?.(ctx.root) ?? [];
+  if (never.some((button) => button.contains(el) || el.contains(button))) return false;
+  return ctx.adapter.isFinalStep?.(el.ownerDocument) === 'final';
 }
 
 /** The adapter's Next button on a step it declared not final, when the step machine allows it. */

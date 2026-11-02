@@ -4,7 +4,7 @@ import { NOTICE_CODES } from '../../shared/report';
 import type { FieldKey } from '../types/field';
 import { RESUME_AUTO_MS, RUN_STATE_TTL_MS, RUN_STATUSES, type RunState, type RunStatus } from '../types/run';
 import {
-  ADVANCE_REFUSALS, autoAdvanceVerdict, createRunState, MAX_FILLED_KEYS_PER_STEP, MAX_IDLE_TRANSITIONS, MAX_STEP_ATTEMPTS,
+  ADVANCE_REFUSALS, autoAdvanceVerdict, autoSubmitVerdict, createRunState, SUBMIT_REFUSALS, MAX_FILLED_KEYS_PER_STEP, MAX_IDLE_TRANSITIONS, MAX_STEP_ATTEMPTS,
   MAX_STEPS,
   noticeOfPause, reduceRun, repeatableCounterKey, resumeMode, STEP_NOTICES, storedFieldKey, TRANSITION_CAP_MS,
   type RunContext, type RunEffect, type RunEvent, type StepFacts,
@@ -951,5 +951,78 @@ describe('the Phase 5 review', () => {
     expect(withheld.effects.slice(2)).toEqual([{ type: 'notify', notice: 'captcha-next' },
       { type: 'await-transition', from: S1, capMs: null }]);
     expect(STEP_NOTICES).toContain('captcha-next');
+  });
+});
+
+describe('Submit mode Auto (v3 Phase 4)', () => {
+  const RULES = { requiredEmpty: true, noAi: true, legalGuess: false };
+  const AUTO: RunContext = { ...OFF, autoSubmit: RULES };
+  const finalStep = (patch: Partial<StepFacts> = {}) => facts({ finality: 'final', nextVisible: false, submitVisible: true,
+    requiredEmpty: 0, noAi: false, legalGuess: false, ...patch });
+  const validatedState = at('validate', { lastFill: CLEAN });
+
+  it('presses Submit after the review only on a clean final step, with Submit on Auto', () => {
+    const step = reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep() }, AUTO);
+    expect(step.state.status).toBe('review');
+    expect(types(step.effects)).toEqual(['persist', 'report', 'show-review', 'press-submit']);
+    // Manual (the default): the review, and the person submits.
+    expect(types(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep() }, OFF).effects))
+      .toEqual(['persist', 'report', 'show-review']);
+    // A dry run's context carries no Auto, and a step not final is never submitted (auto-advance's, or the person's).
+    for (const finality of ['not-final', 'unknown'] as const) {
+      const effects = reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0,
+        step: finalStep({ finality }) }, { ...AUTO, autoAdvance: true }).effects;
+      expect(types(effects)).not.toContain('press-submit');
+    }
+  });
+
+  it('holds the Submit back for the skip rules and the step’s state, saying why', () => {
+    const cases: Array<[Partial<StepFacts>, string]> = [
+      [{ requiredEmpty: 2 }, 'submit-held-required'],
+      [{ noAi: true }, 'submit-held-no-ai'],
+      [{ captchaUnsolved: true }, 'submit-held-captcha'],
+      [{ unconfirmedDrafts: 1 }, 'submit-held-check'],
+      [{ settled: false }, 'submit-held-check'],
+      [{ submitVisible: false }, 'submit-held-check'],
+    ];
+    for (const [patch, notice] of cases) {
+      const step = reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep(patch) }, AUTO);
+      expect(types(step.effects)).not.toContain('press-submit');
+      expect(step.effects).toContainEqual(patch.requiredEmpty === 2 ? { type: 'notify', notice, count: 2 }
+        : { type: 'notify', notice });
+      expect(step.state.status).toBe('review');
+    }
+    // A legal answer the AI guessed holds it back only with that rule on (off by default).
+    expect(types(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep({ legalGuess: true }) },
+      AUTO).effects)).toContain('press-submit');
+    const strict = { ...OFF, autoSubmit: { ...RULES, legalGuess: true } };
+    expect(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep({ legalGuess: true }) },
+      strict).effects).toContainEqual({ type: 'notify', notice: 'submit-held-guess' });
+    // With the empty-field rule off, required fields left empty do not hold it back.
+    const lenient = { ...OFF, autoSubmit: { ...RULES, requiredEmpty: false } };
+    expect(types(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep({ requiredEmpty: 3 }) },
+      lenient).effects)).toContain('press-submit');
+  });
+
+  it('reads its rules in order, the first that fails being the refusal', () => {
+    const state = at('validate', { lastFill: CLEAN });
+    expect(autoSubmitVerdict(state, { errors: 0, step: finalStep() }, { autoSubmit: null }))
+      .toEqual({ submit: false, refusal: 'setting-off' });
+    expect(autoSubmitVerdict(state, { errors: 1, step: finalStep() }, AUTO)).toEqual({ submit: false, refusal: 'errors' });
+    expect(autoSubmitVerdict(at('validate', { lastFill: null }), { errors: 0, step: finalStep() }, AUTO))
+      .toEqual({ submit: false, refusal: 'not-filled' });
+    expect(autoSubmitVerdict(state, { errors: 0, step: finalStep({ requiredEmpty: 1, captchaUnsolved: true }) }, AUTO))
+      .toEqual({ submit: false, refusal: 'required-empty' });
+    expect(autoSubmitVerdict(state, { errors: 0, step: finalStep() }, AUTO)).toEqual({ submit: true });
+    expect(SUBMIT_REFUSALS[0]).toBe('setting-off');
+    for (const notice of ['submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha',
+      'submit-held-check'] as const) {
+      expect(STEP_NOTICES).toContain(notice);
+      expect(NOTICE_CODES).toContain(notice);
+    }
+  });
+
+  it('is done once the platform’s confirmation is seen after the Submit (SUBMITTED), from review', () => {
+    expect(reduceRun(at('review'), { type: 'SUBMITTED' }, OFF).state.status).toBe('done');
   });
 });

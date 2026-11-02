@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
 import { REASON_CODES } from '../core/types/fill';
 import { FIELD_CATEGORIES } from '../core/types/intent';
-import { PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from '../core/types/run';
+import { PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES, STEP_FINALITIES } from '../core/types/run';
 
 const Key = z.string().min(1).max(600);
 
@@ -33,6 +33,10 @@ export const FillResultSchema = z.strictObject({
       userEdited: z.literal(true).optional(),
       /** v3 Phase 3: the person's own input left an answer in a field the run left for them (a flag, no value). */
       filledByYou: z.literal(true).optional(),
+      /** The v3 Phase 4 review: a cover letter longer than its text box takes (cover-letter-too-long): the letter's
+       *  length and the box's limit, in characters. Counts only, never the words. */
+      letterLength: z.strictObject({ length: z.number().int().nonnegative(), limit: z.number().int().positive() })
+        .optional(),
     })
     .optional(),
 });
@@ -54,7 +58,14 @@ export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attenti
   // AI, or because the form holds an "I did not use AI" attestation.
   'policy-profile-only', 'ai-attestation',
   // v3 Phase 3: the form moved to a new step while Autofill after page turn is Manually: Continue fills it.
-  'page-turned'] as const;
+  'page-turned',
+  // v3 Phase 4: Submit mode Auto held the final Submit back, and why; and a Submit pressed (the panel's or Auto's) that
+  // no confirmation followed within SUBMIT_CONFIRM_MS.
+  'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
+  'submit-unconfirmed',
+  // The v3 Phase 4 review: the page refused a Submit pressed (its errors, its failure message; `count` of them), and
+  // Submit mode Auto submitted a posting whose AI rule could not be read.
+  'submit-errors', 'submit-auto-unchecked'] as const;
 
 /** A step's progress line as the adapter reads it from the page ("Step 2 of 4"), at most this long. */
 export const MAX_STEP_PROGRESS = 120;
@@ -84,6 +95,12 @@ export const FrameReportSchema = z.strictObject({
   /** The run rests in a status that otherwise means it works (v3 Phase 3 review): at wait-transition while it waits for
    *  the person's own Next, nothing runs, so the panels show the review at rest, not "Autofilling". */
   resting: z.literal(true).optional(),
+  /** v3 Phase 4: the step's own buttons as the adapter reads them at rest, for the panel's "Continue to the next page"
+   *  and "Submit application": whether the step is the last (`final`, 'unknown' when the adapter cannot tell), whether
+   *  its Next and its Submit show (visible and enabled), and a Submit the panel or Submit mode Auto pressed that waits
+   *  for the platform's confirmation (`pressed`). Flags only. */
+  buttons: z.strictObject({ final: z.enum(STEP_FINALITIES), next: z.boolean(), submit: z.boolean(),
+    pressed: z.literal('submit').optional() }).optional(),
   notices: z.array(z.strictObject({ code: z.enum(NOTICE_CODES), count: z.number().int().positive().optional() })).max(20),
   counters: z.strictObject({
     passes: z.number().int().nonnegative(),

@@ -49,8 +49,8 @@ describe('the v2 copy', () => {
 
   it('tells the person, before they connect, when TailorIT is asked which job page they are on', () => {
     const [, lookups] = COPY.options.connection.disclosure;
-    // v3 Phase 3: as an application page loads, not only while the side panel shows it.
-    expect(lookups).toContain('When an application page on those sites loads');
+    // v3 Phase 3: as an application page loads, not only while the side panel shows it; v3 Phase 3b: a posting too.
+    expect(lookups).toContain('When an application page or a job posting on those sites loads');
     expect(lookups).toContain('side panel shows one');
     expect(lookups).toContain('Autofill or Dry run');
     expect(lookups).toContain('does not keep the page\'s address');

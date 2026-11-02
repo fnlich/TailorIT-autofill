@@ -8,11 +8,17 @@
  * - Count sentences are small functions of the count. No sentence ever holds a field value: the report has none.
  * - The development build's capture tool has its own export, CAPTURE_COPY, so no production bundle carries its words.
  */
-import type { AutofillFileKind, ResumeChoiceReason, WorkArrangement } from '../contract/tailorit';
+import type {
+  AutofillFileKind, DegreeLevel, ExpectedSalaryPeriod, GenderIdentity, RaceCategory, ResumeChoiceReason, WorkArrangement,
+  WorkStatus,
+} from '../contract/tailorit';
 import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
 import type { ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunStatus } from '../core/types/run';
-import type { AddJobOutcome, AskLength, AskOutcome, LetterOutcome, SaveAnswerOutcome } from '../messaging/schemas';
+import type {
+  AddJobOutcome, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome, ProfileSaveRefusal, SaveAnswerOutcome,
+  SiteRequestOutcome, SubmittedState,
+} from '../messaging/schemas';
 import type { FrameReport } from './report';
 
 /** A report notice's code. */
@@ -51,6 +57,17 @@ const NOTICES = {
   'ai-attestation': 'This form asks you to confirm you did not use AI, so only your TailorIT profile was used and nothing was sent to the AI. That box is left for you.',
   // v3 Phase 3 (Autofill after page turn: Manually): a draft for the owner's review.
   'page-turned': 'This is a new page of the application. Choose Continue to fill it.',
+  // v3 Phase 4 (Submit mode Auto held the Submit back; a Submit no confirmation followed): drafts for the owner's review.
+  'submit-held-required': 'Submit is on Auto, but required fields are still empty, so the Submit is yours. Fill them, then submit.',
+  'submit-held-no-ai': 'Submit is on Auto, but this posting says AI-assisted applications are not allowed, so the Submit is yours.',
+  'submit-held-guess': "Submit is on Auto, but a legal answer is the AI's guess, so the Submit is yours. Check it, then submit.",
+  'submit-held-captcha': 'Submit is on Auto, but this page asks you to prove you are human, so the Submit is yours. Complete it, then submit.',
+  'submit-held-check': "Submit is on Auto, but this page isn't ready to submit by itself (a draft to confirm, or the page still changing), so the Submit is yours.",
+  'submit-unconfirmed': "Submit was pressed, but the page didn't confirm the application. Check the page for errors, then submit again.",
+  // The v3 Phase 4 review: the page refused a Submit (its errors, its failure message), and Submit mode Auto submitted
+  // a posting whose AI rule couldn't be read. Drafts for the owner's review.
+  'submit-errors': "Submit was pressed, but the page didn't accept the application: it shows what to fix. Fix it, then submit again.",
+  'submit-auto-unchecked': "I couldn't read this posting to check whether it allows AI tools, and Submit is on Auto, so the application was submitted anyway.",
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -176,6 +193,10 @@ const REASONS = {
   'ai-attestation-ai-used': "This fill used AI, so ticking that you didn't use AI would be untrue. It was left for you.",
   // v3 Phase 3: the side panel's Skip. A draft for the owner's review.
   'skipped-by-you': 'You skipped this field while it was being filled, so it was left for you.',
+  // v3 Phase 3b: drafts for the owner's review.
+  'resume-not-attached': 'You chose to apply without a resume, so none was attached. Attach one yourself if the form needs it.',
+  'cover-letter-typed': 'Your cover letter for this job was typed in from TailorIT.',
+  'cover-letter-too-long': "Your cover letter for this job is longer than this box allows, so it wasn't typed in or cut short. Shorten it in TailorIT, or write a shorter one here.",
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;
@@ -268,6 +289,8 @@ const REPORT = {
   noSource: 'Nothing written',
   /** Phase G: a cover-letter upload's source, the person's letters in TailorIT. */
   coverLetterSource: "Your TailorIT cover letters",
+  /** The v3 Phase 4 review: a cover letter longer than its text box takes, in characters. */
+  letterLength: (length: number, limit: number) => `Your letter is ${length} characters; this box takes ${limit}.`,
   match: 'Match',
   confidence: 'Confidence',
   showOnPage: 'Show on page',
@@ -393,6 +416,66 @@ const PANEL = {
     reloadHeading: 'Reload this page to use Autofill',
     reloadIntro: 'This page opened before TailorIT Autofill could read it. Reload it, and Autofill works here.',
   },
+  /** v3 Phase 3b: "Ask TailorIT to support this site", on a page Autofill does not work on. Drafts for the owner. */
+  siteRequest: {
+    ask: 'Ask TailorIT to support this site',
+    asking: 'Sending…',
+    help: 'Only the site\'s name (like careers.example.com) goes to your TailorIT, which lists it in Settings › Autofill.',
+    outcomes: {
+      sent: 'Sent. TailorIT lists this site in Settings › Autofill.',
+      'no-host': "The browser didn't say which site this is. Open this panel with the TailorIT Autofill icon in the toolbar while this page shows, then ask again.",
+      'not-allowed': "This connection can't send requests. Connect the extension again from TailorIT's Settings › Autofill.",
+      'not-connected': 'Connect to TailorIT in the settings first.',
+      'rate-limited': 'Too many requests in a minute. Wait a little, then try again.',
+      unavailable: "TailorIT couldn't be reached just now. Try again.",
+    } satisfies Record<SiteRequestOutcome, string>,
+  },
+  /** v3 Phase 4: the panel's buttons for the page's own Next and Submit, and what came of a press. Drafts. */
+  step: {
+    next: 'Continue to the next page',
+    submit: 'Submit application',
+    submitting: 'Submitting…',
+    confirmEmpty: (count: number) => (count === 1 ? '1 required field is still empty. Submit anyway?'
+      : `${count} required fields are still empty. Submit anyway?`),
+    submitAnyway: 'Submit anyway',
+    keepEditing: 'Not yet',
+    outcomes: {
+      pressed: 'Pressed on the page.',
+      'required-empty': 'Required fields are still empty.',
+      'not-offered': 'The page no longer shows that button. Check the page.',
+      blocked: 'The page asks you to do something first (a check that you are human, a sign-in or a code).',
+      refused: "That button can't be pressed for you. Press it on the page yourself.",
+      busy: 'Autofill is still working on this page. Wait for it to finish.',
+      gone: 'The form is no longer there. Reload the page.',
+      'not-accepted': "The page didn't accept it. It shows what to fix.",
+    } satisfies Record<PressOutcome, string>,
+    /** The review: the page's own checks refused a press, `count` fields marked. */
+    notAccepted: (count: number) => (count === 1 ? "The page didn't accept it: 1 field shows an error. Fix it, then try again."
+      : `The page didn't accept it: ${count} fields show an error. Fix them, then try again.`),
+    /** The review (Jobright's "Submitted!"): the dock's button once the platform confirmed the application. */
+    submitted: 'Submitted',
+  },
+  /** v3 Phase 4: after the platform confirmed the application. Drafts for the owner's review. */
+  submitted: {
+    title: 'Application submitted',
+    openTracker: 'Open Job Tracker',
+    /** The job the application was for, when the card names it. */
+    job: (title: string, company: string) => (company === '' ? title : title === '' ? company : `${title} at ${company}`),
+    states: {
+      recording: 'Adding it to your Job Tracker…',
+      recorded: 'Added to your Job Tracker as Applied.',
+      'not-recorded': "Your Job Tracker couldn't be told. Try again, or mark it Applied in TailorIT.",
+      'not-allowed': "This connection can't change your Job Tracker. Connect the extension again from TailorIT's Settings › Autofill.",
+    } satisfies Record<SubmittedState, string>,
+    tryAgain: 'Try again',
+  },
+  /** The v3 Phase 4 review: the disclosure changed since the person connected. Drafts for the owner's review. */
+  disclosureChanged: {
+    heading: 'What TailorIT Autofill does has changed',
+    intro: 'Read what changed before Autofill submits for you or tells your TailorIT about pages as they load.',
+    understand: 'I understand',
+    held: 'Until you choose I understand, Submit stays Manual, submitted applications are not recorded, and pages are looked up only when you open the side panel.',
+  },
   /** The links at the panel's foot, to the person's TailorIT. */
   autofillInfo: 'Your autofill information',
   openJobs: 'Open TailorIT Jobs',
@@ -517,6 +600,43 @@ const JOB = {
       unavailable: "Couldn't write it: TailorIT couldn't be reached just now. Try again.",
     } satisfies Record<LetterOutcome, string>,
   },
+  /** v3 Phase 3b: "Autofill for another job". Drafts for the owner's review. */
+  another: {
+    open: 'Autofill for another job',
+    heading: 'Autofill for another job',
+    help: 'Fill this form for a job in your TailorIT tracker: its match, its resume and its details are used.',
+    label: 'Search your tracked jobs',
+    placeholder: 'Job title or company',
+    searching: 'Searching…',
+    none: 'No job in your tracker matches.',
+    use: 'Use this job',
+    pageJob: "Use this page's own job",
+    close: 'Close',
+    chosen: 'Chosen by you for this page',
+    /** The review: the choice could not be kept (the page changed, or the search is gone). */
+    failed: "That job couldn't be chosen: the page changed. Search again.",
+    outcomes: {
+      'not-allowed': "This connection can't search your jobs. Connect the extension again from TailorIT's Settings › Autofill.",
+      'not-connected': 'Connect to TailorIT in the settings first.',
+      'rate-limited': 'Too many searches in a minute. Wait a little, then try again.',
+      unavailable: "Your jobs couldn't be searched just now. Try again.",
+    } satisfies Record<JobSearchRefusal, string>,
+  },
+  /** v3 Phase 3b: Change's "Apply without resume" and the resume's preview. Drafts for the owner's review. */
+  withoutResume: 'Apply without resume',
+  withoutResumeHelp: 'No resume will be uploaded. Autofill uses your autofill information.',
+  withoutResumeOn: 'No resume will be attached',
+  /** The review: Apply without resume could not be kept (no form or posting of ours in the tab now). */
+  withoutFailed: "That couldn't be changed: the page changed. Try again.",
+  preview: {
+    open: 'Preview',
+    close: 'Close the preview',
+    title: (label: string) => `Preview of ${label}`,
+    loading: 'Loading the resume…',
+    unavailable: "This resume's preview couldn't be shown.",
+    notPdf: 'Only a PDF resume has a preview.',
+    openTab: 'Open it larger',
+  },
   picker: {
     heading: 'Choose the resume to attach',
     loading: 'Reading your resumes…',
@@ -556,6 +676,168 @@ const ASK = {
   } satisfies Record<Exclude<AskOutcome, 'answered'>, string>,
 } as const;
 
+/** The side panel's "Your autofill information" editor (v3 Phase 3b, src/ui/panel/Profile.tsx). Drafts for the
+ *  owner's review. */
+const PROFILE = {
+  heading: 'Your autofill information',
+  intro: 'What TailorIT fills applications with. Your changes are saved to your TailorIT.',
+  back: 'Back',
+  loading: 'Loading your autofill information…',
+  /** Why panel/profile gave no profile: by the worker's refusal. */
+  loadFailed: {
+    notConnected: 'Connect to TailorIT in the settings first.',
+    rateLimited: 'Too many reads in a minute. Wait a little, then try again.',
+    unavailable: "Your autofill information couldn't be read just now.",
+  },
+  retry: 'Try again',
+  readOnly: "This connection can read your autofill information but not change it. To edit it here, connect the extension again from TailorIT's Settings › Autofill.",
+  openInTailorit: 'Open in TailorIT',
+  save: 'Save',
+  saving: 'Saving…',
+  saved: 'Saved.',
+  fixFirst: (count: number) => (count === 1 ? 'Fix 1 thing before saving:' : `Fix ${count} things before saving:`),
+  conflict: 'Your autofill information changed elsewhere since you opened it.',
+  conflictHelp: 'Load the latest to see it. Your changes here are kept on it, for you to check before you save.',
+  loadLatest: 'Load the latest',
+  loadingLatest: 'Loading the latest…',
+  /** Load the latest kept the person's edits on what TailorIT holds now (the review of v3 Phase 3b). */
+  merged: 'Loaded the latest from TailorIT, with your changes kept on it. Check them, then save.',
+  mergedBoth: (fields: string) => `Also changed elsewhere, with your version kept: ${fields}.`,
+  sensitiveDropped: "Your changes to work authorization and self-identification couldn't be kept: this browser may no longer read them.",
+  outcomes: {
+    conflict: 'Your autofill information changed elsewhere since you opened it.',
+    invalid: "TailorIT didn't accept a value. Check the fields, then save again.",
+    'not-allowed': "This connection can't change your autofill information. Connect the extension again from TailorIT's Settings › Autofill.",
+    'not-connected': 'Connect to TailorIT in the settings first.',
+    'rate-limited': 'Too many saves in a minute. Wait a little, then try again.',
+    unavailable: "Your changes couldn't be saved just now. Try again.",
+  } satisfies Record<ProfileSaveRefusal, string>,
+  sections: {
+    personal: 'Personal',
+    links: 'Links',
+    education: 'Education',
+    experience: 'Work experience',
+    skills: 'Skills',
+    preferences: 'Preferences',
+    anythingElse: 'Anything else we should know?',
+    sensitive: 'Work authorization and self-identification',
+  },
+  /** An entry of a list, by its place (from 1). */
+  entry: {
+    education: (place: number) => `Education ${place}`,
+    experience: (place: number) => `Work experience ${place}`,
+    workAuthorization: (place: number) => `Country ${place}`,
+  },
+  add: { education: 'Add education', experience: 'Add work experience', workAuthorization: 'Add a country' },
+  remove: (name: string) => `Remove ${name}`,
+  removeShort: 'Remove',
+  fields: {
+    first: 'First name',
+    middle: 'Middle name',
+    last: 'Last name',
+    preferred: 'Preferred first name',
+    suffix: 'Suffix',
+    email: 'Email',
+    phone: 'Phone',
+    phoneCountry: 'Phone country',
+    phoneExtension: 'Extension',
+    line1: 'Address',
+    line2: 'Address line 2',
+    city: 'City',
+    region: 'State or region',
+    postalCode: 'Postal code',
+    country: 'Country',
+    linkedin: 'LinkedIn',
+    github: 'GitHub',
+    portfolio: 'Portfolio',
+    website: 'Website',
+    school: 'School',
+    degreeLevel: 'Degree level',
+    degreeType: 'Degree',
+    fieldOfStudy: 'Field of study',
+    startDate: 'Start',
+    endDate: 'End',
+    studyingNow: 'I study here now',
+    company: 'Company',
+    title: 'Title',
+    workingNow: 'I work here now',
+    description: 'Description',
+    skills: 'Skills',
+    earliestStartDate: 'Earliest start date',
+    noticePeriodWeeks: 'Notice period (weeks)',
+    willingToRelocate: 'Willing to relocate',
+    workArrangements: 'Work arrangements',
+    travelPercent: 'Travel (% of the time)',
+    referralSource: 'How you usually hear about jobs',
+    anythingElse: 'Anything else we should know?',
+    authorized: 'Authorized to work there',
+    sponsorshipNow: 'Needs sponsorship now',
+    sponsorshipFuture: 'Needs sponsorship in the future',
+    workStatus: 'Status',
+    gender: 'Gender',
+    selfDescribed: 'In your words',
+    hispanicOrLatino: 'Hispanic or Latino',
+    races: 'Race',
+    veteran: 'Veteran status',
+    disability: 'Disability',
+    pronouns: 'Pronouns',
+    atLeast18: '18 or older',
+    criminalRecord: 'Ever convicted of a crime',
+    expectedSalary: 'Expected pay',
+    salaryMin: 'Minimum',
+    salaryMax: 'Maximum',
+    currency: 'Currency',
+    period: 'Per',
+  },
+  placeholders: { month: 'YYYY-MM', country: 'US', currency: 'USD', skills: 'TypeScript, PostgreSQL, Leadership' },
+  monthHelp: 'As YYYY-MM.',
+  /** An entry's date TailorIT holds as a year alone, which a month picker cannot show. */
+  yearOnly: (year: string) => `Saved as ${year}, without a month. Choose one to change it.`,
+  /** An empty email is the account's sign-in address (TailorIT's rule), named here. */
+  emailHelp: (email: string) => `Leave it empty to use your TailorIT sign-in email, ${email}.`,
+  /** An expected pay of 0 or less. */
+  salaryAboveZero: { min: 'Enter an amount above 0, or choose Not provided.', max: 'Enter an amount above 0, or leave it empty.' },
+  skillsHelp: 'Separate them with commas.',
+  anythingElseHelp: "Add any details you want TailorIT's AI to consider when it answers applications for you.",
+  /** The note's lines TailorIT keeps from the AI (its anythingElseFlaggedLines, from 0), named from 1. */
+  flagged: (lines: readonly number[]) => {
+    const named = lines.map((line) => line + 1);
+    const list = named.length === 1 ? `Line ${named[0]}`
+      : `Lines ${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`;
+    return `${list} ${named.length === 1 ? 'states' : 'state'} a sensitive answer (a visa, a salary, an age…). ${named.length === 1 ? 'It is saved, but never reaches' : 'They are saved, but never reach'} the AI: put those answers in the sections for them.`;
+  },
+  sensitiveHelp: 'These answers fill the questions that ask for them, and never go to the AI.',
+  sensitiveNotShared: 'This browser may not read your work authorization and self-identification answers. Edit them in TailorIT.',
+  sensitiveUnavailable: "Your work authorization and self-identification answers couldn't be read just now.",
+  choices: {
+    notProvided: 'Not provided',
+    declined: 'Prefer not to say',
+    answer: 'Answer',
+    yes: 'Yes',
+    no: 'No',
+    unset: 'Not set',
+  },
+  degreeLevels: {
+    highSchool: 'High school', associate: 'Associate', bachelor: "Bachelor's", master: "Master's", doctorate: 'Doctorate',
+    professional: 'Professional (MBA, JD, MD)', other: 'Other',
+  } satisfies Record<DegreeLevel, string>,
+  workStatuses: {
+    citizen: 'Citizen', 'permanent-resident': 'Permanent resident', 'work-visa': 'Work visa', 'student-visa': 'Student visa',
+    other: 'Other',
+  } satisfies Record<WorkStatus, string>,
+  genders: {
+    female: 'Woman', male: 'Man', 'non-binary': 'Non-binary', 'self-describe': 'In my own words',
+  } satisfies Record<GenderIdentity, string>,
+  races: {
+    'american-indian-alaska-native': 'American Indian or Alaska Native', asian: 'Asian',
+    'black-african-american': 'Black or African American', 'middle-eastern-north-african': 'Middle Eastern or North African',
+    'native-hawaiian-pacific-islander': 'Native Hawaiian or Pacific Islander', white: 'White',
+  } satisfies Record<RaceCategory, string>,
+  veteran: { none: 'Not a veteran', veteran: 'Veteran', protected: 'Protected veteran' },
+  periods: { year: 'Year', month: 'Month', hour: 'Hour' } satisfies Record<ExpectedSalaryPeriod, string>,
+  arrangements: JOB.arrangements,
+} as const;
+
 /** The in-page review panel (src/content/ui/panel.tsx): the same report, in the page's closed root. */
 const IN_PAGE = {
   region: 'TailorIT Autofill review',
@@ -586,8 +868,8 @@ const OPTIONS = {
     /** The first-run disclosure, shown before Connect (the store's "prominent disclosure"). A draft for the owner. */
     disclosureHeading: 'Before you connect',
     disclosure: [
-      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It never submits an application: you do. Unless you choose Required only under Modes, it ticks every agreement box a form shows, news, job alerts and text messages included, except a binding clause the form does not require (an arbitration agreement, say) and a box saying you did not use AI, which it ticks only when the fill used no AI. Some sites (Ashby) send a text message consent to the employer the moment it is ticked.',
-      'When an application page on those sites loads, and again while its side panel shows one, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match before you open the panel; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings, where you put or hid its button on each site, and notes on each application\'s progress, never your answers.',
+      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in your own TailorIT. It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. It submits an application only when you choose Submit application in its side panel, or set Submit to Auto under Modes; once the site confirms it, it tells your TailorIT tracker the job is Applied. Unless you choose Required only under Modes, it ticks every agreement box a form shows, news, job alerts and text messages included, except a binding clause the form does not require (an arbitration agreement, say) and a box saying you did not use AI, which it ticks only when the fill used no AI. Some sites (Ashby) send a text message consent to the employer the moment it is ticked.',
+      'When an application page or a job posting on those sites loads, and again while its side panel shows one, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match before you open the panel; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job, or mark it Applied after you submit. Its side panel can show and change your autofill information in your TailorIT, and preview the resume it attaches. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings, where you put or hid its button on each site, and notes on each application\'s progress, never your answers.',
       'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Unless you choose Profile only for AI answers under Modes, questions about work authorization, sponsorship, a visa, a clearance, age, criminal history or pay that your profile does not answer, and attention checks, get the AI\'s best guess too, from the question and its options alone. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
@@ -623,9 +905,9 @@ const OPTIONS = {
     inPage: 'A panel on the application page',
     inPageHelp: "The panel on the page opens from the launcher beside the form. On a form inside another site's page that is too small for it, the side panel opens instead.",
   },
-  /** Options › Modes (v3 Phase 3): each behaviour the person chooses, also in the side panel's gear menu. Sign-in,
-   *  Submit and the agent's skip rules are stored and shown once they exist (Phases 4 and 5). Drafts for the owner's
-   *  review. */
+  /** Options › Modes (v3 Phase 3): each behaviour the person chooses, also in the side panel's gear menu. Sign-in and
+   *  the agent's skip rules are stored and shown once they exist (Phase 5); Submit since v3 Phase 4. Drafts for the
+   *  owner's review. */
   modes: {
     heading: 'Modes',
     intro: 'How much TailorIT Autofill does by itself. The gear in the side panel shows these too.',
@@ -633,7 +915,19 @@ const OPTIONS = {
       name: 'Next page',
       manual: 'Manual',
       auto: 'Auto',
-      help: 'Auto presses Next once a page of the application is filled, settled and has nothing flagged. The final Submit is never pressed: you always submit yourself.',
+      help: 'Auto presses Next once a page of the application is filled, settled and has nothing flagged. The last page\'s Submit is the Submit mode\'s, below.',
+    },
+    submit: {
+      name: 'Submit',
+      manual: 'Manual',
+      auto: 'Auto',
+      help: 'Auto presses Submit once the last page of the application is filled and checked, unless a required field is still empty, the posting says AI is not allowed, or the page asks you to prove you are human: then the review says why, and you submit. Manual: you submit, on the page or with Submit application in the side panel.',
+    },
+    recordOwn: {
+      name: 'Record applications I submit myself',
+      on: 'On',
+      off: 'Off',
+      help: 'On: when you submit an application on Greenhouse, Lever or Ashby yourself, without Autofill, and the site confirms it, your TailorIT tracker marks the job Applied. Off: only applications Autofill filled are recorded.',
     },
     afterPageTurn: {
       name: 'Autofill after page turn',
@@ -787,6 +1081,20 @@ export const COPY = {
    *  rewrite is on its way. */
   editWithAi: 'Edit with AI',
   editingWithAi: 'Rewriting…',
+  /** v3 Phase 3b: Edit with AI's instruction box, and what came of a rewrite. Drafts for the owner's review. */
+  aiEdit: {
+    label: 'What should change? (optional)',
+    placeholder: 'Tell me what to add, change or improve',
+    count: (length: number) => `${length}/750`,
+    cancel: 'Cancel',
+    generate: 'Generate',
+    outcomes: {
+      sensitive: "Not rewritten: questions and instructions about self-identification, work authorization, pay, contact details or consent never go to the AI. Reword it, or write this one yourself.",
+      unchanged: 'The AI wrote the same text this box holds already.',
+      failed: "It couldn't be rewritten just now. Try again.",
+      refused: "This box can't be rewritten now: the page changed, or something on it needs you first.",
+    },
+  },
   /** One sentence per reason code. */
   reasons: REASONS,
   statuses: STATUSES,
@@ -801,6 +1109,7 @@ export const COPY = {
   strip: STRIP,
   job: JOB,
   ask: ASK,
+  profile: PROFILE,
   inPage: IN_PAGE,
   options: OPTIONS,
 } as const;

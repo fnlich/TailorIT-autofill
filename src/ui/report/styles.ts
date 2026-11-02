@@ -154,6 +154,28 @@ ${NOTICE_TONES}
 .tia-notice__source { margin: 4px 0 0; font-size: 12px; color: var(--tia-muted); }
 .tia-notice__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
 .tia-empty { margin: 0; color: var(--tia-muted); }
+/* v3 Phase 4: the dock's "Continue to the next page" and "Submit application" (StepDock.tsx), as Jobright's docked
+   button, in TailorIT's brand fill; its question when required fields are still empty. */
+/* The review: the dock stays in view at the bottom of the panel (Jobright's docked button), over the lists. */
+.tia-dock { position: sticky; bottom: 0; z-index: 1; display: grid; gap: 8px; padding: 8px 0;
+  background: var(--tia-bg); }
+.tia-dock__button {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin: 0;
+  padding: 0 16px; border: 0; border-radius: var(--tia-r-row); background: var(--tia-brand); color: var(--tia-on-ink);
+  font: 800 17px/1.2 var(--tia-font); cursor: pointer;
+}
+.tia-dock__button:hover { background: var(--tia-brand-hover); }
+.tia-dock__button:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-dock__button:disabled { opacity: 0.6; cursor: default; }
+.tia-dock__button:disabled:hover { background: var(--tia-brand); }
+.tia-dock__button--done, .tia-dock__button--done:disabled { opacity: 1; background: var(--tia-tone-success-bg);
+  color: var(--tia-tone-success-fg); }
+.tia-dock__button--done:disabled:hover { background: var(--tia-tone-success-bg); }
+.tia-dock__confirm { display: grid; gap: 8px; padding: 12px; border-radius: var(--tia-r-row);
+  background: var(--tia-tone-warning-bg); color: var(--tia-fg); }
+.tia-dock__question { margin: 0; font-weight: 600; }
+.tia-dock__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tia-dock__said { margin: 0; font-size: 13px; color: var(--tia-muted); }
 
 .tia-progress-block { display: grid; gap: 10px; }
 .tia-progress-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }

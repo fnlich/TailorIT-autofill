@@ -12,8 +12,17 @@ const IMPURE_GLOBALS = ['window', 'self', 'document', 'navigator', 'location', '
   'File', 'FileReader', 'DataTransfer', 'URL', 'URLSearchParams', 'atob', 'btoa', 'getComputedStyle', 'process',
   'Buffer', 'require', 'module', '__dirname', 'global'];
 
+/** v3 Phase 4 (docs/SPEC-AMENDMENTS.md §12 Decision 6): the Submit exception's one door, dom/fillers/not-submit.ts's
+ *  clickAdapterSubmit, is named nowhere but src/content/press.ts (imported, re-exported or read off a namespace). */
+const SUBMIT_PRESS_RULE = {
+  selector: "ImportSpecifier[imported.name='clickAdapterSubmit'], ExportSpecifier[local.name='clickAdapterSubmit'], "
+    + "MemberExpression[property.name='clickAdapterSubmit']",
+  message: 'Only src/content/press.ts presses the page\'s Submit (the person\'s Submit application, Submit mode Auto).',
+};
+
 /** Raw HTML, eval and form submission, banned everywhere in src: nothing may submit, and nothing parses markup. */
 const UNSAFE_SYNTAX = [
+  SUBMIT_PRESS_RULE,
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
   { selector: "CallExpression[callee.property.name='insertAdjacentHTML']", message: 'Build DOM nodes; never insert markup.' },
   { selector: "CallExpression[callee.object.name='document'][callee.property.name=/^write(ln)?$/]", message: 'No document.write.' },
@@ -154,6 +163,9 @@ export default tseslint.config(
       ]),
     },
   },
+  // The one module that presses the page's Submit for the person (content/press.ts's header).
+  { files: ['src/content/press.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...UNSAFE_SYNTAX.filter((rule) => rule !== SUBMIT_PRESS_RULE)] } },
   {
     files: ['src/ui/**/*.{ts,tsx}'],
     rules: {

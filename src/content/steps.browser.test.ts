@@ -543,17 +543,32 @@ describe('prefill before our first write on a step (reconcilePrefill)', () => {
 describe('the confirmation page', () => {
   const POSTING = 'https://jobs.lever.co/tailorit-fixture/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00';
 
-  it('marks the application\'s RunState done (the person submitted), and starts no run', async () => {
+  it('marks the application\'s RunState done once the worker takes it after a Submit this tab armed, and starts no run', async () => {
     const worker = createFakeWorker();
     const applicationKey = applicationOf(new URL(`${POSTING}/apply`))!.applicationKey;
     expect(applicationOf(new URL(`${POSTING}/thanks`))).toMatchObject({ page: 'confirmation', applicationKey });
     const atReview = { ...createRunState({ applicationKey, platform: 'lever', now: 0 }), status: 'review' as const };
     await worker.platform.runtime.send({ v: 1, type: 'runstate/put', runState: atReview });
+    // The Submit pressed on the form's page before it (v3 Phase 4).
+    await worker.platform.runtime.send({ v: 1, type: 'submit/armed', applicationKey, by: 'page' });
     const fixture = await loadFixture(document, '<!doctype html><body><h1>Thank you for applying.</h1></body>');
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => `${POSTING}/thanks`, isTop: true });
     runtimes.push(runtime);
+    expect(worker.of('submit/detected')).toEqual([expect.objectContaining({ applicationKey, evidence: 'confirmation-page' })]);
     expect(lastState(worker)).toMatchObject({ applicationKey, status: 'done' });
     expect(runtime.run).toBeNull();
     expect(worker.of('run/begin')).toEqual([]);
+  });
+
+  it('marks nothing where no Submit of this tab came before: page text alone never says it was sent', async () => {
+    const worker = createFakeWorker();
+    const applicationKey = applicationOf(new URL(`${POSTING}/apply`))!.applicationKey;
+    const atReview = { ...createRunState({ applicationKey, platform: 'lever', now: 0 }), status: 'review' as const };
+    await worker.platform.runtime.send({ v: 1, type: 'runstate/put', runState: atReview });
+    const fixture = await loadFixture(document, '<!doctype html><body><h1>Thank you for applying.</h1></body>');
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => `${POSTING}/thanks`, isTop: true });
+    runtimes.push(runtime);
+    expect(worker.of('submit/detected')).toHaveLength(1);
+    expect(lastState(worker)).toMatchObject({ applicationKey, status: 'review' });
   });
 });

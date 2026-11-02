@@ -41,6 +41,7 @@ import {
   EXTENSION_ID,
   CLEAN_ANSWER,
   GOLDEN_LETTER,
+  GOLDEN_LETTER_TEXT,
   GOLDEN_RESUME,
   MOCK_API_VERSION,
   MOCK_SCENARIOS,
@@ -774,8 +775,16 @@ describe('version 3: the profile from a token, the chosen job and a letter as te
     const refused = await put(body);
     expect([refused.status, refused.headers.get(API), await errorCode(refused)]).toEqual([403, V, 'forbidden']);
     const { sensitive: _sensitive, ...withoutSensitive } = body;
-    const saved = PutAutofillProfileResponseSchema.parse(await (await put(withoutSensitive)).json());
-    expect([saved.sensitive, saved.anythingElseFlaggedLines]).toEqual([undefined, []]);
+    // v3 Phase 3b: what PUT saved is kept, at the next revision, and a save from an older one is a conflict.
+    const stale = await put(withoutSensitive);
+    expect([stale.status, await errorCode(stale)]).toEqual([409, 'revision_conflict']);
+    const saved = PutAutofillProfileResponseSchema.parse(await (await put({ ...withoutSensitive, revision: 4,
+      profile: { ...(body.profile as Record<string, unknown>), anythingElse: ['I prefer remote work.', 'My visa expires in May.'].join('\n') } }))
+      .json());
+    expect([saved.revision, saved.sensitive, saved.anythingElseFlaggedLines]).toEqual([5, undefined, [1]]);
+    const read = await (await call('/api/autofill/profile', { headers: asToken() })).json() as { revision: number;
+      anythingElseFlaggedLines: number[] };
+    expect([read.revision, read.anythingElseFlaggedLines]).toEqual([5, [1]]);
   });
 
   it('answers a lookup naming jobId with the chosen job (matchedBy chosen), and refuses a jobId that is not one', async () => {
@@ -793,7 +802,8 @@ describe('version 3: the profile from a token, the chosen job and a letter as te
   it("reads a letter's text as its file: 409 until it is ready, 404 for one it never made", async () => {
     const text = (id: string) => call(`/api/autofill/cover-letters/${id}/text`, { headers: asToken() });
     expect(AutofillCoverLetterTextSchema.parse(await (await text(GOLDEN_LETTER.id)).json()))
-      .toEqual(example('AutofillCoverLetterText'));
+      .toEqual({ text: GOLDEN_LETTER_TEXT });
+    expect(GOLDEN_LETTER_TEXT).toContain(GOLDEN_LETTER.sentinel);
     const made = AutofillCoverLetterResponseSchema.parse(await (await call('/api/autofill/cover-letters', { method: 'POST',
       headers: asToken(), json: example('AutofillCoverLetterRequest') })).json());
     const early = await text(made.letterId);

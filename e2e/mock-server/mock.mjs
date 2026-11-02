@@ -255,7 +255,23 @@ export const MOCK_SCENARIOS = Object.freeze({
   'letter-failed': 'POST /cover-letters with generate true answers generating, and the letter reads failed at its first '
     + "poll (TailorIT's AI could not write it); with generate false it answers failed (the person's letter, unfinished).",
   'letter-none': "POST /cover-letters with generate false gets 404 not_found: the person has no letter for this job.",
+  // v3 Phase 3b and 4: the routes the extension calls since. Without these, GET /jobs/search filters the contract's
+  // example jobs by the words of q, PUT /profile keeps what it saved (its revision checked), POST /site-requests
+  // records the host, POST /applied records the job and every later lookup says Applied, and GET
+  // /cover-letters/:id/text answers GOLDEN_LETTER_TEXT.
+  'profile-conflict': 'PUT /profile gets 409 revision_conflict: the profile changed elsewhere since it was loaded.',
+  'profile-write-forbidden': 'PUT /profile gets 403: a connection made before profile:write.',
+  'job-search-forbidden': 'GET /jobs/search gets 403: a connection made before version 3.',
+  'site-request-limited': 'POST /site-requests gets 429 rate_limited.',
+  'applied-fails': 'POST /applied gets 500.',
+  'applied-forbidden': 'POST /applied gets 403: a connection made before tracker:write.',
 });
+
+/** The words GET /cover-letters/:id/text answers (v3 Phase 3b): `GOLDEN_LETTER.sentinel` among them, so a spec can
+ *  find where they went. */
+export const GOLDEN_LETTER_TEXT = 'Dear Northwind hiring team,\n\nI am applying for the Senior Backend Engineer role '
+  + '(GOLDEN-LETTER-K8M4). At Contoso I built the ordering services that now handle a million orders a day.\n\n'
+  + 'Thank you for your time.';
 /** @typedef {keyof typeof MOCK_SCENARIOS} ScenarioName */
 /** @typedef {'autofill_pick' | 'autofill_classify' | 'autofill_draft' | 'autofill_answer'} AiKind */
 
@@ -432,11 +448,20 @@ export function createMock() {
     /** The cover letters POST /cover-letters made (Phase G), by id: ready at readyAt, failed at failAt (never when null).
      *  @type {Map<string, { id: string; readyAt: number | null; failAt: number | null }>} */
     letters: new Map(),
+    /** v3 Phase 3b: the profile PUT /profile saved (its revision, profile and sensitive part), until the reset.
+     *  @type {{ revision: number; profile: Record<string, any>; sensitive: Record<string, any> | null } | null} */
+    savedProfile: null,
+    /** v3 Phase 3b: the hosts POST /site-requests recorded, in order. @type {string[]} */
+    siteRequests: [],
+    /** v3 Phase 4: the bodies POST /applied took; every later lookup says Applied. @type {Array<Record<string, unknown>>} */
+    applied: [],
     /** The one token this account holds: the golden one, valid unless revoked, with the last redeemed code's scopes
      *  (at first a code's with the sensitive box ticked and the sign-in box not). */
     token: { value: GOLDEN_TOKEN, scopes: connectScopes(true), revoked: false, expiresAt: Date.now() + TOKEN_TTL_MS },
   });
   let state = freshState();
+  /** The query string of the request being answered (GET /jobs/search's q). */
+  let currentQuery = new URL('http://localhost/').searchParams;
   /** Slow answers still waiting: a reset or a close ends them. @type {Set<{ res: import('node:http').ServerResponse; done: () => void }>} */
   const waiting = new Set();
 
@@ -481,7 +506,45 @@ export function createMock() {
       contact.phone = { ...contact.phone, number: '+44 20 7946 0958', country: 'GB' };
       contact.address = { ...contact.address, city: 'London', region: '', postalCode: 'SW1A 1AA', country: 'GB' };
     }
+    const saved = state.savedProfile;
+    if (saved !== null) return { ...envelope, revision: saved.revision, profile: saved.profile,
+      anythingElseFlaggedLines: flaggedLinesOf(saved.profile) };
     return { ...envelope, revision: revisionOf(envelope), profile };
+  }
+
+  /** The lines of the profile's note that state a sensitive answer (TailorIT's screen, in brief): a visa, a salary, an
+   *  age, a sum. @param {Record<string, any>} profile @returns {number[]} */
+  function flaggedLinesOf(profile) {
+    const note = typeof profile.anythingElse === 'string' ? profile.anythingElse : '';
+    if (note === '') return [];
+    return note.split('\n').flatMap((line, at) => (/\b(?:visa|salary|sponsor\w*|years old|age)\b|\$\s?\d/i.test(line)
+      ? [at] : []));
+  }
+
+  /** PUT /profile (version 3): the revision checked against the one held, then kept, at the next revision.
+   *  @param {Record<string, unknown>} json @param {string[] | null} scopes @returns {Answer} */
+  function putProfile(json, scopes) {
+    const sensitiveAllowed = scopes === null || scopes.includes('profile:sensitive');
+    if (json.sensitive !== undefined && !sensitiveAllowed) return refusal(403, 'forbidden', 'This connection may not do that.');
+    if (take('profile-write-forbidden') !== null) return refusal(403, 'forbidden', 'This connection may not do that.');
+    if (take('profile-conflict') !== null) {
+      return refusal(409, 'revision_conflict', 'Your autofill information changed elsewhere. Load it again.');
+    }
+    if (!Number.isInteger(json.revision) || typeof json.profile !== 'object' || json.profile === null) {
+      return invalid('profile: Required');
+    }
+    const current = profileEnvelope();
+    if (json.revision !== current.revision) {
+      return refusal(409, 'revision_conflict', 'Your autofill information changed elsewhere. Load it again.');
+    }
+    const profile = /** @type {Record<string, any>} */ (json.profile);
+    const sensitive = json.sensitive === undefined ? (state.savedProfile?.sensitive ?? null)
+      : /** @type {Record<string, any>} */ (json.sensitive);
+    state.savedProfile = { revision: current.revision + 1, profile, sensitive };
+    const answer = { revision: current.revision + 1, updatedAt: iso(Date.now()), profile,
+      anythingElseFlaggedLines: flaggedLinesOf(profile),
+      ...(sensitiveAllowed ? { sensitive: sensitive ?? sensitiveEnvelope().sensitive } : {}) };
+    return jsonAnswer(200, answer);
   }
 
   function sensitiveEnvelope() {
@@ -495,6 +558,8 @@ export function createMock() {
       sensitive.workAuthorization = sensitive.workAuthorization.map((/** @type {{ country: string }} */ entry) =>
         (entry.country === 'US' ? { ...entry, status: { state: 'value', value: 'citizen' } } : entry));
     }
+    const saved = state.savedProfile;
+    if (saved !== null) return { ...envelope, revision: saved.revision, sensitive: saved.sensitive ?? sensitive };
     return { ...envelope, revision: revisionOf(envelope), sensitive };
   }
 
@@ -542,6 +607,11 @@ export function createMock() {
     } else if (json.jobId !== undefined) answer = lookupAnswer('job-chosen');
     else answer = state.added === null ? lookupAnswer('golden') : JSON.parse(JSON.stringify(state.added));
     if (json.includePostingText !== true && answer.job) delete answer.job.postingText;
+    // v3 Phase 4: a job POST /applied marked is Applied in the tracker from then on.
+    if (state.applied.length > 0 && answer.job) {
+      answer.application = { ...(answer.application ?? { id: 'app-applied', trackedOn: iso(Date.now()), archived: false,
+        resumeId: null, matchedBy: 'job' }), status: 2 };
+    }
     return jsonAnswer(200, withChosen(answer, json.resumeId));
   }
 
@@ -848,7 +918,7 @@ export function createMock() {
     if (letterState(letter) !== 'ready') {
       return refusal(409, 'conflict', 'This cover letter is still being written. Ask again in a moment.');
     }
-    return jsonAnswer(200, example('AutofillCoverLetterText'));
+    return jsonAnswer(200, { text: GOLDEN_LETTER_TEXT });
   }
 
   /** GET or DELETE /api/ai/tasks/:id: a task the mock made, or the contract's golden one; else 404.
@@ -865,7 +935,8 @@ export function createMock() {
   /**
    * What each contract route answers once the caller checks have passed. `json` is the parsed body: an object, or {}
    * for none (or for anything that is not an object). `scopes` is the token's, or null for the Settings page.
-   * @type {Record<string, (call: { json: Record<string, unknown>; params: string[]; scopes: string[] | null }) => Answer>}
+   * @type {Record<string, (call: { json: Record<string, unknown>; params: string[]; scopes: string[] | null;
+   *   query: URLSearchParams }) => Answer>}
    */
   const handlers = {
     'POST /api/autofill/connect': ({ json }) => {
@@ -913,14 +984,8 @@ export function createMock() {
       ? refusal(403, 'forbidden', 'This connection may not do that.')
       : jsonAnswer(200, sensitiveEnvelope())),
     // Version 3: a token with profile:write saves too; it sends and gets back the sensitive part only when it may read
-    // it (profile:sensitive), as the Settings page always may.
-    'PUT /api/autofill/profile': ({ json, scopes }) => {
-      const sensitive = scopes === null || scopes.includes('profile:sensitive');
-      if (json.sensitive !== undefined && !sensitive) return refusal(403, 'forbidden', 'This connection may not do that.');
-      const answer = example('PutAutofillProfileResponse');
-      if (!sensitive) delete answer.sensitive;
-      return jsonAnswer(200, answer);
-    },
+    // it (profile:sensitive), as the Settings page always may. What it saved is kept, its revision checked (v3 Phase 3b).
+    'PUT /api/autofill/profile': ({ json, scopes }) => putProfile(json, scopes),
     'GET /api/autofill/profile/seed': () => jsonAnswer(200, example('AutofillSeed')),
     'POST /api/autofill/lookup': ({ json }) => {
       const urlOk = typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048;
@@ -932,15 +997,35 @@ export function createMock() {
       return lookupOf(json);
     },
     'POST /api/autofill/jobs': ({ json }) => addJob(json),
-    // Version 3's routes the extension does not call yet: their contract examples, as TailorIT's would answer them.
-    'GET /api/autofill/jobs/search': () => jsonAnswer(200, example('AutofillJobSearchResponse')),
+    // Version 3's routes (v3 Phase 3b and 4): as TailorIT's would answer them.
+    'GET /api/autofill/jobs/search': ({ query }) => {
+      if (take('job-search-forbidden') !== null) return refusal(403, 'forbidden', 'Connect the extension again.');
+      const q = (query.get('q') ?? '').toLowerCase().split(/\s+/).filter((word) => word !== '');
+      const items = example('AutofillJobSearchResponse').items.filter((/** @type {{ title: string; company: string }} */ item) =>
+        q.every((word) => `${item.title} ${item.company}`.toLowerCase().includes(word)));
+      return jsonAnswer(200, { items });
+    },
     'POST /api/autofill/applied': ({ json }) => {
       const urlOk = json.url === undefined || (typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048);
       const jobOk = json.jobId === undefined || (Number.isInteger(json.jobId) && Number(json.jobId) > 0);
       if (!urlOk || !jobOk || (json.url === undefined && json.jobId === undefined)) return invalid('url: Name the page or the job');
-      return jsonAnswer(200, withChosen(lookupAnswer(json.jobId === undefined ? 'golden' : 'job-chosen'), json.resumeId));
+      if (take('applied-fails') !== null) return serverError();
+      if (take('applied-forbidden') !== null) return refusal(403, 'forbidden', 'Connect the extension again.');
+      state.applied.push(json);
+      const answer = lookupAnswer(json.jobId === undefined ? 'golden' : 'job-chosen');
+      answer.application = { ...(answer.application ?? { id: 'app-applied', trackedOn: iso(Date.now()), archived: false,
+        resumeId: null, matchedBy: 'job' }), status: 2 };
+      return jsonAnswer(200, withChosen(answer, json.resumeId));
     },
-    'POST /api/autofill/site-requests': () => ({ status: 204 }),
+    'POST /api/autofill/site-requests': ({ json }) => {
+      const host = typeof json.host === 'string' ? json.host : '';
+      if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/.test(host) || host.length > 253) {
+        return invalid("host: Enter the site's host name in lower case");
+      }
+      if (take('site-request-limited') !== null) return { ...refusal(429, 'rate_limited', 'Too many requests.'), headers: { 'Retry-After': '30' } };
+      state.siteRequests.push(host);
+      return { status: 204 };
+    },
     'GET /api/autofill/site-requests': () => jsonAnswer(200, example('AutofillSiteRequestList')),
     'GET /api/autofill/agent/next': () => jsonAnswer(200, example('AutofillAgentNext', 'nothing-to-do')),
     'POST /api/autofill/agent/:id/result': () => ({ status: 204 }),
@@ -1007,7 +1092,7 @@ export function createMock() {
     }
     const json = /** @type {Record<string, unknown>} */ (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {});
     const handler = handlers[`${route.method} ${route.path}`];
-    return handler === undefined ? notFound() : handler({ json, params, scopes });
+    return handler === undefined ? notFound() : handler({ json, params, scopes, query: currentQuery });
   }
 
   /** A request that presents a `tia_` bearer: TailorIT's attachBearer, tokenScope and allow(), in that order.
@@ -1154,6 +1239,7 @@ export function createMock() {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const method = req.method ?? 'GET';
     const raw = await readBody(req);
+    currentQuery = url.searchParams;
     if (url.pathname.startsWith('/__mock/')) return send(res, control(method, url.pathname, raw ?? ''));
     /** @type {LoggedRequest} */
     const entry = { at: Date.now(), method, path: url.pathname, query: url.search, headers: redact(req.headers),

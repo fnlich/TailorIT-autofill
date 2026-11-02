@@ -76,6 +76,13 @@ export const REASON_CODES = [
   // v3 Phase 3: the person chose Skip on the field being written (the side panel's, after 2 s on it): its write was
   // given up, and the run went on without it
   'skipped-by-you',
+  // v3 Phase 3b: the person chose "Apply without resume", so the resume upload is left for them (skipped, never a
+  // failure); the person's own cover letter typed into a cover-letter text box (one TailorIT's AI wrote is
+  // cover-letter-written, as an upload's)
+  'resume-not-attached', 'cover-letter-typed',
+  // the review of v3 Phase 3b: the letter is longer than the cover-letter text box takes, so it was neither typed nor
+  // cut (said plainly, in place of a field's maxlength-exceeded)
+  'cover-letter-too-long',
   // a bug
   'internal-error',
 ] as const;
@@ -121,5 +128,5 @@ export interface FillResult {
    * lists show it filled at once, as Jobright's flip; a flag, never the answer.
    */
   detail?: { suggestions?: Array<{ index: number; score: number }>; revealedBy?: BaseKey; userEdited?: true;
-    filledByYou?: true };
+    filledByYou?: true; letterLength?: { length: number; limit: number } };
 }

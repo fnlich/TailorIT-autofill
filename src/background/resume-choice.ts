@@ -10,7 +10,11 @@
  * v2: the tab's choice is read at every ask, so a Change the person makes while a run goes on applies to every file the
  * run has not uploaded yet: the run's kept choice goes, and its lookup's suggestion (asked for the old choice) is asked
  * again for the new one. A file already uploaded stays as it is.
+ * The v3 Phase 4 review (M3): so does the job the person chose for the application ("Autofill for another job"): a new
+ * choice, or going back to the page's own job, asks the lookup again for it, so the run's job facts, its resume and
+ * the job a submission records are the tab's choice now, never the one the run began with.
  */
+import { applicationOf } from '../adapters';
 import type { AutofillFileKind } from '../contract/tailorit';
 import type { ProfileCache } from './profile-cache';
 import type { RunMemo, RunRegistry } from './runs';
@@ -32,6 +36,9 @@ export interface ResumeChooserDeps {
   generation?(): number;
   /** The resume the person chose for a tab in the side panel now (job-cards.ts; null: none). */
   chosen?(tabId: number): string | null;
+  /** v3 Phase 3b: the job the person chose for the tab's page ("Autofill for another job"; null: none), whose resume a
+   *  lookup made here asks for. */
+  chosenJob?(tabId: number, applicationKey: string | null): number | null;
 }
 
 /** Chooses a run's resume from the frame at `url`: null when there is none to attach or TailorIT could not say. */
@@ -39,8 +46,39 @@ export type ResumeChooser = (runId: string, url: string) => Promise<ResumeChoice
 
 /** The chooser the planner and the resume port share; both read and keep the choice in the run's memo. */
 export function createResumeChooser(deps: ResumeChooserDeps): ResumeChooser {
+  /** The application an address belongs to (null: none a parser reads). */
+  function applicationKeyOf(url: string): string | null {
+    try {
+      return applicationOf(new URL(url))?.applicationKey ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The job the person chose for the run's application changed since its lookup (the review, M3): the lookup is asked
+   *  again for the job chosen now (or the page's own), its posting text with it, and the resume chosen for the old one
+   *  goes. */
+  async function followJob(memo: RunMemo, url: string, current: () => boolean): Promise<boolean> {
+    if (memo.tabId === undefined || deps.chosenJob === undefined || memo.lookup === undefined || memo.lookup === null) {
+      return true;
+    }
+    const now = deps.chosenJob(memo.tabId, applicationKeyOf(url));
+    const held = memo.lookup.job?.matchedBy === 'chosen' ? memo.lookup.job.id : null;
+    if (now === held) return true;
+    const chosen = deps.chosen?.(memo.tabId) ?? null;
+    const answer = await deps.server.lookup({ url, includePostingText: true, ...(chosen === null ? {} : { resumeId: chosen }),
+      ...(now === null ? {} : { jobId: now }) });
+    if (!current()) return false;
+    if (answer.ok) {
+      memo.lookup = answer.value;
+      memo.resume = undefined;
+    }
+    return true;
+  }
+
   /** The tab's choice changed since the run chose (a Change mid-run): what was chosen for the old one goes. */
   async function followTab(memo: RunMemo, url: string, current: () => boolean): Promise<boolean> {
+    if (!(await followJob(memo, url, current))) return false;
     if (memo.tabId === undefined || deps.chosen === undefined) return true;
     const now = deps.chosen(memo.tabId);
     if (now === (memo.chosen ?? null)) return true;
@@ -48,7 +86,9 @@ export function createResumeChooser(deps: ResumeChooserDeps): ResumeChooser {
     memo.resume = undefined;
     // The lookup named its suggestion for the old choice; its job facts stay, its suggestion is asked again.
     if (memo.lookup !== undefined && memo.lookup !== null) {
-      const answer = await deps.server.lookup({ url, includePostingText: false, ...(now === null ? {} : { resumeId: now }) });
+      const job = memo.lookup.job?.matchedBy === 'chosen' ? memo.lookup.job.id : null;
+      const answer = await deps.server.lookup({ url, includePostingText: false, ...(now === null ? {} : { resumeId: now }),
+        ...(job === null ? {} : { jobId: job }) });
       if (!current()) return false;
       if (memo.lookup !== null && memo.lookup !== undefined) {
         memo.lookup = { ...memo.lookup, suggestedResume: answer.ok ? answer.value.suggestedResume : null,
@@ -67,7 +107,9 @@ export function createResumeChooser(deps: ResumeChooserDeps): ResumeChooser {
     const chosen = memo.chosen ?? null;
     // After the worker was stopped the run's lookup is gone: read it again from the frame's own address.
     if (memo.lookup === undefined) {
-      const answer = await deps.server.lookup({ url, includePostingText: false, ...(chosen === null ? {} : { resumeId: chosen }) });
+      const job = memo.tabId === undefined ? null : deps.chosenJob?.(memo.tabId, applicationKeyOf(url)) ?? null;
+      const answer = await deps.server.lookup({ url, includePostingText: false, ...(chosen === null ? {} : { resumeId: chosen }),
+        ...(job === null ? {} : { jobId: job }) });
       if (!current()) return null;
       memo.lookup = answer.ok ? answer.value : null;
     }

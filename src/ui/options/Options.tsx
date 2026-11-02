@@ -37,6 +37,7 @@ import type { ErrorCode } from '../../messaging/envelope';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { LogoMark, Wordmark } from '../brand/Logo';
+import { DisclosureChanged } from '../page/disclosure';
 import { request } from '../page/request';
 import { ModesFields } from '../page/modes';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
@@ -164,6 +165,15 @@ function Connection({ platform, auth, now, frames }: {
     }
   };
 
+  /** The review: I understand, on the disclosure that changed since the person connected. */
+  const acknowledge = async () => {
+    setWorking(true);
+    const answer = await request(platform, { v: 1, type: 'auth/acknowledgeDisclosure' });
+    setWorking(false);
+    if (answer.ok) auth.accept(answer.data);
+    else auth.refresh();
+  };
+
   const disconnect = async () => {
     setWorking(true);
     setMessage(null);
@@ -195,6 +205,7 @@ function Connection({ platform, auth, now, frames }: {
               <p className="tia-help">
                 {status.scopes.includes('profile:sensitive') ? TEXT.connection.sensitiveShared : TEXT.connection.sensitiveNotShared}
               </p>
+              {status.disclosure === 'changed' && <DisclosureChanged onUnderstand={() => void acknowledge()} />}
               {status.expiresAt !== null && (
                 <p className="tia-help">
                   {TEXT.connection.lastsUntil(new Date(status.expiresAt).toLocaleDateString(undefined, { dateStyle: 'long' }))}

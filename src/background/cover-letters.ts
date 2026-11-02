@@ -27,7 +27,14 @@
  *
  * One run's letter (createRunLetter): asked once per run, by the first plan that has a cover-letter upload to fill; the
  * keys waiting for it are planned again (plan/poll) once it is settled, and its id stays here for the resume port,
- * which sends the PDF as it sends a resume. A run that went stops it. A run whose letter TailorIT started writing is
+ * which sends the PDF as it sends a resume. A cover-letter text box (v3 Phase 3b; docs/SPEC-AMENDMENTS.md §12 Decision
+ * 7) waits for the ready letter's words too: GET …/:id/text, read once per run, only when a plan's box asks for them
+ * (PlanOutput.coverLetter.text) and never in a dry run (whose plans read none), kept here for the run alone and planned
+ * into that box's text write (its guards: the canaries, the box's maxLength and visibility). A read answered 409, or
+ * one that failed on the way (a time-out, no answer, a 5xx, a 429), is made once more after LETTER_POLL_MS (or the
+ * 429's hint), only once a state read says the letter is still ready (the review of v3 Phase 3b); words that still do
+ * not read (a refusal, empty, past the write's cap) leave the box cover-letter-unavailable. A run that went stops it.
+ * A run whose letter TailorIT started writing is
  * marked in its value-free record (runs.ts `letterWritten`), so a worker that restarted still marks that letter as the
  * AI's. A worker that restarted between the plan and the upload has lost the letter's id: the resume port checks for
  * the person's letter again (checkLetter: generate false, so nothing is written).
@@ -72,6 +79,8 @@ export const LETTER_POLL_MS = 2_000;
 export const LETTER_BUSY_MS = [15_000, 30_000, 60_000] as const;
 /** A letter not written this long after it was first asked for leaves its field flagged (cover-letter-timed-out). */
 export const LETTER_CAP_MS = 180_000;
+/** The longest letter a cover-letter text box takes (v3 Phase 3b): a planned text write's cap (WriteValueSchema). */
+export const MAX_LETTER_TEXT = 20_000;
 /** panel/letter per tab: each may be a POST TailorIT counts against its 10 a minute. */
 export const LETTER_LIMIT = { count: 6, windowMs: 60_000 } as const;
 /** The most side-panel answers kept at once (one per document, resume and connection). */
@@ -104,13 +113,16 @@ export type LetterResult =
 
 /** What asking needs. */
 export interface LetterDeps {
-  server: Pick<ServerClient, 'coverLetter' | 'coverLetterState'>;
+  server: Pick<ServerClient, 'coverLetter' | 'coverLetterState'> & Partial<Pick<ServerClient, 'coverLetterText'>>;
   timers: Timers;
   now(): number;
 }
 
 /** Failures worth another poll: the next one may answer. */
 const TRANSIENT: ReadonlySet<string> = new Set(['timeout', 'unreachable', 'server-error']);
+/** A text read worth one more try once the letter reads ready again: not ready yet (409), or one that failed on the
+ *  way. */
+const TEXT_RETRIED: ReadonlySet<string> = new Set([...TRANSIENT, 'conflict', 'rate-limited']);
 
 /** The request for an ask, or null when TailorIT cannot be asked: no resume, or a posting it does not have whose page
  *  names no company or title. Page text goes only where TailorIT may write the letter. */
@@ -280,8 +292,9 @@ export interface RunLetter {
   ask(ask: LetterAsk): void;
   /** The ready letter's id, for the resume port; null while there is none. Never sent anywhere but TailorIT. */
   readyId(): string | null;
-  /** These keys wait for the letter, to be planned again with `context` once it is settled. */
-  wait(keys: readonly FieldKey[], context: AskContext): void;
+  /** These keys wait for the letter, to be planned again with `context` once it is settled; `text` (v3 Phase 3b): a
+   *  cover-letter text box among them, which waits for the ready letter's words too. */
+  wait(keys: readonly FieldKey[], context: AskContext, text?: boolean): void;
   /** Whether a key may be planned again (done), still waits, or is not one of this run's. */
   state(key: FieldKey): AwaitState;
   contextOf(key: FieldKey): AskContext | undefined;
@@ -300,8 +313,56 @@ export function createRunLetter(deps: LetterDeps, onWriting: () => void = () => 
   let stopped = false;
   let done: Promise<void> = Promise.resolve();
   const waiting = new Map<FieldKey, AskContext>();
+  /** v3 Phase 3b: whether a text box waits for the letter's words, and where reading them stands (memory only). */
+  let wantsText = false;
+  let words: string | undefined;
+  let wordsState: 'unread' | 'reading' | 'read' | 'failed' = 'unread';
+  /** Reads the ready letter's words once, when a text box asks for them. */
+  function readWords(): void {
+    if (!wantsText || wordsState !== 'unread' || stopped || status?.state !== 'ready' || letterId === null) return;
+    const read = deps.server.coverLetterText;
+    if (read === undefined) {
+      wordsState = 'failed';
+      return;
+    }
+    wordsState = 'reading';
+    const id = letterId;
+    done = done.then(async () => {
+      let answer = await read(id);
+      if (stopped) return;
+      // Once more, after a short wait and only while the letter reads ready (module header).
+      if (!answer.ok && TEXT_RETRIED.has(answer.failure)) {
+        const delay = Math.min(LETTER_BUSY_MS[0], Math.max(LETTER_POLL_MS, (answer.retryAfterSeconds ?? 0) * 1000));
+        await new Promise<void>((resolve) => deps.timers.after(delay, resolve));
+        if (stopped) return;
+        const view = await deps.server.coverLetterState(id);
+        if (stopped) return;
+        if (view.ok && view.value.state === 'ready') {
+          log('letter.text', { retried: true });
+          answer = await read(id);
+          if (stopped) return;
+        }
+      }
+      const text = answer.ok ? answer.value.text : '';
+      // A write takes at most MAX_LETTER_TEXT; what does not fit, or reads empty, is no letter for a text box.
+      if (text.trim() === '' || text.length > MAX_LETTER_TEXT) {
+        log('letter.text', { read: false, status: answer.ok ? 200 : answer.status ?? 0 });
+        wordsState = 'failed';
+        return;
+      }
+      log('letter.text', { read: true });
+      words = text;
+      wordsState = 'read';
+    }).catch(() => {
+      if (!stopped) wordsState = 'failed';
+    });
+  }
   return {
-    input: () => status,
+    input() {
+      if (status?.state !== 'ready') return status;
+      return { ...status, ...(words === undefined ? {} : { text: words }),
+        ...(wordsState === 'failed' ? { textUnavailable: true as const } : {}) };
+    },
     ask(ask) {
       if (status !== undefined || stopped) return;
       status = { state: 'waiting' };
@@ -310,6 +371,7 @@ export function createRunLetter(deps: LetterDeps, onWriting: () => void = () => 
         if (result.state === 'ready') {
           letterId = result.letterId;
           status = { state: 'ready', aiWritten: result.aiWritten };
+          readWords();
         } else {
           status = { state: 'none', reason: result.reason };
         }
@@ -318,12 +380,18 @@ export function createRunLetter(deps: LetterDeps, onWriting: () => void = () => 
       });
     },
     readyId: () => (status?.state === 'ready' ? letterId : null),
-    wait(keys, context) {
+    wait(keys, context, text) {
       for (const key of keys) waiting.set(key, context);
+      if (text === true && !wantsText) {
+        wantsText = true;
+        readWords();
+      }
     },
     state(key) {
       if (!waiting.has(key)) return 'unknown';
-      return status === undefined || status.state === 'waiting' ? 'waiting' : 'done';
+      if (status === undefined || status.state === 'waiting') return 'waiting';
+      return status.state === 'ready' && wantsText && (wordsState === 'unread' || wordsState === 'reading') ? 'waiting'
+        : 'done';
     },
     contextOf: (key) => waiting.get(key),
     settle(keys) {
@@ -333,6 +401,7 @@ export function createRunLetter(deps: LetterDeps, onWriting: () => void = () => 
     stop() {
       stopped = true;
       letterId = null;
+      words = undefined;
     },
   };
 }

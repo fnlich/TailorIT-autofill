@@ -102,6 +102,8 @@ export interface ReportsDeps {
   /** v3 Phase 3: the browser's side panel began (or stopped) showing a tab, so its launcher hides while it does. Told
    *  once per change: when the first side panel watches the tab, and when the last one leaves it. */
   sideShown?(tabId: number, open: boolean): void;
+  /** v3 Phase 4: where recording the tab's submitted application stands (submissions.ts), for its page state. */
+  submitted?(tabId: number): Promise<PageState['submitted']> | PageState['submitted'];
 }
 
 /** The reports over storage.session, with no panel watching yet. */
@@ -115,7 +117,9 @@ export function createReports(deps: ReportsDeps): Reports {
   /** The tab's page state (pageOfTab), and whether a page on an applicant-tracking host waits for a reload: no frame of
    *  ours said hello there. */
   async function pageNow(tabId: number): Promise<PageState> {
-    const page = await pageOfTab(session, tabId);
+    const read = await pageOfTab(session, tabId);
+    const submitted = await deps.submitted?.(tabId);
+    const page = submitted === undefined ? read : { ...read, submitted };
     if (page.support !== 'none' || deps.tabs.onAtsHost === undefined) return page;
     return (await deps.tabs.onAtsHost(tabId).catch(() => false)) ? { ...page, reload: true } : page;
   }

@@ -13,7 +13,7 @@ import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { RESUME_CHUNK_BYTES } from '../messaging/schemas';
 import type { FakePortPeer } from '../platform/fake';
 import {
-  fetchLetter, letterRequestOf, LETTER_BUSY_MS, LETTER_CAP_MS, LETTER_POLL_MS, type LetterAsk,
+  createRunLetter, fetchLetter, letterRequestOf, LETTER_BUSY_MS, LETTER_CAP_MS, LETTER_POLL_MS, type LetterAsk,
 } from './cover-letters';
 import { dispositionName, type ServerResult } from './server-client';
 import { manualTimers } from './timers';
@@ -300,6 +300,56 @@ async function receive(port: FakePortPeer): Promise<{ header: Record<string, unk
   }
   return { header, bytes };
 }
+
+describe('the run’s cover letter’s words, for a cover-letter text box (v3 Phase 3b review)', () => {
+  const WORDS = 'Dear Northwind team, I would like to apply.';
+  /** A run letter over a server whose letter is ready at once, and whose text reads answer from `texts` in order (the
+   *  last one repeats); `states` answers the state check before the retry. */
+  async function wordsOf(texts: Array<ServerResult<{ text: string }>>, states: Array<ServerResult<{ state: 'ready'
+    | 'generating' | 'failed' }>> = [ok({ state: 'ready' })]) {
+    const timers = manualTimers();
+    let reads = 0;
+    let checks = 0;
+    const server = {
+      coverLetter: async () => letter('ready', false),
+      coverLetterState: async () => states[Math.min(checks++, states.length - 1)]!,
+      coverLetterText: async () => texts[Math.min(reads++, texts.length - 1)]!,
+    };
+    const run = createRunLetter({ server, timers, now: () => 0 });
+    run.ask({ ...ASK, generate: false });
+    run.wait(['box' as FieldKey], {} as never, true);
+    for (let step = 0; step < 20; step += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+      timers.advance(LETTER_POLL_MS);
+    }
+    await run.idle();
+    return { input: run.input(), reads, checks, state: run.state('box' as FieldKey) };
+  }
+
+  it('reads them once when the letter is ready', async () => {
+    const read = await wordsOf([ok({ text: WORDS })]);
+    expect(read).toMatchObject({ reads: 1, checks: 0, state: 'done', input: { state: 'ready', text: WORDS } });
+    expect(read.input).not.toHaveProperty('textUnavailable');
+  });
+
+  it('reads them once more after a 409 or a failure, once the letter is ready again', async () => {
+    for (const failed of [refused('conflict', { status: 409 }), refused('server-error', { status: 503 }),
+      refused('timeout')]) {
+      const read = await wordsOf([failed, ok({ text: WORDS })]);
+      expect(read, failed.ok ? '' : failed.failure).toMatchObject({ reads: 2, checks: 1, state: 'done',
+        input: { state: 'ready', text: WORDS } });
+    }
+  });
+
+  it('gives up after the one retry, or when the letter is not ready again, or on a refusal no retry changes', async () => {
+    const twice = await wordsOf([refused('conflict', { status: 409 })]);
+    expect(twice).toMatchObject({ reads: 2, input: { textUnavailable: true } });
+    const notReady = await wordsOf([refused('conflict', { status: 409 })], [ok({ state: 'generating' })]);
+    expect(notReady).toMatchObject({ reads: 1, checks: 1, input: { textUnavailable: true } });
+    const forbidden = await wordsOf([refused('forbidden', { status: 403 })]);
+    expect(forbidden).toMatchObject({ reads: 1, checks: 0, input: { textUnavailable: true } });
+  });
+});
 
 describe('the run’s cover letter', () => {
   it('is asked once, with the lookup’s job and the frame’s posting text, then planned again and sent as a PDF', async () => {

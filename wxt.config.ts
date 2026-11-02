@@ -33,7 +33,10 @@ export default defineConfig({
     key: MANIFEST_KEY,
     // storage.local.setAccessLevel exists from 140; extensions with host permissions pass Local Network Access from 144.
     minimum_chrome_version: '144',
-    permissions: ['storage', 'sidePanel', ...(mode === 'development' ? ['pageCapture'] : [])],
+    // activeTab (v3 Phase 3b, docs/PRIVACY.md): the host of the tab the person invokes the extension on with the toolbar
+    // icon, for "Ask TailorIT to support this site" on a page outside the applicant-tracking hosts. Chrome keeps the
+    // grant across the tab's same-origin moves and takes it back on another origin or when the tab closes.
+    permissions: ['storage', 'sidePanel', 'activeTab', ...(mode === 'development' ? ['pageCapture'] : [])],
     host_permissions: [...ATS_MATCHES, `${TAILORIT_ORIGIN}/*`],
     externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
     // TailorIT's mark (apps/web/public/logo-mark.svg), rendered by scripts/icons.mjs; check-build checks each size.

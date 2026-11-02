@@ -11,7 +11,10 @@
  * Version 4 (v3 Phase 3, the owner's modes: docs/SPEC-AMENDMENTS.md §12): each behaviour is a mode the person chooses
  * (`modes`), shown on the options page's Modes card and in the side panel's gear menu. `autoAdvance` became
  * `modes.next` and `llm.answerAll` became `modes.ai`; the side panel's default view is `view`. Sign-in, Submit and the
- * agent's skip rules are stored now and shown once their behaviour exists (Phases 4 and 5).
+ * agent's skip rules are stored now and shown once their behaviour exists (Phases 4 and 5): Submit acts and shows since
+ * v3 Phase 4 (docs/SPEC-AMENDMENTS.md §12, Decision 6), with the skip rules it reads. The v3 Phase 4 review adds
+ * `modes.recordOwn` ("Record applications I submit myself", on by default): a stored version 4 value without it reads
+ * as on (shared/settings.ts).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -27,6 +30,7 @@ export const MODE_CHOICES = {
   next: ['manual', 'auto'],
   afterPageTurn: ['auto', 'manual'],
   submit: ['manual', 'auto'],
+  recordOwn: ['on', 'off'],
   consents: ['all', 'required'],
   ai: ['all', 'profile'],
 } as const;
@@ -41,8 +45,13 @@ export interface Modes {
   /** Fill each new step of a multi-step form as it appears ('auto', Jobright's "Automatically"), or leave it for the
    *  person's Continue ('manual'). */
   afterPageTurn: (typeof MODE_CHOICES.afterPageTurn)[number];
-  /** Press Submit once the final step is filled (Phase 4): stored only, until that exists. */
+  /** Press Submit once the final step is filled and the skip rules (agentSkip) pass ('auto', v3 Phase 4); else the
+   *  run rests at review saying why, and the panel's Submit application is the person's ('manual'). */
   submit: (typeof MODE_CHOICES.submit)[number];
+  /** Record an application the person submits on the page themselves, with no fill of ours, as Applied in TailorIT's
+   *  tracker once its platform confirms it ('on', Jobright's behaviour; the v3 Phase 4 review), or only those a fill
+   *  of ours filled ('off'). */
+  recordOwn: (typeof MODE_CHOICES.recordOwn)[number];
   /** Tick every agreement box the extension recognises, marketing, text messages and future jobs included ('all', like
    *  Jobright), or only those the form requires and the kinds the person pre-approved ('required'). An "I did not use
    *  AI" statement is ticked only when the run used no AI, in either. */
@@ -50,7 +59,9 @@ export interface Modes {
   /** With the AI's answers on, also the legal, pay and attention-check questions the profile does not answer ('all',
    *  version 3's llm.answerAll), or those from the profile only ('profile'). */
   ai: (typeof MODE_CHOICES.ai)[number];
-  /** When the auto-apply agent (Phase 5) leaves a job for the person instead of submitting it: stored only. */
+  /** When Submit mode Auto (v3 Phase 4) and the auto-apply agent (Phase 5) leave a job for the person instead of
+   *  submitting it: a required field still empty, a posting that forbids AI, a legal answer that was an AI guess. Not
+   *  shown until the agent's phase: their defaults act. */
   agentSkip: { requiredEmpty: boolean; noAi: boolean; legalGuess: boolean };
 }
 
@@ -108,7 +119,7 @@ export const DEFAULT_PREAPPROVED_CONSENT: readonly ConsentCategory[] = ['privacy
  *  the agent leaves a job with an empty required field or a posting that forbids AI, and submits one with an
  *  AI-guessed legal answer. */
 export const DEFAULT_MODES: Modes = {
-  signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual', consents: 'all', ai: 'all',
+  signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual', recordOwn: 'on', consents: 'all', ai: 'all',
   agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false },
 };
 

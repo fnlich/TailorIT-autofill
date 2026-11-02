@@ -81,7 +81,7 @@ describe('the RunState store', () => {
         });
       },
     });
-    expect(Object.keys(await stored()).sort()).toEqual([`run:${keyOf(1)}`, 'settings:v1']);
+    expect(Object.keys(await stored()).sort()).toEqual(['disclosure', `run:${keyOf(1)}`, 'settings:v1']);
     expect(worker.state.storageAccess).toBe('restricted');
   });
 

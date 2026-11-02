@@ -53,6 +53,26 @@
  *    handed at a CAPTCHA pause, which does not pause that step again (X-S4). Cancel at a pause stops it for good
  *    (USER_STOPPED, stored and reported: C-S6).
  * Auto-advance is the run/begin answer's, then each settings/changed the worker pushes (settingsChanged: C-S2).
+ *
+ * v3 Phase 4 (docs/SPEC-AMENDMENTS.md §12 Decision 6): Next and Submit pressed for the person (press.ts).
+ * - At rest (review, or waiting for the person's Next), each report says what the step offers the panel's buttons
+ *   (FrameReport.buttons: its finality, and whether its Next and Submit can be pressed), never in a dry run.
+ * - press (run/press, the side panel's click; or the in-page panel's trusted click): only at rest ('busy' while the run
+ *   works), what the run wrote read again first (E9), then press.ts's one click on the adapter's own Next or Submit. A
+ *   Submit pressed is armed (RunEnv.submitPressed: the runtime tells the worker and watches for the platform's
+ *   confirmation), and the report says it waits for it (buttons.pressed). A Next the page did not take (the step still
+ *   there PRESS_REFUSAL_MS later, with errors shown) is answered 'not-accepted'.
+ * - Submit mode Auto: the step machine's press-submit effect, on a final step its autoSubmitVerdict passed with the
+ *   step's facts (Submit shown, the required questions left unanswered, the posting forbidding AI, a legal answer that
+ *   was an AI guess) and the person's skip rules; inside another page, only while the frame is seen (S1). Its facts are
+ *   read again after its last wait (the mode still on, the same step, nothing the run wrote changed since, no error
+ *   shown), its press re-counts the required questions while that rule holds, and it presses at most once per step.
+ *   Otherwise the review's notice says why (submit-held-*). A posting whose AI rule could not be read does not hold it;
+ *   the review then says it was submitted anyway (submit-auto-unchecked).
+ * - The platform's confirmation seen after a press (submittedSeen, from the runtime, once the worker took it) is
+ *   SUBMITTED: the run is done, at once when it rests or watches, else as soon as it comes to rest. None within the
+ *   runtime's wait: the submit-unconfirmed notice (submitUnconfirmed); the page refusing it: submit-errors with its
+ *   count (submitRefused); a watch that ended any other way clears the wait (submitWatchEnded).
  * A run that fails (RunFailure) gives the machine ERROR before it rests, so RunState is at review and a reload offers
  * Continue rather than filling by itself (C-S7).
  * An 'expired' answer to run/begin, plan/request or report/put begins the run again, once; a second one ends the run in
@@ -126,7 +146,7 @@ import { settleRow } from '../core/plan/settle';
 import type { RepeatableAnswer } from '../core/steps/blocks';
 import {
   createRunState, MAX_IDLE_TRANSITIONS, reduceRun, repeatableCounterKey, TRANSITION_CAP_MS, type ReviewCause,
-  type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice,
+  type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice, type SubmitSkipRules,
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
@@ -134,6 +154,7 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import { MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus } from '../core/types/run';
 import { clickIfAllowed } from '../dom/fillers';
+import { policyClassOf } from '../core/resolver/categories';
 import { captchaElements, detectPause, unsolvedCaptchas, type PauseSignal } from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
 import { isUsableOption } from '../dom/option-hash';
@@ -144,7 +165,9 @@ import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../do
 import { visibleTextWithout } from '../dom/visible-text';
 import { isUserVisible } from '../dom/visibility';
 import type { ErrorCode } from '../messaging/envelope';
-import { MAX_POSTING_TEXT, type AnswerReadAnswerSchema } from '../messaging/schemas';
+import {
+  MAX_EDIT_INSTRUCTION, MAX_POSTING_TEXT, type AnswerReadAnswerSchema, type PressAnswer, type StepTarget,
+} from '../messaging/schemas';
 import type { ContentPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { leftForPerson, needsPerson, progressOf } from '../shared/report';
@@ -162,6 +185,8 @@ import {
   type NoticeCode, type ReportHeader, type ReportLimiter,
 } from './report';
 import { postingNamesOf } from './job-relay';
+import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
+import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
@@ -182,6 +207,9 @@ export class RunFailure extends Error {
 /** Where a run rests or how it ended: 'review' (the person's turn at review), 'waiting' (for the person's Next), a
  *  pause, stopped, failed, or aborted. */
 export const RUN_ENDS = ['review', 'waiting', 'stopped', 'paused', 'error', 'aborted'] as const;
+
+/** What an Edit with AI came to (v3 Phase 3b; FillRun.rewrite). */
+export type RewriteOutcome = 'rewritten' | 'sensitive' | 'unchanged' | 'refused' | 'failed';
 export type RunEnd = (typeof RUN_ENDS)[number];
 
 /** What a run started with. */
@@ -272,6 +300,15 @@ export interface RunEnv {
    *  value MAC of each as written and the row it had, so a later run rows a field still holding one as that answer.
    *  Memory only; absent: the run keeps its own. */
   answers?: Map<BaseKey, HeldAnswer>;
+  /** v3 Phase 4: a Submit this run pressed (the panel's, or Submit mode Auto's): the runtime tells the worker and
+   *  watches for the platform's confirmation. */
+  submitPressed?(by: 'panel' | 'auto', runId: string, before?: PressSnapshot | null): void;
+  /** What the runtime reads right before a press (submitted.ts PressSnapshot: the application, the form, the success
+   *  signs already shown), since the click may move the page before the press is armed (the review, M1 and M6). */
+  beforePress?(): PressSnapshot | null;
+  /** The review: the steps Submit mode Auto pressed in this document (application key, step index and signature),
+   *  shared by every run of the document, so Auto presses a step at most once whatever starts the run again. */
+  autoPressed?: Set<string>;
 }
 
 /** An AI answer written in the document (RunEnv.answers): its value MAC as written, and its row's provenance and
@@ -298,7 +335,16 @@ export const LEFT_REFRESH_MS = 150;
 /** The notices of one step: a new step's scan forgets them. The run's own (tripwire, policy and the policy states)
  *  stay. */
 const STEP_NOTICE_CODES: readonly NoticeCode[] = ['attention-check', 'needs-click', 'deferred-fields', 'validation',
-  'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps', 'next-hidden', 'captcha-next'];
+  'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps', 'next-hidden', 'captcha-next',
+  'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
+  'submit-unconfirmed', 'submit-errors', 'submit-auto-unchecked'];
+
+/** The notices that say the posting itself forbids AI (v3 Phase 4: Submit mode Auto's skip rule), whichever way the
+ *  run went on: profile only, AI anyway, or the saved copy's word; and (the v3 Phase 4 review) a statement only text a
+ *  person cannot see yet holds, which is one all the same. Not the form's "I did not use AI" statement, which a
+ *  profile-only fill makes true, nor a posting that could not be read (policy-unreadable: the person chose Auto, and
+ *  the review says it was submitted anyway), nor the tripwire's hits. */
+const POSTING_NO_AI: readonly NoticeCode[] = ['policy', 'policy-profile-only', 'policy-stored-copy', 'policy-hidden-text'];
 
 /** The event a pause signal gives: sign-in and account creation are AUTH, the rest PAUSE with their reason. */
 function pauseEventOf(signal: PauseSignal): RunEvent {
@@ -399,6 +445,17 @@ export class FillRun {
   private autoAdvance = false;
   /** Autofill after page turn (modes.afterPageTurn): a new step is filled as it appears; off: Continue fills it. */
   private fillAfterTurn = true;
+  /** v3 Phase 4: Submit mode Auto (modes.submit) and the skip rules it reads (modes.agentSkip). */
+  private autoSubmitOn = false;
+  private skipRules: SubmitSkipRules = { requiredEmpty: true, noAi: true, legalGuess: false };
+  /** A Submit this run pressed waits for the platform's confirmation (the report's buttons.pressed). */
+  private submitPending = false;
+  /** The steps Submit mode Auto pressed when the runtime keeps none (RunEnv.autoPressed). */
+  private readonly autoPressedHere = new Set<string>();
+  /** The platform's confirmation came while the run still worked: SUBMITTED is taken when it next rests. */
+  private submittedLate = false;
+  /** Aborted when the platform's confirmation is seen while the run watches the step: the watch ends as SUBMITTED. */
+  private readonly confirmed = new AbortController();
   /** The machine's state (null until the run has begun). */
   private machine: RunState | null = null;
   /** Every canary this frame holds in memory (at most 1024, nearest their hit first): every write is scanned for them. */
@@ -538,6 +595,11 @@ export class FillRun {
     return this.reportStatus ?? this.machine?.status ?? 'detect';
   }
 
+  /** The run's id, as run/begin gave it (null before). */
+  get begunAs(): string | null {
+    return this.id;
+  }
+
   /** The machine's state, for the run that continues this one (null before it began). */
   get runState(): RunState | null {
     return this.machine;
@@ -589,6 +651,8 @@ export class FillRun {
     this.pushedAutoAdvance = settings.modes.next === 'auto';
     this.autoAdvance = settings.modes.next === 'auto';
     this.fillAfterTurn = settings.modes.afterPageTurn === 'auto';
+    this.autoSubmitOn = settings.modes.submit === 'auto';
+    this.skipRules = { ...settings.modes.agentSkip };
     this.llm = settings.llm;
     // AI-written answers turned off (or on) at rest: Edit with AI goes (or comes back) at once.
     this.drawAiEdits();
@@ -738,10 +802,20 @@ export class FillRun {
    * (nothing sent) when the button may not be offered now, another rewrite is on its way, a pause shows, or the field
    * is no longer offered, visible and writable, or holds a canary.
    */
-  async rewriteField(key: FieldKey): Promise<boolean> {
-    const refused = (why: Record<string, boolean>): false => {
+  async rewriteField(key: FieldKey, instruction = ''): Promise<boolean> {
+    return (await this.rewrite(key, instruction)) === 'rewritten';
+  }
+
+  /**
+   * Edit with AI with the person's instruction (v3 Phase 3b: the box's words, '' for none), as rewriteField: what came
+   * of it, for the box to say. 'sensitive': nothing was rewritten because the question, the box's text or the
+   * instruction names what never goes to the AI (the worker's screen or TailorIT's); 'unchanged': the rewrite was what
+   * the box holds; 'refused': it may not be asked now; 'failed': no draft came.
+   */
+  async rewrite(key: FieldKey, instruction = ''): Promise<RewriteOutcome> {
+    const refused = (why: Record<string, boolean>): 'refused' => {
       log('content.ai-edit-refused', why);
-      return false;
+      return 'refused';
     };
     if (!this.aiEditsOpen || this.rewriting !== null) return refused({ resting: this.aiEditsOpen });
     if (!this.aiEditable.has(baseKeyOf(key))) return refused({ offered: false });
@@ -763,9 +837,10 @@ export class FillRun {
       const postingText = this.isTop ? this.postingText() : '';
       const revealEdges = this.state.revealEdges.slice(0, MAX_REVEAL_EDGES)
         .map(([parent, child]): [BaseKey, BaseKey] => [parent, child]);
+      const words = instruction.trim().slice(0, MAX_EDIT_INSTRUCTION);
       const asked = await this.env.channel.request<'draft/rewrite'>({ v: 1, type: 'draft/rewrite', runId: this.runId,
         fieldKey: field.key, specs, canaries: [...this.sent], ...(postingText === '' ? {} : { postingText }),
-        ...(revealEdges.length > 0 ? { revealEdges } : {}) });
+        ...(revealEdges.length > 0 ? { revealEdges } : {}), ...(words === '' ? {} : { instruction: words }) });
       this.alive();
       if (!asked.ok) return refused({ worker: false });
       let answer: PlanAnswer = asked.data;
@@ -774,17 +849,22 @@ export class FillRun {
       const started = monotonicNow();
       while (!answer.writes.some((write) => write.key === field.key) && answer.awaiting.includes(field.key)) {
         const left = capMs - (monotonicNow() - started);
-        if (left <= 0) return refused({ timedOut: true });
-        if (await deadline(Math.min(pollMs, left), this.controller.signal) === 'aborted') return false;
+        if (left <= 0) {
+          log('content.ai-edit-refused', { timedOut: true });
+          return 'failed';
+        }
+        if (await deadline(Math.min(pollMs, left), this.controller.signal) === 'aborted') return 'refused';
         const polled = await this.poll([field.key]);
         if (polled === 'expired' || polled === 'failed') return refused({ worker: false });
         answer = polled;
       }
       const write = (answer.writes as unknown as PlannedWrite[]).find((candidate) => candidate.key === field.key);
       const planned = (answer.results as unknown as FillResult[]).find((candidate) => candidate.key === field.key);
-      // No draft (TailorIT refused or failed): what the field holds stays, and so does its row.
+      // No draft (TailorIT refused or failed): what the field holds stays, and so does its row. One the screens kept
+      // from the AI says so (v3 Phase 3b).
       if (write === undefined || planned === undefined || write.origin.provenance !== 'llm-draft') {
-        return refused({ drafted: false });
+        log('content.ai-edit-refused', { drafted: false });
+        return planned?.reason === 'llm-disabled-for-category' ? 'sensitive' : 'failed';
       }
       if (!this.aiEditsOpen || this.stopRequested) return refused({ resting: false });
       const now = this.scanNow();
@@ -797,7 +877,7 @@ export class FillRun {
         // A rewrite the box holds already changes nothing: the box's row stays (the AI's draft, or the person's text),
         // not the planner's already-correct skip, which carries no provenance.
         if (written.row.reason !== 'already-correct') this.replaceRow(written.row);
-        return false;
+        return written.row.reason === 'already-correct' ? 'unchanged' : 'refused';
       }
       // The draft as written is booked, so the person's later edit makes it theirs (E3, E4).
       const after = this.scanNow().fields.find((candidate) => candidate.key === field.key);
@@ -807,10 +887,11 @@ export class FillRun {
       this.confirmedDrafts.delete(field.baseKey);
       this.storeDrafts();
       this.replaceRow(written.row);
-      return true;
+      return 'rewritten';
     } catch (failure) {
-      if (failure instanceof RunAborted || failure instanceof Invalidated) return false;
-      return refused({ failed: true });
+      if (failure instanceof RunAborted || failure instanceof Invalidated) return 'refused';
+      log('content.ai-edit-refused', { failed: true });
+      return 'failed';
     } finally {
       this.rewriting = null;
       this.drawAiEdits();
@@ -1342,6 +1423,8 @@ export class FillRun {
         this.offerToSave = answer.data.settings.offerToSaveAnswers;
         this.llm = answer.data.settings.llm;
         this.fillAfterTurn = answer.data.settings.modes.afterPageTurn === 'auto';
+        this.autoSubmitOn = answer.data.settings.modes.submit === 'auto';
+        this.skipRules = { ...answer.data.settings.modes.agentSkip };
       }
       return;
     }
@@ -1482,6 +1565,8 @@ export class FillRun {
       ...(this.repeatableCounts.length > 0 ? { repeatables: this.repeatableCounts } : {}),
       // Resting at wait-transition: the person's own Next is awaited, and nothing runs (v3 Phase 3 review).
       ...(this.resting ? { resting: true } : {}),
+      // v3 Phase 4: what the step offers the panel's Next and Submit, at rest only, never in a dry run.
+      ...(this.buttonsNow() ?? {}),
       ...(this.stepped && this.machine !== null
         ? { step: { index: this.machine.stepIndex, progress: this.stepProgress ?? undefined } } : {}) };
   }
@@ -1677,7 +1762,8 @@ export class FillRun {
     const capMs = this.env.options.transition?.capMs
       ?? (typeof quirk === 'number' && quirk > TRANSITION_CAP_MS ? quirk : undefined);
     return { autoAdvance: this.autoAdvance && !this.request.dryRun, now: this.env.now(),
-      fillAfterPageTurn: this.fillAfterTurn, ...(capMs === undefined ? {} : { transitionCapMs: capMs }) };
+      fillAfterPageTurn: this.fillAfterTurn, ...(capMs === undefined ? {} : { transitionCapMs: capMs }),
+      autoSubmit: this.autoSubmitOn && !this.request.dryRun ? this.skipRules : null };
   }
 
   /** The machine takes one event: its state, then each of its effects in order. Answers the event an effect produced
@@ -1715,6 +1801,12 @@ export class FillRun {
       }
       await this.flushReport();
       event = await this.rest();
+      // A confirmation that came while the run worked (submittedSeen) is taken now that it rests.
+      if (event === null && this.submittedLate && this.ended !== null && this.ended !== 'stopped') {
+        this.submittedLate = false;
+        event = { type: 'SUBMITTED' };
+        this.working();
+      }
       if (event === null) return;
     }
   }
@@ -1760,10 +1852,13 @@ export class FillRun {
     try {
       const outcome = await awaitTransition({ doc: this.env.doc, adapter: this.env.page.adapter,
         root: () => this.rootNow(), signature: () => this.signatureNow(), from, capMs,
-        signal: AbortSignal.any([this.controller.signal, this.stopping.signal]), watchNext,
+        signal: AbortSignal.any([this.controller.signal, this.stopping.signal, this.confirmed.signal]), watchNext,
         ...(this.env.options.settle ? { settle: this.env.options.settle } : {}) });
       this.alive();
-      if (outcome.kind === 'aborted') return this.stopRequested ? { type: 'USER_STOPPED' } : null;
+      if (outcome.kind === 'aborted') {
+        if (this.stopRequested) return { type: 'USER_STOPPED' };
+        return this.confirmed.signal.aborted && !this.controller.signal.aborted ? { type: 'SUBMITTED' } : null;
+      }
       this.working();
       if (outcome.kind === 'changed') {
         this.idleTransitions += 1;
@@ -1836,7 +1931,10 @@ export class FillRun {
       case 'pause':
         return effect.kind === 'policy' ? this.policyCard() : this.paused();
       case 'notify':
-        this.notify(effect.notice);
+        this.notify(effect.notice, effect.count);
+        return null;
+      case 'press-submit':
+        await this.autoSubmit();
         return null;
       case 'show-review':
         this.showReview(effect.cause);
@@ -2080,10 +2178,28 @@ export class FillRun {
     }
     const nextVisible = next !== null && isUserVisible(next, cache) && (next as HTMLButtonElement).disabled !== true;
     this.lastErrors = errors.length;
+    // v3 Phase 4, for Submit mode Auto: what its verdict reads of the final step (the core decides).
+    const submitFacts = finality === 'final' && this.autoSubmitOn && !this.request.dryRun ? this.submitFacts() : {};
     return { type: 'VALIDATED', errors: errors.length, fixable: this.fixable(errors), step: { finality, nextVisible,
       settled: this.settledStep,
       unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft' && row.needsUserAction).length,
-      captchaUnsolved: unsolvedCaptchas(env.doc, root, cache) > 0 } };
+      captchaUnsolved: unsolvedCaptchas(env.doc, root, cache) > 0, ...submitFacts } };
+  }
+
+  /** What Submit mode Auto's verdict reads of the final step (v3 Phase 4): Submit shown, the required questions still
+   *  left unanswered (press.ts requiredLeftOf: hidden uploads and the run's own rows left for the person included),
+   *  the posting forbidding AI (its notice), and a legal answer that was the AI's guess. */
+  private submitFacts(): Pick<StepFacts, 'submitVisible' | 'requiredEmpty' | 'noAi' | 'legalGuess'> {
+    const buttons = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow() });
+    const noAi = POSTING_NO_AI.some((code) => this.notices.has(code));
+    const legalGuess = this.rows.some((row) => row.reason === 'ai-guess' && policyClassOf(row.category) === 'legal');
+    return { submitVisible: buttons.submit, requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()), noAi,
+      legalGuess };
+  }
+
+  /** The keys of the step's rows on required fields still left for the person (shared/report.ts leftForPerson). */
+  private leftRequired(): string[] {
+    return this.rows.filter((row) => row.required && leftForPerson(row)).map((row) => row.key);
   }
 
   /** The errors one more pass could address: on a field no pass of this step planned (it showed after the loop), or
@@ -2248,11 +2364,169 @@ export class FillRun {
     return null;
   }
 
-  private notify(notice: StepNotice): void {
+  private notify(notice: StepNotice, count?: number): void {
     if (notice === 'tripwire') this.notices.add('tripwire', this.tripwireHits);
     else if (notice === 'validation') this.notices.add('validation', this.lastErrors);
-    else this.notices.add(notice);
+    else this.notices.add(notice, count);
     this.showNotices();
+  }
+
+  /** The report's `buttons` now (v3 Phase 4): at rest (review, or waiting for the person's Next), not in a dry run. */
+  private buttonsNow(): { buttons: NonNullable<ReportHeader['buttons']> } | null {
+    if (this.request.dryRun || this.machine === null || (this.status !== 'review' && !this.resting)) return null;
+    let read: NonNullable<ReportHeader['buttons']>;
+    try {
+      read = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow() });
+    } catch {
+      return null;
+    }
+    return { buttons: this.submitPending ? { ...read, pressed: 'submit' } : read };
+  }
+
+  /**
+   * The panel's "Continue to the next page" or "Submit application" (v3 Phase 4: run/press, or the in-page panel's
+   * trusted click), on this run's step: only while the run rests, what it wrote read again first (E9), then press.ts's
+   * one click. A Submit pressed is armed (RunEnv.submitPressed) and the report says it waits for its confirmation.
+   */
+  async press(target: StepTarget, confirmed: boolean): Promise<PressAnswer> {
+    if (this.ended === null || this.request.dryRun || this.machine === null) {
+      return { outcome: this.ended === null ? 'busy' : 'not-offered' };
+    }
+    if (this.ended !== 'review' && this.ended !== 'waiting') return { outcome: 'not-offered' };
+    await this.lookBeforeLeaving();
+    if (this.controller.signal.aborted) return { outcome: 'gone' };
+    // From here to the click nothing is awaited: what is checked is what is clicked.
+    const page = this.pressPage();
+    const before = target === 'submit' ? this.env.beforePress?.() : undefined;
+    const answer = pressStep(page, target, { confirmed });
+    log(answer.outcome === 'pressed' ? 'content.step-pressed' : 'content.step-press-refused',
+      { submit: target === 'submit', confirmed });
+    if (answer.outcome === 'pressed' && target === 'submit') this.submitWasPressed('panel', before);
+    // A Next the page did not take: the same step still shows, with what to fix (the review).
+    if (answer.outcome === 'pressed' && target === 'next') {
+      const from = this.stepped ? this.signatureNow() : null;
+      const count = await refusalAfter(page, this.controller.signal);
+      const stayed = !this.controller.signal.aborted && from !== null && this.signatureNow() === from
+        && page.root.isConnected;
+      if (stayed && count > 0) return { outcome: 'not-accepted', count };
+    }
+    return answer;
+  }
+
+  /** press-submit (Submit mode Auto, v3 Phase 4): the step machine's verdict passed on a final step. Inside another
+   *  page, only while the frame is seen there (S1). After the last wait, what the verdict read is read again (the mode
+   *  still on, the same step, nothing the run wrote changed, no error shown); the press re-counts the required
+   *  questions while that skip rule holds; once per step. A press that cannot be made says why, and the person
+   *  submits. */
+  private async autoSubmit(): Promise<void> {
+    if (this.stopRequested || this.request.dryRun || !this.autoSubmitOn) return;
+    const pressed = this.env.autoPressed ?? this.autoPressedHere;
+    const stepKey = `${this.state.applicationKey}|${this.state.stepIndex}|${this.state.stepSignature ?? ''}`;
+    if (pressed.has(stepKey)) return;
+    const changed = await this.lookBeforeLeaving();
+    this.alive();
+    if (!this.isTop && !(await this.env.frameShown(this.controller.signal, true))) {
+      this.alive();
+      this.notify('submit-held-check');
+      return;
+    }
+    this.alive();
+    // After the last await: every fact the verdict read must still hold, or the Submit is the person's.
+    if (this.stopRequested || this.request.dryRun || !this.autoSubmitOn) return;
+    if (changed || this.movedOn() !== null || refusalNow({ doc: this.env.doc, adapter: this.env.page.adapter,
+      root: this.rootNow() }) > 0) {
+      log('content.step-press-refused', { submit: true, auto: true });
+      this.notify('submit-held-check');
+      return;
+    }
+    pressed.add(stepKey);
+    const before = this.env.beforePress?.();
+    const answer = pressStep(this.pressPage(), 'submit', { confirmed: !this.skipRules.requiredEmpty });
+    log(answer.outcome === 'pressed' ? 'content.step-pressed' : 'content.step-press-refused', { submit: true, auto: true });
+    if (answer.outcome === 'pressed') {
+      // The person chose Auto: a posting that could not be read for its AI rule is submitted, and the review says so.
+      if (this.notices.has('policy-unreadable')) this.notices.add('submit-auto-unchecked');
+      this.submitWasPressed('auto', before);
+      return;
+    }
+    if (answer.outcome === 'required-empty') this.notify('submit-held-required', answer.count);
+    else if (answer.outcome === 'not-accepted') {
+      this.notices.add('submit-errors', Math.max(1, answer.count ?? 1));
+      this.showNotices();
+    } else this.notify(answer.outcome === 'blocked' ? 'submit-held-captcha' : 'submit-held-check');
+  }
+
+  /** What press.ts reads of the page: the step's root now, a fresh scan, the run's rows left for the person, the
+   *  CAPTCHA the person was handed. */
+  private pressPage(): PressPage {
+    const signature = this.stepped ? this.signatureNow() : null;
+    const handed = this.handed !== null && this.handed.signature === signature ? this.handed.elements : undefined;
+    return { doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow(), scan: () => this.scanNow(),
+      leftRequired: () => this.leftRequired(), ...(handed === undefined ? {} : { handed }) };
+  }
+
+  /** A Submit was pressed by this run: the runtime arms it, and the report says it waits for its confirmation. */
+  private submitWasPressed(by: 'panel' | 'auto', before?: PressSnapshot | null): void {
+    this.submitPending = true;
+    this.notices.forget(['submit-unconfirmed', 'submit-errors']);
+    if (this.id !== null) this.env.submitPressed?.(by, this.id, before);
+    this.rowsChanged();
+  }
+
+  /** The platform's confirmation was seen after a Submit (v3 Phase 4; the runtime, once the worker took it): the run is
+   *  done (SUBMITTED). While it watches the step, the watch ends with it; at rest, the machine takes it here. */
+  async submittedSeen(): Promise<void> {
+    if (this.machine === null || this.request.dryRun) return;
+    this.submitPending = false;
+    if (this.watchingNow) {
+      this.confirmed.abort();
+      return;
+    }
+    if (this.ended === null) {
+      // The run still works (Submit mode Auto's press, then its review): taken as soon as it rests (drive), and a
+      // watch it starts meanwhile ends with it.
+      this.submittedLate = true;
+      this.confirmed.abort();
+      return;
+    }
+    if (this.ended === 'stopped') return;
+    await this.step({ type: 'SUBMITTED' });
+    await this.flushReport();
+    this.launcher({ state: 'idle', action: 'fill' });
+  }
+
+  /** No confirmation came within the runtime's wait after a Submit this run pressed: the review says to check the page
+   *  (submit-unconfirmed), and the panel's Submit is offered again. */
+  submitUnconfirmed(): void {
+    if (!this.submitPending) return;
+    this.submitPending = false;
+    this.notices.add('submit-unconfirmed');
+    this.showNotices();
+    this.rowsChanged();
+  }
+
+  /** The page refused a Submit pressed (the review): its errors, the fields its form marked, its failure message,
+   *  `count` of them. The wait ends, the review says so (submit-errors), and the panel's Submit is offered again. */
+  submitRefused(count: number): void {
+    const waited = this.submitPending;
+    this.submitPending = false;
+    this.notices.forget(['submit-unconfirmed']);
+    this.notices.add('submit-errors', Math.max(1, count));
+    this.showNotices();
+    if (waited || this.ended !== null) this.rowsChanged();
+  }
+
+  /** A Submit's watch ended without a confirmation and without a word to say (the person's own Submit, or one
+   *  replaced by a newer press): the report no longer says it waits. */
+  submitWatchEnded(): void {
+    if (!this.submitPending) return;
+    this.submitPending = false;
+    this.rowsChanged();
+  }
+
+  /** Whether the run's resume upload is in place on the form: its row verified, written (for the tracker). */
+  resumeAttached(): boolean {
+    return this.rows.some((row) => row.category === 'file.resume' && row.status === 'verified' && row.wrote);
   }
 
   /** show-review: the launcher says how many rows need the person (the review lists them); nothing is drawn over the

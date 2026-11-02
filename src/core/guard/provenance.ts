@@ -32,7 +32,8 @@ import { asUntrusted } from '../text/untrusted';
 import type { FieldSpec } from '../types/field';
 import type { PlannedWrite, ReasonCode } from '../types/fill';
 import {
-  ANSWER_BASES, FILE_PATHS, PROFILE_PATH_PATTERN, RULE_IDS, type FieldCategory, type PolicyClass, type RuleId,
+  ANSWER_BASES, COVER_LETTER_TEXT_PATH, FILE_PATHS, PROFILE_PATH_PATTERN, RULE_IDS, type FieldCategory, type PolicyClass,
+  type RuleId,
   type ValueOrigin,
 } from '../types/intent';
 import type { Profile } from '../types/profile';
@@ -150,6 +151,10 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
       // resume is never sent as a cover letter, nor a cover letter as the resume.
       if (write.value.kind === 'file' && (origin.transform !== undefined
         || origin.path !== FILE_PATHS[write.value.ref])) return fail('policy-violation');
+      // The cover letter's words (v3 Phase 3b) are text, as they are, never transformed.
+      if (origin.path === COVER_LETTER_TEXT_PATH && (write.value.kind !== 'text' || origin.transform !== undefined)) {
+        return fail('policy-violation');
+      }
       return origin.transform === undefined || isRuleId(origin.transform) ? PASS : fail('policy-violation');
     case 'saved':
       return nonEmpty(origin.savedAnswerId) ? PASS : fail('missing-provenance');
@@ -263,6 +268,10 @@ export function checkCategoryPolicy(origin: ValueOrigin, category: FieldCategory
     && AI_OPENED_CATEGORIES.has(category)) return PASS;
   if (USER_ONLY_CATEGORIES.has(category)) {
     return origin.provenance === 'rule' && OWN_RULES[category] === origin.ruleId ? PASS : fail('policy-violation');
+  }
+  // The cover letter's words (v3 Phase 3b) go into a cover-letter text box, and into nothing else.
+  if (origin.provenance === 'profile' && origin.path === COVER_LETTER_TEXT_PATH) {
+    return category === 'freeText.coverLetter' && origin.transform === undefined ? PASS : fail('policy-violation');
   }
   const policy = policyClassOf(category);
   if (!CLASS_PROVENANCES[policy].includes(origin.provenance)) return fail('policy-violation');

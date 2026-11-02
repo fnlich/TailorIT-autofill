@@ -29,18 +29,19 @@ export interface SettingsStore {
 }
 
 /** What a content script may know of the settings. */
-export function contentSettingsOf(settings: Settings): ContentSettings {
-  return { panel: settings.panel, modes: { next: settings.modes.next, afterPageTurn: settings.modes.afterPageTurn },
+export function contentSettingsOf(settings: Settings, options: { holdSubmit?: boolean } = {}): ContentSettings {
+  return { panel: settings.panel, modes: { next: settings.modes.next, afterPageTurn: settings.modes.afterPageTurn,
+    // The v3 Phase 4 review: until the person acknowledged the disclosure as it reads now, Submit stays Manual.
+    submit: options.holdSubmit === true ? 'manual' : settings.modes.submit, agentSkip: { ...settings.modes.agentSkip } },
     llm: { ...settings.llm }, offerToSaveAnswers: settings.offerToSaveAnswers };
 }
 
-/** The settings as they act now (v3 Phase 3 review): Sign-in and Submit are Manual whatever was stored, until the
- *  phase that ships each (v3 Phases 4 and 5) gives it something to do; that phase's settings version resets both to
- *  their defaults, so no choice made before it acts. */
+/** The settings as they act now (v3 Phase 3 review): Sign-in is Manual whatever was stored, until the phase that ships
+ *  it (v3 Phase 5) gives it something to do. Submit shipped with v3 Phase 4: until then this kept it Manual on every
+ *  read and save, so no install holds an Auto chosen before it acted, and none needed a reset. */
 export function withShippedModes(settings: Settings): Settings {
-  if (settings.modes.signIn === 'manual' && settings.modes.submit === 'manual') return settings;
-  return { ...settings, modes: { ...settings.modes, agentSkip: { ...settings.modes.agentSkip }, signIn: 'manual',
-    submit: 'manual' } };
+  if (settings.modes.signIn === 'manual') return settings;
+  return { ...settings, modes: { ...settings.modes, agentSkip: { ...settings.modes.agentSkip }, signIn: 'manual' } };
 }
 
 /** The store over storage.local, read once and kept in memory. */
@@ -104,8 +105,8 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
 /** Tells every registered frame with a form the content settings just saved (settings/changed). A frame that cannot be
  *  reached is skipped: its next run reads them at run/begin. Answers how many frames received them. */
 export async function pushSettings(deps: { session: StorageArea; tabs: Pick<WorkerPlatform['tabs'], 'sendToFrame'> },
-  settings: Settings): Promise<number> {
-  const message = { v: 1, type: 'settings/changed', settings: contentSettingsOf(settings) } as const;
+  settings: Settings, options: { holdSubmit?: boolean } = {}): Promise<number> {
+  const message = { v: 1, type: 'settings/changed', settings: contentSettingsOf(settings, options) } as const;
   const frames = (Object.values(await deps.session.getMany('frames:')) as FrameEntry[]).filter((frame) => frame.hasForm);
   const reached = await Promise.all(frames.map(async (frame) => {
     try {

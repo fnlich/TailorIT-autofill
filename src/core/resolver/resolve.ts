@@ -297,6 +297,10 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':
+      // v3 Phase 3b: a cover-letter text box takes the run's letter's words, once the worker holds them.
+      if (category === 'freeText.coverLetter' && profile.coverLetter?.text !== undefined) {
+        return profileValue(category, { spec, profile, vocab, now, separatePhoneCountry: false });
+      }
       return none('free-text-requires-user', true, true);
     case 'unknown':
       return category === 'screening.previouslyEmployed'

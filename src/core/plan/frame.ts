@@ -697,7 +697,8 @@ interface LetterPlan {
   /** The frame is profile-only (its posting forbids AI, or it holds an "I did not use AI" attestation). */
   aiOff: boolean;
   canWrite: boolean;
-  wait(key: FieldKey): void;
+  /** `text`: a ready letter's words are what it waits for (v3 Phase 3b). */
+  wait(key: FieldKey, text?: boolean): void;
 }
 
 /**
@@ -752,12 +753,91 @@ function planCoverLetter(spec: FieldSpec, field: ResolvedField, ctx: FieldPlanCo
   return standing;
 }
 
+/**
+ * A cover-letter text box (v3 Phase 3b; docs/SPEC-AMENDMENTS.md §10 as amended by §12 Decision 7): the run's letter, as
+ * a cover-letter upload gets it (the person's own for the job, else one TailorIT's AI writes where it may write any
+ * answer), typed in as text through guardWrite: provenance `profile`, path `coverLetter.text`, which only a
+ * cover-letter text box takes, every screen of a text write applied (the canaries, the field's visibility and label,
+ * its maxLength). Its row is cover-letter-typed (the person's letter), or cover-letter-written (TailorIT's AI's,
+ * marked "AI"). An AI-written letter is never typed into a profile-only frame, or with AI-written answers off: there a
+ * box with no letter of the person's is left for them, as an upload is. A box that already holds text keeps it
+ * (prefill-kept), and Edit with AI still rewrites what it holds. A ready letter whose words the worker has not read yet
+ * waits for them (the worker reads them only for a text box: `coverLetter.text`). A dry run reads no words: a ready
+ * letter is the would-be write's row.
+ */
+function planCoverLetterText(spec: FieldSpec, field: ResolvedField, ctx: FieldPlanContext, how: LetterPlan): FieldPlan {
+  const { resolution } = field;
+  const { category } = resolution;
+  const { letter } = how;
+  const aiWritten = letter?.state === 'ready' && letter.aiWritten;
+  if (aiWritten && !how.aiMay) {
+    return { row: rowWithout(spec, category, 'flagged', how.aiOff ? 'ai-off-for-posting' : 'drafts-disabled', 0) };
+  }
+  const standing = planField(spec, field, ctx);
+  if (standing.write !== undefined) {
+    if (standing.row.status !== 'verified') return standing;
+    return { ...standing, row: { ...standing.row, reason: aiWritten ? 'cover-letter-written' : 'cover-letter-typed' } };
+  }
+  // The letter is longer than the box takes: never cut, and said as the letter's length, not a typed answer's.
+  if (standing.row.reason === 'maxlength-exceeded' && letter?.state === 'ready' && letter.text !== undefined) {
+    const limit = spec.constraints.maxLength;
+    return { row: { ...standing.row, reason: 'cover-letter-too-long', needsUserAction: true,
+      ...(limit === undefined || limit < 1 ? {} : { detail: { ...standing.row.detail,
+        letterLength: { length: codePoints(letter.text), limit } } }) } };
+  }
+  if (!how.canWrite || (resolution.reason !== 'free-text-requires-user' && resolution.reason !== 'no-profile-value')) {
+    return standing;
+  }
+  // A box that holds text already (the person's, or the page's) keeps it.
+  if (spec.current.kind === 'text' && spec.current.text.trim() !== '') {
+    return { row: rowWithout(spec, category, 'flagged', 'prefill-kept', resolution.confidence) };
+  }
+  if (letter === undefined || letter.state === 'waiting') {
+    how.wait(spec.key, true);
+    return { row: rowWithout(spec, category, 'flagged', 'cover-letter-waiting', 0) };
+  }
+  if (letter.state === 'none') {
+    if (ctx.input.dryRun && letter.reason === 'cover-letter-none' && how.aiMay) {
+      return { row: wouldTypeRow(spec, category, resolution.confidence, 'cover-letter-would-write') };
+    }
+    return { row: rowWithout(spec, category, 'flagged', letter.reason, 0) };
+  }
+  // Ready. A dry run reads no words: what a fill would type.
+  if (ctx.input.dryRun) {
+    return { row: wouldTypeRow(spec, category, resolution.confidence, aiWritten ? 'cover-letter-written'
+      : 'cover-letter-typed') };
+  }
+  if (letter.textUnavailable === true) return { row: rowWithout(spec, category, 'flagged', 'cover-letter-unavailable', 0) };
+  // Its words are on their way (or planField refused them: the Guard's row stands).
+  if (letter.text === undefined) {
+    how.wait(spec.key, true);
+    return { row: rowWithout(spec, category, 'flagged', 'cover-letter-waiting', 0) };
+  }
+  return standing;
+}
+
+/** A dry run's row for what a fill would type into a cover-letter text box (v3 Phase 3b): verified, nothing written. */
+function wouldTypeRow(spec: FieldSpec, category: FieldCategory, confidence: number, reason: ReasonCode): FillResult {
+  return { key: spec.key, label: spec.label, kind: spec.kind, category, section: sectionKey(spec.section),
+    required: spec.required, status: 'verified', provenance: 'profile', matcherStage: 'not-applicable',
+    confidence: round(confidence), reason, wrote: false, verification: 'not-checked', needsUserAction: false };
+}
+
+/** A resume upload the person left for themselves (v3 Phase 3b, "Apply without resume"): skipped, never a failure, and
+ *  needing them only where the form requires one. */
+function withoutResumeRow(spec: FieldSpec, category: FieldCategory): FillResult {
+  return { ...rowWithout(spec, category, 'skipped', 'resume-not-attached', 0), needsUserAction: spec.required };
+}
+
 /** One plan/request (types.ts): every field of planKeys (every spec without them) resolved, matched, planned and
  *  guarded, each with a value-free row; the other specs are read for context only (the Phase 3 review, LC-2). */
 export function planFrame(asked: PlanInput): PlanOutput {
   // The run's cover letter (Phase G), once ready, is planned with as the profile's own document (withCoverLetter).
   const profile = withCoverLetter(asked.profile, asked.coverLetter);
-  const kept = persistableCanaries(asked.canaries, profile);
+  // The canaries RunState may keep are checked against the profile's own values, never the letter's words (the review
+  // of v3 Phase 3b): a page phrase the letter happens to hold gives nothing of the person's away, and dropping it would
+  // let the next document of the application forget a canary the letter is refused for.
+  const kept = persistableCanaries(asked.canaries, withCoverLetter(asked.profile, undefined));
   // An "I did not use AI" attestation anywhere in the frame's scan makes it a profile-only frame, as a posting that
   // forbids AI does (unless the person's setting is to use the AI anyway).
   const attestation = holdsNoAiAttestation(asked.specs);
@@ -845,6 +925,7 @@ export function planFrame(asked: PlanInput): PlanOutput {
     : { ...row, status: 'flagged', reason: 'ai-off-for-posting', needsUserAction: true });
   // Cover letters (Phase G): TailorIT's AI may write one only where it may write any answer, and never in a dry run.
   const letterKeys: FieldKey[] = [];
+  let letterText = false;
   const letterAi = !aiOff && wantedLlm.drafts;
   const planned = specs.map((spec, at) => {
     const field = resolved[at]!;
@@ -853,6 +934,10 @@ export function planFrame(asked: PlanInput): PlanOutput {
     if (field.resolution.category === 'file.coverLetter' && spec.kind === 'file') {
       return { spec, ...planCoverLetter(spec, field, ctx, { letter: input.coverLetter, aiMay: letterAi, aiOff, canWrite,
         wait: (key) => letterKeys.push(key) }) };
+    }
+    // v3 Phase 3b: "Apply without resume": a resume upload is left for the person.
+    if (input.withoutResume === true && field.resolution.category === 'file.resume' && spec.kind === 'file') {
+      return { spec, row: withoutResumeRow(spec, field.resolution.category) };
     }
     // Edit with AI (the person's click): this field's draft, asked with what it holds now, written over it once in;
     // never in a dry run, a profile-only frame, or with AI-written answers off (the Phase E review, MINOR 8).
@@ -866,6 +951,14 @@ export function planFrame(asked: PlanInput): PlanOutput {
         drafts.push(item);
       }
       return { spec, ...standing };
+    }
+    // v3 Phase 3b: a cover-letter text box takes the run's letter, typed in, rather than a draft of its own.
+    if (field.resolution.category === 'freeText.coverLetter' && (spec.kind === 'textarea' || spec.kind === 'text')) {
+      return { spec, ...planCoverLetterText(spec, field, ctx, { letter: input.coverLetter, aiMay: letterAi, aiOff,
+        canWrite, wait: (key, text) => {
+          letterKeys.push(key);
+          if (text === true) letterText = true;
+        } }) };
     }
     const wouldDraft = drafting || (aiOff && wantedLlm.drafts && !input.dryRun);
     const item = wouldDraft ? draftItemOf(spec, classification, field.resolution, canWrite, draftContext) : null;
@@ -926,5 +1019,6 @@ export function planFrame(asked: PlanInput): PlanOutput {
     ...(ctx.drops.size > 0 ? { cacheDrops: [...ctx.drops] } : {}),
     ...(aiEditable.length > 0 ? { aiEditable } : {}),
     ...(attestation ? { aiAttestation: true as const } : {}),
-    ...(letterKeys.length > 0 ? { coverLetter: { keys: letterKeys, generate: letterAi && !input.dryRun } } : {}) };
+    ...(letterKeys.length > 0 ? { coverLetter: { keys: letterKeys, generate: letterAi && !input.dryRun,
+      ...(letterText ? { text: true as const } : {}) } } : {}) };
 }

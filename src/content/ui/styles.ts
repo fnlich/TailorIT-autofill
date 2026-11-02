@@ -130,6 +130,25 @@ button.ai-edit[aria-busy="true"] .ai-edit__label { display: inline; }
 button.ai-edit:hover { box-shadow: ${IN_PAGE_SHADOWS.launcherHover}; }
 button.ai-edit:focus-visible { outline: 2px solid ${BRAND.ink}; outline-offset: 2px; }
 button.ai-edit[aria-busy="true"] { cursor: progress; }
+/* v3 Phase 3b: Edit with AI's instruction box, under its button. */
+.ai-prompt { pointer-events: auto; position: absolute; box-sizing: border-box; display: grid; gap: 8px; width: 300px;
+  padding: 12px; border-radius: 14px; background: ${NEUTRAL.surface}; color: ${NEUTRAL.fg};
+  box-shadow: ${IN_PAGE_SHADOWS.card}; font: 13px/1.4 ${FONT_STACK}; }
+.ai-prompt[hidden] { display: none; }
+.ai-prompt__label { font-weight: 600; }
+.ai-prompt__input { box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid ${NEUTRAL.input};
+  border-radius: 10px; background: ${NEUTRAL.surface}; color: ${NEUTRAL.fg}; font: inherit; resize: vertical; }
+.ai-prompt__input:focus-visible { outline: 2px solid ${BRAND.ink}; outline-offset: 1px; }
+.ai-prompt__status { margin: 0; color: ${NEUTRAL.muted}; }
+.ai-prompt__status:empty { display: none; }
+.ai-prompt__foot { display: flex; align-items: center; gap: 8px; }
+.ai-prompt__count { flex: 1 1 auto; color: ${NEUTRAL.muted}; font-size: 12px; }
+.ai-prompt__cancel, .ai-prompt__generate { min-height: 32px; padding: 0 12px; border-radius: 999px; font: 600 13px/1 ${FONT_STACK};
+  cursor: pointer; }
+.ai-prompt__cancel { border: 1px solid ${NEUTRAL.input}; background: ${NEUTRAL.surface}; color: ${NEUTRAL.fg}; }
+.ai-prompt__generate { border: 0; background: ${BRAND.ink}; color: ${NEUTRAL.surface}; }
+.ai-prompt__generate:disabled { opacity: 0.6; cursor: default; }
+.ai-prompt__cancel:focus-visible, .ai-prompt__generate:focus-visible { outline: 2px solid ${BRAND.ink}; outline-offset: 2px; }
 .notices.with-panel .notice { display: none; }
 .panel { pointer-events: auto; box-sizing: border-box; display: flex; flex-direction: column; width: 380px;
   max-width: calc(100vw - 16px); max-height: 70vh; margin: 0; overflow: hidden; background: var(--tia-bg);

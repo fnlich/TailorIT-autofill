@@ -43,10 +43,14 @@ export function useTabJob(platform: PagePlatform, tabId: number | null, options:
   const [bump, setBump] = useState(0);
   const [answer, setAnswer] = useState<{ base: string; key: string; view: JobView } | null>(null);
   const { page, connection } = options;
-  const form = tabId !== null && page !== null && page.support === 'form';
+  // v3 Phase 3b: a recognised posting page with no form has its card too; the review: so has the platform's page after
+  // submitting, once a submission there gave it one (the worker answers none otherwise).
+  const form = tabId !== null && page !== null && (page.support === 'form' || page.posting === true
+    || (page.confirmation === true && page.submitted !== undefined));
   const runs = runsKeyOf(options.reports);
   const base = form && typeof connection === 'string' ? `${tabId}|${page.formKey ?? ''}|${connection}` : null;
-  const key = base === null ? null : `${base}|${runs}|${bump}`;
+  // v3 Phase 4: a submitted application's tracker answer becomes the card (Applied): read again when it lands.
+  const key = base === null ? null : `${base}|${runs}|${bump}|${page?.submitted ?? ''}`;
 
   useEffect(() => {
     if (key === null || base === null || tabId === null) return undefined;

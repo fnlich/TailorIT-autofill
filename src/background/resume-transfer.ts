@@ -19,7 +19,7 @@
  * again from the frame's address), and sends that one, or answers resume-unavailable (the Phase G review, MINOR 7).
  */
 import { AUTOFILL_COVER_LETTER_MAX_BYTES, AUTOFILL_FILE_MIME_TYPES, AUTOFILL_RESUME_MAX_BYTES } from '../contract/tailorit';
-import { RESUME_CHUNK_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
+import { PreviewPortMessageSchema, RESUME_CHUNK_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
 import type { PortLike } from '../platform/types';
 import { log } from '../shared/log';
 import { PDF_SIGNATURE, startsWith, toBase64, ZIP_SIGNATURE } from './bytes';
@@ -108,8 +108,18 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
     return { bytes, kind: isPdf ? 'pdf' : 'docx', sha256 };
   }
 
-  /** Serves one port from a content script whose sender the caller checked; its request waits for `ready` first. */
-  function accept(port: PortLike, from: FrameRef & { url: string }, ready: () => Promise<void> = () => Promise.resolve()): void {
+  /** What a request resolves to: the checked bytes, ready to send, or why there are none. */
+  type Prepared = { bytes: Uint8Array; name: string; mime: string; sha256: string } | Refusal;
+
+  /**
+   * Serves one transfer port (the resume port's, and the side panel's preview port: v3 Phase 3b): its first message is
+   * the request `isRequest` reads, which `prepare` resolves (after `ready`), with `active` false once the port closed;
+   * then the header and the chunks, each acknowledged, resume/end and the other side's resume/done. Any other message,
+   * out of turn, ends it as resume-transfer-failed; the bytes are released at its end or within RESUME_RELEASE_MS.
+   */
+  function serve<R>(port: PortLike, isRequest: (raw: unknown) => R | null,
+    prepare: (request: R, active: () => boolean) => Promise<Prepared>, ready: () => Promise<void>,
+    parse: (raw: unknown) => { type: string; index?: number; ok?: boolean } | null): void {
     let phase: 'request' | 'preparing' | 'sending' | 'ending' | 'closed' = 'request';
     let bytes: Uint8Array | null = null;
     let next = 0;
@@ -162,64 +172,26 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
       if (phase === 'sending') sendChunk(0);
     }
 
-    async function start(runId: string, document: 'resume' | 'cover-letter'): Promise<void> {
+    async function start(request: R): Promise<void> {
       phase = 'preparing';
       await ready();
       if (phase !== 'preparing') return;
-      const run = await deps.runs.find(runId, from);
+      const prepared = await prepare(request, () => phase === 'preparing');
       if (phase !== 'preparing') return;
-      if (run === null || run.dryRun) {
-        log('resume.refused', { run: run !== null });
-        return close('resume-unavailable');
-      }
-      if (document === 'cover-letter') {
-        // The run's letter, ready: its id never left the worker's memory (Phase G); or, where the worker holds no letter
-        // for the run (it restarted since the plan), the person's own, checked for again.
-        const held = deps.runs.memo(run.runId).letter;
-        const letterId = held !== undefined ? held.readyId() : await recheckLetter(run.runId, run.letterWritten === true,
-          from.url, () => phase === 'preparing');
-        if (phase !== 'preparing') return;
-        if (letterId === null) {
-          log('resume.refused', { letter: false });
-          return close('resume-unavailable');
-        }
-        const letter = await fetchLetter(letterId);
-        if (phase !== 'preparing') return;
-        if (typeof letter === 'string') {
-          log('resume.refused', { letter: true, fetched: false });
-          return close(letter);
-        }
-        return begin({ ...letter, mime: AUTOFILL_FILE_MIME_TYPES.pdf });
-      }
-      const choice = await choose(run.runId, from.url);
-      if (phase !== 'preparing') return;
-      if (choice === null) {
-        log('resume.refused', { choice: false });
-        return close('resume-unavailable');
-      }
-      // A legacy Word file is refused before anything is fetched.
-      if (choice.fileKind === 'doc') {
-        log('resume.refused', { doc: true });
-        return close('resume-format-unsupported');
-      }
-      const fetched = await fetchChecked(choice);
-      if (phase !== 'preparing') return;
-      if (typeof fetched === 'string') {
-        log('resume.refused', { fetched: false });
-        return close(fetched);
-      }
-      begin({ bytes: fetched.bytes, name: uploadName(choice.fileName, fetched.kind),
-        mime: AUTOFILL_FILE_MIME_TYPES[fetched.kind], sha256: fetched.sha256 });
+      if (typeof prepared === 'string') return close(prepared);
+      begin(prepared);
     }
 
     port.onMessage((raw) => {
-      const parsed = ResumePortMessageSchema.safeParse(raw);
-      const message = parsed.success ? parsed.data : null;
-      if (message?.type === 'resume/error') return close();
-      if (phase === 'request' && message?.type === 'resume/request') {
-        void start(message.runId, message.document ?? 'resume').catch(() => close('resume-unavailable'));
-        return;
+      if (phase === 'request') {
+        const request = isRequest(raw);
+        if (request !== null) {
+          void start(request).catch(() => close('resume-unavailable'));
+          return;
+        }
       }
+      const message = parse(raw);
+      if (message?.type === 'resume/error') return close();
       if (phase === 'sending' && message?.type === 'resume/ack' && message.index === next) {
         next += 1;
         if (next < chunkCount) return sendChunk(next);
@@ -228,7 +200,7 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
         return;
       }
       if (phase === 'ending' && message?.type === 'resume/done') {
-        log('resume.sent', { chunks: chunkCount, ok: message.ok });
+        log('resume.sent', { chunks: chunkCount, ok: message.ok === true });
         return close();
       }
       log('resume.protocol-error');
@@ -241,7 +213,100 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
     });
   }
 
-  return { accept };
+  /** What a content script's resume/request resolves to: the run's resume, or its cover letter (module header). */
+  async function prepareForRun(runId: string, document: 'resume' | 'cover-letter', from: FrameRef & { url: string },
+    active: () => boolean): Promise<Prepared> {
+    const run = await deps.runs.find(runId, from);
+    if (!active()) return 'resume-unavailable';
+    if (run === null || run.dryRun) {
+      log('resume.refused', { run: run !== null });
+      return 'resume-unavailable';
+    }
+    if (document === 'cover-letter') {
+      // The run's letter, ready: its id never left the worker's memory (Phase G); or, where the worker holds no letter
+      // for the run (it restarted since the plan), the person's own, checked for again.
+      const held = deps.runs.memo(run.runId).letter;
+      const letterId = held !== undefined ? held.readyId() : await recheckLetter(run.runId, run.letterWritten === true,
+        from.url, active);
+      if (!active()) return 'resume-unavailable';
+      if (letterId === null) {
+        log('resume.refused', { letter: false });
+        return 'resume-unavailable';
+      }
+      const letter = await fetchLetter(letterId);
+      if (typeof letter === 'string') {
+        log('resume.refused', { letter: true, fetched: false });
+        return letter;
+      }
+      return { ...letter, mime: AUTOFILL_FILE_MIME_TYPES.pdf };
+    }
+    const choice = await choose(run.runId, from.url);
+    if (!active()) return 'resume-unavailable';
+    if (choice === null) {
+      log('resume.refused', { choice: false });
+      return 'resume-unavailable';
+    }
+    return prepareResume(choice);
+  }
+
+  /** A resume's checked bytes: a legacy Word file refused before anything is fetched. */
+  async function prepareResume(choice: ResumeChoice): Promise<Prepared> {
+    if (choice.fileKind === 'doc') {
+      log('resume.refused', { doc: true });
+      return 'resume-format-unsupported';
+    }
+    const fetched = await fetchChecked(choice);
+    if (typeof fetched === 'string') {
+      log('resume.refused', { fetched: false });
+      return fetched;
+    }
+    return { bytes: fetched.bytes, name: uploadName(choice.fileName, fetched.kind),
+      mime: AUTOFILL_FILE_MIME_TYPES[fetched.kind], sha256: fetched.sha256 };
+  }
+
+  const transferMessage = (raw: unknown) => {
+    const parsed = ResumePortMessageSchema.safeParse(raw);
+    return parsed.success ? parsed.data : null;
+  };
+
+  /** Serves one port from a content script whose sender the caller checked; its request waits for `ready` first. */
+  function accept(port: PortLike, from: FrameRef & { url: string }, ready: () => Promise<void> = () => Promise.resolve()): void {
+    serve(port, (raw) => {
+      const message = transferMessage(raw);
+      return message?.type === 'resume/request' ? { runId: message.runId, document: message.document ?? 'resume' } : null;
+    }, (request, active) => prepareForRun(request.runId, request.document, from, active), ready, transferMessage);
+  }
+
+  /**
+   * v3 Phase 3b: serves the side panel's `preview` port (an extension page; the caller checked its sender): the resume a
+   * fill of the tab would attach (`resumeFor`: the person's choice, else the card's), fetched and checked as the
+   * resume port's, a PDF only (a Word file is resume-format-unsupported: the panel says it has no preview), and sent the
+   * same way. The bytes go to the side panel alone, never a page's process, and are released as the resume port's.
+   */
+  function acceptPreview(port: PortLike, resumeFor: (tabId: number) => Promise<ResumeChoice | null>,
+    ready: () => Promise<void> = () => Promise.resolve()): void {
+    const parse = (raw: unknown) => {
+      const parsed = PreviewPortMessageSchema.safeParse(raw);
+      return parsed.success ? parsed.data : null;
+    };
+    serve(port, (raw) => {
+      const message = parse(raw);
+      return message?.type === 'preview/request' ? { tabId: message.tabId } : null;
+    }, async (request, active) => {
+      const choice = await resumeFor(request.tabId);
+      if (!active()) return 'resume-unavailable';
+      if (choice === null) {
+        log('resume.preview', { sent: false });
+        return 'resume-unavailable';
+      }
+      if (choice.fileKind !== 'pdf') return 'resume-format-unsupported';
+      const prepared = await prepareResume(choice);
+      log('resume.preview', { sent: typeof prepared !== 'string' });
+      return prepared;
+    }, ready, parse);
+  }
+
+  return { accept, acceptPreview };
 }
 
 /** The resume transfer, as index.ts wires it. */

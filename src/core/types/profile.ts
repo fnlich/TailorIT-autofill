@@ -149,5 +149,5 @@ export interface Profile {
   /** The run's cover letter (Phase G), attached by the worker only once TailorIT has it ready to upload
    *  (withCoverLetter): whether TailorIT's AI wrote it (and the person never edited it). No id, no name and no word of
    *  the letter: they stay in the worker's memory, and the bytes travel only over the resume port. */
-  coverLetter?: { aiWritten: boolean };
+  coverLetter?: { aiWritten: boolean; text?: string };
 }

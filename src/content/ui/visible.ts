@@ -15,7 +15,7 @@
  * - A browser without IntersectionObserver v2 never says visible (the extension's floor, Chrome 144, has it).
  * The only timer is dom/time.ts's deadline, as the cap of a wait.
  */
-import { deadline } from '../../dom/time';
+import { deadline, monotonicNow } from '../../dom/time';
 
 /** The observer's delay (Chromium's minimum for trackVisibility is 100 ms). */
 export const VISIBILITY_DELAY_MS = 100;
@@ -30,6 +30,9 @@ export interface VisibilityWatch {
   shown(el: Element): boolean;
   /** Whether a notification for `el` has come since observe() or reset(). */
   known(el: Element): boolean;
+  /** The review (12): whether `el` has been seen, without a notification saying otherwise, for at least `ms` (since
+   *  the notification that first said visible). */
+  shownFor(el: Element, ms: number): boolean;
   /** Forgets what is known of `el` (it was just shown) and asks for a fresh notification. */
   reset(el: Element): void;
   /** Stops watching `el` (it was removed), and forgets what is known of it. */
@@ -44,6 +47,8 @@ type EntryV2 = IntersectionObserverEntry & { isVisible?: boolean };
 /** Watches elements of `view`'s document with IntersectionObserver v2. */
 export function createVisibilityWatch(view: (Window & typeof globalThis) | null): VisibilityWatch {
   const state = new WeakMap<Element, boolean>();
+  /** When each observed element was last notified visible after not being so (monotonic ms). */
+  const since = new WeakMap<Element, number>();
   const waiting = new Map<Element, Array<() => void>>();
   let observer: IntersectionObserver | null = null;
   const supported = view !== null && typeof view.IntersectionObserver === 'function'
@@ -52,7 +57,10 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
     try {
       observer = new view.IntersectionObserver((entries) => {
         for (const entry of entries as EntryV2[]) {
-          state.set(entry.target, entry.isVisible === true);
+          const visible = entry.isVisible === true;
+          if (!visible) since.delete(entry.target);
+          else if (state.get(entry.target) !== true) since.set(entry.target, monotonicNow());
+          state.set(entry.target, visible);
           const wake = waiting.get(entry.target);
           waiting.delete(entry.target);
           for (const resolve of wake ?? []) resolve();
@@ -69,8 +77,13 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
     },
     shown: (el) => state.get(el) === true,
     known: (el) => state.has(el),
+    shownFor(el, ms) {
+      const from = since.get(el);
+      return state.get(el) === true && from !== undefined && monotonicNow() - from >= ms;
+    },
     reset(el) {
       state.delete(el);
+      since.delete(el);
       if (observer === null) return;
       // A target observed afresh gets a notification of its own, even when nothing about it changed.
       observer.unobserve(el);
@@ -100,6 +113,7 @@ export function createVisibilityWatch(view: (Window & typeof globalThis) | null)
     },
     unobserve(el) {
       state.delete(el);
+      since.delete(el);
       observer?.unobserve(el);
     },
     disconnect() {

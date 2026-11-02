@@ -88,7 +88,8 @@ describe('the page channel\'s additions', () => {
 
   it('push a saved change of the settings to a frame as its content settings only (the Phase 5 review, C-S2)', () => {
     const changed = { v: 1, type: 'settings/changed', settings: { panel: 'side',
-      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn },
+      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
+        submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip },
       llm: { tiebreak: true, classify: true, drafts: false, answers: true, confirmDrafts: false,
         whenForbidden: 'profile-only' }, offerToSaveAnswers: true } };
     expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);

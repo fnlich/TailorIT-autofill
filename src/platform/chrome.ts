@@ -214,6 +214,16 @@ export function createWorkerPlatform(): WorkerPlatform {
           return false;
         }
       },
+      async hostOf(tabId) {
+        try {
+          const url = (await browser.tabs.get(tabId)).url;
+          if (url === undefined) return null;
+          const parsed = new URL(url);
+          return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.hostname.toLowerCase() : null;
+        } catch {
+          return null;
+        }
+      },
     },
     storage: { local: area(browser.storage.local), session: area(browser.storage.session) },
     sidePanel: {

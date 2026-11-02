@@ -2,6 +2,9 @@
  * The Edit with AI layer (ui/ai-edits.ts) in the page UI: one named button per item, inside its box's bottom-left
  * corner, nothing IntersectionObserver v2 would read as unseen (no transform, opacity, filter or will-change, hover and
  * focus included), widening to its words on hover, and only the person's trusted click on a visible button counts.
+ * v3 Phase 3b: the button opens its instruction box ("Tell me what to add, change or improve", 750 characters), whose
+ * Generate (or Enter) asks for the rewrite with what the person typed, and whose words a page's bubbling listeners never
+ * hear; the box says what came of it, a refusal for a sensitive instruction among them.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
@@ -24,12 +27,20 @@ function setUp() {
   form.append(box);
   document.body.append(form);
   const edits: string[] = [];
+  const instructions: string[] = [];
+  let said: string | null = null;
   const ui = mountPageUi(document, { onLauncher: () => undefined, onPolicyChoice: () => undefined,
-    onAiEdit: (key) => edits.push(key) });
+    onAiEdit: (key, instruction) => {
+      edits.push(key);
+      instructions.push(instruction);
+      return Promise.resolve(said);
+    } });
   mounted.push(ui);
   ui.anchorTo(form);
   ui.setAiEdits([{ key: 'why', elements: [box] }]);
-  return { ui, box, edits };
+  return { ui, box, edits, instructions, say: (text: string | null) => {
+    said = text;
+  } };
 }
 
 async function trustedClick(ui: PageUi, target: Element): Promise<void> {
@@ -80,9 +91,19 @@ describe('the Edit with AI layer', () => {
     await vi.waitFor(() => expect(ui.visibleNow(button)).toBe(true));
     button.click();
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(ui.aiPrompt).toBeNull();
     expect(edits).toEqual([]);
     await trustedClick(ui, button);
+    await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
+    const prompt = ui.aiPrompt!;
+    await vi.waitFor(() => expect(ui.visibleNow(prompt.generate)).toBe(true));
+    // A script's click on Generate asks for nothing.
+    prompt.generate.click();
+    expect(edits).toEqual([]);
+    await trustedClick(ui, prompt.generate);
     await vi.waitFor(() => expect(edits).toEqual(['why']));
+    // A rewrite written closes the box.
+    await vi.waitFor(() => expect(ui.aiPrompt).toBeNull());
     // Busy: its rewrite is on its way; the same button stays, disabled.
     ui.setAiEdits([{ key: 'why', elements: [box], busy: true }]);
     expect(ui.aiEditButtons[0]).toBe(button);
@@ -91,5 +112,41 @@ describe('the Edit with AI layer', () => {
     ui.setAiEdits([]);
     expect(ui.aiEditButtons).toHaveLength(0);
     expect(button.isConnected).toBe(false);
+  });
+});
+
+describe('Edit with AI’s instruction box (v3 Phase 3b)', () => {
+  it('sends what the person typed, says a refusal, and keeps the words from the page’s bubbling listeners', async () => {
+    const { ui, edits, instructions, say } = setUp();
+    const heard: string[] = [];
+    const listen = (event: Event) => heard.push(event.type);
+    for (const type of ['keydown', 'keyup', 'input']) document.addEventListener(type, listen);
+    try {
+      const button = ui.aiEditButtons[0]!;
+      await vi.waitFor(() => expect(ui.visibleNow(button)).toBe(true));
+      await trustedClick(ui, button);
+      await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
+      const prompt = ui.aiPrompt!;
+      expect(prompt.textarea.maxLength).toBe(750);
+      expect(prompt.textarea.placeholder).toBe(COPY.aiEdit.placeholder);
+      prompt.textarea.focus();
+      await userEvent.keyboard('Make it shorter');
+      expect(heard).toEqual([]);
+      say(COPY.aiEdit.outcomes.sensitive);
+      await vi.waitFor(() => expect(ui.visibleNow(prompt.generate)).toBe(true));
+      // Enter generates; the refusal is said in the box, which stays open.
+      await userEvent.keyboard('{Enter}');
+      await vi.waitFor(() => expect(edits).toEqual(['why']));
+      expect(instructions).toEqual(['Make it shorter']);
+      await vi.waitFor(() => expect(prompt.status.textContent).toBe(COPY.aiEdit.outcomes.sensitive));
+      expect(ui.aiPrompt).toBe(prompt);
+      // Escape closes it, and nothing it held is kept.
+      prompt.textarea.focus();
+      await userEvent.keyboard('{Escape}');
+      expect(ui.aiPrompt).toBeNull();
+      expect(prompt.textarea.value).toBe('');
+    } finally {
+      for (const type of ['keydown', 'keyup', 'input']) document.removeEventListener(type, listen);
+    }
   });
 });

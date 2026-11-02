@@ -21,7 +21,8 @@ const begin = (worker: TestWorker, overrides: Record<string, unknown> = {}, send
 const policyHit = (worker: TestWorker, patternId: string | null, applicationKey = LEVER_KEY, sender = contentSender()) =>
   worker.deliver({ v: 1, type: 'policy/hit', applicationKey, patternId }, sender);
 const CONTENT_SETTINGS = { panel: DEFAULT_SETTINGS.panel, llm: DEFAULT_SETTINGS.llm,
-  modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn },
+  modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
+    submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip },
   offerToSaveAnswers: DEFAULT_SETTINGS.offerToSaveAnswers };
 const withPosting = (postingText: string) => ({ json: { ...goldens.lookup, job: { ...goldens.lookup.job, postingText } } });
 
@@ -227,8 +228,9 @@ describe('run/begin', () => {
     const modes = { ...DEFAULT_SETTINGS.modes, next: 'auto' as const, afterPageTurn: 'manual' as const };
     await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS, panel: 'in-page', modes } },
       pageSender('options.html'));
-    // The frame hears only the modes it acts on (v3 Phase 3 review).
+    // The frame hears only the modes it acts on (v3 Phase 3 review; v3 Phase 4: Submit and its skip rules).
     expect(await begin(worker)).toMatchObject({ ok: true, data: { settings: { panel: 'in-page',
-      modes: { next: 'auto', afterPageTurn: 'manual' }, llm: DEFAULT_SETTINGS.llm } } });
+      modes: { next: 'auto', afterPageTurn: 'manual', submit: 'manual', agentSkip: DEFAULT_SETTINGS.modes.agentSkip },
+      llm: DEFAULT_SETTINGS.llm } } });
   });
 });

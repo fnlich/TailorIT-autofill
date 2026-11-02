@@ -24,7 +24,8 @@
  *    the step it was on (trigger 'resume', RESUMED by the load), its attempts counted, so the step after two attempts
  *    goes to review with step-retry-limit and writes nothing. 'continue' (paused, at review, or older): a run reports
  *    what the RunState shows and the launcher offers Continue. 'none': nothing. On the platform's confirmation page
- *    the RunState of the application is marked done (SUBMITTED): the person submitted.
+ *    the RunState of the application is marked done (SUBMITTED), once the worker took it as the sign of a Submit this
+ *    tab armed (v3 Phase 4, below).
  * A run rests at review, at a pause or while it waits for the person's Next (orchestrator.ts); a run that rests and
  * watches the step is replaced by the next Fill. Fill always starts a fresh RunState; Continue starts the next run from
  * the last one's (CONTINUE after a pause, RESUMED by the person after an offer), with what it carries (RunCarry: the
@@ -62,6 +63,15 @@
  * place and hiding from frame/hello's answer and launcher/prefs, the person's drag and hide sent as launcher/place and
  * launcher/hide, and panel/side (the browser's side panel shows this tab: the tab hides meanwhile). frame/hello also says
  * whether the form asks for a cover letter (a file or text box its label names one), so the side panel shows that row.
+ * v3 Phase 4: run/press (the side panel's "Continue to the next page" or "Submit application", from the worker alone)
+ * goes to the current run (FillRun.press, press.ts); the in-page panel's own buttons, on the person's trusted click
+ * there, do the same. A Submit pressed (the person's trusted click on the adapter's own Submit, or a trusted submit of
+ * its form; the panel's press; Submit mode Auto's) is armed: submit/armed tells the worker, and the document watches
+ * for its platform's sign that it was sent (submitted.ts): Ashby's success message, Greenhouse's confirmation, drawn
+ * in place, or the confirmation page an address change shows. That sign, and a confirmation page a new document opens
+ * on, goes to the worker as submit/detected, which takes it only for an application this tab armed (never page text
+ * alone); then the run is done (SUBMITTED), or the stored RunState is. A press of ours that nothing confirmed within
+ * SUBMIT_CONFIRM_MS leaves the review's submit-unconfirmed notice.
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -77,17 +87,21 @@
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { companyOfUrl, scopeOf } from '../adapters/company';
 import type { Adapter } from '../adapters/types';
+import type { Platform } from '../core/enums';
 import { reduceRun, resumeMode, type RunEvent } from '../core/steps/machine';
 import type { BaseKey, FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
 import { scan, toFieldSpec } from '../dom/scan';
-import type { Cancel } from '../dom/time';
+import { monotonicNow, startDeadline, type Cancel } from '../dom/time';
 import { visibleText } from '../dom/visible-text';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
-import { WorkerToContentSchema, type LauncherPrefs, type PolicyDecision } from '../messaging/schemas';
+import {
+  WorkerToContentSchema, type LauncherPrefs, type PolicyDecision, type PressAnswer, type StepTarget, type SubmitEvidence,
+  type SubmitPresser,
+} from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
 import { COPY } from '../shared/copy';
@@ -101,11 +115,17 @@ import {
   FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
 import { readPostingPage } from './policy';
+import { newSuccessSign, signsOf, SUBMIT_CONFIRM_MS, type PressSnapshot } from './submitted';
+import { refusalAfter } from './press';
 import { createReportLimiter } from './report';
 import { showField } from './targets';
 import { TouchLog } from './touches';
 import { mountPageUi, type PageUi } from './ui/page-ui';
 import { createValueHasher, type ValueHasher } from './values';
+
+/** The worker's script, as the built extension names it (wxt: entrypoints/background.ts): run/press is taken only from
+ *  a sender at that address. */
+const WORKER_SCRIPT_PATH = '/background.js';
 
 /** How the runtime is set up; every part defaults to the real one. */
 export interface RuntimeOptions extends RunOptions {
@@ -115,6 +135,8 @@ export interface RuntimeOptions extends RunOptions {
   adapters?: (url: URL) => Adapter[];
   /** Whether this frame is the top one (read from its window by default). */
   isTop?: boolean;
+  /** How long a Submit's confirmation is waited for in this document (SUBMIT_CONFIRM_MS by default; tests pass less). */
+  submitConfirmMs?: number;
 }
 
 /** The running content script, as tests drive it. */
@@ -265,7 +287,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // The side panel's job card (v2, job-relay.ts): relayed with nothing in either answer, and the custom question's
       // job text.
       case 'job/refresh':
-        return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null);
+        // A form of ours, or (v3 Phase 3b) a recognised posting page with no form, whose card the worker reads.
+        return stopped ? refuse('expired') : relayJob(channel, msg.action, page !== null || app?.page === 'posting');
       case 'run/skip':
         return current?.skipField(msg.fieldKey as FieldKey) === true ? ok({}) : refuse('expired');
       case 'launcher/prefs':
@@ -276,6 +299,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         sideOpen = msg.open;
         ui?.setSidePanel(sideOpen);
         return ok({});
+      case 'run/press':
+        // The worker's alone (the review): an extension page's message never presses the page's Next or Submit; the
+        // worker relays the side panel's only while the frame's report offers that button.
+        if (!fromWorker(sender)) return refuse('bad_sender');
+        return ok(await pressFor(msg.target, msg.confirmed));
       case 'job/postingText': {
         // The form's fields too (the Phase G review, MINOR 5): an "I did not use AI" statement on it keeps the side
         // panel's Write it now from writing before a run has said so.
@@ -321,6 +349,178 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     } catch {
       return false;
     }
+  }
+
+  // ── Next and Submit, and the platform's confirmation (v3 Phase 4) ───────────────────────────────────────────────
+
+  /** The panel's Next or Submit (run/press, or the in-page panel's trusted click), for the current run. */
+  async function pressFor(target: StepTarget, confirmed: boolean): Promise<PressAnswer> {
+    if (stopped || current === null || pageNow() === null) return { outcome: 'gone' };
+    return current.press(target, confirmed);
+  }
+
+  /** Whether a message to this frame came from the extension's worker itself (its script's address), not from one of
+   *  the extension's pages. */
+  function fromWorker(sender: Sender): boolean {
+    if (sender.url === undefined) return false;
+    try {
+      const at = new URL(sender.url);
+      return at.hostname === platform.runtime.id && at.pathname === WORKER_SCRIPT_PATH;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The steps Submit mode Auto pressed in this document (RunEnv.autoPressed): once each, whichever run. */
+  const autoPressed = new Set<string>();
+
+  /** A Submit armed in this document (the review, M1 and M6): when, by whom, the application and platform it was
+   *  pressed for (read at the press, so a confirmation shown at an address the parser does not read still counts), the
+   *  form root and adapter it was pressed on, the platform's success signs the page already showed then (never taken as
+   *  this Submit's), and how to end its watch. */
+  interface ArmedSubmit {
+    at: number;
+    by: SubmitPresser;
+    applicationKey: string;
+    platform: Platform;
+    root: Element;
+    adapter: Adapter;
+    before: ReadonlySet<Element>;
+    stopWatch(): void;
+  }
+  let armed: ArmedSubmit | null = null;
+  /** The worker's answer to the latest submit/armed: a sign seen at once waits for it, so the worker holds the arm
+   *  before it hears the sign. */
+  let armedHeard: Promise<unknown> = Promise.resolve();
+
+  /** An armed Submit's watch ends without a confirmation: the run no longer waits. `how`: the page refused it (its
+   *  count), nothing came in SUBMIT_CONFIRM_MS, or a newer press took its place. */
+  function endArm(record: ArmedSubmit, how: { refused: number } | 'unconfirmed' | 'replaced'): void {
+    record.stopWatch();
+    if (armed === record) armed = null;
+    // A newer press took its place: that one's watch speaks for the run now.
+    if (how === 'replaced') return;
+    if (typeof how === 'object') current?.submitRefused(how.refused);
+    // The person's own click on the page is theirs to follow; a press of ours says it saw nothing.
+    else if (record.by !== 'page') current?.submitUnconfirmed();
+    else current?.submitWatchEnded();
+  }
+
+  /** A Submit of the application was pressed (module header): the worker is told, and the document watches for the
+   *  platform's sign until SUBMIT_CONFIRM_MS (a press of ours that nothing confirms then leaves its notice), and for
+   *  the page's refusal PRESS_REFUSAL_MS after the press (its errors, the fields its form marked, its failure message),
+   *  which ends the wait at once. `runId`: the run that filled the form, when there is one. */
+  function arm(by: SubmitPresser, runId?: string, before?: PressSnapshot): void {
+    // What the page showed at the press: its click may have moved it since (a confirmation drawn in place, an address
+    // the parser does not read), which is the sign this arm waits for.
+    const at = before ?? (app === null || page === null ? null : { applicationKey: app.applicationKey,
+      platform: app.platform, root: page.root, adapter: page.adapter, signs: new Set(signsOf(doc, app.platform)) });
+    if (stopped || at === null || !channel.valid()) return;
+    log('content.submit-armed', { page: by === 'page', panel: by === 'panel', auto: by === 'auto' });
+    // The resume is named to the tracker only when the run's own upload row verified on this form.
+    const resume = runId !== undefined && current !== null && current.begunAs === runId && current.resumeAttached();
+    armedHeard = channel.request({ v: 1, type: 'submit/armed', applicationKey: at.applicationKey, by,
+      ...(runId === undefined ? {} : { runId }), ...(resume ? { resume: true as const } : {}) }).catch(() => undefined);
+    if (armed !== null) endArm(armed, 'replaced');
+    const view = doc.defaultView;
+    const watch = new AbortController();
+    lifetime.signal.addEventListener('abort', () => watch.abort(), { once: true, signal: watch.signal });
+    let cancelTimer: Cancel = () => undefined;
+    const observer = view === null ? null : new view.MutationObserver(() => check());
+    const record: ArmedSubmit = { at: platform.now(), by, applicationKey: at.applicationKey, platform: at.platform,
+      root: at.root, adapter: at.adapter, before: at.signs, stopWatch: () => {
+        observer?.disconnect();
+        cancelTimer();
+        watch.abort();
+      } };
+    armed = record;
+    const check = () => {
+      if (armed !== record || stopped) return record.stopWatch();
+      if (newSuccessSign(doc, record.platform, record) === null) return;
+      record.stopWatch();
+      armed = null;
+      void detected('success-message', record);
+    };
+    observer?.observe(doc.documentElement, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['class', 'style', 'hidden'] });
+    cancelTimer = startDeadline(options.submitConfirmMs ?? SUBMIT_CONFIRM_MS, () => {
+      if (armed === record) endArm(record, 'unconfirmed');
+    }, lifetime.signal);
+    // The page's refusal, read PRESS_REFUSAL_MS after the press (the invalid events its form fires in the person's own
+    // click are heard from now on).
+    void refusalAfter({ doc, adapter: at.adapter, root: at.root }, watch.signal).then((count) => {
+      if (armed === record && count > 0) endArm(record, { refused: count });
+    });
+    check();
+  }
+
+  /** The platform's sign was seen (module header): the worker takes it only for an application this tab armed; then the
+   *  run is done, or the stored RunState is. `record`: the Submit armed in this document that it follows (its
+   *  application, read at the press); none on a new document (the confirmation page), whose own address names it. */
+  async function detected(evidence: SubmitEvidence, record?: ArmedSubmit): Promise<void> {
+    const applicationKey = record?.applicationKey ?? app?.applicationKey ?? null;
+    if (stopped || applicationKey === null) return;
+    log('content.submit-detected', { page: evidence === 'confirmation-page' });
+    await armedHeard;
+    if (stopped) return;
+    const answer = await channel.request({ v: 1, type: 'submit/detected', applicationKey, evidence });
+    if (!answer.ok || stopped) return;
+    if (armed !== null) {
+      armed.stopWatch();
+      armed = null;
+    }
+    if (current !== null && current.runState !== null && current.runState.applicationKey === applicationKey) {
+      await current.submittedSeen();
+      return;
+    }
+    await markSubmitted(applicationKey);
+  }
+
+  /** Whether the address is the platform's page after submitting (Lever's /thanks, Greenhouse's /confirmation). */
+  function onConfirmationPage(): boolean {
+    return app?.page === 'confirmation';
+  }
+
+  /** When the person last pressed Enter in a control of the form (monotonic ms): the browser's submit that follows an
+   *  Enter is theirs. The submit event itself is trusted whoever's click caused it, a page's own untrusted click() and
+   *  the extension's press included, so it counts only after the person's own Enter. */
+  let enterAt = Number.NEGATIVE_INFINITY;
+  /** How soon after the person's Enter a form's submit is taken as theirs. */
+  const ENTER_SUBMIT_MS = 1_000;
+
+  /** The person's trusted click on the adapter's own Submit, or their Enter in a box of the form that submits it. */
+  function personSubmitted(event: Event): void {
+    if (!event.isTrusted || stopped) return;
+    const on = page;
+    if (on === null) return;
+    const path = event.composedPath();
+    if (event.type === 'keydown') {
+      if ((event as KeyboardEvent).key === 'Enter' && path.includes(on.root)) enterAt = monotonicNow();
+      return;
+    }
+    if (event.type === 'submit') {
+      if (path.includes(on.root) && monotonicNow() - enterAt <= ENTER_SUBMIT_MS) arm('page', ownRun(on.app));
+      return;
+    }
+    if ((event as MouseEvent).button !== 0) return;
+    let submit: HTMLElement | null = null;
+    try {
+      submit = on.adapter.submitButton?.(on.root) ?? null;
+    } catch {
+      submit = null;
+    }
+    if (submit !== null && path.includes(submit)) arm('page', ownRun(on.app));
+  }
+
+  /** The run that filled this application's form, when one did (its id): the person's own Submit carries it, so the
+   *  tracker hears the job and resume that run knew (the review). */
+  function ownRun(of: ApplicationRef): string | undefined {
+    const run = current;
+    if (run === null || run.begunAs === null || run.runState === null) return undefined;
+    return run.runState.applicationKey === of.applicationKey ? run.begunAs : undefined;
+  }
+  for (const type of ['click', 'submit', 'keydown'] as const) {
+    doc.addEventListener(type, personSubmitted, { capture: true, signal: lifetime.signal });
   }
 
   // ── The in-page panel (Phase 6) ─────────────────────────────────────────────────────────────────────────────────
@@ -402,6 +602,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       hasher: () => (documentHasher ??= createValueHasher()),
       drafts,
       answers,
+      // v3 Phase 4: a Submit this run pressed is armed here, so its platform's sign is watched for.
+      submitPressed: (by, runId, before) => arm(by, runId, before ?? undefined),
+      beforePress: () => (app === null || page === null ? null : { applicationKey: app.applicationKey,
+        platform: app.platform, root: page.root, adapter: page.adapter, signs: new Set(signsOf(doc, app.platform)) }),
+      autoPressed,
     }, request);
     current = run;
     lastRows = new Map();
@@ -510,10 +715,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     startRun({ trigger: 'resume', dryRun: false, from: { state, event: { type: 'RESUMED', by: 'load', sameTab: true } } });
   }
 
-  /** The platform's page after submitting: the application's RunState is done (the person submitted). */
-  async function markSubmitted(): Promise<void> {
-    if (app?.page !== 'confirmation') return;
-    const state = await storedRunState(app.applicationKey);
+  /** The application's stored RunState is done (v3 Phase 4: once the worker took the platform's sign after a Submit
+   *  this tab armed). */
+  async function markSubmitted(applicationKey: string): Promise<void> {
+    const state = await storedRunState(applicationKey);
     if (state === null) return;
     const next = reduceRun(state, { type: 'SUBMITTED' }, { autoAdvance: false, now: platform.now() });
     if (next.state === state) return;
@@ -585,9 +790,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           else startRun({ trigger: 'launcher', dryRun: false });
         },
         // Edit with AI (the owner's amendments): the current run rewrites that field, if it may now.
-        onAiEdit(key) {
-          if (!channel.valid()) return;
-          void current?.rewriteField(key as FieldKey).catch(() => undefined);
+        onAiEdit(key, instruction) {
+          if (!channel.valid() || current === null) return Promise.resolve(COPY.aiEdit.outcomes.refused);
+          return current.rewrite(key as FieldKey, instruction).then((outcome) => (outcome === 'rewritten' ? null
+            : COPY.aiEdit.outcomes[outcome]), () => COPY.aiEdit.outcomes.failed);
         },
         onPolicyChoice(choice) {
           if (choice === 'accepted') current?.accept();
@@ -614,6 +820,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
             ? COPY.panel.draftConfirmed : COPY.panel.confirmFailed),
           saveAnswer: async (key) => saveFromPanel(key as FieldKey),
           closed: () => closePanel(),
+          // v3 Phase 4: the dock's Next and Submit, for this frame's own run.
+          press: (target, confirmed) => pressFor(target, confirmed),
         },
       });
       ui.anchorTo(page.root);
@@ -692,6 +900,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (told !== (page !== null) || page !== null) void hello().catch(() => undefined);
     void readPosting().catch(() => undefined);
     watchLateForm();
+    // v3 Phase 4: the platform's page after submitting, shown by an address change in this document.
+    if (app?.page === 'confirmation') void detected('confirmation-page').catch(() => undefined);
   }
 
   function handle(): ContentRuntime {
@@ -757,7 +967,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       if (view !== null) watchLocation(view, readHref, onAddress, lifetime.signal);
       watchLateForm();
       await resumeStored();
-      await markSubmitted();
+      // The platform's page after submitting (v3 Phase 4): the worker takes it only after a Submit this tab armed.
+      if (onConfirmationPage()) await detected('confirmation-page');
+      // e2e only: the document's start-up is over, its confirmation page's sign told and answered.
+      if (__E2E__) await platform.runtime.send({ v: 1, type: 'e2e/probe', settled: true }).catch(() => undefined);
     }
   } catch (failure) {
     if (!(failure instanceof Invalidated)) throw failure;

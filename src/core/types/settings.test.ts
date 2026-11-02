@@ -16,7 +16,7 @@ describe('settings version 4', () => {
   it('defaults every mode as the owner chose: Manual Next, Submit and sign-in; a new step filled; every consent; all AI answers', () => {
     expect(DEFAULT_SETTINGS.version).toBe(4);
     expect(DEFAULT_SETTINGS.modes).toEqual({ signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual',
-      consents: 'all', ai: 'all', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
+      recordOwn: 'on', consents: 'all', ai: 'all', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
     expect(DEFAULT_SETTINGS.view).toBe('expanded');
     // The defaults are copies: changing one never changes the other.
     expect(DEFAULT_SETTINGS.modes).not.toBe(DEFAULT_MODES);

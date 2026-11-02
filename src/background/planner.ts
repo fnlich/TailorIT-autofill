@@ -111,6 +111,8 @@ export interface PlannerDeps {
    *  cover-letter upload waits until the frame stops waiting (tests that plan no letter). */
   letters?: LetterDeps;
   now(): number;
+  /** v3 Phase 3b: whether the person chose "Apply without resume" for a tab (job-cards.ts): its runs attach none. */
+  withoutResume?(tabId: number, applicationKey: string | null): boolean;
 }
 
 const profileRefusal = (failure: 'not-connected' | 'unavailable' | 'internal') =>
@@ -167,6 +169,9 @@ export function createPlanner(deps: PlannerDeps) {
     const planned = new Set<string>(planKeys);
     const resume = context.specs.some((spec) => spec.kind === 'file' && planned.has(spec.key))
       ? await deps.chooseResume(run.runId, url) : null;
+    // v3 Phase 3b: "Apply without resume": the resume upload is left for the person, and nothing is attached.
+    const tabOf = deps.runs.memo(run.runId).tabId;
+    const withoutResume = tabOf !== undefined && deps.withoutResume?.(tabOf, run.applicationKey) === true;
     const ai = aiOf(run);
     const settings = await deps.settings.get();
     await deps.cache?.ready();
@@ -186,7 +191,7 @@ export function createPlanner(deps: PlannerDeps) {
       specs: context.specs,
       planKeys,
       canaries: context.canaries,
-      profile: deps.core.attachResume(profile.value.profile, resume),
+      profile: deps.core.attachResume(profile.value.profile, withoutResume ? null : resume),
       sensitiveState: state,
       savedAnswers: profile.value.savedAnswers,
       ...(company === null ? {} : { company }),
@@ -203,6 +208,7 @@ export function createPlanner(deps: PlannerDeps) {
       ...(aiUsed ? { aiUsed: true } : {}),
       ...(context.rewrite === undefined ? {} : { rewrite: context.rewrite }),
       ...(letter === undefined ? {} : { coverLetter: letter }),
+      ...(withoutResume ? { withoutResume: true } : {}),
     });
     try {
       const memory = loaded.value.sensitiveState;
@@ -271,7 +277,7 @@ export function createPlanner(deps: PlannerDeps) {
         written: run.letterWritten === true,
       });
     }
-    memo.letter.wait(wanted.keys, context);
+    memo.letter.wait(wanted.keys, context, wanted.text === true && !run.dryRun);
     return wanted.keys;
   }
 
@@ -446,11 +452,12 @@ export function createPlanner(deps: PlannerDeps) {
         return refuse('bad_message');
       }
       const key = message.fieldKey as unknown as FieldKey;
+      const instruction = message.instruction?.trim() ?? '';
       const asked: AskContext = { specs: message.specs as unknown as FieldSpec[], canaries: message.canaries,
         ...(message.postingText === undefined ? {} : { postingText: message.postingText }),
         ...(message.revealEdges === undefined ? {} : {
           revealEdges: message.revealEdges as unknown as Array<[BaseKey, BaseKey]> }),
-        rewrite: key };
+        rewrite: key, ...(instruction === '' ? {} : { instruction }) };
       aiOf(run).forget([key]);
       const planned = await planOnce(run, from.url, asked, [key]);
       if ('refusal' in planned) return planned.refusal;

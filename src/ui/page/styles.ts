@@ -5,6 +5,7 @@
  * with white cards; every colour comes from src/shared/palette.ts through the report's tokens.
  */
 import { NEUTRAL } from '../../shared/palette';
+import { PROFILE_CSS } from '../panel/profile-styles';
 import { adoptStyles, REPORT_CSS } from '../report/styles';
 
 export const PAGE_CSS = `
@@ -16,6 +17,7 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-page a:hover { color: var(--tia-ink-hover); }
 .tia-page a:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; border-radius: 4px; }
 .tia-page a.tia-button { color: var(--tia-fg); text-decoration: none; }
+.tia-page a.tia-button--quiet { color: var(--tia-ink); }
 .tia-page .tia-strip a { color: inherit; }
 
 .tia-panel { display: flex; flex-direction: column; gap: 12px; max-width: 480px; margin: 0 auto; padding: 16px 16px 28px; }
@@ -120,11 +122,17 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 }
 .tia-docs > * + * { margin-top: 10px; }
 .tia-docs[hidden] { display: none; }
-.tia-page a.tia-docs__link {
+.tia-page a.tia-docs__link, .tia-page button.tia-docs__link {
   display: flex; align-items: center; gap: 8px; margin: 0 -16px; padding: 10px 16px; color: var(--tia-fg);
   font-size: 13px; font-weight: 700; text-decoration: none;
 }
-.tia-page a.tia-docs__link:hover { background: var(--tia-hover); color: var(--tia-fg); }
+/* v3 Phase 3b: "Your autofill information" opens the panel's editor, a button drawn as the link row it replaces. */
+.tia-page button.tia-docs__link {
+  width: calc(100% + 32px); border: 0; border-radius: 0; background: none; font-family: var(--tia-font);
+  line-height: inherit; text-align: left; cursor: pointer;
+}
+.tia-page a.tia-docs__link:hover, .tia-page button.tia-docs__link:hover { background: var(--tia-hover); color: var(--tia-fg); }
+.tia-page button.tia-docs__link:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: -2px; }
 .tia-docs__label { flex: 1 1 auto; }
 .tia-docs__chevron { color: var(--tia-muted); }
 .tia-job__applied {
@@ -327,6 +335,56 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-table th, .tia-table td { padding: 4px 12px 4px 0; border-bottom: 1px solid var(--tia-line); text-align: left; }
 .tia-table__count { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* v3 Phase 3b: "Autofill for another job", "Apply without resume" and the resume's preview, "Ask TailorIT to support this
+   site"; v3 Phase 4: "Application submitted". */
+.tia-linkbutton {
+  justify-self: start; margin: 0; padding: 2px 0; border: 0; background: none; color: var(--tia-ink);
+  font: 600 13px/1.4 var(--tia-font); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.tia-linkbutton:hover { color: var(--tia-ink-hover); }
+.tia-linkbutton:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; border-radius: 4px; }
+.tia-input {
+  width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var(--tia-input); border-radius: var(--tia-r-control);
+  font: inherit; color: var(--tia-fg); background: var(--tia-bg);
+}
+.tia-input:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-another { display: grid; gap: 8px; }
+.tia-another__chosen { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 13px; }
+.tia-another__box { display: grid; gap: 8px; padding: 12px; border-radius: var(--tia-r-row); background: var(--tia-track); }
+.tia-another__box .tia-help { margin: 0; }
+.tia-another__form { display: grid; gap: 8px; }
+.tia-another__form .tia-button { justify-self: start; }
+.tia-another__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tia-another__item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--tia-r-control);
+  background: var(--tia-bg);
+}
+.tia-another__what { display: grid; flex: 1 1 auto; min-width: 0; }
+.tia-another__title { overflow-wrap: anywhere; }
+.tia-another__where { font-size: 12px; color: var(--tia-muted); overflow-wrap: anywhere; }
+.tia-preview { display: grid; gap: 8px; }
+.tia-preview__frame {
+  width: 100%; height: 520px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-control); background: var(--tia-bg);
+}
+.tia-preview__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tia-job__buttons { display: flex; flex: none; gap: 4px; }
+.tia-unsupported__ask { display: grid; gap: 6px; }
+.tia-unsupported__ask .tia-button { justify-self: start; }
+.tia-submitted {
+  display: grid; gap: 6px; padding: 14px 16px; border-radius: var(--tia-r-card); background: var(--tia-tone-success-bg);
+}
+.tia-submitted__title { display: flex; align-items: center; gap: 8px; margin: 0; font: 800 16px/1.3 var(--tia-font); }
+.tia-submitted__icon { color: var(--tia-tone-success-fg); }
+.tia-submitted__state { margin: 0; font-size: 13px; }
+.tia-submitted__job { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.tia-submitted__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The review: the disclosure shown again when it changed since the person connected, with I understand. */
+.tia-disclosure-changed { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--tia-line);
+  border-radius: var(--tia-r-card); background: var(--tia-tone-warning-bg); color: var(--tia-fg); }
+.tia-disclosure-changed p { margin: 0; font-size: 13px; }
+.tia-disclosure-changed__heading { margin: 0; font: 800 15px/1.3 var(--tia-font); }
+.tia-disclosure-changed .tia-button { justify-self: start; }
+
 @media (prefers-reduced-motion: reduce) {
   .tia-spin, .tia-skeleton { animation: none; }
 }
@@ -341,4 +399,5 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 export function adoptPageStyles(doc: Document): void {
   adoptStyles(doc, REPORT_CSS);
   adoptStyles(doc, PAGE_CSS);
+  adoptStyles(doc, PROFILE_CSS);
 }

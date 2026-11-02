@@ -23,7 +23,8 @@ import { createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import {
-  createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, framesOfTab, frameTarget, navOf, registerFrame,
+  cardFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, framesOfTab, frameTarget, navOf,
+  registerFrame,
 } from './frames';
 import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
 import { createLauncherStore, LAUNCHER_LIMIT } from './launcher';
@@ -33,6 +34,9 @@ import { createPanelHandlers, openSidePanel } from './panel';
 import { createPlanner } from './planner';
 import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
 import { createProfileCache, type ProfileCache } from './profile-cache';
+import { createProfileEditor, PROFILE_EDIT_LIMIT } from './profile-editor';
+import { createSiteRequests, SITE_REQUEST_LIMIT } from './site-requests';
+import { createSubmissions, SUBMIT_MESSAGE_LIMIT, type Submissions } from './submissions';
 import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
 import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
 import { createResumeChooser } from './resume-choice';
@@ -43,7 +47,7 @@ import { createRunRegistry, type RunRegistry } from './runs';
 import { createRunStateStore } from './runstate-store';
 import { channelOf, isConnectPage } from './senders';
 import { createServerClient } from './server-client';
-import { createSettingsStore, pushSettings } from './settings';
+import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
 import { createTelemetry } from './telemetry';
 import { systemTimers, type Timers } from './timers';
 import { bundledVocab } from './vocab';
@@ -97,11 +101,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let jobCards: JobCards | null = null;
   let panelReports: Reports | null = null;
   let letterRows: ReturnType<typeof createPanelLetters> | null = null;
+  let submissions: Submissions | null = null;
   const keeper = createTokenKeeper(platform, () => {
     profiles?.drop();
     runRegistry?.dropTokenData();
     jobCards?.dropTokenData();
     letterRows?.dropTokenData();
+    submissions?.dropTokenData();
     // Every side panel reads the connection again and drops the card it holds, whichever window the change came from.
     panelReports?.tellPanels('connection');
   });
@@ -135,7 +141,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const telemetry = createTelemetry({ local, session, settings });
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, shownLimit, telemetry,
-    check: (tabId) => checkTab(tabId), sideShown: (tabId, open) => void tellTopFrame(tabId, { v: 1, type: 'panel/side', open }) });
+    check: (tabId) => checkTab(tabId), sideShown: (tabId, open) => void tellTopFrame(tabId, { v: 1, type: 'panel/side', open }),
+    submitted: async (tabId) => submissions?.stateOf(tabId) });
   // The launcher's place and hiding per site (v3 Phase 3): storage.local, a hash of the host only.
   const launchers = createLauncherStore(local);
   const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
@@ -151,7 +158,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // One chooser for the planner and the resume port: it follows the token and the tab's resume choice (v2: a Change
   // mid-run applies to every file not uploaded yet).
   const chooseResume = createResumeChooser({ runs, server, profiles: profileCache, generation: () => keeper.generation,
-    chosen: (tabId) => jobs.chosen(tabId) });
+    chosen: (tabId) => jobs.chosen(tabId), chosenJob: (tabId, applicationKey) => jobs.chosenJob(tabId, applicationKey) });
   // The LLM steps' tasks on TailorIT (Phase 4), shared by every run; each run keeps its own questions (ai-tasks.ts).
   const aiTasks = createAiTasks({ server, timers, now });
   // The accepted-match cache (Phase 6): storage.session, in memory; a match goes in once the field was unchanged at the
@@ -161,7 +168,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // Cover letters (Phase G): a run asks TailorIT for its letter once (cover-letters.ts), and the resume port sends it.
   const letters = { server, timers, now };
   const planner = createPlanner({ runs, profiles: profileCache, settings, core, chooseResume, ai: aiTasks,
-    aiTaskIds: runStates, cache: matchCache, accepts, letters, now });
+    aiTaskIds: runStates, cache: matchCache, accepts, letters, now,
+    withoutResume: (tabId, applicationKey) => jobs.without(tabId, applicationKey) });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes),
     choose: chooseResume, letters });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId) });
@@ -177,6 +185,34 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     profileOnlyHeld: async (tabId) => (await reports.ofTab(tabId)).some(fillsFromProfileOnly),
     dryRunHeld: async (tabId) => latestReport(await reports.ofTab(tabId))?.mode === 'dry-run' });
   letterRows = panelLetters;
+  // v3 Phase 3b: the side panel's "Your autofill information" and "Ask TailorIT to support this site".
+  const profileEditor = createProfileEditor({ server, profiles: profileCache, connected: () => auth.connected(),
+    scopes: async () => (await keeper.current())?.scopes ?? [],
+    limit: createRateLimit(PROFILE_EDIT_LIMIT.count, PROFILE_EDIT_LIMIT.windowMs, now) });
+  const siteRequests = createSiteRequests({ server, tabs: platform.tabs, connected: () => auth.connected(),
+    limit: createRateLimit(SITE_REQUEST_LIMIT.count, SITE_REQUEST_LIMIT.windowMs, now) });
+  // v3 Phase 4: a Submit pressed, its confirmation, and the tracker told.
+  const submitted = createSubmissions({ server, session, runs, jobs, generation: () => keeper.generation, now,
+    limit: createRateLimit(SUBMIT_MESSAGE_LIMIT.count, SUBMIT_MESSAGE_LIMIT.windowMs, now),
+    recordOwn: async () => (await settings.get()).modes.recordOwn === 'on',
+    frameKey: async (tabId, frameId) => (await frameEntry(session, tabId, frameId))?.applicationKey ?? null,
+    disclosed: () => auth.disclosed(),
+    changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined) });
+  submissions = submitted;
+  /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
+   *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
+  async function previewResumeOf(tabId: number) {
+    const frame = cardFrameOf(await framesOfTab(session, tabId));
+    if (jobs.without(tabId, frame?.applicationKey ?? null)) return null;
+    const id = jobs.chosen(tabId) ?? (await jobs.tabJob(tabId)).resume?.id ?? null;
+    if (id === null) return null;
+    const list = await server.resumes();
+    const item = list.ok ? list.value.items.find((entry) => entry.id === id) : undefined;
+    return item === undefined ? null : { id: item.id, fileKind: item.fileKind, fileName: item.fileName };
+  }
+  /** The content settings as they act now: Submit stays Manual until the person acknowledged the disclosure as it
+   *  reads now (the v3 Phase 4 review). */
+  const contentSettings = async () => contentSettingsOf(await settings.get(), { holdSubmit: !(await auth.disclosed()) });
   const beginDeps = {
     jobs,
     generation: () => keeper.generation,
@@ -188,7 +224,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     runs,
     runStates,
     policy,
-    settings,
+    settings: { ...settings, content: contentSettings },
     core,
   };
   const ownId = platform.runtime.id;
@@ -201,7 +237,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
    *  says no hello, keeps its run and report. */
   async function forgetDocument(tabId: number, frameId: number, documentId: string | null): Promise<void> {
     jobs.forgetDocument(tabId, frameId, documentId);
-    await Promise.all([reports.forgetDocument(tabId, frameId, documentId), runs.forgetDocument(tabId, frameId, documentId)]);
+    await Promise.all([reports.forgetDocument(tabId, frameId, documentId), runs.forgetDocument(tabId, frameId, documentId),
+      submitted.forgetDocument(tabId, frameId, documentId)]);
   }
 
   /** One lock per tab for the frame registry: a frame registering and a sweep forgetting one never interleave. */
@@ -275,11 +312,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       content: {
         ping: async () => ok({ pong: true as const }),
         'frame/hello': async (message, from) => {
-          const { previous, entry } = await lockTab(from.tabId, async () => ({
-            previous: await frameEntry(session, from.tabId, from.frameId),
-            entry: await registerFrame(session, { ...from, isTop: message.isTop, hasForm: message.hasForm, nav: message.nav,
-              ...(message.letter === true ? { letter: true } : {}) }, now()),
-          }));
+          const { previous, entry } = await lockTab(from.tabId, async () => {
+            const held = await frameEntry(session, from.tabId, from.frameId);
+            // The same document at an address no parser reads keeps the application it last showed (a Submit that
+            // moved the page there is still that application's).
+            const keep = held !== null && held.documentId === (from.documentId ?? null) ? held.applicationKey : undefined;
+            return { previous: held, entry: await registerFrame(session, { ...from, isTop: message.isTop,
+              hasForm: message.hasForm, nav: message.nav, ...(message.letter === true ? { letter: true } : {}),
+              ...(keep === undefined ? {} : { keepKey: keep }) }, now()) };
+          });
           const newDocument = previous === null || previous.documentId !== entry.documentId;
           // The document it left goes; anything this document began before its hello stays.
           if (previous !== null && newDocument) await forgetDocument(from.tabId, from.frameId, previous.documentId);
@@ -287,7 +328,21 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // another posting's now, so it goes and is read again; the document's run and report stay (the content
           // script ends a run whose application changed).
           if (previous !== null && !newDocument && navOf(previous) !== navOf(entry)) {
-            jobs.forgetDocument(from.tabId, from.frameId, entry.documentId);
+            // The same application at another address (its confirmation drawn in place, Ashby's tabs) keeps its card,
+            // when Chrome's address for the frame follows its moves (the tab's own); a subframe's may be its first.
+            if (previous.applicationKey !== entry.applicationKey || from.addressFrom !== 'tab') {
+              jobs.forgetDocument(from.tabId, from.frameId, entry.documentId);
+            }
+            // What the document saw submitted goes too, unless the address is the same application's (its confirmation
+            // page, drawn in place: the review, 20).
+            await submitted.moved(from.tabId, from.frameId, entry.documentId,
+              from.addressFrom === 'tab' ? entry.applicationKey ?? null : null);
+          }
+          // The job chosen and "Apply without resume" follow the application the tab's card frame shows (the review,
+          // M2): another application lets them go; its posting page, application page or confirmation keep them.
+          if (entry.hasForm || entry.posting === true || entry.confirmation === true) {
+            const card = cardFrameOf(await framesOfTab(session, from.tabId));
+            if (card !== null && card.frameId === entry.frameId) jobs.applicationShown(from.tabId, entry.applicationKey ?? null);
           }
           // A document the registry has not seen may mean others went (a top frame's new page takes its subframes).
           // The sweep asks them in the background, so the hello is answered at once.
@@ -298,10 +353,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           const connected = await auth.connected();
           // v3 Phase 3: a recognised job page (an application form of ours) is looked up as it loads, so the side
           // panel's card and match show at once; the card's own path, with its merge, rate limit and token checks.
-          if (lookupOnLoad && entry.hasForm && connected) void jobs.loadCard(from.tabId, from).catch(() => undefined);
+          // v3 Phase 3b: and so is a recognised posting page with no form (frames.ts postingAddress, the worker's own
+          // reading of the frame's address).
+          // The review: not until the person acknowledged the disclosure as it reads now.
+          if (lookupOnLoad && (entry.hasForm || entry.posting === true) && connected && (await auth.disclosed())) {
+            void jobs.loadCard(from.tabId, from).catch(() => undefined);
+          }
           // A top frame that loads beside an open side panel keeps its launcher hidden (v3 Phase 3 review): the panel's
           // panel/side came to the document before, and none comes now.
-          return ok({ frameId: from.frameId, connected, settings: await settings.content(),
+          return ok({ frameId: from.frameId, connected, settings: await contentSettings(),
             launcher: await launchers.prefsFor(from.url),
             ...(from.frameId === 0 && reports.sideShows(from.tabId) ? { side: true as const } : {}) });
         },
@@ -368,6 +428,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           await launchers.place(from.url, message.top);
           return ok({});
         },
+        // v3 Phase 4: a Submit pressed in the frame, and the platform's confirmation after it (submissions.ts).
+        'submit/armed': (message, from) => submitted.armed(message, from),
+        'submit/detected': (message, from) => submitted.detected(message, from),
         'launcher/hide': async (message, from) => {
           if (from.frameId !== 0) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);
@@ -382,9 +445,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         },
         ...(__E2E__
           ? {
-              'e2e/probe': async (message: { storageLocal: 'refused' | 'allowed' }) => {
+              'e2e/probe': async (message: { storageLocal?: 'refused' | 'allowed'; settled?: true }, from: ContentChannel) => {
                 const events = ((await session.get('e2e:events')) as unknown[] | undefined) ?? [];
-                await session.set({ 'e2e:events': [...events, { type: 'storage-local-probe', result: message.storageLocal }] });
+                const event = message.settled === true ? { type: 'content-settled', tabId: from.tabId, frameId: from.frameId }
+                  : { type: 'storage-local-probe', result: message.storageLocal };
+                await session.set({ 'e2e:events': [...events, event] });
                 return ok({});
               },
             }
@@ -427,11 +492,26 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           await tellLauncherPrefs(message.tabId, true);
           return ok({});
         },
+        // v3 Phase 3b: "Autofill for another job", "Ask TailorIT to support this site", "Your autofill information",
+        // "Apply without resume"; v3 Phase 4: the panel's Next and Submit.
+        'panel/jobSearch': (message) => jobs.search(message),
+        'panel/chooseJob': (message) => jobs.chooseJob(message),
+        'panel/siteRequest': (message) => siteRequests(message),
+        'panel/profile': (message) => profileEditor.read(message),
+        'panel/saveProfile': (message) => profileEditor.save(message),
+        'panel/withoutResume': (message) => jobs.setWithout(message),
+        'panel/press': (message) => panel.press(message),
+        // The review: Try again, when the tracker could not be told of a submitted application.
+        'panel/retryApplied': (message) => submitted.retry(message.tabId, async (tabId, frameId) => {
+          // After a worker restart the frame's address is not known (it is never stored): the card then reads afresh.
+          const frame = await frameEntry(session, tabId, frameId);
+          return frame === null ? null : { tabId, frameId, documentId: frame.documentId ?? undefined, url: '' };
+        }),
         'settings/get': async () => ok({ settings: await settings.get() }),
         'settings/save': async (message) => {
           const saved = await settings.save(message.settings);
           // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
-          await pushSettings({ session, tabs: platform.tabs }, saved);
+          await pushSettings({ session, tabs: platform.tabs }, saved, { holdSubmit: !(await auth.disclosed()) });
           // And every side panel (v2): the custom question follows the AI drafts switch.
           reports.tellPanels('settings');
           return ok({ settings: saved });
@@ -440,6 +520,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'auth/startPairing': () => auth.startPairing(),
         'auth/redeemCode': (message) => auth.redeemCode(message.code),
         'auth/disconnect': () => auth.disconnect(),
+        'auth/acknowledgeDisclosure': async () => {
+          const answer = await auth.acknowledgeDisclosure();
+          // A run in progress reads Submit mode as it acts now.
+          await pushSettings({ session, tabs: platform.tabs }, await settings.get());
+          reports.tellPanels('connection');
+          return answer;
+        },
         'runs/clear': async () => ok({ cleared: await runStates.clearAll() }),
         'telemetry/get': async () => ok({ counts: await telemetry.read() }),
         'telemetry/clear': async () => {
@@ -481,6 +568,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       reports.watch(port);
       return;
     }
+    // v3 Phase 3b: the side panel's resume preview, an extension page's port only.
+    if (port.name === 'preview' && channel?.kind === 'page') {
+      resume.acceptPreview(port, previewResumeOf, () => accessReady);
+      return;
+    }
     log('port.refused');
     port.disconnect();
   });
@@ -501,6 +593,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     letterLimit.forget(`${tabId}/`);
     jobs.forgetTab(tabId);
     panelLetters.forgetTab(tabId);
+    submitted.forgetTab(tabId);
     void Promise.all([
       forgetTabFrames(session, tabId),
       reports.forgetTab(tabId),

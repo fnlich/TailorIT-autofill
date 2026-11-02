@@ -25,7 +25,7 @@ import { DEGREE_LEVEL_RANK } from '../profile/degreeParse';
 import { placeText } from '../profile/canonicalize';
 import { normalize } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
-import type { FieldCategory, ProfilePath, RuleId, ValueOrigin } from '../types/intent';
+import { COVER_LETTER_TEXT_PATH, type FieldCategory, type ProfilePath, type RuleId, type ValueOrigin } from '../types/intent';
 import type { EducationEntry, ExperienceEntry, Profile, YearMonth, Ymd } from '../types/profile';
 import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
@@ -512,6 +512,12 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
         : value({ origin: fromProfile('coverLetter'), confidence: VALUE_EXPLICIT, file: 'cover-letter' });
     case 'file.other':
       return none('no-profile-value');
+    case 'freeText.coverLetter': {
+      // v3 Phase 3b: the run's cover letter as text, once the worker holds its words (planFrame waits for them).
+      const text = profile.coverLetter?.text;
+      return text === undefined ? none('no-profile-value', false)
+        : value({ origin: fromProfile(COVER_LETTER_TEXT_PATH), confidence: VALUE_EXPLICIT, text });
+    }
     default:
       return none('no-profile-value', false);
   }

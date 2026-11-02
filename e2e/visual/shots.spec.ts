@@ -13,6 +13,10 @@
  *   resume picker, and a custom question answered.
  * - Phase G: the job card's cover-letter row: "Written by AI when the form asks for one" with Write it now, Writing…,
  *   then Ready; the person's own letter; and a fill's review with the letter attached, marked "AI".
+ * - v3 Phases 3b and 4: the dock's "Submit application", its question while required fields are empty, "Application
+ *   submitted"; the wizard's "Continue to the next page"; "Autofill for another job" searched; the resume's preview;
+ *   "Apply without resume"; "Your autofill information"; a posting page's card; Edit with AI's instruction box; and
+ *   "Ask TailorIT to support this site" answered on an unsupported page; the review: the disclosure shown again.
  * - The page's own UI: the launcher at rest and at review, its notices and the policy card, the in-page panel open.
  * - The options page.
  * Every capture is in the light scheme with reduced motion and animations stopped, so a picture is the same each time.
@@ -27,6 +31,7 @@ import type { Extension } from '../helpers/extension.ts';
 import { expectation } from '../helpers/labels.ts';
 import { PageUi } from '../helpers/page-ui.ts';
 import { trap } from '../helpers/traps.ts';
+import { WIZARD } from '../helpers/wizard.ts';
 import { routesFile } from '../routes.ts';
 
 /** e2e/artifacts/shots, from this file's own folder: never from wherever the run was started (it is emptied first). */
@@ -382,6 +387,132 @@ test('v3 Phase 3: the launcher’s tab at the page’s edge, its hide menu, an u
   const unsupported = await sidePanel(ext, otherTab);
   await expect(unsupported.locator('[data-unsupported]')).toBeVisible();
   await shoot(unsupported, '29-side-panel-unsupported.png', 'Side panel: "Autofill isn’t supported on this page"');
+  await unsupported.locator('button[data-action="site-request"]').click();
+  await expect(unsupported.locator('[data-site-request]')).toBeVisible();
+  await shoot(unsupported, '29b-side-panel-site-request.png', 'Side panel: "Ask TailorIT to support this site", answered');
+});
+
+test('v3 Phase 4: the dock’s Submit, its question, Application submitted, and Continue to the next page', async ({ extContext, connected: ext, routeLog }) => {
+  const GREENHOUSE = (id: string) => `https://job-boards.greenhouse.io/tailoritfixture/jobs/38${id}`;
+  const filled = async (url: string, file: string) => {
+    routeLog.serve({ [url]: file });
+    const page = await extContext.newPage();
+    await page.goto(url);
+    const tabId = await ext.fill(page);
+    expect((await ext.settled(tabId)).status).toBe('review');
+    const panel = await sidePanel(ext, tabId);
+    await panel.bringToFront();
+    return { page, tabId, panel };
+  };
+
+  const ready = await filled(GREENHOUSE('01'), 'fixtures/synthetic/submit/greenhouse.html');
+  const submit = ready.panel.locator('button[data-step-action="submit"]');
+  await submit.scrollIntoViewIfNeeded();
+  await shoot(ready.panel, '40-side-panel-submit.png', 'Side panel: the dock’s "Submit application" after a fill');
+  await submit.click();
+  await expect(ready.panel.locator('[data-submitted="recorded"]')).toBeVisible();
+  await ready.panel.locator('[data-submitted]').scrollIntoViewIfNeeded();
+  await shoot(ready.panel, '41-side-panel-submitted.png', 'Side panel: "Application submitted", with Open tracker');
+
+  const empty = await filled(`${GREENHOUSE('02')}?badge`, 'fixtures/synthetic/submit/greenhouse.html');
+  await empty.panel.locator('button[data-step-action="submit"]').click();
+  await expect(empty.panel.locator('[data-step-confirm]')).toBeVisible();
+  await empty.panel.locator('[data-step-confirm]').scrollIntoViewIfNeeded();
+  await shoot(empty.panel, '42-side-panel-submit-confirm.png', 'Side panel: Submit while a required field is empty asks first');
+
+  const url = WIZARD.url('shots');
+  routeLog.serve({ [url]: WIZARD.file });
+  const wizard = await extContext.newPage();
+  await wizard.goto(url);
+  const tabId = await ext.fill(wizard);
+  await expect.poll(async () => (await ext.reports(tabId)).find((report) => report.frameId === 0)?.buttons?.next).toBe(true);
+  const panel = await sidePanel(ext, tabId);
+  await panel.bringToFront();
+  const next = panel.locator('button[data-step-action="next"]');
+  await next.scrollIntoViewIfNeeded();
+  await shoot(panel, '43-side-panel-next.png', 'Side panel: the dock’s "Continue to the next page" on a step not the last');
+});
+
+test('v3 Phase 3b: another job, the resume’s preview, without resume, the profile editor, a posting page', async ({ extContext, connected: ext, routeLog }) => {
+  const another = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('101'));
+  await expect(another.card).toHaveAttribute('data-job-state', 'found');
+  await another.panel.locator('button[data-job-action="another"]').click();
+  await expect(another.panel.locator('button[data-job-choice]').first()).toBeVisible();
+  await shoot(another.panel, '44-job-card-another-job.png', 'Job card: "Autofill for another job", the tracked jobs to choose from');
+  await another.panel.locator('button[data-job-choice="j0"]').click();
+  await expect(another.card.locator('[data-job-chosen]')).toBeVisible();
+  await shoot(another.panel, '44b-job-card-chosen.png', 'Job card: another job chosen, with "Use this page’s own job"');
+
+  const preview = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('102'));
+  await preview.panel.locator('button[data-job-action="preview"]').click();
+  await expect(preview.panel.locator('iframe[data-preview-frame]')).toBeVisible();
+  await shoot(preview.panel, '45-job-card-preview.png', 'Job card: the resume’s preview, in the side panel');
+
+  const without = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('103'));
+  await without.panel.locator('button[data-job-action="change"]').click();
+  await expect(without.panel.locator('button[data-resume-choice="without"]')).toBeVisible();
+  await shoot(without.panel, '46-job-card-change-without.png', 'Job card: Change, with "Apply without resume"');
+  await without.panel.locator('button[data-resume-choice="without"]').click();
+  await expect(without.panel.locator('[data-job-resume][data-without-resume]')).toBeVisible();
+  await shoot(without.panel, '46b-job-card-without-resume.png', 'Job card: applying without a resume');
+
+  const profile = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('104'));
+  await profile.panel.locator('[data-job-card] button[data-open-profile]').click();
+  const editor = profile.panel.locator('[data-profile]');
+  await expect(editor).toBeVisible();
+  await shoot(profile.panel, '47-side-panel-profile.png', 'Side panel: "Your autofill information"');
+  await editor.getByRole('textbox', { name: 'Anything else we should know?' }).fill('I prefer remote work.\nMy visa expires in May.');
+  await editor.locator('button[data-profile-save]').click();
+  await expect(editor.locator('[data-profile-flagged]')).toBeVisible();
+  await editor.locator('[data-profile-flagged]').scrollIntoViewIfNeeded();
+  await shoot(profile.panel, '47b-side-panel-profile-saved.png', 'Side panel: the profile saved, the note’s line kept from the AI named');
+
+  const posting = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000c105';
+  routeLog.serve({ [posting]: 'fixtures/synthetic/policy-posting.html' });
+  const page = await extContext.newPage();
+  await page.goto(posting);
+  const panel = await sidePanel(ext, await ext.tabIdOf(page));
+  await panel.bringToFront();
+  await expect(panel.locator('[data-job-card]')).toHaveAttribute('data-job-state', 'found');
+  await shoot(panel, '48-side-panel-posting.png', 'Side panel: a posting page with no form, its card without Autofill');
+});
+
+test('the v3 Phase 4 review: the disclosure shown again when it changed', async ({ extContext, connected: ext, routeLog }) => {
+  const setDisclosure = async (version: number) => (await ext.page()).evaluate(async (value) => {
+    await (globalThis as unknown as { chrome: { storage: { local: { set(items: object): Promise<void> } } } }).chrome
+      .storage.local.set({ disclosure: { version: value } });
+  }, version);
+  await setDisclosure(1);
+  const shown = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('120'));
+  await expect(shown.panel.locator('[data-disclosure-changed]')).toBeVisible();
+  await shoot(shown.panel, '50-side-panel-disclosure-changed.png', 'Side panel: the disclosure shown again, with I understand');
+  await setDisclosure(2);
+});
+
+test('v3 Phase 3b: Edit with AI’s instruction box, on the page', async ({ extContext, connected: ext, routeLog }) => {
+  const served = trap('01');
+  routeLog.serve({ [served.url]: served.file });
+  const page = await extContext.newPage();
+  await page.goto(served.url);
+  const tabId = await ext.fill(page);
+  await ext.settled(tabId);
+  await page.bringToFront();
+  await still(page);
+  const ui = await PageUi.of(page);
+  const why = await page.locator('#why').boundingBox();
+  await expect.poll(async () => (await ui.elements('button[aria-label="Edit with AI"]')).filter((el) => el.shown).length)
+    .toBeGreaterThanOrEqual(1);
+  for (const button of (await ui.elements('button[aria-label="Edit with AI"]')).filter((el) => el.shown)) {
+    const box = await ui.box(button);
+    if (box !== null && why !== null && box.y >= why.y && box.y + box.height <= why.y + why.height) {
+      await ui.click(button);
+      break;
+    }
+  }
+  await expect.poll(async () => (await ui.elements('textarea.ai-prompt__input')).filter((el) => el.shown).length).toBe(1);
+  await page.keyboard.type('Make it two sentences');
+  await shoot(page, '49-ai-edit-instruction.png', 'Edit with AI: "Tell me what to add, change or improve"', {
+    clip: await around(page, ui, ['textarea.ai-prompt__input', 'button.ai-prompt__generate'], 48) });
 });
 
 test('the options page', async ({ extContext, connected: ext }) => {

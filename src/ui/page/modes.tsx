@@ -3,10 +3,10 @@
  * choice saved at once through the container's onChange. The options page's Modes card and the side panel's gear menu
  * both draw them, so the two always read the same.
  *
- * Shown: Next page (Manual / Auto), Autofill after page turn (Automatically / Manually), Consent boxes (All agreements /
- * Required only), AI answers (All / Profile only) and the side panel's view (Expanded / Minimized). Sign-in, Submit and
- * the agent's skip rules are kept in the settings (version 4) but not shown until their behaviour exists (Phases 4 and
- * 5), so nothing here offers what the extension does not do.
+ * Shown: Next page (Manual / Auto), Autofill after page turn (Automatically / Manually), Submit (Manual / Auto, since v3
+ * Phase 4), Record applications I submit myself (On / Off, the v3 Phase 4 review), Consent boxes (All agreements / Required only), AI answers (All / Profile only) and the side panel's view
+ * (Expanded / Minimized). Sign-in and the agent's skip rules are kept in the settings (version 4) but not shown until
+ * their behaviour exists (Phase 5), so nothing here offers what the extension does not do.
  */
 import { useId } from 'react';
 import { MODE_CHOICES, PANEL_VIEWS, type Modes, type PanelView, type Settings } from '../../core/types/settings';
@@ -15,7 +15,8 @@ import { COPY } from '../../shared/copy';
 const WORDS = COPY.options.modes;
 
 /** The modes shown now, in the order they are drawn. */
-export const SHOWN_MODES = ['next', 'afterPageTurn', 'consents', 'ai'] as const satisfies ReadonlyArray<keyof Modes>;
+export const SHOWN_MODES = ['next', 'afterPageTurn', 'submit', 'recordOwn', 'consents', 'ai'] as const satisfies
+  ReadonlyArray<keyof Modes>;
 type ShownMode = (typeof SHOWN_MODES)[number];
 
 /** A mode's words: its name, its help, and each choice's name. */

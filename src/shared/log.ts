@@ -26,6 +26,7 @@ export const LOG_CODES = [
   'auth.pairing-started',
   'auth.pairing-refused',
   'auth.connected',
+  'auth.disclosure-acknowledged',
   'auth.redeem-failed',
   'auth.disconnected',
   'auth.token-dropped',
@@ -180,6 +181,27 @@ export const LOG_CODES = [
   'launcher.shown',
   'job.lookup-on-load',
   'job.lookup-on-load-deferred',
+  // v3 Phase 3b: the side panel's editor read or saved the profile (statuses, flags and counts, never a value); a
+  // cover letter's words read for a text box (whether they read, never a word); "Autofill for another job"'s search and
+  // choice (statuses and counts, never a job or the words typed); a site request (its status, never the host); the
+  // resume's preview (whether it was sent).
+  'profile.editor-read',
+  'profile.editor-save',
+  'letter.text',
+  'job.searched',
+  'job.chosen',
+  'site.requested',
+  'resume.preview',
+  // v3 Phase 4: a Submit pressed on the page (who pressed it, as a flag), the platform's confirmation seen after it, the
+  // tracker told (its status), and the panel's Next and Submit pressed or refused in the frame (flags only).
+  'submit.armed',
+  'submit.detected',
+  'submit.recorded',
+  'submit.refused',
+  'content.step-pressed',
+  'content.step-press-refused',
+  'content.submit-armed',
+  'content.submit-detected',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

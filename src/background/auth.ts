@@ -11,7 +11,10 @@ import { ok, refuse, type Answer } from '../messaging/envelope';
 import type { AuthStatus, ExternalMessage } from '../messaging/schemas';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import { PAIRING_KEY, PairingRecordSchema, TokenRecordSchema, type TokenRecord } from '../shared/stored';
+import {
+  DISCLOSURE_KEY, DISCLOSURE_VERSION, DisclosureRecordSchema, PAIRING_KEY, PairingRecordSchema, TokenRecordSchema,
+  type TokenRecord,
+} from '../shared/stored';
 import { toBase64Url } from './bytes';
 import { createKeyedQueue } from './locks';
 import { CONNECT_PAGE_PATH } from './senders';
@@ -141,6 +144,10 @@ export interface Auth {
   completePairing(message: ExternalMessage): Promise<Answer<Record<string, never>>>;
   redeemCode(code: string): Promise<Answer<AuthStatus>>;
   disconnect(): Promise<Answer<AuthStatus>>;
+  /** The v3 Phase 4 review: whether the person acknowledged the disclosure as it reads now (DISCLOSURE_VERSION). */
+  disclosed(): Promise<boolean>;
+  /** auth/acknowledgeDisclosure: the person chose I understand on the updated disclosure. */
+  acknowledgeDisclosure(): Promise<Answer<AuthStatus>>;
 }
 
 /** The account as the options page shows it, cut to the answer's caps. */
@@ -205,12 +212,25 @@ export function createAuth(deps: AuthDeps): Auth {
       scopes: result.value.scopes,
     });
     account = accountOf(result.value.account);
+    // Pairing showed the disclosure as it reads now (the options page, before Connect): it is acknowledged.
+    await acknowledge().catch(() => undefined);
     // A browser holds one connection: the one it replaced is revoked, best effort.
     if (previous !== null && previous.token !== result.value.token) void server.endSession(previous.token);
     await readAccount();
     if ((await keeper.current()) === null) return refuse('unavailable');
     log('auth.connected', { scopes: result.value.scopes.length });
     return ok(null);
+  }
+
+  /** Whether the person acknowledged the disclosure as it reads now (DISCLOSURE_VERSION): by connecting, which shows
+   *  it, or by I understand. An install connected before the version was kept holds none: version 1. */
+  async function disclosed(): Promise<boolean> {
+    const parsed = DisclosureRecordSchema.safeParse(await platform.storage.local.get(DISCLOSURE_KEY));
+    return (parsed.success ? parsed.data.version : 1) >= DISCLOSURE_VERSION;
+  }
+
+  async function acknowledge(): Promise<void> {
+    await platform.storage.local.set({ [DISCLOSURE_KEY]: { version: DISCLOSURE_VERSION } });
   }
 
   async function status(): Promise<AuthStatus> {
@@ -228,12 +248,19 @@ export function createAuth(deps: AuthDeps): Auth {
       storageAccess: deps.storageAccess(),
       versionMismatch: keeper.versionMismatch,
       pairingExpiresAt: pairing?.expiresAt ?? null,
+      ...(record !== null ? { disclosure: (await disclosed()) ? 'current' as const : 'changed' as const } : {}),
     };
   }
 
   return {
     connected: async () => (await keeper.current()) !== null,
     status,
+    disclosed,
+    async acknowledgeDisclosure() {
+      await acknowledge();
+      log('auth.disclosure-acknowledged');
+      return ok(await status());
+    },
     startPairing() {
       return pairing.run(PAIRING_KEY, async () => {
         const state = toBase64Url(platform.randomBytes(32));

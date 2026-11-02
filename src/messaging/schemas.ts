@@ -10,7 +10,9 @@
 import { z } from 'zod';
 import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
 import { RESUME_CHOICE_REASONS } from '../contract/tailorit/lookup';
-import { WORK_ARRANGEMENTS } from '../contract/tailorit/profile';
+import { AUTOFILL_AI_LIMITS } from '../contract/tailorit/ai';
+import { AutofillProfileSchema, AutofillSensitiveSchema, WORK_ARRANGEMENTS } from '../contract/tailorit/profile';
+import { AUTOFILL_JOB_SEARCH_MAX, AUTOFILL_JOB_SEARCH_QUERY_MAX } from '../contract/tailorit/tracker';
 import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from '../contract/tailorit/resumes';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
@@ -218,6 +220,25 @@ export const RepeatableAnswerSchema = z.strictObject({
 export const LauncherPrefsSchema = z.strictObject({ top: z.number().min(0).max(1).nullable(), hidden: z.boolean() });
 export type LauncherPrefs = z.infer<typeof LauncherPrefsSchema>;
 
+/** The longest instruction Edit with AI's box takes (v3 Phase 3b): TailorIT's cap on a draft's `instruction`. */
+export const MAX_EDIT_INSTRUCTION = AUTOFILL_AI_LIMITS.draft.instruction;
+
+/** Who pressed a Submit (v3 Phase 4): the person on the page itself (a trusted click on the adapter's Submit), the
+ *  person through the panel's Submit application, or Submit mode Auto. */
+export const SUBMIT_PRESSERS = ['page', 'panel', 'auto'] as const;
+export type SubmitPresser = (typeof SUBMIT_PRESSERS)[number];
+
+/** What showed that an application was sent (v3 Phase 4): the platform's page after submitting (Lever's /thanks,
+ *  Greenhouse's /confirmation), or its success message in the form's place (Ashby's, or Greenhouse's confirmation
+ *  drawn in the same document). */
+export const SUBMIT_EVIDENCE = ['confirmation-page', 'success-message'] as const;
+export type SubmitEvidence = (typeof SUBMIT_EVIDENCE)[number];
+
+/** The page's own buttons the panel may press for the person (v3 Phase 4): Next on a step the adapter says is not the
+ *  last, Submit on the last. */
+export const STEP_TARGETS = ['next', 'submit'] as const;
+export type StepTarget = (typeof STEP_TARGETS)[number];
+
 // ── Content script → worker (one-shot messages) ───────────────────────────────────────────────────────────────────
 
 const v = z.literal(MESSAGE_VERSION);
@@ -269,7 +290,10 @@ const contentMessages = [
   z.strictObject({ v, type: z.literal('draft/rewrite'), runId: Id, fieldKey: Key,
     specs: z.array(FieldSpecSchema).max(500), canaries: z.array(Text(120)).max(32),
     postingText: Text(MAX_POSTING_TEXT).optional(),
-    revealEdges: z.array(z.tuple([Key, Key])).max(MAX_REVEAL_EDGES).optional() })
+    revealEdges: z.array(z.tuple([Key, Key])).max(MAX_REVEAL_EDGES).optional(),
+    /** v3 Phase 3b: the person's instruction typed in Edit with AI's box ("Tell me what to add, change or improve"),
+     *  at most 750 characters: the draft question's `instruction`. The person's own words, never kept or logged. */
+    instruction: Text(MAX_EDIT_INSTRUCTION).optional() })
     .refine((message) => message.specs.some((spec) => spec.key === message.fieldKey),
       { message: 'fieldKey names no spec', path: ['fieldKey'] }),
   z.strictObject({ v, type: z.literal('runstate/get'), applicationKey: z.string().max(80) }),
@@ -306,11 +330,29 @@ const contentMessages = [
    *  (storage.local); "until next visit" only in the worker's memory, for the tab's page now, so the side panel can
    *  offer it back. Frame 0 only. */
   z.strictObject({ v, type: z.literal('launcher/hide'), scope: z.enum(['next-visit', 'site', 'everywhere']) }),
+  /** v3 Phase 4: a Submit of this application was pressed in this frame: the person's trusted click on the adapter's
+   *  Submit (`page`), or the press the panel's Submit application (`panel`) or Submit mode Auto (`auto`) made. The
+   *  worker keeps it, with the run's job and resume, for SUBMIT_ARM_MS: only a confirmation seen after it records the
+   *  application as Applied. */
+  z.strictObject({ v, type: z.literal('submit/armed'), applicationKey: z.string().max(80),
+    by: z.enum(SUBMIT_PRESSERS),
+    /** The frame's run, when one filled the form (the person's own Submit included): the worker reads its job and
+     *  resume from its own memory. */
+    runId: Id.optional(),
+    /** The run's resume upload verified on the form (its row): only then is the resume named to the tracker. */
+    resume: z.literal(true).optional() }),
+  /** v3 Phase 4: the platform's sign that the application was sent (its confirmation page, or its success message in
+   *  the form's place), seen in this frame after a Submit was pressed. The worker records Applied in TailorIT only
+   *  when this tab armed the same application within SUBMIT_ARM_MS. */
+  z.strictObject({ v, type: z.literal('submit/detected'), applicationKey: z.string().max(80),
+    evidence: z.enum(SUBMIT_EVIDENCE) }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
 const e2eContentMessages = __E2E__
-  ? [z.strictObject({ v, type: z.literal('e2e/probe'), storageLocal: z.enum(['refused', 'allowed']) })]
+  ? [z.strictObject({ v, type: z.literal('e2e/probe'), storageLocal: z.enum(['refused', 'allowed']).optional(),
+    /** The review: the document's start-up is over (its confirmation page's sign, if any, was told and answered). */
+    settled: z.literal(true).optional() })]
   : [];
 
 export const ContentMessageSchema = z.discriminatedUnion('type', [...contentMessages, ...e2eContentMessages]);
@@ -335,6 +377,10 @@ export type AskLength = (typeof ASK_LENGTHS)[number];
 export const JOB_RELAY_ACTIONS = ['lookup', 'add'] as const;
 export type JobRelayAction = (typeof JOB_RELAY_ACTIONS)[number];
 
+/** A job of the tab's last "Autofill for another job" search, as the panel names it (v3 Phase 3b): its place in that
+ *  search, never TailorIT's id. */
+export const JobRefSchema = z.string().regex(/^j[0-9]$/);
+
 export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('ping') }),
   z.strictObject({ v, type: z.literal('panel/fill'), tabId: TabId, dryRun: z.boolean() }),
@@ -355,6 +401,9 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('auth/startPairing') }),
   z.strictObject({ v, type: z.literal('auth/redeemCode'), code: z.string().regex(/^[0-9A-Za-z -]{16,24}$/) }),
   z.strictObject({ v, type: z.literal('auth/disconnect') }),
+  /** v3 Phase 4 review: the person read the updated disclosure (AuthStatus.disclosure 'changed') and chose I
+   *  understand: its version is kept with the connection. */
+  z.strictObject({ v, type: z.literal('auth/acknowledgeDisclosure') }),
   z.strictObject({ v, type: z.literal('runs/clear') }),
   /** Phase 6: the anonymous counters, read and cleared by the options page. */
   z.strictObject({ v, type: z.literal('telemetry/get') }),
@@ -385,6 +434,31 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('panel/launcher'), tabId: TabId }),
   /** v3 Phase 3: "Show the TailorIT button again": the site's and the everywhere flag cleared, the tab's frames told. */
   z.strictObject({ v, type: z.literal('panel/showLauncher'), tabId: TabId }),
+  /** v3 Phase 3b, "Autofill for another job": the person's tracked jobs whose title or company holds the words typed
+   *  (GET /api/autofill/jobs/search). Answered with references to the search, never TailorIT's ids. */
+  z.strictObject({ v, type: z.literal('panel/jobSearch'), tabId: TabId, query: Text(AUTOFILL_JOB_SEARCH_QUERY_MAX) }),
+  /** v3 Phase 3b: the job the person chose from the tab's last search (`ref`), which the card, the match, the resume
+   *  and the fill use for this page from now on (the lookup's `jobId`); null: the page's own match again. */
+  z.strictObject({ v, type: z.literal('panel/chooseJob'), tabId: TabId, ref: JobRefSchema.nullable() }),
+  /** v3 Phase 3b, "Ask TailorIT to support this site": the tab's host name, alone, to TailorIT. */
+  z.strictObject({ v, type: z.literal('panel/siteRequest'), tabId: TabId }),
+  /** v3 Phase 3b, "Your autofill information": the profile as TailorIT holds it, for the side panel's editor. */
+  z.strictObject({ v, type: z.literal('panel/profile') }),
+  /** v3 Phase 3b: the editor's save, from the revision it loaded; `sensitive` only where the connection may read and
+   *  write it. Sent straight to TailorIT, never kept or logged. */
+  z.strictObject({ v, type: z.literal('panel/saveProfile'), revision: Count, profile: AutofillProfileSchema,
+    sensitive: AutofillSensitiveSchema.optional() }),
+  /** v3 Phase 3b: Change's "Apply without resume" for this tab (`without` true: a fill attaches none, and the resume
+   *  field is left to the person), or not (TailorIT's choice, or the resume chosen, again). */
+  z.strictObject({ v, type: z.literal('panel/withoutResume'), tabId: TabId, without: z.boolean() }),
+  /** v3 Phase 4: the panel's "Continue to the next page" or "Submit application", on the person's click in the side
+   *  panel, for the frame whose report offers it. `confirmed`: the person confirmed a Submit with required fields
+   *  still empty. */
+  z.strictObject({ v, type: z.literal('panel/press'), tabId: TabId, frameId: Count, target: z.enum(STEP_TARGETS),
+    confirmed: z.boolean() }),
+  /** v3 Phase 4 review: Try again, when TailorIT's tracker could not be told of a submitted application (offline, or a
+   *  server failure): the worker asks once more for the same submission. */
+  z.strictObject({ v, type: z.literal('panel/retryApplied'), tabId: TabId }),
 ]);
 export type PageMessage = z.infer<typeof PageMessageSchema>;
 
@@ -395,6 +469,9 @@ export type PageMessage = z.infer<typeof PageMessageSchema>;
  *  a posting page), 'none' (no frame of ours). `formKey` changes whenever that frame shows another document, so the side
  *  panel reads the job card again. */
 export const PAGE_SUPPORT = ['form', 'no-form', 'none'] as const;
+/** Where recording a submitted application stands (v3 Phase 4; PageState.submitted). */
+export const SUBMITTED_STATES = ['recording', 'recorded', 'not-recorded', 'not-allowed'] as const;
+export type SubmittedState = (typeof SUBMITTED_STATES)[number];
 export const PageStateSchema = z.strictObject({
   support: z.enum(PAGE_SUPPORT),
   platform: z.enum(PLATFORMS).nullable(),
@@ -404,6 +481,15 @@ export const PageStateSchema = z.strictObject({
   /** v3 Phase 3 review: no frame of ours is there, but the tab shows a page on an applicant-tracking host (one opened
    *  before the extension was installed or updated): reloading it brings Autofill. */
   reload: z.literal(true).optional(),
+  /** v3 Phase 3b: no form, but the tab's top frame shows a posting a platform's parser reads: the job card shows. */
+  posting: z.literal(true).optional(),
+  /** The v3 Phase 4 review: no form, but the tab's top frame shows the platform's page after submitting: the card POST
+   *  /applied answered shows, without Autofill. */
+  confirmation: z.literal(true).optional(),
+  /** v3 Phase 4: an application of the tab was submitted and its platform confirmed it, since the tab's page loaded:
+   *  whether TailorIT's tracker now says Applied ('recorded'), is being told ('recording'), or could not be told
+   *  ('not-recorded'; 'not-allowed': a connection made before tracker:write). */
+  submitted: z.enum(SUBMITTED_STATES).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
 
@@ -477,6 +563,9 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
     shown: z.literal(true).optional() }),
   /** v3 Phase 3: the browser's side panel shows this tab (or no longer does): the launcher hides while it does. */
   z.strictObject({ v, type: z.literal('panel/side'), open: z.boolean() }),
+  /** v3 Phase 4: the side panel's "Continue to the next page" or "Submit application", the person's click there, for
+   *  this frame's run: it presses the adapter's own Next or Submit, and nothing else, if the step still offers it. */
+  z.strictObject({ v, type: z.literal('run/press'), target: z.enum(STEP_TARGETS), confirmed: z.boolean() }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -612,6 +701,10 @@ export const AuthStatusSchema = z.strictObject({
   versionMismatch: z.boolean(),
   /** A pairing started here and not completed yet: when it lapses, in ms since the epoch. */
   pairingExpiresAt: Count.nullable(),
+  /** v3 Phase 4 review: while connected, whether the person has acknowledged the disclosure as it reads now
+   *  ('current'), or it changed since they connected or last chose I understand ('changed': the side panel and the
+   *  options page show it again; Submit mode Auto, recording Applied and the lookup as a page loads wait for it). */
+  disclosure: z.enum(['current', 'changed']).optional(),
 });
 export type AuthStatus = z.infer<typeof AuthStatusSchema>;
 
@@ -655,6 +748,10 @@ export const JobCardSchema = z.discriminatedUnion('state', [
       .nullable(),
     match: JobCardMatchSchema.nullable(),
     addable: z.boolean(),
+    /** v3 Phase 3b: the person chose "Apply without resume" for the tab: a fill attaches none. */
+    withoutResume: z.literal(true).optional(),
+    /** v3 Phase 3b: the job is the one the person chose with "Autofill for another job" (the lookup's `chosen`). */
+    chosen: z.literal(true).optional(),
   }),
 ]);
 export type JobCard = z.infer<typeof JobCardSchema>;
@@ -723,6 +820,68 @@ export type PanelLetterAnswer = z.infer<typeof PanelLetterAnswerSchema>;
 export const PanelLauncherAnswerSchema = z.strictObject({ hidden: z.enum(['none', 'visit', 'site', 'everywhere']) });
 export type PanelLauncherAnswer = z.infer<typeof PanelLauncherAnswerSchema>;
 
+/** panel/jobSearch (v3 Phase 3b): the jobs found, each with the reference panel/chooseJob takes, its title, company and
+ *  where it is; or why there are none ('not-allowed': a connection made before version 3; 'not-connected';
+ *  'rate-limited'; 'unavailable'). Never TailorIT's id. */
+export const JOB_SEARCH_REFUSALS = ['not-allowed', 'not-connected', 'rate-limited', 'unavailable'] as const;
+export type JobSearchRefusal = (typeof JOB_SEARCH_REFUSALS)[number];
+export const PanelJobSearchAnswerSchema = z.discriminatedUnion('outcome', [
+  z.strictObject({ outcome: z.literal('found'), items: z.array(z.strictObject({ ref: JobRefSchema, title: Text(300),
+    company: Text(200), location: Text(300) })).max(AUTOFILL_JOB_SEARCH_MAX) }),
+  z.strictObject({ outcome: z.enum(JOB_SEARCH_REFUSALS) }),
+]);
+export type PanelJobSearchAnswer = z.infer<typeof PanelJobSearchAnswerSchema>;
+
+/** panel/siteRequest (v3 Phase 3b): 'sent'; 'no-host' (the browser did not say which site the tab shows: the toolbar
+ *  icon lets the extension read the tab's address for that tab, while it stays on the same origin); 'not-allowed',
+ *  'not-connected', 'rate-limited', 'unavailable'. */
+export const SITE_REQUEST_OUTCOMES = ['sent', 'no-host', 'not-allowed', 'not-connected', 'rate-limited',
+  'unavailable'] as const;
+export type SiteRequestOutcome = (typeof SITE_REQUEST_OUTCOMES)[number];
+export const PanelSiteRequestAnswerSchema = z.strictObject({ outcome: z.enum(SITE_REQUEST_OUTCOMES) });
+
+/** panel/profile (v3 Phase 3b): the profile as TailorIT holds it (the person's own data, for their editor), its
+ *  revision, the note's lines TailorIT keeps from the AI (`flaggedLines`), whether this connection may save it
+ *  (profile:write) and the sensitive part when it may read it (profile:sensitive). Shown in the side panel only, kept
+ *  in its memory while the editor is open, never stored or logged. */
+export const ProfileViewSchema = z.strictObject({
+  revision: Count,
+  profile: AutofillProfileSchema,
+  flaggedLines: z.array(Count).max(500),
+  canWrite: z.boolean(),
+  sensitive: z.discriminatedUnion('state', [
+    z.strictObject({ state: z.literal('shared'), value: AutofillSensitiveSchema }),
+    z.strictObject({ state: z.literal('not-shared') }),
+    z.strictObject({ state: z.literal('unavailable') }),
+  ]),
+});
+export type ProfileView = z.infer<typeof ProfileViewSchema>;
+
+/** panel/saveProfile (v3 Phase 3b): 'saved', with the new revision and the note's lines TailorIT keeps from the AI;
+ *  else 'conflict' (it changed elsewhere since it was loaded: load it again), 'invalid' (TailorIT refused a value),
+ *  'not-allowed' (this connection may not change the profile: connect again), 'not-connected', 'rate-limited',
+ *  'unavailable'. */
+export const PROFILE_SAVE_REFUSALS = ['conflict', 'invalid', 'not-allowed', 'not-connected', 'rate-limited',
+  'unavailable'] as const;
+export type ProfileSaveRefusal = (typeof PROFILE_SAVE_REFUSALS)[number];
+export const PanelSaveProfileAnswerSchema = z.discriminatedUnion('outcome', [
+  z.strictObject({ outcome: z.literal('saved'), revision: Count, flaggedLines: z.array(Count).max(500) }),
+  z.strictObject({ outcome: z.enum(PROFILE_SAVE_REFUSALS) }),
+]);
+export type PanelSaveProfileAnswer = z.infer<typeof PanelSaveProfileAnswerSchema>;
+
+/** panel/press and run/press (v3 Phase 4): 'pressed' (the page's own Next or Submit was clicked); 'required-empty' (a
+ *  Submit with required fields still empty, `count` of them, that the person did not confirm); 'not-offered' (the step
+ *  no longer offers that button: another step, a step not final, a button hidden or disabled); 'blocked' (a CAPTCHA,
+ *  a sign-in or a code shows: the person's); 'refused' (assertNotSubmit refused the click); 'busy' (the run works);
+ *  'gone' (no run there); 'not-accepted' (the review: the page's own checks refused it, `count` fields marked: a form's
+ *  validation during the click, or a Next that left the step where it was with errors shown). */
+export const PRESS_OUTCOMES = ['pressed', 'required-empty', 'not-offered', 'blocked', 'refused', 'busy', 'gone',
+  'not-accepted'] as const;
+export type PressOutcome = (typeof PRESS_OUTCOMES)[number];
+export const PressAnswerSchema = z.strictObject({ outcome: z.enum(PRESS_OUTCOMES), count: Count.optional() });
+export type PressAnswer = z.infer<typeof PressAnswerSchema>;
+
 /** runs/clear: how many stored runs were removed. */
 export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
 
@@ -766,6 +925,8 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'job/add': DoneAnswerSchema,
   'launcher/place': DoneAnswerSchema,
   'launcher/hide': DoneAnswerSchema,
+  'submit/armed': DoneAnswerSchema,
+  'submit/detected': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. */
@@ -789,12 +950,21 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/skip': DoneAnswerSchema,
   'panel/launcher': PanelLauncherAnswerSchema,
   'panel/showLauncher': DoneAnswerSchema,
+  'panel/jobSearch': PanelJobSearchAnswerSchema,
+  'panel/chooseJob': DoneAnswerSchema,
+  'panel/siteRequest': PanelSiteRequestAnswerSchema,
+  'panel/profile': ProfileViewSchema,
+  'panel/saveProfile': PanelSaveProfileAnswerSchema,
+  'panel/withoutResume': DoneAnswerSchema,
+  'panel/retryApplied': DoneAnswerSchema,
+  'panel/press': PressAnswerSchema,
   'settings/get': SettingsAnswerSchema,
   'settings/save': SettingsAnswerSchema,
   'auth/status': AuthStatusSchema,
   'auth/startPairing': StartPairingAnswerSchema,
   'auth/redeemCode': AuthStatusSchema,
   'auth/disconnect': AuthStatusSchema,
+  'auth/acknowledgeDisclosure': AuthStatusSchema,
   'runs/clear': RunsClearAnswerSchema,
   'telemetry/get': TelemetryAnswerSchema,
   'telemetry/clear': TelemetryAnswerSchema,
@@ -818,6 +988,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   'run/skip': DoneAnswerSchema,
   'launcher/prefs': DoneAnswerSchema,
   'panel/side': DoneAnswerSchema,
+  'run/press': PressAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */
@@ -830,10 +1001,8 @@ export const EXTERNAL_ANSWER_SCHEMAS = { 'pair/complete': DoneAnswerSchema } as 
 export const RESUME_CHUNK_BYTES = 262_144;
 export const RESUME_MAX_BYTES = 10 * 1024 * 1024;
 
-export const ResumePortMessageSchema = z.discriminatedUnion('type', [
-  /** Phase G: `document` names what the write takes, the run's resume (absent, or 'resume') or its cover letter; the
-   *  rest of the transfer is the same for both. */
-  z.strictObject({ v, type: z.literal('resume/request'), runId: Id, document: z.enum(FILE_REFS).optional() }),
+/** The transfer's own messages, after the request (the resume port's and the preview port's). */
+const TRANSFER_MESSAGES = [
   z.strictObject({ v, type: z.literal('resume/header'), name: Text(255), mime: Text(100), size: Count.max(RESUME_MAX_BYTES),
     sha256: z.string().regex(/^[a-f0-9]{64}$/), chunkCount: Count.max(40) }),
   z.strictObject({ v, type: z.literal('resume/chunk'), index: Count.max(39), data: z.string().max(Math.ceil(RESUME_CHUNK_BYTES / 3) * 4) }),
@@ -842,4 +1011,20 @@ export const ResumePortMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('resume/done'), ok: z.boolean() }),
   z.strictObject({ v, type: z.literal('resume/error'), reason: z.enum(['resume-unavailable', 'resume-transfer-failed',
     'resume-format-unsupported', 'pdf-only-input']) }),
+] as const;
+
+export const ResumePortMessageSchema = z.discriminatedUnion('type', [
+  /** Phase G: `document` names what the write takes, the run's resume (absent, or 'resume') or its cover letter; the
+   *  rest of the transfer is the same for both. */
+  z.strictObject({ v, type: z.literal('resume/request'), runId: Id, document: z.enum(FILE_REFS).optional() }),
+  ...TRANSFER_MESSAGES,
+]);
+
+/** The `preview` port (v3 Phase 3b): the side panel's PDF preview of the resume a fill of the tab attaches. The panel
+ *  posts preview/request {tabId}; the worker answers as the resume port does (resume/header, resume/chunk, each
+ *  acknowledged with resume/ack, resume/end, then the panel's resume/done; resume/error), from the same checked fetch,
+ *  a PDF only. Extension pages only: the bytes never reach a page's process. */
+export const PreviewPortMessageSchema = z.discriminatedUnion('type', [
+  z.strictObject({ v, type: z.literal('preview/request'), tabId: TabId }),
+  ...TRANSFER_MESSAGES,
 ]);

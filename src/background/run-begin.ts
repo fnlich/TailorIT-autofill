@@ -9,6 +9,9 @@
  * so the card shows what this fill attaches with no request of its own. A lookup answered after the token changed is
  * not kept: the run reads it again with the new one when it needs it. The address is the top frame's tab address now
  * (senders.ts, which follows a single-page application); a subframe such an application moved is not looked up.
+ *
+ * v3 Phase 3b: the job the person chose for the page ("Autofill for another job") goes with the lookup as `jobId`, so
+ * the run's job (the card, the match, the resume, the AI's company and title, the cover letter's job) is that one.
  */
 import { AUTOFILL_LOOKUP_URL_MAX, type AutofillLookupResponse } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -48,7 +51,7 @@ export interface RunBeginDeps {
   /** The side panel's job cards (v2): the tab's chosen resume, and where the lookup is kept as the card (with the
    *  document's epoch taken before it was asked, so a lookup that outlived its page is not kept); and whether Chrome's
    *  address for the frame may be a posting a single-page application has left (then nothing is looked up). */
-  jobs?: Pick<JobCards, 'chosen' | 'remember' | 'epoch' | 'addressStale'>;
+  jobs?: Pick<JobCards, 'chosen' | 'remember' | 'epoch' | 'addressStale'> & Partial<Pick<JobCards, 'chosenJob'>>;
   /** The token keeper's generation (auth.ts). */
   generation?(): number;
 }
@@ -60,9 +63,11 @@ export function keyFitsFrame(applicationKey: string, frameUrl: string): boolean 
   return platform === null || applicationKey.startsWith(`${platform}:`);
 }
 
-async function lookUp(server: ServerClient, url: string, chosen: string | null): Promise<AutofillLookupResponse | null> {
+async function lookUp(server: ServerClient, url: string, chosen: string | null, job: number | null):
+  Promise<AutofillLookupResponse | null> {
   if (url.length > AUTOFILL_LOOKUP_URL_MAX) return null;
-  const answer = await server.lookup({ url, includePostingText: true, ...(chosen === null ? {} : { resumeId: chosen }) });
+  const answer = await server.lookup({ url, includePostingText: true, ...(chosen === null ? {} : { resumeId: chosen }),
+    ...(job === null ? {} : { jobId: job }) });
   if (answer.ok) return answer.value;
   log('run.lookup-failed', { status: answer.status ?? 0 });
   return null;
@@ -86,12 +91,13 @@ export async function beginRun(deps: RunBeginDeps, message: RunBegin,
 
   const generation = deps.generation?.() ?? 0;
   const chosen = deps.jobs?.chosen(from.tabId) ?? null;
+  const job = deps.jobs?.chosenJob?.(from.tabId, message.applicationKey) ?? null;
   const epoch = deps.jobs?.epoch(from) ?? '';
   // A subframe a single-page application moved: Chrome's address for it is the posting it left, so none is asked for
   // (the run goes on as with a lookup that failed).
   const stale = (await deps.jobs?.addressStale(from)) ?? false;
   const [profile, lookup] = await Promise.all([deps.profiles.refresh(),
-    stale ? Promise.resolve(null) : lookUp(deps.server, from.url, chosen)]);
+    stale ? Promise.resolve(null) : lookUp(deps.server, from.url, chosen, job)]);
   if (!profile.ok) {
     log('run.refused', { profile: true });
     return refuse(profile.failure === 'not-connected' ? 'not_connected' : profile.failure === 'internal' ? 'internal' : 'unavailable');
@@ -105,7 +111,7 @@ export async function beginRun(deps: RunBeginDeps, message: RunBegin,
   // Read with a token that has since changed: not kept (the run reads it again with the new one when it needs it).
   if ((deps.generation?.() ?? 0) === generation) {
     memo.lookup = lookup;
-    deps.jobs?.remember(from, lookup, { generation, epoch, chosen });
+    deps.jobs?.remember(from, lookup, { generation, epoch, chosen, job });
   }
   const [postingPage, settings] = await Promise.all([deps.policy.postingPage(message.applicationKey), deps.settings.content()]);
   const storedCopy = storedCopyState(lookup?.job?.postingText, deps.core);

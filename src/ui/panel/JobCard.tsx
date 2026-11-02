@@ -18,17 +18,27 @@
  *   not), help that never contradicts a tracker entry (none when one exists), and the resume.
  * - Loading (a busy skeleton), unavailable, and a card asking to connect.
  *
+ * v3 Phase 3b: "Autofill for another job" under the job (AnotherJob.tsx), and its "Chosen by you for this page"; in
+ * Change, "Apply without resume" (the card then says no resume will be attached) and, beside Change, a Preview of the
+ * PDF a fill attaches (ResumePreview.tsx, in this page only); "Your autofill information" opens the side panel's editor
+ * (Profile.tsx) where the container offers it, else TailorIT's Settings › Autofill.
+ *
  * It never shows an id, an address, the posting text or a file name: the card holds none. The resume's title is the
  * person's own and may be their name; it is shown on purpose, as the resume the fill attaches.
  */
-import { useId, useState, type ReactNode } from 'react';
+import { useCallback, useId, useState, type ReactNode } from 'react';
 import { AUTOFILL_TRACKER_STATUSES } from '../../contract/tailorit/lookup';
 import type { Platform } from '../../core/enums';
-import type { AddJobOutcome, JobCard as Card, LetterOutcome, ResumeListAnswer } from '../../messaging/schemas';
+import type {
+  AddJobOutcome, JobCard as Card, LetterOutcome, PanelJobSearchAnswer, ResumeListAnswer,
+} from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
+import { AnotherJob } from './AnotherJob';
 import type { JobView } from './job';
 import type { LetterView } from './letter';
+import type { PreviewResult } from './preview';
+import { ResumePreview } from './ResumePreview';
 
 type Answered = Extract<Card, { state: 'answered' }>;
 type ResumeItem = ResumeListAnswer['items'][number];
@@ -65,6 +75,16 @@ export interface JobCardActions {
   chooseResume(resumeId: string | null): void;
   /** Write it now: TailorIT's AI writes the cover letter for this job (Phase G). */
   onWriteLetter?(): void;
+  /** v3 Phase 3b: "Autofill for another job"'s search and choice (absent: not offered). */
+  searchJobs?(query: string): Promise<PanelJobSearchAnswer | null>;
+  chooseJob?(ref: string | null): void;
+  /** v3 Phase 3b: "Apply without resume" (true), or attach one again (false). */
+  setWithout?(without: boolean): void;
+  /** v3 Phase 3b: the PDF a fill attaches, for the preview (absent: no Preview); the container's stable loader, which
+   *  `signal` ends early. */
+  loadPreview?(signal: AbortSignal): Promise<PreviewResult>;
+  /** v3 Phase 3b: "Your autofill information" opens the side panel's editor (absent: TailorIT's page, a link). */
+  onAutofillInfo?(): void;
 }
 
 /** Whether TailorIT's AI may write the cover letter here (Phase G): yes, not on a posting that forbids AI in
@@ -83,6 +103,8 @@ export interface JobCardProps extends JobCardActions {
   outcome: AddJobOutcome | null;
   /** The clock (ms), for "Posted 2 days ago". */
   now: number;
+  /** The review: the person just submitted this application (the tab's page state): Applied is that, no warning. */
+  submitted?: boolean;
   /** The cover-letter row (Phase G); absent: no row. */
   letter?: LetterView;
   letterMode?: LetterMode;
@@ -136,8 +158,8 @@ export function JobCard(props: JobCardProps) {
 }
 
 function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loadResumes, chooseResume, letter,
-  letterMode = 'ai', onWriteLetter, letterAsked = true, working = false, autofillInfoUrl, children }: JobCardProps
-  & { card: Answered }) {
+  letterMode = 'ai', onWriteLetter, letterAsked = true, working = false, autofillInfoUrl, children, searchJobs, chooseJob,
+  setWithout, loadPreview, onAutofillInfo, submitted = false }: JobCardProps & { card: Answered }) {
   const { job, tracked } = card;
   const via = platform === null ? null : COPY.job.via(COPY.platforms[platform]);
   const status = tracked === null ? null : trackerLabel(tracked.status);
@@ -174,7 +196,7 @@ function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loa
             {COPY.job.posted(Math.max(0, Math.floor((now - job.postedAt) / 86_400_000)))}
           </p>
         )}
-        {applied && (
+        {applied && !submitted && (
           <p className="tia-job__warning" data-job-warning="applied">
             <Icon name="alert" size={16} className="tia-icon tia-job__warning-icon" />
             {COPY.job.alreadyApplied(status)}
@@ -190,10 +212,19 @@ function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loa
           </div>
         )}
         {outcome !== null && <p className="tia-job__note" role="status" data-job-outcome={outcome}>{COPY.job.addOutcomes[outcome]}</p>}
+        {searchJobs !== undefined && chooseJob !== undefined && !working && (
+          <AnotherJob search={searchJobs} choose={chooseJob} chosen={card.chosen === true} />
+        )}
       </div>
       {children}
       <div className="tia-docs" data-job-docs="" hidden={working}>
-        {autofillInfoUrl !== undefined && (
+        {onAutofillInfo !== undefined ? (
+          <button type="button" className="tia-docs__row tia-docs__link" data-open-profile="" onClick={onAutofillInfo}>
+            <Icon name="person" size={18} className="tia-icon tia-job__doc" />
+            <span className="tia-docs__label">{COPY.job.autofillInfo}</span>
+            <Icon name="chevron-right" size={16} className="tia-icon tia-docs__chevron" />
+          </button>
+        ) : autofillInfoUrl !== undefined && (
           <a className="tia-docs__row tia-docs__link" href={autofillInfoUrl} target="_blank" rel="noreferrer"
             data-tailorit-link="autofill">
             <Icon name="person" size={18} className="tia-icon tia-job__doc" />
@@ -201,7 +232,8 @@ function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loa
             <Icon name="chevron-right" size={16} className="tia-icon tia-docs__chevron" />
           </a>
         )}
-        <ResumeRow card={card} dryRun={dryRun} loadResumes={loadResumes} chooseResume={chooseResume} />
+        <ResumeRow card={card} dryRun={dryRun} loadResumes={loadResumes} chooseResume={chooseResume}
+          {...(setWithout === undefined ? {} : { setWithout })} {...(loadPreview === undefined ? {} : { loadPreview })} />
         {letter !== undefined && letterAsked && (
           <LetterRow letter={letter} mode={letterMode} dryRun={dryRun} onWrite={onWriteLetter} />
         )}
@@ -316,12 +348,16 @@ function LetterRow({ letter, mode, dryRun, onWrite }: { letter: LetterView; mode
 /** The picker's state: closed, reading the resumes, unreadable, or the list. */
 type Picker = { state: 'closed' } | { state: 'loading' } | { state: 'failed' } | { state: 'open'; items: readonly ResumeItem[] };
 
-/** The resume a fill attaches, why, its keywords, and Change with the account's resumes to choose from. */
-function ResumeRow({ card, dryRun, loadResumes, chooseResume }: { card: Answered; dryRun: boolean } & Pick<JobCardActions,
-  'loadResumes' | 'chooseResume'>) {
+/** The resume a fill attaches, why, its keywords, and Change with the account's resumes to choose from (and, v3 Phase
+ *  3b, "Apply without resume"); Preview beside it for a PDF. */
+function ResumeRow({ card, dryRun, loadResumes, chooseResume, setWithout, loadPreview }: { card: Answered;
+  dryRun: boolean } & Pick<JobCardActions, 'loadResumes' | 'chooseResume' | 'setWithout' | 'loadPreview'>) {
   const [picker, setPicker] = useState<Picker>({ state: 'closed' });
+  const [previewing, setPreviewing] = useState(false);
   const pickerId = useId();
   const { resume, match } = card;
+  const without = card.withoutResume === true;
+  const closePreview = useCallback(() => setPreviewing(false), []);
 
   const open = () => {
     if (picker.state !== 'closed') {
@@ -339,10 +375,30 @@ function ResumeRow({ card, dryRun, loadResumes, chooseResume }: { card: Answered
     <button type="button" className="tia-button tia-button--quiet tia-job__change" aria-expanded={picker.state !== 'closed'}
       aria-controls={pickerId} data-job-action="change" onClick={open}>{COPY.job.change}</button>
   );
+  const previewable = loadPreview !== undefined && !without && resume !== null && resume.fileKind === 'pdf';
+  const buttons = (
+    <span className="tia-job__buttons">
+      {previewable && (
+        <button type="button" className="tia-button tia-button--quiet" aria-expanded={previewing}
+          data-job-action="preview" onClick={() => setPreviewing((shown) => !shown)}>{COPY.job.preview.open}</button>
+      )}
+      {change}
+    </span>
+  );
 
   return (
-    <div className="tia-job__resume" data-job-resume="">
-      {resume === null ? (
+    <div className="tia-job__resume" data-job-resume="" data-without-resume={without ? '' : undefined}>
+      {without ? (
+        // v3 Phase 3b: the person chose to apply without a resume.
+        <>
+          <div className="tia-job__resume-head">
+            <Icon name="doc" size={18} className="tia-icon tia-job__doc" />
+            <span className="tia-job__resume-text"><strong>{COPY.job.withoutResumeOn}</strong></span>
+            {change}
+          </div>
+          <p className="tia-job__why">{COPY.job.withoutResumeHelp}</p>
+        </>
+      ) : resume === null ? (
         // No resume TailorIT would attach: Change still lists the account's resumes, so one can be chosen (and the
         // custom question asked from it); the list says when there are none.
         <div className="tia-job__resume-head">
@@ -359,7 +415,7 @@ function ResumeRow({ card, dryRun, loadResumes, chooseResume }: { card: Answered
               <strong className="tia-job__resume-label">{resume.label}</strong>{' '}
               <span className="tia-tag tia-job__kind">{COPY.job.fileKinds[resume.fileKind]}</span>
             </span>
-            {change}
+            {buttons}
           </div>
           <p className="tia-job__why">
             {COPY.job.resumeReasons[resume.reason]}
@@ -367,6 +423,10 @@ function ResumeRow({ card, dryRun, loadResumes, chooseResume }: { card: Answered
           </p>
           {match?.state === 'no-keywords' && <p className="tia-job__why">{COPY.job.noKeywords}</p>}
           {match?.state === 'unreadable' && <p className="tia-job__why">{COPY.job.unreadable}</p>}
+          {previewable && previewing && (
+            <ResumePreview key={`${resume.label}|${resume.fileKind}`} load={loadPreview} label={resume.label}
+              onClose={closePreview} />
+          )}
         </>
       )}
       {picker.state !== 'closed' && (
@@ -392,6 +452,13 @@ function ResumeRow({ card, dryRun, loadResumes, chooseResume }: { card: Answered
             </ul>
           )}
           <div className="tia-picker__actions">
+            {setWithout !== undefined && !without && (
+              <button type="button" className="tia-button tia-button--quiet" data-resume-choice="without"
+                onClick={() => {
+                  setPicker({ state: 'closed' });
+                  setWithout(true);
+                }}>{COPY.job.withoutResume}</button>
+            )}
             {resume?.reason === 'chosen' && (
               <button type="button" className="tia-button tia-button--quiet" data-resume-choice="suggested"
                 onClick={() => choose(null)}>{COPY.job.picker.suggested}</button>

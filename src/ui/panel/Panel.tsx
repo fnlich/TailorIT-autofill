@@ -34,6 +34,14 @@
  * - Ask a custom question (v2, Ask.tsx; panel/ask), answered from the tab's active resume: off while AI-written answers
  *   (the drafts setting) are off, and under the posting's no-AI notice when any report of the tab says the posting
  *   forbids AI (saysNoAi) or the answer says so.
+ * - v3 Phase 3b: on the job card, "Autofill for another job" (panel/jobSearch, panel/chooseJob), "Apply without
+ *   resume" (panel/withoutResume) and the resume's Preview (the `preview` port, preview.ts); "Your autofill information"
+ *   opens the profile editor in place of the panel's content (Profile.tsx: panel/profile, panel/saveProfile), with Back;
+ *   a page Autofill does not work on offers "Ask TailorIT to support this site" (panel/siteRequest: its host alone); a
+ *   recognised posting page with no form shows its card (PageState.posting) and no Autofill.
+ * - v3 Phase 4: under the lists, the dock's "Continue to the next page" or "Submit application" (Report's StepDock:
+ *   panel/press for the frame whose step offers it, on the person's click here); once the platform confirmed the
+ *   application, "Application submitted" with where the tracker stands and "Open tracker" (PageState.submitted).
  * - At the foot: "Connected as …", and the link to the person's TailorIT jobs.
  * When the worker says the connection or the settings changed (panel/changed, perhaps from another window), they are
  * read again, and the job card read with the old connection is dropped at once.
@@ -42,11 +50,11 @@
  * job card draws only what TailorIT's lookup said, the resume's title among it (which may be the person's name: it is
  * shown on purpose, as the resume the fill attaches); the custom question's answer is the person's own request.
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
 import type { Answer } from '../../messaging/envelope';
 import type {
-  AddJobOutcome, AskLength, PageMessage, PageState, PanelLauncherAnswer, SaveAnswerOutcome,
+  AddJobOutcome, AskLength, PageMessage, PageState, PanelLauncherAnswer, SaveAnswerOutcome, SiteRequestOutcome,
 } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
@@ -62,6 +70,9 @@ import { AskQuestion } from './Ask';
 import { useTabJob } from './job';
 import { JobCard, type LetterMode } from './JobCard';
 import { useTabLetter } from './letter';
+import { receivePreview } from './preview';
+import { ProfileEditor } from './Profile';
+import { DisclosureChanged } from '../page/disclosure';
 import { useTabReports, type LinkState } from './reports';
 import { useFollowedTab } from './tab';
 
@@ -93,6 +104,7 @@ type RowMessage = Extract<PageMessage, { type: 'panel/confirmDraft' | 'panel/sav
 const TAILORIT_LINKS = {
   autofillInfo: `${__TAILORIT_ORIGIN__}/settings/autofill`,
   jobs: `${__TAILORIT_ORIGIN__}/jobs`,
+  tracker: `${__TAILORIT_ORIGIN__}/tracker`,
 } as const;
 
 /** The run statuses at which a run waits for the person's Continue (or Cancel). */
@@ -156,6 +168,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   /** Where the person hid the launcher of the followed tab's site, read for that tab. */
   const [launcher, setLauncher] = useState<{ tabId: number; hidden: PanelLauncherAnswer['hidden'] } | null>(null);
   const [launcherShown, setLauncherShown] = useState<number | null>(null);
+  /** v3 Phase 3b: the profile editor shows in place of the panel's content. */
+  const [editing, setEditing] = useState(false);
   const { refresh } = auth;
   // The card's connection key: the token's expiry, and every change the worker announced (another window may have
   // connected or disconnected), so a card read with the old connection is dropped the moment the change is heard.
@@ -163,6 +177,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     : auth.status.connection === 'connected' ? `${auth.status.expiresAt ?? 0}|${changes.connection}` : null;
   const job = useTabJob(platform, tabId, { page, connection, reports });
   const newestReport = Math.max(0, ...reports.map((report) => report.updatedAt));
+  // The resume preview's loader, one per tab (the review): a preview opened is one transfer, whatever the panel draws.
+  const loadPreview = useCallback((signal: AbortSignal) => (tabId === null ? Promise.resolve({ ok: false as const,
+    reason: 'unavailable' as const }) : receivePreview(platform, tabId, signal)), [platform, tabId]);
   const settingsUrl = platform.runtime.getURL('/options.html');
   /** AI-written answers (the drafts setting) are off: the custom question is too. */
   const aiOff = settings === null ? null : !settings.llm.drafts;
@@ -273,6 +290,35 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     });
   };
 
+  /** v3 Phase 3b: "Autofill for another job"'s choice, and "Apply without resume": kept for the tab, then the card is
+   *  read again. A choice the worker could not keep (the page changed meanwhile, the search is gone) says so (the
+   *  review, 19). */
+  const chooseJob = (target: number, ref: string | null) => {
+    setAdded(null);
+    void request(platform, { v: 1, type: 'panel/chooseJob', tabId: target, ref }).then((answer) => {
+      if (!answer.ok) setFeedback({ tabId: target, text: COPY.job.another.failed, newest: Number.POSITIVE_INFINITY });
+      job.reload();
+    });
+  };
+  const setWithout = (target: number, without: boolean) => {
+    void request(platform, { v: 1, type: 'panel/withoutResume', tabId: target, without }).then((answer) => {
+      if (!answer.ok) setFeedback({ tabId: target, text: COPY.job.withoutFailed, newest: Number.POSITIVE_INFINITY });
+      job.reload();
+    });
+  };
+
+  /** The review: Try again, when the tracker could not be told of a submitted application. */
+  const retryApplied = (target: number) => {
+    void request(platform, { v: 1, type: 'panel/retryApplied', tabId: target }).then((answer) => {
+      if (!answer.ok) setFeedback({ tabId: target, text: COPY.panel.failed, newest: Number.POSITIVE_INFINITY });
+    });
+  };
+
+  /** The review: I understand, on the disclosure that changed since the person connected. */
+  const acknowledge = () => {
+    void request(platform, { v: 1, type: 'auth/acknowledgeDisclosure' }).then(() => refresh());
+  };
+
   /** Show the TailorIT button again: the site's and the everywhere flag cleared, the tab's frames told. */
   const showLauncher = (target: number) => {
     void request(platform, { v: 1, type: 'panel/showLauncher', tabId: target }).then((answer) => {
@@ -324,6 +370,21 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     </div>
   );
 
+  if (editing) {
+    return (
+      <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}>
+        <ProfileEditor platform={platform} onClose={() => setEditing(false)} tailoritUrl={TAILORIT_LINKS.autofillInfo} />
+      </main>
+    );
+  }
+
+  // A recognised posting page with no form (v3 Phase 3b): its card shows, and Autofill waits for the application; the
+  // platform's page after submitting (the review) shows the card POST /applied answered, without Autofill.
+  const postingOnly = page?.support === 'no-form' && (page.posting === true || page.confirmation === true);
+  // The platform confirmed the tab's application (the review, Jobright's "Submitted!"): no Autofill, no Cancel or Skip.
+  const submitted = page?.submitted !== undefined;
+  const cardJob = card !== null && card.state === 'answered' ? card.job : null;
+
   return (
     <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}>
       <header className="tia-panel__head">
@@ -347,6 +408,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         </section>
       )}
       <ConnectionProblem auth={auth} settingsUrl={settingsUrl} />
+      {auth.status?.connection === 'connected' && auth.status.disclosure === 'changed' && (
+        <DisclosureChanged onUnderstand={acknowledge} />
+      )}
       <LinkProblem link={link} onReconnect={reconnect} />
       {tabId !== null && hidden !== 'none' && (
         <div className="tia-strip tia-launcher-hidden" data-tone="neutral" data-launcher-hidden={hidden}>
@@ -364,15 +428,19 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
       {tabId === null ? (
         <p className="tia-strip" data-strip="no-tab" data-tone="neutral">{COPY.panel.noTab}</p>
       ) : page?.support === 'none' && reports.length === 0 ? (
-        <Unsupported reload={page.reload === true} />
+        <Unsupported reload={page.reload === true}
+          ask={() => request(platform, { v: 1, type: 'panel/siteRequest', tabId })} />
       ) : reports.length === 0 && job.view.state === 'hidden' ? (
         <PageStrip page={page} />
       ) : null}
+      {tabId !== null && page?.submitted !== undefined && (
+        <Submitted state={page.submitted} job={cardJob} onRetry={() => retryApplied(tabId)} />
+      )}
       {tabId !== null && (
         <ReportNotices reports={reports} busy={busy}
           onPolicyDecision={(frameId, decision) => void decide({ v: 1, type: 'panel/policyDecision', tabId, frameId, decision })} />
       )}
-      {tabId !== null && page?.support !== 'none' && (job.view.state === 'hidden' ? toolbar : (
+      {tabId !== null && page?.support !== 'none' && (job.view.state === 'hidden' ? (postingOnly || submitted ? null : toolbar) : (
         <JobCard view={job.view} platform={page?.platform ?? null} dryRun={dryRun} adding={adding}
           outcome={added !== null && added.tabId === tabId ? added.outcome : null} now={now()}
           onAdd={() => void addJob(tabId)}
@@ -382,8 +450,18 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
           }}
           chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
           letter={letter.view} letterMode={letterMode} onWriteLetter={letter.write}
-          letterAsked={asksForLetter(page, reports)} working={working} autofillInfoUrl={TAILORIT_LINKS.autofillInfo}>
-          {toolbar}
+          letterAsked={asksForLetter(page, reports)} working={working} autofillInfoUrl={TAILORIT_LINKS.autofillInfo}
+          searchJobs={async (query) => {
+            const answer = await request(platform, { v: 1, type: 'panel/jobSearch', tabId, query });
+            return answer.ok ? answer.data : null;
+          }}
+          chooseJob={(ref) => chooseJob(tabId, ref)}
+          setWithout={(without) => setWithout(tabId, without)}
+          loadPreview={loadPreview}
+          onAutofillInfo={() => setEditing(true)} submitted={submitted}>
+          {submitted ? null : postingOnly && page?.confirmation !== true
+            ? <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
+            : postingOnly ? null : toolbar}
         </JobCard>
       ))}
       {shownFeedback !== null && <p className="tia-feedback" role="status">{shownFeedback.text}</p>}
@@ -395,10 +473,13 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             notices={false}
             busy={busy}
             minimized={settings?.view === 'minimized'}
-            onCancel={() => void run({ v: 1, type: 'panel/cancel', tabId })}
-            onSkip={(frameId, fieldKey) => {
-              void request(platform, { v: 1, type: 'panel/skip', tabId, frameId, fieldKey });
-            }}
+            submitted={submitted}
+            {...(submitted ? {} : {
+              onCancel: () => void run({ v: 1, type: 'panel/cancel', tabId }),
+              onSkip: (frameId: number, fieldKey: string) => {
+                void request(platform, { v: 1, type: 'panel/skip', tabId, frameId, fieldKey });
+              },
+            })}
             onShowField={(frameId, fieldKey) => {
               void request(platform, { v: 1, type: 'panel/focus', tabId, frameId, fieldKey }).then((answer) => {
                 if (!answer.ok) setFeedback({ tabId, text: COPY.panel.focusFailed, newest: Number.POSITIVE_INFINITY });
@@ -410,6 +491,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             }}
             onConfirmDraft={(frameId, fieldKey) => void act({ v: 1, type: 'panel/confirmDraft', tabId, frameId, fieldKey })}
             onSaveAnswer={(frameId, fieldKey) => void act({ v: 1, type: 'panel/saveAnswer', tabId, frameId, fieldKey })}
+            onPress={async (frameId, target, confirmed) => {
+              const answer = await request(platform, { v: 1, type: 'panel/press', tabId, frameId, target, confirmed });
+              return answer.ok ? answer.data : null;
+            }}
           />
         </section>
       )}
@@ -422,9 +507,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         <ConnectedLine auth={auth} />
         <p className="tia-links">
           {job.view.state === 'hidden' && (
-            <a href={TAILORIT_LINKS.autofillInfo} target="_blank" rel="noreferrer" data-tailorit-link="autofill">
+            <button type="button" className="tia-linkbutton" data-open-profile="" onClick={() => setEditing(true)}>
               {COPY.panel.autofillInfo}
-            </a>
+            </button>
           )}
           <a href={TAILORIT_LINKS.jobs} target="_blank" rel="noreferrer" data-tailorit-link="jobs">{COPY.panel.openJobs}</a>
         </p>
@@ -433,8 +518,64 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   );
 }
 
-/** A page Autofill does not work on (v3 Phase 3): the sites it works on. */
-function Unsupported({ reload }: { reload: boolean }) {
+/** v3 Phase 4: the platform confirmed the application: the job it was for, where the tracker stands (Try again when
+ *  it could not be told), and Open Job Tracker (the review: Jobright's "Application submitted · added to your Job
+ *  Tracker as Applied"). */
+function Submitted({ state, job, onRetry }: { state: NonNullable<PageState['submitted']>;
+  job: { title: string; company: string } | null; onRetry(): void }) {
+  return (
+    <section className="tia-submitted" data-submitted={state} aria-label={COPY.panel.submitted.title}>
+      <p className="tia-submitted__title">
+        <Icon name="check-circle" size={20} className="tia-icon tia-submitted__icon" />
+        {COPY.panel.submitted.title}
+      </p>
+      {job !== null && (job.title !== '' || job.company !== '') && (
+        <p className="tia-submitted__job" data-submitted-job="">{COPY.panel.submitted.job(job.title, job.company)}</p>
+      )}
+      <p className="tia-submitted__state" role="status">{COPY.panel.submitted.states[state]}</p>
+      <div className="tia-submitted__actions">
+        {state === 'not-recorded' && (
+          <button type="button" className="tia-button" data-action="retry-applied" onClick={onRetry}>
+            {COPY.panel.submitted.tryAgain}
+          </button>
+        )}
+        <a className="tia-button" href={TAILORIT_LINKS.tracker} target="_blank" rel="noreferrer" data-tailorit-link="tracker">
+          {COPY.panel.submitted.openTracker}
+        </a>
+      </div>
+    </section>
+  );
+}
+
+
+/** v3 Phase 3b: "Ask TailorIT to support this site": the tab's host alone goes to TailorIT; what came of it. */
+function AskForSite({ ask }: { ask(): Promise<Answer<{ outcome: SiteRequestOutcome }>> }) {
+  const [state, setState] = useState<{ sending: boolean; outcome: SiteRequestOutcome | null; failed: boolean }>(
+    { sending: false, outcome: null, failed: false });
+  const words = COPY.panel.siteRequest;
+  const send = async () => {
+    setState({ sending: true, outcome: null, failed: false });
+    const answer = await ask();
+    setState({ sending: false, outcome: answer.ok ? answer.data.outcome : null, failed: !answer.ok });
+  };
+  return (
+    <div className="tia-unsupported__ask" data-site-request={state.outcome ?? undefined}>
+      {state.outcome !== 'sent' && (
+        <button type="button" className="tia-button tia-button--primary" disabled={state.sending}
+          data-action="site-request" onClick={() => void send()}>
+          {state.sending ? words.asking : words.ask}
+        </button>
+      )}
+      {state.outcome === null && !state.failed && <p className="tia-help">{words.help}</p>}
+      {state.outcome !== null && <p className="tia-feedback" role="status">{words.outcomes[state.outcome]}</p>}
+      {state.failed && <p className="tia-feedback" role="status">{COPY.panel.failed}</p>}
+    </div>
+  );
+}
+
+/** A page Autofill does not work on (v3 Phase 3): the sites it works on, and (v3 Phase 3b) asking TailorIT to support
+ *  this one. */
+function Unsupported({ reload, ask }: { reload: boolean; ask(): Promise<Answer<{ outcome: SiteRequestOutcome }>> }) {
   const headingId = useId();
   const words = COPY.panel.unsupported;
   // A page on a supported site the extension did not see load: a reload is all it takes (v3 Phase 3 review).
@@ -465,6 +606,7 @@ function Unsupported({ reload }: { reload: boolean }) {
         ))}
       </ul>
       <p className="tia-help">{words.embedded}</p>
+      <AskForSite ask={ask} />
     </section>
   );
 }

@@ -90,6 +90,8 @@ export interface ReportHeader {
   repeatables?: FrameReport['repeatables'];
   /** The run rests in a working status (FrameReport.resting): waiting for the person's own Next. */
   resting?: boolean;
+  /** v3 Phase 4: what the step offers the panel's Next and Submit (FrameReport.buttons), at rest. */
+  buttons?: FrameReport['buttons'];
 }
 
 /** A progress line as a report carries it: whitespace collapsed, at most MAX_STEP_PROGRESS characters, none when
@@ -123,6 +125,7 @@ export function buildReport(header: ReportHeader, rows: readonly FillResult[]): 
     ...(header.repeatables === undefined || header.repeatables.length === 0 ? {}
       : { repeatables: header.repeatables.map((count) => ({ ...count })) }),
     ...(header.resting === true ? { resting: true as const } : {}),
+    ...(header.buttons === undefined ? {} : { buttons: { ...header.buttons } }),
     notices: header.notices.forReport(),
     counters: header.counters,
     updatedAt: Math.max(0, Math.floor(header.now)),

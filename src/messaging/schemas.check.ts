@@ -46,7 +46,8 @@ export type PlanAnswerRepeatablesMatch = Assert<Same<Unbrand<NonNullable<PlanOut
  *  C-S2): the worker's contentSettingsOf. */
 type SettingsChanged = Extract<z.infer<typeof WorkerToContentSchema>, { type: 'settings/changed' }>;
 export type SettingsChangedMatches = Assert<Same<Unbrand<Pick<Settings, 'panel' | 'llm' | 'offerToSaveAnswers'>
-  & { modes: Pick<Settings['modes'], 'next' | 'afterPageTurn'> }>, Unbrand<SettingsChanged['settings']>>>;
+  & { modes: Pick<Settings['modes'], 'next' | 'afterPageTurn' | 'submit' | 'agentSkip'> }>,
+  Unbrand<SettingsChanged['settings']>>>;
 /** The anonymous counters hold the core's five fields and a count, nothing more (Phase 6). */
 export type TelemetryCountMatches = Assert<Same<TelemetryCount, z.infer<typeof TelemetryCountSchema>>>;
 /** panel/shown carries whether the in-page panel is open in the sending frame, and nothing more (Phase 6): the worker

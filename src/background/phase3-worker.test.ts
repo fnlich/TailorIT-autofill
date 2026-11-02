@@ -324,4 +324,43 @@ describe('the job card, looked up as a form’s page loads (v3 Phase 3)', () => 
       .toEqual([0, 0]);
     expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'job/refresh')).toEqual([]);
   });
+
+  it('asks for a recognised posting page with no form too (v3 Phase 3b), read from its address, not its word', async () => {
+    const worker = await startTestWorker({ token: tokenRecord(), lookupOnLoad: true });
+    // A posting's own page (Lever's overview, no /apply), top frame, no form: its card frame.
+    const posting = contentSender({ url: LEVER_FRAME.url!.replace(/\/apply$/, '') });
+    relayingAs(worker, posting);
+    await hello(worker, posting, { hasForm: false });
+    await expect.poll(() => worker.tailorit.count(LOOKUP)).toBe(1);
+    expect(lookupBodies(worker)).toEqual([{ url: posting.url, includePostingText: false }]);
+    expect(await page(worker, { type: 'panel/reports', tabId: 7 })).toMatchObject({ ok: true, data: { page: {
+      support: 'no-form', posting: true } } });
+    expect(await page(worker, { type: 'panel/job', tabId: 7 })).toMatchObject({ ok: true, data: { tabId: 7,
+      card: { state: 'answered' } } });
+    expect(worker.tailorit.count(LOOKUP)).toBe(1);
+
+    // Not a posting: a subframe on a posting address, a Workday posting, a page no parser reads, a company's site.
+    const other = await startTestWorker({ token: tokenRecord(), lookupOnLoad: true });
+    const senders = [
+      contentSender({ tab: { id: 8 }, frameId: 2, documentId: 'doc-sub', url: posting.url }),
+      contentSender({ tab: { id: 9 }, documentId: 'doc-wd', url: 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Austin/Engineer_R1' }),
+      contentSender({ tab: { id: 10 }, documentId: 'doc-board', url: 'https://jobs.lever.co/tailorit-fixture' }),
+      contentSender({ tab: { id: 11 }, documentId: 'doc-site', url: 'https://example.com/careers/engineer' }),
+    ];
+    other.fakes.frameAnswers = async (sent) => {
+      const message = sent.message as { type?: string };
+      if (message.type === 'frame/ping') return { ok: true, data: { pong: true } };
+      if (message.type !== 'job/refresh') return { ok: true, data: {} };
+      return (await other.deliver({ v: 1, type: 'job/lookup' }, senders.find((tab) => tab.tab!.id === sent.tabId)!)) as
+        { ok: boolean };
+    };
+    for (const sender of senders) await hello(other, sender, { hasForm: false });
+    await Promise.resolve();
+    expect(other.tailorit.count(LOOKUP)).toBe(0);
+    expect(sentToFrames(other).filter((sent) => typeOfSent(sent) === 'job/refresh')).toEqual([]);
+    for (const tabId of [9, 10, 11]) {
+      const state = await page(other, { type: 'panel/reports', tabId }) as { data: { page: object } };
+      expect(state.data.page).not.toHaveProperty('posting');
+    }
+  });
 });

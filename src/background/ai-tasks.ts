@@ -45,6 +45,9 @@
  * until the frame has it. Edit with AI's rewrite is one draft question with the box's current text as
  * `currentAnswer` (cut after a whole word at TailorIT's cap); a current text naming a sensitive answer, a sum, a contact
  * detail or a postal address is never sent (namesSensitiveAnswer, as the core screens it: the Phase E review, MAJOR 3).
+ * v3 Phase 3b: the person's instruction typed in Edit with AI's box goes as that question's `instruction` (cut after a
+ * whole word at 750), screened the same way (and for a sensitive topic): one that fails is never sent, and the rewrite
+ * is llm-disabled-for-category, which the box says.
  *
  * Answers (the owner's amendments, docs/SPEC-AMENDMENTS.md; settings.llm.answers on; core/plan/answers.ts): a pass's
  * questions nothing else settled go as TailorIT's answer requests (POST …/ai/answer), at most ANSWER_MAX_ITEMS a task
@@ -261,7 +264,7 @@ const DRAFT_DISCARDS: Readonly<Record<Exclude<AutofillDraftReason, 'drafted' | '
  *  current text names a sensitive answer, a sum, a contact detail or a postal address (namesSensitiveAnswer, over the
  *  vocabulary), or a key past TailorIT's cap. */
 export function draftBatches(items: readonly DraftItem[], context: DraftContext, canaries: readonly string[],
-  vocab: Vocab): { batches: DraftBatch[]; withheld: DraftVerdict[] } {
+  vocab: Vocab, rewrite?: { key: string; instruction: string }): { batches: DraftBatch[]; withheld: DraftVerdict[] } {
   const limits = AUTOFILL_AI_LIMITS.draft;
   const withheld: DraftVerdict[] = [];
   const sendable: DraftItem[] = [];
@@ -271,8 +274,12 @@ export function draftBatches(items: readonly DraftItem[], context: DraftContext,
     seen.add(item.key);
     // A rewrite's current text is screened as the core screens it (the Phase E review, MAJOR 3): what the box holds may
     // state a sensitive answer, a sum or a contact detail.
+    // v3 Phase 3b: Edit with AI's instruction, the person's own words, is screened as the box's text is: one naming a
+    // sensitive topic, or stating a sensitive answer, a sum, a contact detail or a postal address, is never sent.
+    const instruction = rewrite !== undefined && rewrite.key === item.key ? rewrite.instruction : undefined;
     if (namesSensitiveTopic(item.question)
-      || (item.current !== undefined && namesSensitiveAnswer(item.current, vocab))) {
+      || (item.current !== undefined && namesSensitiveAnswer(item.current, vocab))
+      || (instruction !== undefined && (namesSensitiveTopic(instruction) || namesSensitiveAnswer(instruction, vocab)))) {
       withheld.push({ key: item.key, text: null, why: 'llm-disabled-for-category' });
     } else if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') {
       withheld.push({ key: item.key, text: null, why: 'llm-invalid-output' });
@@ -286,7 +293,9 @@ export function draftBatches(items: readonly DraftItem[], context: DraftContext,
     batches.push({ kind: 'draft', items: chunk, body: {
       questions: chunk.map((item) => ({ key: item.key, question: cutAtWord(item.question, limits.question),
         maxLength: item.maxLength,
-        ...(item.current === undefined ? {} : { currentAnswer: cutAtWord(item.current, limits.currentAnswer) }) })),
+        ...(item.current === undefined ? {} : { currentAnswer: cutAtWord(item.current, limits.currentAnswer) }),
+        ...(rewrite !== undefined && rewrite.key === item.key
+          ? { instruction: cutAtWord(rewrite.instruction, limits.instruction) } : {}) })),
       jobText: cutAtWord(context.jobText, limits.jobText),
       company: cutAtWord(context.company, limits.company),
       jobTitle: cutAtWord(context.jobTitle, limits.jobTitle),
@@ -766,6 +775,8 @@ export interface AskContext {
   noAi?: boolean;
   /** Edit with AI: the one key this context rewrites (draft/rewrite), planned again as a rewrite. */
   rewrite?: FieldKey;
+  /** v3 Phase 3b: the person's instruction for that rewrite (draft/rewrite's `instruction`), trimmed, never empty. */
+  instruction?: string;
   /** Phase G: the company and job title the frame's page title names (plan/request's `posting`), for a cover letter
    *  of a posting TailorIT does not have. Page text, memory only. */
   posting?: { company: string; title: string };
@@ -881,7 +892,8 @@ export function createRunAi(tasks: AiTasks, ids: AiTaskIds, vocab: Vocab): RunAi
       // Drafts (Phase 6): only with the setting on and a context to send them with.
       const asked = ask.drafts ?? [];
       const written = llm.drafts && context.draft !== undefined
-        ? draftBatches(asked, context.draft, context.canaries, vocab)
+        ? draftBatches(asked, context.draft, context.canaries, vocab, context.rewrite !== undefined
+          && context.instruction !== undefined ? { key: context.rewrite, instruction: context.instruction } : undefined)
         : { batches: [], withheld: asked.map((item): DraftVerdict => ({ key: item.key, text: null, why: 'drafts-disabled' })) };
       for (const verdict of written.withheld) {
         drafts.set(verdict.key, verdict);

@@ -100,7 +100,7 @@ describe('the options page', () => {
     }
   });
 
-  it('shows the modes in their own card, each saved at once, Sign-in, Submit and the agent’s rules not yet (v3 Phase 3)', async () => {
+  it('shows the modes in their own card, each saved at once, Submit since v3 Phase 4, Sign-in and the agent’s rules not yet', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);
     const card = root.querySelector<HTMLElement>('[data-card="modes"]')!;
@@ -108,9 +108,14 @@ describe('the options page', () => {
     expect(card.querySelector('h2')?.textContent).toBe(TEXT.modes.heading);
     expect([...card.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => [group.dataset.settingGroup,
       group.querySelector('legend')?.textContent])).toEqual([['modes.next', TEXT.modes.next.name],
-      ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['modes.consents', TEXT.modes.consents.name],
-      ['modes.ai', TEXT.modes.ai.name], ['view', TEXT.modes.view.name]]);
-    expect(root.querySelector('[data-setting-group="modes.signIn"], [data-setting-group="modes.submit"]')).toBeNull();
+      ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['modes.submit', TEXT.modes.submit.name],
+      ['modes.recordOwn', TEXT.modes.recordOwn.name], ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name], ['view', TEXT.modes.view.name]]);
+    expect(root.querySelector('[data-setting-group="modes.signIn"]')).toBeNull();
+    // Submit is Manual unless the person sets it to Auto.
+    expect(setting(root, 'modes.submit.manual').checked).toBe(true);
+    await click(setting(root, 'modes.submit.auto'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, submit: 'auto' } });
+    await click(setting(root, 'modes.submit.manual'));
     expect(root.querySelector('input[data-setting^="modes.agentSkip"]')).toBeNull();
     // The AI's answers to legal, pay and attention-check questions (version 3's switch) are the AI answers mode.
     expect(root.querySelector('input[data-setting="llm.answerAll"]')).toBeNull();

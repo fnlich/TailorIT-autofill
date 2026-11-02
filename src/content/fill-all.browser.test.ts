@@ -94,6 +94,16 @@ async function personClicks(fixture: Fixture, button: HTMLButtonElement): Promis
   await userEvent.click(fixture.frame, { position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });
 }
 
+/** v3 Phase 3b: the person's click on Edit with AI opens its instruction box; their click on Generate asks. */
+async function personRewrites(started: { fixture: Fixture; runtime: ContentRuntime }, button: HTMLButtonElement):
+  Promise<void> {
+  await personClicks(started.fixture, button);
+  await vi.waitFor(() => expect(started.runtime.ui!.aiPrompt).not.toBeNull());
+  const generate = started.runtime.ui!.aiPrompt!.generate;
+  await vi.waitFor(() => expect(started.runtime.ui!.visibleNow(generate)).toBe(true));
+  await personClicks(started.fixture, generate);
+}
+
 describe('version 2’s defaults: every question filled', () => {
   it('writes an answer to the unknown questions, marked "AI guess", and the draft accepted, each needing nothing of the person', async () => {
     const started = await start(FORM, 'fa-defaults');
@@ -231,7 +241,7 @@ describe('Edit with AI', () => {
     mine.click();
     await deadline(50);
     expect(started.worker.of('draft/rewrite')).toEqual([]);
-    await personClicks(started.fixture, mine);
+    await personRewrites(started, mine);
     await vi.waitFor(() => expect(why.value).toBe(REWRITE));
     const asked = started.worker.of('draft/rewrite');
     expect(asked).toHaveLength(1);
@@ -254,7 +264,7 @@ describe('Edit with AI', () => {
       return at.left >= box.left && at.right <= box.right && at.top >= box.top && at.bottom <= box.bottom;
     })!;
     logs.mockClear();
-    await personClicks(started.fixture, mine);
+    await personRewrites(started, mine);
     await vi.waitFor(() => expect(logs).toHaveBeenCalledWith('[tailorit-autofill] content.ai-edit-refused',
       { written: false }));
     expect(started.worker.of('draft/rewrite')).toHaveLength(1);
@@ -293,7 +303,7 @@ describe('Edit with AI', () => {
     await started.runtime.fill();
     await editButtons(started.runtime, 2);
     await started.worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
-      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn },
+      modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn, submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip },
       llm: { ...DEFAULT_SETTINGS.llm, drafts: false }, offerToSaveAnswers: true } });
     await vi.waitFor(() => expect(started.runtime.ui!.aiEditButtons).toHaveLength(0));
     const key = rowOf(lastReport(started.worker), WHY).key;

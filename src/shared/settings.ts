@@ -25,6 +25,8 @@ export const ModesSchema = z.strictObject({
   next: z.enum(MODE_CHOICES.next),
   afterPageTurn: z.enum(MODE_CHOICES.afterPageTurn),
   submit: z.enum(MODE_CHOICES.submit),
+  /** The v3 Phase 4 review: a stored version 4 value from before it reads as on (its default). */
+  recordOwn: z.enum(MODE_CHOICES.recordOwn).default('on'),
   consents: z.enum(MODE_CHOICES.consents),
   ai: z.enum(MODE_CHOICES.ai),
   agentSkip: z.strictObject({ requiredEmpty: z.boolean(), noAi: z.boolean(), legalGuess: z.boolean() }),
@@ -78,10 +80,10 @@ export const SettingsV1Schema = z.strictObject({
   interpretations: z.strictObject({ postingCountryForLegal: z.boolean(), twoOrMoreRaces: z.boolean() }),
 }) satisfies z.ZodType<SettingsV1>;
 
-/** The modes a content script acts on (v3 Phase 3 review): Next, and whether a new step fills as it appears. The rest
- *  (Consent boxes and AI answers, the planner's; Sign-in, Submit and the agent's skip rules, not yet shipped) stay in
- *  the worker. */
-export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: true });
+/** The modes a content script acts on (v3 Phase 3 review): Next, and whether a new step fills as it appears; since v3
+ *  Phase 4, Submit and the skip rules it reads. The rest (Consent boxes and AI answers, the planner's; Sign-in, not yet
+ *  shipped) stay in the worker. */
+export const ContentModesSchema = ModesSchema.pick({ next: true, afterPageTurn: true, submit: true, agentSkip: true });
 
 /** What a content script needs to know of the settings for a run: panel placement, the modes it acts on
  *  (ContentModesSchema), the AI switches (what a posting that forbids AI does among them), and whether to offer saving

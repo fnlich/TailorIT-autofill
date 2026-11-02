@@ -10,7 +10,16 @@
 import { z } from 'zod';
 import {
   AutofillAddJobResponseSchema,
+  type AutofillAppliedRequest,
   AUTOFILL_COVER_LETTER_MAX_BYTES,
+  AutofillCoverLetterTextSchema,
+  type AutofillCoverLetterText,
+  AutofillJobSearchResponseSchema,
+  type AutofillJobSearchResponse,
+  AUTOFILL_JOB_SEARCH_QUERY_MAX,
+  PutAutofillProfileResponseSchema,
+  type PutAutofillProfileBody,
+  type PutAutofillProfileResponse,
   AutofillCoverLetterIdSchema,
   AutofillCoverLetterResponseSchema,
   AutofillCoverLetterStatusSchema,
@@ -166,6 +175,20 @@ export interface ServerClient {
   /** GET /cover-letters/:id/file: the letter's PDF, refused above `maxBytes` (TailorIT's 10 MiB cap) before or while
    *  reading; a letter not ready yet is a conflict (409). */
   coverLetterFile(id: string, maxBytes?: number): Promise<ServerResult<CoverLetterFile>>;
+  /** GET /cover-letters/:id/text (version 3): a ready letter's words, for a cover-letter text box. A letter not ready
+   *  yet is a conflict (409). The words are never logged. */
+  coverLetterText(id: string): Promise<ServerResult<AutofillCoverLetterText>>;
+  /** GET /jobs/search?q= (version 3): at most 10 of the person's tracked jobs whose title or company holds every word
+   *  of `query` ("Autofill for another job"). The query goes in the query string only, URL-encoded. */
+  searchJobs(query: string): Promise<ServerResult<AutofillJobSearchResponse>>;
+  /** POST /applied (version 3, scope tracker:write): the job is marked Applied in the tracker; answers the lookup. */
+  applied(body: AutofillAppliedRequest): Promise<ServerResult<AutofillLookupResponse>>;
+  /** POST /site-requests (version 3): "Ask TailorIT to support this site", a host name alone. */
+  siteRequest(host: string): Promise<ServerResult<null>>;
+  /** PUT /profile (version 3, scope profile:write; its `sensitive` only with profile:sensitive): the side panel's
+   *  "Your autofill information". A stale revision is a conflict (409 `revision_conflict`), a body TailorIT refuses
+   *  bad-request (400), a token without the scope forbidden (403). */
+  putProfile(body: PutAutofillProfileBody): Promise<ServerResult<PutAutofillProfileResponse>>;
 }
 
 /** What the server client needs. */
@@ -206,6 +229,9 @@ type Body = { kind: 'json'; schema: z.ZodType } | { kind: 'none' } | { kind: 'by
 interface Call {
   method: Method;
   path: string;
+  /** The query string's parameters (GET /jobs/search's `q`), encoded by URLSearchParams: the path alone is checked
+   *  against the allow-list, and the query never names a route. */
+  query?: Record<string, string>;
   /** 'current': the stored token; a string: that token; null: none (redeem). */
   token: 'current' | string | null;
   json?: unknown;
@@ -324,7 +350,8 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     const started = deps.platform.now();
     let response: Response;
     try {
-      response = await deps.platform.fetch(`${deps.origin}${call.path}`, init);
+      const query = call.query === undefined ? '' : `?${new URLSearchParams(call.query).toString()}`;
+      response = await deps.platform.fetch(`${deps.origin}${call.path}${query}`, init);
     } catch (error) {
       if (isTimeout(error)) {
         log('server.timeout');
@@ -468,6 +495,27 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
       }
       return json({ method: 'GET', path: `/api/autofill/cover-letters/${id}`, token: 'current' }, AutofillCoverLetterStatusSchema);
     },
+    coverLetterText(id) {
+      if (!AutofillCoverLetterIdSchema.safeParse(id).success) {
+        log('server.path-refused');
+        return Promise.resolve(failure('refused-path'));
+      }
+      return json({ method: 'GET', path: `/api/autofill/cover-letters/${id}/text`, token: 'current' },
+        AutofillCoverLetterTextSchema);
+    },
+    searchJobs: (query) => json({ method: 'GET', path: '/api/autofill/jobs/search', token: 'current',
+      query: { q: [...query].slice(0, AUTOFILL_JOB_SEARCH_QUERY_MAX).join('') } }, AutofillJobSearchResponseSchema),
+    async applied(body) {
+      const raw = await json({ method: 'POST', path: '/api/autofill/applied', token: 'current', json: body }, LookupWireSchema);
+      return raw.ok ? { ok: true, value: lookupOf(raw.value) } : raw;
+    },
+    async siteRequest(host) {
+      const raw = await send({ method: 'POST', path: '/api/autofill/site-requests', token: 'current', json: { host },
+        answer: { kind: 'none' } });
+      return raw.ok ? { ok: true, value: null } : raw;
+    },
+    putProfile: (body) =>
+      json({ method: 'PUT', path: '/api/autofill/profile', token: 'current', json: body }, PutAutofillProfileResponseSchema),
     async coverLetterFile(id, maxBytes = AUTOFILL_COVER_LETTER_MAX_BYTES) {
       if (!AutofillCoverLetterIdSchema.safeParse(id).success) {
         log('server.path-refused');

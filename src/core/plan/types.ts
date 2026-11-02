@@ -71,6 +71,9 @@ export interface PlanInput {
   /** The run's cover letter as the worker knows it (Phase G; memory only). Absent: not asked yet, so a cover-letter
    *  upload the plan could fill waits for it (PlanOutput.coverLetter). Ready: the plan attaches it (withCoverLetter). */
   coverLetter?: CoverLetterState;
+  /** v3 Phase 3b: the person chose "Apply without resume" for the tab: a resume upload is left for them
+   *  (resume-not-attached, skipped; needing them only where the form requires one). */
+  withoutResume?: boolean;
 }
 
 /** Why a cover-letter upload has no letter (Phase G), as its row says: TailorIT could not write one, or the person's own
@@ -85,7 +88,9 @@ export type CoverLetterGap = Extract<ReasonCode, 'cover-letter-failed' | 'cover-
  * with why.
  */
 export type CoverLetterState =
-  | { state: 'ready'; aiWritten: boolean }
+  /** `text`: its words, once a cover-letter text box asked for them (v3 Phase 3b); `textUnavailable`: they were asked
+   *  for and could not be read. */
+  | { state: 'ready'; aiWritten: boolean; text?: string; textUnavailable?: true }
   | { state: 'waiting' }
   | { state: 'none'; reason: CoverLetterGap };
 
@@ -166,6 +171,7 @@ export interface PlanOutput {
   aiAttestation?: true;
   /** The cover-letter uploads that wait for the run's cover letter (Phase G), never in `awaiting` (they are no LLM
    *  question): the worker asks TailorIT once per run, then plans them again. `generate`: TailorIT's AI may write one
-   *  when the person has none (never in a dry run, a profile-only run, or with AI-written answers off). Absent: none. */
-  coverLetter?: { keys: FieldKey[]; generate: boolean };
+   *  when the person has none (never in a dry run, a profile-only run, or with AI-written answers off). `text` (v3
+   *  Phase 3b): a cover-letter text box among them, so the worker reads the ready letter's words too. Absent: none. */
+  coverLetter?: { keys: FieldKey[]; generate: boolean; text?: true };
 }

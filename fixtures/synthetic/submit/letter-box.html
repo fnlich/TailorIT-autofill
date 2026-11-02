@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 3b): a Lever application form whose cover letter is asked for in a text box rather than an
+  upload (labelRules' freeText.coverLetter), beside questions the golden profile answers. Served at
+  https://jobs.lever.co/tailorit-fixture/<posting>/apply. A fill types the person's letter for the job into the box (the
+  mock's GET /cover-letters/:id/text, its words holding GOLDEN-LETTER-K8M4). Its Submit is button#btn-submit, typeless
+  type="button", which nothing here presses; the page has no script.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Northwind - Senior Backend Engineer</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    ul { list-style: none; padding: 0; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input, textarea { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    textarea { min-height: 160px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Senior Backend Engineer</h1>
+    <form id="application-form">
+      <ul>
+        <li class="application-question"><label>Full name<input name="name" type="text"></label></li>
+        <li class="application-question"><label>Email<input name="email" type="email"></label></li>
+        <li class="application-question"><label>Cover letter<textarea name="comments"></textarea></label></li>
+      </ul>
+      <button id="btn-submit" type="button" data-qa="btn-submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

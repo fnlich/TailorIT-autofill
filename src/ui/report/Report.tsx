@@ -52,6 +52,7 @@ import {
   offersSave, overallStatus, percent, policyFromStoredCopy, progressOf, progressStateOf, repeatablesOf, stepText,
   stripToneOf, tallyOf, type ListRow, type ReportRow, type RowProgress,
 } from './model';
+import { StepDock, type PressAction } from './StepDock';
 import { adoptReportStyles } from './styles';
 
 /** Brings a row into view where the report is drawn: on an extension page of its own (the side panel), as the page
@@ -105,6 +106,12 @@ export interface ReportActions {
   onCancel?(): void;
   /** Skip on the field being written, after SKIP_AFTER_MS on it (the side panel sends panel/skip). */
   onSkip?(frameId: number, fieldKey: string): void;
+  /** v3 Phase 4: the dock's "Continue to the next page" and "Submit application" (StepDock.tsx), for the frame whose
+   *  step offers it (the side panel sends panel/press; the in-page panel presses its own run). */
+  onPress?: PressAction;
+  /** The review: the platform confirmed the tab's application (PageState.submitted): the dock reads "Submitted", and
+   *  the progress line's Cancel and Skip are not drawn. */
+  submitted?: boolean;
   /** While true, the policy card's and the rows' buttons that change something wait (a request is on its way). */
   busy?: boolean;
   /** When set, the row actions apply to this frame's rows only (the in-page panel can act on its own frame alone). */
@@ -137,6 +144,10 @@ export function Report({ reports, notices = true, minimized = false, ...actions 
         <p className="tia-empty">{COPY.panelEmpty}</p>
       ) : (
         <Progress reports={frames} actions={actions} minimized={minimized} />
+      )}
+      {actions.onPress !== undefined && (
+        <StepDock reports={frames} onPress={actions.onPress} submitted={actions.submitted === true}
+          {...(actions.actionsFrameId === undefined ? {} : { actionsFrameId: actions.actionsFrameId })} />
       )}
     </div>
   );
@@ -568,6 +579,9 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
         <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>
         {' '}
         {COPY.reasons[row.reason]}
+        {row.detail?.letterLength !== undefined && (
+          <> {COPY.report.letterLength(row.detail.letterLength.length, row.detail.letterLength.limit)}</>
+        )}
       </p>
       <dl className="tia-row__facts">
         <div className="tia-row__fact">

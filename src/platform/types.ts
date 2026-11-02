@@ -99,6 +99,11 @@ export interface WorkerPlatform {
      *  "Reload the page" when it does and no frame of ours said hello). Chrome gives a tab's address only on the hosts
      *  the extension may read, so false for any other; never the address itself. */
     onAtsHost?(tabId: number): Promise<boolean>;
+    /** v3 Phase 3b ("Ask TailorIT to support this site"): the host name of the tab's page, in lower case, when Chrome
+     *  gives the tab's address (an applicant-tracking host, or a tab the person invoked the extension on with the
+     *  toolbar icon: activeTab, kept across same-origin moves, taken back on another origin or when the tab closes)
+     *  and it is http or https; null otherwise. The host alone. */
+    hostOf?(tabId: number): Promise<string | null>;
   };
   storage: { local: StorageArea; session: StorageArea };
   /** open() must be called before any await in the handler of the message that carries the click, or the browser no
@@ -139,8 +144,9 @@ export interface PagePlatform {
     id: string | undefined;
     /** Sends to the worker. Rejects with a SendFailure when it cannot answer. */
     send(message: unknown): Promise<unknown>;
-    /** The review panel's live connection: post `panel/watch {tabId}`, receive `panel/update` on every change. */
-    connect(name: 'panel'): PortLike;
+    /** The review panel's live connection: post `panel/watch {tabId}`, receive `panel/update` on every change; and
+     *  (v3 Phase 3b) the resume preview's transfer, `preview`. */
+    connect(name: 'panel' | 'preview'): PortLike;
     getURL(path: string): string;
     isValid(): boolean;
   };

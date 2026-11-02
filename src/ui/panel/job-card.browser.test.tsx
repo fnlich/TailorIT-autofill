@@ -572,3 +572,83 @@ describe('the cover letter on the job card (Phase G)', () => {
     expect(letterRow(root)!.textContent).toContain(COPY.job.letter.written);
   });
 });
+
+describe('after a Submit, and the disclosure shown again (the v3 Phase 4 review)', () => {
+  it('says Application submitted, naming the job, with Open Job Tracker; no Autofill; Try again when it was not recorded', async () => {
+    const worker = withForm(jobCard({ tracked: { status: 2, archived: false } }));
+    worker.script.pages.set(5, formPage({ submitted: 'not-recorded' }));
+    worker.script.reports.set(5, [frameReport(0, { status: 'done', fields: [row('first')] })]);
+    worker.on('panel/retryApplied', () => ({ ok: true, data: {} }));
+    const root = await open(worker);
+    await vi.waitFor(() => expect(root.querySelector('[data-submitted="not-recorded"]')).not.toBeNull());
+    const shown = root.querySelector<HTMLElement>('[data-submitted]')!;
+    expect(shown.querySelector('[data-submitted-job]')?.textContent).toBe(COPY.panel.submitted.job(JOB.title, JOB.company));
+    expect(shown.querySelector('a[data-tailorit-link="tracker"]')?.textContent).toBe(COPY.panel.submitted.openTracker);
+    expect(button(root, COPY.panel.fill)).toBeNull();
+    // The card says Applied without warning of it: the person just applied.
+    expect(root.querySelector('[data-job-warning]')).toBeNull();
+    // The dock says Submitted, and the progress line offers no Cancel.
+    expect(root.querySelector('button[data-step-action="submitted"]')?.textContent).toContain(COPY.panel.step.submitted);
+    expect(root.querySelector('[data-action="cancel"]')).toBeNull();
+    await click(shown.querySelector<HTMLButtonElement>('[data-action="retry-applied"]')!);
+    expect(worker.sentOfType('panel/retryApplied')).toEqual([{ v: 1, type: 'panel/retryApplied', tabId: 5 }]);
+  });
+
+  it('says so when a job could not be chosen, or Apply without resume could not be kept', async () => {
+    const worker = withForm();
+    worker.on('panel/chooseJob', () => ({ ok: false, error: 'expired' }));
+    worker.on('panel/withoutResume', () => ({ ok: false, error: 'expired' }));
+    worker.on('panel/jobSearch', () => ({ ok: true, data: { outcome: 'found', items: [{ ref: 'j0', title: 'Backend',
+      company: 'Northwind', location: '' }] } }));
+    const root = await open(worker);
+    await click(root.querySelector<HTMLButtonElement>('button[data-job-action="another"]')!);
+    await vi.waitFor(() => expect(root.querySelector('button[data-job-choice="j0"]')).not.toBeNull());
+    await click(root.querySelector<HTMLButtonElement>('button[data-job-choice="j0"]')!);
+    await vi.waitFor(() => expect(root.textContent).toContain(COPY.job.another.failed));
+    await click(root.querySelector<HTMLButtonElement>('button[data-job-action="change"]')!);
+    await vi.waitFor(() => expect(root.querySelector('button[data-resume-choice="without"]')).not.toBeNull());
+    await click(root.querySelector<HTMLButtonElement>('button[data-resume-choice="without"]')!);
+    await vi.waitFor(() => expect(root.textContent).toContain(COPY.job.withoutFailed));
+  });
+
+  it('shows the disclosure again when it changed, until I understand', async () => {
+    const worker = withForm();
+    worker.script.auth = authStatus({ disclosure: 'changed' });
+    worker.on('auth/acknowledgeDisclosure', () => {
+      worker.script.auth = authStatus({ disclosure: 'current' });
+      return { ok: true, data: worker.script.auth };
+    });
+    const root = await open(worker);
+    const shown = root.querySelector<HTMLElement>('[data-disclosure-changed]')!;
+    expect(shown.textContent).toContain(COPY.options.connection.disclosure[0]);
+    expect(shown.textContent).toContain(COPY.panel.disclosureChanged.held);
+    await click(shown.querySelector<HTMLButtonElement>('[data-action="acknowledge-disclosure"]')!);
+    expect(worker.sentOfType('auth/acknowledgeDisclosure')).toHaveLength(1);
+    await vi.waitFor(() => expect(root.querySelector('[data-disclosure-changed]')).toBeNull());
+  });
+});
+
+describe('the resume preview’s transfer (the review, 8)', () => {
+  it('asks once per preview opened, whatever the panel draws meanwhile, and lets its port go when it closes', async () => {
+    const worker = withForm();
+    const root = await open(worker);
+    await click(root.querySelector<HTMLButtonElement>('button[data-job-action="preview"]')!);
+    await settle();
+    const asked = () => worker.posted.filter((message) => (message as { type?: unknown }).type === 'preview/request');
+    expect(asked()).toEqual([{ v: 1, type: 'preview/request', tabId: 5 }]);
+    const port = worker.ports.at(-1)!;
+    let dropped = false;
+    port.onDisconnect(() => {
+      dropped = true;
+    });
+    // The panel draws again (a report, a page state): no second transfer.
+    await act(async () => worker.ports[0]!.post({ v: 1, type: 'panel/update', tabId: 5,
+      reports: [frameReport(0, { status: 'review' })], page: formPage({ letter: true }) }));
+    await settle();
+    expect(asked()).toHaveLength(1);
+    // Closed before the bytes came: the port goes.
+    await click(root.querySelector<HTMLButtonElement>('button[data-job-action="preview"]')!);
+    await settle();
+    expect(dropped).toBe(true);
+  });
+});

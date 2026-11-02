@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 4): a Greenhouse job-boards application form, as its adapter reads one (form#application-form
+  .application--form, its Submit in .application--submit), with the questions the golden profile answers and an
+  optional one; with ?badge, one more required question the profile cannot answer; with ?resume, a required resume
+  upload whose file input is hidden behind its visible label, as Greenhouse's is (the v3 Phase 4 review). Served at
+  https://job-boards.greenhouse.io/tailoritfixture/jobs/<id>. The page's own script stands for Greenhouse's: on its
+  form's submit event (its own button's, or an Enter in a box) it posts nothing; it shows the confirmation Greenhouse
+  shows after submitting (main > div.confirmation > div.confirmation__content, "Thank you for applying to Northwind!",
+  as a read-only GET of a live posting's /confirmation address showed it on 2026-11-02) in the form's place, at the
+  address /confirmation (history.pushState), and counts the submissions on the body (data-submitted). It dispatches no
+  event, and clicks, focuses or submits nothing itself.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Job Application for Senior Backend Engineer at Northwind</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input { display: block; width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    .application--submit button { margin-top: 20px; padding: 10px 20px; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0 0 0 0); border: 0; }
+  </style>
+</head>
+<body data-submitted="0">
+  <main class="main">
+    <h1>Senior Backend Engineer</h1>
+    <form id="application-form" class="application--form">
+      <div class="field-wrapper"><label for="first_name">First Name<span aria-hidden="true">*</span></label>
+        <input id="first_name" name="first_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="last_name">Last Name<span aria-hidden="true">*</span></label>
+        <input id="last_name" name="last_name" type="text" aria-required="true"></div>
+      <div class="field-wrapper"><label for="email">Email<span aria-hidden="true">*</span></label>
+        <input id="email" name="email" type="email" aria-required="true"></div>
+      <div class="field-wrapper" id="badge-question"><label for="badge">Badge number<span aria-hidden="true">*</span></label>
+        <input id="badge" name="badge" type="text" aria-required="true"></div>
+      <div class="field-wrapper" id="resume-question"><label for="resume">Resume/CV<span aria-hidden="true">*</span></label>
+        <input id="resume" name="resume" type="file" aria-required="true" class="visually-hidden"></div>
+      <div class="field-wrapper"><label for="website">Website</label>
+        <input id="website" name="website" type="text"></div>
+      <div class="application--submit"><button class="btn btn--pill" type="submit">Submit application</button></div>
+    </form>
+  </main>
+  <script>
+    (() => {
+      if (!location.search.includes('badge')) document.getElementById('badge-question').remove();
+      if (!location.search.includes('resume')) document.getElementById('resume-question').remove();
+      const form = document.getElementById('application-form');
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        document.body.dataset.submitted = String(Number(document.body.dataset.submitted) + 1);
+        const box = document.createElement('div');
+        box.className = 'confirmation';
+        const content = document.createElement('div');
+        content.className = 'confirmation__content';
+        const heading = document.createElement('h1');
+        heading.textContent = 'Thank you for applying to Northwind!';
+        content.append(heading);
+        box.append(content);
+        document.querySelector('main').replaceChildren(box);
+        history.pushState({}, '', `${location.pathname}/confirmation`);
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { AUTOFILL_API_VERSION } from '../contract/tailorit';
+import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { PAIRING_TTL_MS } from './auth';
 import {
   connectPageSender,
@@ -253,8 +254,42 @@ describe('the connection', () => {
         storageAccess: 'restricted',
         versionMismatch: true,
         pairingExpiresAt: worker.clock.now + PAIRING_TTL_MS,
+        disclosure: 'current',
       },
     });
+  });
+
+  it('says when the disclosure changed since the person connected, and keeps what it governs off until I understand (the v3 Phase 4 review)', async () => {
+    // A connection made before the disclosure's version was kept: it read version 1.
+    const worker = await startTestWorker({ token: tokenRecord(), disclosure: null, lookupOnLoad: true });
+    expect(await worker.deliver({ v: 1, type: 'auth/status' }, pageSender())).toMatchObject({ ok: true,
+      data: { connection: 'connected', disclosure: 'changed' } });
+    // Submit mode Auto is held Manual in what a frame is told, and a form is not looked up as it loads.
+    const auto = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, submit: 'auto' as const } };
+    await worker.deliver({ v: 1, type: 'settings/save', settings: auto }, pageSender('options.html'));
+    const hello = await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender()) as {
+      data: { settings: { modes: { submit: string } } } };
+    expect(hello.data.settings.modes.submit).toBe('manual');
+    await Promise.resolve();
+    expect(worker.tailorit.count('POST /api/autofill/lookup')).toBe(0);
+    // I understand: it is kept, and Submit mode acts as chosen.
+    expect(await worker.deliver({ v: 1, type: 'auth/acknowledgeDisclosure' }, pageSender())).toMatchObject({ ok: true,
+      data: { disclosure: 'current' } });
+    const again = await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true },
+      contentSender({ documentId: 'doc-2' })) as { data: { settings: { modes: { submit: string } } } };
+    expect(again.data.settings.modes.submit).toBe('auto');
+    // A content script may not acknowledge it.
+    expect(await worker.deliver({ v: 1, type: 'auth/acknowledgeDisclosure' }, contentSender())).toMatchObject({ ok: false });
+  });
+
+  it('keeps the disclosure acknowledged when the person connects: pairing shows it', async () => {
+    const worker = await startTestWorker({ disclosure: null });
+    expect(await worker.deliver({ v: 1, type: 'auth/status' }, pageSender())).toMatchObject({ ok: true,
+      data: { connection: 'not-connected' } });
+    expect(((await worker.deliver({ v: 1, type: 'auth/status' }, pageSender())) as { data: object }).data)
+      .not.toHaveProperty('disclosure');
+    expect(await worker.deliver({ v: 1, type: 'auth/redeemCode', code: CODE }, pageSender('options.html')))
+      .toMatchObject({ ok: true, data: { connection: 'connected', disclosure: 'current' } });
   });
 
   it('reports storage access refused, and refuses to fill', async () => {

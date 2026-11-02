@@ -23,12 +23,19 @@
  * - TailorIT's look: a white card with a 20 px radius (styles.ts), its head TailorIT's mark and "TailorIT Autofill"
  *   beside a round chevron that closes it (Close the review), then the run's status strip and what the last action
  *   did; its body the report (notices, completion, rows). It shows no job facts.
+ * - v3 Phase 4: the report's dock ("Continue to the next page", "Submit application") presses this frame's own step
+ *   (PanelActions.press, the run's press.ts), only for the person's trusted click made while the panel could be seen
+ *   and on what was seen, as Confirm draft's: a page can neither click it (the capture gate stops an untrusted click)
+ *   nor reach its handler any other way. The review (12): the dock's own button is watched too, and its click counts
+ *   only once that button has been seen for DOCK_SEEN_MS, so a page cannot slide it under the pointer at the last
+ *   moment.
  */
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { COPY } from '../../shared/copy';
 import { log } from '../../shared/log';
+import type { PressAnswer, StepTarget } from '../../messaging/schemas';
 import type { FrameReport } from '../../shared/report';
 import { Brand, Icon } from '../../ui/brand';
 import { adoptReportStyles, Report, RunStatusLine, type SuggestionLabel } from '../../ui/report';
@@ -47,13 +54,21 @@ export interface PanelActions {
   saveAnswer?(fieldKey: string): Promise<string>;
   /** The person closed the panel. */
   closed(): void;
+  /** v3 Phase 4: the dock's Next or Submit, pressed in this frame's step (press.ts). Called only for a click the person
+   *  made while the panel could be seen. */
+  press?(target: StepTarget, confirmed: boolean): Promise<PressAnswer>;
 }
 
 /** What the panel needs of the page UI's visibility watch (visible.ts). */
 export interface PanelVisibility {
   observe(el: Element): void;
   shown(el: Element): boolean;
+  /** Seen for at least `ms` (visible.ts shownFor). */
+  shownFor(el: Element, ms: number): boolean;
 }
+
+/** How long the dock's button must have been seen before its click counts (the review, 12). */
+export const DOCK_SEEN_MS = 500;
 
 /** The in-page panel. */
 export interface InPagePanel {
@@ -151,6 +166,15 @@ function PanelView({ reports, frameId, actions, seenAtClick }: {
             describeField={(_frameId, fieldKey) => actions.describeField(fieldKey)}
             onConfirmDraft={seenOnly(actions.confirmDraft)}
             onSaveAnswer={seenOnly(actions.saveAnswer)}
+            {...(actions.press === undefined ? {} : { onPress: (_frameId: number, target: StepTarget,
+              confirmed: boolean) => {
+              // The dock presses only for the person's own click, seen where it landed (as Confirm draft's).
+              if (!seenAtClick()) {
+                log('content.ui-click-refused', { launcher: false, panel: true });
+                return Promise.resolve(null);
+              }
+              return actions.press!(target, confirmed);
+            } })}
             busy={busy}
           />
         )}
@@ -189,6 +213,10 @@ export function createInPagePanel(doc: Document, shadow: ShadowRoot, options: {
       return;
     }
     seenAtClick = visibility.shown(el) && landedInside(event, el);
+    // The dock's button: seen itself, for DOCK_SEEN_MS (the review, 12).
+    const dock = event.composedPath().find((node) => (node as Element).nodeType === 1
+      && (node as Element).hasAttribute?.('data-step-action')) as Element | undefined;
+    if (dock !== undefined) seenAtClick = seenAtClick && visibility.shownFor(dock, DOCK_SEEN_MS);
   };
   for (const type of CLICKS) el.addEventListener(type, gate, { capture: true });
   visibility.observe(el);
@@ -206,6 +234,8 @@ export function createInPagePanel(doc: Document, shadow: ShadowRoot, options: {
     const mounted = root;
     flushSync(() => mounted.render(
       <PanelView reports={reports} frameId={options.frameId()} actions={actions} seenAtClick={() => seenAtClick} />));
+    // The dock's buttons are watched as they are drawn (an element observed twice is one observation).
+    for (const button of container.querySelectorAll('button[data-step-action]')) visibility.observe(button);
   }
 
   return {

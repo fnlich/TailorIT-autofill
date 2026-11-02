@@ -101,10 +101,16 @@ test.describe('fill everything (the owner’s amendments)', () => {
     }
     expect(inBox, 'an Edit with AI button inside the box').not.toBeNull();
     await ui.click(inBox!);
+    // v3 Phase 3b: the button opens its instruction box (optional); nothing is asked until Generate.
+    await expect.poll(async () => (await ui.elements('button.ai-prompt__generate')).filter((el) => el.shown).length).toBe(1);
+    expect(await mock.requestsTo('POST /api/autofill/ai/draft')).toHaveLength(1);
+    await ui.click((await ui.elements('button.ai-prompt__generate')).find((el) => el.shown)!);
     await expect.poll(async () => (await mock.requestsTo('POST /api/autofill/ai/draft')).length).toBe(2);
     const rewrite = JSON.parse((await mock.requestsTo('POST /api/autofill/ai/draft'))[1]!.body) as
       { questions: Array<{ question: string; currentAnswer?: string }>; canaries: string[] };
     expect(rewrite.questions).toEqual([expect.objectContaining({ question: WHY, currentAnswer: CLEAN_DRAFT })]);
+    // No instruction typed: none is sent.
+    expect(rewrite.questions[0]).not.toHaveProperty('instruction');
     expect(rewrite.canaries.map((canary) => canary.toLowerCase())).toContain('i am llm');
     // The rewrite is written over the draft, an accepted draft still.
     await expect(page.locator('#why')).toHaveValue(CLEAN_REWRITE);
