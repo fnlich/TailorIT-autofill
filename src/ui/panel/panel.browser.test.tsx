@@ -332,4 +332,3 @@ describe('the auto-apply agent’s status in the side panel (v3 Phase 5)', () =>
     expect(strip.querySelector('button[data-action="agent-stop"]')).toBeNull();
   });
 });
-

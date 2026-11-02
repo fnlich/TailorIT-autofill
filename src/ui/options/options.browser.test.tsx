@@ -388,4 +388,3 @@ describe('Options › Auto-apply and Sign-in (v3 Phase 5)', () => {
     expect(saves(allowed).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } });
   });
 });
-
