@@ -25,9 +25,10 @@ import { isStopped, type LoopState, type LoopVerdict, type TrackedField } from '
 const OPTION_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'checkbox-group', 'combobox',
   'multiselect', 'typeahead-remote']);
 
-/** The row of a field that disappeared after it was planned or written. */
+/** The row of a field that disappeared after it was planned or written. A file whose upload the page said failed keeps
+ *  that word (the Phase 7a review: Workable's page falls over at a failed upload, taking the field with it). */
 export function disappearedRow(row: FillResult): FillResult {
-  if (row.reason === 'field-disappeared') return row;
+  if (row.reason === 'field-disappeared' || row.reason === 'upload-failed') return row;
   if (row.wrote) {
     return { ...settleRow(row, { kind: 'mismatch' }), reason: 'field-disappeared', verification: 'not-checked' };
   }

@@ -83,6 +83,9 @@ export const REASON_CODES = [
   // the review of v3 Phase 3b: the letter is longer than the cover-letter text box takes, so it was neither typed nor
   // cut (said plainly, in place of a field's maxlength-exceeded)
   'cover-letter-too-long',
+  // the Phase 7a review: a follow-up to the answer above ("If yes, please explain") that is optional, or required while
+  // the answer above is not the one it follows (core/plan/conditional.ts): never drafted or guessed, left as it is
+  'conditional-question',
   // a bug
   'internal-error',
 ] as const;

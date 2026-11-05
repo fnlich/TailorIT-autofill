@@ -106,7 +106,7 @@ describe('the anonymous counters', () => {
     await fakeBrowser.storage.local.set({ [TELEMETRY_KEY]: { counts: [
       { platform: 'lever', fieldKind: 'text', matcherStage: 'exact', outcome: 'success', tripwireTriggered: false, count: 4 },
       { platform: 'lever', fieldKind: 'text', matcherStage: 'exact', outcome: 'fail', tripwireTriggered: false, count: 1, label: 'Email' },
-      { platform: 'workable', fieldKind: 'text', matcherStage: 'exact', outcome: 'fail', tripwireTriggered: false, count: 1 },
+      { platform: 'smartrecruiters', fieldKind: 'text', matcherStage: 'exact', outcome: 'fail', tripwireTriggered: false, count: 1 },
     ] } });
     expect(await counts(worker)).toEqual([
       { platform: 'lever', fieldKind: 'text', matcherStage: 'exact', outcome: 'success', tripwireTriggered: false, count: 4 },

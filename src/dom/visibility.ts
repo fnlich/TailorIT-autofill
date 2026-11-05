@@ -56,6 +56,54 @@ export function isUserVisible(el: Element, cache: ScanCache = newScanCache()): b
   return visibilityOf(el, cache).visible;
 }
 
+/** The fixed boxes that hold a declared widget's list drawn where its field is (followsItsField): judged where they
+ *  stand in the page, as their field is, never as fixed to the viewport. Kept until the list closes (stopsFollowing). */
+const FOLLOWING_FIELDS = new WeakSet<Element>();
+
+/** How far from its field's edge a list drawn at the field's place may start, in CSS px (Workable's dialog starts at the
+ *  box's own bottom). */
+const FOLLOW_GAP_PX = 24;
+
+/** The nearest fixed box holding `list` inside `shared`, or null. */
+function fixedBoxOf(list: Element, shared: Element | null): Element | null {
+  for (let at: Element | null = list; at !== null && at !== shared; at = flatParent(at)) {
+    if (at.ownerDocument.defaultView?.getComputedStyle(at).position === 'fixed') return at;
+  }
+  return null;
+}
+
+/**
+ * A declared widget's open list that its page draws `position: fixed` at its field's place on screen
+ * (WidgetDecl.listFollowsField: Workable's dropdowns, whose fixed dialog's top is the field's own bottom, so a field
+ * below the fold opens its list beyond the viewport, where a person who scrolled to the field would see it): the
+ * nearest fixed box holding the list, when it sits in the field's own part of the page (an ancestor of both that is no
+ * form, body or html) and is drawn at the field (the Phase 7a review: its top or its bottom within the field's height and
+ * FOLLOW_GAP_PX either side, and across the field's own width), is judged by rule 5 as a page element below the fold is, its
+ * field's way, until the list closes. Every other rule stands for it and everything in it; any other fixed box, one
+ * drawn elsewhere, and this one beyond the document, stay judged as fixed.
+ */
+export function followsItsField(list: Element, field: Element): void {
+  let shared: Element | null = field.parentElement;
+  while (shared !== null && !shared.contains(list)) shared = shared.parentElement;
+  if (shared === null || ['html', 'body', 'form'].includes(shared.localName)) return;
+  const box = fixedBoxOf(list, shared);
+  if (box === null) return;
+  const drawn = box.getBoundingClientRect();
+  const own = field.getBoundingClientRect();
+  // Its top at the field (below it, or over it), or its bottom at the field's top (a list that opens upwards).
+  const near = (y: number) => y >= own.top - FOLLOW_GAP_PX && y <= own.bottom + FOLLOW_GAP_PX;
+  const adjacent = near(drawn.top) || near(drawn.bottom);
+  const across = drawn.left < own.right && drawn.right > own.left;
+  if (adjacent && across) FOLLOWING_FIELDS.add(box);
+  else FOLLOWING_FIELDS.delete(box);
+}
+
+/** The list closed (or the run is done with it): its fixed box is judged as fixed again. */
+export function stopsFollowing(list: Element): void {
+  const box = fixedBoxOf(list, null);
+  if (box !== null) FOLLOWING_FIELDS.delete(box);
+}
+
 /** isUserVisible with the rule that decided. */
 export function visibilityOf(el: Element, cache: ScanCache = newScanCache()): VisibilityVerdict {
   return cache.memo('visibility', el, () => judgeElement(el, cache));
@@ -385,10 +433,11 @@ function reachableHeight(doc: Document, view: Window, cache: ScanCache): number 
   return clipped ? view.innerHeight : Math.max(root.scrollHeight, body?.scrollHeight ?? 0, view.innerHeight);
 }
 
-/** True when `el` or an ancestor is `position: fixed`, so it stays put while the page scrolls. */
+/** True when `el` or an ancestor is `position: fixed`, so it stays put while the page scrolls; a fixed box that holds a
+ *  declared widget's list drawn at its field's place (followsItsField) counts as its parent does. */
 function fixedToViewport(el: Element, cache: ScanCache): boolean {
   return cache.memo('fixed', el, (): boolean => {
-    if (styleOf(el, cache)?.position === 'fixed') return true;
+    if (styleOf(el, cache)?.position === 'fixed' && !FOLLOWING_FIELDS.has(el)) return true;
     const parent = flatParent(el);
     return parent !== null && fixedToViewport(parent, cache);
   });

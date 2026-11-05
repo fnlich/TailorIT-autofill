@@ -4,8 +4,8 @@
  * The longer lists (field categories, reason codes, rule ids, degree types) sit beside the types that use them.
  */
 
-/** The applicant-tracking systems with an adapter. Workable and SmartRecruiters come later. */
-export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday'] as const;
+/** The applicant-tracking systems with an adapter (Workable since v3 Phase 7a). SmartRecruiters comes later. */
+export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
 /** The spec's field kinds plus one 'checkbox' (a lone box: consent, "I currently work here"). Equals TailorIT's list. */

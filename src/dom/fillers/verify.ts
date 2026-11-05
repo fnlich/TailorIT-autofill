@@ -124,9 +124,11 @@ export function verifyAfterSettle(fresh: ScanResult, key: FieldKey, value: Write
   Pick<FillOutcome, 'verification' | 'reason'> {
   const target = fresh.target(key);
   if (target === null) return { verification: 'not-checked', reason: 'element-not-found' };
-  if (isDisabled(target.control) || isReadOnly(target.control)) {
-    return { verification: 'mismatch', reason: 'disabled-or-readonly' };
-  }
+  // A widget is disabled or read-only as its scan says (a text box its adapter declares read-only by design is not:
+  // WidgetDecl.readOnlyBox), as the DOM guard reads it; a native control by its own attributes.
+  const unwritable = target.widget !== undefined ? target.field.disabled || target.field.readOnly
+    : isDisabled(target.control) || isReadOnly(target.control);
+  if (unwritable) return { verification: 'mismatch', reason: 'disabled-or-readonly' };
   const rule = options.rule ?? readBackRuleOf(target.field);
   if (!holds(target, value, rule, options.file)) return { verification: 'mismatch', reason: 'verify-mismatch' };
   if (markedInvalid(target)) return { verification: 'mismatch', reason: 'value-rejected-by-site' };

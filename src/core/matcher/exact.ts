@@ -170,7 +170,11 @@ function exactHit(scope: Scope, surface: IntendedSurface, option: PreparedOption
   const main = option.norm.key === surface.norm.key;
   const compact = !main && option.norm.core.length <= 3 && surface.norm.core.length <= 3
     && option.norm.compact === surface.norm.compact;
-  if (!main && !compact) return null;
+  if (!main && !compact) {
+    // One part of a slash-joined option ("Native/Fluent" for "Fluent"): the answer, beside another way to say it.
+    return option.slashParts.includes(surface.norm.key)
+      ? stageHit(option, 'exact', 'slash-part', MATCH_EXACT_QUALIFIERS_IGNORED, INTENDED) : null;
+  }
   const brackets = bracketCheck(scope, surface, option);
   if (!brackets.ok) return null;
   const hit = brackets.otherIgnored

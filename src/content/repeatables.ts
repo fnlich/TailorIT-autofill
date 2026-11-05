@@ -19,15 +19,30 @@
  *   left them with (an end date the page disabled is skipped, end-date-not-applicable; one the page still holds or
  *   requires is flagged). A row of our own write is never replaced. The loop writes a block's box before its end date
  *   (boxBeforeEndDate).
- * Nothing here reads, sends or logs a value: counts, indices, flags and the page's own disabled and checked states.
+ * - Save (saveBlocks), after the step's fill and its final Guard, never in a dry run: a block whose page keeps its
+ *   entry only once its own Save is pressed (the adapter's save: Workable's editors, "Update") has it pressed, one
+ *   untrusted click() through clickIfAllowed, settled after, only when (the Phase 7a review) the run opened that block
+ *   or found it empty when the step began, the person touched nothing in it, and its rows are ready (rowsReadyToSave:
+ *   each verified or skipped with nothing asked of the person, none the person changed, one at least holding our
+ *   value, written or already right). A block left so (the click refused, or the page still showing its Save after
+ *   the settle: it refused the entry) is the person's to finish (the needs-click notice).
+ * - Rounds (the orchestrator's fill step): an Add the page disables while an editor is open adds one block at a time,
+ *   so the step adds, fills and saves again while a section kept by its own Save still lacks an entry and shows its
+ *   Add (moreToAdd), at most as many rounds as the profile has entries; an entry still without a block is the person's
+ *   to add (entriesLeft), which holds Submit mode Auto. A saved entry is a block of its own, which shows its summary
+ *   and no field: the adapter reads its words (savedSummaries, Adapter.prefill.readEntries) for the plan request, so
+ *   the worker finds the entry it holds by its fingerprint and never fills that entry into a new block.
+ * Nothing here sends or logs a value: counts, indices, flags and the page's own disabled and checked states; a saved
+ * entry's words go only to the worker's plan, as a field's current value does.
  */
 import type { Adapter } from '../adapters/types';
 import { planAdd, planCurrentJob, type AddStop } from '../core/steps/repeatable';
-import type { RepeatableAnswer } from '../core/steps/blocks';
+import { SHOWN_CATEGORIES, type RepeatableAnswer, type ShownBlock, type ShownCategory } from '../core/steps/blocks';
 import { sectionKey } from '../core/text/keys';
 import type { FieldKey } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
-import { REPEATABLE_KINDS, type RepeatableCounter, type RepeatableKind } from '../core/types/run';
+import { MAX_REPEATABLE_BLOCKS, REPEATABLE_KINDS, type RepeatableCounter, type RepeatableKind }
+  from '../core/types/run';
 import { assertNotSubmit, clickIfAllowed } from '../dom/fillers';
 import { newScanCache } from '../dom/scan-cache';
 import { settle, type SettleOptions } from '../dom/settle';
@@ -40,6 +55,8 @@ export interface SectionView {
   blocks(): Element[];
   addButton(): HTMLElement | null;
   currentlyHere?(block: Element): HTMLInputElement | null;
+  /** The block's own Save (Adapter.repeatables' save: Workable's "Update"); null for a block that shows none. */
+  save?(block: Element): HTMLElement | null;
 }
 
 const KINDS: ReadonlySet<string> = new Set<string>(REPEATABLE_KINDS);
@@ -60,6 +77,26 @@ export function sectionsOf(adapter: Adapter, root: Element): SectionView[] {
   });
 }
 
+/** The section's blocks that show a saved entry's summary, as the adapter reads them (Adapter.prefill.readEntries),
+ *  kept to the bounds the plan request takes; none when it reads none or its hook fails. */
+export function savedSummaries(adapter: Adapter, section: SectionView):
+  Array<{ block: number; values: Array<{ category: ShownCategory; text: string }> }> {
+  let read: readonly ShownBlock[];
+  try {
+    read = adapter.prefill?.readEntries?.(section.kind, section.blocks()) ?? [];
+  } catch {
+    return [];
+  }
+  const allowed: ReadonlySet<string> = new Set<string>(SHOWN_CATEGORIES);
+  return read.flatMap((summary) => {
+    if (!Number.isInteger(summary.block) || summary.block < 0 || summary.block >= MAX_REPEATABLE_BLOCKS) return [];
+    const values = summary.values.filter((value) => allowed.has(value.category) && value.text.trim() !== '')
+      .slice(0, SHOWN_CATEGORIES.length)
+      .map((value) => ({ category: value.category, text: value.text.trim().slice(0, 300) }));
+    return values.length === 0 ? [] : [{ block: summary.block, values }];
+  }).slice(0, MAX_REPEATABLE_BLOCKS);
+}
+
 /** How one section's adding ended. */
 export interface AddOutcome {
   kind: RepeatableKind;
@@ -70,6 +107,8 @@ export interface AddOutcome {
   stop: AddStop | 'add-refused' | 'page-busy' | 'stopped';
   /** Entries left without a block: the person adds them (needs-your-click). */
   missing: number;
+  /** The blocks the clicks made now (in the page when the adding ended). */
+  opened: Element[];
 }
 
 /** What the adds need from the run. */
@@ -114,6 +153,8 @@ export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): 
     if (profile === undefined) continue;
     let clicks = 0;
     let afterClick = false;
+    const before = new Set(section.blocks());
+    const opened = () => section.blocks().filter((block) => !before.has(block));
     for (;;) {
       const button = section.addButton();
       const rendered = section.blocks().length;
@@ -122,7 +163,8 @@ export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): 
       const missing = Math.max(0, profile - rendered);
       if (!plan.add) {
         await env.record(section.kind, plan.counter);
-        outcomes.push({ kind: section.kind, counter: plan.counter, clicks, stop: plan.stop ?? 'complete', missing });
+        outcomes.push({ kind: section.kind, counter: plan.counter, clicks, stop: plan.stop ?? 'complete', missing,
+          opened: opened() });
         break;
       }
       // The click must be one we may make before it is counted: a typeless button inside a form submits it.
@@ -130,12 +172,14 @@ export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): 
       if (button === null || !shown || !assertNotSubmit(button, { adapter: env.adapter, root: env.root }).ok) {
         const unclicked = { ...counted, addClicks: Math.max(0, counted.addClicks - 1) };
         await env.record(section.kind, unclicked);
-        outcomes.push({ kind: section.kind, counter: unclicked, clicks, stop: 'add-refused', missing });
+        outcomes.push({ kind: section.kind, counter: unclicked, clicks, stop: 'add-refused', missing,
+          opened: opened() });
         break;
       }
       await env.record(section.kind, counted);
       if (env.stopped() || env.signal.aborted) {
-        outcomes.push({ kind: section.kind, counter: counted, clicks, stop: 'stopped', missing });
+        outcomes.push({ kind: section.kind, counter: counted, clicks, stop: 'stopped', missing,
+          opened: opened() });
         break;
       }
       // The page had the record's round trip to change the button: it is checked again at the click itself, with
@@ -143,7 +187,8 @@ export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): 
       if (!clickNow(button, section, env)) {
         const unclicked = { ...counted, addClicks: Math.max(0, counted.addClicks - 1) };
         await env.record(section.kind, unclicked);
-        outcomes.push({ kind: section.kind, counter: unclicked, clicks, stop: 'add-refused', missing });
+        outcomes.push({ kind: section.kind, counter: unclicked, clicks, stop: 'add-refused', missing,
+          opened: opened() });
         break;
       }
       clicks += 1;
@@ -154,12 +199,102 @@ export async function addBlocks(env: AddEnv, sections: readonly SectionView[]): 
         const now = section.blocks().length;
         const busy = { ...counted, rendered: now };
         await env.record(section.kind, busy);
-        outcomes.push({ kind: section.kind, counter: busy, clicks, stop: 'page-busy', missing: Math.max(0, profile - now) });
+        outcomes.push({ kind: section.kind, counter: busy, clicks, stop: 'page-busy',
+          missing: Math.max(0, profile - now), opened: opened() });
         break;
       }
     }
   }
   return outcomes;
+}
+
+/** What the saves need from the run. */
+export interface SaveEnv {
+  adapter: Adapter;
+  root: Element;
+  signal: AbortSignal;
+  settle?: Pick<SettleOptions, 'quietMs' | 'capMs' | 'optionsCapMs'>;
+  /** Whether the block's Save may be pressed at all: the run opened it (an Add of its own), or it was empty when the
+   *  step began. An editor the person opened and typed into is theirs to save. */
+  ours(block: Element): boolean;
+  /** Whether the person edited anything in the block since the step began (the touch log's edits). */
+  touched(block: Element): boolean;
+}
+
+/** How the saves went: the blocks saved (their section keys, sectionKey: "education[0]"), whose fields the page then
+ *  folds away, and the number left for the person (their editor still open). */
+export interface SaveOutcome {
+  saved: string[];
+  left: number;
+}
+
+/** Whether a block's rows let its Save be pressed (module header): each verified or skipped with nothing asked of the
+ *  person, none the person changed, and one at least holding our value (written and verified, or already right). */
+export function rowsReadyToSave(own: readonly FillResult[]): boolean {
+  const clean = own.every((row) => (row.status === 'verified' || (row.status === 'skipped' && !row.needsUserAction))
+    && row.reason !== 'changed-by-you' && row.detail?.userEdited !== true && row.detail?.filledByYou !== true);
+  const ours = own.some((row) => (row.wrote && row.verification === 'verified') || row.reason === 'already-correct');
+  return clean && ours;
+}
+
+/** Presses each filled block's own Save (module header), one block at a time, settled after each. `rows` are the
+ *  step's rows. */
+export async function saveBlocks(env: SaveEnv, sections: readonly SectionView[], rows: readonly FillResult[]):
+  Promise<SaveOutcome> {
+  const outcome: SaveOutcome = { saved: [], left: 0 };
+  for (const section of sections) {
+    if (section.save === undefined) continue;
+    const blocks = section.blocks();
+    for (const [index, block] of blocks.entries()) {
+      if (env.signal.aborted) return outcome;
+      let button: HTMLElement | null;
+      try {
+        button = section.save(block);
+      } catch {
+        button = null;
+      }
+      if (button === null) continue;
+      const name = sectionKey({ id: section.kind, block: index });
+      const own = rows.filter((row) => row.section === name);
+      if (!env.ours(block) || env.touched(block) || !rowsReadyToSave(own) || !clickable(button)
+        || !clickIfAllowed(button, { adapter: env.adapter, root: env.root })) {
+        outcome.left += 1;
+        continue;
+      }
+      const settled = await settle(env.root, { adapter: env.adapter, signal: env.signal, ...env.settle });
+      if (!settled.settled && settled.reason === 'aborted') return outcome;
+      let still: HTMLElement | null;
+      try {
+        still = block.isConnected ? section.save(block) : null;
+      } catch {
+        still = null;
+      }
+      if (still !== null && still.isConnected) outcome.left += 1;
+      else outcome.saved.push(name);
+    }
+  }
+  return outcome;
+}
+
+/** Whether a section whose entries are kept by their own Save still has an entry to add and its Add to add it with:
+ *  the next round of add, fill and save (the orchestrator's fill step). */
+export function moreToAdd(sections: readonly SectionView[], profile: ReadonlyMap<RepeatableKind, number>): boolean {
+  return sections.some((section) => {
+    if (section.save === undefined) return false;
+    let button: HTMLElement | null;
+    try {
+      button = section.addButton();
+    } catch {
+      return false;
+    }
+    return (profile.get(section.kind) ?? 0) > section.blocks().length && clickable(button);
+  });
+}
+
+/** The entries the profile has that no block of a section kept by its own Save holds: the person's to add. */
+export function entriesLeft(sections: readonly SectionView[], profile: ReadonlyMap<RepeatableKind, number>): number {
+  return sections.filter((section) => section.save !== undefined)
+    .reduce((left, section) => left + Math.max(0, (profile.get(section.kind) ?? 0) - section.blocks().length), 0);
 }
 
 /** The sections whose entries are left for the person to add. */
@@ -184,6 +319,13 @@ export function boxBeforeEndDate<T extends { write: PlannedWrite; planned: FillR
     }
   }
   return ordered;
+}
+
+/** The queue with its file writes moved after every other write, each kind keeping its order (Adapter.quirks.filesLast:
+ *  a page whose failed upload takes the form down keeps the rest of the fill). */
+export function filesAfterTheRest<T extends { write: PlannedWrite }>(queue: readonly T[]): T[] {
+  const file = (item: T) => item.write.value.kind === 'file';
+  return [...queue.filter((item) => !file(item)), ...queue.filter(file)];
 }
 
 /** A row nothing of ours was written for, as planCurrentJob leaves it. */

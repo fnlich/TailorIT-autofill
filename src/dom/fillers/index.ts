@@ -9,7 +9,8 @@
  * options, a lone checkbox a check, date a date and file the resume. Any other pairing, or an options value without
  * one clean label per index, is a planner bug (internal-error); an ARIA widget is the widget helpers' (dom/widgets),
  * so fill() refuses it (widget-unsupported). A choice whose option no longer reads as planned is refused as
- * options-changed, with nothing written.
+ * options-changed, with nothing written. A text box its adapter declares a key for around the write
+ * (Adapter.keyAroundWrite) gets it from the text filler, once assertNotSubmit allows the box.
  */
 import type { Adapter } from '../../adapters/types';
 import type { WriteValue } from '../../core/types/intent';
@@ -17,7 +18,9 @@ import { isDisabled, isReadOnly } from '../kinds';
 import type { FieldTarget, FillOutcome, ReadBackRule } from '../types';
 import { fillCheckbox, fillCheckboxGroup, fillRadio } from './choice';
 import { fillDate } from './date';
+import { DECLARED_KEYS, type DeclaredKey } from './events';
 import { fillFile } from './file';
+import { assertNotSubmit } from './not-submit';
 import { refused } from './outcome';
 import { fillMultiSelect, fillSelect } from './select';
 import { fillText } from './text';
@@ -35,6 +38,18 @@ export interface FillContext {
   readBack?: ReadBackRule;
 }
 
+/** The key a text box's adapter declares around its write (Adapter.keyAroundWrite), one of DECLARED_KEYS; null when it
+ *  declares none, or its hook fails. */
+function keyAroundWrite(control: Element, adapter: Adapter | null): DeclaredKey | null {
+  let key: DeclaredKey | null | undefined;
+  try {
+    key = adapter?.keyAroundWrite?.(control);
+  } catch {
+    key = null;
+  }
+  return key !== null && key !== undefined && (DECLARED_KEYS as readonly string[]).includes(key) ? key : null;
+}
+
 /** Writes one planned value into a field just re-found, and reads it back. */
 export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): FillOutcome {
   const { field, control } = target;
@@ -50,10 +65,14 @@ export function fill(target: FieldTarget, value: WriteValue, ctx: FillContext): 
   const clicks = { adapter: ctx.adapter, root: ctx.root };
   switch (field.kind) {
     case 'text':
-    case 'textarea':
-      return value.kind === 'text'
-        ? fillText(control as HTMLInputElement | HTMLTextAreaElement, value.text, ctx.readBack ?? readBackRuleOf(field))
-        : refused(value.kind === 'date' ? 'format-unsupported' : 'internal-error');
+    case 'textarea': {
+      if (value.kind !== 'text') return refused(value.kind === 'date' ? 'format-unsupported' : 'internal-error');
+      // The key its adapter declares around the write (Workable's date masks), only to a box assertNotSubmit allows.
+      const key = keyAroundWrite(control, ctx.adapter);
+      if (key !== null && !assertNotSubmit(control, clicks).ok) return refused('needs-your-click');
+      return fillText(control as HTMLInputElement | HTMLTextAreaElement, value.text,
+        ctx.readBack ?? readBackRuleOf(field), key);
+    }
     case 'select':
       return value.kind === 'option' ? fillSelect(target, value.index, value.cleanLabel) : refused('internal-error');
     case 'multiselect':

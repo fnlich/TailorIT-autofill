@@ -11,7 +11,9 @@ import { doneMatch, inputOf, outcomeOf, prepared, vocab } from './matcher.testki
 
 const austin = intendedInstitution(canonicalInstitution({ name: 'The University of Texas at Austin' }, vocab).value,
   vocab);
-const store = (entries: Record<string, MatchCacheEntry>) => ({ get: (key: string) => entries[key] });
+/** A cache over a plain map that keeps labels as they are. */
+const store = (entries: Record<string, MatchCacheEntry>) => ({ get: (key: string) => entries[key],
+  sealLabel: (label: string) => label });
 const entry = (label: string, acceptedBy: MatchCacheEntry['acceptedBy'] = 'user'): MatchCacheEntry =>
   ({ label, stage: 'fuzzy', confidence: 0.8, acceptedBy, at: 1 });
 
@@ -86,7 +88,17 @@ describe('the cache pre-stage (§4.1)', () => {
     expect(cacheLookup(store({}), 'k', twice)).toBeNull();
   });
 
-  it('is never read for EEO, legal, consent or sensitive fields', () => {
+  it("compares each option's label sealed as the store seals it, never the entry's label in clear", () => {
+    const sealing = (entries: Record<string, MatchCacheEntry>) => ({ get: (k: string) => entries[k],
+      sealLabel: (label: string) => `sealed(${label.length})${label.split('').reverse().join('')}` });
+    const sealed = sealing({ [key]: entry('sealed(16)supmac nitsua tu') });
+    expect(doneMatch(outcomeOf(input, false, sealed))).toMatchObject({ stage: 'cache', optionIndex: 1 });
+    // An entry whose label is kept in clear matches no sealed option: stale.
+    const clear = outcomeOf(input, false, sealing({ [key]: entry('ut austin campus') }));
+    expect(clear.done && clear.cacheDrop).toBe(key);
+  });
+
+    it('is never read for EEO, legal, consent or sensitive fields', () => {
     const female = intendedAnswer('eeo.gender', 'Female', vocab);
     const eeo = inputOf(female, ['Woman', 'Man'], 'eeo.gender', { policy: 'eeo' });
     const cached = store({ [cacheKeyOf(eeo)!]: entry('man') });

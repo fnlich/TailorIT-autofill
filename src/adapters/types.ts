@@ -5,6 +5,7 @@
  * written from the owner's snapshots and names the snapshot it came from; no selector is ever guessed.
  */
 import type { FieldFormat, Platform } from '../core/enums';
+import type { ShownBlock } from '../core/steps/blocks';
 import type { DeclaredKey } from '../dom/fillers/events';
 
 export type AdapterId = Platform | 'generic';
@@ -27,8 +28,22 @@ export interface WidgetDecl {
    *  chooses a planned option (a remote search's only once its typed query lists it), read back, before any event. */
   bridge?: WidgetBridge;
   /** Untrusted keys this widget needs (docs/SPEC-AMENDMENTS.md §12), each a keydown and a keyup on its text box (else
-   *  its element), never one it does not declare: Escape closes a list that ignores focusout and blur. */
+   *  its element, or its list: keyTarget), never one it does not declare: Escape closes a list that ignores focusout
+   *  and blur. */
   keys?: readonly DeclaredKey[];
+  /** Where the declared keys go: 'list', the widget's open list itself (Workable's dropdowns move focus there when they
+   *  open, and close on an Escape there, never on one to their text box). Without it, its text box, else its
+   *  element. */
+  keyTarget?: 'list';
+  /** The widget's text box is read-only by design (Workable's select-only dropdowns: readonly="true", a click opens the
+   *  list and the page writes the chosen option's label into the box): its readonly attribute does not make the field
+   *  read-only. Its aria-readonly="true" still does, and the scanner's rule stands for every control no adapter
+   *  declares so. */
+  readOnlyBox?: true;
+  /** The page draws the widget's open list `position: fixed` at its field's place on screen (Workable's dropdowns), so a
+   *  field below the fold opens its list beyond the viewport: the list is judged reachable where its field is, as a
+   *  page element below the fold is (dom/visibility.ts followsItsField), never as a fixed element off the viewport. */
+  listFollowsField?: true;
   /** The element whose aria-expanded says whether the widget's list is open. Its declared activation toggles the list,
    *  so it is sent only while this says "false" (a second one would close it). */
   expanded?: Element;
@@ -73,11 +88,10 @@ export interface WidgetDecl {
 /** What the page shows of a file the extension put into a file input (Adapter.uploadState). */
 export type UploadState = 'confirmed' | 'failed' | 'pending';
 
-/** A prefilled repeatable block, read into memory only for reconciliation. */
-export interface PrefillEntryView {
-  fingerprint: string;
-  filled: boolean;
-}
+/** A block that shows a saved entry's summary (Adapter.prefill.readEntries: Workable's folded entries), read into
+ *  memory only so the planner finds the profile entry it holds by its fingerprint: its index among the section's
+ *  blocks, and the summary's words by the category each names (core/steps/blocks.ts ShownBlock). */
+export type PrefillEntryView = ShownBlock;
 
 /** The account pages Sign-in mode Auto fills (v3 Phase 5). */
 export type SignInWall = 'sign-in' | 'create-account';
@@ -118,6 +132,11 @@ export interface Adapter {
   /** The layout the page reads a text control's value in, where neither its type nor a visible placeholder says it
    *  (Ashby's date box, whose placeholder is "Pick date..."): the core lays a date out by it. */
   formatFor?(control: Element): { format: FieldFormat; pattern?: string } | null;
+  /** An untrusted key the page needs on a text box around its text write (Workable's date masks take a written value
+   *  only after a keydown, then open their calendar): sent as a keydown and a keyup to that box right before the
+   *  value is written, and once more after its events, which closes what the page opened. One of DECLARED_KEYS, never
+   *  Enter (a date mask reads Enter as today); null for any other control. */
+  keyAroundWrite?(control: Element): DeclaredKey | null;
   /** Whether the page shows a native radio or checkbox chosen, where its own checked property may not say it (Ashby
    *  draws the answer on the span beside an opacity-0 input, and setting .checked changes only the input); null for
    *  the input's own state. */
@@ -161,7 +180,13 @@ export interface Adapter {
     blocks(): Element[];
     addButton(): HTMLElement | null;
     currentlyHere?(block: Element): HTMLInputElement | null;
+    /** The block's own Save, where the page keeps an entry only once it is pressed (Workable's Education and
+     *  Experience editors: "Update", which folds the editor into the entry's summary); null when the block shows none
+     *  (a saved entry). Pressed once after the step's fill, never in a dry run (content/repeatables.ts saveBlocks). */
+    save?(block: Element): HTMLElement | null;
   }>;
+  /** The blocks that show a saved entry's summary, with its words (PrefillEntryView): the planner finds the entry each
+   *  holds by its fingerprint, never by its place (the Phase 7a review: Workable's saved Education and Experience). */
   prefill?: { readEntries?(kind: string, blocks: Element[]): PrefillEntryView[] };
   authState?(doc: Document): 'sign-in' | 'create-account' | 'email-code' | 'entry-choice' | null;
   /** v3 Phase 5, Sign-in mode Auto: the platform's own sign-in or create-account form on this page, or null. Without
@@ -182,5 +207,8 @@ export interface Adapter {
     /** The form root is drawn by the page's own script this long after the page loads, or after an address change,
      *  at most (Ashby's: 4.8 to 6.8 s live): the content runtime looks for it again as the page changes until then. */
     formLateMs?: number;
+    /** A failed upload can take the whole form down (Workable's page shows its error page in the form's place: the
+     *  live check of 2026-11-02), so a pass writes its files after every other field. */
+    filesLast?: true;
   };
 }

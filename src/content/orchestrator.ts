@@ -153,15 +153,18 @@ import { baseKeyOf, MAX_REVEAL_EDGES, storedBaseKey } from '../core/loop/bookkee
 import { unresolvedRow } from '../core/loop/rows';
 import { settleRow } from '../core/plan/settle';
 import type { RepeatableAnswer } from '../core/steps/blocks';
+import { isBlockEmpty } from '../core/steps/repeatable';
 import {
   createRunState, MAX_IDLE_TRANSITIONS, reduceRun, repeatableCounterKey, TRANSITION_CAP_MS, type ReviewCause,
   type RunContext, type RunEffect, type RunEvent, type StepFacts, type StepNotice, type SubmitSkipRules,
 } from '../core/steps/machine';
 import { stepSignature } from '../core/steps/signature';
+import { sectionKey } from '../core/text/keys';
 import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
-import { MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus } from '../core/types/run';
+import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus }
+  from '../core/types/run';
 import { clickIfAllowed } from '../dom/fillers';
 import { policyClassOf } from '../core/resolver/categories';
 import { captchaElements, detectPause, unsolvedCaptchas, type PauseSignal } from '../dom/pause-detect';
@@ -188,7 +191,10 @@ import { RunAborted, writeField, type PassEnv, type PlanAnswer } from './pass';
 import {
   frameHitsOf, hiddenPolicyHits, policyGateOf, POSTING_READ_MIN, postingOutsideFrame, type PolicyView,
 } from './policy';
-import { addBlocks, currentJobRows, needsClicks, sectionsOf, type SectionView } from './repeatables';
+import {
+  addBlocks, currentJobRows, entriesLeft, moreToAdd, needsClicks, savedSummaries, saveBlocks, sectionsOf,
+  type SectionView,
+} from './repeatables';
 import {
   buildReport, createReportLimiter, lastFillOf, NoticeBook, persistedRunState, REPORT_PUTS_PER_SECOND, uploadRow,
   type NoticeCode, type ReportHeader, type ReportLimiter,
@@ -353,7 +359,8 @@ export const LEFT_REFRESH_MS = 150;
 const STEP_NOTICE_CODES: readonly NoticeCode[] = ['attention-check', 'needs-click', 'deferred-fields', 'validation',
   'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps', 'next-hidden', 'captcha-next',
   'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
-  'submit-unconfirmed', 'submit-errors', 'submit-auto-unchecked', 'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed'];
+  'submit-held-attention', 'submit-held-entries', 'submit-unconfirmed', 'submit-errors', 'submit-auto-unchecked',
+  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed'];
 
 /** The notices that say the posting itself forbids AI (v3 Phase 4: Submit mode Auto's skip rule), whichever way the
  *  run went on: profile only, AI anyway, or the saved copy's word; and (the v3 Phase 4 review) a statement only text a
@@ -520,6 +527,9 @@ export class FillRun {
   private readonly answers = new Map<RepeatableKind, RepeatableAnswer>();
   /** Sections whose entries are left for the person to add. */
   private addsLeft = 0;
+  /** The repeatable blocks this step saved (saveBlocks: their section keys): the page folded their fields away after
+   *  our own Save, so what the run wrote there is no longer read back at rest (lookBeforeLeaving). */
+  private savedBlocks: ReadonlySet<string> = new Set();
   private settledStep = true;
   private lastErrors = 0;
   /** The policy card at the first scan said only TailorIT's stored copy carried the statement. */
@@ -1149,7 +1159,9 @@ export class FillRun {
         const macs = await hasher.macsOf(fields);
         const changed = this.rows.flatMap((row) => {
           const baseKey = baseKeyOf(row.key);
-          if (!row.wrote || row.verification !== 'verified' || row.provenance === 'llm-draft' || !books.has(baseKey)) {
+          // A block the step saved (saveBlocks) holds its entry in the page's own summary now, its fields folded away.
+          if (!row.wrote || row.verification !== 'verified' || row.provenance === 'llm-draft' || !books.has(baseKey)
+            || this.savedBlocks.has(row.section)) {
             return [];
           }
           const mac = macs.get(baseKey);
@@ -1501,8 +1513,11 @@ export class FillRun {
       ...(this.machine?.policyDecision === 'accepted' ? [{ kind: 'policy' as const, count: 1 }] : []),
     ];
     const canaries = [...this.sent];
-    const repeatables = this.sections.map((section) => ({ kind: section.kind,
-      entries: kept ? this.answers.get(section.kind)?.entries ?? null : null }));
+    const repeatables = this.sections.map((section) => {
+      const shown = kept ? [] : savedSummaries(this.env.page.adapter, section);
+      return { kind: section.kind, entries: kept ? this.answers.get(section.kind)?.entries ?? null : null,
+        ...(shown.length > 0 ? { shown } : {}) };
+    });
     // Drafts or answers on (Phase 6; the owner's amendments): the posting as the person sees it, from the top frame
     // only, for their job text; never in a dry run, which asks for neither (E12), nor in a profile-only run.
     const aiText = this.llm !== null && (this.llm.drafts || this.llm.answers);
@@ -2065,92 +2080,150 @@ export class FillRun {
     this.loopCut = null;
     this.fillStartedAt = monotonicNow();
     this.rows = [];
+    this.savedBlocks = new Set();
     this.drawAiEdits();
 
-    // 1. Repeatable sections: the worker's entry counts, then the Add clicks (never in a dry run).
     this.sections = sectionsOf(adapter, this.rootNow());
-    this.answers.clear();
-    let outcomes: Awaited<ReturnType<typeof addBlocks>> = [];
-    if (this.sections.length > 0) {
-      const now = this.scanNow();
-      await this.plan(now.fields.map(toFieldSpec), [], 0);
-      if (!this.request.dryRun) {
-        const step = this.state.stepSignature;
-        outcomes = await addBlocks({
-          adapter, root: this.root, signal: this.controller.signal,
-          ...(env.options.settle ? { settle: env.options.settle } : {}),
-          profile: new Map([...this.answers].map(([kind, answer]) => [kind, answer.profile])),
-          prior: (kind) => (step === null ? null
-            : this.state.repeatableCounters[repeatableCounterKey(step, kind)] ?? null),
-          record: (kind, counter) => this.feed({ type: 'REPEATABLE', kind, counter }),
-          stopped: () => this.stopRequested,
-        }, this.sections);
-        this.alive();
+    // The editors the step began with that held nothing: their Save is the run's to press as much as the ones it opens
+    // (repeatables.ts saveBlocks). The rows of the blocks a round saved stand for them in the rounds after it.
+    const emptyAtStart = new Set<Element>();
+    const opened = new Set<Element>();
+    const savedRows = new Map<FieldKey, FillResult>();
+    const written: FieldKey[] = [];
+    // A page that keeps an entry only once its own Save is pressed (Workable's Add, disabled while an editor is open)
+    // takes one entry a round: add, fill, save, until the profile's entries are in, never more rounds than entries.
+    let rounds = 1;
+    for (let round = 0; ; round += 1) {
+      // 1. Repeatable sections: the worker's entry counts, then the Add clicks (never in a dry run).
+      this.answers.clear();
+      let outcomes: Awaited<ReturnType<typeof addBlocks>> = [];
+      if (this.sections.length > 0) {
+        const now = this.scanNow();
+        if (round === 0) {
+          for (const section of this.sections.filter((one) => one.save !== undefined)) {
+            for (const [index, block] of section.blocks().entries()) {
+              const name = sectionKey({ id: section.kind, block: index });
+              const fields = now.fields.filter((field) => sectionKey(field.section) === name);
+              if (fields.length > 0 && isBlockEmpty(fields)) emptyAtStart.add(block);
+            }
+          }
+        }
+        await this.plan(now.fields.map(toFieldSpec), [], 0);
+        if (round === 0) {
+          const entries = [...this.answers.values()].map((one) => one.profile);
+          rounds = Math.min(MAX_REPEATABLE_BLOCKS, Math.max(1, ...entries));
+        }
+        if (!this.request.dryRun) {
+          const step = this.state.stepSignature;
+          outcomes = await addBlocks({
+            adapter, root: this.root, signal: this.controller.signal,
+            ...(env.options.settle ? { settle: env.options.settle } : {}),
+            profile: new Map([...this.answers].map(([kind, answer]) => [kind, answer.profile])),
+            prior: (kind) => (step === null ? null
+              : this.state.repeatableCounters[repeatableCounterKey(step, kind)] ?? null),
+            record: (kind, counter) => this.feed({ type: 'REPEATABLE', kind, counter }),
+            stopped: () => this.stopRequested,
+          }, this.sections);
+          this.alive();
+          for (const outcome of outcomes) for (const block of outcome.opened) opened.add(block);
+        }
       }
-    }
-    this.addsLeft = needsClicks(outcomes);
-    // "Education · 2 of 3 added" (v3 Phase 3): the profile's entries, and the blocks the form shows for them now.
-    this.repeatableCounts = outcomes.map((outcome) => ({ kind: outcome.kind,
-      added: Math.min(outcome.counter.rendered, outcome.counter.profile), of: outcome.counter.profile }))
-      .filter((count) => count.of > 0);
+      this.addsLeft = needsClicks(outcomes);
+      // "Education · 2 of 3 added" (v3 Phase 3): the profile's entries, and the blocks the form shows for them now.
+      this.repeatableCounts = outcomes.map((outcome) => ({ kind: outcome.kind,
+        added: Math.min(outcome.counter.rendered, outcome.counter.profile), of: outcome.counter.profile }))
+        .filter((count) => count.of > 0);
 
-    // 2. The reactive loop, "I currently work here", then the final Guard over its rows and its latest scan. The loop
-    // starts from this step's books in this run, and leaves its own for the step's next attempt (C-S3, C-S5).
-    const signature = this.state.stepSignature;
-    let loop: LoopResult;
-    try {
-      loop = await this.fillLoop(signature === null ? undefined : this.carries.get(signature));
-    } finally {
-      // The step's own report says more than its progress from here on.
-      this.live = null;
-      this.liveGate += 1;
-    }
-    if (signature !== null && !this.request.dryRun) this.carries.set(signature, loop.carry);
-    const last = loop.scan;
-    let rows = new Map(loop.rows.map((row) => [row.key, row]));
-    for (const section of this.sections) rows = currentJobRows(rows, last, section, this.answers.get(section.kind));
-    // The drafts the person confirmed earlier in the run read back as confirmed (Phase 6).
-    const confirmedDrafts = new Set([...rows.keys()].filter((key) => this.confirmedDrafts.has(baseKeyOf(key))));
-    const guarded = finalGuard({ adapter, root: this.rootNow(), canaries: this.inMemory, confirmedDrafts }, last, rows,
-      loop.written);
-    const after = guarded.reverted.size > 0 ? last.rescan() : last;
+      // 2. The reactive loop, "I currently work here", then the final Guard over its rows and its latest scan. The loop
+      // starts from this step's books in this run, and leaves its own for the step's next attempt (C-S3, C-S5).
+      const signature = this.state.stepSignature;
+      let loop: LoopResult;
+      try {
+        loop = await this.fillLoop(signature === null ? undefined : this.carries.get(signature));
+      } finally {
+        // The step's own report says more than its progress from here on.
+        this.live = null;
+        this.liveGate += 1;
+      }
+      if (signature !== null && !this.request.dryRun) this.carries.set(signature, loop.carry);
+      written.push(...loop.written.map((entry) => entry.key).filter((key) => !written.includes(key)));
+      const last = loop.scan;
+      // A block an earlier round saved folded its fields away: its rows are the ones that round left.
+      let rows = new Map(loop.rows.map((row) => [row.key, savedRows.get(row.key) ?? row]));
+      for (const [key, row] of savedRows) if (!rows.has(key)) rows.set(key, row);
+      for (const section of this.sections) rows = currentJobRows(rows, last, section, this.answers.get(section.kind));
+      // The drafts the person confirmed earlier in the run read back as confirmed (Phase 6).
+      const confirmedDrafts = new Set([...rows.keys()].filter((key) => this.confirmedDrafts.has(baseKeyOf(key))));
+      const guarded = finalGuard({ adapter, root: this.rootNow(), canaries: this.inMemory, confirmedDrafts }, last,
+        rows, loop.written);
+      const after = guarded.reverted.size > 0 ? last.rescan() : last;
 
-    // 3. The rows and notices.
-    const busy = loop.busy !== null;
-    if (busy) this.notices.add('page-busy');
-    // Set by the checks before a later pass (recheck), while the loop ran.
-    const cut = this.loopCut as LoopCut | null;
-    if (cut?.kind === 'hidden') {
-      log('content.form-hidden');
-      this.notices.add('form-hidden');
-    }
-    // The person's confirmations and edits during the fill stand on the rows (Phase 6), and so do the drafts this
-    // document wrote (E4).
-    const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
-    const macs = await this.draftMacs(after, rowsNow);
-    this.alive();
-    const all = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
-    this.bookDrafts(all, macs);
-    this.noticesFromRows(all, last);
-    this.counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
-      deferredFields: last.counters.deferredFields };
-    this.rows = all;
-    this.settledStep = !busy;
-    env.onRows(all);
-    this.drawAiEdits();
-    this.showNotices();
-    this.recordFindings(loop);
+      // 3. The rows and notices.
+      const busy = loop.busy !== null;
+      if (busy) this.notices.add('page-busy');
+      // Set by the checks before a later pass (recheck), while the loop ran.
+      const cut = this.loopCut as LoopCut | null;
+      if (cut?.kind === 'hidden') {
+        log('content.form-hidden');
+        this.notices.add('form-hidden');
+      }
+      // The person's confirmations and edits during the fill stand on the rows (Phase 6), and so do the drafts this
+      // document wrote (E4).
+      const rowsNow = [...guarded.rows.values(), ...last.unrecognisedUploads.map(uploadRow)];
+      const macs = await this.draftMacs(after, rowsNow);
+      this.alive();
+      const all = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
+      this.bookDrafts(all, macs);
+      this.noticesFromRows(all, last);
+      this.counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
+        deferredFields: last.counters.deferredFields };
+      this.rows = all;
+      this.settledStep = !busy;
+      env.onRows(all);
+      this.drawAiEdits();
+      this.showNotices();
+      this.recordFindings(loop);
 
-    // 4. How the step's fill ended.
-    if (cut?.kind === 'hidden') return { type: 'USER_STOPPED' };
-    if (cut?.kind === 'moved' && !this.stopRequested) return { type: 'TRANSITIONED', signature: cut.signature };
-    if (cut?.kind === 'policy' && !this.stopRequested) return this.policyMidFill();
-    if (this.stopRequested) return { type: 'USER_STOPPED' };
-    if (busy) return { type: 'PAUSE', reason: 'page-busy' };
-    if (cut?.kind === 'pause') return pauseEventOf(cut.signal);
-    const counts = lastFillOf(all);
-    return { type: 'FILLED', filledKeys: loop.written.map((entry) => entry.key), flagged: counts.flagged + this.addsLeft,
-      blocked: counts.blocked, unresolved: counts.unresolved };
+      // 4. How the step's fill ended.
+      if (cut?.kind === 'hidden') return { type: 'USER_STOPPED' };
+      if (cut?.kind === 'moved' && !this.stopRequested) return { type: 'TRANSITIONED', signature: cut.signature };
+      if (cut?.kind === 'policy' && !this.stopRequested) return this.policyMidFill();
+      if (this.stopRequested) return { type: 'USER_STOPPED' };
+      if (busy) return { type: 'PAUSE', reason: 'page-busy' };
+      if (cut?.kind === 'pause') return pauseEventOf(cut.signal);
+      // 5. The blocks whose page keeps an entry only once its own Save is pressed (repeatables.ts saveBlocks:
+      // Workable's editors): never in a dry run, only in a block the run opened or found empty, and only once its rows
+      // hold our values with nothing left for the person; a block left open is the person's to finish (the needs-click
+      // notice). A save that frees the Add for an entry still to add starts the next round.
+      if (!this.request.dryRun && this.sections.some((section) => section.save !== undefined)) {
+        const since = this.fillStartedAt;
+        const saves = await saveBlocks({ adapter, root: this.rootNow(), signal: this.controller.signal,
+          ...(env.options.settle ? { settle: env.options.settle } : {}),
+          ours: (block) => opened.has(block) || emptyAtStart.has(block),
+          // The person's own edits only: Chromium's trusted input after our click on a box is no edit (touches.ts E3).
+          touched: (block) => env.touches.editedSince(block, since) }, this.sections, all);
+        this.alive();
+        this.savedBlocks = new Set([...this.savedBlocks, ...saves.saved]);
+        for (const row of all) if (saves.saved.includes(row.section)) savedRows.set(row.key, row);
+        if (this.stopRequested) return { type: 'USER_STOPPED' };
+        const profile = new Map([...this.answers].map(([kind, answer]) => [kind, answer.profile]));
+        if (saves.saved.length > 0 && saves.left === 0 && round + 1 < rounds && moreToAdd(this.sections, profile)) {
+          // The next round counts again what is left for the person.
+          this.notices.forget(['needs-click']);
+          continue;
+        }
+        if (saves.left > 0) this.addsLeft += saves.left;
+        // An entry the profile has that no block holds yet is the person's to add.
+        this.addsLeft = Math.max(this.addsLeft, entriesLeft(this.sections, profile));
+        if (this.addsLeft > 0) {
+          this.noticesFromRows(all, last);
+          this.showNotices();
+        }
+      }
+      const counts = lastFillOf(all);
+      return { type: 'FILLED', filledKeys: written, flagged: counts.flagged + this.addsLeft, blocked: counts.blocked,
+        unresolved: counts.unresolved };
+    }
   }
 
   /** What the loop found that RunState keeps beyond the machine's own events: the reveal edges (keys only), and the
@@ -2221,13 +2294,16 @@ export class FillRun {
 
   /** What Submit mode Auto's verdict reads of the final step (v3 Phase 4): Submit shown, the required questions still
    *  left unanswered (press.ts requiredLeftOf: hidden uploads and the run's own rows left for the person included),
-   *  the posting forbidding AI (its notice), and a legal answer that was the AI's guess. */
-  private submitFacts(): Pick<StepFacts, 'submitVisible' | 'requiredEmpty' | 'noAi' | 'legalGuess'> {
+   *  the posting forbidding AI (its notice), a legal answer that was the AI's guess, and an attention check left for
+   *  the person and profile entries still to add (the Phase 7a review). */
+  private submitFacts(): Pick<StepFacts, 'submitVisible' | 'requiredEmpty' | 'noAi' | 'legalGuess' | 'attentionLeft'
+    | 'entriesLeft'> {
     const buttons = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow() });
     const noAi = POSTING_NO_AI.some((code) => this.notices.has(code));
     const legalGuess = this.rows.some((row) => row.reason === 'ai-guess' && policyClassOf(row.category) === 'legal');
+    const attentionLeft = this.rows.some((row) => row.reason === 'attention-check' && leftForPerson(row));
     return { submitVisible: buttons.submit, requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()), noAi,
-      legalGuess };
+      legalGuess, attentionLeft, entriesLeft: this.addsLeft };
   }
 
   /** The keys of the step's rows on required fields still left for the person (shared/report.ts leftForPerson). */

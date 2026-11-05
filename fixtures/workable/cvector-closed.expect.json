@@ -1,0 +1,148 @@
+{
+  "fixture": "workable/cvector-closed",
+  "source": "https://apply.workable.com/cvector/j/657DA97574/apply/",
+  "captured": "2026-11-02T21:58:33.000Z",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"firstname\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"lastname\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Phone country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": ".iti button.iti__selected-country",
+      "note": "intl-tel-input's country button (a widget root): its list of 244 countries, \"United States (+1)\" first, read once opened; labelled by the phone's title with \"country code\" (labelSuffix)."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"input_phone\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"address\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"city\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"postcode\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"country\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "input[type=\"file\"][data-ui=\"resume\"]",
+      "note": "Labelled by its question (aria-labelledby's first target): its \"Choose file\" label[for] with role=button is the adapter's upload widget, which never labels its input."
+    },
+    {
+      "label": "Cover letter",
+      "kind": "textarea",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"cover_letter\"]"
+    },
+    {
+      "label": "Which best describes your work authorization status for employment in the United States?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-ui=\"QA_11171855\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Are you available to participate in an on-call rotation?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12714851\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "This role requires working in our New York City office four days per week. Are you able to meet this requirement with or without reasonable accommodation?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_11171856\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "What are your annual salary expectations in USD?",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12714852\"]"
+    },
+    {
+      "label": "To help us filter automated submissions, please select Option B if you are human.",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-ui=\"QA_11171857\"] input[type=\"checkbox\"]"
+    }
+  ]
+}

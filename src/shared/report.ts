@@ -63,6 +63,8 @@ export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attenti
   // no confirmation followed within SUBMIT_CONFIRM_MS.
   'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
   'submit-unconfirmed',
+  // The Phase 7a review: Submit mode Auto held the Submit for an attention check left for the person.
+  'submit-held-attention', 'submit-held-entries',
   // The v3 Phase 4 review: the page refused a Submit pressed (its errors, its failure message; `count` of them), and
   // Submit mode Auto submitted a posting whose AI rule could not be read.
   'submit-errors', 'submit-auto-unchecked',

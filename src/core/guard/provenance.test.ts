@@ -193,6 +193,8 @@ describe('an AI answer’s text (llm-answer, the owner’s amendments)', () => {
       .toEqual({ ok: false, reason: 'missing-provenance' });
     expect(checkProvenanceShape(writeOf(answer('resume'), { kind: 'check' })))
       .toEqual({ ok: false, reason: 'policy-violation' });
+    // TailorIT's API 4: a date input's one date, checked in its format by TailorIT and the worker.
+    expect(checkProvenanceShape(writeOf(answer('guess'), { kind: 'date', iso: '2027-01-04' }))).toEqual({ ok: true });
   });
 
   it('fills an unknown or free-text field and the answerable job preferences, never anything closed', () => {

@@ -66,7 +66,8 @@ function answeringCore(): Pick<CoreFunctions, 'planFrame' | 'vocab'> {
         const verdict = input.ai?.answers?.get(spec.key);
         if (verdict === undefined) {
           answers.push({ key: spec.key, scope: 'standard', shape: 'text', kind: 'text',
-            question: spec.label as UntrustedText, hint: '' as UntrustedText, section: '' as UntrustedText, optionSetHash: null, options: [], maxLength: null });
+            question: spec.label as UntrustedText, hint: '' as UntrustedText, section: '' as UntrustedText, optionSetHash: null, options: [], maxLength: null,
+            format: null });
           output.awaiting.push(spec.key);
         } else if (verdict.kind === 'text') {
           output.writes.push({ key: spec.key, value: { kind: 'text', text: verdict.text },

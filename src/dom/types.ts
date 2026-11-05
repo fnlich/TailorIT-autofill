@@ -121,6 +121,12 @@ export interface WidgetTarget {
   readonly bridge?: 'react-select' | null;
   /** The untrusted keys the adapter declared for it (WidgetDecl.keys); none for any other widget. */
   readonly keys?: readonly ('Escape' | 'ArrowDown')[];
+  /** Where its declared keys go (WidgetDecl.keyTarget): 'list', its open list; absent, its text box, else its element. */
+  readonly keyTarget?: 'list';
+  /** Its text box is read-only by design (WidgetDecl.readOnlyBox): that box's readonly does not make it read-only. */
+  readonly readOnlyBox?: true;
+  /** Its list is drawn fixed at its field's place (WidgetDecl.listFollowsField): judged where its field is. */
+  readonly listFollowsField?: true;
   /** The adapter declared it, from a snapshot. */
   readonly declared: boolean;
   /** The element whose aria-expanded says whether its list is open (WidgetDecl.expanded): its declared activation

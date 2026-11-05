@@ -6,7 +6,7 @@ import { POLICY_PATTERNS, policyHits, policyKindOf } from './policy';
 const visible = (text: string) => text as VisibleText;
 
 describe('the policy patterns (§7.10)', () => {
-  it('are the design’s seven, in its order, each with its own id', () => {
+  it('are the design’s seven, in its order, then the Phase 7a review’s, each with its own id', () => {
     const design = readFileSync(new URL('../../../docs/design/core.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     const block = /^```ts\n([\s\S]*?)^```$/m.exec(design.slice(design.indexOf('### 7.10')));
     expect(block).not.toBeNull();
@@ -19,7 +19,8 @@ describe('the policy patterns (§7.10)', () => {
     expect(fragments.map((line) => /^const ([A-Z_]+)/.exec(line)![1])).toEqual(['AIX', 'OPENS', 'APPLICANT',
       'EMPLOYER_ACTION', 'GAP', 'VERDICT']);
     for (const line of fragments) expect(source, line).toContain(line);
-    expect(new Set(POLICY_PATTERNS.map((pattern) => pattern.id)).size).toBe(7);
+    expect(new Set(POLICY_PATTERNS.map((pattern) => pattern.id)).size).toBe(8);
+    expect(POLICY_PATTERNS.at(-1)).toMatchObject({ id: 'own-words', kind: 'ai-prohibited' });
   });
 
   it.each<[string, string]>([
@@ -32,13 +33,17 @@ describe('the policy patterns (§7.10)', () => {
     ['Complete the questions without the use of AI.', 'without-ai'],
     ['No AI, please.', 'no-ai'],
     ['Automated applications will be rejected.', 'automated-applications-rejected'],
+    ['Please answer every question in your own words.', 'own-words'],
+    ['We want to hear from you, so write it yourself.', 'own-words'],
+    ['Complete the application yourself; we read every answer.', 'own-words'],
   ])('finds %j', (text, id) => {
     expect(policyHits(visible(text))).toContain(id);
   });
 
   it('leaves ordinary postings alone', () => {
     for (const text of ['We do not use AI to screen candidates.', 'No AI experience required.',
-      'You will build AI tools for our customers.', 'We use AI to match jobs.', '']) {
+      'You will build AI tools for our customers.', 'We use AI to match jobs.', 'You will own the words on our website.',
+      'Write tests yourself and review others.', '']) {
       expect(policyHits(visible(text)), text).toEqual([]);
     }
   });

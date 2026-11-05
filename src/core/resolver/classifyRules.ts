@@ -26,7 +26,7 @@ import type { Classifier } from '../types/match';
 import { normalize, normalizeLabel } from '../text/normalize';
 import type { Vocab } from '../vocab/types';
 import { autocompleteRule } from './autocomplete';
-import { policyClassOf } from './categories';
+import { kindAllowed, policyClassOf } from './categories';
 import {
   affirmativeOption, attestsNoAiUse, consentChoiceHit, matchLabelRules, sectionKindOf, unlabelledTextarea,
   unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit, type NeedsUserCause,
@@ -190,17 +190,33 @@ export function ruleText(key: string): string {
 /** The classes a category read from the help text alone may never be filled in: the closed ones and attention. */
 const CLOSED_FROM_DESCRIPTION: readonly PolicyClass[] = [...CLOSED_CLASSES, 'attention'];
 
+/** Help text asking for a place rather than a street: a city and a country, and no street, postcode or ZIP (Workable's
+ *  Address, the capture of 2026-11-02: "Include your city, region, and country, so that employers can easily manage
+ *  your application."). Only a label that is "Address" and nothing more is read so (the Phase 7a review): "Street
+ *  address", "Address line 1" or "Address (flat and street)" stays the street, whatever its help says. */
+const PLACE_HINT = /\bcity\b.*\bcountry\b|\bcountry\b.*\bcity\b/;
+const STREET_HINT =
+  /\bstreet\b|\blines?\b|\bflat\b|\bsuite\b|\bunit\b|\bpost(?:al)?\s*code\b|\bzip\b|\bapartment\b|\bhouse\s+number\b/;
+/** The normalized label that is the word Address alone. */
+const ADDRESS_ALONE = /^\s*address\s*$/;
+
 /**
  * The label rules over the normalized label; when nothing matches it and the field has a description, over the
  * normalized label and description together (§8.3's "plus the description for long questions"). A consent label also
  * takes the consent kinds of its description, which only ever make it stricter. A legal, EEO, consent, sensitive or
  * attention category found only once the description is read is the person's: help text names topics the question
- * does not ask ("Do you need any accommodations?" over a paragraph about disability).
+ * does not ask ("Do you need any accommodations?" over a paragraph about disability). An "Address" whose help text asks
+ * for a city and a country, not a street (PLACE_HINT), is the applicant's location.
  */
 function labelRuleVote(spec: FieldSpec, label: string, context: LabelContext): RuleVote | null {
   const section = sectionKindOf(spec.section.id);
   const description = ruleText(normalizeLabel(spec.description));
   const onLabel = matchLabelRules(label, section, spec.kind, context);
+  if (onLabel !== null && onLabel.rule === 'label.address1' && ADDRESS_ALONE.test(label)
+    && !STREET_HINT.test(spec.label.toLowerCase()) && PLACE_HINT.test(description) && !STREET_HINT.test(description)
+    && kindAllowed('location.current', spec.kind)) {
+    return labelVote({ ...onLabel, category: 'location.current' }, 'label');
+  }
   if (onLabel !== null) return labelVote(withDescriptionConsent(onLabel, description, spec.kind), 'label');
   if (description === '') return null;
   const both = label === '' ? description : `${label} ${description}`;

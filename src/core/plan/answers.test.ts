@@ -30,6 +30,9 @@ const KUBERNETES = specOf('Do you have hands-on experience running Kubernetes in
 const GO_YEARS = specOf('How many years have you written Go professionally?', 'text');
 /** A short free-text box: too short for a draft. */
 const SHORT_WHY = specOf('Why do you want to work here?', 'text', { constraints: { maxLength: 40 } });
+/** An unknown question in a number box (a Workable box drawn with thousands separators: digits only). */
+const PROJECTS = specOf('How many open-source projects have you maintained?', 'text',
+  { constraints: { format: 'number' } });
 /** A job preference the golden profile holds no value for. */
 const TRAVEL = specOf('Are you willing to travel?', 'radio', { optionLabels: ['Yes', 'No'] });
 
@@ -57,7 +60,7 @@ describe('the questions asked (answerItemOf)', () => {
     expect(out.ask?.answers).toEqual([{ key: KUBERNETES.key, scope: 'standard', shape: 'choice', kind: 'radio',
       question: KUBERNETES.label, hint: '', section: '', optionSetHash: KUBERNETES.optionSetHash,
       options: ['Yes', 'No', 'Some'].map((label, index) => ({ index, label, labelHash: labelHash(label) })),
-      maxLength: null }]);
+      maxLength: null, format: null }]);
     // The row that stands until the answer comes: the gap, as it was.
     expect(fieldOf(out, KUBERNETES)).toMatchObject({ write: undefined, row: { reason: 'unknown-field', wrote: false } });
     // No profile text in the question.
@@ -143,6 +146,15 @@ describe('the questions asked (answerItemOf)', () => {
     expect(off.results[0]).toMatchObject({ status: 'flagged', reason: 'ai-off-for-posting' });
   });
 
+  it('never asks whether the applicant used the posting’s phrase or code word, even with the `all` scope', () => {
+    for (const spec of [specOf('Did you start your cover letter with the phrase we asked for?', 'radio',
+      { optionLabels: ['Yes', 'No'] }), specOf('Did you include the code word requested in the posting?', 'text')]) {
+      const out = planOf([spec]);
+      expect(out.ask?.answers ?? [], spec.label).toEqual([]);
+      expect(fieldOf(out, spec).row, spec.label).toMatchObject({ reason: 'attention-check', needsUserAction: true });
+    }
+  });
+
   it('never asks a honeypot, a disabled box, one only an aria-label names, a set, a lone box or a lazy list', () => {
     const never: FieldSpec[] = [
       specOf('How many years have you written Go professionally?', 'text', { visibility: 'hidden-native-with-visible-label' }),
@@ -156,6 +168,45 @@ describe('the questions asked (answerItemOf)', () => {
         { optionLabels: ['Yes', 'No'], optionsPartial: true }),
     ];
     for (const spec of never) expect(planOf([spec]).ask?.answers ?? [], spec.label).toEqual([]);
+  });
+
+  it('names the layout a number or a date box takes, and never asks a date it cannot name or a birth date (API 4)', () => {
+    const asked = (spec: FieldSpec) => {
+      const out = planOf([spec], { ai: { verdicts: new Map(), classifications: new Map([[spec.key as string,
+        { key: spec.key, category: null, why: 'unknown-field' as const }]]) } });
+      return out.ask?.answers?.find((item) => item.key === spec.key);
+    };
+    const cases: Array<[FieldSpec, string | null]> = [
+      [specOf('How many open-source projects have you maintained?', 'text', { constraints: { format: 'number' } }), 'number'],
+      [specOf('How many conferences have you spoken at?', 'text', { constraints: { format: 'integer' } }), 'integer'],
+      [specOf('What was your last project budget?', 'text', { constraints: { format: 'currency' } }), 'currency'],
+      [specOf('When could you start a trial project?', 'text', { constraints: { format: 'date', pattern: 'MM/DD/YYYY' } }),
+        'MM/DD/YYYY'],
+      [specOf('When could you start a trial project?', 'text', { constraints: { format: 'date', pattern: 'DD/MM/YYYY' } }),
+        'DD/MM/YYYY'],
+      [specOf('When did you last ship a product?', 'text', { constraints: { format: 'month-year', pattern: 'MM/YYYY' } }),
+        'MM/YYYY'],
+      [specOf('When could you start a trial project?', 'date'), 'date'],
+      [specOf('How many years have you written Go professionally?', 'text'), null],
+    ];
+    for (const [spec, format] of cases) expect(asked(spec), spec.label).toMatchObject({ shape: 'text', format });
+    // A date box whose layout no format names, a month input, and a birth date in any layout are never asked.
+    for (const spec of [specOf('When could you start a trial project?', 'text', { constraints: { format: 'date',
+      pattern: 'DD.MM.YYYY' } }), specOf('When could you start a trial project?', 'text', { constraints: { format: 'date' } }),
+    specOf('When could you start a trial project?', 'date', { constraints: { format: 'month-year' } }),
+    specOf('Date of birth', 'text', { constraints: { format: 'date', pattern: 'MM/DD/YYYY' } }),
+    specOf('Your birthday', 'date')]) {
+      expect(asked(spec), spec.label).toBeUndefined();
+    }
+  });
+
+  it('writes a date input\'s answer as a date, and refuses one that is no YYYY-MM-DD date', () => {
+    const start = specOf('When could you start a trial project?', 'date');
+    const answer = (text: string): AnswerVerdict => ({ key: start.key, kind: 'text', text, basis: 'guess', taskId: TASK });
+    expect(fieldOf(planOf([start], { ai: withAnswer(answer('2027-01-04')) }), start).write?.value)
+      .toEqual({ kind: 'date', iso: '2027-01-04' });
+    expect(fieldOf(planOf([start], { ai: withAnswer(answer('01/04/2027')) }), start)).toMatchObject({ write: undefined,
+      row: { reason: 'llm-invalid-output' } });
   });
 
   it('never asks over an answer the field holds, or for a contact detail, a link or a date', () => {
@@ -312,6 +363,24 @@ describe('the answers written (planAnswer)', () => {
       .toBe('llm-invalid-output');
   });
 
+  it('writes the one number a number box takes, and refuses a range or words as llm-invalid-output', () => {
+    const answer = (text: string): AnswerVerdict => ({ key: PROJECTS.key, kind: 'text', text, basis: 'resume',
+      taskId: TASK });
+    for (const [text, written] of [['$85,000', '85000'], ['85k', '85000'], ['12', '12'], ['USD 1,250.50', '1250.5'],
+      ['1.250.000', '1250000']] as const) {
+      expect(fieldOf(planOf([PROJECTS], { ai: withAnswer(answer(text)) }), PROJECTS).write?.value, text)
+        .toEqual({ kind: 'text', text: written });
+    }
+    for (const text of ['80-90k', '$80,000 to $90,000', 'Negotiable', 'About 12', '4.500']) {
+      expect(fieldOf(planOf([PROJECTS], { ai: withAnswer(answer(text)) }), PROJECTS), text).toMatchObject({
+        write: undefined, row: { reason: 'llm-invalid-output' } });
+    }
+    // An integer box takes no fraction.
+    const whole = { ...PROJECTS, constraints: { ...PROJECTS.constraints, format: 'integer' as const } };
+    expect(fieldOf(planOf([whole], { ai: withAnswer({ ...answer('12.5'), key: whole.key }) }), whole).row.reason)
+      .toBe('llm-invalid-output');
+  });
+
   it('blocks an answer holding a canary, in any case, and writes nothing', () => {
     const verdict: AnswerVerdict = { key: GO_YEARS.key, kind: 'text', text: 'Six years, PINEAPPLE', basis: 'resume',
       taskId: TASK };
@@ -353,6 +422,20 @@ describe('an "I did not use AI" attestation in the frame', () => {
         whenForbidden: 'use-ai' } }) })]) {
       expect(fieldOf(out, attest)).toMatchObject({ write: undefined,
         row: { category: 'consent.aiAttestation', reason: 'ai-attestation-ai-used', needsUserAction: true } });
+    }
+  });
+
+  it('reads "everything in this application is true and your own" as the same attestation (the Phase 7a review)', () => {
+    const own = specOf('Can you confirm that everything in this application is true and your own?', 'radio',
+      { optionLabels: ['Yes', 'No'], required: true });
+    const box = specOf('I confirm this application is entirely my own work', 'checkbox');
+    for (const spec of [own, box]) {
+      const out = planOf(inOrder([spec, KUBERNETES]), { aiUsed: true });
+      expect(out.aiAttestation, spec.label).toBe(true);
+      expect(fieldOf(out, spec), spec.label).toMatchObject({ write: undefined,
+        row: { category: 'consent.aiAttestation', reason: 'ai-attestation-ai-used', needsUserAction: true } });
+      // Never asked of the AI, whatever the scope.
+      expect(out.ask?.answers?.map((item) => item.key) ?? [], spec.label).not.toContain(spec.key);
     }
   });
 

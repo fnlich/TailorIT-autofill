@@ -30,6 +30,8 @@ export interface SpyEvent {
    *  helpers set it from the extension's own world, which a page spy cannot watch, so the listbox stands for it
    *  (the DOM testkit's logEvents records the sets themselves: the Phase 4 review, R8). */
   scrollTopSet?: true;
+  /** A keydown's or keyup's key (the Phase 7a review: Workable's spec checks Escape alone was sent, never Enter). */
+  key?: string;
   /** Date.now() in the page. */
   at: number;
 }
@@ -116,7 +118,8 @@ function spy({ types }: { types: readonly string[] }): void {
       const listbox = ((target.getAttribute('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '') === 'listbox';
       record.events.push({ type, trusted: event.isTrusted, target: target.id || target.getAttribute('name') || target.localName,
         control: describe(target), submits: submits(target), words: words(target), honeypot, at: Date.now(),
-        ...(type === 'scroll' && listbox ? { scrollTopSet: true as const } : {}) });
+        ...(type === 'scroll' && listbox ? { scrollTopSet: true as const } : {}),
+        ...(type === 'keydown' || type === 'keyup' ? { key: (event as KeyboardEvent).key } : {}) });
     }, true);
   }
 

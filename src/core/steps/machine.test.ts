@@ -956,6 +956,8 @@ describe('the Phase 5 review', () => {
 
 describe('Submit mode Auto (v3 Phase 4)', () => {
   const RULES = { requiredEmpty: true, noAi: true, legalGuess: false };
+  /** Every skip rule off. */
+  const lenient0 = () => ({ ...OFF, autoSubmit: { requiredEmpty: false, noAi: false, legalGuess: false } });
   const AUTO: RunContext = { ...OFF, autoSubmit: RULES };
   const finalStep = (patch: Partial<StepFacts> = {}) => facts({ finality: 'final', nextVisible: false, submitVisible: true,
     requiredEmpty: 0, noAi: false, legalGuess: false, ...patch });
@@ -998,6 +1000,14 @@ describe('Submit mode Auto (v3 Phase 4)', () => {
     const strict = { ...OFF, autoSubmit: { ...RULES, legalGuess: true } };
     expect(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep({ legalGuess: true }) },
       strict).effects).toContainEqual({ type: 'notify', notice: 'submit-held-guess' });
+    // An attention check left for the person, or entries still to add, always hold it back, whatever the rules (the
+    // Phase 7a review).
+    for (const rules of [AUTO, lenient0()]) {
+      expect(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep({ attentionLeft: true }) },
+        rules).effects).toContainEqual({ type: 'notify', notice: 'submit-held-attention' });
+      expect(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep({ entriesLeft: 1 }) },
+        rules).effects).toContainEqual({ type: 'notify', notice: 'submit-held-entries' });
+    }
     // With the empty-field rule off, required fields left empty do not hold it back.
     const lenient = { ...OFF, autoSubmit: { ...RULES, requiredEmpty: false } };
     expect(types(reduceRun(validatedState, { type: 'VALIDATED', errors: 0, fixable: 0, step: finalStep({ requiredEmpty: 3 }) },
@@ -1016,7 +1026,7 @@ describe('Submit mode Auto (v3 Phase 4)', () => {
     expect(autoSubmitVerdict(state, { errors: 0, step: finalStep() }, AUTO)).toEqual({ submit: true });
     expect(SUBMIT_REFUSALS[0]).toBe('setting-off');
     for (const notice of ['submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha',
-      'submit-held-check'] as const) {
+      'submit-held-check', 'submit-held-attention', 'submit-held-entries'] as const) {
       expect(STEP_NOTICES).toContain(notice);
       expect(NOTICE_CODES).toContain(notice);
     }

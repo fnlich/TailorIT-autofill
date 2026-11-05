@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { bytesToHex, sha256Bytes, sha256Hex } from './sha256';
+import { bytesToHex, hmacSha256Hex, sha256Bytes, sha256Hex } from './sha256';
 
 const nodeSha256 = (data: string | Uint8Array) => createHash('sha256').update(data).digest('hex');
 
@@ -45,5 +45,30 @@ describe('sha256 against node:crypto', () => {
 
   it('writes lower-case hex', () => {
     expect(bytesToHex(Uint8Array.from([0, 1, 0xab, 0xff]))).toBe('0001abff');
+  });
+});
+
+describe('hmacSha256: the RFC 4231 vectors and node:crypto', () => {
+  const bytes = (hex: string) => Uint8Array.from(hex.match(/../g)!.map((pair) => parseInt(pair, 16)));
+
+  it.each([
+    ['test case 1', '0b'.repeat(20), 'Hi There', 'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7'],
+    ['test case 2 (a short key)', '4a656665', 'what do ya want for nothing?',
+      '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843'],
+    ['test case 6 (a key longer than a block)', 'aa'.repeat(131),
+      'Test Using Larger Than Block-Size Key - Hash Key First',
+      '60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54'],
+  ])('%s', (_name, key, text, mac) => {
+    expect(hmacSha256Hex(bytes(key), text)).toBe(mac);
+  });
+
+  it.each([
+    ['an empty text', ''],
+    ['a separator', 'n:typescript\u001fx'],
+    ['multi-byte text', 'São Paulo 中文 😀'],
+    ['a text of two blocks', 'y'.repeat(130)],
+  ])('agrees with node:crypto on %s', (_name, text) => {
+    const key = Uint8Array.from({ length: 32 }, (_, i) => (i * 53 + 11) & 0xff);
+    expect(hmacSha256Hex(key, text)).toBe(createHmac('sha256', key).update(text).digest('hex'));
   });
 });

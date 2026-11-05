@@ -19,6 +19,7 @@ import { AutofillSignInHostSchema, AUTOFILL_SIGN_IN_LIMITS } from '../contract/t
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
 import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
+import { SHOWN_CATEGORIES } from '../core/steps/blocks';
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { ANSWER_BASES, FILE_REFS, RULE_IDS } from '../core/types/intent';
@@ -202,10 +203,17 @@ export const RunStateSchema = z.strictObject({
 const NoticeHit = z.strictObject({ kind: z.enum(['tripwire', 'policy', 'attention-check']), count: Count });
 
 /** A repeatable section the frame's adapter shows on the step (Phase 5): its kind, and each block's profile entry when
- *  the frame holds an assignment from an earlier answer (null: the worker assigns them from the specs). */
+ *  the frame holds an assignment from an earlier answer (null: the worker assigns them from the specs); and (the Phase
+ *  7a review) the blocks that show a saved entry's summary, with its words by category (page text, as a spec's current
+ *  value is), so the worker finds the entry each holds by its fingerprint. */
 export const RepeatableRequestSchema = z.strictObject({
   kind: z.enum(REPEATABLE_KINDS),
   entries: z.array(Count.nullable()).max(MAX_REPEATABLE_BLOCKS).nullable(),
+  shown: z.array(z.strictObject({
+    block: Count.max(MAX_REPEATABLE_BLOCKS - 1),
+    values: z.array(z.strictObject({ category: z.enum(SHOWN_CATEGORIES), text: z.string().min(1).max(300) }))
+      .max(SHOWN_CATEGORIES.length),
+  })).max(MAX_REPEATABLE_BLOCKS).optional(),
 });
 
 /** What the frame learns of a section it named: the profile's entry count, each block's entry (null: none) and

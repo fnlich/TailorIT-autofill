@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "key": "greenhouse|main|are-you-willing-to-travel-up-to-25|3a7c1e9b5d2f4068|0",
+      "shape": "choice",
+      "kind": "radio",
+      "question": "Are you willing to travel up to 25% of the time?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": "3a7c1e9b5d2f4068",
+      "options": [
+        {
+          "index": 0,
+          "label": "Yes"
+        },
+        {
+          "index": 1,
+          "label": "No"
+        }
+      ],
+      "maxLength": null,
+      "format": "integer"
+    }
+  ],
+  "jobText": "",
+  "resumeId": null
+}

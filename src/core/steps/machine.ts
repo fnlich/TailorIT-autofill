@@ -104,6 +104,12 @@ export interface StepFacts {
   noAi?: boolean;
   /** A legal question's answer on the step was an AI guess (absent: no). */
   legalGuess?: boolean;
+  /** An attention check on the step is left for the person (the Phase 7a review: a check only they can answer, such as
+   *  the posting's phrase, or one the AI did not answer; absent: no). Submit mode Auto always holds for it. */
+  attentionLeft?: boolean;
+  /** Profile entries (education, experience) the step's repeatable sections still lack, for the person to add (the
+   *  Phase 7a review; absent: 0). Submit mode Auto always holds for them. */
+  entriesLeft?: number;
 }
 
 /** What the content script tells the machine. Counts, keys and hashes only: no event carries a value. */
@@ -162,7 +168,9 @@ export type RunEventType = RunEvent['type'];
 export const STEP_NOTICES = ['tripwire', 'policy', 'auth', 'captcha', 'page-busy', 'needs-click', 'validation',
   'step-retry-limit', 'final-unknown', 'max-steps', 'captcha-next',
   // v3 Phase 4: Submit mode Auto held the final Submit back, and why (its notice says so; the person submits).
-  'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check'] as const;
+  'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
+  // The Phase 7a review: an attention check left for the person held it, or entries still to add.
+  'submit-held-attention', 'submit-held-entries'] as const;
 export type StepNotice = (typeof STEP_NOTICES)[number];
 
 /** Why a run is at review. 'final-step': the adapter says the step is the last (Submit is the person's);
@@ -230,7 +238,8 @@ export interface SubmitSkipRules {
 
 /** Why Submit mode Auto would not press Submit, in the order they are checked (v3 Phase 4). */
 export const SUBMIT_REFUSALS = ['setting-off', 'not-final', 'no-submit', 'errors', 'not-filled', 'required-empty',
-  'no-ai', 'legal-guess', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled'] as const;
+  'no-ai', 'legal-guess', 'attention-left', 'entries-left', 'unconfirmed-draft', 'captcha-unsolved',
+  'not-settled'] as const;
 export type SubmitRefusal = (typeof SUBMIT_REFUSALS)[number];
 export type SubmitVerdict = { submit: true } | { submit: false; refusal: SubmitRefusal };
 
@@ -243,6 +252,10 @@ export function noticeOfSubmitRefusal(refusal: Exclude<SubmitRefusal, 'setting-o
       return 'submit-held-no-ai';
     case 'legal-guess':
       return 'submit-held-guess';
+    case 'attention-left':
+      return 'submit-held-attention';
+    case 'entries-left':
+      return 'submit-held-entries';
     case 'captcha-unsolved':
       return 'submit-held-captcha';
     default:
@@ -381,6 +394,9 @@ export function autoSubmitVerdict(state: RunState, check: { errors: number; step
   if (rules.requiredEmpty && (step.requiredEmpty ?? 0) > 0) return refuse('required-empty');
   if (rules.noAi && step.noAi === true) return refuse('no-ai');
   if (rules.legalGuess && step.legalGuess === true) return refuse('legal-guess');
+  // An attention check left for the person always holds it, whatever the skip rules (the Phase 7a review).
+  if (step.attentionLeft === true) return refuse('attention-left');
+  if ((step.entriesLeft ?? 0) > 0) return refuse('entries-left');
   if (step.unconfirmedDrafts > 0) return refuse('unconfirmed-draft');
   if (step.captchaUnsolved) return refuse('captcha-unsolved');
   if (!step.settled) return refuse('not-settled');

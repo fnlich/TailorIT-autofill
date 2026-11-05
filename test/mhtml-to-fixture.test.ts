@@ -28,10 +28,12 @@ import {
   convertMhtml,
   imageSize,
   normaliseAshby,
+  normaliseWorkable,
   onAtsHost,
   parseMhtml,
   readRedactList,
   redactSources,
+  workableRenderId,
   writeConversion,
 } from '../scripts/mhtml-to-fixture.mjs';
 import { FIELD_KINDS } from '../src/core/enums';
@@ -432,7 +434,7 @@ describe('mhtml-to-fixture refusals', () => {
   }, 60_000);
 
   it('refuses bad arguments before opening a browser', async () => {
-    await expect(convertMhtml({ file: 'x.mhtml', platform: 'workable', caseName: 'x' })).rejects.toThrow('--platform must be one of');
+    await expect(convertMhtml({ file: 'x.mhtml', platform: 'smartrecruiters', caseName: 'x' })).rejects.toThrow('--platform must be one of');
     await expect(convertMhtml({ file: 'x.mhtml', platform: 'lever', caseName: 'Not A Case' })).rejects.toThrow('--case must be');
     await expect(convertMhtml({ file: 'x.html', platform: 'lever', caseName: 'x' })).rejects.toThrow('must be an .mhtml file');
   });
@@ -619,6 +621,28 @@ describe('mhtml-to-fixture helpers', () => {
     expect(ashbyRenderId(0)).toBe('00000000-0000-4000-8000-000000000001');
     // Any other page is left as it is: the converter normalises only --platform ashby.
     expect(normaliseAshby('<div id="a"></div>')).toEqual({ text: '<div id="a"></div>', renderIds: [], nonces: 0 });
+  });
+
+  it("normalises Workable's per-render ids wherever they stand, in the order the page first names them", () => {
+    const radio = 'pak2Gq7SZqwjVyH7';
+    const group = 'ql336d53WijZCSZa';
+    const file = 'RWwTI8hdLOqxiHAh';
+    const html = `<span id="${group}_label">Q</span><fieldset aria-labelledby="${group}_label"><div id="wrapper_${radio}" `
+      + `aria-labelledby="${group}_label radio_label_${radio}"><input id="${radio}" type="radio"><span id="radio_label_${radio}">`
+      + `YES</span></div></fieldset><label for="input_files_input_${file}" id="description_input_${file}">Choose file</label>`
+      + `<input id="input_files_input_${file}" aria-labelledby="${group}_label description_input_${file}">`
+      + '<input id="firstname"><p id="characteristicsxy">a 16-letter id with no digit and one case stays</p>';
+    const { text, renderIds } = normaliseWorkable(html);
+    expect(renderIds).toEqual([group, radio, file]);
+    for (const id of [radio, group, file]) expect(text).not.toContain(id);
+    expect(text).toContain(`<span id="${workableRenderId(0)}_label">`);
+    expect(text).toContain(`<div id="wrapper_${workableRenderId(1)}" aria-labelledby="${workableRenderId(0)}_label `
+      + `radio_label_${workableRenderId(1)}">`);
+    expect(text).toContain(`for="input_files_input_${workableRenderId(2)}"`);
+    expect(text).toContain('<input id="firstname">');
+    expect(text).toContain('id="characteristicsxy"');
+    expect(workableRenderId(0)).toBe('wk00000000000001');
+    expect(workableRenderId(0)).toHaveLength(16);
   });
 
   it('checks the written text with encodings undone, but not inside stylesheets or base64 payloads', () => {

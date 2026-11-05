@@ -29,7 +29,10 @@
  * - Version 2: POST /jobs adds the posting (the contract's AutofillAddJobResponse, created) and keeps its lookup, so
  *   every later lookup finds that job until the reset; scenarios answer it as existing, closed, the ATS down or an
  *   address TailorIT cannot add from. A lookup naming `resumeId`, one of the listed resumes, suggests that resume
- *   (reason chosen) and scores it. POST /ai/answer makes an answer task: by default every item has no answer
+ *   (reason chosen) and scores it. An address on no ATS the contract names (ATS_KINDS: TailorIT's parseAtsUrl, its
+ *   hosts copied below, finds none; Workable until the contract names it) is an unknown page, as TailorIT answers it:
+ *   the lookup finds no job (unknown-page-default-resume.json), POST /jobs gets 400 unsupported and POST /applied
+ *   without a job 404 not_found. POST /ai/answer makes an answer task: by default every item has no answer
  *   (no_answer), so a form fills as it did before; scenarios answer every item, as a guess or from the resume.
  * - Cover letters (version 2, Phase G): POST /cover-letters checks its body as TailorIT does (a resume id, a company
  *   and a title without a job, the caps), then answers 404 not_found when it may not write (generate false:
@@ -86,7 +89,7 @@ export function example(schema, name = 'golden') {
 }
 
 /** The API version TailorIT speaks, as the contract's version.ts names it. */
-export const MOCK_API_VERSION = 3;
+export const MOCK_API_VERSION = 4;
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';
@@ -109,6 +112,32 @@ const CONTRACT_RECORD = readJson(join(CONTRACT, 'contract.json'));
 export const CONTRACT_ROUTES = CONTRACT_RECORD.routes;
 /** The pick categories TailorIT takes (a pick of any other, country or region, is refused with 400). @type {string[]} */
 const PICK_CATEGORIES = CONTRACT_RECORD.schemas.AutofillPickRequest.properties.items.items.properties.category.enum;
+/** The ATSs the contract names (ATS_KINDS). @type {string[]} */
+const CONTRACT_ATS_KINDS = CONTRACT_RECORD.schemas.AutofillLookupResponse.properties.ats.anyOf[0].properties.kind.enum;
+/** Each ATS's hosts, as TailorIT's parseAtsUrl reads them (packages/shared/src/autofill/lookup.ts). */
+const ATS_HOSTS = /** @type {const} */ ([
+  ['greenhouse', (/** @type {string} */ host) => /^(?:job-)?boards(?:\.eu)?\.greenhouse\.io$/.test(host)],
+  ['lever', (/** @type {string} */ host) => host === 'jobs.lever.co' || host === 'jobs.eu.lever.co'],
+  ['ashby', (/** @type {string} */ host) => host === 'jobs.ashbyhq.com'],
+  ['workday', (/** @type {string} */ host) => /\.(?:myworkdayjobs|myworkdaysite)\.com$/.test(host)],
+  ['workable', (/** @type {string} */ host) => host === 'apply.workable.com' || host.endsWith('.workable.com')],
+]);
+
+/** Whether TailorIT reads `address` as a posting of an ATS the contract names: its host's, or a company page naming
+ *  a Greenhouse posting in ?gh_jid=. @param {unknown} address */
+function contractReads(address) {
+  if (typeof address !== 'string') return false;
+  try {
+    const url = new URL(address);
+    if (url.protocol !== 'https:') return false;
+    const kind = ATS_HOSTS.find(([, matches]) => matches(url.hostname))?.[0]
+      ?? (url.searchParams.has('gh_jid') ? 'greenhouse' : null);
+    return kind !== null && CONTRACT_ATS_KINDS.includes(kind);
+  } catch {
+    return false;
+  }
+}
+
 /** The contract's golden pick task, which GET /api/ai/tasks/:id always holds. */
 const GOLDEN_TASK = example('AutofillPickTask');
 
@@ -211,6 +240,8 @@ export const MOCK_SCENARIOS = Object.freeze({
     + 'United States), at the next revision.',
   'profile-uk': 'GET /profile answers the golden person living in London, United Kingdom, with a British phone ("+44 20 '
     + '7946 0958", its country the United Kingdom), at the next revision.',
+  'profile-start-date': 'GET /profile answers the golden profile with an earliest start date (2027-01-04), at the next '
+    + 'revision (the Phase 7a review: a date the date box takes in the layout it shows).',
   'profile-unavailable': 'GET /profile gets 500.',
   'lookup-slow': "POST /lookup answers after delayMs (default 30 s, past the worker's 25 s timeout).",
   'lookup-fails': 'POST /lookup gets 500.',
@@ -231,6 +262,8 @@ export const MOCK_SCENARIOS = Object.freeze({
   'add-job-unsupported': 'POST /jobs gets 400 unsupported: TailorIT cannot add from that address.',
   'ai-answer': 'POST /ai/answer answers every item: a choice its first option, a text CLEAN_ANSWER within its cap, with the '
     + "basis in value (default 'guess').",
+  'ai-answer-amount': "POST /ai/answer answers as ai-answer does, but every text with AMOUNT_ANSWER ('$85,000', a sum with "
+    + 'its sign and separators, as an AI writes one: the Phase 7a review), which an item asked in a layout gets as invalid.',
   'resume-slow': 'GET /resumes/:id/file answers after delayMs (default 8 s).',
   'resume-fails': 'GET /resumes/:id/file gets 500.',
   'resume-hash-mismatch': "GET /resumes/:id/file sends an X-TailorIT-Sha256 that is not the bytes' digest.",
@@ -315,6 +348,46 @@ export const CLEAN_REWRITE = 'Four years of building products like this one taug
 
 /** The fake CLI's answer to a text item (version 2): one short line, no link, no contact detail. */
 export const CLEAN_ANSWER = 'About three years';
+/** The text the ai-answer-amount scenario answers. */
+export const AMOUNT_ANSWER = '$85,000';
+/** What the ai-answer scenario answers a text asked in a layout (version 4, AUTOFILL_ANSWER_FORMATS). */
+export const FORMAT_ANSWERS = /** @type {Record<string, string>} */ ({ number: '85000', integer: '12', currency: '85000',
+  date: '2027-01-04', 'MM/DD/YYYY': '01/04/2027', 'DD/MM/YYYY': '04/01/2027', 'MM/YYYY': '01/2027' });
+
+/**
+ * TailorIT's answerInFormat (src/contract/tailorit/ai.ts, version 4), in brief for the mock, which imports no
+ * TypeScript: an answer written in its layout, or null when it is not one value of it.
+ * @param {string} text @param {string} format @returns {string | null}
+ */
+export function answerInFormat(text, format) {
+  const value = text.trim();
+  if (['date', 'MM/DD/YYYY', 'DD/MM/YYYY', 'MM/YYYY'].includes(format)) {
+    const separator = format === 'date' ? '-' : '/';
+    const layout = format === 'date' ? ['YYYY', 'MM', 'DD'] : format.split('/');
+    const parts = value.split(separator);
+    if (parts.length !== layout.length) return null;
+    /** @type {Record<string, number>} */
+    const read = {};
+    for (const [at, field] of layout.entries()) {
+      if (!(field === 'YYYY' ? /^\d{4}$/ : /^\d{1,2}$/).test(parts[at] ?? '')) return null;
+      read[field] = Number(parts[at]);
+    }
+    const year = read.YYYY ?? 0;
+    const month = read.MM ?? 0;
+    const day = read.DD ?? 1;
+    const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    if (year < 1900 || year > 2199 || month < 1 || month > 12 || day < 1 || day > days) return null;
+    /** @type {Record<string, string>} */
+    const written = { YYYY: String(year), MM: String(month).padStart(2, '0'), DD: String(day).padStart(2, '0') };
+    return layout.map((field) => written[field]).join(separator);
+  }
+  if (/^[1-9]\d{0,2}\.\d{3}$/.test(value)) return null;
+  const plain = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(value) ? value.replace(/,/g, '') : value;
+  const pattern = format === 'integer' ? /^\d+$/ : format === 'currency' ? /^\d+(?:\.\d{1,2})?$/ : /^\d+(?:\.\d+)?$/;
+  if (!pattern.test(plain)) return null;
+  const number = plain.replace(/^0+(?=\d)/, '');
+  return number.replace('.', '').length <= 15 ? number : null;
+}
 
 /** A draft's cap when its question names no maxLength (the contract's AUTOFILL_AI_LIMITS.draft.defaultLength). */
 const DRAFT_DEFAULT_LENGTH = 3000;
@@ -521,7 +594,7 @@ export function createMock() {
 
   /** The scenarios that change what a profile route answers, which name the next revision. */
   const REVISED = /** @type {const} */ (['sensitive-not-authorized', 'sensitive-us-citizen', 'profile-phone-no-code',
-    'profile-canada', 'profile-uk']);
+    'profile-canada', 'profile-uk', 'profile-start-date']);
 
   /** The revision an envelope carries: the contract example's, or the next one under a scenario that changes a profile
    *  route's answer (REVISED), so that both profile routes agree. @param {{ revision: number }} envelope */
@@ -540,6 +613,7 @@ export function createMock() {
       contact.phone = { ...contact.phone, number: '+44 20 7946 0958', country: 'GB' };
       contact.address = { ...contact.address, city: 'London', region: '', postalCode: 'SW1A 1AA', country: 'GB' };
     }
+    if (isOn('profile-start-date')) profile.preferences = { ...profile.preferences, earliestStartDate: '2027-01-04' };
     const saved = state.savedProfile;
     if (saved !== null) return { ...envelope, revision: saved.revision, profile: saved.profile,
       anythingElseFlaggedLines: flaggedLinesOf(saved.profile) };
@@ -639,6 +713,7 @@ export function createMock() {
       answer = lookupAnswer('golden');
       answer.match = { ...answer.match, percentage: 74.5 };
     } else if (json.jobId !== undefined) answer = lookupAnswer('job-chosen');
+    else if (!contractReads(json.url)) answer = lookupAnswer('unknown-page-default-resume');
     else answer = state.added === null ? lookupAnswer('golden') : JSON.parse(JSON.stringify(state.added));
     if (json.includePostingText !== true && answer.job) delete answer.job.postingText;
     // v3 Phase 4: a job POST /applied marked is Applied in the tracker from then on.
@@ -654,7 +729,9 @@ export function createMock() {
   function addJob(json) {
     const urlOk = typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048;
     if (!urlOk) return invalid('url: Required');
-    if (take('add-job-unsupported') !== null) return refusal(400, 'unsupported', 'TailorIT cannot add jobs from that address.');
+    if (take('add-job-unsupported') !== null || !contractReads(json.url)) {
+      return refusal(400, 'unsupported', 'TailorIT cannot add jobs from that address.');
+    }
     if (take('add-job-closed') !== null) return refusal(404, 'not_found', 'That posting is no longer open.');
     if (take('add-job-ats-down') !== null) return refusal(503, 'ats_unavailable', 'The job site could not be reached. Try again later.');
     const existing = take('add-job-existing') !== null;
@@ -742,9 +819,13 @@ export function createMock() {
   }
 
   /** An answer task's result for these items (version 2): no answer for any, unless the ai-answer scenario answers each
-   *  (a choice its first option, a text CLEAN_ANSWER within its cap) with its basis. @param {Array<Record<string, any>>} items */
+   *  (a choice its first option, a text CLEAN_ANSWER within its cap, or, for a text asked in a layout, version 4,
+   *  FORMAT_ANSWERS' value of it) with its basis. Under ai-answer-amount every text is AMOUNT_ANSWER, which a text
+   *  asked in a layout gets as TailorIT answers it: `invalid`, since it is no one value of that layout (answerInFormat).
+   *  @param {Array<Record<string, any>>} items */
   function answerResult(items) {
-    const answering = take('ai-answer');
+    const amount = take('ai-answer-amount');
+    const answering = amount ?? take('ai-answer');
     const basis = typeof answering?.value === 'string' ? answering.value : 'guess';
     return {
       answers: items.map((item) => {
@@ -756,7 +837,12 @@ export function createMock() {
           return first === undefined ? none : { ...none, index: first.index, basis, reason: 'answered' };
         }
         const cap = typeof item.maxLength === 'number' ? item.maxLength : 500;
-        return { ...none, text: CLEAN_ANSWER.slice(0, cap), basis, reason: 'answered' };
+        const format = typeof item.format === 'string' ? item.format : null;
+        const said = amount !== null ? AMOUNT_ANSWER : format !== null ? FORMAT_ANSWERS[format] ?? CLEAN_ANSWER
+          : CLEAN_ANSWER;
+        const text = format === null ? said : answerInFormat(said, format);
+        if (text === null) return { ...none, reason: 'invalid' };
+        return { ...none, text: text.slice(0, cap), basis, reason: 'answered' };
       }),
     };
   }
@@ -1047,6 +1133,9 @@ export function createMock() {
       if (!urlOk || !jobOk || (json.url === undefined && json.jobId === undefined)) return invalid('url: Name the page or the job');
       if (take('applied-fails') !== null) return serverError();
       if (take('applied-forbidden') !== null) return refusal(403, 'forbidden', 'Connect the extension again.');
+      if (json.jobId === undefined && !contractReads(json.url)) {
+        return refusal(404, 'not_found', 'A job or a tracker entry for this page was not found.');
+      }
       state.applied.push(json);
       const answer = lookupAnswer(json.jobId === undefined ? 'golden' : 'job-chosen');
       answer.application = { ...(answer.application ?? { id: 'app-applied', trackedOn: iso(Date.now()), archived: false,

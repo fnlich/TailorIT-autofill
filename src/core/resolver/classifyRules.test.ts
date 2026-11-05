@@ -375,6 +375,40 @@ describe('classifyByRules: the description (§8.3)', () => {
       .toMatchObject({ category: 'contact.email', matchedOn: 'label' });
   });
 
+  it('reads an "Address" asking for a city and a country, not a street, as the location (Workable\'s)', () => {
+    expect(classifyByRules(field('Address', 'text', { description: 'Include your city, region, and country, so that '
+      + 'employers can easily manage your application.' }))).toMatchObject({ category: 'location.current',
+      rule: 'label.address1', matchedOn: 'label' });
+    // A street, a postcode or no such help keeps it the street address.
+    for (const description of ['', 'Street, city, postcode and country', 'Your street address, city and country']) {
+      expect(classifyByRules(field('Address', 'text', { description })), description)
+        .toMatchObject({ category: 'address.line1' });
+    }
+    // Only the word Address alone is read so (the Phase 7a review): a street address stays the street, whatever its
+    // help says.
+    const place = 'Include your city, region, and country.';
+    for (const label of ['Street address', 'Address line 1', 'Address (flat and street)']) {
+      expect(classifyByRules(field(label, 'text', { description: place })), label)
+        .toMatchObject({ category: 'address.line1' });
+    }
+  });
+
+  it("reads the Workable capture's work authorization and experience wordings (the Phase 7a review)", () => {
+    for (const [label, kind] of [['Work Authorization Status', 'select'],
+      ['Which best describes your work authorization status?', 'radio']] as const) {
+      expect(classifyByRules(field(label, kind)), label).toMatchObject({ category: 'workAuth.status',
+        rule: 'label.work-auth-status' });
+    }
+    expect(classifyByRules(field('Are you legally eligible to be employed in the United States?', 'radio')))
+      .toMatchObject({ category: 'workAuth.authorized', rule: 'label.work-auth' });
+    // Eligibility for a shift is no authorization.
+    expect(classifyByRules(field('Are you eligible to work overtime?', 'radio'))?.category).not.toBe('workAuth.authorized');
+    // An experience block's own Summary is the role's description; a Summary elsewhere is not.
+    expect(classifyByRules(field('Summary', 'textarea', WORK))).toMatchObject({ category: 'experience.description',
+      rule: 'label.experience-description' });
+    expect(classifyByRules(field('Summary', 'textarea'))?.category).not.toBe('experience.description');
+  });
+
   it('can classify an unlabelled textarea before the fallback does', () => {
     expect(classifyByRules(field('', 'textarea', { description: 'Why do you want to work here?' }))).toEqual({
       category: 'freeText.whyCompany', confidence: 0.92, classifiedBy: 'label-rule', rule: 'label.why-company',

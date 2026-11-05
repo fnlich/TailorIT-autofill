@@ -60,6 +60,10 @@ export interface PreparedOption {
   /** Another usable option has the same main key with other brackets ("Chinese (Mandarin)" beside "Chinese
    *  (Cantonese)"): the brackets are what tell them apart, so none of them is ever redundant. */
   bracketSiblings: boolean;
+  /** The keys of a label that joins two to four short answers with slashes ("Native/Fluent", "Full-time / Part-time"),
+   *  each part's own key, in the field's domain; [] for any other label, and in a degree or EEO domain (the Phase 7a
+   *  review: the exact stage takes either part). */
+  slashParts: string[];
 }
 
 /** A field's options prepared once for one domain. */

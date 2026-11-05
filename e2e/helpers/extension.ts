@@ -15,6 +15,7 @@ import { genericCanonicalUrl } from '../../src/adapters/generic/url';
 import { parseAshbyUrl } from '../../src/adapters/ashby/url';
 import { parseGreenhouseUrl } from '../../src/adapters/greenhouse/url';
 import { parseLeverUrl } from '../../src/adapters/lever/url';
+import { parseWorkableUrl } from '../../src/adapters/workable/url';
 import type { RunState } from '../../src/core/types/run';
 import type { Answer } from '../../src/messaging/envelope';
 import type { AuthStatus, PageMessage, TabReports } from '../../src/messaging/schemas';
@@ -41,7 +42,7 @@ export function applicationKeyOf(address: string): string | null {
   const platform = platformOfUrl(url.href);
   if (platform === null) return null;
   const parsed = platform === 'lever' ? parseLeverUrl(url) : platform === 'greenhouse' ? parseGreenhouseUrl(url)
-    : platform === 'ashby' ? parseAshbyUrl(url) : null;
+    : platform === 'ashby' ? parseAshbyUrl(url) : platform === 'workable' ? parseWorkableUrl(url) : null;
   const canonical = parsed?.applicationUrl ?? genericCanonicalUrl(url);
   return canonical === null ? null : applicationKey(platform, canonical);
 }

@@ -17,12 +17,16 @@
 //   page was captured: each form's render id, which prefixes every data-field-entry-id and every radio's and checkbox's
 //   id, name and for, becomes 00000000-0000-4000-8000-00000000000N in the order the page first names it, and the
 //   per-load CSP nonce of meta[name=csp-nonce] becomes REDACTED.
+// - Workable (--platform workable): the ids its React draws afresh on every render (normaliseWorkable: the radios' and
+//   checkboxes' own ids, wrapper_<id>, <id>_label, input_<id>, checkbox_label_<id>, radio_label_<id>, svg_<id>,
+//   input_files_input_<id>, description_input_<id>, <id>_dropdown and an open list's <id>_<option>) become
+//   wk000000000000N (16 characters, as Workable's are) in the order the page first names them, wherever they stand.
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string or a found
 // email remains (also percent- or entity-encoded), if the page still finds an email or phone number, if the page
 // requests anything the route map does not answer, or if any element's visibility changed. Leftover suspicious tokens
 // are printed for review. Counts are printed, never values.
 //
-// Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday> --case <name>
+// Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable> --case <name>
 //          [--redact <file>] [--out <folder>]
 // The redact file holds one string per line (blank lines and lines starting with # are skipped); a string that looks
 // like a phone number matches whatever its punctuation. --out defaults to fixtures/.
@@ -36,10 +40,10 @@ import { paint } from './proc.mjs';
 const ROOT = resolve(import.meta.dirname, '..');
 
 /** The platforms a fixture can belong to (src/core/enums.ts PLATFORMS). */
-export const FIXTURE_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday'];
+export const FIXTURE_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable'];
 
 /** The hosts the extension runs on (src/shared/hosts.ts, the one list): only frames on these are converted. */
-const ATS_HOST = /^(?:(?:job-)?boards\.greenhouse\.io|jobs\.(?:eu\.)?lever\.co|jobs\.ashbyhq\.com|(?:[a-z0-9-]+\.)+myworkday(?:jobs|site)\.com)$/;
+const ATS_HOST = /^(?:(?:job-)?boards\.greenhouse\.io|jobs\.(?:eu\.)?lever\.co|jobs\.ashbyhq\.com|(?:[a-z0-9-]+\.)+myworkday(?:jobs|site)\.com|apply\.workable\.com)$/;
 
 /** Images larger than this become a same-size placeholder: the box is what visibility needs, not the pixels. */
 export const IMAGE_INLINE_MAX = 100 * 1024;
@@ -98,6 +102,44 @@ export function normaliseAshby(html) {
     return `content="${REDACTED}"`;
   }));
   return { text, renderIds, nonces };
+}
+
+/** Where Workable's per-render ids stand (the capture of 2026-11-02, its snapshot-ids log): an element's own 16-character
+ *  id, or one with Workable's prefix or suffix. Each names the id in its first group. */
+const WORKABLE_IDS = [
+  /\bid="([A-Za-z0-9]{16})"/g,
+  /\bid="(?:wrapper|radio_label|checkbox_label|svg|input|input_files_input|description_input)_([A-Za-z0-9]{16})"/g,
+  /\bid="([A-Za-z0-9]{16})_(?:label|dropdown|\d+)"/g,
+];
+
+/** The fixed id Workable's `index`-th per-render id (0-based, in the order the page first names it) becomes: 16
+ *  characters, as Workable's own are. @param {number} index */
+export const workableRenderId = (index) => `wk${String(index + 1).padStart(14, '0')}`;
+
+/**
+ * Workable's per-render ids, normalised in a converted frame's HTML (see the header): every id one of WORKABLE_IDS
+ * names is replaced wherever it stands (the aria-labelledby, aria-describedby, aria-controls, for and
+ * aria-activedescendant references that name it embed it). Answers the text and the ids replaced (never their values).
+ * @param {string} html @returns {{ text: string; renderIds: string[] }}
+ */
+export function normaliseWorkable(html) {
+  /** @type {Array<{ id: string; at: number }>} */
+  const seen = [];
+  for (const pattern of WORKABLE_IDS) {
+    for (const match of html.matchAll(pattern)) seen.push({ id: match[1] ?? '', at: match.index ?? 0 });
+  }
+  /** @type {string[]} */
+  const renderIds = [];
+  for (const { id } of seen.sort((a, b) => a.at - b.at)) {
+    // Only an id with a digit or both cases: a 16-letter word ("characteristics") is no render id.
+    if (id === '' || renderIds.includes(id) || !/\d|[a-z].*[A-Z]|[A-Z].*[a-z]/.test(id)) continue;
+    renderIds.push(id);
+  }
+  let text = html;
+  renderIds.forEach((id, index) => {
+    text = text.split(id).join(workableRenderId(index));
+  });
+  return { text, renderIds };
 }
 
 /** @param {string} message @returns {never} */
@@ -939,7 +981,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       result.notes.push(...outcome.notes.map((note) => `${basename(path)}: ${note}`));
       const serialized = JSON.parse(await frame.evaluate(serializeInPage));
       const { doctype } = serialized;
-      const normalised = platform === 'ashby' ? normaliseAshby(serialized.html) : null;
+      const normalised = platform === 'ashby' ? normaliseAshby(serialized.html)
+        : platform === 'workable' ? { ...normaliseWorkable(serialized.html), nonces: 0 } : null;
       const html = normalised?.text ?? serialized.html;
       // A token the normalisation replaced (a render id, the CSP nonce) is gone from the files: it is not listed.
       result.tokens.push(...outcome.tokens.filter(({ token }) => normalised === null

@@ -1,0 +1,202 @@
+{
+  "fixture": "workable/verneek-closed",
+  "source": "https://apply.workable.com/verneek/j/ED81AD77CE/apply/",
+  "captured": "2026-11-02T21:58:09.000Z",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"firstname\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"lastname\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Phone country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": ".iti button.iti__selected-country",
+      "note": "intl-tel-input's country button (a widget root): its list of 244 countries, \"United States (+1)\" first, read once opened; labelled by the phone's title with \"country code\" (labelSuffix)."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"input_phone\"]"
+    },
+    {
+      "label": "Summary",
+      "kind": "textarea",
+      "required": false,
+      "section": "Profile",
+      "fillable": true,
+      "control": "[id=\"summary\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "input[type=\"file\"][data-ui=\"resume\"]",
+      "note": "Labelled by its question (aria-labelledby's first target): its \"Choose file\" label[for] with role=button is the adapter's upload widget, which never labels its input."
+    },
+    {
+      "label": "Verneek is an early-stage deep-tech AI startup aspiring to change how people make everyday decisions. Tell us in a few lines why you'd like to become a core member of Verneek?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737627\"]"
+    },
+    {
+      "label": "Working knowledge of basic computer software including Google Workspace, ranging from GMail to Google Slides, and beyond?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12737628\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Working knowledge of the Mac Operating System (for using a Macbook laptop)",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12737629\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Work authorization in the USA at the time of hire",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12737630\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Some experience with basic accounting/bookkeeping?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12737631\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "What is your proudest business accomplishment?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737632\"]"
+    },
+    {
+      "label": "Have you ever managed a retail store?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12737633\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "If yes, which retailer(s) have you worked for in a store management capacity?",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737634\"]"
+    },
+    {
+      "label": "Have you ever managed an office?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12737635\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "What is the longest number of years you have worked as an Office Manager or Operations Manager inside one organization?",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "input[name=\"QA_12737636\"]",
+      "note": "The number box (no id, no aria-labelledby; its data-ui its name): labelled by its title inside its wrapping label, read back as a number (formatFor)."
+    },
+    {
+      "label": "Have you done any event organization before? What is the most complicated event you have organized?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737637\"]"
+    },
+    {
+      "label": "Have you ever worked at a fast-paced dynamic environment? Please explain.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737638\"]"
+    },
+    {
+      "label": "What is your current location? (note that Verneek is based in NYC, and fully in-person)",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737639\"]"
+    },
+    {
+      "label": "When can you start? (note that we are looking for an immediate start date).",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "input[name=\"QA_12737640\"]",
+      "note": "A date mask (MM/DD/YYYY, inputmode=\"tel\"): formatFor reads its layout; written with one Escape before and after (keyAroundWrite)."
+    },
+    {
+      "label": "Please share your LinkedIn profile or another public professional profile or website.",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737641\"]"
+    },
+    {
+      "label": "Please provide an alternate email address we can use to contact you if needed.",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12737642\"]"
+    }
+  ]
+}

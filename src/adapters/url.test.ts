@@ -15,6 +15,7 @@ import { applicationKey, type ApplicationPage, type ApplicationUrl } from './app
 import * as ashby from './ashby/url';
 import * as greenhouse from './greenhouse/url';
 import * as lever from './lever/url';
+import * as workable from './workable/url';
 
 /** What the extension reads from an address. */
 interface Ours {
@@ -56,6 +57,12 @@ const leverApply = (site: string, id: string, canonical: string): Ours =>
   ({ platform: 'lever', board: site, jobId: id, page: 'application', canonical });
 const greenhouseJob = (board: string | null, id: string, canonical: string): Ours =>
   ({ platform: 'greenhouse', board, jobId: id, page: 'application', canonical });
+
+const HF_FORM = 'https://apply.workable.com/huggingface/j/F88446C814/apply/';
+const workableForm = (account: string, code: string, canonical: string): Ours =>
+  ({ platform: 'workable', board: account, jobId: code, page: 'application', canonical });
+const workableOverview = (account: string, code: string, applicationUrl: string): Ours =>
+  ({ platform: 'workable', board: account, jobId: code, page: 'posting', canonical: null, applicationUrl });
 
 const ROWS: Row[] = [
   // The owner's captures (captures.json, captures-1.json and phase2-zoox/captures.json): requested and final URLs.
@@ -148,6 +155,26 @@ const ROWS: Row[] = [
       "posting's own pages, where the form is" },
   { url: `${OPENAI}/APPLICATION`, ours: null },
   { url: 'https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting', ours: null },
+
+  // Workable: the live capture of 2026-11-02 (its forms, an overview and the URL probes), then the edge cases.
+  { url: HF_FORM, ours: workableForm('huggingface', 'F88446C814', HF_FORM) },
+  { url: 'https://apply.workable.com/huggingface/j/F88446C814/', ours: workableOverview('huggingface', 'F88446C814', HF_FORM) },
+  { url: 'https://apply.workable.com/labella-associates/j/7716B84ADC/apply/',
+    ours: workableForm('labella-associates', '7716B84ADC', 'https://apply.workable.com/labella-associates/j/7716B84ADC/apply/') },
+  { url: 'https://apply.workable.com/HuggingFace/j/f88446c814/apply?lng=en#top',
+    ours: workableForm('huggingface', 'F88446C814', HF_FORM) },
+  { url: 'https://apply.workable.com/huggingface/j/F88446C814', ours: workableOverview('huggingface', 'F88446C814', HF_FORM) },
+  { url: 'https://apply.workable.com/huggingface/', ours: null },
+  { url: 'https://apply.workable.com/j/F88446C814', ours: null,
+    contract: { kind: 'workable', board: null, externalId: 'F88446C814' },
+    why: 'a /j/ link naming no account: TailorIT finds a job by its shortcode, the extension reads no form there (the page '
+      + "sends the person to the account's own form address, which it reads)" },
+  { url: 'https://apply.workable.com/huggingface/j/F88446C814/apply/success', ours: null },
+  { url: 'https://huggingface.workable.com/j/F88446C814', ours: null,
+    contract: { kind: 'workable', board: 'huggingface', externalId: 'F88446C814' },
+    why: "the account's own host: TailorIT reads the posting, the extension runs only on apply.workable.com, where "
+      + 'Workable sends this address' },
+  { url: 'https://jobs.workable.com/view/abc/engineer', ours: null },
 ];
 
 /** What the two adapters read: their parse, their canonical URL, and which of them matched. */
@@ -170,6 +197,11 @@ function readOurs(address: string): { ours: Ours | null; matched: Platform[] } {
     matched.push('ashby');
     parsed = ashby.parseAshbyUrl(url);
     canonical = ashby.canonicalApplicationUrl(url);
+  }
+  if (workable.matchesUrl(url)) {
+    matched.push('workable');
+    parsed = workable.parseWorkableUrl(url);
+    canonical = workable.canonicalApplicationUrl(url);
   }
   if (!parsed) return { ours: null, matched };
   const ours: Ours = { platform: parsed.platform, board: parsed.board, jobId: parsed.jobId, page: parsed.page, canonical };
@@ -196,7 +228,8 @@ describe('the URL table', () => {
     // At most one adapter takes an address, and exactly the one the shared host list names.
     expect(matched.length).toBeLessThanOrEqual(1);
     const host = platformOfUrl(row.url);
-    expect(matched[0] ?? null).toBe(host === 'lever' || host === 'greenhouse' || host === 'ashby' ? host : null);
+    expect(matched[0] ?? null).toBe(host === 'lever' || host === 'greenhouse' || host === 'ashby' || host === 'workable' ? host
+      : null);
     const contract = readContract(row.url);
     if (row.contract !== undefined) {
       expect(contract).toEqual(row.contract);
@@ -234,6 +267,10 @@ describe('applicationKey', () => {
       `https://jobs.ashbyhq.com/Ashby/${ASHBY_EMBED_ID}/application?embed=js`, `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`];
     expect(new Set(embed.map(keyOf))).toEqual(new Set([applicationKey('ashby', `https://jobs.ashbyhq.com/ashby/${ASHBY_EMBED_ID}/application`)]));
     expect(keyOf(OPENAI)).toBe(keyOf(`${OPENAI}/application`));
+    // Workable: the overview, the form and every spelling of one posting.
+    const hf = [HF_FORM, 'https://apply.workable.com/huggingface/j/F88446C814/', 'https://apply.workable.com/huggingface/j/F88446C814',
+      'https://apply.workable.com/HuggingFace/j/f88446c814/apply?lng=en#top'];
+    expect(new Set(hf.map(keyOf))).toEqual(new Set([applicationKey('workable', HF_FORM)]));
   });
 
   it('is a different key for every other application', () => {

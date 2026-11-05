@@ -40,7 +40,8 @@ import type { BaseKey, Constraints, CurrentValue, FieldKey, FieldSpec, Option, S
 import { isControlCamouflaged } from './camouflage';
 import { constraintsOf } from './constraints';
 import {
-  autocompleteTokens, CONTROL_SELECTOR, isDisabled, isReadOnly, isTextLike, kindOf, type NativeKind,
+  ariaReadOnly, autocompleteTokens, CONTROL_SELECTOR, inputModeFormatOf, isDisabled, isReadOnly, isTextLike, kindOf,
+  typeFormatOf, type NativeKind,
 } from './kinds';
 import {
   adapterLabelOf, descriptionOf, labelOfControl, labelOfGroup, legendOf, optionLabelOf, type LabelContext,
@@ -530,6 +531,9 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): 
     declared: declared !== null,
     ...(declared === null ? {} : { expanded: declared.expanded ?? null, box: declared.box ?? null,
       busy: declared.busy ?? [], bridge: declared.bridge ?? null, keys: declared.keys ?? [],
+      ...(declared.keyTarget === 'list' ? { keyTarget: 'list' as const } : {}),
+      ...(declared.readOnlyBox === true ? { readOnlyBox: true as const } : {}),
+      ...(declared.listFollowsField === true ? { listFollowsField: true as const } : {}),
       ...(declared.shownAnswer ? { shownAnswer: declared.shownAnswer } : {}),
       ...(declared.hidesFormWhileOpen === true ? { hidesFormWhileOpen: true } : {}),
       ...(declared.optionLabel ? { optionLabel: declared.optionLabel } : {}),
@@ -616,7 +620,10 @@ function widgetDraft(first: Candidate, widget: WidgetTarget, ctx: LabelContext, 
     section: sections.sectionOf(el, label.element), description: descriptionOf(el, ctx), constraints: {},
     visibility: first.visibility, proxy: null, required,
     disabled: groupLike ? members.every(isUnavailable) : isDisabled(el) || (widget.input !== null && isDisabled(widget.input)),
-    readOnly: isReadOnly(el) || (widget.input !== null && isReadOnly(widget.input)),
+    // A text box its adapter declares read-only by design (WidgetDecl.readOnlyBox: a select-only dropdown) is read-only
+    // only by its aria-readonly; any other widget by the scanner's rule.
+    readOnly: widget.readOnlyBox === true ? [el, widget.input].some((part) => part !== null && ariaReadOnly(part))
+      : isReadOnly(el) || (widget.input !== null && isReadOnly(widget.input)),
     // A widget's text box is drawn inside the widget's own box, so it is not judged on its own.
     camouflaged: false,
     nameAttr: attribute(widget.input ?? el, 'name'), idAttr: attribute(el, 'id'),
@@ -727,9 +734,12 @@ function adapterRequires(el: Element, adapter: Adapter | null): boolean {
 }
 
 /** A text control's constraints with the layout its adapter reads (formatFor), where neither its type nor a visible
- *  placeholder gave one: a format the control's own type gives, or a placeholder's pattern, stands. */
+ *  placeholder gave one: a format the control's own type gives, or a placeholder's pattern, stands. A format its
+ *  inputmode alone gave is the keyboard a phone shows, not a layout: the adapter's declared format takes its place
+ *  (Workable's date masks say inputmode="tel" over "MM/DD/YYYY"), its placeholder's pattern still standing. */
 function withAdapterFormat(constraints: Constraints, control: Element, adapter: Adapter | null): Constraints {
-  if (constraints.format !== undefined || constraints.pattern !== undefined) return constraints;
+  const keyboardOnly = typeFormatOf(control) === undefined && inputModeFormatOf(control) !== undefined;
+  if (!keyboardOnly && (constraints.format !== undefined || constraints.pattern !== undefined)) return constraints;
   let declared: ReturnType<NonNullable<Adapter['formatFor']>> | undefined;
   try {
     declared = adapter?.formatFor?.(control);
@@ -737,8 +747,9 @@ function withAdapterFormat(constraints: Constraints, control: Element, adapter: 
     declared = null;
   }
   if (declared === null || declared === undefined) return constraints;
+  const pattern = constraints.pattern ?? declared.pattern;
   return { ...constraints, format: declared.format,
-    ...(declared.pattern !== undefined ? { pattern: capCodePoints(declared.pattern, TEXT_CAP_PATTERN) } : {}) };
+    ...(pattern !== undefined ? { pattern: capCodePoints(pattern, TEXT_CAP_PATTERN) } : {}) };
 }
 
 function attribute(el: Element, name: 'name' | 'id'): string {

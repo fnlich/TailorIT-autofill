@@ -11,6 +11,8 @@
  *   document counts too.
  * - Ashby: .ashby-application-form-success-container in the form's place, the same address (the Ashby capture,
  *   adapters/ashby ashbySubmitted).
+ * - Workable: [data-ui=successful-submit] drawn in the page, the same address (Jobright 1.25.2's selector, not seen live:
+ *   adapters/workable workableSubmitted).
  * Workday and the generic adapter read none yet.
  *
  * A sign drawn in the form's own document (the v3 Phase 4 review, M1 and M6) counts only when it is new: not one of the
@@ -20,6 +22,7 @@
  */
 import { ashbySubmitted } from '../adapters/ashby';
 import type { Adapter } from '../adapters/types';
+import { workableSubmitted } from '../adapters/workable';
 import type { Platform } from '../core/enums';
 import { newScanCache } from '../dom/scan-cache';
 import { isUserVisible } from '../dom/visibility';
@@ -47,6 +50,9 @@ export function signsOf(doc: Document, platform: Platform): Element[] {
   }
   // The live confirmation page: <main class="main ..."><div class="confirmation">...<div class="confirmation__content">
   if (platform === 'greenhouse') return [...doc.querySelectorAll('.confirmation .confirmation__content')];
+  if (platform === 'workable') {
+    return workableSubmitted(doc) ? [...doc.querySelectorAll('[data-ui="successful-submit"]')] : [];
+  }
   return [];
 }
 

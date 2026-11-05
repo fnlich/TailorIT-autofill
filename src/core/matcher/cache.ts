@@ -4,6 +4,9 @@
  * never on disk, least recently used out first at 5,000 entries) behind MatchCacheStore; the core only reads it and
  * says what to write or delete. An entry holds the chosen option's normalized clean label, never its index, and is
  * checked again on every use: a hit needs exactly one usable option with that label, otherwise the entry is stale.
+ * The store keeps the key's value part and the label sealed (an HMAC under a secret of the browser session's, the Phase
+ * 7a review): the core hands it plain keys, and compares an entry's label with each option's through sealLabel, so
+ * neither a value nor a label the person chose is ever kept readable.
  * Unconfirmed LLM picks are never cached, and neither are EEO, legal, consent or sensitive fields: only the policy
  * classes profile, free-text and unknown are.
  *
@@ -46,7 +49,8 @@ function fieldIdentity(field: FieldOfStudy | undefined): string {
 
 /** One accepted match. */
 export interface MatchCacheEntry {
-  /** The chosen option's normalized clean label (PreparedOption.fullKey in the value's domain). */
+  /** The chosen option's normalized clean label (PreparedOption.fullKey in the value's domain); in an entry the store
+   *  gives back, that label sealed (MatchCacheStore.sealLabel). */
   label: string;
   stage: MatcherStage;
   confidence: number;
@@ -58,7 +62,10 @@ export interface MatchCacheEntry {
 
 /** The worker's cache, read by the core. */
 export interface MatchCacheStore {
+  /** The entry kept for a plain key (the store seals the key's value part itself), its label sealed. */
   get(key: string): MatchCacheEntry | undefined;
+  /** A normalized label as the store keeps an entry's: what an option's fullKey is compared with. */
+  sealLabel(label: string): string;
 }
 
 /**
@@ -138,11 +145,12 @@ export function cacheEntryFor(input: MatchInput, match: Match, acceptedBy: Match
 /** The cache's answer for the current options: a hit, a stale entry to delete, or nothing stored. */
 export type CacheLookup = { hit: Match } | { stale: true } | null;
 
-/** Checks a stored entry against the current options (§4.1): exactly one usable option with the stored label. */
+/** Checks a stored entry against the current options (§4.1): exactly one usable option with the stored label (each
+ *  option's label sealed as the store seals it). */
 export function cacheLookup(store: MatchCacheStore, key: string, options: PreparedOptions): CacheLookup {
   const entry = store.get(key);
   if (!entry) return null;
-  const same = options.list.filter((option) => chooseable(option) && option.fullKey === entry.label);
+  const same = options.list.filter((option) => chooseable(option) && store.sealLabel(option.fullKey) === entry.label);
   if (same.length !== 1) return { stale: true };
   const option = same[0]!;
   const base = entry.acceptedBy === 'user' ? MATCH_CACHE_ACCEPTED : entry.confidence;

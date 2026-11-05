@@ -1,0 +1,290 @@
+{
+  "fixture": "workable/labella-education-editor",
+  "source": "https://apply.workable.com/labella-associates/j/7716B84ADC/apply/",
+  "captured": "2026-11-02T22:27:06.000Z",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"firstname\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"lastname\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Phone country code",
+      "kind": "combobox",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": ".iti button.iti__selected-country",
+      "note": "intl-tel-input's country button (a widget root): its list of 244 countries, \"United States (+1)\" first, read once opened; labelled by the phone's title with \"country code\" (labelSuffix)."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"input_phone\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"address\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"city\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"postcode\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"country\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "Are you legally eligible to be employed in the United States? (Proof of identity and eligibility will be required upon employment)",
+      "kind": "radio",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"CA_21782\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Will you, now or in the future require sponsorship by LaBella Associates? (In compliance with federal law, all persons hired will be required to verify identity and eligibility to work in the United States and to complete the required I-9 employment eligibility verification document upon hire.)",
+      "kind": "radio",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"CA_21783\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Are you at least 18 years or older? (If no, you may be required to provide authorization to work)",
+      "kind": "radio",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"CA_22005\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Are you able to perform the essential functions of the job for which you are applying, with or without a reasonable accommodation?",
+      "kind": "radio",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"CA_22003\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "If you answered no to the question above, please explain.",
+      "kind": "textarea",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"CA_22004\"]"
+    },
+    {
+      "label": "Have you previously worked at LaBella Associates?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"input_CA_38927_input\"]",
+      "note": "A dropdown: select-only, its text box readonly=\"true\" by design (readOnlyBox), its list drawn in place once opened; its required attribute sits on its hidden value input."
+    },
+    {
+      "label": "Are you represented by yourself or an external recruiting agency?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"input_CA_48139_input\"]",
+      "note": "A dropdown: select-only, its text box readonly=\"true\" by design (readOnlyBox), its list drawn in place once opened; its required attribute sits on its hidden value input."
+    },
+    {
+      "label": "If you answered \"I am represented by an external recruiting agency\" to the question above, please name the agency.",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"CA_48140\"]"
+    },
+    {
+      "label": "Were you referred by a current employee? If yes, please provide their name.",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"CA_48141\"]"
+    },
+    {
+      "label": "Have you ever worked for AVANGRID or any of the following Operating Companies (Central Maine Power Company, United Illuminating, New York State Electric and Gas or Rochester Gas and Electric)?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"input_CA_49160_input\"]",
+      "note": "A dropdown: select-only, its text box readonly=\"true\" by design (readOnlyBox), its list drawn in place once opened; its required attribute sits on its hidden value input."
+    },
+    {
+      "label": "If you answered \"yes\" to previously working at Avangrid, please enter your former Avangrid Manager's name.",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"CA_49161\"]"
+    },
+    {
+      "label": "School",
+      "kind": "text",
+      "required": true,
+      "section": "Education",
+      "fillable": true,
+      "control": "[id=\"school\"]"
+    },
+    {
+      "label": "Field of study",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[id=\"field_of_study\"]"
+    },
+    {
+      "label": "Degree",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "[id=\"degree\"]"
+    },
+    {
+      "label": "Start date",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[name=\"start_date\"]",
+      "note": "A date mask (MM/YYYY, inputmode=\"tel\"): formatFor reads its layout; written with one Escape before and after (keyAroundWrite)."
+    },
+    {
+      "label": "End date",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[name=\"end_date\"]",
+      "note": "A date mask (MM/YYYY, inputmode=\"tel\"): formatFor reads its layout; written with one Escape before and after (keyAroundWrite)."
+    },
+    {
+      "label": "Summary",
+      "kind": "textarea",
+      "required": false,
+      "section": "Profile",
+      "fillable": true,
+      "control": "[id=\"summary\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "input[type=\"file\"][data-ui=\"resume\"]",
+      "note": "Labelled by its question (aria-labelledby's first target): its \"Choose file\" label[for] with role=button is the adapter's upload widget, which never labels its input."
+    },
+    {
+      "label": "Desired salary",
+      "kind": "text",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "input[name=\"CA_21784\"]",
+      "note": "The number box (no id, no aria-labelledby; its data-ui its name): labelled by its title inside its wrapping label, read back as a number (formatFor)."
+    },
+    {
+      "label": "Cover letter",
+      "kind": "textarea",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"cover_letter\"]"
+    },
+    {
+      "label": "Do you have a bachelor's degree in Environmental Science, Engineering, Ecologoy, or Biology?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_11713819\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "For this position, how many years of work-related experience do you have?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"input_QA_11713820_input\"]",
+      "note": "A dropdown: select-only, its text box readonly=\"true\" by design (readOnlyBox), its list drawn in place once opened; its required attribute sits on its hidden value input."
+    },
+    {
+      "label": "Rate your experience level reviewing, editing and providing QA/QC for Environmental Due Diligence Reports.",
+      "kind": "combobox",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"input_QA_11713821_input\"]",
+      "note": "A dropdown: select-only, its text box readonly=\"true\" by design (readOnlyBox), its list drawn in place once opened; its required attribute sits on its hidden value input."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "3f6a9c2e-8b14-4d7a-a5c0-2e9b7d1f4c68",
+  "questionKey": "why do you want to work at northwind",
+  "optionSetHash": "",
+  "scope": "workable:northwind",
+  "fieldKind": "textarea",
+  "questionLabel": "Why do you want to work at Northwind?",
+  "platform": "workable",
+  "answer": {
+    "kind": "text",
+    "text": "Northwind's ordering platform is the kind of system I have spent four years building, and I want to help it grow."
+  },
+  "createdAt": "2026-10-22T12:00:00.000Z",
+  "updatedAt": "2026-10-22T12:00:00.000Z"
+}

@@ -282,7 +282,8 @@ describe('tiebreakRequests', () => {
 });
 
 describe('item ids: one per question, even for several values of one field', () => {
-  const skills = ['JavaScript / TypeScript', 'Golang', 'Rust', 'Python'];
+  // ("JavaScript / TypeScript" would be TypeScript's own answer, either part of a slash-joined option: exact.ts.)
+  const skills = ['JavaScript and TypeScript', 'Golang', 'Rust', 'Python'];
 
   it('gives each value of a field its own id, and keeps the field key when no value is named', () => {
     const base = { key: 'greenhouse|main|skills|x|0' as MatchInput['key'], optionSetHash: HASH };
@@ -299,11 +300,11 @@ describe('item ids: one per question, even for several values of one field', () 
     const asked = outcomes.flatMap((outcome) => (!outcome.done && 'tiebreak' in outcome ? [outcome] : []));
     expect(asked).toHaveLength(2);
     expect(new Set(asked.map((outcome) => outcome.tiebreak.id)).size).toBe(2);
-    const stub = answeringBy({ TypeScript: 'JavaScript / TypeScript', Go: 'Golang' });
+    const stub = answeringBy({ TypeScript: 'JavaScript and TypeScript', Go: 'Golang' });
     const verdicts = await runTiebreaks(asked.map((outcome) => outcome.tiebreak), async (request) => stub(request));
     const chosen = asked.map((outcome) => completeTiebreak(outcome.partial, verdicts.get(outcome.tiebreak.id)!))
       .map((match) => (match.optionIndex === null ? null : skills[match.optionIndex]));
-    expect(chosen).toEqual(['JavaScript / TypeScript', 'Golang']);
+    expect(chosen).toEqual(['JavaScript and TypeScript', 'Golang']);
   });
 
   it('answers two typeahead result lists of one field, asked in one batch, each from its own list', async () => {

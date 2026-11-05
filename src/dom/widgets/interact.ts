@@ -10,8 +10,10 @@
  *   form shows, and nothing answers before: the capture of 2026-11-01);
  * - close: focusout and blur on the widget (the text filler's leave events), and only if its list is still open
  *   after them, an Escape its adapter declared (WidgetDecl.keys: a list that ignores focusout and blur), sent only
- *   while the widget says it is open (WidgetDecl.expanded), then one more click() on a select-only combobox that a
- *   click opened (it toggles);
+ *   while the widget says it is open (WidgetDecl.expanded), to its text box or, where the adapter says so, to the
+ *   open list itself (WidgetDecl.keyTarget 'list': Workable's), then one more click() on a select-only combobox that a
+ *   click opened (it toggles). A list its adapter says is drawn fixed at its field's place (WidgetDecl.listFollowsField)
+ *   is judged visible where its field is (dom/visibility.ts followsItsField);
  * - wait for a list's options: a quiet window with the list's own busy signs cleared, capped (awaitOptions' rule,
  *   applied to the widget's list); the adapter's declared busy signs (WidgetDecl.busy) count as its own;
  * - React first (docs/SPEC-AMENDMENTS.md §12): a widget its adapter declares for the page-world bridge
@@ -33,13 +35,13 @@ import type { Adapter } from '../../adapters/types';
 import type { OptionSetHash } from '../../core/types/field';
 import { askBridge } from '../bridge';
 import type { BridgeReason } from '../bridge-protocol';
-import { fireLeave, windowOf, type DeclaredKey } from '../fillers/events';
-import { assertNotSubmit, optionWordsRefusal } from '../fillers/not-submit';
+import { fireKey, fireLeave, windowOf, type DeclaredKey } from '../fillers/events';
+import { assertKeyTarget, assertNotSubmit, optionWordsRefusal } from '../fillers/not-submit';
 import { quietWait, type QuietWait } from '../settle';
 import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET_MS } from '../thresholds';
 import { monotonicNow, startDeadline } from '../time';
 import type { WidgetTarget } from '../types';
-import { isUserVisible } from '../visibility';
+import { followsItsField, isUserVisible, stopsFollowing } from '../visibility';
 import { listOf } from './aria';
 import { listState, widgetBusy } from './options';
 
@@ -114,9 +116,11 @@ export interface ActionAnswer {
   aborted: boolean;
 }
 
-/** The widget's list now, when a person can see it. */
+/** The widget's list now, when a person can see it: one its adapter says is drawn fixed at its field's place
+ *  (WidgetDecl.listFollowsField) judged where its field is (dom/visibility.ts followsItsField). */
 export function openListOf(widget: WidgetTarget): Element | null {
   const listbox = listOf(widget.element, widget.input);
+  if (listbox !== null && widget.listFollowsField === true) followsItsField(listbox, widget.input ?? widget.element);
   return listbox !== null && isUserVisible(listbox) ? listbox : null;
 }
 
@@ -242,27 +246,35 @@ export async function openList(widget: WidgetTarget, ctx: WidgetContext): Promis
   return { open: false, reason: answer.status === 'answered' ? 'no-list' : 'ignored', mutated: answer.mutated };
 }
 
-/** The `code` of each declared key, as a keyboard's own event carries it. */
-const KEY_CODES: Record<DeclaredKey, string> = { Escape: 'Escape', ArrowDown: 'ArrowDown' };
-
-/** Sends one key the widget's adapter declared (WidgetDecl.keys) to its text box, else its element: an untrusted
+/** Sends one key the widget's adapter declared (WidgetDecl.keys) to its text box, else its element, or to its open
+ *  list when the adapter says the keys go there (WidgetDecl.keyTarget 'list': Workable's dropdowns): an untrusted
  *  keydown and keyup, bubbling, built with the element's own window. False, and nothing sent, when the widget does not
- *  declare the key, assertNotSubmit refuses its target, or the key is Escape and the widget does not say, right now,
- *  that its list is open (WidgetDecl.expanded): an Escape to a closed widget is the page's to read as it likes. */
+ *  declare the key, assertNotSubmit refuses its target, its list is to take it and none is shown, or the key is Escape
+ *  and the widget does not say, right now, that its list is open (WidgetDecl.expanded): an Escape to a closed widget
+ *  is the page's to read as it likes. */
 export function pressDeclaredKey(widget: WidgetTarget, key: DeclaredKey, ctx: WidgetContext): boolean {
   if (!(widget.keys ?? []).includes(key)) return false;
   if (key === 'Escape' && expandedState(widget) !== true) return false;
-  const target = widget.input ?? widget.element;
-  if (!assertNotSubmit(target, ctx).ok) return false;
-  const view = windowOf(target);
-  const init = { key, code: KEY_CODES[key], bubbles: true, cancelable: true, composed: true };
-  target.dispatchEvent(new view.KeyboardEvent('keydown', init));
-  target.dispatchEvent(new view.KeyboardEvent('keyup', init));
+  const target = widget.keyTarget === 'list' ? openListOf(widget) : widget.input ?? widget.element;
+  if (target === null || !assertKeyTarget(target, ctx).ok) return false;
+  fireKey(target, key);
   return true;
 }
 
 /** Closes a widget's list if it is open (see the header). Answers whether it is closed now. */
 export async function closeList(widget: WidgetTarget, ctx: WidgetContext, opened: { activated: boolean }):
+  Promise<boolean> {
+  // The run is done with the list: a list drawn where its field is is judged as fixed again (stopsFollowing).
+  const shown = listOf(widget.element, widget.input);
+  try {
+    return await closeListNow(widget, ctx, opened);
+  } finally {
+    if (shown !== null) stopsFollowing(shown);
+  }
+}
+
+/** closeList's own work: focusout and blur, the declared Escape, then a second click on a select-only box. */
+async function closeListNow(widget: WidgetTarget, ctx: WidgetContext, opened: { activated: boolean }):
   Promise<boolean> {
   const closed = () => openListOf(widget) === null && expandedState(widget) !== true;
   if (closed()) return true;

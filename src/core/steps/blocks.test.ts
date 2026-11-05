@@ -72,6 +72,19 @@ describe('planBlocks: which profile entry each block is filled from', () => {
       .entries).toEqual([1, 0]);
   });
 
+  it('finds the entry a saved summary shows by its fingerprint, never by its place (the Phase 7a review)', () => {
+    // Workable: the draft restored the earlier job as a summary (block 0, no fields); the run opened an editor (block 1).
+    const shown = [{ block: 0, values: [{ category: 'experience.title' as const, text: EARLIER.title },
+      { category: 'experience.company' as const, text: EARLIER.company }, { category: 'experience.startDate' as const,
+        text: 'July 2019' }] }];
+    expect(planBlocks({ kind: 'experience', entries: null, shown }, position(1), profile, vocab))
+      .toEqual({ kind: 'experience', profile: 2, entries: [1, 0], current: [false, true] });
+    // A summary of a job the profile does not hold is no entry's: never given one by its place.
+    const other = [{ block: 0, values: [{ category: 'experience.company' as const, text: 'Brightwater Analytics' }] }];
+    expect(planBlocks({ kind: 'experience', entries: null, shown: other }, position(1), profile, vocab))
+      .toEqual({ kind: 'experience', profile: 2, entries: [null, 0], current: [false, true] });
+  });
+
   it('answers each kind once, and nothing for an unknown one', () => {
     const answers = planRepeatables([{ kind: 'experience', entries: null }, { kind: 'experience', entries: [1] },
       { kind: 'skills' as 'language', entries: null }, { kind: 'education', entries: null }], position(0), profile, vocab);

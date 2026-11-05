@@ -1,0 +1,123 @@
+{
+  "fixture": "workable/blueground-at-closed",
+  "source": "https://apply.workable.com/blueground/j/6C6B4B42F5/apply/",
+  "captured": "2026-11-02T21:58:25.000Z",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"firstname\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"lastname\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Phone country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": ".iti button.iti__selected-country",
+      "note": "intl-tel-input's country button (a widget root): its list of 244 countries, \"United States (+1)\" first, read once opened; labelled by the phone's title with \"country code\" (labelSuffix)."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"input_phone\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"address\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"city\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"postcode\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"country\"]",
+      "note": "One of the Address's hidden parts (city, postcode, country): 1 px, overflow hidden, aria-hidden, tabindex -1."
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "input[type=\"file\"][data-ui=\"resume\"]",
+      "note": "Labelled by its question (aria-labelledby's first target): its \"Choose file\" label[for] with role=button is the adapter's upload widget, which never labels its input."
+    },
+    {
+      "label": "What is your gross annual salary expectations for this role?",
+      "kind": "text",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_9818419\"]"
+    },
+    {
+      "label": "What is your level of English",
+      "kind": "combobox",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"input_QA_9818420_input\"]",
+      "note": "A dropdown: select-only, its text box readonly=\"true\" by design (readOnlyBox), its list drawn in place once opened; its required attribute sits on its hidden value input."
+    },
+    {
+      "label": "I have read, understand and accept the content of the Privacy Notice and consent to the processing of my data as part of this application.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "input[name=\"gdpr\"]",
+      "note": "The GDPR consent: two nested labels; its text is the span its role=checkbox names (labelFor). Required: Workable refuses an application without it (its form API's required: true), though the page marks nothing."
+    }
+  ]
+}

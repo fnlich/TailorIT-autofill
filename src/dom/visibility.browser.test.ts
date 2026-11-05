@@ -3,7 +3,8 @@ import trap02 from '../../fixtures/traps/02-zero-and-offscreen.html?raw';
 import { loadFixture, removeFixtures, withoutCheckVisibility, type Fixture } from './fixture.testkit';
 import { registerOwnUiHost } from './own-ui';
 import { newScanCache } from './scan-cache';
-import { isTextVisible, isUserVisible, visibilityOf, type VisibilityRule } from './visibility';
+import { followsItsField, isTextVisible, isUserVisible, stopsFollowing, visibilityOf, type VisibilityRule }
+  from './visibility';
 
 /**
  * One positive and one negative case for every rule the walk applies. Each case's target is the element with the
@@ -267,6 +268,40 @@ describe('isUserVisible', () => {
         } finally {
           restore();
         }
+      }
+    });
+});
+
+describe('a declared list drawn where its field is (followsItsField; the Phase 7a review)', () => {
+  afterEach(() => removeFixtures(document));
+
+  /** A field below the fold (the viewport 700 px high) and a fixed list in its part of the page, at `top`. */
+  async function page(top: string, left = '20px') {
+    const fixture = await loadFixture(document, `<!doctype html><body style="margin:0"><form>
+      <div style="height:1500px"></div>
+      <div id="field-part"><input id="box" style="display:block;width:300px;height:30px;margin-left:20px">
+      <div id="list" role="dialog" style="position:fixed;top:${top};left:${left};width:300px;height:120px">
+        <ul role="listbox"><li role="option">LinkedIn</li></ul></div></div>
+      <div style="height:400px"></div></form></body>`, { width: 1000, height: 700 });
+    return { fixture, list: fixture.doc.querySelector('[role="listbox"]')!, box: fixture.doc.getElementById('box')! };
+  }
+
+  it('judges the list at its field, below the fold, as visible until the list closes', async () => {
+    const { list, box } = await page('1532px');
+    expect(isUserVisible(list)).toBe(false);
+    followsItsField(list, box);
+    expect(isUserVisible(list)).toBe(true);
+    stopsFollowing(list);
+    expect(isUserVisible(list)).toBe(false);
+  });
+
+  it('never marks a fixed box drawn away from its field, at a negative top, beyond the document or to its side',
+    async () => {
+      for (const [top, left] of [['900px', '20px'], ['-500px', '20px'], ['4000px', '20px'], ['1532px', '700px']]) {
+        const { list, box } = await page(top!, left);
+        followsItsField(list, box);
+        expect(isUserVisible(list), `${top} ${left}`).toBe(false);
+        removeFixtures(document);
       }
     });
 });

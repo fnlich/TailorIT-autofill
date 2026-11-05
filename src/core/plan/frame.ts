@@ -117,8 +117,10 @@ import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
 import { basisPickContradicts, postingCountryOf, type LegalContext } from '../resolver/policy';
 import { withCoverLetter } from '../profile/canonicalize';
-import { answerItemOf, answerRefusal, answerWaitsForOptions, type AnswerItem, type AnswerVerdict } from './answers';
+import { answerItemOf, answerRefusal, answerText, answerWaitsForOptions, type AnswerItem, type AnswerVerdict }
+  from './answers';
 import { holdsNoAiAttestation } from './attestation';
+import { answerWords, antecedentOf, conditionHolds, conditionOf } from './conditional';
 import {
   aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
 } from './drafts';
@@ -588,8 +590,12 @@ function planAnswer(spec: FieldSpec, resolution: Resolution, standing: FillResul
   } else {
     const refusal = answerRefusal(spec, verdict.text);
     if (refusal !== null) return left(refusal);
-    write = { key: spec.key, value: { kind: 'text', text: verdict.text },
-      origin: { provenance: 'llm-answer', taskId: verdict.taskId, basis: verdict.basis }, match: NOT_APPLICABLE };
+    // A number box gets the one number the answer states ("85,000" is 85000): it drops anything else. A date input
+    // takes its YYYY-MM-DD answer as a date; a text date box its answer as written, in the layout it shows.
+    const text = answerText(spec, verdict.text) ?? verdict.text;
+    const value: WriteValue = spec.kind === 'date' ? { kind: 'date', iso: text.trim() } : { kind: 'text', text };
+    write = { key: spec.key, value, origin: { provenance: 'llm-answer', taskId: verdict.taskId, basis: verdict.basis },
+      match: NOT_APPLICABLE };
   }
   const guarded = guardWrite(write, { spec, category }, ctx.guard);
   if (!guarded.ok) {
@@ -927,7 +933,14 @@ export function planFrame(asked: PlanInput): PlanOutput {
   const letterKeys: FieldKey[] = [];
   let letterText = false;
   const letterAi = !aiOff && wantedLlm.drafts;
-  const planned = specs.map((spec, at) => {
+  // What this plan writes so far, in DOM order: a follow-up reads the answer above it from here, else from the page
+  // (conditional.ts).
+  const writing = new Map<FieldKey, WriteValue>();
+  const answerAbove = (spec: FieldSpec): string[] | null => {
+    const above = antecedentOf(spec, input.specs);
+    return above === null ? null : answerWords(above, writing.get(above.key));
+  };
+  const planOne = (spec: FieldSpec, at: number) => {
     const field = resolved[at]!;
     const classification = decided[at]!;
     const canWrite = writable(spec);
@@ -959,6 +972,17 @@ export function planFrame(asked: PlanInput): PlanOutput {
           letterKeys.push(key);
           if (text === true) letterText = true;
         } }) };
+    }
+    // A follow-up to the answer above ("If yes, …": conditional.ts) is never drafted or guessed while optional, nor while
+    // required until the answer above, as written, is the one it follows; the profile's own answer still stands.
+    const condition = conditionOf(spec.label);
+    if (condition !== null && (!spec.required || !conditionHolds(condition, answerAbove(spec)))) {
+      const standing = planField(spec, field, ctx);
+      if (standing.write !== undefined || standing.asked !== undefined || standing.row.status === 'blocked') {
+        return { spec, ...standing };
+      }
+      return { spec, ...standing, row: rowWithout(spec, field.resolution.category,
+        spec.required ? 'flagged' : 'skipped', 'conditional-question', standing.row.confidence) };
     }
     const wouldDraft = drafting || (aiOff && wantedLlm.drafts && !input.dryRun);
     const item = wouldDraft ? draftItemOf(spec, classification, field.resolution, canWrite, draftContext) : null;
@@ -992,7 +1016,14 @@ export function planFrame(asked: PlanInput): PlanOutput {
     if (verdict !== undefined) return { spec, ...planAnswer(spec, field.resolution, standing.row, verdict, ctx) };
     answers.push(question);
     return { spec, ...standing };
-  });
+  };
+  // Planned in DOM order, so a follow-up sees what this plan writes above it; kept in the specs' order.
+  const planned: Array<ReturnType<typeof planOne>> = new Array(specs.length);
+  for (const at of specs.map((_, index) => index).sort((a, b) => specs[a]!.domOrder - specs[b]!.domOrder)) {
+    const one = planOne(specs[at]!, at);
+    if (one.write !== undefined) writing.set(specs[at]!.key, one.write.value);
+    planned[at] = one;
+  }
   const writes = planned.filter((field) => field.write !== undefined)
     .sort((a, b) => a.spec.domOrder - b.spec.domOrder).map((field) => field.write!);
   const tiebreaks = planned.flatMap((field) => field.asked === undefined ? [] : [field.asked]);

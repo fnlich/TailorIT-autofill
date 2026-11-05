@@ -182,6 +182,14 @@ describe('translation: classify', () => {
     expect(batchHash(batches[0]!)).toMatch(/^classify:[0-9a-f]{32}$/);
   });
 
+  it("asks Workable's items in a batch of their own, now that TailorIT's contract names it (API 4)", () => {
+    const workable = { ...classifyItem('k1', 'Are you represented by an agency?'), platform: 'workable' as const };
+    const { batches, withheld } = classifyBatches([workable, classifyItem('k2', 'Where do you work today?')]);
+    expect(withheld).toEqual([]);
+    expect(batches.map((batch) => [batch.body.platform, batch.body.items.map((entry) => entry.key)]))
+      .toEqual([['workable', ['k1']], ['lever', ['k2']]]);
+  });
+
   it('screens the section’s words and the hint again, and the shared terms (the review, T-F1)', () => {
     const bySection = { ...classifyItem('k1', 'Please select one', ['Yes', 'No']), section: u('voluntary self identification') };
     const byHint = { ...classifyItem('k2', 'Please select one', ['Yes', 'No']), hint: u('Do you identify as LGBTQ+?') };

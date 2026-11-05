@@ -10,8 +10,8 @@ import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from './resumes';
 // same addresses with the same code. Adding a posting TailorIT does not have (POST /api/autofill/jobs) answers the
 // same lookup, once the job is in TailorIT's jobs and in the person's tracker as Saved.
 
-/** The applicant-tracking systems the extension fills. Equals the extension's PLATFORMS. */
-export const ATS_KINDS = ['greenhouse', 'lever', 'ashby', 'workday'] as const;
+/** The applicant-tracking systems the extension fills. Equals the extension's PLATFORMS, in its order. */
+export const ATS_KINDS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable'] as const;
 export type AtsKind = (typeof ATS_KINDS)[number];
 
 /** The longest page address a lookup takes. */
@@ -185,8 +185,9 @@ export type AutofillAddJobResponse = z.infer<typeof AutofillAddJobResponseSchema
 /**
  * What POST /api/autofill/jobs refuses with, besides every token route's refusals (401, 403, 409 `conflict` for another
  * API version, 429), and the status of each: `validation_failed` (no address, or one over 2,048 characters),
- * `unsupported` (a job TailorIT does not have, at an address it cannot add from: not Greenhouse, Lever or Ashby, a page
- * that does not name the board, or Greenhouse's EU boards), `not_found` (the ATS has no such posting: it closed),
+ * `unsupported` (a job TailorIT does not have, at an address it cannot add from: not Greenhouse, Lever, Ashby or
+ * Workable, a page that does not name the board or the Workable account, or Greenhouse's EU boards), `not_found` (the
+ * ATS has no such posting: it closed),
  * `ats_failed` (the ATS answered with something TailorIT cannot read), `ats_unavailable` (it could not be reached in
  * time; try again later) and `internal` (the posting was read but TailorIT could not save it; try again).
  */
@@ -203,11 +204,11 @@ export const AUTOFILL_ADD_JOB_REFUSALS = {
 export interface ParsedAtsUrl {
   kind: AtsKind;
   /**
-   * The Greenhouse board or the Lever site, as the address writes it, or the Ashby job board in lower case; null when
-   * the address does not name it.
+   * The Greenhouse board or the Lever site, as the address writes it, or the Ashby job board or the Workable account in
+   * lower case; null when the address does not name it.
    */
   board: string | null;
-  /** The posting's id on that ATS. */
+  /** The posting's id on that ATS (a Workable shortcode in capitals). */
   externalId: string;
   /** The posting's own addresses, to find the job by its stored link (compare them through `linkKey`). */
   canonical: string[];
@@ -241,6 +242,54 @@ const ASHBY_HOST = 'jobs.ashbyhq.com';
 const ASHBY_BOARD = /^[A-Za-z0-9_. -]{1,100}$/;
 /** Ashby's posting ids are UUIDs, as Lever's are. */
 const ASHBY_POSTING_ID = LEVER_POSTING_ID;
+/** Workable's application pages, the host its accounts' own (<account>.workable.com) and www's /j/ links lead to. */
+const WORKABLE_HOST = 'apply.workable.com';
+/** A Workable account's name: a host name's label (<account>.workable.com), compared in lower case. */
+const WORKABLE_ACCOUNT = /^[a-z0-9](?:[a-z0-9-]{0,62})$/i;
+/** A Workable posting's shortcode: ten hexadecimal digits, served in either case and written in capitals. */
+const WORKABLE_SHORTCODE = /^[0-9a-f]{10}$/i;
+
+/**
+ * Names that are Workable's own, never an account's: its hosts' labels (www.workable.com, apply., jobs., help., …)
+ * and apply.workable.com's own first path segments (api, j). parseAtsUrl reads an account only from a name that is not
+ * one of these, under apply.workable.com/<account>/j/<shortcode> or <account>.workable.com/j/<shortcode>; TailorIT's
+ * Workable sources take none of them as an account either. Compared in lower case.
+ */
+export const WORKABLE_SERVICE_NAMES = [
+  'www',
+  'apply',
+  'jobs',
+  'j',
+  'api',
+  'app',
+  'help',
+  'support',
+  'resources',
+  'blog',
+  'engineering',
+  'developers',
+  'status',
+  'careers',
+  'marketplace',
+  'partners',
+  'academy',
+  'community',
+  'id',
+  'login',
+  'signin',
+  'accounts',
+  'cdn',
+  'static',
+  'assets',
+  'mail',
+  'email',
+] as const;
+
+/** Whether a name may be a Workable account's: a host name's label that is not one of Workable's own. */
+export function isWorkableAccountName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return WORKABLE_ACCOUNT.test(lower) && !(WORKABLE_SERVICE_NAMES as readonly string[]).includes(lower);
+}
 
 /** The first value of a query parameter, its name compared in lower case. */
 function queryValue(url: UrlLike, name: string): string | null {
@@ -315,6 +364,48 @@ function ashbyPosting(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'ashby', board, externalId, canonical: pages.flatMap((page) => [page, `${page}/application`]) };
 }
 
+/**
+ * Workable (version 4): apply.workable.com/{account}/j/{shortcode}, then /apply or not, and the account's own host's
+ * /j/{shortcode} (<account>.workable.com, which Workable redirects there); the account in lower case (Workable redirects
+ * any other case to it), the shortcode in capitals, as Workable writes them. The links that name no account,
+ * apply.workable.com/j/{shortcode} (the widget API's `url` and `application_url`, with /apply) and
+ * www.workable.com/j/{shortcode}, are read with no board: Workable redirects them to the account's pages, and the
+ * shortcode alone names the posting. An account is never one of Workable's own names (WORKABLE_SERVICE_NAMES: its
+ * job-search site jobs.workable.com, help., api., apply.workable.com/api/…), which are not read. The query never
+ * matters.
+ */
+function workablePosting(url: UrlLike): ParsedAtsUrl | null {
+  const parts = segmentsOf(url);
+  let named: string | null = null;
+  let path = parts;
+  if (url.hostname === WORKABLE_HOST) {
+    if (parts[0] !== 'j') {
+      named = parts[0] ?? null;
+      if (named === null) return null;
+      path = parts.slice(1);
+    }
+  } else {
+    // www's /j/<shortcode> names no account; any other host of Workable's own is not read (below).
+    const label = url.hostname.slice(0, -'.workable.com'.length);
+    if (label !== 'www') named = label;
+  }
+  const [j, code, ...tail] = path;
+  if (j !== 'j' || code === undefined || !WORKABLE_SHORTCODE.test(code)) return null;
+  if (tail.length > 1 || (tail.length === 1 && tail[0] !== 'apply')) return null;
+  if (named !== null && !isWorkableAccountName(named)) return null;
+  const externalId = code.toUpperCase();
+  const links = [`https://${WORKABLE_HOST}/j/${externalId}`, `https://${WORKABLE_HOST}/j/${externalId}/apply`];
+  if (named === null) return { kind: 'workable', board: null, externalId, canonical: links };
+  const board = named.toLowerCase();
+  // The account's pages as Workable writes them first (its canonical link, the widget's form), then as the address
+  // wrote them, then the links that name no account.
+  const pages = [...new Set([`${board}/j/${externalId}`, `${named}/j/${code}`])].map(
+    (page) => `https://${WORKABLE_HOST}/${page}/`,
+  );
+  const canonical = [...pages.flatMap((page) => [page, `${page}apply/`]), ...links];
+  return { kind: 'workable', board, externalId, canonical };
+}
+
 /** A company's own careers page that embeds a Greenhouse form names the posting in ?gh_jid=. */
 function greenhouseOnCompanyPage(url: UrlLike): ParsedAtsUrl | null {
   const id = queryValue(url, 'gh_jid');
@@ -341,8 +432,10 @@ function webUrl(address: string): UrlLike | null {
  * .eu. twins) at /{board}/jobs/{id}, the embedded form at /embed/job_app?for={board}&token={id}, and a company page
  * with ?gh_jid={id}. Lever: jobs.lever.co and jobs.eu.lever.co at /{site}/{id}, with /apply or /thanks. Ashby (version
  * 3): jobs.ashbyhq.com at /{board}/{id}, with /application or not, and /{board}?ashby_jid={id}; a company page with
- * ?ashby_jid= names no board, so it is not read (its job is found by its link, as any page's). Hosts and query
- * parameter names are compared in lower case; the fragment never matters. Workday comes later.
+ * ?ashby_jid= names no board, so it is not read (its job is found by its link, as any page's). Workable (version 4):
+ * apply.workable.com at /{account}/j/{shortcode}, with /apply or not, and an account's own host at /j/{shortcode}; its
+ * /j/{shortcode} links naming no account are read with no board (see workablePosting). Hosts and query parameter names
+ * are compared in lower case; the fragment never matters. Workday comes later.
  */
 export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   const url = webUrl(address);
@@ -351,6 +444,7 @@ export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   if (region !== undefined) return greenhousePosting(url, region) ?? greenhouseOnCompanyPage(url);
   if (LEVER_HOSTS.has(url.hostname)) return leverPosting(url);
   if (url.hostname === ASHBY_HOST) return ashbyPosting(url);
+  if (url.hostname === WORKABLE_HOST || url.hostname.endsWith('.workable.com')) return workablePosting(url);
   return greenhouseOnCompanyPage(url);
 }
 
@@ -372,13 +466,16 @@ export function greenhouseBoardPage(address: string): ParsedAtsUrl | null {
   return { kind: 'greenhouse', board, externalId: id, canonical: greenhouseJobUrls(region, board, id) };
 }
 
-/** The ATSs POST /api/autofill/jobs can read one posting from (their public job APIs; Ashby since version 3). */
-export const AUTOFILL_ADDABLE_ATS = ['greenhouse', 'lever', 'ashby'] as const;
+/**
+ * The ATSs POST /api/autofill/jobs can read one posting from (their public job APIs; Ashby and Workable since version
+ * 3).
+ */
+export const AUTOFILL_ADDABLE_ATS = ['greenhouse', 'lever', 'ashby', 'workable'] as const;
 export type AddableAtsKind = (typeof AUTOFILL_ADDABLE_ATS)[number];
 
 /**
- * A posting POST /api/autofill/jobs can add: its ATS, board or site, id, and the ATS region it is hosted in (Ashby's
- * is always `global`).
+ * A posting POST /api/autofill/jobs can add: its ATS, board, site or account, id, and the ATS region it is hosted in
+ * (Ashby's and Workable's are always `global`).
  */
 export interface AddablePosting {
   kind: AddableAtsKind;
@@ -391,7 +488,9 @@ export interface AddablePosting {
  * The posting an address lets TailorIT add (the extension offers "Add this job to TailorIT" exactly for these), or
  * null: Greenhouse needs the board in the address (a company page's ?gh_jid= has none: the embedded form's own address
  * names it) and is read on its global boards only, as TailorIT's Greenhouse sources are; Lever on either of its hosts;
- * Ashby from its job board's addresses (one read of the board's API, which lists the posting).
+ * Ashby from its job board's addresses (one read of the board's API, which lists the posting); Workable from the
+ * addresses that name the account (one read of the posting from Workable's API, which needs the account), never from
+ * a /j/{shortcode} link that names none.
  */
 export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | null {
   if (!parsed || parsed.board === null) return null;
@@ -401,8 +500,8 @@ export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | nu
     return { kind: 'greenhouse', board: parsed.board, externalId: parsed.externalId, region };
   }
   if (parsed.kind === 'lever') return { kind: 'lever', board: parsed.board, externalId: parsed.externalId, region };
-  if (parsed.kind === 'ashby') {
-    return { kind: 'ashby', board: parsed.board, externalId: parsed.externalId, region: 'global' };
+  if (parsed.kind === 'ashby' || parsed.kind === 'workable') {
+    return { kind: parsed.kind, board: parsed.board, externalId: parsed.externalId, region: 'global' };
   }
   return null;
 }

@@ -38,7 +38,9 @@ export interface Resolution {
 export const MATCH_RULES = ['raw', 'primary', 'qualifier-ignored', 'compact', 'curated-alias', 'vocab-alias',
   'generated-alias', 'flagship', 'entity-id', 'degree-type', 'degree-level', 'degree-level-fallback',
   'degree-qualifier-types', 'cip-title', 'cip-parent', 'mention', 'polarity', 'numeric-range', 'token-set',
-  'llm-index', 'other-free-text', 'cache-hit', 'place'] as const;
+  'llm-index', 'other-free-text', 'cache-hit', 'place',
+  // The Phase 7a review: one part of a slash-joined option ("Native/Fluent").
+  'slash-part'] as const;
 export type MatchRule = (typeof MATCH_RULES)[number];
 
 export const MATCH_FLAGS = ['injected-label', 'qualifier-ignored', 'ambiguous-abbreviation', 'level-fallback',

@@ -102,9 +102,9 @@ describe('the side panel in TailorIT’s look', () => {
     const unsupported = await open(elsewhere, 5);
     const section = unsupported.querySelector<HTMLElement>('[data-unsupported]')!;
     expect(section.querySelector('h2')?.textContent).toBe(COPY.panel.unsupported.heading);
-    // Workday is not listed until it has an adapter of its own (v3 Phase 3 review).
+    // Workday is not listed until it has an adapter of its own (v3 Phase 3 review); Workable is since v3 Phase 7a.
     expect([...section.querySelectorAll('.tia-unsupported__name')].map((name) => name.textContent))
-      .toEqual(['Greenhouse', 'Lever', 'Ashby']);
+      .toEqual(['Greenhouse', 'Lever', 'Ashby', 'Workable']);
     // Nothing to fill there: no Autofill, no custom question.
     expect(unsupported.querySelector('button.tia-cta')).toBeNull();
     expect(unsupported.querySelector('[data-ask]')).toBeNull();

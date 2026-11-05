@@ -21,6 +21,18 @@ describe('stage a: exact (§4.2)', () => {
       .toMatchObject({ stage: 'exact', rule: 'primary', confidence: 1 });
   });
 
+  it('matches either part of a slash-joined option, at 0.95 (the Phase 7a review: "Native/Fluent")', () => {
+    for (const answer of ['Fluent', 'Native']) {
+      expect(match(intendedText(answer), ['Native/Fluent', 'Advanced', 'Intermediate', 'Basic'], 'generic'), answer)
+        .toMatchObject({ stage: 'exact', optionIndex: 0, rule: 'slash-part', confidence: 0.95 });
+    }
+    expect(match(intendedText('Part-time'), ['Full-time / Part-time', 'Contract'], 'generic'))
+      .toMatchObject({ stage: 'exact', optionIndex: 0, rule: 'slash-part' });
+    // A part is a whole answer, never a word inside one; nor is a label with no slash split.
+    expect(match(intendedText('Native'), ['Native speaker of Spanish/Portuguese and others', 'Advanced'], 'generic').rule)
+      .not.toBe('slash-part');
+  });
+
   it('matches the compact form of labels of at most three tokens', () => {
     expect(match(intendedAnswer('referral', 'LinkedIn', vocab), ['Linked In'], 'referral'))
       .toMatchObject({ stage: 'exact', rule: 'compact', confidence: 1 });

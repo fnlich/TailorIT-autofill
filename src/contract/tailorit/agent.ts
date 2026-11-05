@@ -66,7 +66,7 @@ export type AutofillAgentReason = (typeof AUTOFILL_AGENT_REASONS)[number];
 export const AUTOFILL_AGENT_RUN_TIMEOUT_MS = 30 * 60_000;
 
 /** The platforms whose application forms the agent fills: a job queues only when its posting is on one of them. */
-export const AUTOFILL_AGENT_ATS = ['greenhouse', 'lever', 'ashby'] as const satisfies readonly AtsKind[];
+export const AUTOFILL_AGENT_ATS = ['greenhouse', 'lever', 'ashby', 'workable'] as const satisfies readonly AtsKind[];
 
 /** The longest application address the agent opens. */
 export const AUTOFILL_AGENT_URL_MAX = 2048;
@@ -78,8 +78,10 @@ export const AUTOFILL_AGENT_URL_MAX = 2048;
  * company's own page naming it in ?gh_jid= (its form is a frame of the company's page, which the agent never opens), an
  * embed naming no board, or an EU board (the extension works on no EU Greenhouse host yet). Lever: `…/apply`, on either
  * of its hosts. Ashby: `…/application`, the board in lower case (percent-encoded), from the posting, its form or the
- * board naming it in ?ashby_jid=. Read with parseAtsUrl, so the extension and TailorIT agree: the answer reads as
- * itself again.
+ * board naming it in ?ashby_jid=. Workable: apply.workable.com/{account}/j/{shortcode}/apply/, the account in lower case
+ * and the shortcode in capitals, from the posting or its form on apply.workable.com or the account's own host; never
+ * from a /j/{shortcode} link that names no account. Read with parseAtsUrl, so the extension and TailorIT agree: the
+ * answer reads as itself again.
  */
 export function agentApplicationUrl(url: string): string | null {
   const read = url.length <= AUTOFILL_AGENT_URL_MAX ? parseAtsUrl(url) : null;
@@ -102,6 +104,9 @@ function formAddress({ kind, board, externalId, canonical }: ParsedAtsUrl): stri
       return canonical[1] ?? null;
     case 'ashby':
       return `https://jobs.ashbyhq.com/${encodeURIComponent(board)}/${externalId}/application`;
+    case 'workable':
+      // The account is a host name's label and the shortcode hexadecimal: nothing to encode.
+      return `https://apply.workable.com/${board}/j/${externalId}/apply/`;
     default:
       return null;
   }
@@ -124,7 +129,8 @@ export const AutofillAgentIdSchema = z
 
 /**
  * The job the agent applies to now: open `url`, the application form's address (agentApplicationUrl: Greenhouse's job
- * page on job-boards.greenhouse.io, Lever's `…/apply`, Ashby's `…/application`), and attach `resumeId` when set.
+ * page on job-boards.greenhouse.io, Lever's `…/apply`, Ashby's `…/application`, Workable's `…/apply/`), and attach
+ * `resumeId` when set.
  */
 export const AutofillAgentTaskSchema = z.object({
   id: AutofillAgentIdSchema,

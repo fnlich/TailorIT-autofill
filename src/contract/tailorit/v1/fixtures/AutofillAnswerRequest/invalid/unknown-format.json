@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "key": "workable|main|graduation-year|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "Graduation year",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 4,
+      "format": "YYYY"
+    }
+  ],
+  "jobText": "",
+  "resumeId": null
+}

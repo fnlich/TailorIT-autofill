@@ -1,0 +1,150 @@
+{
+  "fixture": "workable/huggingface-closed",
+  "source": "https://apply.workable.com/huggingface/j/F88446C814/apply/",
+  "captured": "2026-11-02T21:57:53.000Z",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"firstname\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"lastname\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Summary",
+      "kind": "textarea",
+      "required": false,
+      "section": "Profile",
+      "fillable": true,
+      "control": "[id=\"summary\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "input[type=\"file\"][data-ui=\"resume\"]",
+      "note": "Labelled by its question (aria-labelledby's first target): its \"Choose file\" label[for] with role=button is the adapter's upload widget, which never labels its input."
+    },
+    {
+      "label": "Github profile",
+      "kind": "textarea",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "[id=\"CA_47143\"]"
+    },
+    {
+      "label": "Linkedin",
+      "kind": "textarea",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "[id=\"CA_47383\"]"
+    },
+    {
+      "label": "Cover letter",
+      "kind": "textarea",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"cover_letter\"]"
+    },
+    {
+      "label": "Expected salary",
+      "kind": "text",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"CA_10626\"]"
+    },
+    {
+      "label": "Notice period / availability",
+      "kind": "combobox",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"input_CA_10627_input\"]",
+      "note": "A dropdown: select-only, its text box readonly=\"true\" by design (readOnlyBox), its list drawn in place once opened; its required attribute sits on its hidden value input."
+    },
+    {
+      "label": "Are you eligible to work in the country you are applying?",
+      "kind": "radio",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"CA_10628\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "text",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"CA_10629\"]"
+    },
+    {
+      "label": "Can you confirm that everything in this application is true and your own, including your experience and identity?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12487827\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Did you start your first written answer below with the exact phrase we asked for in the job description?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12487828\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Do you have a public track record of open-source contributions, such as merged pull requests to impactful libraries, or projects you've authored or actively maintain?",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12487829\"] input[type=\"radio\"]"
+    },
+    {
+      "label": "Why Hugging Face, and where would you make the biggest difference in this role? Write it yourself, in your own words. We read every answer and we're after the specifics only you could give us, so generic or copy-pasted ones won't get far. 🤗",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12487830\"]"
+    },
+    {
+      "label": "Share 2–3 of your open-source contributions with links (GitHub PRs, issues, or projects you maintain), and a quick note on your role and what each one involved. This one really matters to us, so please give it a real go. Blank or \"N/A\" answers won't move forward. Don't overthink it though, small or ",
+      "kind": "textarea",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"QA_12487831\"]"
+    }
+  ]
+}

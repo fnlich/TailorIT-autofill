@@ -14,9 +14,13 @@
  * the profile's `anythingElse`, a draft question's `instruction`, the lookup's `jobId`, GET /api/autofill/jobs/search,
  * GET …/cover-letters/:id/text, POST /api/autofill/site-requests, POST /api/autofill/applied, the auto-apply queue
  * (/api/autofill/agent/*) and the job-site sign-ins (GET /api/autofill/credentials, /api/autofill/sign-ins): one
- * version bump, so the person connects the extension again once.
+ * version bump, so the person connects the extension again once. 4 (Workable): the platform `workable`, last in
+ * ATS_KINDS (a new value in the lookup's `ats.kind` and in a saved answer's `platform` and `scope`), with Workable's
+ * addresses in parseAtsUrl, Add job, Applied and the agent's platforms, and an answer item's optional `format` (a
+ * number or a date box). It adds no scope: an extension updated to 4 keeps its connection, and one still speaking 3
+ * gets 409 `conflict` on every token request until it is updated.
  */
-export const AUTOFILL_API_VERSION = 3;
+export const AUTOFILL_API_VERSION = 4;
 
 /**
  * Sent by the extension on every request, and by the server on every answer to a request that presents a tia_ bearer,

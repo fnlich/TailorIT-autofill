@@ -24,6 +24,9 @@
  * adapter names never to press: the exception is that one element, so anything inside it, anything holding it, another
  * submit control and every submit word elsewhere stay refused. A refused click leaves the field flagged
  * needs-your-click; it is never retried another way.
+ * A declared key (Escape to a dropdown's list) is checked by assertKeyTarget: the same refusals, the submit words read
+ * in the element's own words only, since a key chooses nothing and a list holds its options' words (the Phase 7a
+ * review).
  * v3 Phase 5 opens two more doors, each in this file, each finding its one element itself, each named by one module
  * alone (eslint.config.mjs, test/allow-submit.test.ts): clickAdapterEntry, the auto-apply agent's press of a posting
  * page's declared Apply (src/content/press.ts), and clickAdapterSignIn, Sign-in mode Auto's press of a sign-in form's
@@ -67,6 +70,16 @@ interface SubmitPressContext extends NotSubmitContext {
 /** Whether `el` may receive an untrusted click. */
 export function assertNotSubmit(el: Element, ctx: NotSubmitContext): { ok: true } | { ok: false; refusal: ClickRefusal } {
   const refusal = refusalOf(el, ctx, 0);
+  return refusal === null ? { ok: true } : { ok: false, refusal };
+}
+
+/** Whether a declared key (WidgetDecl.keys: Escape) may be sent to `el`, which is never clicked: assertNotSubmit's
+ *  refusals, but with the submit words read in the element's own words alone (its aria-label and its own text nodes),
+ *  never its options': a dropdown's list whose option says "I will submit my portfolio later" still takes its Escape
+ *  (the Phase 7a review), while a list named "Submit" or one inside a submit button is still refused. */
+export function assertKeyTarget(el: Element, ctx: NotSubmitContext):
+  { ok: true } | { ok: false; refusal: ClickRefusal } {
+  const refusal = refusalOf(el, ctx, 0, true);
   return refusal === null ? { ok: true } : { ok: false, refusal };
 }
 
@@ -185,11 +198,11 @@ export function submitPressAllowed(el: Element, adapter: Adapter, root: Element)
   return refusalOf(el, ctx, 0) === null;
 }
 
-function refusalOf(el: Element, ctx: NotSubmitContext, depth: number): ClickRefusal | null {
+function refusalOf(el: Element, ctx: NotSubmitContext, depth: number, ownWords = false): ClickRefusal | null {
   if (depth === 0 && submitException(el, ctx)) return null;
   const submitButton = ctx.root !== null ? ctx.adapter?.submitButton?.(ctx.root) ?? null : null;
   if (submitButton !== null && (submitButton.contains(el) || el.contains(submitButton))) return 'adapter-submit';
-  if (SUBMIT_WORDS.test(shownText(el))) return 'submit-word';
+  if (SUBMIT_WORDS.test(ownWords && depth === 0 ? ownText(el) : shownText(el))) return 'submit-word';
   if (submitsForm(el) && !nextException(el, ctx)) return 'submits-form';
   // Next itself, on the step machine's word on a step declared not final, is the one click near it that may be made.
   const next = ctx.root !== null ? ctx.adapter?.nextButton?.(ctx.root) ?? null : null;
@@ -231,6 +244,12 @@ export function optionWordsRefusal(label: string): Extract<ClickRefusal, 'submit
  *  checkbox or radio toggles a state and never submits, so its words (a consent box's "I confirm ...") do not count; a
  *  list's option (listOption) chooses a value, so "confirm" does not count in it, but any other submit word does ("I
  *  confirm and submit"). */
+/** An element's own words: its aria-label and its own text nodes, none of its descendants' (assertKeyTarget). */
+function ownText(el: Element): string {
+  const own = Array.from(el.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent ?? '');
+  return [el.getAttribute('aria-label') ?? '', ...own].join(' ');
+}
+
 function shownText(el: Element): string {
   if (el.localName === 'input' && ['checkbox', 'radio'].includes((el as HTMLInputElement).type)) return '';
   if (listOption(el)) return optionWords([el.getAttribute('aria-label') ?? '', el.textContent ?? ''].join(' '));

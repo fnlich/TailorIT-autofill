@@ -57,6 +57,19 @@ export function kindOf(el: Element): ControlKind {
   return { field: false, auth: false };
 }
 
+/** The format a text or date input's own type gives (email, tel, url, number; date, month), else undefined. */
+export function typeFormatOf(el: Element): FieldFormat | undefined {
+  if (el.localName !== 'input') return undefined;
+  const type = (el as HTMLInputElement).type;
+  return TEXT_TYPES[type] ?? DATE_TYPES[type];
+}
+
+/** The format a text input's inputmode alone gives (email, tel, url, decimal): the keyboard a phone shows for it. */
+export function inputModeFormatOf(el: Element): FieldFormat | undefined {
+  if (el.localName !== 'input' || !((el as HTMLInputElement).type in TEXT_TYPES)) return undefined;
+  return INPUTMODE_FORMATS[(el.getAttribute('inputmode') ?? '').trim().toLowerCase()];
+}
+
 /** A password or one-time-code control: the step needs the person (a sign-in, an account, an email code). */
 export function isAuthField(el: Element): boolean {
   if (el.localName !== 'input') return false;
@@ -89,5 +102,10 @@ export function isReadOnly(el: Element): boolean {
   const honoured = el.localName === 'textarea'
     || (el.localName === 'input' && !['checkbox', 'radio', 'file'].includes((el as HTMLInputElement).type));
   if (honoured && (el as HTMLInputElement).readOnly) return true;
+  return ariaReadOnly(el);
+}
+
+/** aria-readonly="true": the page says a person cannot change it, whatever its readonly attribute says. */
+export function ariaReadOnly(el: Element): boolean {
   return (el.getAttribute('aria-readonly') ?? '').trim().toLowerCase() === 'true';
 }

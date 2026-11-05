@@ -1,30 +1,32 @@
 {
-  "apiVersion": 3,
+  "apiVersion": 4,
   "zod": "4.6.7",
   "files": {
-    "agent.ts": "4b2d43f764244ec569f982d3c7b8906e2e85371051f33c700404c1f60a5479e3",
-    "ai.ts": "0fa222befb63c8993106dd8a4084c83bcc0f4c2694e598e9508f0d91ba5f690d",
+    "agent.ts": "0726b62e9364814159f93a1c00cebaeb65623139492bbb4fe71662fe89cbdae2",
+    "ai.ts": "56614fb5deaf283606aa92414686f032bcb4d0c2af08931bfda568f89ba26b49",
     "answers.ts": "e0d87c386f62dd0d9a8d40eed6a879cd5a9c1e36dfeb9502b5bf4a1deb443607",
     "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
     "cover-letters.ts": "99634afc594f27fb9c2951c8539dcd59aa91c950f42734eaf9f178cd87d7903d",
     "credentials.ts": "41c5e54cdf18288dd4cb3ba9f90eed2e68ae7e4d3ee5efdba1c8b6b72d25bb64",
     "index.ts": "3c146f82768d342ca37d974da6943ad98c4faa1830b4b0401c0bfeca3598028c",
-    "lookup.ts": "a77c90172ef14a868ac0911a7bbbb201bbf85be2e74dfed40c5738823bcbd933",
+    "lookup.ts": "3718a6ff487fd83a27d9b36d80471884769cc49cc207b58d46a341eeb59a8c19",
     "profile.ts": "182052d28bfd0729a3fbbe32f9523c57bbcf43bb45c515fecb3681f913689eb3",
     "registry.ts": "a86c99e93d699afc0a7b9db49b9ad01afb015178c5322c3391cc861620da9c2e",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tracker.ts": "076d57b058c50c75862c964d7fb57464c03eaed3fbe6b44a2f6dac652916320b",
-    "version.ts": "569ce937a849f59db836fe49776979806e08abc1e09d43099b31be7b4c61592b"
+    "version.ts": "c52c1804042d9f9f7bda9646755bd81f7a1b0fa37e9bb80e4d4eb15916d2cf9c"
   },
   "fixtures": {
     "AutofillAddJobRequest/invalid/empty-url.json": "f1928aa6e8d457480cd6177764fdc943720b90340a16dfd718c2c541471fd8bb",
     "AutofillAddJobRequest/valid/golden.json": "7bef15f724f9a329a888a279ab4e8849c9631af603b7049f6ee5de50c3fab8d6",
     "AutofillAddJobRequest/valid/without-resume.json": "8738441e2a03e1dfbaccd4cd71208ee2f0ae0d2215371c91c2a6bbecb717afcd",
+    "AutofillAddJobRequest/valid/workable.json": "a6b7fe86b2691c871ee0a5326b1c617be0279c05a56518ee846a8bac965066be",
     "AutofillAddJobResponse/invalid/no-lookup.json": "c1a75c8b781577c574cccb0e248a12c7bd2afa71300e1aa5953e77fbbdc080ee",
     "AutofillAddJobResponse/valid/existing.json": "2df7f8db68891446d316c0479d97b8c66a3f5b39065d7fb8775a4ef8314522a6",
     "AutofillAddJobResponse/valid/golden.json": "ae76eb602a99787d15a4e9a446c01b6783d55618cd6129d249d8eb733fee62ef",
+    "AutofillAddJobResponse/valid/workable.json": "c779cf54d690995d798e8d210e74e2cf43e51045eead3ba2594858c2a5bddc15",
     "AutofillAgentCleared/invalid/negative.json": "6143c8d778b2d8313270f2cba99abbdc559ee3f138ef3805618f5c64348228f9",
     "AutofillAgentCleared/valid/golden.json": "b076fefbea72b77f5771eb172f290f60558952b51f07958a0cd9b851c8bb4d1c",
     "AutofillAgentEnqueueBody/invalid/no-jobs.json": "3e83886a01d960806cbfe7239137b75b2a394b1da556a7bf2d8e72a96f069546",
@@ -35,6 +37,7 @@
     "AutofillAgentNext/invalid/script-address.json": "58989176f8244935954b42926740c98711631cb9d847bba099d9cc5a1bff8b16",
     "AutofillAgentNext/valid/golden.json": "f3d18e7f19a944fa45fdb3a7d541c05187775a08baa626b83f8f2a87231f4cba",
     "AutofillAgentNext/valid/nothing-to-do.json": "a73ebc758b664f98871eb9325cd7ac5ed0e557b7a2b9957e67981f299e9f606b",
+    "AutofillAgentNext/valid/workable.json": "f496f17f3cb73eafdc6dc8d423d5ca1a4683d26be6caa80157167c6ea391d99e",
     "AutofillAgentQueueList/invalid/unknown-reason.json": "7c14ba466b8613a44a8b78250ab687a240218571c65bf4c8898050eed49427c6",
     "AutofillAgentQueueList/valid/golden.json": "1fcd08744658c08f3fc7b7cae22f3e0cb715b6605a7533bfaf8abf6250f644bb",
     "AutofillAgentResultBody/invalid/skipped-without-reason.json": "c333cb86e09f5d2401ce187cc101250105dc3aab644f738f1afb324ec7c75ae1",
@@ -47,8 +50,10 @@
     "AutofillAnswerRequest/invalid/choice-with-max-length.json": "73e8fcc9468d3f4c3b3294da5ca6c62079fea40914331248e6df5daa100799d1",
     "AutofillAnswerRequest/invalid/choice-with-one-option.json": "87cd67a80aa3760e4c53dd05cb84c6e6877dba23a841b2e23df3ba9b0232a54c",
     "AutofillAnswerRequest/invalid/choice-without-option-set.json": "ade884e0d1571ca6a520c985832c43636ec5db29c26cee81b493f9022bc1b1c6",
+    "AutofillAnswerRequest/invalid/date-field-without-a-date-format.json": "012a519c14bd5c3135ed842082ae7208c62dbc4347a63ef4ef7c4583ac7eb210",
     "AutofillAnswerRequest/invalid/eleven-items.json": "6916e17748e481d092195f1cb9e77b952e82ece99efbef0c24ca689d00752436",
     "AutofillAnswerRequest/invalid/empty-question.json": "e8aa49b1537a6530137c592296e91ceae571a714ccd647f388cbccedd5e9e24a",
+    "AutofillAnswerRequest/invalid/format-for-a-choice.json": "51a02ad48a977885b62db238ee310d1d03f454360300b812ea7d6e0760b029ff",
     "AutofillAnswerRequest/invalid/max-length-over-500.json": "707d41e433cbd76a01e4e9b543cb42b18e28d22f0868fcb5158e4f759826c7c4",
     "AutofillAnswerRequest/invalid/no-items.json": "036e132f900e53ab5a22ba2133e804a20c69b30488dcbd348fc77e7813afcc6d",
     "AutofillAnswerRequest/invalid/one-letter-canary.json": "fa14078c64d95ae0a799740d12e347831a779d375c62e70a56cfa2c40078f527",
@@ -58,9 +63,11 @@
     "AutofillAnswerRequest/invalid/text-with-option-set.json": "c886ee5235e7a2a69ce9c6ff27d5e087ba7c8197db856204065076468030a2a2",
     "AutofillAnswerRequest/invalid/text-with-options.json": "a342807645776b2a91a5b705267595110331ffc647cb27d4a55d1f2443a76f53",
     "AutofillAnswerRequest/invalid/thirty-one-options.json": "5648317eaaaf30a436eb6e729ff04f5893f4091ce5a4e49c7f37112d2757c32f",
+    "AutofillAnswerRequest/invalid/unknown-format.json": "aea08430995320094ef9a94f7b954ab8c1235b5495897a22a4110cfa0ac858d0",
     "AutofillAnswerRequest/invalid/unknown-scope.json": "e19f30a117c69d4bd4e037c355e6a9716ec0bbe03f24524bc78f4ca8998021c6",
     "AutofillAnswerRequest/valid/all-scope.json": "fa26c755d44e15b7beeb05aafd6e30af801a3c3714f22db383822f24db72d6a5",
     "AutofillAnswerRequest/valid/embedded-form.json": "3de37f26bbb87f03af2aae169ad562285f5e26c14301e20e294b582cc7fffd02",
+    "AutofillAnswerRequest/valid/formats.json": "0052bb7a4829d48a7c8e17ae04b5f2f4807d95db113064475fd15a2af09e858a",
     "AutofillAnswerRequest/valid/golden.json": "733701c61af16b788a5820dabfd8406f74239bc432e10c52c71b8cb6bb366b8f",
     "AutofillAnswerResult/invalid/answered-without-basis.json": "0b4e9b688f9cd776e38777ecdcd1e8a62cd197e1f134e19f61b8f135df2693a0",
     "AutofillAnswerResult/invalid/basis-without-answer.json": "1d453bc98211f148a59e7ad00801bb92d02d34be05ca4c2206791445b6d480c5",
@@ -83,7 +90,7 @@
     "AutofillClassifyRequest/invalid/repeated-key.json": "5d9419a970c289ee249e83377e9e4691e94a0128e539782442b8914f29eaa3f7",
     "AutofillClassifyRequest/invalid/twenty-one-options.json": "330ede17147e1fa1b31da301293680c5de42c9c74f3ae107cd3ffef153667f8f",
     "AutofillClassifyRequest/invalid/unknown-kind.json": "798e49602822cdf8fdd135f824a24bc66b4424d995ad90136cbaa1312fc7624a",
-    "AutofillClassifyRequest/invalid/unknown-platform.json": "3bfbb9b78151116290cb9b966573c664586433df77eb7c1e347732a396277208",
+    "AutofillClassifyRequest/invalid/unknown-platform.json": "ef91ef4c9ea88d7a40bde5eb5d4db6ff9eae2d1b0146f50d3ff299752e322b8c",
     "AutofillClassifyRequest/valid/golden.json": "07ec85d144451f6489461fddb8446885b9d8e93a759ea961ba1b150784d801b7",
     "AutofillClassifyRequest/valid/text-field.json": "9ef323dcc4389a60a33072d7d20a48473ac69d38067d94d1930ef8c8b52d3a39",
     "AutofillClassifyResult/invalid/no-reason.json": "1568b139d0d8fbf9e9fbd5fe01c027171ff5d7b00c3e8193b02e44c8d41d770c",
@@ -175,8 +182,9 @@
     "AutofillLookupRequest/valid/golden.json": "038ec88e90ccb9fb9c0e9dd9f520d22807c23fe6358cdfd975b9c74d500ce6a9",
     "AutofillLookupRequest/valid/with-resume.json": "44af6080b069cd777a946b6a169d8a6c1251ab43334eb3ae349ef492ecaa5e54",
     "AutofillLookupRequest/valid/without-posting-text.json": "631b0ad52abc890fa841aa8766989037021fb9f4c88bfe8a7606370b50e56df3",
+    "AutofillLookupRequest/valid/workable.json": "036e0aa0de154f372f6f9998f6b195beb6ac020f12e82789c0b405c179b2159b",
     "AutofillLookupResponse/invalid/match-over-100.json": "9a662e535c370a74b29c19d4c3ce8466dc6285b71b675a7695123522a6df0c8b",
-    "AutofillLookupResponse/invalid/unknown-ats.json": "5bb79fed4f91caa7cef8ec130872f34a13dcdc5b071bb702cad7ff9c93014061",
+    "AutofillLookupResponse/invalid/unknown-ats.json": "2101317193d532ba072d274c43f5f5bb97ada294693d0d30c6066b6f5359ce82",
     "AutofillLookupResponse/invalid/unknown-reason.json": "e00de97035250da2aaf12c335e04c78d1debd2e88ad05a3dad6057e3139bff45",
     "AutofillLookupResponse/valid/ashby.json": "278888b3293ee6d9be6bacfe5144369516009b6feb294b06c27dcd418b9d93ec",
     "AutofillLookupResponse/valid/chosen.json": "b582a87f4bcc4e0d9fcbcc919526992ea9cce55d336782ef0fb169a1b31d6a7b",
@@ -187,6 +195,7 @@
     "AutofillLookupResponse/valid/unknown-page-default-resume.json": "bfcfbc3f71d4fa6a784a5f2310ae3f8933cede22df18ac23f310f4164700e95e",
     "AutofillLookupResponse/valid/unknown-page.json": "5944f7ddc56b5fe9908e8648ec1cac4abd6f366d066d1efe837ec6fd6b2bd3b8",
     "AutofillLookupResponse/valid/with-posting-text.json": "ab9f86a9a6300b0683f7ed97a6de4221b89cfa8c1539ca40972a5f8ef4d66e4a",
+    "AutofillLookupResponse/valid/workable.json": "715d36a52bfea3727e94314386d0c6735a571938c22aeaf02d903f867e614a38",
     "AutofillPickRequest/invalid/country-category.json": "a2fc492bc12a5960b0dae622ff3041bcbe1a8b6b18a684e372510c274391478e",
     "AutofillPickRequest/invalid/eleven-aliases.json": "337c625757578f2b36cb328e51ba537f01a1316da58ed43573122f0a933710c5",
     "AutofillPickRequest/invalid/empty-intended-value.json": "dbb7f6436ba3b8887d1880af9cf5e9e7d2e786c9a8e7a1f1016f020657290313",
@@ -222,10 +231,10 @@
     "AutofillProfile/invalid/unknown-proficiency.json": "2999e644da0235073072355b40c9224422bd41e1ae41bc50807f134b1b9bb2c8",
     "AutofillProfile/valid/empty.json": "e06ce8cdb23b6ddae85c0e94216798a07576f3189dcd71088346bce49a08b19b",
     "AutofillProfile/valid/golden.json": "c143bf44d73be5c3dc1e74c1a12c9c58f0a369476ab6b6eeefafcd1282a3b8ae",
-    "AutofillProfileEnvelope/invalid/missing-profile.json": "257be605b99d46de5c2070cad51c6658dda8bb808023ccedbbb198891f7d7f9f",
-    "AutofillProfileEnvelope/invalid/negative-revision.json": "52af27781df21dc631d274238b22da560812bf128a317947694674a14f84a3aa",
-    "AutofillProfileEnvelope/valid/golden.json": "ff10617526bc5bedd6efc7ceeca953ebc031fa397ce2506b7956536483e6c3ba",
-    "AutofillProfileEnvelope/valid/no-row.json": "8030cf0f02cac3365aa09c12fb726dc3033dd254370164f19d594d74aa177cc6",
+    "AutofillProfileEnvelope/invalid/missing-profile.json": "de1c70ec37d2f282f974b7a7689daea9c915516f0cbdd9a1dc2bfd6bb1c58d42",
+    "AutofillProfileEnvelope/invalid/negative-revision.json": "a18cf05606040c9166b2fd6bba3d4a59dc2f9886b468cf854bb33f0865c8d364",
+    "AutofillProfileEnvelope/valid/golden.json": "fc580d593112e9a0d8b95a4d1cb6041c84564b84fe44ddbcfa568601901011de",
+    "AutofillProfileEnvelope/valid/no-row.json": "0441e9a636e8548f2c1298d6aa0e9503ad3c99d4d92e72a2402b5276ac62dcec",
     "AutofillRedeemBody/invalid/letter-u.json": "178040bdaa9e13515ec87a228ec6a595a5780fb91a19fae18726c0b8c6115eac",
     "AutofillRedeemBody/invalid/no-client.json": "793e4fd4c9be049d2089ea5cb803efdb6bc8d8cfd0a9accc0331a4cfb2ad42e6",
     "AutofillRedeemBody/invalid/short-code.json": "39a26db7a1de17ff8409c23bb41f862a9d39ee353cfb61bebed3679cb45e52cd",
@@ -233,10 +242,10 @@
     "AutofillRedeemBody/valid/golden.json": "c34caa080faa4912448f45ec575aa2d2a1b46569b5bb8d87e554a0689c8fc7df",
     "AutofillRedeemBody/valid/look-alike-letters.json": "10fac8f1a6bec78cc26a52d7a39396617dcfb34350c4a224edef49229690d827",
     "AutofillRedeemBody/valid/typed-code.json": "24f1431448dd3a24eeaa3b01f9621eb73c5fa520bf13518de0d1aab222736de4",
-    "AutofillRedeemResponse/invalid/foreign-token.json": "71133aef785accf94e9df20ce6e5b180bf46f5f239151d13673afe56f2c2dd3a",
-    "AutofillRedeemResponse/invalid/unknown-scope.json": "dfc109883699b6cebc0b2502f10c2856cfab6d46bf5ba3d8cafe2fdb16df0101",
-    "AutofillRedeemResponse/valid/golden.json": "5a71c7414864b9008ebc069cdfbe2563938d00f888fb52ece11ef01b58e8f42d",
-    "AutofillRedeemResponse/valid/without-sensitive.json": "effadd4bbe8a301ab1c23e04c2659e9bb0fe2a97b571aab49a0e513edf3fcd22",
+    "AutofillRedeemResponse/invalid/foreign-token.json": "aa3cf24b87f519c9fdd187eed63a7fa0f9718bfe08bb3dd2e79d0df6f3dc24f6",
+    "AutofillRedeemResponse/invalid/unknown-scope.json": "b22ab3e026d2beffe8374185b7a1599fee5f9daee7639586891075ca87387397",
+    "AutofillRedeemResponse/valid/golden.json": "0081a8bb130bcff8478242481e9ae377647b9507f72bfb85226aa21f38e83c68",
+    "AutofillRedeemResponse/valid/without-sensitive.json": "33a6c172ff656920eb0b85e01fb8cae6b56183f6b55d3446206db96dc4308742",
     "AutofillResumeList/invalid/unknown-file-kind.json": "837aa7db5027680296c9f5a5ebdfab381a4b1df6497043cd575790676aa9114e",
     "AutofillResumeList/valid/golden.json": "4ac733a1f445e870dc1856a05e0eb30a35da5087681866905ab4d174bdd66393",
     "AutofillResumeList/valid/none.json": "ad13fbd1e9c76a3beae2d83d0bca99a43a150efdf5daddb4a29d00c8ffd8e615",
@@ -254,6 +263,7 @@
     "AutofillSavedAnswer/valid/golden.json": "4f3153db1bb8cefb3d7770ea4d7a230da7d64c726bd2905b163bdd02a444239f",
     "AutofillSavedAnswer/valid/one-option.json": "d40b455c9a05aed4995931feb43239d1f9a7f1fa1b88378183f72174d21be2bd",
     "AutofillSavedAnswer/valid/several-options.json": "f730cee0bed596558cb9343902f01a6bec2815eb8567dc239c98dc575886e3be",
+    "AutofillSavedAnswer/valid/workable-company.json": "df729cf77cc4760c080c4619d8a621ab0c064aecc54df79d93416d9305ee65e2",
     "AutofillSavedAnswerList/invalid/no-limit.json": "70687c8fa319500122348b82c7c442f45cb27c5e4c1791a0fae18d46acc50f05",
     "AutofillSavedAnswerList/valid/golden.json": "aa0f54d0092800debebe05785e8f62de197aff860307226e5d4edae300d02273",
     "AutofillSavedAnswerList/valid/none.json": "f1e22f5bb5ae16059b570708a67538574fbdec3c2b457bd267041023fd3a13b3",
@@ -276,12 +286,12 @@
     "AutofillSensitive/valid/empty.json": "9659039a133b715fbbb379f8d9b9bdd7e6fa3fc1078986a1d49778f195240282",
     "AutofillSensitive/valid/golden.json": "7bff58d137abf0a73df69f4ed6d01512e7523a46a3fcffdbc889f4a37bd2e850",
     "AutofillSensitive/valid/self-described.json": "d75fa6a314928b404d930a32779fa7b28e2d8eb23d256f3753ab35868107fa2a",
-    "AutofillSensitiveEnvelope/invalid/local-time.json": "ec09653006eb339d6a8359be79319a6886e3babe539645f70c1954e136805a4c",
-    "AutofillSensitiveEnvelope/valid/golden.json": "4d69c7167ace49ff4e76f5f92e987a52d74d48f6a4434192caae4bc2c0fe55d6",
-    "AutofillSensitiveEnvelope/valid/no-row.json": "efb94deb53d7d217e203893aa6d416c84d9f08786c9be45e9ebac3531fbbff6e",
-    "AutofillSession/invalid/no-ai.json": "c6fa76ea6e8521170dddf4793f8c66ce7820371729324b3a14e39119a592df88",
-    "AutofillSession/valid/golden.json": "dcbd19d77c27870a4bb64593d3dfdef4c8ac676a041c94b347bdac9a6a052562",
-    "AutofillSession/valid/without-sensitive.json": "937f705615bfa9d010bb1321f42ef4ee5494d2dcf2b2015b3d7c61eafef7dcaa",
+    "AutofillSensitiveEnvelope/invalid/local-time.json": "bc04cb42f48b3e23e2f29d1febda63331190d825cd0b929c85c9e2b3abb4a477",
+    "AutofillSensitiveEnvelope/valid/golden.json": "48a992fecd38220b04b187bb11c22d2f5ac9deadfe50f1a8f92b4cce0666d8ae",
+    "AutofillSensitiveEnvelope/valid/no-row.json": "c558ea06fa19583b80a410169d93afecd94638f8fe393503687016a90939853f",
+    "AutofillSession/invalid/no-ai.json": "51ea514ba136f036e4565c000aad5c11da7b71404a3d10768b67ab8f8486cb10",
+    "AutofillSession/valid/golden.json": "3cce8bdc0c9518b1d142b1ebc9f32b267c90982146592021b2ac60faa765f8cf",
+    "AutofillSession/valid/without-sensitive.json": "55f3888ff8c61c351849f26ddca57a18fa27284b357403a9dbb12696f02065e2",
     "AutofillSignInItem/invalid/path-in-host.json": "cd0e94be0203e0ed4eb21654cee05e5f646bc4e45cd09eb06470f01402d5c60c",
     "AutofillSignInItem/valid/golden.json": "51bf42908dc2475c98957ccb3e48fdf4ccf97c3bf64f27d3ae866244077e8c8b",
     "AutofillSignInList/invalid/no-limit.json": "70687c8fa319500122348b82c7c442f45cb27c5e4c1791a0fae18d46acc50f05",
@@ -7436,7 +7446,8 @@
                     "greenhouse",
                     "lever",
                     "ashby",
-                    "workday"
+                    "workday",
+                    "workable"
                   ]
                 },
                 "board": {
@@ -7782,7 +7793,8 @@
                         "greenhouse",
                         "lever",
                         "ashby",
-                        "workday"
+                        "workday",
+                        "workable"
                       ]
                     },
                     "board": {
@@ -8469,7 +8481,8 @@
             "greenhouse",
             "lever",
             "ashby",
-            "workday"
+            "workday",
+            "workable"
           ]
         },
         "items": {
@@ -9227,6 +9240,25 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "format": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "number",
+                      "integer",
+                      "currency",
+                      "date",
+                      "MM/DD/YYYY",
+                      "DD/MM/YYYY",
+                      "MM/YYYY"
+                    ]
                   },
                   {
                     "type": "null"
@@ -10319,7 +10351,7 @@
             {
               "type": "string",
               "maxLength": 250,
-              "pattern": "^(?:greenhouse|lever|ashby|workday):\\S{1,200}$"
+              "pattern": "^(?:greenhouse|lever|ashby|workday|workable):\\S{1,200}$"
             }
           ]
         },
@@ -10351,7 +10383,8 @@
                 "greenhouse",
                 "lever",
                 "ashby",
-                "workday"
+                "workday",
+                "workable"
               ]
             },
             {
@@ -10488,7 +10521,7 @@
                   {
                     "type": "string",
                     "maxLength": 250,
-                    "pattern": "^(?:greenhouse|lever|ashby|workday):\\S{1,200}$"
+                    "pattern": "^(?:greenhouse|lever|ashby|workday|workable):\\S{1,200}$"
                   }
                 ]
               },
@@ -10520,7 +10553,8 @@
                       "greenhouse",
                       "lever",
                       "ashby",
-                      "workday"
+                      "workday",
+                      "workable"
                     ]
                   },
                   {
@@ -10666,7 +10700,7 @@
             {
               "type": "string",
               "maxLength": 250,
-              "pattern": "^(?:greenhouse|lever|ashby|workday):\\S{1,200}$"
+              "pattern": "^(?:greenhouse|lever|ashby|workday|workable):\\S{1,200}$"
             }
           ]
         },
@@ -10698,7 +10732,8 @@
                 "greenhouse",
                 "lever",
                 "ashby",
-                "workday"
+                "workday",
+                "workable"
               ]
             },
             {

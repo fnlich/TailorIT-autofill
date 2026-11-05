@@ -22,10 +22,10 @@ const choice = (at: number, labels = ['Yes', 'No'], question = `Question ${at}?`
   question: u(question), hint: u(''),
   section: u(''), optionSetHash: HASH,
   options: labels.map((label, index) => ({ index: index + 1, label: u(label), labelHash: sha256Hex(label) })),
-  maxLength: null });
+  maxLength: null, format: null });
 const text = (at: number, maxLength: number | null = 40): AnswerItem => ({ key: `lever|main|t${at}|none|0` as FieldKey,
   scope: 'standard', shape: 'text', kind: 'text', question: u(`How many years of Go, ${at}?`), hint: u(''), section: u(''),
-  optionSetHash: null, options: [], maxLength });
+  optionSetHash: null, options: [], maxLength, format: null });
 
 describe('answer requests', () => {
   it('batch at most ten items a task, each request valid as TailorIT reads it, with the job context', () => {
@@ -110,6 +110,25 @@ describe('answer results', () => {
       labelHash: sha256Hex('Some'), basis: 'guess', taskId: 'task-1' });
     expect(verdicts.get(asked[1]!.key)).toEqual({ key: asked[1]!.key, kind: 'text', text: 'Six years', basis: 'resume',
       taskId: 'task-1' });
+  });
+
+  it("send a text's layout (API 4), never a choice's, and take its answer only as one value of it", () => {
+    const salary = { ...text(3), format: 'currency' as const };
+    const start = { ...text(4), kind: 'date' as const, format: 'date' as const };
+    const dated = { ...text(5), format: 'MM/DD/YYYY' as const };
+    expect(answerItemOfCore(salary)).toMatchObject({ shape: 'text', format: 'currency' });
+    expect(answerItemOfCore(start)).toMatchObject({ shape: 'text', kind: 'date', format: 'date' });
+    expect(answerItemOfCore(choice(6))).not.toHaveProperty('format');
+    expect(answerItemOfCore(text(7))).not.toHaveProperty('format');
+    // What the worker sends is a request TailorIT takes.
+    expect(AutofillAnswerRequestSchema.safeParse({ items: [salary, start, dated].map((item) => answerItemOfCore(item)),
+      jobText: '', company: '', jobTitle: '', resumeId: null, canaries: [], scope: 'standard' }).success).toBe(true);
+    const answer = (item: AnswerItem, value: string) => answerVerdicts([item], { answers: [{ key: item.key,
+      optionSetHash: null, index: null, text: value, basis: 'guess', reason: 'answered' }] }, 'task-1').get(item.key);
+    expect(answer(salary, '85,000')).toMatchObject({ kind: 'text', text: '85000' });
+    expect(answer(salary, '$85,000')).toEqual({ key: salary.key, kind: 'none', why: 'llm-invalid-output' });
+    expect(answer(dated, '1/5/2026')).toMatchObject({ kind: 'text', text: '01/05/2026' });
+    expect(answer(start, '2026-02-30')).toMatchObject({ kind: 'none', why: 'llm-invalid-output' });
   });
 
   it('read every other reason as why there is none', () => {

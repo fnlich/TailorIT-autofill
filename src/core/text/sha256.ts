@@ -1,6 +1,7 @@
 /*
  * SHA-256 (FIPS 180-4) for the pure core, which has no crypto global: option-set hashes, label-slug suffixes, an
- * llm-pick's labelHash and the vocabulary test's re-hash all come from here. Tested against the NIST vectors and
+ * llm-pick's labelHash and the vocabulary test's re-hash all come from here, and HMAC-SHA-256 (RFC 2104) the accepted-
+ * match cache's sealed keys and labels (background/match-cache.ts). Tested against the NIST and RFC 4231 vectors and
  * node:crypto.
  */
 import { utf8Encode } from './utf8';
@@ -79,4 +80,28 @@ export function bytesToHex(bytes: Uint8Array): string {
 /** The SHA-256 of `text`'s UTF-8 bytes, as 64 lower-case hex characters. */
 export function sha256Hex(text: string): string {
   return bytesToHex(sha256Bytes(utf8Encode(text)));
+}
+
+/** The block size of SHA-256, in bytes (RFC 2104's B). */
+const BLOCK_BYTES = 64;
+
+/** The 32-byte HMAC-SHA-256 (RFC 2104) of `text`'s UTF-8 bytes under `key`. */
+export function hmacSha256Bytes(key: Uint8Array, text: string): Uint8Array {
+  const block = new Uint8Array(BLOCK_BYTES);
+  block.set(key.length > BLOCK_BYTES ? sha256Bytes(key) : key);
+  const message = utf8Encode(text);
+  const inner = new Uint8Array(BLOCK_BYTES + message.length);
+  const outer = new Uint8Array(BLOCK_BYTES + 32);
+  for (let i = 0; i < BLOCK_BYTES; i += 1) {
+    inner[i] = block[i]! ^ 0x36;
+    outer[i] = block[i]! ^ 0x5c;
+  }
+  inner.set(message, BLOCK_BYTES);
+  outer.set(sha256Bytes(inner), BLOCK_BYTES);
+  return sha256Bytes(outer);
+}
+
+/** The HMAC-SHA-256 of `text` under `key`, as 64 lower-case hex characters. */
+export function hmacSha256Hex(key: Uint8Array, text: string): string {
+  return bytesToHex(hmacSha256Bytes(key, text));
 }

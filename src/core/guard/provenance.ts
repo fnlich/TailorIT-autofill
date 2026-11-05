@@ -13,7 +13,7 @@
  * upload its own category's document (a resume upload the profile's resume, a cover-letter upload the run's cover
  * letter, Phase G; any other upload nothing, and a file write's origin always names the document it carries); an
  * attention check, and every category only the person answers, allow nothing. An AI
- * answer's text (llm-answer, version 2) fills an unknown or free-text field, or one of the profile categories
+ * answer's text (llm-answer, version 2; or a date input's date, version 4) fills an unknown or free-text field, or one of the profile categories
  * ANSWERABLE_PROFILE_CATEGORIES lists; never a sensitive, legal, EEO or consent one.
  * The owner's decisions of 2026-11-01 (docs/SPEC-AMENDMENTS.md §11): with `answerAll` (settings.modes.ai 'all', the AI
  * allowed for the frame) an AI pick or answer may fill a category of AI_OPENED_CATEGORIES (the legal questions, the
@@ -172,7 +172,8 @@ export function checkProvenanceShape(write: PlannedWrite): GuardVerdict {
       if (!nonEmpty(origin.taskId) || !(ANSWER_BASES as readonly string[]).includes(origin.basis)) {
         return fail('missing-provenance');
       }
-      return write.value.kind === 'text' ? PASS : fail('policy-violation');
+      // A text, or (TailorIT's API 4) a date input's one date, which TailorIT and the worker checked in its format.
+      return write.value.kind === 'text' || write.value.kind === 'date' ? PASS : fail('policy-violation');
     default:
       return fail('missing-provenance');
   }

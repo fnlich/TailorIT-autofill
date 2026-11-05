@@ -92,6 +92,21 @@ describe('the text filler', () => {
     expect(fillIn(fixture, 'c', { kind: 'text', text: 'new' })).toMatchObject({ wrote: true, verification: 'mismatch',
       reason: 'value-rejected-by-site' });
   });
+
+  it('reads a number box that drops what is no number as rejecting the value, never as needs-your-click', async () => {
+    // Workable's salary box: digits only, anything else dropped (its value stays what it was).
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <label for="n">Desired salary</label><input id="n" inputmode="decimal">
+      <script>
+        document.getElementById('n').addEventListener('input', (e) => {
+          if (!/^[0-9]*$/.test(e.target.value)) e.target.value = '';
+        });
+      </script></form></body>`);
+    expect(targetOf(fixture, 'n').field.constraints.format).toBe('number');
+    expect(fillIn(fixture, 'n', { kind: 'text', text: 'Negotiable' })).toMatchObject({ wrote: true,
+      verification: 'mismatch', reason: 'value-rejected-by-site', needsUserAction: false });
+    expect(fillIn(fixture, 'n', { kind: 'text', text: '85000' })).toMatchObject({ verification: 'verified' });
+  });
 });
 
 describe('the select fillers', () => {

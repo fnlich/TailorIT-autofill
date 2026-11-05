@@ -10,6 +10,9 @@ import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import {
+  answerInFormat,
+  ATS_KINDS,
+  AUTOFILL_ANSWER_FORMATS,
   AUTOFILL_API_VERSION,
   AUTOFILL_CONTRACT_SCHEMAS,
   AUTOFILL_ROUTES,
@@ -35,11 +38,14 @@ import {
   normalizeConnectCode,
 } from '../src/contract/tailorit';
 import {
+  AMOUNT_ANSWER,
+  answerInFormat as mockAnswerInFormat,
   CLEAN_DRAFT,
   CLEAN_REWRITE,
   CONTRACT_ROUTES,
   EXTENSION_ID,
   CLEAN_ANSWER,
+  FORMAT_ANSWERS,
   GOLDEN_LETTER,
   GOLDEN_LETTER_TEXT,
   GOLDEN_RESUME,
@@ -812,6 +818,37 @@ describe('version 2: the job card, adding a job and AI answers', () => {
     const answered = await ask();
     expect(answered.result?.answers.every((answer) => answer.reason === 'answered' && answer.basis === 'resume')).toBe(true);
     expect(answered.result?.answers.find((answer) => answer.optionSetHash === null)?.text).toBe(CLEAN_ANSWER);
+    await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-answer-amount', times: 1 } });
+    const amount = await ask();
+    expect(amount.result?.answers.find((answer) => answer.optionSetHash === null)?.text).toBe(AMOUNT_ANSWER);
+  });
+
+  it('answers a text asked in a layout in that layout (version 4), and an amount that is no one value of it as invalid',
+    async () => {
+      const body = example('AutofillAnswerRequest', 'formats') as { items: Array<{ key: string; format?: string | null }> };
+      const ask = async () => AutofillAnswerTaskSchema.parse(await (await call('/api/autofill/ai/answer', { method: 'POST',
+        headers: asToken(), json: body })).json());
+      await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-answer', times: 1 } });
+      const answered = await ask();
+      for (const item of body.items) {
+        const answer = answered.result?.answers.find((one) => one.key === item.key);
+        const format = item.format ?? null;
+        expect(answer?.text, item.key).toBe(format === null ? CLEAN_ANSWER : FORMAT_ANSWERS[format]);
+      }
+      await call('/__mock/scenario', { method: 'POST', json: { name: 'ai-answer-amount', times: 1 } });
+      const amounts = await ask();
+      for (const item of body.items) {
+        const answer = amounts.result?.answers.find((one) => one.key === item.key);
+        expect(answer?.reason, item.key).toBe((item.format ?? null) === null ? 'answered' : 'invalid');
+      }
+    });
+
+  it("reads an answer in its layout as TailorIT's answerInFormat does", () => {
+    const answers = ['85,000', '$85,000', '85.000', '007', '3.5', '12.345', '1/5/2026', '01/05/2026', '2026-02-30',
+      '2024-02-29', '13/2026', '09/2018', 'December 2026', '80000-90000', ' 42 ', '1,234,567.89'];
+    for (const format of AUTOFILL_ANSWER_FORMATS) {
+      for (const text of answers) expect(mockAnswerInFormat(text, format), `${format} ${text}`).toBe(answerInFormat(text, format));
+    }
   });
 });
 
@@ -846,6 +883,29 @@ describe('version 3: the profile from a token, the chosen job and a letter as te
       const refused = await lookup(jobId);
       expect([jobId, refused.status, await errorCode(refused)]).toEqual([jobId, 400, 'validation_failed']);
     }
+  });
+
+  it('treats an address on no ATS the contract names as TailorIT does: no job, Add job unsupported, Applied 404', async () => {
+    const lookup = async (url: string) => AutofillLookupResponseSchema.parse(await (await call('/api/autofill/lookup',
+      { method: 'POST', headers: asToken(), json: { url } })).json());
+    const add = (url: string) => call('/api/autofill/jobs', { method: 'POST', headers: asToken(), json: { url } });
+    const applied = (json: Record<string, unknown>) => call('/api/autofill/applied', { method: 'POST', headers: asToken(),
+      json });
+    const unknown = 'https://careers.tailorit-fixture.example/jobs/1';
+    expect((await lookup(unknown)).job).toBeNull();
+    const added = await add(unknown);
+    expect([added.status, await errorCode(added)]).toEqual([400, 'unsupported']);
+    const missing = await applied({ url: unknown });
+    expect([missing.status, await errorCode(missing)]).toEqual([404, 'not_found']);
+    // With a job, the address is not read.
+    expect((await applied({ url: unknown, jobId: 1042 })).status).toBe(200);
+    // A company page naming a Greenhouse posting is one TailorIT reads.
+    expect((await lookup('https://careers.tailorit-fixture.example/jobs?gh_jid=5512345002')).job).not.toBeNull();
+    // Workable: an unknown page until the contract names it (TailorIT's version 3 support), then a posting.
+    const workable = 'https://apply.workable.com/acme/j/0123456789/apply/';
+    const known = (ATS_KINDS as readonly string[]).includes('workable');
+    expect((await lookup(workable)).job === null).toBe(!known);
+    expect((await applied({ url: workable })).status).toBe(known ? 200 : 404);
   });
 
   it("reads a letter's text as its file: 409 until it is ready, 404 for one it never made", async () => {

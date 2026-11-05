@@ -22,6 +22,13 @@ describe('disappearedRow', () => {
     }
   });
 
+  it("keeps a failed upload's word when the page falls over with its field (the Phase 7a review)", () => {
+    const resume = field('Resume', 'file');
+    const failed = rowOf(resume, { status: 'flagged', reason: 'upload-failed', verification: 'mismatch',
+      needsUserAction: true });
+    expect(disappearedRow(failed)).toEqual(failed);
+  });
+
   it('leaves a row already rowed so', () => {
     const once = disappearedRow(rowOf(email));
     expect(disappearedRow(once)).toBe(once);

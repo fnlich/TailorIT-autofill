@@ -95,7 +95,7 @@ import { newBridgeRun, newReadiness, readWidget } from '../dom/widgets';
 import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
-import { boxBeforeEndDate } from './repeatables';
+import { boxBeforeEndDate, filesAfterTheRest } from './repeatables';
 import {
   RunAborted, writeField, type PassEnv, type PlanAnswer, type WidgetWriteEnv, type WriteResult, type WrittenField,
 } from './pass';
@@ -738,8 +738,10 @@ class ReactiveLoop {
       const write = planned.get(key);
       if (write !== undefined) queue.push({ write, planned: row });
     }
-    // A block's "I currently work here" is ticked before its end date (planCurrentJob's order, Phase 5).
-    return boxBeforeEndDate(queue);
+    // A block's "I currently work here" is ticked before its end date (planCurrentJob's order, Phase 5); a page whose
+    // failed upload takes the form down gets its files last (Adapter.quirks.filesLast).
+    const ordered = boxBeforeEndDate(queue);
+    return this.env.adapter.quirks?.filesLast ? filesAfterTheRest(ordered) : ordered;
   }
 
   /**

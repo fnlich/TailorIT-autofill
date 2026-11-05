@@ -354,6 +354,17 @@ const PAST_PAY = /\b(?:current|currently|previous|prior|last|present|most\s+rece
 const PAY_EXPECTATION = /\bpay\s+range\b|\bbase\s+pay\b|\b(?:desired|expected|target|requested)\s+(?:(?:annual|yearly|base|total)\s+)*(?:pay|compensation|salary)\b|\btotal\s+compensation\b/;
 /** Language names, for a proficiency question about a language rather than a tool ("Excel proficiency"). */
 const LANGUAGE_PROFICIENCY = /\b(?:languages?|english|spanish|french|german|italian|portuguese|dutch|polish|russian|ukrainian|turkish|arabic|hebrew|persian|farsi|hindi|urdu|bengali|punjabi|tamil|telugu|marathi|gujarati|mandarin|cantonese|chinese|japanese|korean|vietnamese|thai|indonesian|malay|tagalog|filipino|swahili|greek|swedish|norwegian|danish|finnish|czech|slovak|hungarian|romanian|bulgarian|serbian|croatian|catalan|irish|welsh|afrikaans|amharic|nepali|sign\s+language)\b|^(?:proficiency|fluency)(?:\s+level)?$|^level\s+of\s+(?:proficiency|fluency)$/;
+/** More wordings of work authorization: "entitled to work", "(legally) eligible to be employed". */
+const WORK_AUTH_WIDE = /\bentitled\s+to\s+work\b|\b(?:eligible|authori[sz]ed|permitted|entitled)\s+to\s+be\s+(?:employed|hired)\b|\beligible\s+for\s+employment\b/;
+/** A question about which work authorization status the applicant holds (Workable's "Work Authorization Status",
+ *  "Which best describes your work authorization status?"): which status, never yes or no. */
+const WORK_AUTH_STATUS = /\bauthori[sz]ation\s+status\b|\bwork\s+(?:authori[sz]ation\s+)?status\b/;
+/** An experience block's own summary of the role, labelled with that one word (the Phase 7a review: Workable's
+ *  Experience "Summary"); any longer wording ("Role description") is left to the LLM's classification, as before. */
+const EXPERIENCE_DESCRIPTION = /^(?:summary|description)$/;
+const EXPERIENCE_DESCRIPTION_RULE = { id: 'label.experience-description', strength: 'normal' } as const;
+const WORK_AUTH_STATUS_RULE = { id: 'label.work-auth-status', strength: 'strong' } as const;
+
 /** A legal reading of "eligible", "permitted" or "entitled to work": a place, "legally", "lawfully" or any employer.
  *  Without one it is a question about the job ("eligible to work overtime"). */
 const WORK_AUTH_LEGAL = /authori[sz]ed\s+to\s+work|right\s+to\s+work|work\s+authori[sz]ation|\b(?:legally|lawfully)\b|(?:eligible|permitted|entitled)\s+to\s+work\s+(?:\w+\s+){0,4}?(?:in|within)\s+(?!(?:a|an|our|shifts?|teams?|person|office|offices|hybrid|remote|remotely|this\s+(?:role|position|job|team|office)|the\s+(?:office|field|evenings?|mornings?|afternoons?|weekends?|days?|nights?|shifts?|role|position|job|team|warehouse|store|lab|clinic))\b)\w+|(?:eligible|permitted|entitled)\s+to\s+work\s+for\s+(?:any|an|all)\s+employers?/;
@@ -399,9 +410,12 @@ const RECORD_CHECK = /\b(?:criminal\s+)?(?:background|record|records|history)\s+
 
 const AI_TERM = String.raw`(?:ai|a\s+i|artificial\s+intelligence|chat\s?gpt|gpt\w*|llms?|large\s+language\s+models?|language\s+models?|generative|genai|gen\s+ai|copilot)`;
 const NEGATION = String.raw`(?:did\s+not|didnt|have\s+not|havent|has\s+not|hasnt|had\s+not|hadnt|was\s+not|wasnt|were\s+not|werent|do\s+not|dont|does\s+not|doesnt|will\s+not|wont|not|never|no|without)`;
+/** A statement that the application is the applicant's own work (the Phase 7a review: Workable's "Can you confirm that
+ *  everything in this application is true and your own?"), which a fill that used AI cannot make: an AI attestation. */
+const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b`;
 /** An "I did not use AI" attestation as normalizeLabel writes it (no apostrophes: "didnt", "havent"), with a few words
- *  between the negation and the AI term, either way round. */
-const AI_ATTESTATION = new RegExp(String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+${AI_TERM}\b|\b${AI_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved)\b`);
+ *  between the negation and the AI term, either way round; or a statement that it is the applicant's own (OWN_WORK). */
+const AI_ATTESTATION = new RegExp(String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+${AI_TERM}\b|\b${AI_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved)\b|${OWN_WORK}`);
 /** AI named anywhere in consent wording: that box is an AI attestation, which is never pre-approved (§8.7). */
 const AI_NAMED = new RegExp(String.raw`\b${AI_TERM}\b`);
 /** Unrecognised-consent wordings beyond §8.3's "I agree, consent, acknowledge, accept, understand". */
@@ -499,7 +513,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/ },
   'label.location': { also: /^(?:what\s+is\s+)?your\s+(?:current\s+)?location$/ },
   'label.portfolio': { only: PORTFOLIO_NOUN, ask: true },
-  'label.work-auth': { also: /\bentitled\s+to\s+work\b/, only: WORK_AUTH_LEGAL },
+  // The Phase 7a review: "legally eligible to be employed" is authorization too (a work authorization status is read
+  // before this rule: matchLabelRules).
+  'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL },
   'label.sponsorship': { only: VISA_SPONSORSHIP, readsQualifiers: true,
     needsUser: (c) => (sponsorshipTime(c.label) === 'unclear' ? 'unclear-time' : null) },
   'label.over18': { also: OVER18_WIDE },
@@ -743,6 +759,11 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
   const ctx: RuleCtx = { label: text, section, kind, qualifiers: context.qualifiers ?? '',
     rawLabel: context.rawLabel ?? '' };
   if (context.block !== undefined) ctx.block = context.block;
+  // An experience block's own "Summary" or "Description" is the role's description (the Phase 7a review).
+  if (section === 'experience' && context.block !== undefined && EXPERIENCE_DESCRIPTION.test(text)
+    && kindAllowed('experience.description', kind)) {
+    return hitOf(EXPERIENCE_DESCRIPTION_RULE, 'experience.description');
+  }
   for (const rule of PRE_RULES) {
     const reads = rule.readsQualifiers && ctx.qualifiers !== '' ? [text, `${text} ${ctx.qualifiers}`] : [text];
     if (reads.some((read) => rule.re.test(read) && !(rule.unless?.test(read) ?? false))) {
@@ -756,6 +777,11 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     if (criminalClaim(text)) return hitOf(CRIMINAL_RULE, 'screening.criminalHistory');
     const entries = consentEntries(text);
     if (entries.length > 0) return consentVerdict(entries, kind);
+  }
+  // Which work authorization status (the Phase 7a review), before the design's authorization rule reads it as yes or
+  // no.
+  if (WORK_AUTH_STATUS.test(text) && kindAllowed('workAuth.status', kind)) {
+    return hitOf(WORK_AUTH_STATUS_RULE, 'workAuth.status');
   }
   for (const rule of LABEL_RULES) {
     if (DATE_RULES.has(rule.id) && section === 'other' && context.block !== undefined) continue;

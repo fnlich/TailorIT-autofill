@@ -64,6 +64,19 @@ function idsOf(hits: readonly KeyHit[]): string[] {
   return [...new Set(hits.map((hit) => hit.id))];
 }
 
+/** The parts a label joins with slashes: two to four, each of one to four words. */
+const SLASH = /\s*\/\s*/;
+
+/** The keys of a slash-joined label's parts (PreparedOption.slashParts), in `context`. */
+function slashPartsOf(clean: string, domain: MatchDomain, context: NormContext): string[] {
+  if (domain === 'degree' || domain.startsWith('eeo.') || !clean.includes('/')) return [];
+  const parts = clean.split(SLASH).map((part) => part.trim());
+  if (parts.length < 2 || parts.length > 4 || parts.some((part) => part === '' || part.split(/\s+/).length > 4)) {
+    return [];
+  }
+  return [...new Set(parts.map((part) => normalize(matchedText(part, domain), context).key).filter((key) => key !== ''))];
+}
+
 /** Prepares a field's options for one domain (§4.0). */
 export function prepareOptions(options: readonly Option[], domain: MatchDomain, vocab: Vocab): PreparedOptions {
   const context = domainContext(domain);
@@ -116,6 +129,7 @@ export function prepareOptions(options: readonly Option[], domain: MatchDomain, 
       other: !unusable && other.has(answerKey),
       ...(domain === 'degree' && !unusable ? { degree: parseDegree(clean, vocab) } : {}),
       bracketSiblings: false,
+      slashParts: unusable ? [] : slashPartsOf(clean, domain, context),
     };
   });
   // Options of one main key whose full keys differ are told apart by their brackets alone.

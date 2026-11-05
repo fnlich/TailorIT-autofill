@@ -11,7 +11,8 @@
  *   (FIXTURE_BOARD), which the trap and synthetic fixtures are served on, in every build: it is read by the generic
  *   rule, the page's origin and path, as is any address on an ATS host with no parser yet (Workday).
  * The Lever and Greenhouse adapters joined PLATFORM_ADAPTERS in Phase 2, Ashby's in v3 Phase 2 (its overview, its form
- * and its embed's spelling of one posting share one application key); Workday's comes later. In e2e builds only, the e2e-only test adapters (./test: trap 09's) come before them for their own address.
+ * and its embed's spelling of one posting share one application key), Workable's in v3 Phase 7a (its overview and its
+ * form, in any spelling, share one); Workday's comes later. In e2e builds only, the e2e-only test adapters (./test: trap 09's) come before them for their own address.
  * A production build replaces __E2E__ with false, which leaves ./test unreferenced, so it is compiled out
  * (scripts/check-build.mjs checks for its marker). Vitest's Node projects keep __E2E__ a global, so a test can turn
  * the switch on with vi.stubGlobal.
@@ -29,15 +30,17 @@ import { leverAdapter } from './lever';
 import { matchesUrl as matchesLeverUrl, parseLeverUrl } from './lever/url';
 import { e2eAdaptersFor } from './test';
 import type { Adapter } from './types';
+import { workableAdapter } from './workable';
+import { parseWorkableUrl } from './workable/url';
 
 /** The platform adapters built so far. */
 const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
-  greenhouse: greenhouseAdapter, lever: leverAdapter, ashby: ashbyAdapter,
+  greenhouse: greenhouseAdapter, lever: leverAdapter, ashby: ashbyAdapter, workable: workableAdapter,
 };
 
 /** The platforms whose addresses are read by a parser of their own (each platform's url.ts). */
 const URL_PARSERS: Partial<Record<Platform, (url: URL) => ApplicationUrl | null>> = {
-  greenhouse: parseGreenhouseUrl, lever: parseLeverUrl, ashby: parseAshbyUrl,
+  greenhouse: parseGreenhouseUrl, lever: parseLeverUrl, ashby: parseAshbyUrl, workable: parseWorkableUrl,
 };
 
 /** The reserved Lever board the trap and synthetic fixtures are served on (https://jobs.lever.co/tailorit-fixture/...).

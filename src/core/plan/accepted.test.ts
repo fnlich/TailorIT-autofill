@@ -11,7 +11,7 @@ const GENDER = specOf('Gender', 'radio', { section: { id: 'eeo' }, optionLabels:
 
 /** A cache over a plain map. */
 function storeOf(entries: Record<string, MatchCacheEntry>): MatchCacheStore {
-  return { get: (key) => entries[key] };
+  return { get: (key) => entries[key], sealLabel: (label) => label };
 }
 
 describe('planFrame and the accepted-match cache', () => {

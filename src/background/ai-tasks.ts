@@ -65,7 +65,7 @@
  * and statuses only.
  */
 import {
-  AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AutofillAnswerItem,
+  answerInFormat, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AutofillAnswerItem,
   type AutofillAnswerReason, type AutofillAnswerRequest, type AutofillAnswerResult, type AutofillClassifyItem,
   type AutofillClassifyRequest, type AutofillClassifyResult, type AutofillDraftReason, type AutofillDraftRequest,
   type AutofillDraftResult, type AutofillPickItem, type AutofillPickRequest, type AutofillPickResult,
@@ -371,7 +371,9 @@ export function answerItemOfCore(item: AnswerItem, vocab?: Vocab): AutofillAnswe
     hint: cutAtWord(item.hint, limits.hint), section: cutAtWord(item.section, limits.section),
     optionSetHash: item.shape === 'choice' ? item.optionSetHash : null,
     options: item.options.map((option) => ({ index: option.index, label: option.label as string })),
-    maxLength: item.shape === 'text' ? item.maxLength : null };
+    maxLength: item.shape === 'text' ? item.maxLength : null,
+    // API 4: the layout a text's answer must have (a number box, a date box); never sent for a choice.
+    ...(item.shape === 'text' && item.format !== null ? { format: item.format } : {}) };
 }
 
 /** The text an answer item holds, as TailorIT counts it. */
@@ -462,7 +464,10 @@ export function answerVerdicts(items: readonly AnswerItem[], result: AutofillAns
         }
       } else if (answer.basis !== null && item.shape === 'text' && answer.index === null && answer.text !== null
         && answer.optionSetHash === null && answer.text.trim() !== '') {
-        verdict = { key: item.key, kind: 'text', text: answer.text, basis: answer.basis, taskId };
+        // A text asked in a layout is checked in it again, as TailorIT checks it (answerInFormat): one value of it, as
+        // TailorIT writes it, or nothing.
+        const text = item.format === null ? answer.text : answerInFormat(answer.text, item.format);
+        if (text !== null) verdict = { key: item.key, kind: 'text', text, basis: answer.basis, taskId };
       }
     }
     verdicts.set(item.key, verdict);

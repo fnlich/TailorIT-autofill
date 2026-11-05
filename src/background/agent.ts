@@ -236,6 +236,7 @@ function atRest(report: ReportView, has: (code: FrameReport['notices'][number]['
   if (has('submit-held-no-ai')) return finish('skipped', 'posting_forbids_ai');
   if (has('submit-held-required')) return finish('needs-you', 'required_field_empty');
   if (has('submit-held-guess')) return finish('needs-you', 'ai_guess_legal');
+  if (has('submit-held-attention') || has('submit-held-entries')) return finish('needs-you', 'other');
   if (has('submit-held-captcha') || has('captcha-next') || has('captcha')) return finish('needs-you', 'captcha');
   if (has('auth')) return finish('needs-you', 'sign_in');
   if (has('submit-errors')) return context.retried ? finish('failed', 'validation_error') : { kind: 'retry' };

@@ -104,7 +104,7 @@ export interface PlannerDeps {
   /** Each run's AI task ids: RunState.aiTasks (runstate-store.ts). */
   aiTaskIds: Pick<RunStateStore, 'aiTasks'>;
   /** The accepted-match cache (Phase 6): read at every plan, its stale entries dropped. Absent: plans run without one. */
-  cache?: Pick<MatchCache, 'ready' | 'get' | 'drop'>;
+  cache?: Pick<MatchCache, 'ready' | 'get' | 'sealLabel' | 'drop'>;
   /** Which writes' matches the cache may take once accepted (Phase 6). */
   accepts?: Pick<AcceptBook, 'planned'>;
   /** What a run's cover letter is asked with (Phase G, cover-letters.ts). Absent: no plan asks for one, and a

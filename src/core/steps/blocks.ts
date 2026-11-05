@@ -13,11 +13,15 @@
  *   each block (null: none, so its fields get no value), and whether that entry is a current job (planCurrentJob).
  *   Indices, counts and flags only: a fingerprint never leaves this function, and no value does.
  * Blocks are the section's indices the scan names (FieldSpec.section.block, the adapter's block order), from 0 to the
- * highest; a block whose fields the scan does not show counts as empty.
+ * highest; a block whose fields the scan does not show counts as empty. A block the frame says shows a saved entry's
+ * summary and no fields (RepeatableRequest.shown: Workable's folded entries, the Phase 7a review) is read from the words
+ * the summary names, so the entry it holds is found by its fingerprint; such a block takes an entry only so, never by
+ * its place, since nothing in it can be written.
  */
 import { parseDegree } from '../profile/degreeParse';
 import { classifyField } from '../resolver/resolve';
-import type { FieldSpec } from '../types/field';
+import type { CurrentValue, FieldSpec } from '../types/field';
+import type { FieldCategory } from '../types/intent';
 import type { Profile } from '../types/profile';
 import { MAX_REPEATABLE_BLOCKS, REPEATABLE_KINDS, type RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
@@ -28,11 +32,23 @@ import {
 
 export { MAX_REPEATABLE_BLOCKS } from '../types/run';
 
-/** A section the frame asks about: its kind, and the entry of each block when it already holds an assignment (null:
- *  the plan assigns them from the specs). */
+/** The categories a saved entry's summary may name (RepeatableRequest.shown). */
+export const SHOWN_CATEGORIES = ['education.school', 'experience.company', 'experience.title', 'experience.startDate',
+  'languages.language'] as const satisfies readonly FieldCategory[];
+export type ShownCategory = (typeof SHOWN_CATEGORIES)[number];
+
+/** A block that shows a saved entry's summary (Adapter.prefill.readEntries): its index, and its words by category. */
+export interface ShownBlock {
+  block: number;
+  values: ReadonlyArray<{ category: ShownCategory; text: string }>;
+}
+
+/** A section the frame asks about: its kind, the entry of each block when it already holds an assignment (null: the
+ *  plan assigns them from the specs), and the blocks that show a saved entry's summary. */
 export interface RepeatableRequest {
   kind: RepeatableKind;
   entries: readonly (number | null)[] | null;
+  shown?: readonly ShownBlock[];
 }
 
 /** What the frame learns of a section: counts, indices and flags only. */
@@ -66,9 +82,18 @@ function ruleCategory(spec: FieldSpec): BlockField['category'] | null {
   return classification.by === 'rules' ? classification.rules.category ?? null : null;
 }
 
-/** The section's rendered blocks, as assignEntries reads them, from the specs in them. */
-function blocksOf(kind: RepeatableKind, specs: readonly FieldSpec[], vocab: Vocab): RepeatableBlock[] {
+/** The section's rendered blocks, as assignEntries reads them, from the specs in them and the summaries shown. */
+function blocksOf(kind: RepeatableKind, specs: readonly FieldSpec[], vocab: Vocab, shown: readonly ShownBlock[] = []):
+  RepeatableBlock[] {
   const fields = new Map<number, BlockField[]>();
+  const saved = new Set<number>();
+  for (const summary of shown) {
+    if (!Number.isInteger(summary.block) || summary.block < 0 || summary.block >= MAX_REPEATABLE_BLOCKS) continue;
+    const words = summary.values.map(({ category, text }): BlockField => ({ category,
+      current: { kind: 'text', text } satisfies CurrentValue }));
+    fields.set(summary.block, [...(fields.get(summary.block) ?? []), ...words]);
+    saved.add(summary.block);
+  }
   for (const spec of specs) {
     const block = spec.section.block;
     if (spec.section.id !== kind || block === undefined || block >= MAX_REPEATABLE_BLOCKS) continue;
@@ -85,7 +110,8 @@ function blocksOf(kind: RepeatableKind, specs: readonly FieldSpec[], vocab: Voca
       : degree.current.kind === 'selected' ? degree.current.labels.join(' ') : '';
     const degreeLevel = kind === 'education' && degreeText.trim() !== '' ? parseDegree(degreeText, vocab).level ?? null
       : null;
-    return { index, print: blockPrint(kind, own, { degreeLevel }), empty: isBlockEmpty(own) };
+    return { index, print: blockPrint(kind, own, { degreeLevel }), empty: isBlockEmpty(own),
+      ...(saved.has(index) ? { saved: true as const } : {}) };
   });
 }
 
@@ -108,7 +134,7 @@ export function planBlocks(request: RepeatableRequest, specs: readonly FieldSpec
   if (request.entries !== null) {
     entries = request.entries.slice(0, MAX_REPEATABLE_BLOCKS).map((entry) => checkedEntry(entry, prints.length));
   } else {
-    const blocks = blocksOf(kind, specs, vocab);
+    const blocks = blocksOf(kind, specs, vocab, request.shown);
     const match = assignEntries(prints, blocks);
     entries = blocks.map(() => null);
     for (const assignment of match.assignments) {

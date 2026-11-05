@@ -1,0 +1,81 @@
+{
+  "items": [
+    {
+      "key": "workable|main|how-many-years-of-python-experience-do-you-have|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "How many years of Python experience do you have?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 10,
+      "format": "integer"
+    },
+    {
+      "key": "workable|main|desired-salary|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "Desired salary",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 20,
+      "format": "currency"
+    },
+    {
+      "key": "workable|main|when-can-you-start|none|0",
+      "shape": "text",
+      "kind": "date",
+      "question": "When can you start?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 10,
+      "format": "MM/DD/YYYY"
+    },
+    {
+      "key": "workable|main|graduation-date|none|0",
+      "shape": "text",
+      "kind": "date",
+      "question": "Graduation date",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 7,
+      "format": "MM/YYYY"
+    },
+    {
+      "key": "workable|main|what-is-your-gpa|none|0",
+      "shape": "text",
+      "kind": "text",
+      "question": "What is your GPA?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 10,
+      "format": "number"
+    },
+    {
+      "key": "greenhouse|main|anything-else|none|0",
+      "shape": "text",
+      "kind": "textarea",
+      "question": "Anything else we should know?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 500,
+      "format": null
+    }
+  ],
+  "scope": "all",
+  "jobText": "Northwind pays $140,000 to $170,000 for this role.",
+  "company": "Northwind",
+  "jobTitle": "Senior Data Engineer",
+  "resumeId": null
+}

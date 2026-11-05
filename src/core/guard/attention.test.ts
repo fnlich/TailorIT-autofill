@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ATTENTION_PATTERNS, attentionHits, namesConsentTopic, type AttentionPatternId } from './attention';
+import { ATTENTION_PATTERNS, attentionHits, namesConsentTopic, PERSON_ONLY_ATTENTION, type AttentionPatternId }
+  from './attention';
 
 describe('the attention-check patterns (§7.9)', () => {
-  it('are exactly the design’s, in its order', () => {
+  it('are exactly the design’s, in its order, then the Phase 7a review’s', () => {
     const design = readFileSync(new URL('../../../docs/design/core.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     const block = /^```ts\n([\s\S]*?)^```$/m.exec(design.slice(design.indexOf('### 7.9')));
     expect(block).not.toBeNull();
@@ -13,7 +14,24 @@ describe('the attention-check patterns (§7.9)', () => {
     for (const line of lines) expect(source, line).toContain(line.trim());
     expect(ATTENTION_PATTERNS.map((pattern) => pattern.id)).toEqual(['select-to-prove', 'type-to-prove',
       'prove-reading', 'attention-check', 'if-reading', 'select-labelled', 'answer-literal', 'human-check',
-      'arithmetic']);
+      'arithmetic', 'posting-phrase']);
+    expect([...PERSON_ONLY_ATTENTION]).toEqual(['posting-phrase']);
+  });
+
+  it.each([
+    'Did you start your cover letter with the phrase we asked for in the job description?',
+    'Did you include the code word requested in the posting?',
+    'Did you use the requested keyword in your answer?',
+    'Did you begin your application with the words we asked you to use?',
+  ])('reads %j as a check only the person can answer', (label) => {
+    expect(attentionHits(label, '')).toContain('posting-phrase');
+  });
+
+  it("leaves a question about the applicant's work alone", () => {
+    for (const label of ['Did you use Python in your last role?', 'Did you start a company?',
+      'Did you include references?']) {
+      expect(attentionHits(label, ''), label).toEqual([]);
+    }
   });
 
   it.each<[string, AttentionPatternId]>([

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../../adapters/types';
 import { loadFixture, logEvents, removeFixtures } from '../fixture.testkit';
-import { assertNotSubmit, clickIfAllowed, type ClickRefusal } from './not-submit';
+import { assertKeyTarget, assertNotSubmit, clickIfAllowed, type ClickRefusal } from './not-submit';
 
 const PAGE = `<!doctype html><body>
   <form id="f" action="/__submitted">
@@ -132,5 +132,30 @@ describe('assertNotSubmit', () => {
     expect(clickIfAllowed(fixture.doc.getElementById('plain-button')!, { adapter, root })).toBe(true);
     expect(log.events.map((event) => [event.type, event.trusted])).toEqual([['click', false]]);
     expect(submitted).toBe(0);
+  });
+});
+
+describe('assertKeyTarget: a declared key to a list (the Phase 7a review)', () => {
+  afterEach(() => removeFixtures(document));
+
+  it("reads only the list's own words, never its options', and keeps every other refusal", async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form id="f">
+      <ul role="listbox" id="plain"><li role="option">I will submit my portfolio later</li><li role="option">No</li></ul>
+      <ul role="listbox" id="named" aria-label="Submit"><li role="option">Yes</li></ul>
+      <button id="wrap" type="submit"><ul role="listbox" id="inside"><li role="option">Yes</li></ul></button>
+      <div role="button" id="go"><ul role="listbox" id="in-submit"><li role="option">Yes</li></ul></div>
+    </form></body>`);
+    const root = fixture.doc.getElementById('f')!;
+    const adapter = { submitButton: () => fixture.doc.getElementById('go') } as unknown as Adapter;
+    const verdict = (id: string, check = assertKeyTarget) => {
+      const answer = check(fixture.doc.getElementById(id)!, { adapter, root });
+      return answer.ok ? null : answer.refusal;
+    };
+    // A click on the list would be refused by its option's words; a key is not.
+    expect(verdict('plain', assertNotSubmit)).toBe('submit-word');
+    expect(verdict('plain')).toBeNull();
+    expect(verdict('named')).toBe('submit-word');
+    expect(verdict('inside')).toBe('inside-submit');
+    expect(verdict('in-submit')).toBe('adapter-submit');
   });
 });

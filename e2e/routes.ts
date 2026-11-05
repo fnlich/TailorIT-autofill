@@ -29,9 +29,9 @@ export const SMOKE_ROUTES: Record<string, string> = {
   'https://example.com/': 'fixtures/smoke/form.html',
 };
 
-/** One answer: a repo-relative file, or a body (or file) with its own type and headers. */
+/** One answer: a repo-relative file, or a body (or file) with its own type, headers and status (200 by default). */
 export type RouteAnswer = string | { file?: string; body?: string | Buffer; contentType?: string;
-  headers?: Record<string, string> };
+  headers?: Record<string, string>; status?: number };
 /** What a routed URL is answered with: one answer, or answers in turn (the last one from then on). */
 export type RouteEntry = RouteAnswer | readonly RouteAnswer[];
 /** URL (without fragment) to its answer. */
@@ -66,7 +66,7 @@ function fulfilmentOf(entry: RouteAnswer): { status: number; contentType: string
   const body = spec.body ?? (spec.file !== undefined ? readFileSync(resolve(spec.file)) : null);
   if (body === null) throw new Error('a route entry needs a file or a body');
   const contentType = spec.contentType ?? CONTENT_TYPES[extname(spec.file ?? '.html')] ?? 'application/octet-stream';
-  return { status: 200, contentType, body, ...(spec.headers ? { headers: spec.headers } : {}) };
+  return { status: spec.status ?? 200, contentType, body, ...(spec.headers ? { headers: spec.headers } : {}) };
 }
 
 export async function installRoutes(context: BrowserContext, routes: RouteMap = SMOKE_ROUTES): Promise<RouteLog> {

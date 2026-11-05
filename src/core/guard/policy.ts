@@ -15,6 +15,9 @@
  * prohibited"). An employer's statement about its own process is none: "Our recruiters do not use AI to screen
  * candidates", "No AI is used to make hiring decisions", "Hiring decisions are made without the use of AI", "AI is not
  * permitted to make final hiring decisions".
+ *
+ * The Phase 7a review adds an applicant asked to write the answers themselves ("in your own words", "write it
+ * yourself"): an AI's answer would not be theirs, so it is a notice of the same kind.
  */
 import type { RawPageText, StoredPostingText, VisibleText } from '../types/text';
 import { detectionViews } from './fold';
@@ -37,7 +40,8 @@ const VERDICT = String.raw`(?:(?:are|is|will\s+be|shall\s+be|may\s+be|would\s+be
 export const POLICY_KINDS = ['ai-prohibited', 'automation-prohibited'] as const;
 export type PolicyKind = (typeof POLICY_KINDS)[number];
 
-/** The seven policy patterns (§7.10), in the design's order, each with the id a hit reports and its kind. */
+/** The seven policy patterns (§7.10), in the design's order, and the Phase 7a review's (own words), each with the id a
+ *  hit reports and its kind. */
 export const POLICY_PATTERNS = [
   { id: 'do-not-use-ai', kind: 'ai-prohibited', re: new RegExp(String.raw`${APPLICANT}(?:do\s+not|don't|dont|must\s+not|may\s+not|should\s+not|shall\s+not|cannot|can't|(?:are|is)\s+not\s+(?:allowed|permitted)\s+to|(?:are|is)\s+(?:prohibited|forbidden)\s+from|(?:are|is)\s+(?:\w+\s+)?asked\s+not\s+to|(?:(?:must|should|please)\s+)?(?:refrain|abstain)\s+from)\s+(?:use|using|the\s+use\s+of|rely\s+on|relying\s+on|utili[sz]e|utili[sz]ing|employ|employing)\s+(?:any\s+)?(?:\w+\s+){0,2}?${AIX}\b|\b(?:do\s+not|don't|dont|does\s+not|doesn't|will\s+not|won't|cannot|can't|never)\s+(?:allow|permit|let)\s+(?:candidates?|applicants?|you|anyone|job\s+seekers?)\s+(?:to\s+)?(?:use|rely\s+on|utili[sz]e|employ)\s+(?:any\s+)?(?:\w+\s+){0,2}?${AIX}\b`, 'i') },
   { id: 'ai-generated-rejected', kind: 'ai-prohibited', re: new RegExp(String.raw`\b(?:ai|machine)[-\s](?:generated|written|assisted|created|produced)\s+(?:applications?|responses?|answers?|submissions?|resumes?|cover\s+letters?|content|essays?|materials?)\s+${VERDICT}|\b(?:do\s+not|don't|dont|does\s+not|doesn't|will\s+not|won't|cannot|can't|never)\s+(?:accept|consider|review|allow|permit|tolerate)\s+(?:any\s+)?(?:ai|machine)[-\s](?:generated|written|assisted|created|produced)\b`, 'i') },
@@ -46,6 +50,9 @@ export const POLICY_PATTERNS = [
   { id: 'without-ai', kind: 'ai-prohibited', re: new RegExp(String.raw`(?:${OPENS}(?:please\s+)?(?:complete|answer|write|apply|submit|respond|fill|prepare|craft|draft|do|work|create|compose)\b|\bplease\b|\b(?:you|candidates?|applicants?)\s+(?:must|should|need\s+to|have\s+to|will\s+need\s+to|are\s+(?:required|expected|asked)\s+to)\b|\byour\s+(?:\w+\s+){0,2}?(?:must|should|need\s+to|needs\s+to|has\s+to|have\s+to)\b)${GAP}{0,100}?\bwithout\s+(?:the\s+)?(?:use|help|assistance|aid)\s+of\s+(?:any\s+)?${AIX}\b`, 'i') },
   { id: 'no-ai', kind: 'ai-prohibited', re: new RegExp(String.raw`\bno\s+${AIX}\b(?!\s*(?:experience|background|knowledge|skills?|required|needed|involvement|interviewers?))(?!\s+(?:is|are|was|were|will|would|shall|ever|gets?)\b(?:\s+\w+){0,2}?\s+(?:used|involved|employed|applied|utili[sz]ed|review\w*|screen\w*|evaluat\w*|decid\w*|make|makes|making|read\w*|rank\w*|scor\w*)\b)`, 'i') },
   { id: 'automated-applications-rejected', kind: 'automation-prohibited', re: /\bautomated\s+(?:applications?|submissions?)\s+(?:are|will\s+be)\s+(?:not\s+accepted|rejected|prohibited)/i },
+  // The Phase 7a review: the applicant asked to write the answers themselves ("Please write it yourself", "Answer in
+  // your own words"), which an AI's answer is not.
+  { id: 'own-words', kind: 'ai-prohibited', re: /\bin\s+your\s+own\s+words\b|\b(?:write|answer|complete|draft|compose|fill\s+(?:in|out))\s+(?:it|them|this|these|each|your\s+(?:answers?|responses?|application)|the\s+(?:answers?|questions?|responses?|application))\s+(?:all\s+)?yourself\b/i },
 ] as const satisfies ReadonlyArray<{ id: string; kind: PolicyKind; re: RegExp }>;
 
 /** The id of a policy pattern. */

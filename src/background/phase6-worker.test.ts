@@ -303,8 +303,11 @@ describe('the accepted-match cache', () => {
     // The confirmation page marks the application done.
     expect(await worker.deliver({ v: 1, type: 'runstate/put', runState: runState({ applicationKey: LEVER_KEY,
       status: 'done' }) }, contentSender())).toMatchObject({ ok: true });
-    expect((await fakeBrowser.storage.session.get(MATCH_CACHE_KEY))[MATCH_CACHE_KEY]).toEqual({ entries: [[
-      'm2|lever|source|9d4c2b7e1f0a3c58|ref:linkedin',
-      { label: 'linkedin', stage: 'exact', confidence: 1, acceptedBy: 'run-complete', at: worker.clock.now }]] });
+    // Sealed (match-cache.ts): no value or label readable, the key's page parts as they were.
+    expect((await fakeBrowser.storage.session.get(MATCH_CACHE_KEY))[MATCH_CACHE_KEY]).toEqual({
+      secret: expect.stringMatching(/^[0-9a-f]{64}$/), entries: [[expect.stringMatching(/^[0-9a-f]{32}$/),
+        { label: expect.stringMatching(/^[0-9a-f]{32}$/), stage: 'exact', confidence: 1, acceptedBy: 'run-complete',
+          at: worker.clock.now }]] });
+    expect(JSON.stringify(await fakeBrowser.storage.session.get(MATCH_CACHE_KEY))).not.toContain('linkedin');
   });
 });

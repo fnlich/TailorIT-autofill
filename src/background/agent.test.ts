@@ -289,6 +289,8 @@ describe('agentVerdict: what a report of the agent’s run means', () => {
     expect(verdict({ notices: notices('policy-profile-only', 'submit-held-no-ai') })).toEqual(finish('skipped', 'posting_forbids_ai'));
     expect(verdict({ notices: notices('submit-held-required') })).toEqual(finish('needs-you', 'required_field_empty'));
     expect(verdict({ notices: notices('submit-held-guess') })).toEqual(finish('needs-you', 'ai_guess_legal'));
+    expect(verdict({ notices: notices('submit-held-attention') })).toEqual(finish('needs-you', 'other'));
+    expect(verdict({ notices: notices('submit-held-entries') })).toEqual(finish('needs-you', 'other'));
     expect(verdict({ notices: notices('submit-held-captcha') })).toEqual(finish('needs-you', 'captcha'));
     expect(verdict({ status: 'wait-transition', resting: true, notices: notices('captcha-next') }))
       .toEqual(finish('needs-you', 'captcha'));

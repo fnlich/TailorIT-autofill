@@ -20,8 +20,11 @@
  * adapter's label, then its aria-label. Each member's own visible label is the option's label.
  *
  * The adapter's label is the visible text of the element its labelFor names, with the words its labelSuffix adds for a
- * control that shares that element with others (Ashby's month and year lists under one "Start Date"). Help text is
- * the visible aria-describedby targets, else the elements the adapter's descriptionFor names.
+ * control that shares that element with others (Ashby's month and year lists under one "Start Date"). One inside the
+ * control's own wrapping label that reads otherwise comes before that label's whole text (Workable's question beside
+ * its required star in one <label>). An adapter's upload control (uploadWidgets: Workable's "Choose file", a
+ * label[for] its input's aria-labelledby also names) never labels its input. Help text is the visible aria-describedby
+ * targets, else the elements the adapter's descriptionFor names.
  */
 import type { LabelSource } from '../core/enums';
 import type { Adapter } from '../adapters/types';
@@ -143,17 +146,41 @@ export function referenced(el: Element, attribute: 'aria-labelledby' | 'aria-des
   return ids.map((id) => root.getElementById(id)).filter((target): target is HTMLElement => target !== null);
 }
 
+/**
+ * The visible controls of the adapter's upload widgets among these elements (Workable's "Choose file", a label[for]
+ * with role=button that its file input also names in its aria-labelledby): such a control is the widget's button, never
+ * its input's question, so neither a label[for] nor an aria-labelledby target that is one names the input.
+ */
+function uploadControlsAmong(elements: readonly Element[], ctx: LabelContext): Set<Element> {
+  const first = elements[0];
+  if (first === undefined || ctx.adapter?.uploadWidgets === undefined) return new Set();
+  const scope = first.closest('form') ?? first.ownerDocument.body ?? first;
+  const widgets = ctx.cache.memo('upload-widgets', scope, () => ctx.adapter?.uploadWidgets?.(scope) ?? []);
+  const controls = new Set(widgets.map((widget) => widget.control));
+  return new Set(elements.filter((el) => controls.has(el)));
+}
+
 /** The label of a single control (a text field, a select, a lone checkbox, a file input). */
 export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLabel {
   const { explicit, wrapping } = tiedLabels(control);
-  const forLabel = joinedText(explicit, ctx);
+  const ownFor = uploadControlsAmong(explicit, ctx);
+  const forLabel = joinedText(explicit.filter((label) => !ownFor.has(label)), ctx);
   const byFor = fromText(forLabel.text, 'for', forLabel.first);
   if (byFor) return byFor;
-  const labelledBy = joinedText(referenced(control, 'aria-labelledby'), ctx);
+  const targets = referenced(control, 'aria-labelledby');
+  const ownTargets = uploadControlsAmong(targets, ctx);
+  const labelledBy = joinedText(targets.filter((target) => !ownTargets.has(target)), ctx);
   const byLabelledBy = fromText(labelledBy.text, 'aria-labelledby', labelledBy.first);
   if (byLabelledBy) return byLabelledBy;
   const wrap = joinedText(wrapping, ctx, uploadControlsIn(wrapping, ctx));
   const byWrapping = fromText(wrap.text, 'wrapping-label', wrap.first);
+  // The adapter's label inside the control's own wrapping label, where the two read differently, is that label's
+  // question without the label's other parts (Workable draws its required star before the question in the same
+  // <label>, and its consent box sits in two nested labels, whose texts would join twice). Where they read alike the
+  // wrapping label stands (Lever's resume question).
+  const inner = byWrapping === null ? null : adapterLabelOf(control, ctx);
+  if (inner !== null && inner.element !== null && inner.text !== byWrapping!.text
+    && wrapping.some((label) => label.contains(inner.element!))) return inner;
   if (byWrapping) return byWrapping;
   const legend = soleFieldLegend(control, ctx);
   if (legend) return legend;

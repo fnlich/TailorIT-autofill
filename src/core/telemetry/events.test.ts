@@ -46,7 +46,7 @@ describe('the anonymous counters', () => {
     expect(isTelemetryEvent(event)).toBe(true);
     expect(isTelemetryEvent({ ...event, v: 1 })).toBe(false);
     expect(isTelemetryEvent({ ...event, label: 'Email' })).toBe(false);
-    expect(isTelemetryEvent({ ...event, platform: 'workable' })).toBe(false);
+    expect(isTelemetryEvent({ ...event, platform: 'smartrecruiters' })).toBe(false);
     expect(isTelemetryEvent({ ...event, fieldKind: 'password' })).toBe(false);
     expect(isTelemetryEvent({ ...event, outcome: 'maybe' })).toBe(false);
     expect(isTelemetryEvent({ ...event, tripwireTriggered: 'no' })).toBe(false);

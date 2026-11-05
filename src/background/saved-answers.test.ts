@@ -63,6 +63,9 @@ describe("TailorIT's saved answers, as the core reads them", () => {
       'https://jobs.lever.co/tailorit-fixture/trap-01/apply', 'https://jobs.ashbyhq.com/acme/1', 'not an address']) {
       expect(companyOfUrl(address), address).toBeNull();
     }
+    // Workable (TailorIT's API 4): its account, in lower case.
+    expect(companyOfUrl('https://apply.workable.com/HuggingFace/j/F88446C814/apply/'))
+      .toEqual({ platform: 'workable', board: 'huggingface' });
   });
 });
 

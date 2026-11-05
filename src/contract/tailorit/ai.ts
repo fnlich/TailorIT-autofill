@@ -481,12 +481,94 @@ export type AutofillAnswerShape = (typeof AUTOFILL_ANSWER_SHAPES)[number];
 
 /**
  * The field kinds each shape answers. Never a set (a checkbox group, a multiselect), a lone checkbox, a remote
- * typeahead, a date or a file: Claude answers none of those.
+ * typeahead or a file: Claude answers none of those; a date only as a text with a date `format` (version 4).
  */
 export const AUTOFILL_ANSWER_KINDS = {
   choice: ['select', 'radio', 'combobox'],
   text: ['text', 'textarea'],
 } as const satisfies Record<AutofillAnswerShape, readonly AutofillFieldKind[]>;
+
+/**
+ * The layout a text's answer must have (version 4; optional, and absent or null is any short text, as before), for a
+ * box that takes nothing else: a salary, years of experience, a graduation year, a date. `number`: one number, digits
+ * with at most one decimal point ("3.5"); `integer`: digits alone ("5", "2019"); `currency`: a sum of money as one
+ * number, with at most two decimals and never a currency sign or code ("85000"); `date`: one calendar date written
+ * YYYY-MM-DD ("2026-12-01"); `MM/DD/YYYY`, `DD/MM/YYYY`: one calendar date written so ("12/01/2026", "01/12/2026");
+ * `MM/YYYY`: one month ("09/2018"). Never a range, a unit or a word. A `date` field (AUTOFILL_FIELD_KINDS) is answered
+ * only with one of the date layouts.
+ */
+export const AUTOFILL_ANSWER_FORMATS = [
+  'number',
+  'integer',
+  'currency',
+  'date',
+  'MM/DD/YYYY',
+  'DD/MM/YYYY',
+  'MM/YYYY',
+] as const;
+export type AutofillAnswerFormat = (typeof AUTOFILL_ANSWER_FORMATS)[number];
+
+/** The formats that are dates (or a month): the ones a `date` field may be answered with. */
+export const AUTOFILL_ANSWER_DATE_FORMATS = [
+  'date',
+  'MM/DD/YYYY',
+  'DD/MM/YYYY',
+  'MM/YYYY',
+] as const satisfies readonly AutofillAnswerFormat[];
+
+const isDateFormat = (format: AutofillAnswerFormat | null) =>
+  format !== null && (AUTOFILL_ANSWER_DATE_FORMATS as readonly string[]).includes(format);
+
+/** The most digits a number answer may have, its decimals included. */
+const FORMAT_DIGITS_MAX = 15;
+
+/** Days in a month of a year (1-12), leap years counted. */
+const daysIn = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+/** A date in its layout, each part read and written back two digits wide (a year four); null for no such date. */
+function dateInFormat(value: string, format: (typeof AUTOFILL_ANSWER_DATE_FORMATS)[number]): string | null {
+  const separator = format === 'date' ? '-' : '/';
+  const layout = format === 'date' ? ['YYYY', 'MM', 'DD'] : format.split('/');
+  const parts = value.split(separator);
+  if (parts.length !== layout.length) return null;
+  const read = new Map<string, number>();
+  for (const [at, field] of layout.entries()) {
+    const part = parts[at]!;
+    if (!(field === 'YYYY' ? /^\d{4}$/ : /^\d{1,2}$/).test(part)) return null;
+    read.set(field, Number(part));
+  }
+  const year = read.get('YYYY')!;
+  const month = read.get('MM')!;
+  const day = read.get('DD') ?? 1;
+  if (year < 1900 || year > 2199 || month < 1 || month > 12 || day < 1 || day > daysIn(year, month)) return null;
+  const written = new Map([
+    ['YYYY', String(year)],
+    ['MM', String(month).padStart(2, '0')],
+    ['DD', String(day).padStart(2, '0')],
+  ]);
+  return layout.map((field) => written.get(field)!).join(separator);
+}
+
+/**
+ * An answer written in its format, or null when it is not one value of that format ("5 years", "$85,000",
+ * "80000-90000", "December 2026", "02/30/2026", and "85.000", a lone thousands group with a dot, which reads as 85 here
+ * and 85000 elsewhere). The only changes: the text is trimmed, a number's comma thousands separators in their places
+ * are dropped ("85,000" is "85000") and so are its leading zeros ("007" is "7", "00.5" is "0.5"), and a date's
+ * one-digit day or month is written two digits wide ("1/5/2026" is "01/05/2026"). TailorIT keeps an answer only so;
+ * the extension may check it again with this.
+ */
+export function answerInFormat(text: string, format: AutofillAnswerFormat): string | null {
+  const value = text.trim();
+  if (isDateFormat(format)) return dateInFormat(value, format as (typeof AUTOFILL_ANSWER_DATE_FORMATS)[number]);
+  // A lone European thousands group ("85.000", 85000 where a dot groups thousands) is not one value: never read as 85.
+  if (/^[1-9]\d{0,2}\.\d{3}$/.test(value)) return null;
+  const plain = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(value) ? value.replace(/,/g, '') : value;
+  const pattern = format === 'integer' ? /^\d+$/ : format === 'currency' ? /^\d+(?:\.\d{1,2})?$/ : /^\d+(?:\.\d+)?$/;
+  if (!pattern.test(plain)) return null;
+  // Leading zeros go ("007" is 7), never a lone zero or the one before a decimal point.
+  const number = plain.replace(/^0+(?=\d)/, '');
+  return number.replace('.', '').length <= FORMAT_DIGITS_MAX ? number : null;
+}
 
 /** One question nothing on the extension's side settled. Every text is page text. */
 export const AutofillAnswerItemSchema = z.object({
@@ -508,16 +590,24 @@ export const AutofillAnswerItemSchema = z.object({
   /** A text's cap: the field's maxLength, at most 500; null when it names none (the answer is then kept to 500).
    *  Null for a choice. */
   maxLength: z.number().int().min(1).max(AUTOFILL_AI_LIMITS.answer.textMax).nullable(),
+  /**
+   * The layout a text's answer must have (AUTOFILL_ANSWER_FORMATS, version 4: a number box, a date box); absent or null
+   * for any short text, as an extension that never sends it gets. Null for a choice.
+   */
+  format: z.enum(AUTOFILL_ANSWER_FORMATS).nullable().optional(),
 });
 export type AutofillAnswerItem = z.infer<typeof AutofillAnswerItemSchema>;
 
-/** A choice names its kind, its option set and 2 to 30 options, each index once, and no maxLength; a text names its
- *  kind and neither an option set nor options. */
+/** A choice names its kind, its option set and 2 to 30 options, each index once, and no maxLength or format; a text
+ *  names its kind (a date field with a date format only) and neither an option set nor options. */
 function checkAnswerRequest(request: { items: readonly AutofillAnswerItem[] }, ctx: z.RefinementCtx): void {
   request.items.forEach((item, at) => {
     const issue = (field: string, message: string) =>
       ctx.addIssue({ code: 'custom', path: ['items', at, field], message });
-    const kinds: readonly string[] = AUTOFILL_ANSWER_KINDS[item.shape];
+    const dated = item.shape === 'text' && isDateFormat(item.format ?? null);
+    const kinds: readonly string[] = dated
+      ? [...AUTOFILL_ANSWER_KINDS.text, 'date']
+      : AUTOFILL_ANSWER_KINDS[item.shape];
     if (!kinds.includes(item.kind)) issue('kind', `A ${item.shape} answers a ${kinds.join(', ')} field only`);
     if (item.shape === 'text') {
       if (item.optionSetHash !== null) issue('optionSetHash', 'A text has no option set');
@@ -527,6 +617,7 @@ function checkAnswerRequest(request: { items: readonly AutofillAnswerItem[] }, c
     if (item.optionSetHash === null) issue('optionSetHash', 'A choice needs its option set');
     if (item.options.length < 2) issue('options', 'A choice needs at least two options');
     if (item.maxLength !== null) issue('maxLength', 'A choice has no maxLength');
+    if ((item.format ?? null) !== null) issue('format', 'A choice has no format');
     const indices = new Set<number>();
     item.options.forEach((option, index) => {
       if (indices.has(option.index)) {
@@ -605,7 +696,8 @@ export type AutofillAnswerBasis = (typeof AUTOFILL_ANSWER_BASES)[number];
  * Why an answer is what it is. `answered`: one of the item's sent option indices (a choice), or a text within its cap
  * (a text), with its basis. `no_answer`: Claude gave none (null, or a text with nothing left once cleaned). `invalid`:
  * the answer did not fit the item (a choice's index not one the item sent, or with a text; a text that is not a
- * string, comes with an index, or holds a line break for a one-line input); or the answer as a whole was not trusted
+ * string, comes with an index, holds a line break for a one-line input, or is not one value of its `format`:
+ * answerInFormat); or the answer as a whole was not trusted
  * (it did not name each item exactly once), which makes every item `invalid`. `too_long`: a text over its cap (it is
  * never cut). `canary`: one of the page's canaries anywhere in Claude's reply; `ai_reference`: Claude speaking as an
  * AI anywhere in it; either makes every item so. `wrapper`: the text holds the prompt's `<untrusted>` wrapper, the JSON

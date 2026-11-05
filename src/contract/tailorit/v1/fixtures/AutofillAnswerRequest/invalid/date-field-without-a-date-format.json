@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "key": "workable|main|when-can-you-start|none|0",
+      "shape": "text",
+      "kind": "date",
+      "question": "When can you start?",
+      "hint": "",
+      "section": "",
+      "optionSetHash": null,
+      "options": [],
+      "maxLength": 10,
+      "format": "integer"
+    }
+  ],
+  "jobText": "",
+  "resumeId": null
+}

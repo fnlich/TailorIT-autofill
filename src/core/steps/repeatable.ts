@@ -49,6 +49,8 @@ export interface RepeatableBlock {
   print: BlockPrint | null;
   /** None of its fields holds anything (isBlockEmpty). */
   empty: boolean;
+  /** It shows a saved entry's summary, nothing to write in (blocks.ts ShownBlock): taken by its fingerprint only. */
+  saved?: true;
 }
 
 /** Where one profile entry is filled. */
@@ -224,7 +226,7 @@ export function assignEntries(entries: readonly EntryPrint[], blocks: readonly R
   // A block holding an entry the profile has would have been found; the rest go in order.
   for (const assignment of assignments) {
     if (assignment.block !== null) continue;
-    const block = ordered.find((candidate) => !taken.has(candidate.index));
+    const block = ordered.find((candidate) => !taken.has(candidate.index) && candidate.saved !== true);
     if (block !== undefined) take(assignment, block, 'order');
   }
   return {

@@ -13,7 +13,9 @@ import type { RepeatableCounter, RepeatableKind } from '../core/types/run';
 import { loadFixture, logEvents, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { scan } from '../dom/scan';
 import { deadline } from '../dom/time';
-import { addBlocks, boxBeforeEndDate, currentJobRows, needsClicks, sectionsOf, type AddEnv } from './repeatables';
+import {
+  addBlocks, boxBeforeEndDate, currentJobRows, filesAfterTheRest, needsClicks, rowsReadyToSave, sectionsOf, type AddEnv,
+} from './repeatables';
 
 afterEach(() => removeFixtures(document));
 
@@ -64,7 +66,8 @@ describe('addBlocks: one Add click at a time, from counts', () => {
     const { env, sections, stored } = envOf(fixture, 3);
     const outcomes = await addBlocks(env, sections);
     expect(outcomes).toEqual([{ kind: 'experience', counter: { profile: 3, rendered: 3, addClicks: 2 }, clicks: 2,
-      stop: 'complete', missing: 0 }]);
+      stop: 'complete', missing: 0, opened: sections[0]!.blocks().slice(1) }]);
+    expect(outcomes[0]!.opened).toHaveLength(2);
     // Before each click, then the end: the clicks never pass the profile's count.
     expect(stored).toEqual([{ profile: 3, rendered: 1, addClicks: 1 }, { profile: 3, rendered: 2, addClicks: 2 },
       { profile: 3, rendered: 3, addClicks: 2 }]);
@@ -77,7 +80,7 @@ describe('addBlocks: one Add click at a time, from counts', () => {
     const { env, sections } = envOf(fixture, 2);
     const outcomes = await addBlocks(env, sections);
     expect(outcomes).toEqual([{ kind: 'experience', counter: { profile: 2, rendered: 1, addClicks: 1 }, clicks: 1,
-      stop: 'add-ignored', missing: 1 }]);
+      stop: 'add-ignored', missing: 1, opened: [] }]);
     expect(needsClicks(outcomes)).toBe(1);
   });
 
@@ -87,7 +90,7 @@ describe('addBlocks: one Add click at a time, from counts', () => {
     const { env, sections, stored } = envOf(fixture, 1);
     const outcomes = await addBlocks(env, sections);
     expect(outcomes).toEqual([{ kind: 'experience', counter: { profile: 1, rendered: 0, addClicks: 0 }, clicks: 0,
-      stop: 'add-refused', missing: 1 }]);
+      stop: 'add-refused', missing: 1, opened: [] }]);
     expect(stored).toEqual([{ profile: 1, rendered: 0, addClicks: 0 }]);
     expect(log.events).toEqual([]);
     expect(needsClicks(outcomes)).toBe(1);
@@ -144,7 +147,7 @@ describe('the Add button is checked at its click (the Phase 5 review, X-S3 and X
       expect(submits).toBe(0);
       expect(log.on('add').filter((event) => event.type === 'click')).toEqual([]);
       expect(outcomes).toEqual([{ kind: 'experience', counter: { profile: 2, rendered: 1, addClicks: 0 }, clicks: 0,
-        stop: 'add-refused', missing: 1 }]);
+        stop: 'add-refused', missing: 1, opened: [] }]);
       // Counted before the click, as ever; then the click it never made is taken back.
       expect(stored).toEqual([{ profile: 2, rendered: 1, addClicks: 1 }, { profile: 2, rendered: 1, addClicks: 0 }]);
     });
@@ -246,5 +249,39 @@ describe('boxBeforeEndDate', () => {
     expect(boxBeforeEndDate([box0, end0]).map((entry) => entry.write.key)).toEqual(['box-0', 'end-0']);
     const box1 = item('box-1', 'experience.current', 'experience[1]', 'check');
     expect(boxBeforeEndDate([end0, box1]).map((entry) => entry.write.key)).toEqual(['end-0', 'box-1']);
+  });
+});
+
+describe('rowsReadyToSave: a block whose Save the run may press (the Phase 7a review)', () => {
+  const row = (extra: Partial<FillResult> = {}): FillResult => ({ key: 'k' as FieldKey, label: 'School', kind: 'text',
+    category: 'education.school', section: 'education[0]', required: true, status: 'verified', provenance: 'profile',
+    matcherStage: 'not-applicable', confidence: 1, reason: 'ok', wrote: true, verification: 'verified',
+    needsUserAction: false, ...extra });
+  const skipped = { status: 'skipped' as const, reason: 'no-profile-value' as const, wrote: false, provenance: null,
+    verification: 'not-applicable' as const };
+
+  it('is ready once every row is verified or skipped and one holds our value, written or already right', () => {
+    expect(rowsReadyToSave([row(), row({ ...skipped, required: false })])).toBe(true);
+    expect(rowsReadyToSave([row({ ...skipped, reason: 'already-correct' })])).toBe(true);
+    // Nothing of ours in it.
+    expect(rowsReadyToSave([row({ ...skipped, required: false })])).toBe(false);
+    expect(rowsReadyToSave([])).toBe(false);
+  });
+
+  it('is never ready with a row flagged, changed by the person, or one they filled', () => {
+    expect(rowsReadyToSave([row(), row({ status: 'flagged', reason: 'filled-low-confidence', needsUserAction: true })]))
+      .toBe(false);
+    expect(rowsReadyToSave([row(), row({ status: 'skipped', reason: 'changed-by-you', wrote: false })])).toBe(false);
+    expect(rowsReadyToSave([row({ detail: { userEdited: true } })])).toBe(false);
+    expect(rowsReadyToSave([row(), row({ ...skipped, needsUserAction: true })])).toBe(false);
+  });
+});
+
+describe('filesAfterTheRest (Adapter.quirks.filesLast)', () => {
+  it('moves the file writes after every other, each kind keeping its order', () => {
+    const item = (key: string, kind: 'file' | 'text') => ({ write: { key, value: kind === 'file'
+      ? { kind: 'file', ref: 'resume' } : { kind: 'text', text: '' } } as unknown as PlannedWrite });
+    const queue = [item('resume', 'file'), item('first', 'text'), item('photo', 'file'), item('last', 'text')];
+    expect(filesAfterTheRest(queue).map((entry) => entry.write.key)).toEqual(['first', 'last', 'resume', 'photo']);
   });
 });

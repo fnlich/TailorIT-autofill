@@ -19,7 +19,11 @@
  * - Its shape: a choice for a select, a radio group or a combobox (never a set, a lone checkbox, a typeahead, a date or
  *   an upload), whose list was read whole, holds nothing chosen yet, and offers 2 to ANSWER_MAX_OPTIONS options that
  *   can be chosen, an option whose label had injected text cut never among them; or a text for an empty text box or
- *   textarea that asks for no contact detail, link, date or postal code, capped at min(maxLength, ANSWER_TEXT_MAX).
+ *   textarea that asks for no contact detail, link or postal code, capped at min(maxLength, ANSWER_TEXT_MAX), or for an
+ *   empty date box. Since TailorIT's API 4 a text names the layout its answer must have (answerFormatOf, the contract's
+ *   AUTOFILL_ANSWER_FORMATS): a number box its number, integer or currency, a date box the date layout it shows
+ *   (MM/DD/YYYY, DD/MM/YYYY, MM/YYYY, or YYYY-MM-DD for a date input); a date box of any other layout, and a birth date
+ *   whatever its layout, is never asked.
  * - What is sent: visible text only, each string made by asUntrusted: the label, the description, the section's words
  *   and, for a choice, each option's clean label under its own index (the hash of that label stays here). No profile
  *   text: TailorIT reads the facts itself. The worker adds the posting's visible text, the lookup's company and title,
@@ -33,8 +37,9 @@
  *   §11): a legal, criminal-history, pay or attention-check question the profile leaves open is asked too, with
  *   TailorIT's `all` scope (AnswerItem.scope), and its answer is written as any other ("AI guess" unless a fact settles
  *   it). Which: a category of AI_OPENED_CATEGORIES whose row says the profile holds no answer (legal-not-in-profile,
- *   criminal-not-covered, no-profile-value), an attention check whose own words name no consent,
- *   a question the classify screen kept from the LLM, or one an EEO, legal or sensitive context closed, as long as its
+ *   criminal-not-covered, no-profile-value), an attention check whose own words name no consent (never one only the
+ *   person can answer, guard/attention.ts PERSON_ONLY_ATTENTION: the posting's phrase or code word, the Phase 7a
+ *   review), a question the classify screen kept from the LLM, or one an EEO, legal or sensitive context closed, as long as its
  *   own text names only open topics (classify.ts openAnswerTopics: authorization, age, pay, criminal history; never a
  *   self-identification, a consent or an identity number, never an EEO answer among its options, a decline option
  *   only beside an open topic) and its context holds no self-identification, consent or pronoun question
@@ -51,7 +56,9 @@ import {
   ANSWER_HINT_MAX, ANSWER_MAX_OPTIONS, ANSWER_MIN_OPTIONS, ANSWER_QUESTION_MAX, ANSWER_SECTION_MAX, ANSWER_TEXT_MAX,
   DRAFT_MIN_LENGTH, TIEBREAK_LABEL_MAX,
 } from '../confidence';
+import type { AutofillAnswerFormat } from '../../contract/tailorit';
 import type { FieldFormat, FieldKind } from '../enums';
+import { attentionHits, PERSON_ONLY_ATTENTION } from '../guard/attention';
 import { detectionViews } from '../guard/fold';
 import { llmMaySeeLabel } from '../guard/honeypot';
 import { cutInjected } from '../guard/injected';
@@ -111,6 +118,8 @@ export interface AnswerItem {
   /** A text's cap: min(maxLength, ANSWER_TEXT_MAX), or null when the field names none (TailorIT then keeps to
    *  ANSWER_TEXT_MAX); null for a choice. */
   maxLength: number | null;
+  /** The layout a text's answer must have (answerFormatOf); null for any short text, and for a choice. */
+  format: AutofillAnswerFormat | null;
 }
 
 /** Why an answer is not written (the worker maps TailorIT's reasons to these; the frame adds the checks of its own). */
@@ -129,9 +138,37 @@ export type AnswerVerdict =
 const CHOICE_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['select', 'radio', 'combobox']);
 const TEXT_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['text', 'textarea']);
 
-/** Formats an AI never writes: a contact detail, a link, a date or a postal code is the profile's or the person's. */
-const NO_ANSWER_FORMATS: ReadonlySet<FieldFormat> = new Set<FieldFormat>(['email', 'tel', 'url', 'date', 'month-year',
-  'postal-code']);
+/** Formats an AI never writes: a contact detail, a link or a postal code is the profile's or the person's. A date is
+ *  written only in a layout TailorIT checks it in (answerFormatOf). */
+const NO_ANSWER_FORMATS: ReadonlySet<FieldFormat> = new Set<FieldFormat>(['email', 'tel', 'url', 'postal-code']);
+
+/** The answer layouts that are a date or a month. */
+const DATE_LAYOUTS: ReadonlySet<AutofillAnswerFormat> = new Set<AutofillAnswerFormat>(['date', 'MM/DD/YYYY',
+  'DD/MM/YYYY', 'MM/YYYY']);
+
+/**
+ * The layout an answer must have in this field (TailorIT's API 4, AUTOFILL_ANSWER_FORMATS): a number box's number,
+ * integer or currency; a date input's YYYY-MM-DD ('date'); a text date box's MM/DD/YYYY, DD/MM/YYYY or MM/YYYY, or
+ * YYYY-MM-DD, as its pattern shows it. Null for any short text; undefined for a date box whose layout no format names
+ * (a month input, DD.MM.YYYY, a date with no pattern): such a box is never asked.
+ */
+export function answerFormatOf(spec: Pick<FieldSpec, 'kind' | 'constraints'>): AutofillAnswerFormat | null | undefined {
+  const format = spec.constraints.format;
+  const pattern = (spec.constraints.pattern ?? '').trim().toUpperCase();
+  if (spec.kind === 'date') return format === 'month-year' ? undefined : 'date';
+  switch (format) {
+    case 'number':
+    case 'integer':
+    case 'currency':
+      return format;
+    case 'date':
+      return pattern === 'MM/DD/YYYY' || pattern === 'DD/MM/YYYY' ? pattern : pattern === 'YYYY-MM-DD' ? 'date' : undefined;
+    case 'month-year':
+      return pattern === 'MM/YYYY' ? 'MM/YYYY' : undefined;
+    default:
+      return null;
+  }
+}
 
 /**
  * What an AI answer never states, read in a question's text, its hint, its section's words and its options (the Phase
@@ -303,6 +340,8 @@ function openAnswerable(spec: FieldSpec, classification: FieldClassification, re
   row: FillResult, context: DraftContext): { topics: ReadonlySet<ScreenTopic>; attention: boolean } | null {
   const attention = classification.by === 'attention';
   if (attention && classification.consent !== null) return null;
+  // A check of what the applicant did (the posting's phrase or code word) is the person's alone (the Phase 7a review).
+  if (attention && attentionHits(spec.label, spec.description).some((id) => PERSON_ONLY_ATTENTION.has(id))) return null;
   if (classification.by === 'rules' && classification.rules.needsUser !== undefined
     && !OPENABLE_CAUSES.has(classification.rules.needsUser)) return null;
   if (classification.by === 'rules' && classification.rules.needsUser === 'age' && !CHOICE_KINDS.has(spec.kind)) {
@@ -365,16 +404,23 @@ export function answerItemOf(spec: FieldSpec, classification: FieldClassificatio
   if (CHOICE_KINDS.has(spec.kind)) {
     const options = choiceOptions(spec, context);
     if (options === null || spec.optionSetHash === 'lazy' || spec.optionSetHash === 'none') return null;
-    return { ...base, shape: 'choice', optionSetHash: spec.optionSetHash, options, maxLength: null };
+    return { ...base, shape: 'choice', optionSetHash: spec.optionSetHash, options, maxLength: null, format: null };
   }
-  if (!TEXT_KINDS.has(spec.kind)) return null;
+  if (!TEXT_KINDS.has(spec.kind) && spec.kind !== 'date') return null;
   if (spec.current.kind === 'text' ? spec.current.text.trim() !== '' : spec.current.kind !== 'empty') return null;
   const format = spec.constraints.format;
   if (format !== undefined && NO_ANSWER_FORMATS.has(format)) return null;
+  const layout = answerFormatOf(spec);
+  if (layout === undefined) return null;
+  // A birth date is never asked, whatever its layout (an identifier the facts do not hold).
+  if (layout !== null && DATE_LAYOUTS.has(layout)
+    && screenedTexts(spec).some((text) => detectionViews(text).some((view) => BIRTH_DATE.test(view.toLowerCase())))) {
+    return null;
+  }
   const max = spec.constraints.maxLength;
   if (max !== undefined && max < 1) return null;
   return { ...base, shape: 'text', optionSetHash: null, options: [],
-    maxLength: max === undefined ? null : Math.min(max, ANSWER_TEXT_MAX) };
+    maxLength: max === undefined ? null : Math.min(max, ANSWER_TEXT_MAX), format: layout };
 }
 
 /** The cap an answer's text is held to in this field: its maxLength, never more than ANSWER_TEXT_MAX. */
@@ -383,10 +429,53 @@ export function answerCap(spec: Pick<FieldSpec, 'constraints'>): number {
   return max === undefined ? ANSWER_TEXT_MAX : Math.min(max, ANSWER_TEXT_MAX);
 }
 
-/** Why an answer's text may not be written into this field, or null: empty, past its cap, or a line break in a one-line
- *  box. */
+/** Why an answer's text may not be written into this field, or null: empty, past its cap, a line break in a one-line
+ *  box, in a number box (format number, integer or currency) anything but one number (numberAnswer), or in a date
+ *  input anything but one YYYY-MM-DD date (its layout, answerFormatOf, which the worker checked it in). */
 export function answerRefusal(spec: Pick<FieldSpec, 'constraints' | 'kind'>, text: string): AnswerDiscard | null {
   if (text.trim() === '') return 'llm-no-answer';
   if ([...text].length > answerCap(spec)) return 'maxlength-exceeded';
-  return spec.kind === 'text' && /[\r\n]/.test(text) ? 'llm-invalid-output' : null;
+  if (spec.kind === 'text' && /[\r\n]/.test(text)) return 'llm-invalid-output';
+  if (spec.kind === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(text.trim())) return 'llm-invalid-output';
+  return answerText(spec, text) === null ? 'llm-invalid-output' : null;
+}
+
+/** The formats whose box takes one number (a Workable salary box drops anything else). */
+const NUMBER_FORMATS: ReadonlySet<FieldFormat> = new Set<FieldFormat>(['number', 'integer', 'currency']);
+
+/** What an answer writes into this field: in a number box, the one number its text states (numberAnswer), else the
+ *  text itself; null when a number box's text states no single number. */
+export function answerText(spec: Pick<FieldSpec, 'constraints'>, text: string): string | null {
+  const format = spec.constraints.format;
+  return format !== undefined && NUMBER_FORMATS.has(format) ? numberAnswer(text, format === 'integer') : text;
+}
+
+/** Two amounts joined as a range ("80-90k", "80,000 to 90,000", "80k/90k"). */
+const RANGE = /[\dk]\s*(?:[-–—/]|\bto\b|\band\b|\bor\b)\s*[$€£¥₹]?\s*\d/i;
+/** A currency's sign or code beside an amount. */
+const CURRENCY = /[$€£¥₹]|\b(?:US|CA|AU|NZ|HK|SG)\$|\b(?:USD|EUR|GBP|CAD|AUD|NZD|CHF|INR|JPY|SGD|HKD|SEK|NOK|DKK|PLN|BRL|MXN)\b/g;
+/** One amount: digits with thousands separators (comma, space, apostrophe) or none, a decimal part, and "k". */
+const AMOUNT = /^(\d{1,3}(?:[,' \u00a0\u202f]\d{3})+|\d+)(?:\.(\d+))?\s*(k)?$/i;
+/** Dots as thousands separators, twice or more ("1.250.000"); one such dot ("4.500") could be either. */
+const DOTTED = /^\d{1,3}(?:\.\d{3}){2,}$/;
+
+/**
+ * The one number an AI's answer states for a number box, as plain digits (a point and at most two decimals unless
+ * `integer`): its currency sign or code and its thousands separators gone, "k" as thousands ("$85,000" and "85k" are
+ * "85000", "1.250.000" is "1250000"). Null for a range, words, two numbers, one dot that could be a decimal or a
+ * thousands separator ("4.500"), or a fraction in an integer box.
+ */
+export function numberAnswer(text: string, integer = false): string | null {
+  if (RANGE.test(text)) return null;
+  const bare = text.replace(CURRENCY, ' ').trim();
+  const dotted = DOTTED.test(bare) ? bare.replace(/\./g, '') : bare;
+  if (/^\d{1,3}\.\d{3}$/.test(dotted)) return null;
+  const amount = AMOUNT.exec(dotted);
+  if (amount === null) return null;
+  const whole = amount[1]!.replace(/[,' \u00a0\u202f]/g, '');
+  let value = Number(`${whole}.${amount[2] ?? '0'}`) * (amount[3] === undefined ? 1 : 1000);
+  if (!Number.isFinite(value)) return null;
+  value = Math.round(value * 100) / 100;
+  if (integer && !Number.isInteger(value)) return null;
+  return String(value);
 }

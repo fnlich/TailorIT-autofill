@@ -26,9 +26,10 @@ export const DISCLOSURE_KEY = 'disclosure';
 /** The disclosure's version (shared/copy.ts COPY.options.connection.disclosure): 1, the wording up to v3 Phase 3 (an
  *  install connected before it was kept holds none, read as 1); 2, v3 Phases 3b and 4 (Submit pressed for the person,
  *  Applied recorded, a posting's address told as it loads, the profile editor, the resume's preview); 3, v3 Phase 5 (the
- *  auto-apply agent, which submits unattended, and Sign-in mode Auto, which reads the job-site password). Raise it
- *  whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 3;
+ *  auto-apply agent, which submits unattended, and Sign-in mode Auto, which reads the job-site password); 4, v3 Phase 7a
+ *  (Workable's application pages read and filled, what Ashby and Workable keep before Submit, and the accepted list
+ *  options kept sealed: its review). Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 4;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

@@ -44,6 +44,10 @@
  *    lookup's, or the page title's) and the page's declared canaries.
  * 6. Every filled or verified row has a provenance.
  * 7. The run never reaches done.
+ * A run whose spec pressed the side panel's Submit application after the fill (`panelSubmitted`, v3 Phase 4: the
+ * person's choice, as Workable's Submit test makes it) is excused exactly that: one submit event (the browser's own,
+ * trusted, as for any button's click()), one untrusted click on the page's own Submit, and the run reaching done; every other point holds, the storage the run's done wrote (the
+ * accepted-match cache) included.
  * 8. No request went anywhere the routes do not answer.
  */
 import { expect, type Page } from '@playwright/test';
@@ -81,6 +85,8 @@ export interface TrapRun {
   /** The questions (their visible text, as the draft request sends it) whose Edit with AI the spec clicked: only their
    *  rewrite request's `currentAnswer` is page text set aside (point 5). None by default. */
   rewrites?: readonly string[];
+  /** The spec pressed the panel's Submit application after the fill (the header's last paragraph). */
+  panelSubmitted?: true;
 }
 
 type Row = FrameReport['fields'][number];
@@ -261,9 +267,10 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   const records = await spyRecords(run.page);
   const events = records.flatMap((record) => record.events);
 
-  // 1. Nothing submitted.
+  // 1. Nothing submitted (the panel's one Submit aside, when the spec pressed it).
+  const submits = run.panelSubmitted ? 1 : 0;
   expect(run.routeLog.submitted, 'a form was submitted').toEqual([]);
-  expect(events.filter((event) => event.type === 'submit'), 'a submit event').toEqual([]);
+  expect(events.filter((event) => event.type === 'submit').slice(submits), 'a submit event').toEqual([]);
 
   // 2. Untrusted events only, Chromium's own input and change after an untrusted click on a box aside, and the
   //    person's own on the controls the spec clicked as them (none of which may submit).
@@ -271,8 +278,10 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   const theirs = (event: (typeof events)[number]) => event.trusted && personal.has(event.control);
   expect(events.filter((event) => theirs(event) && (event.submits || SUBMIT_WORDS.test(event.words))),
     "the person's clicks the spec made on a control that could submit").toEqual([]);
+  // The form's submit event that the panel's Submit causes is the browser's own (trusted), as for any button's click().
+  const panelSubmit = (event: (typeof events)[number]) => run.panelSubmitted === true && event.type === 'submit';
   for (const record of records) {
-    expect(untrustedViolations(record.events.filter((event) => !theirs(event))),
+    expect(untrustedViolations(record.events.filter((event) => !theirs(event) && !panelSubmit(event))),
       `trusted events on form controls in ${record.url}`).toEqual([]);
   }
 
@@ -280,7 +289,7 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
   const allowed = new Set<string>([...ALLOWED_EVENTS, ...(run.activation ?? declaredActivation(run.page.url()))]);
   const ours = events.filter((event) => !event.trusted);
   expect(ours.filter((event) => !allowed.has(event.type)), 'events the fillers never cause').toEqual([]);
-  expect(ours.filter((event) => event.type === 'click' && (event.submits || SUBMIT_WORDS.test(event.words))),
+  expect(ours.filter((event) => event.type === 'click' && (event.submits || SUBMIT_WORDS.test(event.words))).slice(submits),
     'a click on a control that could submit').toEqual([]);
 
   // 4. Hidden markers and canaries nowhere.
@@ -342,9 +351,11 @@ export async function assertTrapInvariants(run: TrapRun): Promise<void> {
     expect(missing.map((row) => row.label), 'filled or verified rows without a provenance').toEqual([]);
   }
 
-  // 7. Never done.
-  expect(reports.map((report) => report.status), 'a report reached done').not.toContain('done');
-  expect((runState as { status?: string } | null)?.status, 'RunState reached done').not.toBe('done');
+  // 7. Never done (unless the panel's Submit was pressed).
+  if (!run.panelSubmitted) {
+    expect(reports.map((report) => report.status), 'a report reached done').not.toContain('done');
+    expect((runState as { status?: string } | null)?.status, 'RunState reached done').not.toBe('done');
+  }
 
   // 8. Nothing else on the network.
   expect(run.routeLog.unexpected, 'requests nothing answers').toEqual([]);

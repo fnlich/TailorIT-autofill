@@ -170,9 +170,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     chosen: (tabId) => jobs.chosen(tabId), chosenJob: (tabId, applicationKey) => jobs.chosenJob(tabId, applicationKey) });
   // The LLM steps' tasks on TailorIT (Phase 4), shared by every run; each run keeps its own questions (ai-tasks.ts).
   const aiTasks = createAiTasks({ server, timers, now });
-  // The accepted-match cache (Phase 6): storage.session, in memory; a match goes in once the field was unchanged at the
-  // run's done (match-cache.ts).
-  const matchCache = createMatchCache(session);
+  // The accepted-match cache (Phase 6): storage.session, in memory, sealed under the session's secret; a match goes in
+  // once the field was unchanged at the run's done (match-cache.ts).
+  const matchCache = createMatchCache(session, (count) => platform.randomBytes(count));
   const accepts = createAcceptBook(matchCache);
   // Cover letters (Phase G): a run asks TailorIT for its letter once (cover-letters.ts), and the resume port sends it.
   const letters = { server, timers, now };
