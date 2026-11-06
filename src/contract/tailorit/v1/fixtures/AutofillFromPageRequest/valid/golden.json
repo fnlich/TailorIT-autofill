@@ -1,0 +1,23 @@
+{
+  "url": "https://www.linkedin.com/jobs/view/4012345678/",
+  "employerUrl": "https://careers-northwind.icims.com/jobs/13634/senior-data-engineer/job?iis=Job+Board&iisn=LinkedIn",
+  "title": "Senior Data Engineer",
+  "company": "Northwind",
+  "location": "Rochester, NY",
+  "description": "Northwind is hiring a Senior Data Engineer to build its data platform.\n\nWhat you will do\nDesign and run batch and streaming pipelines with Python, Airflow and Kafka.\n\nWhat you bring\n5+ years of data engineering experience. SQL and Python.",
+  "criteria": [
+    {
+      "label": "Seniority level",
+      "value": "Mid-Senior level"
+    },
+    {
+      "label": "Employment type",
+      "value": "Full-time"
+    },
+    {
+      "label": "Industries",
+      "value": "Software Development"
+    }
+  ],
+  "resumeId": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73"
+}

@@ -24,7 +24,7 @@
  * folded), the location dropped: the posting, its choice and its application share one. The canonical application URL is
  * https://<host>/<site>/job/x/<slug>_<reqId>/apply/applyManually, the form verified to load the account landing, with
  * recruiting/<tenant>/ before the site on myworkdaysite.com (that form by analogy, not loaded). TailorIT's parseAtsUrl
- * does not read Workday yet (src/adapters/url.test.ts holds both readings over one table).
+ * reads Workday since its API 5 (src/adapters/url.test.ts holds both readings over one table).
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 

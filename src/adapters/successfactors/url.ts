@@ -14,8 +14,8 @@
  * The key is the host, the company as written and the requisition id: the posting, its account pages and its form share
  * one; the tokens (_s.crb, requestParams, jobSecKey), the language and the site are dropped. The canonical application
  * URL is https://<host>/career?company=<co>&career_job_req_id=<id>&career_ns=job_listing. The Career Site Builder's own
- * domains (jobs.<co>.com) and sapsf.com wait for Phase 8. TailorIT's parseAtsUrl does not read SuccessFactors yet
- * (PLATFORMS_AHEAD_OF_CONTRACT).
+ * domains (jobs.<co>.com) and sapsf.com wait for Phase 8. TailorIT's parseAtsUrl reads the same posting since its
+ * API 5 (src/adapters/url.test.ts).
  */
 import type { ApplicationUrl } from '../application-key';
 

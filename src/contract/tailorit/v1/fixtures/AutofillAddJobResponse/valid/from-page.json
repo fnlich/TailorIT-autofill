@@ -1,0 +1,50 @@
+{
+  "created": true,
+  "lookup": {
+    "ats": null,
+    "job": {
+      "id": 1302,
+      "title": "Senior Data Engineer",
+      "companyName": "Northwind",
+      "location": "Rochester, NY, USA",
+      "active": true,
+      "matchedBy": "alias",
+      "postedAt": "2026-11-05T17:00:00.000Z",
+      "salary": null,
+      "workArrangement": null
+    },
+    "application": {
+      "id": "2b7d4e1a-6c93-4f05-a8e2-9d1c3b5f7a60",
+      "status": 1,
+      "trackedOn": "2026-11-05",
+      "archived": false,
+      "resumeId": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
+      "matchedBy": "job"
+    },
+    "suggestedResume": {
+      "id": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
+      "label": "Data Engineer",
+      "kind": "built",
+      "fileKind": "pdf",
+      "fileName": "Elena Ruiz Resume.pdf",
+      "reason": "application"
+    },
+    "match": {
+      "state": "ok",
+      "resumeId": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
+      "matchedCount": 7,
+      "total": 10,
+      "percentage": 70
+    },
+    "page": {
+      "kind": "linkedin",
+      "linkedInUrl": "https://www.linkedin.com/jobs/view/4012345678/",
+      "employer": {
+        "kind": "icims",
+        "board": "careers-northwind",
+        "externalId": "13634"
+      },
+      "addWith": "page"
+    }
+  }
+}

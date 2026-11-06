@@ -32,8 +32,8 @@
  *   filled (enablesWhenFilled). The terms box is reached through its label, whose words must read clear: on the
  *   captured tenants they are drawn over that image too, so Sign-in Auto refuses those gates ('hidden') and the gate is
  *   the person's, failing closed. The code NEXT sends is the person's. Sign-in Auto acts only on a host the every-site
- *   sign-in covers (<tenant>.fa.<region>.oraclecloud.com): JPMC's region-less host is not, until TailorIT's contract
- *   widens its pattern (contract API 5).
+ *   sign-in covers (<tenant>.fa.<region>.oraclecloud.com, and since TailorIT's contract API 5 a region-less
+ *   <tenant>.fa.oraclecloud.com: JPMC's).
  * - Never pressed (neverPress): APPLY NOW (the entry door's alone), the gate's CANCEL, the dialogs' buttons (the cookie
  *   preferences, the session's end, the agreement's Close), the map's controls, the Digital Assistant's chat button and
  *   the copyright links.

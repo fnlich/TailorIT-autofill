@@ -13,8 +13,8 @@
  * - .../sites/<site>/my-profile/sign-in ("Manage Your Profile") names no job: no application.
  * The key is the host, the site in upper case (as the application writes it) and the posting's id, the language
  * dropped. The canonical application URL is https://<host>/hcmUI/CandidateExperience/en/sites/<SITE>/job/<id>. The content
- * script runs on these candidate pages alone (src/shared/hosts.ts). TailorIT's parseAtsUrl does not read Oracle yet
- * (PLATFORMS_AHEAD_OF_CONTRACT).
+ * script runs on these candidate pages alone (src/shared/hosts.ts). TailorIT's parseAtsUrl reads the same posting since
+ * its API 5 (src/adapters/url.test.ts).
  */
 import type { ApplicationUrl } from '../application-key';
 

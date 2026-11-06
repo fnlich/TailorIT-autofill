@@ -6,8 +6,8 @@
  * cases: query strings, trailing slashes, case, the EU Lever host, the embed, gh_jid on a company page and the legacy
  * hosts. The application key (application-key.ts) is checked here too, since it hashes what the parsers produce.
  * v3 Phases 6 and 7b add Workday's, iCIMS's, Taleo's, SuccessFactors' and Oracle's addresses from the public capture of
- * 2026-11-04/05: TailorIT's parseAtsUrl reads none of them yet (Workday comes with its own reading later; the other
- * four are ahead of the contract, PLATFORMS_AHEAD_OF_CONTRACT), and each row says so.
+ * 2026-11-04/05, which TailorIT's parseAtsUrl reads since API 5 (v3 Phase 8): every one of them agrees with the
+ * adapters, platform, board and job id.
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
@@ -77,11 +77,8 @@ const WORKDAY_SLUG = 'Senior-Product-Manager--Technical_JR-0110787';
 const WORKDAY_FORM = `${WORKDAY}/workday/job/x/${WORKDAY_SLUG}/apply/applyManually`;
 const SF_FORM = 'https://career2.successfactors.eu/career?company=danfossas&career_job_req_id=48659&career_ns=job_listing';
 const ORACLE_FORM = 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946';
-const WORKDAY_WHY = "TailorIT's parseAtsUrl does not read Workday yet: the job card says the posting is not in TailorIT";
-const AHEAD_WHY = "TailorIT's parseAtsUrl does not read this platform yet (PLATFORMS_AHEAD_OF_CONTRACT): the job card says "
-  + 'the posting is not in TailorIT';
 /** A v3 Phase 6 or 7b reading: `canonical` on its application, null on its posting (with the posting's application). */
-const ahead = (platform: Platform, board: string, jobId: string, page: ApplicationPage, canonical: string | null,
+const phase6 = (platform: Platform, board: string, jobId: string, page: ApplicationPage, canonical: string | null,
   applicationUrl?: string): Ours => ({ platform, board, jobId, page, canonical,
   ...(applicationUrl === undefined ? {} : { applicationUrl }) });
 
@@ -198,34 +195,32 @@ const ROWS: Row[] = [
   { url: 'https://jobs.workable.com/view/abc/engineer', ours: null },
 
   // v3 Phases 6 and 7b: the public capture of 2026-11-04/05 (its postings, their account pages and the address probes).
-  { url: `${WORKDAY}/en-US/Workday/job/USA-CA-Pleasanton/${WORKDAY_SLUG}`, ours: ahead('workday', 'workday', 'JR-0110787',
-    'posting', null, WORKDAY_FORM), contract: null, why: WORKDAY_WHY },
+  { url: `${WORKDAY}/en-US/Workday/job/USA-CA-Pleasanton/${WORKDAY_SLUG}`, ours: phase6('workday', 'workday', 'JR-0110787',
+    'posting', null, WORKDAY_FORM) },
   { url: `${WORKDAY}/en-US/Workday/job/USA%2C-CA%2C-Pleasanton/${WORKDAY_SLUG}/apply/applyManually`,
-    ours: ahead('workday', 'workday', 'JR-0110787', 'application', WORKDAY_FORM), contract: null, why: WORKDAY_WHY },
+    ours: phase6('workday', 'workday', 'JR-0110787', 'application', WORKDAY_FORM) },
   // The choice's other ways: the person's own choice, read as the application under its key (v3 Phase 6/7b, C1).
   { url: `${WORKDAY}/en-US/Workday/job/x/${WORKDAY_SLUG}/apply/autofillWithResume`,
-    ours: ahead('workday', 'workday', 'JR-0110787', 'application', WORKDAY_FORM), contract: null, why: WORKDAY_WHY },
+    ours: phase6('workday', 'workday', 'JR-0110787', 'application', WORKDAY_FORM) },
   { url: `${WORKDAY}/en-US/Workday/login`, ours: null },
   { url: 'https://wd1.myworkdaysite.com/en-US/recruiting/snapchat/snap/job/Los-Angeles-California/Ad-Product-Quality-Analyst-I_R0047453-1',
-    ours: ahead('workday', 'snapchat', 'R0047453-1', 'posting', null,
-      'https://wd1.myworkdaysite.com/recruiting/snapchat/snap/job/x/Ad-Product-Quality-Analyst-I_R0047453-1/apply/applyManually'),
-    contract: null, why: WORKDAY_WHY },
-  { url: 'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?in_iframe=1', ours: ahead('icims',
-    'careers-eastwestbank', '13634', 'posting', null, 'https://careers-eastwestbank.icims.com/jobs/13634/job'), contract: null, why: AHEAD_WHY },
-  { url: 'https://careers-gdms.icims.com/jobs/78183/senior-advanced-quality-inspector/login?in_iframe=1', ours: ahead('icims',
-    'careers-gdms', '78183', 'application', 'https://careers-gdms.icims.com/jobs/78183/job'), contract: null, why: AHEAD_WHY },
+    ours: phase6('workday', 'snapchat', 'R0047453-1', 'posting', null,
+      'https://wd1.myworkdaysite.com/recruiting/snapchat/snap/job/x/Ad-Product-Quality-Analyst-I_R0047453-1/apply/applyManually'), },
+  { url: 'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?in_iframe=1', ours: phase6('icims',
+    'careers-eastwestbank', '13634', 'posting', null, 'https://careers-eastwestbank.icims.com/jobs/13634/job') },
+  { url: 'https://careers-gdms.icims.com/jobs/78183/senior-advanced-quality-inspector/login?in_iframe=1', ours: phase6('icims',
+    'careers-gdms', '78183', 'application', 'https://careers-gdms.icims.com/jobs/78183/job') },
   { url: 'https://login.icims.com/u/login/identifier?state=x', ours: null },
-  { url: 'https://hdr.taleo.net/careersection/ex/jobdetail.ftl?job=197675&lang=en', ours: ahead('taleo', 'hdr', '197675', 'posting',
-    null, 'https://hdr.taleo.net/careersection/ex/jobapply.ftl?job=197675&lang=en'), contract: null, why: AHEAD_WHY },
+  { url: 'https://hdr.taleo.net/careersection/ex/jobdetail.ftl?job=197675&lang=en', ours: phase6('taleo', 'hdr', '197675', 'posting',
+    null, 'https://hdr.taleo.net/careersection/ex/jobapply.ftl?job=197675&lang=en') },
   { url: 'https://cpsk12il.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=en&redirectionURI=https%3A%2F%2Fcpsk12il.taleo.net%2Fcareersection%2F3%2Fjobapply.ftl%3Fjob%3DP177162%26lang%3Den',
-    ours: ahead('taleo', 'cpsk12il', 'P177162', 'application', 'https://cpsk12il.taleo.net/careersection/3/jobapply.ftl?job=P177162&lang=en'),
-    contract: null, why: AHEAD_WHY },
+    ours: phase6('taleo', 'cpsk12il', 'P177162', 'application', 'https://cpsk12il.taleo.net/careersection/3/jobapply.ftl?job=P177162&lang=en'), },
   { url: 'https://career2.successfactors.eu/career?career_job_req_id=48659&career_ns=job_listing&company=danfossas',
-    ours: ahead('successfactors', 'danfossas', '48659', 'posting', null, SF_FORM), contract: null, why: AHEAD_WHY },
+    ours: phase6('successfactors', 'danfossas', '48659', 'posting', null, SF_FORM) },
   { url: 'https://career2.successfactors.eu/career?company=danfossas&site=&lang=en_GB&requestParams=x&login_ns=register&career_job_req_id=48659',
-    ours: ahead('successfactors', 'danfossas', '48659', 'application', SF_FORM), contract: null, why: AHEAD_WHY },
+    ours: phase6('successfactors', 'danfossas', '48659', 'application', SF_FORM) },
   { url: 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email',
-    ours: ahead('oracle', 'CX_1001', '12946', 'application', ORACLE_FORM), contract: null, why: AHEAD_WHY },
+    ours: phase6('oracle', 'CX_1001', '12946', 'application', ORACLE_FORM) },
   { url: 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/my-profile/sign-in', ours: null },
 ];
 

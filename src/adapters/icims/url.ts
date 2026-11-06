@@ -17,7 +17,7 @@
  *   name its word (APPLICATION_WORDS).
  * The key is the host and the posting's id: the slug and the query (in_iframe, hashed, the wrapper's layout) are
  * dropped, so the wrapper, its frame, the gate and the pages after it share one. The canonical application URL is
- * https://<host>/jobs/<id>/job. TailorIT's parseAtsUrl does not read iCIMS yet (PLATFORMS_AHEAD_OF_CONTRACT).
+ * https://<host>/jobs/<id>/job. TailorIT's parseAtsUrl reads the same posting since its API 5 (src/adapters/url.test.ts).
  */
 import type { ApplicationUrl } from '../application-key';
 

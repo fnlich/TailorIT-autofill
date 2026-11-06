@@ -16,8 +16,8 @@
  * The key is the host, the career section and the job id as written: the posting, its apply address, its account pages
  * and its flow share one. The career section's case is kept: no capture shows the server reading /careersection/EX/ as
  * /careersection/ex/, and folding it would make two sections' postings of one id one application. The canonical application URL is https://<host>/careersection/<cs>/jobapply.ftl?job=<id>&lang=en.
- * Taleo Business Edition (<co>.tbe.taleo.net) is another product and is not read. TailorIT's parseAtsUrl does not read
- * Taleo yet (PLATFORMS_AHEAD_OF_CONTRACT).
+ * Taleo Business Edition (<co>.tbe.taleo.net) is another product and is not read. TailorIT's parseAtsUrl reads the same
+ * posting since its API 5 (src/adapters/url.test.ts).
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 

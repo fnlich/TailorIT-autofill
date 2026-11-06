@@ -81,9 +81,9 @@ export const LOOKUP_ON_LOAD_LIMIT = { count: 4, windowMs: 60_000 } as const;
 
 /** Whether an address names an application or a posting a platform's parser reads (parseAtsUrl, or the application
  *  parsers of adapters/index.ts): a lookup as the page loads asks only for one. The reserved fixture board, read by
- *  the generic rule, is not. A platform TailorIT's parseAtsUrl does not read yet (Workday, and those ahead of its
- *  contract, v3 Phase 7b) is looked up by its canonical address, which TailorIT finds no job for: the card says the
- *  posting is not in TailorIT. */
+ *  the generic rule, is not. A platform TailorIT's parseAtsUrl does not read (one ahead of its contract: none since its
+ *  API 5) is looked up by its canonical address, which TailorIT finds no job for: the card says the posting is not in
+ *  TailorIT. */
 export function recognisedPosting(url: string): boolean {
   if (parseAtsUrl(url) !== null) return true;
   try {

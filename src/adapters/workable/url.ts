@@ -12,8 +12,8 @@
  * After Submit the same address shows the success panel ([data-ui=successful-submit], the adapter's to read; /apply/success
  * answers 200 only because the app serves every path), so no address is the page after submitting. The canonical URL
  * folds the account to lower case and the shortcode to upper case and drops the query and the fragment: the overview,
- * the form and every spelling of one posting share one application key. TailorIT's parseAtsUrl does not read Workable
- * yet (it comes with the contract's next version): src/adapters/url.test.ts holds both readings over one table.
+ * the form and every spelling of one posting share one application key. TailorIT's parseAtsUrl reads Workable since its
+ * API 4: src/adapters/url.test.ts holds both readings over one table.
  */
 import type { ApplicationPage, ApplicationUrl } from '../application-key';
 

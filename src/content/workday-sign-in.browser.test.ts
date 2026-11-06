@@ -241,14 +241,14 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
     expect(seen.presses).toBe(0);
   });
 
-  it('is refused on JPMC’s region-less host, which the every-site sign-in does not cover', async () => {
+  it('takes the gate on JPMC’s region-less host too, which the every-site sign-in covers since TailorIT’s API 5', async () => {
     const fixture = await plainGate();
     const seen = actAsOracle(fixture);
     const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
     const jpmc = 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/1/apply/email';
-    expect(await attempt(fixture, oracleAdapter, channel, jpmc)).toBe('unavailable');
-    expect(channel.asked).toEqual([]);
-    expect(seen.presses).toBe(0);
+    expect(await attempt(fixture, oracleAdapter, channel, jpmc)).toBe('continue');
+    expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
+    expect(seen).toEqual({ presses: 1, typed: { email: CREDENTIAL.email, honeypot: '', terms: true } });
   });
 
   it('waits for a NEXT the page enables once the form is filled, and gives up when it never is', async () => {

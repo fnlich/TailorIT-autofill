@@ -9,9 +9,26 @@ import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from './resumes';
 // `parseAtsUrl` is the shared reading of such an address: the server resolves with it, and the extension reads the
 // same addresses with the same code. Adding a posting TailorIT does not have (POST /api/autofill/jobs) answers the
 // same lookup, once the job is in TailorIT's jobs and in the person's tracker as Saved.
+//
+// Version 5 (LinkedIn and company career sites, v3 Phase 8): a page that is not the posting's own (a LinkedIn job, a
+// company's careers page) names the employer's posting in `employerUrl` when the person's page shows it (its Apply
+// link); `parseLinkedInJobUrl` reads a LinkedIn job's address; POST /api/autofill/jobs/from-page adds the job from the
+// text the person sees when no ATS API can read it; and the answer's `page` says how TailorIT read the page. TailorIT's
+// server never requests LinkedIn, for anything: LinkedIn's robots.txt disallows automated access, so its addresses
+// are only compared, never fetched.
 
 /** The applicant-tracking systems the extension fills. Equals the extension's PLATFORMS, in its order. */
-export const ATS_KINDS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable'] as const;
+export const ATS_KINDS = [
+  'greenhouse',
+  'lever',
+  'ashby',
+  'workday',
+  'workable',
+  'icims',
+  'taleo',
+  'successfactors',
+  'oracle',
+] as const;
 export type AtsKind = (typeof ATS_KINDS)[number];
 
 /** The longest page address a lookup takes. */
@@ -22,8 +39,51 @@ export const AUTOFILL_POSTING_TEXT_MAX = 20_000;
 /** A resume's id as a request names it (TailorIT's ids are UUIDs; anything else is a resume that is not there). */
 const RequestResumeIdSchema = z.string().min(1).max(64);
 
+/**
+ * LinkedIn's own hosts: linkedin.com and every host under it (www., its country hosts uk., de., …), its China site
+ * linkedin.cn, its link shortener lnkd.in and its static host licdn.com, compared in lower case and with any trailing
+ * dots dropped. TailorIT's server never requests one of them, and an employer's link is never one.
+ */
+export function isLinkedInHost(host: string): boolean {
+  const name = host.toLowerCase().replace(/\.+$/, '');
+  return ['linkedin.com', 'linkedin.cn', 'lnkd.in', 'licdn.com'].some((domain) => name === domain || name.endsWith(`.${domain}`));
+}
+
+/**
+ * Why `address` cannot be an employer's link, or null when it can: an https address (default port, no user name or
+ * password) on a host that is not LinkedIn's, at most AUTOFILL_LOOKUP_URL_MAX characters. The extension sends the
+ * visible Apply link, a LinkedIn redirect's `url=` decoded, and never a LinkedIn address.
+ */
+export function employerUrlProblem(address: string): string | null {
+  if (address.length > AUTOFILL_LOOKUP_URL_MAX) return 'An employer link has at most 2,048 characters';
+  const url = runtimeUrl(address);
+  if (!url || url.protocol !== 'https:') return 'An employer link is an https address';
+  if (url.port !== '' || url.username !== '' || url.password !== '') return 'An employer link names no port or user';
+  if (!url.hostname || isLinkedInHost(url.hostname)) return "An employer link is the employer's own page, never LinkedIn's";
+  return null;
+}
+
+/** An employer's link (version 5): https, never LinkedIn's (employerUrlProblem). */
+const EmployerUrlSchema = z
+  .string()
+  .min(1)
+  .max(AUTOFILL_LOOKUP_URL_MAX)
+  .superRefine((address, ctx) => {
+    const problem = employerUrlProblem(address);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem });
+  });
+
 export const AutofillLookupRequestSchema = z.object({
   url: z.string().min(1).max(AUTOFILL_LOOKUP_URL_MAX),
+  /**
+   * Version 5: the employer's own link for the posting this page shows, when the page is not the posting's own (a
+   * LinkedIn job's Apply link, a company page's link to its ATS): https, never a LinkedIn host. A LinkedIn job's address
+   * the person keeps for a job (POST /api/autofill/jobs/from-page) answers first; then the employer's posting, only
+   * when parseAtsUrl reads one from the link (any other link, a careers site's home page two jobs may share, names no
+   * job); then the page; then the person's tracker by the posting links saved on it, however they are spelt. A job
+   * another account made from a page never answers.
+   */
+  employerUrl: EmployerUrlSchema.optional(),
   /** Ask for the job's stored posting text, for the extension's policy check. */
   includePostingText: z.boolean().default(false),
   /**
@@ -65,10 +125,11 @@ export const AutofillResumeChoiceSchema = z.object({
 export type AutofillResumeChoice = z.infer<typeof AutofillResumeChoiceSchema>;
 
 /**
- * How the job was found: the ATS's own posting id (a source TailorIT ingests), the posting's link, or (version 3) the
- * request's `jobId`, the job the person chose.
+ * How the job was found: the ATS's own posting id (a source TailorIT ingests), the posting's link, (version 3) the
+ * request's `jobId`, the job the person chose, or (version 5) another address TailorIT keeps for the job (a LinkedIn
+ * job's, the page's or the employer's link a job added from its page was saved with: job_link_aliases).
  */
-export const LOOKUP_JOB_MATCHES = ['source_link', 'link_key', 'chosen'] as const;
+export const LOOKUP_JOB_MATCHES = ['source_link', 'link_key', 'chosen', 'alias'] as const;
 /** How the application was found: by its job, or by the posting link saved on it. */
 export const LOOKUP_APPLICATION_MATCHES = ['job', 'posting_url'] as const;
 
@@ -109,6 +170,45 @@ export const AutofillLookupMatchSchema = z.discriminatedUnion('state', [
 ]);
 export type AutofillLookupMatch = z.infer<typeof AutofillLookupMatchSchema>;
 
+/** An ATS posting as parseAtsUrl reads an address: its ATS, board (null when the address names none) and id. */
+const AtsReadingSchema = z.object({
+  kind: z.enum(ATS_KINDS),
+  board: z.string().nullable(),
+  externalId: z.string().nullable(),
+});
+
+/**
+ * What a page is, to TailorIT (version 5): `linkedin`, a LinkedIn job (parseLinkedInJobUrl reads it); `ats`, a posting
+ * parseAtsUrl reads; `site`, any other page (a company's careers page, a LinkedIn page that shows no job).
+ */
+export const AUTOFILL_PAGE_KINDS = ['linkedin', 'ats', 'site'] as const;
+export type AutofillPageKind = (typeof AUTOFILL_PAGE_KINDS)[number];
+
+/**
+ * How "Add to TailorIT" adds the posting while TailorIT lacks it (version 5): `ats`, POST /api/autofill/jobs with the
+ * page's address (a posting addablePosting reads: TailorIT reads it from its ATS's public API); `page`, POST
+ * /api/autofill/jobs/from-page (a LinkedIn job or another page: TailorIT reads the employer's posting from its ATS when
+ * the employer's link is one addablePosting reads, else keeps the text the person sees).
+ */
+export const AUTOFILL_ADD_ROUTES = ['ats', 'page'] as const;
+export type AutofillAddRoute = (typeof AUTOFILL_ADD_ROUTES)[number];
+
+/**
+ * The answer's `page` (version 5): how TailorIT read the page and the employer's link, so the extension needs no
+ * reading of its own to choose its buttons. `linkedInUrl` is a LinkedIn job's canonical address,
+ * https://www.linkedin.com/jobs/view/<id>/, the one TailorIT keeps for a job added from it (null on any other page);
+ * `employer` is parseAtsUrl's reading of the request's employerUrl (null without one, or when it names no posting an
+ * ATS TailorIT knows holds); `addWith` is how Add to TailorIT adds the posting (AUTOFILL_ADD_ROUTES), null on a page it
+ * cannot add from (a LinkedIn page that shows no job, an address that is not https).
+ */
+export const AutofillLookupPageSchema = z.object({
+  kind: z.enum(AUTOFILL_PAGE_KINDS),
+  linkedInUrl: z.string().nullable(),
+  employer: AtsReadingSchema.nullable(),
+  addWith: z.enum(AUTOFILL_ADD_ROUTES).nullable(),
+});
+export type AutofillLookupPage = z.infer<typeof AutofillLookupPageSchema>;
+
 /**
  * `ats` is null when parseAtsUrl does not read the address, `job` and `application` when TailorIT has neither: the
  * extension still fills, without job context. `suggestedResume` is the resume the person chose when it can be
@@ -117,9 +217,7 @@ export type AutofillLookupMatch = z.infer<typeof AutofillLookupMatchSchema>;
  * optional are absent from a TailorIT older than them.
  */
 export const AutofillLookupResponseSchema = z.object({
-  ats: z
-    .object({ kind: z.enum(ATS_KINDS), board: z.string().nullable(), externalId: z.string().nullable() })
-    .nullable(),
+  ats: AtsReadingSchema.nullable(),
   job: z
     .object({
       id: z.number().int(),
@@ -156,6 +254,8 @@ export const AutofillLookupResponseSchema = z.object({
    * computed.
    */
   match: AutofillLookupMatchSchema.nullable().optional(),
+  /** Version 5: how TailorIT read the page and the employer's link (AutofillLookupPageSchema). */
+  page: AutofillLookupPageSchema.optional(),
 });
 export type AutofillLookupResponse = z.infer<typeof AutofillLookupResponseSchema>;
 
@@ -182,12 +282,59 @@ export const AutofillAddJobResponseSchema = z.object({
 });
 export type AutofillAddJobResponse = z.infer<typeof AutofillAddJobResponseSchema>;
 
+/** The caps of POST /api/autofill/jobs/from-page's text (version 5), in characters. */
+export const AUTOFILL_FROM_PAGE_LIMITS = {
+  title: 300,
+  company: 200,
+  location: 300,
+  description: 20_000,
+  criteria: 12,
+  criterionLabel: 100,
+  criterionValue: 300,
+} as const;
+
+/**
+ * POST /api/autofill/jobs/from-page (version 5, scope jobs:add): add the job a page the person has open shows, when
+ * no ATS API can read it (a LinkedIn job, an iCIMS, Taleo, SuccessFactors or Oracle posting, a company's careers
+ * page), to TailorIT's jobs and to the person's tracker as Saved. `url` is the page's https address (a LinkedIn
+ * address must be a job's: parseLinkedInJobUrl); `employerUrl` the employer's own link when the page shows it. The
+ * text is what the person sees on the page, read from the page by the extension: TailorIT keeps it as untrusted text
+ * (never fetched, expanded or followed, its markup shown as text) and its AI reads it as data. A job TailorIT has
+ * for the person (found as the lookup finds it; by a link or an alias alone only when its title and company are the
+ * page's) is saved as it is; a posting the employer's link or the page names that addablePosting reads is read from
+ * its ATS instead, as POST /api/autofill/jobs reads it, and the text is not used. A job made from the text is the
+ * person's alone: no other account sees it. `url` names no user name, password or port (400 `unsupported`), and
+ * TailorIT keeps no session parameter of either address. Answers AutofillAddJobResponse, its lookup the page's (with
+ * the same employerUrl).
+ */
+export const AutofillFromPageRequestSchema = z.object({
+  url: z.string().min(1).max(AUTOFILL_LOOKUP_URL_MAX),
+  employerUrl: EmployerUrlSchema.optional(),
+  title: z.string().trim().min(1).max(AUTOFILL_FROM_PAGE_LIMITS.title),
+  company: z.string().trim().min(1).max(AUTOFILL_FROM_PAGE_LIMITS.company),
+  location: z.string().trim().max(AUTOFILL_FROM_PAGE_LIMITS.location).optional(),
+  description: z.string().trim().min(1).max(AUTOFILL_FROM_PAGE_LIMITS.description),
+  /** The posting's facts as the page lists them (LinkedIn's "Seniority level", "Employment type", …). */
+  criteria: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(AUTOFILL_FROM_PAGE_LIMITS.criterionLabel),
+        value: z.string().trim().min(1).max(AUTOFILL_FROM_PAGE_LIMITS.criterionValue),
+      }),
+    )
+    .max(AUTOFILL_FROM_PAGE_LIMITS.criteria)
+    .optional(),
+  resumeId: RequestResumeIdSchema.optional(),
+});
+export type AutofillFromPageRequest = z.infer<typeof AutofillFromPageRequestSchema>;
+
 /**
  * What POST /api/autofill/jobs refuses with, besides every token route's refusals (401, 403, 409 `conflict` for another
  * API version, 429), and the status of each: `validation_failed` (no address, or one over 2,048 characters),
- * `unsupported` (a job TailorIT does not have, at an address it cannot add from: not Greenhouse, Lever, Ashby or
- * Workable, a page that does not name the board or the Workable account, or Greenhouse's EU boards), `not_found` (the
- * ATS has no such posting: it closed),
+ * `unsupported` (a job TailorIT does not have, at an address it cannot add from: not Greenhouse, Lever, Ashby,
+ * Workable or (version 5) Workday, a page that does not name the board or the Workable account, Greenhouse's EU
+ * boards, or a Workday site whose robots.txt asks not to be read; for POST /api/autofill/jobs/from-page, an address
+ * that is not https or a LinkedIn page that shows no job), `not_found` (the ATS has no such posting: it closed),
  * `ats_failed` (the ATS answered with something TailorIT cannot read), `ats_unavailable` (it could not be reached in
  * time; try again later) and `internal` (the posting was read but TailorIT could not save it; try again).
  */
@@ -205,10 +352,15 @@ export interface ParsedAtsUrl {
   kind: AtsKind;
   /**
    * The Greenhouse board or the Lever site, as the address writes it, or the Ashby job board or the Workable account in
-   * lower case; null when the address does not name it.
+   * lower case; (version 5) the Workday tenant in lower case, the iCIMS or Taleo portal's host label, the SuccessFactors
+   * company as written, or the Oracle Recruiting Cloud site in capitals, as the extension's adapters read them; null
+   * when the address does not name it.
    */
   board: string | null;
-  /** The posting's id on that ATS (a Workable shortcode in capitals). */
+  /**
+   * The posting's id on that ATS (a Workable shortcode in capitals; a Workday requisition id, the text after the last
+   * '_' of the posting's name).
+   */
   externalId: string;
   /** The posting's own addresses, to find the job by its stored link (compare them through `linkKey`). */
   canonical: string[];
@@ -217,6 +369,9 @@ export interface ParsedAtsUrl {
 interface UrlLike {
   protocol: string;
   hostname: string;
+  port: string;
+  username: string;
+  password: string;
   pathname: string;
   href: string;
   searchParams: Iterable<[string, string]>;
@@ -224,6 +379,16 @@ interface UrlLike {
 
 // URL exists in every browser and in Node; this package's lib types (ES only) do not declare it.
 const runtime = globalThis as unknown as { URL?: new (input: string) => UrlLike };
+
+/** An address read as a URL (any scheme), or null. */
+function runtimeUrl(address: string): UrlLike | null {
+  if (!runtime.URL) return null;
+  try {
+    return new runtime.URL(address.trim());
+  } catch {
+    return null;
+  }
+}
 
 /** Greenhouse's hosts, with the region part of their twins (job-boards.eu.greenhouse.io). */
 const GREENHOUSE_REGIONS = new Map([
@@ -417,14 +582,263 @@ function greenhouseOnCompanyPage(url: UrlLike): ParsedAtsUrl | null {
 
 /** An address over https or http, read; null for anything else. */
 function webUrl(address: string): UrlLike | null {
-  if (!runtime.URL) return null;
-  let url: UrlLike;
-  try {
-    url = new runtime.URL(address.trim());
-  } catch {
+  const url = runtimeUrl(address);
+  return url && (url.protocol === 'https:' || url.protocol === 'http:') ? url : null;
+}
+
+// Version 5: Workday, iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud, read exactly as the extension's
+// adapters read them (its src/adapters/<platform>/url.ts, from the public capture of 2026-11-04/05): the same hosts,
+// pages, board and id, so a posting's platform, board and id are one reading in both. The query parameter names these
+// platforms use are compared as written, as the adapters compare them.
+
+/** The first value of a query parameter named exactly `name` (URLSearchParams.get), or null. */
+function exactQueryValue(url: UrlLike, name: string): string | null {
+  for (const [key, value] of url.searchParams) if (key === name) return value;
+  return null;
+}
+
+/** A tenant's own Workday host: <tenant>.wd<n>.myworkdayjobs.com, or <tenant>.myworkdayjobs.com (never www or a bare
+ *  wd<n>). */
+const WORKDAY_JOBS_HOST = /^(?!(?:www|wd\d{1,3})\.)([a-z0-9-]+)\.(?:wd\d{1,3}\.)?myworkdayjobs\.com$/;
+/** The shared host of myworkdaysite.com: wd<n>.myworkdaysite.com, the tenant in the path. */
+const WORKDAY_SITE_HOST = /^wd\d{1,3}\.myworkdaysite\.com$/;
+/** A locale (en-US as Workday writes it, en-us, fr, zh-Hans): read as one only where a site follows it. */
+const WORKDAY_LOCALE = /^[a-z]{2,3}(?:-[a-z0-9]{2,4})?$/i;
+/** A tenant or a site as Workday's addresses write them. */
+const WORKDAY_NAME = /^[A-Za-z0-9_-]+$/;
+/** <slug>_<reqId>: the requisition id is everything after the last '_'. */
+const WORKDAY_POSTING = /^(.+)_([^_]+)$/;
+/** What may follow <slug>_<reqId>: nothing (the posting), its Apply choice, or the application (its three ways). */
+const WORKDAY_PAGES: ReadonlySet<string> = new Set([
+  '',
+  'apply',
+  'apply/applyManually',
+  'apply/autofillWithResume',
+  'apply/useMyLastApplication',
+]);
+
+/**
+ * A location or posting segment TailorIT never puts into a Workday address of its own (the read Add job makes, so
+ * addablePosting refuses it): a dot segment, or one holding a '/', '\', '?', '#' or a control character, decoded once
+ * or twice (%2e%2e, %252e%252e, %2F, %5C, %3F, %23, %00). parseAtsUrl still reads the posting it names, as the
+ * extension does, so the lookup and the tracker know it by the same identity.
+ */
+export function unsafeWorkdaySegment(segment: string): boolean {
+  const once = decodedSegment(segment);
+  if (once === null) return true;
+  const twice = decodedSegment(once) ?? once;
+  return [once, twice].some((text) => text === '.' || text === '..' || /[/\\?#\p{Cc}]/u.test(text));
+}
+
+/** The longest Workday posting page path TailorIT reads a posting from (its read's path is a few characters longer). */
+export const WORKDAY_PATH_MAX = 512;
+
+/** A Workday posting as its address names it. */
+interface WorkdayAddress {
+  host: string;
+  /** The tenant in lower case: the host's first label, or the path's on myworkdaysite.com. */
+  tenant: string;
+  /** '' on a tenant's own host; /recruiting/<tenant as written> on myworkdaysite.com. */
+  prefix: string;
+  locale: string | null;
+  /** The career site as written (Workday reads it in any case). */
+  site: string;
+  /** The location segment as written (free text: Workday reads any). */
+  location: string;
+  /** <slug>_<reqId>, percent-encoding folded one way. */
+  posting: string;
+  reqId: string;
+}
+
+/** A path segment percent-decoded and encoded again the one way (a ',' and its '%2C' are one), or null. */
+function foldedSegment(segment: string): string | null {
+  const decoded = decodedSegment(segment);
+  return decoded === null ? null : encodeURIComponent(decoded);
+}
+
+/**
+ * <tenant>.wd<n>.myworkdayjobs.com/[<locale>/]<site>/job/<location>/<slug>_<reqId>, and on wd<n>.myworkdaysite.com
+ * /[<locale>/]recruiting/<tenant>/<site>/job/...; then nothing, /apply or /apply/applyManually. Any other page (the
+ * choice's other ways, /login, /userHome, /details/... search pages) names no posting of ours.
+ */
+function workdayAddress(url: UrlLike): WorkdayAddress | null {
+  const host = url.hostname;
+  const own = WORKDAY_JOBS_HOST.exec(host);
+  if (!own && !WORKDAY_SITE_HOST.test(host)) return null;
+  let parts = segmentsOf(url);
+  let locale: string | null = null;
+  // A first segment shaped like a locale is one only where a site follows it (a site named "ext" is no locale).
+  const siteFollows = own ? parts[2] === 'job' : parts[1] === 'recruiting';
+  if (parts[0] !== undefined && WORKDAY_LOCALE.test(parts[0]) && siteFollows) {
+    locale = parts[0];
+    parts = parts.slice(1);
+  }
+  let tenant: string;
+  let prefix = '';
+  if (own) {
+    tenant = own[1]!;
+  } else {
+    const [recruiting, named, ...rest] = parts;
+    if (recruiting !== 'recruiting' || named === undefined || !WORKDAY_NAME.test(named)) return null;
+    tenant = named.toLowerCase();
+    prefix = `/recruiting/${named}`;
+    parts = rest;
+  }
+  const [site, job, location, posting, ...rest] = parts;
+  if (site === undefined || !WORKDAY_NAME.test(site) || job !== 'job' || !location || posting === undefined) return null;
+  if (!WORKDAY_PAGES.has(rest.join('/'))) return null;
+  const folded = foldedSegment(posting);
+  const match = folded === null ? null : WORKDAY_POSTING.exec(folded);
+  if (!folded || !match) return null;
+  return { host, tenant, prefix, locale, site, location, posting: folded, reqId: match[2]! };
+}
+
+/** The Workday posting's own page, with its locale or not. */
+function workdayPage(address: WorkdayAddress, locale: string | null): string {
+  const lead = locale ? `/${locale}` : '';
+  return `https://${address.host}${lead}${address.prefix}/${address.site}/job/${address.location}/${address.posting}`;
+}
+
+/** Workday (version 5): the tenant is the board, the requisition id the posting's id. */
+function workdayPosting(url: UrlLike): ParsedAtsUrl | null {
+  const address = workdayAddress(url);
+  if (!address) return null;
+  const pages = [...new Set([workdayPage(address, null), workdayPage(address, address.locale)])];
+  return { kind: 'workday', board: address.tenant, externalId: address.reqId, canonical: pages };
+}
+
+/** A company's iCIMS portal: careers-<co>.icims.com or <co>.icims.com, never iCIMS's www, api or login hosts, nor an
+ *  employees' internal-<co> portal. */
+const ICIMS_HOST = /^(?!(?:www|api|login)\.)(?!internal-)[a-z0-9-]+\.icims\.com$/;
+const ICIMS_POSTING_ID = /^\d{1,12}$/;
+/** The words a posting's pages end in, as the extension reads them: its posting (job) and its email gate (login). */
+const ICIMS_PAGES: ReadonlySet<string> = new Set(['job', 'login']);
+
+/**
+ * iCIMS (version 5): /jobs/<id>/[<slug>/]job, the posting, and /jobs/<id>/[<slug>/]login, its email gate (the slug is
+ * free); never "Log back in" (login?loginOnly=1, iCIMS's own sign-in, which names no job) nor any other page under a
+ * posting. The board is the portal's host label (careers-<co>), the id the posting's number; the query (the wrapper's
+ * layout, in_iframe, hashed) never matters.
+ */
+function icimsPosting(url: UrlLike): ParsedAtsUrl | null {
+  const parts = segmentsOf(url);
+  if (parts.length < 3 || parts.length > 4 || parts[0] !== 'jobs' || !ICIMS_POSTING_ID.test(parts[1]!)) return null;
+  const name = parts.at(-1)!;
+  if (!ICIMS_PAGES.has(name)) return null;
+  if (name === 'login' && exactQueryValue(url, 'loginOnly') === '1') return null;
+  const id = parts[1]!;
+  const board = url.hostname.slice(0, -'.icims.com'.length);
+  const pages = [`https://${url.hostname}/jobs/${id}/job`];
+  if (parts.length === 4) pages.push(`https://${url.hostname}/jobs/${id}/${parts[2]}/job`);
+  return { kind: 'icims', board, externalId: id, canonical: pages };
+}
+
+/** A company's Taleo (Enterprise) portal: <co>.taleo.net, never www; Taleo Business Edition (<co>.tbe.taleo.net) is
+ *  another product, not read. */
+const TALEO_HOST = /^(?!www\.)[a-z0-9-]+\.taleo\.net$/;
+const TALEO_SECTION = /^[A-Za-z0-9_-]{1,40}$/;
+const TALEO_JOB_ID = /^[A-Za-z0-9_-]{1,40}$/;
+/** A career section's pages that name a posting in ?job=. */
+const TALEO_PAGES: ReadonlySet<string> = new Set(['jobdetail.ftl', 'jobapply.ftl', 'flow.jsf', 'application.jss']);
+/** The account pages and the pre-sign-in agreement, which name their job in redirectionURI or TARGET. */
+const TALEO_ACCOUNT_FOLDERS = ['/careersection/iam/accessmanagement/', '/careersection/careersection/privacyagreement/'];
+/** An address as an account page names it in its query (decoded once): https, its host, path and query. */
+const TALEO_NAMED = /^https:\/\/([^/?#]+)(\/[^?#]*)(?:\?([^#]*))?/;
+
+/** A career section's page, by its path and its job parameter: its section and job, or null. */
+function taleoSectionPage(pathname: string, job: string | null): { section: string; job: string } | null {
+  const parts = pathname.split('/').slice(1);
+  if (parts.length !== 3 || parts[0] !== 'careersection' || !TALEO_SECTION.test(parts[1]!)) return null;
+  if (!TALEO_PAGES.has(parts[2]!) || job === null || !TALEO_JOB_ID.test(job)) return null;
+  return { section: parts[1]!, job };
+}
+
+/** The job an account page returns to: its redirectionURI's (or TARGET's) apply address on the same host, as written. */
+function taleoReturnsTo(url: UrlLike): { section: string; job: string } | null {
+  for (const name of ['redirectionURI', 'TARGET']) {
+    const written = exactQueryValue(url, name);
+    const match = written === null ? null : TALEO_NAMED.exec(written);
+    if (match === null || match[1]!.toLowerCase() !== url.hostname) continue;
+    // Its job is the first job= of the named address's own query; written plain with its lang= first
+    // (jobapply.ftl?lang=en&job=N), that job= became the page's own parameter: that one, then.
+    const job = /(?:^|&)job=([^&]*)/.exec(match[3] ?? '')?.[1] ?? null;
+    const read = taleoSectionPage(match[2]!, job === null ? exactQueryValue(url, 'job') : decodedSegment(job));
+    if (read !== null) return read;
+  }
+  return null;
+}
+
+/**
+ * Taleo (version 5): a career section's /careersection/<cs>/jobdetail.ftl?job=<id> (and its jobapply.ftl, flow.jsf
+ * and application.jss), and the account pages naming that address in redirectionURI or TARGET. The board is the
+ * portal's host label, the id the job parameter as written.
+ */
+function taleoPosting(url: UrlLike): ParsedAtsUrl | null {
+  const account = TALEO_ACCOUNT_FOLDERS.some((folder) => url.pathname.startsWith(folder)) && url.pathname.endsWith('.jsf');
+  const read = account ? taleoReturnsTo(url) : taleoSectionPage(url.pathname, exactQueryValue(url, 'job'));
+  if (read === null) return null;
+  const board = url.hostname.slice(0, -'.taleo.net'.length);
+  const section = `https://${url.hostname}/careersection/${read.section}`;
+  const pages = [
+    `${section}/jobdetail.ftl?job=${read.job}`,
+    `${section}/jobdetail.ftl?job=${read.job}&lang=en`,
+    `${section}/jobapply.ftl?job=${read.job}&lang=en`,
+  ];
+  return { kind: 'taleo', board, externalId: read.job, canonical: pages };
+}
+
+/** SuccessFactors' career sites: career<n>.successfactors.com or .eu. */
+const SUCCESSFACTORS_HOST = /^career\d{0,3}\.successfactors\.(?:com|eu)$/;
+const SUCCESSFACTORS_COMPANY = /^[A-Za-z0-9_-]{1,60}$/;
+const SUCCESSFACTORS_REQ_ID = /^\d{1,12}$/;
+
+/**
+ * SuccessFactors (version 5, its classic career sites): /career with ?company=<co> (or career_company) and
+ * career_job_req_id=<id>, the posting and its account pages alike. The board is the company as written.
+ */
+function successFactorsPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (url.pathname !== '/career' && url.pathname !== '/career/') return null;
+  const company = exactQueryValue(url, 'company') ?? exactQueryValue(url, 'career_company');
+  const id = exactQueryValue(url, 'career_job_req_id');
+  if (company === null || id === null || !SUCCESSFACTORS_COMPANY.test(company) || !SUCCESSFACTORS_REQ_ID.test(id)) {
     return null;
   }
-  return url.protocol === 'https:' || url.protocol === 'http:' ? url : null;
+  const page = `https://${url.hostname}/career?career_job_req_id=${id}&career_ns=job_listing&company=${company}`;
+  return { kind: 'successfactors', board: company, externalId: id, canonical: [page] };
+}
+
+/** An Oracle Recruiting Cloud tenant: <tenant>.fa.<region>.oraclecloud.com or <tenant>.fa.oraclecloud.com. */
+const ORACLE_HOST = /^[a-z0-9-]+\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com$/;
+const ORACLE_ROOT = '/hcmUI/CandidateExperience/';
+const ORACLE_LANGUAGE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/;
+const ORACLE_SITE = /^[A-Za-z0-9_-]{1,40}$/;
+const ORACLE_POSTING_ID = /^\d{1,15}$/;
+/** The pages after a posting's id that are its application: the apply flow, and the quick apply's. */
+const ORACLE_APPLY_TAILS: ReadonlySet<string> = new Set(['apply', 'easy-apply']);
+
+/**
+ * Oracle Recruiting Cloud (version 5): /hcmUI/CandidateExperience/<lang>/sites/<site>/job/<id> (or
+ * /requisitions/preview/<id>), then nothing, /apply/... or /easy-apply/...; never the site's search or its profile
+ * pages. The board is the site in capitals, as the application writes it.
+ */
+function oraclePosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith(ORACLE_ROOT)) return null;
+  const path = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+  const [language, sites, site, ...rest] = path.slice(ORACLE_ROOT.length).split('/');
+  if (language === undefined || !ORACLE_LANGUAGE.test(language) || sites !== 'sites' || site === undefined) return null;
+  if (!ORACLE_SITE.test(site)) return null;
+  let at: number;
+  if (rest[0] === 'job') at = 1;
+  else if (rest[0] === 'requisitions' && rest[1] === 'preview') at = 2;
+  else return null;
+  const id = rest[at];
+  const tail = rest.slice(at + 1);
+  if (id === undefined || !ORACLE_POSTING_ID.test(id) || (tail.length > 0 && !ORACLE_APPLY_TAILS.has(tail[0]!))) return null;
+  const board = site.toUpperCase();
+  const pages = [...new Set([`en/sites/${board}`, `${language}/sites/${site}`])].map(
+    (where) => `https://${url.hostname}${ORACLE_ROOT}${where}/job/${id}`,
+  );
+  return { kind: 'oracle', board, externalId: id, canonical: pages };
 }
 
 /**
@@ -434,18 +848,79 @@ function webUrl(address: string): UrlLike | null {
  * 3): jobs.ashbyhq.com at /{board}/{id}, with /application or not, and /{board}?ashby_jid={id}; a company page with
  * ?ashby_jid= names no board, so it is not read (its job is found by its link, as any page's). Workable (version 4):
  * apply.workable.com at /{account}/j/{shortcode}, with /apply or not, and an account's own host at /j/{shortcode}; its
- * /j/{shortcode} links naming no account are read with no board (see workablePosting). Hosts and query parameter names
- * are compared in lower case; the fragment never matters. Workday comes later.
+ * /j/{shortcode} links naming no account are read with no board (see workablePosting). Version 5: Workday (a tenant's
+ * <tenant>.wd<n>.myworkdayjobs.com, company career sites such as Cisco's, Adobe's and NVIDIA's among them, and
+ * wd<n>.myworkdaysite.com with the tenant in the path), iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud, as
+ * the extension's adapters read them (see each reader). Hosts are compared in lower case, and the query parameter
+ * names of Greenhouse, Lever, Ashby and Workable too; the fragment never matters.
  */
 export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   const url = webUrl(address);
   if (!url) return null;
-  const region = GREENHOUSE_REGIONS.get(url.hostname);
+  const host = url.hostname;
+  const region = GREENHOUSE_REGIONS.get(host);
   if (region !== undefined) return greenhousePosting(url, region) ?? greenhouseOnCompanyPage(url);
-  if (LEVER_HOSTS.has(url.hostname)) return leverPosting(url);
-  if (url.hostname === ASHBY_HOST) return ashbyPosting(url);
-  if (url.hostname === WORKABLE_HOST || url.hostname.endsWith('.workable.com')) return workablePosting(url);
+  if (LEVER_HOSTS.has(host)) return leverPosting(url);
+  if (host === ASHBY_HOST) return ashbyPosting(url);
+  if (host === WORKABLE_HOST || host.endsWith('.workable.com')) return workablePosting(url);
+  const reader = VERSION_5_READERS.find(([pattern]) => pattern.test(host))?.[1];
+  if (reader) {
+    const plain = url.protocol === 'https:' && url.port === '' && url.username === '' && url.password === '';
+    return plain ? reader(url) : null;
+  }
   return greenhouseOnCompanyPage(url);
+}
+
+/**
+ * Version 5's platforms by host, each read over https on the default port and without a user name or password, as
+ * the adapters read them (a stored link is compared as linkKey writes it, https, so an http spelling loses nothing).
+ */
+const VERSION_5_READERS: ReadonlyArray<readonly [RegExp, (url: UrlLike) => ParsedAtsUrl | null]> = [
+  [WORKDAY_JOBS_HOST, workdayPosting],
+  [WORKDAY_SITE_HOST, workdayPosting],
+  [ICIMS_HOST, icimsPosting],
+  [TALEO_HOST, taleoPosting],
+  [SUCCESSFACTORS_HOST, successFactorsPosting],
+  [ORACLE_HOST, oraclePosting],
+];
+
+/** A LinkedIn job, as parseLinkedInJobUrl reads its address. */
+export interface ParsedLinkedInJob {
+  /** LinkedIn's job id: digits. */
+  jobId: string;
+  /** https://www.linkedin.com/jobs/view/<id>/ */
+  canonical: string;
+}
+
+/** LinkedIn's hosts a job is shown on: linkedin.com, www. and a country's (uk., de., …). */
+const LINKEDIN_JOB_HOST = /^(?:www\.|[a-z]{2}\.)?linkedin\.com$/;
+/** A LinkedIn job id: 6 to 20 digits (its ids today are 10). */
+const LINKEDIN_JOB_ID = /^\d{6,20}$/;
+/** /jobs/view/<id> or /jobs/view/<slug>-<id>. */
+const LINKEDIN_VIEW = /^(?:.*-)?(\d{6,20})$/;
+
+/**
+ * A LinkedIn job's canonical address (version 5) from the address of a page showing it: /jobs/view/<id> and
+ * /jobs/view/<slug>-<id>, and /jobs/search or /jobs/collections[/<name>] with ?currentJobId=<id>, on linkedin.com, www.
+ * or a country's host; https://www.linkedin.com/jobs/view/<id>/ for each. Null for any other address: another LinkedIn
+ * page, a look-alike host, another scheme. Read only: TailorIT never requests it.
+ */
+export function parseLinkedInJobUrl(address: string): ParsedLinkedInJob | null {
+  const url = webUrl(address);
+  if (!url || !LINKEDIN_JOB_HOST.test(url.hostname)) return null;
+  if (url.port !== '' || url.username !== '' || url.password !== '') return null;
+  const parts = segmentsOf(url);
+  let id: string | null = null;
+  if (parts.length === 3 && parts[0] === 'jobs' && parts[1] === 'view') {
+    id = LINKEDIN_VIEW.exec(parts[2]!)?.[1] ?? null;
+  } else if (
+    parts[0] === 'jobs' &&
+    ((parts.length === 2 && parts[1] === 'search') || (parts[1] === 'collections' && parts.length <= 3))
+  ) {
+    const current = exactQueryValue(url, 'currentJobId');
+    id = current !== null && LINKEDIN_JOB_ID.test(current) ? current : null;
+  }
+  return id === null ? null : { jobId: id, canonical: `https://www.linkedin.com/jobs/view/${id}/` };
 }
 
 /**
@@ -468,20 +943,33 @@ export function greenhouseBoardPage(address: string): ParsedAtsUrl | null {
 
 /**
  * The ATSs POST /api/autofill/jobs can read one posting from (their public job APIs; Ashby and Workable since version
- * 3).
+ * 3; Workday since version 5, through the read its posting page makes itself, on a tenant whose robots.txt allows it).
  */
-export const AUTOFILL_ADDABLE_ATS = ['greenhouse', 'lever', 'ashby', 'workable'] as const;
+export const AUTOFILL_ADDABLE_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'workday'] as const;
 export type AddableAtsKind = (typeof AUTOFILL_ADDABLE_ATS)[number];
+
+/** A Workday posting's address parts its read needs (version 5): the host, the career site and the posting's name. */
+export interface WorkdayPostingRef {
+  /** <tenant>.wd<n>.myworkdayjobs.com or wd<n>.myworkdaysite.com. */
+  host: string;
+  /** The career site as the address writes it. */
+  site: string;
+  /** The location segment as the address writes it (free text: Workday reads any). */
+  location: string;
+  /** <slug>_<reqId>, as Workday names the posting (the slug must match). */
+  posting: string;
+}
 
 /**
  * A posting POST /api/autofill/jobs can add: its ATS, board, site or account, id, and the ATS region it is hosted in
- * (Ashby's and Workable's are always `global`).
+ * (Ashby's, Workable's and Workday's are always `global`); a Workday posting's address parts too.
  */
 export interface AddablePosting {
   kind: AddableAtsKind;
   board: string;
   externalId: string;
   region: 'global' | 'eu';
+  workday?: WorkdayPostingRef;
 }
 
 /**
@@ -490,7 +978,10 @@ export interface AddablePosting {
  * names it) and is read on its global boards only, as TailorIT's Greenhouse sources are; Lever on either of its hosts;
  * Ashby from its job board's addresses (one read of the board's API, which lists the posting); Workable from the
  * addresses that name the account (one read of the posting from Workable's API, which needs the account), never from
- * a /j/{shortcode} link that names none.
+ * a /j/{shortcode} link that names none; Workday (version 5) from a posting's page on either kind of host (one read of
+ * the posting from the tenant's own job API, the read the posting's page makes, when the tenant's robots.txt allows
+ * it: the server checks that before it reads). iCIMS, Taleo, SuccessFactors and Oracle have no public posting API:
+ * POST /api/autofill/jobs/from-page adds theirs.
  */
 export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | null {
   if (!parsed || parsed.board === null) return null;
@@ -502,6 +993,18 @@ export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | nu
   if (parsed.kind === 'lever') return { kind: 'lever', board: parsed.board, externalId: parsed.externalId, region };
   if (parsed.kind === 'ashby' || parsed.kind === 'workable') {
     return { kind: parsed.kind, board: parsed.board, externalId: parsed.externalId, region: 'global' };
+  }
+  if (parsed.kind === 'workday') {
+    // The posting's own page, which workdayPosting put first.
+    const url = webUrl(parsed.canonical[0] ?? '');
+    const address = url ? workdayAddress(url) : null;
+    if (!address || address.reqId !== parsed.externalId) return null;
+    // Never a segment that would change the read's path, nor a path longer than WORKDAY_PATH_MAX.
+    if (unsafeWorkdaySegment(address.location) || unsafeWorkdaySegment(address.posting)) return null;
+    const path = `${address.prefix}/${address.site}/job/${address.location}/${address.posting}`;
+    if (path.length > WORKDAY_PATH_MAX) return null;
+    const workday = { host: address.host, site: address.site, location: address.location, posting: address.posting };
+    return { kind: 'workday', board: parsed.board, externalId: parsed.externalId, region: 'global', workday };
   }
   return null;
 }

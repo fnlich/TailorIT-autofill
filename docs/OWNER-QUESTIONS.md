@@ -198,13 +198,13 @@ Decided by the coordinator on 2026-11-05 under your standing approval (docs/SPEC
 - **Taleo's user-name box** gets the saved sign-in's email; there is no separate user-name field in a saved sign-in.
 - **Taleo's Privacy Agreement** is a required consent to apply: the agent's entry presses its I Accept, in either Consents mode; I Decline never.
 - **SuccessFactors' account creation** follows Sign-in Auto as Workday's does: the email typed twice (its "Retype Email Address", the `confirmEmail` slot) and the password twice. The form also asks for a name, a phone and a country, and its terms are accepted in a dialog; those and the DPCS dialog at Apply stay yours until there are snapshots, so its Create Account is yours to press.
-- **Oracle's region-less hosts** (JPMC's `jpmc.fa.oraclecloud.com`) count as covered: TailorIT is widening `signInHostCovered` in its contract API 5, which the extension takes when it pulls the contract (src/contract is never edited by hand). Until then those hosts' gates stay yours.
+- **Oracle's region-less hosts** (JPMC's `jpmc.fa.oraclecloud.com`) count as covered: TailorIT's contract API 5 widened `signInHostCovered`, and the extension took it with the API 5 pull (2026-11-06), so those hosts' gates are Sign-in Auto's too.
 - **Oracle's broader host permission** (Chrome reads the path-scoped content script's permission as all of oraclecloud.com) is accepted, and documented in docs/PRIVACY.md.
 
 Decisions still wanted:
 
 - Taleo's "Apply as Guest": whether the agent may prefer it where a portal offers it (waits for snapshots).
-- iCIMS's own sign-in, login.icims.com, and its password step: whether the every-site sign-in should cover it (TailorIT's `signInHostCovered` excludes it, and its page names the company but no job), and whether Sign-in Auto may act on its identifier-first flow (waits for snapshots).
+- iCIMS's own sign-in, login.icims.com, and its password step: TailorIT's contract API 5 covers it in `signInHostCovered` (a sign-in saved for every site answers there), but the extension does not run on it (its page names the company but no job); whether Sign-in Auto may act on its identifier-first flow waits for snapshots.
 - TailorIT's side: reading the five platforms' addresses (`ATS_KINDS`, `parseAtsUrl`, Add job from Workday's public posting API; contract API 5 is adding them), and the agent's addresses (Workday's `/apply/applyManually`, Taleo's `jobapply.ftl?job=`, SuccessFactors' Sign In link, Oracle's `/apply/email`).
 - iCIMS's pages after the gate: until a snapshot names their address word (`/jobs/<id>/<slug>/<word>`), only the posting and the gate are read as the posting's (the v3 Phase 6/7b review), so the extension does not fill them yet.
 

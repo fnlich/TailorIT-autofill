@@ -908,6 +908,18 @@ describe('version 3: the profile from a token, the chosen job and a letter as te
     expect((await applied({ url: workable })).status).toBe(known ? 200 : 404);
   });
 
+  it('adds a job from its page (version 5) only for an https page with a title, a company and a description', async () => {
+    const golden = example('AutofillFromPageRequest') as Record<string, unknown>;
+    const fromPage = (json: Record<string, unknown>) => call('/api/autofill/jobs/from-page', { method: 'POST',
+      headers: asToken(), json });
+    const added = AutofillAddJobResponseSchema.parse(await (await fromPage(golden)).json());
+    expect(added.lookup.job).not.toBeNull();
+    const plain = await fromPage({ ...golden, url: 'http://careers.tailorit-fixture.example/jobs/1' });
+    expect([plain.status, await errorCode(plain)]).toEqual([400, 'unsupported']);
+    const untitled = await fromPage({ ...golden, title: ' ' });
+    expect([untitled.status, await errorCode(untitled)]).toEqual([400, 'validation_failed']);
+  });
+
   it("reads a letter's text as its file: 409 until it is ready, 404 for one it never made", async () => {
     const text = (id: string) => call(`/api/autofill/cover-letters/${id}/text`, { headers: asToken() });
     expect(AutofillCoverLetterTextSchema.parse(await (await text(GOLDEN_LETTER.id)).json()))

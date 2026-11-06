@@ -89,7 +89,7 @@ export function example(schema, name = 'golden') {
 }
 
 /** The API version TailorIT speaks, as the contract's version.ts names it. */
-export const MOCK_API_VERSION = 4;
+export const MOCK_API_VERSION = 5;
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';
@@ -744,6 +744,26 @@ export function createMock() {
     return jsonAnswer(200, { created: !existing, lookup });
   }
 
+  /** POST /jobs/from-page (version 5): the job a page the person has open shows, added from the text the extension read
+   *  from it. TailorIT's own checks (an https address; a title, a company and a description within its caps) and its
+   *  refusals by scenario, else the contract's from-page answer, its lookup kept for the lookups after it.
+   *  @param {Record<string, unknown>} json @returns {Answer} */
+  function addJobFromPage(json) {
+    const limits = { title: 300, company: 200, description: 20_000 };
+    const text = (/** @type {unknown} */ value, /** @type {number} */ max) => typeof value === 'string' && value.trim() !== ''
+      && value.length <= max;
+    const urlOk = typeof json.url === 'string' && json.url.length >= 1 && json.url.length <= 2048;
+    if (!urlOk || !text(json.title, limits.title) || !text(json.company, limits.company)
+      || !text(json.description, limits.description)) return invalid('title: Required');
+    if (take('add-job-unsupported') !== null || !/^https:\/\//i.test(String(json.url))) {
+      return refusal(400, 'unsupported', 'TailorIT cannot add a job from that page.');
+    }
+    const body = example('AutofillAddJobResponse', 'from-page');
+    const lookup = withChosen(lookupAnswer('from-page', body.lookup), json.resumeId);
+    state.added = lookup;
+    return jsonAnswer(200, { created: body.created, lookup });
+  }
+
   function resumeList() {
     const list = example('AutofillResumeList');
     list.items = list.items.map((/** @type {{ id: string; fileName: string }} */ item) =>
@@ -1119,6 +1139,7 @@ export function createMock() {
       return lookupOf(json);
     },
     'POST /api/autofill/jobs': ({ json }) => addJob(json),
+    'POST /api/autofill/jobs/from-page': ({ json }) => addJobFromPage(json),
     // Version 3's routes (v3 Phase 3b and 4): as TailorIT's would answer them.
     'GET /api/autofill/jobs/search': ({ query }) => {
       if (take('job-search-forbidden') !== null) return refusal(403, 'forbidden', 'Connect the extension again.');

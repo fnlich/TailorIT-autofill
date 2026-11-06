@@ -51,6 +51,7 @@ import {
 import {
   AutofillAddJobRequestSchema,
   AutofillAddJobResponseSchema,
+  AutofillFromPageRequestSchema,
   AutofillLookupRequestSchema,
   AutofillLookupResponseSchema,
 } from './lookup';
@@ -98,6 +99,7 @@ export const AUTOFILL_CONTRACT_SCHEMAS = {
   AutofillLookupResponse: AutofillLookupResponseSchema,
   AutofillAddJobRequest: AutofillAddJobRequestSchema,
   AutofillAddJobResponse: AutofillAddJobResponseSchema,
+  AutofillFromPageRequest: AutofillFromPageRequestSchema,
   AutofillResumeList: AutofillResumeListSchema,
   AutofillPickRequest: AutofillPickRequestSchema,
   AutofillPickResult: AutofillPickResultSchema,
@@ -178,7 +180,7 @@ export interface AutofillRoute {
  * `conflict` for another API version, 401 for a dead token, 403 for a missing scope, 429 when rate-limited). The AI
  * routes refuse with AUTOFILL_AI_REFUSALS too; their tasks are polled and cancelled on /api/ai/tasks/:id, the one path
  * outside /api/autofill a token reaches, where a token sees only the autofill kinds (404 for any other task). The
- * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS, adding a job with AUTOFILL_ADD_JOB_REFUSALS and the
+ * saved-answer routes refuse with AUTOFILL_SAVED_ANSWER_REFUSALS, adding a job (and, version 5, adding one from its page) with AUTOFILL_ADD_JOB_REFUSALS and the
  * cover-letter routes with AUTOFILL_COVER_LETTER_REFUSALS (both version 2), marking a job Applied with
  * AUTOFILL_APPLIED_REFUSALS (version 3). The extension reads the saved answers (GET /api/autofill/answers, with
  * profile:read) together with GET /api/autofill/profile, once per run. A GET's query (the job search's, the
@@ -302,6 +304,16 @@ export const AUTOFILL_ROUTES = [
     caller: 'either',
     scope: 'jobs:add',
     request: 'AutofillAddJobRequest',
+    status: 200,
+    response: 'AutofillAddJobResponse',
+    accepted: null,
+  },
+  {
+    method: 'POST',
+    path: '/api/autofill/jobs/from-page',
+    caller: 'either',
+    scope: 'jobs:add',
+    request: 'AutofillFromPageRequest',
     status: 200,
     response: 'AutofillAddJobResponse',
     accepted: null,

@@ -1,5 +1,5 @@
 {
-  "apiVersion": 4,
+  "apiVersion": 5,
   "zod": "4.6.7",
   "files": {
     "agent.ts": "0726b62e9364814159f93a1c00cebaeb65623139492bbb4fe71662fe89cbdae2",
@@ -8,23 +8,25 @@
     "common.ts": "49960ec62489547d78a01bdc51d82142b6ce44168c31a81f060a282774da20f1",
     "connect.ts": "c7c32bda21eb64b78ec9e8085549144384fbf1d5c676b72918dbe726588b0071",
     "cover-letters.ts": "99634afc594f27fb9c2951c8539dcd59aa91c950f42734eaf9f178cd87d7903d",
-    "credentials.ts": "41c5e54cdf18288dd4cb3ba9f90eed2e68ae7e4d3ee5efdba1c8b6b72d25bb64",
+    "credentials.ts": "ce79a1b38594737caee22e73de0b92ae2b5700f15eddb607e46a63da3a55159b",
     "index.ts": "3c146f82768d342ca37d974da6943ad98c4faa1830b4b0401c0bfeca3598028c",
-    "lookup.ts": "3718a6ff487fd83a27d9b36d80471884769cc49cc207b58d46a341eeb59a8c19",
+    "lookup.ts": "0d62e0144a0f433598da8b13a896eabde8d07e442c5d48d1bc78ae4f63173684",
     "profile.ts": "182052d28bfd0729a3fbbe32f9523c57bbcf43bb45c515fecb3681f913689eb3",
-    "registry.ts": "a86c99e93d699afc0a7b9db49b9ad01afb015178c5322c3391cc861620da9c2e",
+    "registry.ts": "a094035377492c9b1a43029d18cc86a0e37c94bf00e644cf6a69f1d64220e6ef",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
     "tracker.ts": "076d57b058c50c75862c964d7fb57464c03eaed3fbe6b44a2f6dac652916320b",
-    "version.ts": "c52c1804042d9f9f7bda9646755bd81f7a1b0fa37e9bb80e4d4eb15916d2cf9c"
+    "version.ts": "64640b4a8b3421922e1dcf8edac4a92d11488adb2a0a18516daef9a3b76be2da"
   },
   "fixtures": {
     "AutofillAddJobRequest/invalid/empty-url.json": "f1928aa6e8d457480cd6177764fdc943720b90340a16dfd718c2c541471fd8bb",
     "AutofillAddJobRequest/valid/golden.json": "7bef15f724f9a329a888a279ab4e8849c9631af603b7049f6ee5de50c3fab8d6",
     "AutofillAddJobRequest/valid/without-resume.json": "8738441e2a03e1dfbaccd4cd71208ee2f0ae0d2215371c91c2a6bbecb717afcd",
     "AutofillAddJobRequest/valid/workable.json": "a6b7fe86b2691c871ee0a5326b1c617be0279c05a56518ee846a8bac965066be",
+    "AutofillAddJobRequest/valid/workday.json": "716af123df8e6fc814ffe3866149c0734d972243ca985620adab28e5677daff4",
     "AutofillAddJobResponse/invalid/no-lookup.json": "c1a75c8b781577c574cccb0e248a12c7bd2afa71300e1aa5953e77fbbdc080ee",
     "AutofillAddJobResponse/valid/existing.json": "2df7f8db68891446d316c0479d97b8c66a3f5b39065d7fb8775a4ef8314522a6",
+    "AutofillAddJobResponse/valid/from-page.json": "33159ced565af935ba868ba915c41a4aa1500e210c5228dffa8016896fd8eb05",
     "AutofillAddJobResponse/valid/golden.json": "ae76eb602a99787d15a4e9a446c01b6783d55618cd6129d249d8eb733fee62ef",
     "AutofillAddJobResponse/valid/workable.json": "c779cf54d690995d798e8d210e74e2cf43e51045eead3ba2594858c2a5bddc15",
     "AutofillAgentCleared/invalid/negative.json": "6143c8d778b2d8313270f2cba99abbdc559ee3f138ef3805618f5c64348228f9",
@@ -90,7 +92,7 @@
     "AutofillClassifyRequest/invalid/repeated-key.json": "5d9419a970c289ee249e83377e9e4691e94a0128e539782442b8914f29eaa3f7",
     "AutofillClassifyRequest/invalid/twenty-one-options.json": "330ede17147e1fa1b31da301293680c5de42c9c74f3ae107cd3ffef153667f8f",
     "AutofillClassifyRequest/invalid/unknown-kind.json": "798e49602822cdf8fdd135f824a24bc66b4424d995ad90136cbaa1312fc7624a",
-    "AutofillClassifyRequest/invalid/unknown-platform.json": "ef91ef4c9ea88d7a40bde5eb5d4db6ff9eae2d1b0146f50d3ff299752e322b8c",
+    "AutofillClassifyRequest/invalid/unknown-platform.json": "348bc9d3ec0a31b2144ac0c0977d15ca035a0a21322435c9d2ffb2fa6ecef164",
     "AutofillClassifyRequest/valid/golden.json": "07ec85d144451f6489461fddb8446885b9d8e93a759ea961ba1b150784d801b7",
     "AutofillClassifyRequest/valid/text-field.json": "9ef323dcc4389a60a33072d7d20a48473ac69d38067d94d1930ef8c8b52d3a39",
     "AutofillClassifyResult/invalid/no-reason.json": "1568b139d0d8fbf9e9fbd5fe01c027171ff5d7b00c3e8193b02e44c8d41d770c",
@@ -168,34 +170,46 @@
     "AutofillErrorBody/valid/other-api-version.json": "50242c36adc8591d00199b16ec1eda268341a186fc41c70a42ca8853e9bb0c4f",
     "AutofillErrorBody/valid/rate-limited.json": "b24c201b6f016bcdc9a7eb5722e1f83c8de9983105d24368d19a6a7596625e0e",
     "AutofillErrorBody/valid/validation-failed.json": "2aecc3b8ebc0dccc7b374a399827a641bc2e14948c3fe0806274277b887befb2",
+    "AutofillFromPageRequest/invalid/description-over-20000.json": "013726520b7a26b4e7e9b24fd04f22df24c08bf298f2dbf7f6c34909f1d12887",
+    "AutofillFromPageRequest/invalid/employer-on-linkedin.json": "3dfa9826a33cf845f2eb98916f2f267e792ccaaf5a0be10d4f2e5af64bacda9d",
+    "AutofillFromPageRequest/invalid/no-title.json": "4499e324c01f3ab3516e5c5553c76ea7d89221f4ddde36065081cf8cfe3ea79f",
+    "AutofillFromPageRequest/invalid/thirteen-criteria.json": "3e44120ac44c6e1f46d5f466e93f0bb50e8c2031dacc08890a54dc40cdc4f155",
+    "AutofillFromPageRequest/valid/careers-page.json": "8659b7d6d9addb2b603638f48c376d863a25bc957223a9f67206aff4a30e2752",
+    "AutofillFromPageRequest/valid/easy-apply.json": "6f2991c0c464a72fdb44a8b4aed454fd4e223ae8a92f0d65530d80b1332a0165",
+    "AutofillFromPageRequest/valid/golden.json": "cfb5a7163ea37be2faf4b259480f4f6551742c7c28623b2c0dddc8fcd638f458",
     "AutofillJobSearchQuery/invalid/query-over-200.json": "82bae39eb9fdd14bea5672448ce33b8054efd2a0fc1b61de546da7fe2959bdb9",
     "AutofillJobSearchQuery/valid/golden.json": "1e393b6f261978c8e36ecfa68327be728b7003e4ed56eb538b19c4046a4604e5",
     "AutofillJobSearchQuery/valid/no-words.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
     "AutofillJobSearchResponse/invalid/text-job-id.json": "c94cc890c071982dcd09e8dffdf1a26344382db5e225bdf747fc13885cdae833",
     "AutofillJobSearchResponse/valid/golden.json": "14db35b39ec2d2e14b8d41c00a9e83d9a1e734270961d1e371aa021339497631",
     "AutofillJobSearchResponse/valid/none.json": "0343639fac1511a32a4c9a92c7655a6e9f9ad3a600fc6f30b5bdad6806160a97",
+    "AutofillLookupRequest/invalid/employer-not-https.json": "cb549a568fa9c33c073865d64a6be4cbcd8ec0f64321fb57169a239f6ab12f65",
     "AutofillLookupRequest/invalid/empty-resume-id.json": "2a280c254e072a250505b46c48c5beb643396a10ab0b53a1264039328742c5a1",
     "AutofillLookupRequest/invalid/empty-url.json": "216673388b36464e2f958802134ced30cda65bd4accbb49d16a677248e147be3",
     "AutofillLookupRequest/invalid/job-id-zero.json": "befe93cd9726115b80c16c7b80e73f7912b4056aff377fab2e98015c4e2dafbe",
     "AutofillLookupRequest/invalid/url-over-2048.json": "4cdf8b18bff676f68aed639ee29e78cf63542f304cb771be1e182aade1c665ca",
     "AutofillLookupRequest/valid/chosen-job.json": "b6fb65d37e112852c85681677a0a4456ea36ef6a5a6bb7eaaca250fe36b71988",
+    "AutofillLookupRequest/valid/employer-link.json": "82447edf4a1bd934612635a0b00c9a3cc72bcc9bdaed17a0bc6a0219b6ddb488",
     "AutofillLookupRequest/valid/golden.json": "038ec88e90ccb9fb9c0e9dd9f520d22807c23fe6358cdfd975b9c74d500ce6a9",
     "AutofillLookupRequest/valid/with-resume.json": "44af6080b069cd777a946b6a169d8a6c1251ab43334eb3ae349ef492ecaa5e54",
     "AutofillLookupRequest/valid/without-posting-text.json": "631b0ad52abc890fa841aa8766989037021fb9f4c88bfe8a7606370b50e56df3",
     "AutofillLookupRequest/valid/workable.json": "036e0aa0de154f372f6f9998f6b195beb6ac020f12e82789c0b405c179b2159b",
     "AutofillLookupResponse/invalid/match-over-100.json": "9a662e535c370a74b29c19d4c3ce8466dc6285b71b675a7695123522a6df0c8b",
-    "AutofillLookupResponse/invalid/unknown-ats.json": "2101317193d532ba072d274c43f5f5bb97ada294693d0d30c6066b6f5359ce82",
+    "AutofillLookupResponse/invalid/unknown-add-route.json": "a0380eceea1d9c2e6afefac635b9757986f4ac51f40cf4a51f4eba3052342160",
+    "AutofillLookupResponse/invalid/unknown-ats.json": "94901f1c34e0709ca979589e1d494c8958fdeddda89ed4aa0497935da6eed054",
     "AutofillLookupResponse/invalid/unknown-reason.json": "e00de97035250da2aaf12c335e04c78d1debd2e88ad05a3dad6057e3139bff45",
     "AutofillLookupResponse/valid/ashby.json": "278888b3293ee6d9be6bacfe5144369516009b6feb294b06c27dcd418b9d93ec",
     "AutofillLookupResponse/valid/chosen.json": "b582a87f4bcc4e0d9fcbcc919526992ea9cce55d336782ef0fb169a1b31d6a7b",
     "AutofillLookupResponse/valid/company-page.json": "0a5a01e6ab565a1142e254a01698c7c62ba324528ab3079a1456d0d8272e65ce",
     "AutofillLookupResponse/valid/golden.json": "13f44f268aa9f7d261cc25d79154a07bd35457cfac6d6e2a53b5b27df677a6b2",
     "AutofillLookupResponse/valid/job-chosen.json": "de4c5205f98603a88b3c8c8afca0e467a1497014bbd92e47e34e1e6126933df1",
+    "AutofillLookupResponse/valid/linkedin.json": "724c65444746bbcdb0c86c4d3abacbf6f95c39a84828c53b2395bd1e5b502762",
     "AutofillLookupResponse/valid/no-keywords.json": "40d8063549e470411510662202d3104a9c34aac8d5ac960238188571dd57e616",
     "AutofillLookupResponse/valid/unknown-page-default-resume.json": "bfcfbc3f71d4fa6a784a5f2310ae3f8933cede22df18ac23f310f4164700e95e",
     "AutofillLookupResponse/valid/unknown-page.json": "5944f7ddc56b5fe9908e8648ec1cac4abd6f366d066d1efe837ec6fd6b2bd3b8",
     "AutofillLookupResponse/valid/with-posting-text.json": "ab9f86a9a6300b0683f7ed97a6de4221b89cfa8c1539ca40972a5f8ef4d66e4a",
     "AutofillLookupResponse/valid/workable.json": "715d36a52bfea3727e94314386d0c6735a571938c22aeaf02d903f867e614a38",
+    "AutofillLookupResponse/valid/workday.json": "d06c407f380c2acc78e16edb6b9e4407537008691250cb13623120e2ecc958f3",
     "AutofillPickRequest/invalid/country-category.json": "a2fc492bc12a5960b0dae622ff3041bcbe1a8b6b18a684e372510c274391478e",
     "AutofillPickRequest/invalid/eleven-aliases.json": "337c625757578f2b36cb328e51ba537f01a1316da58ed43573122f0a933710c5",
     "AutofillPickRequest/invalid/empty-intended-value.json": "dbb7f6436ba3b8887d1880af9cf5e9e7d2e786c9a8e7a1f1016f020657290313",
@@ -231,10 +245,10 @@
     "AutofillProfile/invalid/unknown-proficiency.json": "2999e644da0235073072355b40c9224422bd41e1ae41bc50807f134b1b9bb2c8",
     "AutofillProfile/valid/empty.json": "e06ce8cdb23b6ddae85c0e94216798a07576f3189dcd71088346bce49a08b19b",
     "AutofillProfile/valid/golden.json": "c143bf44d73be5c3dc1e74c1a12c9c58f0a369476ab6b6eeefafcd1282a3b8ae",
-    "AutofillProfileEnvelope/invalid/missing-profile.json": "de1c70ec37d2f282f974b7a7689daea9c915516f0cbdd9a1dc2bfd6bb1c58d42",
-    "AutofillProfileEnvelope/invalid/negative-revision.json": "a18cf05606040c9166b2fd6bba3d4a59dc2f9886b468cf854bb33f0865c8d364",
-    "AutofillProfileEnvelope/valid/golden.json": "fc580d593112e9a0d8b95a4d1cb6041c84564b84fe44ddbcfa568601901011de",
-    "AutofillProfileEnvelope/valid/no-row.json": "0441e9a636e8548f2c1298d6aa0e9503ad3c99d4d92e72a2402b5276ac62dcec",
+    "AutofillProfileEnvelope/invalid/missing-profile.json": "f7c798d4ade7c16e6417a563b96ceb9c084c020e6c14a91cd60343f49088ca92",
+    "AutofillProfileEnvelope/invalid/negative-revision.json": "259ba93e15afb2176f6be0fe73780c40732eed40746b10f5590eb13cbf3a7dd8",
+    "AutofillProfileEnvelope/valid/golden.json": "1046339c26a4bc5d64e6b5c4c96a0a20818980084379651ea07fd8a9f471864b",
+    "AutofillProfileEnvelope/valid/no-row.json": "30c06f2c15595287e7750ff1efbdfe53d053b48cbded4710a0378a33d8e9bafa",
     "AutofillRedeemBody/invalid/letter-u.json": "178040bdaa9e13515ec87a228ec6a595a5780fb91a19fae18726c0b8c6115eac",
     "AutofillRedeemBody/invalid/no-client.json": "793e4fd4c9be049d2089ea5cb803efdb6bc8d8cfd0a9accc0331a4cfb2ad42e6",
     "AutofillRedeemBody/invalid/short-code.json": "39a26db7a1de17ff8409c23bb41f862a9d39ee353cfb61bebed3679cb45e52cd",
@@ -242,10 +256,10 @@
     "AutofillRedeemBody/valid/golden.json": "c34caa080faa4912448f45ec575aa2d2a1b46569b5bb8d87e554a0689c8fc7df",
     "AutofillRedeemBody/valid/look-alike-letters.json": "10fac8f1a6bec78cc26a52d7a39396617dcfb34350c4a224edef49229690d827",
     "AutofillRedeemBody/valid/typed-code.json": "24f1431448dd3a24eeaa3b01f9621eb73c5fa520bf13518de0d1aab222736de4",
-    "AutofillRedeemResponse/invalid/foreign-token.json": "aa3cf24b87f519c9fdd187eed63a7fa0f9718bfe08bb3dd2e79d0df6f3dc24f6",
-    "AutofillRedeemResponse/invalid/unknown-scope.json": "b22ab3e026d2beffe8374185b7a1599fee5f9daee7639586891075ca87387397",
-    "AutofillRedeemResponse/valid/golden.json": "0081a8bb130bcff8478242481e9ae377647b9507f72bfb85226aa21f38e83c68",
-    "AutofillRedeemResponse/valid/without-sensitive.json": "33a6c172ff656920eb0b85e01fb8cae6b56183f6b55d3446206db96dc4308742",
+    "AutofillRedeemResponse/invalid/foreign-token.json": "a6faef1b9794d82e74484d007a105b5e05799f8b3cc17433aa39391b88513f75",
+    "AutofillRedeemResponse/invalid/unknown-scope.json": "0672238a91da074614b9b78408947da3e582e83eaa8e42fd5ed0489d5e00d37f",
+    "AutofillRedeemResponse/valid/golden.json": "af7ba8e95b21726bd04f5c4c8c8c8e12710c2620772d3d664ce89730ca13bb82",
+    "AutofillRedeemResponse/valid/without-sensitive.json": "0c621f2a7f7b2d010484b39c67a304b6ef25ecab12a3bb70fd47fa6bcdafb122",
     "AutofillResumeList/invalid/unknown-file-kind.json": "837aa7db5027680296c9f5a5ebdfab381a4b1df6497043cd575790676aa9114e",
     "AutofillResumeList/valid/golden.json": "4ac733a1f445e870dc1856a05e0eb30a35da5087681866905ab4d174bdd66393",
     "AutofillResumeList/valid/none.json": "ad13fbd1e9c76a3beae2d83d0bca99a43a150efdf5daddb4a29d00c8ffd8e615",
@@ -286,12 +300,12 @@
     "AutofillSensitive/valid/empty.json": "9659039a133b715fbbb379f8d9b9bdd7e6fa3fc1078986a1d49778f195240282",
     "AutofillSensitive/valid/golden.json": "7bff58d137abf0a73df69f4ed6d01512e7523a46a3fcffdbc889f4a37bd2e850",
     "AutofillSensitive/valid/self-described.json": "d75fa6a314928b404d930a32779fa7b28e2d8eb23d256f3753ab35868107fa2a",
-    "AutofillSensitiveEnvelope/invalid/local-time.json": "bc04cb42f48b3e23e2f29d1febda63331190d825cd0b929c85c9e2b3abb4a477",
-    "AutofillSensitiveEnvelope/valid/golden.json": "48a992fecd38220b04b187bb11c22d2f5ac9deadfe50f1a8f92b4cce0666d8ae",
-    "AutofillSensitiveEnvelope/valid/no-row.json": "c558ea06fa19583b80a410169d93afecd94638f8fe393503687016a90939853f",
-    "AutofillSession/invalid/no-ai.json": "51ea514ba136f036e4565c000aad5c11da7b71404a3d10768b67ab8f8486cb10",
-    "AutofillSession/valid/golden.json": "3cce8bdc0c9518b1d142b1ebc9f32b267c90982146592021b2ac60faa765f8cf",
-    "AutofillSession/valid/without-sensitive.json": "55f3888ff8c61c351849f26ddca57a18fa27284b357403a9dbb12696f02065e2",
+    "AutofillSensitiveEnvelope/invalid/local-time.json": "df56cec161a03ca5b284528900a4d6571f672593db928e83a7119f1b36e9c213",
+    "AutofillSensitiveEnvelope/valid/golden.json": "bd63eeb3e802041b55e7ae232ed59dd58ee253ffa5c9f76a9de5c72df7b53a5b",
+    "AutofillSensitiveEnvelope/valid/no-row.json": "1a76dcd54bdbfdc20ad1045354f0b98e12c1e6ce9a01ee9a14bba135c0003b6e",
+    "AutofillSession/invalid/no-ai.json": "ad89b60da2968ea8b9d32a099193f7798183d3cd027bf59b417b1b76e4c874f3",
+    "AutofillSession/valid/golden.json": "1a589f13147037a45ee992d3665288c8d9c99e5fc396d152e509d26054caf5ae",
+    "AutofillSession/valid/without-sensitive.json": "1b8e1896168736504944272085f26afbfa7496a7366d536beb3361b65bab18ad",
     "AutofillSignInItem/invalid/path-in-host.json": "cd0e94be0203e0ed4eb21654cee05e5f646bc4e45cd09eb06470f01402d5c60c",
     "AutofillSignInItem/valid/golden.json": "51bf42908dc2475c98957ccb3e48fdf4ccf97c3bf64f27d3ae866244077e8c8b",
     "AutofillSignInList/invalid/no-limit.json": "70687c8fa319500122348b82c7c442f45cb27c5e4c1791a0fae18d46acc50f05",
@@ -7410,6 +7424,11 @@
           "minLength": 1,
           "maxLength": 2048
         },
+        "employerUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
         "includePostingText": {
           "default": false,
           "type": "boolean"
@@ -7447,7 +7466,11 @@
                     "lever",
                     "ashby",
                     "workday",
-                    "workable"
+                    "workable",
+                    "icims",
+                    "taleo",
+                    "successfactors",
+                    "oracle"
                   ]
                 },
                 "board": {
@@ -7502,7 +7525,8 @@
                   "enum": [
                     "source_link",
                     "link_key",
-                    "chosen"
+                    "chosen",
+                    "alias"
                   ]
                 },
                 "postingText": {
@@ -7742,6 +7766,90 @@
               "type": "null"
             }
           ]
+        },
+        "page": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "linkedin",
+                "ats",
+                "site"
+              ]
+            },
+            "linkedInUrl": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "employer": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "greenhouse",
+                        "lever",
+                        "ashby",
+                        "workday",
+                        "workable",
+                        "icims",
+                        "taleo",
+                        "successfactors",
+                        "oracle"
+                      ]
+                    },
+                    "board": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "externalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "board",
+                    "externalId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "addWith": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "ats",
+                    "page"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "linkedInUrl",
+            "employer",
+            "addWith"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -7794,7 +7902,11 @@
                         "lever",
                         "ashby",
                         "workday",
-                        "workable"
+                        "workable",
+                        "icims",
+                        "taleo",
+                        "successfactors",
+                        "oracle"
                       ]
                     },
                     "board": {
@@ -7849,7 +7961,8 @@
                       "enum": [
                         "source_link",
                         "link_key",
-                        "chosen"
+                        "chosen",
+                        "alias"
                       ]
                     },
                     "postingText": {
@@ -8089,6 +8202,90 @@
                   "type": "null"
                 }
               ]
+            },
+            "page": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "linkedin",
+                    "ats",
+                    "site"
+                  ]
+                },
+                "linkedInUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "employer": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "greenhouse",
+                            "lever",
+                            "ashby",
+                            "workday",
+                            "workable",
+                            "icims",
+                            "taleo",
+                            "successfactors",
+                            "oracle"
+                          ]
+                        },
+                        "board": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "externalId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "board",
+                        "externalId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "addWith": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "ats",
+                        "page"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "linkedInUrl",
+                "employer",
+                "addWith"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -8103,6 +8300,77 @@
       "required": [
         "created",
         "lookup"
+      ],
+      "additionalProperties": false
+    },
+    "AutofillFromPageRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "employerUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "company": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "criteria": {
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "label",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "resumeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "url",
+        "title",
+        "company",
+        "description"
       ],
       "additionalProperties": false
     },
@@ -8482,7 +8750,11 @@
             "lever",
             "ashby",
             "workday",
-            "workable"
+            "workable",
+            "icims",
+            "taleo",
+            "successfactors",
+            "oracle"
           ]
         },
         "items": {
@@ -10351,7 +10623,7 @@
             {
               "type": "string",
               "maxLength": 250,
-              "pattern": "^(?:greenhouse|lever|ashby|workday|workable):\\S{1,200}$"
+              "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle):\\S{1,200}$"
             }
           ]
         },
@@ -10384,7 +10656,11 @@
                 "lever",
                 "ashby",
                 "workday",
-                "workable"
+                "workable",
+                "icims",
+                "taleo",
+                "successfactors",
+                "oracle"
               ]
             },
             {
@@ -10521,7 +10797,7 @@
                   {
                     "type": "string",
                     "maxLength": 250,
-                    "pattern": "^(?:greenhouse|lever|ashby|workday|workable):\\S{1,200}$"
+                    "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle):\\S{1,200}$"
                   }
                 ]
               },
@@ -10554,7 +10830,11 @@
                       "lever",
                       "ashby",
                       "workday",
-                      "workable"
+                      "workable",
+                      "icims",
+                      "taleo",
+                      "successfactors",
+                      "oracle"
                     ]
                   },
                   {
@@ -10700,7 +10980,7 @@
             {
               "type": "string",
               "maxLength": 250,
-              "pattern": "^(?:greenhouse|lever|ashby|workday|workable):\\S{1,200}$"
+              "pattern": "^(?:greenhouse|lever|ashby|workday|workable|icims|taleo|successfactors|oracle):\\S{1,200}$"
             }
           ]
         },
@@ -10733,7 +11013,11 @@
                 "lever",
                 "ashby",
                 "workday",
-                "workable"
+                "workable",
+                "icims",
+                "taleo",
+                "successfactors",
+                "oracle"
               ]
             },
             {
@@ -11847,6 +12131,16 @@
       "caller": "either",
       "scope": "jobs:add",
       "request": "AutofillAddJobRequest",
+      "status": 200,
+      "response": "AutofillAddJobResponse",
+      "accepted": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/autofill/jobs/from-page",
+      "caller": "either",
+      "scope": "jobs:add",
+      "request": "AutofillFromPageRequest",
       "status": 200,
       "response": "AutofillAddJobResponse",
       "accepted": null

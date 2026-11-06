@@ -25,6 +25,7 @@ import {
   RACE_CATEGORIES,
   WORK_STATUSES as CONTRACT_WORK_STATUSES,
   cutAtWord as contractCutAtWord,
+  signInHostCovered,
 } from '../src/contract/tailorit';
 import {
   CLASSIFY_MAX_ITEMS, CLASSIFY_MAX_OPTIONS, CLASSIFY_TEXT_MAX, DRAFT_DEFAULT_LENGTH, DRAFT_MAX_LENGTH, DRAFT_MAX_QUESTIONS,
@@ -108,9 +109,9 @@ describe("the copy of TailorIT's contract (src/contract/tailorit)", () => {
     }
   });
 
-  it('names API version 4 and the zod this extension pins, as SOURCE.json does', () => {
+  it('names API version 5 and the zod this extension pins, as SOURCE.json does', () => {
     const zod = (createRequire(import.meta.url)('zod/package.json') as { version: string }).version;
-    expect(record.apiVersion).toBe(4);
+    expect(record.apiVersion).toBe(5);
     expect(AUTOFILL_API_VERSION).toBe(record.apiVersion);
     expect(zod).toBe('4.6.7');
     expect(record.zod).toBe(zod);
@@ -158,12 +159,25 @@ describe('the examples (v1/fixtures)', () => {
   });
 });
 
+describe("the every-site sign-in's hosts (TailorIT's API 5)", () => {
+  it('cover login.icims.com, a Taleo Business Edition portal and a region-less Oracle tenant, as decided', () => {
+    for (const host of ['login.icims.com', 'acme.tbe.taleo.net', 'jpmc.fa.oraclecloud.com', 'elhr.fa.us2.oraclecloud.com',
+      'careers-acme.icims.com', 'hdr.taleo.net', 'acme.wd5.myworkdayjobs.com', 'wd5.myworkdaysite.com', 'career2.successfactors.eu']) {
+      expect(signInHostCovered(host), host).toBe(true);
+    }
+    for (const host of ['www.icims.com', 'api.icims.com', 'tbe.taleo.net', 'www.taleo.net', 'objectstorage.us-ashburn-1.oraclecloud.com',
+      'fa.oraclecloud.com', 'performancemanager4.successfactors.com', 'example.com']) {
+      expect(signInHostCovered(host), host).toBe(false);
+    }
+  });
+});
+
 describe('the value lists the two sides share', () => {
   // TailorIT's test holds the same lists (as this extension's src/core/enums.ts writes them): change both sides at once.
   it("are this extension's, value for value and in its order", () => {
     expect(AUTOFILL_FIELD_KINDS).toEqual(FIELD_KINDS);
-    // The platforms ahead of the contract (v3 Phase 7b: their sign-in and posting pages only) are named to TailorIT
-    // nowhere until it lists them: this fails once it does, and the list is emptied then.
+    // A platform ahead of the contract is named to TailorIT nowhere until it lists it: this fails once it does, and the
+    // list is emptied then (iCIMS, Taleo, SuccessFactors and Oracle, listed since TailorIT's API 5).
     expect(ATS_KINDS).toEqual(PLATFORMS.filter((platform) => !PLATFORMS_AHEAD_OF_CONTRACT.includes(platform)));
     expect(PLATFORMS_AHEAD_OF_CONTRACT.some((platform) => (ATS_KINDS as readonly string[]).includes(platform))).toBe(false);
     expect(CONTRACT_DEGREE_LEVELS).toEqual(DEGREE_LEVELS);

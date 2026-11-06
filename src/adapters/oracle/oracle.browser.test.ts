@@ -97,7 +97,8 @@ describe('the email gate (v3 Phase 7b)', () => {
     expect(signInRefusal(form, new URL(address))).toBe('hidden');
   });
 
-  it('takes the gate on a covered tenant, and refuses it on JPMC’s region-less host and on http', async () => {
+  it('takes the gate on a covered tenant, JPMC’s region-less host included (API 5), and refuses it elsewhere and on http',
+    async () => {
     const { fixture, address } = await served();
     plain(fixture.doc);
     const form = signInFormOf(oracleAdapter, fixture.doc, 'email-gate')!;
@@ -105,7 +106,10 @@ describe('the email gate (v3 Phase 7b)', () => {
     expect(form.scriptSubmits).toBe(true);
     expect(form.enablesWhenFilled).toBe(true);
     expect(signInRefusal(form, new URL(address))).toBeNull();
+    // TailorIT's API 5 covers a region-less tenant (<tenant>.fa.oraclecloud.com); a host that is no Fusion tenant it does not.
     expect(signInRefusal(form, new URL('https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/1/apply/email')))
+      .toBeNull();
+    expect(signInRefusal(form, new URL('https://acme.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/1/apply/email')))
       .toBe('method');
     expect(signInRefusal(form, new URL(address.replace('https:', 'http:')))).toBe('not-https');
     expect(signInRefusal({ ...form, scriptSubmits: undefined }, new URL(address))).toBe('method');

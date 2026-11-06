@@ -354,11 +354,20 @@ describe('the job card, looked up as a form’s page loads (v3 Phase 3)', () => 
       card: { state: 'answered' } } });
     expect(worker.tailorit.count(LOOKUP)).toBe(1);
 
-    // Not a posting: a subframe on a posting address, a Workday posting, a page no parser reads, a company's site.
+    // A Workday posting's own page, which TailorIT's parseAtsUrl reads since its API 5: its card frame too.
+    const workday = await startTestWorker({ token: tokenRecord(), lookupOnLoad: true });
+    const workdayPosting = contentSender({ tab: { id: 9 }, documentId: 'doc-wd',
+      url: 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Austin/Engineer_R1' });
+    relayingAs(workday, workdayPosting);
+    await hello(workday, workdayPosting, { hasForm: false });
+    await expect.poll(() => workday.tailorit.count(LOOKUP)).toBe(1);
+    expect(await page(workday, { type: 'panel/reports', tabId: 9 })).toMatchObject({ ok: true, data: { page: {
+      support: 'no-form', posting: true } } });
+
+    // Not a posting: a subframe on a posting address, a page no parser reads, a company's site.
     const other = await startTestWorker({ token: tokenRecord(), lookupOnLoad: true });
     const senders = [
       contentSender({ tab: { id: 8 }, frameId: 2, documentId: 'doc-sub', url: posting.url }),
-      contentSender({ tab: { id: 9 }, documentId: 'doc-wd', url: 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Austin/Engineer_R1' }),
       contentSender({ tab: { id: 10 }, documentId: 'doc-board', url: 'https://jobs.lever.co/tailorit-fixture' }),
       contentSender({ tab: { id: 11 }, documentId: 'doc-site', url: 'https://example.com/careers/engineer' }),
     ];
@@ -373,7 +382,7 @@ describe('the job card, looked up as a form’s page loads (v3 Phase 3)', () => 
     await Promise.resolve();
     expect(other.tailorit.count(LOOKUP)).toBe(0);
     expect(sentToFrames(other).filter((sent) => typeOfSent(sent) === 'job/refresh')).toEqual([]);
-    for (const tabId of [9, 10, 11]) {
+    for (const tabId of [10, 11]) {
       const state = await page(other, { type: 'panel/reports', tabId }) as { data: { page: object } };
       expect(state.data.page).not.toHaveProperty('posting');
     }

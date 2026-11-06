@@ -34,20 +34,26 @@ export const AUTOFILL_SIGN_IN_HOST_SUFFIXES: readonly string[] = [
 /**
  * The candidate sign-in hosts under each domain of AUTOFILL_SIGN_IN_HOST_SUFFIXES, as patterns over the whole host:
  * - Workday: a tenant's host, `<tenant>.wd<n>.myworkdayjobs.com` (or `myworkdaysite.com`; the tenant may sit directly
- *   below the domain on older sites), never `www`;
+ *   below the domain on older sites), never `www`; `wd<n>.myworkdaysite.com`, which serves every tenant on it (the
+ *   tenant in the path), is one host, so one sign-in saved for it covers all of them;
  * - iCIMS: a company's portal, `careers-<company>.icims.com` or `<company>.icims.com`, never `www`, `api` or `login`;
- * - Taleo: a company's portal, `<company>.taleo.net`, never `www`;
+ *   and (version 5) `login.icims.com`, iCIMS's own sign-in ("Log back in" sends every portal's candidate there);
+ * - Taleo: a company's portal, `<company>.taleo.net`, never `www` or `tbe`; and (version 5) a Taleo Business Edition
+ *   portal, `<company>.tbe.taleo.net`;
  * - SuccessFactors: the career sites alone, `career<n>.successfactors.com` / `.eu` (`career`, `career2`, `career012`);
  * - Oracle Recruiting Cloud: a Fusion Applications tenant, `<tenant>.fa.<region>.oraclecloud.com` (`.fa.ocs.`
- *   included), never Object Storage or another Oracle Cloud service;
+ *   included) or (version 5) `<tenant>.fa.oraclecloud.com` with no region (JPMC's), never Object Storage or another
+ *   Oracle Cloud service;
  * - SmartRecruiters: `jobs.smartrecruiters.com` and `careers.smartrecruiters.com`.
  */
 const SIGN_IN_HOSTS: readonly RegExp[] = [
   /^(?!www\.)[a-z0-9-]+(?:\.wd\d{1,3})?\.myworkday(?:jobs|site)\.com$/,
   /^(?!(?:www|api|login)\.)[a-z0-9-]+\.icims\.com$/,
-  /^(?!www\.)[a-z0-9-]+\.taleo\.net$/,
+  /^login\.icims\.com$/,
+  /^(?!(?:www|tbe)\.)[a-z0-9-]+\.taleo\.net$/,
+  /^[a-z0-9-]+\.tbe\.taleo\.net$/,
   /^career\d{0,3}\.successfactors\.(?:com|eu)$/,
-  /^[a-z0-9-]+\.fa\.[a-z0-9-]+\.oraclecloud\.com$/,
+  /^[a-z0-9-]+\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com$/,
   /^(?:jobs|careers)\.smartrecruiters\.com$/,
 ];
 
