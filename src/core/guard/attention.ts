@@ -16,6 +16,7 @@
  * wording, so a "read" followed by an agreement or a consent document is none. "Select all that apply" is never an
  * attack (§7.7), and "Are you a human resources professional?" asks about a job.
  */
+import type { FieldKind } from '../enums';
 import { detectionViews } from './fold';
 
 /** The nine attention-check patterns (§7.9) and the Phase 7a review's, each with the id a hit reports. */
@@ -35,11 +36,81 @@ export const ATTENTION_PATTERNS = [
   { id: 'posting-phrase', re: /\bdid\s+you\s+(?:start|begin|include|use|add|mention)\b[^.?!]{0,80}?\b(?:(?:phrase|words?|code(?:\s*word)?|keyword|password)\b[^.?!]{0,80}?\b(?:asked|requested|instructed|specified|given|mentioned)\b|(?:asked|requested|instructed|specified)\b[^.?!]{0,40}?\b(?:phrase|words?|code(?:\s*word)?|keyword|password)\b)/i },
 ] as const;
 
-/** The patterns whose check only the person can answer: never asked of the AI, whatever the scope. */
-export const PERSON_ONLY_ATTENTION: ReadonlySet<AttentionPatternId> = new Set<AttentionPatternId>(['posting-phrase']);
+/** The patterns whose check only the person can answer: never asked of the AI, whatever the scope. The audit of
+ *  2026-11-06 (S-2) adds the bot checks ("Are you a robot?", "What is 4 + 3?"): a CAPTCHA asked as a question, which
+ *  the extension never answers (SPEC NON-NEGOTIABLES 2). */
+export const PERSON_ONLY_ATTENTION: ReadonlySet<AttentionPatternId> = new Set<AttentionPatternId>(['human-check',
+  'arithmetic', 'posting-phrase']);
 
 /** The id of an attention-check pattern. */
 export type AttentionPatternId = (typeof ATTENTION_PATTERNS)[number]['id'];
+
+// ---- Bot checks (the audit of 2026-11-06, S-2 and S-3) ----
+
+/** The attention patterns that are a bot check: the step's CAPTCHA, the person's alone (reason `bot-check`). */
+export const BOT_CHECK_ATTENTION: ReadonlySet<AttentionPatternId> = new Set<AttentionPatternId>(['human-check',
+  'arithmetic']);
+
+/** Why a field is a bot check: one of BOT_CHECK_ATTENTION, a CAPTCHA asked in words ('captcha'), or a statement that
+ *  the applicant is human or no robot on a field that is ticked or chosen ('robot-statement'). */
+export type BotCheckId = AttentionPatternId | 'captcha' | 'robot-statement';
+
+/** A CAPTCHA by name, in a field's own label: "CAPTCHA", "reCAPTCHA", "Captcha code". Never read in a description,
+ *  where a form's "This site is protected by reCAPTCHA" notice may sit beside an ordinary field. */
+const CAPTCHA_NAMED = /\b(?:re\s?|h\s?)?captcha\b/i;
+/** Text to copy from an image or a picture ("Enter the characters you see in the image above", "Type the text shown in
+ *  the picture", "Please enter the security code shown in the image"), or characters "you see" ("Enter the letters you
+ *  see"), or a verification asked in words ("Security question: what colour is the sky?", "Spam check"). Read in the
+ *  label and the description. */
+const CAPTCHA_WORDED = [
+  // Characters to copy: "Enter the characters you see", "Type the text shown in the picture".
+  /\b(?:enter|type|input|write|copy|retype|re\s?-?\s?enter|fill\s+in|key\s+in)\s+(?:in\s+)?(?:\w+\s+){0,2}?(?:characters?|letters?|text|words?|code|numbers?|digits?|symbols?)\s+(?:(?:that\s+)?you\s+(?:can\s+)?see\b|[^.?!]{0,40}?\b(?:in|on|from|within|inside)\s+(?:the|this|that|an?)\s+(?:\w+\s+)?(?:images?|pictures?|graphics?)\b)/i,
+  // A security or verification code tied to an image: "Security code (shown in the image)".
+  /\b(?:security|verification)\s+code\b[^.?!]{0,40}?\b(?:images?|pictures?|graphics?)\b|\b(?:images?|pictures?|graphics?)\b[^.?!]{0,40}?\b(?:security|verification)\s+code\b/i,
+  // A verification asked in words: "Spam check: ...", "Security question: ...", "Verify you are human".
+  /\b(?:anti\s?-?\s?spam|spam|bot|robot)\s+(?:check|test|question|verification|challenge)\b|\bsecurity\s+question\b|\b(?:human|bot)\s+verification\b|\bverify\s+(?:that\s+)?you(?:\s+are|\s*['’]?\s*re)\s+(?:a\s+)?(?:human\b(?!\s+resources?\b)|not\s+a\s+(?:ro)?bot\b)/i,
+] as const;
+/** A first-person statement of being human or no robot ("I'm not a robot", "I am a human", "I confirm I am not a
+ *  bot"), or "not a robot" anywhere: what a site's own bot check asks the person to tick. Never "I am a human resources
+ *  professional". */
+const ROBOT_STATEMENT = /\bnot\s+(?:a\s+|an\s+)?(?:ro)?bots?\b|\b(?:i\s*['’]?\s*m|i\s+am)\s+(?:a\s+)?(?:real\s+|living\s+)?(?:human\b(?!\s+resources?\b)|person\s*[.!]?\s*$)/i;
+/** What a box or a choice asks the person to confirm of themselves ("Please confirm you are human", "Check this box to
+ *  show you are a real person"): on a field that is ticked or chosen, a bot check. A text box that asks for a word to
+ *  type ("To confirm you are a human, type the word 'human' below") stays an attention check (trap fixture 6). */
+const HUMAN_CONFIRMED = /\b(?:confirm|verify|prove|show|certify|attest|indicate)\s+(?:that\s+)?you(?:\s+are|\s*['’]?\s*re)\s+(?:a\s+)?(?:real\s+|living\s+)?(?:human\b(?!\s+resources?\b)|person\b(?!\s+(?:with|who|of|that|living|in|from|eligible|authori[sz]ed)\b))/i;
+
+/** The kinds a site's bot check is ticked or chosen on, where a statement of being human is one. */
+const CHOSEN_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['checkbox', 'checkbox-group', 'radio', 'select', 'combobox',
+  'multiselect']);
+
+/** Whether a text, in any detection view, matches one of `patterns`. */
+const anyView = (text: string, patterns: readonly RegExp[]) => text.trim() !== ''
+  && detectionViews(text).some((view) => patterns.some((pattern) => pattern.test(view)));
+
+/** Whether page text names a CAPTCHA, asks for one in words (CAPTCHA_WORDED), or states being human or no robot in the
+ *  first person (ROBOT_STATEMENT): what an AI answer never gives, in any scope (plan/answers.ts namesUnanswerableTopic,
+ *  which the worker runs again over a question, its hint, its section and its options). */
+export function namesBotCheck(text: string): boolean {
+  return anyView(text, [CAPTCHA_NAMED, ...CAPTCHA_WORDED, ROBOT_STATEMENT]);
+}
+
+/**
+ * Whether a field is a bot check (the audit of 2026-11-06, S-2 and S-3), and why: a human check or a sum
+ * (BOT_CHECK_ATTENTION) in its label or description; a CAPTCHA named in its label or asked in words in either; or, on a
+ * field that is ticked or chosen, a statement that the applicant is human or no robot ("I'm not a robot", "Please
+ * confirm you are human"), read before any consent policy. Null for anything else. Such a field is the person's alone:
+ * never answered, ticked or sent to an AI, and while one is left the step holds as at a CAPTCHA.
+ */
+export function botCheckOf(label: string, description: string, kind: FieldKind): BotCheckId | null {
+  const attention = attentionHits(label, description).find((id) => BOT_CHECK_ATTENTION.has(id));
+  if (attention !== undefined) return attention;
+  if (anyView(label, [CAPTCHA_NAMED]) || anyView(label, CAPTCHA_WORDED) || anyView(description, CAPTCHA_WORDED)) {
+    return 'captcha';
+  }
+  if (!CHOSEN_KINDS.has(kind)) return null;
+  const statement = [ROBOT_STATEMENT, HUMAN_CONFIRMED];
+  return anyView(label, statement) || anyView(description, statement) ? 'robot-statement' : null;
+}
 
 /** The consent words that make an attention-shaped label consent instead (§7.9). */
 export const CONSENT_TOPIC = /\b(?:privacy|terms|policy|policies|notice|agreement)\b/i;

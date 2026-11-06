@@ -39,7 +39,8 @@
  * the widget shows chosen kept in place (withChosenKept), so the next scan sees what it now shows and still knows its
  * chips. The person's Skip (v3 Phase 3: interact.ts's skipTidyContext) ends a wait: a list opened for the write is
  * closed on the tidy context and nothing is chosen; an option already clicked stands, read back as the widget shows
- * it, its list closed the same way. Nothing here logs or reports a value.
+ * it, its list closed the same way: one the widget does not show yet is written, not verified (verify-mismatch: the
+ * audit of 2026-11-06, m11). Nothing here logs or reports a value.
  */
 import { llmPickStillValid } from '../../core/guard/provenance';
 import type { BaseKey, Option } from '../../core/types/field';
@@ -253,7 +254,7 @@ async function chooseByEvents(target: FieldTarget, value: Extract<WriteValue, { 
   await closeList(widget, closingContext(ctx), opened);
   const after = chosenLabels(widget, [...known, fresh.label]);
   if (after.some((label) => shownIdentity(label) === shownIdentity(fresh.label))) return done(true, 'ok');
-  if (after.length === before.length && after.every((label, at) => label === before[at])) return refused('needs-your-click');
+  if (after.length === before.length && after.every((label, at) => label === before[at])) return clickedUnshown(ctx);
   return mismatch('verify-mismatch');
 }
 
@@ -342,7 +343,7 @@ export async function addOptions(target: FieldTarget, value: Extract<WriteValue,
     (option.el as HTMLElement).click();
     await afterAction(widget, ctx);
     if (!showsOption(widget, known, item.label)) {
-      stopped = refused('needs-your-click');
+      stopped = clickedUnshown(ctx);
       break;
     }
     added += 1;
@@ -377,5 +378,13 @@ export async function pressMember(target: FieldTarget, value: Extract<WriteValue
   if (!assertNotSubmit(member, ctx).ok) return refused('needs-your-click');
   member.click();
   await afterAction(widget, ctx);
-  return isChosen(member) ? done(true, 'ok') : refused('needs-your-click');
+  return isChosen(member) ? done(true, 'ok') : clickedUnshown(ctx);
+}
+
+/** An option or a member clicked that the widget does not show chosen yet: one that ignores our events is
+ *  needs-your-click; but when the person's Skip ended the wait for it (the audit of 2026-11-06, m11), the page may yet
+ *  take the click, so it is written and not verified (verify-mismatch), read back after the settle, never the person's
+ *  skipped field the page holds our value in. */
+function clickedUnshown(ctx: WidgetFillContext): FillOutcome {
+  return ctx.signal?.aborted === true ? mismatch('verify-mismatch') : refused('needs-your-click');
 }

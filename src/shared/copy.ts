@@ -16,7 +16,7 @@ import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Pr
 import type { ReasonCode } from '../core/types/fill';
 import type { PauseReason, RunStatus } from '../core/types/run';
 import type {
-  AddJobOutcome, AgentBlock, AgentStatus, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome,
+  AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome,
   ProfileSaveRefusal, SaveAnswerOutcome, SiteRequestOutcome, SubmittedState,
 } from '../messaging/schemas';
 import type { FrameReport } from './report';
@@ -75,6 +75,8 @@ const NOTICES = {
   'sign-in-auto': 'Sign-in is on Auto: signing you in with the job-site sign-in you saved in TailorIT.',
   'sign-in-unavailable': 'Sign-in is on Auto, but no job-site sign-in you saved in TailorIT can be used on this page. Sign in yourself, then choose Continue.',
   'sign-in-failed': "Signing in with your saved job-site sign-in didn't work, and it won't be tried again here. Check it in TailorIT's Settings › Autofill, then sign in yourself.",
+  // The audit of 2026-11-06 (S-2, S-3): a draft for the owner's review.
+  'bot-check': "A question checks that a person is filling in this form, so it was left for you. Next and Submit won't be pressed for you until you answer it.",
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -206,6 +208,10 @@ const REASONS = {
   'cover-letter-too-long': "Your cover letter for this job is longer than this box allows, so it wasn't typed in or cut short. Shorten it in TailorIT, or write a shorter one here.",
   // The Phase 7a review: a draft for the owner's review.
   'conditional-question': "This question follows up an answer above that doesn't call for it, or that you haven't given yet, so it was left for you.",
+  // The audit of 2026-11-06 (S-2, S-3): a draft for the owner's review.
+  'bot-check': 'This checks that a person is filling in the form, so it was left for you. Answer it yourself.',
+  // The audit of 2026-11-06 (S-4): a draft for the owner's review.
+  'how-application-made': 'This asks how your application was made. An extension is filling it in, so only you can answer this one.',
   // A bug.
   'internal-error': 'Something went wrong in the extension, so this was left for you.',
 } as const satisfies Record<ReasonCode, string>;
@@ -1018,6 +1024,8 @@ const OPTIONS = {
       'no-scope': "This browser's connection was made before auto-apply. Disconnect, then connect again.",
       disclosure: 'Choose I understand on the updated notice to use auto-apply.',
       'no-window': 'Auto-apply waits until a browser window of yours is open.',
+      // The audit of 2026-11-06 (M5): a draft for the owner's review.
+      offline: 'Auto-apply waits until this browser is back online.',
     } satisfies Record<AgentBlock, string>,
   },
   consent: {
@@ -1136,6 +1144,13 @@ const AGENT_REASONS = {
   cancelled: 'stopped',
   other: 'something to check',
 } as const satisfies Record<AutofillAgentReason, string>;
+/** The audit of 2026-11-06 (M5, m14): why the agent paused itself, Run auto-apply off until the person turns it on
+ *  again. Drafts for the owner's review. */
+const AGENT_PAUSE_WORDS = {
+  'no-window': "Chrome didn't open a window for the next job",
+  'page-errors': "several pages in a row didn't load",
+  'window-closed': 'you closed its window',
+} as const satisfies Record<AgentPause, string>;
 
 const AGENT = {
   label: 'Auto-apply',
@@ -1143,13 +1158,18 @@ const AGENT = {
   open: 'Open Auto-apply in TailorIT',
   states: AGENT_STATES,
   reasons: AGENT_REASONS,
+  pauses: AGENT_PAUSE_WORDS,
   /** "Auto-apply: running Senior Backend Engineer at Northwind · 2 done today · last: Needs you (a check that you are
    *  human)". */
-  line(status: Pick<AgentStatus, 'phase' | 'job' | 'doneToday' | 'last'> & Partial<Pick<AgentStatus, 'pending'>>): string {
+  line(status: Pick<AgentStatus, 'phase' | 'job' | 'doneToday' | 'last'>
+    & Partial<Pick<AgentStatus, 'pending' | 'paused'>>): string {
     const job = status.job === null ? '' : status.job.company === '' ? status.job.title
       : status.job.title === '' ? status.job.company : `${status.job.title} at ${status.job.company}`;
+    // The agent paused itself (M5, m14): why, and that the person turns it on again.
+    const paused = status.phase === 'off' && status.paused != null
+      ? `paused because ${AGENT_PAUSE_WORDS[status.paused]}; turn Run auto-apply on to go on` : null;
     const phase = status.phase === 'running' ? (job === '' ? 'running' : `running ${job}`)
-      : status.phase === 'waiting' ? 'waiting for a job' : status.phase === 'blocked' ? 'paused' : 'off';
+      : status.phase === 'waiting' ? 'waiting for a job' : status.phase === 'blocked' ? 'paused' : paused ?? 'off';
     const last = status.last === null ? '' : ` · last: ${AGENT_STATES[status.last.state]}${status.last.reason === null
       ? '' : ` (${AGENT_REASONS[status.last.reason]})`}`;
     const pending = status.pending === true ? ' · a result not yet told TailorIT' : '';

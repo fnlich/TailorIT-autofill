@@ -13,14 +13,16 @@
  *   person could have meant (S5): the launcher's and the policy card's buttons are watched with IntersectionObserver
  *   v2 (visible.ts), and a trusted click counts only while the control it lands on is visible. A page layer drawn over
  *   the launcher that lets clicks through (a decoy reading "Continue") makes the launcher not visible, so the click
- *   harvested through it does nothing (logged as content.ui-click-refused). The launcher must have been seen before
- *   the click, since Open review has to reach the worker inside it; a card button just shown is waited for (capped),
- *   since its choice needs no user gesture.
+ *   harvested through it does nothing (logged as content.ui-click-refused). The audit of 2026-11-06 (S-1): every
+ *   control's trusted event counts only once the control has been seen without a break for CONTROL_SEEN_MS (600 ms),
+ *   judged at the event itself, so a page that hides its decoy as the pointer comes (the control shown a moment before
+ *   the click) harvests nothing. A click on a control not yet seen that long is refused, never counted later, whatever
+ *   the control (a card button just shown included): the person clicks again.
  * - launcherShown() is the frame's own visibility on its page (S1): a frame the page around it hides (opacity 0,
  *   off-screen, in a zero-height wrapper) has a launcher that is not visible, which no check inside the frame can see.
  * - Edit with AI (the owner's amendments, ai-edits.ts): its buttons sit in their own layer, not hidden from assistive
- *   technology, each watched like a card button: a trusted click counts only while the button is visible (a button
- *   just drawn waits for the watch's first word, capped).
+ *   technology, each watched like a card button: a trusted click counts only once the button has been seen for
+ *   CONTROL_SEEN_MS.
  * - Nothing is drawn over the page's fields (the owner's decision of 2026-11-01, docs/SPEC-AMENDMENTS.md §11): no
  *   outline or chip marks a field's status or the AI's answers; the review lists them, and Show on page scrolls to a
  *   field and focuses it (runtime.ts).
@@ -29,8 +31,8 @@
  *   everywhere); its place and hiding come from the worker (setLauncherPrefs: frame/hello's answer, then
  *   launcher/prefs), and the tab hides while a panel of ours shows the tab (the in-page panel, or the browser's side
  *   panel: setSidePanel). Its close button, grip and menu items keep the visible-click rule: a trusted event counts
- *   only while the control it lands on is seen (a drag's start at once; the menu's choices wait for the watch's first
- *   word, capped). A frame inside another page keeps its launcher at the form's corner, never hidden: it is how its
+ *   only once the control it lands on has been seen for CONTROL_SEEN_MS (a drag's start and the menu's choices
+ *   alike). A frame inside another page keeps its launcher at the form's corner, never hidden: it is how its
  *   run knows the frame is seen (S1).
  */
 import { COPY } from '../../shared/copy';
@@ -44,7 +46,7 @@ import { createNotices, type NoticeCode, type PolicyChoice } from './notices';
 import { createInPagePanel, type InPagePanel, type PanelActions } from './panel';
 import { createUiHost } from './shadow';
 import type { StyleMode } from './styles';
-import { createVisibilityWatch } from './visible';
+import { CONTROL_SEEN_MS, createVisibilityWatch } from './visible';
 
 /** The launcher's size, and its inset from the form root's corner. */
 export const LAUNCHER_PX = 32;
@@ -126,6 +128,9 @@ export interface PageUi {
   launcherShown(signal?: AbortSignal, fresh?: boolean): Promise<boolean>;
   /** What the visibility watch last said of one of our controls (the launcher, a card button); null: not known yet. */
   visibleNow(el: Element): boolean | null;
+  /** Whether a trusted click on one of our controls would count now: the watch has seen it, without a break, for
+   *  CONTROL_SEEN_MS (the audit of 2026-11-06, S-1). For tests. */
+  readyNow(el: Element): boolean;
   /** Re-measures in the next animation frame. */
   refresh(): void;
   destroy(): void;
@@ -143,36 +148,28 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   const anchor = doc.createElement('div');
   anchor.className = 'anchor';
   const visibility = createVisibilityWatch(view as (Window & typeof globalThis) | null);
+  /** Whether a trusted event on one of our controls counts now: the control has been seen, without a break, for
+   *  CONTROL_SEEN_MS (the audit of 2026-11-06, S-1). Decided at the event, never later: a refusal is logged, and the
+   *  person's next click is judged afresh. */
+  const counts = (control: Element, launcherClick = false): boolean => {
+    if (visibility.shownFor(control, CONTROL_SEEN_MS)) return true;
+    log('content.ui-click-refused', { launcher: launcherClick, known: visibility.known(control),
+      shown: visibility.shown(control) });
+    return false;
+  };
   const launcher = createLauncher(doc, (action) => {
     // Open review must go out inside the click, so the launcher must already have been seen: no waiting here.
-    if (visibility.shown(launcher.el)) handlers.onLauncher(action);
-    else log('content.ui-click-refused', { launcher: true, known: visibility.known(launcher.el) });
+    if (counts(launcher.el, true)) handlers.onLauncher(action);
   });
   const notices = createNotices(doc, (choice, button) => {
-    if (visibility.known(button)) {
-      if (visibility.shown(button)) handlers.onPolicyChoice(choice);
-      else log('content.ui-click-refused', { launcher: false, known: true });
-      return;
-    }
-    // The card has just been shown: its choice needs no user gesture, so the click waits for the watch's first word.
-    void visibility.settled(button, lifetime.signal).then((shown) => {
-      if (shown && notices.cardShown) handlers.onPolicyChoice(choice);
-      else log('content.ui-click-refused', { launcher: false, known: visibility.known(button) });
-    });
+    if (counts(button) && notices.cardShown) handlers.onPolicyChoice(choice);
   });
   // v3 Phase 3: the top frame's launcher sits in the tab at the window's right edge; a frame inside another page keeps
   // it at its form's corner.
-  /** Runs `action` for a trusted event on one of the tab's controls while it is seen (module header). */
-  const act = (control: Element, action: () => void, now: boolean) => {
-    if (visibility.known(control) || now) {
-      if (visibility.shown(control)) action();
-      else log('content.ui-click-refused', { launcher: false, known: visibility.known(control) });
-      return;
-    }
-    void visibility.settled(control, lifetime.signal).then((shown) => {
-      if (shown && control.isConnected) action();
-      else log('content.ui-click-refused', { launcher: false, known: visibility.known(control) });
-    });
+  /** Runs `action` for a trusted event on one of the tab's controls once it has been seen long enough (module
+   *  header). */
+  const act = (control: Element, action: () => void) => {
+    if (control.isConnected && counts(control)) action();
   };
   /** The person hid the tab until the document goes ("Hide until next visit"): this document's memory only. */
   let hiddenForVisit = false;
@@ -200,36 +197,16 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   // comes before the anchor's column, whose layout keeps it left of the tab (edgeLimit), so neither covers the other.
   layer.append(aiEditLayer, ...(edge === null ? [] : [edge.el]), anchor);
   root.append(layer);
-  /** A trusted click on one of the layer's controls counts only while it is seen (a control just drawn waits for the
-   *  watch's first word, capped). */
+  /** A trusted click on one of the layer's controls counts only once it has been seen long enough (a control just
+   *  drawn included: its click is refused, and the person clicks again). */
   const whenSeen = (button: HTMLButtonElement, act: () => void) => {
-    if (visibility.known(button)) {
-      if (visibility.shown(button)) act();
-      else log('content.ui-click-refused', { launcher: false, known: true });
-      return;
-    }
-    void visibility.settled(button, lifetime.signal).then((shown) => {
-      if (shown && button.isConnected && !button.disabled) act();
-      else log('content.ui-click-refused', { launcher: false, known: visibility.known(button) });
-    });
+    if (button.isConnected && !button.disabled && counts(button)) act();
   };
-  const aiEdits = createAiEdits(doc, aiEditLayer, (key, button) => {
+  const aiEdits = createAiEdits(doc, aiEditLayer, (key, button) => whenSeen(button, () => {
     // v3 Phase 3b: the button opens the field's instruction box; its Generate asks for the rewrite.
-    const act = () => {
-      aiEdits.openPrompt(key);
-      layout();
-    };
-    if (visibility.known(button)) {
-      if (visibility.shown(button)) act();
-      else log('content.ui-click-refused', { launcher: false, known: true });
-      return;
-    }
-    // A button just drawn: its rewrite needs no user gesture, so the click waits for the watch's first word.
-    void visibility.settled(button, lifetime.signal).then((shown) => {
-      if (shown && button.isConnected && !button.disabled) act();
-      else log('content.ui-click-refused', { launcher: false, known: visibility.known(button) });
-    });
-  }, (added, removed) => {
+    aiEdits.openPrompt(key);
+    layout();
+  }), (added, removed) => {
     for (const button of removed) visibility.unobserve(button);
     for (const button of added) visibility.observe(button);
   }, (key, instruction, generate) => whenSeen(generate, () => {
@@ -432,6 +409,7 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       return visibility.settled(launcher.el, signal);
     },
     visibleNow: (el) => (visibility.known(el) ? visibility.shown(el) : null),
+    readyNow: (el) => visibility.shownFor(el, CONTROL_SEEN_MS),
     refresh: schedule,
     destroy() {
       lifetime.abort();

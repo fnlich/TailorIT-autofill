@@ -11,7 +11,8 @@
  * card hides it; a refusal shows "unavailable", so a loading card always ends.
  *
  * TailorIT is asked only when the tab shows a form of ours and the extension is connected; the worker answers from its
- * memory when it holds the card, and through the form frame otherwise.
+ * memory when it holds the card, and through the form frame otherwise. The audit of 2026-11-06 (M1): a panel port
+ * opened again (`relinked`: the worker may have restarted) reads the card again too, keeping the one shown meanwhile.
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { JobCard, PageState } from '../../messaging/schemas';
@@ -39,6 +40,8 @@ export function useTabJob(platform: PagePlatform, tabId: number | null, options:
   page: PageState | null;
   connection: string | null | undefined;
   reports: readonly FrameReport[];
+  /** How many times the panel's port was opened again (useTabReports relinked). */
+  relinked?: number;
 }): { view: JobView; reload(): void } {
   const [bump, setBump] = useState(0);
   const [answer, setAnswer] = useState<{ base: string; key: string; view: JobView } | null>(null);
@@ -50,7 +53,7 @@ export function useTabJob(platform: PagePlatform, tabId: number | null, options:
   const runs = runsKeyOf(options.reports);
   const base = form && typeof connection === 'string' ? `${tabId}|${page.formKey ?? ''}|${connection}` : null;
   // v3 Phase 4: a submitted application's tracker answer becomes the card (Applied): read again when it lands.
-  const key = base === null ? null : `${base}|${runs}|${bump}|${page?.submitted ?? ''}`;
+  const key = base === null ? null : `${base}|${runs}|${bump}|${page?.submitted ?? ''}|${options.relinked ?? 0}`;
 
   useEffect(() => {
     if (key === null || base === null || tabId === null) return undefined;

@@ -445,3 +445,37 @@ describe('the options page: Where Autofill works (v3 Phase 8)', () => {
     expect(root.textContent).toContain(TEXT.sites.failed);
   });
 });
+
+describe('the options page left open (the audit of 2026-11-06, M4)', () => {
+  afterEach(() => unmountAll());
+
+  it('reads the settings again when the worker says they changed, and saves its change with what it read', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    expect(setting(root, 'modes.next.manual').checked).toBe(true);
+    // The side panel's gear turns Next page to Auto meanwhile; the worker tells every page.
+    const gear: Settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' } };
+    worker.script.settings = gear;
+    await act(async () => {
+      for (const port of worker.ports) port.post({ v: 1, type: 'panel/changed', what: 'settings' });
+    });
+    await settle();
+    expect(setting(root, 'modes.next.auto').checked).toBe(true);
+    // The page's own change goes with the settings it read, so the worker applies that change alone.
+    await click(setting(root, 'llm.classify'));
+    const sent = worker.sentOfType('settings/save').at(-1)!;
+    expect(sent.base).toEqual(gear);
+    expect(sent.settings).toEqual({ ...gear, llm: { ...gear.llm, classify: false } });
+  });
+
+  it('reads the settings again when it is seen again', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    const reads = worker.sentOfType('settings/get').length;
+    worker.script.settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, submit: 'auto' } };
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(worker.sentOfType('settings/get').length).toBe(reads + 1);
+    expect(setting(root, 'modes.submit.auto').checked).toBe(true);
+  });
+});

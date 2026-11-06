@@ -331,4 +331,16 @@ describe('the auto-apply agent’s status in the side panel (v3 Phase 5)', () =>
       .toBe('Auto-apply: off · 0 done today · a result not yet told TailorIT');
     expect(strip.querySelector('button[data-action="agent-stop"]')).toBeNull();
   });
+
+  it('stays, off, while the agent paused itself, and says why (the audit of 2026-11-06, M5 and m14)', async () => {
+    const worker = createFakeWorker();
+    worker.script.agent = { on: false, confirmed: true, phase: 'off', blocked: null, paused: 'window-closed',
+      allowed: true, pending: false, job: null, doneToday: 1, last: { state: 'needs-you', reason: 'cancelled' } };
+    const root = await open(worker, 5);
+    await settle();
+    const strip = root.querySelector<HTMLElement>('[data-agent="off"]')!;
+    expect(strip.querySelector('[data-agent-line]')?.textContent).toBe('Auto-apply: paused because you closed its '
+      + 'window; turn Run auto-apply on to go on · 1 done today · last: Needs you (stopped)');
+    expect(strip.querySelector('button[data-action="agent-stop"]')).toBeNull();
+  });
 });

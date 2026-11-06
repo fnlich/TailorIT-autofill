@@ -61,7 +61,7 @@ type ReportPut = Extract<ContentMessage, { type: 'report/put' | 'report/live' }>
 
 /** The tab reports and the panels that follow them. */
 export interface Reports {
-  put(message: ReportPut, from: FrameRef): Promise<Answer<Record<string, never>>>;
+  put(message: ReportPut, from: FrameRef & { incognito?: true }): Promise<Answer<Record<string, never>>>;
   /** The tab's reports, one per frame, by frame id. */
   ofTab(tabId: number): Promise<FrameReport[]>;
   /** Drops the frame's report when it came from this document (null: one Chrome gave no id), or when its run is no
@@ -276,8 +276,9 @@ export function createReports(deps: ReportsDeps): Reports {
       // A live report (v3 Phase 3: report/live) is the panels' alone: its rows may still wait for their writes, so it
       // counts nothing, and a report after it is counted against the run's own bookkeeping, never against it.
       if (!live) {
-        await deps.telemetry?.record(message.report, previous?.filling === undefined ? previous : null)
-          .catch(() => undefined);
+        // A private (incognito) tab's report counts nothing (the audit of 2026-11-06, S-6: telemetry.ts).
+        await deps.telemetry?.record(message.report, previous?.filling === undefined ? previous : null,
+          { incognito: from.incognito === true }).catch(() => undefined);
       }
       await changed(from.tabId);
       return ok({});

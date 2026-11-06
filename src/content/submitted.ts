@@ -32,6 +32,12 @@ import { isUserVisible } from '../dom/visibility';
  *  document's to confirm. */
 export const SUBMIT_CONFIRM_MS = 45_000;
 
+/** How long after a press its platform's sign is still watched for in the form's own document, quietly, once
+ *  SUBMIT_CONFIRM_MS has passed (the audit of 2026-11-06, m10): a sign a slow platform draws later still records the
+ *  application. The worker's SUBMIT_ARM_MS (background/submissions.ts), for which it keeps the tab's arm: the same ten
+ *  minutes (src/content/submit-watch.test.ts holds them equal). */
+export const SUBMIT_WATCH_MS = 10 * 60_000;
+
 /** What a press of ours reads just before its click (the review, M1 and M6): the application and platform the page
  *  shows, its form root and adapter, and the success signs already there. The click may move the page (a confirmation
  *  drawn in place, an address the parser does not read) before the press is armed. */

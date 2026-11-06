@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ATTENTION_PATTERNS, attentionHits, namesConsentTopic, PERSON_ONLY_ATTENTION, type AttentionPatternId }
-  from './attention';
+import {
+  ATTENTION_PATTERNS, attentionHits, BOT_CHECK_ATTENTION, botCheckOf, namesBotCheck, namesConsentTopic,
+  PERSON_ONLY_ATTENTION, type AttentionPatternId, type BotCheckId,
+} from './attention';
 
 describe('the attention-check patterns (§7.9)', () => {
   it('are exactly the design’s, in its order, then the Phase 7a review’s', () => {
@@ -15,7 +17,9 @@ describe('the attention-check patterns (§7.9)', () => {
     expect(ATTENTION_PATTERNS.map((pattern) => pattern.id)).toEqual(['select-to-prove', 'type-to-prove',
       'prove-reading', 'attention-check', 'if-reading', 'select-labelled', 'answer-literal', 'human-check',
       'arithmetic', 'posting-phrase']);
-    expect([...PERSON_ONLY_ATTENTION]).toEqual(['posting-phrase']);
+    // The audit of 2026-11-06 (S-2): the human check and the sum are bot checks, the person's alone.
+    expect([...PERSON_ONLY_ATTENTION]).toEqual(['human-check', 'arithmetic', 'posting-phrase']);
+    expect([...BOT_CHECK_ATTENTION]).toEqual(['human-check', 'arithmetic']);
   });
 
   it.each([
@@ -99,5 +103,62 @@ describe('the attention-check patterns (§7.9)', () => {
     ['Are you a human being or a bot?', 'human-check'],
   ])('still flags %j as %s', (label, id) => {
     expect(attentionHits(label, '')).toContain(id);
+  });
+});
+
+// The audit of 2026-11-06 (S-2, S-3): bot checks and CAPTCHA asked as questions, and a site's own "I'm not a robot"
+// box, are the person's alone (reason bot-check), read before any consent policy.
+describe('bot checks (botCheckOf)', () => {
+  it.each<[string, string, Parameters<typeof botCheckOf>[2], BotCheckId]>([
+    ['Are you a robot?', '', 'radio', 'human-check'],
+    ['Are you human?', '', 'select', 'human-check'],
+    ['What is 4 + 3?', '', 'text', 'arithmetic'],
+    ['Spam check: what is 7 plus 2?', '', 'text', 'arithmetic'],
+    ['CAPTCHA', '', 'text', 'captcha'],
+    ['reCAPTCHA', '', 'text', 'captcha'],
+    ['Enter the characters you see in the image above', '', 'text', 'captcha'],
+    ['Type the text shown in the picture', '', 'text', 'captcha'],
+    ['Verification', 'Please enter the letters you see', 'text', 'captcha'],
+    ['Security code', 'Enter the security code shown in the image.', 'text', 'captcha'],
+    ['Security question: what colour is the sky?', '', 'text', 'captcha'],
+    ['Anti-spam question', '', 'text', 'captcha'],
+    ["I'm not a robot", '', 'checkbox', 'robot-statement'],
+    ['I’m not a robot', '', 'checkbox', 'robot-statement'],
+    ['I am a human', '', 'checkbox', 'robot-statement'],
+    ['I confirm I am not a bot', '', 'checkbox', 'robot-statement'],
+    ['Please confirm you are human', '', 'checkbox', 'robot-statement'],
+    ['Check this box to confirm you are human', '', 'checkbox', 'robot-statement'],
+    ['Verification', 'Tick to confirm you’re not a robot.', 'checkbox', 'robot-statement'],
+    ['I am not a robot', '', 'radio', 'robot-statement'],
+  ])('reads %j (%j, %s) as %s', (label, description, kind, id) => {
+    expect(botCheckOf(label, description, kind)).toBe(id);
+  });
+
+  it.each<[string, string, Parameters<typeof botCheckOf>[2]]>([
+    // Trap fixture 6's typed proof stays an attention check, which the `all` scope asks the AI (SPEC-AMENDMENTS §11).
+    ["To confirm you are a human, type the word 'human' below.", '', 'text'],
+    ['Attention check: select PURPLE.', '', 'radio'],
+    ['Are you a human resources professional?', '', 'radio'],
+    ['I am a human resources professional', '', 'checkbox'],
+    ['I am a person with a disability', '', 'checkbox'],
+    ['Please confirm you are a person with the right to work in the UK', '', 'checkbox'],
+    ['Security code', '', 'text'],
+    ['Email', 'This site is protected by reCAPTCHA and the Google Privacy Policy applies.', 'text'],
+    ['Enter the code shown on your invitation letter', '', 'text'],
+    ['Write a short text about this picture', '', 'textarea'],
+    ['Do you have experience with robotics?', '', 'radio'],
+    ['Phone number', '', 'text'],
+  ])('leaves %j (%j, %s) alone', (label, description, kind) => {
+    expect(botCheckOf(label, description, kind)).toBeNull();
+  });
+
+  it('names a bot check in any text an AI answer could be asked about', () => {
+    for (const text of ['Enter the characters you see in the image', "I'm not a robot", 'CAPTCHA', 'Spam check']) {
+      expect(namesBotCheck(text), text).toBe(true);
+    }
+    for (const text of ["To confirm you are a human, type the word 'human' below.", 'Why do you want to work here?',
+      'Upload a picture of yourself']) {
+      expect(namesBotCheck(text), text).toBe(false);
+    }
   });
 });

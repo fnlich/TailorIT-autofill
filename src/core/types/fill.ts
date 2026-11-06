@@ -86,6 +86,14 @@ export const REASON_CODES = [
   // the Phase 7a review: a follow-up to the answer above ("If yes, please explain") that is optional, or required while
   // the answer above is not the one it follows (core/plan/conditional.ts): never drafted or guessed, left as it is
   'conditional-question',
+  // the audit of 2026-11-06 (S-2, S-3): a bot check or CAPTCHA asked as a question ("Are you a robot?", "What is
+  // 4 + 3?", "Enter the characters you see", a site's own "I'm not a robot" box): never answered, ticked or sent to an
+  // AI; left for the person, and while one is left the step holds Next, Submit mode Auto and the agent as a CAPTCHA does
+  'bot-check',
+  // the audit of 2026-11-06 (S-4): a question or statement about how the application was made (whether AI, automation,
+  // an extension or anyone's help made it, or a denial that any was used): only the person can say, and the extension
+  // is automation itself, so it is never answered, ticked or sent to an AI
+  'how-application-made',
   // a bug
   'internal-error',
 ] as const;

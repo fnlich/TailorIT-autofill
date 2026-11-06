@@ -18,15 +18,20 @@
  * - stop: Stop, the switch off, the agent blocked, the tab closed by the person, the connection changed (the switch
  *   off, its confirmation asked again); a job past its time; a page that never loads or never shows a form. Only the
  *   agent's tab is closed, never a window.
+ * - the audit of 2026-11-06: a page that never loaded is page_error, never closed (M5); no job is taken offline; the
+ *   agent pauses itself when Chrome opens no window, after AGENT_MAX_PAGE_ERRORS page errors in a row (M5), and when the
+ *   person closes its window, their Stop (m14); and the guards the audit's mutations showed untested.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { applicationOf } from '../adapters';
 import { agentApplicationUrl, type AutofillAgentResultBody, type AutofillAgentTask } from '../contract/tailorit';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
+import { COPY } from '../shared/copy';
 import type { FrameReport } from '../shared/report';
 import {
   AGENT_ALARM, AGENT_BACKOFF_MS, AGENT_CONFIRM_MS, AGENT_FORM_WAIT_MS, AGENT_JOB_MAX_MS, AGENT_JOB_TIMEOUT_MS,
-  AGENT_LOAD_SETTLE_MS, AGENT_MAX_STARTS, AGENT_RUN_KEY, AGENT_SETTLE_MS, AGENT_SIGN_IN_WAIT_MS, AGENT_SWITCH_KEY, agentVerdict, createAgent,
+  AGENT_LOAD_SETTLE_MS, AGENT_MAX_PAGE_ERRORS, AGENT_MAX_STARTS, AGENT_RUN_KEY, AGENT_SETTLE_MS,
+  AGENT_SIGN_IN_WAIT_MS, AGENT_SWITCH_KEY, agentVerdict, createAgent,
   type AgentDeps,
   type AgentTask,
 } from './agent';
@@ -150,6 +155,9 @@ interface Harness {
   entry: { answer: Record<string, unknown> | 'gone' };
   /** What the tab's address shows now (deps.atsPageOf, when the harness was given one), and how often it was read. */
   ats: { page: AtsPage | null; reads: number };
+  /** What the browser says of the network (deps.online), and whether Chrome opens a window (windows.open). */
+  online: { value: boolean };
+  opens: { value: boolean };
   start: { answer: unknown };
   deps: AgentDeps;
 }
@@ -157,8 +165,7 @@ interface Harness {
 let nonces = 0;
 
 function harness(options: { local?: ReturnType<typeof memoryArea>; session?: ReturnType<typeof memoryArea>;
-  queue?: Queue; tasks?: AutofillAgentTask[]; firstWindow?: number; onAtsHost?: boolean;
-  atsPage?: AtsPage | null } = {}): Harness {
+  queue?: Queue; tasks?: AutofillAgentTask[]; firstWindow?: number; atsPage?: AtsPage | null } = {}): Harness {
   const queue = options.queue ?? queueOf(options.tasks);
   const h = {
     local: options.local ?? memoryArea(),
@@ -178,11 +185,14 @@ function harness(options: { local?: ReturnType<typeof memoryArea>; session?: Ret
     changes: { count: 0 },
     entry: { answer: { outcome: 'pressed' } as Record<string, unknown> | 'gone' },
     ats: { page: options.atsPage ?? null, reads: 0 },
+    online: { value: true },
+    opens: { value: true },
     start: { answer: { ok: true, data: {} } as unknown },
   } as Omit<Harness, 'agent' | 'deps'>;
   let nextWindow = options.firstWindow ?? 10;
   const windows: AgentWindows = {
     async open() {
+      if (!h.opens.value) return null;
       nextWindow += 1;
       h.windows.tabs.add(nextWindow + 100);
       return { windowId: nextWindow, tabId: nextWindow + 100 };
@@ -220,6 +230,7 @@ function harness(options: { local?: ReturnType<typeof memoryArea>; session?: Ret
     nonce: () => `session-nonce-${(nonces += 1)}`,
     scopes: async () => h.scopes.value,
     disclosed: async () => h.disclosed.value,
+    online: () => h.online.value,
     reports: async (tabId) => h.reports.get(tabId) ?? [],
     topFrame: async () => ({ frameId: 0, documentId: 'doc-1' }),
     async send(tabId, message) {
@@ -238,7 +249,6 @@ function harness(options: { local?: ReturnType<typeof memoryArea>; session?: Ret
       h.changes.count += 1;
     },
     dayOf: (ms) => new Date(ms).toISOString().slice(0, 10),
-    ...(options.onAtsHost === undefined ? {} : { onAtsHost: async () => options.onAtsHost! }),
     ...(options.atsPage === undefined ? {} : { atsPageOf: async () => {
       h.ats.reads += 1;
       return h.ats.page;
@@ -314,6 +324,10 @@ describe('agentVerdict: what a report of the agent’s run means', () => {
     expect(verdict({ notices: notices('submit-held-attention') })).toEqual(finish('needs-you', 'other'));
     expect(verdict({ notices: notices('submit-held-entries') })).toEqual(finish('needs-you', 'other'));
     expect(verdict({ notices: notices('submit-held-captcha') })).toEqual(finish('needs-you', 'captcha'));
+    // The audit of 2026-11-06 (S-2, S-3): a bot check asked as a question is a CAPTCHA, required or not.
+    expect(verdict({ notices: notices('bot-check', 'submit-held-required') })).toEqual(finish('needs-you', 'captcha'));
+    expect(verdict({ status: 'wait-transition', resting: true, notices: notices('bot-check') }))
+      .toEqual(finish('needs-you', 'captcha'));
     expect(verdict({ status: 'wait-transition', resting: true, notices: notices('captcha-next') }))
       .toEqual(finish('needs-you', 'captcha'));
     expect(verdict({ notices: notices('submit-unconfirmed') })).toEqual(finish('needs-you', 'other'));
@@ -351,8 +365,8 @@ describe('the agent', () => {
     expect((await h.agent.status()).blocked).toBe('not-connected');
     h.scopes.value = ['agent:run'];
     const answer = await h.agent.set(true, true);
-    expect(answer.ok && answer.data).toEqual({ on: true, confirmed: true, phase: 'waiting', blocked: null, allowed: true,
-      pending: false, job: null, doneToday: 0, last: null });
+    expect(answer.ok && answer.data).toEqual({ on: true, confirmed: true, phase: 'waiting', blocked: null, paused: null,
+      allowed: true, pending: false, job: null, doneToday: 0, last: null });
     expect(h.alarms.started).toEqual([AGENT_ALARM]);
     // Confirmed once: on again without asking.
     await h.agent.set(false, false);
@@ -514,16 +528,21 @@ describe('the agent', () => {
       }
     });
 
-  it('a tab still on the platform\u2019s host whose page never said hello is a closed posting (S3: such a page says none)', async () => {
-    for (const [onAtsHost, reason] of [[true, 'posting_closed'], [false, 'page_error']] as const) {
-      const h = harness({ tasks: [task(1)], onAtsHost });
-      await on(h);
-      await running(h);
-      h.clock.now += AGENT_FORM_WAIT_MS;
-      await h.agent.tick();
-      expect(h.results, String(onAtsHost)).toEqual([{ id: ID(1), body: { state: 'failed', reason, aiGuesses: 0 } }]);
-    }
-  });
+  it('a tab whose address names no posting and whose page never said hello is closed; one still at the posting never loaded (M5)',
+    async () => {
+      // S3: a page of the platform's host that shows no posting says no hello, so its address alone says it is closed.
+      // The audit of 2026-11-06 (M5): a tab still at the task's own address with no hello is a page that never loaded
+      // (offline, the site down), never a closed posting; nor is one whose address is not known.
+      const POSTING: AtsPage = { page: 'posting', platform: 'greenhouse' };
+      for (const [page, reason] of [[BOARD, 'posting_closed'], [POSTING, 'page_error'], [null, 'page_error']] as const) {
+        const h = harness({ tasks: [task(1)], atsPage: page });
+        await on(h);
+        await running(h);
+        h.clock.now += AGENT_FORM_WAIT_MS;
+        await h.agent.tick();
+        expect(h.results, JSON.stringify(page)).toEqual([{ id: ID(1), body: { state: 'failed', reason, aiGuesses: 0 } }]);
+      }
+    });
 
   it('counts the job begun only once an entry answered pressed, or a form showed (round 2, K4)', async () => {
     const h = harness({ tasks: [task(1)] });
@@ -636,22 +655,32 @@ describe('the agent', () => {
     });
   });
 
-  it('answers the person\u2019s sign-in at the form\u2019s wait when the entry was pressed and the tab sits on an ATS host (E8)', async () => {
-    const h = harness({ tasks: [task(1)], onAtsHost: true });
+  it('answers the person’s sign-in at the form’s wait when the entry was pressed and the tab sits on a page of the host that names no posting (E8)', async () => {
+    const h = harness({ tasks: [task(1)], atsPage: { page: 'posting', platform: 'greenhouse' } });
     await on(h);
     const { tabId, key } = await running(h);
     await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true, applicationKey: key });
+    h.ats.page = BOARD;
     h.clock.now += AGENT_FORM_WAIT_MS;
     await h.agent.tick();
     expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'sign_in', aiGuesses: 0 } }]);
+    // M5: still at the posting after the press, with no form: the person's to look at, never a closed posting.
+    const still = harness({ tasks: [task(1)], atsPage: { page: 'posting', platform: 'greenhouse' } });
+    await on(still);
+    const second = await running(still);
+    await still.agent.hello(second.tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true,
+      applicationKey: second.key });
+    still.clock.now += AGENT_FORM_WAIT_MS;
+    await still.agent.tick();
+    expect(still.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
   });
 
   it('a page that said hello but never showed a form is a closed posting; one that never loaded, a page error', async () => {
     const h = harness({ tasks: [task(1), task(2)] });
     await on(h);
     const { tabId, key } = await running(h);
-    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: key });
     h.entry.answer = { outcome: 'not-offered' };
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, applicationKey: key });
     h.clock.now += AGENT_FORM_WAIT_MS;
     await h.agent.tick();
     expect(h.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0 } }]);
@@ -1076,5 +1105,166 @@ describe('the agent', () => {
     h.clock.now += AGENT_JOB_MAX_MS;
     await h.agent.tick();
     expect(h.results.at(-1)).toEqual({ id: ID(2), body: { state: 'needs-you', reason: 'timed_out', aiGuesses: 0 } });
+  });
+});
+
+describe('the audit of 2026-11-06: outages, the person closing the window, and the guards', () => {
+  it('takes no job while the browser is offline, says so, and takes it once it is back (M5)', async () => {
+    const h = harness({ tasks: [task(1)] });
+    h.online.value = false;
+    await on(h);
+    expect(h.queue.next.calls).toBe(0);
+    expect(h.windows.opened).toEqual([]);
+    expect(await h.agent.status()).toMatchObject({ on: true, phase: 'blocked', blocked: 'offline' });
+    h.online.value = true;
+    await h.agent.tick();
+    expect(h.windows.opened).toEqual([task(1).url]);
+    expect(await h.agent.status()).toMatchObject({ phase: 'running', blocked: null });
+  });
+
+  it('pauses when Chrome opens no window: the job is left for the person, and no next job is taken (M5)', async () => {
+    const h = harness({ tasks: [task(1), task(2)] });
+    h.opens.value = false;
+    await on(h);
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } }]);
+    const paused = await h.agent.status();
+    expect(paused).toMatchObject({ on: false, confirmed: true, phase: 'off', paused: 'no-window' });
+    expect(COPY.agent.line(paused)).toContain('paused because Chrome didn');
+    h.timers.advance(AGENT_BACKOFF_MS[1]);
+    await h.agent.tick();
+    expect(h.queue.next.calls).toBe(1);
+    expect(h.queue.rows[1]!.state).toBe('queued');
+    // The person turns it on again (confirmed once: no question): the pause is gone, and the next job is taken.
+    h.opens.value = true;
+    const again = await h.agent.set(true, false);
+    expect(again.ok && again.data).toMatchObject({ on: true, paused: null });
+    await h.agent.tick();
+    expect(h.windows.opened).toEqual([task(2).url]);
+  });
+
+  it(`pauses after ${AGENT_MAX_PAGE_ERRORS} jobs in a row whose pages never loaded, never draining the queue (M5)`, async () => {
+    const h = harness({ tasks: [task(1), task(2), task(3), task(4), task(5), task(6), task(7)] });
+    await on(h);
+    const neverLoads = async () => {
+      h.clock.now += AGENT_FORM_WAIT_MS;
+      await h.agent.tick();
+      h.timers.advance(1_000);
+      await h.agent.tick();
+    };
+    // Two pages that never loaded, then a job the page decided: the count starts again.
+    await neverLoads();
+    await neverLoads();
+    const third = await running(h);
+    h.reports.set(third.tabId, [report({ status: 'handoff', pauseReason: 'captcha' })]);
+    await h.agent.reported(third.tabId);
+    h.timers.advance(1_000);
+    await h.agent.tick();
+    for (let n = 0; n < AGENT_MAX_PAGE_ERRORS; n += 1) await neverLoads();
+    expect(h.results.map((each) => each.body.reason)).toEqual(['page_error', 'page_error', 'captcha', 'page_error',
+      'page_error', 'page_error']);
+    expect(await h.agent.status()).toMatchObject({ on: false, phase: 'off', paused: 'page-errors' });
+    // The queue's last job is still queued: nothing more was opened.
+    expect(h.windows.opened).toHaveLength(6);
+    h.timers.advance(AGENT_BACKOFF_MS[1]);
+    await h.agent.tick();
+    expect(h.windows.opened).toHaveLength(6);
+    expect(h.queue.rows.map((row) => row.state)).toEqual(['failed', 'failed', 'needs-you', 'failed', 'failed', 'failed',
+      'queued']);
+  });
+
+  it('the person closing its window is their Stop: the agent pauses and opens no next job (m14)', async () => {
+    const h = harness({ tasks: [task(1), task(2)] });
+    await on(h);
+    const { tabId } = await running(h);
+    h.windows.tabs.delete(tabId);
+    await h.agent.tabRemoved(tabId);
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'cancelled', aiGuesses: 0 } }]);
+    const paused = await h.agent.status();
+    expect(paused).toMatchObject({ on: false, confirmed: true, phase: 'off', paused: 'window-closed' });
+    expect(COPY.agent.line(paused)).toContain('paused because you closed its window; turn Run auto-apply on to go on');
+    expect(h.alarms.log.at(-1)).toBe('stop');
+    h.timers.advance(1_000);
+    await h.agent.tick();
+    expect(h.windows.opened).toEqual([task(1).url]);
+    expect(h.queue.rows[1]!.state).toBe('queued');
+    // A worker that slept through the close finds the tab gone at its tick: the same Stop.
+    const other = harness({ tasks: [task(1), task(2)] });
+    await on(other);
+    const gone = await running(other);
+    other.windows.tabs.delete(gone.tabId);
+    await other.agent.tick();
+    expect(await other.agent.status()).toMatchObject({ on: false, paused: 'window-closed' });
+    other.timers.advance(1_000);
+    await other.agent.tick();
+    expect(other.windows.opened).toEqual([task(1).url]);
+    // The person's own Stop is no pause: its reason goes.
+    await on(other);
+    await other.agent.stop();
+    expect(await other.agent.status()).toMatchObject({ on: false, paused: null });
+  });
+
+  it('another tab closing leaves the job running (the tab check)', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId } = await running(h);
+    await h.agent.tabRemoved(tabId + 1);
+    expect(h.results).toEqual([]);
+    expect(await runRecord(h)).toMatchObject({ result: null, tabId });
+    expect(await h.agent.status()).toMatchObject({ on: true, phase: 'running' });
+  });
+
+  it('a sign after the job was finished is not the agent’s: no second result (the result guard)', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    h.queue.failing = { ok: false, failure: 'unreachable' };
+    h.reports.set(tabId, [report({ status: 'handoff', pauseReason: 'captcha' })]);
+    await h.agent.reported(tabId);
+    expect(await runRecord(h)).toMatchObject({ result: { state: 'needs-you', reason: 'captcha' } });
+    // The person solved it and submitted in the same tab before it closed: recorded the normal way, never the agent's.
+    expect(await h.agent.submitted(tabId, key)).toBe('not-ours');
+    expect(await runRecord(h)).toMatchObject({ result: { state: 'needs-you', reason: 'captcha' } });
+    expect(h.results.map((each) => each.body.state)).toEqual(['needs-you']);
+  });
+
+  it('closes no tab of another browser session when the connection changes (the session check in release)', async () => {
+    const local = memoryArea();
+    const queue = queueOf([task(1)]);
+    const first = harness({ local, queue });
+    await on(first);
+    const { tabId } = await running(first);
+    // The browser restarted (storage.session empty) and Chrome gave the old id to a tab of the person's.
+    const fresh = harness({ local, session: memoryArea(), queue });
+    fresh.windows.tabs.add(tabId);
+    await fresh.agent.tokenChanged();
+    expect(fresh.windows.closedTabs).toEqual([]);
+    expect(fresh.released).toEqual([]);
+    expect(fresh.windows.tabs.has(tabId)).toBe(true);
+  });
+
+  it('starts no run in a subframe of its tab: only the top frame’s form is the job’s (the frameId check)', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, { frameId: 3, documentId: 'doc-sub', hasForm: true, applicationKey: key });
+    await h.agent.hello(tabId, { frameId: 3, documentId: 'doc-sub', hasForm: false,
+      applicationKey: 'greenhouse:00000000000000ff' });
+    expect(h.sent).toEqual([]);
+    expect(await runRecord(h)).toMatchObject({ result: null, starts: 0 });
+  });
+
+  it('after the job’s Submit, a page that names no posting awaits the confirmation (pressedAt in noPosting)', async () => {
+    const h = harness({ tasks: [task(1)], atsPage: BOARD });
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, form(key, 'doc-1'));
+    await h.agent.pressed(tabId, key, 'doc-1');
+    // The platform's page after submitting, on its host, naming no posting: by its hello and by its load.
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-2', hasForm: false, platform: 'greenhouse' });
+    await settledLoad(h, tabId, BOARD);
+    expect(h.results).toEqual([]);
+    expect(await runRecord(h)).toMatchObject({ result: null });
+    expect(await h.agent.submitted(tabId, key)).toBe('recorded');
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0 } }]);
   });
 });

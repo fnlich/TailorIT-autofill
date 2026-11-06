@@ -6,8 +6,11 @@
  *   per tab and application, when, which frame and document, by whom, and what the run knew (the job the person chose
  *   for the application, else the run's lookup's; the resume the run attached, only when its upload row verified on the
  *   form: the frame's `resume`), for SUBMIT_ARM_MS. The arm is kept in storage.session (SUBMIT_ARM_PREFIX), so a
- *   worker stopped while the person solves a check or the page sends still records it; the posting's canonical address
- *   (Chrome's sender address, read by the platform's parser: never an address the frame sent) is kept in memory only.
+ *   worker stopped while the person solves a check or the page sends still records it, with the posting's canonical
+ *   address (Chrome's sender address, read by the platform's parser: never an address the frame sent, the address the
+ *   lookup on load sends), so a Try again after the worker was stopped still records it (the audit of 2026-11-06, m4).
+ *   The run's job and resume come from its memory, else from its record (runs.ts noteAttached: the audit's M6), so a
+ *   Submit after the worker was stopped still names them.
  *   Refused: in a private (incognito) tab; a person's own Submit with no run of ours when "Record applications I submit
  *   myself" is off; and anything until the person acknowledged the disclosure as it reads now.
  * - submit/detected (content): the platform's sign that it was sent, seen after the press: Lever's /thanks page,
@@ -25,7 +28,10 @@
  *   /api/autofill/agent/:id/result {state: submitted}, which marks the job Applied in TailorIT), so POST /applied is not
  *   called for it.
  * - Both messages are counted (SUBMIT_MESSAGE_LIMIT a minute per tab), and the application key must fit the frame.
- * No log line names the job, the address or the person; storage holds ids, keys and times, never an address.
+ * - A token change drops every arm and every page state with them (the audit's m4): what was armed for one connection
+ *   is never recorded, or offered again, under the next.
+ * No log line names the job, the address or the person; storage holds ids, keys and times, and an arm's posting address
+ * in storage.session only, never in storage.local.
  */
 import { z } from 'zod';
 import { applicationOf, type ApplicationRef } from '../adapters';
@@ -89,6 +95,8 @@ const ArmSchema = z.strictObject({
   resumeId: z.string().max(64).nullable(),
   /** When its sign was taken: a second sign records nothing more, and Try again asks with it. */
   detectedAt: z.number().int().nonnegative().optional(),
+  /** The posting's canonical address (lookupAddressOf of Chrome's sender address; m4), when it has one. */
+  url: z.string().min(1).max(AUTOFILL_LOOKUP_URL_MAX).optional(),
 });
 type Arm = z.infer<typeof ArmSchema>;
 
@@ -98,8 +106,6 @@ type Submitted = z.infer<typeof SubmittedSchema>;
 
 /** The submissions of the tabs. */
 export function createSubmissions(deps: SubmissionsDeps) {
-  /** The posting's canonical address per arm, memory only (never stored). */
-  const urls = new Map<string, string>();
   /** Where recording stands per tab, as last read or written (storage.session holds it across a restart). */
   const states = new Map<number, Submitted>();
   /** Requests in flight per tab: a Try again while one runs waits for it. */
@@ -137,7 +143,6 @@ export function createSubmissions(deps: SubmissionsDeps) {
   }
 
   async function dropArm(key: string): Promise<void> {
-    urls.delete(key);
     await deps.session.remove([key]);
   }
 
@@ -165,7 +170,7 @@ export function createSubmissions(deps: SubmissionsDeps) {
     }
     const generation = deps.generation();
     const epoch = deps.jobs.epoch(from);
-    const url = urls.get(key) ?? null;
+    const url = held.url ?? null;
     const body = held.jobId !== null ? { jobId: held.jobId } : url !== null ? { url } : null;
     if (body === null) {
       await dropArm(key);
@@ -225,17 +230,18 @@ export function createSubmissions(deps: SubmissionsDeps) {
       }
       const memo = run === null ? null : deps.runs.memo(run.runId);
       const chosen = deps.jobs.chosenJob(from.tabId, message.applicationKey);
-      const looked = memo?.lookup?.job ?? null;
+      // The run's lookup and resume from its memory; after the worker was stopped, from its record (M6).
+      const looked = memo === null ? null : memo.lookup !== undefined ? memo.lookup?.job?.id ?? null : run?.jobId ?? null;
+      const attached = memo === null ? null : memo.resume !== undefined ? memo.resume?.id ?? null
+        : run?.resumeId ?? null;
       const key = armKey(from.tabId, message.applicationKey);
       const url = ref === null ? null : lookupAddressOf(from.url);
-      if (url !== null && url.length <= AUTOFILL_LOOKUP_URL_MAX) urls.set(key, url);
-      else urls.delete(key);
       // The resume only when the run's own upload verified on the form, and the person did not choose to apply
       // without one.
       const resumeId = message.resume === true && !deps.jobs.without(from.tabId, message.applicationKey)
-        ? memo?.resume?.id ?? null : null;
+        ? attached : null;
       const arm: Arm = { at: deps.now(), by: message.by, frameId: from.frameId, documentId: from.documentId ?? null,
-        jobId: chosen ?? looked?.id ?? null, resumeId };
+        jobId: chosen ?? looked, resumeId, ...(url !== null && url.length <= AUTOFILL_LOOKUP_URL_MAX ? { url } : {}) };
       await deps.session.set({ [key]: arm });
       log('submit.armed', { page: message.by === 'page', panel: message.by === 'panel', auto: message.by === 'auto',
         run: run !== null });
@@ -263,11 +269,10 @@ export function createSubmissions(deps: SubmissionsDeps) {
       }
       // A confirmation page's own address, when it names the same application, is the posting's too.
       const ref = refOf(from.url);
-      if (ref !== null && ref.applicationKey === message.applicationKey && !urls.has(key)) {
-        const url = lookupAddressOf(from.url);
-        if (url.length <= AUTOFILL_LOOKUP_URL_MAX) urls.set(key, url);
-      }
-      const taken: Arm = { ...held, detectedAt: deps.now() };
+      const seenUrl = ref !== null && ref.applicationKey === message.applicationKey && held.url === undefined
+        ? lookupAddressOf(from.url) : null;
+      const taken: Arm = { ...held, detectedAt: deps.now(),
+        ...(seenUrl !== null && seenUrl.length <= AUTOFILL_LOOKUP_URL_MAX ? { url: seenUrl } : {}) };
       await deps.session.set({ [key]: taken });
       log('submit.detected', { page });
       seenIn.set(from.tabId, { tabId: from.tabId, frameId: from.frameId, documentId: from.documentId, url: from.url });
@@ -317,14 +322,20 @@ export function createSubmissions(deps: SubmissionsDeps) {
       const prefix = `${SUBMIT_ARM_PREFIX}${tabId}|`;
       const stored = Object.keys(await deps.session.getMany(prefix));
       await deps.session.remove([`${SUBMITTED_PREFIX}${tabId}`, ...stored]);
-      for (const key of [...urls.keys()]) if (key.startsWith(prefix)) urls.delete(key);
       deps.limit.forget(`${tabId}/`);
     },
 
-    /** The token changed: what was armed for it goes (its job and resume are the old connection's). */
+    /** The token changed: what was armed for it goes (its job and resume are the old connection's), and with the arms
+     *  every page state, so no Try again is offered that could only fail, and nothing the old connection recorded is
+     *  said of the new one (the audit of 2026-11-06, m4). Each tab whose state went is told. */
     async dropTokenData(): Promise<void> {
-      urls.clear();
-      await deps.session.remove(Object.keys(await deps.session.getMany(SUBMIT_ARM_PREFIX)));
+      const held = Object.keys(await deps.session.getMany(SUBMITTED_PREFIX));
+      const tabs = new Set([...states.keys(), ...held.map((key) => Number(key.slice(SUBMITTED_PREFIX.length)))]
+        .filter((tabId) => Number.isInteger(tabId)));
+      states.clear();
+      seenIn.clear();
+      await deps.session.remove([...Object.keys(await deps.session.getMany(SUBMIT_ARM_PREFIX)), ...held]);
+      for (const tabId of tabs) deps.changed(tabId);
     },
   };
 }

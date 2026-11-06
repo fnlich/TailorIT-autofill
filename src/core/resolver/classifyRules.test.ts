@@ -543,6 +543,9 @@ describe('classifyByRules: a field handed to the person (needsUser)', () => {
     ['nationality', field('Nationality', 'select')],
     ['age', field('What is your age?', 'text')],
     ['current-pay', field('Current salary', 'text')],
+    // The audit of 2026-11-06 (S-4, S-5).
+    ['how-made', field('Did you use Claude to complete this application?', 'radio')],
+    ['binding-waiver', field('Do you agree to binding arbitration of any employment dispute?', 'radio')],
   ];
 
   it('has a field for every cause', () => {

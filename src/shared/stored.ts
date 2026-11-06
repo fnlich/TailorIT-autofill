@@ -66,9 +66,33 @@ export const RunRecordSchema = z.strictObject({
   startedAt: z.number().int().nonnegative(),
   /** Phase G: TailorIT's AI started writing this run's cover letter (a flag; the letter's id stays in memory). */
   letterWritten: z.literal(true).optional(),
+  /** The audit of 2026-11-06 (M6): the job its lookup named and the resume it attaches, ids only (null: none), so a
+   *  Submit after the worker was stopped still records them; absent until known, and gone with the token. */
+  jobId: z.number().int().positive().nullable().optional(),
+  resumeId: z.string().max(64).nullable().optional(),
 });
 /** A checked run record. */
 export type RunRecord = z.infer<typeof RunRecordSchema>;
+
+/** The audit of 2026-11-06 (M1, m9): storage.session `jobchoice:<tabId>`, what the person chose in the side panel for
+ *  the tab's application, so a worker Chrome stopped while idle keeps it: the resume chosen with Change, "Apply
+ *  without resume", the job chosen for "Autofill for another job" (TailorIT's id) and the tab's last search's job ids.
+ *  Ids and keys only: an application's key (or, for an address no parser reads, its document's), a resume's id, job
+ *  ids. Dropped with the tab and with the token. */
+export const JOB_CHOICE_PREFIX = 'jobchoice:';
+/** An application the choices are for: its key, or `doc:<tabId>:<frameId>:<documentId>` for an address no parser
+ *  reads. */
+const ChoiceAppSchema = z.union([ApplicationKeySchema, z.string().regex(/^doc:\d+:\d+:\S{0,100}$/)]);
+/** A tab's choices. */
+export const JobChoiceRecordSchema = z.strictObject({
+  resume: z.strictObject({ app: ChoiceAppSchema.nullable(), id: z.string().min(1).max(64) }).optional(),
+  without: ChoiceAppSchema.optional(),
+  job: z.strictObject({ app: ChoiceAppSchema, jobId: z.number().int().positive() }).optional(),
+  search: z.strictObject({ docKey: z.string().regex(/^\d+:\d+:\S{0,100}$/),
+    ids: z.array(z.number().int().positive()).max(10) }).optional(),
+});
+/** A checked choices record. */
+export type JobChoiceRecord = z.infer<typeof JobChoiceRecordSchema>;
 
 /** storage.session `policy:<applicationKey>`: the policy pattern ids a posting page matched, and whether one was read
  *  and found clear. Ids only, never the posting's text. */

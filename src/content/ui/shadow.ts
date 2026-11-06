@@ -8,6 +8,10 @@
  *   none); only the launcher, the notices and the card take pointer events.
  * - Events stop propagating at the host, so page listeners in the bubble phase never see what the person does in our
  *   UI (capture-phase listeners above the host cannot be kept out, and need not be: the host carries no page data).
+ *   The audit of 2026-11-06 (S-8): every composed event a person's use of our UI makes, not only clicks and keys: the
+ *   text events that carry what they type (textInput, beforeinput, input, the composition events), the clipboard's
+ *   (paste, cut, copy), a drag's (dragstart to drop, whose data a page could read) and the pointer's and mouse's
+ *   moves, so the instruction typed into Edit with AI's box reaches no bubbling listener of the page.
  * - A page that removes the host gets it back, at most MAX_REATTACH times; after that it stays gone, the run carries
  *   on without it (the side panel mirrors everything), and the loss is logged.
  */
@@ -40,10 +44,15 @@ const HOST_STYLE: ReadonlyArray<readonly [string, string]> = [
   ['z-index', '2147483647'],
 ];
 
-/** Events the host keeps from bubbling into the page. */
-const CONTAINED_EVENTS = ['click', 'dblclick', 'auxclick', 'contextmenu', 'mousedown', 'mouseup', 'pointerdown',
-  'pointerup', 'touchstart', 'touchend', 'keydown', 'keyup', 'keypress', 'focusin', 'focusout', 'input', 'change',
-  'beforeinput', 'wheel'] as const;
+/** Events the host keeps from bubbling into the page: every composed UI event a person's use of our UI makes (the
+ *  audit of 2026-11-06, S-8). `change` and `select` are not composed (they never leave the closed root) and are listed
+ *  for safety. */
+export const CONTAINED_EVENTS = ['click', 'dblclick', 'auxclick', 'contextmenu', 'mousedown', 'mouseup', 'mousemove',
+  'mouseover', 'mouseout', 'pointerdown', 'pointerup', 'pointermove', 'pointerover', 'pointerout', 'pointercancel',
+  'gotpointercapture', 'lostpointercapture', 'touchstart', 'touchend', 'touchmove', 'touchcancel', 'keydown', 'keyup',
+  'keypress', 'focusin', 'focusout', 'input', 'change', 'beforeinput', 'textInput', 'compositionstart',
+  'compositionupdate', 'compositionend', 'paste', 'cut', 'copy', 'select', 'selectstart', 'selectionchange', 'drag',
+  'dragstart', 'dragend', 'dragenter', 'dragover', 'dragleave', 'drop', 'wheel'] as const;
 
 /** The mounted host. */
 export interface UiHost {

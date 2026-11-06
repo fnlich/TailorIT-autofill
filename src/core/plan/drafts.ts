@@ -27,7 +27,8 @@
  *   sensitive context); rewriteItemOf is the one field's draft question at the person's click, with what the box holds
  *   now (`current`, page text quoted as untrusted, line breaks kept) for TailorIT to rewrite, the empty-box rule left
  *   out for that key only, and none when what it holds names a sensitive answer, a sum, a contact detail or a postal
- *   address (namesSensitiveAnswer: the Phase E review, MAJOR 3).
+ *   address (namesSensitiveAnswer: the Phase E review, MAJOR 3), or holds text addressed to AI tools (the tripwire:
+ *   the audit of 2026-11-06, S-10).
  * - What comes back (DraftVerdict, the worker's translation of TailorIT's answer): a text, or why there is none. A
  *   discarded draft is never written: its row is flagged with the reason. A text longer than the field's cap (its
  *   maxLength, else DRAFT_DEFAULT_LENGTH) is discarded too (draft-too-long), and the Guard's canary scan blocks one
@@ -39,6 +40,7 @@ import {
   DRAFT_CURRENT_MAX, DRAFT_DEFAULT_LENGTH, DRAFT_MAX_LENGTH, DRAFT_MIN_LENGTH, DRAFT_QUESTION_MAX,
 } from '../confidence';
 import { llmMaySeeLabel } from '../guard/honeypot';
+import { hasTripwire } from '../guard/tripwire';
 import { policyClassOf } from '../resolver/categories';
 import { namesSensitiveAnswer, openAnswerTopics, screenForClassify } from '../resolver/classify';
 import type { FieldClassification } from '../resolver/resolve';
@@ -279,6 +281,9 @@ export function rewriteItemOf(spec: FieldSpec, classification: FieldClassificati
   const max = spec.constraints.maxLength;
   const current = currentOf(spec);
   if (current !== '' && namesSensitiveAnswer(current, context.vocab)) return null;
+  // What the box holds is the page's words as much as the person's (a page may have written it): text addressed to AI
+  // tools in it is never sent (the audit of 2026-11-06, S-10; the tripwire's screen, as on a label).
+  if (spec.current.kind === 'text' && hasTripwire(spec.current.text as VisibleText)) return null;
   return { key: spec.key, question: questionOf(spec), maxLength: max === undefined ? null : Math.min(max, DRAFT_MAX_LENGTH),
     ...(current === '' ? {} : { current }) };
 }

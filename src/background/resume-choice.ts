@@ -98,7 +98,20 @@ export function createResumeChooser(deps: ResumeChooserDeps): ResumeChooser {
     return true;
   }
 
-  return async (runId, url) => {
+  /** The audit of 2026-11-06 (M6): what the run chose, and the job its lookup names, kept in its record (ids only), so a
+   *  Submit after the worker was stopped still records them. Nothing chosen across a token change is kept. */
+  const choose: ResumeChooser = async (runId, url) => {
+    const generation = deps.generation?.() ?? 0;
+    const choice = await chooseNow(runId, url);
+    if ((deps.generation?.() ?? 0) === generation && deps.runs.memo(runId).resume !== undefined) {
+      const memo = deps.runs.memo(runId);
+      await deps.runs.noteAttached(runId, { resumeId: memo.resume?.id ?? null,
+        ...(memo.lookup === undefined ? {} : { jobId: memo.lookup?.job?.id ?? null }) });
+    }
+    return choice;
+  };
+
+  const chooseNow: ResumeChooser = async (runId, url) => {
     const memo = deps.runs.memo(runId);
     const generation = deps.generation?.() ?? 0;
     const current = () => (deps.generation?.() ?? 0) === generation;
@@ -134,4 +147,6 @@ export function createResumeChooser(deps: ResumeChooserDeps): ResumeChooser {
     memo.resume = item ? { id: item.id, fileKind: item.fileKind, fileName: item.fileName } : null;
     return memo.resume;
   };
+
+  return choose;
 }

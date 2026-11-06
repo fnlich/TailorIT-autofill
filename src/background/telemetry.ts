@@ -13,6 +13,7 @@
  * - The stored counts are checked on the way in and out (addEvents keeps only well-formed counts, rebuilt from their
  *   five fields), so a stored entry with anything more, or a corrupt one, is dropped.
  * Writes are serialised, so two reports at once never lose a count.
+ * A private (incognito) tab's reports count nothing, and its run ids are never kept (the audit of 2026-11-06, S-6).
  */
 import { addEvents, outcomeKnown, telemetryEventsOf } from '../core/telemetry/events';
 import type { TelemetryCount } from '../core/types/telemetry';
@@ -44,8 +45,9 @@ function countedOf(value: unknown): Counted {
 /** The counters, as the worker keeps them. */
 export interface Telemetry {
   /** Counts `report`'s rows that `previous` (the frame's report it replaces) did not already count for the same run,
-   *  when the person opted in. Answers how many events were added. */
-  record(report: FrameReport, previous: FrameReport | null): Promise<number>;
+   *  when the person opted in, and never a private (incognito) tab's (the audit of 2026-11-06, S-6). Answers how many
+   *  events were added. */
+  record(report: FrameReport, previous: FrameReport | null, from?: { incognito?: boolean }): Promise<number>;
   /** The counts, one per combination of the five fields. */
   read(): Promise<TelemetryCount[]>;
   /** Removes every count. */
@@ -65,8 +67,8 @@ export function createTelemetry(deps: { local: StorageArea; session: StorageArea
   }
 
   return {
-    async record(report, previous) {
-      if (report.mode !== 'fill' || !(await deps.settings.get()).telemetry.optIn) return 0;
+    async record(report, previous, from = {}) {
+      if (report.mode !== 'fill' || from.incognito === true || !(await deps.settings.get()).telemetry.optIn) return 0;
       const tripwireTriggered = report.notices.some((notice) => notice.code === 'tripwire');
       const events = await queue.run(TELEMETRY_KEY, async () => {
         const runs = countedOf(await session.get(TELEMETRY_COUNTED_KEY));

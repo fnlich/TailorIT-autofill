@@ -64,11 +64,13 @@ export type AutofillAppliedRequest = z.infer<typeof AutofillAppliedRequestSchema
  * What POST /api/autofill/applied refuses with, besides every token route's refusals (401, 403, 409 `conflict` for
  * another API version, 429), and the status of each: `validation_failed` (neither an address nor a job, or one over
  * its cap), `not_found` (no such job, and no job or hand-added entry at the address; or a posting its board no longer
- * has), and, when the job had to be added first, POST /api/autofill/jobs's `ats_failed`, `ats_unavailable` and
+ * has), and, when the job had to be added first, POST /api/autofill/jobs's `unsupported` (a posting it will not read:
+ * one off its board's public list, a site whose robots.txt keeps it out), `ats_failed`, `ats_unavailable` and
  * `internal`.
  */
 export const AUTOFILL_APPLIED_REFUSALS = {
   validation_failed: 400,
+  unsupported: 400,
   not_found: 404,
   ats_failed: 502,
   ats_unavailable: 503,

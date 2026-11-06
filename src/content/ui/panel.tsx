@@ -11,12 +11,13 @@
  *   are shown, without actions). It never shows the policy card's buttons: the page's own card has them, and the side
  *   panel mirrors every notice, because a page could draw over this one.
  * - Every click in it must be the person's: a capture listener on the panel stops any untrusted click before React
- *   hears it. Confirm draft and Save my answer (Phase 6 wave 2 passes them) also need the panel to have been seen
- *   (IntersectionObserver v2, visible.ts) when the click came, as the launcher's own clicks do, and the click to have
- *   landed on what was seen (the Phase 6 review, E1): the watch speaks for the panel's box only, so the click's point
- *   (a keyboard's click: the control's centre) must lie inside that box, inside the scrolling body for a row's
- *   control, and on the control itself. The rows scroll inside the box (styles.ts), which clips anything past it. The
- *   panel then says what came of each, under its title.
+ *   hears it, and (the audit of 2026-11-06, S-1) any trusted one made before the panel had been seen, without a break,
+ *   for CONTROL_SEEN_MS (IntersectionObserver v2, visible.ts), as the launcher's own clicks, or one that did not land
+ *   on what was seen (the Phase 6 review, E1): the watch speaks for the panel's box only, so the click's point (a
+ *   keyboard's click: the control's centre) must lie inside that box, inside the scrolling body for a row's control,
+ *   and on the control itself. The rows scroll inside the box (styles.ts), which clips anything past it. Confirm draft
+ *   and Save my answer (Phase 6 wave 2 passes them) read the same verdict again before they act, and the panel then
+ *   says what came of each, under its title.
  * - It renders synchronously (flushSync), so what it shows is what it was last given. It never shows or receives a
  *   value: reports hold none, and the suggested options' labels live in the open row's state only. Closed, it keeps
  *   nothing: its reports are dropped and its tree unmounted (E7), so the next opening waits for a fresh report.
@@ -27,8 +28,8 @@
  *   (PanelActions.press, the run's press.ts), only for the person's trusted click made while the panel could be seen
  *   and on what was seen, as Confirm draft's: a page can neither click it (the capture gate stops an untrusted click)
  *   nor reach its handler any other way. The review (12): the dock's own button is watched too, and its click counts
- *   only once that button has been seen for DOCK_SEEN_MS, so a page cannot slide it under the pointer at the last
- *   moment.
+ *   only once that button has been seen for CONTROL_SEEN_MS (500 ms before the audit of 2026-11-06), so a page cannot
+ *   slide it under the pointer at the last moment.
  */
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -39,6 +40,7 @@ import type { PressAnswer, StepTarget } from '../../messaging/schemas';
 import type { FrameReport } from '../../shared/report';
 import { Brand, Icon } from '../../ui/brand';
 import { adoptReportStyles, Report, RunStatusLine, type SuggestionLabel } from '../../ui/report';
+import { CONTROL_SEEN_MS } from './visible';
 
 /** What the panel's buttons ask the runtime for. Each is about one of this frame's own fields. */
 export interface PanelActions {
@@ -66,9 +68,6 @@ export interface PanelVisibility {
   /** Seen for at least `ms` (visible.ts shownFor). */
   shownFor(el: Element, ms: number): boolean;
 }
-
-/** How long the dock's button must have been seen before its click counts (the review, 12). */
-export const DOCK_SEEN_MS = 500;
 
 /** The in-page panel. */
 export interface InPagePanel {
@@ -203,20 +202,29 @@ export function createInPagePanel(doc: Document, shadow: ShadowRoot, options: {
   container.className = 'panel__root';
   el.append(container);
 
-  // The person's clicks only: an untrusted one never reaches React. Whether the panel could be seen, and the click
-  // landed on what was seen, is read at the click, before React runs the button's handler in the same dispatch.
+  // The person's clicks only: an untrusted one never reaches React, nor (the audit of 2026-11-06, S-1) a trusted one
+  // made before the panel had been seen, without a break, for CONTROL_SEEN_MS, or that did not land on what was seen.
+  // That is read at the click, before React runs the button's handler in the same dispatch, and never later.
   let seenAtClick = false;
   const gate = (event: Event) => {
-    if (!event.isTrusted) {
+    const stop = () => {
       event.stopImmediatePropagation();
       event.preventDefault();
+    };
+    if (!event.isTrusted) {
+      seenAtClick = false;
+      stop();
       return;
     }
-    seenAtClick = visibility.shown(el) && landedInside(event, el);
-    // The dock's button: seen itself, for DOCK_SEEN_MS (the review, 12).
+    seenAtClick = visibility.shownFor(el, CONTROL_SEEN_MS) && landedInside(event, el);
+    // The dock's button: seen itself, for CONTROL_SEEN_MS (the review, 12).
     const dock = event.composedPath().find((node) => (node as Element).nodeType === 1
       && (node as Element).hasAttribute?.('data-step-action')) as Element | undefined;
-    if (dock !== undefined) seenAtClick = seenAtClick && visibility.shownFor(dock, DOCK_SEEN_MS);
+    if (dock !== undefined) seenAtClick = seenAtClick && visibility.shownFor(dock, CONTROL_SEEN_MS);
+    if (!seenAtClick) {
+      log('content.ui-click-refused', { launcher: false, panel: true, dock: dock !== undefined });
+      stop();
+    }
   };
   for (const type of CLICKS) el.addEventListener(type, gate, { capture: true });
   visibility.observe(el);

@@ -14,7 +14,8 @@
  *   again").
  * - The tab hides while the person hid it, or while a panel of ours shows the tab (the in-page panel, or the browser's
  *   side panel, which the worker says).
- * Every control accepts trusted events only, and only while it can be seen (`act`, the page UI's visibility rule).
+ * Every control accepts trusted events only, and only once it has been seen without a break for CONTROL_SEEN_MS (`act`,
+ * the page UI's visibility rule; the audit of 2026-11-06, S-1): a menu just opened takes its items' clicks 600 ms on.
  * Nothing here reads or writes the page's own DOM; the tab lives in the closed shadow root.
  */
 import { COPY } from '../../shared/copy';
@@ -37,9 +38,9 @@ export interface EdgeHandlers {
   placed(top: number): void;
   /** The person chose to hide the tab. */
   hide(scope: HideScope): void;
-  /** Runs `action` when a trusted event on `control` counts: the control is visible now (the page UI's rule). `now`:
-   *  the event needs an answer at once (a drag's start); otherwise it may wait for the visibility watch's first word. */
-  act(control: Element, action: () => void, now: boolean): void;
+  /** Runs `action` when a trusted event on `control` counts: the control has been seen, without a break, for the page
+   *  UI's CONTROL_SEEN_MS (the audit of 2026-11-06, S-1); decided at the event, never later. */
+  act(control: Element, action: () => void): void;
   /** The tab's controls appeared or went (the menu opened or closed): the visibility watch follows them. */
   controls(added: readonly Element[], removed: readonly Element[]): void;
 }
@@ -108,7 +109,7 @@ export function createEdge(doc: Document, launcher: HTMLElement, handlers: EdgeH
         if (menu.hidden) return;
         closeMenu();
         handlers.hide(scope);
-      }, false);
+      });
     }, { signal: lifetime.signal });
     return item;
   });
@@ -158,7 +159,7 @@ export function createEdge(doc: Document, launcher: HTMLElement, handlers: EdgeH
     if (!event.isTrusted) return;
     // A click the keyboard made (Enter or Space: no pointer, detail 0) moves the focus into the menu.
     const byKeyboard = event.detail === 0;
-    handlers.act(close, () => (menu.hidden ? openMenu(byKeyboard) : closeMenu()), false);
+    handlers.act(close, () => (menu.hidden ? openMenu(byKeyboard) : closeMenu()));
   }, { signal: lifetime.signal });
 
   el.addEventListener('keydown', (event) => {
@@ -206,7 +207,7 @@ export function createEdge(doc: Document, launcher: HTMLElement, handlers: EdgeH
         // A pointer the browser no longer tracks: the drag follows the moves that still reach the grip.
       }
       el.dataset.dragging = '';
-    }, true);
+    });
   }, { signal: lifetime.signal });
   grip.addEventListener('pointermove', (event) => {
     if (!event.isTrusted || dragging === null || event.pointerId !== dragging.pointerId) return;
@@ -230,7 +231,7 @@ export function createEdge(doc: Document, launcher: HTMLElement, handlers: EdgeH
     handlers.act(grip, () => {
       draw(top + (event.key === 'ArrowUp' ? -EDGE_KEY_STEP_PX : EDGE_KEY_STEP_PX));
       keyMoved = true;
-    }, true);
+    });
   }, { signal: lifetime.signal });
   const keyDone = (event: Event) => {
     if (!event.isTrusted || !keyMoved) return;

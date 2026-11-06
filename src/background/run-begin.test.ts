@@ -60,6 +60,8 @@ describe('run/begin', () => {
     expect(record![1]).toEqual({
       runId: expect.any(String), tabId: 7, frameId: 0, documentId: 'doc-1', applicationKey: LEVER_KEY, dryRun: false,
       sensitive: 'untried', startedAt: worker.clock.now,
+      // The audit of 2026-11-06 (M6): the lookup's job, by its id alone.
+      jobId: goldens.lookup.job.id,
     });
   });
 

@@ -4,7 +4,7 @@
  * path's read, each fill, the virtualized list, the chips, the typeahead's queries, and every event they cause, which
  * must be untrusted and on the fillers' list (the browser's own scroll event on a list whose scrollTop we set aside).
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import typeaheadHtml from '../../../fixtures/synthetic/remote-typeahead/index.html?raw';
 import widgetsHtml from '../../../fixtures/synthetic/widgets/index.html?raw';
 import { TIEBREAK_LABEL_MAX } from '../../core/confidence';
@@ -591,5 +591,66 @@ describe('the person’s Skip ends a widget’s wait and puts back what the writ
       });
     expect(result).toMatchObject({ chosen: null, reason: 'internal-error' });
     expect((page.fixture.doc.getElementById('s') as HTMLInputElement).value).toBe('University of Texas');
+  });
+
+  /** A list and a radio group that show a click only 800 ms after it (a slow page): the list closes at once. */
+  const SLOW = `<!doctype html><html><head><style>[role=listbox]{min-height:40px;margin:0;border:1px solid #888}
+    [role=listbox][hidden]{display:none}</style></head><body><form>
+    <span id="q">Degree</span>
+    <div id="cb" role="combobox" tabindex="0" aria-labelledby="q" aria-haspopup="listbox" aria-controls="cl"
+      aria-expanded="false">Select a degree</div>
+    <ul id="cl" role="listbox" aria-labelledby="q" hidden><li id="ba" role="option" aria-selected="false">Bachelor's</li>
+      <li id="ma" role="option" aria-selected="false">Master's</li></ul>
+    <p id="sq">Will you require sponsorship?</p>
+    <div id="sp" role="radiogroup" aria-labelledby="sq">
+      <button type="button" id="sp-yes" role="radio" aria-checked="false">Yes</button>
+      <button type="button" id="sp-no" role="radio" aria-checked="false">No</button></div>
+    <script>
+      const cb = document.getElementById('cb');
+      const cl = document.getElementById('cl');
+      cb.addEventListener('click', () => { cl.hidden = !cl.hidden; cb.setAttribute('aria-expanded', String(!cl.hidden)); });
+      for (const option of cl.querySelectorAll('[role=option]')) option.addEventListener('click', () => {
+        cl.hidden = true;
+        cb.setAttribute('aria-expanded', 'false');
+        setTimeout(() => { cb.textContent = option.textContent; option.setAttribute('aria-selected', 'true'); }, 800);
+      });
+      for (const radio of document.querySelectorAll('[role=radio]')) radio.addEventListener('click', () => {
+        setTimeout(() => radio.setAttribute('aria-checked', 'true'), 800);
+      });
+    </script></form></body></html>`;
+
+  /** A write's context whose Skip comes the moment `el` is clicked: the run's own signal never aborts. */
+  function skippingAtClick(page: Page, el: Element) {
+    const run = new AbortController();
+    const skip = new AbortController();
+    el.addEventListener('click', () => skip.abort());
+    return { ...page.ctx(), signal: AbortSignal.any([run.signal, skip.signal]), runSignal: run.signal };
+  }
+
+  it('an option clicked as the Skip came, not shown yet: written, not verified (the audit of 2026-11-06, m11)',
+    async () => {
+      const page = await open(SLOW);
+      page.readings.set(page.target('Degree').field.baseKey, { kind: 'options', multiselectable: false, complete: true,
+        options: [{ label: "Bachelor's", disabled: false }, { label: "Master's", disabled: false }] });
+      const option = page.fixture.doc.getElementById('ma')!;
+      const outcome = await fillWidget(page.target('Degree'), { kind: 'option', index: 1, cleanLabel: "Master's" },
+        skippingAtClick(page, option));
+      expect(outcome).toMatchObject({ wrote: true, verification: 'mismatch', reason: 'verify-mismatch' });
+      // The page takes the click after all: what the read-back after the settle will find.
+      await vi.waitFor(() => expect(page.fixture.doc.getElementById('cb')!.textContent).toBe("Master's"));
+      expectOurEventsOnly(page.events);
+    });
+
+  it('a radio member clicked as the Skip came, not shown yet: written, not verified (m11)', async () => {
+    const page = await open(SLOW);
+    const yes = page.fixture.doc.getElementById('sp-yes')!;
+    const outcome = await fillWidget(page.target('Will you require sponsorship?'),
+      { kind: 'option', index: 0, cleanLabel: 'Yes' }, skippingAtClick(page, yes));
+    expect(outcome).toMatchObject({ wrote: true, verification: 'mismatch', reason: 'verify-mismatch' });
+    // Without a Skip, a member that never shows chosen in the wait is the person's click.
+    const page2 = await open(SLOW.replace("setTimeout(() => radio.setAttribute('aria-checked', 'true'), 800);", ''));
+    const ignored = await fillWidget(page2.target('Will you require sponsorship?'),
+      { kind: 'option', index: 1, cleanLabel: 'No' }, page2.ctx());
+    expect(ignored).toMatchObject({ wrote: false, reason: 'needs-your-click' });
   });
 });

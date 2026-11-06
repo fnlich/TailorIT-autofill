@@ -70,7 +70,10 @@ export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attenti
   'submit-errors', 'submit-auto-unchecked',
   // v3 Phase 5, Sign-in mode Auto: the run signs in with the person's saved job-site sign-in; it could not (no sign-in
   // for this site, a field it may not fill, Sign-in Auto not allowed); or the site did not take it.
-  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed'] as const;
+  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed',
+  // The audit of 2026-11-06 (S-2, S-3): a bot check or CAPTCHA asked as a question is left for the person (`count` of
+  // them); while one is, Next and Submit are never pressed for them, and the agent leaves the job (needs-you captcha).
+  'bot-check'] as const;
 
 /** A step's progress line as the adapter reads it from the page ("Step 2 of 4"), at most this long. */
 export const MAX_STEP_PROGRESS = 120;

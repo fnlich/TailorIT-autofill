@@ -15,6 +15,7 @@ import { createProfileEditor } from './profile-editor';
 import { createRateLimit } from './locks';
 import { createSiteRequests } from './site-requests';
 import { CONFIRMATION_PAGE_MS, SUBMIT_ARM_MS } from './submissions';
+import { AUTOFILL_APPLIED_REFUSALS } from '../contract/tailorit';
 import {
   contentSender, fakeDocx, fieldSpec, fileReply, frameReport, goldens, LEVER_URL, pageSender, restartTestWorker,
   sentToFrames, startTestWorker, tokenRecord, typeOfSent, beginRun, type TestWorker,
@@ -390,11 +391,13 @@ describe('a Submit\'s confirmation, recorded as Applied (v3 Phase 4)', () => {
       notices: [] }, contentSender());
     expect(await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: KEY, by: 'panel', runId },
       contentSender())).toEqual({ ok: true, data: {} });
-    // The worker stops while the page sends; the arm is in storage.session, never an address.
+    // The worker stops while the page sends; the arm is in storage.session, with the posting's canonical address alone
+    // (the audit of 2026-11-06, m4: for a Try again after a restart): never the address the frame is at.
     const arms = await fakeBrowser.storage.session.get(null);
     const arm = Object.entries(arms).filter(([key]) => key.startsWith('submit-arm:'));
     expect(arm).toHaveLength(1);
-    expect(JSON.stringify(arm)).not.toContain('jobs.lever.co');
+    expect(arm[0]![1]).toMatchObject({ url: 'https://jobs.lever.co/tailorit-fixture/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00' });
+    expect(JSON.stringify(arm)).not.toContain('/apply');
     const restarted = await restartTestWorker(worker, { token: tokenRecord() });
     restarted.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
     expect(await restarted.deliver({ v: 1, type: 'submit/detected', applicationKey: KEY, evidence: 'success-message' },
@@ -484,6 +487,21 @@ describe('a Submit\'s confirmation, recorded as Applied (v3 Phase 4)', () => {
     await detected(refused);
     expect(await page(refused, { type: 'panel/retryApplied', tabId: 7 })).toEqual({ ok: false, error: 'expired' });
     expect(refused.tailorit.count('POST /api/autofill/applied')).toBe(1);
+  });
+
+  it('takes TailorIT’s 400 `unsupported` (a posting it will not read, contract b8085f4) as final: said, never asked again', async () => {
+    expect(AUTOFILL_APPLIED_REFUSALS.unsupported).toBe(400);
+    const worker = await withForm();
+    worker.tailorit.reply('POST /api/autofill/applied', { status: 400, json: { error: { code: 'unsupported',
+      message: 'x' } } });
+    await armed(worker);
+    await detected(worker);
+    // The side panel says it was not recorded; Try again has nothing to ask with, and asks nothing.
+    expect(await page(worker, { type: 'panel/reports', tabId: 7 })).toMatchObject({ ok: true,
+      data: { page: { submitted: 'not-recorded' } } });
+    expect(await page(worker, { type: 'panel/retryApplied', tabId: 7 })).toEqual({ ok: false, error: 'expired' });
+    expect(await detected(worker)).toEqual({ ok: false, error: 'expired' });
+    expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(1);
   });
 
   it('lets the page state go when the frame moves to another posting in its document, and keeps it for its confirmation', async () => {

@@ -51,7 +51,13 @@
  *     form: its lookup on load, its card and its Add go through it as a form frame's do. A confirmation page (the
  *     platform's page after submitting) is too, but only for the card POST /applied answered (remember): nothing is
  *     looked up through it.
- * Memory only: nothing here is stored, and no log line names the job, the address, the resume or the person.
+ * - The audit of 2026-11-06 (M1, m9): what the person chose for the tab (the resume chosen with Change, "Apply without
+ *   resume", the job chosen and the last search's job ids) is kept per tab and per application, in memory and in
+ *   storage.session (`jobchoice:<tabId>`, shared/stored.ts JobChoiceRecordSchema: ids and keys only), so Chrome stopping
+ *   the idle worker loses none of it: the worker reads them back at start (`ready`, which the content messages and the
+ *   panel's reads wait for). A resume chosen with Change belongs to the application it was chosen for, as the job
+ *   chosen and "Apply without resume" do: another application shown in the tab lets it go (applicationShown).
+ * The cards themselves are memory only, and no log line names the job, the address, the resume or the person.
  */
 import { applicationOf } from '../adapters';
 import { addressForTailorIT, matchesSiteUrl } from '../adapters/site';
@@ -65,8 +71,9 @@ import {
 } from '../messaging/schemas';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
+import { JOB_CHOICE_PREFIX, JobChoiceRecordSchema, type JobChoiceRecord } from '../shared/stored';
 import { cardFrameOf, frameEntry, framesOfTab, frameTarget, navOf, type FrameEntry } from './frames';
-import type { createRateLimit } from './locks';
+import { createKeyedQueue, type createRateLimit } from './locks';
 import type { ContentChannel } from './router';
 import type { ServerClient, ServerResult } from './server-client';
 
@@ -150,6 +157,8 @@ export interface TabJob {
 
 /** The job cards, their relay and the tab's resume choice. */
 export interface JobCards {
+  /** Settles once the choices kept in storage.session are back in memory (M1); never rejects. */
+  readonly ready: Promise<void>;
   card(message: Of<'panel/job'>): Promise<Answer<PanelJobAnswer>>;
   /** The lookup as a recognised posting's page loads (v3 Phase 3; see the header): `from` is the frame's hello. */
   loadCard(tabId: number, from: Pick<ContentChannel, 'frameId' | 'url' | 'incognito'>): Promise<void>;
@@ -185,8 +194,9 @@ export interface JobCards {
    *  document's card. */
   remember(from: Pick<ContentChannel, 'tabId' | 'frameId' | 'documentId' | 'url'>, lookup: AutofillLookupResponse | null,
     read: CardRead): void;
-  /** The resume the person chose for a tab (null: none). */
-  chosen(tabId: number): string | null;
+  /** The resume the person chose for a tab (null: none), for the application `applicationKey` when one is given
+   *  (m9: a choice made for another application is none). */
+  chosen(tabId: number, applicationKey?: string | null): string | null;
   /** What the tab's card says of its job and resume, reading the card first when none is held. */
   tabJob(tabId: number): Promise<TabJob>;
   forgetDocument(tabId: number, frameId: number, documentId: string | null): void;
@@ -295,19 +305,94 @@ function addOutcomeOf(failure: Extract<ServerResult<unknown>, { ok: false }>): A
 export function createJobCards(deps: JobCardsDeps): JobCards {
   const cards = new Map<string, CardEntry>();
   const relays = new Map<string, Relay>();
-  const choices = new Map<number, string>();
-  /** v3 Phase 3b: the tab's last search's job ids, by place (memory only), the job chosen for a document (by its
-   *  document key), and the tabs that apply without a resume. */
+  /** The resume chosen with Change, for the application it was chosen for (m9; null: chosen while the tab showed no
+   *  card frame, so for the next application it shows). */
+  const choices = new Map<number, { app: string | null; id: string }>();
+  /** v3 Phase 3b: the tab's last search's job ids, by place, the job chosen for an application, and the application
+   *  that applies without a resume. Each is kept in storage.session too (M1: persist). */
   const searches = new Map<number, { docKey: string; ids: number[] }>();
   const chosenJobs = new Map<number, { app: string; jobId: number }>();
   const withouts = new Map<number, string>();
+  /** M1: one write at a time per tab; the tabs whose choices changed before the stored ones were read back (theirs in
+   *  memory are newer), and whether the token changed meanwhile (the stored ones are the old connection's). */
+  const writes = createKeyedQueue();
+  const changedEarly = new Set<number>();
+  let restored = false;
+  let droppedEarly = false;
+  const choiceKey = (tabId: number) => `${JOB_CHOICE_PREFIX}${tabId}`;
+
+  /** The tab's choices as storage.session keeps them; null when there are none. */
+  function recordOf(tabId: number): JobChoiceRecord | null {
+    const record: JobChoiceRecord = {};
+    const resume = choices.get(tabId);
+    if (resume !== undefined) record.resume = { app: resume.app, id: resume.id };
+    const without = withouts.get(tabId);
+    if (without !== undefined) record.without = without;
+    const job = chosenJobs.get(tabId);
+    if (job !== undefined) record.job = { app: job.app, jobId: job.jobId };
+    const search = searches.get(tabId);
+    if (search !== undefined) record.search = { docKey: search.docKey, ids: [...search.ids] };
+    return Object.keys(record).length === 0 ? null : record;
+  }
+
+  /** Stores the tab's choices as memory holds them when the write runs (M1). A record that does not check (an address
+   *  no parser reads, its document id too long) is not stored: memory keeps it until the worker stops. */
+  function persist(tabId: number): Promise<void> {
+    if (!restored) changedEarly.add(tabId);
+    return writes.run(choiceKey(tabId), async () => {
+      const record = recordOf(tabId);
+      const checked = record === null ? null : JobChoiceRecordSchema.safeParse(record);
+      try {
+        if (checked === null || !checked.success) await deps.session.remove([choiceKey(tabId)]);
+        else await deps.session.set({ [choiceKey(tabId)]: checked.data });
+      } catch {
+        log('job.choices-unstored');
+      }
+    });
+  }
+
+  /** M1: the choices a worker stopped while idle kept, back in memory; a tab changed since the start keeps its own. */
+  const ready = (async () => {
+    try {
+      const stored = await deps.session.getMany(JOB_CHOICE_PREFIX);
+      if (droppedEarly) {
+        const keys = Object.keys(stored).filter((key) => !changedEarly.has(Number(key.slice(JOB_CHOICE_PREFIX.length))));
+        if (keys.length > 0) await deps.session.remove(keys);
+        return;
+      }
+      for (const [key, value] of Object.entries(stored)) {
+        const tabId = Number(key.slice(JOB_CHOICE_PREFIX.length));
+        if (!Number.isInteger(tabId) || tabId < 0 || changedEarly.has(tabId)) continue;
+        const parsed = JobChoiceRecordSchema.safeParse(value);
+        if (!parsed.success) {
+          await deps.session.remove([key]);
+          continue;
+        }
+        const { resume, without, job, search } = parsed.data;
+        if (resume !== undefined) choices.set(tabId, { app: resume.app, id: resume.id });
+        if (without !== undefined) withouts.set(tabId, without);
+        if (job !== undefined) chosenJobs.set(tabId, { app: job.app, jobId: job.jobId });
+        if (search !== undefined) searches.set(tabId, { docKey: search.docKey, ids: [...search.ids] });
+      }
+    } catch {
+      log('job.choices-unstored');
+    } finally {
+      restored = true;
+      changedEarly.clear();
+    }
+  })();
   /** The epochs: a tab's moves when the tab is forgotten, a document's when the document is (one clock for both, so a
    *  value is never given twice). */
   let clock = 0;
   const tabEpochs = new Map<number, number>();
   const docEpochs = new Map<string, number>();
 
-  const chosenFor = (tabId: number) => choices.get(tabId) ?? null;
+  /** The resume chosen for the tab (m9: for the application `app` when one is given; another's is none). */
+  const chosenFor = (tabId: number, app?: string | null) => {
+    const held = choices.get(tabId);
+    if (held === undefined) return null;
+    return app === undefined || app === null || held.app === null || held.app === app ? held.id : null;
+  };
   /** The job chosen for the tab's application `app` (null: none, or one chosen for another application). */
   const jobFor = (tabId: number, app: string | null): number | null => {
     const held = chosenJobs.get(tabId);
@@ -334,8 +419,9 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     const entry = cards.get(key);
     if (entry === undefined) return null;
     const ttl = entry.lookup === null ? JOB_CARD_FAILED_TTL_MS : JOB_CARD_TTL_MS;
+    const app = appOfFrame(tabId, frame);
     if (deps.now() - entry.at >= ttl || entry.generation !== deps.generation()
-      || entry.chosen !== chosenFor(tabId) || entry.job !== jobFor(tabId, appOfFrame(tabId, frame))) {
+      || entry.chosen !== chosenFor(tabId, app) || entry.job !== jobFor(tabId, app)) {
       cards.delete(key);
       return null;
     }
@@ -353,8 +439,9 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     read: CardRead): void {
     const key = docKeyOf(from.tabId, from.frameId, from.documentId);
     const job = read.job ?? null;
-    if (read.generation !== deps.generation() || read.chosen !== chosenFor(from.tabId)
-      || read.epoch !== epochOf(from.tabId, key) || job !== jobFor(from.tabId, appOfFrom(from))) return;
+    const app = appOfFrom(from);
+    if (read.generation !== deps.generation() || read.chosen !== chosenFor(from.tabId, app)
+      || read.epoch !== epochOf(from.tabId, key) || job !== jobFor(from.tabId, app)) return;
     cards.set(key, {
       lookup: lookup === null ? null : withoutPostingText(lookup),
       addable: addablePosting(parseAtsUrl(from.url)) !== null,
@@ -371,8 +458,9 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     const key = `${docKey}|${action}`;
     const held = relays.get(key);
     if (held !== undefined) return held.done;
-    const relay: Relay = { generation: deps.generation(), epoch: epochOf(tabId, docKey), chosen: chosenFor(tabId),
-      job: jobFor(tabId, appOfFrame(tabId, frame)), taken: false, onLoad, outcome: null,
+    const app = appOfFrame(tabId, frame);
+    const relay: Relay = { generation: deps.generation(), epoch: epochOf(tabId, docKey), chosen: chosenFor(tabId, app),
+      job: jobFor(tabId, app), taken: false, onLoad, outcome: null,
       done: Promise.resolve({ relayed: false, limited: false, outcome: null }) };
     relay.done = (async () => {
       let relayed = false;
@@ -462,7 +550,9 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
   }
 
   return {
+    ready,
     async card({ tabId }) {
+      await ready;
       if (!(await deps.connected())) return ok({ tabId, card: null });
       const read = await cardOfTab(tabId);
       if (read === null) return ok({ tabId, card: null });
@@ -473,6 +563,7 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       return ok({ tabId, card: card.state === 'answered' && without ? { ...card, withoutResume: true } : card });
     },
     async loadCard(tabId, from) {
+      await ready;
       if (from.incognito === true || !recognisedPosting(from.url) || from.url.length > AUTOFILL_LOOKUP_URL_MAX) return;
       if (!(await deps.connected())) return;
       const frame = await formFrame(tabId);
@@ -489,6 +580,7 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       await refresh(tabId, frame, 'lookup', true);
     },
     async add({ tabId }) {
+      await ready;
       if (!(await deps.connected())) return ok({ outcome: 'not-connected' });
       const frame = await formFrame(tabId);
       if (frame === null) return ok({ outcome: 'unavailable' });
@@ -496,11 +588,13 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       return ok({ outcome: outcome ?? (limited ? 'rate-limited' : 'unavailable') });
     },
     async resumes({ tabId }) {
+      await ready;
       const list = await deps.server.resumes();
       if (!list.ok) return refuse(list.failure === 'not-connected' ? 'not_connected' : 'unavailable');
       const frame = await formFrame(tabId);
       const held = frame === null ? null : usable(tabId, frame);
-      const current = chosenFor(tabId) ?? held?.lookup?.suggestedResume?.id ?? null;
+      const current = chosenFor(tabId, frame === null ? null : appOfFrame(tabId, frame))
+        ?? held?.lookup?.suggestedResume?.id ?? null;
       return ok({
         items: list.value.items.filter((item) => item.id.length > 0 && item.id.length <= 64).slice(0, 200).map((item) => ({
           id: item.id, label: cutAtWord(item.label, 200), fileKind: item.fileKind, kind: item.kind, current: item.id === current,
@@ -508,14 +602,22 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       });
     },
     async setResume({ tabId, resumeId }) {
+      await ready;
       if (resumeId === null) choices.delete(tabId);
-      else choices.set(tabId, resumeId);
+      else {
+        // m9: the choice is for the card frame's application, as the job chosen and "Apply without resume" are (with
+        // none yet, for the next one the tab shows).
+        const frame = await formFrame(tabId);
+        choices.set(tabId, { app: frame === null ? null : appOfFrame(tabId, frame), id: resumeId });
+      }
       // Choosing a resume is choosing to attach one (v3 Phase 3b).
       withouts.delete(tabId);
+      await persist(tabId);
       // The tab's cards were read for the old choice: usable() passes them over from now on.
       return ok({});
     },
     async search({ tabId, query }) {
+      await ready;
       if (!(await deps.connected()) || deps.server.searchJobs === undefined) return ok({ outcome: 'not-connected' });
       const answer = await deps.server.searchJobs(query);
       log('job.searched', { status: answer.ok ? 200 : answer.status ?? 0, found: answer.ok ? answer.value.items.length : 0 });
@@ -530,12 +632,15 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       const frame = await formFrame(tabId);
       if (frame === null) return ok({ outcome: 'unavailable' });
       searches.set(tabId, { docKey: docKeyOf(tabId, frame.frameId, frame.documentId), ids: items.map((item) => item.jobId) });
+      await persist(tabId);
       return ok({ outcome: 'found', items: items.map((item, at) => ({ ref: `j${at}`, title: cutAtWord(item.title, 300),
         company: cutAtWord(item.company, 200), location: cutAtWord(item.location, 300) })) });
     },
     async chooseJob({ tabId, ref }) {
+      await ready;
       if (ref === null) {
         chosenJobs.delete(tabId);
+        await persist(tabId);
         return ok({});
       }
       const frame = await formFrame(tabId);
@@ -547,6 +652,7 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       const jobId = search.ids[Number(ref.slice(1))];
       if (jobId === undefined) return refuse('expired');
       chosenJobs.set(tabId, { app: appOfFrame(tabId, frame), jobId });
+      await persist(tabId);
       log('job.chosen');
       // The document's card was read for the page's own match: usable() passes it over from now on.
       return ok({});
@@ -557,27 +663,39 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     assign(tabId, applicationKey, jobId, resumeId) {
       chosenJobs.set(tabId, { app: applicationKey, jobId });
       if (resumeId !== null) {
-        choices.set(tabId, resumeId);
+        choices.set(tabId, { app: applicationKey, id: resumeId });
         withouts.delete(tabId);
       }
+      void persist(tabId);
     },
     async setWithout({ tabId, without }) {
+      await ready;
       if (!without) {
         withouts.delete(tabId);
+        await persist(tabId);
         return ok({});
       }
       const frame = await formFrame(tabId);
       if (frame === null) return refuse('expired');
       withouts.set(tabId, appOfFrame(tabId, frame));
+      await persist(tabId);
       return ok({});
     },
     without: (tabId, applicationKey) => applicationKey !== null && withouts.get(tabId) === applicationKey,
     applicationShown(tabId, applicationKey) {
       if (applicationKey === null) return;
+      let changed = false;
       const held = chosenJobs.get(tabId);
-      if (held !== undefined && held.app !== applicationKey) chosenJobs.delete(tabId);
+      if (held !== undefined && held.app !== applicationKey) changed = chosenJobs.delete(tabId);
       const without = withouts.get(tabId);
-      if (without !== undefined && without !== applicationKey) withouts.delete(tabId);
+      if (without !== undefined && without !== applicationKey) changed = withouts.delete(tabId) || changed;
+      // m9: the resume chosen with Change goes with its application too (one chosen before any is the first one's).
+      const resume = choices.get(tabId);
+      if (resume !== undefined && resume.app === null) {
+        choices.set(tabId, { app: applicationKey, id: resume.id });
+        changed = true;
+      } else if (resume !== undefined && resume.app !== applicationKey) changed = choices.delete(tabId) || changed;
+      if (changed) void persist(tabId);
     },
     async relay(action, from) {
       const relay = relays.get(`${docKeyOf(from.tabId, from.frameId, from.documentId)}|${action}`);
@@ -600,11 +718,12 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
     remember(from, lookup, read) {
       if (lookup !== null) keep(from, lookup, read);
     },
-    chosen: chosenFor,
+    chosen: (tabId, applicationKey) => chosenFor(tabId, applicationKey),
     async tabJob(tabId) {
+      await ready;
       const read = await cardOfTab(tabId);
       const lookup = read?.entry?.lookup ?? null;
-      const chosen = chosenFor(tabId);
+      const chosen = chosenFor(tabId, read === null ? null : appOfFrame(tabId, read.frame));
       const suggested = lookup?.suggestedResume ?? null;
       let resume: TabJob['resume'] = null;
       if (suggested !== null && (chosen === null || suggested.id === chosen)) resume = { id: suggested.id, label: suggested.label };
@@ -616,7 +735,10 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       const key = docKeyOf(tabId, frameId, documentId);
       cards.delete(key);
       // The search made on this page goes with it; the job chosen stays with its application (applicationShown).
-      if (searches.get(tabId)?.docKey === key) searches.delete(tabId);
+      if (searches.get(tabId)?.docKey === key) {
+        searches.delete(tabId);
+        void persist(tabId);
+      }
       // What is in flight for it lands nowhere, and the next read starts afresh rather than waiting for it.
       clock += 1;
       docEpochs.set(key, clock);
@@ -634,14 +756,20 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       searches.delete(tabId);
       chosenJobs.delete(tabId);
       withouts.delete(tabId);
+      void persist(tabId);
       deps.limit.forget(`${tabId}/`);
     },
     dropTokenData() {
       cards.clear();
+      const tabs = new Set([...choices.keys(), ...searches.keys(), ...chosenJobs.keys(), ...withouts.keys()]);
       choices.clear();
       searches.clear();
       chosenJobs.clear();
       withouts.clear();
+      // M1: the stored ones go too (once read back, memory holds every stored one; until then, each is removed as it
+      // is read).
+      if (!restored) droppedEarly = true;
+      for (const tabId of tabs) void persist(tabId);
     },
   };
 }

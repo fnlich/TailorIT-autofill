@@ -40,9 +40,16 @@
  *   one refused for good is dropped. Then the next job is taken.
  * - Wake: a chrome.alarms alarm (AGENT_ALARM, every AGENT_TICK_MINUTES) wakes the worker while Run auto-apply is on, or
  *   a result waits to be told. An empty queue or a failure waits AGENT_BACKOFF_MS (a minute, then five).
+ * - An outage never drains the queue (the audit of 2026-11-06, M5): while the browser says it is offline no job is
+ *   taken (blocked, offline); a page that never loaded is page_error, never a closed posting (closed only where the
+ *   tab's address is a page of the platform's host that names no posting); and the agent pauses itself, Run auto-apply
+ *   off with the reason said (AGENT_PAUSES), when Chrome opens no window for a job (that job is left for the person,
+ *   needs-you cancelled) or after AGENT_MAX_PAGE_ERRORS jobs in a row ended page_error. The person turns it on again.
  * - Stop: Stop, Run auto-apply turned off, the person closing the tab, the agent blocked (a disclosure to acknowledge,
  *   a connection without agent:run, none) leave the running job for the person (needs-you, cancelled). A changed or
- *   dropped connection does too, and turns Run auto-apply off (its confirmation asked again).
+ *   dropped connection does too, and turns Run auto-apply off (its confirmation asked again). The person closing the
+ *   agent's tab or window is their Stop (the audit's m14): the agent pauses (window-closed) until they turn Run
+ *   auto-apply on again, so no next job opens by itself.
  * Commands come only from the worker's own poll of TailorIT with its token: no page, frame or message can start the
  * agent, choose its job or make it submit. Nothing here logs a job, an address or a value: states and reasons are
  * logged as their places in the contract's lists.
@@ -54,7 +61,9 @@ import {
   type AutofillAgentFinishedState, type AutofillAgentReason,
 } from '../contract/tailorit';
 import { ok, type Answer } from '../messaging/envelope';
-import type { AgentBlock, AgentStatus, EntryAnswer, EntryBlock } from '../messaging/schemas';
+import {
+  AGENT_PAUSES, type AgentBlock, type AgentPause, type AgentStatus, type EntryAnswer, type EntryBlock,
+} from '../messaging/schemas';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
@@ -91,6 +100,9 @@ export const AGENT_LOAD_SETTLE_MS = 1_500;
 export const AGENT_MAX_ENTRIES = 2;
 /** Runs started per job (one per document of the form): a form that keeps loading again is not filled forever. */
 export const AGENT_MAX_STARTS = 8;
+/** Jobs in a row ended page_error before the agent pauses itself (the audit of 2026-11-06, M5): pages that do not load
+ *  one after another are an outage, not the jobs', and the queue is not drained through it. */
+export const AGENT_MAX_PAGE_ERRORS = 3;
 
 /** storage.local: the switch, the running job, today's tally. storage.session: when the queue is asked next, and the
  *  browser session's nonce. */
@@ -99,6 +111,8 @@ export const AGENT_RUN_KEY = 'agent:run';
 export const AGENT_TALLY_KEY = 'agent:day';
 export const AGENT_POLL_KEY = 'agent:poll';
 export const AGENT_SESSION_KEY = 'agent:session';
+/** storage.session: how many jobs in a row ended page_error (a count; M5). */
+export const AGENT_ERRORS_KEY = 'agent:errors';
 
 const Count = z.number().int().nonnegative();
 const ResultSchema = z.strictObject({
@@ -107,8 +121,9 @@ const ResultSchema = z.strictObject({
 });
 const NONCE = /^[A-Za-z0-9_-]{8,64}$/;
 
-/** Run auto-apply, and whether the person gave the one-time confirmation. */
-const SwitchSchema = z.strictObject({ on: z.boolean(), confirmed: z.boolean() });
+/** Run auto-apply, whether the person gave the one-time confirmation, and, while it is off because the agent paused
+ *  itself (M5, m14), why. */
+const SwitchSchema = z.strictObject({ on: z.boolean(), confirmed: z.boolean(), paused: z.enum(AGENT_PAUSES).optional() });
 type AgentSwitch = z.infer<typeof SwitchSchema>;
 
 /** The job the agent runs: ids, keys, times and counts, the job's company and title as TailorIT named them; never an
@@ -193,7 +208,8 @@ const WAIT: AgentVerdict = { kind: 'wait' };
  *   page_error, anything else (an entry choice, a control that takes only the person's click) needs-you other;
  * - stopped: a form its page hid failed page_error; else needs-you cancelled (the person's Cancel);
  * - at rest (review, or waiting for a Next): a Submit pressed waits for its confirmation; then, in order, the skip
- *   rules' notices (no-AI posting: skipped posting_forbids_ai; a required field empty: needs-you required_field_empty;
+ *   rules' notices (no-AI posting: skipped posting_forbids_ai; then a bot check asked as a question, the audit's S-2
+ *   and S-3: needs-you captcha; a required field empty: needs-you required_field_empty;
  *   an AI-guessed legal answer: needs-you ai_guess_legal), a CAPTCHA (needs-you captcha), a sign-in (needs-you sign_in),
  *   the page refusing the Submit pressed (one retry, then failed validation_error), errors shown before any Submit
  *   (failed validation_error: the run's own fix pass came first), a Submit no confirmation followed (needs-you other),
@@ -242,6 +258,8 @@ function atRest(report: ReportView, has: (code: FrameReport['notices'][number]['
   context: { retried: boolean }): AgentVerdict {
   if (report.buttons?.pressed === 'submit') return WAIT;
   if (has('submit-held-no-ai')) return finish('skipped', 'posting_forbids_ai');
+  // The audit of 2026-11-06 (S-2, S-3): a bot check asked as a question is a CAPTCHA, whether or not it is required.
+  if (has('bot-check')) return finish('needs-you', 'captcha');
   if (has('submit-held-required')) return finish('needs-you', 'required_field_empty');
   if (has('submit-held-guess')) return finish('needs-you', 'ai_guess_legal');
   if (has('submit-held-attention') || has('submit-held-entries')) return finish('needs-you', 'other');
@@ -293,11 +311,10 @@ export interface AgentDeps {
   scopes(): Promise<readonly string[] | null>;
   /** The person acknowledged the disclosure as it reads now (auth.ts). */
   disclosed(): Promise<boolean>;
+  /** Whether the browser says it is online (navigator.onLine; M5). Absent: online. */
+  online?(): boolean;
   /** The tab's reports, as the panels read them. */
   reports(tabId: number): Promise<readonly FrameReport[]>;
-  /** Whether the tab's page is on one of the ATS hosts now (its platform's candidate hosts), read from the browser
-   *  (v3 Phase 6/7b review, S3: a page there that shows no posting says no hello). Absent: not known. */
-  onAtsHost?(tabId: number): Promise<boolean>;
   /** What the tab shows by its address (WorkerPlatform tabs.atsPageOf): 'other' for a page on an ATS host that names no
    *  posting, where no frame of ours says hello (round 2, K3), and the host's platform (round 3, X8). Absent: not
    *  known. */
@@ -357,6 +374,8 @@ export function createAgent(deps: AgentDeps) {
   const dayOf = deps.dayOf ?? localDay;
   /** No browser window of the person's was open at the last look (memory only). */
   let noWindow = false;
+  /** The browser said it was offline at the last look (memory only; M5). */
+  let offline = false;
   /** The next tick already scheduled by a timer (memory only: the alarm covers a stopped worker). */
   let soon: (() => void) | null = null;
   /** The browser session's nonce, once read (storage.session holds it across worker restarts). */
@@ -375,6 +394,7 @@ export function createAgent(deps: AgentDeps) {
   const saveRun = (run: AgentRun | null) => (run === null ? deps.local.remove([AGENT_RUN_KEY])
     : deps.local.set({ [AGENT_RUN_KEY]: run }));
   const savePoll = (poll: AgentPoll) => deps.session.set({ [AGENT_POLL_KEY]: poll });
+  const errorsOf = () => read<number>(deps.session, AGENT_ERRORS_KEY, Count, 0);
   const guessesOf = (run: AgentRun) => Object.values(run.guesses).reduce((sum, count) => sum + count, 0);
   /** Whether the job has begun (the v3 Phase 6/7b review's round 2, K4): an entry answered 'pressed', or a form showed. */
   const begun = (run: AgentRun) => (run.pressedEntryAt ?? null) !== null || run.formAt !== null;
@@ -453,12 +473,14 @@ export function createAgent(deps: AgentDeps) {
     const [on, run, tally, blocked] = [await switchOf(), await runOf(), await tallyOf(), await blockOf()];
     const today = dayOf(deps.now());
     const running = run !== null && run.result === null;
-    const block: AgentBlock | null = blocked ?? (on.on && !running && noWindow ? 'no-window' : null);
+    const block: AgentBlock | null = blocked
+      ?? (on.on && !running && noWindow ? 'no-window' : on.on && !running && offline ? 'offline' : null);
     return {
       on: on.on,
       confirmed: on.confirmed,
       phase: !on.on ? 'off' : running ? 'running' : block !== null ? 'blocked' : 'waiting',
       blocked: on.on ? block : blocked,
+      paused: on.on ? null : on.paused ?? null,
       allowed: blocked === null,
       pending: run !== null && run.result !== null,
       job: running ? { company: run.company, title: run.title } : null,
@@ -482,13 +504,30 @@ export function createAgent(deps: AgentDeps) {
     else await deps.alarms.stop(AGENT_ALARM).catch(() => undefined);
   }
 
-  /** The job's result: kept, its tab released and closed, then told to TailorIT (reportResult). */
+  /** The agent pauses itself (M5, m14): Run auto-apply off, the person's confirmation kept, the reason said, no next
+   *  job taken until the person turns it on again. Nothing while it is off already. */
+  async function pause(reason: AgentPause): Promise<void> {
+    const held = await switchOf();
+    if (!held.on) return;
+    await deps.local.set({ [AGENT_SWITCH_KEY]: { on: false, confirmed: held.confirmed, paused: reason } satisfies AgentSwitch });
+    soon?.();
+    soon = null;
+    log('agent.paused', { reason: AGENT_PAUSES.indexOf(reason) });
+    await keepAlarm();
+    deps.changed();
+  }
+
+  /** The job's result: kept, its tab released and closed, then told to TailorIT (reportResult). Jobs that end
+   *  page_error one after another pause the agent at AGENT_MAX_PAGE_ERRORS (M5). */
   async function finishRun(run: AgentRun, state: AutofillAgentFinishedState, reason: AutofillAgentReason | null):
     Promise<boolean> {
     const done: AgentRun = { ...run, result: { state, reason, aiGuesses: guessesOf(run) }, waiting: null };
     await saveRun(done);
     log('agent.finished', { state: AUTOFILL_AGENT_FINISHED_STATES.indexOf(state),
       reason: reason === null ? -1 : AUTOFILL_AGENT_REASONS.indexOf(reason) });
+    const errors = reason === 'page_error' ? (await errorsOf()) + 1 : 0;
+    await deps.session.set({ [AGENT_ERRORS_KEY]: errors >= AGENT_MAX_PAGE_ERRORS ? 0 : errors });
+    if (errors >= AGENT_MAX_PAGE_ERRORS) await pause('page-errors');
     await release(done);
     if (!(await mayTell())) {
       await keepAlarm();
@@ -541,8 +580,11 @@ export function createAgent(deps: AgentDeps) {
   async function open(run: AgentRun, address: string): Promise<void> {
     const opened = await deps.windows.open();
     if (opened === null) {
+      // The browser would not open a window (M5): nothing of the job was tried, so it is left for the person, and the
+      // agent pauses rather than take the next job into the same refusal.
       log('agent.open-failed');
-      await finishRun(run, 'failed', 'page_error');
+      await pause('no-window');
+      await finishRun(run, 'needs-you', 'cancelled');
       return;
     }
     const now = deps.now();
@@ -574,6 +616,14 @@ export function createAgent(deps: AgentDeps) {
     }
     if (noWindow) deps.changed();
     noWindow = false;
+    // Offline (M5): no job is taken, so none is opened into pages that cannot load; the next look tries again.
+    if (deps.online?.() === false) {
+      if (!offline) deps.changed();
+      offline = true;
+      return;
+    }
+    if (offline) deps.changed();
+    offline = false;
     const answer = await deps.server.agentNext();
     if (!answer.ok || answer.value.item === null) {
       const misses = poll.misses + 1;
@@ -626,7 +676,8 @@ export function createAgent(deps: AgentDeps) {
       return;
     }
     if (!(await deps.windows.tabExists(run.tabId))) {
-      // Closed (by the person): nothing of it to close.
+      // Closed (by the person): their Stop (m14), and nothing of it to close.
+      await pause('window-closed');
       await finishRun({ ...run, tabId: null, windowId: null }, 'needs-you', 'cancelled');
       return;
     }
@@ -635,17 +686,21 @@ export function createAgent(deps: AgentDeps) {
       return;
     }
     if (run.formAt === null && run.openedAt !== null && now - run.openedAt >= AGENT_FORM_WAIT_MS) {
-      // A page said hello and never showed a form (its posting gone, a page that says so): closed. None said hello: a
-      // page of the platform's host that shows no posting says none (the v3 Phase 6/7b review, S3), so the tab still
-      // on such a host is a closed posting too, or, once the job's entry was pressed, the person's sign-in (round 2,
-      // E8); anywhere else, not loaded.
-      const onPlatform = run.tabId !== null && deps.onAtsHost !== undefined
-        && await deps.onAtsHost(run.tabId).catch(() => false);
-      if (onPlatform && begun(run)) {
-        await finishRun(run, 'needs-you', 'sign_in');
+      // The tab's address names a page of the platform's host that shows no posting (which says no hello: the v3 Phase
+      // 6/7b review, S3): a closed posting, or, once the job has begun, the person's sign-in on the job's own platform
+      // (round 2, E8; noPosting). A page that said hello and never showed a form (its posting gone, a page that says
+      // so): closed before the job began, the person's after. Anything else, the tab still at the posting's or its
+      // form's address included, never loaded: page_error, never a closed posting (the audit of 2026-11-06, M5).
+      const shown = deps.atsPageOf === undefined ? null : await deps.atsPageOf(run.tabId).catch(() => null);
+      if (shown?.page === 'other') {
+        await noPosting(run, onJobPlatform(run, shown.platform));
         return;
       }
-      await finishRun(run, 'failed', run.heardAt !== null || onPlatform ? 'posting_closed' : 'page_error');
+      if (run.heardAt !== null) {
+        await finishRun(run, begun(run) ? 'needs-you' : 'failed', begun(run) ? 'other' : 'posting_closed');
+        return;
+      }
+      await finishRun(run, 'failed', 'page_error');
       return;
     }
     if (run.heldAt !== null && now - run.heldAt >= AGENT_CONFIRM_MS) {
@@ -774,6 +829,7 @@ export function createAgent(deps: AgentDeps) {
     await serial(async () => {
       const held = await switchOf();
       if (!on) {
+        // The person's own off: a pause the agent made is theirs now, and its reason goes.
         await deps.local.set({ [AGENT_SWITCH_KEY]: { on: false, confirmed: held.confirmed } satisfies AgentSwitch });
         const run = await adopt(await runOf());
         if (run !== null && run.result === null) await finishRun(run, 'needs-you', 'cancelled');
@@ -787,6 +843,7 @@ export function createAgent(deps: AgentDeps) {
       }
       await deps.local.set({ [AGENT_SWITCH_KEY]: { on: true, confirmed: true } satisfies AgentSwitch });
       await savePoll({ nextAt: 0, misses: 0 });
+      await deps.session.set({ [AGENT_ERRORS_KEY]: 0 });
       await keepAlarm();
       log('agent.switched', { on: true });
     });
@@ -959,11 +1016,13 @@ export function createAgent(deps: AgentDeps) {
       });
     },
 
-    /** A tab closed: the agent's, closed by the person, leaves its job for them (nothing left to close). */
+    /** A tab closed: the agent's, closed by the person (its tab or its window), is their Stop (the audit's m14): its job
+     *  is left for them (nothing left to close), and the agent pauses until they turn Run auto-apply on again. */
     async tabRemoved(tabId: number): Promise<void> {
       await serial(async () => {
         const run = await runOf();
         if (run === null || run.result !== null || run.tabId !== tabId || !(await ofThisSession(run))) return;
+        await pause('window-closed');
         await finishRun({ ...run, tabId: null, windowId: null }, 'needs-you', 'cancelled');
       });
     },

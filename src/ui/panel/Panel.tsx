@@ -155,7 +155,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const dashboardId = useId();
   const menuId = useId();
   const tabId = useFollowedTab(platform, pinnedTabId);
-  const { reports, page, link, reconnect, changes } = useTabReports(platform, tabId, now, { side: pinnedTabId === null });
+  const { reports, page, link, reconnect, changes, relinked } = useTabReports(platform, tabId, now,
+    { side: pinnedTabId === null });
   const auth = useAuthStatus(platform, root);
   // v3 Phase 5: the auto-apply agent's status, read again at each change the worker announces.
   const agent = useAgentStatus(platform, root, { changes: changes.agent });
@@ -164,7 +165,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
    *  the newest report's time at the click), which says more (the Phase F1 review, 7); a row action's stays. */
   const [feedback, setFeedback] = useState<{ tabId: number | null; text: string; newest: number } | null>(null);
   const [adding, setAdding] = useState(false);
-  const [added, setAdded] = useState<{ tabId: number; outcome: AddJobOutcome } | null>(null);
+  /** What the last Add or Save to tracker came to, for the page it was asked on (the audit's m7: `view`). */
+  const [added, setAdded] = useState<{ view: string; outcome: AddJobOutcome } | null>(null);
   /** The settings as last read or saved (null until read): the AI switches, the modes and the view. */
   const [settings, setSettings] = useState<Settings | null>(null);
   /** Whether the first read of the settings has answered, either way: the review waits for it, so the Minimized view
@@ -182,7 +184,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   // connected or disconnected), so a card read with the old connection is dropped the moment the change is heard.
   const connection = auth.status === null ? undefined
     : auth.status.connection === 'connected' ? `${auth.status.expiresAt ?? 0}|${changes.connection}` : null;
-  const job = useTabJob(platform, tabId, { page, connection, reports });
+  const job = useTabJob(platform, tabId, { page, connection, reports, relinked });
+  /** The audit of 2026-11-06 (m7): what the panel shows for a page belongs to that tab's page under that connection, so
+   *  an Add's outcome or a custom answer never shows under the next posting the tab moves to. */
+  const viewKey = `${tabId ?? ''}|${page?.formKey ?? ''}|${connection ?? ''}`;
   const newestReport = Math.max(0, ...reports.map((report) => report.updatedAt));
   // The resume preview's loader, one per tab (the review): a preview opened is one transfer, whatever the panel draws.
   const loadPreview = useCallback((signal: AbortSignal) => (tabId === null ? Promise.resolve({ ok: false as const,
@@ -254,10 +259,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
 
   /** Add this job to TailorIT, or Save to tracker: what came of it, then the card read again. */
   const addJob = async (target: number) => {
+    const view = viewKey;
     setAdding(true);
     const answer = await request(platform, { v: 1, type: 'panel/addJob', tabId: target });
     setAdding(false);
-    setAdded({ tabId: target, outcome: answer.ok ? answer.data.outcome
+    setAdded({ view, outcome: answer.ok ? answer.data.outcome
       : answer.error === 'not_connected' ? 'not-connected' : 'unavailable' });
     job.reload();
   };
@@ -286,9 +292,11 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
 
   /** A mode or the view chosen in the gear's menu: saved at once, then shown as the worker stored it. */
   const saveModes = (next: Settings) => {
+    // The audit's M4: the settings this menu last read go with the change, so the worker applies only the change.
+    const base = settings;
     setSavingModes(true);
     setSettings(next);
-    void request(platform, { v: 1, type: 'settings/save', settings: next }).then((answer) => {
+    void request(platform, { v: 1, type: 'settings/save', settings: next, ...(base === null ? {} : { base }) }).then((answer) => {
       setSavingModes(false);
       if (answer.ok) setSettings(answer.data.settings);
       else void request(platform, { v: 1, type: 'settings/get' }).then((read) => {
@@ -420,7 +428,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         <DisclosureChanged onUnderstand={acknowledge} />
       )}
       <LinkProblem link={link} onReconnect={reconnect} />
-      {(agent.status?.on === true || agent.status?.pending === true) && <AgentStatusLine platform={platform} agent={agent} />}
+      {(agent.status?.on === true || agent.status?.pending === true || agent.status?.paused != null)
+        && <AgentStatusLine platform={platform} agent={agent} />}
       {tabId !== null && hidden !== 'none' && (
         <div className="tia-strip tia-launcher-hidden" data-tone="neutral" data-launcher-hidden={hidden}>
           <span>{COPY.panel.launcherHidden[hidden]}</span>{' '}
@@ -451,7 +460,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
       )}
       {tabId !== null && page?.support !== 'none' && (job.view.state === 'hidden' ? (postingOnly || submitted ? null : toolbar) : (
         <JobCard view={job.view} platform={page?.platform ?? null} dryRun={dryRun} adding={adding}
-          outcome={added !== null && added.tabId === tabId ? added.outcome : null} now={now()}
+          outcome={added !== null && added.view === viewKey ? added.outcome : null} now={now()}
           onAdd={() => void addJob(tabId)}
           loadResumes={async () => {
             const answer = await request(platform, { v: 1, type: 'panel/resumes', tabId });
@@ -485,9 +494,9 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
             submitted={submitted}
             {...(submitted ? {} : {
               onCancel: () => void run({ v: 1, type: 'panel/cancel', tabId }),
-              onSkip: (frameId: number, fieldKey: string) => {
-                void request(platform, { v: 1, type: 'panel/skip', tabId, frameId, fieldKey });
-              },
+              // Whether the run took it: one it did not ('expired') offers Skip again (the audit of 2026-11-06, m5).
+              onSkip: (frameId: number, fieldKey: string) =>
+                request(platform, { v: 1, type: 'panel/skip', tabId, frameId, fieldKey }).then((answer) => answer.ok),
             })}
             onShowField={(frameId, fieldKey) => {
               void request(platform, { v: 1, type: 'panel/focus', tabId, frameId, fieldKey }).then((answer) => {
@@ -508,7 +517,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         </section>
       )}
       {tabId !== null && page?.support !== 'none' && (
-        <AskQuestion key={tabId} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
+        <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
           connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
           noResume={card !== null && card.state === 'answered' && card.resume === null} policy={policy} />
       )}

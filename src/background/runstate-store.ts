@@ -13,6 +13,12 @@
  * an id the moment TailorIT gives one (aiTasks()), in storage.session's `aitasks` record, since the content script puts
  * its RunState only at a run's end; every put folds the application's entries in. A batch asked again after a worker
  * restart or a reload is read by its id, from either place, within TailorIT's hour.
+ *
+ * A private (incognito) tab (the audit of 2026-11-06, S-6): nothing of its runs reaches storage.local, where it would
+ * outlive the private session. Its RunStates and its AI task ids are kept in one storage.session record of that tab
+ * alone (`privrun:<tabId>`, at most MAX_PRIVATE_STATES RunStates, each checked and weighed as above), which goes when
+ * the tab closes (forgetTab) and with runs/clear. The worker marks the tab private at its frames' hello (markPrivate),
+ * before any run of it can note an AI task; a tab's record says it is private from then on, whatever a put says.
  */
 import { AUTOFILL_TASK_RETENTION_MS } from '../contract/tailorit';
 import { RUN_STATE_TTL_MS, type RunState } from '../core/types/run';
@@ -39,9 +45,20 @@ export const MAX_RUN_STATES = 20;
 export const MAX_RUN_STATE_BYTES = 256 * 1024;
 const STATE_PREFIX = 'run:';
 const TAB_PREFIX = 'tabrun:';
+/** S-6: a private tab's runs, in storage.session only. */
+export const PRIVATE_RUN_PREFIX = 'privrun:';
+/** S-6: at most this many RunStates a private tab keeps (the latest updated first kept). */
+export const MAX_PRIVATE_STATES = 3;
 
 const stateKey = (applicationKey: string) => `${STATE_PREFIX}${applicationKey}`;
 const tabKey = (tabId: number) => `${TAB_PREFIX}${tabId}`;
+const privateKey = (tabId: number) => `${PRIVATE_RUN_PREFIX}${tabId}`;
+
+/** A private tab's record (S-6): its RunStates by application, and its AI tasks' ids. */
+interface PrivateRecord {
+  states: Record<string, RunState>;
+  tasks: AiTaskRecord;
+}
 
 /** Statuses a run never resumes from. */
 const FINISHED: ReadonlySet<RunState['status']> = new Set(['done', 'stopped']);
@@ -51,14 +68,17 @@ export interface RunStateStore {
   /** This tab's RunState for the application, or null (none, expired, or another tab's). */
   get(applicationKey: string, tabId: number): Promise<RunState | null>;
   /** Stores a RunState for this tab, its canaries checked; answers the stored updatedAt, or `too_large` (nothing
-   *  stored) when its stored form would exceed MAX_RUN_STATE_BYTES. */
-  put(runState: RunState, tabId: number): Promise<Answer<{ updatedAt: number }>>;
+   *  stored) when its stored form would exceed MAX_RUN_STATE_BYTES. A private tab's (`incognito`, or a tab marked
+   *  private) is kept in its storage.session record alone (S-6). */
+  put(runState: RunState, tabId: number, options?: { incognito?: boolean }): Promise<Answer<{ updatedAt: number }>>;
+  /** S-6: the tab is a private (incognito) one: its runs are kept for it alone, in storage.session. */
+  markPrivate(tabId: number): Promise<void>;
   clear(applicationKey: string, tabId: number): Promise<void>;
   /** runs/clear: every RunState and tab index. Answers how many RunStates went. */
   clearAll(): Promise<number>;
   /** Whether this tab holds an unfinished RunState for the application (run/begin's 'resume' trigger). */
   activeFor(applicationKey: string, tabId: number): Promise<boolean>;
-  /** A closed tab's index goes; its RunState stays until it expires. */
+  /** A closed tab's index goes; its RunState stays until it expires. A private tab's record goes whole (S-6). */
   forgetTab(tabId: number): Promise<void>;
   /** Drops expired and unreadable entries, then the oldest beyond MAX_RUN_STATES. */
   prune(): Promise<void>;
@@ -90,6 +110,32 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
     const parsed = AiTaskRecordSchema.safeParse(await session.get(AI_TASKS_KEY));
     if (!parsed.success) return [];
     return parsed.data.filter((entry) => entry.at + AUTOFILL_TASK_RETENTION_MS > deps.now());
+  }
+
+  /** S-6: the tab's private record, or null when the tab is no private one. What does not check reads as empty. */
+  async function privateOf(tabId: number): Promise<PrivateRecord | null> {
+    const stored = await session.get(privateKey(tabId));
+    if (stored === undefined) return null;
+    const raw = (stored ?? {}) as { states?: unknown; tasks?: unknown };
+    const states: Record<string, RunState> = {};
+    if (raw.states !== null && typeof raw.states === 'object') {
+      for (const [applicationKey, value] of Object.entries(raw.states as Record<string, unknown>)) {
+        const parsed = RunStateSchema.safeParse(value);
+        if (parsed.success && parsed.data.applicationKey === applicationKey && !expired(parsed.data)) {
+          states[applicationKey] = parsed.data as unknown as RunState;
+        }
+      }
+    }
+    const tasks = AiTaskRecordSchema.safeParse(raw.tasks);
+    return { states, tasks: tasks.success
+      ? tasks.data.filter((entry) => entry.at + AUTOFILL_TASK_RETENTION_MS > deps.now()) : [] };
+  }
+
+  /** S-6: stores the tab's private record, its latest MAX_PRIVATE_STATES RunStates kept. */
+  async function storePrivate(tabId: number, record: PrivateRecord): Promise<void> {
+    const kept = Object.values(record.states).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_PRIVATE_STATES);
+    await session.set({ [privateKey(tabId)]: { states: Object.fromEntries(kept.map((state) => [state.applicationKey, state])),
+      tasks: record.tasks.slice(-MAX_AI_TASK_ENTRIES) } });
   }
 
   /** An application's noted tasks, as RunState.aiTasks holds them. */
@@ -155,16 +201,22 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
 
   const store: RunStateStore = {
     async get(applicationKey, tabId) {
+      // S-6: a private tab reads its own record alone.
+      const own = await privateOf(tabId);
+      if (own !== null) return own.states[applicationKey] ?? null;
       if ((await session.get(tabKey(tabId))) !== applicationKey) return null;
       const state = await read(applicationKey);
       // The tab's pointer goes with an entry that expired or no longer parses.
       if (state === null) await session.remove([tabKey(tabId)]);
       return state;
     },
-    put(runState, tabId) {
+    put(runState, tabId, options = {}) {
       return queue.run('runstate', async (): Promise<Answer<{ updatedAt: number }>> => {
         const now = deps.now();
-        const aiTasks = withTasks(runState.aiTasks, tasksOf(await taskEntries(), runState.applicationKey));
+        const own = await privateOf(tabId);
+        const secret = own !== null || options.incognito === true;
+        const noted = secret ? own?.tasks ?? [] : await taskEntries();
+        const aiTasks = withTasks(runState.aiTasks, tasksOf(noted, runState.applicationKey));
         const stamped = { ...runState, aiTasks, startedAt: Math.min(runState.startedAt, now), updatedAt: now };
         // Weighed as it would be stored, before the canary check (which may fetch the profile) and before any write;
         // dropping canaries only makes it lighter.
@@ -175,6 +227,14 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
         }
         const canarySet = await checkedCanaries(runState.canarySet);
         const stored = RunStateSchema.parse({ ...stamped, canarySet });
+        if (secret) {
+          // S-6: a private tab's RunState stays in its own storage.session record, never storage.local.
+          const record = own ?? { states: {}, tasks: [] };
+          await storePrivate(tabId, { ...record,
+            states: { ...record.states, [stored.applicationKey]: stored as unknown as RunState } });
+          log('runstate.private', { canaries: canarySet.length });
+          return ok({ updatedAt: now });
+        }
         await local.set({ [stateKey(stored.applicationKey)]: stored });
         // A run lives in one tab: any other tab's pointer to this application goes.
         const pointers = await session.getMany(TAB_PREFIX);
@@ -188,8 +248,19 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
         return ok({ updatedAt: now });
       });
     },
+    markPrivate(tabId) {
+      return queue.run('runstate', async () => {
+        if ((await session.get(privateKey(tabId))) === undefined) await storePrivate(tabId, { states: {}, tasks: [] });
+      });
+    },
     clear(applicationKey, tabId) {
       return queue.run('runstate', async () => {
+        const own = await privateOf(tabId);
+        if (own !== null) {
+          const { [applicationKey]: _gone, ...states } = own.states;
+          await storePrivate(tabId, { states, tasks: own.tasks.filter((entry) => entry.applicationKey !== applicationKey) });
+          return;
+        }
         await local.remove([stateKey(applicationKey)]);
         if ((await session.get(tabKey(tabId))) === applicationKey) await session.remove([tabKey(tabId)]);
       });
@@ -198,10 +269,18 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
       return queue.run('runstate', async () => {
         const states = Object.keys(await local.getMany(STATE_PREFIX));
         const pointers = Object.keys(await session.getMany(TAB_PREFIX));
+        // S-6: the private tabs' RunStates go too; their records stay (empty), so they stay private.
+        const privates = Object.keys(await session.getMany(PRIVATE_RUN_PREFIX));
+        let privateStates = 0;
+        for (const key of privates) {
+          const own = await privateOf(Number(key.slice(PRIVATE_RUN_PREFIX.length)));
+          privateStates += Object.keys(own?.states ?? {}).length;
+          await session.set({ [key]: { states: {}, tasks: [] } });
+        }
         if (states.length > 0) await local.remove(states);
         if (pointers.length > 0) await session.remove(pointers);
         await session.remove([AI_TASKS_KEY]);
-        return states.length;
+        return states.length + privateStates;
       });
     },
     async activeFor(applicationKey, tabId) {
@@ -209,32 +288,57 @@ export function createRunStateStore(deps: RunStateStoreDeps): RunStateStore {
       return state !== null && !FINISHED.has(state.status);
     },
     async forgetTab(tabId) {
-      await session.remove([tabKey(tabId)]);
+      // S-6: a private tab's record goes whole with it.
+      await queue.run('runstate', () => session.remove([tabKey(tabId), privateKey(tabId)]));
     },
     prune() {
       return queue.run('runstate', pruneNow);
     },
     aiTasks(applicationKey, tabId) {
+      /** The tab's noted tasks: its private record's (S-6), else the shared record's. */
+      const entriesOf = async () => (await privateOf(tabId))?.tasks ?? taskEntries();
       return {
         async get(hash) {
-          const noted = (await taskEntries()).find((entry) => entry.applicationKey === applicationKey && entry.hash === hash);
+          const noted = (await entriesOf()).find((entry) => entry.applicationKey === applicationKey && entry.hash === hash);
           if (noted !== undefined) return noted.taskId;
           return (await store.get(applicationKey, tabId))?.aiTasks[hash] ?? null;
         },
         note(hash, taskId) {
           return queue.run('aitasks', async () => {
-            const entries = (await taskEntries())
-              .filter((entry) => !(entry.applicationKey === applicationKey && entry.hash === hash));
-            const next = [...entries, { applicationKey, hash, taskId, at: deps.now() }].slice(-MAX_AI_TASK_ENTRIES);
-            await session.set({ [AI_TASKS_KEY]: AiTaskRecordSchema.parse(next) });
+            const noted = (entries: AiTaskRecord) => AiTaskRecordSchema.parse([...entries
+              .filter((entry) => !(entry.applicationKey === applicationKey && entry.hash === hash)),
+            { applicationKey, hash, taskId, at: deps.now() }].slice(-MAX_AI_TASK_ENTRIES));
+            // S-6: a private tab notes its tasks in its own record, under the RunStates' queue (its one writer).
+            if ((await privateOf(tabId)) !== null) {
+              await queue.run('runstate', async () => {
+                const own = await privateOf(tabId);
+                if (own !== null) await storePrivate(tabId, { ...own, tasks: noted(own.tasks) });
+              });
+              return;
+            }
+            await session.set({ [AI_TASKS_KEY]: noted(await taskEntries()) });
           });
         },
         async any() {
-          if ((await taskEntries()).some((entry) => entry.applicationKey === applicationKey)) return true;
+          if ((await entriesOf()).some((entry) => entry.applicationKey === applicationKey)) return true;
           return Object.keys((await store.get(applicationKey, tabId))?.aiTasks ?? {}).length > 0;
         },
         forget(hash) {
           return queue.run('aitasks', async () => {
+            const own = await privateOf(tabId);
+            if (own !== null) {
+              await queue.run('runstate', async () => {
+                const now = await privateOf(tabId);
+                if (now === null) return;
+                const tasks = now.tasks.filter((entry) => !(entry.applicationKey === applicationKey && entry.hash === hash));
+                const state = now.states[applicationKey];
+                const states = state === undefined || !(hash in state.aiTasks) ? now.states : { ...now.states,
+                  [applicationKey]: { ...state, aiTasks: Object.fromEntries(Object.entries(state.aiTasks)
+                    .filter(([name]) => name !== hash)) } };
+                await storePrivate(tabId, { states, tasks });
+              });
+              return;
+            }
             const entries = await taskEntries();
             const kept = entries.filter((entry) => !(entry.applicationKey === applicationKey && entry.hash === hash));
             if (kept.length !== entries.length) await session.set({ [AI_TASKS_KEY]: kept });

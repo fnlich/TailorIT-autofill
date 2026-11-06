@@ -3,10 +3,13 @@
  * root the content script attaches to <html> (src/content/ui). No page script can reach a closed root, and neither can
  * Playwright's selectors, so tests read it through DevTools, which shows closed roots as its Elements panel does
  * (DOM.getDocument with pierce), and click in it with Playwright's mouse at the element's own box: a trusted click,
- * like a person's. Nothing here writes to the page.
+ * like a person's, made only once the element has held still where it shows for longer than the content script's
+ * CONTROL_SEEN_MS (the audit of 2026-11-06, S-1: a click on one of its controls counts only once the control has been
+ * seen without a break that long). Nothing here writes to the page.
  * The selectors follow the content script's markup; UI_PARTS is the one place to change if it changes.
  */
 import type { CDPSession, Page } from '@playwright/test';
+import { CONTROL_SEEN_MS } from '../../src/content/ui/visible';
 
 /** The parts of the in-page UI the specs look for (src/content/ui/launcher.ts and notices.ts). */
 export const UI_PARTS = {
@@ -14,6 +17,12 @@ export const UI_PARTS = {
   notice: '.notice',
   policyCard: '[role="alertdialog"]',
 } as const;
+
+/** How long a click waits once the element's box holds still: CONTROL_SEEN_MS, with room for the visibility watch's
+ *  own delay (it speaks about 100 ms after a change) and the click's way there. */
+const STEADY_BEFORE_CLICK_MS = CONTROL_SEEN_MS + 300;
+/** A box that never holds still that long is an error, after this. */
+const STEADY_CAP_MS = 10_000;
 
 /** The DevTools DOM node fields this probe reads. */
 interface DomNode {
@@ -127,15 +136,35 @@ export class PageUi {
     return (await this.elements(UI_PARTS.policyCard)).some((el) => el.shown);
   }
 
-  /** A trusted click at the centre of a shown element of the UI. */
+  /** A trusted click at the centre of a shown element of the UI, once its box has held still for
+   *  STEADY_BEFORE_CLICK_MS (the content script counts it only on a control seen that long: module header). */
   async click(target: UiElement): Promise<void> {
     await this.cdp.send('DOM.scrollIntoViewIfNeeded', { nodeId: target.nodeId });
-    const { quads } = await this.cdp.send('DOM.getContentQuads', { nodeId: target.nodeId });
-    const quad = quads[0];
-    if (quad === undefined) throw new Error(`the ${target.localName} has no box to click`);
-    const x = (quad[0]! + quad[2]! + quad[4]! + quad[6]!) / 4;
-    const y = (quad[1]! + quad[3]! + quad[5]! + quad[7]!) / 4;
+    const { x, y } = await this.steadyCentre(target);
     await this.page.mouse.click(x, y);
+  }
+
+  /** The centre of the element's box, or null without one. */
+  private async centre(target: UiElement): Promise<{ x: number; y: number } | null> {
+    const { quads } = await this.cdp.send('DOM.getContentQuads', { nodeId: target.nodeId }).catch(() => ({ quads: [] }));
+    const quad = quads[0];
+    if (quad === undefined) return null;
+    return { x: (quad[0]! + quad[2]! + quad[4]! + quad[6]!) / 4, y: (quad[1]! + quad[3]! + quad[5]! + quad[7]!) / 4 };
+  }
+
+  /** The element's centre once its box has stayed where it is for STEADY_BEFORE_CLICK_MS. */
+  private async steadyCentre(target: UiElement): Promise<{ x: number; y: number }> {
+    const started = Date.now();
+    let at = await this.centre(target);
+    let since = Date.now();
+    while (at === null || Date.now() - since < STEADY_BEFORE_CLICK_MS) {
+      if (Date.now() - started > STEADY_CAP_MS) throw new Error(`the ${target.localName} never held still to be clicked`);
+      await this.page.waitForTimeout(50);
+      const now = await this.centre(target);
+      if (now === null || at === null || Math.abs(now.x - at.x) > 0.5 || Math.abs(now.y - at.y) > 0.5) since = Date.now();
+      at = now;
+    }
+    return at;
   }
 
   /** A shown element's box in the viewport's CSS pixels (its border box, where a click aims), or null without one. */

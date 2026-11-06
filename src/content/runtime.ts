@@ -71,7 +71,10 @@
  * in place, or the confirmation page an address change shows. That sign, and a confirmation page a new document opens
  * on, goes to the worker as submit/detected, which takes it only for an application this tab armed (never page text
  * alone); then the run is done (SUBMITTED), or the stored RunState is. A press of ours that nothing confirmed within
- * SUBMIT_CONFIRM_MS leaves the review's submit-unconfirmed notice.
+ * SUBMIT_CONFIRM_MS leaves the review's submit-unconfirmed notice, and its sign is still watched for, quietly, until
+ * SUBMIT_WATCH_MS after the press (the audit of 2026-11-06, m10): a later one still makes the application submitted.
+ * The audit's S-9: a frame on a domain that also holds an employer's own pages, below a page of its own origin that is
+ * no posting's (address.ts framedByEmployerPage), does nothing at all: no listener, no frame/hello, no UI.
  * v3 Phase 5: run/start {agent} (the auto-apply agent's run, in the window the worker opened for it) and agent/enter
  * (press a posting page's declared entry control: press.ts pressEntry) are taken from the worker's own script alone,
  * like run/press; a page, a frame or an extension page can send neither. The agent's one retry (run/start {agent,
@@ -99,7 +102,7 @@
  * does. The page-world bridge and the forged-event listener never run there (bridgeInstallsAt reads no such address).
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
-import { bridgeInstallsAt } from '../adapters/address';
+import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
 import { companyOfUrl, scopeOf } from '../adapters/company';
 import type { Adapter } from '../adapters/types';
 import type { Platform } from '../core/enums';
@@ -133,7 +136,7 @@ import {
   FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
 import { readPostingPage } from './policy';
-import { newSuccessSign, signsOf, SUBMIT_CONFIRM_MS, type PressSnapshot } from './submitted';
+import { newSuccessSign, signsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot } from './submitted';
 import { blockOf, entryWaitOf, pressEntry, refusalAfter } from './press';
 import { signIn } from './sign-in';
 import { createReportLimiter } from './report';
@@ -158,6 +161,12 @@ export interface RuntimeOptions extends RunOptions {
   isTop?: boolean;
   /** How long a Submit's confirmation is waited for in this document (SUBMIT_CONFIRM_MS by default; tests pass less). */
   submitConfirmMs?: number;
+  /** How long an armed Submit's sign is still watched for, quietly, after that wait (SUBMIT_WATCH_MS by default, from
+   *  the press; tests pass less). */
+  submitWatchMs?: number;
+  /** The addresses of the frame's ancestors it may read (address.ts readableAncestors over its window by default;
+   *  tests serve fixtures in frames of the test page, whose own address is no posting's). */
+  ancestors?: () => readonly string[];
 }
 
 /** The running content script, as tests drive it. */
@@ -222,6 +231,12 @@ export function loadedHref(view: Window | null): string | null {
   }
 }
 
+/** A runtime that does nothing at all (S-9's silent frame): no listener, no hello, no UI, no run. */
+function silentRuntime(): ContentRuntime {
+  return { ui: null, run: null, page: null, frameId: null, fill: () => null, stopped: true, stop: () => undefined,
+    restored: () => Promise.resolve() };
+}
+
 /** Starts the content runtime in `doc`. Resolves once the frame has said hello and its UI is mounted. */
 export async function startContentRuntime(platform: ContentPlatform, doc: Document, options: RuntimeOptions = {}):
   Promise<ContentRuntime> {
@@ -231,6 +246,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   const readHref = options.href ?? (() => doc.location.href);
   const adapters = options.adapters ?? adaptersFor;
   const isTop = options.isTop ?? (view !== null && view.top === view);
+  // The audit of 2026-11-06 (S-9): a frame on a domain that also holds an employer's own pages, below a page of its own
+  // origin that is no posting's (an HR page framing a posting-looking address to learn whether the extension is
+  // there), says nothing and installs nothing, as the page-world bridge does not install there: decided once, from the
+  // address the document was loaded at and the ancestors it can read now.
+  if (!isTop && framedByEmployerPage(options.href === undefined ? loadedHref(view) ?? readHref() : readHref(),
+    options.ancestors?.() ?? readableAncestors(view))) {
+    return silentRuntime();
+  }
   let stopped = false;
   let ui: PageUi | null = null;
   let page: RunPage | null = null;
@@ -489,6 +512,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     root: Element;
     adapter: Adapter;
     before: ReadonlySet<Element>;
+    /** The run was told that nothing came within SUBMIT_CONFIRM_MS (the audit's m10): the watch goes on quietly. */
+    quiet: boolean;
     stopWatch(): void;
   }
   let armed: ArmedSubmit | null = null;
@@ -496,23 +521,32 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *  before it hears the sign. */
   let armedHeard: Promise<unknown> = Promise.resolve();
 
-  /** An armed Submit's watch ends without a confirmation: the run no longer waits. `how`: the page refused it (its
-   *  count), nothing came in SUBMIT_CONFIRM_MS, or a newer press took its place. */
-  function endArm(record: ArmedSubmit, how: { refused: number } | 'unconfirmed' | 'replaced'): void {
+  /** An armed Submit's wait ends without a confirmation: the run no longer waits. `how`: the page refused it (its
+   *  count), nothing came in SUBMIT_CONFIRM_MS, a newer press took its place, or SUBMIT_WATCH_MS passed. Nothing in
+   *  SUBMIT_CONFIRM_MS tells the run so, but the watch goes on quietly until SUBMIT_WATCH_MS after the press (the
+   *  audit's m10): a slow platform's sign still makes the application submitted, which the worker takes as long as the
+   *  tab's arm holds (its SUBMIT_ARM_MS, the same ten minutes). */
+  function endArm(record: ArmedSubmit, how: { refused: number } | 'unconfirmed' | 'replaced' | 'expired'): void {
+    if (how === 'unconfirmed') {
+      if (record.quiet) return;
+      record.quiet = true;
+      // The person's own click on the page is theirs to follow; a press of ours says it saw nothing.
+      if (record.by !== 'page') current?.submitUnconfirmed();
+      else current?.submitWatchEnded();
+      return;
+    }
     record.stopWatch();
     if (armed === record) armed = null;
-    // A newer press took its place: that one's watch speaks for the run now.
-    if (how === 'replaced') return;
-    if (typeof how === 'object') current?.submitRefused(how.refused);
-    // The person's own click on the page is theirs to follow; a press of ours says it saw nothing.
-    else if (record.by !== 'page') current?.submitUnconfirmed();
-    else current?.submitWatchEnded();
+    // A newer press took its place: that one's watch speaks for the run now. The quiet watch's end says nothing more.
+    if (how === 'replaced' || how === 'expired') return;
+    current?.submitRefused(how.refused);
   }
 
   /** A Submit of the application was pressed (module header): the worker is told, and the document watches for the
-   *  platform's sign until SUBMIT_CONFIRM_MS (a press of ours that nothing confirms then leaves its notice), and for
-   *  the page's refusal PRESS_REFUSAL_MS after the press (its errors, the fields its form marked, its failure message),
-   *  which ends the wait at once. `runId`: the run that filled the form, when there is one. */
+   *  platform's sign until SUBMIT_CONFIRM_MS (a press of ours that nothing confirms then leaves its notice), then
+   *  quietly until SUBMIT_WATCH_MS (endArm), and for the page's refusal PRESS_REFUSAL_MS after the press (its errors,
+   *  the fields its form marked, its failure message), which ends the wait at once. `runId`: the run that filled the
+   *  form, when there is one. */
   function arm(by: SubmitPresser, runId?: string, before?: PressSnapshot): void {
     // What the page showed at the press: its click may have moved it since (a confirmation drawn in place, an address
     // the parser does not read), which is the sign this arm waits for.
@@ -529,11 +563,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const watch = new AbortController();
     lifetime.signal.addEventListener('abort', () => watch.abort(), { once: true, signal: watch.signal });
     let cancelTimer: Cancel = () => undefined;
+    let cancelWatch: Cancel = () => undefined;
     const observer = view === null ? null : new view.MutationObserver(() => check());
     const record: ArmedSubmit = { at: platform.now(), by, applicationKey: at.applicationKey, platform: at.platform,
-      root: at.root, adapter: at.adapter, before: at.signs, stopWatch: () => {
+      root: at.root, adapter: at.adapter, before: at.signs, quiet: false, stopWatch: () => {
         observer?.disconnect();
         cancelTimer();
+        cancelWatch();
         watch.abort();
       } };
     armed = record;
@@ -546,8 +582,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     };
     observer?.observe(doc.documentElement, { childList: true, subtree: true, attributes: true,
       attributeFilter: ['class', 'style', 'hidden'] });
-    cancelTimer = startDeadline(options.submitConfirmMs ?? SUBMIT_CONFIRM_MS, () => {
+    const confirmMs = options.submitConfirmMs ?? SUBMIT_CONFIRM_MS;
+    cancelTimer = startDeadline(confirmMs, () => {
       if (armed === record) endArm(record, 'unconfirmed');
+    }, lifetime.signal);
+    cancelWatch = startDeadline(Math.max(confirmMs, options.submitWatchMs ?? SUBMIT_WATCH_MS), () => {
+      if (armed === record) endArm(record, 'expired');
     }, lifetime.signal);
     // The page's refusal, read PRESS_REFUSAL_MS after the press (the invalid events its form fires in the person's own
     // click are heard from now on).
@@ -675,8 +715,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const on = stopped ? null : pageNow();
     if (on === null || !channel.valid()) return null;
     if (current !== null && current.ended === null) return null;
-    // A run that rests and watches the step (review, or the person's Next) gives way to the new one.
-    if (current?.watching === true) current.abort();
+    // A run that rests and watches the step (review, or the person's Next) gives way to the new one, and so does a
+    // paused one (the audit's m13): its Sign-in Auto may still be typing or pressing, which must never go on beside a
+    // new run of the frame (abort ends it, writing the password it typed empty again).
+    if (current !== null && (current.watching || current.ended === 'paused')) current.abort();
     const run = new FillRun({
       doc,
       content: platform,
@@ -725,13 +767,15 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** run/continue, or the launcher's Continue: a fresh run after a pause. It never answers the policy card: Continue
-   *  goes to every frame that reported, and one waiting at the card must not fill as if Fill anyway was chosen. */
+   *  goes to every frame that reported, and one waiting at the card must not fill as if Fill anyway was chosen. A dry
+   *  run's Continue is a dry run too (the audit of 2026-11-06, M3): it never writes what the paused run only showed. */
   function continueRun(trigger: RunRequest['trigger']): void {
     if (current === null || current.ended !== 'paused') return;
     const state = current.runState;
     const carry = current.carryOut(true);
-    startRun(state === null ? { trigger, dryRun: false, carry }
-      : { trigger, dryRun: false, from: { state, event: continueEventOf(state) }, carry });
+    const { dryRun } = current.request;
+    startRun(state === null ? { trigger, dryRun, carry }
+      : { trigger, dryRun, from: { state, event: continueEventOf(state) }, carry });
   }
 
   /** v3 Phase 5: the auto-apply agent's run (run/start {agent}): from the tab's stored RunState when it holds one for

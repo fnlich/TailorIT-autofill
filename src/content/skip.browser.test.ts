@@ -213,6 +213,101 @@ describe('Skip on a field whose AI answer the run waits for (v3 Phase 3 review)'
     expect((fixture.doc.getElementById('source') as HTMLSelectElement).value).toBe('');
     expect(report.fields.find((row) => row.label === 'First name')).toMatchObject({ status: 'verified', wrote: true });
   });
+
+  it('takes a Skip sent while a poll for the answer is out, and never loses it (the audit of 2026-11-06, m5)', async () => {
+    const LABEL = 'How did you hear about us?';
+    const fixture = await loadFixture(document, `<!doctype html><html><body><main><h1>Platform Engineer</h1>
+      <form action="/__submitted" method="post"><label for="first">First name</label><input id="first" name="first">
+      <label for="source">${LABEL}</label><select id="source" name="source"><option value="">Select...</option>
+      <option value="post">LinkedIn job post</option><option value="message">LinkedIn recruiter message</option></select>
+      <button type="submit">Submit application</button></form></main></body></html>`);
+    // The AI's pick never comes; the first poll answers at once, the second only when the test lets it.
+    let key = '';
+    let polls = 0;
+    const held = () => ({ ok: true, data: { writes: [], results: [], awaiting: [key], persistableCanaries: [],
+      savable: [], aiEditable: [] } });
+    let answerFirst: (value: unknown) => void = () => undefined;
+    let answerSecond: (value: unknown) => void = () => undefined;
+    const first = new Promise((resolve) => {
+      answerFirst = resolve;
+    });
+    const second = new Promise((resolve) => {
+      answerSecond = resolve;
+    });
+    const worker = createFakeWorker({ settings: CAUTIOUS_SETTINGS, aiHold: true, script: { 'plan/poll': [first, second] },
+      onMessage(message) {
+        if (message.type === 'plan/request') {
+          const specs = (message as { specs?: Array<{ key: string; label: string }> }).specs ?? [];
+          key = specs.find((spec) => spec.label === LABEL)?.key ?? key;
+        }
+        if (message.type !== 'plan/poll') return;
+        polls += 1;
+        if (polls === 1) answerFirst(held());
+      } });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => trapUrl('ai-skip-poll'),
+      isTop: true, settle: { quietMs: 60 }, ai: { pollMs: 20, capMs: 60_000 } });
+    runtimes.push(runtime);
+    const ending = runtime.fill()!;
+    const shown = await currentKey(worker, LABEL);
+    // The second poll is out, unanswered: the person's Skip then is taken.
+    await vi.waitFor(() => expect(polls).toBe(2), { timeout: 5_000 });
+    expect(await worker.platform.deliver({ v: 1, type: 'run/skip', fieldKey: shown })).toEqual({ ok: true, data: {} });
+    answerSecond(held());
+    expect(await ending).toBe('review');
+    const report = worker.reports.at(-1)!;
+    expect(report.fields.find((row) => row.label === LABEL)).toMatchObject({ reason: 'skipped-by-you', wrote: false });
+    expect((fixture.doc.getElementById('source') as HTMLSelectElement).value).toBe('');
+  });
+});
+
+describe('Skip on a widget whose option was already clicked (the audit of 2026-11-06: m11, pass.ts afterWait)', () => {
+  /** A select-only list whose page takes a click slowly: busy at once, its choice shown 1.2 s later. */
+  const SLOW_LIST = `<!doctype html><html><head><style>body{margin:0;background:#fff;color:#222;font:16px/1.5 system-ui}
+    [role=listbox]{margin:0;border:1px solid #888}[role=listbox][hidden]{display:none}</style></head><body><main>
+    <h1>Engineer</h1><p>A visible description of the role.</p><form action="/__submitted" method="post">
+    <label for="email">Email</label><input id="email" type="email" name="email">
+    <span id="q">Country</span>
+    <div id="cb" role="combobox" tabindex="0" aria-labelledby="q" aria-haspopup="listbox" aria-controls="cl"
+      aria-expanded="false">Select a country</div>
+    <ul id="cl" role="listbox" aria-labelledby="q" hidden><li id="us" role="option" aria-selected="false">United States</li>
+      <li id="ca" role="option" aria-selected="false">Canada</li></ul>
+    <label for="phone">Phone</label><input id="phone" type="tel" name="phone">
+    <button type="submit">Submit application</button></form></main>
+    <script>
+      const cb = document.getElementById('cb');
+      const cl = document.getElementById('cl');
+      cb.addEventListener('click', () => { cl.hidden = !cl.hidden; cb.setAttribute('aria-expanded', String(!cl.hidden)); });
+      for (const option of cl.querySelectorAll('[role=option]')) option.addEventListener('click', () => {
+        window.clicked = (window.clicked ?? 0) + 1;
+        cl.hidden = true;
+        cb.setAttribute('aria-expanded', 'false');
+        cb.setAttribute('aria-busy', 'true');
+        setTimeout(() => { cb.textContent = option.textContent; option.setAttribute('aria-selected', 'true');
+          cb.removeAttribute('aria-busy'); }, 1200);
+      });
+    </script></body></html>`;
+
+  it('keeps the click as written (never skipped-by-you), and the field is never written again', async () => {
+    const fixture = await loadFixture(document, SLOW_LIST);
+    const worker = createFakeWorker({ settings: CAUTIOUS_SETTINGS });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => trapUrl('skip-clicked'),
+      isTop: true, settle: { quietMs: 60, capMs: 6_000 } });
+    runtimes.push(runtime);
+    const ending = runtime.fill()!;
+    const key = await currentKey(worker, 'Country');
+    const view = fixture.view as unknown as { clicked?: number };
+    // The person's Skip once the option was clicked, while the page still shows it busy.
+    await vi.waitFor(() => expect(view.clicked).toBe(1), { timeout: 5_000 });
+    expect(await worker.platform.deliver({ v: 1, type: 'run/skip', fieldKey: key })).toEqual({ ok: true, data: {} });
+    expect(await ending).toBe('review');
+    const report = worker.reports.at(-1)!;
+    const country = report.fields.find((row) => row.label === 'Country')!;
+    expect(country.reason).not.toBe('skipped-by-you');
+    expect(country).toMatchObject({ wrote: true });
+    expect(report.fields.find((row) => row.label === 'Phone')).toMatchObject({ status: 'verified', wrote: true });
+    await vi.waitFor(() => expect(fixture.doc.getElementById('cb')!.textContent).toBe('United States'));
+    expect(view.clicked).toBe(1);
+  });
 });
 
 describe('the launcher’s tab beside the browser’s side panel (v3 Phase 3 review)', () => {

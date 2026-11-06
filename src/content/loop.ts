@@ -287,9 +287,13 @@ function aiWrite(entry: { row: FillResult; write?: PlannedWrite }): boolean {
     || entry.row.reason === 'cover-letter-written');
 }
 
-/** Whether a waiting field waits for the run's cover letter (Phase G), by the row it stands with. */
+/** Whether a waiting field waits for the run's cover letter (Phase G), by the row it stands with: a cover-letter upload,
+ *  or (the audit of 2026-11-06, M2) a cover-letter text box waiting for the letter's words (v3 Phase 3b: its row
+ *  cover-letter-waiting; a rewrite Edit with AI asked for in it waits for the AI as any field does). */
 function waitsForLetter(field: { row: FillResult | null } | undefined): boolean {
-  return field?.row?.category === 'file.coverLetter';
+  const row = field?.row;
+  return row?.category === 'file.coverLetter'
+    || (row?.category === 'freeText.coverLetter' && row.reason === 'cover-letter-waiting');
 }
 
 /** The row of a field the AI would have answered, once the run fills from the profile only: an optional question left
@@ -876,6 +880,24 @@ class ReactiveLoop {
       ? Math.max(aiCapMs, env.ai?.letterCapMs ?? LETTER_WAIT_CAP_MS) : aiCapMs);
     this.aiProgressAt ??= monotonicNow();
     const started = monotonicNow();
+    /** The field whose Skip the wait takes (the audit of 2026-11-06, m5): one slot across the whole wait, the poll's
+     *  requests included, so a Skip the person sends while a poll is out is never lost. It moves only when the wait
+     *  moves on to another field. */
+    let held: { key: FieldKey; skip: AbortSignal } | null = null;
+    const hold = (key: FieldKey | null): AbortSignal | null => {
+      if (held !== null && held.key === key) return held.skip;
+      if (held !== null) env.writing?.end();
+      held = key === null || env.writing === undefined ? null : { key, skip: env.writing.begin(key) };
+      return held?.skip ?? null;
+    };
+    /** A Skip that came for the held field, given up (skipAwaiting) and the slot let go; answers whether one came. */
+    const skippedNow = (): boolean => {
+      if (held === null || !held.skip.aborted || env.stopped()) return false;
+      const { key } = held;
+      hold(null);
+      this.skipAwaiting(key);
+      return true;
+    };
     try {
       for (;;) {
         // Profile-only now: nothing more is waited for, or written, of the AI's; a cover letter still is (Phase G).
@@ -885,11 +907,14 @@ class ReactiveLoop {
         }
         const keys = awaitingKeys(this.state).filter((key) => !this.arrived.has(key));
         if (keys.length === 0 || env.poll === undefined) return [];
+        if (block) hold(keys[0] ?? null);
         this.aiPolls += 1;
         const answer = await env.poll(keys);
         this.alive();
         if (answer === 'failed') {
           this.giveUp(keys, 'llm-unavailable', 'cover-letter-unavailable');
+          // A Skip sent meanwhile still says the person's word on that one field.
+          skippedNow();
           return [];
         }
         const asked = new Set<string>(keys);
@@ -915,6 +940,8 @@ class ReactiveLoop {
         }
         const requeue = requeueAwaiting(this.state, forgotten);
         this.state = requeue.state;
+        // A Skip sent while the poll was out (m5): that field's answer, arrived or not, is never used.
+        if (skippedNow()) continue;
         // The field the wait is on, while nothing else is left to do (v3 Phase 3 review): the panels spin its row and,
         // after a while on it, offer its Skip, which gives up that one field's answer (skipAwaiting).
         const on = block ? awaitingKeys(this.state).find((key) => !this.arrived.has(key)) ?? null : null;
@@ -926,19 +953,16 @@ class ReactiveLoop {
           this.giveUp(awaitingKeys(this.state), 'llm-unavailable', 'cover-letter-timed-out');
           return [];
         }
-        const skip = on === null || env.writing === undefined ? null : env.writing.begin(on);
+        const skip = hold(on);
         const stop = AbortSignal.any([env.signal, ...(env.stopSignal === undefined ? [] : [env.stopSignal]),
           ...(skip === null ? [] : [skip])]);
         const waited = await deadline(Math.min(pollMs, left), stop);
-        env.writing?.end();
         this.alive();
-        if (skip?.aborted === true && on !== null && !env.stopped()) {
-          this.skipAwaiting(on);
-          continue;
-        }
+        if (skippedNow()) continue;
         if (waited === 'aborted' || env.stopped()) return [];
       }
     } finally {
+      hold(null);
       if (block) log('content.ai-waited', { polls: this.aiPolls, ms: Math.round(monotonicNow() - started) });
     }
   }

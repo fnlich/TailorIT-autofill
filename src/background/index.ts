@@ -38,7 +38,9 @@ import { createPolicyBook, POLICY_HIT_LIMIT } from './policy';
 import { createProfileCache, type ProfileCache } from './profile-cache';
 import { createProfileEditor, PROFILE_EDIT_LIMIT } from './profile-editor';
 import { createSiteRequests, SITE_REQUEST_LIMIT } from './site-requests';
-import { createSubmissions, SUBMIT_MESSAGE_LIMIT, type Submissions } from './submissions';
+import {
+  CONFIRMATION_PAGE_MS, createSubmissions, SUBMIT_ARM_PREFIX, SUBMIT_MESSAGE_LIMIT, type Submissions,
+} from './submissions';
 import { createReports, PANEL_SHOWN_LIMIT, REPORT_PUT_LIMIT, type Reports } from './reports';
 import { fillsFromProfileOnly, latestReport, saysNoAi } from '../shared/report';
 import { createResumeChooser } from './resume-choice';
@@ -86,6 +88,11 @@ const CORE: CoreFunctions = { planFrame, canonicalizeProfile, attachResume, pers
 
 /** The e2e build only: how long the agent's new window rests on its empty page (agent.ts windowSettleMs). */
 const AGENT_E2E_SETTLE_MS = 750;
+
+/** The audit of 2026-11-06 (m6): how long after a Submit pressed in a document an address no parser reads (its
+ *  confirmation drawn in place) still counts as that document's application: the confirmation page's own window. Past
+ *  it, such an address (the board the page moved on to) is no application's, so "Application submitted" goes. */
+export const KEEP_KEY_AFTER_PRESS_MS = CONFIRMATION_PAGE_MS;
 
 /** Content messages that skip the access-level wait. */
 const UNGATED: ReadonlySet<string> = new Set(['ping', 'panel/open']);
@@ -137,7 +144,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   let agentRef: Agent | null = null;
   const keeper = createTokenKeeper(platform, () => {
     profiles?.drop();
-    runRegistry?.dropTokenData();
+    void runRegistry?.dropTokenData().catch(() => undefined);
     jobCards?.dropTokenData();
     letterRows?.dropTokenData();
     submissions?.dropTokenData();
@@ -243,7 +250,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   async function previewResumeOf(tabId: number) {
     const frame = cardFrameOf(await framesOfTab(session, tabId));
     if (jobs.without(tabId, frame?.applicationKey ?? null)) return null;
-    const id = jobs.chosen(tabId) ?? (await jobs.tabJob(tabId)).resume?.id ?? null;
+    const id = jobs.chosen(tabId, frame?.applicationKey ?? null) ?? (await jobs.tabJob(tabId)).resume?.id ?? null;
     if (id === null) return null;
     const list = await server.resumes();
     const item = list.ok ? list.value.items.find((entry) => entry.id === id) : undefined;
@@ -271,8 +278,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     disclosed: () => auth.disclosed(),
     reports: (tabId) => reports.ofTab(tabId),
     topFrame: (tabId) => topFrameOf(tabId),
-    ...(platform.tabs.onAtsHost === undefined ? {} : { onAtsHost: (tabId: number) => platform.tabs.onAtsHost!(tabId) }),
     ...(platform.tabs.atsPageOf === undefined ? {} : { atsPageOf: (tabId: number) => platform.tabs.atsPageOf!(tabId) }),
+    // The audit of 2026-11-06 (M5): no job is taken while the browser says it is offline.
+    online: () => (globalThis as { navigator?: { onLine?: boolean } }).navigator?.onLine !== false,
     send: (tabId, message, target) => platform.tabs.sendToFrame(tabId, message, target),
     nonce: () => toBase64Url(platform.randomBytes(16)),
     // The tab it lets go of: every frame of ours there stops its run and hears the person's own settings.
@@ -313,9 +321,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
   const signIn = createSignIn({ server, session, now,
     signInAuto: async () => (await settings.get()).modes.signIn === 'auto' && (await signInAllowed()) });
-  /** Every frame with a form hears the settings as they act now (settings/changed), the agent's tab the agent's. */
-  const pushNow = async (saved?: Awaited<ReturnType<typeof settings.get>>) => pushSettings({ session, tabs: platform.tabs },
-    saved ?? await settings.get(), { ...(await holds()), agentTab: await agent.tab() });
+  /** Every frame with a form hears the settings as they act now for it (settings/changed): the agent's tab's documents
+   *  the agent's, each as contentSettingsFor builds them for its application and document (the audit's m1: Submit stays
+   *  on Manual in every document but the one the job's Submit was pressed in). */
+  const pushNow = async () => pushSettings({ session, tabs: platform.tabs },
+    (frame) => contentSettingsFor(frame.tabId, frame.applicationKey, frame.documentId));
   const beginDeps = {
     jobs,
     generation: () => keeper.generation,
@@ -334,6 +344,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const ownPagesPrefix = platform.runtime.getURL('/');
   /** Settles once Chrome answered the access-level call (set below, before anything can be delivered). */
   let accessReady: Promise<void> = Promise.resolve();
+  /** What a content message waits for: the access level, and (the audit's M1) the side panel's choices read back from
+   *  storage.session, so a run begun after Chrome stopped the idle worker attaches what the person chose. */
+  const contentReady = () => Promise.all([accessReady, jobs.ready]).then(() => undefined);
 
   /** A frame's document that is gone (the frame loaded another, or the check found it gone): what that document
    *  reported and began goes. Only that document's: a page the frame shows again from the back/forward cache, which
@@ -370,6 +383,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     if (checking.has(tabId)) return;
     checking.add(tabId);
     void sweepTab(tabId).catch(() => undefined).finally(() => checking.delete(tabId));
+  }
+
+  /** Whether a Submit of `applicationKey` was pressed in the tab's document `documentId` within KEEP_KEY_AFTER_PRESS_MS
+   *  (its arm, submissions.ts: kept in storage.session, so a worker restart keeps it). */
+  async function pressedLately(tabId: number, applicationKey: string, documentId: string | null): Promise<boolean> {
+    const arm = (await session.get(`${SUBMIT_ARM_PREFIX}${tabId}|${applicationKey}`)) as
+      { at?: unknown; documentId?: unknown } | undefined;
+    return typeof arm?.at === 'number' && now() - arm.at <= KEEP_KEY_AFTER_PRESS_MS
+      && (arm.documentId ?? null) === documentId;
   }
 
   /** Whether a frame may speak for this application (its key's platform is the frame host's). */
@@ -411,7 +433,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     createRouter({
       ownId,
       ownPagesPrefix,
-      contentGate: { ready: () => accessReady, except: UNGATED },
+      contentGate: { ready: () => contentReady(), except: UNGATED },
       // v3 Phase 8: the frames off the ATS hosts the worker injected, and the sentinel's page/recognised.
       injected: sites.injected,
       // The Phase 8 review (B6): a company page's "open review" after a restart opens the side panel inside its click.
@@ -419,11 +441,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       content: {
         ping: async () => ok({ pong: true as const }),
         'frame/hello': async (message, from) => {
+          // The audit's S-6: a private (incognito) tab's runs are kept for it alone, in storage.session, before any of
+          // its runs can begin.
+          if (from.incognito === true) await runStates.markPrivate(from.tabId);
           const { previous, entry } = await lockTab(from.tabId, async () => {
             const held = await frameEntry(session, from.tabId, from.frameId);
-            // The same document at an address no parser reads keeps the application it last showed (a Submit that
-            // moved the page there is still that application's).
-            const keep = held !== null && held.documentId === (from.documentId ?? null) ? held.applicationKey : undefined;
+            // The same document at an address no parser reads keeps the application it last showed only shortly after
+            // a Submit pressed in it (its confirmation drawn in place: still that application's); otherwise (a board
+            // the page moved on to) it is no application's (the audit's m6).
+            const keep = held !== null && held.documentId === (from.documentId ?? null) && held.applicationKey !== undefined
+              && (await pressedLately(from.tabId, held.applicationKey, held.documentId)) ? held.applicationKey : undefined;
             return { previous: held, entry: await registerFrame(session, { ...from, isTop: message.isTop,
               hasForm: message.hasForm, nav: message.nav, ...(message.letter === true ? { letter: true } : {}),
               ...(keep === undefined ? {} : { keepKey: keep }) }, now()) };
@@ -502,9 +529,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             log('runstate.refused');
             return refuse('bad_message');
           }
-          const stored = await runStates.put(runState, from.tabId);
-          // The application reached done (its confirmation page): the matches its fields still held are accepted.
-          if (stored.ok && runState.status === 'done') await accepts.done(runState.applicationKey, now()).catch(() => 0);
+          const stored = await runStates.put(runState, from.tabId, { incognito: from.incognito === true });
+          // The application reached done (its confirmation page): the matches its fields still held are accepted; a
+          // private tab's never are (the audit's S-6: nothing of it outlives the private session).
+          if (stored.ok && runState.status === 'done') {
+            if (from.incognito === true) accepts.forget(runState.applicationKey);
+            else await accepts.done(runState.applicationKey, now()).catch(() => 0);
+          }
           return stored;
         },
         'runstate/clear': async (message, from) => {
@@ -523,7 +554,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           const answer = await reports.put(message, from);
           if (answer.ok) void agent.reported(from.tabId).catch(() => undefined);
           // Which of the application's written fields still hold our value, for the accepted-match cache.
-          const run = answer.ok ? await runs.find(message.runId, from) : null;
+          const run = answer.ok && from.incognito !== true ? await runs.find(message.runId, from) : null;
           if (run !== null) accepts.reported(run.applicationKey, message.report);
           return answer;
         },
@@ -551,6 +582,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           if (from.frameId !== 0) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);
           if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          // The audit's S-6: a private tab's drag is its page's alone (the tab keeps it while the page shows); nothing
+          // of a private session is written to storage.local.
+          if (from.incognito === true) {
+            log('launcher.private');
+            return ok({});
+          }
           await launchers.place(from.url, message.top);
           return ok({});
         },
@@ -577,9 +614,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           if (from.frameId !== 0) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);
           if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
-          if (message.scope === 'next-visit') {
+          // The audit's S-6: in a private tab every hiding is the page's alone ("until next visit", in storage.session
+          // and gone with the tab): nothing of a private session is written to storage.local.
+          if (message.scope === 'next-visit' || from.incognito === true) {
             await session.set({ [visitKey(from.tabId)]: from.documentId ?? '' });
-            log('launcher.hidden', { everywhere: false, visit: true });
+            if (from.incognito === true) log('launcher.private');
+            else log('launcher.hidden', { everywhere: false, visit: true });
             return ok({});
           }
           await launchers.hide(from.url, message.scope);
@@ -649,9 +689,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         }),
         'settings/get': async () => ok({ settings: await settings.get() }),
         'settings/save': async (message) => {
-          const saved = await settings.save(message.settings);
+          // The audit's M4: what the page changed from the settings it read, applied to the stored ones.
+          const saved = await settings.save(message.settings, message.base);
           // Every frame with a form hears of it, so a run in progress reads auto-advance afresh (Phase 5 review, C-S2).
-          await pushNow(saved);
+          await pushNow();
           // And every side panel (v2): the custom question follows the AI drafts switch.
           reports.tellPanels('settings');
           return ok({ settings: saved });
@@ -709,7 +750,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     if (port.name === 'resume' && channel?.kind === 'content') {
       // Listening starts at once (a message posted before the access level settles is not lost); the request is
       // served once it has.
-      resume.accept(port, channel, () => accessReady);
+      resume.accept(port, channel, () => contentReady());
       return;
     }
     // v3 Phase 8: a company's own page the worker injected. Its messages
@@ -721,7 +762,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       void (known !== undefined ? Promise.resolve(known) : sites.injected.read(off.tabId, off.frameId, off.documentId))
         .then((kind) => {
           const site = offAtsChannelOf(off, kind, null);
-          if (site?.reach === 'site') resume.accept(held, site, () => accessReady);
+          if (site?.reach === 'site') resume.accept(held, site, () => contentReady());
           else {
             log('port.refused');
             port.disconnect();
@@ -735,7 +776,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
     // v3 Phase 3b: the side panel's resume preview, an extension page's port only.
     if (port.name === 'preview' && channel?.kind === 'page') {
-      resume.acceptPreview(port, previewResumeOf, () => accessReady);
+      resume.acceptPreview(port, previewResumeOf, () => contentReady());
       return;
     }
     log('port.refused');

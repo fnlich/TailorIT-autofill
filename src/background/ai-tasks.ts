@@ -77,6 +77,7 @@ import type { Platform } from '../core/enums';
 import { readTiebreakReply, tiebreakRequests } from '../core/matcher/tiebreak';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
 import { attentionHits } from '../core/guard/attention';
+import { hasTripwire } from '../core/guard/tripwire';
 import {
   allowanceOf, namesUnanswerableTopic, type AnswerDiscard, type AnswerItem, type AnswerScope, type AnswerVerdict,
 } from '../core/plan/answers';
@@ -90,6 +91,7 @@ import {
 import { sha256Hex } from '../core/text/sha256';
 import type { BaseKey, FieldKey, FieldSpec } from '../core/types/field';
 import type { Settings } from '../core/types/settings';
+import type { VisibleText } from '../core/types/text';
 import type { Vocab } from '../core/vocab/types';
 import { log } from '../shared/log';
 import type { ServerClient, ServerResult } from './server-client';
@@ -270,7 +272,8 @@ const DRAFT_DISCARDS: Readonly<Record<Exclude<AutofillDraftReason, 'drafted' | '
 /** A pass's draft questions as draft batches (at most DRAFT_MAX_QUESTIONS each, every string within TailorIT's caps,
  *  cut after a whole word), and the verdicts of those never sent: a question naming a sensitive topic, a rewrite whose
  *  current text names a sensitive answer, a sum, a contact detail or a postal address (namesSensitiveAnswer, over the
- *  vocabulary), or a key past TailorIT's cap. */
+ *  vocabulary) or holds text addressed to AI tools (the tripwire: the audit of 2026-11-06, S-10), or a key past
+ *  TailorIT's cap. */
 export function draftBatches(items: readonly DraftItem[], context: DraftContext, canaries: readonly string[],
   vocab: Vocab, rewrite?: { key: string; instruction: string }): { batches: DraftBatch[]; withheld: DraftVerdict[] } {
   const limits = AUTOFILL_AI_LIMITS.draft;
@@ -284,9 +287,12 @@ export function draftBatches(items: readonly DraftItem[], context: DraftContext,
     // state a sensitive answer, a sum or a contact detail.
     // v3 Phase 3b: Edit with AI's instruction, the person's own words, is screened as the box's text is: one naming a
     // sensitive topic, or stating a sensitive answer, a sum, a contact detail or a postal address, is never sent.
+    // The audit of 2026-11-06 (S-10): a rewrite's current text that holds words addressed to AI tools (the tripwire, as
+    // the core screens it) is never sent: the page may have written it.
     const instruction = rewrite !== undefined && rewrite.key === item.key ? rewrite.instruction : undefined;
     if (namesSensitiveTopic(item.question)
       || (item.current !== undefined && namesSensitiveAnswer(item.current, vocab))
+      || (item.current !== undefined && hasTripwire(item.current as string as VisibleText))
       || (instruction !== undefined && (namesSensitiveTopic(instruction) || namesSensitiveAnswer(instruction, vocab)))) {
       withheld.push({ key: item.key, text: null, why: 'llm-disabled-for-category' });
     } else if (codePoints(item.key) > AUTOFILL_AI_LIMITS.key || item.question.trim() === '') {

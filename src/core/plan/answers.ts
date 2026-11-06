@@ -39,7 +39,8 @@
  *   it). Which: a category of AI_OPENED_CATEGORIES whose row says the profile holds no answer (legal-not-in-profile,
  *   criminal-not-covered, no-profile-value), an attention check whose own words name no consent (never one only the
  *   person can answer, guard/attention.ts PERSON_ONLY_ATTENTION: the posting's phrase or code word, the Phase 7a
- *   review), a question the classify screen kept from the LLM, or one an EEO, legal or sensitive context closed, as long as its
+ *   review; nor a bot check, a human check, a sum or a CAPTCHA, the audit of 2026-11-06, S-2), a question the classify
+ *   screen kept from the LLM, or one an EEO, legal or sensitive context closed, as long as its
  *   own text names only open topics (classify.ts openAnswerTopics: authorization, age, pay, criminal history; never a
  *   self-identification, a consent or an identity number, never an EEO answer among its options, a decline option
  *   only beside an open topic) and its context holds no self-identification, consent or pronoun question
@@ -58,7 +59,7 @@ import {
 } from '../confidence';
 import type { AutofillAnswerFormat } from '../../contract/tailorit';
 import type { FieldFormat, FieldKind } from '../enums';
-import { attentionHits, PERSON_ONLY_ATTENTION } from '../guard/attention';
+import { attentionHits, namesBotCheck, PERSON_ONLY_ATTENTION } from '../guard/attention';
 import { detectionViews } from '../guard/fold';
 import { llmMaySeeLabel } from '../guard/honeypot';
 import { cutInjected } from '../guard/injected';
@@ -68,7 +69,9 @@ import {
 } from '../resolver/categories';
 import { classifiable, openAnswerTopics, sectionWordsOfKey, type ScreenTopic } from '../resolver/classify';
 import { namesAnotherPerson } from '../resolver/classifyRules';
-import { attestsNoAiUse, namesConsentTopic, type NeedsUserCause } from '../resolver/labelRules';
+import {
+  asksHowApplicationMade, attestsNoAiUse, namesBindingWaiver, namesConsentTopic, type NeedsUserCause,
+} from '../resolver/labelRules';
 import type { FieldClassification } from '../resolver/resolve';
 import { capCodePoints } from '../text/fold';
 import { sectionKey } from '../text/keys';
@@ -198,10 +201,6 @@ const BARE_NUMBER = /\bnumbers?\b(?!\s+of\b)/;
 /** A security clearance (TS/SCI, secret, ITAR: the legal class), which only the `all` scope may ask about. */
 const CLEARANCE: readonly RegExp[] = [/\bclearances?\b/, /\bts\s*[/-]?\s*sci\b/, /\bsecret\b/, /\bitar\b/, /\bpolygraph\b/];
 
-/** A question whether AI helped write the application ("Did you use AI to complete this application?"), as
- *  normalizeLabel writes it: its answer is the person's word on how the application was written. */
-const AI_USE_QUESTION = /\b(?:did|have|has|were|was)\s+(?:you|anyone|any\s+(?:part\s+)?of\s+(?:this|your|these|the))\b(?:\s+\w+){0,6}?\s+(?:ai|a\s+i|artificial\s+intelligence|chat\s?gpt|gpt\w*|llms?|large\s+language\s+models?|generative\s+ai|genai|gen\s+ai|copilot)\b(?:\s+\w+){0,6}?\s+(?:this|your|these|the)\s+(?:application|answers?|responses?|submission|essays?|cover\s+letter|resume|cv)\b/;
-
 /** The short identifiers matched in capitals only, as the page wrote them: SIN, NI ("sin" and "ni" are words too). */
 const UNANSWERABLE_ACRONYMS: readonly RegExp[] = [/\bSIN\b/, /\bNI\b/];
 
@@ -215,13 +214,18 @@ export interface AnswerAllowance {
  *  security clearance unless `allow` lets them through), asks for a consent (labelRules namesConsentTopic: a
  *  newsletter, being contacted about other roles, a talent pool), which only the person or a pre-approval gives, or is
  *  an "I did not use AI" attestation or a question whether AI wrote the application (the owner's decision of
- *  2026-11-01: never sent, in any scope). The worker screens each answer item again with it (ai-tasks.ts
- *  answerItemOfCore). */
+ *  2026-11-01: never sent, in any scope). The audit of 2026-11-06 adds, in any scope: a bot check or CAPTCHA (S-2:
+ *  "Are you a robot?", a sum, "Enter the characters you see in the image", "I'm not a robot"; guard/attention.ts), a
+ *  question or statement about how the application was made, by a named assistant, automation, an extension or
+ *  someone's help (S-4, labelRules asksHowApplicationMade), and a binding waiver or covenant (S-5, labelRules
+ *  namesBindingWaiver). The worker screens each answer item again with it (ai-tasks.ts answerItemOfCore). */
 export function namesUnanswerableTopic(text: string, allow: AnswerAllowance = {}): boolean {
   if (text.trim() === '') return false;
   if (UNANSWERABLE_ACRONYMS.some((acronym) => acronym.test(text))) return true;
+  if (namesBotCheck(text) || attentionHits(text, '').some((id) => PERSON_ONLY_ATTENTION.has(id))) return true;
   const normalized = normalizeLabel(text);
-  if (namesConsentTopic(normalized) || attestsNoAiUse(normalized) || AI_USE_QUESTION.test(normalized)) return true;
+  if (namesConsentTopic(normalized) || attestsNoAiUse(normalized) || asksHowApplicationMade(normalized)
+    || namesBindingWaiver(normalized)) return true;
   return detectionViews(text).some((view) => {
     const lower = view.toLowerCase();
     return UNANSWERABLE.some((pattern) => pattern.test(lower)) || (allow.number !== true && BARE_NUMBER.test(lower))
@@ -339,8 +343,9 @@ const BIRTH_DATE = /\b(?:date\s+of\s+birth|birth\s*(?:date|day|year|place)|years
 function openAnswerable(spec: FieldSpec, classification: FieldClassification, resolution: Resolution,
   row: FillResult, context: DraftContext): { topics: ReadonlySet<ScreenTopic>; attention: boolean } | null {
   const attention = classification.by === 'attention';
-  if (attention && classification.consent !== null) return null;
-  // A check of what the applicant did (the posting's phrase or code word) is the person's alone (the Phase 7a review).
+  if (attention && (classification.consent !== null || classification.botCheck === true)) return null;
+  // A check of what the applicant did (the posting's phrase or code word) is the person's alone (the Phase 7a review),
+  // and so is a bot check (the audit of 2026-11-06, S-2).
   if (attention && attentionHits(spec.label, spec.description).some((id) => PERSON_ONLY_ATTENTION.has(id))) return null;
   if (classification.by === 'rules' && classification.rules.needsUser !== undefined
     && !OPENABLE_CAUSES.has(classification.rules.needsUser)) return null;

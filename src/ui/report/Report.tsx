@@ -104,8 +104,10 @@ export interface ReportActions {
   onPolicyDecision?(frameId: number, decision: PolicyCardDecision): void;
   /** Cancel on the progress line while a run works (the side panel sends panel/cancel). */
   onCancel?(): void;
-  /** Skip on the field being written, after SKIP_AFTER_MS on it (the side panel sends panel/skip). */
-  onSkip?(frameId: number, fieldKey: string): void;
+  /** Skip on the field being written, after SKIP_AFTER_MS on it (the side panel sends panel/skip). It may answer
+   *  whether the run took it: false (the frame no longer writes that field, 'expired') offers the button again (the
+   *  audit of 2026-11-06, m5). */
+  onSkip?(frameId: number, fieldKey: string): void | Promise<boolean>;
   /** v3 Phase 4: the dock's "Continue to the next page" and "Submit application" (StepDock.tsx), for the frame whose
    *  step offers it (the side panel sends panel/press; the in-page panel presses its own run). */
   onPress?: PressAction;
@@ -675,7 +677,7 @@ const BROWSER_CLOCK = { now: () => Date.now(), frames: animationFrames };
  *  write. Its clock starts with the row's turn (the button is mounted only on the current row), and starts afresh for
  *  the next field; it ticks on animation frames, never a timer. */
 function SkipButton({ frameId, row, onSkip, clock }: { frameId: number; row: ReportRow;
-  onSkip(frameId: number, key: string): void; clock: NonNullable<ReportActions['clock']> }) {
+  onSkip(frameId: number, key: string): void | Promise<boolean>; clock: NonNullable<ReportActions['clock']> }) {
   const [shown, setShown] = useState(false);
   const [sent, setSent] = useState(false);
   const { now, frames } = clock;
@@ -686,7 +688,10 @@ function SkipButton({ frameId, row, onSkip, clock }: { frameId: number; row: Rep
     <button type="button" className="tia-linkbutton tia-row__skip" data-action="skip" disabled={sent}
       aria-label={COPY.report.skipLabel(label)} onClick={() => {
         setSent(true);
-        onSkip(frameId, row.key);
+        // A Skip the run did not take (m5): offered again, so the person's word is never lost silently.
+        void Promise.resolve(onSkip(frameId, row.key)).then((taken) => {
+          if (taken === false) setSent(false);
+        }, () => setSent(false));
       }}>
       {COPY.report.skip}
     </button>

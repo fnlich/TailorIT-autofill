@@ -10,7 +10,8 @@ import { deadline } from '../../dom/time';
 import { COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
 import { mountPageUi, type PageUi } from './page-ui';
-import { DOCK_SEEN_MS } from './panel';
+import { clickTimes, ready, uncoveredAsThePointerComes } from './ui.testkit';
+import { CONTROL_SEEN_MS } from './visible';
 
 type Row = FrameReport['fields'][number];
 
@@ -88,7 +89,7 @@ const panelOf = (ui: PageUi) => ui.shadow.querySelector<HTMLElement>('[data-pane
 async function unfold(ui: PageUi, key: string): Promise<void> {
   const toggle = panelOf(ui).querySelector<HTMLButtonElement>(`li[data-field-key="${key}"] button.tia-row__toggle`)!;
   if (toggle.getAttribute('aria-expanded') === 'true') return;
-  await vi.waitFor(() => expect(ui.visibleNow(panelOf(ui))).toBe(true));
+  await ready(ui, panelOf(ui));
   await trustedClick(ui, toggle);
   await vi.waitFor(() => expect(toggle.getAttribute('aria-expanded')).toBe('true'));
 }
@@ -161,6 +162,7 @@ describe('the in-page panel', () => {
     show.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
     close.click();
     expect(calls).toMatchObject({ shown: [], closed: 0 });
+    await ready(ui, panelOf(ui));
     await trustedClick(ui, close);
     expect(calls.closed).toBe(1);
     expect(close.getAttribute('aria-label')).toBe(COPY.inPage.close);
@@ -180,20 +182,22 @@ describe('the in-page panel', () => {
     ui.host.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
     await deadline(50);
     expect(calls.pressed).toEqual([]);
-    // Another frame's step offers nothing here: the panel acts on its own frame alone.
+    // The panel itself is seen long enough, so only the dock's own time decides below.
+    await ready(ui, panel);
+    // Another frame's step offers nothing here: the panel acts on its own frame alone. Its own step again draws the
+    // dock anew, the moment before the click.
     ui.updatePanel([report(5, { status: 'review', buttons: { final: 'final', next: false, submit: true } })]);
     expect(panel.querySelector('button[data-step-action]')).toBeNull();
     ui.updatePanel([report(2, { status: 'review', fields: [row('own')],
       buttons: { final: 'final', next: false, submit: true } })]);
-    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
-    // The dock's button itself must have been seen for DOCK_SEEN_MS (the review, 12): a click on it the moment it is
-    // drawn does not count.
+    // The dock's button itself must have been seen for CONTROL_SEEN_MS (the review, 12; 600 ms since the audit of
+    // 2026-11-06): a click on it the moment it is drawn does not count.
     const dock = () => panel.querySelector<HTMLButtonElement>('button[data-step-action="submit"]')!;
     await trustedClick(ui, dock());
     await deadline(50);
     expect(calls.pressed).toEqual([]);
     await vi.waitFor(() => expect(ui.visibleNow(dock())).toBe(true));
-    await deadline(DOCK_SEEN_MS + 50);
+    await ready(ui, dock());
     await trustedClick(ui, dock());
     await vi.waitFor(() => expect(calls.pressed).toEqual([['submit', false]]));
   });
@@ -206,7 +210,7 @@ describe('the in-page panel', () => {
     const panel = panelOf(ui);
     const confirm = () => buttonIn(panel, COPY.report.confirmDraft)!;
     await unfold(ui, 'why');
-    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    await ready(ui, panel);
     await trustedClick(ui, confirm());
     expect(calls.confirmed).toEqual(['why']);
     // Phase 6, wave 2: the panel says what came of it, under its title.
@@ -253,7 +257,7 @@ describe('the in-page panel', () => {
     // Scrolled into view inside the body, it is the person's to click.
     confirm.scrollIntoView({ block: 'nearest' });
     expect(confirm.getBoundingClientRect().bottom).toBeLessThanOrEqual(body.getBoundingClientRect().bottom + 1);
-    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    await ready(ui, panel);
     await trustedClick(ui, confirm);
     expect(calls.confirmed).toEqual(['why']);
   });
@@ -314,6 +318,50 @@ describe('the in-page panel', () => {
     await userEvent.click(ui.host, { force: true, position: { x: button.left - host.left + button.width / 2,
       y: button.top - host.top + button.height / 2 } });
     expect(calls.confirmed).toEqual([]);
+  });
+
+  it('refuses its buttons’ clicks when the page uncovered it a moment before, and never counts them later (the audit of 2026-11-06, S-1)',
+    async () => {
+      const { ui, calls } = mount(document, 2, { confirm: true });
+      ui.openPanel();
+      ui.updatePanel([report(2, { fields: [row('why', { kind: 'textarea', category: 'freeText.whyCompany',
+        status: 'flagged', provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', needsUserAction: true })],
+      buttons: { final: 'final', next: false, submit: true } })]);
+      const panel = panelOf(ui);
+      await unfold(ui, 'why');
+      const confirm = buttonIn(panel, COPY.report.confirmDraft)!;
+      const close = panel.querySelector<HTMLButtonElement>('button.panel__close')!;
+      const dock = panel.querySelector<HTMLButtonElement>('button[data-step-action="submit"]')!;
+      for (const el of [panel, dock]) await ready(ui, el);
+      const clicks = clickTimes(ui);
+      // The auditor's decoy over the whole panel, gone as the pointer comes: Confirm draft, the dock and Close.
+      for (const target of [confirm, dock, close]) {
+        const gone = await uncoveredAsThePointerComes(ui, panel);
+        await trustedClick(ui, target);
+        expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
+      }
+      await deadline(CONTROL_SEEN_MS + 100);
+      expect([calls.confirmed, calls.pressed, calls.closed]).toEqual([[], [], 0]);
+      // Seen without a break for CONTROL_SEEN_MS, the person's clicks count.
+      await ready(ui, panel);
+      await trustedClick(ui, confirm);
+      expect(calls.confirmed).toEqual(['why']);
+      await ready(ui, dock);
+      await trustedClick(ui, dock);
+      await vi.waitFor(() => expect(calls.pressed).toEqual([['submit', false]]));
+    });
+
+  it('refuses a click on itself made the moment it opened (S-1)', async () => {
+    const { ui, calls } = mount();
+    ui.openPanel();
+    ui.updatePanel([report(2, { fields: [row('own')] })]);
+    const close = panelOf(ui).querySelector<HTMLButtonElement>('button.panel__close')!;
+    await vi.waitFor(() => expect(ui.visibleNow(panelOf(ui))).toBe(true));
+    await trustedClick(ui, close);
+    expect(calls.closed).toBe(0);
+    await ready(ui, panelOf(ui));
+    await trustedClick(ui, close);
+    expect(calls.closed).toBe(1);
   });
 
   // The Phase 6 review, E7: a closed panel kept the tab's reports, other frames' labels included, and its tree.

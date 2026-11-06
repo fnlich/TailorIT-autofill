@@ -17,8 +17,9 @@
  *   Shift+Enter breaks the line, Escape closes. Generate counts only when trusted and on a visible button (the page UI
  *   watches it as the others), and sends the field with the instruction; the box then says what came of it (Rewriting…,
  *   or why nothing was rewritten: an instruction about a sensitive topic is never sent), and closes on a rewrite. The
- *   person's keys stop at the box (a page's listeners in their bubbling phase never hear them; its capture listeners on
- *   the window can, as they hear any typing on the page: docs/PRIVACY.md says so). What they type is never kept.
+ *   person's keys, and what they type, paste or drop, stop at the box (a page's listeners in their bubbling phase never
+ *   hear them, the audit of 2026-11-06's S-8; its capture listeners on the window can, as they hear any typing on the
+ *   page: docs/PRIVACY.md says so). What they type is never kept.
  * The page's own DOM is never annotated: no attribute, class or style is set on a page element.
  */
 import { MAX_EDIT_INSTRUCTION } from '../../messaging/schemas';
@@ -67,9 +68,12 @@ export interface AiPrompt {
   readonly status: HTMLElement;
 }
 
-/** The keys a box stops before the page's bubbling listeners hear them. */
-const PROMPT_KEY_EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'paste', 'compositionstart',
-  'compositionupdate', 'compositionend'] as const;
+/** The events a box stops before the page's bubbling listeners hear them: the keys and every event that carries what
+ *  the person types, pastes or drops into it (the audit of 2026-11-06, S-8: textInput and a drop's data had reached
+ *  the page). The host stops them all again (shadow.ts CONTAINED_EVENTS). */
+const PROMPT_EVENTS = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput', 'paste', 'cut', 'copy',
+  'compositionstart', 'compositionupdate', 'compositionend', 'select', 'selectstart', 'selectionchange', 'dragstart',
+  'drag', 'dragend', 'dragenter', 'dragover', 'dragleave', 'drop'] as const;
 
 /** The union of the boxes of the connected elements, or null when none has a box. */
 function unionOf(elements: readonly Element[]): { left: number; top: number; right: number; bottom: number } | null {
@@ -148,7 +152,7 @@ export function createAiEdits(doc: Document, layer: HTMLElement, onClick: (key: 
     foot.append(count, cancel, generate);
     el.append(label, textarea, status, foot);
     // The person's keys stop here (module header): the page's bubbling listeners never hear them.
-    for (const type of PROMPT_KEY_EVENTS) el.addEventListener(type, (event) => event.stopPropagation());
+    for (const type of PROMPT_EVENTS) el.addEventListener(type, (event) => event.stopPropagation());
     el.addEventListener('click', (event) => event.stopPropagation());
     const send = () => {
       if (generate.disabled || prompt?.el !== el) return;

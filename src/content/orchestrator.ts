@@ -167,7 +167,7 @@ import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, type RepeatableKind, type 
   from '../core/types/run';
 import { clickIfAllowed } from '../dom/fillers';
 import { policyClassOf } from '../core/resolver/categories';
-import { captchaElements, detectPause, unsolvedCaptchas, type PauseSignal } from '../dom/pause-detect';
+import { captchaElements, detectPause, pageChallenged, type PauseSignal } from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
 import { isUsableOption } from '../dom/option-hash';
 import { newScanCache } from '../dom/scan-cache';
@@ -276,8 +276,8 @@ export interface RunOptions {
   /** awaitOptions()' window and cap. */
   awaitOptions?: OptionsTimings;
   resume?: { idleMs?: number; releaseAfterMs?: number };
-  /** The poll interval and the cap on waiting for the LLM (loop.ts). */
-  ai?: { pollMs?: number; capMs?: number };
+  /** The poll interval and the cap on waiting for the LLM, and for the run's cover letter (loop.ts). */
+  ai?: { pollMs?: number; capMs?: number; letterCapMs?: number };
   /** The cap on the next step after our own click on Next (TRANSITION_CAP_MS, or the adapter's quirk). */
   transition?: { capMs?: number };
 }
@@ -360,7 +360,7 @@ const STEP_NOTICE_CODES: readonly NoticeCode[] = ['attention-check', 'needs-clic
   'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps', 'next-hidden', 'captcha-next',
   'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
   'submit-held-attention', 'submit-held-entries', 'submit-unconfirmed', 'submit-errors', 'submit-auto-unchecked',
-  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed'];
+  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed', 'bot-check'];
 
 /** The notices that say the posting itself forbids AI (v3 Phase 4: Submit mode Auto's skip rule), whichever way the
  *  run went on: profile only, AI anyway, or the saved copy's word; and (the v3 Phase 4 review) a statement only text a
@@ -1992,6 +1992,9 @@ export class FillRun {
         return null;
       case 'offer-continue':
         this.offered = true;
+        // A run found after a reload that offers Continue rests (the audit of 2026-11-06, m3): its report says so, as
+        // a turned page's does (pageTurned), never the status it was stored at while it worked.
+        this.reportStatus = 'review';
         return null;
     }
   }
@@ -2292,7 +2295,7 @@ export class FillRun {
     return { type: 'VALIDATED', errors: errors.length, fixable: this.fixable(errors), step: { finality, nextVisible,
       settled: this.settledStep,
       unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft' && row.needsUserAction).length,
-      captchaUnsolved: unsolvedCaptchas(env.doc, root, cache) > 0, ...submitFacts } };
+      captchaUnsolved: this.challengedNow(cache), ...submitFacts } };
   }
 
   /** What Submit mode Auto's verdict reads of the final step (v3 Phase 4): Submit shown, the required questions still
@@ -2307,6 +2310,19 @@ export class FillRun {
     const attentionLeft = this.rows.some((row) => row.reason === 'attention-check' && leftForPerson(row));
     return { submitVisible: buttons.submit, requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()), noAi,
       legalGuess, attentionLeft, entriesLeft: this.addsLeft };
+  }
+
+  /** The audit of 2026-11-06: whether the step holds a challenge the person must answer, which holds Next, Submit mode
+   *  Auto and the agent as an unsolved CAPTCHA does: one anywhere on the page, not known solved, or a frame that reads
+   *  like one (S-7, pause-detect.ts pageChallenged), or a bot check asked as a question still left for the person (a
+   *  'bot-check' row: "Are you a robot?", "What is 4 + 3?", a site's own "I'm not a robot" box; S-2, S-3). */
+  private challengedNow(cache = newScanCache()): boolean {
+    return this.botCheckLeft() || pageChallenged(this.env.doc, cache);
+  }
+
+  /** Whether a bot check asked as a question is still left for the person on the step (S-2, S-3). */
+  private botCheckLeft(): boolean {
+    return this.rows.some((row) => row.reason === 'bot-check' && leftForPerson(row));
   }
 
   /** The keys of the step's rows on required fields still left for the person (shared/report.ts leftForPerson). */
@@ -2375,8 +2391,9 @@ export class FillRun {
       log('content.next-withheld');
       return { type: 'NEXT_WITHHELD', reason: 'setting-off' };
     }
-    // A CAPTCHA handed to the person and not known solved since: Next is theirs (X-S4, tightened).
-    if (unsolvedCaptchas(this.env.doc, root) > 0) {
+    // A CAPTCHA handed to the person and not known solved since, anywhere on the page (X-S4, tightened; S-7), or a bot
+    // check asked as a question still left for them (S-2, S-3): Next is theirs.
+    if (this.challengedNow()) {
       log('content.next-withheld');
       return { type: 'NEXT_WITHHELD', reason: 'captcha-unsolved' };
     }
@@ -2506,9 +2523,12 @@ export class FillRun {
     await this.report();
   }
 
-  /** The report's `buttons` now (v3 Phase 4): at rest (review, or waiting for the person's Next), not in a dry run. */
+  /** The report's `buttons` now (v3 Phase 4): at rest (review, or waiting for the person's Next), not in a dry run;
+   *  never while the run offers Continue or ended paused or stopped, when press() would refuse them (the audit of
+   *  2026-11-06, m3: a run found after a reload at review). */
   private buttonsNow(): { buttons: NonNullable<ReportHeader['buttons']> } | null {
     if (this.request.dryRun || this.machine === null || (this.status !== 'review' && !this.resting)) return null;
+    if (this.ended === null ? this.offered : this.ended !== 'review' && this.ended !== 'waiting') return null;
     let read: NonNullable<ReportHeader['buttons']>;
     try {
       read = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow() });
@@ -2574,6 +2594,12 @@ export class FillRun {
       this.notify('submit-held-check');
       return;
     }
+    // A challenge shown since, or a bot check still left for the person (S-2, S-3, S-7): the Submit is theirs.
+    if (this.challengedNow()) {
+      log('content.step-press-refused', { submit: true, auto: true });
+      this.notify('submit-held-captcha');
+      return;
+    }
     pressed.add(stepKey);
     const before = this.env.beforePress?.();
     const answer = pressStep(this.pressPage(), 'submit', { confirmed: !this.skipRules.requiredEmpty });
@@ -2613,6 +2639,9 @@ export class FillRun {
   async submittedSeen(): Promise<void> {
     if (this.machine === null || this.request.dryRun) return;
     this.submitPending = false;
+    // A sign seen after the wait said to check the page (the audit's m10: still watched, quietly, up to the arm's
+    // life) settles it: the report no longer says the Submit went unconfirmed.
+    this.notices.forget(['submit-unconfirmed', 'submit-errors']);
     if (this.watchingNow) {
       this.confirmed.abort();
       return;
@@ -2841,6 +2870,9 @@ export class FillRun {
   private noticesFromRows(rows: readonly FillResult[], scanned: ScanResult): void {
     const attention = rows.filter((row) => row.reason === 'attention-check').length;
     if (attention > 0) this.notices.add('attention-check', attention);
+    // A bot check asked as a question (S-2, S-3) is a CAPTCHA to the person and to the agent (needs-you captcha).
+    const bots = rows.filter((row) => row.reason === 'bot-check' && leftForPerson(row)).length;
+    if (bots > 0) this.notices.add('bot-check', bots);
     const clicks = rows.filter((row) => row.reason === 'needs-your-click').length + this.addsLeft;
     if (clicks > 0) this.notices.add('needs-click', clicks);
     if (scanned.counters.deferredFields > 0) this.notices.add('deferred-fields', scanned.counters.deferredFields);

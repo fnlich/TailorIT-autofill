@@ -10,12 +10,13 @@
  * (runtime.ts's sender check), and the in-page panel takes only trusted clicks.
  *
  * What a press does, checked right before its one click with nothing awaited between: no pause shows (a sign-in, an
- * email code, a CAPTCHA, a bot check: 'blocked'), and for Submit no CAPTCHA not known solved either; the adapter says
- * the step is not the last (Next) or is (Submit); the adapter's own button is there, visible and enabled ('not-offered'
- * otherwise); for Submit, no required field is still left unanswered unless the person confirmed ('required-empty',
- * with how many: requiredLeftOf); then the one click: Next through clickIfAllowed with allowNext, Submit through
- * clickAdapterSubmit, so the never-press list, a label, a button holding it and every other submit control stay refused
- * ('refused'). A form whose own validation refuses the click (its `invalid` events, fired during the click) answers
+ * email code, a CAPTCHA, a bot check: 'blocked'), and no challenge not known solved anywhere on the page, nor a frame
+ * that reads like one (the audit of 2026-11-06, S-7: pause-detect.ts pageChallenged, as Sign-in Auto reads it); the
+ * adapter says the step is not the last (Next) or is (Submit); the adapter's own button is there, visible and enabled
+ * ('not-offered' otherwise); for Submit, no required field is still left unanswered unless the person confirmed
+ * ('required-empty', with how many: requiredLeftOf); then the one click: Next through clickIfAllowed with allowNext,
+ * Submit through clickAdapterSubmit, so the never-press list, a label, a button holding it and every other submit
+ * control stay refused ('refused'). A form whose own validation refuses the click (its `invalid` events, fired during the click) answers
  * 'not-accepted' with how many fields it marked. Nothing is retried another way. A press never reads or writes a
  * value.
  *
@@ -26,8 +27,9 @@
  * v3 Phase 5: pressEntry, the auto-apply agent's agent/enter (from the worker's own script alone: runtime.ts), presses
  * a posting page's declared entry control (Adapter.entryControl: Greenhouse's and Lever's Apply, Ashby's Application
  * tab) through not-submit.ts clickAdapterEntry, the third door this module alone may open: never while a form, a
- * CAPTCHA, a sign-in or a code shows, never anything but that one control. A page that draws it late is watched for it
- * for ENTRY_WAIT_MS, or the adapter's own quirks.entryWaitMs. v3 Phase 7b: a choice of how to apply blocks it only where
+ * CAPTCHA (anywhere on the page, or a frame that reads like one: S-7), a sign-in or a code shows, never anything but
+ * that one control. A page that draws it late is watched for it for ENTRY_WAIT_MS, or the adapter's own
+ * quirks.entryWaitMs. v3 Phase 7b: a choice of how to apply blocks it only where
  * the adapter offers no control on it, and an adapter may allow a second press in the same document (Workday's Apply,
  * then its Apply Manually), made only while the adapter says its choice shows. A CAPTCHA shown and not solved comes
  * before every other page (dom/pause-detect.ts): the entry is 'blocked' by it, the choice included (the v3 Phase 6/7b
@@ -38,7 +40,7 @@ import type { EntryAnswer, EntryBlock, StepTarget, PressAnswer } from '../messag
 import type { FrameReport } from '../shared/report';
 import { clickIfAllowed } from '../dom/fillers';
 import { clickAdapterEntry, clickAdapterSubmit } from '../dom/fillers/not-submit';
-import { detectPause, unsolvedCaptchas, type PauseKind } from '../dom/pause-detect';
+import { detectPause, pageChallenged, type PauseKind } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
 import { deadline } from '../dom/time';
 import type { ScanResult } from '../dom/types';
@@ -162,7 +164,9 @@ export function pressStep(page: PressPage, target: StepTarget, options: { confir
   const cache = newScanCache();
   if (detectPause(page.doc, page.root, page.adapter, cache, page.handed === undefined ? {} : { handed: page.handed })
     !== null) return { outcome: 'blocked' };
-  if (target === 'submit' && unsolvedCaptchas(page.doc, page.root, cache) > 0) return { outcome: 'blocked' };
+  // The audit of 2026-11-06 (S-7): a challenge not known solved anywhere on the page, or a frame that reads like one,
+  // holds Next and Submit alike, as it holds Sign-in Auto (a CAPTCHA the person was handed included).
+  if (pageChallenged(page.doc, cache)) return { outcome: 'blocked' };
   const finality = finalityOf(page);
   if (finality !== (target === 'next' ? 'not-final' : 'final')) return { outcome: 'not-offered' };
   const button = buttonOf(page, target);
@@ -306,6 +310,8 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
   };
   const attempt = (): EntryAnswer | null => {
     if (formShown()) return { outcome: 'not-offered' };
+    // The audit of 2026-11-06 (S-7): a challenge anywhere on the page, or a frame that reads like one, first.
+    if (pageChallenged(doc)) return { outcome: 'blocked', block: 'captcha' };
     const pause = detectPause(doc, null, own[0]!);
     if (pause !== null && pause.kind !== 'entry-choice') return { outcome: 'blocked', block: blockOf(pause.kind) };
     const by = pressOne();
@@ -326,6 +332,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
      *  nothing yet. */
     const next = (): EntryAnswer | 'pressed' | 'wait' => {
       if (signal.aborted || formShown()) return done;
+      if (pageChallenged(doc)) return { outcome: 'blocked', block: 'captcha' };
       const pause = detectPause(doc, null, own[0]!);
       if (pause === null) return 'wait';
       if (pause.kind !== 'entry-choice') return { outcome: 'blocked', block: blockOf(pause.kind) };

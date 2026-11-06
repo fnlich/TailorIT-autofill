@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from './fixture.testkit';
-import { captchaElements, challengeLikeFramesShown, detectPause, unsolvedCaptchas, vendorFramesShown } from './pause-detect';
+import {
+  captchaElements, challengeLikeFramesShown, detectPause, pageChallenged, unsolvedCaptchas, vendorFramesShown,
+} from './pause-detect';
 
 async function pauseOf(body: string, adapter: Adapter | null = null) {
   const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
@@ -208,5 +210,64 @@ describe('detectPause', () => {
       style="width:300px;height:200px"></iframe><input type="hidden" name="fc-token" value="solved"></div></form>`))
       .toBeGreaterThan(0);
     expect(await count('<form><label for="n">Full name</label><input id="n"></form>')).toBe(0);
+  });
+
+  it('counts the parent of an empty response field no documented container holds (the audit of 2026-11-06, S-7)',
+    async () => {
+      const count = async (body: string) => {
+        const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
+        const found = [unsolvedCaptchas(fixture.doc, fixture.doc.querySelector('form')),
+          detectPause(fixture.doc, fixture.doc.querySelector('form'), null)?.kind ?? null];
+        removeFixtures(document);
+        return found;
+      };
+      // A widget rendered into the page's own element: no documented class names it, only the vendor's field inside.
+      for (const field of ['<textarea name="g-recaptcha-response" style="display:none">VALUE</textarea>',
+        '<textarea name="h-captcha-response" style="display:none">VALUE</textarea>',
+        '<input type="hidden" name="cf-turnstile-response" value="VALUE">']) {
+        const widget = (value: string) => `<form><label for="n">Full name</label><input id="n">
+          <div id="my-widget" style="width:304px;height:78px">${field.replace('VALUE', value)}</div></form>`;
+        expect(await count(widget('')), field).toEqual([1, 'captcha']);
+        expect(await count(widget('03AFcWeA-token')), field).toEqual([0, null]);
+      }
+      // Greenhouse's live markup: the invisible reCAPTCHA's field sits in its badge, which draws no challenge.
+      expect(await count(`<form><label for="n">Full name</label><input id="n"></form>
+        <div class="grecaptcha-badge" data-style="bottomright" style="width:256px;height:60px;position:fixed;bottom:14px;right:-186px">
+        <div class="grecaptcha-logo"></div><div class="grecaptcha-error"></div>
+        <textarea id="g-recaptcha-response-100000" name="g-recaptcha-response" class="g-recaptcha-response"
+          style="width:250px;height:40px;display:none"></textarea></div>`)).toEqual([0, null]);
+      // iCIMS's live markup: an invisible hCaptcha's field in its documented container, which says so.
+      expect(await count(`<form><div id="h-captcha" class="h-captcha" data-sitekey="x" data-size="invisible">
+        <textarea name="h-captcha-response" style="display:none;"></textarea></div></form>`)).toEqual([0, null]);
+      // A field whose parent shows nothing (no size) is no challenge shown.
+      expect(await count(`<form><div style="width:0;height:0;overflow:hidden">
+        <textarea name="g-recaptcha-response" style="display:none"></textarea></div></form>`)).toEqual([0, null]);
+      // In a documented container it is that container's, counted once.
+      expect(await count(`<form><div class="g-recaptcha" data-sitekey="x" style="width:304px;height:78px"><div
+        style="width:304px;height:78px"><textarea name="g-recaptcha-response" style="display:none"></textarea></div></div>
+        </form>`)).toEqual([1, 'captcha']);
+    });
+
+  it('reads the whole page for a press, as Sign-in Auto does, but takes a solved widget as solved (S-7)', async () => {
+    const challenged = async (body: string) => {
+      const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
+      const form = fixture.doc.querySelector('form');
+      const found = [unsolvedCaptchas(fixture.doc, form) > 0, pageChallenged(fixture.doc)];
+      removeFixtures(document);
+      return found;
+    };
+    const form = '<form style="height:200px"><label for="n">Full name</label><input id="n"></form>';
+    const below = (widget: string) => `${form}<div style="margin-top:400px">${widget}</div>`;
+    // A widget outside the form and away from it: the form's own reading misses it; the page's does not.
+    expect(await challenged(below(`<div class="g-recaptcha" data-sitekey="x" style="width:304px;height:78px">
+      <textarea name="g-recaptcha-response" style="display:none"></textarea></div>`))).toEqual([false, true]);
+    // Solved (its token there): no press is held for it.
+    expect(await challenged(below(`<div class="g-recaptcha" data-sitekey="x" style="width:304px;height:78px">
+      <textarea name="g-recaptcha-response" style="display:none">03AFcWeA-token</textarea></div>`)))
+      .toEqual([false, false]);
+    // A frame of another origin that reads like a challenge holds a press too.
+    expect(await challenged(below(`<iframe srcdoc="" src="https://shield.example/f" title="Human verification"
+      style="width:300px;height:80px"></iframe>`))).toEqual([false, true]);
+    expect(await challenged(form)).toEqual([false, false]);
   });
 });

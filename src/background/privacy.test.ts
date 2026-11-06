@@ -196,9 +196,14 @@ describe('the worker keeps the cover letter to itself (Phase G)', () => {
     expect(atob((port.received[1] as { data: string }).data)).toContain('LETTER-WORDS-Q7Z3');
     expect((port.received[1] as { data: string }).data).toContain(btoa(words).slice(0, 16));
 
+    // The audit of 2026-11-06 (M6): the run's record keeps the job's id (an id alone, in storage.session), so a Submit
+    // after the worker was stopped still names it; nowhere else.
+    const session = await fakeBrowser.storage.session.get(null);
+    const record = session[`runs:${runId}`] as Record<string, unknown>;
+    expect(record.jobId).toBe(goldens.lookup.job.id);
     const kept = JSON.stringify({
       local: await fakeBrowser.storage.local.get(null),
-      session: await fakeBrowser.storage.session.get(null),
+      session: { ...session, [`runs:${runId}`]: { ...record, jobId: null } },
       toFrames: worker.fakes.tabMessages,
       toPanel: panel.received,
       row,

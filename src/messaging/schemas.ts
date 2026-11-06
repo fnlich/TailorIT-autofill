@@ -444,7 +444,10 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('panel/confirmDraft'), ...FrameRef }),
   z.strictObject({ v, type: z.literal('panel/saveAnswer'), ...FrameRef }),
   z.strictObject({ v, type: z.literal('settings/get') }),
-  z.strictObject({ v, type: z.literal('settings/save'), settings: SettingsSchema }),
+  /** The audit of 2026-11-06 (M4): `base`, the settings the page last read; the worker then applies only what the page
+   *  changed from them onto the settings stored now, so a mode changed meanwhile elsewhere (the side panel's gear, the
+   *  options page in another window) is kept. Without it, the settings sent are stored whole. */
+  z.strictObject({ v, type: z.literal('settings/save'), settings: SettingsSchema, base: SettingsSchema.optional() }),
   z.strictObject({ v, type: z.literal('auth/status') }),
   z.strictObject({ v, type: z.literal('auth/startPairing') }),
   z.strictObject({ v, type: z.literal('auth/redeemCode'), code: z.string().regex(/^[0-9A-Za-z -]{16,24}$/) }),
@@ -980,9 +983,15 @@ export const SignInCredentialAnswerSchema = z.strictObject({
 export type SignInCredential = z.infer<typeof SignInCredentialAnswerSchema>;
 
 /** Why the auto-apply agent cannot run now (v3 Phase 5): not connected, a connection without agent:run (made before
- *  version 3), the disclosure not acknowledged as it reads now, or no browser window of the person's open. */
-export const AGENT_BLOCKS = ['not-connected', 'no-scope', 'disclosure', 'no-window'] as const;
+ *  version 3), the disclosure not acknowledged as it reads now, no browser window of the person's open, or (the audit
+ *  of 2026-11-06, M5) the browser offline, so no job is taken. */
+export const AGENT_BLOCKS = ['not-connected', 'no-scope', 'disclosure', 'no-window', 'offline'] as const;
 export type AgentBlock = (typeof AGENT_BLOCKS)[number];
+/** Why the agent paused itself, Run auto-apply off until the person turns it on again (the audit of 2026-11-06): the
+ *  browser opened no window for a job, jobs in a row whose pages did not load (M5), or the person closed its window,
+ *  which is their Stop (m14). */
+export const AGENT_PAUSES = ['no-window', 'page-errors', 'window-closed'] as const;
+export type AgentPause = (typeof AGENT_PAUSES)[number];
 /** Where the agent stands: off; on and waiting for a job (the queue empty, or its next look); on and running one; on
  *  but blocked (AGENT_BLOCKS). */
 export const AGENT_PHASES = ['off', 'waiting', 'running', 'blocked'] as const;
@@ -997,6 +1006,8 @@ export const AgentStatusSchema = z.strictObject({
   confirmed: z.boolean(),
   phase: z.enum(AGENT_PHASES),
   blocked: z.enum(AGENT_BLOCKS).nullable(),
+  /** While off: why the agent paused itself (AGENT_PAUSES); null or absent when the person turned it off. */
+  paused: z.enum(AGENT_PAUSES).nullable().optional(),
   /** Run auto-apply may be turned on now: connected with agent:run, the disclosure acknowledged. */
   allowed: z.boolean(),
   /** A result is kept that TailorIT has not taken yet (offline, its failure): it is sent again (the review). */

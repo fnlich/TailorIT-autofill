@@ -38,6 +38,7 @@ import { AnotherJob } from './AnotherJob';
 import type { JobView } from './job';
 import type { LetterView } from './letter';
 import type { PreviewResult } from './preview';
+import { postedDaysAgo } from './posted';
 import { ResumePreview } from './ResumePreview';
 
 type Answered = Extract<Card, { state: 'answered' }>;
@@ -193,7 +194,7 @@ function AnsweredCard({ card, platform, dryRun, adding, outcome, now, onAdd, loa
         <JobChips card={card} status={status} />
         {job !== null && job.postedAt !== null && (
           <p className="tia-job__meta" data-job-posted="">
-            {COPY.job.posted(Math.max(0, Math.floor((now - job.postedAt) / 86_400_000)))}
+            {COPY.job.posted(postedDaysAgo(job.postedAt, now))}
           </p>
         )}
         {applied && !submitted && (

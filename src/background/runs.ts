@@ -2,7 +2,9 @@
  * The runs the worker knows. run/begin mints a run id per document and remembers the run's tab, frame, document,
  * applicationKey and mode, so plan/request, plan/poll, report/put and the resume port can check that a message comes
  * from the frame that began it. The record is value-free and kept in storage.session (`runs:<runId>`), so a run
- * survives the worker being stopped between messages; what a run looked up (its lookup answer) stays in memory only.
+ * survives the worker being stopped between messages; what a run looked up (its lookup answer) stays in memory only,
+ * but for the ids a Submit records (the audit of 2026-11-06, M6): the job its lookup named and the resume it attaches,
+ * which its record keeps (noteAttached) until the token changes.
  * A run is gone when its tab closes, when its frame begins another run, when the document it was begun in is gone (its
  * frame loaded another one, or the frame check found it gone: only that document's runs go), and when the browser
  * restarts.
@@ -65,10 +67,13 @@ export interface RunRegistry {
   /** The token changed: every run forgets what it read with the old one (its lookup, its resume and the resume chosen
    *  for it, its cover letter), so nothing of one connection reaches the next; a run that still needs them reads them
    *  again. */
-  dropTokenData(): void;
+  dropTokenData(): Promise<void>;
   /** TailorIT started writing the run's cover letter (Phase G): its record says so (a flag, no id), so a worker that
    *  restarted still marks that letter as the AI's. */
   noteLetterWritten(runId: string): Promise<void>;
+  /** The audit of 2026-11-06 (M6): the job the run's lookup named and the resume it attaches (ids, null: none), kept
+   *  in its record so a Submit after the worker was stopped still records them. An id left out stays as it was. */
+  noteAttached(runId: string, ids: { jobId?: number | null; resumeId?: string | null }): Promise<void>;
 }
 
 const keyOf = (runId: string) => `${RUN_PREFIX}${runId}`;
@@ -170,7 +175,7 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
     async forgetTab(tabId) {
       await remove((await all()).filter((run) => run.tabId === tabId).map((run) => run.runId));
     },
-    dropTokenData() {
+    async dropTokenData() {
       for (const memo of memos.values()) {
         memo.lookup = undefined;
         memo.resume = undefined;
@@ -179,6 +184,25 @@ export function createRunRegistry(platform: Pick<WorkerPlatform, 'now' | 'random
         memo.letter?.stop();
         memo.letter = undefined;
       }
+      // The ids the old connection's lookup gave go from the records too (M6).
+      for (const record of await all()) {
+        if (record.jobId === undefined && record.resumeId === undefined) continue;
+        const next: RunRecord = { ...(known.get(record.runId) ?? record) };
+        delete next.jobId;
+        delete next.resumeId;
+        known.set(record.runId, next);
+        await session.set({ [keyOf(record.runId)]: next });
+      }
+    },
+    async noteAttached(runId, ids) {
+      const loaded = await load(runId);
+      const record = loaded === null ? null : known.get(runId) ?? loaded;
+      if (record === null) return;
+      const next: RunRecord = { ...record, ...(ids.jobId === undefined ? {} : { jobId: ids.jobId }),
+        ...(ids.resumeId === undefined ? {} : { resumeId: ids.resumeId }) };
+      if (next.jobId === record.jobId && next.resumeId === record.resumeId) return;
+      known.set(runId, next);
+      await session.set({ [keyOf(runId)]: next });
     },
     async noteLetterWritten(runId) {
       const loaded = await load(runId);

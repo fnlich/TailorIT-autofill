@@ -9,7 +9,7 @@
  */
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
 import { button, click, frameReport, mount, row, settle, unmountAll } from '../ui.testkit';
@@ -155,7 +155,7 @@ describe('the report in TailorIT’s look', () => {
     document.body.append(container);
     const root = createRoot(container);
     const draw = (current: string) => act(async () => root.render(<Report reports={reportOn(current)} clock={time.clock}
-      onSkip={(frameId, key) => skips.push([frameId, key])} />));
+      onSkip={(frameId, key) => { skips.push([frameId, key]); }} />));
     await draw('a');
     const skipOf = () => container.querySelector<HTMLButtonElement>('button[data-action="skip"]');
     await time.advance(SKIP_AFTER_MS - 1);
@@ -171,6 +171,29 @@ describe('the report in TailorIT’s look', () => {
     expect(skipOf()).toBeNull();
     await time.advance(SKIP_AFTER_MS);
     expect(skipOf()?.closest('li')?.dataset.fieldKey).toBe('b');
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it('offers Skip again when the run did not take it, and not when it did (the audit of 2026-11-06, m5)', async () => {
+    const time = testClock();
+    const answers = [false, true];
+    const reports = [frameReport(4, { status: 'fill-step', fields: [row('a', { label: 'First', required: true,
+      wrote: false })], filling: { current: 'a', pending: ['a'] } })];
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(<Report reports={reports} clock={time.clock}
+      onSkip={() => Promise.resolve(answers.shift()!)} />));
+    await time.advance(SKIP_AFTER_MS);
+    const skipOf = () => container.querySelector<HTMLButtonElement>('button[data-action="skip"]')!;
+    await click(skipOf());
+    // 'expired': the frame was between two waits on that field; the button comes back.
+    await vi.waitFor(() => expect(skipOf().disabled).toBe(false));
+    await click(skipOf());
+    await act(async () => Promise.resolve());
+    expect(skipOf().disabled).toBe(true);
+    expect(answers).toEqual([]);
     await act(async () => root.unmount());
     container.remove();
   });

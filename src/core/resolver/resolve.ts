@@ -21,7 +21,7 @@
  * sensitive question, and a required field with no value, are flagged rather than skipped, so the person sees them.
  */
 import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFIDENCE } from '../confidence';
-import { attentionHits, namesConsentTopic } from '../guard/attention';
+import { attentionHits, botCheckOf, namesConsentTopic } from '../guard/attention';
 import { cutInjected } from '../guard/injected';
 import { hasTripwire } from '../guard/tripwire';
 import { intendedText } from '../matcher/intended';
@@ -76,7 +76,8 @@ export interface ResolveContext {
  *  nothing. */
 export type FieldClassification =
   | { by: 'tripwire'; rules: RuleClassification | null }
-  | { by: 'attention'; patternId: string; consent: FieldCategory | null }
+  /** `botCheck`: a bot check (guard/attention.ts botCheckOf, the audit of 2026-11-06), the person's alone. */
+  | { by: 'attention'; patternId: string; consent: FieldCategory | null; botCheck?: true }
   | { by: 'rules'; rules: RuleClassification }
   | { by: 'llm'; llm: LlmClassification }
   | { by: 'none' };
@@ -88,6 +89,10 @@ export function classifyField(spec: FieldSpec, vocab?: Vocab): FieldClassificati
   if (hasTripwire(spec.label as VisibleText) || hasTripwire(spec.description as VisibleText)) {
     return { by: 'tripwire', rules: classifyByRules(spec) };
   }
+  // A bot check (the audit of 2026-11-06, S-2 and S-3) comes before any consent reading: a site's own "I'm not a robot"
+  // box is never ticked, and "Are you a robot?" or a sum is never answered.
+  const bot = botCheckOf(spec.label, spec.description, spec.kind);
+  if (bot !== null) return { by: 'attention', patternId: bot, consent: null, botCheck: true };
   const attention = attentionHits(spec.label, spec.description);
   if (attention.length > 0) {
     let consent: FieldCategory | null = null;
@@ -135,6 +140,7 @@ export function actionFor(confidence: number, alwaysFlag: boolean): Action {
 /** Why a field handed to the person is so, as the panel words it: by the class of what it asks, or a conflict. */
 function needsUserReason(cause: NeedsUserCause, asks: FieldCategory): ReasonCode {
   if (cause === 'source-conflict') return 'classification-conflict';
+  if (cause === 'how-made') return 'how-application-made';
   switch (policyClassOf(asks)) {
     case 'legal':
       return 'legal-not-in-profile';
@@ -282,6 +288,9 @@ function intendedOf(shaped: Shaped): IntendedValue {
   }
 }
 
+/** The kinds a consent may be asked on as a choice among options (policy.ts ConsentContext.list). */
+const LIST_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['radio', 'select', 'combobox']);
+
 /** The value of a classified field, by its class (§8.2): the profile's, the policy's, or none. */
 function valueOf(category: FieldCategory, rules: RuleClassification, spec: FieldSpec, ctx: ResolveContext): ValueResult {
   const { profile, settings, vocab, now } = ctx;
@@ -293,7 +302,8 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       return eeoValue(category, spec, profile, settings, vocab);
     case 'consent':
       return consentValue(category, rules.consentKinds, profile, settings,
-        { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab) });
+        { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab),
+          list: LIST_KINDS.has(spec.kind) });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':
@@ -388,11 +398,12 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
       action: 'needs-user', reason: 'tripwire-in-label', awaiting: null });
   }
   if (classification.by === 'attention') {
-    const category = classification.consent ?? 'attentionCheck';
+    const category = classification.botCheck === true ? 'attentionCheck' : classification.consent ?? 'attentionCheck';
+    const reason: ReasonCode = classification.botCheck === true ? 'bot-check'
+      : classification.consent === null ? 'attention-check' : 'consent-requires-user';
     return answer({ key: spec.key, category, classifiedBy: 'label-rule', rule: `attention.${classification.patternId}`,
       intended: null, origin: null, confidence: LABEL_RULE_CONFIDENCE.strong, policy: policyClassOf(category),
-      action: 'needs-user', reason: classification.consent === null ? 'attention-check' : 'consent-requires-user',
-      awaiting: null });
+      action: 'needs-user', reason, awaiting: null });
   }
   if (classification.by === 'llm') return answerFromLlm(spec, ctx, classification.llm);
   const rules = classification.by === 'rules' ? classification.rules : null;

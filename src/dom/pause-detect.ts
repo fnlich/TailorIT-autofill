@@ -10,7 +10,9 @@
  *   (captcha-delivery.com) or GeeTest (geetest.com), or a visible explicit-render container (.g-recaptcha, .h-captcha,
  *   .cf-turnstile, [data-sitekey], PerimeterX's #px-captcha, GeeTest's .geetest_holder, .geetest_panel,
  *   .geetest_captcha, .geetest_box) over or inside the form, in the document, its open shadow roots or a frame of its
- *   own origin inside it (the v3 Phase 6/7b review's round 2, E10). A closed shadow root cannot be read, nor an Arkose
+ *   own origin inside it (the v3 Phase 6/7b review's round 2, E10), and (the audit of 2026-11-06, S-7) the parent of a
+ *   vendor's empty response field (g-recaptcha-response, h-captcha-response, cf-turnstile-response) that no documented
+ *   container holds: a widget rendered into the page's own element. A closed shadow root cannot be read, nor an Arkose
  *   custom domain recognised: a known limit. The invisible reCAPTCHA badge and a widget
  *   bound to a button (invisible mode) do not pause. Phase 5 confirms this markup against the vendors' documentation.
  *   A widget the person solved holds its response token in the field the vendor puts inside it (g-recaptcha-response,
@@ -21,6 +23,8 @@
  *   aside): Sign-in Auto types nothing while one shows (round 2, E10). challengeLikeFramesShown (round 3, X9): every
  *   visible frame of another origin whose address, title, name or label reads like a challenge (CHALLENGE_WORDS: a
  *   vendor this module does not know, a site's own), which Sign-in Auto also waits out; a fill does not pause for one.
+ * - pageChallenged (the audit of 2026-11-06, S-7): a challenge not known solved anywhere on the page, or a frame that
+ *   reads like one; every Next, Submit and entry press holds while one shows (orchestrator.ts, press.ts).
  * - Workday's entry choice is the adapter's to declare, and so are (v3 Phase 7b) an email gate (an email-first identity
  *   step: Oracle's and iCIMS's, no password) and a password reset (Workday's Forgot Password, Taleo's and SuccessFactors'
  *   password help), whose email box is never filled.
@@ -179,16 +183,45 @@ function shownCaptchas(scopes: readonly Scope[], root: Element | null, cache: Sc
     shown.push({ el: frame, evidence: 'captcha-frame' });
   }
   for (const { el: container, frame: host } of all(scopes, CAPTCHA_CONTAINERS)) {
-    const tag = container.localName;
-    // Invisible mode binds the widget to a button, or says data-size="invisible": no challenge is shown.
-    if (tag === 'button' || tag === 'input' || tag === 'a') continue;
-    if ((container.getAttribute('data-size') ?? '').toLowerCase() === 'invisible') continue;
-    if (container.closest('.grecaptcha-badge') !== null) continue;
+    if (!drawnWidget(container)) continue;
     if (showsAt(container, host, root, cache) && !solved(container)) {
       shown.push({ el: container, evidence: 'captcha-container' });
     }
   }
+  // The audit of 2026-11-06 (S-7): a widget drawn in a container none of the documented classes names (an explicit
+  // render into the page's own element) is known by the vendor's own response field inside it: the field's parent is
+  // the widget's container, a challenge while the field is empty. One inside a documented container is that
+  // container's, read above.
+  const parents = new Set<Element>();
+  for (const { el: field, frame: host } of all<HTMLTextAreaElement | HTMLInputElement>(scopes, RESPONSE_FIELDS)) {
+    const parent = field.parentElement;
+    if (parent === null || parents.has(parent) || field.value.trim() !== '' || isInOwnUi(parent)) continue;
+    if (parent.closest(CAPTCHA_CONTAINERS) !== null || !drawnWidget(parent)) continue;
+    parents.add(parent);
+    if (showsAt(parent, host, root, cache) && !solved(parent)) shown.push({ el: parent, evidence: 'captcha-container' });
+  }
   return shown;
+}
+
+/** Whether a widget's container draws a challenge: not invisible mode (a widget bound to a button or a link, or one
+ *  saying data-size="invisible"), and not the invisible reCAPTCHA's badge. */
+function drawnWidget(container: Element): boolean {
+  const tag = container.localName;
+  if (tag === 'button' || tag === 'input' || tag === 'a') return false;
+  if ((container.getAttribute('data-size') ?? '').toLowerCase() === 'invisible') return false;
+  return container.closest('.grecaptcha-badge') === null;
+}
+
+/**
+ * The audit of 2026-11-06 (S-7): whether the page shows, anywhere (no form root: over the form or not, in the
+ * document, its open shadow roots and its frames of its own origin), a challenge not known solved (unsolvedCaptchas:
+ * a vendor's widget whose response token is empty, or one whose vendor holds none) or a frame of another origin that
+ * reads like one (challengeLikeFramesShown). Every Next, Submit and entry press holds while one shows, as Sign-in Auto
+ * does. A vendor's widget the person solved (its token there) holds no press, unlike Sign-in Auto, which waits out
+ * every vendor frame: a press types nothing.
+ */
+export function pageChallenged(doc: Document, cache: ScanCache = newScanCache()): boolean {
+  return unsolvedCaptchas(doc, null, cache) > 0 || challengeLikeFramesShown(doc, cache) > 0;
 }
 
 /** How many visible frames on a vendor's challenge host the page shows, solved or not, in the document, its open shadow

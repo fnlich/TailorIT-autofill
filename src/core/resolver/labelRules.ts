@@ -93,6 +93,12 @@ export const NEEDS_USER_CAUSES = [
   'age',
   /** Current, previous or historical pay: the profile holds only expected pay, and saved answers refuse pay. */
   'current-pay',
+  /** How the application was made (the audit of 2026-11-06, S-4): whether AI, automation, an extension or someone's help
+   *  made it, or a denial that any was used. Only the person can say; the extension is automation itself. */
+  'how-made',
+  /** A binding waiver or covenant (arbitration, a jury-trial or class-action waiver, a non-compete or non-solicitation)
+   *  asked on anything but a lone checkbox (the audit of 2026-11-06, S-5): the person's, never an AI's. */
+  'binding-waiver',
 ] as const;
 export type NeedsUserCause = (typeof NEEDS_USER_CAUSES)[number];
 
@@ -408,11 +414,85 @@ const MARKETING_WIDE = new RegExp(String.raw`\b${CONTACT_VERB}\b(?:\s+\w+){0,6}?
 /** A check the person consents to, which is not a claim about their record ("a criminal background check"). */
 const RECORD_CHECK = /\b(?:criminal\s+)?(?:background|record|records|history)\s+(?:checks?|screenings?|search|searches|investigations?|reports?|verifications?)\b|\bcriminal\s+(?:checks?|screenings?|search|searches|investigations?|reports?)\b/g;
 
-const AI_TERM = String.raw`(?:ai|a\s+i|artificial\s+intelligence|chat\s?gpt|gpt\w*|llms?|large\s+language\s+models?|language\s+models?|generative|genai|gen\s+ai|copilot)`;
+/** AI, by its name or a named assistant (the audit of 2026-11-06, S-4: Claude, Gemini, Bard, Perplexity, machine
+ *  learning, an AI or writing assistant, and the like). */
+const AI_TERM = String.raw`(?:ai|a\s+i|artificial\s+intelligence|chat\s?gpt|gpt\w*|llms?|large\s+language\s+models?|language\s+models?|generative|genai|gen\s+ai|copilot|claude|gemini|bard|perplexity|openai|anthropic|deepseek|grammarly|quillbot|chat\s?bots?|machine\s+learning|(?:ai\s+|virtual\s+)?(?:writing|ai)\s+assistants?)`;
 const NEGATION = String.raw`(?:did\s+not|didnt|have\s+not|havent|has\s+not|hasnt|had\s+not|hadnt|was\s+not|wasnt|were\s+not|werent|do\s+not|dont|does\s+not|doesnt|will\s+not|wont|not|never|no|without)`;
 /** A statement that the application is the applicant's own work (the Phase 7a review: Workable's "Can you confirm that
- *  everything in this application is true and your own?"), which a fill that used AI cannot make: an AI attestation. */
-const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b`;
+ *  everything in this application is true and your own?"), which a fill that used AI cannot make: an AI attestation.
+ *  The audit of 2026-11-06 (S-4) adds a claim of sole authorship ("I wrote every answer in this application myself",
+ *  "I completed this application myself"), ticked, like the attestation, only when the run used no AI at all. */
+const OWN_WORK = String.raw`\btrue\s+and\s+(?:\w+\s+)?(?:my|your|their)\s+own\b|\b(?:entirely\s+|completely\s+|all\s+)?(?:my|your)\s+own\s+(?:work|words|writing)\b|\b(?:i|myself)\b(?:\s+\w+){0,3}?\s+(?:wrote|written|write|authored|composed|drafted|prepared|completed|filled\s+(?:in|out))\b(?:\s+\w+){0,8}?\s+(?:myself|by\s+myself|on\s+my\s+own|personally|alone|without\s+(?:any\s+)?(?:help|assistance))\b|\b(?:written|authored|composed|prepared|completed)\s+(?:entirely\s+|solely\s+|only\s+|wholly\s+)?by\s+me\b|\bsole\s+author\b`;
+
+/** What fills or writes an application other than the person: automation, autofill, a bot, a script, software, a tool,
+ *  an extension or plug-in, an app, or someone's help (the audit of 2026-11-06, S-4). The extension itself is such
+ *  automation, so a statement that none was used is never true of a run of it. */
+const AUTOMATION_TERM = String.raw`(?:automat\w*|auto\s?fill\w*|autocomplete\w*|bots?|robots?|scripts?|software|tools?|(?:browser\s+)?extensions?|plug\s?ins?|add\s?ons?|third\s+part(?:y|ies)|assistance|help|helpers?|anyone\s+else|another\s+person|someone\s+else)`;
+/** A negation the person makes of their own doing ("I did not", "I have never"), or an impersonal one ("no", "without",
+ *  "not used"): never a company's ("this company does not use automated decision-making"). */
+const PERSON_NEGATION = String.raw`(?:\bi\s+(?:\w+\s+){0,2}?(?:did\s+not|didnt|have\s+not|havent|had\s+not|hadnt|do\s+not|dont|will\s+not|wont|never|was\s+not|wasnt)\b|\b(?:no|without|neither|nor)\b|\bnot\s+(?:used|employed|relied|assisted|helped|aided|with|by)\b)`;
+/** A denial that automation or help was used ("I confirm that no autofill software or browser extension was used",
+ *  "I completed this application without automated tools or bots"): never ticked or answered yes, whatever the run
+ *  used, since the extension is automation (S-4). */
+const AUTOMATION_DENIAL = new RegExp(String.raw`${PERSON_NEGATION}(?:\s+\w+){0,3}?\s+(?:(?:the\s+)?(?:use|help|aid|assistance|support)\s+of\s+)?(?:any\s+|an\s+|a\s+)?(?:\w+\s+)??${AUTOMATION_TERM}\b|\b${AUTOMATION_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved|employed)\b`);
+/** A tool, software or help named by its AI ("AI tools", "machine learning software", "AI-powered assistance"): AI. */
+const AI_QUALIFIED = new RegExp(String.raw`\b(${AI_TERM})\s+(?:based\s+|powered\s+|driven\s+|enabled\s+|writing\s+)?(?:tools?|software|assistance|help|helpers?|bots?|scripts?|extensions?|plug\s?ins?|add\s?ons?)\b`, 'g');
+/** The person speaking of themselves: a denial in the first person, not a company's ("We do not use automated
+ *  decisions"). */
+const FIRST_PERSON = /\b(?:i|my|me|myself)\b/;
+/** What a question about how the application was made asks about: THIS application, or the person's own materials in
+ *  it ("this application", "your cover letter", "the form", "your answers", "these responses"). A plural or another
+ *  application ("web applications", "a production application", "application deployment") is a skills question, never
+ *  this one (the review of the audit's S-4). */
+const THIS_APPLICATION = /\b(?:this|your|the)\s+(?:(?:job|own|online|whole|entire|written)\s+)?(?:application|form|answers?|responses?|submission|essays?|cover\s+letter|resume|cv)\b|\bthese\s+(?:answers|responses)\b/;
+/** A question's start ("Did you", "Was this application", "Has anyone", "Were any of your answers"). */
+const QUESTION_START = /^(?:(?:please|kindly)\s+)?(?:\w+\s+){0,2}?(?:did|have|has|had|were|was|is|are|do|does|will|would|can)\s+(?:you|anyone|anybody|anything|someone|something|any|this|your|the|it|ai)\b/;
+/** Who or what made the application, as a question asks it: AI, automation, an autofill, a bot, a script, an extension,
+ *  or the person alone ("yourself"). */
+const MADE_BY_AGENT = String.raw`(?:${AI_TERM}|automat\w*|auto\s?fill\w*|autocomplete\w*|(?:ro)?bots?|scripts?|(?:browser\s+)?extensions?|plug\s?ins?|add\s?ons?|yourself|by\s+yourself|on\s+your\s+own|your\s+own\s+(?:work|words|writing))`;
+/** What making the application is: using, helping, completing, filling, writing, preparing, answering, drafting,
+ *  generating or submitting it. */
+const MAKING_VERB = String.raw`(?:use[ds]?|using|help\w*|assist\w*|complet\w*|fill\w*|writ\w*|wrote|prepar\w*|answer\w*|draft\w*|generat\w*|submit\w*)`;
+/** Who or what made the application, as a question asks it, beside the making (the review of the audit's S-4): an agent
+ *  within a few words of a making verb, either way round ("use AI to complete", "written by ChatGPT", "complete this
+ *  application yourself"), or someone's help to make it ("Did anyone help you", "help you fill"). "Built automation
+ *  tools", "experience with test automation" or "worked with Claude" name no making of this application. */
+const MADE_BY = new RegExp(String.raw`\b${MADE_BY_AGENT}\b(?:\s+\w+){0,4}?\s+${MAKING_VERB}\b|\b${MAKING_VERB}\b(?:\s+\w+){0,4}?\s+${MADE_BY_AGENT}\b|\b(?:anyone|anybody|anything|someone|something|any\s+(?:one|person|tool|tools))\b(?:\s+\w+){0,3}?\s+(?:help|helped|assist|assisted)\b|\b(?:help|helped|assist|assisted)\s+(?:\w+\s+){0,2}?(?:fill|complet|writ|wrote|prepar|answer|draft)\w*`);
+
+/**
+ * Whether normalized text asks or states how the application was made, which only the person can say (the audit of
+ * 2026-11-06, S-4): a question whether AI, automation, an autofill, an extension or someone's help made it, or whether
+ * the person made it alone ("Did you use Claude to complete this application?", "Was this application filled in by an
+ * autofill tool?", "Did you complete this application yourself?"); or a first-person denial that automation or help
+ * was used, on a box or a choice (`statement`: a statement to tick), elsewhere only about the application or the form.
+ * Never answered, ticked or sent to an AI.
+ */
+export function asksHowApplicationMade(text: string, statement = false): boolean {
+  if (QUESTION_START.test(text) && THIS_APPLICATION.test(text) && MADE_BY.test(text)) return true;
+  // "AI tools", "machine learning software": AI, which the attestation's rule reads (ticked only in a run that used
+  // none), not a denial of automation.
+  const denial = text.replace(AI_QUALIFIED, '$1');
+  return FIRST_PERSON.test(denial) && AUTOMATION_DENIAL.test(denial) && (statement || THIS_APPLICATION.test(denial));
+}
+
+/** What binds the person beyond applying (the audit of 2026-11-06, S-5): arbitration, a jury-trial or class-action
+ *  waiver, a non-compete or non-solicitation covenant, a waiver or release of claims, giving up inventions. A waiver
+ *  counts only beside what it gives up in law (a right, a claim, a jury, a trial, a class, a lawsuit or a court: the
+ *  review of the audit's S-5), never "waive the 2-week notice" or "a waiting period waiver". */
+const BINDING_WAIVER = /\barbitrat\w*|\bjury\b|\bclass\s+action\b|\bnon\s?compet\w*|\bnoncompet\w*|\bnon\s?solicit\w*|\bnonsolicit\w*|\brestrictive\s+covenants?\b|\bwaiv(?:e|ed|es|er|ers|ing)\b(?:\s+\w+){0,4}?\s+(?:rights?|claims?|jury|trial|class|lawsuits?|suits?|courts?|litigation|legal\s+actions?)\b|\b(?:rights?|claims?|jury|trial|class|lawsuits?|courts?|litigation)\b(?:\s+\w+){0,4}?\s+waiv(?:e|ed|es|er|ers|ing)\b|\brelease\s+(?:of\s+)?(?:all\s+|any\s+)?(?:claims|liability)\b|\b(?:assign|relinquish|transfer|surrender|forfeit)\w*\s+(?:\w+\s+){0,4}?(?:inventions?|intellectual\s+property|copyrights?|patents?)\b|\binventions?\s+assignment\b/;
+/** Wording that asks the person to take on such a commitment ("Do you agree", "Are you willing to sign", "waive"). */
+const BINDING_ASK = /\b(?:agree\w*|accept\w*|consent\w*|sign\w*|willing|bound|abide|waive\w*|submit\w*\s+to|enter\w*\s+into|comply|relinquish\w*|assign\w*|forfeit\w*|release)\b/;
+
+/** The kinds a statement is ticked or chosen on, where a denial of automation is read alone. */
+const STATEMENT_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['checkbox', 'radio', 'select', 'combobox']);
+const HOW_MADE_RULE = { id: 'label.how-application-made', strength: 'strong' } as const;
+const BINDING_WAIVER_RULE = { id: 'label.binding-waiver', strength: 'strong' } as const;
+
+/** Whether normalized text asks the person to take on a binding waiver or covenant (BINDING_WAIVER with BINDING_ASK):
+ *  the person's, in any form but a required lone checkbox (which still follows the Consents mode), never an AI's. */
+export function namesBindingWaiver(text: string): boolean {
+  return BINDING_WAIVER.test(text) && BINDING_ASK.test(text);
+}
 /** An "I did not use AI" attestation as normalizeLabel writes it (no apostrophes: "didnt", "havent"), with a few words
  *  between the negation and the AI term, either way round; or a statement that it is the applicant's own (OWN_WORK). */
 const AI_ATTESTATION = new RegExp(String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+${AI_TERM}\b|\b${AI_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved)\b|${OWN_WORK}`);
@@ -769,6 +849,17 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     if (reads.some((read) => rule.re.test(read) && !(rule.unless?.test(read) ?? false))) {
       return { ...hitOf(rule, rule.category), needsUser: rule.needsUser };
     }
+  }
+  // The audit of 2026-11-06: how the application was made (S-4), on any field, and a binding waiver on anything but a
+  // lone checkbox (S-5), are the person's, before any consent reading. A required lone box still follows the Consents
+  // mode (consent.required), since the person cannot apply without it.
+  if (asksHowApplicationMade(text, STATEMENT_KINDS.has(kind))) {
+    return { ...hitOf(HOW_MADE_RULE, 'consent.aiAttestation'), consentKinds: ['consent.aiAttestation'],
+      needsUser: 'how-made' };
+  }
+  if (kind !== 'checkbox' && namesBindingWaiver(text)) {
+    return { ...hitOf(BINDING_WAIVER_RULE, 'consent.other'), consentKinds: ['consent.other'],
+      needsUser: 'binding-waiver' };
   }
   // Consent first only for wording that consents: a box that names a consent topic and nothing more ("Willing to
   // travel for marketing events") keeps §8.3's order, where the consent rules come last.

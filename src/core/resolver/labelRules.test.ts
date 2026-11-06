@@ -670,7 +670,10 @@ describe('unrecognised consent', () => {
   });
 
   it('hands a box the person must sign for unrecognised consent to the person', () => {
+    // The audit of 2026-11-06 (S-5): a binding waiver on anything but a lone checkbox is the person's, by its own cause.
     expect(labelHit('Sign below to agree to binding arbitration', 'text')).toMatchObject({ category: 'consent.other',
+      needsUser: 'binding-waiver' });
+    expect(labelHit('Sign below to agree to our privacy notice and terms', 'text')).toMatchObject({
       needsUser: 'kind-mismatch' });
   });
 });

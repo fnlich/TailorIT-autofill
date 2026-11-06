@@ -113,6 +113,8 @@ export async function beginRun(deps: RunBeginDeps, message: RunBegin,
   if ((deps.generation?.() ?? 0) === generation) {
     memo.lookup = lookup;
     deps.jobs?.remember(from, lookup, { generation, epoch, chosen, job });
+    // The audit of 2026-11-06 (M6): the job's id in the run's record too, for a Submit after the worker was stopped.
+    await deps.runs.noteAttached(run.runId, { jobId: lookup?.job?.id ?? null });
   }
   const [postingPage, settings] = await Promise.all([deps.policy.postingPage(message.applicationKey), deps.settings.content()]);
   const storedCopy = storedCopyState(lookup?.job?.postingText, deps.core);

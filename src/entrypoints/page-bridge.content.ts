@@ -7,13 +7,16 @@
  * Workable's, a Workday tenant's own myworkdayjobs.com: a board's route to a posting keeps it, round 2's E9), and on
  * the domains that also hold an employer's own pages (iCIMS, Taleo, SuccessFactors, Oracle Cloud, Workday's shared
  * myworkdaysite.com) only at a posting or its application form (the v3 Phase 6/7b review, S3). Elsewhere there is
- * nothing of the extension in the page's world to answer a command, not even a silent listener.
+ * nothing of the extension in the page's world to answer a command, not even a silent listener. The audit of
+ * 2026-11-06 (S-9): nor in a frame on those shared domains below an ancestor of its own origin that is no posting's page
+ * (an employer's HR page framing a posting-looking address to probe for the extension: address.ts framedByEmployerPage,
+ * reading the ancestors' addresses through `parent`, where another origin's throws).
  * It imports nothing of the app but the bridge, its protocol, the host list and the platforms' pure address parsers (no
  * zod, so no zod-setup: test/entrypoints.test.ts), and scripts/check-build.mjs holds its bundle to the bridge's size
  * budget. WXT's main-world wrapper is an anonymous function: the bridge adds no global to the page.
  */
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { bridgeInstallsAt } from '../adapters/address';
+import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
 import { installBridge } from '../page/bridge';
 import { ATS_MATCHES } from '../shared/hosts';
 
@@ -23,6 +26,9 @@ export default defineContentScript({
   allFrames: true,
   runAt: 'document_start',
   main() {
-    if (bridgeInstallsAt(String(document.location?.href ?? ''))) installBridge(document);
+    const href = String(document.location?.href ?? '');
+    if (bridgeInstallsAt(href) && !framedByEmployerPage(href, readableAncestors(document.defaultView))) {
+      installBridge(document);
+    }
   },
 });

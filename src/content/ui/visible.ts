@@ -5,13 +5,15 @@
  * no opacity under 1, no filter, no transform other than a 2D move or upscale, nothing painted over it (a layer that
  * lets clicks through included). So a frame its parent page hides (opacity 0, off-screen, a zero-height wrapper) has a
  * launcher that is not visible, and so has a launcher a page draws a decoy over.
- * - Only the extension's own controls are observed (the launcher, the policy card's two buttons, the Edit with AI
- *   buttons), never the page's
- *   elements: a page element is legitimately covered by our UI and by sticky headers, so observing it would block real
- *   fills.
+ * - Only the extension's own controls are observed (the launcher, the tab's controls, the policy card's two buttons,
+ *   the Edit with AI buttons, the in-page panel), never the page's elements: a page element is legitimately covered
+ *   by our UI and by sticky headers, so observing it would block real fills.
  * - The answer is the latest notification's. Chromium sends one at least VISIBILITY_DELAY_MS apart and only when
  *   something changes, so until the first one comes after observe() or reset(), nothing is known, which counts as not
  *   visible (fails closed). settled() waits for that first one, capped.
+ * - A trusted event on one of our controls counts only once the control has been seen without a break for
+ *   CONTROL_SEEN_MS (shownFor; the audit of 2026-11-06, S-1): a notification saying unseen, a reset() or an
+ *   unobserve() starts the time again.
  * - A browser without IntersectionObserver v2 never says visible (the extension's floor, Chrome 144, has it).
  * The only timer is dom/time.ts's deadline, as the cap of a wait.
  */
@@ -19,6 +21,14 @@ import { deadline, monotonicNow } from '../../dom/time';
 
 /** The observer's delay (Chromium's minimum for trackVisibility is 100 ms). */
 export const VISIBILITY_DELAY_MS = 100;
+/**
+ * How long one of our controls must have been seen, without a break, before a trusted event on it counts (the audit of
+ * 2026-11-06, S-1): the launcher, the tab's ×, grip and hide menu, the policy card, Edit with AI and its Generate, the
+ * in-page panel and its dock. A page that covers a control (a top-layer popover over the tab) and uncovers it as the
+ * pointer comes would otherwise harvest the click a person aimed at its own decoy; a cover starts the time again
+ * (shownFor). A click on a control not yet seen this long is refused, never counted later: the person clicks again.
+ */
+export const CONTROL_SEEN_MS = 600;
 /** settled() gives up after this long without a notification. */
 export const VISIBILITY_SETTLE_CAP_MS = 1_500;
 

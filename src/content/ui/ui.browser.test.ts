@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { isInOwnUi } from '../../dom/own-ui';
+import { deadline, monotonicNow } from '../../dom/time';
 import type { LauncherAction } from './launcher';
 import type { PolicyChoice } from './notices';
 import { mountPageUi, type PageUi } from './page-ui';
+import { CONTAINED_EVENTS } from './shadow';
+import { clickTimes, ready, uncoveredAsThePointerComes } from './ui.testkit';
+import { CONTROL_SEEN_MS } from './visible';
 
 /** A trusted click (Playwright's input) at an element of the closed root, aimed through the host's box. */
 async function trustedClick(ui: PageUi, target: Element): Promise<void> {
@@ -73,7 +77,7 @@ describe('the in-page UI', () => {
     ui.launcher.el.click();
     ui.launcher.el.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
     expect(actions).toEqual([]);
-    await seen(ui, ui.launcher.el);
+    await ready(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual(['fill']);
   });
@@ -85,7 +89,7 @@ describe('the in-page UI', () => {
     const bubbled: string[] = [];
     const listener = (event: Event) => bubbled.push(event.type);
     document.addEventListener('click', listener);
-    await seen(ui, ui.launcher.el);
+    await ready(ui, ui.launcher.el);
     try {
       await trustedClick(ui, ui.launcher.el);
     } finally {
@@ -106,9 +110,15 @@ describe('the in-page UI', () => {
     fill!.click();
     cancel!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(choices).toEqual([]);
-    // Clicked as soon as it shows: the choice counts once the watch has seen the button (S5).
+    // Clicked as soon as the watch sees it: refused, and never counted later (the audit of 2026-11-06, S-1).
+    await seen(ui, fill!);
     await trustedClick(ui, fill!);
-    await vi.waitFor(() => expect(choices).toEqual(['accepted']));
+    await deadline(CONTROL_SEEN_MS + 200);
+    expect(choices).toEqual([]);
+    // Seen for CONTROL_SEEN_MS without a break, the person's click counts.
+    await ready(ui, fill!);
+    await trustedClick(ui, fill!);
+    expect(choices).toEqual(['accepted']);
     expect(ui.shadow.querySelector('.card')!.textContent)
       .toContain('This posting says AI-assisted applications are not allowed. Filling is your decision.');
   });
@@ -212,7 +222,7 @@ describe('the in-page UI’s own controls, as a person can see them (Intersectio
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual([]);
     decoy.remove();
-    await seen(ui, ui.launcher.el);
+    await ready(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual(['fill']);
   });
@@ -231,6 +241,94 @@ describe('the in-page UI’s own controls, as a person can see them (Intersectio
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     expect(choices).toEqual([]);
   });
+
+  it('refuses the launcher’s click when the page uncovered it a moment before, and takes it once seen for 600 ms (the audit of 2026-11-06, S-1)',
+    async () => {
+      const root = formRoot();
+      const { ui, actions } = mount();
+      ui.anchorTo(root);
+      ui.setLauncher({ state: 'idle', action: 'fill' });
+      await ready(ui, ui.launcher.el);
+      const clicks = clickTimes(ui);
+      // The auditor's clicks came 80 to 430 ms after the decoy went: as soon as the watch saw the launcher again, and
+      // 350 ms on.
+      for (const after of [0, 350]) {
+        const gone = await uncoveredAsThePointerComes(ui, ui.launcher.el);
+        const wait = gone + after - monotonicNow();
+        if (wait > 0) await deadline(wait);
+        await trustedClick(ui, ui.launcher.el);
+        expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
+        expect(actions).toEqual([]);
+      }
+      // Seen without a break for CONTROL_SEEN_MS, the person's click counts.
+      await ready(ui, ui.launcher.el);
+      await trustedClick(ui, ui.launcher.el);
+      expect(actions).toEqual(['fill']);
+    });
+
+  it('refuses the policy card’s click when the page uncovered it a moment before (S-1)', async () => {
+    const root = formRoot();
+    const { ui, choices } = mount();
+    ui.anchorTo(root);
+    ui.showPolicyCard({ fromStoredCopy: false });
+    const fill = ui.shadow.querySelector<HTMLButtonElement>('.card button.action:not(.secondary)')!;
+    await ready(ui, fill);
+    const clicks = clickTimes(ui);
+    const gone = await uncoveredAsThePointerComes(ui, fill);
+    await trustedClick(ui, fill);
+    expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
+    // Never counted later either.
+    await deadline(CONTROL_SEEN_MS + 200);
+    expect(choices).toEqual([]);
+    await ready(ui, fill);
+    await trustedClick(ui, fill);
+    expect(choices).toEqual(['accepted']);
+  });
+
+  it('starts the time again whenever a control is covered: seen 600 ms in all, but not without a break, is not enough (S-1)',
+    async () => {
+      const root = formRoot();
+      const { ui, actions } = mount();
+      ui.anchorTo(root);
+      ui.setLauncher({ state: 'idle', action: 'fill' });
+      await ready(ui, ui.launcher.el);
+      const decoy = decoyOver(ui.launcher.el.getBoundingClientRect());
+      await vi.waitFor(() => expect(ui.visibleNow(ui.launcher.el)).toBe(false));
+      decoy.remove();
+      await seen(ui, ui.launcher.el);
+      expect(ui.readyNow(ui.launcher.el)).toBe(false);
+      await trustedClick(ui, ui.launcher.el);
+      expect(actions).toEqual([]);
+    });
+
+  it('keeps every composed event of the person’s use of our UI from the page’s bubbling listeners (the audit of 2026-11-06, S-8)',
+    async () => {
+      const root = formRoot();
+      const { ui } = mount();
+      ui.anchorTo(root);
+      const heard: string[] = [];
+      const types = ['textInput', 'drop', 'dragenter', 'dragover', 'dragleave', 'dragstart', 'drag', 'dragend',
+        'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend', 'paste', 'cut', 'copy',
+        'keydown', 'keyup', 'keypress', 'click', 'pointerdown', 'pointermove', 'mousemove', 'mouseover', 'focusin'];
+      const listen = (event: Event) => heard.push(event.type);
+      for (const type of types) {
+        document.addEventListener(type, listen);
+        window.addEventListener(type, listen);
+      }
+      try {
+        // Each as the browser dispatches it inside the closed root: composed, bubbling.
+        for (const type of types) {
+          ui.launcher.el.dispatchEvent(new Event(type, { bubbles: true, composed: true }));
+        }
+      } finally {
+        for (const type of types) {
+          document.removeEventListener(type, listen);
+          window.removeEventListener(type, listen);
+        }
+      }
+      expect(heard).toEqual([]);
+      for (const type of types) expect(CONTAINED_EVENTS as readonly string[]).toContain(type);
+    });
 
   it('knows nothing of a launcher just mounted until the watch’s first word, which then sees it (S5)', async () => {
     const root = formRoot();

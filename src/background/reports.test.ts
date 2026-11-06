@@ -266,3 +266,25 @@ describe('reports', () => {
     expect(left.filter((key) => key.startsWith('report:') || key.startsWith('frames:7:') || key.startsWith('runs:'))).toEqual([]);
   });
 });
+
+describe('a live report against the stored one (the audit of 2026-11-06)', () => {
+  it('never replaces the run’s own report of the same moment, but replaces a live one of that moment', async () => {
+    const worker = await startTestWorker({ token: tokenRecord() });
+    const runId = await beginRun(worker);
+    const final = frameReport(runId);
+    const keys = final.fields.map((field) => field.key);
+    const live = { ...final, status: 'fill-step' as const, filling: { current: keys[0], pending: keys } };
+    const live2 = { ...live, filling: { current: keys[0], pending: keys.slice(0, 1) } };
+    // The run's own report first, then a live one built at the same moment (on its way while the report went): kept.
+    expect(await putReport(worker, runId, final)).toEqual({ ok: true, data: {} });
+    expect(await worker.deliver({ v: 1, type: 'report/live', runId, report: live }, contentSender()))
+      .toEqual({ ok: true, data: {} });
+    expect(await fakeBrowser.storage.session.get('report:7:0')).toEqual({ 'report:7:0': final });
+    // A live report stored, then another live one of the same moment: the newer word.
+    const other = await startTestWorker({ token: tokenRecord() });
+    const run2 = await beginRun(other);
+    await other.deliver({ v: 1, type: 'report/live', runId: run2, report: { ...live, runId: run2 } }, contentSender());
+    await other.deliver({ v: 1, type: 'report/live', runId: run2, report: { ...live2, runId: run2 } }, contentSender());
+    expect(await fakeBrowser.storage.session.get('report:7:0')).toEqual({ 'report:7:0': { ...live2, runId: run2 } });
+  });
+});

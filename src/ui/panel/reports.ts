@@ -17,6 +17,8 @@
  * the tab is read again: a page without our script says no hello, and the read's frame check prunes what went. The
  * port also says when the connection or the settings changed (panel/changed), whichever window it happened in: each
  * bumps its count in `changes`, so the panel reads them again.
+ * The audit of 2026-11-06 (M1): every port opened again after a drop counts in `relinked`, so the panel reads its job
+ * card again: a worker Chrome stopped while idle answers it from the choices it kept in storage.session.
  */
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { PanelPortMessageSchema, type PageState } from '../../messaging/schemas';
@@ -59,12 +61,15 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
   link: LinkState;
   reconnect(): void;
   changes: PanelChanges;
+  /** How many times the port was opened again after a drop (or by hand): the worker may have restarted. */
+  relinked: number;
 } {
   const [shown, setShown] = useState<{ tabId: number | null; reports: readonly FrameReport[]; page: PageState | null }>(
     { tabId: null, reports: NO_REPORTS, page: null });
   const [changes, setChanges] = useState<PanelChanges>({ connection: 0, settings: 0, agent: 0 });
   const [link, setLink] = useState<LinkState>('live');
   const [generation, setGeneration] = useState(0);
+  const [relinked, setRelinked] = useState(0);
   const port = useRef<PortLike | null>(null);
   const watched = useRef<number | null>(null);
   /** Updates the port delivered for the watched tab since it was chosen: a one-shot read older than them is dropped. */
@@ -112,6 +117,7 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
         open(true);
       });
       if (rewatch && watched.current !== null) watch(next, watched.current, sideNow.current);
+      if (rewatch) setRelinked((count) => count + 1);
     };
     // The first port's watch comes from the tab effect below; a reconnect (by hand, or after a drop) watches again.
     open(generation > 0);
@@ -153,5 +159,6 @@ export function useTabReports(platform: PagePlatform, tabId: number | null, now:
     setGeneration((count) => count + 1);
   }, []);
   const current = shown.tabId === tabId && tabId !== null;
-  return { reports: current ? shown.reports : NO_REPORTS, page: current ? shown.page : null, link, reconnect, changes };
+  return { reports: current ? shown.reports : NO_REPORTS, page: current ? shown.page : null, link, reconnect, changes,
+    relinked };
 }

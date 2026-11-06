@@ -84,7 +84,8 @@ function drawnOverFields(runtime: ContentRuntime): Element[] {
 async function editButtons(runtime: ContentRuntime, count: number): Promise<HTMLButtonElement[]> {
   await vi.waitFor(() => expect(runtime.ui!.aiEditButtons).toHaveLength(count));
   const buttons = [...runtime.ui!.aiEditButtons];
-  for (const button of buttons) await vi.waitFor(() => expect(runtime.ui!.visibleNow(button)).toBe(true));
+  // A click counts once each has been seen for CONTROL_SEEN_MS (the audit of 2026-11-06, S-1).
+  for (const button of buttons) await vi.waitFor(() => expect(runtime.ui!.readyNow(button)).toBe(true), { timeout: 3_000 });
   return buttons;
 }
 
@@ -100,7 +101,7 @@ async function personRewrites(started: { fixture: Fixture; runtime: ContentRunti
   await personClicks(started.fixture, button);
   await vi.waitFor(() => expect(started.runtime.ui!.aiPrompt).not.toBeNull());
   const generate = started.runtime.ui!.aiPrompt!.generate;
-  await vi.waitFor(() => expect(started.runtime.ui!.visibleNow(generate)).toBe(true));
+  await vi.waitFor(() => expect(started.runtime.ui!.readyNow(generate)).toBe(true), { timeout: 3_000 });
   await personClicks(started.fixture, generate);
 }
 

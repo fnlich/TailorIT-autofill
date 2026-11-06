@@ -10,7 +10,8 @@
  *   back our file at the fill and is empty now was emptied by its upload widget, which took the file: verified, and
  *   never written again (the Phase 3 review, LC-3; a widget's text chips that clear themselves are Phase 4's). A file
  *   whose page says its upload failed (Adapter.uploadState, waited for at the write and read again now) is
- *   upload-failed, one it never showed done upload-not-confirmed: written, never verified.
+ *   upload-failed, one it never showed done upload-not-confirmed: written, never verified. One still pending at the
+ *   write that the page shows done by the read-back is read back as any file is (the audit of 2026-11-06, m2).
  * - finalGuard: guardReady reads back every value in the form, ours and the person's own alike, before the run says it
  *   is ready for review. A value holding a canary that we wrote is blocked: a text is set back to what it held before
  *   our write (a write with provenance rule guard.revert, through both Guards, cleared to empty if that earlier value
@@ -44,7 +45,8 @@ export function verifyWritten(fresh: ScanResult, written: WrittenField): FillRes
   if (written.value.kind === 'file' && written.upload !== null) {
     const now = written.uploadNow?.() ?? written.upload;
     if (written.upload === 'failed' || now === 'failed') return uploadRow(written.planned, 'failed');
-    if (written.upload === 'pending') return uploadRow(written.planned, 'pending');
+    // Pending at the write and shown done since (the audit of 2026-11-06, m2): read back as any file is, below.
+    if (written.upload === 'pending' && now !== 'confirmed') return uploadRow(written.planned, 'pending');
   }
   if (written.value.kind === 'file' && written.readBackVerified) {
     // Upload widgets empty their input once they have the file: the upload taken, not a mismatch (LC-3).

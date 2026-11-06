@@ -652,3 +652,46 @@ describe('the resume preview’s transfer (the review, 8)', () => {
     expect(dropped).toBe(true);
   });
 });
+
+describe('the audit of 2026-11-06 (M1, m7, m8)', () => {
+  it('reads the card again when its port reconnects (the worker may have restarted), keeping the card on show', async () => {
+    const worker = withForm();
+    const root = await open(worker);
+    expect(reads(worker, 'panel/job')).toBe(1);
+    worker.on('panel/job', () => new Promise(() => undefined));
+    await act(async () => worker.ports[0]!.disconnect());
+    await settle();
+    expect(worker.platform.connects).toBe(2);
+    expect(reads(worker, 'panel/job')).toBe(2);
+    expect(cardOf(root)?.dataset.jobState).toBe('found');
+  });
+
+  it("shows an Add's outcome and a custom answer only for the page they were made on", async () => {
+    const worker = withForm(jobCard({ job: null, tracked: null, match: null }));
+    const root = await open(worker);
+    await click(button(root, COPY.job.add));
+    expect(cardOf(root)?.textContent).toContain(COPY.job.addOutcomes.added);
+    await click(root.querySelector<HTMLElement>('[data-ask] summary'));
+    await typeInto(root.querySelector<HTMLTextAreaElement>('[data-ask] textarea')!, 'Why Northwind?');
+    await click(button(root, COPY.ask.submit));
+    expect(root.querySelector('[data-ask-answer]')).not.toBeNull();
+    // The tab moves on to another posting: neither belongs to it.
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [],
+      page: formPage({ letter: true, formKey: '0:doc-2' }) }));
+    await settle();
+    expect(cardOf(root)?.textContent).not.toContain(COPY.job.addOutcomes.added);
+    expect(root.querySelector('[data-ask-answer]')).toBeNull();
+  });
+
+  it("asks for the cover letter again when the card's job changes with the same resume", async () => {
+    const worker = withForm();
+    await open(worker);
+    expect(worker.sentOfType('panel/letter')).toHaveLength(1);
+    // The person chose another job for the page ("Autofill for another job"): the card's lookup names it.
+    worker.script.cards.set(5, jobCard({ job: { ...JOB, title: 'Backend Engineer, Payments' }, chosen: true }));
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0)],
+      page: formPage({ letter: true }) }));
+    await settle();
+    expect(worker.sentOfType('panel/letter')).toHaveLength(2);
+  });
+});

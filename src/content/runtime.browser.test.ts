@@ -336,6 +336,8 @@ describe('the launcher in the page', () => {
     });
     ui.launcher.el.click();
     expect(opened).toEqual([]);
+    // The person's click counts once the launcher has been seen for CONTROL_SEEN_MS (the audit of 2026-11-06, S-1).
+    await vi.waitFor(() => expect(ui.readyNow(ui.launcher.el)).toBe(true), { timeout: 3_000 });
     const host = ui.host.getBoundingClientRect();
     const box = ui.launcher.el.getBoundingClientRect();
     await userEvent.click(ui.host, { force: true, position: { x: box.left - host.left + 16, y: box.top - host.top + 16 } });
@@ -389,7 +391,7 @@ describe('the in-page panel', () => {
     const { fake, runtime } = await startInPage(document, true);
     expect(await runtime.fill()).toBe('review');
     expect(runtime.ui!.launcher.view.action).toBe('open-review');
-    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
+    await vi.waitFor(() => expect(runtime.ui!.readyNow(runtime.ui!.launcher.el)).toBe(true), { timeout: 3_000 });
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(runtime.ui!.panel?.open).toBe(true);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }]);
@@ -405,6 +407,8 @@ describe('the in-page panel', () => {
       .toEqual({ ok: false, error: 'bad_message' });
     expect(panel.querySelectorAll('li[data-field-key]')).toHaveLength(2);
 
+    // The panel's own clicks count once it has been seen for CONTROL_SEEN_MS (the audit of 2026-11-06, S-1).
+    await vi.waitFor(() => expect(runtime.ui!.readyNow(panel)).toBe(true), { timeout: 3_000 });
     await clickInUi(runtime, panel.querySelector('button.panel__close')!);
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown').at(-1)).toEqual({ v: 1, type: 'panel/shown', open: false });
@@ -419,7 +423,7 @@ describe('the in-page panel', () => {
     pageForm();
     const { fake, runtime } = await startInPage(document, true);
     expect(await runtime.fill()).toBe('review');
-    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
+    await vi.waitFor(() => expect(runtime.ui!.readyNow(runtime.ui!.launcher.el)).toBe(true), { timeout: 3_000 });
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(runtime.ui!.panel?.open).toBe(true);
     await fake.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
@@ -428,7 +432,7 @@ describe('the in-page panel', () => {
     expect(runtime.ui!.panel?.open).toBe(false);
     expect(fake.of('panel/shown')).toEqual([{ v: 1, type: 'panel/shown', open: true }, { v: 1, type: 'panel/shown', open: false }]);
     // v3 Phase 3: the launcher's tab hid while the panel was open; shown again, it is clicked once it is seen.
-    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
+    await vi.waitFor(() => expect(runtime.ui!.readyNow(runtime.ui!.launcher.el)).toBe(true), { timeout: 3_000 });
     await clickInUi(runtime, runtime.ui!.launcher.el);
     expect(fake.of('panel/open')).toHaveLength(1);
     expect(runtime.ui!.panel?.open).toBe(false);
@@ -440,7 +444,7 @@ describe('the in-page panel', () => {
     const { fake, runtime } = await startInPage(fixture.doc, false);
     expect(await runtime.fill()).toBe('review');
     expect(runtime.ui!.panelFits()).toBe(false);
-    await vi.waitFor(() => expect(runtime.ui!.visibleNow(runtime.ui!.launcher.el)).toBe(true));
+    await vi.waitFor(() => expect(runtime.ui!.readyNow(runtime.ui!.launcher.el)).toBe(true), { timeout: 3_000 });
     const frameBox = fixture.frame.getBoundingClientRect();
     const box = runtime.ui!.launcher.el.getBoundingClientRect();
     await userEvent.click(fixture.frame, { force: true, position: { x: box.left + box.width / 2, y: box.top + box.height / 2 } });

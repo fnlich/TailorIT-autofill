@@ -10,7 +10,10 @@ import { userEvent } from 'vitest/browser';
 import { COPY } from '../../shared/copy';
 import { EDGE_DEFAULT_TOP_PX, EDGE_KEY_STEP_PX, EDGE_MARGIN_PX } from './edge';
 import type { LauncherAction } from './launcher';
+import { deadline } from '../../dom/time';
 import { EDGE_CLEARANCE_PX, mountPageUi, type PageUi } from './page-ui';
+import { clickTimes, ready, uncoveredAsThePointerComes } from './ui.testkit';
+import { CONTROL_SEEN_MS } from './visible';
 
 /** The host's box: every point of the closed root is aimed through it. */
 const offsetOf = (ui: PageUi, target: Element) => {
@@ -68,7 +71,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     expect([edge.close.getAttribute('aria-label'), edge.grip.getAttribute('aria-label')])
       .toEqual([COPY.launcherHide.open, COPY.launcherMove]);
     // The launcher still does what its state says, on the person's click.
-    await seen(ui, ui.launcher.el);
+    await ready(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual(['fill']);
     // The worker's place, as a fraction of the window's height, kept within the window.
@@ -80,7 +83,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
 
   it('drags up and down only, by a trusted drag of its grip, and tells the worker where it was dropped', async () => {
     const { ui, edge, placed } = mount();
-    await seen(ui, edge.grip);
+    await ready(ui, edge.grip);
     // A page's own pointer events move nothing.
     edge.grip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true, clientY: 130, pointerId: 1 }));
     edge.grip.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, composed: true, clientY: 400, pointerId: 1 }));
@@ -102,7 +105,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
 
   it('moves by ArrowUp and ArrowDown on its grip', async () => {
     const { ui, edge, placed } = mount();
-    await seen(ui, edge.grip);
+    await ready(ui, edge.grip);
     edge.grip.focus();
     await userEvent.keyboard('{ArrowDown}');
     await userEvent.keyboard('{ArrowDown}');
@@ -117,7 +120,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
   it('opens its hide menu from the ×: until next visit stays in the page, on this site and everywhere go to the worker', async () => {
     for (const scope of ['next-visit', 'site', 'everywhere'] as const) {
       const { ui, edge, hidden } = mount();
-      await seen(ui, edge.close);
+      await ready(ui, edge.close);
       // A page's own click opens nothing.
       edge.close.click();
       expect(edge.menuOpen).toBe(false);
@@ -130,7 +133,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
       // Nor does a page's click on an item.
       item.click();
       expect([edge.menuOpen, edge.el.hidden]).toEqual([true, false]);
-      await seen(ui, item);
+      await ready(ui, item);
       await trustedClick(ui, item);
       await vi.waitFor(() => expect(edge.el.hidden).toBe(true));
       // Every scope reaches the worker: "until next visit" too, so the side panel can offer it back.
@@ -177,7 +180,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
       for (const el of drawn) expect(el.getBoundingClientRect().right).toBeLessThanOrEqual(tab.left - EDGE_CLEARANCE_PX + 1);
     });
     // The launcher in the tab is still seen, and takes the person's click.
-    await seen(ui, ui.launcher.el);
+    await ready(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual(['fill']);
     // With the tab hidden, the column goes back to the form's corner.
@@ -188,7 +191,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
 
   it('sends where a held arrow key left it once, at its release', async () => {
     const { ui, edge, placed } = mount();
-    await seen(ui, edge.grip);
+    await ready(ui, edge.grip);
     edge.grip.focus();
     await userEvent.keyboard('{ArrowDown>4/}');
     expect(edge.topPx()).toBe(EDGE_DEFAULT_TOP_PX + 4 * EDGE_KEY_STEP_PX);
@@ -200,7 +203,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     async () => {
       const { ui, edge } = mount();
       ui.setLauncherPrefs({ top: 1, hidden: false });
-      await seen(ui, edge.close);
+      await ready(ui, edge.close);
       await trustedClick(ui, edge.close);
       const menu = ui.shadow.querySelector<HTMLElement>('[role="menu"]')!;
       expect(menu.dataset.up).toBe('');
@@ -227,10 +230,10 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
 
   it('shows again after "Hide until next visit" when the person asks for it from the side panel', async () => {
     const { ui, edge } = mount();
-    await seen(ui, edge.close);
+    await ready(ui, edge.close);
     await trustedClick(ui, edge.close);
     const item = edge.menuItems.find((each) => each.dataset.hide === 'next-visit')!;
-    await seen(ui, item);
+    await ready(ui, item);
     await trustedClick(ui, item);
     await vi.waitFor(() => expect(edge.el.hidden).toBe(true));
     // The worker's prefs alone never undo it; the person's Show does.
@@ -240,9 +243,53 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     expect(edge.el.hidden).toBe(false);
   });
 
+  it('refuses its launcher’s, its ×’s and its grip’s events when the page uncovered the tab a moment before (the audit of 2026-11-06, S-1)',
+    async () => {
+      const { ui, edge, actions, placed } = mount();
+      for (const control of [ui.launcher.el, edge.close, edge.grip]) await ready(ui, control);
+      const clicks = clickTimes(ui);
+      // The auditor's scenario: a top-layer "Chat with us" over the tab, gone as the pointer comes onto it.
+      let gone = await uncoveredAsThePointerComes(ui, ui.launcher.el);
+      await trustedClick(ui, ui.launcher.el);
+      expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
+      expect(actions).toEqual([]);
+      gone = await uncoveredAsThePointerComes(ui, edge.close);
+      await trustedClick(ui, edge.close);
+      expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
+      expect(edge.menuOpen).toBe(false);
+      // A drag's start too.
+      await uncoveredAsThePointerComes(ui, edge.grip);
+      const from = offsetOf(ui, edge.grip);
+      await userEvent.dragAndDrop(ui.host, ui.host, { force: true, sourcePosition: from,
+        targetPosition: { x: from.x, y: from.y + 150 } } as never);
+      expect([edge.topPx(), placed]).toEqual([EDGE_DEFAULT_TOP_PX, []]);
+      // Seen without a break for CONTROL_SEEN_MS, each takes the person's event.
+      await ready(ui, ui.launcher.el);
+      await trustedClick(ui, ui.launcher.el);
+      expect(actions).toEqual(['fill']);
+      await ready(ui, edge.close);
+      await trustedClick(ui, edge.close);
+      expect(edge.menuOpen).toBe(true);
+    });
+
+  it('takes a hide menu item’s click only once the menu has been seen for 600 ms (S-1)', async () => {
+    const { ui, edge, hidden } = mount();
+    await ready(ui, edge.close);
+    await trustedClick(ui, edge.close);
+    const item = edge.menuItems.find((each) => each.dataset.hide === 'site')!;
+    // The moment the watch sees the item, a click on it is refused, and never counted later.
+    await vi.waitFor(() => expect(ui.visibleNow(item)).toBe(true));
+    await trustedClick(ui, item);
+    await deadline(CONTROL_SEEN_MS + 100);
+    expect([hidden, edge.menuOpen]).toEqual([[], true]);
+    await ready(ui, item);
+    await trustedClick(ui, item);
+    expect(hidden).toEqual(['site']);
+  });
+
   it('has no serious or critical accessibility violation, its hide menu open (axe, on a copy of its closed root)', async () => {
     const { ui, edge } = mount();
-    await seen(ui, edge.close);
+    await ready(ui, edge.close);
     await trustedClick(ui, edge.close);
     expect(edge.menuOpen).toBe(true);
     // axe cannot reach into a closed root: the tab and its menu are copied into an open one, with its stylesheets.

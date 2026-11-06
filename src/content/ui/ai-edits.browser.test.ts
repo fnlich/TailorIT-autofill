@@ -11,6 +11,8 @@ import { userEvent } from 'vitest/browser';
 import { COPY } from '../../shared/copy';
 import { AI_EDIT_PX } from './ai-edits';
 import { mountPageUi, type PageUi } from './page-ui';
+import { clickTimes, ready, uncoveredAsThePointerComes } from './ui.testkit';
+import { CONTROL_SEEN_MS } from './visible';
 
 const mounted: PageUi[] = [];
 afterEach(() => {
@@ -88,7 +90,7 @@ describe('the Edit with AI layer', () => {
   it('takes the person’s visible click only: never a click from script, never a disabled (busy) button', async () => {
     const { ui, box, edits } = setUp();
     const button = ui.aiEditButtons[0]!;
-    await vi.waitFor(() => expect(ui.visibleNow(button)).toBe(true));
+    await ready(ui, button);
     button.click();
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(ui.aiPrompt).toBeNull();
@@ -96,7 +98,7 @@ describe('the Edit with AI layer', () => {
     await trustedClick(ui, button);
     await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
     const prompt = ui.aiPrompt!;
-    await vi.waitFor(() => expect(ui.visibleNow(prompt.generate)).toBe(true));
+    await ready(ui, prompt.generate);
     // A script's click on Generate asks for nothing.
     prompt.generate.click();
     expect(edits).toEqual([]);
@@ -123,7 +125,7 @@ describe('Edit with AI’s instruction box (v3 Phase 3b)', () => {
     for (const type of ['keydown', 'keyup', 'input']) document.addEventListener(type, listen);
     try {
       const button = ui.aiEditButtons[0]!;
-      await vi.waitFor(() => expect(ui.visibleNow(button)).toBe(true));
+      await ready(ui, button);
       await trustedClick(ui, button);
       await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
       const prompt = ui.aiPrompt!;
@@ -133,7 +135,7 @@ describe('Edit with AI’s instruction box (v3 Phase 3b)', () => {
       await userEvent.keyboard('Make it shorter');
       expect(heard).toEqual([]);
       say(COPY.aiEdit.outcomes.sensitive);
-      await vi.waitFor(() => expect(ui.visibleNow(prompt.generate)).toBe(true));
+      await ready(ui, prompt.generate);
       // Enter generates; the refusal is said in the box, which stays open.
       await userEvent.keyboard('{Enter}');
       await vi.waitFor(() => expect(edits).toEqual(['why']));
@@ -148,5 +150,80 @@ describe('Edit with AI’s instruction box (v3 Phase 3b)', () => {
     } finally {
       for (const type of ['keydown', 'keyup', 'input']) document.removeEventListener(type, listen);
     }
+  });
+});
+
+describe('Edit with AI against a page that tricks the click or listens (the audit of 2026-11-06)', () => {
+  it('refuses its button’s and its Generate’s clicks when the page uncovered them a moment before (S-1)', async () => {
+    const { ui, edits } = setUp();
+    const button = ui.aiEditButtons[0]!;
+    await ready(ui, button);
+    const clicks = clickTimes(ui);
+    let gone = await uncoveredAsThePointerComes(ui, button);
+    await trustedClick(ui, button);
+    expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
+    expect(ui.aiPrompt).toBeNull();
+    await ready(ui, button);
+    await trustedClick(ui, button);
+    await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
+    const { generate } = ui.aiPrompt!;
+    await ready(ui, generate);
+    gone = await uncoveredAsThePointerComes(ui, generate);
+    await trustedClick(ui, generate);
+    expect(clicks.at(-1)! - gone).toBeLessThan(CONTROL_SEEN_MS);
+    expect(edits).toEqual([]);
+    await ready(ui, generate);
+    await trustedClick(ui, generate);
+    await vi.waitFor(() => expect(edits).toEqual(['why']));
+  });
+
+  it('keeps what the person types, pastes or drops into the box from the page’s bubbling listeners (S-8)', async () => {
+    const { ui } = setUp();
+    const types = ['keydown', 'keyup', 'keypress', 'input', 'beforeinput', 'textInput', 'paste', 'cut', 'copy',
+      'compositionstart', 'compositionupdate', 'compositionend', 'select', 'selectstart', 'dragstart', 'drag',
+      'dragend', 'dragenter', 'dragover', 'dragleave', 'drop'];
+    const heard: string[] = [];
+    const listen = (event: Event) => {
+      const data = (event as InputEvent).data ?? (event as ClipboardEvent).clipboardData?.getData('text/plain')
+        ?? (event as DragEvent).dataTransfer?.getData('text/plain') ?? '';
+      heard.push(`${event.type}:${data}`);
+    };
+    for (const type of types) {
+      document.addEventListener(type, listen);
+      window.addEventListener(type, listen);
+    }
+    try {
+      const button = ui.aiEditButtons[0]!;
+      await ready(ui, button);
+      await trustedClick(ui, button);
+      await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
+      const { textarea } = ui.aiPrompt!;
+      textarea.focus();
+      // The person's own typing: Chromium's keydown, keypress, beforeinput, textInput (whose data is the text), input.
+      await userEvent.keyboard('Secret wish');
+      expect(textarea.value).toBe('Secret wish');
+      // What else the browser dispatches in the box, as it would: composed and bubbling, with the text it carries.
+      const carrying = new DataTransfer();
+      carrying.setData('text/plain', 'Dropped wish');
+      textarea.dispatchEvent(new DragEvent('drop', { bubbles: true, composed: true, dataTransfer: carrying }));
+      for (const type of ['dragenter', 'dragover', 'dragleave', 'dragstart', 'drag', 'dragend']) {
+        textarea.dispatchEvent(new DragEvent(type, { bubbles: true, composed: true, dataTransfer: carrying }));
+      }
+      textarea.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, composed: true, clipboardData: carrying }));
+      for (const type of ['cut', 'copy']) {
+        textarea.dispatchEvent(new ClipboardEvent(type, { bubbles: true, composed: true, clipboardData: carrying }));
+      }
+      textarea.dispatchEvent(new InputEvent('textInput', { bubbles: true, composed: true, data: 'Typed wish' }));
+      for (const type of ['compositionstart', 'compositionupdate', 'compositionend']) {
+        textarea.dispatchEvent(new CompositionEvent(type, { bubbles: true, composed: true, data: 'Composed wish' }));
+      }
+      textarea.dispatchEvent(new Event('selectstart', { bubbles: true, composed: true }));
+    } finally {
+      for (const type of types) {
+        document.removeEventListener(type, listen);
+        window.removeEventListener(type, listen);
+      }
+    }
+    expect(heard).toEqual([]);
   });
 });

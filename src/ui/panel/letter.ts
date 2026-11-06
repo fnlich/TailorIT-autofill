@@ -3,8 +3,9 @@
  * (panel/letter {write: false}: nothing is written), and Write it now (panel/letter {write: true}). States only: the
  * worker never sends a letter's id or a word of it.
  *
- * It asks once per read key: the tab, the form's document, the connection, and the resume the card attaches (a Change
- * asks again), and only while the card has answered. A row of the tab's report that attached a letter says more than
+ * It asks once per read key: the tab, the form's document, the connection, the job the card names (the audit's m8: a
+ * job chosen with "Autofill for another job" has its own letter) and the resume the card attaches (a Change asks
+ * again), and only while the card has answered. A row of the tab's report that attached a letter says more than
  * an earlier answer (the fill's own: the person's letter, or one TailorIT's AI wrote and they never edited). Write it
  * now's outcome is kept for its key, so the row says Ready or Couldn't write it until the key moves.
  */
@@ -47,7 +48,8 @@ export function useTabLetter(platform: PagePlatform, tabId: number | null, optio
   const { base, card } = options;
   const answered = card !== null && card.state === 'answered' ? card : null;
   const key = tabId === null || base === null || answered === null ? null
-    : `${base}|${answered.resume?.label ?? ''}|${answered.resume?.reason ?? ''}`;
+    : JSON.stringify([base, answered.job?.title ?? null, answered.job?.company ?? null, answered.chosen === true,
+      answered.resume?.label ?? '', answered.resume?.reason ?? '']);
   const [answer, setAnswer] = useState<{ key: string; outcome: LetterOutcome | null } | null>(null);
   const [written, setWritten] = useState<{ key: string; busy: boolean; outcome: LetterOutcome | null } | null>(null);
 

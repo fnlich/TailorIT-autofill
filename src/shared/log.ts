@@ -220,6 +220,8 @@ export const LOG_CODES = [
   'agent.finished',
   'agent.report-failed',
   'agent.refused',
+  // The audit of 2026-11-06 (M5, m14): the agent paused itself (why, as its place in AGENT_PAUSES).
+  'agent.paused',
   'signin.credential',
   'signin.refused',
   'content.agent-refused',
@@ -238,6 +240,11 @@ export const LOG_CODES = [
   // page the worker injected ending its run on the worker's word.
   'sites.stopped',
   'content.site-stopped',
+  // The audit of 2026-11-06 (C2): the side panel's choices could not be kept in storage.session (M1); a private
+  // (incognito) tab's RunState kept for that tab alone, and its launcher change kept for its page alone (S-6).
+  'job.choices-unstored',
+  'runstate.private',
+  'launcher.private',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

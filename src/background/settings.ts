@@ -7,7 +7,11 @@
  * answers mode); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
  * switches, the offer to save answers) with frame/hello and run/begin, and again with settings/changed whenever the
  * person saves them (pushSettings: every registered frame with a form, so a run in progress reads the Next mode as it
- * is now: the Phase 5 review, C-S2); they never read storage.
+ * is now: the Phase 5 review, C-S2), each frame the settings as they act for it (contentSettingsFor: the agent's tab's
+ * documents their own, the audit's m1); they never read storage.
+ * The audit of 2026-11-06 (M4): a page's save names the settings it last read (`base`), and only what it changed from
+ * them is applied to the settings stored now (mergeSettings), so the options page left open never puts back a mode the
+ * side panel's gear changed meanwhile.
  */
 import {
   DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, type Settings,
@@ -18,12 +22,14 @@ import {
   SETTINGS_KEY, SettingsSchema, SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, type ContentSettings,
 } from '../shared/settings';
 import { frameTarget, type FrameEntry } from './frames';
+import { createKeyedQueue } from './locks';
 
 /** The settings, as the worker reads and saves them. */
 export interface SettingsStore {
   get(): Promise<Settings>;
-  /** Stores checked settings and answers them as stored. */
-  save(settings: Settings): Promise<Settings>;
+  /** Stores checked settings and answers them as stored. With `base` (the settings the page last read), only what
+   *  `settings` changed from it is applied to the stored settings (mergeSettings, the audit's M4). */
+  save(settings: Settings, base?: Settings): Promise<Settings>;
   /** The part a content script receives. */
   content(): Promise<ContentSettings>;
 }
@@ -58,6 +64,27 @@ export function contentSettingsOf(settings: Settings, options: ContentHolds = {}
     offerToSaveAnswers: settings.offerToSaveAnswers };
 }
 
+/** A plain object (not an array): its keys are merged one by one. */
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * The audit of 2026-11-06 (M4): `next` as a change of `base` applied to `current`. Every setting (a leaf: a choice, a
+ * switch, the pre-approved list as a whole) that `next` holds as `base` did is taken from `current`, which may have
+ * changed since the page read `base`; every one the page changed is taken from `next`.
+ */
+export function mergeSettings(current: Settings, base: Settings, next: Settings): Settings {
+  const merge = (now: unknown, was: unknown, wanted: unknown): unknown => {
+    if (isRecord(now) && isRecord(was) && isRecord(wanted)) {
+      const out: Record<string, unknown> = { ...now };
+      for (const key of Object.keys(wanted)) out[key] = merge(now[key], was[key], wanted[key]);
+      return out;
+    }
+    return JSON.stringify(wanted) === JSON.stringify(was) ? now : wanted;
+  };
+  return merge(current, base, next) as Settings;
+}
+
 /** The settings as they act now (v3 Phase 3 review): every mode has shipped since v3 Phase 5 (Sign-in), so a stored
  *  value is taken as it is. Until then this kept Sign-in, and before v3 Phase 4 Submit, Manual on every read and save,
  *  so no install holds an Auto chosen before it acted. */
@@ -68,6 +95,8 @@ export function withShippedModes(settings: Settings): Settings {
 /** The store over storage.local, read once and kept in memory. */
 export function createSettingsStore(local: StorageArea): SettingsStore {
   let cached: Settings | null = null;
+  /** One save at a time: each merges onto what the one before stored (M4). */
+  const saves = createKeyedQueue();
 
   const store: SettingsStore = {
     async get() {
@@ -109,12 +138,15 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       }
       return cached;
     },
-    async save(settings) {
-      const checked = withShippedModes(SettingsSchema.parse(settings));
-      await local.set({ [SETTINGS_KEY]: checked });
-      cached = checked;
-      log('settings.saved');
-      return checked;
+    save(settings, base) {
+      return saves.run(SETTINGS_KEY, async () => {
+        const wanted = base === undefined ? settings : mergeSettings(await store.get(), base, settings);
+        const checked = withShippedModes(SettingsSchema.parse(wanted));
+        await local.set({ [SETTINGS_KEY]: checked });
+        cached = checked;
+        log('settings.saved');
+        return checked;
+      });
     },
     async content() {
       // Without the connection's word, Sign-in acts as Manual (index.ts passes the holds it knows).
@@ -124,16 +156,16 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
   return store;
 }
 
-/** Tells every registered frame with a form the content settings just saved (settings/changed). A frame that cannot be
- *  reached is skipped: its next run reads them at run/begin. Answers how many frames received them. `agentTab`: the
- *  auto-apply agent's tab, whose frames get the agent's settings (v3 Phase 5). */
+/** Tells every registered frame with a form the content settings as they act now for it (settings/changed). A frame
+ *  that cannot be reached is skipped: its next run reads them at run/begin. Answers how many frames received them.
+ *  `contentFor`: the frame's own (index.ts contentSettingsFor), so the auto-apply agent's tab gets the agent's
+ *  settings for its task's application, with Submit on Manual in a document but the one the job's Submit was pressed
+ *  in (v3 Phase 5; the audit of 2026-11-06, m1: the whole tab got Submit on Auto before). */
 export async function pushSettings(deps: { session: StorageArea; tabs: Pick<WorkerPlatform['tabs'], 'sendToFrame'> },
-  settings: Settings, options: Omit<ContentHolds, 'agent'> & { agentTab?: number | null } = {}): Promise<number> {
-  const { agentTab = null, ...holds } = options;
+  contentFor: (frame: FrameEntry) => Promise<ContentSettings>): Promise<number> {
   const frames = (Object.values(await deps.session.getMany('frames:')) as FrameEntry[]).filter((frame) => frame.hasForm);
   const reached = await Promise.all(frames.map(async (frame) => {
-    const message = { v: 1, type: 'settings/changed',
-      settings: contentSettingsOf(settings, { ...holds, agent: frame.tabId === agentTab }) } as const;
+    const message = { v: 1, type: 'settings/changed', settings: await contentFor(frame) } as const;
     try {
       await deps.tabs.sendToFrame(frame.tabId, message, frameTarget(frame));
       return true;

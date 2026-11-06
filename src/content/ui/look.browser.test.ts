@@ -106,7 +106,8 @@ describe('the page’s own UI in TailorIT’s look', () => {
     ui.setLauncher({ state: 'review', action: 'open-review', count: 5 });
     const badge = ui.launcher.el.querySelector<HTMLElement>('.badge')!;
     expect(getComputedStyle(badge).pointerEvents).toBe('none');
-    await vi.waitFor(() => expect(ui.visibleNow(ui.launcher.el)).toBe(true));
+    // A click counts once the launcher has been seen for CONTROL_SEEN_MS (the audit of 2026-11-06, S-1).
+    await vi.waitFor(() => expect(ui.readyNow(ui.launcher.el)).toBe(true), { timeout: 3_000 });
     const own = ui.launcher.el.getBoundingClientRect();
     const drawn = badge.getBoundingClientRect();
     // The badge's corner past the launcher's right and top edges.
@@ -177,7 +178,7 @@ describe('the page’s own UI in TailorIT’s look', () => {
     const strip = panel.querySelector<HTMLElement>('.tia-run-status')!;
     expect([strip.dataset.tone, getComputedStyle(strip).borderRadius, getComputedStyle(strip).backgroundColor])
       .toEqual(['attention', '12px', 'rgb(248, 244, 229)']);
-    await vi.waitFor(() => expect(ui.visibleNow(panel)).toBe(true));
+    await vi.waitFor(() => expect(ui.readyNow(panel)).toBe(true), { timeout: 3_000 });
     // The row unfolded first, by the person's own click (rows are folded at first, v3 Phase 3 review).
     const toggle = panel.querySelector<HTMLButtonElement>('li[data-field-key="why"] button.tia-row__toggle')!;
     const fold = toggle.getBoundingClientRect();

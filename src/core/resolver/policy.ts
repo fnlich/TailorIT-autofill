@@ -524,6 +524,10 @@ export interface ConsentContext {
    *  plainly agrees, which its tick chooses; 'pending' while its options are not read; null or absent for a box, or a
    *  radio group of Yes and No (its Yes chosen by polarity). */
   choice?: string | 'pending' | null;
+  /** The field is a list, a combobox or a radio group (absent: a box or a text). With no `choice`, it offers an option
+   *  that does not agree (a Yes and a No): a question, whose Yes consent.required never picks (the audit of
+   *  2026-11-06, S-5). */
+  list?: boolean;
 }
 
 /** A consent's tick (or Yes, or its one option that agrees: `option`), by the rule that gives it. */
@@ -563,6 +567,12 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
     return setting !== null && (all || settings.preapprovedConsent.includes(setting));
   });
   if (!approved && !consent.required) return none('consent-optional-unticked', false);
+  // A Yes/No question is a question, not a consent (SPEC-AMENDMENTS §11 Decision 2): consent.required never chooses
+  // the agreeing answer of a list that also offers one that does not agree; it is the person's (the audit of
+  // 2026-11-06, S-5). A list whose only option agrees, like a lone box, is still chosen.
+  if (!approved && consent.list === true && typeof option !== 'string') {
+    return none('consent-requires-user', true, true);
+  }
   if (category === 'consent.signature') {
     const name = profile.identity.fullName.trim();
     if (name === '') return none('no-profile-value');
