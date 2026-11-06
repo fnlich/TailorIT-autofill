@@ -114,13 +114,21 @@ export function createReports(deps: ReportsDeps): Reports {
   /** The side panels (not the report page) and the tab each shows (v3 Phase 3). */
   const sides = new Map<PortLike, number>();
 
-  /** The tab's page state (pageOfTab), and whether a page on an applicant-tracking host waits for a reload: no frame of
-   *  ours said hello there. */
+  /** The tab's page state (pageOfTab), and, where no frame of ours said hello: a page on an applicant-tracking host
+   *  whose address the content script says hello at (a posting, its form) waits for a reload; any other page there (a
+   *  board, a sign-in that names no job, an employer's own pages, where the content script says nothing: the v3 Phase
+   *  6/7b review's S3) shows no application form, as it did when every page said hello (round 2, K1). */
   async function pageNow(tabId: number): Promise<PageState> {
     const read = await pageOfTab(session, tabId);
     const submitted = await deps.submitted?.(tabId);
     const page = submitted === undefined ? read : { ...read, submitted };
-    if (page.support !== 'none' || deps.tabs.onAtsHost === undefined) return page;
+    if (page.support !== 'none') return page;
+    if (deps.tabs.atsPageOf !== undefined) {
+      const shown = await deps.tabs.atsPageOf(tabId).catch(() => null);
+      return shown?.page === 'posting' ? { ...page, reload: true } : shown?.page === 'other' ? { ...page, support: 'no-form' }
+        : page;
+    }
+    if (deps.tabs.onAtsHost === undefined) return page;
     return (await deps.tabs.onAtsHost(tabId).catch(() => false)) ? { ...page, reload: true } : page;
   }
 

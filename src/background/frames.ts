@@ -79,11 +79,12 @@ export async function framesOfTab(session: StorageArea, tabId: number): Promise<
 
 /** Whether an address shows a posting with no form that a platform's own parser reads (v3 Phase 3b): Lever's and
  *  Ashby's overviews, as the adapter's parser and TailorIT's parseAtsUrl both read them (the lookup on load's own rule,
- *  job-cards.ts recognisedPosting); never Workday, which has no parser yet. */
+ *  job-cards.ts recognisedPosting). A posting TailorIT's parseAtsUrl does not read (Workday's, and those of the
+ *  platforms ahead of its contract, v3 Phase 7b) is no card frame here: the card reads through its form frame. */
 export function postingAddress(url: string): boolean {
   try {
     const ref = applicationOf(new URL(url));
-    return ref !== null && ref.page === 'posting' && ref.platform !== 'workday' && parseAtsUrl(url) !== null;
+    return ref !== null && ref.page === 'posting' && parseAtsUrl(url) !== null;
   } catch {
     return false;
   }

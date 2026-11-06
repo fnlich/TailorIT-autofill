@@ -1,0 +1,166 @@
+<!doctype html>
+<!--
+  Synthetic (v3 Phase 6, Sign-in mode Auto): a Workday tenant's account views, drawn with the markup of the public capture
+  of 2026-11-04/05 (fixtures/workday/workday-landing.html, -sign-in.html, -create-account.html, -forgot-password.html:
+  the same data-automation-id names, the same nesting), served at
+  https://tailoritfixture.wd5.myworkdayjobs.com/en-US/careers/job/x/Fixture-Engineer_JR-0000001/apply/applyManually, read
+  by the Workday adapter:
+  - main > [data-automation-id=applyFlowPage] with the progress bar, holding [data-automation-id=signInContent];
+  - the landing: Apple's and Google's buttons (never pressed) and "Sign in with email", which shows the Sign In view in
+    place (no change of address);
+  - the Sign In and Create Account views: form[data-automation-id=signInFormo] with no method and no action, its email
+    and password boxes (and Create Account's Verify New Password and its unrequired createAccountCheckbox behind its
+    visible label), and the visible div[data-automation-id=click_filter][role=button] drawn over the aria-hidden submit
+    button; the beecatcher honeypot beside the form;
+  - the Forgot Password view: its email box and the Reset Password click_filter (a reset email: never pressed).
+  ?view=signin, ?view=create and ?view=forgot open on that view; the landing otherwise.
+  The page's own script stands for Workday's: a click on the Sign In or Create Account click_filter reads the form (does
+  it hold the test's dummies, is the terms box ticked, is the honeypot empty: data-email-ok, data-password-ok,
+  data-confirm-ok, data-terms, data-bee-empty, data-submits) and clicks the hidden submit button as Workday's own does,
+  letting the browser's own submission go: the form has no method, so it would go as a GET with the password in the
+  address (the boxes carry names here, unlike Workday's, so it would hold them). Whether it went is data-native-get:
+  "prevented" while Sign-in Auto watches its press (guardNativeGet), "sent" otherwise. Then the account view leaves and
+  the next step shows in the same flow page: "My Information", First Name and Last Name. Nothing is ever posted.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sign In</title>
+  <style>
+    body { margin: 0; background: #fff; color: #333d47; font: 14px/1.5 system-ui, sans-serif; }
+    main { max-width: 640px; margin: 24px auto; padding: 0 16px; }
+    ol { display: flex; gap: 12px; list-style: none; padding: 0; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input[type="text"], input[type="password"] { display: block; width: 100%; box-sizing: border-box; padding: 6px;
+      border: 1px solid #7b858f; border-radius: 4px; }
+    .face-holder { position: relative; display: inline-block; margin-top: 16px; }
+    [data-automation-id="click_filter"] { position: absolute; inset: 0; cursor: pointer; }
+    .face-holder button { padding: 10px 20px; background: #0875e1; color: #fff; border: 0; border-radius: 20px; }
+    .terms { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+    .terms input { opacity: 0; width: 16px; height: 16px; margin: 0; }
+    .bee { position: absolute; width: 1px; height: 0; overflow: hidden; border: 0; padding: 0; }
+    .social { display: block; margin-top: 8px; padding: 8px 16px; }
+  </style>
+</head>
+<body data-email-ok="" data-password-ok="" data-confirm-ok="" data-terms="" data-bee-empty="" data-submits="0"
+  data-native-get="">
+  <main>
+    <div data-automation-id="applyFlowPage">
+      <button type="button" data-automation-id="backToJobPosting" role="link">Back to Job Posting</button>
+      <h2 data-automation-id="jobTitleHeading">Fixture Engineer</h2>
+      <div aria-label="Application Progress">
+        <ol data-automation-id="progressBar">
+          <li data-automation-id="progressBarActiveStep"><label aria-live="polite">current step 1 of 3</label>
+            <label>Create Account/Sign In</label></li>
+          <li data-automation-id="progressBarInactiveStep"><label aria-live="polite">step 2 of 3</label>
+            <label>My Information</label></li>
+          <li data-automation-id="progressBarInactiveStep"><label aria-live="polite">step 3 of 3</label>
+            <label>Review</label></li>
+        </ol>
+      </div>
+      <div data-automation-id="signInContent" id="view"></div>
+      <input data-automation-id="beecatcher" id="00000000-0000-4000-8000-000000000001" name="website" type="text"
+        class="bee" aria-label="Enter website. This input is for robots only, do not enter if you're human.">
+    </div>
+  </main>
+  <script>
+    (() => {
+      const EMAIL = 'alex.rivera@example.com';
+      const PASSWORD = 'e2e-dummy-password-not-real';
+      const body = document.body;
+      const view = document.getElementById('view');
+      /** An element with its attributes and children: the page draws each view by script, as Workday's React does. */
+      const make = (tag, attributes = {}, ...children) => {
+        const el = document.createElement(tag);
+        for (const [name, value] of Object.entries(attributes)) el.setAttribute(name, value);
+        el.append(...children);
+        return el;
+      };
+      const field = (id, label, type, automation, autocomplete) => make('div', { 'data-automation-id': `formField-${automation}` },
+        make('label', { for: id }, make('span', {}, label, make('abbr', { 'aria-hidden': 'true' }, '*'))),
+        make('input', { type, id, name: automation, 'data-automation-id': automation, 'aria-required': 'true',
+          autocomplete }));
+      /** Workday's press control: the visible click_filter over its aria-hidden submit button. */
+      const face = (label, hiddenId, words) => make('div', { 'data-automation-id': 'noCaptchaWrapper' },
+        make('div', { class: 'face-holder' },
+          make('div', { 'aria-label': label, role: 'button', tabindex: '0', 'data-automation-id': 'click_filter' }),
+          make('button', { type: 'submit', 'data-automation-id': hiddenId, tabindex: '-2', 'aria-hidden': 'true' }, words)));
+      const views = {
+        landing: () => [make('h2', { id: 'authViewTitle' }, 'Sign In'),
+          make('button', { 'data-automation-id': 'AppleSignInButton', class: 'social' }, 'Sign in with Apple'),
+          make('button', { 'data-automation-id': 'GoogleSignInButton', class: 'social' }, 'Sign in with Google'),
+          make('p', {}, 'OR'),
+          make('button', { 'data-automation-id': 'SignInWithEmailButton', class: 'social' }, 'Sign in with email')],
+        signin: () => [make('h3', { id: 'authViewTitle' }, 'Sign In'),
+          make('form', { 'data-automation-id': 'signInFormo' }, field('input-1', 'Email Address', 'text', 'email', 'email'),
+            field('input-2', 'Password', 'password', 'password', 'current-password'),
+            face('Submit', 'signInSubmitButton', 'Sign In')),
+          make('button', { 'data-automation-id': 'createAccountLink' }, 'Create Account'),
+          make('button', { 'data-automation-id': 'forgotPasswordLink' }, 'Forgot your password?')],
+        create: () => [make('h3', { id: 'authViewTitle' }, 'Create Account'),
+          make('form', { 'data-automation-id': 'signInFormo' }, field('input-1', 'Email Address', 'text', 'email', 'email'),
+            field('input-2', 'Password', 'password', 'password', 'new-password'),
+            field('input-3', 'Verify New Password', 'password', 'verifyPassword', 'new-password'),
+            make('div', { 'data-automation-id': 'formField-' }, make('label', { class: 'terms', for: 'input-4' },
+              make('input', { id: 'input-4', type: 'checkbox', 'aria-checked': 'false',
+                'data-automation-id': 'createAccountCheckbox' }),
+              'I agree to creating this account to allow me to apply for positions with Fixture.')),
+            face('Create Account', 'createAccountSubmitButton', 'Create Account')),
+          make('button', { 'data-automation-id': 'signInLink' }, 'Sign In')],
+        forgot: () => [make('h3', { id: 'authViewTitle' }, 'Forgot Password'),
+          make('form', { 'data-automation-id': 'signInFormo' }, field('input-1', 'Email Address', 'text', 'email', 'email'),
+            face('Reset Password', 'resetPasswordButton', 'Reset Password')),
+          make('button', { 'data-automation-id': 'signInLink' }, 'Sign In')],
+      };
+      const show = (name) => {
+        view.replaceChildren(...views[name]());
+        document.title = name === 'create' ? 'Create Account' : name === 'forgot' ? 'Forgot Password' : 'Sign In';
+      };
+      const value = (id) => document.querySelector(`input[data-automation-id="${id}"]`)?.value ?? '';
+      /** The next step, in the same flow page: My Information. */
+      const next = () => {
+        view.remove();
+        const step = make('form', { id: 'my-information' }, make('h3', {}, 'My Information'),
+          make('label', { for: 'first' }, 'First Name'), make('input', { id: 'first', type: 'text' }),
+          make('label', { for: 'last' }, 'Last Name'), make('input', { id: 'last', type: 'text' }));
+        document.querySelector('[data-automation-id="applyFlowPage"]').append(step);
+        document.title = 'My Information';
+      };
+      document.addEventListener('click', (event) => {
+        const target = event.target.closest('[data-automation-id]');
+        const id = target?.getAttribute('data-automation-id');
+        if (id === 'SignInWithEmailButton') show('signin');
+        if (id === 'createAccountLink') show('create');
+        if (id === 'forgotPasswordLink') show('forgot');
+        if (id === 'signInLink') show('signin');
+        if (id !== 'click_filter') return;
+        const hidden = target.parentElement.querySelector('button[aria-hidden="true"]');
+        const kind = hidden.getAttribute('data-automation-id');
+        if (kind === 'resetPasswordButton') {
+          body.dataset.reset = 'pressed';
+          return;
+        }
+        body.dataset.submits = String(Number(body.dataset.submits) + 1);
+        body.dataset.emailOk = String(value('email') === EMAIL);
+        body.dataset.passwordOk = String(value('password') === PASSWORD);
+        body.dataset.confirmOk = String(kind === 'createAccountSubmitButton' ? value('verifyPassword') === PASSWORD : '');
+        body.dataset.terms = String(document.querySelector('input[data-automation-id="createAccountCheckbox"]')?.checked ?? '');
+        body.dataset.beeEmpty = String(value('beecatcher') === '');
+        // As Workday's script presses its own hidden button, the browser's own submission goes unless something stops
+        // it: whether it did is read once every listener ran.
+        const form = hidden.form;
+        const seen = (submitted) => {
+          setTimeout(() => {
+            body.dataset.nativeGet = submitted.defaultPrevented ? 'prevented' : 'sent';
+          }, 0);
+        };
+        form.addEventListener('submit', seen, { once: true });
+        hidden.click();
+        next();
+      });
+      const wanted = new URLSearchParams(location.search).get('view');
+      show(wanted === 'signin' || wanted === 'create' || wanted === 'forgot' ? wanted : 'landing');
+    })();
+  </script>
+</body>
+</html>

@@ -37,8 +37,14 @@ describe('entrypoints', () => {
     }
   });
 
-  it('keep the page-world bridge to the bridge, its protocol and the host list: no zod, no React, no browser API', () => {
-    expect(importsOf(PAGE_BRIDGE)).toEqual(['wxt/utils/define-content-script', '../page/bridge', '../shared/hosts']);
+  it('keep the page-world bridge to the bridge, its protocol, the hosts and the address parsers: no zod, no React', () => {
+    expect(importsOf(PAGE_BRIDGE)).toEqual(['wxt/utils/define-content-script', '../adapters/address', '../page/bridge',
+      '../shared/hosts']);
+    // The v3 Phase 6/7b review (S3): the address reading the bridge installs by holds no adapter and no DOM code.
+    const address = importsOf(join(ENTRYPOINTS, '..', 'adapters', 'address.ts'));
+    expect(address.filter((source) => !/^\.\/[a-z]+\/url$/.test(source))).toEqual(['../core/enums', '../shared/hosts',
+      './application-key']);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'shared', 'hosts.ts'))).toEqual(['../core/enums']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'bridge.ts'))).toEqual(['../dom/bridge-protocol']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'bridge-protocol.ts'))).toEqual([]);
   });

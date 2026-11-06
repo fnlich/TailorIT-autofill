@@ -1,0 +1,4 @@
+{
+  "https://career2.successfactors.eu/career?company=danfossas&site=&lang=en_GB&requestParams=REDACTED&login_ns=register&career_job_req_id=48659&_s.crb=REDACTED": "fixtures/successfactors/danfoss-create-account.html",
+  "https://jobs.danfoss.com/widgets/cookiemanageriframe/": "fixtures/successfactors/danfoss-create-account.third-party-frame.html"
+}

@@ -1,0 +1,27 @@
+{
+  "fixture": "workday/workday-landing",
+  "source": "https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/USA%2C-CA%2C-Pleasanton/Senior-Product-Manager--Technical_JR-0110787/apply/applyManually",
+  "captured": "2026-11-05T05:48:22.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": "sign-in",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": {
+      "wall": "sign-in",
+      "control": "button[data-automation-id=\"SignInWithEmailButton\"]"
+    },
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"utilityButtonSignIn\"]",
+      "[data-automation-id^=\"navigationItem-\"]",
+      "[data-automation-id=\"AppleSignInButton\"]",
+      "[data-automation-id=\"GoogleSignInButton\"]"
+    ],
+    "pressable": [
+      "button[data-automation-id=\"SignInWithEmailButton\"]"
+    ]
+  }
+}

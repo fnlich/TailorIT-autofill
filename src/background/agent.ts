@@ -55,7 +55,7 @@ import {
 } from '../contract/tailorit';
 import { ok, type Answer } from '../messaging/envelope';
 import type { AgentBlock, AgentStatus, EntryAnswer, EntryBlock } from '../messaging/schemas';
-import type { AgentAlarms, AgentWindows, StorageArea } from '../platform/types';
+import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
 import type { FrameReport } from '../shared/report';
@@ -84,6 +84,9 @@ export const AGENT_CONFIRM_MS = 90_000;
 export const AGENT_BACKOFF_MS = [60_000, 5 * 60_000] as const;
 /** How soon after a job finished the next one is taken. */
 export const AGENT_NEXT_MS = 1_000;
+/** A page of an ATS host that names no posting is looked at again this long after its load before the job is answered
+ *  (round 3 of the v3 Phase 6/7b review, X8): a page's script may route on at once, a board to its posting. */
+export const AGENT_LOAD_SETTLE_MS = 1_500;
 /** Entry presses (Apply, Application) per job: a posting that keeps showing itself is not pressed forever. */
 export const AGENT_MAX_ENTRIES = 2;
 /** Runs started per job (one per document of the form): a form that keeps loading again is not filled forever. */
@@ -131,10 +134,13 @@ const RunSchema = z.strictObject({
   formAt: Count.nullable(),
   progressAt: Count,
   lastReportAt: Count.nullable(),
-  /** Runs started (and their documents, Chrome's ids), and the documents whose entry was pressed. */
+  /** Runs started (and their documents, Chrome's ids), and the documents whose entry was asked for. */
   starts: Count,
   started: z.array(z.string().max(100)).max(AGENT_MAX_STARTS),
   entered: z.array(z.string().max(100)).max(AGENT_MAX_ENTRIES),
+  /** When an entry first answered 'pressed' (the v3 Phase 6/7b review's round 2, K4: the job has begun); absent in a
+   *  run kept before it. */
+  pressedEntryAt: Count.nullable().optional(),
   /** When the job's Submit was pressed, and in which document (Chrome's id; null when not known); when a form document
    *  showed after it (held, not started). */
   pressedAt: Count.nullable(),
@@ -214,6 +220,8 @@ export function agentVerdict(report: ReportView, context: { retried: boolean }):
           return finish('needs-you', 'captcha');
         case 'email-code':
           return finish('needs-you', 'email_code');
+        case 'forgot-password':
+          return finish('needs-you', 'sign_in');
         case 'page-busy':
           return finish('failed', 'page_error');
         default:
@@ -287,6 +295,13 @@ export interface AgentDeps {
   disclosed(): Promise<boolean>;
   /** The tab's reports, as the panels read them. */
   reports(tabId: number): Promise<readonly FrameReport[]>;
+  /** Whether the tab's page is on one of the ATS hosts now (its platform's candidate hosts), read from the browser
+   *  (v3 Phase 6/7b review, S3: a page there that shows no posting says no hello). Absent: not known. */
+  onAtsHost?(tabId: number): Promise<boolean>;
+  /** What the tab shows by its address (WorkerPlatform tabs.atsPageOf): 'other' for a page on an ATS host that names no
+   *  posting, where no frame of ours says hello (round 2, K3), and the host's platform (round 3, X8). Absent: not
+   *  known. */
+  atsPageOf?(tabId: number): Promise<AtsPage | null>;
   /** The tab's top frame of ours, as the frame registry holds it. */
   topFrame(tabId: number): Promise<Pick<FrameEntry, 'frameId' | 'documentId'> | null>;
   /** One message to one frame of a tab: its answer, or a throw when it cannot be reached. */
@@ -361,6 +376,27 @@ export function createAgent(deps: AgentDeps) {
     : deps.local.set({ [AGENT_RUN_KEY]: run }));
   const savePoll = (poll: AgentPoll) => deps.session.set({ [AGENT_POLL_KEY]: poll });
   const guessesOf = (run: AgentRun) => Object.values(run.guesses).reduce((sum, count) => sum + count, 0);
+  /** Whether the job has begun (the v3 Phase 6/7b review's round 2, K4): an entry answered 'pressed', or a form showed. */
+  const begun = (run: AgentRun) => (run.pressedEntryAt ?? null) !== null || run.formAt !== null;
+
+  /**
+   * The agent's tab shows a page of an ATS host that names no posting (a hello with no key, or, where no frame says
+   * hello, its address at load: round 2, K3). After the job's Submit: nothing yet, its confirmation is awaited. Once it
+   * has begun, on the job's own platform: the person's sign-in (a route to Workday's /login, SuccessFactors' post-back
+   * showing its sign-in); on another platform, or one not known (round 3, X8), a page the job did not lead to, the
+   * person's to look at, never a sign-in. Before it began: the board or its "not found", a closed posting, at once.
+   */
+  async function noPosting(run: AgentRun, samePlatform: boolean | null): Promise<void> {
+    if (run.pressedAt !== null) return;
+    if (begun(run)) {
+      await finishRun(run, 'needs-you', samePlatform === true ? 'sign_in' : 'other');
+      return;
+    }
+    await finishRun(run, 'failed', 'posting_closed');
+  }
+
+  /** Whether a page of `platform`'s host is the job's own platform's. */
+  const onJobPlatform = (run: AgentRun, platform: string) => run.applicationKey.startsWith(`${platform}:`);
 
   /** This browser session's nonce: storage.session's, made when it holds none (a browser restart empties it). */
   async function sessionNonce(): Promise<string> {
@@ -599,8 +635,17 @@ export function createAgent(deps: AgentDeps) {
       return;
     }
     if (run.formAt === null && run.openedAt !== null && now - run.openedAt >= AGENT_FORM_WAIT_MS) {
-      // A page said hello and never showed a form (its posting gone, a page that says so): closed. None: not loaded.
-      await finishRun(run, 'failed', run.heardAt !== null ? 'posting_closed' : 'page_error');
+      // A page said hello and never showed a form (its posting gone, a page that says so): closed. None said hello: a
+      // page of the platform's host that shows no posting says none (the v3 Phase 6/7b review, S3), so the tab still
+      // on such a host is a closed posting too, or, once the job's entry was pressed, the person's sign-in (round 2,
+      // E8); anywhere else, not loaded.
+      const onPlatform = run.tabId !== null && deps.onAtsHost !== undefined
+        && await deps.onAtsHost(run.tabId).catch(() => false);
+      if (onPlatform && begun(run)) {
+        await finishRun(run, 'needs-you', 'sign_in');
+        return;
+      }
+      await finishRun(run, 'failed', run.heardAt !== null || onPlatform ? 'posting_closed' : 'page_error');
       return;
     }
     if (run.heldAt !== null && now - run.heldAt >= AGENT_CONFIRM_MS) {
@@ -786,17 +831,36 @@ export function createAgent(deps: AgentDeps) {
       return { jobId: run.jobId, resumeId: run.resumeId, submitHeld };
     },
 
+    /** A tab finished loading a page (round 2, K3 and E8). Only the agent's own tab is looked at (round 3, X8): where
+     *  the address the load reports (`shown`) is a page of an ATS host that names no posting, which says no hello (the
+     *  review's S3), and still is once AGENT_LOAD_SETTLE_MS later (a page's script may route on at once), the job is
+     *  answered (noPosting), by that page's platform; any other page is the hellos' to answer. */
+    async loaded(tabId: number, shown: () => AtsPage | null): Promise<void> {
+      if (deps.atsPageOf === undefined) return;
+      const first = await activeRun();
+      if (first === null || first.tabId !== tabId || first.result !== null) return;
+      if (shown()?.page !== 'other') return;
+      await new Promise<void>((resolve) => deps.timers.after(AGENT_LOAD_SETTLE_MS, resolve));
+      const now = await deps.atsPageOf(tabId).catch(() => null);
+      if (now?.page !== 'other') return;
+      await serial(async () => {
+        const run = await activeRun();
+        if (run === null || run.tabId !== tabId || run.result !== null) return;
+        await noPosting(run, onJobPlatform(run, now.platform));
+      });
+    },
+
     /** A frame of the agent's tab said hello: another posting's page (or one that names none: a closed posting) ends
      *  the job; a form's document gets its run (once each, at most AGENT_MAX_STARTS, never after the job's Submit); one
      *  with no form its entry (once each, at most AGENT_MAX_ENTRIES), never the platform's page after submitting. */
     async hello(tabId: number, entry: Pick<FrameEntry, 'frameId' | 'documentId' | 'hasForm' | 'posting' | 'confirmation'
-      | 'applicationKey'>): Promise<void> {
+      | 'applicationKey'> & Partial<Pick<FrameEntry, 'platform'>>): Promise<void> {
       await serial(async () => {
         const run = await activeRun();
         if (run === null || run.tabId !== tabId || entry.frameId !== 0) return;
         if (entry.applicationKey === undefined) {
-          // An address on the platform's host that names no posting: the board, or its "not found" (a closed posting).
-          await finishRun(run, 'failed', 'posting_closed');
+          await noPosting(run, entry.platform === null || entry.platform === undefined ? null
+            : onJobPlatform(run, entry.platform));
           return;
         }
         if (entry.applicationKey !== run.applicationKey) {
@@ -841,6 +905,12 @@ export function createAgent(deps: AgentDeps) {
         const answer = await sendTo(tabId, entry, { v: 1, type: 'agent/enter' });
         const data = (answer as { ok?: boolean; data?: EntryAnswer } | undefined)?.data;
         log('agent.entered', { pressed: data?.outcome === 'pressed' });
+        if (data?.outcome === 'pressed') {
+          const now = await runOf();
+          if (now !== null && now.id === run.id && (now.pressedEntryAt ?? null) === null) {
+            await saveRun({ ...now, pressedEntryAt: deps.now() });
+          }
+        }
         // A CAPTCHA, a sign-in or a code before the form: the person's. Not offered (a form drawn late, a page still
         // loading): the form's wait covers it.
         if (data?.outcome === 'blocked') {
@@ -852,6 +922,18 @@ export function createAgent(deps: AgentDeps) {
 
     /** A Submit of the task's application was pressed (armed) in the agent's tab, in document `documentId`: the job's
      *  one Submit (its first press, and where it was pressed, are kept). */
+    /** The agent's tab's top frame pressed the job's entry, told before the entry waits on what the press brings (round
+     *  3 of the v3 Phase 6/7b review, X8): the job has begun, even where the press takes the document away before
+     *  agent/enter is answered. Only a document the agent asked to enter counts. */
+    async entered(tabId: number, documentId?: string | null): Promise<void> {
+      await serial(async () => {
+        const run = await activeRun();
+        if (run === null || run.tabId !== tabId || run.result !== null || (run.pressedEntryAt ?? null) !== null) return;
+        if (!run.entered.includes(documentId ?? '')) return;
+        await saveRun({ ...run, pressedEntryAt: deps.now(), progressAt: deps.now() });
+      });
+    },
+
     async pressed(tabId: number, applicationKey: string, documentId?: string | null): Promise<void> {
       await serial(async () => {
         const run = await activeRun();

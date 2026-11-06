@@ -1,0 +1,5 @@
+{
+  "https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/login": "fixtures/icims/eastwestbank-email-gate.html",
+  "https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/login?in_iframe=1": "fixtures/icims/eastwestbank-email-gate.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/b49f887305cf92c71933d7583a21626c73d87363/static/hcaptcha.html": "fixtures/icims/eastwestbank-email-gate.third-party-frame.html"
+}

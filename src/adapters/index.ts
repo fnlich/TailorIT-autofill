@@ -9,48 +9,43 @@
  *   submitting, a ?gh_jid board, an upper-case /APPLY, an Ashby org's board): null, so the content runtime shows no
  *   launcher and runs nothing there. The one exception is the reserved `tailorit-fixture` Lever board
  *   (FIXTURE_BOARD), which the trap and synthetic fixtures are served on, in every build: it is read by the generic
- *   rule, the page's origin and path, as is any address on an ATS host with no parser yet (Workday).
+ *   rule, the page's origin and path, as is any address on an ATS host with no parser (none is left since v3 Phase 7b).
+ *   The reading itself lives in ./address.ts (postingAddressOf), which the page-world bridge's entry reads too (the v3
+ *   Phase 6/7b review, S3), so it holds no adapter.
  * The Lever and Greenhouse adapters joined PLATFORM_ADAPTERS in Phase 2, Ashby's in v3 Phase 2 (its overview, its form
  * and its embed's spelling of one posting share one application key), Workable's in v3 Phase 7a (its overview and its
- * form, in any spelling, share one); Workday's comes later. In e2e builds only, the e2e-only test adapters (./test: trap 09's) come before them for their own address.
+ * form, in any spelling, share one); Workday's, iCIMS's, Taleo's, SuccessFactors' and Oracle's in v3 Phases 6 and 7b
+ * (their postings and their account pages; the forms behind the account wait for the owner's snapshots). In e2e
+ * builds only, the e2e-only test adapters (./test: trap 09's) come before them for their own address.
  * A production build replaces __E2E__ with false, which leaves ./test unreferenced, so it is compiled out
  * (scripts/check-build.mjs checks for its marker). Vitest's Node projects keep __E2E__ a global, so a test can turn
  * the switch on with vi.stubGlobal.
  */
 import type { Platform } from '../core/enums';
 import { platformOfUrl } from '../shared/hosts';
-import { applicationKey, type ApplicationPage, type ApplicationUrl } from './application-key';
+import { postingAddressOf } from './address';
+import { applicationKey, type ApplicationPage } from './application-key';
 import { ashbyAdapter } from './ashby';
-import { parseAshbyUrl } from './ashby/url';
 import { genericAdapter } from './generic';
-import { genericCanonicalUrl } from './generic/url';
 import { greenhouseAdapter } from './greenhouse';
-import { parseGreenhouseUrl } from './greenhouse/url';
+import { icimsAdapter } from './icims';
 import { leverAdapter } from './lever';
-import { matchesUrl as matchesLeverUrl, parseLeverUrl } from './lever/url';
+import { oracleAdapter } from './oracle';
+import { successFactorsAdapter } from './successfactors';
+import { taleoAdapter } from './taleo';
 import { e2eAdaptersFor } from './test';
 import type { Adapter } from './types';
 import { workableAdapter } from './workable';
-import { parseWorkableUrl } from './workable/url';
+import { workdayAdapter } from './workday';
+
+export { FIXTURE_BOARD } from './address';
 
 /** The platform adapters built so far. */
 const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
-  greenhouse: greenhouseAdapter, lever: leverAdapter, ashby: ashbyAdapter, workable: workableAdapter,
+  greenhouse: greenhouseAdapter, lever: leverAdapter, ashby: ashbyAdapter, workday: workdayAdapter,
+  workable: workableAdapter, icims: icimsAdapter, taleo: taleoAdapter, successfactors: successFactorsAdapter,
+  oracle: oracleAdapter,
 };
-
-/** The platforms whose addresses are read by a parser of their own (each platform's url.ts). */
-const URL_PARSERS: Partial<Record<Platform, (url: URL) => ApplicationUrl | null>> = {
-  greenhouse: parseGreenhouseUrl, lever: parseLeverUrl, ashby: parseAshbyUrl, workable: parseWorkableUrl,
-};
-
-/** The reserved Lever board the trap and synthetic fixtures are served on (https://jobs.lever.co/tailorit-fixture/...).
- *  Its addresses name no real posting, so they are read by the generic rule, in every build. */
-export const FIXTURE_BOARD = 'tailorit-fixture';
-
-/** Whether an address is on the reserved fixture board, on either Lever host. */
-function onFixtureBoard(url: URL): boolean {
-  return matchesLeverUrl(url) && url.pathname.split('/')[1] === FIXTURE_BOARD;
-}
 
 /** The adapters that may handle a frame at `url`, in the order the content runtime tries their detect(). */
 export function adaptersFor(url: URL): Adapter[] {
@@ -78,12 +73,6 @@ function refOf(platform: Platform, page: ApplicationPage, applicationUrl: string
 /** The application of an address on an ATS host; null for any other host, and for an address on a host with a parser
  *  that the parser does not read (except on the reserved fixture board). */
 export function applicationOf(url: URL): ApplicationRef | null {
-  const platform = platformOfUrl(url.href);
-  if (platform === null) return null;
-  const parser = URL_PARSERS[platform];
-  const parsed = parser === undefined ? null : parser(url);
-  if (parsed !== null) return refOf(platform, parsed.page, parsed.applicationUrl);
-  if (parser !== undefined && !onFixtureBoard(url)) return null;
-  const canonical = genericCanonicalUrl(url);
-  return canonical === null ? null : refOf(platform, 'application', canonical);
+  const read = postingAddressOf(url);
+  return read === null ? null : refOf(read.platform, read.page, read.applicationUrl);
 }

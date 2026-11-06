@@ -4,9 +4,21 @@
  * The longer lists (field categories, reason codes, rule ids, degree types) sit beside the types that use them.
  */
 
-/** The applicant-tracking systems with an adapter (Workable since v3 Phase 7a). SmartRecruiters comes later. */
-export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable'] as const;
+/** The applicant-tracking systems with an adapter (Workable since v3 Phase 7a; iCIMS, Taleo, SuccessFactors and Oracle
+ *  Recruiting Cloud since v3 Phase 7b, their sign-in and posting pages). SmartRecruiters comes later. */
+export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable', 'icims', 'taleo', 'successfactors',
+  'oracle'] as const;
 export type Platform = (typeof PLATFORMS)[number];
+
+/** The platforms the extension works on that TailorIT's contract does not list yet (its ATS_KINDS): iCIMS, Taleo,
+ *  SuccessFactors and Oracle Recruiting Cloud (v3 Phase 7b), until TailorIT's own reading of their addresses
+ *  (parseAtsUrl, Add job, the agent's address) comes with a later contract version. Nothing names one of these to
+ *  TailorIT: its AI classification is not asked for (the fields go on to the AI answer, which names no platform), no
+ *  saved answer keeps it, and no company scope names it (adapters/company.ts reads none of their addresses). TailorIT's
+ *  lookup does not read their addresses, so the job card says the posting is not in TailorIT, and its agent never
+ *  queues one. test/contract.test.ts holds ATS_KINDS to PLATFORMS without these, and fails once the contract lists one,
+ *  so this list is emptied then. */
+export const PLATFORMS_AHEAD_OF_CONTRACT: readonly Platform[] = ['icims', 'taleo', 'successfactors', 'oracle'];
 
 /** The spec's field kinds plus one 'checkbox' (a lone box: consent, "I currently work here"). Equals TailorIT's list. */
 export const FIELD_KINDS = ['text', 'textarea', 'select', 'radio', 'checkbox', 'checkbox-group', 'combobox',

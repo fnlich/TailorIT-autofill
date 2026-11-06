@@ -28,9 +28,12 @@ import {
   convertMhtml,
   imageSize,
   normaliseAshby,
+  normaliseTokens,
   normaliseWorkable,
   onAtsHost,
   parseMhtml,
+  pruneCssInPage,
+  PRUNED_CSS_PLATFORMS,
   readRedactList,
   redactSources,
   workableRenderId,
@@ -501,6 +504,8 @@ describe('mhtml-to-fixture command line', () => {
     const out = join(work, 'cli-out');
     writeConversion({ files: [], routes: {}, chrome: '', tokens: [], notes: [], counts: {} }, join(out, 'greenhouse'), 'cli');
     writeFileSync(join(out, 'greenhouse', 'cli.frame-7.html'), 'stale');
+    // A frame's hand-written expectations stay through a conversion again (round 2 of the v3 Phase 6/7b review, K8).
+    writeFileSync(join(out, 'greenhouse', 'cli.frame-1.expect.json'), '{"kept":true}\n');
     const run = spawnSync(process.execPath, [SCRIPT, file, '--platform', 'greenhouse', '--case', 'cli', '--redact', redact,
       '--out', out], { encoding: 'utf8', windowsHide: true, timeout: 60_000 });
     expect(run.stderr).toBe('');
@@ -511,6 +516,7 @@ describe('mhtml-to-fixture command line', () => {
       expect(existsSync(join(out, 'greenhouse', name)), name).toBe(true);
     }
     expect(existsSync(join(out, 'greenhouse', 'cli.frame-7.html'))).toBe(false);
+    expect(readFileSync(join(out, 'greenhouse', 'cli.frame-1.expect.json'), 'utf8')).toBe('{"kept":true}\n');
     const routes = JSON.parse(readFileSync(join(out, 'greenhouse', 'cli.routes.json'), 'utf8'));
     expect(Object.keys(routes)).toEqual([PAGE, EMBED, CAPTCHA.split('#')[0]]);
     const written = readFileSync(join(out, 'greenhouse', 'cli.html'), 'utf8');
@@ -593,9 +599,55 @@ describe('mhtml-to-fixture helpers', () => {
     for (const url of [EMBED, 'https://boards.greenhouse.io/x/jobs/1', 'https://jobs.lever.co/x', 'https://jobs.eu.lever.co/x',
       'https://jobs.ashbyhq.com/x', 'https://wlu.wd5.myworkdayjobs.com/x', 'https://wd5.myworkdaysite.com/recruiting/x',
       'https://job-boards.eu.greenhouse.io/x/jobs/1', 'http://jobs.lever.co/x', 'https://jobs.lever.co.tailorit-fixture.example/x',
-      CAPTCHA, 'https://www.recaptcha.net/recaptcha/enterprise/anchor', 'https://myworkdayjobs.com/x', PAGE]) {
+      CAPTCHA, 'https://www.recaptcha.net/recaptcha/enterprise/anchor', 'https://myworkdayjobs.com/x', PAGE,
+      // v3 Phase 7b: the candidate hosts alone (src/shared/hosts.ts HOST_PLATFORMS).
+      'https://careers-acme.icims.com/jobs/1/x/job', 'https://login.icims.com/u/login', 'https://www.icims.com/',
+      'https://acme.taleo.net/careersection/ex/jobdetail.ftl', 'https://acme.tbe.taleo.net/x',
+      'https://career2.successfactors.eu/career', 'https://performancemanager4.successfactors.com/login',
+      'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/x', 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/x',
+      'https://acme.fa.us2.oraclecloud.com/hcmUI/x', 'https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome',
+      'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x', 'https://acme.myworkdayjobs.com/x', 'https://wd5.myworkdayjobs.com/x',
+      'https://a.b.wd5.myworkdayjobs.com/x']) {
       expect(onAtsHost(url), url).toBe(platformOfUrl(url) !== null);
     }
+  });
+
+  it("redacts hCaptcha's site key in its frames' addresses and each widget's id, wherever they stand (S9)", () => {
+    const page = '<div class="h-captcha" data-sitekey="94fee806-5cac-4582-9738-384a0f4ea6f8"><iframe '
+      + 'data-hcaptcha-widget-id="0gp98jgqs8c8" src="https://newassets.hcaptcha.com/captcha/v1/x/static/hcaptcha.html'
+      + '#frame=challenge&amp;id=0gp98jgqs8c8&amp;host=careers-gdms.icims.com&amp;sitekey=94fee806-5cac-4582-9738-384a0f4ea6f8'
+      + '&amp;size=invisible"></iframe></div><p id="main">id=main stays</p>';
+    for (const platform of ['icims', 'oracle']) {
+      const { text, renderIds } = normaliseTokens(platform, page);
+      expect(text, platform).not.toContain('94fee806');
+      expect(text, platform).not.toContain('0gp98jgqs8c8');
+      expect(text, platform).toContain('data-hcaptcha-widget-id="REDACTED"');
+      expect(text, platform).toContain('&amp;id=REDACTED&amp;host=careers-gdms.icims.com&amp;sitekey=REDACTED&amp;size');
+      expect(text, platform).toContain('<p id="main">id=main stays</p>');
+      expect(renderIds.length, platform).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('normalises the v3 Phase 6 and 7b platforms\u2019 per-load values, wherever they stand, and nothing else', () => {
+    const workday = normaliseTokens('workday', '<label for="input-14">Email</label><input id="input-14" '
+      + 'aria-describedby="input-14-error"><input id="input-9"><input data-automation-id="beecatcher" '
+      + 'id="f3a71433-d857-401f-983e-be6f20e1f05e"><p>input-stream stays</p>');
+    expect(workday.text).toBe('<label for="input-1">Email</label><input id="input-1" aria-describedby="input-1-error">'
+      + '<input id="input-2"><input data-automation-id="beecatcher" id="00000000-0000-4000-8000-000000000001"><p>input-stream '
+      + 'stays</p>');
+    expect(workday.renderIds).toHaveLength(3);
+    expect(normaliseTokens('icims', '<a href="/jobs/1/x/job?mode=apply&amp;hashed=-336056110">'
+      + '<div data-sitekey="94fee806-5cac-4582-9738-384a0f4ea6f8">https://login.icims.com/u/login/identifier?state=hKFo2SB').text)
+      .toBe('<a href="/jobs/1/x/job?mode=apply&amp;hashed=REDACTED"><div data-sitekey="REDACTED">'
+        + 'https://login.icims.com/u/login/identifier?state=REDACTED');
+    expect(normaliseTokens('successfactors', '<form action="/career?_s.crb=U9GeUu%252bw%253d"><a href="/career?company=x&amp;'
+      + 'requestParams=TiIiBIY%0aGZ&amp;login_ns=register">').text)
+      .toBe('<form action="/career?_s.crb=REDACTED"><a href="/career?company=x&amp;requestParams=REDACTED&amp;login_ns=register">');
+    expect(normaliseTokens('oracle', '<label for="primary-email-3"><input id="primary-email-3"><input id="honey-pot-7">'
+      + '<label for="primary-email-5">').text)
+      .toBe('<label for="primary-email-0"><input id="primary-email-0"><input id="honey-pot-0"><label for="primary-email-1">');
+    // Another platform's page is left as it is, its tokens and all.
+    expect(normaliseTokens('lever', '<input id="input-14"> hashed=12').text).toBe('<input id="input-14"> hashed=12');
   });
 
   it("normalises Ashby's per-load ids: each form's render id wherever it stands, in the order first named, and the CSP nonce", () => {
@@ -793,5 +845,123 @@ describe('the committed Lever, Greenhouse and Ashby fixtures', () => {
     }, { fields: expectation.fields, ashby: name.startsWith('ashby/') });
     await context.close();
     expect(problems).toEqual([]);
+  }, 60_000);
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The committed v3 Phase 6 and 7b fixtures (the v3 Phase 6/7b review, C9): every converted file, its route map, its
+// header and its expectations agree, and its markup holds nothing the converter removes
+// ---------------------------------------------------------------------------------------------------------------------
+
+const PHASE_67_PLATFORMS = ['workday', 'icims', 'taleo', 'successfactors', 'oracle'];
+/** Each converted page and frame of those platforms (not the third-party stand-ins). */
+const PHASE_67_FILES = PHASE_67_PLATFORMS.flatMap((platform) => readdirSync(join(ROOT, 'fixtures', platform))
+  .filter((name) => name.endsWith('.html') && !name.endsWith('.third-party-frame.html'))
+  .map((name) => `${platform}/${name.slice(0, -'.html'.length)}`));
+
+/** The markup with its comments, and the text of its style, textarea and title elements, taken out: what is left is
+ *  tags and text, so a word in a comment (Oracle's Knockout bindings) or a stylesheet reads as nothing. */
+function markupOf(body: string): string {
+  return body.replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/(<(style|textarea|title)\b[^>]*>)[\s\S]*?(<\/\2>)/gi, '$1$3');
+}
+
+/** Every attribute name of every tag in `markup` (markupOf's), in lower case. */
+function attributeNames(markup: string): string[] {
+  const names: string[] = [];
+  for (const [, attributes] of markup.matchAll(/<[a-zA-Z][^\s/>]*((?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*\/?>/g)) {
+    for (const [, name] of (attributes ?? '').matchAll(/\s+([^\s=/>]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/g)) {
+      names.push((name ?? '').toLowerCase());
+    }
+  }
+  return names;
+}
+
+describe('the committed Workday, iCIMS, Taleo, SuccessFactors and Oracle fixtures', () => {
+  it('reads tags and their attributes past comments and stylesheets', () => {
+    const markup = markupOf('<!-- <script> onclick="x" --><div data-bind="click: next" title="onload=x"><style>a{}</style>'
+      + '<button onClick="go()">Go</button>');
+    expect(markup).not.toContain('<script');
+    expect(attributeNames(markup)).toEqual(['data-bind', 'title', 'onclick']);
+  });
+
+  it('hold no expectation without its page or frame (round 2 of the v3 Phase 6/7b review, K8)', () => {
+    for (const platform of PHASE_67_PLATFORMS) {
+      for (const name of readdirSync(join(ROOT, 'fixtures', platform)).filter((each) => each.endsWith('.expect.json'))) {
+        const page = name.replace(/\.expect\.json$/, '.html');
+        expect(existsSync(join(ROOT, 'fixtures', platform, page)), `${platform}/${name}`).toBe(true);
+      }
+    }
+  });
+
+  it('are the cases of the capture: each platform’s pages and frames', () => {
+    expect(PHASE_67_FILES.length).toBe(26);
+    for (const platform of PHASE_67_PLATFORMS) {
+      expect(PHASE_67_FILES.some((name) => name.startsWith(`${platform}/`)), platform).toBe(true);
+    }
+  });
+
+  it.each(PHASE_67_FILES)('%s: its file, route map, header and expectations agree, and it holds nothing removed', (name) => {
+    const html = readFileSync(join(ROOT, 'fixtures', `${name}.html`), 'utf8');
+    const routes = JSON.parse(readFileSync(routesOf(name), 'utf8')) as Record<string, string>;
+    const header = JSON.parse(/<!-- TailorIT fixture[^\n]*\n(\{.*\}) -->/.exec(html)?.[1] ?? '{}');
+    expect(header).toMatchObject({ fixture: name });
+    expect(header.chrome).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(routes[header.source]).toBe(`fixtures/${name}.html`);
+    for (const [url, path] of Object.entries(routes)) {
+      expect(new URL(url).hash, url).toBe('');
+      expect(path.startsWith(`fixtures/${name.replace(/\.frame-\d+$/, '')}.`) && existsSync(join(ROOT, path)), path).toBe(true);
+    }
+    const expectation = join(ROOT, 'fixtures', `${name}.expect.json`);
+    if (existsSync(expectation)) {
+      const expected = JSON.parse(readFileSync(expectation, 'utf8')) as Expectation;
+      expect(expected).toMatchObject({ fixture: name, source: header.source, captured: header.captured });
+    }
+    const body = html.slice(html.indexOf('-->') + 3);
+    const markup = markupOf(body);
+    expect(markup).not.toMatch(/<script|<noscript|<base\b|http-equiv|<link[^>]*stylesheet|\r/i);
+    expect(markup).not.toMatch(/(?:href|src|action|formaction)\s*=\s*["']?\s*javascript:/i);
+    expect(attributeNames(markup).filter((attribute) => attribute.startsWith('on'))).toEqual([]);
+    // A form element (never Oracle's <form-element-label> custom element) posts to the harness's /__submitted.
+    expect([...markup.matchAll(/<form(?=[\s>])[^>]*>/gi)].every(([form]) => form.includes('action="/__submitted"')))
+      .toBe(true);
+    // The per-load tokens and the hCaptcha site key and widget ids are normalised away (S9).
+    expect(body).not.toMatch(/[?&;#]sitekey=(?!REDACTED)[^&"'\s]/);
+    expect(body).not.toMatch(/data-(?:hcaptcha-widget-id|sitekey)="(?!REDACTED")/);
+    expect(body).not.toMatch(/\bhashed=-?\d/);
+    expect(body).not.toMatch(/_s\.crb=(?!REDACTED)[^&"'\s]/);
+  });
+});
+
+describe('pruneCssInPage (the v3 Phase 6/7b review, C10)', () => {
+  it('drops the rules no element matches, keeping state rules, at-rules and what it cannot read', async () => {
+    expect(PRUNED_CSS_PLATFORMS).toEqual(['icims', 'taleo', 'successfactors', 'oracle']);
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><head><style>
+      .used { color: red; }
+      .unused { color: blue; }
+      .used:hover, .used:focus-within > span { color: green; }
+      input:checked + label { font-weight: bold; }
+      .gone:checked { color: blue; }
+      .used::before { content: "x"; }
+      input::placeholder { color: #777; }
+      :not(:hover) > .used { color: black; }
+      @media (min-width: 1px) { .used { margin: 1px; } .unused { margin: 2px; } }
+      @media print { .unused { display: none; } }
+      @font-face { font-family: Kept; src: local(Arial); }
+      @keyframes spin { to { transform: rotate(1turn); } }
+    </style></head><body><p class="used"><span>a</span></p><input type="checkbox" id="box"><label for="box">b</label>
+      <input placeholder="c"></body></html>`);
+    const counts = await page.evaluate(pruneCssInPage);
+    const text = await page.evaluate(() => document.querySelector('style')!.textContent ?? '');
+    await context.close();
+    expect(counts.dropped).toBe(4);
+    for (const kept of ['.used { color: red; }', '.used:hover', 'input:checked + label', '.used::before',
+      'input::placeholder', ':not(:hover) > .used', '@media (min-width: 1px)', 'margin: 1px', '@font-face',
+      '@keyframes spin']) {
+      expect(text, kept).toContain(kept);
+    }
+    for (const dropped of ['.unused', '.gone', '@media print']) expect(text, dropped).not.toContain(dropped);
   }, 60_000);
 });

@@ -138,15 +138,26 @@ describe('the content runtime’s start-up', () => {
   });
 
   it('offers no launcher and runs nothing at a Lever address that is no application (W2)', async () => {
-    // A site's board: the generic adapter would find the form, but the address names no posting.
+    // A site's board: the generic adapter would find the form, but the address names no posting. Nor does the frame say
+    // hello there (the v3 Phase 6/7b review, S3): the worker never hears of a page that shows no posting.
     const { fake, runtime } = await startOn(plain, 'https://jobs.lever.co/acme');
-    expect(fake.of('frame/hello')[0]).toMatchObject({ hasForm: false });
+    expect(fake.of('frame/hello')).toEqual([]);
     expect(runtime.page).toBeNull();
     expect(runtime.ui).toBeNull();
     expect(runtime.fill()).toBeNull();
     expect(await fake.platform.deliver({ v: 1, type: 'run/start', dryRun: false })).toEqual({ ok: true, data: {} });
     expect(fake.of('run/begin')).toEqual([]);
     expect(fake.of('policy/hit')).toEqual([]);
+  });
+
+  it('says hello once a single-page application’s route shows a posting where it started on none (S3)', async () => {
+    let href = 'https://jobs.lever.co/acme';
+    const { fixture, fake } = await startOn(plain, () => href);
+    expect(fake.of('frame/hello')).toEqual([]);
+    href = 'https://jobs.lever.co/acme/3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    fixture.view.dispatchEvent(new fixture.view.PopStateEvent('popstate'));
+    await vi.waitFor(() => expect(fake.of('frame/hello')).toHaveLength(1));
+    expect(JSON.stringify(fake.of('frame/hello'))).not.toContain('acme');
   });
 
   it('says hello again only when the browser brings the page back from the back/forward cache (W1)', async () => {
@@ -172,6 +183,83 @@ describe('the content runtime’s start-up', () => {
     fixture.frame.remove();
     await vi.waitFor(() => expect(runtime.stopped).toBe(true));
     expect(runtime.ui).toBeNull();
+  });
+});
+
+describe('the forged WXT events (the v3 Phase 6/7b review, rounds 3 and 4: X1, Y1)', () => {
+  // An employer's board on Workday's shared domain, where the bridge never installs, and a posting its route shows.
+  const BOARD = 'https://wd5.myworkdaysite.com/recruiting/acme/External';
+  const JOB = `${BOARD}/job/Remote/Engineer_JR-1`;
+
+  /** The event names added on `target` from now on, as added. */
+  function namesAddedOn(target: EventTarget): string[] {
+    const names: string[] = [];
+    const add = target.addEventListener.bind(target);
+    vi.spyOn(target, 'addEventListener').mockImplementation((type, listener, options) => {
+      names.push(type);
+      add(type, listener, options);
+    });
+    return names;
+  }
+
+  /** The runtime started on a document loaded at `start`, with its listeners' names, its forgeries' log and its route. */
+  async function startAt(start: string) {
+    let href = start;
+    const fixture = await loadFixture(document, plain);
+    const fake = createFakeWorker();
+    const id = fake.platform.runtime.id!;
+    const onDocument = namesAddedOn(fixture.doc);
+    const onWindow = namesAddedOn(fixture.view);
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    runtimes.push(await startContentRuntime(fake.platform, fixture.doc, { href: () => href, isTop: true,
+      settle: { quietMs: 60 } }));
+    return {
+      id, info,
+      keyed: () => [...onDocument, ...onWindow].filter((name) => name.includes(id) || name.includes(':')),
+      forged: () => info.mock.calls.filter(([text]) => String(text).includes('content.forged-wxt-event')).length,
+      forge: () => {
+        fixture.doc.dispatchEvent(new fixture.view.CustomEvent(`${id}:content:wxt:content-script-started`));
+        fixture.view.dispatchEvent(new fixture.view.CustomEvent(`${id}:content:wxt:locationchange`));
+      },
+      // The address watch (location.ts) reads a popstate at once.
+      route: (next: string) => {
+        href = next;
+        fixture.view.dispatchEvent(new fixture.view.PopStateEvent('popstate'));
+      },
+    };
+  }
+
+  it('adds nothing keyed to the id on a document loaded where the bridge does not install, a route to a posting neither',
+    async () => {
+      const at = await startAt(BOARD);
+      try {
+        expect(at.keyed()).toEqual([]);
+        at.forge();
+        expect(at.forged()).toBe(0);
+        // The page's own route to a posting address (its pushState), then back: still nothing to time.
+        at.route(JOB);
+        at.forge();
+        at.route(BOARD);
+        at.forge();
+        expect([at.keyed(), at.forged()]).toEqual([[], 0]);
+      } finally {
+        at.info.mockRestore();
+      }
+    });
+
+  it('listens for the document’s life where it was loaded at a posting, and logs a forgery as itself', async () => {
+    const at = await startAt(JOB);
+    try {
+      expect(at.keyed().sort()).toEqual([`${at.id}:content:wxt:content-script-started`,
+        `${at.id}:content:wxt:locationchange`]);
+      at.forge();
+      expect(at.forged()).toBe(2);
+      at.route(BOARD);
+      at.forge();
+      expect(at.forged()).toBe(4);
+    } finally {
+      at.info.mockRestore();
+    }
   });
 });
 

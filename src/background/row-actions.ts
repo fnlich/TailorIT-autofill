@@ -31,7 +31,7 @@ import { CLASS_POLICIES, policyClassOf } from '../core/resolver/categories';
 import { namesUnsavableAnswer, SERVER_CATEGORY_MAP } from '../core/resolver/classify';
 import { answerFitsKind } from '../core/resolver/saved';
 import { normalizeLabel } from '../core/text/normalize';
-import type { FieldKind } from '../core/enums';
+import { PLATFORMS_AHEAD_OF_CONTRACT, type FieldKind } from '../core/enums';
 import type { FieldCategory } from '../core/types/intent';
 import type { Vocab } from '../core/vocab/types';
 import { answerSchema, ok, refuse, type Answer } from '../messaging/envelope';
@@ -151,7 +151,9 @@ export function createAnswerHandlers(deps: AnswerDeps) {
       scope: company === null ? '' : scopeOf(company),
       fieldKind: row.kind,
       questionLabel: row.label,
-      platform: report.platform,
+      // A platform TailorIT's contract does not name yet (iCIMS, Taleo, SuccessFactors, Oracle) is no platform it keeps:
+      // the answer is saved without one.
+      platform: PLATFORMS_AHEAD_OF_CONTRACT.includes(report.platform) ? null : report.platform,
       answer: value.answer,
       category: serverCategoryOf(row.category),
     });

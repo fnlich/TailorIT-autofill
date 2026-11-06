@@ -1,0 +1,5 @@
+{
+  "https://careers-gdms.icims.com/jobs/78183/senior-advanced-quality-inspector/login": "fixtures/icims/gdms-email-gate.html",
+  "https://careers-gdms.icims.com/jobs/78183/senior-advanced-quality-inspector/login?in_iframe=1": "fixtures/icims/gdms-email-gate.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/b49f887305cf92c71933d7583a21626c73d87363/static/hcaptcha.html": "fixtures/icims/gdms-email-gate.third-party-frame.html"
+}

@@ -94,10 +94,19 @@ export async function readPostingPage(channel: Channel, doc: Document, applicati
   }
 }
 
-/** Whether this frame sits below a top page that runs no content script of ours: a top origin off the ATS list. A
- *  browser that does not say (no ancestorOrigins) is taken to mean so, which only adds a notice. */
+/** Whether this frame sits below a top page that runs no content script of ours: a top page off the ATS list, read by
+ *  its full address where the frame may read it (a top of its own origin: an Oracle tenant's candidate pages are its
+ *  platform's by their path, the v3 Phase 6/7b review's round 2, E11), else by its origin. A browser that does not say
+ *  (no ancestorOrigins) is taken to mean so, which only adds a notice. */
 export function postingOutsideFrame(view: Window, isTop: boolean): boolean {
   if (isTop) return false;
+  let topHref: string | null = null;
+  try {
+    topHref = view.top?.location.href ?? null;
+  } catch {
+    topHref = null;
+  }
+  if (topHref !== null && /^https?:/i.test(topHref)) return platformOfUrl(topHref) === null;
   const ancestors = (view.location as Location & { ancestorOrigins?: DOMStringList }).ancestorOrigins;
   if (ancestors === undefined || ancestors.length === 0) return true;
   const top = ancestors.item(ancestors.length - 1);

@@ -204,6 +204,13 @@ export function logEvents(doc: Document): EventLog {
 const POINTER_BOUNDARY_EVENTS: ReadonlySet<string> = new Set(['pointerover', 'pointerout', 'pointerenter',
   'pointerleave', 'pointermove', 'mouseover', 'mouseout', 'mouseenter', 'mouseleave', 'mousemove']);
 
+/** A log without the trusted pointer and mouse boundary and move events Chromium fires by itself when a page changes
+ *  under a cursor that sits still (POINTER_BOUNDARY_EVENTS: another test file's pointer): what a test that expects
+ *  nothing dispatched on the page compares, so a stray cursor never fails it. Untrusted ones stay. */
+export function withoutPointerBoundary(events: readonly LoggedEvent[]): LoggedEvent[] {
+  return events.filter((event) => !(event.trusted && POINTER_BOUNDARY_EVENTS.has(event.type)));
+}
+
 /**
  * The events in a log that break the untrusted-events rule. Every event the fillers dispatch is untrusted. Three
  * exceptions are the browser's own:

@@ -1,0 +1,57 @@
+{
+  "fixture": "icims/gdms-email-gate.frame-1",
+  "source": "https://careers-gdms.icims.com/jobs/78183/senior-advanced-quality-inspector/login?in_iframe=1",
+  "captured": "2026-11-05T05:57:22.000Z",
+  "fields": [
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input#email"
+    },
+    {
+      "label": "I agree",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#accept_gdpr",
+      "note": "GDMS asks for this GDPR box; its Next is disabled until it is ticked."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "textarea[name=\"h-captcha-response\"]",
+      "note": "The invisible hCaptcha's response field, bound to Next."
+    }
+  ],
+  "hooks": {
+    "detect": "form#enterEmailForm",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#email",
+      "password": null,
+      "confirm": null,
+      "terms": [
+        "input#accept_gdpr"
+      ],
+      "button": "input#enterEmailSubmitButton",
+      "form": "form#enterEmailForm",
+      "enablesWhenFilled": true
+    },
+    "signInPrelude": null,
+    "neverPress": [],
+    "pressable": [
+      "input#enterEmailSubmitButton"
+    ]
+  }
+}

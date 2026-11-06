@@ -1,0 +1,19 @@
+{
+  "fixture": "taleo/massanf-privacy-agreement",
+  "source": "https://massanf.taleo.net/careersection/ex/jobapply.ftl?job=260007QL&lang=en",
+  "captured": "2026-11-05T06:03:53.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": "entry-choice",
+    "postingText": null,
+    "entryControl": "input[type=\"button\"][id$=\"StatementBeforeAuthentificationContent-ContinueButton\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[id$=\"StatementBeforeAuthentificationContent-ContinueButton\"]",
+      "[id$=\"StatementBeforeAuthentificationContent-CancelButton\"]"
+    ],
+    "pressable": []
+  }
+}

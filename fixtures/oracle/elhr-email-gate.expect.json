@@ -1,0 +1,63 @@
+{
+  "fixture": "oracle/elhr-email-gate",
+  "source": "https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email",
+  "captured": "2026-11-05T06:13:11.000Z",
+  "fields": [
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#primary-email-0"
+    },
+    {
+      "label": "honeypot",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "input#honey-pot-0",
+      "note": "A honeypot: aria-hidden, out of the tab order, drawn invisible. Never filled."
+    },
+    {
+      "label": "I agree with the terms and conditions",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#legal-disclaimer-checkbox",
+      "note": "Drawn at 0 by 0 behind its visible label."
+    }
+  ],
+  "hooks": {
+    "detect": "main[aria-labelledby=\"apply-flow-main-heading\"] section.apply-flow__content",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#primary-email-0",
+      "password": null,
+      "confirm": null,
+      "terms": [
+        "input#legal-disclaimer-checkbox"
+      ],
+      "button": "button[type=\"submit\"][title=\"Next\"]",
+      "form": "form:has(input[name=\"primary-email\"])",
+      "colourUnknown": [
+        "input#primary-email-0"
+      ],
+      "enablesWhenFilled": true,
+      "scriptSubmits": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-qa=\"emailVerificationCancelButton\"]"
+    ],
+    "pressable": [
+      "button[type=\"submit\"][title=\"Next\"]"
+    ]
+  }
+}

@@ -4,7 +4,9 @@
 // a PNG of the size its key names (scripts/icons.mjs renders them). There are exactly two content scripts: ours, in the
 // isolated world, and the page-world bridge (world MAIN, docs/SPEC-AMENDMENTS.md §12), on the same hosts, with no CSS,
 // each within its own size budget. The bridge's bundle is read too: one anonymous function called at once, naming no
-// chrome., browser. or postMessage, and run in a bare context it must add no global and listen for its command only.
+// chrome., browser. or postMessage, and run in a bare context it must add no global and listen for its command only,
+// and only at a posting or its application form (the v3 Phase 6/7b review, S3). No content script's bundle holds WXT's
+// content-script context, whose start-up announces the extension to the page (round 2, E1).
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -19,11 +21,18 @@ const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8'
 /** The content script, React included once the in-page panel lands, must stay under this: every file the manifest's
  *  content script lists, together. */
 const CONTENT_SCRIPT_BUDGET = 1024 * 1024;
-/** The page-world bridge (src/page/bridge.ts and its protocol, nothing else of the app) must stay under this. */
-const BRIDGE_BUDGET = 12 * 1024;
+/** The page-world bridge (src/page/bridge.ts and its protocol, and the address parsers it installs by: the v3 Phase
+ *  6/7b review, S3) must stay under this. */
+const BRIDGE_BUDGET = 20 * 1024;
 /** What the bridge's bundle may never name: the extension's APIs (it runs in the page's world, which has none of
  *  them, and must not look for any) and window messaging. */
 const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
+/** What no content script's bundle may hold: WXT's content-script context, whose start-up dispatches
+ *  `<extension id>:<entry>:wxt:content-script-started` on the page's document (and posts it to the window), an event
+ *  any page script can listen for to learn the extension is installed (the v3 Phase 6/7b review's round 2, E1). Our
+ *  content script is an unlisted script the manifest hook lists (wxt.config.ts), whose wrapper only calls main(). */
+const WXT_CONTEXT_NAMES = ['stopOldScripts', 'SCRIPT_STARTED_MESSAGE_TYPE', 'listenForNewerScripts',
+  'noScriptStartedPostMessage'];
 /** Keys a content script never has: CSS, and every way to reach more frames or other addresses than its matches. */
 const NEVER_IN_A_CONTENT_SCRIPT = ['css', 'match_about_blank', 'match_origin_as_fallback', 'include_globs',
   'exclude_globs', 'exclude_matches'];
@@ -165,11 +174,25 @@ function checkScriptSize(build, dir, script, name, budget) {
   if (total > budget) fail(build, `${name} is ${total} bytes (${listed.join(', ')}), over the ${budget}-byte budget`);
 }
 
+/** Addresses the bridge's bundle is run at (src/adapters/address.ts bridgeInstallsAt): where it installs, a posting or
+ *  its form, and any page of a host that serves only public job postings (a board: round 2, E9); where it must not,
+ *  every other page of the domains that also hold an employer's own pages (an internal portal, performancemanager, a
+ *  search, an Oracle tenant's Fusion page, myworkdaysite.com's own pages) and an address with none (S3). */
+const BRIDGE_INSTALLS_AT = ['https://job-boards.greenhouse.io/acme/jobs/4012345',
+  'https://acme.wd5.myworkdayjobs.com/en-US/External/job/Remote/Engineer_JR-1/apply/applyManually',
+  'https://job-boards.greenhouse.io/acme', 'https://jobs.lever.co/acme', 'https://acme.wd5.myworkdayjobs.com/en-US/External',
+  'https://wd5.myworkdaysite.com/recruiting/acme/External/job/Remote/Engineer_JR-1'];
+const BRIDGE_SILENT_AT = ['https://internal-acme.icims.com/jobs/1/engineer/job',
+  'https://performancemanager4.successfactors.com/sf/home', 'https://acme.taleo.net/careersection/2/jobsearch.ftl',
+  'https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://wd5.myworkdaysite.com/recruiting/acme/External',
+  'https://careers-acme.icims.com/jobs/search?ss=1', ''];
+
 /**
  * The page-world bridge's bundle (src/entrypoints/page-bridge.content.ts): WXT's anonymous wrapper, `(function(){...})();`,
- * naming none of BRIDGE_NEVER_NAMES; and, run in a bare context whose document only records its listeners, it adds no
- * global, throws nothing, and listens for exactly one event on the document, its command (src/dom/bridge-protocol.ts),
- * in the capture phase. The page's world is the page's: a global there would be the page's to read and to change.
+ * naming none of BRIDGE_NEVER_NAMES; and, run in a bare context whose document only records its listeners and has an
+ * address, it adds no global and throws nothing; at a posting or its form it listens for exactly one event on the
+ * document, its command (src/dom/bridge-protocol.ts), in the capture phase, and anywhere else for none. The page's world
+ * is the page's: a global there would be the page's to read and to change.
  */
 function checkBridgeBundle(build, dir, bridge) {
   const [path] = Array.isArray(bridge?.js) ? bridge.js : [];
@@ -180,22 +203,40 @@ function checkBridgeBundle(build, dir, bridge) {
     fail(build, 'the page-world bridge is not one anonymous function called at once');
   }
   for (const name of BRIDGE_NEVER_NAMES) if (text.includes(name)) fail(build, `the page-world bridge names "${name}"`);
-  const listeners = [];
-  const document = { addEventListener: (type, _listener, capture) => listeners.push([type, capture === true]),
-    removeEventListener: () => undefined };
-  document.defaultView = { document };
-  const sandbox = { document };
-  const before = new Set(Object.getOwnPropertyNames(sandbox));
-  try {
-    vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
-  } catch (error) {
-    fail(build, `the page-world bridge throws on its own: ${String(error).slice(0, 120)}`);
-    return;
+  for (const href of [...BRIDGE_INSTALLS_AT, ...BRIDGE_SILENT_AT]) {
+    const listeners = [];
+    const document = { addEventListener: (type, _listener, capture) => listeners.push([type, capture === true]),
+      removeEventListener: () => undefined, location: { href } };
+    document.defaultView = { document };
+    const sandbox = { document, URL };
+    const before = new Set(Object.getOwnPropertyNames(sandbox));
+    try {
+      vm.runInContext(text, vm.createContext(sandbox), { timeout: 1_000 });
+    } catch (error) {
+      fail(build, `the page-world bridge throws on its own at ${href || 'no address'}: ${String(error).slice(0, 120)}`);
+      return;
+    }
+    const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
+    if (added.length > 0) fail(build, `the page-world bridge adds globals: ${added.join(', ')}`);
+    const wanted = BRIDGE_INSTALLS_AT.includes(href) ? [['tailorit:bridge', true]] : [];
+    if (!isDeepStrictEqual(listeners, wanted)) {
+      fail(build, `the page-world bridge listens for ${JSON.stringify(listeners)} at ${href || 'no address'}, not `
+        + `${JSON.stringify(wanted)}`);
+    }
   }
-  const added = Object.getOwnPropertyNames(sandbox).filter((name) => !before.has(name));
-  if (added.length > 0) fail(build, `the page-world bridge adds globals: ${added.join(', ')}`);
-  if (!isDeepStrictEqual(listeners, [['tailorit:bridge', true]])) {
-    fail(build, `the page-world bridge listens for ${JSON.stringify(listeners)}, not its command alone`);
+}
+
+/** Each content script's bundle names none of WXT_CONTEXT_NAMES: nothing of the extension announces itself to a page. */
+function checkNoWxtContext(build, dir, manifest) {
+  for (const script of manifest.content_scripts ?? []) {
+    for (const path of Array.isArray(script.js) ? script.js : []) {
+      const file = join(dir, String(path));
+      if (!existsSync(file)) continue;
+      const text = readFileSync(file, 'utf8');
+      for (const name of WXT_CONTEXT_NAMES) {
+        if (text.includes(name)) fail(build, `content script ${String(path)} holds WXT's content-script context (${name})`);
+      }
+    }
   }
 }
 
@@ -236,6 +277,7 @@ for (const build of BUILDS) {
   }
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
   checkContentScriptSize(build, dir, manifest);
+  checkNoWxtContext(build, dir, manifest);
   checkIcons(build, dir, manifest);
   checked.push({ build, sizes: all.map((file) => [relative(dir, file), statSync(file).size]) });
 }

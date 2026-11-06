@@ -1,12 +1,13 @@
 /*
  * Phase 0's smoke suite: the extension loads, its worker starts with the fixed id, the content script injects on every
  * ATS host served at its real address (an embedded form's frame included, its company page not), the panel renders,
- * the worker reaches the mock, content scripts are refused storage.local, nothing announces the extension to the page,
- * and the worker comes back after being stopped. Runs on the e2e build and on the production build.
+ * the worker reaches the mock, content scripts are refused storage.local, nothing announces the extension to the page
+ * (and at a page that shows no posting, nothing of it reaches the page at all, not even a listener keyed to its id), and
+ * the worker comes back after being stopped. Runs on the e2e build and on the production build.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import type { Worker } from '@playwright/test';
+import type { Page, Worker } from '@playwright/test';
 import { expect, sessionStorage, test } from '../fixtures.ts';
 import { spyRecord } from '../helpers/spies.ts';
 import { readSession, stopWorker } from '../helpers/stop-worker.ts';
@@ -35,6 +36,31 @@ async function frames(worker: Worker): Promise<FrameEntry[]> {
 }
 
 const ATS_PAGES = Object.keys(SMOKE_ROUTES).filter((url) => !/tailorit-fixture\.example|example\.com|embed\/job_app/.test(url));
+
+/** The types of every listener on the top document and its window, in every world of the top frame (the page's own and
+ *  each isolated one, the content script's included: the debugger lists a world's own listeners only), sorted. */
+async function listenerTypes(page: Page): Promise<string[]> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const contexts: Array<{ id: number; auxData?: { frameId?: string } }> = [];
+    cdp.on('Runtime.executionContextCreated', ({ context }) => contexts.push(context));
+    // Enabling reports every context that exists already.
+    await cdp.send('Runtime.enable');
+    const top = (await cdp.send('Page.getFrameTree')).frameTree.frame.id;
+    const types: string[] = [];
+    for (const context of contexts.filter((each) => each.auxData?.frameId === top)) {
+      for (const expression of ['document', 'window']) {
+        const { result } = await cdp.send('Runtime.evaluate', { expression, contextId: context.id });
+        if (result.objectId === undefined) continue;
+        const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId });
+        types.push(...listeners.map((listener) => listener.type));
+      }
+    }
+    return types.sort();
+  } finally {
+    await cdp.detach();
+  }
+}
 
 test.describe('smoke', () => {
   test('the worker starts with the id the manifest key fixes', async ({ extensionId }) => {
@@ -96,6 +122,93 @@ test.describe('smoke', () => {
     expect(record.messages.filter((data) => data.includes(extensionId))).toEqual([]);
     await page.close();
   });
+
+  test('at a page that shows no posting, nothing of the extension reaches the page: no event, message or DOM change',
+    async ({ extContext, extensionId, ext, routeLog, build }) => {
+      test.skip(build !== 'e2e', "the content script's settled probe is compiled into the e2e build only");
+      // The v3 Phase 6/7b review's round 2 (E1): an employer's own pages on an ATS domain, and a board. The page's own
+      // spy listens from before any script for WXT's started event (the old content-script context's announcement,
+      // which a page could listen for since the id is fixed), the bridge's command, window messages and, once the
+      // page is parsed, every change to its DOM.
+      const pages = ['https://internal-acme.icims.com/jobs/1/engineer/job', 'https://performancemanager4.successfactors.com/sf/home',
+        'https://jobs.lever.co/acme'];
+      routeLog.serve(Object.fromEntries(pages.map((url) => [url, 'fixtures/smoke/form.html'])));
+      for (const url of pages) {
+        const page = await extContext.newPage();
+        await page.addInitScript((id) => {
+          const seen: string[] = [];
+          (window as unknown as { __seen: string[] }).__seen = seen;
+          for (const entry of ['content', 'content-script']) {
+            document.addEventListener(`${id}:${entry}:wxt:content-script-started`, () => seen.push(`event:${entry}`), true);
+          }
+          document.addEventListener('tailorit:bridge', () => seen.push('event:bridge'), true);
+          window.addEventListener('message', () => seen.push('message'));
+          document.addEventListener('DOMContentLoaded', () => new MutationObserver((records) => {
+            for (const record of records) seen.push(`mutation:${record.type}:${record.target.nodeName}`);
+          }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true }));
+        }, extensionId);
+        await page.goto(url);
+        const tabId = await ext.tabIdOf(page);
+        // The content script has finished its start-up there (the e2e build's probe), and said nothing to the page.
+        await expect.poll(async () => (((await ext.session())['e2e:events'] as Array<{ type: string; tabId?: number }>
+          | undefined) ?? []).some((event) => event.type === 'content-settled' && event.tabId === tabId), { message: url })
+          .toBe(true);
+        await page.waitForTimeout(500);
+        expect(await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen), url).toEqual([]);
+        // The spy hears the event when it comes (its own dispatch, here).
+        await page.evaluate((id) => document.dispatchEvent(new CustomEvent(`${id}:content:wxt:content-script-started`)),
+          extensionId);
+        expect(await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen), url).toEqual(['event:content']);
+        await page.close();
+      }
+    });
+
+  test('at an ATS domain page that shows no posting, no listener keyed to the extension is on the page',
+    async ({ extContext, extensionId, ext, routeLog, build }) => {
+      test.skip(build !== 'e2e', "the content script's settled probe is compiled into the e2e build only");
+      // The v3 Phase 6/7b review's round 3 (X1): a page timing its own dispatch of an event named after the fixed id
+      // learnt the extension was there when our listener ran. On an employer's own pages on a shared ATS domain no
+      // such listener is on the document or the window, nor one for any name of the extension's own (a colon in it);
+      // on a host of public job postings the bridge's own is, and so are the forged WXT events' two (so the debugger is
+      // seen to list the content script's listeners). Round 4 (Y1): it is decided once, at load, as the bridge's is, so
+      // the page's own pushState to a posting address on its origin adds none either.
+      const pages: Array<[string, boolean, string?]> = [['https://internal-acme.icims.com/jobs/1/engineer/job', false],
+        ['https://performancemanager4.successfactors.com/sf/home', false],
+        ['https://acme.taleo.net/careersection/2/jobsearch.ftl', false, '/careersection/ex/jobdetail.ftl?job=1&lang=en'],
+        ['https://wd5.myworkdaysite.com/recruiting/acme/External', false, '/recruiting/acme/External/job/Remote/Engineer_JR-1'],
+        ['https://jobs.lever.co/acme', true]];
+      routeLog.serve(Object.fromEntries(pages.map(([url]) => [url, 'fixtures/smoke/form.html'])));
+      const keyed = async (page: Page) => (await listenerTypes(page))
+        .filter((type) => type.includes(extensionId) || type.includes(':'));
+      for (const [url, listens, route] of pages) {
+        const page = await extContext.newPage();
+        await page.goto(url);
+        const tabId = await ext.tabIdOf(page);
+        await expect.poll(async () => (((await ext.session())['e2e:events'] as Array<{ type: string; tabId?: number }>
+          | undefined) ?? []).some((event) => event.type === 'content-settled' && event.tabId === tabId), { message: url })
+          .toBe(true);
+        expect(await keyed(page), url).toEqual(listens ? [`${extensionId}:content:wxt:content-script-started`,
+          `${extensionId}:content:wxt:locationchange`, 'tailorit:bridge'] : []);
+        if (route !== undefined) {
+          await page.evaluate((to) => history.pushState(null, '', to), route);
+          // The reviewer's probe waited a second after its pushState before timing its dispatches.
+          await page.waitForTimeout(1_000);
+          expect(await keyed(page), `${url} -> ${route}`).toEqual([]);
+        }
+        await page.close();
+      }
+      // A pushState made before the content script starts (it runs once the page is idle) moves nothing either: the
+      // address it decides by is the one the document was loaded at (its navigation entry).
+      const early = await extContext.newPage();
+      await early.addInitScript(() => history.pushState(null, '', '/careersection/ex/jobdetail.ftl?job=1&lang=en'));
+      await early.goto(pages[2]![0]);
+      const earlyTab = await ext.tabIdOf(early);
+      await expect.poll(async () => (((await ext.session())['e2e:events'] as Array<{ type: string; tabId?: number }>
+        | undefined) ?? []).some((event) => event.type === 'content-settled' && event.tabId === earlyTab)).toBe(true);
+      expect(new URL(early.url()).pathname).toBe('/careersection/ex/jobdetail.ftl');
+      expect((await listenerTypes(early)).filter((type) => type.includes(extensionId))).toEqual([]);
+      await early.close();
+    });
 
   test('the worker reaches the TailorIT mock with Local Network Access on', async ({ worker, build }) => {
     test.skip(build !== 'e2e', 'only the e2e build has the mock as its TailorIT origin');

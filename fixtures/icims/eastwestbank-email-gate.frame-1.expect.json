@@ -1,0 +1,45 @@
+{
+  "fixture": "icims/eastwestbank-email-gate.frame-1",
+  "source": "https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/login?in_iframe=1",
+  "captured": "2026-11-05T05:55:22.000Z",
+  "fields": [
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input#email"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "textarea[name=\"h-captcha-response\"]",
+      "note": "The invisible hCaptcha's response field, bound to Next."
+    }
+  ],
+  "hooks": {
+    "detect": "form#enterEmailForm",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#email",
+      "password": null,
+      "confirm": null,
+      "terms": [],
+      "button": "input#enterEmailSubmitButton",
+      "form": "form#enterEmailForm"
+    },
+    "signInPrelude": null,
+    "neverPress": [],
+    "pressable": [
+      "input#enterEmailSubmitButton"
+    ]
+  }
+}

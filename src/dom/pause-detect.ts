@@ -6,13 +6,27 @@
  *   security or one-time code) means an email code. The adapter's authState adds what a platform's snapshots show.
  * - CAPTCHA: recognised only from the vendors' documented markup. A visible challenge frame from reCAPTCHA
  *   (google.com or recaptcha.net under /recaptcha/), hCaptcha (hcaptcha.com), Cloudflare Turnstile
- *   (challenges.cloudflare.com) or Arkose Labs (arkoselabs.com), or a visible explicit-render container (.g-recaptcha,
- *   .h-captcha, .cf-turnstile, [data-sitekey]) over or inside the form. The invisible reCAPTCHA badge and a widget
+ *   (challenges.cloudflare.com), Arkose Labs (arkoselabs.com, and FunCaptcha's legacy funcaptcha.com), DataDome
+ *   (captcha-delivery.com) or GeeTest (geetest.com), or a visible explicit-render container (.g-recaptcha, .h-captcha,
+ *   .cf-turnstile, [data-sitekey], PerimeterX's #px-captcha, GeeTest's .geetest_holder, .geetest_panel,
+ *   .geetest_captcha, .geetest_box) over or inside the form, in the document, its open shadow roots or a frame of its
+ *   own origin inside it (the v3 Phase 6/7b review's round 2, E10). A closed shadow root cannot be read, nor an Arkose
+ *   custom domain recognised: a known limit. The invisible reCAPTCHA badge and a widget
  *   bound to a button (invisible mode) do not pause. Phase 5 confirms this markup against the vendors' documentation.
  *   A widget the person solved holds its response token in the field the vendor puts inside it (g-recaptcha-response,
  *   h-captcha-response, cf-turnstile-response): it does not pause, and neither does its frame (the Phase 5 review,
- *   X-S4). The token is only read for being there: it is never kept, sent or logged.
- * - Workday's entry choice is the adapter's to declare.
+ *   X-S4). The token is only read for being there: it is never kept, sent or logged. A widget that holds no token
+ *   (Arkose's, DataDome's, PerimeterX's, GeeTest's) is never known solved.
+ * - vendorFramesShown: every visible frame on a vendor's challenge host, solved or not (the invisible reCAPTCHA badge
+ *   aside): Sign-in Auto types nothing while one shows (round 2, E10). challengeLikeFramesShown (round 3, X9): every
+ *   visible frame of another origin whose address, title, name or label reads like a challenge (CHALLENGE_WORDS: a
+ *   vendor this module does not know, a site's own), which Sign-in Auto also waits out; a fill does not pause for one.
+ * - Workday's entry choice is the adapter's to declare, and so are (v3 Phase 7b) an email gate (an email-first identity
+ *   step: Oracle's and iCIMS's, no password) and a password reset (Workday's Forgot Password, Taleo's and SuccessFactors'
+ *   password help), whose email box is never filled.
+ * - Order: a CAPTCHA shown and not solved (and not handed) comes first, then the adapter's word, then the rules above
+ *   (the v3 Phase 6/7b review, S1): a challenge over a sign-in, an account's creation, an email gate or a choice of how
+ *   to apply is the person's, so Sign-in Auto types nothing and the agent's entry presses nothing while it shows.
  * - The whole document is read, open shadow roots included (the scanner fills fields there: the Phase 5 review, X-S6);
  *   the extension's own UI never is.
  * - PauseOptions.handed: the CAPTCHA frames and containers the person was already handed on this step (their trusted
@@ -29,7 +43,8 @@ import { flatContains, type ScanCache, viewOf, newScanCache } from './scan-cache
 import { isUserVisible } from './visibility';
 
 /** Why a step pauses. */
-export const PAUSE_KINDS = ['sign-in', 'create-account', 'email-code', 'captcha', 'entry-choice'] as const;
+export const PAUSE_KINDS = ['sign-in', 'create-account', 'email-gate', 'email-code', 'captcha', 'entry-choice',
+  'forgot-password'] as const;
 export type PauseKind = (typeof PAUSE_KINDS)[number];
 
 /** What showed it. */
@@ -45,7 +60,8 @@ export interface PauseSignal {
 
 const CONFIRM_PASSWORD = /\b(?:confirm|re-?enter|repeat|retype|verify)\b.*\bpassword\b|\bpassword\b.*\b(?:again|confirmation)\b/i;
 const CODE_LABEL = /\b(?:verification|security|confirmation|one[-\s]?time|authentication|access|login|sign[-\s]?in|e-?mail(?:ed)?|sms|text)\s+(?:code|pin|passcode)\b|\bpass\s?code\b|\botp\b/i;
-const CAPTCHA_CONTAINERS = '.g-recaptcha, .h-captcha, .cf-turnstile, [data-sitekey]';
+const CAPTCHA_CONTAINERS = '.g-recaptcha, .h-captcha, .cf-turnstile, [data-sitekey], #px-captcha, .geetest_holder, '
+  + '.geetest_panel, .geetest_captcha, .geetest_box';
 /** The fields the vendors put inside a widget for its response token (reCAPTCHA's, hCaptcha's, Turnstile's). */
 const RESPONSE_FIELDS = 'textarea[name="g-recaptcha-response"], textarea[name="h-captcha-response"], '
   + 'input[name="cf-turnstile-response"]';
@@ -59,12 +75,16 @@ export interface PauseOptions {
 /** The reason this frame's step needs the person, or null. `root` is the form root (null when the page has none). */
 export function detectPause(doc: Document, root: Element | null, adapter: Adapter | null,
   cache: ScanCache = newScanCache(), options: PauseOptions = {}): PauseSignal | null {
-  const declared = adapter?.authState?.(doc) ?? null;
-  if (declared !== null) return { kind: declared, evidence: 'adapter' };
+  // A challenge shown and not solved comes first, before any account page the adapter names (the v3 Phase 6/7b
+  // review, S1): nothing is typed or pressed while one shows.
   const scopes = scopesOf(doc);
   const captcha = shownCaptchas(scopes, root, cache).find((shown) => !isHanded(shown.el, options.handed));
   if (captcha !== undefined) return { kind: 'captcha', evidence: captcha.evidence };
-  const inputs = all<HTMLInputElement>(scopes, 'input').filter((input) => isUserVisible(input, cache));
+  const declared = adapter?.authState?.(doc) ?? null;
+  if (declared !== null) return { kind: declared, evidence: 'adapter' };
+  // Account fields are the page's own: a frame of its origin is read for challenges alone.
+  const inputs = all<HTMLInputElement>(scopes.filter((each) => each.frame === null), 'input').map(({ el }) => el)
+    .filter((input) => isUserVisible(input, cache));
   const passwords = inputs.filter((input) => input.type === 'password');
   if (passwords.length >= 2) return { kind: 'create-account', evidence: 'password' };
   if (passwords.length === 1) {
@@ -101,45 +121,113 @@ export function unsolvedCaptchas(doc: Document, root: Element | null, cache: Sca
   return shownCaptchas(scopesOf(doc), root, cache).length;
 }
 
-/** The document and every open shadow root in it, nested ones included; the extension's own UI is never entered. */
-function scopesOf(doc: Document): Array<Document | ShadowRoot> {
-  const scopes: Array<Document | ShadowRoot> = [doc];
+/** A place challenges are looked for: the document, an open shadow root in it, or the document of a frame of its own
+ *  origin inside it, with the frame element of `doc` it is drawn in (null for `doc`'s own scopes). */
+interface Scope {
+  scope: Document | ShadowRoot;
+  frame: Element | null;
+}
+
+/** The document and every open shadow root in it, nested ones included, and (round 2, E10) the documents of the frames
+ *  of its own origin inside it, theirs too; the extension's own UI is never entered. */
+function scopesOf(doc: Document): Scope[] {
+  const scopes: Scope[] = [{ scope: doc, frame: null }];
   for (let at = 0; at < scopes.length; at += 1) {
-    for (const el of Array.from(scopes[at]!.querySelectorAll('*'))) {
-      if (el.shadowRoot !== null && !isInOwnUi(el)) scopes.push(el.shadowRoot);
+    const { scope, frame } = scopes[at]!;
+    for (const el of Array.from(scope.querySelectorAll('*'))) {
+      if (isInOwnUi(el)) continue;
+      if (el.shadowRoot !== null) scopes.push({ scope: el.shadowRoot, frame });
+      if (el.localName === 'iframe' || el.localName === 'frame') {
+        let inner: Document | null = null;
+        try {
+          inner = (el as HTMLIFrameElement).contentDocument;
+        } catch {
+          inner = null;
+        }
+        if (inner !== null && inner.documentElement !== null) scopes.push({ scope: inner, frame: frame ?? el });
+      }
     }
   }
   return scopes;
 }
 
-/** Every element of the scopes matching `selector`, the extension's UI excluded. */
-function all<T extends Element>(scopes: ReadonlyArray<Document | ShadowRoot>, selector: string): T[] {
-  return scopes.flatMap((scope) => Array.from(scope.querySelectorAll<T>(selector))).filter((el) => !isInOwnUi(el));
+/** Every element of the scopes matching `selector`, with the frame it is drawn in; the extension's UI excluded. */
+function all<T extends Element>(scopes: readonly Scope[], selector: string): Array<{ el: T; frame: Element | null }> {
+  return scopes.flatMap(({ scope, frame }) => Array.from(scope.querySelectorAll<T>(selector))
+    .filter((el) => !isInOwnUi(el)).map((el) => ({ el, frame })));
+}
+
+/** Whether a challenge element shows where the step is: visible in its own document, and (one in a frame of the page's
+ *  origin) that frame visible, over or inside the form. */
+function showsAt(el: Element, frame: Element | null, root: Element | null, cache: ScanCache): boolean {
+  if (!isUserVisible(el, cache)) return false;
+  if (frame === null) return overOrInside(el, root);
+  return isUserVisible(frame, cache) && overOrInside(frame, root);
 }
 
 /** The visible challenge frames, then the visible containers, over or inside the form, none of them solved. */
-function shownCaptchas(scopes: ReadonlyArray<Document | ShadowRoot>, root: Element | null, cache: ScanCache):
+function shownCaptchas(scopes: readonly Scope[], root: Element | null, cache: ScanCache):
   Array<{ el: Element; evidence: PauseEvidence }> {
   const shown: Array<{ el: Element; evidence: PauseEvidence }> = [];
-  const view = scopes[0] === undefined ? null : viewOf(scopes[0]);
-  for (const frame of all<HTMLIFrameElement>(scopes, 'iframe')) {
-    if (frame.closest('.grecaptcha-badge') !== null || !isUserVisible(frame, cache)) continue;
-    const vendor = challengeVendor(frame.src, view);
-    if (vendor === null || !overOrInside(frame, root)) continue;
+  for (const { el: frame, frame: host } of all<HTMLIFrameElement>(scopes, 'iframe')) {
+    if (frame.closest('.grecaptcha-badge') !== null) continue;
+    const vendor = challengeVendor(frame.src, viewOf(frame.ownerDocument));
+    if (vendor === null || !showsAt(frame, host, root, cache)) continue;
     // Only a vendor that puts a response token in its widget can be known solved; Arkose's never is.
     const container = frame.closest(CAPTCHA_CONTAINERS);
     if (vendor === 'token' && container !== null && solved(container)) continue;
     shown.push({ el: frame, evidence: 'captcha-frame' });
   }
-  for (const container of all(scopes, CAPTCHA_CONTAINERS)) {
+  for (const { el: container, frame: host } of all(scopes, CAPTCHA_CONTAINERS)) {
     const tag = container.localName;
     // Invisible mode binds the widget to a button, or says data-size="invisible": no challenge is shown.
     if (tag === 'button' || tag === 'input' || tag === 'a') continue;
     if ((container.getAttribute('data-size') ?? '').toLowerCase() === 'invisible') continue;
-    if (container.closest('.grecaptcha-badge') !== null || !isUserVisible(container, cache)) continue;
-    if (overOrInside(container, root) && !solved(container)) shown.push({ el: container, evidence: 'captcha-container' });
+    if (container.closest('.grecaptcha-badge') !== null) continue;
+    if (showsAt(container, host, root, cache) && !solved(container)) {
+      shown.push({ el: container, evidence: 'captcha-container' });
+    }
   }
   return shown;
+}
+
+/** How many visible frames on a vendor's challenge host the page shows, solved or not, in the document, its open shadow
+ *  roots and the frames of its own origin (the invisible reCAPTCHA badge aside): Sign-in Auto types nothing while one
+ *  shows (module header). */
+export function vendorFramesShown(doc: Document, cache: ScanCache = newScanCache()): number {
+  return all<HTMLIFrameElement>(scopesOf(doc), 'iframe').filter(({ el, frame }) => el.closest('.grecaptcha-badge') === null
+    && challengeHost(el.src, viewOf(el.ownerDocument)) && showsAt(el, frame, null, cache)).length;
+}
+
+/** Words a challenge frame's address, title, name or label carries (round 3, X9); "bot" as a word of its own. */
+const CHALLENGE_WORDS = /captcha|challenge|verify|human|arkose|turnstile|\bbots?\b/i;
+
+/** How many visible frames of another origin than their document's the page shows whose address, title, name or
+ *  aria-label reads like a challenge (CHALLENGE_WORDS), in the document, its open shadow roots and the frames of its own
+ *  origin (module header): Sign-in Auto types nothing while one shows. Its address is read, never loaded. */
+export function challengeLikeFramesShown(doc: Document, cache: ScanCache = newScanCache()): number {
+  return all<HTMLIFrameElement>(scopesOf(doc), 'iframe').filter(({ el, frame }) => crossOrigin(el)
+    && [el.src, el.title, el.name, el.getAttribute('aria-label') ?? ''].some((text) => CHALLENGE_WORDS.test(text))
+    && showsAt(el, frame, null, cache)).length;
+}
+
+/** Whether a frame shows a document of another origin than its own document's: its address, read against that
+ *  document's, has another origin, or its document cannot be reached. */
+function crossOrigin(frame: HTMLIFrameElement): boolean {
+  const view = viewOf(frame.ownerDocument);
+  if (view !== null && frame.src !== '') {
+    try {
+      const url = new view.URL(frame.src, frame.ownerDocument.baseURI);
+      if (/^https?:$/.test(url.protocol) && url.origin !== view.location.origin) return true;
+    } catch {
+      // An address that does not parse: judged by its document below.
+    }
+  }
+  try {
+    return frame.contentDocument === null;
+  } catch {
+    return true;
+  }
 }
 
 /** A widget that holds its response token in the vendor's own field inside it: the person solved it. */
@@ -156,24 +244,48 @@ function isHanded(el: Element, handed: ReadonlySet<Element> | undefined): boolea
   return container !== null && handed.has(container);
 }
 
-/** A frame address on a vendor's challenge host: 'token' for a vendor whose widget holds its response token
- *  (reCAPTCHA, hCaptcha, Turnstile), 'no-token' for one whose widget holds none (Arkose Labs), null for any other
- *  address. An invisible reCAPTCHA anchor says size=invisible. */
-function challengeVendor(src: string, view: (Window & typeof globalThis) | null): 'token' | 'no-token' | null {
+/** The vendors' challenge hosts whose widgets hold no response token (module header): Arkose Labs, FunCaptcha's legacy
+ *  host, DataDome, GeeTest. */
+const NO_TOKEN_HOSTS = ['arkoselabs.com', 'funcaptcha.com', 'captcha-delivery.com', 'geetest.com'];
+
+/** A frame address parsed, https only, or null. */
+function frameUrl(src: string, view: (Window & typeof globalThis) | null): URL | null {
   if (src === '' || view === null) return null;
-  let url: URL;
   try {
-    url = new view.URL(src);
+    const url = new view.URL(src);
+    return url.protocol === 'https:' ? url : null;
   } catch {
     return null;
   }
-  if (url.protocol !== 'https:') return null;
+}
+
+/** Whether `host` is `domain` or one of its subdomains. */
+const onDomain = (host: string, domain: string) => host === domain || host.endsWith(`.${domain}`);
+
+/** Whether a frame address is on a vendor's challenge host, whatever it shows (vendorFramesShown). */
+function challengeHost(src: string, view: (Window & typeof globalThis) | null): boolean {
+  const url = frameUrl(src, view);
+  if (url === null) return false;
+  const host = url.hostname.toLowerCase();
+  if (['google.com', 'www.google.com', 'recaptcha.net', 'www.recaptcha.net'].includes(host)) {
+    return url.pathname.startsWith('/recaptcha/');
+  }
+  return onDomain(host, 'hcaptcha.com') || host === 'challenges.cloudflare.com'
+    || NO_TOKEN_HOSTS.some((domain) => onDomain(host, domain));
+}
+
+/** A frame address on a vendor's challenge host: 'token' for a vendor whose widget holds its response token
+ *  (reCAPTCHA, hCaptcha, Turnstile), 'no-token' for one whose widget holds none (NO_TOKEN_HOSTS), null for any other
+ *  address. An invisible reCAPTCHA anchor says size=invisible. */
+function challengeVendor(src: string, view: (Window & typeof globalThis) | null): 'token' | 'no-token' | null {
+  const url = frameUrl(src, view);
+  if (url === null) return null;
   const host = url.hostname.toLowerCase();
   if (['google.com', 'www.google.com', 'recaptcha.net', 'www.recaptcha.net'].includes(host)) {
     return url.pathname.startsWith('/recaptcha/') && url.searchParams.get('size') !== 'invisible' ? 'token' : null;
   }
-  if (host === 'hcaptcha.com' || host.endsWith('.hcaptcha.com') || host === 'challenges.cloudflare.com') return 'token';
-  return host === 'arkoselabs.com' || host.endsWith('.arkoselabs.com') ? 'no-token' : null;
+  if (onDomain(host, 'hcaptcha.com') || host === 'challenges.cloudflare.com') return 'token';
+  return NO_TOKEN_HOSTS.some((domain) => onDomain(host, domain)) ? 'no-token' : null;
 }
 
 /** Inside the form root (shadow roots crossed), or drawn over it. Anywhere on the page when there is no form root. */

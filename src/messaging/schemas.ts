@@ -254,8 +254,9 @@ export type StepTarget = (typeof STEP_TARGETS)[number];
 export const RUN_TRIGGERS = ['launcher', 'panel', 'resume', 'agent'] as const;
 export type RunTrigger = (typeof RUN_TRIGGERS)[number];
 
-/** The account pages Sign-in mode Auto fills (v3 Phase 5): a sign-in, or an account's creation. */
-export const SIGN_IN_WALLS = ['sign-in', 'create-account'] as const;
+/** The account pages Sign-in mode Auto fills (v3 Phase 5): a sign-in, or an account's creation; and (v3 Phase 7b) an
+ *  email gate, whose answer carries the email alone, never the password. */
+export const SIGN_IN_WALLS = ['sign-in', 'create-account', 'email-gate'] as const;
 export type SignInWall = (typeof SIGN_IN_WALLS)[number];
 
 /** What came of the agent's press on a posting page's entry control (v3 Phase 5; agent/enter): 'pressed' (the
@@ -380,8 +381,14 @@ const contentMessages = [
    *  (`create-account`) page and asks for the job-site sign-in of its own host. The worker reads the host from Chrome's
    *  sender address, never from a payload, fetches GET /credentials?host= only while the person chose Auto, the
    *  connection may read sign-ins and the disclosure was acknowledged, and answers it to this frame alone, once per
-   *  tab, host and wall: the one message that ever carries the password. */
+   *  tab, host and wall: the one message that ever carries the password. At an email gate (`email-gate`, v3 Phase 7b)
+   *  the answer carries the email alone. */
   z.strictObject({ v, type: z.literal('signin/credential'), wall: z.enum(SIGN_IN_WALLS) }),
+  /** Round 3 of the v3 Phase 6/7b review (X8): the auto-apply agent's entry press was made in this frame (press.ts
+   *  pressEntry, for agent/enter), told at once, before the entry waits on what the press brings: a press that takes
+   *  the document away ends it before agent/enter is answered. The worker takes it from the agent's tab's top frame,
+   *  for a document it asked to enter, as the job begun. Nothing else. */
+  z.strictObject({ v, type: z.literal('agent/entered') }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -942,7 +949,8 @@ export type EntryAnswer = z.infer<typeof EntryAnswerSchema>;
 export const SignInCredentialAnswerSchema = z.strictObject({
   host: AutofillSignInHostSchema,
   email: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.email),
-  password: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.password).regex(/^[^\r\n]*$/),
+  /** Absent only in the answer for an email gate (v3 Phase 7b), which types the email alone. */
+  password: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.password).regex(/^[^\r\n]*$/).optional(),
 });
 export type SignInCredential = z.infer<typeof SignInCredentialAnswerSchema>;
 
@@ -1021,6 +1029,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'submit/armed': DoneAnswerSchema,
   'submit/detected': DoneAnswerSchema,
   'signin/credential': SignInCredentialAnswerSchema,
+  'agent/entered': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. */

@@ -110,6 +110,7 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 }
 .tia-unsupported__name { font-weight: 700; }
 .tia-unsupported__hosts { font-size: 12px; color: var(--tia-muted); overflow-wrap: anywhere; }
+.tia-unsupported__note { font-size: 12px; color: var(--tia-muted); font-style: italic; }
 .tia-panel__foot { display: grid; justify-items: center; gap: 2px; margin-top: 4px; }
 .tia-panel__foot .tia-connection { margin: 0; }
 

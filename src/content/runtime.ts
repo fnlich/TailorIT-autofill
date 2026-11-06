@@ -81,15 +81,21 @@
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
  * wxt:locationchange. The runtime owns its lifetime (one AbortController), reads address changes from location.href
- * (location.ts), and logs forged WXT events without letting them change anything (forged.ts). It ends only on the
+ * (location.ts), and logs forged WXT events without letting them change anything (forged.ts), listening for them only
+ * where the page-world bridge installs, decided once, as the bridge's is, from the address the document was loaded at
+ * (the v3 Phase 6/7b review's round 3, X1, and round 4, Y1: elsewhere on an ATS domain no listener keyed to the
+ * extension's id is on the page for a page to time, nor does a route of the page's own add one). It ends only on the
  * platform's word that the extension is gone (isValid(), or a send that fails as context-invalidated), or when the
  * document is going away (a trusted pagehide that does not keep the page in the back/forward cache). Then the run is
  * aborted, its planned writes dropped and the UI removed. A page the cache keeps only drops its run, and when the
  * browser brings it back (a trusted pageshow with persisted set) it says frame/hello again (W1).
  * An address that is no application (applicationOf null: a host off the list, or a Lever or Greenhouse address its
- * parser does not read, W2) gets no launcher and no run, as a page with no form root does.
+ * parser does not read, W2) gets no launcher and no run, as a page with no form root does; and (the v3 Phase 6/7b
+ * review, S3) a document whose address never was one says no frame/hello at all: the worker never hears of it, until a
+ * single-page application's route shows a posting's page there.
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
+import { bridgeInstallsAt } from '../adapters/address';
 import { companyOfUrl, scopeOf } from '../adapters/company';
 import type { Adapter } from '../adapters/types';
 import type { Platform } from '../core/enums';
@@ -98,6 +104,7 @@ import type { BaseKey, FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
+import { detectPause } from '../dom/pause-detect';
 import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow, startDeadline, type Cancel } from '../dom/time';
 import { visibleText } from '../dom/visible-text';
@@ -121,7 +128,7 @@ import {
 } from './orchestrator';
 import { readPostingPage } from './policy';
 import { newSuccessSign, signsOf, SUBMIT_CONFIRM_MS, type PressSnapshot } from './submitted';
-import { pressEntry, refusalAfter } from './press';
+import { blockOf, entryWaitOf, pressEntry, refusalAfter } from './press';
 import { signIn } from './sign-in';
 import { createReportLimiter } from './report';
 import { showField } from './targets';
@@ -190,6 +197,17 @@ function continueEventOf(state: RunState): RunEvent {
 function urlOf(href: string): URL | null {
   try {
     return new URL(href);
+  } catch {
+    return null;
+  }
+}
+
+/** The address the document in `view` was loaded at, before any script of the page could move it (its navigation
+ *  entry; round 4 of the v3 Phase 6/7b review, Y1), or null where the browser gives none. */
+export function loadedHref(view: Window | null): string | null {
+  try {
+    const entry = view?.performance.getEntriesByType('navigation')[0];
+    return entry !== undefined && entry.name !== '' ? entry.name : null;
   } catch {
     return null;
   }
@@ -346,6 +364,11 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   // ── Runs ────────────────────────────────────────────────────────────────────────────────────────────────────────
   async function hello(): Promise<void> {
+    // The v3 Phase 6/7b review (S3): a document says hello only once its address shows a posting's page on its
+    // platform's candidate host (applicationOf: a posting, its application or the page after submitting), the same
+    // reading the page-world bridge installs by; one whose address never did stays silent (an employer's own pages on
+    // an ATS domain, a board). One that said hello before says it again, so the worker hears its form go.
+    if (app === null && told === null) return;
     const hasForm = page !== null;
     const letter = hasForm && asksForLetter();
     const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }),
@@ -691,17 +714,28 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** v3 Phase 5: agent/enter, in the top frame with no form: the adapter's declared entry control (press.ts
-   *  pressEntry); a sign-in page before any form is signed in to with Sign-in mode Auto (sign-in.ts), else it blocks. */
+   *  pressEntry), waited for as long as the address's adapters ask (press.ts entryWaitOf: 8 s, and v3 Phase 7b's
+   *  Workday and Oracle, whose postings show their Apply 6 to 11 s after load, quirks.entryWaitMs); a sign-in page
+   *  before any form is signed in to with Sign-in mode Auto (sign-in.ts), else it blocks. */
   async function enterForAgent(): Promise<EntryAnswer> {
     const at = urlOf(readHref());
     if (stopped || page !== null || at === null || !isTop) return { outcome: 'not-offered' };
     const own = adapters(at);
-    const entered = await pressEntry(doc, own, lifetime.signal);
+    // The press is told the worker as it is made, with nothing awaited (round 3 of the v3 Phase 6/7b review, X8): one
+    // that takes the page away ends this document before the entry's answer.
+    const entered = await pressEntry(doc, own, lifetime.signal, entryWaitOf(own), undefined,
+      () => void channel.request({ v: 1, type: 'agent/entered' }).catch(() => undefined));
     if (entered.outcome !== 'blocked' || entered.block !== 'sign-in' || signInMode !== 'auto' || own.length === 0) {
       return entered;
     }
     const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, signal: lifetime.signal });
-    if (outcome === 'continue' || outcome === 'left') return { outcome: 'pressed' };
+    if (outcome === 'left') return { outcome: 'pressed' };
+    if (outcome === 'continue') {
+      // What the page shows after the sign-in: a challenge its press raised, an email code, another account page is
+      // the person's, and the entry says so (the v3 Phase 6/7b review's round 2, E7); nothing: it went on.
+      const after = detectPause(doc, null, own[0]!);
+      return after === null ? { outcome: 'pressed' } : { outcome: 'blocked', block: blockOf(after.kind) };
+    }
     return { outcome: 'blocked', block: outcome === 'failed' ? 'sign-in-failed' : 'sign-in' };
   }
 
@@ -1009,12 +1043,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   // ── Start-up ────────────────────────────────────────────────────────────────────────────────────────────────────
-  watchWxtEvents(doc, platform.runtime.id, (kind) => {
-    // The real started event of a newer instance comes only once the extension was reloaded, when the platform says
-    // it is gone (channel.valid() then tears down). Anything else is a page's forgery: logged, changing nothing.
-    if (kind === 'started' && !channel.valid()) return;
-    log('content.forged-wxt-event', kind === 'started' ? { started: true } : { locationChange: true });
-  }, lifetime.signal);
+  // The forged WXT events (forged.ts) are listened for, for the document's life, only where the page-world bridge
+  // installs: decided once, from the address the document was loaded at (loadedHref), never again at a route of the
+  // page's own, which a page could use to add the listener and time it (round 4 of the v3 Phase 6/7b review, Y1).
+  if (bridgeInstallsAt(options.href === undefined ? loadedHref(view) ?? readHref() : readHref())) {
+    watchWxtEvents(doc, platform.runtime.id, (kind) => {
+      // The real started event of a newer instance comes only once the extension was reloaded, when the platform says
+      // it is gone (channel.valid() then tears down). Anything else is a page's forgery: logged, changing nothing.
+      if (kind === 'started' && !channel.valid()) return;
+      log('content.forged-wxt-event', kind === 'started' ? { started: true } : { locationChange: true });
+    }, lifetime.signal);
+  }
   view?.addEventListener('pagehide', (event) => {
     if (!event.isTrusted) return;
     if (!event.persisted) {

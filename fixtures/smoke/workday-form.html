@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Smoke fixture: a Workday application step</title>
+  </head>
+  <body>
+    <!-- Workday's page as its adapter knows it (src/adapters/workday/index.ts): the application's flow page in main,
+         holding a step's form. While the Workday adapter waits for a form drawn late, no other adapter may claim a
+         Workday application page, so the plain form.html would show no form here for 30 s. -->
+    <main>
+      <div data-automation-id="applyFlowPage">
+        <h2 data-automation-id="jobTitleHeading">Software Engineer</h2>
+        <p>VISIBLE-MARKER-SMOKE</p>
+        <form action="/__submitted" method="post">
+          <label for="first">First name</label>
+          <input id="first" name="first" autocomplete="given-name" />
+          <button type="submit">Submit application</button>
+        </form>
+      </div>
+    </main>
+  </body>
+</html>

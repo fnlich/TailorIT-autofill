@@ -1,0 +1,4 @@
+{
+  "https://career2.successfactors.eu/career?career_company=danfossas&lang=en_GB&company=danfossas&site=&loginFlowRequired=true&career_job_req_id=48659&_s.crb=REDACTED": "fixtures/successfactors/danfoss-sign-in.html",
+  "https://jobs.danfoss.com/widgets/cookiemanageriframe/": "fixtures/successfactors/danfoss-sign-in.third-party-frame.html"
+}

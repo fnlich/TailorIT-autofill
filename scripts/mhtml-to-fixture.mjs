@@ -21,12 +21,27 @@
 //   checkboxes' own ids, wrapper_<id>, <id>_label, input_<id>, checkbox_label_<id>, radio_label_<id>, svg_<id>,
 //   input_files_input_<id>, description_input_<id>, <id>_dropdown and an open list's <id>_<option>) become
 //   wk000000000000N (16 characters, as Workable's are) in the order the page first names them, wherever they stand.
+// - Workday, iCIMS, Taleo, SuccessFactors and Oracle (v3 Phases 6 and 7b; normaliseTokens): the per-load values the
+//   public capture of 2026-11-04/05 met become fixed ones: Workday's input-<n> ids (in the order the page first names
+//   them) and its beecatcher's UUID; iCIMS's hashed=<n> and Auth0's state=; SuccessFactors' _s.crb=, requestParams= and
+//   jobSecKey; Oracle's primary-email-<n> and honey-pot-<n>; the hCaptcha site keys on iCIMS and Oracle (public, but
+//   dropped), in data-sitekey and in its frames' addresses (sitekey=), and each hCaptcha widget's id (its
+//   data-hcaptcha-widget-id and the id= of its frames' addresses: the v3 Phase 6/7b review, S9). Taleo's JSF state is
+//   in hidden inputs, which are redacted anyway.
+// - iCIMS, Taleo, SuccessFactors and Oracle (the v3 Phase 6/7b review, C10): the style rules no element of the frame
+//   matches are dropped (pruneCssInPage), their sheets being most of each capture's weight. A rule is kept wherever its
+//   selector, read without its dynamic pseudo-classes (:hover, :focus, :checked, :disabled, ...) and its pseudo-elements,
+//   names an element, and wherever the browser cannot read it so; every at-rule but @media, @supports, @container and
+//   @layer blocks (whose own rules are pruned the same way) is kept whole. The reload's visibility check below holds the
+//   result. Workday's sheets are kept whole: its tests stage one capture's view inside another's page (the choice in the
+//   posting, the landing in the Sign In page), whose rules the page itself would not keep.
 // It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string or a found
 // email remains (also percent- or entity-encoded), if the page still finds an email or phone number, if the page
 // requests anything the route map does not answer, or if any element's visibility changed. Leftover suspicious tokens
 // are printed for review. Counts are printed, never values.
 //
-// Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable> --case <name>
+// Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable|icims|taleo|
+//          successfactors|oracle> --case <name>
 //          [--redact <file>] [--out <folder>]
 // The redact file holds one string per line (blank lines and lines starting with # are skipped); a string that looks
 // like a phone number matches whatever its punctuation. --out defaults to fixtures/.
@@ -40,10 +55,19 @@ import { paint } from './proc.mjs';
 const ROOT = resolve(import.meta.dirname, '..');
 
 /** The platforms a fixture can belong to (src/core/enums.ts PLATFORMS). */
-export const FIXTURE_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable'];
+export const FIXTURE_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable', 'icims', 'taleo', 'successfactors',
+  'oracle'];
 
 /** The hosts the extension runs on (src/shared/hosts.ts, the one list): only frames on these are converted. */
-const ATS_HOST = /^(?:(?:job-)?boards\.greenhouse\.io|jobs\.(?:eu\.)?lever\.co|jobs\.ashbyhq\.com|(?:[a-z0-9-]+\.)+myworkday(?:jobs|site)\.com|apply\.workable\.com)$/;
+const ATS_HOST = new RegExp('^(?:(?:job-)?boards\\.greenhouse\\.io|jobs\\.(?:eu\\.)?lever\\.co|jobs\\.ashbyhq\\.com'
+  + '|(?!(?:www|wd\\d{1,3})\\.)[a-z0-9-]+\\.(?:wd\\d{1,3}\\.)?myworkdayjobs\\.com|wd\\d{1,3}\\.myworkdaysite\\.com'
+  + '|apply\\.workable\\.com'
+  // v3 Phase 7b: the candidate hosts of src/shared/hosts.ts's HOST_PLATFORMS.
+  + '|(?!(?:www|api|login)\\.)(?!internal-)[a-z0-9-]+\\.icims\\.com|(?!www\\.)[a-z0-9-]+\\.taleo\\.net'
+  + '|career\\d{0,3}\\.successfactors\\.(?:com|eu)|[a-z0-9-]+\\.fa(?:\\.[a-z0-9-]+)?\\.oraclecloud\\.com)$');
+
+/** The platforms whose fixtures keep only the style rules their own elements match (pruneCssInPage). */
+export const PRUNED_CSS_PLATFORMS = ['icims', 'taleo', 'successfactors', 'oracle'];
 
 /** Images larger than this become a same-size placeholder: the box is what visibility needs, not the pixels. */
 export const IMAGE_INLINE_MAX = 100 * 1024;
@@ -139,6 +163,76 @@ export function normaliseWorkable(html) {
   renderIds.forEach((id, index) => {
     text = text.split(id).join(workableRenderId(index));
   });
+  return { text, renderIds };
+}
+
+/**
+ * The per-load values of the v3 Phase 6 and 7b platforms (see the header), each kind of token replaced by a fixed one
+ * wherever it stands: a numbered id becomes its kind's own numbering in the order the page first names it, an opaque
+ * token becomes REDACTED. Answers the text and the values replaced (never their values). Other platforms: unchanged.
+ * @param {string} platform @param {string} html @returns {{ text: string; renderIds: string[] }}
+ */
+export function normaliseTokens(platform, html) {
+  /** @type {string[]} */
+  const renderIds = [];
+  let text = html;
+  /** Renumbers `pattern`'s numbered ids (its first group the prefix, its second the number) in first-seen order, each
+   *  prefix counted on its own. @param {RegExp} pattern @param {(prefix: string, index: number) => string} fixed */
+  const renumber = (pattern, fixed) => {
+    /** @type {Map<string, string>} */
+    const seen = new Map();
+    /** @type {Map<string, number>} */
+    const counts = new Map();
+    text = text.replace(pattern, (whole, prefix) => {
+      if (!seen.has(whole)) {
+        const index = counts.get(prefix) ?? 0;
+        counts.set(prefix, index + 1);
+        seen.set(whole, fixed(prefix, index));
+        renderIds.push(whole);
+      }
+      return seen.get(whole) ?? whole;
+    });
+  };
+  /** Replaces each value of `pattern`'s first group with REDACTED. @param {RegExp} pattern */
+  const redactValue = (pattern) => {
+    text = text.replace(pattern, (whole, value) => {
+      if (value === REDACTED) return whole;
+      renderIds.push(value);
+      return whole.replace(value, REDACTED);
+    });
+  };
+  /** hCaptcha's site key in its frames' addresses (sitekey=), and each widget's id, wherever it stands: in its
+   *  data-hcaptcha-widget-id and as the id= of its frames' hcaptcha.com addresses. */
+  const redactCaptcha = () => {
+    redactValue(/[?&#;]sitekey=([^&"'\s<#]+)/g);
+    /** @type {Set<string>} */
+    const widgets = new Set();
+    for (const match of text.matchAll(/\bdata-hcaptcha-widget-id="([^"]+)"/g)) widgets.add(match[1] ?? '');
+    for (const match of text.matchAll(/hcaptcha\.com\/[^"'\s<]*?[#&;]id=([A-Za-z0-9_-]+)/g)) widgets.add(match[1] ?? '');
+    for (const id of widgets) {
+      if (id === '' || id === REDACTED) continue;
+      renderIds.push(id);
+      text = text.split(id).join(REDACTED);
+    }
+  };
+  if (platform === 'workday') {
+    renumber(/\b(input)-(\d+)\b/g, (prefix, index) => `${prefix}-${index + 1}`);
+    renumber(/()\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, (_prefix, index) =>
+      `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
+  } else if (platform === 'icims') {
+    redactValue(/\bdata-sitekey="([^"]+)"/g);
+    redactValue(/\bhashed=(-?\d+)/g);
+    redactValue(/\bstate=([^&"'\s<]+)/g);
+    redactCaptcha();
+  } else if (platform === 'successfactors') {
+    redactValue(/\b_s\.crb=([^&"'\s<]+)/g);
+    redactValue(/\brequestParams=([^&"'\s<]+)/g);
+    redactValue(/\bjobSecKey(?:'|&quot;|"|%27)?\s*[:=]\s*(?:'|&quot;|"|%27)?([A-Za-z0-9%+/=_-]{8,})/g);
+  } else if (platform === 'oracle') {
+    redactValue(/\bdata-sitekey="([^"]+)"/g);
+    redactCaptcha();
+    renumber(/\b(primary-email|honey-pot)-(\d+)\b/g, (prefix, index) => `${prefix}-${index}`);
+  }
   return { text, renderIds };
 }
 
@@ -765,6 +859,69 @@ export function transformInPage(input) {
     linkedFrames };
 }
 
+/**
+ * The v3 Phase 6/7b review, C10 (see the header): drops each style rule of the frame's <style> elements that no element
+ * of the frame matches, read without its dynamic pseudo-classes and its pseudo-elements; a selector the browser cannot
+ * read so is kept, and so is every at-rule but a block of rules (@media, @supports, @container, @layer), pruned in turn
+ * and dropped once empty. Each sheet is written back from the rules kept. Returns how many rules it kept and dropped.
+ * @returns {{ kept: number; dropped: number }}
+ */
+export function pruneCssInPage() {
+  const doc = globalThis.document;
+  const view = /** @type {any} */ (doc.defaultView);
+  const pseudoElements = /::?(?:before|after|first-line|first-letter|marker|placeholder|selection|backdrop|cue|file-selector-button|-webkit-[a-z-]+|-moz-[a-z-]+|-ms-[a-z-]+)(?![\w-])/gi;
+  const dynamic = /:(?:hover|focus|focus-within|focus-visible|active|visited|link|any-link|checked|disabled|enabled|invalid|valid|user-invalid|user-valid|required|optional|placeholder-shown|indeterminate|default|target|read-only|read-write|autofill|in-range|out-of-range|empty|open|closed|modal|popover-open|fullscreen|defined|playing|paused)(?![\w-])/gi;
+  let kept = 0;
+  let dropped = 0;
+  /** @param {string} selector */
+  const used = (selector) => {
+    if (/::?(?:slotted|part|host)\b/i.test(selector)) return true;
+    let read = selector.replace(pseudoElements, '').replace(dynamic, '').trim();
+    if (read === '') return true;
+    if (/[>+~]$/.test(read)) read += ' *';
+    try {
+      return doc.querySelector(read) !== null;
+    } catch {
+      return true;
+    }
+  };
+  /** @param {any} holder */
+  const prune = (holder) => {
+    const rules = holder.cssRules;
+    for (let index = rules.length - 1; index >= 0; index -= 1) {
+      const rule = rules[index];
+      if (rule instanceof view.CSSStyleRule) {
+        if (used(rule.selectorText)) kept += 1;
+        else {
+          holder.deleteRule(index);
+          dropped += 1;
+        }
+      } else if (rule instanceof view.CSSMediaRule || rule instanceof view.CSSSupportsRule
+        || (view.CSSContainerRule && rule instanceof view.CSSContainerRule)
+        || (view.CSSLayerBlockRule && rule instanceof view.CSSLayerBlockRule)) {
+        prune(rule);
+        if (rule.cssRules.length === 0) holder.deleteRule(index);
+      } else {
+        kept += 1;
+      }
+    }
+  };
+  for (const style of doc.querySelectorAll('style')) {
+    const sheet = /** @type {HTMLStyleElement} */ (style).sheet;
+    if (!sheet) continue;
+    const before = dropped;
+    try {
+      prune(sheet);
+    } catch {
+      continue;
+    }
+    if (dropped === before) continue;
+    const text = Array.from(sheet.cssRules, (rule) => rule.cssText).join('\n');
+    style.textContent = /<\/style/i.test(text) ? text.replace(/<\/style/gi, '<\\/style') : text;
+  }
+  return { kept, dropped };
+}
+
 /** The frame's document as text: its doctype, if it had one, then the root element. @returns {string} */
 export function serializeInPage() {
   const doc = globalThis.document;
@@ -879,6 +1036,10 @@ const withoutFragment = (url) => {
 export function onAtsHost(url) {
   try {
     const parsed = new URL(url);
+    // Oracle's candidate pages by their path too, as src/shared/hosts.ts platformOfUrl reads them.
+    if (parsed.hostname.endsWith('.oraclecloud.com') && !parsed.pathname.startsWith('/hcmUI/CandidateExperience/')) {
+      return false;
+    }
     return parsed.protocol === 'https:' && ATS_HOST.test(parsed.hostname);
   } catch {
     return false;
@@ -913,6 +1074,9 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   const captured = mhtml.date && !Number.isNaN(Date.parse(mhtml.date)) ? new Date(mhtml.date).toISOString() : null;
 
   const folder = join(outDir, platform);
+  /** A frame's address as its fixture is served and named: its per-load tokens normalised as the page's are (the
+   *  frames' src attributes hold the same), so the header and the route map keep none (v3 Phase 7b). */
+  const addressOf = (/** @type {string} */ url) => normaliseTokens(platform, url).text;
   /** The path a route map gives for a file: repo-relative with forward slashes, or absolute outside the repo. */
   const routePath = (/** @type {string} */ path) => {
     const rel = relative(ROOT, path);
@@ -970,6 +1134,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     for (const [index, { frame, url, path }] of converted.entries()) {
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
         ...patterns });
+      const pruned = PRUNED_CSS_PLATFORMS.includes(platform) ? await frame.evaluate(pruneCssInPage) : null;
       if (outcome.counts.shadowRoots > 0) fail(`${basename(path)}: the page has shadow roots, which the converter cannot keep yet`);
       for (const link of outcome.linkedFrames) {
         if (!onAtsHost(link)) thirdParty.add(link);
@@ -982,7 +1147,9 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       const serialized = JSON.parse(await frame.evaluate(serializeInPage));
       const { doctype } = serialized;
       const normalised = platform === 'ashby' ? normaliseAshby(serialized.html)
-        : platform === 'workable' ? { ...normaliseWorkable(serialized.html), nonces: 0 } : null;
+        : platform === 'workable' ? { ...normaliseWorkable(serialized.html), nonces: 0 }
+          : ['workday', 'icims', 'taleo', 'successfactors', 'oracle'].includes(platform)
+            ? { ...normaliseTokens(platform, serialized.html), nonces: 0 } : null;
       const html = normalised?.text ?? serialized.html;
       // A token the normalisation replaced (a render id, the CSP nonce) is gone from the files: it is not listed.
       result.tokens.push(...outcome.tokens.filter(({ token }) => normalised === null
@@ -991,7 +1158,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       const { counts } = outcome;
       const header = {
         fixture: `${platform}/${basename(path, '.html')}`,
-        source: url,
+        source: addressOf(url),
         captured,
         chrome,
         redacted: { typedValues: counts.typedValues, checked: counts.checked, selected: counts.selected,
@@ -1002,6 +1169,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
           embeds: counts.embeds, links: counts.links, srcdoc: counts.srcdoc },
         inlined: { stylesheets: counts.stylesheets, images: counts.images, placeholders: counts.placeholders,
           missing: counts.missing },
+        ...(pruned === null ? {} : { pruned: { rulesKept: pruned.kept, rulesDropped: pruned.dropped } }),
         frames: { linked: counts.frames, blanked: counts.framesDropped },
         forms: counts.forms,
         ...(normalised === null ? {} : { normalised: { renderIds: normalised.renderIds.length, nonces: normalised.nonces } }),
@@ -1011,10 +1179,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         `rather than editing it.\n${commentJson(header)} -->`;
       // LF line ends throughout: HTML parsing treats CR LF as LF anyway, and git stores the fixture with LF.
       result.files.push({ path, text: `${doctype ? `${doctype}\n` : ''}${comment}\n${html.replace(/\r\n?/g, '\n')}\n` });
-      if (index > 0 && withoutFragment(url) in result.routes) {
+      if (index > 0 && withoutFragment(addressOf(url)) in result.routes) {
         result.notes.push(`${basename(path)}: another frame has the same address, so the route map serves the first`);
       } else {
-        result.routes[withoutFragment(url)] = routePath(path);
+        result.routes[withoutFragment(addressOf(url))] = routePath(path);
       }
     }
     if (thirdParty.size > 0) {
@@ -1045,10 +1213,10 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       return route.abort();
     });
     const reloaded = await check.newPage();
-    await reloaded.goto(withoutFragment(mainUrl), { waitUntil: 'load' });
+    await reloaded.goto(withoutFragment(addressOf(mainUrl)), { waitUntil: 'load' });
     for (const [index, { url, path }] of converted.entries()) {
       const frame = index === 0 ? reloaded.mainFrame()
-        : reloaded.frames().find((candidate) => withoutFragment(candidate.url()) === withoutFragment(url));
+        : reloaded.frames().find((candidate) => withoutFragment(candidate.url()) === withoutFragment(addressOf(url)));
       if (!frame) {
         reasons.push(`${basename(path)}: the frame did not load from the route map`);
         continue;
@@ -1088,13 +1256,16 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
 }
 
 /**
- * Writes a conversion: its files, then the route map, replacing an earlier conversion of the same case.
+ * Writes a conversion: its files, then the route map, replacing an earlier conversion of the same case. An earlier
+ * conversion's frames and third-party stand-in go; the hand-written expectations (<case>.frame-<n>.expect.json among
+ * them) stay.
  * @param {Conversion} conversion @param {string} folder @param {string} caseName @returns {string[]}
  */
 export function writeConversion(conversion, folder, caseName) {
   mkdirSync(folder, { recursive: true });
   for (const name of readdirSync(folder)) {
-    if (name.startsWith(`${caseName}.frame-`) || name === `${caseName}.third-party-frame.html`) rmSync(join(folder, name));
+    const frame = name.startsWith(`${caseName}.frame-`) && /^\.frame-\d+\.html$/.test(name.slice(caseName.length));
+    if (frame || name === `${caseName}.third-party-frame.html`) rmSync(join(folder, name));
   }
   const written = [];
   for (const output of conversion.files) {

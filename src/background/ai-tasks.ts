@@ -65,8 +65,9 @@
  * and statuses only.
  */
 import {
-  answerInFormat, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AutofillAnswerItem,
-  type AutofillAnswerReason, type AutofillAnswerRequest, type AutofillAnswerResult, type AutofillClassifyItem,
+  answerInFormat, ATS_KINDS, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS, AUTOFILL_PICK_CATEGORIES, cutAtWord, type AtsKind,
+  type AutofillAnswerItem, type AutofillAnswerReason, type AutofillAnswerRequest, type AutofillAnswerResult,
+  type AutofillClassifyItem,
   type AutofillClassifyRequest, type AutofillClassifyResult, type AutofillDraftReason, type AutofillDraftRequest,
   type AutofillDraftResult, type AutofillPickItem, type AutofillPickRequest, type AutofillPickResult,
   type AutofillTaskView,
@@ -200,18 +201,25 @@ export function classifyItemOfCore(item: ClassifyItem): AutofillClassifyItem | n
 const textOf = (item: AutofillClassifyItem) => [item.key, item.kind, item.label, item.hint, item.section, ...item.options]
   .reduce((sum, text) => sum + text.length, 0);
 
+/** Whether TailorIT's contract names a platform (its ATS_KINDS): a classify request names the form's platform, and one
+ *  it does not list yet (PLATFORMS_AHEAD_OF_CONTRACT: iCIMS, Taleo, SuccessFactors, Oracle) would be refused. */
+const knownToTailorIt = (platform: Platform): platform is AtsKind => (ATS_KINDS as readonly string[]).includes(platform);
+
 /** A pass's classify items as batches, per platform, at most 20 items each and under the text cap, and the verdicts
- *  of those never sent. */
+ *  of those never sent: screened ones (llm-disabled-for-category), and those of a platform TailorIT's contract does not
+ *  name yet (unknown-field, as when the AI names none: the field goes on to the AI answer, which names no platform). */
 export function classifyBatches(items: readonly ClassifyItem[]): { batches: ClassifyBatch[]; withheld: ClassifyVerdict[] } {
   const withheld: ClassifyVerdict[] = [];
-  const byPlatform = new Map<Platform, Array<{ item: ClassifyItem; sent: AutofillClassifyItem }>>();
+  const byPlatform = new Map<AtsKind, Array<{ item: ClassifyItem; sent: AutofillClassifyItem }>>();
   const seen = new Set<string>();
   for (const item of items) {
     if (seen.has(item.key)) continue;
     seen.add(item.key);
     const sent = classifyItemOfCore(item);
+    const platform = item.platform;
     if (sent === null) withheld.push({ key: item.key, category: null, why: 'llm-disabled-for-category' });
-    else byPlatform.set(item.platform, [...(byPlatform.get(item.platform) ?? []), { item, sent }]);
+    else if (!knownToTailorIt(platform)) withheld.push({ key: item.key, category: null, why: 'unknown-field' });
+    else byPlatform.set(platform, [...(byPlatform.get(platform) ?? []), { item, sent }]);
   }
   const batches: ClassifyBatch[] = [];
   for (const [platform, entries] of byPlatform) {

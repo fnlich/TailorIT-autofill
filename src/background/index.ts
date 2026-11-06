@@ -243,6 +243,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     disclosed: () => auth.disclosed(),
     reports: (tabId) => reports.ofTab(tabId),
     topFrame: (tabId) => topFrameOf(tabId),
+    ...(platform.tabs.onAtsHost === undefined ? {} : { onAtsHost: (tabId: number) => platform.tabs.onAtsHost!(tabId) }),
+    ...(platform.tabs.atsPageOf === undefined ? {} : { atsPageOf: (tabId: number) => platform.tabs.atsPageOf!(tabId) }),
     send: (tabId, message, target) => platform.tabs.sendToFrame(tabId, message, target),
     nonce: () => toBase64Url(platform.randomBytes(16)),
     // The tab it lets go of: every frame of ours there stops its run and hears the person's own settings.
@@ -513,6 +515,13 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'submit/detected': (message, from) => submitted.detected(message, from),
         // v3 Phase 5: Sign-in mode Auto's credential, to the asking top frame alone (sign-in.ts).
         'signin/credential': (message, from) => signIn.credential(message, from),
+        // Round 3 of the v3 Phase 6/7b review (X8): the agent's entry pressed in the top frame, told before the entry
+        // waits on what the press brings (agent.ts entered).
+        'agent/entered': async (_message, from) => {
+          if (from.frameId !== 0) return refuse('bad_sender');
+          await agent.entered(from.tabId, from.documentId).catch(() => undefined);
+          return ok({});
+        },
         'launcher/hide': async (message, from) => {
           if (from.frameId !== 0) return refuse('bad_sender');
           const retry = launcherLimit.take(`${from.tabId}/`);
@@ -672,6 +681,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // v3 Phase 5: the agent's alarm wakes the worker while Run auto-apply is on.
   platform.alarms.onAlarm((name) => {
     if (name === AGENT_ALARM) void agent.tick().catch(() => undefined);
+  });
+
+  // Round 2 of the v3 Phase 6/7b review (K3): the agent's tab at a page that says no hello is answered at its load
+  // (round 3, X8: the agent's tab alone, its address read only then).
+  platform.tabs.onLoaded?.((tabId, shown) => {
+    void agent.loaded(tabId, shown).catch(() => undefined);
   });
 
   platform.tabs.onRemoved((tabId) => {

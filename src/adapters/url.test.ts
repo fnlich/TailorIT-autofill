@@ -5,6 +5,9 @@
  * addresses (fixtures/_incoming captures, their requested and final URLs, and the frames inside them) plus the edge
  * cases: query strings, trailing slashes, case, the EU Lever host, the embed, gh_jid on a company page and the legacy
  * hosts. The application key (application-key.ts) is checked here too, since it hashes what the parsers produce.
+ * v3 Phases 6 and 7b add Workday's, iCIMS's, Taleo's, SuccessFactors' and Oracle's addresses from the public capture of
+ * 2026-11-04/05: TailorIT's parseAtsUrl reads none of them yet (Workday comes with its own reading later; the other
+ * four are ahead of the contract, PLATFORMS_AHEAD_OF_CONTRACT), and each row says so.
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
@@ -14,8 +17,13 @@ import { platformOfUrl } from '../shared/hosts';
 import { applicationKey, type ApplicationPage, type ApplicationUrl } from './application-key';
 import * as ashby from './ashby/url';
 import * as greenhouse from './greenhouse/url';
+import * as icims from './icims/url';
 import * as lever from './lever/url';
+import * as oracle from './oracle/url';
+import * as successfactors from './successfactors/url';
+import * as taleo from './taleo/url';
 import * as workable from './workable/url';
+import * as workday from './workday/url';
 
 /** What the extension reads from an address. */
 interface Ours {
@@ -63,6 +71,19 @@ const workableForm = (account: string, code: string, canonical: string): Ours =>
   ({ platform: 'workable', board: account, jobId: code, page: 'application', canonical });
 const workableOverview = (account: string, code: string, applicationUrl: string): Ours =>
   ({ platform: 'workable', board: account, jobId: code, page: 'posting', canonical: null, applicationUrl });
+
+const WORKDAY = 'https://workday.wd5.myworkdayjobs.com';
+const WORKDAY_SLUG = 'Senior-Product-Manager--Technical_JR-0110787';
+const WORKDAY_FORM = `${WORKDAY}/workday/job/x/${WORKDAY_SLUG}/apply/applyManually`;
+const SF_FORM = 'https://career2.successfactors.eu/career?company=danfossas&career_job_req_id=48659&career_ns=job_listing';
+const ORACLE_FORM = 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946';
+const WORKDAY_WHY = "TailorIT's parseAtsUrl does not read Workday yet: the job card says the posting is not in TailorIT";
+const AHEAD_WHY = "TailorIT's parseAtsUrl does not read this platform yet (PLATFORMS_AHEAD_OF_CONTRACT): the job card says "
+  + 'the posting is not in TailorIT';
+/** A v3 Phase 6 or 7b reading: `canonical` on its application, null on its posting (with the posting's application). */
+const ahead = (platform: Platform, board: string, jobId: string, page: ApplicationPage, canonical: string | null,
+  applicationUrl?: string): Ours => ({ platform, board, jobId, page, canonical,
+  ...(applicationUrl === undefined ? {} : { applicationUrl }) });
 
 const ROWS: Row[] = [
   // The owner's captures (captures.json, captures-1.json and phase2-zoox/captures.json): requested and final URLs.
@@ -175,6 +196,37 @@ const ROWS: Row[] = [
     why: "the account's own host: TailorIT reads the posting, the extension runs only on apply.workable.com, where "
       + 'Workable sends this address' },
   { url: 'https://jobs.workable.com/view/abc/engineer', ours: null },
+
+  // v3 Phases 6 and 7b: the public capture of 2026-11-04/05 (its postings, their account pages and the address probes).
+  { url: `${WORKDAY}/en-US/Workday/job/USA-CA-Pleasanton/${WORKDAY_SLUG}`, ours: ahead('workday', 'workday', 'JR-0110787',
+    'posting', null, WORKDAY_FORM), contract: null, why: WORKDAY_WHY },
+  { url: `${WORKDAY}/en-US/Workday/job/USA%2C-CA%2C-Pleasanton/${WORKDAY_SLUG}/apply/applyManually`,
+    ours: ahead('workday', 'workday', 'JR-0110787', 'application', WORKDAY_FORM), contract: null, why: WORKDAY_WHY },
+  // The choice's other ways: the person's own choice, read as the application under its key (v3 Phase 6/7b, C1).
+  { url: `${WORKDAY}/en-US/Workday/job/x/${WORKDAY_SLUG}/apply/autofillWithResume`,
+    ours: ahead('workday', 'workday', 'JR-0110787', 'application', WORKDAY_FORM), contract: null, why: WORKDAY_WHY },
+  { url: `${WORKDAY}/en-US/Workday/login`, ours: null },
+  { url: 'https://wd1.myworkdaysite.com/en-US/recruiting/snapchat/snap/job/Los-Angeles-California/Ad-Product-Quality-Analyst-I_R0047453-1',
+    ours: ahead('workday', 'snapchat', 'R0047453-1', 'posting', null,
+      'https://wd1.myworkdaysite.com/recruiting/snapchat/snap/job/x/Ad-Product-Quality-Analyst-I_R0047453-1/apply/applyManually'),
+    contract: null, why: WORKDAY_WHY },
+  { url: 'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?in_iframe=1', ours: ahead('icims',
+    'careers-eastwestbank', '13634', 'posting', null, 'https://careers-eastwestbank.icims.com/jobs/13634/job'), contract: null, why: AHEAD_WHY },
+  { url: 'https://careers-gdms.icims.com/jobs/78183/senior-advanced-quality-inspector/login?in_iframe=1', ours: ahead('icims',
+    'careers-gdms', '78183', 'application', 'https://careers-gdms.icims.com/jobs/78183/job'), contract: null, why: AHEAD_WHY },
+  { url: 'https://login.icims.com/u/login/identifier?state=x', ours: null },
+  { url: 'https://hdr.taleo.net/careersection/ex/jobdetail.ftl?job=197675&lang=en', ours: ahead('taleo', 'hdr', '197675', 'posting',
+    null, 'https://hdr.taleo.net/careersection/ex/jobapply.ftl?job=197675&lang=en'), contract: null, why: AHEAD_WHY },
+  { url: 'https://cpsk12il.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=en&redirectionURI=https%3A%2F%2Fcpsk12il.taleo.net%2Fcareersection%2F3%2Fjobapply.ftl%3Fjob%3DP177162%26lang%3Den',
+    ours: ahead('taleo', 'cpsk12il', 'P177162', 'application', 'https://cpsk12il.taleo.net/careersection/3/jobapply.ftl?job=P177162&lang=en'),
+    contract: null, why: AHEAD_WHY },
+  { url: 'https://career2.successfactors.eu/career?career_job_req_id=48659&career_ns=job_listing&company=danfossas',
+    ours: ahead('successfactors', 'danfossas', '48659', 'posting', null, SF_FORM), contract: null, why: AHEAD_WHY },
+  { url: 'https://career2.successfactors.eu/career?company=danfossas&site=&lang=en_GB&requestParams=x&login_ns=register&career_job_req_id=48659',
+    ours: ahead('successfactors', 'danfossas', '48659', 'application', SF_FORM), contract: null, why: AHEAD_WHY },
+  { url: 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email',
+    ours: ahead('oracle', 'CX_1001', '12946', 'application', ORACLE_FORM), contract: null, why: AHEAD_WHY },
+  { url: 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/my-profile/sign-in', ours: null },
 ];
 
 /** What the two adapters read: their parse, their canonical URL, and which of them matched. */
@@ -203,6 +255,18 @@ function readOurs(address: string): { ours: Ours | null; matched: Platform[] } {
     parsed = workable.parseWorkableUrl(url);
     canonical = workable.canonicalApplicationUrl(url);
   }
+  // v3 Phases 6 and 7b.
+  const more = [['workday', workday.matchesUrl, workday.parseWorkdayUrl, workday.canonicalApplicationUrl],
+    ['icims', icims.matchesUrl, icims.parseIcimsUrl, icims.canonicalApplicationUrl],
+    ['taleo', taleo.matchesUrl, taleo.parseTaleoUrl, taleo.canonicalApplicationUrl],
+    ['successfactors', successfactors.matchesUrl, successfactors.parseSuccessFactorsUrl, successfactors.canonicalApplicationUrl],
+    ['oracle', oracle.matchesUrl, oracle.parseOracleUrl, oracle.canonicalApplicationUrl]] as const;
+  for (const [platform, matches, parse, canonicalOf] of more) {
+    if (!matches(url)) continue;
+    matched.push(platform);
+    parsed = parse(url);
+    canonical = canonicalOf(url);
+  }
   if (!parsed) return { ours: null, matched };
   const ours: Ours = { platform: parsed.platform, board: parsed.board, jobId: parsed.jobId, page: parsed.page, canonical };
   if (parsed.applicationUrl !== canonical) ours.applicationUrl = parsed.applicationUrl;
@@ -228,8 +292,7 @@ describe('the URL table', () => {
     // At most one adapter takes an address, and exactly the one the shared host list names.
     expect(matched.length).toBeLessThanOrEqual(1);
     const host = platformOfUrl(row.url);
-    expect(matched[0] ?? null).toBe(host === 'lever' || host === 'greenhouse' || host === 'ashby' || host === 'workable' ? host
-      : null);
+    expect(matched[0] ?? null).toBe(host);
     const contract = readContract(row.url);
     if (row.contract !== undefined) {
       expect(contract).toEqual(row.contract);

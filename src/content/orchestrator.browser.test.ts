@@ -20,8 +20,8 @@ import type { PlanOutput } from '../core/plan/types';
 import type { FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite } from '../core/types/fill';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
-import { logEvents, loadFixture, removeFixtures, untrustedViolations, watchHoneypots, type EventLog,
-  type Fixture } from '../dom/fixture.testkit';
+import { logEvents, loadFixture, removeFixtures, untrustedViolations, watchHoneypots, withoutPointerBoundary,
+  type EventLog, type Fixture } from '../dom/fixture.testkit';
 import type { FrameReport } from '../shared/report';
 import {
   createFakeWorker, FAKE_TASK_ID, fakePdf, PAGE_TEXT_SENTINELS, sentinelsIn, testVocab, trapUrl, VALUE_SENTINELS,
@@ -465,7 +465,7 @@ describe('the policy gate, before anything is filled', () => {
       expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'cancel' }))
         .toEqual({ ok: true, data: {} });
       expect(await running).toBe('stopped');
-      expect(started.events.events).toEqual([]);
+      expect(withoutPointerBoundary(started.events.events)).toEqual([]);
       expect(started.worker.runStates.at(-1)).toMatchObject({ status: 'stopped', policyDecision: 'declined' });
       // Once nothing waits at the card, a decision is answered expired and changes nothing.
       expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
@@ -496,7 +496,7 @@ describe('the policy gate, before anything is filled', () => {
     await started.worker.platform.deliver({ v: 1, type: 'run/cancel' });
     expect(await running).toBe('stopped');
     expect(started.worker.of('plan/request')).toEqual([]);
-    expect(started.events.events).toEqual([]);
+    expect(withoutPointerBoundary(started.events.events)).toEqual([]);
     expect(formValues(started.fixture.doc)).toEqual(['', '', '']);
     expect(started.worker.reports.at(-1)).toMatchObject({ status: 'stopped', fields: [] });
     expect(started.worker.runStates.at(-1)).toMatchObject({ status: 'stopped', policyDecision: 'declined' });
@@ -589,7 +589,7 @@ describe('expired answers and the run’s other ends', () => {
     const started = await start(plain, 'expired-c', { worker: { script: { 'plan/request': [expired, expired] } } });
     expect(await started.runtime.fill()).toBe('error');
     expect(started.runtime.ui!.launcher.view).toMatchObject({ state: 'error', action: 'fill', reason: 'failed' });
-    expect(started.events.events).toEqual([]);
+    expect(withoutPointerBoundary(started.events.events)).toEqual([]);
   });
 
   it('says to connect first when the worker is not connected', async () => {
@@ -603,7 +603,7 @@ describe('expired answers and the run’s other ends', () => {
     await started.worker.platform.deliver({ v: 1, type: 'run/start', dryRun: true });
     await vi.waitFor(() => expect(started.runtime.run?.ended).toBe('review'));
     const ran = ranOf(started, 'review');
-    expect(ran.events.events).toEqual([]);
+    expect(withoutPointerBoundary(ran.events.events)).toEqual([]);
     expect(formValues(ran.fixture.doc)).toEqual(['', '', '']);
     expect(ran.report.mode).toBe('dry-run');
     expect(ran.report.fields.every((row) => !row.wrote && row.verification === 'not-checked')).toBe(true);
@@ -616,7 +616,7 @@ describe('expired answers and the run’s other ends', () => {
       if (message.type === 'plan/request') started.worker.platform.invalidate();
     } } });
     expect(await started.runtime.fill()).toBe('aborted');
-    expect(started.events.events).toEqual([]);
+    expect(withoutPointerBoundary(started.events.events)).toEqual([]);
     expect(started.runtime.stopped).toBe(true);
     expect(started.runtime.ui).toBeNull();
     expect(started.fixture.doc.documentElement.lastElementChild?.localName).not.toBe('div');
@@ -636,7 +636,7 @@ describe('expired answers and the run’s other ends', () => {
         if (message.type === 'plan/request') void during.worker.platform.deliver({ v: 1, type: 'run/cancel' });
       } } });
       expect(await during.runtime.fill()).toBe('stopped');
-      expect(during.events.events).toEqual([]);
+      expect(withoutPointerBoundary(during.events.events)).toEqual([]);
       const report = during.worker.reports.at(-1)!;
       expect(report.status).toBe('stopped');
       expect(report.fields.filter((row) => row.reason === 'user-stopped').map((row) => row.label))
@@ -649,7 +649,7 @@ describe('expired answers and the run’s other ends', () => {
       + '<button type="submit">');
     const started = await start(page, 'sign-in');
     expect(await started.runtime.fill()).toBe('paused');
-    expect(started.events.events).toEqual([]);
+    expect(withoutPointerBoundary(started.events.events)).toEqual([]);
     expect(started.worker.reports.at(-1)).toMatchObject({ status: 'auth-needed', pauseReason: null, fields: [] });
     expect(started.worker.reports.at(-1)!.notices.map((notice) => notice.code)).toContain('auth');
     expect(started.worker.of('plan/request')).toEqual([]);
@@ -834,7 +834,7 @@ describe('a form in a frame its page hides (S1)', () => {
       await vi.waitFor(() => expect(runtime.run?.ended).toBe('stopped'), { timeout: 10_000 });
       expect([(inner.getElementById('first') as HTMLInputElement).value,
         (inner.getElementById('email') as HTMLInputElement).value]).toEqual(['', '']);
-      expect(events.events).toEqual([]);
+      expect(withoutPointerBoundary(events.events)).toEqual([]);
       expect(worker.of('plan/request')).toEqual([]);
       const report = worker.reports.at(-1)!;
       expect(report).toMatchObject({ status: 'stopped', fields: [] });

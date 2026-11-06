@@ -59,6 +59,16 @@ function manifest(origin: string): Record<string, unknown> {
   };
 }
 
+/** A bridge bundle as the real one behaves (v3 Phase 6/7b review, S3, and round 2, E9): it listens for its command on
+ *  the public job hosts and at a posting (check-build's own addresses), and nowhere else. */
+const BRIDGE_LISTEN = 'document.addEventListener("tailorit:bridge",()=>{},!0)';
+const BRIDGE_AT = 'var h=String(document.location&&document.location.href||"");'
+  + 'if(/^https:\\/\\/(job-boards\\.greenhouse\\.io|jobs\\.lever\\.co|acme\\.wd5\\.myworkdayjobs\\.com)\\//.test(h)'
+  + '||h.indexOf("/job/Remote/Engineer_JR-1")>0)';
+const BRIDGE_BUNDLE = `(function(){${BRIDGE_AT}${BRIDGE_LISTEN}})();`;
+/** check-build's first address, a posting, where the bridge must listen. */
+const POSTING_AT = 'https://job-boards.greenhouse.io/acme/jobs/4012345';
+
 /** The page-world bridge's entry in a manifest, as WXT writes it (src/entrypoints/page-bridge.content.ts). */
 const BRIDGE_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['content-scripts/page-bridge.js'], world: 'MAIN' };
 
@@ -80,7 +90,7 @@ function project(change: (write: (path: string, text: string | Uint8Array) => vo
     write(`${dir}/manifest.json`, JSON.stringify(manifest(name === 'e2e' ? 'http://localhost:3190' : 'http://localhost:3100')));
     write(`${dir}/background.js`, 'var background=(function(){return {}})();');
     write(`${dir}/content-scripts/content.js`, 'var content=(function(){return {}})();');
-    write(`${dir}/content-scripts/page-bridge.js`, '(function(){document.addEventListener("tailorit:bridge",()=>{},!0)})();');
+    write(`${dir}/content-scripts/page-bridge.js`, BRIDGE_BUNDLE);
     write(`${dir}/chunks/options-abc.js`, 'export const options = 1;');
     write(`${dir}/options.html`, '<!doctype html><title>Settings</title>');
     write(`${dir}/sidepanel.html`, '<!doctype html><title>Review</title>');
@@ -329,12 +339,12 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
     }
   });
 
-  it("fail a page-world bridge over its 12 KiB budget, or one whose file is missing", () => {
+  it("fail a page-world bridge over its 20 KiB budget, or one whose file is missing", () => {
     const big = checkBuild(project((write) => {
-      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(12 * 1024)}";`);
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(20 * 1024)}";`);
     }));
     expect(big.output).toContain('.output/chrome-mv3: the page-world bridge is');
-    expect(big.output).toContain('over the 12288-byte budget');
+    expect(big.output).toContain('over the 20480-byte budget');
     expect(big.status).toBe(1);
 
     const missing = checkBuild(project((write) => everyManifest(write, (changed) => {
@@ -352,8 +362,22 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
     expect(status).toBe(1);
   });
 
+  it("fail a content script whose bundle holds WXT's content-script context, which announces the extension (round 2, E1)", () => {
+    for (const name of ['stopOldScripts', 'SCRIPT_STARTED_MESSAGE_TYPE']) {
+      const { status, output } = checkBuild(project((write) => {
+        for (const dir of Object.values(BUILDS)) {
+          write(`${dir}/content-scripts/content.js`, `var content=(function(){var c={${name}:function(){}};return c})();`);
+        }
+      }));
+      expect(output, name).toContain(`.output/chrome-mv3: content script content-scripts/content.js holds WXT's `
+        + `content-script context (${name})`);
+      expect(status, name).toBe(1);
+    }
+  });
+
   it("fail a page-world bridge bundle that adds a global, names an extension API or window messaging, or listens elsewise", () => {
-    const listen = 'document.addEventListener("tailorit:bridge",()=>{},!0)';
+    const listen = `${BRIDGE_AT}${BRIDGE_LISTEN}`;
+    const command = '[["tailorit:bridge",true]]';
     const cases: Array<[string, string]> = [
       [`var pageBridge=(function(){${listen}})();`, 'the page-world bridge is not one anonymous function called at once'],
       [`var pageBridge=(function(){${listen}})();`, 'the page-world bridge adds globals: pageBridge'],
@@ -361,12 +385,16 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
       [`(function(){chrome.runtime;${listen}})();`, 'the page-world bridge names "chrome."'],
       [`(function(){browser.runtime;${listen}})();`, 'the page-world bridge names "browser."'],
       [`(function(){document.defaultView.postMessage;${listen}})();`, 'the page-world bridge names "postMessage"'],
-      ['(function(){})();', 'the page-world bridge listens for [], not its command alone'],
+      ['(function(){})();', `the page-world bridge listens for [] at ${POSTING_AT}, not ${command}`],
       [`(function(){${listen};document.addEventListener("message",()=>{},!0)})();`,
-        'the page-world bridge listens for [["tailorit:bridge",true],["message",true]], not its command alone'],
+        `the page-world bridge listens for [["tailorit:bridge",true],["message",true]] at ${POSTING_AT}, not ${command}`],
       ['(function(){document.addEventListener("tailorit:bridge",()=>{})})();',
-        'the page-world bridge listens for [["tailorit:bridge",false]], not its command alone'],
-      ['(function(){window.x=1})();', 'the page-world bridge throws on its own: ReferenceError: window is not defined'],
+        `the page-world bridge listens for [["tailorit:bridge",false]] at ${POSTING_AT}, not ${command}`],
+      // The v3 Phase 6/7b review (S3): a bridge that installs on every page of the ATS domains.
+      [`(function(){${BRIDGE_LISTEN}})();`,
+        `the page-world bridge listens for ${command} at https://internal-acme.icims.com/jobs/1/engineer/job, not []`],
+      ['(function(){window.x=1})();',
+        `the page-world bridge throws on its own at ${POSTING_AT}: ReferenceError: window is not defined`],
     ];
     for (const [bundle, message] of cases) {
       const { status, output } = checkBuild(project((write) => {

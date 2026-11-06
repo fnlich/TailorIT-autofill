@@ -1,0 +1,18 @@
+{
+  "fixture": "taleo/hdr-posting",
+  "source": "https://hdr.taleo.net/careersection/ex/jobdetail.ftl?job=197675&lang=en",
+  "captured": "2026-11-05T06:01:02.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": ".editablesection",
+    "entryControl": "[id=\"requisitionDescriptionInterface.UP_APPLY_ON_REQ.row1\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[type=\"button\"][id$=\"APPLY_ON_REQ.row1\"]"
+    ],
+    "pressable": []
+  }
+}

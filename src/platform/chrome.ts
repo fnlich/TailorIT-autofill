@@ -4,10 +4,12 @@
  * strings all stay here; the rest of the extension sees platform/types.ts.
  */
 import { browser } from 'wxt/browser';
+import { postingAddressOf } from '../adapters/address';
 import { platformOfUrl } from '../shared/hosts';
 import type {
   AgentAlarms,
   AgentWindows,
+  AtsPage,
   ClientInfo,
   ContentPlatform,
   FrameSendFailure,
@@ -21,6 +23,19 @@ import type {
   WorkerPlatform,
 } from './types';
 import type { CapturePagePlatform, CaptureTarget, CaptureWorkerPlatform } from './types';
+
+/** What a page shows by its address (tabs.atsPageOf): a posting or another page on an applicant-tracking host, and
+ *  that host's platform; null off those hosts or for an address that does not parse. */
+function atsPageAt(url: string | undefined): AtsPage | null {
+  if (url === undefined) return null;
+  const platform = platformOfUrl(url);
+  if (platform === null) return null;
+  try {
+    return { page: postingAddressOf(new URL(url)) === null ? 'other' : 'posting', platform };
+  } catch {
+    return null;
+  }
+}
 
 type RawSender = {
   id?: string;
@@ -273,12 +288,22 @@ export function createWorkerPlatform(): WorkerPlatform {
         return tab.id ?? null;
       },
       onRemoved: (cb) => browser.tabs.onRemoved.addListener((tabId) => cb(tabId)),
+      onLoaded: (cb) => browser.tabs.onUpdated.addListener((tabId, change, tab) => {
+        if (change.status === 'complete') cb(tabId, () => atsPageAt(change.url ?? tab.url));
+      }),
       async onAtsHost(tabId) {
         try {
           const url = (await browser.tabs.get(tabId)).url;
           return url !== undefined && platformOfUrl(url) !== null;
         } catch {
           return false;
+        }
+      },
+      async atsPageOf(tabId) {
+        try {
+          return atsPageAt((await browser.tabs.get(tabId)).url);
+        } catch {
+          return null;
         }
       },
       async hostOf(tabId) {

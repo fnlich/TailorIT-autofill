@@ -226,6 +226,7 @@ export const LOG_CODES = [
   'content.agent-entry',
   'content.sign-in',
   'content.sign-in-refused',
+  'content.sign-in-prelude',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

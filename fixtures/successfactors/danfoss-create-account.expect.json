@@ -1,0 +1,106 @@
+{
+  "fixture": "successfactors/danfoss-create-account",
+  "source": "https://career2.successfactors.eu/career?company=danfossas&site=&lang=en_GB&requestParams=REDACTED&login_ns=register&career_job_req_id=48659&_s.crb=REDACTED",
+  "captured": "2026-11-05T06:09:24.000Z",
+  "fields": [
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_userName"
+    },
+    {
+      "label": "Retype Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_emailConf"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_fName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_lName"
+    },
+    {
+      "label": "Country/Region Code",
+      "kind": "select",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "options": 252,
+      "control": "select#fbclc_ituCode"
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_phoneNumber"
+    },
+    {
+      "label": "Country/Region of Residence",
+      "kind": "select",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "options": 252,
+      "control": "select#fbclc_country"
+    },
+    {
+      "label": "Notification",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_emailEnabled"
+    },
+    {
+      "label": "Hear more about career opportunities. By clicking these boxes, I give my consent for processing of my personal data to the job portal so that based on my profile I will receive job posting notifications on open positions. I understand that I can unsubscribe from these notifications at any time by ch",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_campaignEmailEnabled",
+      "note": "A marketing consent (cut at 300 characters, as every label is)."
+    }
+  ],
+  "hooks": {
+    "detect": "form#careerform",
+    "authState": "create-account",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input#fbclc_userName",
+      "confirmEmail": "input#fbclc_emailConf",
+      "password": "input#fbclc_pwd",
+      "confirm": "input#fbclc_pwdConf",
+      "terms": [],
+      "button": "button#fbclc_createAccountButton",
+      "form": "form#careerform",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "#show_button",
+      "#show_conf_button",
+      "a#dataPrivacyId"
+    ],
+    "pressable": []
+  }
+}

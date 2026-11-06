@@ -1,0 +1,18 @@
+{
+  "fixture": "successfactors/danfoss-posting",
+  "source": "https://career2.successfactors.eu/career?career_job_req_id=48659&career_ns=job_listing&company=danfossas",
+  "captured": "2026-11-05T06:07:49.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": ".joqReqDescription",
+    "entryControl": "button#applyButton_top",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button#applyButton_top"
+    ],
+    "pressable": []
+  }
+}

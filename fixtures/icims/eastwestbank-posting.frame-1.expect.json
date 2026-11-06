@@ -1,0 +1,21 @@
+{
+  "fixture": "icims/eastwestbank-posting.frame-1",
+  "source": "https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?in_iframe=1&mobile=false&width=1270&height=500&bga=true&needsRedirect=false&jan1offset=-300&jun1offset=-240",
+  "captured": "2026-11-05T05:55:15.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": ".iCIMS_JobContent",
+    "entryControl": "#jobOptionsMobile a.iCIMS_ApplyOnlineButton",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_ApplyOnlineButton",
+      "a.iCIMS_JobShareButton",
+      "a[href*=\"/referral\"]",
+      ".icimsSD_widget"
+    ],
+    "pressable": []
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "fixture": "taleo/cps-login",
+  "source": "https://cpsk12il.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=en&redirectionURI=https%3A%2F%2Fcpsk12il.taleo.net%2Fcareersection%2F3%2Fjobapply.ftl%3Fjob%3DP177162%26lang%3Den&TARGET=https%3A%2F%2Fcpsk12il.taleo.net%2Fcareersection%2F3%2Fjobapply.ftl%3Fjob%3DP177162%26lang%3Den",
+  "captured": "2026-11-05T06:02:40.000Z",
+  "fields": [
+    {
+      "label": "User Name",
+      "kind": "text",
+      "required": true,
+      "section": "Login",
+      "fillable": true,
+      "control": "#dialogTemplate-dialogForm-login-name1",
+      "note": "Taleo's user name, often the candidate's email; required by its mandatory icon."
+    }
+  ],
+  "hooks": {
+    "detect": "form#dialogTemplate-dialogForm",
+    "authState": "sign-in",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "sign-in",
+      "email": "#dialogTemplate-dialogForm-login-name1",
+      "password": "#dialogTemplate-dialogForm-login-password",
+      "confirm": null,
+      "terms": [],
+      "button": "#dialogTemplate-dialogForm-login-defaultCmd",
+      "form": "form#dialogTemplate-dialogForm"
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "#dialogTemplate-dialogForm-login-register",
+      "#dialogTemplate-dialogForm-login-forgotUsernameLinkBottom",
+      "#dialogTemplate-dialogForm-login-forgotPasswordLinkBottom"
+    ],
+    "pressable": [
+      "#dialogTemplate-dialogForm-login-defaultCmd"
+    ]
+  }
+}

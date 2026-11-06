@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Smoke fixture: an Oracle Recruiting Cloud application step</title>
+  </head>
+  <body>
+    <!-- Oracle's page as its adapter knows it (src/adapters/oracle/index.ts): the application flow's content, in the
+         main labelled by the flow's heading, holding a step's form. While the Oracle adapter waits for a form drawn
+         late, no other adapter may claim an Oracle application page, so the plain form.html would show no form here
+         for 30 s. -->
+    <main id="main" aria-labelledby="apply-flow-main-heading">
+      <h1 id="apply-flow-main-heading">Job application form</h1>
+      <section class="apply-flow__content">
+        <p>VISIBLE-MARKER-SMOKE</p>
+        <form action="/__submitted" method="post">
+          <label for="first">First name</label>
+          <input id="first" name="first" autocomplete="given-name" />
+          <button type="submit">Submit application</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

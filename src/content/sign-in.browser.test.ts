@@ -31,7 +31,8 @@ import { startContentRuntime, type ContentRuntime } from './runtime';
 import { signIn, type SignInContext } from './sign-in';
 
 const HOST = 'acme.wd5.myworkdayjobs.com';
-const HREF = `https://${HOST}/en-US/careers/login`;
+/** An application's account page on a Workday tenant (the Workday parser reads it; its /login names no posting). */
+const HREF = `https://${HOST}/en-US/careers/job/x/Engineer_JR-0000001/apply/applyManually`;
 const CREDENTIAL: SignInCredential = { host: HOST, email: 'alex.rivera@example.com', password: 'dummy-password-not-real' };
 
 /** Sets a loaded page's base address (a srcdoc page's own is about:srcdoc), after it loaded: the fixture loader lets
@@ -45,7 +46,7 @@ function setBase(doc: Document, base = `https://${HOST}/`): void {
 /** A sign-in page: email, password and a required terms box in one form, its button "Sign In". `before` goes in the
  *  form before the button; with `wrong`, the page's script shows an error and keeps the form. */
 function signInPage(options: { before?: string; action?: string; method?: string; wrong?: boolean;
-  passwordStyle?: string; passwordAttrs?: string } = {}): string {
+  passwordStyle?: string; passwordAttrs?: string; captcha?: boolean } = {}): string {
   return `<!doctype html><html><head><title>Sign In</title><style>
     body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui; }
     input[type=email], input[type=password] { display: block; width: 300px; padding: 6px; border: 1px solid #888; }
@@ -66,6 +67,15 @@ function signInPage(options: { before?: string; action?: string; method?: string
       window.submits += 1;
       window.typed = { email: document.getElementById('email').value, password: document.getElementById('password').value,
         terms: document.getElementById('terms').checked };
+      if (${options.captcha === true}) {
+        // The press raises a challenge, and the form stays where it is.
+        const widget = document.createElement('div');
+        widget.className = 'g-recaptcha';
+        widget.setAttribute('data-sitekey', 'k');
+        widget.style.cssText = 'width:304px;height:78px;border:1px solid #888';
+        document.querySelector('main').append(widget);
+        return;
+      }
       if (${options.wrong === true}) {
         const error = document.getElementById('error');
         error.textContent = "That email or password isn't right.";
@@ -135,12 +145,12 @@ describe('the standard sign-in form', () => {
   it('reads a sign-in and a create-account form, each with its one button and its required terms', async () => {
     const fixture = await loadFixture(document, signInPage());
     const form = standardSignInForm(fixture.doc, 'sign-in')!;
-    expect([form.email?.id, form.password.id, form.confirm, form.terms.map((box) => box.id), form.button.id])
+    expect([form.email?.id, form.password?.id, form.confirm, form.terms.map((box) => box.id), form.button.id])
       .toEqual(['email', 'password', null, ['terms'], 'go']);
     expect(signInRefusal(form, new URL(HREF))).toBeNull();
     const create = await loadFixture(document, CREATE_ACCOUNT);
     const account = standardSignInForm(create.doc, 'create-account')!;
-    expect([account.email?.id, account.password.id, account.confirm?.id, account.terms.map((box) => box.id),
+    expect([account.email?.id, account.password?.id, account.confirm?.id, account.terms.map((box) => box.id),
       account.button.id]).toEqual(['email', 'p1', 'p2', ['terms'], 'create-button']);
     // Two submit buttons: no reading of one.
     const two = await loadFixture(document, signInPage({ before: '<button type="submit">Sign in with Google</button>' }));
@@ -363,9 +373,12 @@ describe('the agent’s messages (v3 Phase 5)', () => {
     }
     expect(applied(fixture)).toBe(0);
     expect(worker.of('run/begin')).toEqual([]);
-    // The worker's own: the declared Apply, pressed once.
+    expect(worker.of('agent/entered')).toEqual([]);
+    // The worker's own: the declared Apply, pressed once, and told as it was made (round 3 of the v3 Phase 6/7b review,
+    // X8: before the entry's answer, which a press that takes the page away never sends).
     expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' })).toEqual({ ok: true, data: { outcome: 'pressed' } });
     expect(applied(fixture)).toBe(1);
+    expect(worker.of('agent/entered')).toEqual([{ v: 1, type: 'agent/entered' }]);
   });
 
   it('never presses an entry the adapter never presses, unless the adapter marks it so (Ashby’s Application tab)', async () => {
@@ -429,6 +442,21 @@ describe('the agent’s messages (v3 Phase 5)', () => {
     const refused = await enter(signInPage({ wrong: true }), 'auto', { 'signin/credential': [{ ok: true, data: {
       ...CREDENTIAL, host: 'job-boards.greenhouse.io' } }] });
     expect(refused.answer).toEqual({ ok: true, data: { outcome: 'blocked', block: 'sign-in-failed' } });
+  });
+
+  it('answers the agent\u2019s entry blocked by the challenge a sign-in\u2019s press raised, never pressed (round 2, E7)', async () => {
+    const posting = 'https://job-boards.greenhouse.io/northwind/jobs/4407';
+    const fixture = await loadFixture(document, signInPage({ captcha: true }), { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
+    const worker = createFakeWorker({ settings, script: { 'signin/credential': [{ ok: true, data: { ...CREDENTIAL,
+      host: 'job-boards.greenhouse.io' } }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => posting, isTop: true,
+      adapters: () => [greenhouseAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    expect(await worker.platform.deliver({ v: 1, type: 'agent/enter' }))
+      .toEqual({ ok: true, data: { outcome: 'blocked', block: 'captcha' } });
+    // The challenge is the person's, and the password stays typed for them to press Sign In once they solved it.
+    expect(fixture.doc.querySelector<HTMLInputElement>('#password')!.value).toBe(CREDENTIAL.password);
   });
 
   it('resumes the tab’s stored RunState in the next document, so its counts carry across documents', async () => {

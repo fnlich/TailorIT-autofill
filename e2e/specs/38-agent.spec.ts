@@ -39,8 +39,11 @@ const CREATE_ACCOUNT = 'fixtures/synthetic/signin/create-account.html';
 const greenhouseAt = (id: string) => `https://job-boards.greenhouse.io/tailoritfixture/jobs/38${id}`;
 const leverAt = (id: string) => `https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-0000000038${id}`;
 const ashbyAt = (id: string) => `https://jobs.ashbyhq.com/tailorit-fixture/00000000-0000-4000-8000-0000000038${id}/application`;
-const SIGN_IN_HOST = 'tailoritfixture.wd5.myworkdayjobs.com';
-const signInAt = (path: string) => `https://${SIGN_IN_HOST}/en-US/careers/${path}`;
+// A Taleo portal's apply address (v3 Phase 7b: a candidate host the every-site sign-in covers, whose adapter knows no
+// form of these synthetic pages, so the generic adapter's standard rule reads them; Workday's own sign-in is
+// 42-workday.spec.ts's).
+const SIGN_IN_HOST = 'tailoritfixture.taleo.net';
+const signInAt = (job: string) => `https://${SIGN_IN_HOST}/careersection/ex/jobapply.ftl?job=${job}&lang=en`;
 /** The sign-in the mock holds for the synthetic host: the fixtures' own dummies. */
 const DUMMY = { host: SIGN_IN_HOST, email: 'alex.rivera@example.com', password: 'e2e-dummy-password-not-real' };
 
@@ -220,7 +223,7 @@ test.describe('Sign-in mode Auto (v3 Phase 5)', () => {
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } } });
     const page = await extContext.newPage();
-    const url = `${signInAt('login')}?wrong`;
+    const url = `${signInAt('login')}&wrong`;
     routeLog.serve({ [url]: SIGN_IN });
     await page.goto(url);
     const tabId = await ext.fill(page);

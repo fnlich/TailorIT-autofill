@@ -80,8 +80,8 @@ export const MAX_FILLED_KEYS_PER_STEP = 50;
  *  watching is its own. */
 export const MAX_IDLE_TRANSITIONS = 8;
 
-/** A wall that needs the person's sign-in or a new account (auth-needed). */
-export type AuthWall = 'sign-in' | 'create-account';
+/** A wall that needs the person's sign-in, a new account or (v3 Phase 7b) their email at an email gate (auth-needed). */
+export type AuthWall = 'sign-in' | 'create-account' | 'email-gate';
 
 /** What validation and auto-advance read of the step, as the content script found it at validation. */
 export interface StepFacts {
@@ -327,6 +327,7 @@ export function noticeOfPause(reason: PauseReason): StepNotice {
       return 'captcha';
     case 'email-code':
     case 'entry-choice':
+    case 'forgot-password':
       return 'auth';
     case 'page-busy':
       return 'page-busy';

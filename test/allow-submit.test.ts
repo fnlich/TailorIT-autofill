@@ -9,7 +9,9 @@
  * submitted that the person never asked for.
  * v3 Phase 5 adds two doors of the same kind: clickAdapterEntry (the auto-apply agent's press of a posting's declared
  * Apply), named by src/content/press.ts alone, and clickAdapterSignIn (Sign-in mode Auto's press of a sign-in form's
- * button), named by src/content/sign-in.ts alone. Each finds its one element itself; neither takes a flag.
+ * button), named by src/content/sign-in.ts alone. Each finds its one element itself; neither takes a flag. v3 Phase 7b
+ * adds clickAdapterSignInPrelude (Sign-in mode Auto's press of the control that shows a wall's form: Workday's "Sign in
+ * with email"), named by src/content/sign-in.ts alone too.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -69,17 +71,18 @@ describe('the Submit exception', () => {
   }, 60_000);
 
   it('keeps the agent’s entry press in press.ts and Sign-in Auto’s press in sign-in.ts alone (v3 Phase 5)', async () => {
-    for (const [name, home] of [['clickAdapterEntry', 'content/press.ts'], ['clickAdapterSignIn', 'content/sign-in.ts']] as const) {
+    for (const [name, home] of [['clickAdapterEntry', 'content/press.ts'], ['clickAdapterSignIn', 'content/sign-in.ts'],
+      ['clickAdapterSignInPrelude', 'content/sign-in.ts']] as const) {
       const naming = sources(SRC).map(nameOf).filter((each) => !isTest(each))
         .filter((each) => new RegExp(`\\b${name}\\b`).test(readFileSync(join(SRC, each), 'utf8')));
       expect(naming.sort(), name).toEqual([home, 'dom/fillers/not-submit.ts'].sort());
       expect(readFileSync(join(SRC, home), 'utf8').match(new RegExp(`${name}\\(`, 'g')), name).toHaveLength(1);
     }
     const index = readFileSync(join(SRC, 'dom/fillers/index.ts'), 'utf8');
-    expect(index).not.toMatch(/clickAdapterEntry|clickAdapterSignIn/);
+    expect(index).not.toMatch(/clickAdapterEntry|clickAdapterSignIn|clickAdapterSignInPrelude/);
     // The review: not-submit.ts never calls a door itself: each name is followed by `(` once, in its own definition.
     const notSubmit = readFileSync(join(SRC, 'dom/fillers/not-submit.ts'), 'utf8');
-    for (const door of ['clickAdapterSubmit', 'clickAdapterEntry', 'clickAdapterSignIn']) {
+    for (const door of ['clickAdapterSubmit', 'clickAdapterEntry', 'clickAdapterSignIn', 'clickAdapterSignInPrelude']) {
       expect(notSubmit.match(new RegExp(`\\b${door}\\(`, 'g')), door).toHaveLength(1);
       expect(notSubmit, door).toMatch(new RegExp(`export function ${door}\\(`));
     }
@@ -95,7 +98,8 @@ describe('the Submit exception', () => {
     }
     const eslint = new ESLint({ cwd: ROOT });
     for (const [name, home, other] of [['clickAdapterEntry', 'content/press.ts', 'content/sign-in.ts'],
-      ['clickAdapterSignIn', 'content/sign-in.ts', 'content/press.ts']] as const) {
+      ['clickAdapterSignIn', 'content/sign-in.ts', 'content/press.ts'],
+      ['clickAdapterSignInPrelude', 'content/sign-in.ts', 'content/press.ts']] as const) {
       const probe = `import { ${name} } from '../dom/fillers/not-submit';\nexport const press = ${name};\n`;
       for (const elsewhere of ['content/orchestrator.ts', 'content/runtime.ts', other, 'background/agent.ts']) {
         const [result] = await eslint.lintText(probe, { filePath: join(SRC, elsewhere) });

@@ -19,14 +19,14 @@
  *   off, its confirmation asked again); a job past its time; a page that never loads or never shows a form. Only the
  *   agent's tab is closed, never a window.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applicationOf } from '../adapters';
 import { agentApplicationUrl, type AutofillAgentResultBody, type AutofillAgentTask } from '../contract/tailorit';
-import type { AgentAlarms, AgentWindows, StorageArea } from '../platform/types';
+import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import type { FrameReport } from '../shared/report';
 import {
   AGENT_ALARM, AGENT_BACKOFF_MS, AGENT_CONFIRM_MS, AGENT_FORM_WAIT_MS, AGENT_JOB_MAX_MS, AGENT_JOB_TIMEOUT_MS,
-  AGENT_MAX_STARTS, AGENT_RUN_KEY, AGENT_SETTLE_MS, AGENT_SIGN_IN_WAIT_MS, AGENT_SWITCH_KEY, agentVerdict, createAgent,
+  AGENT_LOAD_SETTLE_MS, AGENT_MAX_STARTS, AGENT_RUN_KEY, AGENT_SETTLE_MS, AGENT_SIGN_IN_WAIT_MS, AGENT_SWITCH_KEY, agentVerdict, createAgent,
   type AgentDeps,
   type AgentTask,
 } from './agent';
@@ -146,8 +146,10 @@ interface Harness {
   scopes: { value: string[] | null };
   disclosed: { value: boolean };
   changes: { count: number };
-  /** The frame's answer to agent/enter, and to run/start. */
-  entry: { answer: Record<string, unknown> };
+  /** The frame's answer to agent/enter (a throw: the press took the document away first), and to run/start. */
+  entry: { answer: Record<string, unknown> | 'gone' };
+  /** What the tab's address shows now (deps.atsPageOf, when the harness was given one), and how often it was read. */
+  ats: { page: AtsPage | null; reads: number };
   start: { answer: unknown };
   deps: AgentDeps;
 }
@@ -155,7 +157,8 @@ interface Harness {
 let nonces = 0;
 
 function harness(options: { local?: ReturnType<typeof memoryArea>; session?: ReturnType<typeof memoryArea>;
-  queue?: Queue; tasks?: AutofillAgentTask[]; firstWindow?: number } = {}): Harness {
+  queue?: Queue; tasks?: AutofillAgentTask[]; firstWindow?: number; onAtsHost?: boolean;
+  atsPage?: AtsPage | null } = {}): Harness {
   const queue = options.queue ?? queueOf(options.tasks);
   const h = {
     local: options.local ?? memoryArea(),
@@ -173,7 +176,8 @@ function harness(options: { local?: ReturnType<typeof memoryArea>; session?: Ret
     scopes: { value: ['agent:run', 'tracker:write'] as string[] | null },
     disclosed: { value: true },
     changes: { count: 0 },
-    entry: { answer: { outcome: 'pressed' } as Record<string, unknown> },
+    entry: { answer: { outcome: 'pressed' } as Record<string, unknown> | 'gone' },
+    ats: { page: options.atsPage ?? null, reads: 0 },
     start: { answer: { ok: true, data: {} } as unknown },
   } as Omit<Harness, 'agent' | 'deps'>;
   let nextWindow = options.firstWindow ?? 10;
@@ -221,6 +225,7 @@ function harness(options: { local?: ReturnType<typeof memoryArea>; session?: Ret
     async send(tabId, message) {
       h.sent.push({ tabId, message: message as Harness['sent'][number]['message'] });
       const type = (message as { type: string }).type;
+      if (type === 'agent/enter' && h.entry.answer === 'gone') throw new Error('the document went away');
       return type === 'agent/enter' ? { ok: true, data: h.entry.answer } : h.start.answer;
     },
     async release(tabId) {
@@ -233,6 +238,11 @@ function harness(options: { local?: ReturnType<typeof memoryArea>; session?: Ret
       h.changes.count += 1;
     },
     dayOf: (ms) => new Date(ms).toISOString().slice(0, 10),
+    ...(options.onAtsHost === undefined ? {} : { onAtsHost: async () => options.onAtsHost! }),
+    ...(options.atsPage === undefined ? {} : { atsPageOf: async () => {
+      h.ats.reads += 1;
+      return h.ats.page;
+    } }),
   };
   return { ...h, agent: createAgent(deps), deps };
 }
@@ -252,6 +262,18 @@ const runRecord = async (h: Harness) => (await h.local.get(AGENT_RUN_KEY)) as Ru
 async function running(h: Harness): Promise<{ tabId: number; key: string }> {
   const run = (await runRecord(h))!;
   return { tabId: run.tabId!, key: run.applicationKey };
+}
+
+/** A page of the job's platform's host that names no posting (its board, a sign-in that names no job). */
+const BOARD: AtsPage = { page: 'other', platform: 'greenhouse' };
+
+/** The tab's load reporting `shown`, then its settle (AGENT_LOAD_SETTLE_MS) run to its end. */
+async function settledLoad(h: Harness, tabId: number, shown: AtsPage): Promise<void> {
+  const before = h.timers.pending;
+  const loading = h.agent.loaded(tabId, () => shown);
+  await vi.waitFor(() => expect(h.timers.pending).toBeGreaterThan(before));
+  h.timers.advance(AGENT_LOAD_SETTLE_MS);
+  await loading;
 }
 
 /** A frame's hello for the task's own application. */
@@ -461,6 +483,167 @@ describe('the agent', () => {
     await h.agent.hello(second.tabId, { frameId: 0, documentId: 'doc-3', hasForm: false });
     expect(h.sent).toHaveLength(1);
     expect(h.results.at(-1)).toEqual({ id: ID(2), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0 } });
+  });
+
+  it('a page of the job\u2019s platform that names no posting after the entry is the person\u2019s sign-in (v3 Phase 6/7b, C1)', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true, applicationKey: key,
+      platform: 'greenhouse' });
+    expect(h.sent.map((each) => each.message.type)).toEqual(['agent/enter']);
+    // A single-page application's route to its sign-in (Workday's /login), on the job's own platform.
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, platform: 'greenhouse' });
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'sign_in', aiGuesses: 0 } }]);
+  });
+
+  it('a page that names no posting before any entry is a closed posting; on another platform after it, the person’s',
+    async () => {
+      // Round 3 of the v3 Phase 6/7b review (X8): after the entry, another platform's page is no closed posting of this
+      // job's, nor its sign-in: a page the job did not lead to.
+      for (const [platform, state, reason] of [['greenhouse', 'failed', 'posting_closed'], ['lever', 'needs-you', 'other']] as const) {
+        const h = harness({ tasks: [task(1)] });
+        await on(h);
+        const { tabId, key } = await running(h);
+        if (platform === 'lever') {
+          await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true, applicationKey: key,
+            platform: 'greenhouse' });
+        }
+        await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-2', hasForm: false, platform });
+        expect(h.results, platform).toEqual([{ id: ID(1), body: { state, reason, aiGuesses: 0 } }]);
+      }
+    });
+
+  it('a tab still on the platform\u2019s host whose page never said hello is a closed posting (S3: such a page says none)', async () => {
+    for (const [onAtsHost, reason] of [[true, 'posting_closed'], [false, 'page_error']] as const) {
+      const h = harness({ tasks: [task(1)], onAtsHost });
+      await on(h);
+      await running(h);
+      h.clock.now += AGENT_FORM_WAIT_MS;
+      await h.agent.tick();
+      expect(h.results, String(onAtsHost)).toEqual([{ id: ID(1), body: { state: 'failed', reason, aiGuesses: 0 } }]);
+    }
+  });
+
+  it('counts the job begun only once an entry answered pressed, or a form showed (round 2, K4)', async () => {
+    const h = harness({ tasks: [task(1)] });
+    h.entry.answer = { outcome: 'not-offered' };
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true, applicationKey: key,
+      platform: 'greenhouse' });
+    // A closed Workable posting that routes to its board in place: never the person's sign-in.
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, platform: 'greenhouse' });
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0 } }]);
+  });
+
+  it('answers at the tab\u2019s load a page of an ATS host that names no posting and says no hello (round 2, K3, E8)', async () => {
+    // Nothing begun: a closed posting once the load settles, not after the form's wait.
+    const closed = harness({ tasks: [task(1)], atsPage: BOARD });
+    await on(closed);
+    const first = await running(closed);
+    await settledLoad(closed, first.tabId, BOARD);
+    expect(closed.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0 } }]);
+    // The entry pressed, then a full load of the platform's sign-in that names no job (Workday's /login): the person's.
+    const begun = harness({ tasks: [task(1)], atsPage: BOARD });
+    await on(begun);
+    const second = await running(begun);
+    await begun.agent.hello(second.tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true,
+      applicationKey: second.key, platform: 'greenhouse' });
+    await settledLoad(begun, second.tabId, BOARD);
+    expect(begun.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'sign_in', aiGuesses: 0 } }]);
+    // A posting page loading is the hellos' to answer.
+    const posting = harness({ tasks: [task(1)], atsPage: { page: 'posting', platform: 'greenhouse' } });
+    await on(posting);
+    const third = await running(posting);
+    await posting.agent.loaded(third.tabId, () => ({ page: 'posting', platform: 'greenhouse' }));
+    expect(posting.results).toEqual([]);
+  });
+
+  describe('round 3 of the v3 Phase 6/7b review (X8)', () => {
+    it('reads no other tab\u2019s load, not even its address', async () => {
+      const h = harness({ tasks: [task(1)], atsPage: BOARD });
+      await on(h);
+      const { tabId } = await running(h);
+      let asked = 0;
+      const before = h.timers.pending;
+      await h.agent.loaded(tabId + 1, () => {
+        asked += 1;
+        return BOARD;
+      });
+      expect([asked, h.ats.reads, h.timers.pending]).toEqual([0, 0, before]);
+      expect(h.results).toEqual([]);
+    });
+
+    it('looks at the address again once the load settles: a board whose script goes on to the posting is no closed one',
+      async () => {
+        const h = harness({ tasks: [task(1)], atsPage: { page: 'posting', platform: 'greenhouse' } });
+        await on(h);
+        const { tabId } = await running(h);
+        // The load reports the board; by the settle the page's script has gone on to the posting.
+        await settledLoad(h, tabId, BOARD);
+        expect(h.ats.reads).toBe(1);
+        expect(h.results).toEqual([]);
+      });
+
+    it('answers a page of another platform, or one not known, after the entry as the person\u2019s, never a sign-in',
+      async () => {
+        // A load on another platform's host: a redirect the job did not lead to.
+        const elsewhere = harness({ tasks: [task(1)], atsPage: { page: 'other', platform: 'lever' } });
+        await on(elsewhere);
+        const first = await running(elsewhere);
+        await elsewhere.agent.hello(first.tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true,
+          applicationKey: first.key, platform: 'greenhouse' });
+        await settledLoad(elsewhere, first.tabId, { page: 'other', platform: 'lever' });
+        expect(elsewhere.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+        // A hello that names no posting from a frame whose platform is not known.
+        const unknown = harness({ tasks: [task(1)] });
+        await on(unknown);
+        const second = await running(unknown);
+        await unknown.agent.hello(second.tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true,
+          applicationKey: second.key, platform: 'greenhouse' });
+        await unknown.agent.hello(second.tabId, { frameId: 0, documentId: 'doc-1', hasForm: false });
+        expect(unknown.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+      });
+
+    it('counts the job begun from the frame\u2019s note of its press when the press takes the document away first', async () => {
+      const h = harness({ tasks: [task(1)], atsPage: BOARD });
+      h.entry.answer = 'gone';
+      await on(h);
+      const { tabId, key } = await running(h);
+      // The worker asks doc-1 to enter; the frame's note of its press comes, and the answer never does.
+      const hello = h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true, applicationKey: key,
+        platform: 'greenhouse' });
+      const noted = h.agent.entered(tabId, 'doc-1');
+      // A note from a document the agent never asked to enter, or another tab, counts for nothing.
+      await h.agent.entered(tabId, 'doc-9');
+      await h.agent.entered(tabId + 1, 'doc-1');
+      await Promise.all([hello, noted]);
+      expect(((await h.local.get(AGENT_RUN_KEY)) as { pressedEntryAt?: number | null }).pressedEntryAt).toBe(h.clock.now);
+      // The page the press led to, the platform's own sign-in that names no job: the person's sign-in.
+      await settledLoad(h, tabId, BOARD);
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'sign_in', aiGuesses: 0 } }]);
+    });
+
+    it('takes no note before the agent asked the document to enter', async () => {
+      const h = harness({ tasks: [task(1)], atsPage: BOARD });
+      await on(h);
+      const { tabId } = await running(h);
+      await h.agent.entered(tabId, 'doc-1');
+      expect(((await h.local.get(AGENT_RUN_KEY)) as { pressedEntryAt?: number | null }).pressedEntryAt ?? null).toBeNull();
+      await settledLoad(h, tabId, BOARD);
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'failed', reason: 'posting_closed', aiGuesses: 0 } }]);
+    });
+  });
+
+  it('answers the person\u2019s sign-in at the form\u2019s wait when the entry was pressed and the tab sits on an ATS host (E8)', async () => {
+    const h = harness({ tasks: [task(1)], onAtsHost: true });
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-1', hasForm: false, posting: true, applicationKey: key });
+    h.clock.now += AGENT_FORM_WAIT_MS;
+    await h.agent.tick();
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'sign_in', aiGuesses: 0 } }]);
   });
 
   it('a page that said hello but never showed a form is a closed posting; one that never loaded, a page error', async () => {

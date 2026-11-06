@@ -23,8 +23,18 @@ export const SMOKE_ROUTES: Record<string, string> = {
   'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-000000000001/apply': 'fixtures/smoke/form.html',
   'https://jobs.eu.lever.co/tailorit-fixture/00000000-0000-4000-8000-000000000001/apply': 'fixtures/smoke/form.html',
   'https://jobs.ashbyhq.com/tailorit-fixture/00000000-0000-4000-8000-000000000001/application': 'fixtures/smoke/ashby-form.html',
-  'https://wlu.wd5.myworkdayjobs.com/en-US/careers/job/Austin-TX/Engineer_R100': 'fixtures/smoke/form.html',
-  'https://wd5.myworkdaysite.com/recruiting/tailoritfixture/careers/job/Austin-TX/Engineer_R100': 'fixtures/smoke/form.html',
+  // Workday's application (v3 Phase 6): its account view and steps under .../apply/applyManually, its flow page known.
+  'https://wlu.wd5.myworkdayjobs.com/en-US/careers/job/Austin-TX/Engineer_R100/apply/applyManually': 'fixtures/smoke/workday-form.html',
+  'https://wd5.myworkdaysite.com/recruiting/tailoritfixture/careers/job/Austin-TX/Engineer_R100/apply/applyManually':
+    'fixtures/smoke/workday-form.html',
+  // v3 Phase 7b: each platform's application page, the forms behind the account read by the generic adapter (iCIMS's
+  // gate address, the one word under /jobs/<id>/<slug>/ its parser reads as the application until snapshots name more).
+  'https://careers-tailoritfixture.icims.com/jobs/1/engineer/login': 'fixtures/smoke/form.html',
+  'https://tailoritfixture.taleo.net/careersection/ex/jobapply.ftl?job=1&lang=en': 'fixtures/smoke/form.html',
+  'https://career2.successfactors.eu/career?company=tailoritfixture&career_job_req_id=1&career_ns=job_application':
+    'fixtures/smoke/form.html',
+  'https://tailoritfixture.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1/apply/section/1':
+    'fixtures/smoke/oracle-form.html',
   'https://careers.tailorit-fixture.example/jobs/1': 'fixtures/smoke/company-embed.html',
   'https://example.com/': 'fixtures/smoke/form.html',
 };

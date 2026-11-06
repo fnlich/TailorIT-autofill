@@ -102,9 +102,13 @@ describe('the side panel in TailorIT’s look', () => {
     const unsupported = await open(elsewhere, 5);
     const section = unsupported.querySelector<HTMLElement>('[data-unsupported]')!;
     expect(section.querySelector('h2')?.textContent).toBe(COPY.panel.unsupported.heading);
-    // Workday is not listed until it has an adapter of its own (v3 Phase 3 review); Workable is since v3 Phase 7a.
+    // Workable is listed since v3 Phase 7a; Workday, iCIMS, Taleo, SuccessFactors and Oracle since v3 Phases 6 and 7b,
+    // each saying its application forms are still to come.
     expect([...section.querySelectorAll('.tia-unsupported__name')].map((name) => name.textContent))
-      .toEqual(['Greenhouse', 'Lever', 'Ashby', 'Workable']);
+      .toEqual(['Greenhouse', 'Lever', 'Ashby', 'Workable', 'Workday', 'iCIMS', 'Taleo', 'SuccessFactors',
+        'Oracle Recruiting Cloud']);
+    expect([...section.querySelectorAll('.tia-unsupported__site')].map((site) => site.querySelector('.tia-unsupported__note')
+      ?.textContent ?? null)).toEqual([null, null, null, null, ...Array(5).fill(COPY.panel.unsupported.sites[4]!.note)]);
     // Nothing to fill there: no Autofill, no custom question.
     expect(unsupported.querySelector('button.tia-cta')).toBeNull();
     expect(unsupported.querySelector('[data-ask]')).toBeNull();

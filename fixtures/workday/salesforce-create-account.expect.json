@@ -1,0 +1,63 @@
+{
+  "fixture": "workday/salesforce-create-account",
+  "source": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/California---San-Francisco/Senior-Executive-Assistant_JR337145/apply/applyManually",
+  "captured": "2026-11-05T05:49:58.000Z",
+  "fields": [
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Create Account",
+      "fillable": true,
+      "control": "input[data-automation-id=\"email\"]"
+    },
+    {
+      "label": "I acknowledge and agree to Salesforce's Candidate Privacy Notice",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Create Account",
+      "fillable": true,
+      "control": "input[data-automation-id=\"createAccountCheckbox\"]",
+      "note": "Drawn at opacity 0 behind its visible label[for]; marked required nowhere, but the account's own terms: Sign-in Auto ticks it (the adapter declares it)."
+    },
+    {
+      "label": "Enter website. This input is for robots only, do not enter if you're human.",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "input[data-automation-id=\"beecatcher\"]",
+      "note": "The honeypot: 1 by 0 px, beside the form; never a field, and Sign-in Auto never types into it."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": "create-account",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[data-automation-id=\"email\"]",
+      "password": "input[data-automation-id=\"password\"]",
+      "confirm": "input[data-automation-id=\"verifyPassword\"]",
+      "terms": [
+        "input[data-automation-id=\"createAccountCheckbox\"]"
+      ],
+      "button": "[data-automation-id=\"click_filter\"][aria-label=\"Create Account\"]",
+      "form": "form[data-automation-id=\"signInFormo\"]",
+      "scriptSubmits": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"utilityButtonSignIn\"]",
+      "[data-automation-id^=\"navigationItem-\"]",
+      "[data-automation-id=\"signInLink\"]",
+      "[data-automation-id=\"forgotPasswordLink\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"click_filter\"][aria-label=\"Create Account\"]"
+    ]
+  }
+}

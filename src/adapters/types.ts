@@ -93,21 +93,57 @@ export type UploadState = 'confirmed' | 'failed' | 'pending';
  *  blocks, and the summary's words by the category each names (core/steps/blocks.ts ShownBlock). */
 export type PrefillEntryView = ShownBlock;
 
-/** The account pages Sign-in mode Auto fills (v3 Phase 5). */
-export type SignInWall = 'sign-in' | 'create-account';
+/** The account pages Sign-in mode Auto fills (v3 Phase 5): a sign-in, an account's creation, and (v3 Phase 7b) an
+ *  email gate, the email-first identity step whose Next sends the person a code (Oracle Recruiting Cloud's) or leads on
+ *  to their account (iCIMS's): the email alone is typed there, never a password. */
+export type SignInWall = 'sign-in' | 'create-account' | 'email-gate';
 
-/** A sign-in or create-account form (v3 Phase 5, Sign-in mode Auto), as an adapter declares it, or as the standard
- *  rule reads one (dom/sign-in-form.ts standardSignInForm). Elements only: nothing is read from them here. */
+/** A sign-in, create-account or email-gate form (v3 Phase 5, Sign-in mode Auto), as an adapter declares it, or as the
+ *  standard rule reads one (dom/sign-in-form.ts standardSignInForm, which reads no email gate). Elements only: nothing
+ *  is read from them here. */
 export interface SignInForm {
-  /** The email or user-name box; null when the page asks for the password alone. */
+  /** The email or user-name box; null when the page asks for the password alone. An email gate always has one. */
   email: HTMLInputElement | null;
-  password: HTMLInputElement;
+  /** v3 Phase 7b: on a create-account page an adapter declares, the email typed again (SuccessFactors' "Retype Email
+   *  Address"); absent or null when the page asks for it once. Never on a form the standard rule reads. */
+  confirmEmail?: HTMLInputElement | null;
+  /** The password box; null on an email gate alone, which asks for none. */
+  password: HTMLInputElement | null;
   /** On a create-account page, the password typed again; null when the page asks for it once. */
   confirm: HTMLInputElement | null;
-  /** The account's required terms boxes still unticked. */
+  /** The account's required terms boxes still unticked: the form's required ones, or (v3 Phase 7b) the boxes the
+   *  adapter declares the account's terms where the page marks none required (Workday's createAccountCheckbox). */
   terms: HTMLInputElement[];
-  /** Sign in, or Create account: the one control pressed. */
+  /** Sign in, Create account or Next: the one control pressed. A declared form's is named by an identity of its own
+   *  in the snapshot (an id, its data-automation-id, its title or its words), never as "the form's one submit button";
+   *  it may be the visible face the page draws over its own button (Workday's div[role=button] over an aria-hidden
+   *  submit button), inside the form. */
   button: HTMLElement;
+  /** v3 Phase 7b: on a form an adapter declares, the adapter's own <form> element, by its snapshot's markup: every box
+   *  and the button must belong to it (the v3 Phase 6/7b review, S8). Required of a declared form. */
+  form?: HTMLFormElement;
+  /** v3 Phase 7b: set by dom/sign-in-form.ts signInFormOf on a form an adapter declares (never by the standard rule).
+   *  Its terms are at most one box. */
+  declared?: true;
+  /** v3 Phase 7b, a declared form's per-box opt-out of the colour test alone (never a password box): the boxes the
+   *  snapshot shows drawn in front of a background whose colours cannot be worked out (Oracle's gate email, over the
+   *  flow's image), held to every other honeypot rule. Each must be one of the form's own boxes. */
+  colourUnknown?: readonly HTMLInputElement[];
+  /** v3 Phase 7b: on a declared form, the page enables its button only once the form is filled (Oracle's NEXT, iCIMS's
+   *  Next behind its GDPR box): a button disabled when the form is read is taken, and the sign-in waits a moment,
+   *  bounded, for it to be enabled after typing (content/sign-in.ts). Without this mark a disabled button refuses the
+   *  form ('disabled'), as it does every form the standard rule reads. */
+  enablesWhenFilled?: true;
+  /** v3 Phase 7b: a declared form that asks for more than Sign-in Auto types (SuccessFactors' account creation: names, a
+   *  phone, a country and a terms dialog, all the person's): its credential boxes are typed and its button is the
+   *  person's to press. Sign-in Auto presses nothing there (its door refuses such a form) and answers 'continue', the run
+   *  then pausing at the page for the rest. */
+  personPresses?: true;
+  /** v3 Phase 7b: the page's own script sends this form (a single-page application's sign-in: no method and no action
+   *  written, Workday's and Oracle's), declared by the adapter alone, never by the standard rule. dom/sign-in-form.ts
+   *  signInRefusal then takes a form with neither attribute on an https page of a host the every-site sign-in covers,
+   *  and content/sign-in.ts keeps the browser from ever sending it itself as a GET while it signs in. */
+  scriptSubmits?: true;
 }
 
 export interface Adapter {
@@ -188,14 +224,26 @@ export interface Adapter {
   /** The blocks that show a saved entry's summary, with its words (PrefillEntryView): the planner finds the entry each
    *  holds by its fingerprint, never by its place (the Phase 7a review: Workable's saved Education and Experience). */
   prefill?: { readEntries?(kind: string, blocks: Element[]): PrefillEntryView[] };
-  authState?(doc: Document): 'sign-in' | 'create-account' | 'email-code' | 'entry-choice' | null;
-  /** v3 Phase 5, Sign-in mode Auto: the platform's own sign-in or create-account form on this page, or null. Without
-   *  this hook the standard rule reads it (autocomplete username/email and current-password/new-password, in one form
-   *  with one submit button: dom/sign-in-form.ts). */
+  /** The account or choice page the document shows, where the platform's own markup says it (each named in its
+   *  snapshot): a sign-in, an account's creation, an email gate (v3 Phase 7b: an email-first identity step, no
+   *  password), an email code, a choice of how to apply, or (v3 Phase 7b) a password reset ('forgot-password': the
+   *  person's alone; nothing is ever typed into its email box); null for none. */
+  authState?(doc: Document): 'sign-in' | 'create-account' | 'email-gate' | 'email-code' | 'entry-choice'
+    | 'forgot-password' | null;
+  /** v3 Phase 5, Sign-in mode Auto: the platform's own sign-in, create-account or (v3 Phase 7b) email-gate form on this
+   *  page, or null. Without this hook the standard rule reads it (autocomplete username/email and
+   *  current-password/new-password, in one form with one submit button: dom/sign-in-form.ts). */
   signInForm?(doc: Document, wall: SignInWall): SignInForm | null;
+  /** v3 Phase 7b, Sign-in mode Auto: on a wall whose form the page shows only after a first choice (Workday's landing:
+   *  Apple, Google, or "Sign in with email"), the one control that shows it, or null once it shows (or none is
+   *  declared). Pressed only by the sign-in prelude door of dom/fillers/not-submit.ts, for Sign-in Auto alone, and only
+   *  while the page shows no form for the wall. */
+  signInPrelude?(doc: Document, wall: SignInWall): HTMLElement | null;
   /** v3 Phase 5, the auto-apply agent: on a posting page that shows no form, the one control that opens the
    *  application (Greenhouse's and Lever's Apply, Ashby's Application tab), or null. Pressed only by
-   *  the entry door of dom/fillers/not-submit.ts, for the agent alone. */
+   *  the entry door of dom/fillers/not-submit.ts, for the agent alone. Where quirks.entryPresses allows it, a press
+   *  that leaves the page in the same document is followed by the next control the hook answers then (v3 Phase 7b:
+   *  Workday's Apply opens its choice in place, and the hook then answers its Apply Manually). */
   entryControl?(doc: Document): HTMLElement | null;
   /** v3 Phase 5 review: the entry control is one of this adapter's own never-pressed controls (neverPress: Ashby's
    *  Application tab, which no run presses), and the entry door may press that one element, nothing beside it. Without
@@ -207,6 +255,14 @@ export interface Adapter {
     /** The form root is drawn by the page's own script this long after the page loads, or after an address change,
      *  at most (Ashby's: 4.8 to 6.8 s live): the content runtime looks for it again as the page changes until then. */
     formLateMs?: number;
+    /** v3 Phase 7b: how long the agent's entry waits for this adapter's entry control to be drawn, where its page
+     *  draws it later than most (Workday's Apply 6 to 11 s after load); content/press.ts ENTRY_WAIT_MS (8 s) when absent,
+     *  held at its ENTRY_WAIT_CAP_MS. */
+    entryWaitMs?: number;
+    /** v3 Phase 7b: the entry controls the agent's one agent/enter may press in one document, one after the other
+     *  (Workday's 2: its Apply draws the choice in place, whose Apply Manually entryControl answers then), held at
+     *  content/press.ts ENTRY_MAX_PRESSES. 1 when absent. */
+    entryPresses?: number;
     /** A failed upload can take the whole form down (Workable's page shows its error page in the form's place: the
      *  live check of 2026-11-02), so a pass writes its files after every other field. */
     filesLast?: true;

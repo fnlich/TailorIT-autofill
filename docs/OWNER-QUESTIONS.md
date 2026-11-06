@@ -172,14 +172,41 @@ Copied as the notes give them.
 
 From the plan and the Phase 5 report, taken with a throwaway candidate account holding only the golden dummy profile (never your real data; type the dummy data where a step needs it, and submit nothing):
 
-- the sign-in and create-account pages;
-- every step: My Information, My Experience with an added block, Application Questions, Voluntary Disclosures, Self Identify, Review;
-- an open multi-select and a date field.
+- ~~the sign-in and create-account pages~~: public, captured on 2026-11-04/05 (v3 Phase 6: the landing, Sign In, Create Account, Forgot Password); still wanted: the sign-in's error text, and the "verify your account" message after a new account;
+- every step: My Information, My Experience with an added block, Application Questions, Voluntary Disclosures, Self Identify, Review, with each step's Next and Review's Submit and the confirmation after it;
+- an open multi-select and a date field;
+- a tenant whose account form shows a CAPTCHA, if you meet one.
 
 Related notes:
 
 - Phase 2 (fixtures): "Workday review cells not redacted yet (Phase 5)"
 - Phase 5 (review): "Plausible gap (Workday): a form that renders after the content script starts gets no resume after a reload (resumeStored runs only at start-up and on address changes). Record it for the Workday adapter, and ideally observe for a form root appearing later."
+
+### iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud (v3 Phase 7b)
+
+Their public pages were captured on 2026-11-04/05 (docs/FIXTURES.md); their adapters know the posting, the entry and the account pages. With a throwaway candidate account and the golden dummy profile, submitting nothing:
+
+- **iCIMS:** what follows the email gate's Next, for a new candidate (the profile with "Create a login") and a returning one (the password step on login.icims.com, or a code); the profile, questions and EEO steps; the page after Submit.
+- **Taleo:** the New User registration (reachable only by Taleo's own post-back), the application's flow (`flow.jsf`, `application.jss`) and its confirmation, and "Apply as Guest".
+- **SuccessFactors:** the data-privacy dialog at Apply, the registration's terms dialog, the `job_application` steps, any email verification, the confirmation; one Career Site Builder company site's hand-off.
+- **Oracle Recruiting Cloud:** the code page after the gate's NEXT ("Confirm your identity"), the `/apply/section/<n>` steps, Easy Apply, the confirmation.
+
+Decided by the coordinator on 2026-11-05 under your standing approval (docs/SPEC-AMENDMENTS.md §12 Decision 12 holds what was built); each is yours to overrule:
+
+- **Sign-in Auto may press a form the page's own script sends** (Workday's and Oracle's: no method, no action), under the narrow rules: declared by the platform's adapter, on https, on a host the every-site sign-in covers, every native submission of it cancelled while Sign-in watches, and the password written empty again unless the sign-in goes on.
+- **Sign-in Auto may press an email gate's Next** (Oracle's), which makes the site email you a code: only with Sign-in on Auto; with Manual you press it. The code is yours. (On the captured tenants the gate's terms label reads over a background image the extension cannot judge, so it refuses those gates and they stay yours.)
+- **Taleo's user-name box** gets the saved sign-in's email; there is no separate user-name field in a saved sign-in.
+- **Taleo's Privacy Agreement** is a required consent to apply: the agent's entry presses its I Accept, in either Consents mode; I Decline never.
+- **SuccessFactors' account creation** follows Sign-in Auto as Workday's does: the email typed twice (its "Retype Email Address", the `confirmEmail` slot) and the password twice. The form also asks for a name, a phone and a country, and its terms are accepted in a dialog; those and the DPCS dialog at Apply stay yours until there are snapshots, so its Create Account is yours to press.
+- **Oracle's region-less hosts** (JPMC's `jpmc.fa.oraclecloud.com`) count as covered: TailorIT is widening `signInHostCovered` in its contract API 5, which the extension takes when it pulls the contract (src/contract is never edited by hand). Until then those hosts' gates stay yours.
+- **Oracle's broader host permission** (Chrome reads the path-scoped content script's permission as all of oraclecloud.com) is accepted, and documented in docs/PRIVACY.md.
+
+Decisions still wanted:
+
+- Taleo's "Apply as Guest": whether the agent may prefer it where a portal offers it (waits for snapshots).
+- iCIMS's own sign-in, login.icims.com, and its password step: whether the every-site sign-in should cover it (TailorIT's `signInHostCovered` excludes it, and its page names the company but no job), and whether Sign-in Auto may act on its identifier-first flow (waits for snapshots).
+- TailorIT's side: reading the five platforms' addresses (`ATS_KINDS`, `parseAtsUrl`, Add job from Workday's public posting API; contract API 5 is adding them), and the agent's addresses (Workday's `/apply/applyManually`, Taleo's `jobapply.ftl?job=`, SuccessFactors' Sign In link, Oracle's `/apply/email`).
+- iCIMS's pages after the gate: until a snapshot names their address word (`/jobs/<id>/<slug>/<word>`), only the posting and the gate are read as the posting's (the v3 Phase 6/7b review), so the extension does not fill them yet.
 
 ### Real pages and the dry run
 

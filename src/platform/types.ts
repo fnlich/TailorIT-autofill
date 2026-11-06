@@ -3,6 +3,16 @@
  * use fake.ts (Node, over WXT's fake browser plus hand fakes) and memory.ts (in-memory doubles). A content script gets
  * ContentPlatform, which has no storage, tabs, network or secrets at all.
  */
+import type { Platform } from '../core/enums';
+
+/** What a page on an applicant-tracking host shows by its address alone (WorkerPlatform tabs.atsPageOf): 'posting'
+ *  where the content script says hello (a posting, its application or the page after submitting: adapters/address.ts),
+ *  'other' for any other page there (a board, a sign-in that names no job, an employer's own pages); and (round 3 of
+ *  the v3 Phase 6/7b review, X8) the platform whose host it is. */
+export interface AtsPage {
+  page: 'posting' | 'other';
+  platform: Platform;
+}
 
 /** What Chrome says about who sent a message. The worker decides trust from this, never from a payload. */
 export interface Sender {
@@ -95,10 +105,18 @@ export interface WorkerPlatform {
     /** Opens a tab in front; resolves with its id. */
     create(url: string): Promise<number | null>;
     onRemoved(cb: (tabId: number) => void): void;
+    /** Calls `cb` with a tab's id whenever it finishes loading a page (tabs.onUpdated, status 'complete'), and what
+     *  the page the load reports shows (atsPageOf's reading of the change's or the tab's address), read only when `cb`
+     *  asks: the auto-apply agent answers its own tab's page from it, and reads no other tab's (round 2 of the v3 Phase
+     *  6/7b review, K3; round 3, X8). */
+    onLoaded?(cb: (tabId: number, shown: () => AtsPage | null) => void): void;
     /** Whether a tab shows a page on one of the applicant-tracking hosts (v3 Phase 3 review: the side panel says
      *  "Reload the page" when it does and no frame of ours said hello). Chrome gives a tab's address only on the hosts
      *  the extension may read, so false for any other; never the address itself. */
     onAtsHost?(tabId: number): Promise<boolean>;
+    /** The v3 Phase 6/7b review's round 2 (K1): what a tab on an applicant-tracking host shows, by its address alone
+     *  (AtsPage), null off those hosts. Never the address itself. */
+    atsPageOf?(tabId: number): Promise<AtsPage | null>;
     /** v3 Phase 3b ("Ask TailorIT to support this site"): the host name of the tab's page, in lower case, when Chrome
      *  gives the tab's address (an applicant-tracking host, or a tab the person invoked the extension on with the
      *  toolbar icon: activeTab, kept across same-origin moves, taken back on another origin or when the tab closes)

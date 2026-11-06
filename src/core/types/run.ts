@@ -6,12 +6,14 @@ import type { Platform } from '../enums';
 import type { BaseKey, FieldKey } from './field';
 
 /** 'handoff': the user must act (a CAPTCHA, an email code, a bot check, Workday's entry choice, a busy page, a click the
- *  site needs). 'auth-needed': sign-in or account creation. Neither is ever automated. */
+ *  site needs, v3 Phase 7b's password reset). 'auth-needed': sign-in, account creation or an email gate. Neither is ever
+ *  automated, but by Sign-in mode Auto at an auth-needed pause (docs/SPEC-AMENDMENTS.md §12). */
 export const RUN_STATUSES = ['detect', 'auth-needed', 'handoff', 'policy-notice', 'scan-step', 'fill-step', 'validate',
   'advance', 'wait-transition', 'review', 'done', 'stopped'] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
-export const PAUSE_REASONS = ['captcha', 'email-code', 'bot-check', 'entry-choice', 'page-busy', 'needs-click'] as const;
+export const PAUSE_REASONS = ['captcha', 'email-code', 'bot-check', 'entry-choice', 'page-busy', 'needs-click',
+  'forgot-password'] as const;
 export type PauseReason = (typeof PAUSE_REASONS)[number];
 
 /** At most two fill attempts per step, counted across reloads. */

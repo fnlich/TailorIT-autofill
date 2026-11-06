@@ -27,7 +27,11 @@
  * a posting page's declared entry control (Adapter.entryControl: Greenhouse's and Lever's Apply, Ashby's Application
  * tab) through not-submit.ts clickAdapterEntry, the third door this module alone may open: never while a form, a
  * CAPTCHA, a sign-in or a code shows, never anything but that one control. A page that draws it late is watched for it
- * for ENTRY_WAIT_MS.
+ * for ENTRY_WAIT_MS, or the adapter's own quirks.entryWaitMs. v3 Phase 7b: a choice of how to apply blocks it only where
+ * the adapter offers no control on it, and an adapter may allow a second press in the same document (Workday's Apply,
+ * then its Apply Manually), made only while the adapter says its choice shows. A CAPTCHA shown and not solved comes
+ * before every other page (dom/pause-detect.ts): the entry is 'blocked' by it, the choice included (the v3 Phase 6/7b
+ * review, S1).
  */
 import type { Adapter } from '../adapters/types';
 import type { EntryAnswer, EntryBlock, StepTarget, PressAnswer } from '../messaging/schemas';
@@ -208,14 +212,25 @@ export async function refusalAfter(page: Pick<PressPage, 'doc' | 'adapter' | 'ro
   return refusalNow(page, marked.size);
 }
 
-/** How long the agent's entry waits for its control to be drawn (Ashby draws its overview's tabs seconds after load). */
+/** How long the agent's entry waits for its control to be drawn (Ashby draws its overview's tabs seconds after load),
+ *  where its adapter says nothing else (quirks.entryWaitMs). */
 export const ENTRY_WAIT_MS = 8_000;
+/** The longest an adapter may ask the entry to wait (quirks.entryWaitMs): the agent's queue waits meanwhile. */
+export const ENTRY_WAIT_CAP_MS = 20_000;
+/** v3 Phase 7b: the most presses one agent/enter makes in one document (Workday's Apply, then its Apply Manually), each
+ *  one the adapter allows (quirks.entryPresses). */
+export const ENTRY_MAX_PRESSES = 2;
+/** v3 Phase 7b: how long after a press that leaves the agent in the same document the next entry control is waited for
+ *  (Workday's choice is drawn at once, in place). */
+export const ENTRY_FOLLOW_MS = 5_000;
 
 /** What blocked an entry, by the pause the page shows. */
-function blockOf(kind: PauseKind): EntryBlock {
+export function blockOf(kind: PauseKind): EntryBlock {
   switch (kind) {
     case 'sign-in':
     case 'create-account':
+    case 'email-gate':
+    case 'forgot-password':
       return 'sign-in';
     case 'email-code':
       return 'email-code';
@@ -226,35 +241,119 @@ function blockOf(kind: PauseKind): EntryBlock {
   }
 }
 
-/** The agent's press on a posting page's entry control (module header): 'pressed'; 'blocked' with what blocked it (a
- *  sign-in or account page, an email code, a CAPTCHA, another choice); or 'not-offered' (no adapter of the address
- *  declares one, a form shows, or none was drawn within `waitMs`). Nothing is pressed but that one control. */
-export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: AbortSignal, waitMs = ENTRY_WAIT_MS):
-  Promise<EntryAnswer> {
+/** How long the entry waits for a control the address's adapters draw late: the longest quirks.entryWaitMs of those
+ *  that declare an entry control, ENTRY_WAIT_MS where none says (v3 Phase 6/7b review, C7), at most ENTRY_WAIT_CAP_MS. */
+export function entryWaitOf(adapters: readonly Adapter[]): number {
+  const asked = adapters.filter((adapter) => adapter.entryControl !== undefined)
+    .map((adapter) => adapter.quirks?.entryWaitMs ?? ENTRY_WAIT_MS)
+    .filter((ms) => Number.isFinite(ms) && ms > 0);
+  return Math.min(ENTRY_WAIT_CAP_MS, Math.max(ENTRY_WAIT_MS, ...asked));
+}
+
+/** The presses an adapter allows in one document: its quirks.entryPresses, at least 1, at most ENTRY_MAX_PRESSES. */
+function pressesOf(adapter: Adapter): number {
+  const declared = adapter.quirks?.entryPresses ?? 1;
+  return Math.max(1, Math.min(ENTRY_MAX_PRESSES, Number.isInteger(declared) ? declared : 1));
+}
+
+/**
+ * The agent's press on a posting page's entry control (module header): 'pressed'; 'blocked' with what blocked it (a
+ * sign-in or account page, an email code, a CAPTCHA, another choice); or 'not-offered' (no adapter of the address
+ * declares one, a form shows, or none was drawn within `waitMs`). Nothing is pressed but that one control.
+ * v3 Phase 7b: a choice of how to apply that the adapter declares (authState 'entry-choice': Workday's "Start Your
+ * Application") blocks only when the adapter offers no entry control on it; one it offers (Apply Manually) is pressed
+ * through the same door. And where the adapter allows more than one press in a document (quirks.entryPresses: Workday's
+ * Apply draws its choice in place), a press made before the choice shows that leaves the page in this document is
+ * followed by the control the adapter offers on its choice, and only while the adapter says the choice shows
+ * (authState 'entry-choice'; a press made on the choice is the last), never one
+ * already pressed, at most ENTRY_MAX_PRESSES in all (v3 Phase 6/7b review, C6). The answer is 'pressed' once the last
+ * press is made, a form shows or the document goes; 'blocked' by what another page shows instead (a sign-in, which
+ * Sign-in mode Auto may then take: runtime.ts; a CAPTCHA); and when none of that comes within `followMs` (the choice
+ * never drawn, or drawn with no control the adapter offers), 'blocked' 'other': the person's. `onPress` hears of the
+ * first press as it is made, before anything is waited for (round 3 of the v3 Phase 6/7b review, X8: a press that takes
+ * the page away ends the document before its answer).
+ */
+export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: AbortSignal, waitMs = ENTRY_WAIT_MS,
+  followMs = ENTRY_FOLLOW_MS, onPress?: () => void): Promise<EntryAnswer> {
   const own = adapters.filter((adapter) => adapter.entryControl !== undefined);
   if (own.length === 0 || signal.aborted) return Promise.resolve({ outcome: 'not-offered' });
-  const attempt = (): EntryAnswer | null => {
-    for (const adapter of own) {
-      let shown: Element | null = null;
-      try {
-        shown = adapter.detect(doc)?.formRoot ?? null;
-      } catch {
-        shown = null;
-      }
-      if (shown !== null) return { outcome: 'not-offered' };
+  const pressed = new Set<Element>();
+  let allowed = 1;
+  const formShown = (): boolean => own.some((adapter) => {
+    try {
+      return adapter.detect(doc)?.formRoot != null;
+    } catch {
+      return false;
     }
-    const pause = detectPause(doc, null, own[0]!);
-    if (pause !== null) return { outcome: 'blocked', block: blockOf(pause.kind) };
-    for (const adapter of own) if (clickAdapterEntry(adapter, doc) !== null) return { outcome: 'pressed' };
+  });
+  /** One press of an entry control none pressed before, through the door: the adapter that pressed, or null. */
+  const pressOne = (): Adapter | null => {
+    for (const adapter of own) {
+      let offered: Element | null = null;
+      try {
+        offered = adapter.entryControl!(doc);
+      } catch {
+        offered = null;
+      }
+      if (offered === null || pressed.has(offered)) continue;
+      const clicked = clickAdapterEntry(adapter, doc);
+      if (clicked !== null) {
+        pressed.add(clicked);
+        return adapter;
+      }
+    }
     return null;
   };
+  const attempt = (): EntryAnswer | null => {
+    if (formShown()) return { outcome: 'not-offered' };
+    const pause = detectPause(doc, null, own[0]!);
+    if (pause !== null && pause.kind !== 'entry-choice') return { outcome: 'blocked', block: blockOf(pause.kind) };
+    const by = pressOne();
+    if (by !== null) {
+      // A press on the choice itself is the entry's last: only one made before the choice shows is followed.
+      allowed = pause?.kind === 'entry-choice' ? pressed.size : pressesOf(by);
+      // Told at once, before the entry waits on what the press brings (round 3 of the v3 Phase 6/7b review, X8).
+      onPress?.();
+      return { outcome: 'pressed' };
+    }
+    return pause === null ? null : { outcome: 'blocked', block: blockOf(pause.kind) };
+  };
+  /** After a press: the control the adapter offers on its choice, while it allows one more (pressEntry's doc). */
+  const follow = (): Promise<EntryAnswer> => {
+    const done: EntryAnswer = { outcome: 'pressed' };
+    if (pressed.size >= allowed || signal.aborted) return Promise.resolve(done);
+    /** The answer once a form or another page shows or the document goes; 'pressed': the choice's control; 'wait':
+     *  nothing yet. */
+    const next = (): EntryAnswer | 'pressed' | 'wait' => {
+      if (signal.aborted || formShown()) return done;
+      const pause = detectPause(doc, null, own[0]!);
+      if (pause === null) return 'wait';
+      if (pause.kind !== 'entry-choice') return { outcome: 'blocked', block: blockOf(pause.kind) };
+      return pressOne() !== null ? 'pressed' : 'wait';
+    };
+    const first = next();
+    if (first === 'pressed') return follow();
+    if (first !== 'wait') return Promise.resolve(first);
+    return new Promise((resolve) => {
+      watchForLateForm(doc, followMs, () => {
+        const looked = next();
+        if (looked === 'wait') return false;
+        resolve(looked === 'pressed' ? follow() : looked);
+        return true;
+      }, signal, () => {
+        const last = next();
+        resolve(last === 'pressed' ? follow() : last === 'wait' ? { outcome: 'blocked', block: 'other' } : last);
+      });
+      signal.addEventListener('abort', () => resolve(done), { once: true });
+    });
+  };
   const now = attempt();
-  if (now !== null) return Promise.resolve(now);
+  if (now !== null) return now.outcome === 'pressed' ? follow() : Promise.resolve(now);
   return new Promise((resolve) => {
     watchForLateForm(doc, waitMs, () => {
       const outcome = attempt();
       if (outcome === null) return false;
-      resolve(outcome);
+      resolve(outcome.outcome === 'pressed' ? follow() : outcome);
       return true;
     }, signal, () => resolve({ outcome: 'not-offered' }));
     signal.addEventListener('abort', () => resolve({ outcome: 'not-offered' }), { once: true });

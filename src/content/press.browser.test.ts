@@ -29,7 +29,11 @@ import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testki
 import { scan } from '../dom/scan';
 import { deadline } from '../dom/time';
 import { createFakeWorker, testVocab } from './content.testkit';
-import { pressStep, requiredLeftOf, stepButtonsOf } from './press';
+import { workableAdapter } from '../adapters/workable';
+import { oracleAdapter } from '../adapters/oracle';
+import { workdayAdapter } from '../adapters/workday';
+import { genericAdapter } from '../adapters/generic';
+import { ENTRY_WAIT_CAP_MS, ENTRY_WAIT_MS, entryWaitOf, pressEntry, pressStep, requiredLeftOf, stepButtonsOf } from './press';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
 const GREENHOUSE = 'https://job-boards.greenhouse.io/tailoritfixture/jobs/4401';
@@ -118,6 +122,60 @@ describe('the Submit exception (clickAdapterSubmit)', () => {
     expect(clickIfAllowed(submit, ctx)).toBe(false);
     expect(submitted(fixture)).toBe(0);
   });
+});
+
+describe('the agent\u2019s entry waits and follows (round 2 of the v3 Phase 6/7b review, K8)', () => {
+  it('waits 8 s for Ashby and Workable, 15 s for Workday and Oracle, and never past the cap (C7)', () => {
+    expect(ENTRY_WAIT_MS).toBe(8_000);
+    expect(ENTRY_WAIT_CAP_MS).toBe(20_000);
+    expect(entryWaitOf([ashbyAdapter, genericAdapter])).toBe(8_000);
+    expect(entryWaitOf([workableAdapter, genericAdapter])).toBe(8_000);
+    expect(entryWaitOf([workdayAdapter, genericAdapter])).toBe(15_000);
+    expect(entryWaitOf([oracleAdapter, genericAdapter])).toBe(15_000);
+    const slow: Adapter = { ...ashbyAdapter, quirks: { ...ashbyAdapter.quirks, entryWaitMs: 60_000 } };
+    expect(entryWaitOf([slow])).toBe(20_000);
+    expect(entryWaitOf([])).toBe(8_000);
+  });
+
+  it('answers blocked, other, when an Apply that allows a second press draws no choice within the follow-up wait (C6)', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><main>
+      <a id="apply" href="https://jobs.example/apply" role="button" style="display:inline-block;padding:8px">Apply</a></main></body>`);
+    const clicks: string[] = [];
+    fixture.doc.addEventListener('click', (event) => {
+      clicks.push((event.target as Element).id);
+      event.preventDefault();
+    });
+    // An adapter whose Apply allows a second press in its document, and whose page then draws nothing at all.
+    const twice: Adapter = { ...genericAdapter, detect: () => null, entryControl: (doc) => doc.getElementById('apply'),
+      entryNeverPressed: true, quirks: { entryPresses: 2 } };
+    expect(await pressEntry(fixture.doc, [twice], new AbortController().signal, 300, 300))
+      .toEqual({ outcome: 'blocked', block: 'other' });
+    expect(clicks).toEqual(['apply']);
+  });
+
+  it('tells of its press as it is made, before it waits on what the press brings (round 3 of the v3 Phase 6/7b review, X8)',
+    async () => {
+      const fixture = await loadFixture(document, `<!doctype html><body><main>
+        <a id="apply" href="https://jobs.example/apply" role="button" style="display:inline-block;padding:8px">Apply</a></main></body>`);
+      let clicks = 0;
+      fixture.doc.addEventListener('click', (event) => {
+        clicks += 1;
+        event.preventDefault();
+      });
+      const twice: Adapter = { ...genericAdapter, detect: () => null, entryControl: (doc) => doc.getElementById('apply'),
+        entryNeverPressed: true, quirks: { entryPresses: 2 } };
+      const told: number[] = [];
+      let answered = false;
+      const entry = pressEntry(fixture.doc, [twice], new AbortController().signal, 300, 300, () => told.push(clicks))
+        .then((answer) => {
+          answered = true;
+          return answer;
+        });
+      // Told at the press, the follow-up wait still ahead.
+      expect([told, answered]).toEqual([[1], false]);
+      expect(await entry).toEqual({ outcome: 'blocked', block: 'other' });
+      expect(told).toEqual([1]);
+    });
 });
 
 describe('press.ts', () => {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from './fixture.testkit';
-import { captchaElements, detectPause, unsolvedCaptchas } from './pause-detect';
+import { captchaElements, challengeLikeFramesShown, detectPause, unsolvedCaptchas, vendorFramesShown } from './pause-detect';
 
 async function pauseOf(body: string, adapter: Adapter | null = null) {
   const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
@@ -48,6 +48,56 @@ describe('detectPause', () => {
       .toEqual({ kind: 'captcha', evidence: 'captcha-container' });
   });
 
+  it('recognises the other vendors a page may show, and a widget in a frame of its own origin (round 2, E10)', async () => {
+    const frame = (src: string) => `<form><iframe srcdoc="" src="${src}" style="width:300px;height:80px"></iframe></form>`;
+    for (const src of ['https://geo.captcha-delivery.com/captcha/?initialCid=x', 'https://client-api.funcaptcha.com/fc/gc/?token=x',
+      'https://acme-api.arkoselabs.com/v2/x', 'https://static.geetest.com/x']) {
+      expect(await pauseOf(frame(src)), src).toEqual({ kind: 'captcha', evidence: 'captcha-frame' });
+      removeFixtures(document);
+    }
+    for (const widget of ['<div id="px-captcha" style="width:300px;height:80px"></div>',
+      '<div class="geetest_holder" style="width:300px;height:80px"></div>']) {
+      expect(await pauseOf(`<form>${widget}</form>`), widget).toEqual({ kind: 'captcha', evidence: 'captcha-container' });
+      removeFixtures(document);
+    }
+    // A frame of the page's own origin that holds a widget, drawn in the form.
+    expect(await pauseOf('<form><iframe style="width:400px;height:120px" srcdoc="&lt;div class=&quot;g-recaptcha&quot; '
+      + 'data-sitekey=&quot;x&quot; style=&quot;width:304px;height:78px&quot;&gt;&lt;/div&gt;"></iframe></form>'))
+      .toEqual({ kind: 'captcha', evidence: 'captcha-container' });
+  });
+
+  it('counts every visible frame on a vendor’s challenge host for Sign-in Auto, solved or not, the badge aside', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <div class="g-recaptcha" data-sitekey="x"><iframe srcdoc="" src="https://www.google.com/recaptcha/api2/anchor?k=x"
+        style="width:304px;height:78px"></iframe><textarea name="g-recaptcha-response" style="display:none">tok</textarea></div>
+      <div class="grecaptcha-badge" style="width:256px;height:60px"><iframe srcdoc=""
+        src="https://www.google.com/recaptcha/api2/anchor?k=x&size=invisible" style="width:256px;height:60px"></iframe></div>
+      <iframe srcdoc="" src="https://www.example.com/widget" style="width:300px;height:80px"></iframe>
+    </form></body>`);
+    // Solved, so no pause; but a challenge frame shows, which Sign-in Auto never types beside.
+    expect(unsolvedCaptchas(fixture.doc, null)).toBe(0);
+    expect(vendorFramesShown(fixture.doc)).toBe(1);
+  });
+
+  it('counts the visible frames of another origin that read like a challenge for Sign-in Auto, and pauses no fill (X9)',
+    async () => {
+      const frame = (attributes: string, style = 'width:300px;height:80px') =>
+        `<iframe srcdoc="" ${attributes} style="${style}"></iframe>`;
+      const fixture = await loadFixture(document, `<!doctype html><body><form><input aria-label="Email">
+        ${frame('src="https://shield.example/captcha/frame"')}
+        ${frame('src="https://shield.example/f" title="Human verification"')}
+        ${frame('src="https://shield.example/f" name="bot-check"')}
+        ${frame('src="https://shield.example/f" aria-label="Verify you are a person"')}
+        ${frame('src="https://shield.example/arkose"', 'display:none')}
+        ${frame('src="https://player.example/bottom-banner" title="Robots on video"')}
+        ${frame('title="Challenge accepted"')}
+      </form></body>`);
+      // Four that show; one hidden; one that reads like nothing of the kind ("bottom" and "robots" hold no word "bot");
+      // one of the page's own origin.
+      expect(challengeLikeFramesShown(fixture.doc)).toBe(4);
+      expect(detectPause(fixture.doc, fixture.doc.querySelector('form'), null)).toBeNull();
+    });
+
   it('does not pause for the invisible reCAPTCHA badge or a widget bound to a button', async () => {
     expect(await pauseOf(`<form><button class="g-recaptcha" data-sitekey="x">Submit</button></form>
       <div class="grecaptcha-badge" style="width:256px;height:60px"><iframe srcdoc=""
@@ -60,6 +110,21 @@ describe('detectPause', () => {
     const adapter = { authState: () => 'entry-choice' } as unknown as Adapter;
     expect(await pauseOf('<form><label for="e">Email</label><input id="e"></form>', adapter))
       .toEqual({ kind: 'entry-choice', evidence: 'adapter' });
+  });
+
+  it('puts a challenge shown before any page the adapter names, and a handed one after (the v3 Phase 6/7b review, S1)', async () => {
+    const widget = '<div class="g-recaptcha" data-sitekey="x" style="width:304px;height:78px"></div>';
+    for (const kind of ['sign-in', 'create-account', 'email-gate', 'entry-choice'] as const) {
+      const adapter = { authState: () => kind } as unknown as Adapter;
+      expect(await pauseOf(`<form><input aria-label="Email">${widget}</form>`, adapter), kind)
+        .toEqual({ kind: 'captcha', evidence: 'captcha-container' });
+      removeFixtures(document);
+    }
+    const fixture = await loadFixture(document, `<!doctype html><body><form><input aria-label="Email">${widget}</form></body>`);
+    const adapter = { authState: () => 'sign-in' } as unknown as Adapter;
+    const handed = new Set(captchaElements(fixture.doc, fixture.doc.querySelector('form')));
+    expect(detectPause(fixture.doc, fixture.doc.querySelector('form'), adapter, undefined, { handed }))
+      .toEqual({ kind: 'sign-in', evidence: 'adapter' });
   });
 
   it('looks into open shadow roots, as the scanner does when it fills them (the Phase 5 review, X-S6)', async () => {

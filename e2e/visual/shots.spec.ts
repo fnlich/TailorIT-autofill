@@ -545,7 +545,7 @@ test('v3 Phase 5: Sign-in Auto signing in on a sign-in page, and Modes with Sign
     { clip: (await skips.boundingBox()) ?? undefined });
   // A run paused at a sign-in with Sign-in on Manual: the review says it is the person's.
   const page = await extContext.newPage();
-  const url = 'https://tailoritfixture.wd5.myworkdayjobs.com/en-US/careers/login';
+  const url = 'https://tailoritfixture.taleo.net/careersection/ex/jobapply.ftl?job=login&lang=en';
   routeLog.serve({ [url]: 'fixtures/synthetic/signin/sign-in.html' });
   await page.goto(url);
   const tabId = await ext.fill(page);

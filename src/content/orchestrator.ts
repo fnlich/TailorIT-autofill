@@ -374,11 +374,14 @@ function pauseEventOf(signal: PauseSignal): RunEvent {
   switch (signal.kind) {
     case 'sign-in':
     case 'create-account':
+    case 'email-gate':
       return { type: 'AUTH', wall: signal.kind };
     case 'email-code':
       return { type: 'PAUSE', reason: 'email-code' };
     case 'entry-choice':
       return { type: 'PAUSE', reason: 'entry-choice' };
+    case 'forgot-password':
+      return { type: 'PAUSE', reason: 'forgot-password' };
     case 'captcha':
       return { type: 'PAUSE', reason: 'captcha' };
   }

@@ -14,8 +14,9 @@
  *   host, checked again here.
  * The answer to that frame's message is the one place the password goes: it is held in this function's memory only
  * until the answer is sent, never stored, logged, cached, put in a report or sent anywhere else, and the frame types it
- * into the page's password field only (src/content/sign-in.ts). Logs say whether one was found, never a host, an email
- * or a password.
+ * into the page's password field only (src/content/sign-in.ts). At an email gate (v3 Phase 7b: wall 'email-gate', the
+ * email-first identity step of Oracle Recruiting Cloud) the answer carries the email alone, never the password. Logs
+ * say whether one was found, never a host, an email or a password.
  */
 import {
   AUTOFILL_ANY_HOST, HostNameSchema, signInHostCovered,
@@ -97,7 +98,8 @@ export function createSignIn(deps: SignInDeps) {
       // Answered: this tab, wall and host are not answered again within SIGN_IN_ONCE_MS.
       await deps.session.set({ [key]: deps.now() });
       log('signin.credential', { found: true, everySite: own === AUTOFILL_ANY_HOST });
-      return ok({ host: own, email, password });
+      // An email gate (v3 Phase 7b) types the email alone: the password never leaves the worker for one.
+      return ok(message.wall === 'email-gate' ? { host: own, email } : { host: own, email, password });
     },
 
     /** A closed tab's asks go with it. */

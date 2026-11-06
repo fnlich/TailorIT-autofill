@@ -35,6 +35,14 @@ const SIGN_IN_PRESS_RULE = {
   message: "Only src/content/sign-in.ts presses a sign-in form's button (Sign-in mode Auto).",
 };
 
+/** v3 Phase 7b: Sign-in mode Auto's press on the control that shows a wall's form (Workday's "Sign in with email"),
+ *  named nowhere but src/content/sign-in.ts, as clickAdapterSignIn is. */
+const SIGN_IN_PRELUDE_RULE = {
+  selector: "ImportSpecifier[imported.name='clickAdapterSignInPrelude'], "
+    + "ExportSpecifier[local.name='clickAdapterSignInPrelude'], MemberExpression[property.name='clickAdapterSignInPrelude']",
+  message: "Only src/content/sign-in.ts presses a sign-in page's prelude control (Sign-in mode Auto).",
+};
+
 /** v3 Phase 5 review: the wrappers around those two doors, press.ts pressEntry and sign-in.ts signIn, are called by
  *  src/content/runtime.ts alone (the agent's agent/enter from the worker, a run's sign-in pause), so no other module can
  *  reach a door through them. */
@@ -54,6 +62,7 @@ const UNSAFE_SYNTAX = [
   SUBMIT_PRESS_RULE,
   ENTRY_PRESS_RULE,
   SIGN_IN_PRESS_RULE,
+  SIGN_IN_PRELUDE_RULE,
   ENTRY_WRAPPER_RULE,
   SIGN_IN_WRAPPER_RULE,
   { selector: "AssignmentExpression[left.property.name=/^(innerHTML|outerHTML)$/]", message: 'Build DOM nodes; never assign markup.' },
@@ -200,15 +209,20 @@ export default tseslint.config(
   // agent (content/press.ts's header).
   { files: ['src/content/press.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== SUBMIT_PRESS_RULE && rule !== ENTRY_PRESS_RULE)] } },
-  // v3 Phase 5: the one module that presses a sign-in form's button (content/sign-in.ts's header).
-  { files: ['src/content/sign-in.ts'],
-    rules: { 'no-restricted-syntax': ['error', ...UNSAFE_SYNTAX.filter((rule) => rule !== SIGN_IN_PRESS_RULE)] } },
+  // v3 Phase 5: the one module that presses a sign-in form's button, and (v3 Phase 7b) a sign-in page's prelude control
+  // (content/sign-in.ts's header).
+  { files: ['src/content/sign-in.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => rule !== SIGN_IN_PRESS_RULE && rule !== SIGN_IN_PRELUDE_RULE)] } },
   // v3 Phase 5 review: the one module that calls the doors' wrappers (the agent's entry, a run's sign-in).
   { files: ['src/content/runtime.ts'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== ENTRY_WRAPPER_RULE && rule !== SIGN_IN_WRAPPER_RULE)] } },
   // Tests drive the wrappers directly (never the doors).
   { files: ['src/**/*.test.{ts,tsx}'], rules: { 'no-restricted-syntax': ['error',
     ...UNSAFE_SYNTAX.filter((rule) => rule !== ENTRY_WRAPPER_RULE && rule !== SIGN_IN_WRAPPER_RULE)] } },
+  // But for the one test of Sign-in mode Auto's two doors on their own (the v3 Phase 6/7b review, C2).
+  { files: ['src/dom/fillers/sign-in-doors.browser.test.ts'], rules: { 'no-restricted-syntax': ['error',
+    ...UNSAFE_SYNTAX.filter((rule) => ![ENTRY_WRAPPER_RULE, SIGN_IN_WRAPPER_RULE, SIGN_IN_PRESS_RULE,
+      SIGN_IN_PRELUDE_RULE].includes(rule))] } },
   {
     files: ['src/ui/**/*.{ts,tsx}'],
     rules: {

@@ -611,6 +611,7 @@ function Unsupported({ reload, ask }: { reload: boolean; ask(): Promise<Answer<{
           <li key={site.name} className="tia-unsupported__site">
             <span className="tia-unsupported__name">{site.name}</span>
             <span className="tia-unsupported__hosts">{site.hosts}</span>
+            {site.note === null ? null : <span className="tia-unsupported__note">{site.note}</span>}
           </li>
         ))}
       </ul>

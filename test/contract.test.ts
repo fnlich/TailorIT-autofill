@@ -36,7 +36,9 @@ import { MAX_POSTING_TEXT } from '../src/messaging/schemas';
 import { PICK_CATEGORIES } from '../src/core/matcher/types';
 import { SERVER_CATEGORY_MAP } from '../src/core/resolver/classify';
 import { cutAtWord } from '../src/core/text/fold';
-import { DEGREE_LEVELS, FIELD_KINDS, GENDERS, PLATFORMS, PROFICIENCIES, RACES, WORK_STATUSES } from '../src/core/enums';
+import {
+  DEGREE_LEVELS, FIELD_KINDS, GENDERS, PLATFORMS, PLATFORMS_AHEAD_OF_CONTRACT, PROFICIENCIES, RACES, WORK_STATUSES,
+} from '../src/core/enums';
 
 // TailorIT's contract as `npm run contract:pull` copies it into src/contract/tailorit/: the schemas, their record
 // (v1/contract.json) and the examples beside it, never edited by hand. TailorIT's own test
@@ -160,7 +162,10 @@ describe('the value lists the two sides share', () => {
   // TailorIT's test holds the same lists (as this extension's src/core/enums.ts writes them): change both sides at once.
   it("are this extension's, value for value and in its order", () => {
     expect(AUTOFILL_FIELD_KINDS).toEqual(FIELD_KINDS);
-    expect(ATS_KINDS).toEqual(PLATFORMS);
+    // The platforms ahead of the contract (v3 Phase 7b: their sign-in and posting pages only) are named to TailorIT
+    // nowhere until it lists them: this fails once it does, and the list is emptied then.
+    expect(ATS_KINDS).toEqual(PLATFORMS.filter((platform) => !PLATFORMS_AHEAD_OF_CONTRACT.includes(platform)));
+    expect(PLATFORMS_AHEAD_OF_CONTRACT.some((platform) => (ATS_KINDS as readonly string[]).includes(platform))).toBe(false);
     expect(CONTRACT_DEGREE_LEVELS).toEqual(DEGREE_LEVELS);
     expect(LANGUAGE_PROFICIENCIES).toEqual(PROFICIENCIES);
     expect(RACE_CATEGORIES).toEqual(RACES);

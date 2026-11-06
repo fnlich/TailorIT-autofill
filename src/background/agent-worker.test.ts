@@ -136,6 +136,30 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
       data: { doneToday: 1, last: { state: 'submitted', reason: null }, pending: false } });
   });
 
+  it('takes the entry’s note of its press from the agent’s tab’s top frame alone (round 3 of the v3 Phase 6/7b review, X8)',
+    async () => {
+      const { worker, win } = await withAgent();
+      // The frame's answer to agent/enter never comes back as 'pressed' (its document went with the press).
+      worker.fakes.frameAnswers = () => ({ ok: true, data: {} });
+      await worker.deliver({ v: 1, type: 'agent/set', on: true, confirmed: true }, OPTIONS);
+      worker.timers.advance(1);
+      await vi.waitFor(() => expect(win.opened).toEqual([GREENHOUSE]));
+      await vi.waitFor(async () => expect(await fakeBrowser.storage.local.get(AGENT_RUN_KEY))
+        .toMatchObject({ [AGENT_RUN_KEY]: { tabId: AGENT_TAB } }));
+      const agentFrame = contentSender({ url: GREENHOUSE, tab: { id: AGENT_TAB, url: GREENHOUSE }, documentId: 'doc-a' });
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, agentFrame);
+      await vi.waitFor(() => expect(sentToFrames(worker).map(typeOfSent)).toContain('agent/enter'));
+      const pressedEntryAt = async () => ((await fakeBrowser.storage.local.get(AGENT_RUN_KEY))[AGENT_RUN_KEY] as
+        { pressedEntryAt?: number | null }).pressedEntryAt ?? null;
+      await vi.waitFor(async () => expect(await pressedEntryAt()).toBeNull());
+      const subframe = contentSender({ url: GREENHOUSE, tab: { id: AGENT_TAB, url: GREENHOUSE }, frameId: 3,
+        documentId: 'doc-a' });
+      expect(await worker.deliver({ v: 1, type: 'agent/entered' }, subframe)).toEqual({ ok: false, error: 'bad_sender' });
+      expect(await pressedEntryAt()).toBeNull();
+      expect(await worker.deliver({ v: 1, type: 'agent/entered' }, agentFrame)).toEqual({ ok: true, data: {} });
+      expect(await pressedEntryAt()).not.toBeNull();
+    });
+
   it('reports a report’s stop: a CAPTCHA leaves the job for the person and closes its window', async () => {
     const { worker, win } = await withAgent();
     worker.fakes.frameAnswers = () => ({ ok: true, data: {} });
@@ -210,7 +234,7 @@ describe('Run auto-apply in the worker (v3 Phase 5)', () => {
 describe('Sign-in Auto’s credential in the worker (v3 Phase 5)', () => {
   const top = (overrides = {}) => contentSender({ url: WORKDAY, tab: { id: 12, url: WORKDAY }, documentId: 'doc-w',
     ...overrides });
-  const ask = (worker: TestWorker, sender = top(), wall: 'sign-in' | 'create-account' = 'sign-in') =>
+  const ask = (worker: TestWorker, sender = top(), wall: 'sign-in' | 'create-account' | 'email-gate' = 'sign-in') =>
     worker.deliver({ v: 1, type: 'signin/credential', wall }, sender);
   async function signInWorker(options: { mode?: 'auto' | 'manual'; scopes?: boolean; disclosure?: number } = {}) {
     const record = tokenRecord();
@@ -247,6 +271,15 @@ describe('Sign-in Auto’s credential in the worker (v3 Phase 5)', () => {
     const stored = JSON.stringify([await fakeBrowser.storage.local.get(null), await fakeBrowser.storage.session.get(null)]);
     expect(stored).not.toContain(PASSWORD);
     expect(stored).not.toContain('alex.rivera@example.com');
+  });
+
+  it('answers an email gate the email alone, never the password, once per tab and host (v3 Phase 7b)', async () => {
+    const worker = await signInWorker();
+    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: true, data: { host: 'acme.wd5.myworkdayjobs.com',
+      email: 'alex.rivera@example.com' } });
+    expect(await ask(worker, top(), 'email-gate')).toEqual({ ok: false, error: 'expired' });
+    // The gate's answer is its own wall: the tab's sign-in is still answered once.
+    expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD } });
   });
 
   it('refuses with Sign-in Manual, without credentials:read, or before the disclosure was acknowledged', async () => {

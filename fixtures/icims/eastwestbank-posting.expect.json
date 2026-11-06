@@ -1,0 +1,16 @@
+{
+  "fixture": "icims/eastwestbank-posting",
+  "source": "https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?mobile=false&width=1270&height=500&bga=true&needsRedirect=false&jan1offset=-300&jun1offset=-240",
+  "captured": "2026-11-05T05:55:15.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [],
+    "pressable": []
+  }
+}

@@ -15,6 +15,8 @@ const E2E = process.env.TAILORIT_BUILD === 'e2e';
 /** The fallback when Chromium injects no content script into routed pages: fixtures served from 127.0.0.1 instead. */
 const FIXTURE_FALLBACK = E2E && process.env.TAILORIT_FIXTURE_ORIGIN === '1';
 const TAILORIT_ORIGIN = E2E ? 'http://localhost:3190' : 'http://localhost:3100';
+/** Our content script's bundle: src/entrypoints/content-script.ts, an unlisted script WXT writes at the build's root. */
+const CONTENT_SCRIPT = 'content-script.js';
 /** The public half of a key pair made once (the private half was never kept), so every local build has one id. */
 const MANIFEST_KEY = readFileSync(resolve('keys/manifest-key.txt'), 'utf8').trim();
 
@@ -51,6 +53,11 @@ export default defineConfig({
   }),
   hooks: {
     'build:manifestGenerated': (_wxt, manifest) => {
+      // Our content script, in the isolated world: an unlisted script (src/entrypoints/content-script.ts), listed here
+      // rather than built as a WXT content script, whose wrapper announces the extension to the page with an event
+      // (the v3 Phase 6/7b review's round 2, E1). On the ATS hosts, every frame, once the page is loaded.
+      manifest.content_scripts = [{ matches: [...ATS_MATCHES], js: [CONTENT_SCRIPT], all_frames: true,
+        run_at: 'document_idle' }, ...(manifest.content_scripts ?? [])];
       // Both content scripts, ours and the page-world bridge, which check-build holds to the same matches.
       if (FIXTURE_FALLBACK) for (const script of manifest.content_scripts ?? []) script.matches?.push('http://127.0.0.1/*');
     },

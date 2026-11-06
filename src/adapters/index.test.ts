@@ -4,9 +4,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ashbyAdapter } from './ashby';
 import { genericAdapter } from './generic';
 import { greenhouseAdapter } from './greenhouse';
+import { icimsAdapter } from './icims';
 import { adaptersFor, applicationOf } from './index';
 import { leverAdapter } from './lever';
+import { oracleAdapter } from './oracle';
+import { successFactorsAdapter } from './successfactors';
+import { taleoAdapter } from './taleo';
 import { E2E_TEST_ADAPTER_MARKER, TRAP_09_URL } from './test';
+import { workdayAdapter } from './workday';
 
 const LEVER_JOB = 'https://jobs.lever.co/tailorit-fixture/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00';
 
@@ -31,8 +36,17 @@ describe('adaptersFor', () => {
       'https://jobs.ashbyhq.com/Ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2?embed=js', 'https://jobs.ashbyhq.com/acme/1b2c']) {
       expect(adaptersFor(new URL(address)), address).toEqual([ashbyAdapter, genericAdapter]);
     }
-    for (const address of ['https://acme.wd5.myworkdayjobs.com/en-US/careers/job/x',
-      'https://example.com/careers/apply', 'http://jobs.lever.co/acme/x/apply', 'http://jobs.ashbyhq.com/acme/x']) {
+    // v3 Phases 6 and 7b: each candidate host's own adapter, on any of its addresses.
+    const OWN = [[workdayAdapter, 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/x'],
+      [workdayAdapter, 'https://wd1.myworkdaysite.com/en-US/recruiting/snapchat/snap/job/x/Analyst_R1'],
+      [icimsAdapter, 'https://careers-acme.icims.com/jobs/1/x/job'], [taleoAdapter, 'https://acme.taleo.net/careersection/ex/jobsearch.ftl'],
+      [successFactorsAdapter, 'https://career2.successfactors.eu/career?company=acme'],
+      [oracleAdapter, 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1']] as const;
+    for (const [adapter, address] of OWN) expect(adaptersFor(new URL(address)), address).toEqual([adapter, genericAdapter]);
+    for (const address of ['https://example.com/careers/apply', 'http://jobs.lever.co/acme/x/apply', 'http://jobs.ashbyhq.com/acme/x',
+      // The domains' other hosts (src/shared/hosts.ts), and an Oracle Cloud address that is no candidate page.
+      'https://login.icims.com/u/login/identifier', 'https://www.taleo.net/', 'https://acme.tbe.taleo.net/x',
+      'https://performancemanager4.successfactors.com/login', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x/b/y/o/z']) {
       expect(adaptersFor(new URL(address)), address).toEqual([genericAdapter]);
     }
   });
@@ -98,6 +112,26 @@ describe('applicationOf', () => {
     // An org's board, or an address with no posting, is no application.
     expect(applicationOf(new URL('https://jobs.ashbyhq.com/openai'))).toBeNull();
     expect(applicationOf(new URL('https://jobs.ashbyhq.com/acme/1b2c'))).toBeNull();
+  });
+
+  it("gives each v3 Phase 6 and 7b platform's posting and its account pages one key", () => {
+    const keys = (addresses: readonly string[]) => new Set(addresses.map((address) => applicationOf(new URL(address))?.applicationKey));
+    expect(keys(['https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/USA-CA-Pleasanton/Senior-Product-Manager--Technical_JR-0110787',
+      'https://workday.wd5.myworkdayjobs.com/en-US/Workday/job/USA%2C-CA%2C-Pleasanton/Senior-Product-Manager--Technical_JR-0110787/apply/applyManually',
+      'https://workday.wd5.myworkdayjobs.com/workday/job/x/Senior-Product-Manager--Technical_JR-0110787/apply'])).toEqual(
+      new Set([applicationOf(new URL('https://workday.wd5.myworkdayjobs.com/workday/job/x/Senior-Product-Manager--Technical_JR-0110787/apply/applyManually'))!.applicationKey]));
+    for (const group of [
+      ['https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?in_iframe=1',
+        'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/login?in_iframe=1&hashed=-1'],
+      ['https://hdr.taleo.net/careersection/ex/jobdetail.ftl?job=197675&lang=en',
+        'https://hdr.taleo.net/careersection/iam/accessmanagement/login.jsf?lang=en&redirectionURI=https%3A%2F%2Fhdr.taleo.net%2Fcareersection%2Fex%2Fjobapply.ftl%3Fjob%3D197675%26lang%3Den'],
+      ['https://career2.successfactors.eu/career?career_job_req_id=48659&career_ns=job_listing&company=danfossas',
+        'https://career2.successfactors.eu/career?career_company=danfossas&company=danfossas&loginFlowRequired=true&career_job_req_id=48659'],
+      ['https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946',
+        'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email']]) {
+      expect(keys(group).size, group[0]).toBe(1);
+      expect([...keys(group)][0], group[0]).toMatch(/^(?:icims|taleo|successfactors|oracle):[0-9a-f]{16}$/);
+    }
   });
 
   it('knows no application on a host outside the ATS list', () => {

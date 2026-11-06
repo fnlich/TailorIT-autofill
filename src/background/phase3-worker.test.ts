@@ -221,6 +221,20 @@ describe('Skip, the live report and the cover letter’s flag (v3 Phase 3)', () 
       .not.toHaveProperty('reload');
   });
 
+  it('says a page on an applicant-tracking host that shows no posting has no application form, never to reload (K1)', async () => {
+    // Where the content script says no hello (the v3 Phase 6/7b review's S3): the old four platforms' boards, Workday's
+    // sign-in that names no job, an employer's own pages on an ATS domain.
+    const worker = await startTestWorker();
+    for (const url of ['https://job-boards.greenhouse.io/acme', 'https://jobs.lever.co/acme', 'https://jobs.ashbyhq.com/acme',
+      'https://apply.workable.com/acme/', 'https://acme.wd5.myworkdayjobs.com/en-US/External/login',
+      'https://internal-acme.icims.com/jobs/1/engineer/job']) {
+      const tab = await fakeBrowser.tabs.create({ url });
+      const read = (await page(worker, { type: 'panel/reports', tabId: tab.id })) as { data: { page: Record<string, unknown> } };
+      expect(read.data.page, url).toMatchObject({ support: url.includes('internal-acme') ? 'none' : 'no-form' });
+      expect(read.data.page, url).not.toHaveProperty('reload');
+    }
+  });
+
   it('carries the frame’s word that its form asks for a cover letter into the tab’s page state', async () => {
     const worker = await startTestWorker();
     await hello(worker);
@@ -272,8 +286,9 @@ describe('the job card, looked up as a form’s page loads (v3 Phase 3)', () => 
 
   it('asks only for a posting a parser reads, never in a private tab, and sends its address without the query string', async () => {
     const worker = await startTestWorker({ token: tokenRecord(), lookupOnLoad: true });
-    // Workday (no parser yet), and a posting in a private tab: nothing is asked.
-    const workday = contentSender({ url: 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Austin/Engineer_R1' });
+    // An address no parser reads as a posting (Workday's own sign-in page, which names none), and a posting in a
+    // private tab: nothing is asked.
+    const workday = contentSender({ url: 'https://acme.wd5.myworkdayjobs.com/en-US/careers/login' });
     relayingAs(worker, workday);
     await hello(worker, workday);
     const hidden = contentSender({ tab: { id: 7, incognito: true } });

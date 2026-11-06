@@ -28,8 +28,10 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  Applied recorded, a posting's address told as it loads, the profile editor, the resume's preview); 3, v3 Phase 5 (the
  *  auto-apply agent, which submits unattended, and Sign-in mode Auto, which reads the job-site password); 4, v3 Phase 7a
  *  (Workable's application pages read and filled, what Ashby and Workable keep before Submit, and the accepted list
- *  options kept sealed: its review). Raise it whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 4;
+ *  options kept sealed: its review); 5, v3 Phases 6 and 7b (Workday's, iCIMS's, Taleo's, SuccessFactors' and Oracle's
+ *  pages read, the postings on platforms TailorIT reads told to it as they load, and Sign-in Auto at an email-first
+ *  step: the email typed there alone). Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 5;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

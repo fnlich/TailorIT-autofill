@@ -30,7 +30,10 @@
  * v3 Phase 5 opens two more doors, each in this file, each finding its one element itself, each named by one module
  * alone (eslint.config.mjs, test/allow-submit.test.ts): clickAdapterEntry, the auto-apply agent's press of a posting
  * page's declared Apply (src/content/press.ts), and clickAdapterSignIn, Sign-in mode Auto's press of a sign-in form's
- * button (src/content/sign-in.ts). Neither opens assertNotSubmit or clickIfAllowed for anyone.
+ * button (src/content/sign-in.ts). Neither opens assertNotSubmit or clickIfAllowed for anyone. v3 Phase 7b adds a
+ * fourth of the same kind, clickAdapterSignInPrelude, Sign-in mode Auto's press of the one control that shows a wall's
+ * form (Workday's "Sign in with email"), named by src/content/sign-in.ts alone; and Sign-in's door now refuses a button
+ * the adapter names never to press anywhere on the page (Workday's Reset Password face, the social sign-ins).
  * A choice made through the page-world bridge (docs/SPEC-AMENDMENTS.md §12) clicks nothing, and the option it names
  * may not be drawn yet (a closed list): its text box goes through assertNotSubmit, and the option's label, as the
  * frame read it, through optionWordsRefusal, the word rule an option of an open list gets here ("confirm" chooses a
@@ -184,11 +187,51 @@ export function clickAdapterEntry(adapter: Adapter, doc: Document): HTMLElement 
  */
 export function clickAdapterSignIn(adapter: Adapter, doc: Document, wall: SignInWall, address: URL): HTMLElement | null {
   const form = signInFormOf(adapter, doc, wall);
-  if (form === null || signInRefusal(form, address) !== null) return null;
+  // A form whose press is the person's (SignInForm.personPresses) is never pressed here.
+  if (form === null || form.personPresses === true || signInRefusal(form, address) !== null) return null;
   const button = form.button;
-  if (button.ownerDocument !== doc || !pressableNow(button) || nearApplicationButtons(button, adapter, doc)) return null;
+  if (button.ownerDocument !== doc || !pressableNow(button) || nearApplicationButtons(button, adapter, doc)
+    || nearNeverPressed(button, adapter, doc)) return null;
   button.click();
   return button;
+}
+
+/** v3 Phase 7b: whether `el` is one of the controls the adapter names never to press anywhere on the page (neverPress,
+ *  read over the whole document), or holds or sits inside one: a reset's button, a social sign-in, an Apply with
+ *  LinkedIn. A hook that throws refuses. */
+function nearNeverPressed(el: Element, adapter: Adapter, doc: Document): boolean {
+  let never: Element[] = [];
+  try {
+    never = adapter.neverPress?.(doc.documentElement) ?? [];
+  } catch {
+    return true;
+  }
+  return never.some((other) => other === el || other.contains(el) || el.contains(other));
+}
+
+/**
+ * v3 Phase 7b, Sign-in mode Auto: on a wall whose form the page shows only after a first choice (Workday's landing:
+ * Apple, Google or "Sign in with email"), presses the adapter's declared prelude control once (Adapter.signInPrelude),
+ * with an untrusted click(). It finds the control itself; never on an http page, never while the page shows the wall's
+ * form already (signInFormOf), never one that would submit a form (its words may say "Sign in": that is why it has a
+ * door of its own), never the application form's Submit, Next or a never-pressed button, never one of the adapter's
+ * never-pressed controls anywhere on the page (the social sign-ins), never one a person cannot see or press. Answers
+ * the element clicked, or null. Only src/content/sign-in.ts may call it (eslint.config.mjs), before it reads the form.
+ */
+export function clickAdapterSignInPrelude(adapter: Adapter, doc: Document, wall: SignInWall, address: URL):
+  HTMLElement | null {
+  if (address.protocol !== 'https:') return null;
+  let control: HTMLElement | null = null;
+  try {
+    if (signInFormOf(adapter, doc, wall) !== null) return null;
+    control = adapter.signInPrelude?.(doc, wall) ?? null;
+  } catch {
+    return null;
+  }
+  if (control === null || control.ownerDocument !== doc || !pressableNow(control) || submitsForm(control)
+    || nearApplicationButtons(control, adapter, doc) || nearNeverPressed(control, adapter, doc)) return null;
+  control.click();
+  return control;
 }
 
 /** Whether the Submit exception would let `el` through (for the tests and the checks that read it; it clicks

@@ -1,0 +1,18 @@
+{
+  "fixture": "oracle/jpmc-posting",
+  "source": "https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210734835",
+  "captured": "2026-11-05T06:11:23.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": ".job-details__description-content @0",
+    "entryControl": ".job-details__section-apply-button button.apply-now-button @0",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      ".job-details__section-apply-button button.apply-now-button"
+    ],
+    "pressable": []
+  }
+}

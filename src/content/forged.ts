@@ -1,6 +1,11 @@
 /*
- * Forged WXT events (trap 11; docs/ARCHITECTURE.md "Isolation"). WXT's content-script context is the one thing a page
- * can reach: it names two DOM events after the extension's id and the entrypoint, and a page can dispatch either one.
+ * Forged WXT events (trap 11; docs/ARCHITECTURE.md "Isolation"). WXT's content-script context named two DOM events
+ * after the extension's id and the entrypoint, and a page can dispatch either one. Since the v3 Phase 6/7b review's
+ * round 2 (E1) the content script is an unlisted script with no such context at all (src/entrypoints/content-script.ts:
+ * the context's own start-up event announced the extension to the page), so nothing of ours dispatches or answers
+ * either event; they are only listened for, so a page's forgery is logged, and only where the page-world bridge
+ * installs, decided once from the address the document was loaded at (runtime.ts loadedHref; round 3, X1, and round 4,
+ * Y1): a listener that runs, or one a route of the page's own adds, is one a page can time.
  * - `<id>:content:wxt:content-script-started` on the document: WXT's context invalidates itself when it hears another
  *   instance of the script start. The runtime never uses that context, so a forgery stops nothing. The real event of
  *   a newer instance comes only after the extension was reloaded, and then the platform says the extension is gone;
@@ -10,7 +15,7 @@
  * A forgery is logged under its own code (content.forged-wxt-event), never as a tripwire hit, and changes nothing.
  */
 
-/** The content script's entrypoint name, as WXT builds the event names (src/entrypoints/content.ts). */
+/** The entrypoint name WXT built the event names with (the content script's old WXT entry, content.ts). */
 export const WXT_ENTRYPOINT = 'content';
 
 /** Which WXT event arrived. */

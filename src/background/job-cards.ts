@@ -14,7 +14,7 @@
  *   single-page application has moved since its script started, whose address now Chrome does not give, is not looked
  *   up at all ('unavailable', never the previous posting's card).
  * - The lookup as a page loads (v3 Phase 3: loadCard, from frame/hello) goes the same way, for a document whose address
- *   a platform's parser reads as an application or a posting (recognisedPosting: not Workday, which has none yet), never
+ *   a platform's parser reads as an application or a posting (recognisedPosting), never
  *   in an incognito tab, at most LOOKUP_ON_LOAD_LIMIT a minute across every tab (a restored session's tabs never ask at
  *   once) and never out of the panel's own JOB_RELAY_LIMIT; it sends the posting's canonical address, without the
  *   page's query string where the posting needs none (lookupAddressOf).
@@ -81,12 +81,14 @@ export const LOOKUP_ON_LOAD_LIMIT = { count: 4, windowMs: 60_000 } as const;
 
 /** Whether an address names an application or a posting a platform's parser reads (parseAtsUrl, or the application
  *  parsers of adapters/index.ts): a lookup as the page loads asks only for one. The reserved fixture board, read by
- *  the generic rule, and Workday, which has no parser yet, are not. */
+ *  the generic rule, is not. A platform TailorIT's parseAtsUrl does not read yet (Workday, and those ahead of its
+ *  contract, v3 Phase 7b) is looked up by its canonical address, which TailorIT finds no job for: the card says the
+ *  posting is not in TailorIT. */
 export function recognisedPosting(url: string): boolean {
   if (parseAtsUrl(url) !== null) return true;
   try {
     const ref = applicationOf(new URL(url));
-    return ref !== null && ref.platform !== 'workday' && !new URL(url).pathname.includes('/tailorit-fixture/');
+    return ref !== null && !new URL(url).pathname.includes('/tailorit-fixture/');
   } catch {
     return false;
   }
