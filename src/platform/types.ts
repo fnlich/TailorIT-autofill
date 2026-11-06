@@ -4,6 +4,7 @@
  * ContentPlatform, which has no storage, tabs, network or secrets at all.
  */
 import type { Platform } from '../core/enums';
+import type { SiteRegistration } from '../shared/hosts';
 
 /** What a page on an applicant-tracking host shows by its address alone (WorkerPlatform tabs.atsPageOf): 'posting'
  *  where the content script says hello (a posting, its application or the page after submitting: adapters/address.ts),
@@ -122,7 +123,18 @@ export interface WorkerPlatform {
      *  toolbar icon: activeTab, kept across same-origin moves, taken back on another origin or when the tab closes)
      *  and it is http or https; null otherwise. The host alone. */
     hostOf?(tabId: number): Promise<string | null>;
+    /** v3 Phase 8 (the review's P1/B8): every tab's id, and nothing else of them, so the worker can tell each top frame
+     *  `site/stop` once the company career sites stop acting. */
+    ids?(): Promise<number[]>;
+    /** v3 Phase 8 (the review's B10): whether a tab shows a company's own https page (shared/hosts.ts
+     *  isCompanySiteUrl: no ATS match, not LinkedIn's, not an employee HR system's), read from its address while
+     *  Chrome gives it (with the career sites' permission). A flag only, never the address. */
+    companySite?(tabId: number): Promise<boolean>;
   };
+  /** v3 Phase 8: the sentinel's registrations and the content script's injection (the `scripting` permission). */
+  scripting: SitesScripting;
+  /** v3 Phase 8: the optional host permission (every https page, for the company career sites). */
+  permissions: HostPermissions;
   storage: { local: StorageArea; session: StorageArea };
   /** open() must be called before any await in the handler of the message that carries the click, or the browser no
    *  longer counts the click as the person's gesture. */
@@ -159,6 +171,29 @@ export interface AgentWindows {
   tabExists(tabId: number): Promise<boolean>;
   /** Whether a normal browser window other than `except` is open: the agent works only while the person's browser is. */
   othersOpen(except: number | null): Promise<boolean>;
+}
+
+/** v3 Phase 8: the dynamic content scripts (chrome.scripting): the sentinel's registrations, and the one injection of
+ *  the content script into a frame the sentinel recognised. */
+export interface SitesScripting {
+  /** The registrations Chrome holds now among `ids`, in the shape registrationsFor gives. */
+  registered(ids: readonly string[]): Promise<SiteRegistration[]>;
+  register(scripts: readonly SiteRegistration[]): Promise<void>;
+  unregister(ids: readonly string[]): Promise<void>;
+  /** Runs the extension's file `file` in one document of a tab (its frame, when Chrome gave no document id); rejects
+   *  when Chrome refused (no host permission, the document gone). */
+  inject(tabId: number, target: { frameId: number; documentId?: string }, file: string): Promise<void>;
+}
+
+/** v3 Phase 8: the optional host permissions, as Chrome holds them. Asking for one is an extension page's, on the
+ *  person's click (PagePlatform.requestHosts); the worker reads, gives back and hears of changes. */
+export interface HostPermissions {
+  contains(origins: readonly string[]): Promise<boolean>;
+  /** Gives the permission back; false when Chrome kept it (a required host). */
+  remove(origins: readonly string[]): Promise<boolean>;
+  /** Calls `cb` whenever the person grants or takes back a permission (permissions.onAdded, onRemoved: in Options or
+   *  in Chrome's own extension settings). Registered synchronously at start-up. */
+  onChanged(cb: () => void): void;
 }
 
 /** The auto-apply agent's alarm (v3 Phase 5): a periodic wake-up that outlives a stopped worker. */
@@ -208,6 +243,12 @@ export interface PagePlatform {
    *  needed, and no address read); the returned function stops listening. The side panel reads its tab again then
    *  (v2), since a page without our script says no hello. */
   onTabLoaded(cb: (tabId: number) => void): () => void;
+  /** v3 Phase 8: asks Chrome for optional host permissions. Call it synchronously inside the person's click, before
+   *  anything is awaited, or Chrome refuses it as no user gesture. Resolves whether they are held. */
+  requestHosts(origins: readonly string[]): Promise<boolean>;
+  /** The Phase 8 review (P8): gives optional host permissions back (a choice that could not be saved after Chrome
+   *  granted them). Resolves whether they were removed. */
+  removeHosts(origins: readonly string[]): Promise<boolean>;
 }
 
 /** The tab a keyboard command was pressed in: where the capture page opens beside it. */

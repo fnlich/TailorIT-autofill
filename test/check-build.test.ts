@@ -46,8 +46,9 @@ function manifest(origin: string): Record<string, unknown> {
     version: '0.1.0',
     key: KEY,
     minimum_chrome_version: '144',
-    permissions: ['storage', 'sidePanel', 'activeTab', 'alarms'],
+    permissions: ['storage', 'sidePanel', 'activeTab', 'alarms', 'scripting'],
     host_permissions: [...ATS_MATCHES, `${origin}/*`],
+    optional_host_permissions: ['https://*/*'],
     externally_connectable: { matches: [`${origin}/*`] },
     icons: { ...ICONS },
     action: { default_title: 'TailorIT Autofill', default_icon: { 16: ICONS[16], 32: ICONS[32] } },
@@ -68,6 +69,10 @@ const BRIDGE_AT = 'var h=String(document.location&&document.location.href||"");'
 const BRIDGE_BUNDLE = `(function(){${BRIDGE_AT}${BRIDGE_LISTEN}})();`;
 /** check-build's first address, a posting, where the bridge must listen. */
 const POSTING_AT = 'https://job-boards.greenhouse.io/acme/jobs/4012345';
+
+/** v3 Phase 8: a sentinel bundle as the real one reads: it reads the page and sends one message. */
+const SENTINEL_BUNDLE = '(function(){var t=globalThis.chrome;var r=document.querySelectorAll("input");'
+  + 't.runtime.sendMessage({v:1,type:"page/recognised",reason:"application-form"})})();';
 
 /** The page-world bridge's entry in a manifest, as WXT writes it (src/entrypoints/page-bridge.content.ts). */
 const BRIDGE_SCRIPT = { all_frames: true, run_at: 'document_start', js: ['content-scripts/page-bridge.js'], world: 'MAIN' };
@@ -91,6 +96,9 @@ function project(change: (write: (path: string, text: string | Uint8Array) => vo
     write(`${dir}/background.js`, 'var background=(function(){return {}})();');
     write(`${dir}/content-scripts/content.js`, 'var content=(function(){return {}})();');
     write(`${dir}/content-scripts/page-bridge.js`, BRIDGE_BUNDLE);
+    // v3 Phase 8: the sentinel the worker registers, and the content script it injects, at the build's root.
+    write(`${dir}/sentinel.js`, SENTINEL_BUNDLE);
+    write(`${dir}/content-script.js`, 'var contentScript=(function(){return {}})();');
     write(`${dir}/chunks/options-abc.js`, 'export const options = 1;');
     write(`${dir}/options.html`, '<!doctype html><title>Settings</title>');
     write(`${dir}/sidepanel.html`, '<!doctype html><title>Review</title>');
@@ -402,6 +410,115 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
       }));
       expect(output, bundle).toContain(`.output/chrome-mv3: ${message}`);
       expect(status, bundle).toBe(1);
+    }
+  });
+});
+
+describe("check-build's v3 Phase 8 assertions: the optional hosts, the sentinel and its registrations", () => {
+  afterEach(() => {
+    for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
+  });
+
+  it('fail a build without scripting, or with another permission', () => {
+    for (const permissions of [['storage', 'sidePanel', 'activeTab', 'alarms'], ['storage', 'sidePanel', 'activeTab', 'alarms',
+      'scripting', 'tabs']]) {
+      const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+        changed.permissions = permissions;
+      })));
+      expect(output, permissions.join()).toContain(`.output/chrome-mv3: permissions are ${JSON.stringify(permissions)}`);
+      expect(status).toBe(1);
+    }
+  });
+
+  it('fail optional host permissions other than every https page, and none', () => {
+    for (const optional of [undefined, ['<all_urls>'], ['https://*/*', 'http://*/*'], ['https://careers.example.com/*']]) {
+      const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+        if (optional === undefined) delete changed.optional_host_permissions;
+        else changed.optional_host_permissions = optional;
+      })));
+      expect(output, JSON.stringify(optional)).toContain(`.output/chrome-mv3: optional_host_permissions are ${JSON.stringify(optional)}`);
+      expect(status).toBe(1);
+    }
+  });
+
+  it('fail a broad required host permission, and optional permissions', () => {
+    for (const broad of ['<all_urls>', 'https://*/*', '*://*/*', 'http://*/*']) {
+      const { output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+        changed.host_permissions = [...(changed.host_permissions as string[]), broad];
+      })));
+      expect(output, broad).toContain(`.output/chrome-mv3: the required host permission ${broad} is broad`);
+    }
+    const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+      changed.optional_permissions = ['tabs'];
+    })));
+    expect(output).toContain('.output/chrome-mv3: optional_permissions must be absent');
+    expect(status).toBe(1);
+  });
+
+  it('fail a sentinel that is missing, listed in the manifest, over its budget, or that names React, zod or a DOM write', () => {
+    const cases: Array<[string, string]> = [
+      [`var big="${'a'.repeat(16 * 1024)}";`, 'the sentinel is 16395 bytes, over the 16384-byte budget'],
+      ['(function(){document.body.appendChild(document.createElement("div"))})();', 'the sentinel names "createElement"'],
+      ['(function(){e.innerHTML="x"})();', 'the sentinel names "innerHTML"'],
+      ['(function(){e.setAttribute("x","y")})();', 'the sentinel names "setAttribute"'],
+      ['(function(){Symbol.for("react.element")})();', 'the sentinel names "react."'],
+      ['(function(){class ZodError extends Error{}})();', 'the sentinel names "ZodError"'],
+      ['(function(){window.postMessage("x","*")})();', 'the sentinel names "postMessage"'],
+      ['(function(){var stopOldScripts=1})();', 'the sentinel names "stopOldScripts"'],
+    ];
+    for (const [bundle, message] of cases) {
+      const { status, output } = checkBuild(project((write) => {
+        for (const dir of Object.values(BUILDS)) write(`${dir}/sentinel.js`, bundle);
+      }));
+      expect(output, bundle).toContain(`.output/chrome-mv3: ${message}`);
+      expect(status, bundle).toBe(1);
+    }
+    const listed = checkBuild(project((write) => everyManifest(write, (changed) => {
+      contentScript(changed).js = ['content-scripts/content.js', 'sentinel.js'];
+    })));
+    expect(listed.output).toContain('.output/chrome-mv3: the sentinel is listed in the manifest');
+    // project() keeps its folder last in `folders` before it calls the change.
+    const gone = checkBuild(project(() => {
+      for (const dir of Object.values(BUILDS)) rmSync(join(folders.at(-1)!, dir, 'sentinel.js'));
+    }));
+    expect(gone.output).toContain('.output/chrome-mv3: the sentinel sentinel.js is missing');
+  });
+
+  it('hold registrationsFor to the sentinel, in the top frame only, on every https page but the ATS hosts, LinkedIn and the HR systems', () => {
+    const changed = (body: string) => checkBuild(project((write) => {
+      const hosts = readFileSync(join(ROOT, 'src', 'shared', 'hosts.ts'), 'utf8');
+      write('src/shared/hosts.ts', hosts.replace(/export function registrationsFor[\s\S]*?\n}\n/, body));
+    }));
+    /** A registrationsFor that registers `fields` while on. */
+    const registering = (fields: string) => 'export function registrationsFor(on: { sites: boolean }): SiteRegistration[] {\n'
+      + `  return on.sites ? [{ id: SITES_REGISTRATION_ID, js: [SENTINEL_FILE], runAt: 'document_idle', persistAcrossSessions: true, world: 'ISOLATED', ${fields} } as never] : [];\n}\n`;
+    const cases: Array<[string, string]> = [
+      ['export function registrationsFor(on: { sites: boolean }): SiteRegistration[] {\n  void on;\n  return [];\n}\n',
+        'registrationsFor: registers []'],
+      [registering("allFrames: true, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites is not the top frame only'],
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...LINKEDIN_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites does not exclude https://job-boards.greenhouse.io/*'],
+      [registering("allFrames: false, matches: ['https://*/*', 'http://*/*'], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites matches http://*/*'],
+      // LinkedIn is deferred to v5: a registration that does not exclude every LinkedIn host fails, and says where it
+      // would reach.
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...HR_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites does not exclude https://*.linkedin.com/*'],
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...HR_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites reaches LinkedIn at https://www.linkedin.com/jobs/view/4012345678/'],
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...HR_HOST_MATCHES, 'https://www.linkedin.com/*']"),
+        'registrationsFor: tailorit-sites reaches LinkedIn at https://uk.linkedin.com/jobs/search/?currentJobId=4012345678'],
+      // The Phase 8 review (B4): the employee HR systems are excluded too.
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites does not exclude https://*.oraclecloud.com/*'],
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites reaches an HR system at https://wd5.myworkday.com/acme/d/home.htmld'],
+    ];
+    for (const [body, message] of cases) {
+      const { status, output } = changed(body);
+      expect(output, message).toContain(message);
+      expect(status, message).toBe(1);
     }
   });
 });

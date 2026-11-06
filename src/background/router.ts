@@ -8,7 +8,7 @@ import { refuse, type Answer } from '../messaging/envelope';
 import { ContentMessageSchema, PageMessageSchema, type ContentMessage, type PageMessage } from '../messaging/schemas';
 import type { Handler, Sender } from '../platform/types';
 import { log } from '../shared/log';
-import { channelOf, type Channel } from './senders';
+import { allowedOn, channelOf, offAtsChannelOf, offAtsSenderOf, type Channel, type InjectedOf } from './senders';
 
 /** Where a content message came from: its tab, frame, document and address, as Chrome reported them. */
 export type ContentChannel = Extract<Channel, { kind: 'content' }>;
@@ -41,16 +41,32 @@ export interface RouterOptions {
   /** Content messages wait for `ready` (the storage access level) before their handler runs, except the types in
    *  `except`: panel/open must reach sidePanel.open before anything is awaited, or the click no longer counts. */
   contentGate?: { ready(): Promise<void>; except: ReadonlySet<string> };
+  /** v3 Phase 8: the frames off the ATS hosts the worker injected (background/sites.ts); without it, none is. */
+  injected?: InjectedOf;
+  /** The Phase 8 review (B6): opens the side panel for panel/open from a top frame off the ATS hosts the worker does
+   *  not know in memory yet (a worker that restarted), before storage is read, while the click still counts. Such a
+   *  sender is our own script (our id); the handler, once storage says the frame was injected, opens it as always. */
+  openSidePanel?(tabId: number): void;
 }
 
 export function createRouter(options: RouterOptions): Handler {
   return async (message: unknown, sender: Sender) => {
-    const channel = channelOf(sender, options.ownId, options.ownPagesPrefix);
-    if (!channel) {
+    const type = typeOf(message);
+    // Synchronous for the ATS hosts and the extension's pages, and for a frame off them the worker knows in memory
+    // (v3 Phase 8): panel/open reaches sidePanel.open with nothing awaited. Storage is read only for one it does not.
+    let channel: Channel | null = channelOf(sender, options.ownId, options.ownPagesPrefix);
+    const off = channel === null && options.injected !== undefined
+      ? offAtsSenderOf(sender, options.ownId, options.ownPagesPrefix) : null;
+    if (off !== null) {
+      const now = options.injected!.now(off.tabId, off.frameId, off.documentId);
+      if (now === undefined && type === 'panel/open' && off.frameId === 0) options.openSidePanel?.(off.tabId);
+      channel = offAtsChannelOf(off, now !== undefined ? now
+        : await options.injected!.read(off.tabId, off.frameId, off.documentId), type);
+    }
+    if (!channel || (channel.kind === 'content' && type !== null && !allowedOn(channel, type))) {
       log('router.bad-sender');
       return refuse('bad_sender');
     }
-    const type = typeOf(message);
     const [schema, own, other] =
       channel.kind === 'content' ? [ContentMessageSchema, CONTENT_TYPES, PAGE_TYPES] : [PageMessageSchema, PAGE_TYPES, CONTENT_TYPES];
     if (type !== null && !own.has(type) && other.has(type)) {

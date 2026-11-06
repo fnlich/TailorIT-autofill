@@ -8,6 +8,7 @@ import { icimsAdapter } from './icims';
 import { adaptersFor, applicationOf } from './index';
 import { leverAdapter } from './lever';
 import { oracleAdapter } from './oracle';
+import { addressForTailorIT, siteAdapter } from './site';
 import { successFactorsAdapter } from './successfactors';
 import { taleoAdapter } from './taleo';
 import { E2E_TEST_ADAPTER_MARKER, TRAP_09_URL } from './test';
@@ -43,11 +44,20 @@ describe('adaptersFor', () => {
       [successFactorsAdapter, 'https://career2.successfactors.eu/career?company=acme'],
       [oracleAdapter, 'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1']] as const;
     for (const [adapter, address] of OWN) expect(adaptersFor(new URL(address)), address).toEqual([adapter, genericAdapter]);
-    for (const address of ['https://example.com/careers/apply', 'http://jobs.lever.co/acme/x/apply', 'http://jobs.ashbyhq.com/acme/x',
-      // The domains' other hosts (src/shared/hosts.ts), and an Oracle Cloud address that is no candidate page.
+    for (const address of ['http://jobs.lever.co/acme/x/apply', 'http://jobs.ashbyhq.com/acme/x', 'http://example.com/careers/apply',
+      // The domains' other hosts (src/shared/hosts.ts), where the static content script runs and stays dormant.
       'https://login.icims.com/u/login/identifier', 'https://www.taleo.net/', 'https://acme.tbe.taleo.net/x',
-      'https://performancemanager4.successfactors.com/login', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x/b/y/o/z']) {
+      'https://performancemanager4.successfactors.com/login', 'https://www.linkedin.com/jobs/view/4012345678/',
+      // The Phase 8 review (B4): an employee HR system is never a company site (Oracle Cloud's every other page, Workday's
+      // and SAP SuccessFactors' employee hosts).
+      'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x/b/y/o/z', 'https://acme.fa.us2.oraclecloud.com/fscmUI/faces/x',
+      'https://acme.myworkday.com/acme/d/home.htmld', 'https://hcm.sapsf.com/sf/home', 'https://hcm.sapsf.eu/sf/home']) {
       expect(adaptersFor(new URL(address)), address).toEqual([genericAdapter]);
+    }
+    // v3 Phase 8: a company's own https page (the content script is injected there only once the sentinel recognised
+    // it) gets the site adapter alone.
+    for (const address of ['https://example.com/careers/apply', 'https://careers.acme.example/jobs/1']) {
+      expect(adaptersFor(new URL(address)), address).toEqual([siteAdapter]);
     }
   });
 });
@@ -134,8 +144,15 @@ describe('applicationOf', () => {
     }
   });
 
-  it('knows no application on a host outside the ATS list', () => {
-    expect(applicationOf(new URL('https://example.com/careers/apply'))).toBeNull();
+  it("knows a company's own https page as the site's application of its origin and path, and no other address (v3 Phase 8)", () => {
+    const ref = applicationOf(new URL('https://example.com/careers/apply?ref=x#top'));
+    expect(ref).toMatchObject({ platform: 'site', page: 'application', applicationUrl: 'https://example.com/careers/apply' });
+    expect(ref?.applicationKey).toMatch(/^site:[0-9a-f]{16}$/);
+    for (const address of ['http://example.com/careers/apply', 'https://www.linkedin.com/jobs/view/4012345678/',
+      'https://uk.linkedin.com/jobs/view/4012345678/', 'https://performancemanager4.successfactors.com/login',
+      'https://login.icims.com/u/login/identifier']) {
+      expect(applicationOf(new URL(address)), address).toBeNull();
+    }
   });
 
   it('knows no application at a Lever or Greenhouse address its platform parser does not read (W2)', () => {
@@ -156,5 +173,24 @@ describe('applicationOf', () => {
     // Only that board: another site's unparsed path, or the board's name in another place, is no application.
     expect(applicationOf(new URL('https://jobs.lever.co/acme/tailorit-fixture/apply'))).toBeNull();
     expect(applicationOf(new URL('https://jobs.lever.co/tailorit-fixturex/trap-01/apply'))).toBeNull();
+  });
+});
+
+describe("a company page's address to TailorIT (the Phase 8 review, P3)", () => {
+  it('is its origin and path, and the gh_jid or ashby_jid that names its posting, nothing else', () => {
+    expect(addressForTailorIT('https://careers.acme.example/positions/1/?gh_jid=4012&session=s3cret&utm_source=mail#apply'))
+      .toBe('https://careers.acme.example/positions/1/?gh_jid=4012');
+    expect(addressForTailorIT('https://careers.acme.example/jobs?ashby_jid=1f2e-3d4c&token=x'))
+      .toBe('https://careers.acme.example/jobs?ashby_jid=1f2e-3d4c');
+    expect(addressForTailorIT('https://careers.acme.example/jobs/42/apply?ref=linkedin')).toBe('https://careers.acme.example/jobs/42/apply');
+    // A gh_jid that names no posting (anything but a short id) is dropped too.
+    expect(addressForTailorIT('https://careers.acme.example/x?gh_jid=%3Cscript%3E')).toBe('https://careers.acme.example/x');
+  });
+
+  it("leaves any other address as it is: an ATS host's, an http page's, an HR system's", () => {
+    for (const url of ['https://job-boards.greenhouse.io/acme/jobs/1?gh_src=x', 'http://careers.acme.example/jobs/1?x=1',
+      'https://acme.myworkday.com/acme/d/home.htmld?x=1', 'not an address']) {
+      expect(addressForTailorIT(url), url).toBe(url);
+    }
   });
 });

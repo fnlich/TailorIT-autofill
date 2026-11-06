@@ -7,6 +7,13 @@
 // chrome., browser. or postMessage, and run in a bare context it must add no global and listen for its command only,
 // and only at a posting or its application form (the v3 Phase 6/7b review, S3). No content script's bundle holds WXT's
 // content-script context, whose start-up announces the extension to the page (round 2, E1).
+// v3 Phase 8 (docs/SPEC-AMENDMENTS.md §12 Decision 13): `scripting` joins the permissions; the optional host permissions
+// are exactly https://*/* and no required host permission is broad; the static content scripts are still the two on
+// the ATS hosts; the sentinel (sentinel.js, an unlisted script the worker registers at run time) is in every build,
+// listed nowhere in the manifest, within its 16 KiB budget, holding no React, no zod and no DOM write; and
+// registrationsFor (src/shared/hosts.ts), read here as the worker reads it, registers that sentinel in the top frame
+// only, on every https page but the ATS hosts and every LinkedIn host (LinkedIn is deferred to v5: nothing of the
+// extension may run there, even with https://*/* granted), inside the optional host permissions.
 // Usage: node scripts/check-build.mjs [--all]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -16,7 +23,8 @@ import { paint } from './proc.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const requireAll = process.argv.includes('--all');
-const { ATS_MATCHES } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
+const { ATS_MATCHES, CONTENT_SCRIPT_FILE, OPTIONAL_HOST_PERMISSIONS, registrationsFor, SENTINEL_FILE, SITES_MATCH,
+  SITES_REGISTRATION_ID } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
 const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
 /** The content script, React included once the in-page panel lands, must stay under this: every file the manifest's
  *  content script lists, together. */
@@ -27,6 +35,16 @@ const BRIDGE_BUDGET = 20 * 1024;
 /** What the bridge's bundle may never name: the extension's APIs (it runs in the page's world, which has none of
  *  them, and must not look for any) and window messaging. */
 const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
+/** v3 Phase 8: the sentinel's budget (src/entrypoints/sentinel.ts and what it imports). */
+const SENTINEL_BUDGET = 16 * 1024;
+/** What the sentinel's bundle may never name: React and zod (it renders and parses nothing), any DOM write, and window
+ *  messaging. It reads the page and sends the worker one message. */
+const SENTINEL_NEVER_NAMES = ['react.', '__REACT', 'ZodError', '$ZodType', 'zod', 'createElement', 'appendChild', 'insertBefore',
+  'replaceChild', 'replaceChildren', 'innerHTML', 'outerHTML', 'insertAdjacent', 'setAttribute', 'removeAttribute',
+  'toggleAttribute', 'attachShadow', 'dispatchEvent', 'postMessage', 'execCommand', 'document.write', 'textContent=',
+  'chrome.storage', 'browser.storage'];
+/** A host permission that reaches every site (v3 Phase 8: the required ones never may). */
+const BROAD_HOST = /^(?:<all_urls>|(?:\*|https?|wss?|ftp|file):\/\/\*(?:\/.*)?)$/;
 /** What no content script's bundle may hold: WXT's content-script context, whose start-up dispatches
  *  `<extension id>:<entry>:wxt:content-script-started` on the page's document (and posts it to the window), an event
  *  any page script can listen for to learn the extension is installed (the v3 Phase 6/7b review's round 2, E1). Our
@@ -89,9 +107,17 @@ function files(dir) {
 function checkManifest(build, manifest) {
   const fallback = !build.production && process.env.TAILORIT_FIXTURE_ORIGIN === '1';
   if (manifest.manifest_version !== 3) fail(build, 'manifest_version is not 3');
-  if (!sameSet(manifest.permissions ?? [], ['storage', 'sidePanel', 'activeTab', 'alarms'])) fail(build, `permissions are ${JSON.stringify(manifest.permissions)}`);
+  if (!sameSet(manifest.permissions ?? [], ['storage', 'sidePanel', 'activeTab', 'alarms', 'scripting'])) {
+    fail(build, `permissions are ${JSON.stringify(manifest.permissions)}`);
+  }
   if (!sameSet(manifest.host_permissions ?? [], [...ATS_MATCHES, `${build.origin}/*`])) fail(build, 'host_permissions differ from the ATS list plus TailorIT');
-  for (const key of ['optional_permissions', 'optional_host_permissions', 'web_accessible_resources', 'content_security_policy', 'commands', 'update_url']) {
+  for (const host of manifest.host_permissions ?? []) if (BROAD_HOST.test(host)) fail(build, `the required host permission ${host} is broad`);
+  // v3 Phase 8: asked for on the person's click in Options, never at install.
+  if (!isDeepStrictEqual(manifest.optional_host_permissions, [...OPTIONAL_HOST_PERMISSIONS])
+    || !isDeepStrictEqual(manifest.optional_host_permissions, ['https://*/*'])) {
+    fail(build, `optional_host_permissions are ${JSON.stringify(manifest.optional_host_permissions)}, not ["https://*/*"]`);
+  }
+  for (const key of ['optional_permissions', 'web_accessible_resources', 'content_security_policy', 'commands', 'update_url']) {
     if (key in manifest) fail(build, `${key} must be absent`);
   }
   if (manifest.key !== MANIFEST_KEY) fail(build, 'key is missing or is not the committed public key');
@@ -226,6 +252,81 @@ function checkBridgeBundle(build, dir, bridge) {
   }
 }
 
+/** v3 Phase 8: the sentinel's bundle: in the build, at its root, listed nowhere in the manifest, within its budget,
+ *  naming none of SENTINEL_NEVER_NAMES nor WXT's content-script context; and the content script the worker injects is
+ *  there too. */
+function checkSentinel(build, dir, manifest) {
+  const file = join(dir, SENTINEL_FILE);
+  if (!existsSync(file)) {
+    fail(build, `the sentinel ${SENTINEL_FILE} is missing`);
+    return;
+  }
+  if (!existsSync(join(dir, CONTENT_SCRIPT_FILE))) fail(build, `the injected content script ${CONTENT_SCRIPT_FILE} is missing`);
+  const listed = JSON.stringify([manifest.content_scripts ?? [], manifest.web_accessible_resources ?? [], manifest.background ?? {}]);
+  if (listed.includes(SENTINEL_FILE)) fail(build, 'the sentinel is listed in the manifest: the worker registers it at run time');
+  const size = statSync(file).size;
+  if (size > SENTINEL_BUDGET) fail(build, `the sentinel is ${size} bytes, over the ${SENTINEL_BUDGET}-byte budget`);
+  const text = readFileSync(file, 'utf8');
+  for (const name of [...SENTINEL_NEVER_NAMES, ...WXT_CONTEXT_NAMES]) if (text.includes(name)) fail(build, `the sentinel names "${name}"`);
+}
+
+/** LinkedIn's hosts as patterns (v3 Phase 8: deferred to v5), each of which the career sites' registration must
+ *  exclude, and addresses on them it must never reach. */
+const LINKEDIN_EXCLUDED = ['https://*.linkedin.com/*', 'https://*.linkedin.cn/*', 'https://*.lnkd.in/*', 'https://*.licdn.com/*'];
+const LINKEDIN_ADDRESSES = ['https://www.linkedin.com/jobs/view/4012345678/', 'https://linkedin.com/jobs/view/4012345678/',
+  'https://uk.linkedin.com/jobs/search/?currentJobId=4012345678', 'https://lnkd.in/abc', 'https://media.licdn.com/x.js'];
+/** The employee HR systems' hosts (the Phase 8 review, B4), which the registration must exclude too, and addresses on
+ *  them it must never reach: a system where a person works for their employer never gets the sentinel. */
+const HR_EXCLUDED = ['https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*', 'https://*.sapsf.eu/*'];
+const HR_ADDRESSES = ['https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x',
+  'https://wd5.myworkday.com/acme/d/home.htmld', 'https://performancemanager4.sapsf.com/sf/home', 'https://hcm.sapsf.eu/sf/home'];
+
+/** Whether a Chrome match pattern (https://<host>/<path>, `*.` a host's first labels) matches an address. */
+function patternMatches(pattern, address) {
+  const [, host, path] = /^https:\/\/([^/]+)(\/.*)$/.exec(pattern) ?? [];
+  if (host === undefined || path === undefined) return false;
+  const url = new URL(address);
+  if (url.protocol !== 'https:') return false;
+  const name = url.hostname;
+  const hostFits = host === '*' || (host.startsWith('*.') ? name === host.slice(2) || name.endsWith(host.slice(1)) : name === host);
+  const prefix = path.replace(/\*$/, '');
+  return hostFits && (path === '/*' || url.pathname.startsWith(prefix));
+}
+
+/** v3 Phase 8: registrationsFor, pure, as the worker reconciles Chrome's registration to it: nothing while the career
+ *  sites are off; while on, one, loading the sentinel alone, in the top frame only, once the page is loaded, kept across
+ *  sessions, in the isolated world, on every https page but the ATS hosts, every LinkedIn host and the employee HR
+ *  systems, inside the optional host permissions, none on an http page. */
+function checkRegistrations() {
+  const where = 'registrationsFor';
+  const failHere = (message) => failures.push(`${where}: ${message}`);
+  if (registrationsFor({ sites: false }).length !== 0) failHere('registers something while off');
+  const on = registrationsFor({ sites: true });
+  if (on.length !== 1 || on[0].id !== SITES_REGISTRATION_ID) failHere(`registers ${JSON.stringify(on.map((each) => each.id))}`);
+  for (const each of on) {
+    if (!isDeepStrictEqual(each.js, [SENTINEL_FILE])) failHere(`${each.id} loads ${JSON.stringify(each.js)}, not the sentinel`);
+    if (each.allFrames !== false) failHere(`${each.id} is not the top frame only`);
+    if (each.runAt !== 'document_idle') failHere(`${each.id} does not run at document_idle`);
+    if (each.persistAcrossSessions !== true) failHere(`${each.id} is not kept across sessions`);
+    if (each.world !== 'ISOLATED') failHere(`${each.id} is not in the isolated world`);
+    for (const key of ['css', 'matchOriginAsFallback', 'match_about_blank']) if (key in each) failHere(`${each.id} has ${key}`);
+    if (!isDeepStrictEqual(each.matches, [SITES_MATCH])) failHere(`${each.id} matches ${JSON.stringify(each.matches)}`);
+    for (const match of each.matches) {
+      if (!match.startsWith('https://')) failHere(`${each.id} matches ${match}`);
+      if (!OPTIONAL_HOST_PERMISSIONS.includes(match)) failHere(`${each.id} matches ${match}, outside the optional host permissions`);
+    }
+    const excluded = new Set(each.excludeMatches ?? []);
+    for (const pattern of [...ATS_MATCHES, ...LINKEDIN_EXCLUDED, ...HR_EXCLUDED]) {
+      if (!excluded.has(pattern)) failHere(`${each.id} does not exclude ${pattern}`);
+    }
+    // LinkedIn is deferred to v5, and the HR systems are never reached: no address of theirs may be one it reaches.
+    const reaches = (address) => each.matches.some((pattern) => patternMatches(pattern, address))
+      && !(each.excludeMatches ?? []).some((pattern) => patternMatches(pattern, address));
+    for (const address of LINKEDIN_ADDRESSES) if (reaches(address)) failHere(`${each.id} reaches LinkedIn at ${address}`);
+    for (const address of HR_ADDRESSES) if (reaches(address)) failHere(`${each.id} reaches an HR system at ${address}`);
+  }
+}
+
 /** Each content script's bundle names none of WXT_CONTEXT_NAMES: nothing of the extension announces itself to a page. */
 function checkNoWxtContext(build, dir, manifest) {
   for (const script of manifest.content_scripts ?? []) {
@@ -278,9 +379,12 @@ for (const build of BUILDS) {
   for (const page of DEV_ONLY_PAGES) if (existsSync(join(dir, page))) fail(build, `${page} is a development-only page`);
   checkContentScriptSize(build, dir, manifest);
   checkNoWxtContext(build, dir, manifest);
+  checkSentinel(build, dir, manifest);
   checkIcons(build, dir, manifest);
   checked.push({ build, sizes: all.map((file) => [relative(dir, file), statSync(file).size]) });
 }
+
+checkRegistrations();
 
 // The e2e manifest may differ from production only by TailorIT's origin (and the fallback match, when on).
 const production = BUILDS[0]?.manifest;

@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Synthetic (v3 Phase 8): an application form on a company's own careers page (no ATS), the kind the read-only
+     capture of 2026-11-04 met only behind a sign-in. The application-form score claims it by its name, email and phone
+     boxes and its resume upload; the site adapter then reads it with the standard rules. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Apply: Platform Engineer | Fixture Corp Careers</title></head>
+<body>
+  <header><a href="/">Fixture Corp</a> <form role="search" action="/search"><input type="search" name="q" aria-label="Search jobs"></form></header>
+  <main>
+    <h1>Platform Engineer</h1>
+    <p>Fixture Corp is hiring a platform engineer to run its build systems.</p>
+    <form id="application" action="/__submitted" method="post">
+      <label for="first">First name</label><input id="first" name="first_name" autocomplete="given-name" required>
+      <label for="last">Last name</label><input id="last" name="last_name" autocomplete="family-name" required>
+      <label for="email">Email</label><input id="email" type="email" name="email" autocomplete="email" required>
+      <label for="phone">Phone</label><input id="phone" type="tel" name="phone" autocomplete="tel">
+      <label for="resume">Resume/CV</label><input id="resume" type="file" name="resume" accept=".pdf,.doc,.docx">
+      <button type="submit">Submit application</button>
+    </form>
+  </main>
+</body>
+</html>

@@ -119,6 +119,10 @@ export interface MemoryPagePlatform extends PagePlatform {
   invalidate(): void;
   /** A tab finished loading a page, as tabs.onUpdated says with status 'complete'. */
   loaded(tabId: number): void;
+  /** v3 Phase 8: every requestHosts the page made, in order (the origins asked for). */
+  readonly hostRequests: string[][];
+  /** The Phase 8 review (P8): every removeHosts the page made, in order. */
+  readonly hostRemovals: string[][];
 }
 
 /**
@@ -128,9 +132,13 @@ export interface MemoryPagePlatform extends PagePlatform {
  */
 export function createMemoryPagePlatform(
   worker: (message: unknown) => Promise<unknown>,
-  options: { connectWorker?: (port: PortLike) => void; activeTabId?: number | null } = {},
+  options: { connectWorker?: (port: PortLike) => void; activeTabId?: number | null;
+    /** v3 Phase 8: what Chrome answers a host permission request (granted by default). */
+    grantHosts?: (origins: readonly string[]) => boolean } = {},
 ): MemoryPagePlatform {
   const sent: unknown[] = [];
+  const hostRequests: string[][] = [];
+  const hostRemovals: string[][] = [];
   const listeners = new Set<(tabId: number) => void>();
   const loads = new Set<(tabId: number) => void>();
   let active = options.activeTabId ?? null;
@@ -183,6 +191,16 @@ export function createMemoryPagePlatform(
     },
     invalidate() {
       valid = false;
+    },
+    hostRequests,
+    async requestHosts(origins) {
+      hostRequests.push([...origins]);
+      return options.grantHosts?.(origins) ?? true;
+    },
+    hostRemovals,
+    async removeHosts(origins) {
+      hostRemovals.push([...origins]);
+      return true;
     },
   };
 }

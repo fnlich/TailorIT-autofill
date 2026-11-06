@@ -38,8 +38,10 @@ import { TELEMETRY_FIELDS } from '../../core/telemetry/events';
 import type { TelemetryCount } from '../../core/types/telemetry';
 import { AI_FORBIDDEN_MODES, type AiForbiddenMode, type Settings } from '../../core/types/settings';
 import type { ErrorCode } from '../../messaging/envelope';
+import type { SitesState } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
+import { SITES_MATCH } from '../../shared/hosts';
 import { LogoMark, Wordmark } from '../brand/Logo';
 import { DisclosureChanged } from '../page/disclosure';
 import { request } from '../page/request';
@@ -282,6 +284,8 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
 
       <AutoApply platform={platform} auth={auth} />
 
+      <WhereItWorks platform={platform} />
+
       <Card title={TEXT.panel.heading} name="panel">
         <fieldset className="tia-fieldset">
           <legend className="tia-help">{TEXT.panel.intro}</legend>
@@ -423,6 +427,67 @@ function AutoApply({ platform, auth }: { platform: PagePlatform; auth: AuthState
           </>
         )}
       </div>
+    </Card>
+  );
+}
+
+// ── Where Autofill works (v3 Phase 8) ─────────────────────────────────────────────────────────────────────────────
+
+/** The company career sites: turning them on asks Chrome for every https page on the person's own click (requestHosts,
+ *  called inside the click, before anything is awaited), and turning them off gives the permission back (the worker).
+ *  They act only while the person turned them on and Chrome holds the permission. A choice to turn them on that could
+ *  not be saved gives back what Chrome just granted (the Phase 8 review, P8). */
+function WhereItWorks({ platform }: { platform: PagePlatform }) {
+  const words = TEXT.sites;
+  const [state, setState] = useState<SitesState | null>(null);
+  const [working, setWorking] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void request(platform, { v: 1, type: 'sites/get' }).then((answer) => {
+      if (live && answer.ok) setState(answer.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [platform]);
+
+  const toggle = (on: boolean) => {
+    // Chrome counts the click as the person's only while nothing has been awaited: ask first.
+    const granted = on ? platform.requestHosts([SITES_MATCH]) : Promise.resolve(true);
+    setWorking(true);
+    setMessage(null);
+    void (async () => {
+      let held = false;
+      try {
+        held = await granted;
+      } catch {
+        held = false;
+      }
+      if (!held) {
+        setWorking(false);
+        setMessage(words.refused);
+        return;
+      }
+      const answer = await request(platform, { v: 1, type: 'sites/set', on })
+        .catch(() => ({ ok: false as const, error: 'unavailable' as const }));
+      if (!answer.ok && on) await platform.removeHosts([SITES_MATCH]).catch(() => false);
+      setWorking(false);
+      if (answer.ok) setState(answer.data);
+      else setMessage(words.failed);
+    })();
+  };
+
+  return (
+    <Card title={words.heading} name="sites">
+      <p className="tia-help">{words.intro}</p>
+      {state === null ? <p className="tia-note">{TEXT.loading}</p> : (
+        <Toggle setting="sites.on" name={words.toggle} help={words.hint} checked={state.on && state.granted}
+          disabled={working} onChange={toggle}>
+          {state.on && !state.granted && <p className="tia-note" data-sites-permission="">{words.needsPermission}</p>}
+          {message !== null && <p className="tia-error" role="status">{message}</p>}
+        </Toggle>
+      )}
     </Card>
   );
 }

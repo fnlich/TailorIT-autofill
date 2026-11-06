@@ -1,0 +1,9 @@
+<!doctype html>
+<!-- Synthetic (v3 Phase 8 review, B1 corpus): an application page: Apply with Dropzone-style hidden input on body. Read at https://www.startup.example/apply. -->
+<html lang="en"><head><meta charset="utf-8"><title>Apply | Startup</title>
+<style>body{font-family:sans-serif} label{display:block;margin-top:6px} input,textarea,select{display:block;width:300px;height:24px}</style></head>
+<body><header><nav><a href="/">Home</a> <a href="/about">About</a></nav>
+<form role="search" action="/search"><input type="search" name="q" aria-label="Search"></form></header>
+<main><h1>Apply</h1><form id="app"><label for="fn">Full name</label><input id="fn"><label for="e">Email</label><input id="e" type="email">
+    <div class="dropzone">Drop your resume here or click to upload</div><button>Send</button></form>
+    <input type="file" class="dz-hidden-input" style="visibility:hidden;position:absolute;top:0;left:0;height:0;width:0"></main><footer><p>© Example</p></footer></body></html>

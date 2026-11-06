@@ -104,6 +104,8 @@ export interface ReportsDeps {
   sideShown?(tabId: number, open: boolean): void;
   /** v3 Phase 4: where recording the tab's submitted application stands (submissions.ts), for its page state. */
   submitted?(tabId: number): Promise<PageState['submitted']> | PageState['submitted'];
+  /** v3 Phase 8 (the review's B10): whether the company career sites act now (sites.ts). */
+  sitesActive?(): Promise<boolean>;
 }
 
 /** The reports over storage.session, with no panel watching yet. */
@@ -125,11 +127,19 @@ export function createReports(deps: ReportsDeps): Reports {
     if (page.support !== 'none') return page;
     if (deps.tabs.atsPageOf !== undefined) {
       const shown = await deps.tabs.atsPageOf(tabId).catch(() => null);
-      return shown?.page === 'posting' ? { ...page, reload: true } : shown?.page === 'other' ? { ...page, support: 'no-form' }
-        : page;
+      if (shown !== null) {
+        return shown.page === 'posting' ? { ...page, reload: true } : { ...page, support: 'no-form' };
+      }
+    } else if (deps.tabs.onAtsHost !== undefined && await deps.tabs.onAtsHost(tabId).catch(() => false)) {
+      return { ...page, reload: true };
     }
-    if (deps.tabs.onAtsHost === undefined) return page;
-    return (await deps.tabs.onAtsHost(tabId).catch(() => false)) ? { ...page, reload: true } : page;
+    // v3 Phase 8 (the review's B10): while the company career sites act, a company's own https page no frame of ours
+    // is on (one opened before they were turned on, or one the sentinel has not recognised) offers a reload.
+    if (deps.sitesActive !== undefined && deps.tabs.companySite !== undefined
+      && await deps.sitesActive().catch(() => false) && await deps.tabs.companySite(tabId).catch(() => false)) {
+      return { ...page, reload: true, site: true };
+    }
+    return page;
   }
 
   /** A side panel shows `tabId` now (or nothing): the tab it left and the tab it shows hear of it when that changes

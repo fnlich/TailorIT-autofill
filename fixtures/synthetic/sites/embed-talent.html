@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- Synthetic (v3 Phase 8 review, B3): a company page embedding a Greenhouse form (the smoke form's frame), with a
+     "Join our talent community" form of the company's own beside it. The sentinel does not recognise the page by its
+     embed (the ATS's own frame gets the static content script), and no form of the company page's is ever filled. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Careers at Fixture Co</title>
+    <style>label{display:block;margin-top:6px} input{display:block;width:300px;height:24px}</style>
+  </head>
+  <body>
+    <h1>Careers at Fixture Co</h1>
+    <p>The posting's text lives on the company page, outside the form's frame.</p>
+    <iframe id="grnhse_iframe" title="Application" style="width:900px;height:600px;border:0"
+      src="https://job-boards.greenhouse.io/embed/job_app?for=tailoritfixture&token=1"></iframe>
+    <section>
+      <h2>Not the right role? Join our talent community</h2>
+      <form id="talent-community" action="/__submitted" method="post">
+        <label for="tc-first">First name</label><input id="tc-first" name="first_name" autocomplete="given-name" />
+        <label for="tc-email">Email</label><input id="tc-email" type="email" name="email" autocomplete="email" />
+        <label for="tc-phone">Phone</label><input id="tc-phone" type="tel" name="phone" autocomplete="tel" />
+        <button type="submit">Join</button>
+      </form>
+    </section>
+  </body>
+</html>

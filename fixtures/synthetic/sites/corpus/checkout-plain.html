@@ -1,0 +1,12 @@
+<!doctype html>
+<!-- Synthetic (v3 Phase 8 review, B1 corpus): an ordinary page, no job: Checkout, billing step (plain names). Read at https://www.bookshop.example/checkout. -->
+<html lang="en"><head><meta charset="utf-8"><title>Checkout</title>
+<style>body{font-family:sans-serif} label{display:block;margin-top:6px} input,textarea,select{display:block;width:300px;height:24px}</style></head>
+<body><header><nav><a href="/">Home</a> <a href="/about">About</a></nav>
+<form role="search" action="/search"><input type="search" name="q" aria-label="Search"></form></header>
+<main><h1>Billing details</h1><form id="billing" class="checkout woocommerce-checkout">
+    <label for="billing_first_name">First name</label><input id="billing_first_name" name="billing_first_name" autocomplete="given-name">
+    <label for="billing_last_name">Last name</label><input id="billing_last_name" name="billing_last_name" autocomplete="family-name">
+    <label for="billing_phone">Phone</label><input id="billing_phone" name="billing_phone" type="tel" autocomplete="tel">
+    <label for="billing_email">Email address</label><input id="billing_email" name="billing_email" type="email" autocomplete="email">
+    <button>Place order</button></form></main><footer><p>© Example</p></footer></body></html>

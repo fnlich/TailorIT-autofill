@@ -12,6 +12,9 @@
  *   rule, the page's origin and path, as is any address on an ATS host with no parser (none is left since v3 Phase 7b).
  *   The reading itself lives in ./address.ts (postingAddressOf), which the page-world bridge's entry reads too (the v3
  *   Phase 6/7b review, S3), so it holds no adapter.
+ * v3 Phase 8: a company's own https page (no ATS host, not LinkedIn, not an HR system) is the `site` platform's, its
+ * adapter (./site) claiming a page by the application-form score; the content script runs there only once the sentinel
+ * recognised the page.
  * The Lever and Greenhouse adapters joined PLATFORM_ADAPTERS in Phase 2, Ashby's in v3 Phase 2 (its overview, its form
  * and its embed's spelling of one posting share one application key), Workable's in v3 Phase 7a (its overview and its
  * form, in any spelling, share one); Workday's, iCIMS's, Taleo's, SuccessFactors' and Oracle's in v3 Phases 6 and 7b
@@ -31,6 +34,7 @@ import { greenhouseAdapter } from './greenhouse';
 import { icimsAdapter } from './icims';
 import { leverAdapter } from './lever';
 import { oracleAdapter } from './oracle';
+import { siteAdapter, siteCanonicalUrl } from './site';
 import { successFactorsAdapter } from './successfactors';
 import { taleoAdapter } from './taleo';
 import { e2eAdaptersFor } from './test';
@@ -47,9 +51,12 @@ const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
   oracle: oracleAdapter,
 };
 
-/** The adapters that may handle a frame at `url`, in the order the content runtime tries their detect(). */
+/** The adapters that may handle a frame at `url`, in the order the content runtime tries their detect(). A company's
+ *  own page (v3 Phase 8: shared/hosts.ts isCompanySiteUrl), where the content script runs only once the sentinel
+ *  recognised it, gets the site adapter alone, which claims a page by the application-form score. */
 export function adaptersFor(url: URL): Adapter[] {
   const platform = platformOfUrl(url.href);
+  if (siteAdapter.matchesUrl(url)) return __E2E__ ? [...e2eAdaptersFor(url), siteAdapter] : [siteAdapter];
   const own = platform === null ? undefined : PLATFORM_ADAPTERS[platform];
   const candidates = own !== undefined && own.matchesUrl(url) ? [own, genericAdapter] : [genericAdapter];
   return __E2E__ ? [...e2eAdaptersFor(url), ...candidates] : candidates;
@@ -70,9 +77,13 @@ function refOf(platform: Platform, page: ApplicationPage, applicationUrl: string
   return { platform, page, applicationUrl, applicationKey: applicationKey(platform, applicationUrl) };
 }
 
-/** The application of an address on an ATS host; null for any other host, and for an address on a host with a parser
- *  that the parser does not read (except on the reserved fixture board). */
+/** The application of an address on an ATS host; null for an address on a host with a parser that the parser does
+ *  not read (except on the reserved fixture board). A company's own https page (v3 Phase 8: no ATS match, neither
+ *  LinkedIn's nor an employee HR system's) is the `site` application of its origin and path; any other address (http,
+ *  LinkedIn's, an HR system's, an ATS domain's other hosts) is none. */
 export function applicationOf(url: URL): ApplicationRef | null {
   const read = postingAddressOf(url);
-  return read === null ? null : refOf(read.platform, read.page, read.applicationUrl);
+  if (read !== null) return refOf(read.platform, read.page, read.applicationUrl);
+  const site = siteCanonicalUrl(url);
+  return site === null ? null : refOf('site', 'application', site);
 }

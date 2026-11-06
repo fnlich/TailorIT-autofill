@@ -437,7 +437,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
       {tabId === null ? (
         <p className="tia-strip" data-strip="no-tab" data-tone="neutral">{COPY.panel.noTab}</p>
       ) : page?.support === 'none' && reports.length === 0 ? (
-        <Unsupported reload={page.reload === true}
+        <Unsupported reload={page.reload !== true ? null : page.site === true ? 'site' : 'ats'}
           ask={() => request(platform, { v: 1, type: 'panel/siteRequest', tabId })} />
       ) : reports.length === 0 && job.view.state === 'hidden' ? (
         <PageStrip page={page} />
@@ -584,18 +584,23 @@ function AskForSite({ ask }: { ask(): Promise<Answer<{ outcome: SiteRequestOutco
 
 /** A page Autofill does not work on (v3 Phase 3): the sites it works on, and (v3 Phase 3b) asking TailorIT to support
  *  this one. */
-function Unsupported({ reload, ask }: { reload: boolean; ask(): Promise<Answer<{ outcome: SiteRequestOutcome }>> }) {
+function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
+  ask(): Promise<Answer<{ outcome: SiteRequestOutcome }>> }) {
   const headingId = useId();
   const words = COPY.panel.unsupported;
-  // A page on a supported site the extension did not see load: a reload is all it takes (v3 Phase 3 review).
-  if (reload) {
+  // A page on a supported site the extension did not see load: a reload is all it takes (v3 Phase 3 review). A
+  // company's own page while the career sites act (v3 Phase 8 review, B10): a reload lets the sentinel read it.
+  if (reload !== null) {
     return (
-      <section className="tia-unsupported" data-unsupported="reload" aria-labelledby={headingId}>
+      <section className="tia-unsupported" data-unsupported={reload === 'site' ? 'reload-site' : 'reload'}
+        aria-labelledby={headingId}>
         <div className="tia-unsupported__head">
           <Icon name="info" size={20} className="tia-icon tia-unsupported__icon" />
-          <h2 className="tia-unsupported__title" id={headingId}>{words.reloadHeading}</h2>
+          <h2 className="tia-unsupported__title" id={headingId}>
+            {reload === 'site' ? words.reloadSiteHeading : words.reloadHeading}
+          </h2>
         </div>
-        <p className="tia-unsupported__intro">{words.reloadIntro}</p>
+        <p className="tia-unsupported__intro">{reload === 'site' ? words.reloadSiteIntro : words.reloadIntro}</p>
       </section>
     );
   }
@@ -616,6 +621,7 @@ function Unsupported({ reload, ask }: { reload: boolean; ask(): Promise<Answer<{
         ))}
       </ul>
       <p className="tia-help">{words.embedded}</p>
+      <p className="tia-help">{words.companySites}</p>
       <AskForSite ask={ask} />
     </section>
   );

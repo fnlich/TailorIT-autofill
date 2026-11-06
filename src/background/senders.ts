@@ -3,6 +3,11 @@
  * message needs our own extension id, a tab, a frame, an ATS address and an active document; a page message must come
  * from one of our own extension pages; an external message must come from TailorIT's connect page, at TailorIT's exact
  * origin. Anything else is refused before its payload is parsed.
+ * v3 Phase 8 (docs/SPEC-AMENDMENTS.md §12 Decision 13) adds two, and nothing else: a frame off the ATS hosts the worker
+ * itself injected the content script into (its tab, frame and document as the injection recorded them: a company's own
+ * page), which may send what a frame on the ATS hosts sends, and nothing of the sentinel's (allowedOn); and the
+ * sentinel's top frame on an https page, for page/recognised alone, whose address the worker checks again before it
+ * injects anything.
  */
 import { MatchPattern } from 'wxt/utils/match-patterns';
 import { ATS_MATCHES } from '../shared/hosts';
@@ -17,8 +22,25 @@ export type Channel =
   | { kind: 'content'; tabId: number; frameId: number; documentId: string | undefined; url: string;
     addressFrom?: 'tab' | 'document';
     /** The tab is a private (incognito) one: nothing is looked up as its pages load (v3 Phase 3 review). */
-    incognito?: true }
+    incognito?: true;
+    /** v3 Phase 8: a frame off the ATS hosts: one the worker injected the content script into ('site', a company's
+     *  own page), or the sentinel's top frame before that ('sentinel'). Absent on the ATS hosts. */
+    reach?: Reach }
   | { kind: 'page' };
+
+/** v3 Phase 8: what a frame off the ATS hosts is to the worker. */
+export type Reach = 'site' | 'sentinel';
+/** v3 Phase 8: the frame kinds the worker injects the content script into. */
+export type InjectedKind = Exclude<Reach, 'sentinel'>;
+type ContentChannelOf = Extract<Channel, { kind: 'content' }>;
+
+/** v3 Phase 8: the sentinel's one message: its frame may send nothing else, and no other frame may send it. */
+const SENTINEL_MESSAGES: ReadonlySet<string> = new Set(['page/recognised']);
+
+/** Whether a content channel may send a message of `type` (v3 Phase 8). */
+export function allowedOn(channel: ContentChannelOf, type: string): boolean {
+  return channel.reach === 'sentinel' ? SENTINEL_MESSAGES.has(type) : !SENTINEL_MESSAGES.has(type);
+}
 
 function isAtsAddress(url: string): boolean {
   if (ATS_PATTERNS.some((pattern) => pattern.includes(url))) return true;
@@ -64,6 +86,37 @@ export function channelOf(sender: Sender, ownId: string, ownPagesPrefix: string)
   const { url, addressFrom } = addressOf({ ...sender, url: sender.url });
   return { kind: 'content', tabId: sender.tabId, frameId: sender.frameId, documentId: sender.documentId, url, addressFrom,
     ...(sender.incognito === true ? { incognito: true as const } : {}) };
+}
+
+/** v3 Phase 8: what the worker knows of a frame off the ATS hosts: whether it injected the content script into that
+ *  document, and as which kind (background/sites.ts). `now` answers from memory (undefined: not known there yet, as
+ *  after a restart), so a launcher's click keeps its gesture; `read` asks storage. */
+export interface InjectedOf {
+  now(tabId: number, frameId: number, documentId: string | undefined): InjectedKind | null | undefined;
+  read(tabId: number, frameId: number, documentId: string | undefined): Promise<InjectedKind | null>;
+}
+
+/** v3 Phase 8: a content sender off the ATS hosts, as a channel with no reach yet: an https frame of a tab, with our id
+ *  and an active document. Its address is the tab's now for the top frame when on the document's own origin (a
+ *  single-page application's pushState), else the document's. Null for anything else. */
+export function offAtsSenderOf(sender: Sender, ownId: string, ownPagesPrefix: string): ContentChannelOf | null {
+  if (sender.id !== ownId || !sender.url || sender.tabId === undefined || typeof sender.frameId !== 'number') return null;
+  if (sender.url.startsWith(ownPagesPrefix) || !/^https:\/\//i.test(sender.url) || isAtsAddress(sender.url)) return null;
+  if (sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return null;
+  const tabUrl = sender.tabUrl;
+  const sameOrigin = sender.frameId === 0 && tabUrl !== undefined && originOf(tabUrl) !== null
+    && originOf(tabUrl) === originOf(sender.url);
+  return { kind: 'content', tabId: sender.tabId, frameId: sender.frameId, documentId: sender.documentId,
+    url: sameOrigin ? tabUrl! : sender.url, addressFrom: sameOrigin ? 'tab' : 'document',
+    ...(sender.incognito === true ? { incognito: true as const } : {}) };
+}
+
+/** v3 Phase 8: such a sender's channel: the kind the worker injected, else the sentinel's top frame for page/recognised
+ *  alone, else none. */
+export function offAtsChannelOf(base: ContentChannelOf, injected: InjectedKind | null, type: string | null):
+  ContentChannelOf | null {
+  if (injected !== null) return { ...base, reach: injected };
+  return type === 'page/recognised' && base.frameId === 0 ? { ...base, reach: 'sentinel' } : null;
 }
 
 /** TailorIT's page that hands over a connect code (Settings › Autofill), at exactly TailorIT's origin. */

@@ -11,9 +11,15 @@
  * the generic adapter, which takes any page with a visible control, never takes one before its own adapter's form is
  * drawn; once the wait is over without it, every adapter may. The same watch waits for a posting page's own text
  * (Adapter.postingText: Ashby's overview, drawn as late), which is then read for the policy notice.
+ * v3 Phase 8 (the review's B5): a company's own page, where the worker injected the content script, is watched for its
+ * form for the document's life instead (watchForSiteForm), and cheaply: a batch of mutations counts only when it adds a
+ * form, a control or JSON-LD (dom/page-signals.ts addsFormParts, by tag and attribute alone), and each look waits for
+ * the browser's next frame (never in a hidden tab) and for its gap, SITE_LOOK_GAP_MS doubling up to
+ * SITE_LOOK_MAX_GAP_MS.
  */
 import type { Adapter } from '../adapters/types';
-import { startDeadline, type Cancel } from '../dom/time';
+import { addsFormParts } from '../dom/page-signals';
+import { monotonicNow, nextFrame, startDeadline, type Cancel } from '../dom/time';
 
 /** One look at the page this long after the first mutation of a burst: the page has drawn more of its form by then. */
 export const LATE_FORM_LOOK_MS = 100;
@@ -67,6 +73,50 @@ export function watchForLateForm(doc: Document, capMs: number, look: () => boole
     pending?.();
     pending = null;
     cap();
+    signal.removeEventListener('abort', stop);
+  }
+  signal.addEventListener('abort', stop, { once: true });
+  observer.observe(doc.documentElement ?? doc, { childList: true, subtree: true });
+  return stop;
+}
+
+/** The least time between two looks for a company page's form; it doubles with each look, up to the most. */
+export const SITE_LOOK_GAP_MS = 750;
+export const SITE_LOOK_MAX_GAP_MS = 12_000;
+
+/** Watches a company page for its form for the document's life (the module header): calls `look` when the page adds a
+ *  form's parts, at the browser's next frame once the gap is over; stops as soon as a look answers true or `signal`
+ *  aborts. Answers how to stop it sooner. */
+export function watchForSiteForm(doc: Document, look: () => boolean, signal: AbortSignal): Cancel {
+  const view = doc.defaultView;
+  if (view === null || signal.aborted) return () => undefined;
+  let looks = 0;
+  let last = 0;
+  let pending: Cancel | null = null;
+  let done = false;
+  const observer = new view.MutationObserver((records) => {
+    if (done || pending !== null || !addsFormParts(records)) return;
+    const gap = looks === 0 ? 0 : Math.min(SITE_LOOK_GAP_MS * 2 ** (looks - 1), SITE_LOOK_MAX_GAP_MS);
+    let frame: Cancel | null = null;
+    const timer = startDeadline(Math.max(0, last + gap - monotonicNow()), () => {
+      frame = nextFrame(view, () => {
+        pending = null;
+        looks += 1;
+        last = monotonicNow();
+        if (!done && look()) stop();
+      }, signal);
+    }, signal);
+    pending = () => {
+      timer();
+      frame?.();
+    };
+  });
+  function stop(): void {
+    if (done) return;
+    done = true;
+    observer.disconnect();
+    pending?.();
+    pending = null;
     signal.removeEventListener('abort', stop);
   }
   signal.addEventListener('abort', stop, { once: true });

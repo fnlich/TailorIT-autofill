@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'wxt';
-import { ATS_MATCHES } from './src/shared/hosts';
+import { ATS_MATCHES, CONTENT_SCRIPT_FILE, OPTIONAL_HOST_PERMISSIONS } from './src/shared/hosts';
 import { CAPTURE_PAGE, captureCommands } from './src/background/capture';
 import { CAPTURE_COPY } from './src/shared/copy';
 
@@ -16,7 +16,7 @@ const E2E = process.env.TAILORIT_BUILD === 'e2e';
 const FIXTURE_FALLBACK = E2E && process.env.TAILORIT_FIXTURE_ORIGIN === '1';
 const TAILORIT_ORIGIN = E2E ? 'http://localhost:3190' : 'http://localhost:3100';
 /** Our content script's bundle: src/entrypoints/content-script.ts, an unlisted script WXT writes at the build's root. */
-const CONTENT_SCRIPT = 'content-script.js';
+const CONTENT_SCRIPT = CONTENT_SCRIPT_FILE;
 /** The public half of a key pair made once (the private half was never kept), so every local build has one id. */
 const MANIFEST_KEY = readFileSync(resolve('keys/manifest-key.txt'), 'utf8').trim();
 
@@ -40,8 +40,15 @@ export default defineConfig({
     // grant across the tab's same-origin moves and takes it back on another origin or when the tab closes.
     // alarms (v3 Phase 5, docs/PRIVACY.md): wakes the worker every 30 seconds while Run auto-apply is on, so the agent
     // looks at its running job and the queue after the browser stopped an idle worker. No install warning.
-    permissions: ['storage', 'sidePanel', 'activeTab', 'alarms', ...(mode === 'development' ? ['pageCapture'] : [])],
+    // scripting (v3 Phase 8, docs/PRIVACY.md): the sentinel's registration for the company career sites
+    // (chrome.scripting.registerContentScripts), and the content script injected into a frame the sentinel recognised
+    // (executeScript, that document alone). No install warning: it reaches only the hosts the extension holds.
+    permissions: ['storage', 'sidePanel', 'activeTab', 'alarms', 'scripting',
+      ...(mode === 'development' ? ['pageCapture'] : [])],
     host_permissions: [...ATS_MATCHES, `${TAILORIT_ORIGIN}/*`],
+    // v3 Phase 8: asked for only on the person's click in Options (every https page, for the company career sites), and
+    // given back when they turn it off. Never <all_urls>, never a required host.
+    optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
     externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
     // TailorIT's mark (apps/web/public/logo-mark.svg), rendered by scripts/icons.mjs; check-build checks each size.
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },

@@ -26,6 +26,7 @@ import { ANSWER_BASES, FILE_REFS, RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from
   '../core/types/run';
+import { RECOGNITION_REASONS } from '../shared/recognition';
 import { FrameReportSchema } from '../shared/report';
 import { ContentSettingsSchema, SettingsSchema } from '../shared/settings';
 import { MESSAGE_VERSION } from './envelope';
@@ -389,6 +390,10 @@ const contentMessages = [
    *  the document away ends it before agent/enter is answered. The worker takes it from the agent's tab's top frame,
    *  for a document it asked to enter, as the job begun. Nothing else. */
   z.strictObject({ v, type: z.literal('agent/entered') }),
+  /** v3 Phase 8: the sentinel recognised its top frame (src/sentinel): why, from a closed list. The worker checks the
+   *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
+   *  into that one document. The only message a company's own page sends before then. */
+  z.strictObject({ v, type: z.literal('page/recognised'), reason: z.enum(RECOGNITION_REASONS) }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -504,6 +509,12 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('panel/retryApplied'), tabId: TabId }),
   /** v3 Phase 5: the auto-apply agent, as the options page and the side panel show it (value-free). */
   z.strictObject({ v, type: z.literal('agent/status') }),
+  /** v3 Phase 8: Options › "Where Autofill works" › Company career sites: on only while the person turned it on and
+   *  Chrome holds its permission. */
+  z.strictObject({ v, type: z.literal('sites/get') }),
+  /** v3 Phase 8: turns it on (the page asked Chrome for its permission on the person's click first) or off (the worker
+   *  gives the permission back); the worker registers the sentinel while it is on. */
+  z.strictObject({ v, type: z.literal('sites/set'), on: z.boolean() }),
   /** Options › "Run auto-apply": on or off. Turning it on needs the person's one-time confirmation (`confirmed`, once:
    *  the worker keeps it), a connection with agent:run and the disclosure acknowledged. */
   z.strictObject({ v, type: z.literal('agent/set'), on: z.boolean(), confirmed: z.literal(true).optional() }),
@@ -532,6 +543,9 @@ export const PageStateSchema = z.strictObject({
   /** v3 Phase 3 review: no frame of ours is there, but the tab shows a page on an applicant-tracking host (one opened
    *  before the extension was installed or updated): reloading it brings Autofill. */
   reload: z.literal(true).optional(),
+  /** v3 Phase 8 (the review's B10): the reload is a company's own page's, while the company career sites act: the
+   *  sentinel reads a page once it is loaded again. */
+  site: z.literal(true).optional(),
   /** v3 Phase 3b: no form, but the tab's top frame shows a posting a platform's parser reads: the job card shows. */
   posting: z.literal(true).optional(),
   /** The v3 Phase 4 review: no form, but the tab's top frame shows the platform's page after submitting: the card POST
@@ -623,6 +637,10 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   /** v3 Phase 4: the side panel's "Continue to the next page" or "Submit application", the person's click there, for
    *  this frame's run: it presses the adapter's own Next or Submit, and nothing else, if the step still offers it. */
   z.strictObject({ v, type: z.literal('run/press'), target: z.enum(STEP_TARGETS), confirmed: z.boolean() }),
+  /** v3 Phase 8 (the review's P1/B8): the company career sites were turned off, or Chrome's permission taken back: the
+   *  worker's alone, to every tab's top frame. A page the worker injected ends its run and removes its UI; the sentinel
+   *  stops (platform/sentinel.ts reads it without this schema); a page on an ATS host ignores it. */
+  z.strictObject({ v, type: z.literal('site/stop') }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -830,6 +848,13 @@ export const ADD_JOB_OUTCOMES = ['added', 'saved', 'closed', 'unsupported', 'not
 export type AddJobOutcome = (typeof ADD_JOB_OUTCOMES)[number];
 export const AddJobAnswerSchema = z.strictObject({ outcome: z.enum(ADD_JOB_OUTCOMES) });
 
+/** v3 Phase 8: page/recognised's answer: the content script was injected into the frame (or was there already). */
+export const PageRecognisedAnswerSchema = z.strictObject({ injected: z.boolean() });
+/** v3 Phase 8: Options › "Where Autofill works" › Company career sites: turned on by the person, and Chrome holding its
+ *  permission (it acts only with both). */
+export const SitesStateSchema = z.strictObject({ on: z.boolean(), granted: z.boolean() });
+export type SitesState = z.infer<typeof SitesStateSchema>;
+
 /** panel/resumes: the account's resumes as the picker lists them (title, file kind, built or uploaded), the one the
  *  tab's card attaches marked `current`. Never a file name. */
 export const ResumeListAnswerSchema = z.strictObject({
@@ -1030,6 +1055,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'submit/detected': DoneAnswerSchema,
   'signin/credential': SignInCredentialAnswerSchema,
   'agent/entered': DoneAnswerSchema,
+  'page/recognised': PageRecognisedAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. */
@@ -1074,6 +1100,8 @@ export const PAGE_ANSWER_SCHEMAS = {
   'agent/status': AgentStatusSchema,
   'agent/set': AgentStatusSchema,
   'agent/stop': AgentStatusSchema,
+  'sites/get': SitesStateSchema,
+  'sites/set': SitesStateSchema,
 } as const satisfies Record<PageMessage['type'], z.ZodType>;
 
 /** The data schema of a frame's answer to each message the worker sends it. */
@@ -1096,6 +1124,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   'panel/side': DoneAnswerSchema,
   'run/press': PressAnswerSchema,
   'agent/enter': EntryAnswerSchema,
+  'site/stop': DoneAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 /** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */

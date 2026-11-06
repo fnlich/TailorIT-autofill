@@ -54,6 +54,7 @@
  * Memory only: nothing here is stored, and no log line names the job, the address, the resume or the person.
  */
 import { applicationOf } from '../adapters';
+import { addressForTailorIT, matchesSiteUrl } from '../adapters/site';
 import {
   addablePosting, AUTOFILL_LOOKUP_URL_MAX, cutAtWord, parseAtsUrl, type AutofillLookupResponse,
 } from '../contract/tailorit';
@@ -85,19 +86,29 @@ export const LOOKUP_ON_LOAD_LIMIT = { count: 4, windowMs: 60_000 } as const;
  *  API 5) is looked up by its canonical address, which TailorIT finds no job for: the card says the posting is not in
  *  TailorIT. */
 export function recognisedPosting(url: string): boolean {
-  if (parseAtsUrl(url) !== null) return true;
+  let ref: ReturnType<typeof applicationOf>;
   try {
-    const ref = applicationOf(new URL(url));
-    return ref !== null && !new URL(url).pathname.includes('/tailorit-fixture/');
+    ref = applicationOf(new URL(url));
   } catch {
     return false;
   }
+  // A company's own page (v3 Phase 8; the review's P3) is looked up when the person opens its side panel or starts
+  // Autofill, never as it loads, whatever its address carries (a ?gh_jid= TailorIT's parser reads included).
+  if (ref?.platform === 'site') return false;
+  if (parseAtsUrl(url) !== null) return true;
+  return ref !== null && !new URL(url).pathname.includes('/tailorit-fixture/');
 }
 
 /** The address a lookup as a page loads sends: the posting's canonical one (no query string where the posting needs
  *  none: a Lever posting, a Greenhouse board's; a company page's ?gh_jid= stays), else the application's canonical
  *  address, else the page's own. */
 export function lookupAddressOf(url: string): string {
+  // A company's own page: its origin and path, and a gh_jid or ashby_jid (the review's P3).
+  try {
+    if (matchesSiteUrl(new URL(url))) return addressForTailorIT(url);
+  } catch {
+    return url;
+  }
   const parsed = parseAtsUrl(url);
   if (parsed !== null && parsed.canonical.length > 0) return parsed.canonical[0]!;
   try {

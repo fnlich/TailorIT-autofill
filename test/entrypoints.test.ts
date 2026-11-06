@@ -16,6 +16,8 @@ function scripts(dir: string): string[] {
 
 /** The page-world bridge's entry (docs/SPEC-AMENDMENTS.md §12): it runs in the page's own world and holds no zod. */
 const PAGE_BRIDGE = join(ENTRYPOINTS, 'page-bridge.content.ts');
+/** v3 Phase 8: the sentinel's entry, on every https page the person turned on: it parses nothing, so it holds no zod. */
+const SENTINEL = join(ENTRYPOINTS, 'sentinel.ts');
 
 /** A file's import sources, in order (an import's source ends its statement's last line, in either quotes), then
  *  one 'import()' or 'require()' for each dynamic import or require it holds. */
@@ -29,7 +31,7 @@ const importsOf = (file: string) => {
 
 describe('entrypoints', () => {
   it("import zod's setup before anything else, because MV3's CSP refuses zod's JIT", () => {
-    const files = scripts(ENTRYPOINTS).filter((file) => file !== PAGE_BRIDGE);
+    const files = scripts(ENTRYPOINTS).filter((file) => file !== PAGE_BRIDGE && file !== SENTINEL);
     expect(files.length).toBeGreaterThanOrEqual(4);
     for (const file of files) {
       const first = readFileSync(file, 'utf8').split('\n').find((line) => line.startsWith('import '));
@@ -47,6 +49,21 @@ describe('entrypoints', () => {
     expect(importsOf(join(ENTRYPOINTS, '..', 'shared', 'hosts.ts'))).toEqual(['../core/enums']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'bridge.ts'))).toEqual(['../dom/bridge-protocol']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'bridge-protocol.ts'))).toEqual([]);
+  });
+
+  it('keep the sentinel to its platform and its reading: no zod, no React, no form runtime (v3 Phase 8)', () => {
+    expect(importsOf(SENTINEL)).toEqual(['wxt/utils/define-unlisted-script', '../platform/sentinel', '../sentinel']);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'platform', 'sentinel.ts'))).toEqual(['wxt/browser', '../sentinel']);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'sentinel', 'index.ts'))).toEqual(['../dom/page-signals', '../dom/time',
+      './recognise']);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'sentinel', 'recognise.ts'))).toEqual(['../dom/form-score', '../dom/page-signals',
+      '../shared/hosts', '../shared/recognition']);
+    // The score shared with the site adapter reads the page signals, which read the host list alone.
+    expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'form-score.ts'))).toEqual(['./page-signals']);
+    expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'page-signals.ts'))).toEqual(['../shared/hosts']);
+    for (const leaf of ['dom/time.ts', 'shared/recognition.ts']) {
+      expect(importsOf(join(ENTRYPOINTS, '..', ...leaf.split('/'))), leaf).toEqual([]);
+    }
   });
 
   it('read an import in either quotes, and every dynamic import or require', () => {

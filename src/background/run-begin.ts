@@ -56,10 +56,11 @@ export interface RunBeginDeps {
   generation?(): number;
 }
 
-/** Whether an application key fits the frame: `${platform}:${hex16}`, its platform the frame host's (when known). */
+/** Whether an application key fits the frame: `${platform}:${hex16}`, its platform the frame host's (when known). A
+ *  company's own https page (v3 Phase 8: the frames the worker injected off the ATS hosts) takes the site's keys alone. */
 export function keyFitsFrame(applicationKey: string, frameUrl: string): boolean {
   if (!ApplicationKeySchema.safeParse(applicationKey).success) return false;
-  const platform = platformOfUrl(frameUrl);
+  const platform = platformOfUrl(frameUrl) ?? (/^https:\/\//i.test(frameUrl) ? 'site' : null);
   return platform === null || applicationKey.startsWith(`${platform}:`);
 }
 

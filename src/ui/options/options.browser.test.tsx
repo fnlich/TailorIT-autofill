@@ -388,3 +388,60 @@ describe('Options › Auto-apply and Sign-in (v3 Phase 5)', () => {
     expect(saves(allowed).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } });
   });
 });
+
+describe('the options page: Where Autofill works (v3 Phase 8)', () => {
+  afterEach(() => unmountAll());
+
+  it("asks Chrome for every https page on the person's click, then turns the company career sites on", async () => {
+    const worker = createFakeWorker();
+    let state = { on: false, granted: false };
+    worker.on('sites/get', () => ({ ok: true, data: state }));
+    worker.on('sites/set', (message) => {
+      state = { on: message.on as boolean, granted: message.on as boolean };
+      return { ok: true, data: state };
+    });
+    const root = await open(worker);
+    const toggle = setting(root, 'sites.on');
+    expect(toggle.checked).toBe(false);
+    await click(toggle);
+    await settle();
+    expect(worker.platform.hostRequests).toEqual([['https://*/*']]);
+    expect(worker.sentOfType('sites/set')).toEqual([{ v: 1, type: 'sites/set', on: true }]);
+    expect(setting(root, 'sites.on').checked).toBe(true);
+    // Off: nothing is asked of Chrome; the worker gives the permission back.
+    await click(setting(root, 'sites.on'));
+    await settle();
+    expect(worker.platform.hostRequests).toHaveLength(1);
+    expect(worker.sentOfType('sites/set').at(-1)).toEqual({ v: 1, type: 'sites/set', on: false });
+    expect(setting(root, 'sites.on').checked).toBe(false);
+  });
+
+  it("stays off when Chrome does not give the permission, and says when Chrome's was taken back", async () => {
+    const worker = createFakeWorker();
+    worker.on('sites/get', () => ({ ok: true, data: { on: true, granted: false } }));
+    worker.platform.requestHosts = async (origins) => {
+      worker.platform.hostRequests.push([...origins]);
+      return false;
+    };
+    const root = await open(worker);
+    expect(setting(root, 'sites.on').checked).toBe(false);
+    expect(root.textContent).toContain(TEXT.sites.needsPermission);
+    await click(setting(root, 'sites.on'));
+    await settle();
+    expect(worker.sentOfType('sites/set')).toEqual([]);
+    expect(root.textContent).toContain(TEXT.sites.refused);
+  });
+
+  it('gives back what Chrome just granted when the choice could not be saved (the Phase 8 review, P8)', async () => {
+    const worker = createFakeWorker();
+    worker.on('sites/get', () => ({ ok: true, data: { on: false, granted: false } }));
+    worker.on('sites/set', () => ({ ok: false, error: 'internal' }));
+    const root = await open(worker);
+    await click(setting(root, 'sites.on'));
+    await settle();
+    expect(worker.platform.hostRequests).toEqual([['https://*/*']]);
+    expect(worker.platform.hostRemovals).toEqual([['https://*/*']]);
+    expect(setting(root, 'sites.on').checked).toBe(false);
+    expect(root.textContent).toContain(TEXT.sites.failed);
+  });
+});

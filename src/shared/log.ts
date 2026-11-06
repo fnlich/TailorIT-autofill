@@ -227,6 +227,17 @@ export const LOG_CODES = [
   'content.sign-in',
   'content.sign-in-refused',
   'content.sign-in-prelude',
+  // v3 Phase 8: the company career sites (background/sites.ts): flags only, never an address or a host.
+  'sites.reconciled',
+  'sites.reconcile-failed',
+  'sites.recognised',
+  'sites.refused',
+  'sites.injected',
+  'sites.inject-failed',
+  // The Phase 8 review (P1/B8, P8): the career sites stopped (turned off, or Chrome's permission taken back), and a
+  // page the worker injected ending its run on the worker's word.
+  'sites.stopped',
+  'content.site-stopped',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

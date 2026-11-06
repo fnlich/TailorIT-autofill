@@ -11,7 +11,8 @@
  *   TailorIT down, or no sign-in saved for the host, is 'unavailable' and may be asked again;
  * - TailorIT answers one (GET /api/autofill/credentials?host=: the host's own, else, on a host signInHostCovered
  *   covers, the one for every site), and it is for this host: its own host equal to the frame's, or `*` on a covered
- *   host, checked again here.
+ *   host, checked again here; a company's own page the worker injected (v3 Phase 8, reach 'site') takes its exact
+ *   host's alone, never `*` (the Phase 8 review, P6).
  * The answer to that frame's message is the one place the password goes: it is held in this function's memory only
  * until the answer is sent, never stored, logged, cached, put in a report or sent anywhere else, and the frame types it
  * into the page's password field only (src/content/sign-in.ts). At an email gate (v3 Phase 7b: wall 'email-gate', the
@@ -91,7 +92,9 @@ export function createSignIn(deps: SignInDeps) {
           : refuse('unavailable');
       }
       const { host: own, email, password } = answer.value;
-      if (own !== host && !(own === AUTOFILL_ANY_HOST && signInHostCovered(host))) {
+      // A company's own page (v3 Phase 8, the review's P6) takes a sign-in saved for its exact host alone: never the
+      // every-site one, whose hosts are the job sites' (signInHostCovered), not a company's or an employer's.
+      if (own !== host && !(own === AUTOFILL_ANY_HOST && from.reach !== 'site' && signInHostCovered(host))) {
         log('signin.refused', { host: false });
         return refuse('unavailable');
       }

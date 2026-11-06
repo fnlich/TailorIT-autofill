@@ -180,6 +180,22 @@ export default tseslint.config(
     },
   },
   {
+    // v3 Phase 8: the sentinel runs on every https page the person turned on (docs/SPEC-AMENDMENTS.md §12 Decision 13):
+    // it reads the page it is given and writes nothing, and holds no React, no zod and no browser API (its one message
+    // goes through src/platform/sentinel.ts); scripts/check-build.mjs holds its bundle to its budget.
+    files: ['src/sentinel/**/*.ts'],
+    ignores: ['src/sentinel/**/*.test.ts'],
+    rules: {
+      'no-restricted-globals': ['error', ...TIMERS, ...['chrome', 'browser', 'window', 'document', 'postMessage', 'fetch',
+        'XMLHttpRequest', 'localStorage', 'sessionStorage', 'indexedDB'].map((name) => ({
+        name, message: 'The sentinel works from the document it is given, and reaches no extension or network API.' }))],
+      '@typescript-eslint/no-restricted-imports': restrictImports([
+        { regex: String.raw`^(?!(?:\.\./dom/(?:form-score|page-signals|time)|\.\./shared/(?:hosts|recognition)|\./recognise)$)`,
+          message: 'The sentinel imports only the form score, the page signals, the timers, the host list and the reasons.' },
+      ]),
+    },
+  },
+  {
     files: ['src/background/**/*.ts'],
     ignores: ['src/background/**/*.test.ts'],
     rules: {

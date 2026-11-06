@@ -5,18 +5,21 @@
  */
 
 /** The applicant-tracking systems with an adapter (Workable since v3 Phase 7a; iCIMS, Taleo, SuccessFactors and Oracle
- *  Recruiting Cloud since v3 Phase 7b, their sign-in and posting pages). SmartRecruiters comes later. */
+ *  Recruiting Cloud since v3 Phase 7b, their sign-in and posting pages). SmartRecruiters comes later. And (v3 Phase 8)
+ *  `site`: a company's own careers page the sentinel recognised, whose application form the site adapter claims by
+ *  the application-form score (src/adapters/site). */
 export const PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable', 'icims', 'taleo', 'successfactors',
-  'oracle'] as const;
+  'oracle', 'site'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
-/** The platforms the extension works on that TailorIT's contract does not list yet (its ATS_KINDS): none since
- *  TailorIT's API 5 (v3 Phase 8), which lists iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud (v3 Phase 7b)
- *  with their addresses in parseAtsUrl. A platform here is named to TailorIT nowhere: its AI classification is not
- *  asked for (the fields go on to the AI answer, which names no platform) and no saved answer keeps it.
- *  test/contract.test.ts holds ATS_KINDS to PLATFORMS without these, and fails once the contract lists one, so a
- *  platform the extension adds ahead of TailorIT goes here until it does. */
-export const PLATFORMS_AHEAD_OF_CONTRACT: readonly Platform[] = [];
+/** The platforms the extension works on that TailorIT's contract does not list (its ATS_KINDS): none of the ATSs since
+ *  TailorIT's API 5, which lists iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud (v3 Phase 7b) with their
+ *  addresses in parseAtsUrl; and `site` (v3 Phase 8), a company's own page, which is no ATS and which the contract
+ *  never lists. A platform here is named to TailorIT nowhere: its AI classification is not asked for (the fields go on
+ *  to the AI answer, which names no platform) and no saved answer keeps it. test/contract.test.ts holds ATS_KINDS to
+ *  PLATFORMS without these, and fails once the contract lists one, so a platform the extension adds ahead of TailorIT
+ *  goes here until it does. */
+export const PLATFORMS_AHEAD_OF_CONTRACT: readonly Platform[] = ['site'];
 
 /** The spec's field kinds plus one 'checkbox' (a lone box: consent, "I currently work here"). Equals TailorIT's list. */
 export const FIELD_KINDS = ['text', 'textarea', 'select', 'radio', 'checkbox', 'checkbox-group', 'combobox',

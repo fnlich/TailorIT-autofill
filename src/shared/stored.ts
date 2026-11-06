@@ -30,8 +30,11 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  (Workable's application pages read and filled, what Ashby and Workable keep before Submit, and the accepted list
  *  options kept sealed: its review); 5, v3 Phases 6 and 7b (Workday's, iCIMS's, Taleo's, SuccessFactors' and Oracle's
  *  pages read, the postings on platforms TailorIT reads told to it as they load, and Sign-in Auto at an email-first
- *  step: the email typed there alone). Raise it whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 5;
+ *  step: the email typed there alone); 6, v3 Phase 8 (Company career sites: every https page read, LinkedIn and the
+ *  employee HR systems never, to recognise an application form on an employer's own site, filled as on the other sites,
+ *  its origin and path (and the posting's id) told to TailorIT when its side panel opens or Autofill starts). Raise it
+ *  whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 6;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

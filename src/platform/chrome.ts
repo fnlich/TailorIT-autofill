@@ -5,7 +5,7 @@
  */
 import { browser } from 'wxt/browser';
 import { postingAddressOf } from '../adapters/address';
-import { platformOfUrl } from '../shared/hosts';
+import { isCompanySiteUrl, platformOfUrl, type SiteRegistration } from '../shared/hosts';
 import type {
   AgentAlarms,
   AgentWindows,
@@ -14,11 +14,13 @@ import type {
   ContentPlatform,
   FrameSendFailure,
   Handler,
+  HostPermissions,
   PagePlatform,
   PortLike,
   SecretStore,
   Sender,
   SendFailure,
+  SitesScripting,
   StorageArea,
   WorkerPlatform,
 } from './types';
@@ -259,6 +261,56 @@ function agentAlarms(): AgentAlarms {
   };
 }
 
+/** A registration as Chrome answers it, in registrationsFor's shape (the fields the extension sets, nothing else). */
+function registrationOf(raw: { id: string; js?: string[]; matches?: string[]; excludeMatches?: string[]; allFrames?: boolean;
+  runAt?: string; persistAcrossSessions?: boolean; world?: string }): SiteRegistration {
+  return { id: raw.id, js: [...(raw.js ?? [])], matches: [...(raw.matches ?? [])],
+    ...(raw.excludeMatches === undefined || raw.excludeMatches.length === 0 ? {} : { excludeMatches: [...raw.excludeMatches] }),
+    // What Chrome answers is compared with what the extension wants: anything else reads as a difference.
+    allFrames: raw.allFrames as false, runAt: raw.runAt as 'document_idle',
+    persistAcrossSessions: raw.persistAcrossSessions as true, world: (raw.world ?? 'ISOLATED') as 'ISOLATED' };
+}
+
+/** v3 Phase 8: the sentinel's registrations and the content script's one injection (chrome.scripting). */
+function sitesScripting(): SitesScripting {
+  type Scripting = {
+    getRegisteredContentScripts(filter: { ids: string[] }): Promise<Array<Parameters<typeof registrationOf>[0]>>;
+    registerContentScripts(scripts: unknown[]): Promise<void>;
+    unregisterContentScripts(filter: { ids: string[] }): Promise<void>;
+    executeScript(injection: { target: { tabId: number; frameIds?: number[]; documentIds?: string[] }; files: string[];
+      injectImmediately?: boolean }): Promise<unknown>;
+  };
+  const scripting = () => (browser as unknown as { scripting: Scripting }).scripting;
+  return {
+    async registered(ids) {
+      return (await scripting().getRegisteredContentScripts({ ids: [...ids] })).map(registrationOf);
+    },
+    async register(scripts) {
+      await scripting().registerContentScripts(scripts.map((script) => ({ ...script, js: [...script.js],
+        matches: [...script.matches], ...(script.excludeMatches === undefined ? {} : { excludeMatches: [...script.excludeMatches] }) })));
+    },
+    async unregister(ids) {
+      if (ids.length > 0) await scripting().unregisterContentScripts({ ids: [...ids] });
+    },
+    async inject(tabId, target, file) {
+      await scripting().executeScript({ target: target.documentId === undefined ? { tabId, frameIds: [target.frameId] }
+        : { tabId, documentIds: [target.documentId] }, files: [file] });
+    },
+  };
+}
+
+/** v3 Phase 8: the optional host permissions, read, given back and heard of. */
+function hostPermissions(): HostPermissions {
+  return {
+    contains: (origins) => browser.permissions.contains({ origins: [...origins] }),
+    remove: (origins) => browser.permissions.remove({ origins: [...origins] }),
+    onChanged(cb) {
+      browser.permissions.onAdded.addListener(() => cb());
+      browser.permissions.onRemoved.addListener(() => cb());
+    },
+  };
+}
+
 export function createWorkerPlatform(): WorkerPlatform {
   return {
     runtime: {
@@ -316,6 +368,21 @@ export function createWorkerPlatform(): WorkerPlatform {
           return null;
         }
       },
+      async ids() {
+        try {
+          return (await browser.tabs.query({})).map((tab) => tab.id).filter((id): id is number => typeof id === 'number');
+        } catch {
+          return [];
+        }
+      },
+      async companySite(tabId) {
+        try {
+          const url = (await browser.tabs.get(tabId)).url;
+          return url !== undefined && isCompanySiteUrl(url);
+        } catch {
+          return false;
+        }
+      },
     },
     storage: { local: area(browser.storage.local), session: area(browser.storage.session) },
     sidePanel: {
@@ -324,6 +391,8 @@ export function createWorkerPlatform(): WorkerPlatform {
     },
     windows: agentWindows(),
     alarms: agentAlarms(),
+    scripting: sitesScripting(),
+    permissions: hostPermissions(),
     secrets: indexedDbSecrets(),
     // The global is read at call time, so a test can stub it.
     fetch: (url, init) => fetch(url, init),
@@ -392,6 +461,9 @@ export function createPagePlatform(): PagePlatform {
       browser.tabs.onUpdated.addListener(listener);
       return () => browser.tabs.onUpdated.removeListener(listener);
     },
+    // Called inside the person's click: nothing is awaited before Chrome is asked.
+    requestHosts: (origins) => browser.permissions.request({ origins: [...origins] }),
+    removeHosts: (origins) => browser.permissions.remove({ origins: [...origins] }),
   };
 }
 

@@ -1,9 +1,9 @@
 /*
  * The content side's only timers (docs/ARCHITECTURE.md "Isolation", "settle()"). Every wait in the content script ends
  * on a DOM condition or one of these caps, never on a fixed sleep: a timer here only ever bounds a wait, polls the
- * address, or spaces the polls for the LLM's answers (content/loop.ts, AI_POLL_MS), and it is cleared by whoever
- * started it or by the run's own AbortSignal. WXT's context timers are never used, because a page can reach that
- * context. Lint allows setTimeout and setInterval in this file alone.
+ * address, spaces the polls for the LLM's answers (content/loop.ts, AI_POLL_MS) or waits for the browser's next frame
+ * (nextFrame), and it is cleared by whoever started it or by the run's own AbortSignal. WXT's context timers are never
+ * used, because a page can reach that context. Lint allows setTimeout and setInterval in this file alone.
  */
 
 /** Cancels a timer started here; calling it twice is harmless. */
@@ -51,6 +51,25 @@ export function every(ms: number, tick: () => void, signal?: AbortSignal): Cance
   let id: ReturnType<typeof setInterval> | undefined = setInterval(tick, Math.max(1, ms));
   function cancel(): void {
     if (id !== undefined) clearInterval(id);
+    id = undefined;
+    signal?.removeEventListener('abort', cancel);
+  }
+  signal?.addEventListener('abort', cancel, { once: true });
+  return cancel;
+}
+
+/** Calls `run` once at the next frame the browser draws for `view` (requestAnimationFrame), unless cancelled first or
+ *  `signal` aborts. A hidden tab draws no frame, so nothing waiting here runs there until the person shows the tab
+ *  again: the v3 Phase 8 sentinel's and the site adapter's readings of a page (the Phase 8 review, P2). */
+export function nextFrame(view: Window, run: () => void, signal?: AbortSignal): Cancel {
+  if (signal?.aborted || typeof view.requestAnimationFrame !== 'function') return () => undefined;
+  let id: number | undefined = view.requestAnimationFrame(() => {
+    id = undefined;
+    signal?.removeEventListener('abort', cancel);
+    run();
+  });
+  function cancel(): void {
+    if (id !== undefined) view.cancelAnimationFrame(id);
     id = undefined;
     signal?.removeEventListener('abort', cancel);
   }

@@ -14,7 +14,7 @@ import type { RunState } from '../core/types/run';
 import { ok, refuse } from '../messaging/envelope';
 import { ExternalMessageSchema } from '../messaging/schemas';
 import { createWorkerPlatform } from '../platform/chrome';
-import type { WorkerPlatform } from '../platform/types';
+import type { PortLike, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { AGENT_ALARM, createAgent, type Agent } from './agent';
 import { createAuth, createTokenKeeper } from './auth';
@@ -47,10 +47,11 @@ import { createRouter, type ContentChannel } from './router';
 import { beginRun, keyFitsFrame, RUN_BEGIN_LIMIT } from './run-begin';
 import { createRunRegistry, type RunRegistry } from './runs';
 import { createRunStateStore } from './runstate-store';
-import { channelOf, isConnectPage } from './senders';
+import { channelOf, isConnectPage, offAtsChannelOf, offAtsSenderOf } from './senders';
 import { createServerClient } from './server-client';
 import { contentSettingsOf, createSettingsStore, pushSettings } from './settings';
 import { createSignIn } from './sign-in';
+import { createSites, RECOGNISED_LIMIT } from './sites';
 import { createTelemetry } from './telemetry';
 import { systemTimers, type Timers } from './timers';
 import { bundledVocab } from './vocab';
@@ -88,6 +89,31 @@ const AGENT_E2E_SETTLE_MS = 750;
 
 /** Content messages that skip the access-level wait. */
 const UNGATED: ReadonlySet<string> = new Set(['ping', 'panel/open']);
+
+/** v3 Phase 8: a port whose sender is checked asynchronously (a frame the worker injected, after a restart): what it
+ *  receives meanwhile is held, and handed in order to the first listener that takes it. */
+function heldPort(port: PortLike): PortLike {
+  const held: unknown[] = [];
+  let listeners: Array<(message: unknown) => void> | null = null;
+  port.onMessage((message) => {
+    if (listeners === null) held.push(message);
+    else for (const cb of [...listeners]) cb(message);
+  });
+  return {
+    name: port.name,
+    ...(port.sender === undefined ? {} : { sender: port.sender }),
+    post: (message) => port.post(message),
+    onMessage(cb) {
+      const first = listeners === null;
+      listeners ??= [];
+      listeners.push(cb);
+      if (first) for (const message of held.splice(0)) cb(message);
+      return () => void listeners?.splice(listeners.indexOf(cb), 1);
+    },
+    onDisconnect: (cb) => port.onDisconnect(cb),
+    disconnect: () => port.disconnect(),
+  };
+}
 
 export function startWorker(options: WorkerOptions = {}): WorkerState {
   const platform = options.platform ?? createWorkerPlatform();
@@ -151,7 +177,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // A panel that reads or starts to follow a tab checks its frames first (checkTab, below).
   const reports = createReports({ session, tabs: platform.tabs, runs, settings, limit: reportLimit, shownLimit, telemetry,
     check: (tabId) => checkTab(tabId), sideShown: (tabId, open) => void tellTopFrame(tabId, { v: 1, type: 'panel/side', open }),
-    submitted: async (tabId) => submissions?.stateOf(tabId) });
+    submitted: async (tabId) => submissions?.stateOf(tabId),
+    // v3 Phase 8 (the review's B10): the career sites act, so a company page no frame of ours is on waits for a reload.
+    sitesActive: () => sites.active() });
   // The launcher's place and hiding per site (v3 Phase 3): storage.local, a hash of the host only.
   const launchers = createLauncherStore(local);
   const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
@@ -265,6 +293,23 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     // The e2e build: its test browser routes the agent's new window before the job's address opens in it.
     windowSettleMs: __E2E__ ? AGENT_E2E_SETTLE_MS : 0 });
   agentRef = agent;
+  /** The e2e build only: a test event in storage.session (e2e:events), never an address; one write at a time, so two
+   *  frames' events at once both land. */
+  const e2eWrites = createKeyedQueue();
+  const noteE2e = (event: Record<string, unknown>) => (!__E2E__ ? Promise.resolve() : e2eWrites.run('e2e:events', async () => {
+    const events = ((await session.get('e2e:events')) as unknown[] | undefined) ?? [];
+    await session.set({ 'e2e:events': [...events, event] });
+  }));
+  /** v3 Phase 8: the company career sites: the sentinel's registration and the injection. */
+  const sites = createSites({ local, session, scripting: platform.scripting, permissions: platform.permissions,
+    limit: createRateLimit(RECOGNISED_LIMIT.count, RECOGNISED_LIMIT.windowMs, now), now,
+    // The Phase 8 review (P1/B8): every tab's top frame told site/stop, by its id alone.
+    stopPages: async () => {
+      const ids = (await platform.tabs.ids?.()) ?? [];
+      await Promise.all(ids.map((tabId) => platform.tabs.sendToFrame(tabId, { v: 1, type: 'site/stop' }, { frameId: 0 })
+        .catch(() => undefined)));
+    },
+    ...(__E2E__ ? { note: (event) => noteE2e(event) } : {}) });
   /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
   const signIn = createSignIn({ server, session, now,
     signInAuto: async () => (await settings.get()).modes.signIn === 'auto' && (await signInAllowed()) });
@@ -367,6 +412,10 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       ownId,
       ownPagesPrefix,
       contentGate: { ready: () => accessReady, except: UNGATED },
+      // v3 Phase 8: the frames off the ATS hosts the worker injected, and the sentinel's page/recognised.
+      injected: sites.injected,
+      // The Phase 8 review (B6): a company page's "open review" after a restart opens the side panel inside its click.
+      openSidePanel: (tabId) => void openSidePanel(platform, tabId),
       content: {
         ping: async () => ok({ pong: true as const }),
         'frame/hello': async (message, from) => {
@@ -517,6 +566,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'signin/credential': (message, from) => signIn.credential(message, from),
         // Round 3 of the v3 Phase 6/7b review (X8): the agent's entry pressed in the top frame, told before the entry
         // waits on what the press brings (agent.ts entered).
+        // v3 Phase 8: the sentinel's one message (sites.ts).
+        'page/recognised': (message, from) => sites.recognised(message, from),
         'agent/entered': async (_message, from) => {
           if (from.frameId !== 0) return refuse('bad_sender');
           await agent.entered(from.tabId, from.documentId).catch(() => undefined);
@@ -537,10 +588,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         ...(__E2E__
           ? {
               'e2e/probe': async (message: { storageLocal?: 'refused' | 'allowed'; settled?: true }, from: ContentChannel) => {
-                const events = ((await session.get('e2e:events')) as unknown[] | undefined) ?? [];
-                const event = message.settled === true ? { type: 'content-settled', tabId: from.tabId, frameId: from.frameId }
-                  : { type: 'storage-local-probe', result: message.storageLocal };
-                await session.set({ 'e2e:events': [...events, event] });
+                await noteE2e(message.settled === true ? { type: 'content-settled', tabId: from.tabId, frameId: from.frameId }
+                  : { type: 'storage-local-probe', result: message.storageLocal });
                 return ok({});
               },
             }
@@ -625,6 +674,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'agent/status': async () => ok(await agent.status()),
         'agent/set': (message) => agent.set(message.on, message.confirmed === true),
         'agent/stop': () => agent.stop(),
+        // v3 Phase 8: Options › "Where Autofill works".
+        'sites/get': async () => ok(await sites.state()),
+        'sites/set': async (message) => ok(await sites.set(message.on)),
         'telemetry/clear': async () => {
           await telemetry.clear();
           return ok({ counts: [] });
@@ -660,6 +712,23 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       resume.accept(port, channel, () => accessReady);
       return;
     }
+    // v3 Phase 8: a company's own page the worker injected. Its messages
+    // are held while the injection is read from storage (a worker that restarted since).
+    const off = port.name === 'resume' && channel === null && port.sender ? offAtsSenderOf(port.sender, ownId, ownPagesPrefix) : null;
+    if (off !== null) {
+      const held = heldPort(port);
+      const known = sites.injected.now(off.tabId, off.frameId, off.documentId);
+      void (known !== undefined ? Promise.resolve(known) : sites.injected.read(off.tabId, off.frameId, off.documentId))
+        .then((kind) => {
+          const site = offAtsChannelOf(off, kind, null);
+          if (site?.reach === 'site') resume.accept(held, site, () => accessReady);
+          else {
+            log('port.refused');
+            port.disconnect();
+          }
+        }, () => port.disconnect());
+      return;
+    }
     if (port.name === 'panel' && channel?.kind === 'page') {
       reports.watch(port);
       return;
@@ -676,7 +745,15 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   platform.runtime.onInstalled(() => {
     void restrict();
     void platform.sidePanel.openOnActionClick(true).catch(() => undefined);
+    // v3 Phase 8: the sentinel's registrations, as the person's choice and Chrome's permissions stand.
+    void sites.reconcile().catch(() => undefined);
   });
+
+  // v3 Phase 8: the person granted or took back a host permission (in Options, or in Chrome's own settings).
+  platform.permissions.onChanged(() => {
+    void sites.reconcile().catch(() => undefined);
+  });
+
 
   // v3 Phase 5: the agent's alarm wakes the worker while Run auto-apply is on.
   platform.alarms.onAlarm((name) => {
@@ -701,6 +778,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     askLimit.forget(`${tabId}/`);
     letterLimit.forget(`${tabId}/`);
     jobs.forgetTab(tabId);
+    sites.forgetTab(tabId);
     panelLetters.forgetTab(tabId);
     submitted.forgetTab(tabId);
     void Promise.all([
@@ -729,6 +807,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   state.ready = accessReady.then(() => runStates.prune().catch(() => undefined));
   // v3 Phase 5: the agent picks up where it was (its job, a result still to tell, the queue).
   void state.ready.then(() => agent.start()).catch(() => undefined);
+  // v3 Phase 8: the injected frames back in memory, and the sentinel's registrations reconciled.
+  void sites.start().catch(() => undefined);
   log('worker.started');
   return state;
 }

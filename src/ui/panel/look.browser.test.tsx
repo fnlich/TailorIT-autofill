@@ -109,6 +109,8 @@ describe('the side panel in TailorIT’s look', () => {
         'Oracle Recruiting Cloud']);
     expect([...section.querySelectorAll('.tia-unsupported__site')].map((site) => site.querySelector('.tia-unsupported__note')
       ?.textContent ?? null)).toEqual([null, null, null, null, ...Array(5).fill(COPY.panel.unsupported.sites[4]!.note)]);
+    // The Phase 8 review (B10): it says where Company career sites works too.
+    expect([...section.querySelectorAll('.tia-help')].map((help) => help.textContent)).toContain(COPY.panel.unsupported.companySites);
     // Nothing to fill there: no Autofill, no custom question.
     expect(unsupported.querySelector('button.tia-cta')).toBeNull();
     expect(unsupported.querySelector('[data-ask]')).toBeNull();
@@ -121,6 +123,14 @@ describe('the side panel in TailorIT’s look', () => {
     expect([reload.dataset.unsupported, reload.querySelector('h2')?.textContent, reload.querySelector('p')?.textContent])
       .toEqual(['reload', COPY.panel.unsupported.reloadHeading, COPY.panel.unsupported.reloadIntro]);
     expect(reload.querySelector('.tia-unsupported__sites')).toBeNull();
+    unmountAll();
+
+    // A company's own page while Company career sites is on (the Phase 8 review, B10): a reload lets it be read.
+    const company = createFakeWorker();
+    company.script.pages.set(5, { support: 'none', platform: null, formKey: null, reload: true, site: true });
+    const site = (await open(company, 5)).querySelector<HTMLElement>('[data-unsupported]')!;
+    expect([site.dataset.unsupported, site.querySelector('h2')?.textContent, site.querySelector('p')?.textContent])
+      .toEqual(['reload-site', COPY.panel.unsupported.reloadSiteHeading, COPY.panel.unsupported.reloadSiteIntro]);
 
     const found = createFakeWorker();
     found.script.pages.set(5, formPage());

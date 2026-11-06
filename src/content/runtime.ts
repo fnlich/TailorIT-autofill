@@ -93,6 +93,10 @@
  * parser does not read, W2) gets no launcher and no run, as a page with no form root does; and (the v3 Phase 6/7b
  * review, S3) a document whose address never was one says no frame/hello at all: the worker never hears of it, until a
  * single-page application's route shows a posting's page there.
+ * v3 Phase 8: on a company's own page, where the worker injected the content script once the sentinel recognised the
+ * page, the address is the `site` application of its origin and path and the site adapter alone may claim a form (by
+ * the application-form score, and again for SITE_FORM_LATE_MS as the page draws); nothing is said to the worker until it
+ * does. The page-world bridge and the forged-event listener never run there (bridgeInstallsAt reads no such address).
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt } from '../adapters/address';
@@ -104,6 +108,7 @@ import type { BaseKey, FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
+import { embedsAts, jobSignalOf } from '../dom/page-signals';
 import { detectPause } from '../dom/pause-detect';
 import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow, startDeadline, type Cancel } from '../dom/time';
@@ -117,10 +122,11 @@ import {
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
 import { COPY } from '../shared/copy';
+import { isCompanySiteUrl } from '../shared/hosts';
 import { log } from '../shared/log';
 import { createChannel, Invalidated } from './channel';
 import { watchWxtEvents } from './forged';
-import { LATE_FORM_CAP_MS, lateAdapters, lateFormMs, watchForLateForm } from './late-form';
+import { LATE_FORM_CAP_MS, lateAdapters, lateFormMs, watchForLateForm, watchForSiteForm } from './late-form';
 import { watchLocation } from './location';
 import { postingTextOf, relayJob } from './job-relay';
 import {
@@ -166,6 +172,9 @@ export interface ContentRuntime {
   fill(request?: Partial<RunRequest>): Promise<RunEnd> | null;
   readonly stopped: boolean;
   stop(): void;
+  /** What the browser bringing the document back from the back/forward cache does (its trusted pageshow with persisted
+   *  set, which a test cannot make). */
+  restored(): Promise<void>;
 }
 
 /** The first adapter whose detect() finds a form root, with that root. */
@@ -266,6 +275,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     ui = null;
   }
 
+  /** v3 Phase 8: the worker injected this document's script (a company's own page: the static content script runs on
+   *  the ATS hosts alone), read once from the address the document was loaded at. */
+  const injectedHere = isCompanySiteUrl(options.href === undefined ? loadedHref(view) ?? readHref() : readHref());
+
   // ── The worker's messages: listened for before frame/hello goes out ─────────────────────────────────────────────
   platform.runtime.onMessage(async (message: unknown, sender: Sender) => {
     if (sender.id === undefined || sender.id !== platform.runtime.id || sender.tabId !== undefined) {
@@ -351,6 +364,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         // worker relays the side panel's only while the frame's report offers that button.
         if (!fromWorker(sender)) return refuse('bad_sender');
         return ok(await pressFor(msg.target, msg.confirmed));
+      case 'site/stop':
+        // v3 Phase 8 (the review's P1/B8): the company career sites were turned off, or Chrome's permission taken back.
+        // The worker's alone; a page the worker injected ends its run and removes its UI, a page on an ATS host carries
+        // on as it was.
+        if (!fromWorker(sender)) return refuse('bad_sender');
+        if (injectedHere) {
+          log('content.site-stopped');
+          cancelRun();
+          teardown('leaving');
+        }
+        return ok({});
       case 'job/postingText': {
         // The form's fields too (the Phase G review, MINOR 5): an "I did not use AI" statement on it keeps the side
         // panel's Write it now from writing before a run has said so.
@@ -363,17 +387,23 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   });
 
   // ── Runs ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  async function hello(): Promise<void> {
+  /** Says frame/hello; answers 'refused' when the worker refused this frame as a sender (it no longer knows it). */
+  async function hello(): Promise<'refused' | null> {
     // The v3 Phase 6/7b review (S3): a document says hello only once its address shows a posting's page on its
     // platform's candidate host (applicationOf: a posting, its application or the page after submitting), the same
     // reading the page-world bridge installs by; one whose address never did stays silent (an employer's own pages on
     // an ATS domain, a board). One that said hello before says it again, so the worker hears its form go.
-    if (app === null && told === null) return;
+    if (app === null && told === null) return null;
+    // v3 Phase 8: on a company's own page (injected once the sentinel recognised it) nothing is said until the site
+    // adapter claims an application form there, but by a top frame a job signal recognised (the review's B10): it says
+    // a form-less hello, so the side panel shows its "No application form" strip. A page embedding an ATS says none:
+    // the ATS's own frame does.
+    if (app?.platform === 'site' && page === null && told === null && !siteJobPage()) return null;
     const hasForm = page !== null;
     const letter = hasForm && asksForLetter();
     const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }),
       ...(letter ? { letter: true as const } : {}) });
-    if (!answer.ok) return;
+    if (!answer.ok) return answer.error === 'bad_sender' ? 'refused' : null;
     told = hasForm;
     frameId = answer.data.frameId;
     placementChanged(answer.data.settings.panel);
@@ -388,6 +418,26 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       sideOpen = true;
       ui?.setSidePanel(true);
     }
+    return null;
+  }
+
+  /** Back from the back/forward cache (a trusted pageshow with persisted set): it says hello again (W1). A company's
+   *  page the worker no longer knows (the career sites stopped while it was away, and site/stop reaches active
+   *  documents alone) ends its run and removes its UI (round 2 of the Phase 8 review, M3). */
+  async function restored(): Promise<void> {
+    if (stopped) return;
+    if ((await hello()) !== 'refused' || !injectedHere || stopped) return;
+    log('content.site-stopped');
+    cancelRun();
+    teardown('leaving');
+  }
+
+  /** v3 Phase 8 (the review's B10): this top frame shows a company's job page by a job signal (its address a career
+   *  site's, a career-site platform, a JobPosting), embedding no ATS. */
+  function siteJobPage(): boolean {
+    if (!isTop || embedsAts(doc)) return false;
+    const url = urlOf(readHref());
+    return url !== null && jobSignalOf(doc, url) !== null;
   }
 
   /** Whether the form asks for a cover letter (v3 Phase 3): a file or text box its label names one. A flag only. */
@@ -872,6 +922,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     lateWatch = null;
     if (stopped || page !== null || app?.page !== 'application') return;
     const href = readHref();
+    // v3 Phase 8 (the review's B5): a company's own page is watched for its form for the document's life, cheaply.
+    if (app.platform === 'site') {
+      lateWatch = watchForSiteForm(doc, () => {
+        if (stopped || readHref() !== href) return true;
+        resolvePage(href);
+        if (page === null) return false;
+        formFound();
+        return true;
+      }, lifetime.signal);
+      return;
+    }
     const url = urlOf(href);
     const capMs = url === null ? 0 : lateFormMs(adapters(url));
     if (capMs === 0) return;
@@ -1039,6 +1100,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         return stopped;
       },
       stop: () => teardown('leaving'),
+      restored,
     };
   }
 
@@ -1071,7 +1133,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   // frame that does not answer), so it says hello again, and the side panel's messages reach this document (W1).
   view?.addEventListener('pageshow', (event) => {
     if (stopped || !restoredFromCache(event)) return;
-    void hello().catch(() => undefined);
+    void restored().catch(() => undefined);
   }, { signal: lifetime.signal });
 
   resolvePage(readHref());

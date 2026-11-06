@@ -78,6 +78,20 @@ export interface HandFakes {
   pageCaptures: number[];
   /** What pageCapture.saveAsMHTML answers for a tab; a thrown error is the browser refusing. */
   pageCapture: (tabId: number) => Blob;
+  /** v3 Phase 8: the content scripts registered with scripting.registerContentScripts, by id, as Chrome keeps them. */
+  registrations: Map<string, Record<string, unknown>>;
+  /** v3 Phase 8: every scripting.executeScript the worker made, in order. */
+  injections: Array<{ target: { tabId: number; frameIds?: number[]; documentIds?: string[] }; files: string[] }>;
+  /** What executeScript does with an injection: returning resolves it, a thrown error rejects it; a promise holds it
+   *  until it settles. */
+  injectAnswer: (injection: HandFakes['injections'][number]) => void | Promise<void>;
+  /** v3 Phase 8: the optional host permissions Chrome holds (permissions.contains reads them; the every-https-page
+   *  pattern covers every https origin). */
+  granted: Set<string>;
+  /** Grants origins and tells the worker (permissions.onAdded), as the person's click in Options would. */
+  grant: (origins: string[]) => void;
+  /** Takes origins back and tells the worker (permissions.onRemoved), as Chrome's own settings would. */
+  revoke: (origins: string[]) => void;
 }
 
 /** A pair of linked port ends: the worker gets `raw` (Chrome's Port shape), the test gets the peer. */
@@ -166,7 +180,23 @@ export function installHandFakes(): HandFakes {
     onCommand: fakeEvent<(command: string, tab?: { id?: number; windowId: number; index: number }) => unknown>(),
     pageCaptures: [],
     pageCapture: () => new Blob(['From: <Saved by Blink>\r\n'], { type: 'multipart/related' }),
+    registrations: new Map(),
+    injections: [],
+    injectAnswer: () => undefined,
+    granted: new Set(),
+    grant(origins) {
+      for (const origin of origins) fakes.granted.add(origin);
+      permissionsAdded.trigger({ origins });
+    },
+    revoke(origins) {
+      for (const origin of origins) fakes.granted.delete(origin);
+      permissionsRemoved.trigger({ origins });
+    },
   };
+  const permissionsAdded = fakeEvent<(permissions: { origins: string[] }) => unknown>();
+  const permissionsRemoved = fakeEvent<(permissions: { origins: string[] }) => unknown>();
+  /** Whether Chrome holds an origin: as granted, or under the every-https-page pattern. */
+  const holds = (origin: string) => fakes.granted.has(origin) || (fakes.granted.has('https://*/*') && origin.startsWith('https://'));
   const browser = fakeBrowser as unknown as Record<string, Record<string, unknown>>;
   const runtime = browser.runtime as Record<string, unknown>;
   runtime.onMessageExternal = fakes.onMessageExternal;
@@ -197,6 +227,46 @@ export function installHandFakes(): HandFakes {
     return fakes.frameAnswers(sent);
   };
   browser.commands = { onCommand: fakes.onCommand, getAll: async () => [] };
+  // v3 Phase 8: the optional host permissions and chrome.scripting, which WXT's fake leaves unmocked.
+  browser.permissions = {
+    contains: async (query: { origins?: string[] }) => (query.origins ?? []).every(holds),
+    remove: async (query: { origins?: string[] }) => {
+      const origins = query.origins ?? [];
+      for (const origin of origins) fakes.granted.delete(origin);
+      permissionsRemoved.trigger({ origins });
+      return true;
+    },
+    request: async (query: { origins?: string[] }) => (query.origins ?? []).every(holds),
+    getAll: async () => ({ origins: [...fakes.granted], permissions: [] }),
+    onAdded: permissionsAdded,
+    onRemoved: permissionsRemoved,
+  };
+  browser.scripting = {
+    getRegisteredContentScripts: async (filter?: { ids?: string[] }) => [...fakes.registrations.values()]
+      .filter((script) => filter?.ids === undefined || filter.ids.includes(String(script.id)))
+      .map((script) => JSON.parse(JSON.stringify(script)) as unknown),
+    registerContentScripts: async (scripts: Array<Record<string, unknown>>) => {
+      for (const script of scripts) {
+        const matches = (script.matches as string[] | undefined) ?? [];
+        if (fakes.registrations.has(String(script.id))) throw new Error(`Duplicate script ID '${String(script.id)}'`);
+        if (!matches.every(holds)) throw new Error('Extension manifest must request permission to access the respective host.');
+      }
+      for (const script of scripts) {
+        fakes.registrations.set(String(script.id), JSON.parse(JSON.stringify(script)) as Record<string, unknown>);
+      }
+    },
+    unregisterContentScripts: async (filter?: { ids?: string[] }) => {
+      for (const id of filter?.ids ?? [...fakes.registrations.keys()]) {
+        if (!fakes.registrations.delete(id)) throw new Error(`Nonexistent script ID '${id}'`);
+      }
+    },
+    executeScript: async (injection: HandFakes['injections'][number]) => {
+      const copy = JSON.parse(JSON.stringify(injection)) as HandFakes['injections'][number];
+      fakes.injections.push(copy);
+      await fakes.injectAnswer(copy);
+      return [];
+    },
+  };
   browser.pageCapture = {
     saveAsMHTML: async (details: { tabId: number }) => {
       fakes.pageCaptures.push(details.tabId);

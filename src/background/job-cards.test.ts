@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { AutofillLookupResponse } from '../contract/tailorit';
-import { JOB_CARD_FAILED_TTL_MS, JOB_CARD_TTL_MS, JOB_RELAY_LIMIT, jobCardOf } from './job-cards';
+import { JOB_CARD_FAILED_TTL_MS, JOB_CARD_TTL_MS, JOB_RELAY_LIMIT, jobCardOf, lookupAddressOf, recognisedPosting } from './job-cards';
 import {
   beginRun,
   contentSender,
@@ -494,3 +494,14 @@ async function withFrame(worker: TestWorker): Promise<void> {
   await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, contentSender());
   relayFrom(worker, true);
 }
+
+describe("a company page's lookup (v3 Phase 8 review, P3)", () => {
+  it('is never as the page loads, whatever its address carries, and names the page by its origin, path and gh_jid', () => {
+    const company = 'https://careers.acme.example/positions/1/?gh_jid=4012&session=s3cret#apply';
+    // TailorIT's parser reads a company page's gh_jid: the page is still looked up only when the person asks.
+    expect(recognisedPosting(company)).toBe(false);
+    expect(recognisedPosting('https://careers.acme.example/jobs/42/apply')).toBe(false);
+    expect(recognisedPosting(LEVER_URL)).toBe(true);
+    expect(lookupAddressOf(company)).toBe('https://careers.acme.example/positions/1/?gh_jid=4012');
+  });
+});

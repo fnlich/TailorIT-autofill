@@ -1,0 +1,5 @@
+<!doctype html>
+<!-- Synthetic (v3 Phase 8 review, B1 corpus): an application page: Apply form inside an open shadow root (web component). Read at https://careers.widgets.example/job/1/apply. -->
+<html><head><title>Apply | Widgets Careers</title></head><body><h1>Engineer</h1><apply-form></apply-form>
+    <script>customElements.define('apply-form', class extends HTMLElement { constructor(){ super(); const r=this.attachShadow({mode:'open'});
+    r.innerHTML='<form><label for=fn>First name</label><input id=fn><label for=e>Email</label><input id=e type=email><label for=p>Phone</label><input id=p type=tel><label for=cv>Resume</label><input id=cv type=file></form>'; } });</script></body></html>

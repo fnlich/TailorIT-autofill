@@ -1,0 +1,266 @@
+[
+  {
+    "id": "contact-hubspot",
+    "job": false,
+    "kind": "Contact us / demo request (HubSpot-style)",
+    "href": "https://www.acme-saas.example/contact-sales"
+  },
+  {
+    "id": "contact-wcag",
+    "job": false,
+    "kind": "Contact form, accessible (autocomplete name/email/tel)",
+    "href": "https://www.springfield.gov.example/contact"
+  },
+  {
+    "id": "contact-plain-name",
+    "job": false,
+    "kind": "Contact form, \"Name\" without autocomplete",
+    "href": "https://www.joes-plumbing.example/contact"
+  },
+  {
+    "id": "newsletter",
+    "job": false,
+    "kind": "Newsletter sign-up (email)",
+    "href": "https://www.garden.example/"
+  },
+  {
+    "id": "sms-popup",
+    "job": false,
+    "kind": "Retail SMS/email pop-up (Klaviyo-style, no <form>)",
+    "href": "https://shop.apparel.example/products/tee"
+  },
+  {
+    "id": "webinar",
+    "job": false,
+    "kind": "Webinar registration",
+    "href": "https://www.datatools.example/webinars/q4-roadmap/register"
+  },
+  {
+    "id": "quote",
+    "job": false,
+    "kind": "Insurance quote request",
+    "href": "https://www.safeauto.example/get-a-quote"
+  },
+  {
+    "id": "checkout",
+    "job": false,
+    "kind": "Checkout, contact + shipping step (card in iframe)",
+    "href": "https://shop.apparel.example/checkouts/cn/Z2NwLXVz/information"
+  },
+  {
+    "id": "checkout-plain",
+    "job": false,
+    "kind": "Checkout, billing step (plain names)",
+    "href": "https://www.bookshop.example/checkout"
+  },
+  {
+    "id": "signup-step1",
+    "job": false,
+    "kind": "Account registration step 1 (no password yet)",
+    "href": "https://app.fitness.example/signup"
+  },
+  {
+    "id": "booking",
+    "job": false,
+    "kind": "Restaurant booking",
+    "href": "https://www.bistro.example/reservations"
+  },
+  {
+    "id": "realestate",
+    "job": false,
+    "kind": "Real-estate enquiry",
+    "href": "https://www.homes.example/property/123-main-st"
+  },
+  {
+    "id": "support",
+    "job": false,
+    "kind": "Support ticket with an attachment",
+    "href": "https://help.cloudapp.example/hc/requests/new"
+  },
+  {
+    "id": "support-resume-word",
+    "job": false,
+    "kind": "File upload whose surroundings say \"resume\" (uploads can resume)",
+    "href": "https://files.transfer.example/upload"
+  },
+  {
+    "id": "loan",
+    "job": false,
+    "kind": "Loan application (path /apply)",
+    "href": "https://www.quickloans.example/personal-loans/apply"
+  },
+  {
+    "id": "rental",
+    "job": false,
+    "kind": "Rental application",
+    "href": "https://www.parkview-apartments.example/apply"
+  },
+  {
+    "id": "dealer",
+    "job": false,
+    "kind": "Car dealer test-drive request",
+    "href": "https://www.citymotors.example/new/2026-sedan-lx"
+  },
+  {
+    "id": "clinic",
+    "job": false,
+    "kind": "Doctor appointment request",
+    "href": "https://www.familyclinic.example/appointments/request"
+  },
+  {
+    "id": "react-contact",
+    "job": false,
+    "kind": "React contact form with no <form> element",
+    "href": "https://www.agency.example/contact"
+  },
+  {
+    "id": "loose-widgets",
+    "job": false,
+    "kind": "Unrelated loose widgets (footer newsletter + callback widget)",
+    "href": "https://www.solar.example/"
+  },
+  {
+    "id": "event",
+    "job": false,
+    "kind": "Event ticket attendee details",
+    "href": "https://tickets.concerts.example/order/9981/attendees"
+  },
+  {
+    "id": "volunteer",
+    "job": false,
+    "kind": "Volunteer sign-up",
+    "href": "https://www.foodbank.example/volunteer"
+  },
+  {
+    "id": "job-resume",
+    "job": true,
+    "kind": "Careers apply form with resume upload",
+    "href": "https://careers.fixture-corp.example/jobs/42/apply"
+  },
+  {
+    "id": "job-nep-careers",
+    "job": true,
+    "kind": "Small company /careers/apply, name+email+phone, no upload",
+    "href": "https://www.smallco.example/careers/apply"
+  },
+  {
+    "id": "job-nep-joinus",
+    "job": true,
+    "kind": "/join-us \"Apply for Barista\" (no job word in path/title)",
+    "href": "https://www.beanery.example/join-us"
+  },
+  {
+    "id": "job-step1",
+    "job": true,
+    "kind": "Multi-step apply, step 1 name+email only",
+    "href": "https://jobs.retailer.example/apply/88123"
+  },
+  {
+    "id": "job-plainname",
+    "job": true,
+    "kind": "Apply form \"Name\" (name=name), email, phone, resume URL",
+    "href": "https://www.studio.example/careers/designer"
+  },
+  {
+    "id": "job-dropzone",
+    "job": true,
+    "kind": "Apply with Dropzone-style hidden input on body",
+    "href": "https://www.startup.example/apply"
+  },
+  {
+    "id": "job-password",
+    "job": true,
+    "kind": "Apply + create account on one page (password)",
+    "href": "https://careers.hospital.example/jobs/5512/apply"
+  },
+  {
+    "id": "job-aspnet",
+    "job": true,
+    "kind": "ASP.NET page-wide form, header sign-in box",
+    "href": "https://jobs.county.example/apply.aspx?id=771"
+  },
+  {
+    "id": "job-shadow",
+    "job": true,
+    "kind": "Apply form inside an open shadow root (web component)",
+    "href": "https://careers.widgets.example/job/1/apply"
+  },
+  {
+    "id": "job-iframe",
+    "job": true,
+    "kind": "Apply form in a same-origin iframe",
+    "href": "https://careers.legacy.example/job/77"
+  },
+  {
+    "id": "talent-community",
+    "job": true,
+    "kind": "Talent community sign-up on careers host",
+    "href": "https://careers.bigco.example/talent-community"
+  },
+  {
+    "id": "staffing-cv",
+    "job": true,
+    "kind": "Staffing agency \"Send us your CV\"",
+    "href": "https://www.temps.example/send-cv"
+  },
+  {
+    "id": "avatar-upload",
+    "job": false,
+    "kind": "Profile page, hidden avatar input, \"CV\" in an unrelated heading",
+    "href": "https://forum.cars.example/settings/profile"
+  },
+  {
+    "id": "talent-agency-booking",
+    "job": false,
+    "kind": "talent agency booking",
+    "href": "https://www.starlight-talent.example/book"
+  },
+  {
+    "id": "shop-hiring-banner",
+    "job": false,
+    "kind": "shop contact, 'We're hiring!' banner",
+    "href": "https://www.corner-bakery.example/contact"
+  },
+  {
+    "id": "contact-footer-careers",
+    "job": false,
+    "kind": "contact page, footer h2 'Careers'",
+    "href": "https://www.widgets.example/contact"
+  },
+  {
+    "id": "wp-comment-hiring-post",
+    "job": false,
+    "kind": "WordPress comment on a hiring article",
+    "href": "https://blog.saas.example/2026/10/how-we-hire-engineers/"
+  },
+  {
+    "id": "news-comment-jobs-report",
+    "job": false,
+    "kind": "news comment on a jobs report",
+    "href": "https://www.news.example/business/october-jobs-report"
+  },
+  {
+    "id": "volunteer-meet-candidates",
+    "job": false,
+    "kind": "campaign volunteer, h2 'Meet the candidates'",
+    "href": "https://www.vote-smith.example/volunteer"
+  },
+  {
+    "id": "employment-verification",
+    "job": false,
+    "kind": "employment-verification request",
+    "href": "https://www.verify-employment.example/request"
+  },
+  {
+    "id": "staffing-hire-talent",
+    "job": false,
+    "kind": "staffing B2B \"Hire talent\" lead form",
+    "href": "https://www.staffco.example/employers/contact"
+  },
+  {
+    "id": "yoga-positions-workshop",
+    "job": false,
+    "kind": "gym \"positions\" class booking",
+    "href": "https://www.yoga.example/classes/positions-workshop"
+  }
+]

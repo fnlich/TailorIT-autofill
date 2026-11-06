@@ -58,7 +58,8 @@ export async function registerFrame(
     frameId: frame.frameId,
     documentId: frame.documentId ?? null,
     origin: new URL(frame.url).origin,
-    platform: platformOfUrl(frame.url),
+    // v3 Phase 8: a company's own page the worker injected is the site's.
+    platform: platformOfUrl(frame.url) ?? siteOf(frame.url),
     isTop: frame.isTop,
     hasForm: frame.hasForm,
     registeredAt: now,
@@ -70,6 +71,15 @@ export async function registerFrame(
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
+}
+
+/** The site platform of a company's own page (v3 Phase 8: applicationOf's `site` application), else null. */
+function siteOf(url: string): Platform | null {
+  try {
+    return applicationOf(new URL(url))?.platform === 'site' ? 'site' : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Every registered frame of a tab. */

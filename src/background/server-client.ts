@@ -78,6 +78,7 @@ import {
   type PutAutofillSavedAnswerBody,
   type AutofillSession,
 } from '../contract/tailorit';
+import { addressForTailorIT } from '../adapters/site';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 
@@ -467,11 +468,15 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     sensitive: () =>
       json({ method: 'GET', path: '/api/autofill/profile/sensitive', token: 'current' }, AutofillSensitiveEnvelopeSchema),
     async lookup(body) {
-      const raw = await json({ method: 'POST', path: '/api/autofill/lookup', token: 'current', json: body }, LookupWireSchema);
+      // v3 Phase 8 (the review's P3): a company's own page is named by its origin and path (and a gh_jid or ashby_jid)
+      // alone, whichever lookup asks: the side panel's, a run's, the resume choice's.
+      const raw = await json({ method: 'POST', path: '/api/autofill/lookup', token: 'current',
+        json: { ...body, url: addressForTailorIT(body.url) } }, LookupWireSchema);
       return raw.ok ? { ok: true, value: lookupOf(raw.value) } : raw;
     },
     async addJob(body) {
-      const raw = await json({ method: 'POST', path: '/api/autofill/jobs', token: 'current', json: body }, AddJobWireSchema);
+      const raw = await json({ method: 'POST', path: '/api/autofill/jobs', token: 'current',
+        json: { ...body, url: addressForTailorIT(body.url) } }, AddJobWireSchema);
       return raw.ok ? { ok: true, value: { created: raw.value.created, lookup: lookupOf(raw.value.lookup) } } : raw;
     },
     resumes: () => json({ method: 'GET', path: '/api/autofill/resumes', token: 'current' }, AutofillResumeListSchema),
@@ -524,7 +529,8 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
     searchJobs: (query) => json({ method: 'GET', path: '/api/autofill/jobs/search', token: 'current',
       query: { q: [...query].slice(0, AUTOFILL_JOB_SEARCH_QUERY_MAX).join('') } }, AutofillJobSearchResponseSchema),
     async applied(body) {
-      const raw = await json({ method: 'POST', path: '/api/autofill/applied', token: 'current', json: body }, LookupWireSchema);
+      const raw = await json({ method: 'POST', path: '/api/autofill/applied', token: 'current',
+        json: body.url === undefined ? body : { ...body, url: addressForTailorIT(body.url) } }, LookupWireSchema);
       return raw.ok ? { ok: true, value: lookupOf(raw.value) } : raw;
     },
     async siteRequest(host) {

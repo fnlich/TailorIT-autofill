@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Synthetic (v3 Phase 8 review, B1 corpus): an ordinary page, no job: Checkout, contact + shipping step (card in iframe). Read at https://shop.apparel.example/checkouts/cn/Z2NwLXVz/information. -->
+<html lang="en"><head><meta charset="utf-8"><title>Checkout - Apparel</title>
+<style>body{font-family:sans-serif} label{display:block;margin-top:6px} input,textarea,select{display:block;width:300px;height:24px}</style></head>
+<body><header><nav><a href="/">Home</a> <a href="/about">About</a></nav>
+<form role="search" action="/search"><input type="search" name="q" aria-label="Search"></form></header>
+<main><h1>Contact</h1><form id="checkout" action="/checkouts/cn/Z2NwLXVz" method="post">
+    <input id="email" name="email" type="email" autocomplete="email" placeholder="Email or mobile phone number" aria-label="Email">
+    <h2>Shipping address</h2>
+    <input id="fn" name="firstName" autocomplete="shipping given-name" placeholder="First name" aria-label="First name">
+    <input id="ln" name="lastName" autocomplete="shipping family-name" placeholder="Last name" aria-label="Last name">
+    <input id="a1" name="address1" autocomplete="shipping address-line1" placeholder="Address" aria-label="Address">
+    <input id="city" name="city" autocomplete="shipping address-level2" placeholder="City" aria-label="City">
+    <input id="ph" name="phone" type="tel" autocomplete="shipping tel" placeholder="Phone" aria-label="Phone">
+    <input id="gift" name="reductions" placeholder="Discount code or gift card" aria-label="Discount code or gift card">
+    <button>Continue to shipping</button></form></main><footer><p>© Example</p></footer></body></html>
