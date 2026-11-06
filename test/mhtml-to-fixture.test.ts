@@ -580,6 +580,17 @@ describe('mhtml-to-fixture helpers', () => {
     expect(name?.test('by JxR. (Jane)')).toBe(false);
     for (const spelling of ['+1 (555) 010-0142', '15550100142', '1.555.010.0142']) expect(phone?.test(spelling), spelling).toBe(true);
     expect(phone?.test('215550100142')).toBe(false);
+    // A word entry is a whole word: the owner's name or employer never takes part of the page's own words.
+    const [ann, acme, zoe] = redactSources(['Ann', 'Acme Corp', 'Zoë']).map((source) => new RegExp(source, 'i'));
+    expect(zoe?.test('Zoëlle')).toBe(false);
+    expect(zoe?.test('Zoë Roe')).toBe(true);
+    expect('Ann wrote to ann.'.replace(new RegExp(redactSources(['Ann'])[0] ?? '', 'gi'), 'X')).toBe('X wrote to X.');
+    expect(ann?.test('Ann Roe')).toBe(true);
+    expect(ann?.test('Ann_Roe_Resume.pdf')).toBe(true);
+    expect(ann?.test('Announcement')).toBe(false);
+    expect(ann?.test('Joann')).toBe(false);
+    expect(acme?.test('worked at acme corp.')).toBe(true);
+    expect(acme?.test('Acme Corporation')).toBe(false);
   });
 
   it('finds emails and phone numbers, and leaves ids, dates and image names alone', () => {

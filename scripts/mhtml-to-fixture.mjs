@@ -441,9 +441,15 @@ export function readRedactList(text) {
 /** Escapes a string for use inside a RegExp. @param {string} text */
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** A letter or digit, Latin scripts included, as a class that needs no `u` flag (the patterns are built with 'gi'). */
+const WORD_CHAR = '[A-Za-z0-9\\u00C0-\\u024F]';
+
 /**
  * Each redact string as a case-insensitive pattern source. One that looks like a phone number (digits and phone
- * punctuation only, at least 7 digits) matches its digits with any punctuation between them.
+ * punctuation only, at least 7 digits) matches its digits with any punctuation between them. One that starts or ends
+ * with a letter or digit matches only where no letter or digit adjoins it there (a whole word: a name "Ann" never
+ * takes the "ann" of "Announcement"), so a short name or an employer's name redacts that name and not the page's words
+ * around it; list a name's joined spellings ("JaneRoe", "Jane_Roe") as entries of their own.
  * @param {string[]} strings @returns {string[]}
  */
 export function redactSources(strings) {
@@ -452,7 +458,9 @@ export function redactSources(strings) {
     if (/^[\d\s().+-]+$/.test(entry) && digits.length >= 7) {
       return `(?<!\\d)${[...digits].join('[\\s().+-]*')}(?!\\d)`;
     }
-    return escapeRegExp(entry);
+    const before = new RegExp(`^${WORD_CHAR}`).test(entry) ? `(?<!${WORD_CHAR})` : '';
+    const after = new RegExp(`${WORD_CHAR}$`).test(entry) ? `(?!${WORD_CHAR})` : '';
+    return `${before}${escapeRegExp(entry)}${after}`;
   });
 }
 
