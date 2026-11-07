@@ -283,6 +283,9 @@ export function jobCardOf(lookup: AutofillLookupResponse, addable: boolean): Job
       postedAt: msOf(job.postedAt),
       salary: job.salary === null || job.salary === undefined ? null : cutAtWord(job.salary, 120),
       workArrangement: job.workArrangement ?? null,
+      // v4: the card names the industry under the company (absent from a TailorIT older than it).
+      ...(job.industry === undefined ? {} : { industry: job.industry === null || job.industry.trim() === '' ? null
+        : cutAtWord(job.industry, 120) }),
     },
     tracked: application === null ? null : { status: application.status, archived: application.archived },
     resume: suggestedResume === null ? null

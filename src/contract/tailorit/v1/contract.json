@@ -10,7 +10,7 @@
     "cover-letters.ts": "99634afc594f27fb9c2951c8539dcd59aa91c950f42734eaf9f178cd87d7903d",
     "credentials.ts": "c09ae7e8fd46ce7f16d136a90b85b76ed99817cf68d543d572ec0851950d699d",
     "index.ts": "3c146f82768d342ca37d974da6943ad98c4faa1830b4b0401c0bfeca3598028c",
-    "lookup.ts": "77714f430ad56db9962780bda18c39ff8e2057c5ba74d68e0869f99a9d2de517",
+    "lookup.ts": "5df4d24096b46b608622768f76935703135daca1e06941b0b354822f115f9896",
     "profile.ts": "182052d28bfd0729a3fbbe32f9523c57bbcf43bb45c515fecb3681f913689eb3",
     "registry.ts": "a094035377492c9b1a43029d18cc86a0e37c94bf00e644cf6a69f1d64220e6ef",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
@@ -7587,6 +7587,17 @@
                       "type": "null"
                     }
                   ]
+                },
+                "industry": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 120
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -8050,6 +8061,17 @@
                             "hybrid",
                             "onsite"
                           ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "industry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 120
                         },
                         {
                           "type": "null"

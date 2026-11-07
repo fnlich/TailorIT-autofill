@@ -287,6 +287,8 @@ export const AutofillLookupResponseSchema = z.object({
       salary: z.string().nullable().optional(),
       /** Remote, hybrid or on-site; null when the posting does not say. */
       workArrangement: z.enum(WORK_ARRANGEMENTS).nullable().optional(),
+      /** The industry as the Jobs page names it ("Finance"), the job's own else its company's; null when unknown. */
+      industry: z.string().max(120).nullable().optional(),
     })
     .nullable(),
   /** The person's own tracker entry for this posting: the extension warns before a second application. */

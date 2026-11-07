@@ -447,7 +447,11 @@ export const JobRefSchema = z.string().regex(/^j[0-9]$/);
 
 export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('ping') }),
-  z.strictObject({ v, type: z.literal('panel/fill'), tabId: TabId, dryRun: z.boolean() }),
+  z.strictObject({ v, type: z.literal('panel/fill'), tabId: TabId, dryRun: z.boolean(),
+    /** v4: "Sign up & Autofill": this run signs in, or creates the account, at the tab's next account wall once, as
+     *  Sign-in mode Auto would (the same rules: credentials:read, the disclosure acknowledged, a password never kept),
+     *  whatever the mode says. */
+    signIn: z.literal(true).optional() }),
   /** The toolbar's Continue and Cancel, for every frame that reported. Continue only resumes a pause; it never
    *  answers a policy card. */
   z.strictObject({ v, type: z.literal('panel/continue'), tabId: TabId }),
@@ -574,6 +578,9 @@ export const PageStateSchema = z.strictObject({
    *  whether TailorIT's tracker now says Applied ('recorded'), is being told ('recording'), or could not be told
    *  ('not-recorded'; 'not-allowed': a connection made before tracker:write). */
   submitted: z.enum(SUBMITTED_STATES).optional(),
+  /** v4 (the owner, 2026-11-07): the tab's application frame shows an account wall (a sign-in, a create-account page,
+   *  an email gate) right now: the side panel's main button reads "Sign up & Autofill" (panel/fill {signIn: true}). */
+  wall: z.enum(SIGN_IN_WALLS).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
 
@@ -838,7 +845,10 @@ export const JobCardSchema = z.discriminatedUnion('state', [
   z.strictObject({
     state: z.literal('answered'),
     job: z.strictObject({ title: Text(300), company: Text(200), location: Text(300), closed: z.boolean(),
-      postedAt: Count.nullable(), salary: Text(120).nullable(), workArrangement: z.enum(WORK_ARRANGEMENTS).nullable() })
+      postedAt: Count.nullable(), salary: Text(120).nullable(), workArrangement: z.enum(WORK_ARRANGEMENTS).nullable(),
+      /** v4: the industry as TailorIT's Jobs page names it ("Finance"), under the company on the card; absent or null
+       *  when TailorIT does not say. */
+      industry: Text(120).nullable().optional() })
       .nullable(),
     tracked: z.strictObject({ status: z.number().int(), archived: z.boolean() }).nullable(),
     resume: z.strictObject({ label: Text(200), fileKind: z.enum(AUTOFILL_FILE_KINDS), reason: z.enum(RESUME_CHOICE_REASONS) })
@@ -1191,6 +1201,8 @@ export const ResumePortMessageSchema = z.discriminatedUnion('type', [
  *  acknowledged with resume/ack, resume/end, then the panel's resume/done; resume/error), from the same checked fetch,
  *  a PDF only. Extension pages only: the bytes never reach a page's process. */
 export const PreviewPortMessageSchema = z.discriminatedUnion('type', [
-  z.strictObject({ v, type: z.literal('preview/request'), tabId: TabId }),
+  z.strictObject({ v, type: z.literal('preview/request'), tabId: TabId,
+    /** v4: which file of the tab's fill: the resume (the default) or the cover letter it attached or would attach. */
+    kind: z.enum(['resume', 'coverLetter']).optional() }),
   ...TRANSFER_MESSAGES,
 ]);
