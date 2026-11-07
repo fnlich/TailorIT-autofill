@@ -314,7 +314,10 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
     case 'consent':
       return consentValue(category, rules.consentKinds, profile, settings,
         { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab),
-          list: LIST_KINDS.has(spec.kind), ...(rules.needsUser !== undefined ? { decided: true as const } : {}) });
+          list: LIST_KINDS.has(spec.kind),
+          // Only DECIDED_CONSENT_CAUSES reach here with a needsUser (resolveField hands every other cause over).
+          ...(rules.needsUser === 'binding-waiver' || rules.needsUser === 'description-only'
+            ? { decided: rules.needsUser } : {}) });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':

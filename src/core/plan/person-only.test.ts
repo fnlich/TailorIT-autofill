@@ -150,9 +150,9 @@ describe('S-4: how the application was made is the person’s to say', () => {
 });
 
 // v4 (D5, the owner's word of 2026-11-07: "Never flag to the user, just determine with your own"): a consent asked as a
-// Yes/No question, a binding waiver among them, is decided by the Consents mode (All: agreed; Required only: agreed only
-// when the form requires it), never left for the person; never by an AI. A binding commitment asked as a fact ("Are you
-// subject to a non-compete?") is never answered: its Yes would state one.
+// Yes/No question is decided, never left for the person, never by an AI: by the Consents mode, but a binding waiver,
+// which is agreed only when the form requires it (an optional one is left unanswered, as an optional binding box is). A
+// binding commitment asked as a fact ("Are you subject to a non-compete?") is never answered: its Yes would state one.
 /** The Yes a consent decision chose (option 0 of Yes, No), with nothing asked of any AI. */
 const agreed = (out: ReturnType<typeof planOf>, spec: FieldSpec) => {
   askedNothing(out);
@@ -178,18 +178,19 @@ describe('S-5, v4 (D5): a consent asked as Yes/No and a binding waiver follow th
     ['Are you willing to sign a non-solicitation agreement?', 'radio'],
     ['Do you waive your right to bring a class action?', 'radio'],
     ['Are you willing to relinquish ownership of all inventions you create?', 'radio'],
-  ] as const)('%j (%s): agreed under Consents All, required or not; under Required only when required', (label, kind) => {
+  ] as const)('%j (%s): agreed when the form requires it, under either mode; an optional one left unanswered, decided', (label, kind) => {
+    // As an optional binding box is (the disclosure: "except a binding clause the form does not require"): a right given
+    // up that the application does not need is never agreed for the person, and never handed to them either.
     const required = settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } });
     for (const isRequired of [true, false]) {
       const list = specOf(label, kind, { optionLabels: ['Yes', 'No'], required: isRequired });
-      for (const out of [planOf([list], { profile }), planOf([list], { profile, ai: unclassified(list) })]) {
-        agreed(out, list);
+      for (const out of [planOf([list], { profile }), planOf([list], { profile, ai: unclassified(list) }),
+        planOf([list], { profile, settings: required })]) {
+        askedNothing(out);
+        if (isRequired) agreed(out, list);
+        else expect(fieldOf(out, list).row).toMatchObject({ reason: 'consent-optional-unticked', wrote: false });
+        expect(fieldOf(out, list).row.reason).not.toBe('consent-requires-user');
       }
-      const cautious = planOf([list], { profile, settings: required });
-      askedNothing(cautious);
-      if (isRequired) agreed(cautious, list);
-      else expect(fieldOf(cautious, list).row).toMatchObject({ reason: 'consent-optional-unticked', wrote: false });
-      expect(fieldOf(cautious, list).row.reason).not.toBe('consent-requires-user');
     }
   });
 

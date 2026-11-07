@@ -527,9 +527,12 @@ export interface ConsentContext {
   /** The field is a list, a combobox or a radio group (absent: a box or a text). With no `choice`, it offers an option
    *  that does not agree (a Yes and a No): a question. */
   list?: boolean;
-  /** v4 (D5): a consent the rules once handed to the person (a binding waiver asked as a Yes/No question, a consent read
-   *  from its help text alone): decided by the Consents mode like any other, All agreeing to it whatever its kind. */
-  decided?: true;
+  /** v4 (D5): a consent the rules once handed to the person, now decided here, by why it was handed over:
+   *  'description-only' (a consent read from its help text alone) follows the Consents mode like any other, All agreeing
+   *  to it; 'binding-waiver' (a binding waiver asked as an agreement, Yes/No) is agreed only when the form requires it,
+   *  under either mode, and an optional one is left unanswered, decided, as an optional binding box is (the disclosure:
+   *  "except a binding clause the form does not require"). */
+  decided?: 'binding-waiver' | 'description-only';
 }
 
 /** A consent's tick (or Yes, or its one option that agrees: `option`), by the rule that gives it. */
@@ -564,14 +567,17 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
   // A true attestation among the label's kinds asks nothing more: the rest decide.
   const kinds = named.filter((kind) => kind !== 'consent.aiAttestation');
   const all = settings.modes.consents === 'all';
-  const approved = (all && consent.decided === true) || (kinds.length > 0 && kinds.every((kind) => {
-    const setting = consentCategoryOf(kind);
-    return setting !== null && (all || settings.preapprovedConsent.includes(setting));
-  }));
+  const approved = (all && consent.decided === 'description-only') || (consent.decided !== 'binding-waiver'
+    && kinds.length > 0 && kinds.every((kind) => {
+      const setting = consentCategoryOf(kind);
+      return setting !== null && (all || settings.preapprovedConsent.includes(setting));
+    }));
   if (!approved && !consent.required) return none('consent-optional-unticked', false);
   // v4 (D5, the owner's word of 2026-11-07: "just determine with your own"): a Yes/No question a consent is asked as
-  // (a binding waiver among them) is decided like any consent the form requires: its agreeing answer is chosen (the
-  // Yes, by polarity). It was the person's before (the audit of 2026-11-06, S-5); nothing is the person's now.
+  // is decided like any consent: its agreeing answer is chosen (the Yes, by polarity) when approved or required. A
+  // binding waiver is never approved, so it is agreed only when the form requires it, and an optional one is left
+  // unanswered (decided, never the person's), as an optional binding box is. Both were the person's before (the audit of
+  // 2026-11-06, S-5); nothing is the person's now.
 
   if (category === 'consent.signature') {
     const name = profile.identity.fullName.trim();

@@ -52,7 +52,9 @@ describe('the v2 copy', () => {
     // v3 Phase 3: as an application page loads, not only while the side panel shows it; v3 Phase 3b: a posting too.
     expect(lookups).toContain('When an application page or a job posting on those sites loads');
     expect(lookups).toContain('side panel shows one');
-    expect(lookups).toContain('Autofill or Dry run');
+    // v4: no Dry run to choose (disclosure version 8).
+    expect(lookups).toContain('when you choose Autofill, add the job');
+    expect(lookups).not.toContain('Dry run');
     expect(lookups).toContain('does not keep the page\'s address');
   });
 

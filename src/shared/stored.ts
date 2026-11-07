@@ -38,8 +38,11 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  Workday's, iCIMS's and Oracle's application forms filled by their own rules; the page's path told to TailorIT for
  *  the sign-in on ADP Workforce Now's and ClearCompany's job pages; a page that names no job taken as the job of the
  *  tab's page before it, kept per tab in session storage; a form filled beside an unticked checkbox CAPTCHA, every press
- *  waiting for the person). Raise it whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 7;
+ *  waiting for the person); 8, v4 (the owner's request of 2026-11-07: every field it can answer filled without asking
+ *  and the rest listed as left empty, the AI's best guess no longer marked, Sign up & Autofill using the saved job-site
+ *  sign-in for one run, a run carrying on by itself once the person ticks a checkbox CAPTCHA, and no Dry run to choose).
+ *  Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 8;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */
