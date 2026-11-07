@@ -2,6 +2,8 @@
 
 The owner chose to try the extension on live postings through a **dry run**. A dry run plans every field and shows the report a fill would give, and writes nothing: no field is typed into, nothing is clicked, nothing is submitted. It still reads TailorIT (the profile, the lookup) and, when its switches are on, asks TailorIT's AI about fields the rules could not settle.
 
+**Since v4 (2026-11-07)** the side panel offers no Dry run button (docs/SPEC-AMENDMENTS.md §13 U8): a dry run is the page message `panel/fill {dryRun: true}`, which only the tests send, and the review shows each field as filled or not, with no status, source, reason or "AI guess" mark. On a live posting, choose **Autofill** and check the form before pressing anything: nothing is submitted unless Submit is on Auto. Step 6's Dry run below is as it was before v4.
+
 During Phases 2-6 TailorIT's autofill backend was built in a worktree (`F:\Develop\TailorIT-wt-autofill`, branch `autofill`), and the dry run used a build of its own (`npm run build:worktree`) against that worktree's scratch servers on 3300. That branch is now merged into the owner's checkout, `F:\Develop\TailorIT` (branch `v1.2`), so the dry run uses the ordinary production build against the owner's own TailorIT on `http://localhost:3100`.
 
 ## What is built

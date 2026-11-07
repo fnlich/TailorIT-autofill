@@ -244,17 +244,55 @@ Your 249 signed-in snapshots, built into adapters for about 25 platforms, then f
 162. **Lead.** Where a site's own adapter reads a page state (an account step, a choice before the form), the generic rules never take the page; after the auto-apply agent pressed a job's Submit it presses no other entry and waits for the confirmation; an error the page showed before anything was written leaves the job to you ("needs you"), never failed. The new notice's wording is a draft.
 163. **Lead (fixtures).** The converter clears a person's chosen marks wherever a page draws them, defaults included (Workday's "Select One" aside), and refuses a file that still holds one; it drops other extensions' UI and their parameters, a page's own overlays drawn in shadow roots, sign-in tokens (UltiPro's hidden sign-in frame carried the account's name and email in base64), per-load tokens and file names. The public captures of 2026-11-01/02 keep their test choices as listed exceptions; a dummy-data "-chosen" capture converted again would lose its chosen state. Your Yes/No answer on HiBob and your text-message opt-in on Rippling were cleared from the committed fixtures too, and one snapshot (iCIMS's US Employment Application, whose state lists reveal where you worked) was not committed.
 
+## 13. v4: your request of 2026-11-07 (decided under your standing approval; each yours to overrule)
+
+Your request of 2026-11-07 (the Jobright-like side panel, "?" tooltips, candidate answers for typeable dropdowns, row previews, "Never flag to the user, just determine with your own", branded notifications on the page), built and merged as docs/SPEC-AMENDMENTS.md §13 says (D1 to D12, U1 to U8, the typeable dropdowns). Each item states what was built; answer by number as above.
+
+**The run (decide, don't flag)**
+
+164. **Lead (D5, the coordinator at the merge).** A binding waiver asked as an agreement ("Do you agree to binding arbitration?", "Are you willing to sign a non-compete?") is agreed only when the form requires it, under either Consents mode; an optional one is left unanswered (decided, never handed to you), the same as an optional binding checkbox and as the first-run disclosure says ("except a binding clause the form does not require"). The run's own build agreed to an optional one under All agreements. Default: as built. The alternative: agree to an optional binding waiver under All agreements too (the disclosure would then change).
+165. **Lead (D10).** At rest on a final step a toast says "Autofill complete · 7/7 required fields filled" (the counts as they stand). Default: keep. The alternative: no toast when nothing is left for you.
+166. **Ask (D2, not built).** A remote search still chooses no result whose match is in the flag band (0.6 to 0.85); it types its next candidate until a clean result reaches the fill band, or leaves the field empty. Taking a flag-band result at once would mean accepting one whose label carried words aimed at AI tools (chosen by its clean part). Default: as built.
+167. **Ask (D9 against trap spec 20).** Every informational notice is gone but one: the tripwire sentence (text on the page addressed to AI tools was ignored) still shows on the page, as a branded toast, because the specification's trap test reads it there. Default: keep. Drop it if you will let that test change.
+
+**The side panel**
+
+168. **Lead (U1).** One view at a time: set-up, main, Settings, or the profile editor. Connected with an incomplete profile shows only "Complete your profile details".
+169. **Lead.** "Complete" means a first and a last name, an email (yours, or your account's sign-in address that an empty one stands for), a phone number, and a city or a country; the "?" lists what is missing. To tell, opening the side panel reads your profile once per connection (GET /profile, never the sensitive part), and again after the editor saves.
+170. **Lead (U2).** Step 1's GO shows the first-run disclosure before Connect, so the store's prominent disclosure still comes before any pairing: one click more than Jobright's GO.
+171. **Lead (U3).** A profile that cannot be read shows the main view, so you are never locked out (the fill reads your profile itself). Step 2's GO waits until the account is connected.
+172. **Lead (U4).** At an account wall "Sign up & Autofill" takes the place of going on with a run paused at the sign-in: the wall's button signs in.
+173. **Lead (U5).** Settings in the side panel are a draft until Save (✕ drops an unsaved change); the options page still saves each change at once. Both show the modes in one order, and "Side panel view" is now "Default view".
+174. **Lead (U6).** The options page no longer shows "Your fixes" (Save my answer is offered nowhere), "Wait for me to confirm each draft" or "Ask me each time" (D6).
+175. **Lead (U7).** Every explanation is a "?" tooltip; what a setting is now, the first-run disclosure, the sentence on what never goes to the AI and the counters' list stay as text. A form's status line still says where its run stands, but no longer what to do at a pause: the page's TailorIT notification says that.
+176. **Lead (U8).** "Résumé: <label> · Preview · Change" shows until the first run lists the résumé's row, which then carries Preview, Show and Change; the cover-letter row carries Preview and Show. The job card's cover-letter row and Write it now are gone: the fill writes the letter when the form asks for one.
+177. **Lead.** The main view drops Save to tracker, the card's chips and "Already in your tracker", the "What the fill uses" box and the foot ("Connected as …", Open TailorIT Jobs): your account shows in Settings.
+178. **Lead.** No Dry run, Continue or Cancel buttons: Autofill goes on with a paused run, Cancel is on the progress line while a run works, and a dry run is left to the tests. While a run works, the main button stays in place, disabled, with a spinner.
+179. **Lead.** The in-page panel keeps its notices and each row's drawer (Show on page, the closest options) as before; its rows are the new ticks and circles, as the side panel's.
+
+**Typeable dropdowns**
+
+180. **Lead.** A long list (50 options or more, or one read only in part) whose read holds no option for your answer is typed into with your answer's candidate answers, as a remote search is, where the widget filters as you type (declared by its adapter, or marked so by its ARIA); up to six candidates within 15 s, a result chosen only when it matches without doubt. Any other list is left empty.
+181. **Lead.** Lever's "Current location" is searched with an untrusted Escape after each typed candidate (Lever starts its search on any key but the arrows and Enter; its Escape closes nothing) and a result is chosen with one mousedown, both read from the public page's own script on 2026-11-07. Default: as built. The alternative: leave the field to you, as before.
+
+**Still unknown**
+
+182. **Ask (snapshot).** Workday's prompts (School, Field of Study, Country Phone Code, Skills, "How Did You Hear About Us?") stay yours: none of the Workday snapshots of 2026-11-06 shows a prompt's results open (each holds only chosen pills). Wanted: a signed-in snapshot with a prompt's results open (type into it, wait for the list, save the page).
+183. **Ask (snapshot).** Greenhouse's Discipline is searched like Degree, with your field of study's candidate answers, but no fixture holds the question with its list. Wanted: a Greenhouse form whose Discipline list is open.
+
+**What v4 needs you to do:** reload the extension in `chrome://extensions`; choose I understand on the disclosure when the side panel or the options page shows it again (version 8: until then Submit stays Manual, nothing is recorded as Applied, no page is looked up as it loads, and neither Sign-in Auto nor Sign up & Autofill acts); and restart TailorIT's dev server, whose lookup now sends the job's industry for the job card (TailorIT `187696e` on `v1.2`).
+
 ## Snapshots and owner-only inputs still needed
 
 ### Still lacking, per platform (after the snapshots of 2026-11-06)
 
 One line per platform: what no snapshot shows yet, and (live) what only a live check can show. A throwaway account and dummy data, submitting nothing, as before.
 
-- **Greenhouse:** a school search showing results; an upload error; a second education block after "Add another"; an embed's confirmation inside a company page; what the email-code step does once the code is typed.
-- **Lever:** the location search with suggestions open (and whether it takes typed text without a pick); the résumé parse's busy sign and what it fills (m12); a failed Submit's errors.
+- **Greenhouse:** a school search showing results; Discipline's list open (item 183); an upload error; a second education block after "Add another"; an embed's confirmation inside a company page; what the email-code step does once the code is typed.
+- **Lever:** ~~the location search with suggestions open (and whether it takes typed text without a pick)~~ (answered by a read-only live capture of a public page, 2026-11-07: its results open, and its script empties the box when it is left while its list shows, so a result is chosen); the résumé parse's busy sign and what it fills (m12); a failed Submit's errors.
 - **Ashby:** its résumé parse in progress; a ValueSelect open on these forms.
 - **Workable:** a failed upload; what "Apply now" does on jobs.workable.com; the success panel on either host; the job-search site's dialog after scrolling.
-- **Workday:** the page after Review's Submit; a validation error after Next; a prompt's list open; how a date part takes typed digits (live); the "Autofill with Resume" step before its upload and while Workday reads it; a failed upload; Languages' and Certifications' blocks; a CAPTCHA on an account form; the loading panel shown.
+- **Workday:** the page after Review's Submit; a validation error after Next; a prompt's list open (item 182); how a date part takes typed digits (live); the "Autofill with Resume" step before its upload and while Workday reads it; a failed upload; Languages' and Certifications' blocks; a CAPTCHA on an account form; the loading panel shown.
 - **iCIMS:** login.icims.com and a returning candidate's path; the gate's errors and a visible hCaptcha; a dropdown open (and the event that opens it), "Add More" and the date parts in use; a failed résumé read; the page after a last IForm's Submit; errors on the profile, EEO and IForm pages; what the consent and phone gates show next; the step bar on a narrow (mobile) layout.
 - **Taleo:** the New User registration, the application's flow (`flow.jsf`, `application.jss`) and its confirmation, and "Apply as Guest".
 - **SuccessFactors:** the application form after the account, unfilled; the DPCS dialog at Apply and the registration's terms dialog; any email verification; the confirmation; a Career Site Builder site's hand-off; the referrer a `/career` post-back carries (live).
@@ -288,13 +326,13 @@ Copied as the notes give them.
 
 ### Lever and Greenhouse
 
-- Phase 2 (adapters): "Snapshots needed (report): Lever + Greenhouse after a failed submit (validation errors); Lever location search with suggestions open (Phase 4); Greenhouse react-select open (Phase 4); both just after a resume upload (busy hint; Phase 5 reconcile); Greenhouse with MyGreenhouse "Autofill with Greenhouse" applied." **Answered (the snapshots of 2026-11-06):** Greenhouse after a failed Submit (ABC Legal's frame), its react-select open, after an upload, and with MyGreenhouse's Autofill applied; still wanted: Lever after a failed Submit and its location suggestions open.
+- Phase 2 (adapters): "Snapshots needed (report): Lever + Greenhouse after a failed submit (validation errors); Lever location search with suggestions open (Phase 4); Greenhouse react-select open (Phase 4); both just after a resume upload (busy hint; Phase 5 reconcile); Greenhouse with MyGreenhouse "Autofill with Greenhouse" applied." **Answered (the snapshots of 2026-11-06):** Greenhouse after a failed Submit (ABC Legal's frame), its react-select open, after an upload, and with MyGreenhouse's Autofill applied; still wanted: Lever after a failed Submit (its location suggestions open came with the live capture of 2026-11-07).
 - Phase 2 (adapters): "Hooks left out (no markup in snapshots): stepSignature, nextButton, repeatables, prefill, authState on both; isBusy on Greenhouse. proxyFor not needed." **Answered (the snapshots of 2026-11-06):** Greenhouse's isBusy (its Submit's spinner) and its email code (`authState` 'email-code').
 - Phase 2 (fixtures): "Snapshots still missing: a Lever posting page without its form (policy check); a Greenhouse form with an education section; a company page with the Greenhouse iframe in it." **Answered (the snapshots of 2026-11-06):** all three (a Lever posting, Nuvem's education section, three company pages around a Greenhouse frame).
 
 ### Lever
 
-- Phase 2 (fixtures): "Lever "Current location" = remote typeahead (Phase 4): does Lever accept typed text without picking a suggestion? (dry run)"
+- Phase 2 (fixtures): "Lever "Current location" = remote typeahead (Phase 4): does Lever accept typed text without picking a suggestion? (dry run)" **Answered (the live capture of 2026-11-07, v4):** its script empties the box when it is left while its list shows (typing shows the list), so the extension chooses a result (item 181).
 - The audit of 2026-11-06 (m12, skipped): Lever may still be reading the resume just uploaded (its own "autofill from resume") while the extension writes the other fields, so it could write over them. Not fixed: no snapshot shows that moment. Wanted: a snapshot of a Lever form just after a resume is put in, while it still shows its busy sign, and the same form after it settles, to read its busy sign and what it fills. **Still open after the snapshots of 2026-11-06:** neither Lever capture shows "Analyzing resume..." or a busy sign.
 
 ### Workday
