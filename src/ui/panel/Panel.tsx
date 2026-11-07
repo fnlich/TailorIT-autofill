@@ -25,9 +25,14 @@
  *     the job and can add it;
  *   - the main button, big and teal: "Autofill" (panel/fill {dryRun: false}); "Sign up & Autofill" (panel/fill
  *     {dryRun: false, signIn: true}) while the tab's application frame shows an account wall (PageState.wall); and,
- *     while a run waits to go on (a pause, a sign-in, a new page under Autofill after page turn: Manually), the same
- *     "Autofill" sends panel/continue. While a run works it spins, and the progress below has Cancel. No Dry run,
- *     Continue or Cancel buttons (the messages stay);
+ *     while a run waits to go on (paused: a hand-off or a sign-in), the same "Autofill" sends panel/continue. A run
+ *     resting on a new page under Autofill after page turn: Manually reports 'review' with no row (v4, D7: no
+ *     page-turned notice): its Autofill is a plain panel/fill, which the run takes as going on there. On a posting page
+ *     (no form) it shows only while the application frame shows an entry choice (PageState.choice: Workday's "Start
+ *     Your Application", whose Autofill presses the declared entry) or an account wall. Whenever what it says and
+ *     sends changes, it takes no click until the new label has been shown CONTROL_SEEN_MS (seen.ts, the v4 review's
+ *     L4: a page cannot flip it as the pointer comes). While a run works it spins, and the progress below has Cancel.
+ *     No Dry run, Continue or Cancel buttons (the messages stay);
  *   - "Ask custom question" (Ask.tsx: panel/ask), an outline button that unfolds the box;
  *   - "Résumé: <label> · Preview · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
  *     panel/withoutResume, the `preview` port) until a run lists the résumé's own row;
@@ -57,7 +62,7 @@ import type {
 } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
-import { saysNoAi, type FrameReport } from '../../shared/report';
+import { leftOut, saysNoAi, type FrameReport } from '../../shared/report';
 import { Brand } from '../brand/Logo';
 import { Icon } from '../brand/Icon';
 import { AgentStatusLine, useAgentStatus } from '../page/agent';
@@ -78,6 +83,7 @@ import { useTabReports, type LinkState } from './reports';
 import { SettingsView } from './SettingsView';
 import { SetupView } from './Setup';
 import { useProfileCheck } from './profile-check';
+import { BROWSER_SEEN_CLOCK, useShownFor, type SeenClock } from './seen';
 import { useFollowedTab } from './tab';
 
 export interface PanelProps {
@@ -88,6 +94,8 @@ export interface PanelProps {
   now?: () => number;
   /** Puts text on the clipboard (the custom answer's Copy); the browser's by default. */
   copyText?: (text: string) => Promise<boolean>;
+  /** The clock the main button's CONTROL_SEEN_MS is timed on (seen.ts); the browser's by default. */
+  seenClock?: SeenClock;
 }
 
 /** The browser's clipboard: false when it would not take the text. */
@@ -108,13 +116,21 @@ const TAILORIT_LINKS = {
   tracker: `${__TAILORIT_ORIGIN__}/tracker`,
 } as const;
 
-/** The run statuses at which a run waits for the person's word to go on. */
+/** The run statuses at which a run waits for the person's word to go on (the machine's pauses: a hand-off, a sign-in,
+ *  each answered by run/continue's CONTINUE). The main button then sends panel/continue. A run resting on a new step
+ *  under Autofill after page turn: Manually is at 'review' (v4, D7: it raises no page-turned notice any more), and its
+ *  plain panel/fill goes on there. */
 const PAUSED: ReadonlySet<FrameReport['status']> = new Set<FrameReport['status']>(['handoff', 'auth-needed']);
 
-/** Whether a frame's run waits to go on: paused (a hand-off, a sign-in), or resting on a new step under Autofill after
- *  page turn: Manually (the page-turned notice, v3 Phase 3). The main button then sends panel/continue. */
-const awaitsContinue = (report: FrameReport) => PAUSED.has(report.status)
-  || report.notices.some((notice) => notice.code === 'page-turned');
+/** What the main button says and sends: Autofill, Sign up & Autofill, or (labelled Autofill) go on with a paused run. */
+type MainMeaning = 'fill' | 'sign-up' | 'continue';
+
+/** The main button's message for what it means. */
+function mainMessageOf(meaning: MainMeaning, tabId: number): RunMessage {
+  if (meaning === 'sign-up') return { v: 1, type: 'panel/fill', tabId, dryRun: false, signIn: true };
+  if (meaning === 'continue') return { v: 1, type: 'panel/continue', tabId };
+  return { v: 1, type: 'panel/fill', tabId, dryRun: false };
+}
 
 /** What a refusal means to the person. */
 function refusalOf(error: Exclude<Answer<unknown>, { ok: true }>['error']): string {
@@ -144,7 +160,8 @@ function asksForLetter(page: PageState | null, reports: readonly FrameReport[]):
  *  set-up view is the gate's (`gate`), before the main view. */
 type View = { name: 'main' } | { name: 'settings' } | { name: 'editor'; back: 'setup' | 'settings' };
 
-export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipboardCopy }: PanelProps) {
+export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipboardCopy,
+  seenClock = BROWSER_SEEN_CLOCK }: PanelProps) {
   const root = useRef<HTMLElement>(null);
   const dashboardId = useId();
   const tabId = useFollowedTab(platform, pinnedTabId);
@@ -401,23 +418,26 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     );
   }
 
+  const wall = page?.wall !== undefined;
+  // The v4 review (M4): the tab's application frame shows an entry choice (Workday's "Start Your Application", whose
+  // address reads as the posting's): Autofill answers it with the declared entry.
+  const choice = page?.choice === true;
   // A recognised posting page with no form (v3 Phase 3b): its card shows, and Autofill waits for the application; the
-  // platform's page after submitting (the review) shows the card POST /applied answered, without Autofill.
-  const postingOnly = page?.support === 'no-form' && (page.posting === true || page.confirmation === true);
+  // platform's page after submitting (the review) shows the card POST /applied answered, without Autofill. A posting
+  // that shows an entry choice or an account wall is not one: Autofill (or Sign up & Autofill) answers it there.
+  const postingOnly = page?.support === 'no-form' && (page.confirmation === true
+    || (page.posting === true && !choice && !wall));
   // The platform confirmed the tab's application (the review, Jobright's "Submitted!"): no Autofill, no Cancel or Skip.
   const submitted = page?.submitted !== undefined;
   const cardJob = answered?.job ?? null;
-  // v4 ui: the main button's message: Sign up & Autofill at an account wall, else go on with a run that waits, else
-  // Autofill.
-  const wall = page?.wall !== undefined;
-  const paused = reports.some(awaitsContinue);
-  const mainMessage = (target: number): RunMessage => (wall ? { v: 1, type: 'panel/fill', tabId: target, dryRun: false,
-    signIn: true } : paused ? { v: 1, type: 'panel/continue', tabId: target } : { v: 1, type: 'panel/fill', tabId: target,
-    dryRun: false });
+  // v4 ui: the main button's meaning: Sign up & Autofill at an account wall; Autofill at an entry choice (a fill that
+  // presses the entry); else go on with a run that waits; else Autofill.
+  const meaning: MainMeaning = wall ? 'sign-up' : choice ? 'fill' : reports.some((report) => PAUSED.has(report.status))
+    ? 'continue' : 'fill';
   const offersFill = tabId !== null && page?.support !== 'none' && !postingOnly && !submitted;
-  // The résumé line until a run lists the résumé's own row (which then has its Preview).
+  // The résumé line until a run lists the résumé's own row (which then has its Preview): one the lists show (D8).
   const resumeRow = reports.some((report) => report.fields.some((row) => row.category === 'file.resume'
-    && row.status !== 'blocked'));
+    && !leftOut(row)));
   /** v4 ui: which file a résumé or cover-letter row previews: the PDF the fill attached or would attach. */
   const previewOf = (row: ReportRow): PreviewKind | null => {
     if (row.category === 'file.resume') {
@@ -473,15 +493,8 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
       )}
       {offersFill && tabId !== null && (
-        <div className="tia-toolbar">
-          <button type="button" className="tia-cta" disabled={busy || working}
-            data-working={busy || working ? 'true' : undefined} data-main-action={wall ? 'sign-up' : paused ? 'continue' : 'fill'}
-            onClick={() => void run(mainMessage(tabId))}>
-            {(busy || working) && <Icon name="spinner" size={20} className="tia-icon tia-spin" />}
-            {wall ? COPY.mainView.signUpFill : COPY.panel.fill}
-          </button>
-          {wall && <HelpTip text={COPY.mainView.signUpHelp} topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />}
-        </div>
+        <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock}
+          onRun={(message) => void run(message)} />
       )}
       {tabId !== null && page?.support !== 'none' && (
         <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
@@ -536,6 +549,30 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
         </section>
       )}
     </main>
+  );
+}
+
+/** The main button (v4 ui): big and teal, "Autofill" or "Sign up & Autofill" (its "?" beside it), spinning while a run
+ *  works. The v4 review (L4): it takes no click until what it means (what it sends, to which tab) has been shown
+ *  CONTROL_SEEN_MS (seen.ts), disabled meanwhile; a click then sends the message of the meaning it shows. */
+function MainButton({ tabId, meaning, working, clock, onRun }: { tabId: number; meaning: MainMeaning; working: boolean;
+  clock: SeenClock; onRun(message: RunMessage): void }) {
+  const seen = useShownFor(`${tabId}|${meaning}`, clock);
+  const label = meaning === 'sign-up' ? COPY.mainView.signUpFill : COPY.panel.fill;
+  return (
+    <div className="tia-toolbar">
+      <button type="button" className="tia-cta" disabled={working || !seen} data-working={working ? 'true' : undefined}
+        data-main-action={meaning} onClick={() => {
+          // Decided at the click, on what this render shows: a meaning not yet shown long enough is never acted on.
+          if (seen && !working) onRun(mainMessageOf(meaning, tabId));
+        }}>
+        {working && <Icon name="spinner" size={20} className="tia-icon tia-spin" />}
+        {label}
+      </button>
+      {meaning === 'sign-up' && (
+        <HelpTip text={COPY.mainView.signUpHelp} topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />
+      )}
+    </div>
   );
 }
 
@@ -640,9 +677,11 @@ function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
 }
 
 /** Before any run, when no job card says more: what the tab's page holds, from the worker's frame registry; nothing
- *  until it is known. */
+ *  until it is known, and no "No application form" where the page shows an entry choice or an account wall, which the
+ *  main button answers (the v4 review, M4). */
 function PageStrip({ page }: { page: PageState | null }) {
   if (page === null) return null;
+  if (page.support === 'no-form' && (page.choice === true || page.wall !== undefined)) return null;
   if (page.support === 'form') {
     return (
       <p className="tia-strip" data-strip="form" data-tone="brand">

@@ -1396,6 +1396,8 @@ const SETUP = {
   profileMissing: (items: readonly string[]) => `Still missing: ${listed(items)}.`,
   gaps: PROFILE_GAP_WORDS,
   profileDone: 'Your autofill information has what Autofill needs.',
+  // v4 review (fix B): step 2's "?" when the profile could not be read; Start applying stays open.
+  profileUnreadable: "TailorIT couldn't read your autofill information just now, so it can't say what is missing. You can start applying: Autofill reads it again as it fills.",
   go: 'GO',
   /** The pills' accessible names: the step, then what the pill does or says. */
   goLabel: (step: string) => `${step}: go`,

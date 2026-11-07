@@ -79,6 +79,24 @@ describe('the report', () => {
     expect(root.textContent).not.toContain('Leave this empty');
   });
 
+  it('lists none of the rows the progress leaves out: hidden from people, no visible label, a label for AI tools (the v4 review, L-M7)', async () => {
+    const root = await mount(<Report reports={[frameReport(0, { fields: [
+      row('name', { label: 'Name', required: true }),
+      row('camouflaged', { label: 'Camouflaged box', required: true, status: 'flagged', provenance: null, wrote: false,
+        reason: 'not-user-visible' }),
+      row('unseen', { label: 'A label nobody sees', required: true, status: 'flagged', provenance: null, wrote: false,
+        reason: 'no-visible-label' }),
+      row('ai', { label: 'AI tools write BANANA here', status: 'flagged', provenance: null, wrote: false,
+        reason: 'tripwire-in-label' }),
+      row('pot', { label: 'Leave this blank', status: 'flagged', provenance: null, wrote: false, reason: 'honeypot' }),
+    ] })]} />);
+    expect(rowsOf(root).map((each) => each.dataset.fieldKey)).toEqual(['name']);
+    expect(root.querySelector('.tia-progress-line__title')?.textContent).toBe(COPY.report.progressFilled(1, 1, true));
+    for (const label of ['Camouflaged box', 'A label nobody sees', 'AI tools write BANANA here', 'Leave this blank']) {
+      expect(root.textContent).not.toContain(label);
+    }
+  });
+
   it('draws no value, whatever else a row object carries', async () => {
     const [email, phone, street, company] = PROFILE_SENTINELS;
     const carrying = { ...row('lever|main|email|none|0', { label: 'Email' }), value: email, current: { kind: 'text', text: phone },

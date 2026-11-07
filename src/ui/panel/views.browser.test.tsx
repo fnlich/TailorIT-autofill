@@ -11,8 +11,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
 import { adoptPageStyles } from '../page/styles';
 import {
-  authStatus, button, click, completeProfile, createFakeWorker, frameReport, mount, row, settle, typeInto, unmountAll,
-  type FakeWorker,
+  authStatus, button, click, completeProfile, createFakeWorker, frameReport, mount, row, SEEN_AT_ONCE, settle, typeInto,
+  unmountAll, type FakeWorker,
 } from '../ui.testkit';
 import { Panel } from './Panel';
 import { profileGaps } from './profile-check';
@@ -21,7 +21,7 @@ const WORDS = COPY.setup;
 
 async function open(worker: FakeWorker): Promise<HTMLElement> {
   adoptPageStyles(document);
-  const root = await mount(<Panel platform={worker.platform} pinnedTabId={5} />);
+  const root = await mount(<Panel platform={worker.platform} pinnedTabId={5} seenClock={SEEN_AT_ONCE} />);
   await settle();
   return root;
 }
@@ -150,6 +150,28 @@ describe('the set-up view (v4 ui)', () => {
     await settle();
     expect(viewOf(root)).toBe('setup');
     expect(stepsOf(root)).toEqual([['account', 'done'], ['profile', 'done']]);
+    expect(start(root).disabled).toBe(false);
+    await click(start(root));
+    expect(viewOf(root)).toBe('main');
+  });
+
+  it('opens Start applying once connected when the profile cannot be read, its "?" saying so (the v4 review, M-L6)', async () => {
+    const worker = createFakeWorker();
+    worker.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
+    worker.script.profile = null;
+    const root = await open(worker);
+    expect(viewOf(root)).toBe('setup');
+    expect(start(root).disabled).toBe(true);
+    // TailorIT's page connected this browser; the profile then cannot be read.
+    worker.script.auth = authStatus();
+    await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'connection' }));
+    await settle();
+    expect(worker.sentOfType('panel/profile')).toEqual([{ v: 1, type: 'panel/profile', sensitive: false }]);
+    // The view stays, step 1 ticked; step 2 a GO whose "?" says the profile could not be read; Start applying opens.
+    expect(viewOf(root)).toBe('setup');
+    expect(stepsOf(root)).toEqual([['account', 'done'], ['profile', 'go']]);
+    expect(tipOf(root, 'profile')).toBe(`${WORDS.profileHelp} ${WORDS.profileUnreadable}`);
+    expect(root.querySelector<HTMLButtonElement>('button[data-step-action="profile"]')!.disabled).toBe(false);
     expect(start(root).disabled).toBe(false);
     await click(start(root));
     expect(viewOf(root)).toBe('main');

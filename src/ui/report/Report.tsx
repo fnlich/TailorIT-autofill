@@ -19,8 +19,9 @@
  * added"), then "Required", then "Optional", each row a line: a teal tick when filled, an empty grey circle when not,
  * a spinner while it is written, and its label as a button that shows the field on the page (Show on page: scrolled
  * into view and focused, nothing drawn). No status chip, no reason sentence, no "AI"/"AI guess" mark, no alert or cross,
- * no "Needs you", no Save my answer; a blocked row (a honeypot, a field with no visible label, a guard's refusal) is
- * neither listed nor counted (model.ts shownReports). The row being written scrolls into view, and after SKIP_AFTER_MS
+ * no "Needs you", no Save my answer; a row the run leaves out (shared/report.ts leftOut: a guard's refusal, a honeypot,
+ * a field hidden from people, one with no visible label, one whose label addresses AI tools) is neither listed nor
+ * counted (model.ts shownReports). The row being written scrolls into view, and after SKIP_AFTER_MS
  * on the same field it offers Skip, which gives up that one write (never a guard).
  *
  * The résumé and cover-letter rows (file.resume, file.coverLetter, freeText.coverLetter; v4 ui): on the right, Preview
@@ -309,7 +310,7 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
     </>
   );
   const named = reports.length > 1 || reports.some((report) => report.frameId !== 0);
-  // A run at rest with nothing counted and no row (a new step it has not read: page-turned) says no "0/0 · 0%": only
+  // A run at rest with nothing counted and no row (a new step it has not read, after a page turn) says no "0/0 · 0%": only
   // where each form stands.
   const counted = state !== 'rest' || progress.of > 0 || hasRows;
   return (

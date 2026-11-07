@@ -320,3 +320,44 @@ export async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, te
 export function button(root: ParentNode, text: string): HTMLButtonElement | null {
   return [...root.querySelectorAll('button')].find((each) => each.textContent?.trim() === text) ?? null;
 }
+
+// ── The side panel's main button clock (the v4 review, L4: panel/seen.ts) ─────────────────────────────────────────
+
+/** A clock on which every meaning of the main button has been shown long enough by its first check: each read is a
+ *  minute on from the last, and frames run at once. For tests about anything but the CONTROL_SEEN_MS rule itself. */
+export const SEEN_AT_ONCE: { now(): number; frames(callback: () => void): () => void } = (() => {
+  let time = 0;
+  return {
+    now: () => {
+      time += 60_000;
+      return time;
+    },
+    frames: (callback: () => void) => {
+      callback();
+      return () => undefined;
+    },
+  };
+})();
+
+/** A clock the test moves by hand: `at` is the time (ms), and frames wait until `flush()` runs them (inside act). */
+export function manualClock(): { now(): number; frames(callback: () => void): () => void; at: number; flush(): Promise<void> } {
+  let queued: Array<() => void> = [];
+  const clock = {
+    at: 0,
+    now: () => clock.at,
+    frames: (callback: () => void) => {
+      queued.push(callback);
+      return () => {
+        queued = queued.filter((each) => each !== callback);
+      };
+    },
+    async flush() {
+      await act(async () => {
+        const due = queued;
+        queued = [];
+        for (const callback of due) callback();
+      });
+    },
+  };
+  return clock;
+}

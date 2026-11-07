@@ -3,8 +3,8 @@
  * rows by section, the one run status that most needs the person, the progress (v3 Phase 3, shared/report.ts
  * progressOf: the percent of the required fields filled, one rule for both panels and the launcher) and the field
  * lists (Required, then Optional, each row filled, missing or being filled). Plain functions over the reports, which
- * hold labels, codes and counts and never a value. v4 ui (the owner's "never flag", D1/D6/D8): no AI marks; blocked
- * rows are neither listed nor counted (shownReports).
+ * hold labels, codes and counts and never a value. v4 ui (the owner's "never flag", D1/D6/D8): no AI marks; rows the
+ * run leaves out (shared/report.ts leftOut) are neither listed nor counted (shownReports).
  */
 import { FILL_STATUSES, type FillStatus } from '../../core/enums';
 import { CLASS_POLICIES, policyClassOf } from '../../core/resolver/categories';
@@ -12,7 +12,7 @@ import type { RunStatus } from '../../core/types/run';
 import { PAGE_COPY } from '../../shared/copy';
 import type { IconName } from '../../shared/icons';
 import {
-  filledByPerson, isReady, leftForPerson, needsPerson, NOTICE_CODES, progressOf, rowProgressOf, type FrameReport,
+  filledByPerson, isReady, leftForPerson, leftOut, needsPerson, NOTICE_CODES, progressOf, rowProgressOf, type FrameReport,
   type Progress, type RowProgress,
 } from '../../shared/report';
 
@@ -186,16 +186,18 @@ export interface ListRow {
   current: boolean;
 }
 
-/** v4 ui (D8): the reports as the person is shown them and counted: every row but a blocked one (a honeypot, a field
- *  with no visible label, a canary, a guard's refusal), which is never filled and is none of the person's business. A
- *  report with no blocked row is passed as it is. */
+/** v4 ui (D8): the reports as the person is shown them and counted: every row but one the run leaves out
+ *  (shared/report.ts leftOut: a guard's refusal, a honeypot or a canary, and a field hidden from people, named by no
+ *  visible label, or whose label addresses AI tools), which is never filled and is none of the person's business. One
+ *  rule with the progress, so the lists and the counts agree (the v4 review, L-M7). A report with no such row is
+ *  passed as it is. */
 export function shownReports<T extends Pick<FrameReport, 'fields'>>(reports: readonly T[]): T[] {
-  return reports.map((report) => (report.fields.some((row) => row.status === 'blocked')
-    ? { ...report, fields: report.fields.filter((row) => row.status !== 'blocked') } : report));
+  return reports.map((report) => (report.fields.some(leftOut)
+    ? { ...report, fields: report.fields.filter((row) => !leftOut(row)) } : report));
 }
 
 /** The field lists (v3 Phase 3, Jobright's): the required rows, then the optional ones, each frame's in its report's
- *  order (the form's), frames by id; no blocked row (v4 ui, D8: shownReports). */
+ *  order (the form's), frames by id; no row left out (v4 ui, D8: shownReports). */
 export function fieldListsOf(reports: readonly FrameReport[]): { required: ListRow[]; optional: ListRow[] } {
   const rows = shownReports([...reports].sort((a, b) => a.frameId - b.frameId)).flatMap((report) => report.fields.map((row) => ({
     frameId: report.frameId, row, progress: rowProgressOf(row, report.filling),
