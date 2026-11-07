@@ -1,17 +1,22 @@
 /*
  * The in-page UI, put together (docs/design/runtime.md §10.1): the host and its closed shadow root (shadow.ts), the one
- * stylesheet (styles.ts), the launcher, the notices, the policy card and the Edit with AI buttons, all vanilla DOM; and the
- * in-page review panel (panel.tsx, the only React in the content script), under the notices in the anchor's column,
- * so it never covers the launcher or the card. While it is open the notice stack hides its plain notices (the panel
- * shows them all); the card stays, since only it has the decision's buttons in the page. In a small embedded frame
- * (panelFits false) the panel does not open: the runtime opens the side panel instead.
- * - The launcher and the notices sit at the form root's top-right corner in document coordinates, measured against the
- *   host, because fixed positioning would land off-screen in an embedded form whose iframe grows to fit its content.
+ * stylesheet (styles.ts), the launcher, the toasts (v4) and the Edit with AI buttons, all vanilla DOM; and the in-page
+ * review panel (panel.tsx, the only React in the content script), in the anchor's column, so it never covers the
+ * launcher. In a small embedded frame (panelFits false) the panel does not open: the runtime opens the side panel
+ * instead.
+ * - v4 (the owner, 2026-11-07; toasts.ts): what is left for the person shows as branded toasts, never a notice stack or
+ *   a policy card (both gone). In the top frame they sit fixed at the viewport's top-right corner, left of the
+ *   launcher's tab while it shows (EDGE_CLEARANCE_PX from it), and above the in-page panel in its column while that is
+ *   open; in a frame inside another page, in the anchor's column under the launcher. Their buttons are watched like
+ *   every control of ours (the visible-click rule below).
+ * - The launcher sits at the form root's top-right corner in document coordinates in a frame inside another page,
+ *   measured against the host, because fixed positioning would land off-screen in an embedded form whose iframe grows
+ *   to fit its content.
  * - Everything is re-measured in one animation frame, throttled, on scroll (any scroller, caught in the capture phase),
  *   on resize and when the form root changes size; positions never use a timer.
  * - The runtime decides what each control does; this file only draws and reports trusted clicks, and only those a
- *   person could have meant (S5): the launcher's and the policy card's buttons are watched with IntersectionObserver
- *   v2 (visible.ts), and a trusted click counts only while the control it lands on is visible. A page layer drawn over
+ *   person could have meant (S5): the launcher's and the toasts' buttons are watched with IntersectionObserver v2
+ *   (visible.ts), and a trusted click counts only while the control it lands on is visible. A page layer drawn over
  *   the launcher that lets clicks through (a decoy reading "Continue") makes the launcher not visible, so the click
  *   harvested through it does nothing (logged as content.ui-click-refused). The audit of 2026-11-06 (S-1): every
  *   control's trusted event counts only once the control has been seen without a break for CONTROL_SEEN_MS (600 ms),
@@ -42,20 +47,23 @@ import type { LauncherPrefs } from '../../messaging/schemas';
 import { createAiEdits, type AiEditItem, type AiPrompt } from './ai-edits';
 import { createEdge, type Edge, type HideScope } from './edge';
 import { createLauncher, type LauncherAction, type LauncherView } from './launcher';
-import { createNotices, type NoticeCode, type PolicyChoice } from './notices';
 import { createInPagePanel, type InPagePanel, type PanelActions } from './panel';
 import { createUiHost } from './shadow';
 import type { StyleMode } from './styles';
+import { createToasts, type ToastKind, type ToastSpec } from './toasts';
 import { CONTROL_SEEN_MS, createVisibilityWatch } from './visible';
 
 /** The launcher's size, and its inset from the form root's corner. */
 export const LAUNCHER_PX = 32;
-/** How far the anchor's column (the notices, the policy card) keeps from the tab at the window's edge. The visibility
- *  watch counts a box-shadow's ink as painted over what lies under it, and a card's shadow reaches about 18 px past its
- *  box (IN_PAGE_SHADOWS.card), so a column closer than this would hide the launcher and the grip from it (their clicks
- *  refused), and the tab's own shadow would do the same to a card's buttons. */
+/** How far the anchor's column (the in-page panel) and the toasts keep from the tab at the window's edge. The
+ *  visibility watch counts a box-shadow's ink as painted over what lies under it, and a card's shadow reaches about
+ *  18 px past its box (IN_PAGE_SHADOWS.card), so a column closer than this would hide the launcher and the grip from it
+ *  (their clicks refused), and the tab's own shadow would do the same to a toast's buttons. */
 export const EDGE_CLEARANCE_PX = 24;
 const INSET_PX = 8;
+/** v4: how far the top frame's toasts sit from the viewport's top and right edges (the right one: from the launcher's
+ *  tab, EDGE_CLEARANCE_PX, while it shows). */
+export const TOAST_INSET_PX = 16;
 
 /** An embedded frame smaller than this (its own viewport, in CSS pixels) is too small for the in-page panel: the
  *  launcher's Open review opens the side panel instead. The top frame always has room. */
@@ -64,7 +72,6 @@ export const PANEL_MIN_VIEWPORT = { width: 420, height: 360 } as const;
 /** What the person's trusted clicks ask for. */
 export interface PageUiHandlers {
   onLauncher(action: LauncherAction): void;
-  onPolicyChoice(choice: PolicyChoice): void;
   /** Edit with AI on one field (the owner's amendments): a trusted click on its visible button opens its instruction
    *  box (v3 Phase 3b), whose trusted Generate on a visible button asks for the rewrite with what the person typed
    *  (possibly nothing). Answers what to say in the box (null: it was rewritten, and the box closes). */
@@ -86,15 +93,14 @@ export interface PageUi {
   readonly shadow: ShadowRoot;
   readonly styleMode: StyleMode;
   readonly launcher: { readonly el: HTMLButtonElement; readonly view: LauncherView };
-  readonly notices: { readonly shown: readonly NoticeCode[]; readonly cardShown: boolean };
-  /** The element the launcher and notices are anchored to: the form root (null: nothing to anchor, launcher hidden). */
+  /** v4: the toasts shown now, and a shown toast's buttons (for tests). */
+  readonly toasts: { readonly shown: readonly ToastKind[]; button(kind: ToastKind, which: 'action' | 'close'):
+    HTMLButtonElement | null };
+  /** The element the launcher is anchored to: the form root (null: nothing to anchor, launcher hidden). */
   anchorTo(root: Element | null): void;
   setLauncher(view: LauncherView): void;
-  setNotices(codes: readonly NoticeCode[]): void;
-  /** A new run: notices the person dismissed show again. */
-  resetNotices(): void;
-  showPolicyCard(options: { fromStoredCopy: boolean }): void;
-  hidePolicyCard(): void;
+  /** v4 (toasts.ts): the toasts the run gives now, one per kind; [] removes them all. */
+  setToasts(list: readonly ToastSpec[]): void;
   /** The Edit with AI buttons (ai-edits.ts): one per item; [] removes them all. */
   setAiEdits(items: readonly AiEditItem[]): void;
   /** The Edit with AI buttons drawn now (for tests). */
@@ -161,8 +167,14 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     // Open review must go out inside the click, so the launcher must already have been seen: no waiting here.
     if (counts(launcher.el, true)) handlers.onLauncher(action);
   });
-  const notices = createNotices(doc, (choice, button) => {
-    if (counts(button) && notices.cardShown) handlers.onPolicyChoice(choice);
+  // v4: the toasts' buttons are watched like every control of ours, and counted only once seen long enough.
+  const toasts = createToasts(doc, {
+    counts: (control) => counts(control),
+    controls(added, removed) {
+      for (const control of removed) visibility.unobserve(control);
+      for (const control of added) visibility.observe(control);
+      schedule();
+    },
   });
   // v3 Phase 3: the top frame's launcher sits in the tab at the window's right edge; a frame inside another page keeps
   // it at its form's corner.
@@ -191,11 +203,13 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       for (const control of added) visibility.observe(control);
     },
   });
-  if (edge === null) anchor.append(launcher.el, notices.el);
-  else anchor.append(notices.el);
+  // v4: in the top frame the toasts sit fixed at the viewport's top-right (placeToasts); in a frame inside another page,
+  // in the anchor's column under the launcher.
+  if (edge === null) anchor.append(launcher.el, toasts.el);
+  else toasts.el.classList.add('toasts--fixed');
   // The Edit with AI buttons are controls, so their layer is not hidden from assistive technology. The tab at the edge
   // comes before the anchor's column, whose layout keeps it left of the tab (edgeLimit), so neither covers the other.
-  layer.append(aiEditLayer, ...(edge === null ? [] : [edge.el]), anchor);
+  layer.append(aiEditLayer, ...(edge === null ? [] : [edge.el]), anchor, ...(edge === null ? [] : [toasts.el]));
   root.append(layer);
   /** A trusted click on one of the layer's controls counts only once it has been seen long enough (a control just
    *  drawn included: its click is refused, and the person clicks again). */
@@ -219,7 +233,6 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
   });
   visibility.observe(launcher.el);
   if (edge !== null) for (const control of [edge.close, edge.grip]) visibility.observe(control);
-  for (const button of notices.cardButtons) visibility.observe(button);
   const panelHandlers = handlers.panel;
   const panel = panelHandlers === undefined ? null : createInPagePanel(doc, root, {
     actions: panelHandlers,
@@ -234,7 +247,25 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     return view.innerWidth >= PANEL_MIN_VIEWPORT.width && view.innerHeight >= PANEL_MIN_VIEWPORT.height;
   };
   const panelShown = (open: boolean) => {
-    notices.el.classList.toggle('with-panel', open);
+    // v4: in the top frame the toasts move into the panel's column, above it, while it is open, so neither covers the
+    // other; what the watch knew of their buttons is stale once they moved.
+    if (edge !== null && panel !== null) {
+      if (open) {
+        toasts.el.classList.remove('toasts--fixed');
+        toasts.el.style.removeProperty('right');
+        toasts.el.style.removeProperty('top');
+        anchor.prepend(toasts.el);
+      } else {
+        toasts.el.classList.add('toasts--fixed');
+        layer.append(toasts.el);
+      }
+      for (const kind of toasts.shown) {
+        for (const which of ['action', 'close'] as const) {
+          const control = toasts.button(kind, which);
+          if (control !== null) visibility.reset(control);
+        }
+      }
+    }
     showEdge();
     schedule();
   };
@@ -296,14 +327,28 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       const right = Math.max(rect.right, rect.left + LAUNCHER_PX + INSET_PX * 2);
       const left = Math.max(0, right - hostRect.left - INSET_PX - LAUNCHER_PX);
       const top = Math.max(0, rect.top - hostRect.top + INSET_PX);
-      // The anchor's right edge is the launcher's, so the notices under it line up with the form's corner; in the top
-      // frame, never past the tab at the window's edge: a notice or the policy card over the tab would hide the
+      // The anchor's right edge is the launcher's, so the toasts under it line up with the form's corner; in the top
+      // frame, never past the tab at the window's edge: the panel or a toast over the tab would hide the
       // launcher from the visibility watch (its clicks refused), and the tab over them would hide their buttons.
       anchor.style.left = `${Math.min(left + LAUNCHER_PX, edgeLimit(hostRect))}px`;
       anchor.style.top = `${top}px`;
       anchor.style.transform = 'translateX(-100%)';
     }
+    placeToasts();
     aiEdits.render(hostRect);
+  }
+
+  /** v4: the top frame's fixed toasts, TOAST_INSET_PX from the viewport's top and right, and EDGE_CLEARANCE_PX left of
+   *  the launcher's tab while it shows. */
+  function placeToasts(): void {
+    if (edge === null || !toasts.el.classList.contains('toasts--fixed') || view === null) return;
+    let right = TOAST_INSET_PX;
+    if (!edge.el.hidden) {
+      const tab = edge.el.getBoundingClientRect();
+      if (tab.width > 0) right = Math.max(right, view.innerWidth - tab.left + EDGE_CLEARANCE_PX);
+    }
+    toasts.el.style.right = `${right}px`;
+    toasts.el.style.top = `${TOAST_INSET_PX}px`;
   }
 
   /** The furthest right the anchor's column may reach, in the host's pixels: EDGE_CLEARANCE_PX left of the tab at the
@@ -331,7 +376,12 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     shadow: root,
     styleMode: mounted.styleMode,
     launcher,
-    notices,
+    toasts: {
+      get shown() {
+        return toasts.shown;
+      },
+      button: (kind, which) => toasts.button(kind, which),
+    },
     anchorTo(next) {
       if (anchorRoot !== null) resizes?.unobserve(anchorRoot);
       anchorRoot = next;
@@ -344,22 +394,8 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       launcher.set(next);
       showCorner();
     },
-    setNotices(codes) {
-      notices.set(codes);
-      schedule();
-    },
-    resetNotices() {
-      notices.reset();
-    },
-    showPolicyCard(options) {
-      const wasShown = notices.cardShown;
-      notices.showPolicyCard(options);
-      // What the watch knew of the hidden buttons is stale: a click waits for its fresh word.
-      if (!wasShown) for (const button of notices.cardButtons) visibility.reset(button);
-      schedule();
-    },
-    hidePolicyCard() {
-      notices.hidePolicyCard();
+    setToasts(list) {
+      toasts.set(list);
       schedule();
     },
     setAiEdits(items) {

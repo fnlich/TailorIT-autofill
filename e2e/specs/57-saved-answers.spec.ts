@@ -74,10 +74,9 @@ test.describe('saved answers and drafts', () => {
       labels: LABELS, applicationKey: applicationKeyOf(SAVED.again) });
   });
 
-  test('a draft the person confirms on the report page is theirs: verified, an AI draft still', async ({ extContext, connected: ext, routeLog, logs }) => {
-    // Drafts wait for the person only with "Wait for me to confirm each draft" on (the owner's amendments).
+  test('v4 (D6): a draft is written and accepted at once: verified, an AI draft, with nothing to confirm', async ({ extContext, connected: ext, routeLog, logs }) => {
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
-      llm: { ...DEFAULT_SETTINGS.llm, drafts: true, confirmDrafts: true } } });
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: true } } });
     try {
       const served = trap('01');
       routeLog.serve({ [served.url]: served.file });
@@ -85,19 +84,8 @@ test.describe('saved answers and drafts', () => {
       await page.goto(served.url);
       const tabId = await ext.fill(page);
       const report = await ext.settled(tabId);
-      const why = row(report, 'Why do you want to work here?');
-      expect(why).toMatchObject({ status: 'flagged', provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation' });
-
-      const panel = await ext.reportPage(tabId);
-      await panel.bringToFront();
-      await panel.locator(`li[data-field-key="${why.key}"] button.tia-row__toggle`).click();
-      await panel.locator(`li[data-field-key="${why.key}"] [data-action="confirm-draft"]`).click();
-      await expect(panel.locator('.tia-feedback')).toHaveText(COPY.panel.draftConfirmed);
-      const confirmed = await ext.settled(tabId, { until: (each) => rowOf(each, why.label)?.status === 'verified' });
-      expect(row(confirmed, why.label)).toMatchObject({ status: 'verified', provenance: 'llm-draft', reason: 'ok',
-        needsUserAction: false });
-      await expect(panel.locator(`li[data-field-key="${why.key}"] [data-action="confirm-draft"]`)).toHaveCount(0);
-      await page.bringToFront();
+      expect(row(report, 'Why do you want to work here?')).toMatchObject({ status: 'verified', provenance: 'llm-draft',
+        reason: 'llm-draft-written', wrote: true, needsUserAction: false });
       await expect(page.locator('#why')).toHaveValue(CLEAN_DRAFT);
       await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: served.markers,
         canaries: served.canaries, labels: served.labels, applicationKey: applicationKeyOf(served.url) });

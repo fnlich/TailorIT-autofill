@@ -55,7 +55,6 @@ function mount(doc: Document = document, frameId = 2, options: { confirm?: boole
   const calls: Calls = { shown: [], described: [], confirmed: [], closed: 0, pressed: [] };
   const ui = mountPageUi(doc, {
     onLauncher: () => undefined,
-    onPolicyChoice: () => undefined,
     panel: {
       frameId: () => frameId,
       showField: (key) => calls.shown.push(key),
@@ -383,27 +382,20 @@ describe('the in-page panel', () => {
     expect(ui.shadow.querySelectorAll('li[data-field-key]').length).toBe(1);
   });
 
-  it('hides the page’s plain notices while it is open, keeping the policy card, and says them in the same words', () => {
+  it('v4 (D10): keeps the toasts shown while it is open, in its column above it in the top frame, and back at the corner once closed', () => {
     const { ui } = mount();
-    ui.setNotices(['tripwire', 'validation']);
-    ui.showPolicyCard({ fromStoredCopy: true });
-    const pageTexts = [...ui.shadow.querySelectorAll<HTMLElement>('.notices .notice p')].map((p) => p.textContent);
-    const cardTexts = [...ui.shadow.querySelectorAll<HTMLElement>('.card p')].map((p) => p.textContent);
+    ui.setToasts([{ kind: 'tripwire', text: COPY.notices.tripwire }]);
     ui.openPanel();
-    expect(ui.shadow.querySelector('.notices')?.classList.contains('with-panel')).toBe(true);
-    expect([...ui.shadow.querySelectorAll<HTMLElement>('.notices .notice')].every((item) => getComputedStyle(item).display === 'none'))
-      .toBe(true);
-    expect(getComputedStyle(ui.shadow.querySelector('.card')!).display).not.toBe('none');
-    ui.updatePanel([report(2, { status: 'policy-notice', notices: [{ code: 'tripwire' }, { code: 'validation' },
-      { code: 'policy' }, { code: 'policy-stored-copy' }] })]);
-    const panel = panelOf(ui);
-    // The same sentences as the page's own notices and card; the panel's policy notice has no buttons of its own.
-    expect([...panel.querySelectorAll('[data-notice="tripwire"], [data-notice="validation"]')].map((each) => each.textContent))
-      .toEqual(pageTexts);
-    expect([...panel.querySelectorAll('[data-notice="policy"] p')].map((p) => p.textContent)).toEqual(cardTexts);
-    expect(buttonIn(panel, COPY.policyFillAnyway)).toBeNull();
+    const toasts = ui.shadow.querySelector<HTMLElement>('.toasts')!;
+    expect(ui.toasts.shown).toEqual(['tripwire']);
+    expect(getComputedStyle(ui.shadow.querySelector('.toast')!).display).not.toBe('none');
+    if (ui.edge !== null) {
+      expect(toasts.parentElement?.classList.contains('anchor')).toBe(true);
+      expect(toasts.classList.contains('toasts--fixed')).toBe(false);
+    }
     ui.closePanel();
-    expect(ui.shadow.querySelector('.notices')?.classList.contains('with-panel')).toBe(false);
+    if (ui.edge !== null) expect(toasts.classList.contains('toasts--fixed')).toBe(true);
+    expect(ui.toasts.shown).toEqual(['tripwire']);
   });
 
   it('does not open in a small embedded frame, which leaves the review to the side panel', async () => {

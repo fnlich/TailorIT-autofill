@@ -17,7 +17,7 @@
 import { applicationOf } from '../adapters';
 import { parseAtsUrl } from '../contract/tailorit';
 import type { Platform } from '../core/enums';
-import type { PageState } from '../messaging/schemas';
+import type { PageState, SignInWall } from '../messaging/schemas';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';
@@ -57,6 +57,12 @@ export interface FrameEntry {
   chained?: true;
   chainUrl?: string;
   chainedFrom?: number;
+  // ── v4 run (docs/_v4/run.md) ──
+  /** The account wall the frame shows now, as its frame/wall said (a top or claim frame's; absent: none). Kept while
+   *  the same document says hello again. */
+  wall?: SignInWall;
+  /** The frame shows a choice of how to apply its adapter answers with a declared entry (frame/wall's `choice`). */
+  choice?: true;
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
@@ -73,7 +79,9 @@ export interface FrameChain {
 export async function registerFrame(
   session: StorageArea,
   frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean;
-    nav?: number; letter?: true; keepKey?: string; wraps?: true; claimed?: true; chain?: FrameChain },
+    nav?: number; letter?: true; keepKey?: string; wraps?: true; claimed?: true; chain?: FrameChain;
+    /** v4: the same document's wall and choice, kept from its entry (frame/wall). */
+    wall?: SignInWall; choice?: true },
   now: number,
 ): Promise<FrameEntry> {
   const entry: FrameEntry = {
@@ -99,9 +107,36 @@ export async function registerFrame(
     ...(frame.chain === undefined ? {} : { applicationKey: frame.chain.applicationKey, chained: true as const,
       chainUrl: frame.chain.url, ...(frame.chain.parentFrameId === undefined ? {}
         : { chainedFrom: frame.chain.parentFrameId }) }),
+    ...(frame.wall === undefined ? {} : { wall: frame.wall }),
+    ...(frame.choice === true ? { choice: true as const } : {}),
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
+}
+
+/** v4: a frame's frame/wall: its entry, for the same document, takes the wall and the choice it shows now (none:
+ *  gone). Answers the entry as stored, or null when the frame is not registered for that document. */
+export async function setWall(session: StorageArea, tabId: number, frameId: number, documentId: string | null,
+  shown: { wall: SignInWall | null; choice: boolean }): Promise<FrameEntry | null> {
+  const held = await frameEntry(session, tabId, frameId);
+  if (held === null || held.documentId !== documentId) return null;
+  const { wall: _wall, choice: _choice, ...rest } = held;
+  const entry: FrameEntry = { ...rest, ...(shown.wall === null ? {} : { wall: shown.wall }),
+    ...(shown.choice ? { choice: true as const } : {}) };
+  await session.set({ [keyOf(tabId, frameId)]: entry });
+  return entry;
+}
+
+/** v4: the frame whose wall the tab's page state shows (PageState.wall), and whose wall or choice Sign up & Autofill
+ *  acts at: the tab's claim frame (claimFrameOf), else its top frame. */
+export function wallFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
+  return claimFrameOf(frames) ?? frames.find((frame) => frame.frameId === 0) ?? null;
+}
+
+/** v4: the wall the tab's application frame shows now (wallFrameOf), for PageState.wall. */
+function wallOf(frames: readonly FrameEntry[]): { wall?: SignInWall } {
+  const wall = wallFrameOf(frames)?.wall;
+  return wall === undefined ? {} : { wall };
 }
 
 /** The chain an entry holds, as registerFrame takes it again (the same document's next hello keeps it). */
@@ -219,15 +254,15 @@ export async function pageOfTab(session: StorageArea, tabId: number): Promise<Pa
       const nav = navOf(posting);
       return { support: 'no-form', platform: posting.platform,
         ...(posting.confirmation === true ? { confirmation: true as const } : { posting: true as const }),
-        formKey: `${posting.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120) };
+        formKey: `${posting.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120), ...wallOf(frames) };
     }
-    return { support: frames.length > 0 ? 'no-form' : 'none', platform: null, formKey: null };
+    return { support: frames.length > 0 ? 'no-form' : 'none', platform: null, formKey: null, ...wallOf(frames) };
   }
   const document = (form.documentId ?? `at-${form.registeredAt}`).slice(0, 96);
   const nav = navOf(form);
   return { support: 'form', platform: form.platform,
     formKey: `${form.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120),
-    ...(frames.some((frame) => frame.hasForm && frame.letter === true) ? { letter: true } : {}) };
+    ...(frames.some((frame) => frame.hasForm && frame.letter === true) ? { letter: true } : {}), ...wallOf(frames) };
 }
 
 /** One registered frame, or null. */

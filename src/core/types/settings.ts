@@ -21,14 +21,21 @@
  * field through the same upload path, as the page's own file input takes it, never pressing the page's Remove or Delete,
  * and leaves the field to the person (resume-held-no-input) where the page offers no file input while it shows one. A
  * version 4 value takes Keep it (migrateSettingsV4).
+ * Version 6 (v4, the owner's word of 2026-11-07: "Never flag to the user, just determine with your own"): the run never
+ * waits at a policy card, so "Ask me each time" goes from what a posting that forbids AI does (a stored 'ask' reads as
+ * 'profile-only', the default), and so does the draft confirmation (llm.confirmDrafts: a draft is always written and
+ * accepted). migrateSettingsV5.
  */
 import type { ConsentCategory } from '../enums';
 
 /** What a run does on a posting that says AI-assisted applications are not allowed, or a form that asks the person to
- *  certify they did not use AI: fill from the profile only, with no AI request at all (the default); show the policy
- *  card and let the person choose (the Phase 2 behaviour); or use the AI anyway. */
-export const AI_FORBIDDEN_MODES = ['profile-only', 'ask', 'use-ai'] as const;
+ *  certify they did not use AI: fill from the profile only, with no AI request at all (the default); or use the AI
+ *  anyway. Version 6 (v4): the run never asks, so the Phase 2 policy card ('ask') is gone (AI_FORBIDDEN_MODES_V5). */
+export const AI_FORBIDDEN_MODES = ['profile-only', 'use-ai'] as const;
 export type AiForbiddenMode = (typeof AI_FORBIDDEN_MODES)[number];
+/** Versions 2 to 5's choices, 'ask' among them (read only to migrate them). */
+export const AI_FORBIDDEN_MODES_V5 = ['profile-only', 'ask', 'use-ai'] as const;
+export type AiForbiddenModeV5 = (typeof AI_FORBIDDEN_MODES_V5)[number];
 
 /** The choices of each mode (version 4), the default first. */
 export const MODE_CHOICES = {
@@ -82,7 +89,7 @@ export const PANEL_VIEWS = ['expanded', 'minimized'] as const;
 export type PanelView = (typeof PANEL_VIEWS)[number];
 
 export interface Settings {
-  version: 5;
+  version: 6;
   /** Where the review report shows: the browser's side panel (default) or a panel on the page. */
   panel: 'side' | 'in-page';
   /** The side panel's review at first: whole ('expanded'), or folded to its progress line ('minimized'). */
@@ -99,9 +106,6 @@ export interface Settings {
      *  a short text, marked "AI guess" when nothing in the resume or profile settles it. With modes.ai 'all', the
      *  legal, criminal-history, pay and attention-check questions too (TailorIT's `all` scope). */
     answers: boolean;
-    /** Keep each draft for the person to confirm before the form is ready (the Phase 6 behaviour); off: a draft is
-     *  written and accepted. */
-    confirmDrafts: boolean;
     /** When a posting forbids AI (AI_FORBIDDEN_MODES). */
     whenForbidden: AiForbiddenMode;
   };
@@ -136,16 +140,34 @@ export const DEFAULT_MODES: Modes = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  version: 5,
+  version: 6,
   panel: 'side',
   view: 'expanded',
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip } },
   preapprovedConsent: [...DEFAULT_PREAPPROVED_CONSENT],
-  llm: { tiebreak: true, classify: true, drafts: true, answers: true, confirmDrafts: false, whenForbidden: 'profile-only' },
+  llm: { tiebreak: true, classify: true, drafts: true, answers: true, whenForbidden: 'profile-only' },
   telemetry: { optIn: false },
   offerToSaveAnswers: true,
   interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
 };
+
+/** Versions 2 to 5's AI switches: the draft confirmation, and "Ask me each time" among what a posting that forbids AI
+ *  does. */
+export interface LlmV5 {
+  tiebreak: boolean;
+  classify: boolean;
+  drafts: boolean;
+  answers: boolean;
+  /** Keep each draft for the person to confirm before the form is ready (the Phase 6 behaviour). */
+  confirmDrafts: boolean;
+  whenForbidden: AiForbiddenModeV5;
+}
+
+/** Version 5's settings, as an install stored them before v4's "decide, don't flag" (version 6). */
+export interface SettingsV5 extends Omit<Settings, 'version' | 'llm'> {
+  version: 5;
+  llm: LlmV5;
+}
 
 /** Version 1's settings, as an install stored them before the owner's amendments. */
 export interface SettingsV1 {
@@ -161,7 +183,7 @@ export interface SettingsV1 {
 
 /** Version 4's settings, as an install stored them before "Résumé already on the page" (the behaviour review of
  *  2026-11-06, M2). */
-export interface SettingsV4 extends Omit<Settings, 'version' | 'modes'> {
+export interface SettingsV4 extends Omit<SettingsV5, 'version' | 'modes'> {
   version: 4;
   modes: Omit<Modes, 'resumeOnPage'>;
 }
@@ -171,7 +193,7 @@ export interface SettingsV3 extends Omit<Settings, 'version' | 'view' | 'modes' 
   version: 3;
   /** Press Next on a clean, settled, non-final step (now modes.next). */
   autoAdvance: boolean;
-  llm: Settings['llm'] & {
+  llm: LlmV5 & {
     /** The AI also answers the legal, pay and attention-check questions the profile does not (now modes.ai). */
     answerAll: boolean;
   };
@@ -184,11 +206,32 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
 }
 
 /**
- * Version 4's settings as version 5's (the behaviour review of 2026-11-06, M2): every choice is kept, and "Résumé already
- * on the page" takes its default, Keep it, which is what version 4 did with a résumé the page showed.
+ * Version 5's settings as version 6's (v4, the owner's word of 2026-11-07): every choice is kept but the two that asked
+ * the person: "Ask me each time" on a posting that forbids AI becomes Profile only (the default: nothing goes to the
+ * AI, and no card waits), and the draft confirmation goes (a draft is written and accepted).
+ */
+export function migrateSettingsV5(old: SettingsV5): Settings {
+  const { confirmDrafts: _gone, whenForbidden, ...llm } = old.llm;
+  return {
+    version: 6,
+    panel: old.panel,
+    view: old.view,
+    modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } },
+    preapprovedConsent: [...old.preapprovedConsent],
+    llm: { ...llm, whenForbidden: whenForbidden === 'ask' ? 'profile-only' : whenForbidden },
+    telemetry: { ...old.telemetry },
+    offerToSaveAnswers: old.offerToSaveAnswers,
+    interpretations: { ...old.interpretations },
+  };
+}
+
+/**
+ * Version 4's settings as version 6's, through version 5 (the behaviour review of 2026-11-06, M2): every choice is kept,
+ * and "Résumé already on the page" takes its default, Keep it, which is what version 4 did with a résumé the page
+ * showed.
  */
 export function migrateSettingsV4(old: SettingsV4): Settings {
-  return {
+  return migrateSettingsV5({
     version: 5,
     panel: old.panel,
     view: old.view,
@@ -198,11 +241,11 @@ export function migrateSettingsV4(old: SettingsV4): Settings {
     telemetry: { ...old.telemetry },
     offerToSaveAnswers: old.offerToSaveAnswers,
     interpretations: { ...old.interpretations },
-  };
+  });
 }
 
 /**
- * Version 3's settings as version 5's, through version 4's (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
+ * Version 3's settings as version 6's, through versions 4 and 5 (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
  * the AI's legal, pay and attention-check answers the AI answers mode (on: All, off: Profile only), each as the person
  * had it; the other modes and the default view take their defaults. Consents: All among them is a change, not a choice
  * kept (the owner's decision: every agreement box is ticked, like Jobright): an optional box version 3 left unticked is
@@ -231,7 +274,7 @@ function settingsV4Of(old: SettingsV3): SettingsV4 {
 }
 
 /**
- * Version 2's settings as version 5's, through versions 3 and 4: every choice is kept, and version 3's switch,
+ * Version 2's settings as version 6's, through versions 3, 4 and 5: every choice is kept, and version 3's switch,
  * llm.answerAll, takes its default (on, as the owner chose), so the AI answers mode is All. It acts only while answers
  * are on, so a person who turned the AI's answers off keeps them off.
  */
@@ -240,7 +283,7 @@ export function migrateSettingsV2(old: SettingsV2): Settings {
 }
 
 /**
- * Version 1's settings as version 5's, through versions 2, 3 and 4: each choice still on version 1's default (drafts off,
+ * Version 1's settings as version 6's, through versions 2, 3, 4 and 5: each choice still on version 1's default (drafts off,
  * nothing pre-approved, the two interpretations off) takes version 2's, and every choice the person changed is kept.
  * The new switches take their defaults, but a person who had turned the AI off (the tiebreak and classification both
  * off) keeps answers off and drafts as they were (off unless they turned them on: the lead's decision on the Phase E
@@ -261,7 +304,7 @@ function settingsV2Of(old: SettingsV1): SettingsV2 {
       : [...old.preapprovedConsent],
     llm: { tiebreak: old.llm.tiebreak, classify: old.llm.classify, drafts: aiOff ? old.llm.drafts : true,
       answers: aiOff ? false : DEFAULT_SETTINGS.llm.answers,
-      confirmDrafts: DEFAULT_SETTINGS.llm.confirmDrafts, whenForbidden: DEFAULT_SETTINGS.llm.whenForbidden },
+      confirmDrafts: false, whenForbidden: DEFAULT_SETTINGS.llm.whenForbidden },
     telemetry: { optIn: old.telemetry.optIn },
     offerToSaveAnswers: old.offerToSaveAnswers,
     interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true,

@@ -16,7 +16,8 @@
  *    report: the frame's report is due; it goes out when the run comes to rest (a review, a wait for the person's Next,
  *    a pause, the policy card, the end), so the side panel sees the statuses a person can act on.
  * 4. scan: the step as it is now. The policy gate (the posting page's and the stored copy's states at the first scan,
- *    this frame's visible text at every scan: a hit stops at policy-notice, Fill anyway or Cancel), the raw scan and
+ *    this frame's visible text at every scan: a hit makes the run profile-only, or AI-anyway, as the person's setting
+ *    says; v4: never a card), the raw scan and
  *    the tripwire (every canary in memory for the frame's own scans; the 32 nearest to plan/request and RunState),
  *    detectPause (sign-in and account: AUTH; email code, entry choice, CAPTCHA: PAUSE; nothing on the step is filled),
  *    and the step's signature from the adapter's parts (SCANNED). A new step's notices start afresh. The couldn't-read
@@ -27,8 +28,7 @@
  *    reactive loop (loop.ts), "I currently work here" (planCurrentJob's rows), the final Guard (verify.ts), the rows
  *    and the notices (FILLED); nothing is drawn over the page's fields (the owner's decision of 2026-11-01). A page still busy at a settle's cap pauses (page-busy); a pause or a
  *    hidden frame a later pass found cuts the loop (the Phase 3 review, L-S2 and L-S4): the pause, or the run ends
- *    stopped; a policy statement a later pass revealed shows the card (Cancel: stopped, policy-declined; Fill anyway:
- *    this run ends and a fresh one starts from its RunState, whose gate takes that decision).
+ *    stopped; a policy statement a later pass revealed makes the rest of the fill profile-only (v4: no card).
  * 6. validate: a pause the step shows now (detectPause, the whole document: AUTH or PAUSE, never a click), then the
  *    adapter's errors (fixable: those on a field no pass planned, or one the page emptied after our write, never one
  *    the person emptied: one more pass where the step has an attempt left), its finality ('unknown' without the hook:
@@ -44,7 +44,7 @@
  * 8. await-transition (transition.ts): the step's signature watched until it changes and the page is quiet, capped
  *    after our own click (TIMED_OUT), with no cap when the person advances: the run then rests ('waiting'), its report
  *    sent, and the person's Next moves it on (TRANSITIONED, or STEP_UNCHANGED when errors showed instead).
- * 9. notify, show-review, pause, offer-continue: the in-page UI (notices, the launcher, the card). At review the run
+ * 9. notify, show-review, pause, offer-continue: the in-page UI (v4: the toasts and the launcher). At review the run
  *    rests and still watches the step (an adapter that tells steps apart): the person's own Next after fixing what
  *    the review showed is a transition. A step change the machine ignores (a step at its limit) moves the watch on to
  *    what the page shows, and after MAX_IDLE_TRANSITIONS step changes in a row that filled nothing the run stops
@@ -117,21 +117,17 @@
  *   reported, so the accepted-match cache never takes a match the page or a widget changed at rest (E9).
  *
  * The owner's amendments (docs/SPEC-AMENDMENTS.md):
- * - On a page that saves every answer to its own server as it is written (Adapter.autosaves: Ashby's), while
- *   settings.llm.confirmDrafts is on, an AI draft is not written at all until the person confirms it: its row waits
- *   (llm-draft-held, with Confirm draft), the text kept in this run's memory only, and the person's Confirm writes it
- *   through both Guards (a field they have typed into meanwhile is theirs, and is never written over).
- * - Drafts are accepted as written (llm-draft-written) unless settings.llm.confirmDrafts keeps the Phase 6
- *   confirmation: an accepted draft reads back as confirmed in the final Guard, is no unconfirmed draft at validation,
- *   and is booked in the document like a waiting one, so a later run rows a field still holding it as the accepted draft
- *   it is. The AI's answers (llm-answer texts, and llm-picks with an answer's reason) are booked the same way, in memory
+ * - Drafts are accepted as written (llm-draft-written; v4: always, llm.confirmDrafts is gone): an accepted draft reads
+ *   back as confirmed in the final Guard, is no unconfirmed draft at validation, and is booked in the document like a
+ *   waiting one, so a later run rows a field still holding it as the accepted draft it is. (The held-draft path for a
+ *   page that saves as it is filled, Ashby's, is kept for a draft a stored run still names, and never starts now.) The AI's answers (llm-answer texts, and llm-picks with an answer's reason) are booked the same way, in memory
  *   only. The posting text goes with plan/request while drafts or answers are on.
  * - When a posting forbids AI (the policy gate at the first scan, or a later pass's hit), settings.llm.whenForbidden
- *   decides: 'ask' shows the policy card as before; 'profile-only' (the default) fills on with no card, from the
- *   profile only: every plan/request says noAi, so the worker asks the LLM nothing, the policy-profile-only notice
- *   shows, and Edit with AI is offered nowhere; 'use-ai' fills on with the AI, the policy notice shown. A plan answer
- *   that names an "I did not use AI" attestation in the frame's scan switches the run to profile-only the same way (the
- *   ai-attestation notice), unless the setting is 'use-ai'.
+ *   decides: 'profile-only' (the default) fills on from the profile only: every plan/request says noAi, so the worker
+ *   asks the LLM nothing, the report says policy-profile-only, and Edit with AI is offered nowhere; 'use-ai' fills on
+ *   with the AI, the report saying policy. A plan answer that names an "I did not use AI" attestation in the frame's
+ *   scan switches the run to profile-only the same way (ai-attestation), unless the setting is 'use-ai'. v4 (D6): the
+ *   policy card and "Ask me each time" are gone; nothing waits for the person.
  * - Edit with AI: the plan answers name the text boxes the page may offer it on (`aiEditable`); while the run rests at
  *   review or waits for the person's Next, not in a dry run or a profile-only run and with no pause on the page, the
  *   page UI draws the button in each (ui/ai-edits.ts). rewriteField, on the person's trusted click on a visible button,
@@ -140,6 +136,23 @@
  *   Guard over every canary in memory). One rewrite at a time. A rewrite the box already holds writes nothing and
  *   leaves the box's row as it was (the AI's draft stays marked as the AI's). The person's later edit makes the text
  *   theirs (changed-by-you), as any draft's.
+ *
+ * v4 (the owner, 2026-11-07: "Never flag to the user, just determine with your own"; docs/_v4/run.md, D1-D12):
+ * - Nothing is handed to the person but the hard rules: a CAPTCHA, a bot check, an email code (never automated), and a
+ *   sign-in the person's Sign-in mode leaves to them. A field the run could not or would not fill is simply not filled
+ *   (shared/report.ts notFilled); only a required one left empty holds auto-Next (report.ts lastFillOf).
+ * - What is left for the person shows as a branded toast on the page (drawToasts; ui/toasts.ts), never a notice stack or
+ *   a card: the check to solve, the sign-in to make (or "Sign up & Autofill"), the job-site sign-in to add in TailorIT,
+ *   Submit Auto holding back, the page refusing a Submit or showing errors the run could not fix, and the run's end. A
+ *   toast leaves once its cause is gone. The report's notices are facts the worker reads, never shown.
+ * - A run paused at what the page shows carries on by itself once the page no longer shows it (watchPauseGone: the
+ *   pause detection again on each DOM change, coalesced, capped at PAUSE_WATCH_MS; RunEnv.resumeAfterPause), so the
+ *   person never presses Continue for it. Workday's entry choice is answered with the adapter's declared entry
+ *   (RunEnv.enterChoice: its "Apply manually"); a page still busy, a Next not taken, a new page with Autofill after page
+ *   turn on Manual rest silently (D7). The launcher's badge shows progress only (D11).
+ * - "Sign up & Autofill" (RunRequest.signIn): this run signs in or creates the account at an account wall as Sign-in
+ *   mode Auto would, whatever the mode says (the worker answers the credential for that tab and run alone); with no
+ *   job-site sign-in saved in TailorIT, the toast says to add one, with its Open action.
  */
 import type { Adapter } from '../adapters/types';
 import type { ApplicationRef } from '../adapters';
@@ -183,16 +196,15 @@ import {
   MAX_EDIT_INSTRUCTION, MAX_POSTING_TEXT, type AnswerReadAnswerSchema, type PressAnswer, type RunTrigger, type StepTarget,
 } from '../messaging/schemas';
 import type { ContentPlatform } from '../platform/types';
+import { PAGE_COPY } from '../shared/copy';
 import { log } from '../shared/log';
-import { leftForPerson, needsPerson, progressOf } from '../shared/report';
+import { isReady, leftForPerson, leftOut, notFilled, progressOf } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
 import { AI_POLL_MS, AI_WAIT_CAP_MS, CurrentWrite, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
   type SettleTimings } from './loop';
 import { RunAborted, writeField, type PassEnv, type PlanAnswer } from './pass';
-import {
-  frameHitsOf, hiddenPolicyHits, policyGateOf, POSTING_READ_MIN, postingOutsideFrame, type PolicyView,
-} from './policy';
+import { frameHitsOf, hiddenPolicyHits, policyGateOf, POSTING_READ_MIN, type PolicyView } from './policy';
 import {
   addBlocks, currentJobRows, entriesLeft, moreToAdd, needsClicks, savedSummaries, saveBlocks, sectionsOf,
   type SectionView,
@@ -209,8 +221,8 @@ import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
 import type { LauncherView } from './ui/launcher';
 import type { AiEditItem } from './ui/ai-edits';
-import type { PolicyChoice } from './ui/notices';
 import type { PageUi } from './ui/page-ui';
+import type { ToastSpec } from './ui/toasts';
 import { readBack, type ValueHasher } from './values';
 import { finalGuard } from './verify';
 
@@ -236,9 +248,9 @@ export interface RunRequest {
    *  auto-apply agent's run, from the worker's own run/start alone. */
   trigger: RunTrigger;
   dryRun: boolean;
-  /** The person chose Fill anyway at the policy card a run ago, on this page (the card a later pass's hit showed):
-   *  this run's gate takes that decision instead of asking again. Set by the runtime only. */
-  policyAccepted?: boolean;
+  /** v4, "Sign up & Autofill" (panel/fill {signIn: true}, run/start {signIn: true}): this run signs in or creates the
+   *  account at an account wall as Sign-in mode Auto would, whatever the mode says. Its Continue keeps it. */
+  signIn?: boolean;
   /** Where the machine starts: a RunState and the event that resumes it (CONTINUE after a pause, RESUMED after a
    *  reload or at the person's Continue). Without it a fresh RunState and DETECTED. Set by the runtime only. */
   from?: { state: RunState; event: RunEvent };
@@ -306,8 +318,6 @@ export interface RunEnv {
   options: RunOptions;
   /** The run's rows, once it has them: field/describe reads their suggestions. */
   onRows(rows: readonly FillResult[]): void;
-  /** Starts a fresh run once this one has ended (Fill anyway at a policy card a later pass showed). */
-  fillAgain(request: RunRequest): void;
   /** The adapter's form root is another element now (the page drew its whole form again): the runtime anchors its UI to
    *  it and reads it from now on. */
   rootMoved?(root: Element): void;
@@ -336,8 +346,15 @@ export interface RunEnv {
   /** v3 Phase 5, Sign-in mode Auto: signs in once on the page the run paused at (content/sign-in.ts), until `signal`
    *  (the run stopped, cancelled at its pause, or gone) aborts. */
   signIn?(signal: AbortSignal): Promise<SignInOutcome>;
-  /** v3 Phase 5: the site took the sign-in in this document: the run goes on (the runtime's Continue). */
+  /** v3 Phase 5: the site took the sign-in in this document: the run goes on (the runtime's Continue). v4: also once the
+   *  page no longer shows the pause the run rests at (watchPauseGone), and after the entry choice was answered. */
   afterSignIn?(): void;
+  /** v4 (D7): at Workday's entry choice, the adapter's declared entry (its "Apply manually") pressed through the entry
+   *  door (press.ts pressEntryChoice, from the runtime): 'pressed', or 'none' (no entry declared or shown, or a
+   *  challenge on the page). */
+  enterChoice?(): 'pressed' | 'none';
+  /** v4 (D10): the no-sign-in toast's Open: TailorIT's Settings › Autofill in a new tab, inside the person's click. */
+  openSignInSettings?(): void;
   /** core-x, item 2, Sign-in mode Auto: types the saved job-site sign-in into the form's account section
    *  (content/sign-in.ts, SignInContext.section), pressing nothing, until `signal` aborts. */
   signInSection?(signal: AbortSignal): Promise<SignInOutcome>;
@@ -435,9 +452,14 @@ function pauseCutOf(signal: PauseSignal): ReasonCode {
   return signal.kind === 'captcha' ? 'challenge-present' : 'auth-required';
 }
 
-/** What cut the loop before a later pass: the frame hidden, a policy statement, or a pause. */
-type LoopCut = { kind: 'hidden' } | { kind: 'policy' } | { kind: 'pause'; signal: PauseSignal }
-  | { kind: 'moved'; signature: string };
+/** What cut the loop before a later pass: the frame hidden, a pause, or the step moved on. */
+type LoopCut = { kind: 'hidden' } | { kind: 'pause'; signal: PauseSignal } | { kind: 'moved'; signature: string };
+
+/** v4 (D10): how long after a DOM change a run resting at a pause looks at the page again (watchPauseGone): the
+ *  changes of one moment are read once. */
+export const PAUSE_LOOK_MS = 250;
+/** v4 (D10): how long a run resting at a pause watches for it to go, at most (RunState's own resume window). */
+export const PAUSE_WATCH_MS = 30 * 60 * 1000;
 
 /** A passage's identity: a new one is one the run has not read. */
 const passageId = (passage: RawPassage) => `${passage.origin}\u{0}${passage.text}`;
@@ -485,6 +507,12 @@ function heldDraftRow(row: FillResult): boolean {
     && (row.reason === 'llm-draft-needs-confirmation' || row.reason === 'llm-draft-written');
 }
 
+/** v4: whether a row is a field the run did not fill, filled by the person since or not (notFilled, filledByYou
+ *  aside): the rows read again after the person's input at rest. */
+function open(row: FillResult): boolean {
+  return !isReady(row) && !leftOut(row) && row.status !== 'skipped';
+}
+
 /** Whether a row is one the AI's answer wrote (an llm-answer text, or an llm-pick with an answer's reason). */
 function aiAnswerRow(row: FillResult): boolean {
   return row.wrote && ANSWER_REASONS.has(row.reason)
@@ -499,7 +527,6 @@ export class FillRun {
   /** Aborted when the person stops the run: a wait for a list's options, or for the next step, ends at once. */
   private readonly stopping = new AbortController();
   private readonly notices = new NoticeBook();
-  private choose: ((choice: PolicyChoice) => void) | null = null;
   private stopRequested = false;
   private id: string | null = null;
   private expiredSeen = 0;
@@ -527,6 +554,15 @@ export class FillRun {
   private signInAuto = false;
   /** The run paused at a sign-in and signs in once it rests (sign-in-auto). */
   private signInDue = false;
+  /** v4 (D10): what came of this run's sign-in, for its toast: no job-site sign-in to use, or the site refused it. */
+  private signInSaid: 'unavailable' | 'failed' | null = null;
+  /** v4: a statement only text a person cannot see yet holds says the posting forbids AI (the Phase 2 review's S6):
+   *  no notice any more, but Submit mode Auto's "posting forbids AI" skip rule still reads it. */
+  private hiddenPolicy = false;
+  /** v4 (D10): the step the run last validated is the final one (the end-of-run toast). */
+  private finalStep = false;
+  /** v4 (D10): the watch for the pause the run rests at to go (watchPauseGone), while one runs. */
+  private pauseWatch: AbortController | null = null;
   /** Aborted when the person cancels the run at its pause (cancelPause): a sign-in on its way types nothing. */
   private readonly cancelled = new AbortController();
   /** A Submit this run pressed waits for the platform's confirmation (the report's buttons.pressed). */
@@ -594,8 +630,6 @@ export class FillRun {
   private stepProgress: string | null = null;
   /** The progress line the latest signature read. */
   private progressRead: string | null = null;
-  /** The run handed over: it ended so that a fresh one could start (Fill anyway after a later pass's hit). */
-  private halted = false;
   private offered = false;
   /** The run watches for the next step while it rests. */
   private watchingNow = false;
@@ -703,25 +737,14 @@ export class FillRun {
     return this.watchingNow;
   }
 
-  /** Whether the run waits at the policy card. */
+  /** Whether the run waits at the policy card: v4 (D6), never (kept for the runtime's run/policyDecision answer). */
   get atPolicyCard(): boolean {
-    return this.choose !== null;
-  }
-
-  /** Fill anyway (the card, or run/policyDecision 'fill'): answers whether the run was waiting for it. */
-  accept(): boolean {
-    return this.answer('accepted');
-  }
-
-  /** Cancel at the card (or run/policyDecision 'cancel', or run/cancel): answers whether the run was waiting for it. */
-  decline(): boolean {
-    return this.answer('declined');
+    return false;
   }
 
   /** run/cancel while the run writes or watches: nothing more is written, and the run ends stopped. */
   stop(): void {
     this.cancelled.abort();
-    if (this.decline()) return;
     this.stopRequested = true;
     this.stopping.abort();
   }
@@ -805,10 +828,10 @@ export class FillRun {
     return true;
   }
 
-  /** Whether an AI draft is held back from the page rather than written (module header): the person's setting keeps
-   *  drafts for their confirmation, and the page saves every answer the moment it is written. */
+  /** Whether an AI draft is held back from the page rather than written (module header): v4 (D6), never: a draft is
+   *  always written and accepted. */
   private holdsDrafts(): boolean {
-    return this.llm?.confirmDrafts === true && this.env.page.adapter.autosaves === true && !this.request.dryRun;
+    return false;
   }
 
   /** The loop's draft about to be written (LoopEnv.holdDraft): held back, with the row that says so, on a page that
@@ -867,7 +890,7 @@ export class FillRun {
    *  review, MINOR 8), with no rewrite on its way and no policy card waiting. */
   private get aiEditsOpen(): boolean {
     return (this.ended === 'review' || this.ended === 'waiting') && !this.request.dryRun && !this.noAi
-      && this.llm?.drafts !== false && this.choose === null;
+      && this.llm?.drafts !== false;
   }
 
   /** The Edit with AI buttons the page shows now (module header): one per offered field found on the step, none while
@@ -1020,15 +1043,14 @@ export class FillRun {
     if (!this.noAi) log('content.profile-only', { posting: why === 'posting', attestation: why === 'attestation' });
     this.noAi = true;
     this.notices.add(why === 'posting' ? 'policy-profile-only' : 'ai-attestation');
-    this.showNotices();
     this.drawAiEdits();
   }
 
-  /** A row left for the person with detail.filledByYou as what its field holds now says (v3 Phase 3): a flag only,
-   *  which claims nothing about who filled it. Any other row as it is. `scanned`: a fresh scan was made in this batch
-   *  already (currentOf makes at most one). */
+  /** A row the run did not fill (v4: notFilled, or one the person filled since) with detail.filledByYou as what its
+   *  field holds now says (v3 Phase 3): a flag only, which claims nothing about who filled it. Any other row as it is.
+   *  `scanned`: a fresh scan was made in this batch already (currentOf makes at most one). */
   private withFilledByYou(row: FillResult, scanned: boolean): FillResult {
-    if (!needsPerson(row) || row.wrote) return row;
+    if (!open(row)) return row;
     const current = this.currentOf(row.key, scanned);
     const holds = current !== null && holdsAnswer(current);
     if (holds === (row.detail?.filledByYou === true)) return row;
@@ -1133,9 +1155,9 @@ export class FillRun {
   personInput(type: HeardType, path: readonly Element[], heard: Heard): void {
     if (this.ended === null || this.request.dryRun || this.rows.length === 0) return;
     if (heard.activation) this.lookBeforeLeaving();
-    // Any trusted input, click or change may have answered a field left for the person, wherever it landed (a page's
+    // Any trusted input, click or change may have answered a field the run did not fill, wherever it landed (a page's
     // own dropdown list, a button that opens a file picker): those fields are read again (v3 Phase 3 review).
-    if (this.rows.some((row) => needsPerson(row) && !row.wrote)) this.scheduleLeftRefresh();
+    if (this.rows.some(open)) this.scheduleLeftRefresh();
     if (type !== 'input' || !heard.edit) return;
     let key: FieldKey | undefined;
     for (const el of path) {
@@ -1286,12 +1308,13 @@ export class FillRun {
     this.rowsChanged();
   }
 
-  /** The rows changed while the run rests: the runtime's copy, the launcher's count, and the report. */
+  /** The rows changed while the run rests: the runtime's copy, the launcher's progress, the toasts and the report. */
   private rowsChanged(): void {
     this.env.onRows(this.rows);
     if (this.ended === 'review' || this.ended === 'waiting') {
-      this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
+      this.launcher({ state: 'review', action: 'open-review', ...this.progressNow() });
     }
+    this.drawToasts();
     if (this.ended === null || this.id === null) return;
     void this.report().catch(() => undefined);
   }
@@ -1360,13 +1383,9 @@ export class FillRun {
       this.forgetDraft(baseKey);
       return { ...row, status: 'blocked', reason: 'canary-in-value', provenance: null, needsUserAction: true };
     }
-    // Accepted as written unless the person's setting keeps drafts for their confirmation.
-    if (this.llm?.confirmDrafts !== true) {
-      return { ...row, status: 'verified', provenance: 'llm-draft', matcherStage: 'not-applicable', confidence: LLM_DRAFT,
-        reason: 'llm-draft-written', wrote: true, verification: 'verified', needsUserAction: false };
-    }
-    return { ...row, status: 'flagged', provenance: 'llm-draft', matcherStage: 'not-applicable', confidence: LLM_DRAFT,
-      reason: 'llm-draft-needs-confirmation', wrote: true, verification: 'verified', needsUserAction: true };
+    // Accepted as written (v4, D6: no draft waits for the person's confirmation).
+    return { ...row, status: 'verified', provenance: 'llm-draft', matcherStage: 'not-applicable', confidence: LLM_DRAFT,
+      reason: 'llm-draft-written', wrote: true, verification: 'verified', needsUserAction: false };
   }
 
   /** The row of a field that holds an AI answer this document wrote earlier, as written (its value MAC): that answer's
@@ -1436,9 +1455,10 @@ export class FillRun {
   async cancelPause(): Promise<void> {
     if (this.ended !== 'paused' || this.machine === null) return;
     this.cancelled.abort();
+    this.pauseWatch?.abort();
     this.ended = 'stopped';
     log('content.pause-cancelled');
-    this.env.ui()?.hidePolicyCard();
+    this.drawToasts();
     this.launcher({ state: 'idle', action: 'fill' });
     const next = reduceRun(this.machine, { type: 'USER_STOPPED' }, this.ctx());
     this.machine = next.state;
@@ -1453,33 +1473,71 @@ export class FillRun {
     }
   }
 
-  private answer(choice: PolicyChoice): boolean {
-    const choose = this.choose;
-    if (choose === null) return false;
-    this.choose = null;
-    choose(choice);
-    return true;
-  }
-
   private alive(): void {
     if (this.controller.signal.aborted) throw new RunAborted();
   }
 
   private launcher(view: LauncherView): void {
     if (this.controller.signal.aborted) return;
-    // At review, a notice that stands keeps the badge from a tick, as it keeps the report from its all-clear (the Phase F1
-    // review, 3).
-    const notices = this.notices.codes().some((code) => code !== 'policy-stored-copy');
-    this.env.ui()?.setLauncher(view.state === 'review' ? { ...view, notices } : view);
+    this.env.ui()?.setLauncher(view);
   }
 
-  /** The notices the stack shows: the report's, but the policy notice and its stored-copy line, which the card is (with
-   *  the "Ask me each time" setting; with "Use AI anyway" there is no card, so the stack shows them). */
-  private showNotices(): void {
+  /** v4 (D10): the toasts the page shows for this run now (ui/toasts.ts), recomputed from its state at each change, so a
+   *  toast leaves once its cause is gone. */
+  private drawToasts(): void {
     if (this.controller.signal.aborted) return;
-    const card = (this.llm?.whenForbidden ?? 'profile-only') === 'ask';
-    this.env.ui()?.setNotices(this.notices.codes().filter((code) => !card
-      || (code !== 'policy' && code !== 'policy-stored-copy')));
+    this.env.ui()?.setToasts(this.toastsNow());
+  }
+
+  /**
+   * What is left for the person, as toasts (D10), in this order: the check to solve on the page (a CAPTCHA, a bot check
+   * or an email code the run paused at, or one that holds Next or Submit at rest); the sign-in or account the page asks
+   * for (Sign-in mode Manual, or a saved sign-in the site refused), or the job-site sign-in to add in TailorIT (Sign up
+   * & Autofill, or Sign-in mode Auto, with none to use: its Open action); Submit mode Auto holding back; the page
+   * refusing a Submit; errors the run could not fix; and, alone, the end of a run on the final step.
+   */
+  private toastsNow(): ToastSpec[] {
+    const words = PAGE_COPY.toasts;
+    const status = this.machine?.status ?? null;
+    if (this.machine === null || status === 'done' || status === 'stopped' || this.ended === 'aborted'
+      || this.ended === 'stopped') return [];
+    const list: ToastSpec[] = [];
+    const reason = this.machine.pauseReason;
+    const paused = status === 'handoff' && (reason === 'captcha' || reason === 'bot-check' || reason === 'email-code');
+    const atRest = this.ended === 'review' || this.ended === 'waiting';
+    if (paused || (atRest && (this.botCheckLeft() || this.notices.has('captcha-next')
+      || this.notices.has('submit-held-captcha')))) {
+      list.push({ kind: 'challenge', text: words.challenge });
+    }
+    if (status === 'auth-needed' && this.ended === 'paused' && !this.signInDue) {
+      if (this.signInSaid === 'unavailable' && (this.signInAuto || this.request.signIn === true)) {
+        const open = this.env.openSignInSettings;
+        list.push({ kind: 'no-sign-in', text: words.noSignIn,
+          ...(open === undefined ? {} : { action: { label: words.open, run: () => open() } }) });
+      } else {
+        list.push({ kind: 'sign-in', text: this.signInSaid === 'failed' ? words.signInFailed : words.signIn });
+      }
+    }
+    if (atRest) {
+      const held = this.notices.has('submit-held-required') ? words.submitHeld.required
+        : this.notices.has('submit-held-no-ai') ? words.submitHeld['no-ai']
+          : this.notices.has('submit-held-guess') ? words.submitHeld.guess
+            : this.notices.has('submit-held-attention') ? words.submitHeld.attention
+              : this.notices.has('submit-held-check') ? words.submitHeld.check : null;
+      if (held !== null) list.push({ kind: 'submit-held', text: held });
+      if (this.notices.has('submit-errors')) list.push({ kind: 'submit-errors', text: words.submitErrors });
+      if (this.notices.has('validation')) list.push({ kind: 'validation', text: words.validation });
+      // The end of a run on the final step, alone (D10's optional toast): never while anything else is said.
+      const progress = progressOf([{ fields: this.rows }]);
+      if (list.length === 0 && this.ended === 'review' && status === 'review' && this.finalStep && !this.submitPending
+        && !this.request.dryRun && progress.of > 0) {
+        list.push({ kind: 'complete', text: words.complete(progress.filled, progress.of) });
+      }
+    }
+    // Text on the page addressed to AI tools was ignored: the plan's own sentence, the one notice the hard rules keep
+    // on the page (the trap specs read it there).
+    if (this.notices.has('tripwire')) list.push({ kind: 'tripwire', text: PAGE_COPY.notices.tripwire });
+    return list;
   }
 
   private get state(): RunState {
@@ -1497,11 +1555,11 @@ export class FillRun {
     return typeof this.env.page.adapter.stepSignature === 'function';
   }
 
-  /** How many rows (and Add buttons left to the person) need the person, for the launcher's review: the rows by the
-   *  review's own rule (leftForPerson: needing them, and not filled by them since), so the badge and the panel count a
-   *  row alike. */
-  private needing(): number {
-    return this.rows.filter(leftForPerson).length + this.addsLeft;
+  /** v4 (D11): the launcher's progress, by the side panel's own rule (shared/report.ts progressOf): the percent of the
+   *  required fields filled; none while no row counts. Progress only, never a count of fields "needing you". */
+  private progressNow(): { percent?: number } {
+    const progress = progressOf([{ fields: this.rows }]);
+    return progress.of > 0 ? { percent: progress.percent } : {};
   }
 
   // ── The run's messages ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1784,20 +1842,13 @@ export class FillRun {
     const fresh = this.absorbPassages(raw.passages);
     if (this.state.policyDecision !== 'accepted') {
       if (frameHitsOf(env.doc).length > 0) {
-        // What a posting that forbids AI does is the person's setting (module header): only 'ask' shows the card.
-        const mode = this.llm?.whenForbidden ?? 'profile-only';
-        if (mode === 'ask') {
-          this.loopCut = { kind: 'policy' };
-          this.showNotices();
-          return 'policy-notice';
-        }
-        if (mode === 'profile-only') this.profileOnly('posting');
+        // What a posting that forbids AI does is the person's setting (module header): never a card (v4, D6).
+        if ((this.llm?.whenForbidden ?? 'profile-only') === 'profile-only') this.profileOnly('posting');
         else this.notices.add('policy');
       } else if (hiddenPolicyHits(fresh).length > 0) {
-        this.notices.add('policy-hidden-text');
+        this.hiddenPolicy = true;
       }
     }
-    this.showNotices();
     const paused = this.pauseNow();
     if (paused !== null) {
       this.loopCut = { kind: 'pause', signal: paused };
@@ -1880,7 +1931,6 @@ export class FillRun {
     for (const effect of next.effects) {
       const answer = await this.perform(effect);
       if (answer !== null) produced = answer;
-      if (this.halted) return null;
     }
     return produced;
   }
@@ -1899,7 +1949,6 @@ export class FillRun {
           break;
         }
         event = await this.step(event);
-        if (this.halted) return;
       }
       await this.flushReport();
       event = await this.rest();
@@ -1918,10 +1967,16 @@ export class FillRun {
   private async rest(): Promise<RunEvent | null> {
     const { status } = this.state;
     if (this.offered || status === 'handoff' || status === 'auth-needed') {
-      this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause' });
+      this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause', ...this.progressNow() });
       this.end('paused');
-      // v3 Phase 5: Sign-in mode Auto signs in now that the pause is reported (module header).
-      if (status === 'auth-needed' && this.signInDue) void this.signInNow().catch(() => undefined);
+      const signing = status === 'auth-needed' && this.signInDue;
+      // v3 Phase 5: Sign-in mode Auto signs in now that the pause is reported (module header); its own outcome carries
+      // the run on, or starts the watch below once the sign-in is the person's.
+      if (signing) void this.signInNow().catch(() => undefined);
+      // v4 (D7): Workday's entry choice is answered with the adapter's declared entry ("Apply manually").
+      else if (status === 'handoff' && this.state.pauseReason === 'entry-choice') void this.enterChoiceNow();
+      // v4 (D10): the run carries on by itself once the page no longer shows its pause.
+      if (!this.offered && !signing) void this.watchPauseGone().catch(() => undefined);
       return null;
     }
     if (status === 'stopped' || status === 'done') {
@@ -1937,7 +1992,7 @@ export class FillRun {
       await this.flushReport();
       return null;
     }
-    this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
+    this.launcher({ state: 'review', action: 'open-review', ...this.progressNow() });
     this.end('review');
     // Core pass Z1, item 24: Sign-in mode Auto presses the step's declared sign-in container now it rests.
     if (status === 'review') void this.signInContainerNow().catch(() => undefined);
@@ -1978,10 +2033,10 @@ export class FillRun {
   }
 
   /** A new step under Autofill after page turn: Manually (the person's mode, docs/SPEC-AMENDMENTS.md §12): its fields
-   *  are not read or filled; the review says so (page-turned) and the run rests offering Continue, which fills it. */
+   *  are not read or filled, and the run rests offering Continue, which fills it (v4, D7: silently, no notice: the
+   *  panel's Autofill fills the new page). */
   private pageTurned(): void {
     this.notices.forget(STEP_NOTICE_CODES);
-    this.notices.add('page-turned');
     this.rows = [];
     this.counters = NO_COUNTERS;
     this.addsLeft = 0;
@@ -1993,7 +2048,7 @@ export class FillRun {
     this.reportStatus = 'review';
     this.offered = true;
     this.reportDue = true;
-    this.showNotices();
+    this.drawToasts();
     log('content.page-turned');
   }
 
@@ -2002,8 +2057,10 @@ export class FillRun {
     this.ended = null;
     this.resting = false;
     this.restScan = null;
+    this.pauseWatch?.abort();
     this.launcher({ state: 'running', action: null });
     this.drawAiEdits();
+    this.drawToasts();
   }
 
   private end(how: RunEnd): RunEnd {
@@ -2013,6 +2070,7 @@ export class FillRun {
     this.restedOnce = null;
     resolve?.(how);
     this.drawAiEdits();
+    this.drawToasts();
     return how;
   }
 
@@ -2035,7 +2093,7 @@ export class FillRun {
       case 'await-transition':
         return this.awaitStep(effect.from, effect.capMs);
       case 'pause':
-        return effect.kind === 'policy' ? this.policyCard() : this.paused();
+        return this.paused();
       case 'notify':
         this.notify(effect.notice, effect.count);
         return null;
@@ -2094,34 +2152,22 @@ export class FillRun {
         readHere);
       policyHits = gate.blocked ? Math.max(1, frameHits.length) : 0;
       this.fromStoredCopy = gate.fromStoredCopy;
-      if (!gate.blocked && gate.unreadable) this.notices.add('policy-unreadable');
     }
-    // A posting that forbids AI (module header): the card only with the 'ask' setting; otherwise the run fills on,
-    // from the profile only (the default) or with the AI, and the notice says which.
-    const mode = this.llm?.whenForbidden ?? 'profile-only';
-    if (policyHits > 0 && mode !== 'ask' && this.state.policyDecision !== 'accepted') {
-      if (mode === 'profile-only') this.profileOnly('posting');
+    // A posting that forbids AI (module header): the run fills on, from the profile only (the default) or with the AI,
+    // and the report says which (v4, D6: never a card, nothing waits).
+    if (policyHits > 0 && this.state.policyDecision !== 'accepted') {
+      if ((this.llm?.whenForbidden ?? 'profile-only') === 'profile-only') this.profileOnly('posting');
       else this.notices.add('policy');
       if (first && this.fromStoredCopy) this.notices.add('policy-stored-copy');
-      policyHits = 0;
     }
-    if (policyHits > 0) this.notices.add('policy');
-    // The card says when only TailorIT's saved copy held the statement, and so does the panel's (Phase 6).
-    if (policyHits > 0 && first && this.fromStoredCopy) this.notices.add('policy-stored-copy');
-    this.showNotices();
     const raw = await rawScan(env.doc, { signal: this.controller.signal });
     this.alive();
     const fresh = this.absorbPassages(raw.passages);
-    // Policy text only text a person cannot see yet holds (behind "Show more") informs; it stops nothing (S6).
-    if (policyHits === 0 && hiddenPolicyHits(first ? raw.passages : fresh).length > 0) {
-      this.notices.add('policy-hidden-text');
-    }
-    this.showNotices();
-    // A policy statement is the person's decision first; a pause the step shows is found when the fill starts.
-    if (policyHits === 0 || this.state.policyDecision === 'accepted') {
-      const paused = this.pauseNow();
-      if (paused !== null) return pauseEventOf(paused);
-    }
+    // Policy text only text a person cannot see yet holds (behind "Show more") stops nothing (S6); Submit mode Auto's
+    // "posting forbids AI" skip rule still reads it.
+    if (policyHits === 0 && hiddenPolicyHits(first ? raw.passages : fresh).length > 0) this.hiddenPolicy = true;
+    const paused = this.pauseNow();
+    if (paused !== null) return pauseEventOf(paused);
     const hits = Math.max(0, this.tripwireHits - this.hitsCounted);
     this.hitsCounted = this.tripwireHits;
     const signature = this.signatureNow();
@@ -2252,9 +2298,9 @@ export class FillRun {
         rows, loop.written);
       const after = guarded.reverted.size > 0 ? last.rescan() : last;
 
-      // 3. The rows and notices.
+      // 3. The rows and notices. v4 (D7): a page still busy at the settle's cap is no hand-off: the step is validated as
+      // it stands, not settled, so Next is never pressed by itself and the run rests for the person's own.
       const busy = loop.busy !== null;
-      if (busy) this.notices.add('page-busy');
       // Set by the checks before a later pass (recheck), while the loop ran.
       const cut = this.loopCut as LoopCut | null;
       if (cut?.kind === 'hidden') {
@@ -2268,22 +2314,19 @@ export class FillRun {
       this.alive();
       const all = this.markedRows(rowsNow, after, loop.carry.lastWriteAt, macs);
       this.bookDrafts(all, macs);
-      this.noticesFromRows(all, last);
+      this.noticesFromRows(all);
       this.counters = { passes: loop.passes, hiddenControlsIgnored: last.counters.hiddenControlsIgnored,
         deferredFields: last.counters.deferredFields };
       this.rows = all;
       this.settledStep = !busy;
       env.onRows(all);
       this.drawAiEdits();
-      this.showNotices();
       this.recordFindings(loop);
 
       // 4. How the step's fill ended.
       if (cut?.kind === 'hidden') return { type: 'USER_STOPPED' };
       if (cut?.kind === 'moved' && !this.stopRequested) return { type: 'TRANSITIONED', signature: cut.signature };
-      if (cut?.kind === 'policy' && !this.stopRequested) return this.policyMidFill();
       if (this.stopRequested) return { type: 'USER_STOPPED' };
-      if (busy) return { type: 'PAUSE', reason: 'page-busy' };
       if (cut?.kind === 'pause') return pauseEventOf(cut.signal);
       // 5. The blocks whose page keeps an entry only once its own Save is pressed (repeatables.ts saveBlocks:
       // Workable's editors): never in a dry run, only in a block the run opened or found empty, and only once its rows
@@ -2307,15 +2350,12 @@ export class FillRun {
           continue;
         }
         if (saves.left > 0) this.addsLeft += saves.left;
-        // An entry the profile has that no block holds yet is the person's to add.
+        // An entry the profile has that no block holds yet stays out of the form (v4, D1: nothing asks the person).
         this.addsLeft = Math.max(this.addsLeft, entriesLeft(this.sections, profile));
-        if (this.addsLeft > 0) {
-          this.noticesFromRows(all, last);
-          this.showNotices();
-        }
       }
+      // v4 (D3): only a required field left empty, or a hard-rule stop, holds auto-Next (report.ts lastFillOf).
       const counts = lastFillOf(all);
-      return { type: 'FILLED', filledKeys: written, flagged: counts.flagged + this.addsLeft, blocked: counts.blocked,
+      return { type: 'FILLED', filledKeys: written, flagged: counts.flagged, blocked: counts.blocked,
         unresolved: counts.unresolved };
     }
   }
@@ -2374,6 +2414,7 @@ export class FillRun {
     }
     const nextVisible = next !== null && isUserVisible(next, cache) && (next as HTMLButtonElement).disabled !== true;
     this.lastErrors = errors.length;
+    this.finalStep = finality === 'final';
     // v3 Phase 4, for Submit mode Auto: what its verdict reads of the final step (the core decides).
     const submitFacts = finality === 'final' && this.autoSubmitOn && !this.request.dryRun ? this.submitFacts() : {};
     // core-x, item 2: the form's account section's required boxes still empty (dom/account-section.ts).
@@ -2392,9 +2433,10 @@ export class FillRun {
   private submitFacts(): Pick<StepFacts, 'submitVisible' | 'requiredEmpty' | 'noAi' | 'legalGuess' | 'attentionLeft'
     | 'entriesLeft'> {
     const buttons = stepButtonsOf({ doc: this.env.doc, adapter: this.env.page.adapter, root: this.rootNow() });
-    const noAi = POSTING_NO_AI.some((code) => this.notices.has(code));
+    const noAi = this.hiddenPolicy || POSTING_NO_AI.some((code) => this.notices.has(code));
     const legalGuess = this.rows.some((row) => row.reason === 'ai-guess' && policyClassOf(row.category) === 'legal');
-    const attentionLeft = this.rows.some((row) => row.reason === 'attention-check' && leftForPerson(row));
+    // v4: an attention check the run never answers (the posting's phrase) and left empty: the hard rule's hold.
+    const attentionLeft = this.rows.some((row) => row.reason === 'attention-check' && notFilled(row));
     // core-x, item 2: an account section's required boxes still empty count as required fields left (they are no rows).
     const account = accountLeft(this.env.page.adapter, this.env.doc, this.rootNow());
     return { submitVisible: buttons.submit,
@@ -2415,9 +2457,9 @@ export class FillRun {
     return this.rows.some((row) => row.reason === 'bot-check' && leftForPerson(row));
   }
 
-  /** The keys of the step's rows on required fields still left for the person (shared/report.ts leftForPerson). */
+  /** The keys of the step's rows on required fields still empty (v4: shared/report.ts notFilled, whoever's they are). */
   private leftRequired(): string[] {
-    return this.rows.filter((row) => row.required && leftForPerson(row)).map((row) => row.key);
+    return this.rows.filter((row) => row.required && notFilled(row)).map((row) => row.key);
   }
 
   /** The errors one more pass could address: on a field no pass of this step planned (it showed after the loop), or
@@ -2462,8 +2504,8 @@ export class FillRun {
       if (!shown) {
         log('content.form-hidden');
         this.notices.add('next-hidden');
-        this.showNotices();
-        return { type: 'PAUSE', reason: 'needs-click' };
+        // v4 (D7): no hand-off: the run rests for the person's own Next.
+        return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
       }
       if (this.stopRequested) return { type: 'USER_STOPPED' };
     }
@@ -2493,10 +2535,11 @@ export class FillRun {
     } catch {
       next = null;
     }
-    if (next === null || !isUserVisible(next, newScanCache())) return { type: 'PAUSE', reason: 'needs-click' };
+    // v4 (D7): no Next to press, or a click the page refused: no hand-off, the run rests for the person's own Next.
+    if (next === null || !isUserVisible(next, newScanCache())) return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
     if (!clickIfAllowed(next, { adapter, root, allowNext: true })) {
       log('content.next-refused');
-      return { type: 'PAUSE', reason: 'needs-click' };
+      return { type: 'NEXT_WITHHELD', reason: 'not-pressable' };
     }
     log('content.next-pressed');
     return { type: 'ADVANCED', by: 'extension' };
@@ -2510,81 +2553,88 @@ export class FillRun {
     this.resting = true;
     this.reportDue = true;
     await this.flushReport();
-    this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
+    this.launcher({ state: 'review', action: 'open-review', ...this.progressNow() });
     this.end('waiting');
     if (this.request.dryRun) return null;
     return this.watchStep(from, null, true);
   }
 
-  /** pause {policy}: the card, until the person chooses (a run whose request carries Fill anyway takes it at once). */
-  private async policyCard(): Promise<RunEvent> {
-    // Whether this document read the step: one that only showed the card again (a reload at it) scans first (C-S4).
-    if (this.request.policyAccepted === true) return { type: 'POLICY_ACCEPTED', scanned: this.scans > 0 };
-    const ui = this.env.ui();
-    this.notices.add('policy');
-    this.showNotices();
-    ui?.showPolicyCard({ fromStoredCopy: this.fromStoredCopy });
-    this.launcher({ state: 'needs-you', action: 'open-review', reason: 'policy' });
-    const waiting = this.waitForChoice();
-    // Handled here as well: if the report fails or the run is aborted first, nothing waits on it.
-    waiting.catch(() => undefined);
-    this.reportDue = true;
-    await this.flushReport();
-    const choice = await waiting;
-    this.alive();
-    ui?.hidePolicyCard();
-    if (choice === 'declined') return { type: 'POLICY_DECLINED' };
-    this.launcher({ state: 'running', action: null });
-    return { type: 'POLICY_ACCEPTED', scanned: this.scans > 0 };
-  }
-
-  /**
-   * The policy card a later pass's hit showed (L-S2): the run waits there, its rows reported at policy-notice. Cancel
-   * ends it stopped (policy-declined); Fill anyway ends it and starts a fresh run from its RunState, whose gate takes
-   * that decision.
-   */
-  private async policyMidFill(): Promise<RunEvent | null> {
-    const ui = this.env.ui();
-    this.notices.add('policy');
-    this.reportStatus = 'policy-notice';
-    this.showNotices();
-    ui?.showPolicyCard({ fromStoredCopy: false });
-    this.launcher({ state: 'needs-you', action: 'open-review', reason: 'policy' });
-    const waiting = this.waitForChoice();
-    waiting.catch(() => undefined);
-    await this.report();
-    const choice = await waiting;
-    this.alive();
-    ui?.hidePolicyCard();
-    this.reportStatus = null;
-    if (choice === 'declined') {
-      this.rows = this.rows.map((row) => (row.reason === 'policy-notice' ? { ...row, reason: 'policy-declined' as const }
-        : row));
-      this.env.onRows(this.rows);
-      this.machine = { ...this.state, policyDecision: 'declined' };
-      return { type: 'USER_STOPPED' };
-    }
-    this.halted = true;
-    this.end('stopped');
-    this.env.fillAgain({ ...this.request, policyAccepted: true,
-      from: { state: this.state, event: { type: 'RESUMED', by: 'person', sameTab: true } }, carry: this.carryOut(false) });
-    return null;
-  }
-
-  /** pause {auth, handoff}: the person acts; their Continue starts the next run (the runtime). At a CAPTCHA pause the
-   *  widgets the step shows now are what the person is handed (carryOut, X-S4). */
+  /** pause {auth, handoff}: the page shows what only the person does; the run carries on once it goes (v4: by itself,
+   *  watchPauseGone; or their Continue starts the next run, the runtime). At a CAPTCHA pause the widgets the step shows
+   *  now are what the person is handed (carryOut, X-S4). */
   private paused(): null {
-    // v3 Phase 5: a sign-in or account page, with Sign-in acting as Auto: the run signs in once it rests.
-    this.signInDue = this.state.status === 'auth-needed' && this.signInAuto && !this.request.dryRun
-      && this.env.signIn !== undefined && (this.isTop || this.claimed);
+    // v3 Phase 5: a sign-in or account page, with Sign-in acting as Auto (or v4's Sign up & Autofill for this run): the
+    // run signs in once it rests.
+    this.signInDue = this.state.status === 'auth-needed' && (this.signInAuto || this.request.signIn === true)
+      && !this.request.dryRun && this.env.signIn !== undefined && (this.isTop || this.claimed);
     if (this.signInDue) this.notices.add('sign-in-auto');
     if (this.state.pauseReason === 'captcha') {
       const signature = this.signatureNow();
       const before = this.handed !== null && this.handed.signature === signature ? [...this.handed.elements] : [];
       this.pausedBy = { signature, elements: new Set([...before, ...captchaElements(this.env.doc, this.root)]) };
     }
-    this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause' });
+    this.launcher({ state: 'needs-you', action: 'continue', reason: 'pause', ...this.progressNow() });
     return null;
+  }
+
+  /**
+   * v4 (D10): while the run rests at a pause the page shows (a CAPTCHA, a bot check, an email code, a sign-in or account
+   * wall, a password reset, a choice of how to apply), the page is looked at again with the pause detection
+   * (pauseNow) PAUSE_LOOK_MS after each DOM change (the changes of a moment read once), for PAUSE_WATCH_MS at most. Once
+   * it no longer shows the pause it showed when the run came to rest (gone, or another one), the run carries on by
+   * itself (RunEnv.afterSignIn: the runtime's Continue, which scans again and pauses again where it must). Nothing is
+   * ever done to the challenge itself: it is only read for being there. A Sign-in Auto on its way first finishes.
+   */
+  private async watchPauseGone(): Promise<void> {
+    const view = this.env.doc.defaultView;
+    const resume = this.env.afterSignIn;
+    if (view === null || resume === undefined || this.ended !== 'paused' || this.pauseWatch !== null) return;
+    const watch = new AbortController();
+    this.pauseWatch = watch;
+    const signal = AbortSignal.any([watch.signal, this.controller.signal, this.cancelled.signal]);
+    const from = this.pauseNow()?.kind ?? null;
+    let looking = false;
+    let gone = false;
+    const look = () => {
+      if (signal.aborted || this.ended !== 'paused' || this.signInDue) return;
+      const now = this.pauseNow()?.kind ?? null;
+      if (now === from) return;
+      gone = true;
+      log('content.pause-gone', { other: now !== null });
+      watch.abort();
+      resume();
+    };
+    const observer = new view.MutationObserver(() => {
+      if (looking || signal.aborted) return;
+      looking = true;
+      void deadline(PAUSE_LOOK_MS, signal).then(() => {
+        looking = false;
+        look();
+      });
+    });
+    try {
+      observer.observe(this.env.doc.documentElement, { childList: true, subtree: true, attributes: true,
+        attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'disabled', 'type'] });
+      // A pause already gone when the run came to rest (a document a sign-in brought, its wall gone) carries on at once.
+      look();
+      if (!gone) await deadline(PAUSE_WATCH_MS, signal);
+    } finally {
+      observer.disconnect();
+      if (this.pauseWatch === watch) this.pauseWatch = null;
+    }
+  }
+
+  /** v4 (D7): Workday's choice of how to apply ("Autofill with resume / Apply manually / Use my last application"): the
+   *  adapter's declared entry is pressed (RunEnv.enterChoice: its "Apply manually", through the entry door) and the run
+   *  carries on; with none declared or shown, it rests silently, and watchPauseGone follows the person's own choice. */
+  private async enterChoiceNow(): Promise<void> {
+    const enter = this.env.enterChoice;
+    if (enter === undefined || this.request.dryRun || (!this.isTop && !this.claimed)) return;
+    const outcome = enter();
+    log('content.entry-choice', { pressed: outcome === 'pressed' });
+    if (outcome !== 'pressed' || this.controller.signal.aborted || this.ended !== 'paused') return;
+    this.pauseWatch?.abort();
+    this.env.afterSignIn?.();
   }
 
   private notify(notice: StepNotice, count?: number): void {
@@ -2595,7 +2645,7 @@ export class FillRun {
       // person's to fix (the agent leaves the job for them, never failed).
       if (this.errorsOnLoad()) this.notices.add('errors-on-load', this.lastErrors);
     } else this.notices.add(notice, count);
-    this.showNotices();
+    this.drawToasts();
   }
 
   /** core-x, item 2 (dom/account-section.ts): with Sign-in acting as Auto, not in a dry run, in a frame that may sign in
@@ -2649,9 +2699,13 @@ export class FillRun {
       this.env.afterSignIn?.();
       return;
     }
-    this.notices.add(outcome === 'failed' ? 'sign-in-failed' : 'sign-in-unavailable');
-    this.showNotices();
+    // v4 (D10): the toast says what is left: the job-site sign-in to add in TailorIT, or the sign-in to make here.
+    this.signInSaid = outcome === 'failed' ? 'failed' : 'unavailable';
+    if (outcome === 'failed') this.notices.add('sign-in-failed');
+    this.drawToasts();
     await this.report();
+    // The person signs in on the page, and the run carries on by itself once the wall goes.
+    void this.watchPauseGone().catch(() => undefined);
   }
 
   /** The report's `buttons` now (v3 Phase 4): at rest (review, or waiting for the person's Next), not in a dry run;
@@ -2736,15 +2790,13 @@ export class FillRun {
     const answer = pressStep(this.pressPage(), 'submit', { confirmed: !this.skipRules.requiredEmpty });
     log(answer.outcome === 'pressed' ? 'content.step-pressed' : 'content.step-press-refused', { submit: true, auto: true });
     if (answer.outcome === 'pressed') {
-      // The person chose Auto: a posting that could not be read for its AI rule is submitted, and the review says so.
-      if (this.notices.has('policy-unreadable')) this.notices.add('submit-auto-unchecked');
       this.submitWasPressed('auto', before);
       return;
     }
     if (answer.outcome === 'required-empty') this.notify('submit-held-required', answer.count);
     else if (answer.outcome === 'not-accepted') {
       this.notices.add('submit-errors', Math.max(1, answer.count ?? 1));
-      this.showNotices();
+      this.drawToasts();
     } else this.notify(answer.outcome === 'blocked' ? 'submit-held-captcha' : 'submit-held-check');
   }
 
@@ -2796,7 +2848,6 @@ export class FillRun {
     if (!this.submitPending) return;
     this.submitPending = false;
     this.notices.add('submit-unconfirmed');
-    this.showNotices();
     this.rowsChanged();
   }
 
@@ -2807,7 +2858,7 @@ export class FillRun {
     this.submitPending = false;
     this.notices.forget(['submit-unconfirmed']);
     this.notices.add('submit-errors', Math.max(1, count));
-    this.showNotices();
+    this.drawToasts();
     if (waited || this.ended !== null) this.rowsChanged();
   }
 
@@ -2824,28 +2875,11 @@ export class FillRun {
     return this.rows.some((row) => row.category === 'file.resume' && row.status === 'verified' && row.wrote);
   }
 
-  /** show-review: the launcher says how many rows need the person (the review lists them); nothing is drawn over the
-   *  page. */
+  /** show-review: the launcher shows how far the fill is (v4, D11: progress only); nothing is drawn over the page. */
   private showReview(cause: ReviewCause): void {
     if (cause === 'error') log('content.step-review-error');
     this.drawAiEdits();
-    this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
-  }
-
-  private waitForChoice(): Promise<PolicyChoice> {
-    return new Promise((resolve, reject) => {
-      const signal = this.controller.signal;
-      const onAbort = () => {
-        this.choose = null;
-        reject(new RunAborted());
-      };
-      if (signal.aborted) return onAbort();
-      signal.addEventListener('abort', onAbort, { once: true });
-      this.choose = (choice) => {
-        signal.removeEventListener('abort', onAbort);
-        resolve(choice);
-      };
-    });
+    this.launcher({ state: 'review', action: 'open-review', ...this.progressNow() });
   }
 
   // ── The run ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2870,10 +2904,8 @@ export class FillRun {
   private async execute(): Promise<void> {
     const { env } = this;
     const { page } = env;
-    const ui = env.ui();
-    ui?.resetNotices();
-    ui?.hidePolicyCard();
-    this.showNotices();
+    // A new run's toasts start afresh (the person's dismissals with them).
+    env.ui()?.setToasts([]);
     this.launcher({ state: 'running', action: null });
     try {
       const frame = await env.frame();
@@ -2891,7 +2923,6 @@ export class FillRun {
         if (!shown) {
           log('content.form-hidden');
           this.notices.add('form-hidden');
-          this.showNotices();
           // Before the machine starts: nothing is stored, and the report says the run stopped.
           this.reportStatus = 'stopped';
           await this.report();
@@ -2900,8 +2931,6 @@ export class FillRun {
           return;
         }
       }
-      const view = env.doc.defaultView;
-      if (view !== null && postingOutsideFrame(view, frame.isTop)) this.notices.add('posting-outside-frame');
 
       // 2. The machine, from the run's RunState.
       const from = this.request.from;
@@ -2925,11 +2954,8 @@ export class FillRun {
       const code: ErrorCode = failure instanceof RunFailure ? failure.code : 'internal';
       log('content.run-failed', { notConnected: code === 'not_connected', expired: code === 'expired' });
       await this.failed();
-      env.ui()?.hidePolicyCard();
       this.launcher({ state: 'error', action: 'fill', reason: code === 'not_connected' ? 'not-connected' : 'failed' });
       this.end('error');
-    } finally {
-      this.choose = null;
     }
   }
 
@@ -2997,16 +3023,10 @@ export class FillRun {
     });
   }
 
-  /** The notices the rows and the scan raise: attention checks, controls that need the person's click (an Add button
-   *  left to them among them), and fields not rendered yet. */
-  private noticesFromRows(rows: readonly FillResult[], scanned: ScanResult): void {
-    const attention = rows.filter((row) => row.reason === 'attention-check').length;
-    if (attention > 0) this.notices.add('attention-check', attention);
-    // A bot check asked as a question (S-2, S-3) is a CAPTCHA to the person and to the agent (needs-you captcha).
+  /** The notices the rows raise (v4, D9: the facts the worker reads only): a bot check asked as a question (S-2, S-3),
+   *  a CAPTCHA to the person and to the agent (needs-you captcha). */
+  private noticesFromRows(rows: readonly FillResult[]): void {
     const bots = rows.filter((row) => row.reason === 'bot-check' && leftForPerson(row)).length;
     if (bots > 0) this.notices.add('bot-check', bots);
-    const clicks = rows.filter((row) => row.reason === 'needs-your-click').length + this.addsLeft;
-    if (clicks > 0) this.notices.add('needs-click', clicks);
-    if (scanned.counters.deferredFields > 0) this.notices.add('deferred-fields', scanned.counters.deferredFields);
   }
 }

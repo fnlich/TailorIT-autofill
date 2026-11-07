@@ -146,10 +146,11 @@ test.describe('a dependent list whose options load asynchronously', () => {
     await invariants(filled, run);
   });
 
-  test('a page that stays busy: the settle cap is hit and the page-busy notice shows', async ({ extContext, connected: ext, routeLog, logs }) => {
+  test('a page that stays busy: the settle cap is hit, and the run rests silently (v4, D7: no notice, no hand-off)', async ({ extContext, connected: ext, routeLog, logs }) => {
     const run = { extContext, ext, routeLog, logs };
     const filled = await fillVariant('page-busy', run);
-    expect(noticeCount(filled.report, 'page-busy')).toBe(1);
+    expect(noticeCount(filled.report, 'page-busy')).toBe(0);
+    expect(filled.report.status).not.toBe('handoff');
     await contactAndCountry(filled, { verified: false });
     // The run waited the whole cap after the Country write before it stopped.
     expect(filled.report.updatedAt - await requestedAt(filled.page)).toBeGreaterThanOrEqual(SETTLE_CAP_MS - 100);

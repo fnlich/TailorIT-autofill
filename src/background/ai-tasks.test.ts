@@ -468,7 +468,7 @@ describe('a run’s questions', () => {
     const other = { ...SCHOOL, id: 'lever|main|other|0e7f3a9c5b1d2468|0', intended: 'Rice University' };
     const context = { specs: [], canaries: [] };
     const llm = { tiebreak: true, classify: true, drafts: false, answers: false,
-      confirmDrafts: false, whenForbidden: 'profile-only' as const };
+      whenForbidden: 'profile-only' as const };
     ai.ask({ tiebreaks: [SCHOOL], classify: [] }, [SCHOOL.id as FieldKey], context, llm, 1);
     ai.ask({ tiebreaks: [other], classify: [] }, [other.id as FieldKey], context, llm, 1);
     await flush();
@@ -488,8 +488,7 @@ describe('a run’s questions', () => {
     const ai = createRunAi(createAiTasks({ server, timers: time.timers, now: time.now }), memoryIds(), vocab);
     const where = classifyItem('lever|main|where|none|0', 'Where do you work today?');
     ai.ask({ tiebreaks: [SCHOOL], classify: [where] }, [SCHOOL.id as FieldKey, where.key], { specs: [], canaries: [] },
-      { tiebreak: false, classify: false, drafts: false, answers: false, confirmDrafts: false,
-        whenForbidden: 'profile-only' }, 1);
+      { tiebreak: false, classify: false, drafts: false, answers: false, whenForbidden: 'profile-only' }, 1);
     await ai.idle();
     expect(calls).toEqual([]);
     expect([ai.state(SCHOOL.id as FieldKey), ai.state(where.key)]).toEqual(['done', 'done']);

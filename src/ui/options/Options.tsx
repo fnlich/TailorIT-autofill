@@ -329,9 +329,6 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
           disabled={saving} onChange={(drafts) => set({ llm: { ...shown.llm, drafts } })} />
         <Toggle setting="llm.answers" name={TEXT.ai.answers} help={TEXT.ai.answersHelp} checked={shown.llm.answers}
           disabled={saving} onChange={(answers) => set({ llm: { ...shown.llm, answers } })} />
-        <Toggle setting="llm.confirmDrafts" name={TEXT.ai.confirmDrafts} help={TEXT.ai.confirmDraftsHelp}
-          checked={shown.llm.confirmDrafts} disabled={saving}
-          onChange={(confirmDrafts) => set({ llm: { ...shown.llm, confirmDrafts } })} />
         <fieldset className="tia-fieldset" data-setting-group="llm.whenForbidden">
           <legend className="tia-field__name">{TEXT.ai.whenForbidden.heading}</legend>
           {AI_FORBIDDEN_MODES.map((mode) => (
@@ -501,7 +498,7 @@ function ForbiddenChoice({ mode, checked, disabled, onChoose }: {
 }) {
   const id = useId();
   const words = TEXT.ai.whenForbidden;
-  const help = mode === 'profile-only' ? words['profile-onlyHelp'] : mode === 'ask' ? words.askHelp : words['use-aiHelp'];
+  const help = mode === 'profile-only' ? words['profile-onlyHelp'] : words['use-aiHelp'];
   return (
     <div className="tia-field">
       <input type="radio" id={id} name="when-forbidden" value={mode} data-setting={`llm.whenForbidden.${mode}`}

@@ -61,7 +61,8 @@ describe('the report in TailorIT’s look', () => {
     expect([...root.querySelectorAll<HTMLElement>('[data-group]')].map((group) => [group.dataset.group,
       group.querySelector('h3')?.textContent, [...group.querySelectorAll<HTMLElement>('li[data-field-key]')]
         .map((each) => [each.dataset.fieldKey, each.dataset.layout, each.dataset.progress])])).toEqual([
-      ['required', COPY.report.requiredGroup, [['email', 'line', 'filled'], ['school', 'card', 'missing']]],
+      // v4 (D1): a field not filled is a folded line like any other, its state "missing" (not filled).
+      ['required', COPY.report.requiredGroup, [['email', 'line', 'filled'], ['school', 'line', 'missing']]],
       ['optional', COPY.report.optionalGroup, [['phone', 'line', 'filled'], ['website', 'line', 'none']]],
     ]);
     // Every row keeps its detail folded under its chevron at first, one that needs the person too (Jobright's list):
@@ -112,7 +113,8 @@ describe('the report in TailorIT’s look', () => {
       bar.getAttribute('aria-valuetext')]).toEqual(['0', '100', '50', COPY.report.progressText(1, 2, true, 50)]);
     const fill = bar.querySelector<HTMLElement>('.tia-progress__fill')!;
     expect(fill.getBoundingClientRect().width / bar.getBoundingClientRect().width).toBeCloseTo(0.5, 2);
-    expect(block.querySelector('[data-needs]')?.textContent).toBe(COPY.report.needsYou(1));
+    // v4 (D1): nothing is "left for you" but a hard-rule stop.
+    expect(block.querySelector('[data-needs]')?.textContent).toBeUndefined();
     // No required field: every counted row, "fields filled".
     const optional = await mount(<Report reports={[frameReport(0, { fields: [filled, skipped] })]} />);
     expect(optional.querySelector('.tia-progress-line__title')?.textContent).toBe(COPY.report.progressFilled(1, 1, false));
@@ -223,7 +225,8 @@ describe('the report in TailorIT’s look', () => {
     const allClear = async (reports: FrameReport[]) =>
       (await mount(<Report reports={reports} />)).querySelector('.tia-allclear')?.textContent ?? null;
     expect(await allClear([frameReport(0, { fields: [verified, filled] })])).toBe(COPY.report.allClear);
-    expect(await allClear([frameReport(0, { fields: [verified, flagged] })])).toBeNull();
+    // v4 (D1): a field not filled asks nothing of the person.
+    expect(await allClear([frameReport(0, { fields: [verified, flagged] })])).toBe(COPY.report.allClear);
     expect(await allClear([frameReport(0, { status: 'fill-step', fields: [verified] })])).toBeNull();
     expect(await allClear([frameReport(0, { fields: [verified], notices: [{ code: 'policy-unreadable' }] })])).toBeNull();
     expect(await allClear([frameReport(0, { fields: [verified] }), frameReport(2, { status: 'policy-notice' })])).toBeNull();
@@ -251,7 +254,8 @@ describe('the report in TailorIT’s look', () => {
     const root = await mount(<Report reports={[frameReport(0, { fields: [waiting, confirmed] })]} />);
     await unfold(root, 'why');
     await unfold(root, 'cover');
-    for (const [key, layout] of [['why', 'card'], ['cover', 'line']] as const) {
+    // v4 (D1, D6): no draft waits for the person, so neither row is a card.
+    for (const [key, layout] of [['why', 'line'], ['cover', 'line']] as const) {
       const each = rowOf(root, key);
       expect([key, each.dataset.layout, each.dataset.draft]).toEqual([key, layout, 'true']);
       expect(each.querySelector('.tia-row__draft')?.textContent).toBe(COPY.report.draftMark);

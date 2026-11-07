@@ -405,16 +405,18 @@ describe('a dependent list whose options load asynchronously', () => {
     expect(ran.events.on('state')).toEqual([]);
   });
 
-  it('pauses at the settle cap on a page that stays busy: the state left page-busy, and Continue starts afresh',
+  it('v4 (D7): rests silently at the settle cap on a page that stays busy: the state not filled, no hand-off, Next the person\'s',
     async () => {
       const started = await start(asyncPage('page-busy'), 'async-options-page-busy', { settle: { quietMs: 200,
         capMs: 1_500 } });
       const requested = Date.now();
       const ran = ranOf(started, await started.runtime.fill());
       expectInvariants(ran);
-      expect(ran.end).toBe('paused');
-      expect(ran.report).toMatchObject({ status: 'handoff', pauseReason: 'page-busy' });
-      expect(ran.report.notices.map((notice) => notice.code)).toContain('page-busy');
+      // No hand-off: the step is validated as it stands (not settled), and the run rests at review.
+      expect(ran.end).not.toBe('paused');
+      expect(ran.report.status).not.toBe('handoff');
+      expect(ran.report.pauseReason).toBeNull();
+      expect(ran.report.notices.map((notice) => notice.code)).not.toContain('page-busy');
       expect(Date.now() - requested).toBeGreaterThanOrEqual(1_500);
       for (const label of ['Full name', 'Email', 'Country']) {
         expect(ran.row(label), label).toMatchObject({ provenance: 'profile', wrote: true });
@@ -424,14 +426,12 @@ describe('a dependent list whose options load asynchronously', () => {
       expect(ran.row('State')).toMatchObject({ category: 'address.region', status: 'flagged', reason: 'page-busy',
         wrote: false, provenance: null });
       expect(ran.writes('state')).toBe(0);
-      expect(ran.worker.runStates.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'page-busy',
-        resumeStatus: 'fill-step' });
-      expect(ran.runtime.ui!.launcher.view).toMatchObject({ state: 'needs-you', action: 'continue', reason: 'pause' });
-      expect(ran.runtime.ui!.notices.shown).toContain('page-busy');
+      expect(ran.worker.runStates.at(-1)).toMatchObject({ pauseReason: null });
+      expect(ran.worker.runStates.at(-1)!.status).not.toBe('handoff');
+      expect(ran.runtime.ui!.launcher.view.state).toBe('review');
+      expect(ran.runtime.ui!.toasts.shown).toEqual([]);
       expect(logs.mock.calls).toContainEqual(['[tailorit-autofill] content.page-busy', { 'aria-busy': true,
         progressbar: true, adapter: false, 'options-loading': false }]);
-      await started.worker.platform.deliver({ v: 1, type: 'run/continue' });
-      await vi.waitFor(() => expect(started.worker.of('run/begin')).toHaveLength(2));
     });
 });
 

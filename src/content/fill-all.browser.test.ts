@@ -138,21 +138,23 @@ describe('version 2’s defaults: every question filled', () => {
       needsUserAction: false });
   });
 
-  it('keeps the Phase 6 confirmation behind its setting', async () => {
-    const started = await start(FORM, 'fa-confirm', { settings: withLlm({ confirmDrafts: true }) });
+  it('v4 (D6): never keeps a draft for the person to confirm: the setting is gone, and a stored "Ask me" reads as accepted', async () => {
+    const started = await start(FORM, 'fa-confirm');
     await started.runtime.fill();
-    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ status: 'flagged',
-      reason: 'llm-draft-needs-confirmation', needsUserAction: true });
+    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ status: 'verified', reason: 'llm-draft-written',
+      needsUserAction: false });
+    expect('confirmDrafts' in DEFAULT_SETTINGS.llm).toBe(false);
   });
 });
 
 describe('a posting that forbids AI', () => {
   const HIT = { postingPage: 'hit', storedCopy: 'clear' } as const;
 
-  it('fills from the profile only by default: no card, no AI request, the notice, and what only the AI could answer left', async () => {
+  it('fills from the profile only by default: no card, no AI request, the report says so, and what only the AI could answer left', async () => {
     const started = await start(FORM, 'fa-policy-profile', { policy: HIT });
     expect(await started.runtime.fill()).toBe('review');
-    expect(started.runtime.ui!.notices.cardShown).toBe(false);
+    // v4 (D6, D9): no card and no notice on the page; the report's fact is the worker's.
+    expect(started.runtime.ui!.toasts.shown).toEqual([]);
     const report = lastReport(started.worker);
     expect(report.notices.map((notice) => notice.code)).toContain('policy-profile-only');
     expect(started.worker.of('plan/request').every((message) => message.noAi === true)).toBe(true);
@@ -192,10 +194,7 @@ describe('a posting that forbids AI', () => {
     expect(started.runtime.ui!.aiEditButtons).toHaveLength(0);
   });
 
-  it('shows the card with "Ask me each time", and fills on with the AI with "Use AI anyway"', async () => {
-    const ask = await start(FORM, 'fa-policy-ask', { policy: HIT, settings: withLlm({ whenForbidden: 'ask' }) });
-    void ask.runtime.fill();
-    await vi.waitFor(() => expect(ask.runtime.ui!.notices.cardShown).toBe(true));
+  it('fills on with the AI with "Use AI anyway" (v4, D6: "Ask me each time" and its card are gone)', async () => {
     const useAi = await start(FORM, 'fa-policy-use', { policy: HIT, settings: withLlm({ whenForbidden: 'use-ai' }) });
     expect(await useAi.runtime.fill()).toBe('review');
     expect(lastReport(useAi.worker).notices.map((notice) => notice.code)).toContain('policy');

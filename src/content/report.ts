@@ -10,6 +10,13 @@
  *   value), never a field value. The worker stamps its own updatedAt.
  * A hidden file input beside a visible upload control that did not qualify gets a flagged row of its own here
  * (upload-control-not-recognized); it is never written, focused or sent an event.
+ * v4 (the owner, 2026-11-07: "Never flag to the user, just determine with your own"; docs/_v4/run.md):
+ * - a report's rows keep the core's statuses and needsUserAction (the trap specs read them); what asks anything of the
+ *   person is shared/report.ts needsPerson alone (a hard-rule stop), and what is filled its isReady;
+ * - the notices are the facts the worker reads (the agent's verdict, the posting's AI rule, the counters), never shown:
+ *   NoticeBook drops the informational ones (DROPPED_NOTICES, D9) no reader takes;
+ * - RunState.lastFill counts what holds auto-advance: the required fields the fill left empty (`flagged`) and the
+ *   hard-rule stops left (`blocked`); `unresolved` is always 0 (nothing decidable holds Next: D3).
  */
 import type { AdapterId } from '../adapters/types';
 import type { Platform } from '../core/enums';
@@ -20,7 +27,7 @@ import type { PauseReason, RunState, RunStatus } from '../core/types/run';
 import { deadline, monotonicNow } from '../dom/time';
 import type { UnrecognisedUpload } from '../dom/types';
 import { log } from '../shared/log';
-import { FrameReportSchema, MAX_STEP_PROGRESS, type FrameReport } from '../shared/report';
+import { FrameReportSchema, MAX_STEP_PROGRESS, needsPerson, notFilled, type FrameReport } from '../shared/report';
 
 /** report/put's limit per frame (the worker refuses more). */
 export const REPORT_PUTS_PER_SECOND = 4;
@@ -40,11 +47,18 @@ export function uploadRow(upload: UnrecognisedUpload): FillResult {
   };
 }
 
-/** The run's notices in the order they were raised, each once, with an optional count. */
+/** v4 (D9): the informational notices no reader of a report takes (the worker's agent, its no-AI checks and counters
+ *  read the rest): never raised, so no report carries them. */
+export const DROPPED_NOTICES: ReadonlySet<NoticeCode> = new Set<NoticeCode>(['policy-unreadable', 'attention-check',
+  'page-busy', 'needs-click', 'posting-outside-frame', 'deferred-fields', 'policy-hidden-text', 'submit-auto-unchecked',
+  'sign-in-unavailable', 'account-left', 'page-turned', 'submit-held-entries']);
+
+/** The run's notices in the order they were raised, each once, with an optional count (DROPPED_NOTICES never). */
 export class NoticeBook {
   private readonly entries = new Map<NoticeCode, number | undefined>();
 
   add(code: NoticeCode, count?: number): void {
+    if (DROPPED_NOTICES.has(code)) return;
     const before = this.entries.get(code);
     this.entries.set(code, count === undefined ? before : Math.max(before ?? 0, count));
   }
@@ -138,13 +152,15 @@ export function buildReport(header: ReportHeader, rows: readonly FillResult[]): 
   return parsed.data;
 }
 
-/** RunState's lastFill: flagged and blocked rows, and rows that still need the person otherwise (a value that did
- *  not stick). */
+/** RunState's lastFill (v4, D3): what holds auto-advance on the step. `flagged`: the required fields the fill left
+ *  empty (shared/report.ts notFilled, a hard-rule stop aside); `blocked`: the hard-rule stops left (a bot check asked
+ *  as a question); `unresolved`: nothing (a low-confidence fill, a kept prefill, a hidden or refused field, a value the
+ *  page shows differently: none of them holds Next any more). */
 export function lastFillOf(rows: readonly FillResult[]): NonNullable<RunState['lastFill']> {
   return {
-    flagged: rows.filter((row) => row.status === 'flagged').length,
-    blocked: rows.filter((row) => row.status === 'blocked').length,
-    unresolved: rows.filter((row) => row.needsUserAction && row.status !== 'flagged' && row.status !== 'blocked').length,
+    flagged: rows.filter((row) => row.required && notFilled(row) && !needsPerson(row)).length,
+    blocked: rows.filter((row) => needsPerson(row)).length,
+    unresolved: 0,
   };
 }
 

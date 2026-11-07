@@ -150,7 +150,9 @@ const PARTIAL_LIST_STAGES: ReadonlySet<MatcherStage> = new Set<MatcherStage>(['e
 const FORCING_FLAGS: ReadonlySet<MatchFlag> = new Set<MatchFlag>(['injected-label', 'ambiguous-abbreviation',
   'level-fallback', 'same-entity-duplicates', 'small-margin']);
 
-/** A row with nothing written. */
+/** A row with nothing written. v4 (the owner, 2026-11-07: "Never flag to the user"): its status and needsUserAction stay
+ *  the core's own word on the row (the Guard's, the loop's, the trap specs'); whether it asks anything of the person is
+ *  shared/report.ts needsPerson's alone: a hard-rule stop only. */
 function rowWithout(spec: FieldSpec, category: FieldCategory, status: FillResult['status'], reason: ReasonCode,
   confidence: number, match?: Match): FillResult {
   const options = spec.options === 'lazy' || spec.options.length > 0;
@@ -548,9 +550,9 @@ interface FieldPlan {
 
 /**
  * A free-text field with its draft (drafts.ts): the draft written as an llm-draft through guardWrite (its canary scan
- * included), accepted as written (llm-draft-written, verified), or flagged for the person's confirmation while
- * settings.llm.confirmDrafts is on; or, for a draft TailorIT discarded or one past the field's cap, a flagged row with
- * the reason, and nothing written. A Guard refusal blocks it, as any write's.
+ * included), accepted as written (llm-draft-written, verified: v4, no draft waits for the person's confirmation any
+ * more); or, for a draft TailorIT discarded or one past the field's cap, a flagged row with the reason, and nothing
+ * written. A Guard refusal blocks it, as any write's.
  */
 function planDraft(spec: FieldSpec, resolution: Resolution, verdict: DraftVerdict, ctx: FieldPlanContext): FieldPlan {
   const { category } = resolution;
@@ -563,15 +565,13 @@ function planDraft(spec: FieldSpec, resolution: Resolution, verdict: DraftVerdic
   if (!guarded.ok) {
     return { row: rowWithout(spec, category, refusedStatus(spec, guarded.reason), guarded.reason, LLM_DRAFT) };
   }
-  const confirm = ctx.input.settings.llm.confirmDrafts;
   return {
     write,
     row: {
       key: spec.key, label: spec.label, kind: spec.kind, category, section: sectionKey(spec.section),
-      required: spec.required, status: confirm ? 'flagged' : 'verified', provenance: 'llm-draft',
-      matcherStage: 'not-applicable', confidence: LLM_DRAFT,
-      reason: confirm ? 'llm-draft-needs-confirmation' : 'llm-draft-written', wrote: false, verification: 'not-checked',
-      needsUserAction: confirm,
+      required: spec.required, status: 'verified', provenance: 'llm-draft', matcherStage: 'not-applicable',
+      confidence: LLM_DRAFT, reason: 'llm-draft-written', wrote: false, verification: 'not-checked',
+      needsUserAction: false,
     },
   };
 }
@@ -675,7 +675,8 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   }
   // A remote typeahead chooses one of its results only in the fill band (§4.11: the first result that reaches it ends
   // the search). A weaker match, or one always flagged (an injected label's clean part), is left unchosen with its
-  // reason, and the frame types its next query: blank beats wrong.
+  // reason, and the frame types its next query: blank beats wrong. v4: kept as it is, a decision of its own (the
+  // search goes on to a clean result, and never takes one a page aimed at AI tools: docs/_v4/run.md, D2).
   if (spec.kind === 'typeahead-remote' && planned.value.kind === 'option' && action !== 'fill') {
     return { row: rowWithout(spec, resolution.category, 'flagged', flag ?? 'low-confidence', confidence, planned.match) };
   }
@@ -694,8 +695,9 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
     row: {
       key: spec.key, label: spec.label, kind: spec.kind, category: resolution.category, section: sectionKey(spec.section),
       required: spec.required, status, provenance: write.origin.provenance, matcherStage: planned.match.stage,
-      // A fill flagged for its confidence is still written: the flag is advisory ("check it"), so it never asks for the
-      // person (SPEC-AMENDMENTS §11, nothing left for them); a write that fails is flagged again where it fails.
+      // A fill flagged for its confidence is still written (D2): its flag only says how it came (shared/report.ts
+      // isReady counts it filled; nothing asks for the person or holds Next for it); a write that fails is flagged
+      // again where it fails.
       confidence, reason, wrote: false, verification: 'not-checked', needsUserAction: false,
     },
   };

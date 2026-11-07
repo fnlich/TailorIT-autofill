@@ -19,6 +19,7 @@ import { genericAdapter } from '../adapters/generic';
 import { greenhouseAdapter } from '../adapters/greenhouse';
 import type { Adapter, SignInForm } from '../adapters/types';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
+import { COPY } from '../shared/copy';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
 import { guardSubmission, signInContainerOf, standardSignInForm, signInRefusal } from '../dom/sign-in-form';
 import { deadline } from '../dom/time';
@@ -382,12 +383,114 @@ describe('a run paused at a sign-in (v3 Phase 5)', () => {
     expect(submitsOn(fixture)).toBe(0);
   });
 
-  it('says sign-in-unavailable when the worker has none for the page', async () => {
+  it('says so on the page when the worker has none for the page: the branded toast to add one in TailorIT (v4, D10)', async () => {
     const { worker, runtime } = await start(signInPage(), 'auto', { 'signin/credential': [{ ok: false, error: 'unavailable' }] });
     expect(await runtime.fill()).toBe('paused');
-    await vi.waitFor(() => expect(worker.reports.at(-1)!.notices.map((notice) => notice.code))
-      .toContain('sign-in-unavailable'));
-    expect(worker.reports.at(-1)!.notices.map((notice) => notice.code)).not.toContain('sign-in-auto');
+    await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['no-sign-in']));
+    expect(runtime.ui!.toasts.button('no-sign-in', 'action')?.textContent).toBe(COPY.toasts.open);
+    // The report holds no notice of it (v4, D9), and no longer says it signs in.
+    await vi.waitFor(() => expect(worker.reports.at(-1)!.notices.map((notice) => notice.code)).not.toContain('sign-in-auto'));
+    expect(worker.reports.at(-1)!.notices.map((notice) => notice.code)).not.toContain('sign-in-unavailable');
+  });
+});
+
+describe('v4: the account wall, its toast, and Sign up & Autofill (docs/_v4/run.md)', () => {
+  async function start(page: string, signInMode: 'auto' | 'manual', script: Record<string, unknown[]> = {},
+    adapters: Adapter[] = [genericAdapter]) {
+    const fixture = await loadFixture(document, page, { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: signInMode } };
+    const worker = createFakeWorker({ settings, script: script as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => adapters, settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    return { fixture, worker, runtime };
+  }
+  /** The person signs in on the page: the wall goes, and the application's form shows in its place. */
+  const signedIn = (fixture: Fixture) => {
+    const { doc } = fixture;
+    const form = doc.createElement('form');
+    form.id = 'done';
+    const label = doc.createElement('label');
+    label.htmlFor = 'first';
+    label.textContent = 'First Name';
+    const first = doc.createElement('input');
+    first.id = 'first';
+    first.name = 'first';
+    form.append(label, first);
+    doc.querySelector('main')!.replaceChildren(form);
+  };
+  /** A wall with no form root: an adapter that reads the account page and claims no form (Workday's landing). */
+  const walled: Adapter = { ...genericAdapter, id: 'workday', detect: () => null,
+    authState: (doc) => (doc.querySelector('input[type=password]') === null ? null : 'sign-in') };
+
+  it('with Sign-in Manual: the branded sign-in toast, nothing asked; once the person signed in, the run carries on by itself', async () => {
+    const { fixture, worker, runtime } = await start(signInPage(), 'manual');
+    expect(await runtime.fill()).toBe('paused');
+    expect(runtime.ui!.toasts.shown).toEqual(['sign-in']);
+    expect(worker.of('signin/credential')).toEqual([]);
+    // Never a "needs you" badge: the launcher offers Continue with its progress, never "!".
+    expect(runtime.ui!.launcher.el.querySelector('.badge')!.textContent).not.toBe('!');
+    signedIn(fixture);
+    await vi.waitFor(() => expect(worker.of('run/begin')).toHaveLength(2), { timeout: 5_000 });
+    await vi.waitFor(() => expect((fixture.doc.getElementById('first') as HTMLInputElement).value).not.toBe(''),
+      { timeout: 10_000 });
+    expect(runtime.ui!.toasts.shown).not.toContain('sign-in');
+  });
+
+  it('Sign up & Autofill (run/start {signIn}) signs in under Sign-in Manual, for that run', async () => {
+    const { fixture, worker, runtime } = await start(signInPage(), 'manual',
+      { 'signin/credential': [{ ok: true, data: CREDENTIAL }] });
+    expect(await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true })).toEqual({ ok: true,
+      data: {} });
+    await vi.waitFor(() => expect(submitsOn(fixture)).toBe(1), { timeout: 5_000 });
+    expect(worker.of('signin/credential')).toHaveLength(1);
+    expect(runtime.run!.request.signIn).toBe(true);
+    removeFixtures(document);
+    // A plain Autofill on the same page asks for nothing.
+    const plain = await start(signInPage(), 'manual');
+    expect(await plain.runtime.fill()).toBe('paused');
+    expect(plain.worker.of('signin/credential')).toEqual([]);
+  });
+
+  it('Sign up & Autofill with no job-site sign-in saved: the toast to add one, with its Open', async () => {
+    const { worker, runtime } = await start(signInPage(), 'manual', { 'signin/credential': [{ ok: false,
+      error: 'unavailable' }] });
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+    await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['no-sign-in']), { timeout: 5_000 });
+    expect(runtime.ui!.shadow.querySelector('.toast[data-kind="no-sign-in"] .notice')?.textContent)
+      .toBe(COPY.toasts.noSignIn);
+  });
+
+  it('tells the worker the page’s wall before any run (frame/wall), and that it went', async () => {
+    const { fixture, worker } = await start(signInPage(), 'manual');
+    await vi.waitFor(() => expect(worker.of('frame/wall').map((message) => message.wall)).toEqual(['sign-in']));
+    expect(worker.of('run/begin')).toEqual([]);
+    signedIn(fixture);
+    await vi.waitFor(() => expect(worker.of('frame/wall').map((message) => message.wall)).toEqual(['sign-in', null]));
+  });
+
+  it('at a wall with no form: Autofill shows the sign-in toast under Manual; Sign up & Autofill signs in there', async () => {
+    const manual = await start(signInPage(), 'manual', {}, [walled]);
+    expect(manual.runtime.page).toBeNull();
+    await vi.waitFor(() => expect(manual.worker.of('frame/wall').map((message) => message.wall)).toEqual(['sign-in']));
+    await manual.worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(manual.runtime.ui?.toasts.shown).toEqual(['sign-in']));
+    expect(manual.worker.of('signin/credential')).toEqual([]);
+    expect(manual.worker.of('run/begin')).toEqual([]);
+    manual.runtime.stop();
+    removeFixtures(document);
+
+    const signUp = await start(signInPage(), 'manual', { 'signin/credential': [{ ok: true, data: CREDENTIAL }] },
+      [walled]);
+    await signUp.worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+    await vi.waitFor(() => expect(submitsOn(signUp.fixture)).toBe(1), { timeout: 5_000 });
+    signUp.runtime.stop();
+    removeFixtures(document);
+    // Never in a dry run.
+    const dry = await start(signInPage(), 'auto', {}, [walled]);
+    await dry.worker.platform.deliver({ v: 1, type: 'run/start', dryRun: true, signIn: true });
+    await deadline(300);
+    expect(dry.worker.of('signin/credential')).toEqual([]);
   });
 });
 

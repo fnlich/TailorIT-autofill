@@ -302,7 +302,7 @@ describe('C-S3: a later attempt on a step never writes over what the person type
   });
 });
 
-describe('C-S4: Fill anyway after a reload at the policy card', () => {
+describe('C-S4, v4 (D6): a run reloaded at the old policy card', () => {
   async function start(worker: FakeWorker) {
     const fixture = await loadFixture(document, trap01b);
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => trapUrl('01b-reload'),
@@ -312,16 +312,22 @@ describe('C-S4: Fill anyway after a reload at the policy card', () => {
   }
 
   it('scans the step first: the tripwire is read and its canary blocks the write that holds it', async () => {
-    const worker = createFakeWorker({ policy: { postingPage: 'hit', storedCopy: 'clear' } });
-    const first = await start(worker);
-    void first.runtime.fill();
-    await vi.waitFor(() => expect(first.runtime.run!.atPolicyCard).toBe(true));
-    first.runtime.stop();
+    // A RunState a version before v4 stored at the card (the first run's, as it stood before its scan): the new
+    // document resumes it, with no card and nothing to decide, and its scan comes before any write.
+    const first = createFakeWorker({ policy: { postingPage: 'hit', storedCopy: 'clear' } });
+    const ran = await start(first);
+    expect(await ran.runtime.fill()).toBe('review');
+    ran.runtime.stop();
     removeFixtures(document);
+    const stored: RunState = { ...first.runStates.at(-1)!, status: 'policy-notice', stepSignature: null, stepIndex: 0,
+      stepAttempts: {}, filledFieldKeys: {}, canarySet: [], tripwire: { triggered: false, hits: 0 }, policyDecision: null,
+      lastFill: null, updatedAt: Date.now() };
+    const worker = createFakeWorker({ policy: { postingPage: 'hit', storedCopy: 'clear' },
+      script: { 'runstate/get': [{ ok: true, data: { runState: stored } }] } });
     const second = await start(worker);
-    await vi.waitFor(() => expect(second.runtime.run?.atPolicyCard).toBe(true), { timeout: 10_000 });
-    await worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' });
-    await vi.waitFor(() => expect(second.runtime.run!.ended).toBe('review'), { timeout: 10_000 });
+    await vi.waitFor(() => expect(second.runtime.run?.ended).toBe('review'), { timeout: 10_000 });
+    expect(second.runtime.run!.atPolicyCard).toBe(false);
+    expect(worker.reports.map((report) => report.status)).not.toContain('policy-notice');
     expect((second.fixture.doc.getElementById('city') as HTMLInputElement).value).toBe('');
     expect(codes(lastReport(worker))).toContain('tripwire');
     expect(worker.of('plan/request').at(-1)!.canaries).not.toEqual([]);
@@ -524,7 +530,7 @@ describe('X-S5: a page that keeps flipping its step', () => {
 });
 
 describe('X-S8: a frame its page hides just before the click on Next', () => {
-  it('pauses instead of pressing Next where the person cannot see it', async () => {
+  it('never presses Next where the person cannot see it: it rests for their own Next (v4, D7: no hand-off)', async () => {
     let hidden = false;
     const holder: { fixture?: Fixture } = {};
     const worker = createFakeWorker({ ...AUTO, onMessage: (message) => {
@@ -538,10 +544,11 @@ describe('X-S8: a frame its page hides just before the click on Next', () => {
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WIZARD_URL, isTop: false,
       adapters: () => [ADAPTER], settle: { quietMs: 60 } });
     runtimes.push(runtime);
-    expect(await runtime.fill()).toBe('paused');
+    expect(await runtime.fill()).toBe('waiting');
     expect(hidden).toBe(true);
     expect(wizard(fixture).next).toEqual([]);
-    expect(lastState(worker)).toMatchObject({ status: 'handoff', pauseReason: 'needs-click' });
+    expect(lastState(worker)).toMatchObject({ status: 'wait-transition', pauseReason: null });
+    // The worker's agent still reads why (page_error); the page shows nothing.
     expect(codes(lastReport(worker))).toContain('next-hidden');
   });
 });

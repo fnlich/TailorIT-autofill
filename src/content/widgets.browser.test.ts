@@ -134,7 +134,8 @@ describe('the widgets page', () => {
     expect(ran.row('Degree')).toMatchObject({ category: 'education.degree', status: 'flagged', reason: 'needs-your-click',
       wrote: false });
     expect(ran.events.on('degree').map((event) => event.type)).toEqual(['click']);
-    expect(ran.report.notices.map((notice) => notice.code)).toContain('needs-click');
+    // v4 (D7, D9): no needs-click notice: the row is simply not filled.
+    expect(ran.report.notices.map((notice) => notice.code)).not.toContain('needs-click');
     // Pass 0 planned everything, the lazy widgets waiting for options; pass 1 planned the two widgets read in between.
     const plans = planned(ran.worker);
     expect(plans.map((plan) => plan.pass)).toEqual([0, 1]);

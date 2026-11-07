@@ -525,9 +525,9 @@ describe('the cover letter on the job card (Phase G)', () => {
     expect(letterRow(forbiddenRoot)!.textContent).toContain(COPY.job.letter.profileOnly);
     expect(writeButton(forbiddenRoot)).toBeNull();
 
-    // "Ask me each time": the posting's notice leaves Write it now to the person.
+    // "Use AI anyway" (v4: "Ask me each time" is gone): the posting's notice leaves Write it now to the person.
     const asking = withForm();
-    asking.script.settings = { ...asking.script.settings, llm: { ...asking.script.settings.llm, whenForbidden: 'ask' } };
+    asking.script.settings = { ...asking.script.settings, llm: { ...asking.script.settings.llm, whenForbidden: 'use-ai' } };
     asking.script.reports.set(5, [frameReport(0, { notices: [{ code: 'policy' }] })]);
     const askingRoot = await open(asking);
     expect(letterRow(askingRoot)!.dataset.letterMode).toBe('ai');

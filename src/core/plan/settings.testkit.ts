@@ -11,6 +11,6 @@ export const CAUTIOUS_SETTINGS: Settings = {
   ...DEFAULT_SETTINGS,
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip }, consents: 'required', ai: 'profile' },
   preapprovedConsent: [],
-  llm: { tiebreak: true, classify: true, drafts: false, answers: false, confirmDrafts: true, whenForbidden: 'ask' },
+  llm: { tiebreak: true, classify: true, drafts: false, answers: false, whenForbidden: 'profile-only' },
   interpretations: { postingCountryForLegal: false, twoOrMoreRaces: false, eeoDeclineByDefault: false },
 };

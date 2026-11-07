@@ -121,7 +121,8 @@ async function expectEducationFlagged(page: Page, report: FrameReport): Promise<
   // row: the needs-click notice carries it (wave 2's decision), counted with the step's flagged fields in lastFill.
   expect(report.fields.filter((candidate) => candidate.reason === 'needs-your-click')).toEqual([]);
   expect(report.fields.map((candidate) => candidate.label)).not.toContain(ADD_EDUCATION_LABEL);
-  expect(noticeCount(report, 'needs-click')).toBe(1);
+  // v4 (D7, D9): the Add the run could not press is simply not pressed; no needs-click notice.
+  expect(noticeCount(report, 'needs-click')).toBe(0);
 
   // The owner's amendments (docs/SPEC-AMENDMENTS.md §1): the question the profile cannot answer is TailorIT's AI's,
   // and the mock's answer task has no answer for it by default, so it stays blank and flagged.
@@ -207,7 +208,8 @@ test.describe('the 4-step wizard', () => {
     await expectEducationFlagged(page, at.report!);
     expect(Object.entries(at.runState.repeatableCounters)).toContainEqual([`${at.runState.stepSignature}:education`,
       expect.objectContaining({ profile: 1, rendered: 0 })]);
-    expect(at.runState.lastFill?.flagged).toBeGreaterThanOrEqual(2);
+    // v4 (D3): the required shift question left empty holds Next; the education entry not added holds nothing.
+    expect(at.runState.lastFill?.flagged).toBe(1);
     expect(await extensionClicks(page, NEXT.education)).toEqual([]);
     await expectValueFree(at.runState, page);
 

@@ -10,8 +10,8 @@
  * Every rule is scoped by the shadow root, and the host resets inheritance (all: initial), so no page style reaches in
  * and none of these reaches out. Colours are TailorIT's (src/shared/palette.ts, the report's own), written in as
  * values rather than custom properties, which a page could pass in through the host: the launcher is TailorIT's teal
- * tile with its white "T" and a toned badge; notices and the policy card are white cards with a soft shadow, shaped so
- * it never covers another of our controls (palette.ts IN_PAGE_SHADOWS). Nothing is drawn over the page's fields (the
+ * tile with its white "T" and a toned badge; v4's toasts (toasts.ts) are white cards with a soft shadow, led by
+ * TailorIT's mark and name, shaped so they never cover another of our controls (palette.ts IN_PAGE_SHADOWS). Nothing is drawn over the page's fields (the
  * owner's decision of 2026-11-01): a field's status and the AI's marks are the review's. The in-page review panel's
  * frame is here too, a white card with a 20 px radius; the report inside it adds the report's own stylesheet to the
  * same root (src/content/ui/panel.tsx), whose tokens its box carries (.tia-page). Its rows scroll inside its box (a
@@ -19,20 +19,18 @@
  * box its visibility watch observes (the Phase 6 review, E1).
  *
  * IntersectionObserver v2 judges our controls (visible.ts): no transform, opacity below 1, filter, backdrop-filter or
- * will-change on the anchor, the launcher, a notice, the card, the panel, an Edit with AI button or their buttons,
+ * will-change on the anchor, the launcher, a toast, the panel, an Edit with AI button or their buttons,
  * hover included (an Edit with AI button widens by showing its label). Animations are paint-only and run on
  * descendants (the launcher's spinner is its ::after); no url() anywhere. The top frame's launcher sits in a white tab
  * at the window's right edge (v3 Phase 3, edge.ts), its close button above it and its grip under it, 8 px apart and the
  * launcher without its own shadow there, so neither it nor its badge is ever painted over them; the hide menu opens to
  * its left with a shadow too small to reach the tab.
  */
-import { BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, SHADOWS, TONES } from '../../shared/palette';
+import { BRAND, FONT_STACK, IN_PAGE_SHADOWS, NEUTRAL, TONES } from '../../shared/palette';
 
-/** A notice's icon, and the launcher's badge, per tone. */
-const TONE_RULES = (['warning', 'danger', 'info', 'success', 'brand'] as const).map((tone) => [
-  `.notice[data-tone="${tone}"] .icon { color: ${TONES[tone].fg}; }`,
-  `.badge[data-tone="${tone}"] { background: ${TONES[tone].fg}; }`,
-].join('\n')).join('\n');
+/** The launcher's badge, per tone. */
+const TONE_RULES = (['warning', 'danger', 'info', 'success', 'brand'] as const).map((tone) =>
+  `.badge[data-tone="${tone}"] { background: ${TONES[tone].fg}; }`).join('\n');
 
 const WHITE = NEUTRAL.surface;
 
@@ -87,37 +85,30 @@ button.edge__item { pointer-events: auto; display: block; box-sizing: border-box
   font: 600 13px/1.3 ${FONT_STACK}; text-align: left; cursor: pointer; }
 button.edge__item:hover { background: ${NEUTRAL.track}; }
 .edge__note { margin: 4px 10px 2px; font: 400 12px/1.4 ${FONT_STACK}; color: ${NEUTRAL.muted}; }
-.notices { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 320px; max-width: 90vw; }
-.notice, .card { pointer-events: auto; box-sizing: border-box; margin: 0; padding: 12px; border-radius: 12px;
-  background: ${WHITE}; color: ${NEUTRAL.fg}; border: 1px solid ${NEUTRAL.line};
-  box-shadow: ${IN_PAGE_SHADOWS.card};
-  font: 400 13px/1.45 ${FONT_STACK}; text-align: left; }
-.notice { display: flex; gap: 10px; align-items: flex-start; }
-.notice[data-tone="danger"] { background: ${TONES.danger.bg}; border-color: ${TONES.danger.line}; }
 ${TONE_RULES}
-.notice p, .card p { margin: 0; }
-.notice p { flex: 1 1 auto; min-width: 0; }
-.card__brand { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font: 700 12px/1.2 ${FONT_STACK};
+/* v4 (toasts.ts): what is left for the person, on the page, branded. */
+.toasts { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 320px; max-width: calc(100vw - 32px);
+  pointer-events: none; font: 13px/1.45 ${FONT_STACK}; color: ${NEUTRAL.fg}; }
+.toasts--fixed { position: fixed; top: 16px; right: 16px; z-index: 1; }
+.toast { pointer-events: auto; box-sizing: border-box; margin: 0; padding: 10px 12px 12px; border-radius: 12px;
+  background: ${WHITE}; color: ${NEUTRAL.fg}; border: 1px solid ${NEUTRAL.line}; box-shadow: ${IN_PAGE_SHADOWS.card};
+  font: 400 13px/1.45 ${FONT_STACK}; text-align: left; }
+.toast__brand { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font: 700 12px/1.2 ${FONT_STACK};
   color: ${NEUTRAL.fg}; }
-.card__brand .name { white-space: nowrap; }
-.card__brand .it { color: ${BRAND.ink}; }
-.card__body { display: flex; gap: 10px; align-items: flex-start; }
-.card__body .icon { color: ${TONES.warning.fg}; }
-.card__text { flex: 1 1 auto; min-width: 0; }
-.card .source { margin-top: 4px; color: ${NEUTRAL.muted}; font-size: 12px; }
-.card .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
-button.action, button.dismiss { pointer-events: auto; box-sizing: border-box; margin: 0; cursor: pointer;
+.toast__brand .name { flex: 1 1 auto; white-space: nowrap; }
+.toast__brand .it { color: ${BRAND.ink}; }
+.toast__text { margin: 0; }
+.toast__actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+button.toast__action, button.toast__close { pointer-events: auto; box-sizing: border-box; margin: 0; cursor: pointer;
   font: 700 13px/1.2 ${FONT_STACK}; }
-button.action { height: 32px; padding: 0 14px; border: 1px solid ${BRAND.ink}; border-radius: 10px;
+button.toast__action { height: 32px; padding: 0 14px; border: 1px solid ${BRAND.ink}; border-radius: 10px;
   background: ${BRAND.ink}; color: ${WHITE}; }
-button.action:hover { border-color: ${BRAND.inkHover}; background: ${BRAND.inkHover}; }
-button.action.secondary { border-color: ${NEUTRAL.control}; background: ${WHITE}; color: ${NEUTRAL.fg};
-  box-shadow: ${SHADOWS.control}; }
-button.action.secondary:hover { border-color: ${NEUTRAL.controlHover}; background: ${NEUTRAL.hover}; }
-button.dismiss { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;
-  margin: -3px -4px 0 0; padding: 0; border: 0; border-radius: 999px; background: transparent; color: ${NEUTRAL.muted}; }
-button.dismiss:hover { background: ${NEUTRAL.track}; color: ${NEUTRAL.fg}; }
-button.action:focus-visible, button.dismiss:focus-visible { outline: 2px solid ${BRAND.ink}; outline-offset: 2px; }
+button.toast__action:hover { border-color: ${BRAND.inkHover}; background: ${BRAND.inkHover}; }
+button.toast__close { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 24px;
+  height: 24px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: ${NEUTRAL.muted}; }
+button.toast__close:hover { background: ${NEUTRAL.track}; color: ${NEUTRAL.fg}; }
+button.toast__action:focus-visible, button.toast__close:focus-visible { outline: 2px solid ${BRAND.ink};
+  outline-offset: 2px; }
 .ai-edits { position: absolute; top: 0; left: 0; width: 0; height: 0; pointer-events: none; }
 button.ai-edit { pointer-events: auto; position: absolute; box-sizing: border-box; display: flex; align-items: center;
   gap: 6px; height: ${24}px; min-width: ${24}px; margin: 0; padding: 0; border: 0; border-radius: 8px;
@@ -149,7 +140,6 @@ button.ai-edit[aria-busy="true"] { cursor: progress; }
 .ai-prompt__generate { border: 0; background: ${BRAND.ink}; color: ${NEUTRAL.surface}; }
 .ai-prompt__generate:disabled { opacity: 0.6; cursor: default; }
 .ai-prompt__cancel:focus-visible, .ai-prompt__generate:focus-visible { outline: 2px solid ${BRAND.ink}; outline-offset: 2px; }
-.notices.with-panel .notice { display: none; }
 .panel { pointer-events: auto; box-sizing: border-box; display: flex; flex-direction: column; width: 380px;
   max-width: calc(100vw - 16px); max-height: 70vh; margin: 0; overflow: hidden; background: var(--tia-bg);
   color: var(--tia-fg); border: 1px solid var(--tia-line); border-radius: 20px;

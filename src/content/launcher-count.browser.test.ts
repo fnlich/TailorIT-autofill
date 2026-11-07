@@ -1,7 +1,7 @@
 /*
- * The launcher's review badge (the Phase F1 review, 3 and 4): it counts the rows that need the person by the review's
- * own rule (needsPerson: a blocked row counts even without needsUserAction), and with nothing counted it shows a tick
- * only when no notice stands, as the report shows its all-clear only then.
+ * The launcher's badge (the Phase F1 review, 3 and 4; v4, D11: "Never flag to the user"): it shows progress only, the
+ * percent of the required fields filled by the review's own rule (shared/report.ts progressOf), or a tick once every
+ * one is; never a count of fields "needing you", never a "!" for a notice. Only a failure shows "!".
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import trap01 from '../../fixtures/traps/01-white-on-white.html?raw';
@@ -17,32 +17,41 @@ afterEach(() => {
   removeFixtures(document);
 });
 
-describe('the launcher’s review badge', () => {
-  it('shows "!" rather than a tick when nothing is counted but a notice stands, and the count otherwise', () => {
+describe('the launcher’s badge (v4, D11: progress only)', () => {
+  it('shows the percent while short of 100, a tick at 100 or when nothing counts, and "!" only for a failure', () => {
     const launcher = createLauncher(document, () => undefined);
     const badge = launcher.el.querySelector<HTMLElement>('.badge')!;
-    launcher.set({ state: 'review', action: 'open-review', count: 0, notices: true });
-    expect([badge.hidden, badge.dataset.tone, badge.textContent]).toEqual([false, 'warning', '!']);
-    launcher.set({ state: 'review', action: 'open-review', count: 0, notices: false });
+    launcher.set({ state: 'review', action: 'open-review', percent: 40 });
+    expect([badge.hidden, badge.dataset.tone, badge.textContent]).toEqual([false, 'brand', '40%']);
+    launcher.set({ state: 'review', action: 'open-review', percent: 100 });
     expect([badge.hidden, badge.dataset.tone, badge.textContent]).toEqual([false, 'success', '']);
     expect(badge.querySelector('svg')).not.toBeNull();
-    launcher.set({ state: 'review', action: 'open-review', count: 3, notices: true });
-    expect([badge.dataset.tone, badge.textContent]).toEqual(['warning', '3']);
+    launcher.set({ state: 'review', action: 'open-review' });
+    expect([badge.dataset.tone, badge.textContent]).toEqual(['success', '']);
+    // At a pause: its progress, never a "needs you" "!".
+    launcher.set({ state: 'needs-you', action: 'continue', reason: 'pause', percent: 25 });
+    expect([badge.dataset.tone, badge.textContent]).toEqual(['brand', '25%']);
+    expect(launcher.el.title).not.toMatch(/needs you/i);
+    launcher.set({ state: 'error', action: 'fill', reason: 'failed' });
+    expect([badge.dataset.tone, badge.textContent]).toEqual(['danger', '!']);
   });
 
-  it('counts a blocked row whose needsUserAction is false: a run that ends in review gives {state: review, count: 1}', async () => {
+  it('counts nothing for a blocked row (D8): a run that ends in review with a refused and empty fields shows its progress, never a count', async () => {
     const fixture = await loadFixture(document, trap01);
-    // The plan's first row blocked, asking nothing of the person: the review's rule still counts it.
+    // The plan's first row blocked, the rest left empty and required: progress 0%, never "1 needs you".
     const editPlan = (plan: PlanOutput) => ({ ...plan, writes: [], results: plan.results.map((row, at) => (at === 0
       ? { ...row, status: 'blocked' as const, wrote: false, provenance: null, reason: 'policy-violation' as const,
         needsUserAction: false }
-      : { ...row, status: 'skipped' as const, wrote: false, provenance: null, reason: 'no-profile-value' as const,
-        needsUserAction: false })) });
+      : { ...row, required: true, status: 'flagged' as const, wrote: false, provenance: null,
+        reason: 'no-profile-value' as const, needsUserAction: true })) });
     const worker = createFakeWorker({ editPlan });
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => trapUrl('01'), isTop: true,
       settle: { quietMs: 60 } });
     runtimes.push(runtime);
     expect(await runtime.fill()).toBe('review');
-    expect(runtime.ui!.launcher.view).toMatchObject({ state: 'review', count: 1 });
+    const view = runtime.ui!.launcher.view;
+    expect(view).toMatchObject({ state: 'review', percent: 0 });
+    expect('count' in view).toBe(false);
+    expect(runtime.ui!.launcher.el.querySelector('.badge')!.textContent).toBe('0%');
   });
 });

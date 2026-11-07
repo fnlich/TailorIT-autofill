@@ -34,21 +34,25 @@
  *   guess). Otherwise it rests at review, its notice saying why (submit-held-*). The content script makes the press
  *   (src/content/press.ts, assertNotSubmit's Submit exception); a confirmation seen after it is SUBMITTED. An unknown
  *   step is never submitted, nor a step whose finality only the person's own Next could tell.
- * - After the extension's click the transition is awaited at most TRANSITION_CAP_MS: at the cap an unchanged step
- *   pauses with needs-click, a changed but still busy page with page-busy. When the person is the one to press Next
- *   (auto-advance off, or a check failed), the wait has no timer.
+ * - After the extension's click the transition is awaited at most TRANSITION_CAP_MS: at the cap an unchanged step is
+ *   validated again (v4: the person's own Next is awaited), a changed but still busy page scanned as the new step. When
+ *   the person is the one to press Next (auto-advance off, or a check failed), the wait has no timer.
  * - Validation errors are fixed in one more pass where the plan can (and the step has an attempt left), then surfaced
  *   at review; a run never pauses on them.
  * - Pauses: sign-in and account creation are auth-needed; a CAPTCHA, an email code, a bot check, Workday's entry
- *   choice, a page busy at the settle cap and a click the site needs are handoff with that pauseReason. Nothing is
- *   automated: only the person's trusted Continue (CONTINUE, or RESUMED by the person) leaves them, to scan the step
- *   again. resumeStatus records where the pause came from.
+ *   choice and a password reset are handoff with that pauseReason. Nothing of them is automated: CONTINUE (the
+ *   person's, or v4's own once the page no longer shows the pause: content/orchestrator.ts) leaves them, to scan the
+ *   step again. resumeStatus records where the pause came from. v4 (the owner's word of 2026-11-07, "just determine
+ *   with your own", D7): a page still busy after our click on Next and a click the page did not take are no hand-off
+ *   any more: the step is validated again (TIMED_OUT on the same step, with its lastFill cleared so nothing is pressed
+ *   again) or scanned as the step it became.
+ * - v4 (D6): the policy card is gone. A posting that forbids AI is the content script's to read (it fills from the
+ *   profile only, or with the AI, as the person's setting says), so SCANNED's policyHits no longer stop the step, and a
+ *   stored run at the old card (policy-notice) is scanned again once resumed.
  * - After a reload (resumeMode): automatic in the same tab within RESUME_AUTO_MS of updatedAt, otherwise the person's
  *   Continue; never in another tab, and never once RunState has expired (RUN_STATE_TTL_MS). A paused run shows its
  *   pause again. A run at review (a final, unknown or limited step: the person's turn) is never filled again by
- *   itself: it offers Continue, and done is never resumed. Fill anyway at a card the new document only showed again
- *   (POLICY_ACCEPTED, scanned false) scans the step first: its raw scan, tripwire and canaries come before any write
- *   (C-S4).
+ *   itself: it offers Continue, and done is never resumed.
  * - RunState holds no value: signatures are hashes, filled keys are stored with their section and label slug hashed
  *   (storedFieldKey, as the reveal edges are), counters are numbers, and the canaries are the page's, which the worker
  *   checks against the profile before storing. The reducer never adds a field RunState does not declare.
@@ -131,13 +135,9 @@ export type RunEvent =
   /** The person's trusted Continue on a paused run. */
   | { type: 'CONTINUE' }
   /** The step was scanned: its signature (stepSignature), the policy statements and tripwire hits found on it, and its
-   *  canaries, nearest their hit first (the worker drops any that equals a profile value when it stores RunState). */
+   *  canaries, nearest their hit first (the worker drops any that equals a profile value when it stores RunState).
+   *  v4: policyHits is a count the content script reports, which stops nothing (D6: no policy card). */
   | { type: 'SCANNED'; signature: string; policyHits: number; tripwireHits: number; canaries: readonly string[] }
-  /** The person's Fill anyway at the policy card. `scanned`: this document scanned the step (its raw scan, tripwire,
-   *  canaries and signature); false after a reload at the card, whose new document only showed it again. */
-  | { type: 'POLICY_ACCEPTED'; scanned: boolean }
-  /** The person's Cancel at the policy card. */
-  | { type: 'POLICY_DECLINED' }
   /** The step's fill ended (its repeatable sections, then the reactive loop): the keys written, and the counts of the
    *  step's rows as they stand after it, as RunState.lastFill holds them (report.ts lastFillOf). */
   | { type: 'FILLED'; filledKeys: readonly FieldKey[]; flagged: number; blocked: number; unresolved: number }
@@ -146,8 +146,9 @@ export type RunEvent =
   /** Next was pressed: by the extension (press-next's click), or by the person before the extension would have. */
   | { type: 'ADVANCED'; by: 'extension' | 'person' }
   /** press-next found, right before its click, that Next is the person's: their auto-advance setting is off now (they
-   *  turned it off since the validation), or the step shows a CAPTCHA not known to be solved. Nothing was pressed. */
-  | { type: 'NEXT_WITHHELD'; reason: 'setting-off' | 'captcha-unsolved' }
+   *  turned it off since the validation), the step shows a CAPTCHA not known to be solved, or (v4, D7) the page offered
+   *  no Next to press or refused the click: the run rests silently for the person's own Next. Nothing was pressed. */
+  | { type: 'NEXT_WITHHELD'; reason: 'setting-off' | 'captcha-unsolved' | 'not-pressable' }
   /** The step's signature changed and the page is quiet (a step the person or the page moved to). */
   | { type: 'TRANSITIONED'; signature: string }
   /** The person's Next left the step as it was (errors showed instead): validate it again. */
@@ -200,15 +201,16 @@ export type RunEffect =
   | { type: 'fill-step'; attempt: number; fix: boolean }
   /** Read the step's errors and facts (then VALIDATED). */
   | { type: 'validate' }
-  /** The one untrusted click on the adapter's Next, through assertNotSubmit's Next exception (then ADVANCED, or PAUSE
-   *  needs-click when the click is refused or Next is gone). Never Submit. */
+  /** The one untrusted click on the adapter's Next, through assertNotSubmit's Next exception (then ADVANCED, or v4's
+   *  NEXT_WITHHELD not-pressable when the click is refused or Next is gone). Never Submit. */
   | { type: 'press-next' }
   /** Watch the step's signature until it differs from `from` and the page is quiet (then TRANSITIONED, or
    *  STEP_UNCHANGED when the person's Next leaves errors instead). `capMs` null: no timer, the person clicks; a number:
    *  TIMED_OUT at the cap. A signature that already differs when the watch starts is a transition at once. */
   | { type: 'await-transition'; from: string; capMs: number | null }
-  /** Show the pause and wait for the person: 'auth' and 'handoff' for Continue, 'policy' for the policy card. */
-  | { type: 'pause'; kind: 'auth' | 'handoff' | 'policy' }
+  /** Show the pause and wait for the person: 'auth' and 'handoff', until a Continue (v4: the page's toast says what to
+   *  do, and the run carries on by itself once the page no longer shows the pause). */
+  | { type: 'pause'; kind: 'auth' | 'handoff' }
   | { type: 'notify'; notice: StepNotice; count?: number }
   /** v3 Phase 4, Submit mode Auto: the one untrusted click on the adapter's Submit, through assertNotSubmit's Submit
    *  exception (src/content/press.ts), on a final step autoSubmitVerdict passed. It produces no event: the platform's
@@ -291,7 +293,7 @@ export type ResumeMode = 'auto' | 'continue' | 'none';
 /** Statuses in which the extension is working on a step: a pause may interrupt them. */
 const WORKING: ReadonlySet<RunStatus> = new Set<RunStatus>(['detect', 'scan-step', 'fill-step', 'validate', 'advance',
   'wait-transition']);
-/** Statuses that wait for the person's own decision. */
+/** Statuses that wait for the person's own decision (a stored policy-notice among them: v4 scans it again). */
 const PAUSED: ReadonlySet<RunStatus> = new Set<RunStatus>(['auth-needed', 'handoff', 'policy-notice']);
 /** Statuses a run never leaves. */
 const FINISHED: ReadonlySet<RunStatus> = new Set<RunStatus>(['done', 'stopped']);
@@ -362,8 +364,11 @@ export function resumeMode(state: RunState | null, input: { now: number; sameTab
 
 /**
  * Whether auto-advance may press Next on the step being validated: the setting on, the step declared not final, Next
- * visible, no error, the step filled with nothing flagged, blocked or unresolved (RunState.lastFill), no unconfirmed
- * draft, no CAPTCHA not known solved, the step settled, and fewer than MAX_STEP_ATTEMPTS attempts. The first rule that fails is the refusal.
+ * visible, no error, the step filled with no required field left empty and no hard-rule stop left (RunState.lastFill:
+ * v4, D3, its `flagged` counts the required fields the fill left empty, its `blocked` the bot checks left for the
+ * person, its `unresolved` nothing decidable: a low-confidence fill, a kept prefill or a hidden field never holds Next),
+ * no unconfirmed draft, no CAPTCHA not known solved, the step settled, and fewer than MAX_STEP_ATTEMPTS attempts. The
+ * first rule that fails is the refusal.
  */
 export function autoAdvanceVerdict(state: RunState, check: { errors: number; step: StepFacts },
   ctx: Pick<RunContext, 'autoAdvance'>): AdvanceVerdict {
@@ -408,9 +413,9 @@ export function autoSubmitVerdict(state: RunState, check: { errors: number; step
   if (rules.requiredEmpty && (step.requiredEmpty ?? 0) > 0) return refuse('required-empty');
   if (rules.noAi && step.noAi === true) return refuse('no-ai');
   if (rules.legalGuess && step.legalGuess === true) return refuse('legal-guess');
-  // An attention check left for the person always holds it, whatever the skip rules (the Phase 7a review).
+  // An attention check only the person can answer (the posting's phrase) always holds it, whatever the skip rules (the
+  // Phase 7a review). v4 (D1): entries the run could not add hold nothing: the run decided what it could.
   if (step.attentionLeft === true) return refuse('attention-left');
-  if ((step.entriesLeft ?? 0) > 0) return refuse('entries-left');
   if (step.unconfirmedDrafts > 0) return refuse('unconfirmed-draft');
   if (step.captchaUnsolved) return refuse('captcha-unsolved');
   if (!step.settled) return refuse('not-settled');
@@ -470,14 +475,6 @@ function transition(state: RunState, event: RunEvent, ctx: RunContext): Outcome 
       return status === 'auth-needed' || status === 'handoff' ? rescan(state) : null;
     case 'SCANNED':
       return status === 'scan-step' ? scanned(state, event) : null;
-    case 'POLICY_ACCEPTED':
-      if (status !== 'policy-notice') return null;
-      // A document that only showed the card again (a reload at it) has read nothing of the step: no raw scan, no
-      // tripwire, no canary. It scans first, and the scan's gate takes the decision (the Phase 5 review, C-S4).
-      return event.scanned ? startFill(state, { policyDecision: 'accepted' }, [], false)
-        : move(enter(state, 'scan-step', { policyDecision: 'accepted' }), [{ type: 'scan' }]);
-    case 'POLICY_DECLINED':
-      return status === 'policy-notice' ? move(enter(state, 'stopped', { policyDecision: 'declined' })) : null;
     case 'FILLED':
       return status === 'fill-step' ? filled(state, event) : null;
     case 'VALIDATED':
@@ -499,8 +496,11 @@ function transition(state: RunState, event: RunEvent, ctx: RunContext): Outcome 
       return status === 'wait-transition'
         ? move(enter(state, 'validate', { lastFill: null }), [{ type: 'validate' }]) : null;
     case 'TIMED_OUT':
-      return status === 'wait-transition'
-        ? pause(state, event.signature === state.stepSignature ? 'needs-click' : 'page-busy') : null;
+      // v4 (D7): no hand-off. The same step after our click: validated again, its lastFill cleared so Next is never
+      // pressed again by itself (the person's own Next moves it on); another step still busy: scanned as it is.
+      if (status !== 'wait-transition') return null;
+      return event.signature === state.stepSignature
+        ? move(enter(state, 'validate', { lastFill: null }), [{ type: 'validate' }]) : rescan(state);
     case 'SUBMITTED':
       return move(enter(state, 'done'));
     case 'RESUMED':
@@ -538,7 +538,7 @@ function pause(state: RunState, reason: PauseReason): Outcome | null {
     [{ type: 'pause', kind: 'handoff' }, notify(noticeOfPause(reason))]);
 }
 
-/** The step's scan: the step's place, then the attempt limit, the step guard and the policy gate, then the fill. */
+/** The step's scan: the step's place, then the attempt limit and the step guard, then the fill (v4: no policy gate). */
 function scanned(state: RunState, event: Extract<RunEvent, { type: 'SCANNED' }>): Outcome {
   const signature = event.signature;
   if (!isStepSignature(signature)) return move(enter(state, 'review'), [review('error', 'internal-error')]);
@@ -561,9 +561,6 @@ function scanned(state: RunState, event: Extract<RunEvent, { type: 'SCANNED' }>)
   // The step guard counts distinct steps: Back and forth over the same steps never trips it (the Phase 5 review, C-S8).
   if (!known && Object.keys(state.stepAttempts).length >= MAX_STEPS) {
     return move(enter(state, 'review', seen), [...notices, notify('max-steps'), review('max-steps')]);
-  }
-  if (whole(event.policyHits) > 0 && state.policyDecision === null) {
-    return move(enter(state, 'policy-notice', seen), [...notices, { type: 'pause', kind: 'policy' }, notify('policy')]);
   }
   return startFill({ ...state, ...seen }, {}, notices, false);
 }
@@ -619,11 +616,9 @@ function validated(state: RunState, event: Extract<RunEvent, { type: 'VALIDATED'
   }
   const verdict = autoAdvanceVerdict(state, { errors, step: event.step }, ctx);
   if (verdict.advance) return move(enter(state, 'advance'), [{ type: 'press-next' }]);
-  // A CAPTCHA not known solved is the one refusal the person would not expect: the notice says to press Next. So is an
-  // account section left for them (core-x, item 2), which shows no row.
-  const why = verdict.refusal === 'captcha-unsolved' ? [notify('captcha-next')]
-    : verdict.refusal === 'account-left' ? [notify('account-left')] : [];
-  return awaitTransition(state, null, why);
+  // A CAPTCHA not known solved is the one refusal that names something left for the person (the page's toast); every
+  // other refusal rests silently (v4, D9: the account section's notice went with the rest).
+  return awaitTransition(state, null, verdict.refusal === 'captcha-unsolved' ? [notify('captcha-next')] : []);
 }
 
 /** Next was pressed: the extension's click is awaited with its cap, the person's without a timer. */
@@ -645,8 +640,8 @@ function awaitTransition(state: RunState, capMs: number | null, before: RunEffec
 function resumed(state: RunState, event: Extract<RunEvent, { type: 'RESUMED' }>, ctx: RunContext): Outcome | null {
   if (!event.sameTab || expired(state, ctx.now)) return null;
   const { status } = state;
-  if (status === 'policy-notice') return quiet([{ type: 'pause', kind: 'policy' }, notify('policy')]);
-  if (event.by === 'person') return rescan(state);
+  // v4 (D6): a run stored at the old policy card is scanned again: the content script reads the posting's rule itself.
+  if (status === 'policy-notice' || event.by === 'person') return rescan(state);
   if (status === 'auth-needed') return quiet([{ type: 'pause', kind: 'auth' }, notify('auth')]);
   if (status === 'handoff') {
     return quiet([{ type: 'pause', kind: 'handoff' }, notify(noticeOfPause(state.pauseReason ?? 'needs-click'))]);

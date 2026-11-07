@@ -57,7 +57,6 @@ describe('the options page', () => {
     expect(setting(root, 'llm.classify').checked).toBe(true);
     expect(setting(root, 'llm.drafts').checked).toBe(true);
     expect(setting(root, 'llm.answers').checked).toBe(true);
-    expect(setting(root, 'llm.confirmDrafts').checked).toBe(false);
     expect(setting(root, 'llm.whenForbidden.profile-only').checked).toBe(true);
     expect(setting(root, 'interpretations.eeoDeclineByDefault').checked).toBe(true);
     expect(setting(root, 'panel.side').checked).toBe(true);
@@ -80,19 +79,19 @@ describe('the options page', () => {
     await click(setting(root, 'consent.marketing'));
     await click(setting(root, 'consent.privacy'));
     await click(setting(root, 'llm.drafts'));
-    await click(setting(root, 'llm.confirmDrafts'));
-    await click(setting(root, 'llm.whenForbidden.ask'));
+    // v4 (D6): the draft confirmation and "Ask me each time" are gone; "Use AI anyway" stands for the policy choice.
+    await click(setting(root, 'llm.whenForbidden.use-ai'));
     await click(setting(root, 'interpretations.twoOrMoreRaces'));
     await click(setting(root, 'panel.in-page'));
-    expect(saves(worker)).toHaveLength(9);
+    expect(saves(worker)).toHaveLength(8);
     // Each save is the whole settings, built on the last answer; consent stays in the closed list's order.
     expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto',
       consents: 'required' },
       preapprovedConsent: ['terms', 'certify', 'dataRetention', 'marketing', 'backgroundCheck', 'signature'],
-      llm: { ...DEFAULT_SETTINGS.llm, drafts: false, confirmDrafts: true, whenForbidden: 'ask' }, panel: 'in-page',
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false, whenForbidden: 'use-ai' }, panel: 'in-page',
       interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } });
     expect(root.textContent).toContain(TEXT.saved);
-    for (const name of ['modes.next.auto', 'consent.marketing', 'llm.confirmDrafts', 'llm.whenForbidden.ask', 'panel.in-page']) {
+    for (const name of ['modes.next.auto', 'consent.marketing', 'llm.whenForbidden.use-ai', 'panel.in-page']) {
       expect(setting(root, name).checked, name).toBe(true);
     }
     for (const name of ['consent.privacy', 'llm.drafts', 'interpretations.twoOrMoreRaces', 'llm.whenForbidden.profile-only']) {

@@ -65,13 +65,11 @@ describe('settings', () => {
       .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual', submit: 'manual' } } } });
   });
 
-  it('gives the agent’s tab Next and Submit on Auto, and "Ask me each time" at a no-AI posting as the profile only (v3 Phase 5 review)', () => {
-    const ask = { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' as const } };
-    // Nobody is in the agent's window to answer the policy card: the profile only, so its noAi skip rule decides.
+  it('gives the agent’s tab Next and Submit on Auto, the person’s posting rule kept (v3 Phase 5 review; v4: no card)', () => {
+    const ask = { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'use-ai' as const } };
     expect(contentSettingsOf(ask, { agent: true })).toMatchObject({ modes: { next: 'auto', afterPageTurn: 'auto',
-      submit: 'auto' }, llm: { whenForbidden: 'profile-only' } });
-    // Anywhere else the person's own choice, the card included.
-    expect(contentSettingsOf(ask).llm.whenForbidden).toBe('ask');
+      submit: 'auto' }, llm: { whenForbidden: 'use-ai' } });
+    expect(contentSettingsOf(ask).llm.whenForbidden).toBe('use-ai');
     expect(contentSettingsOf(ask, { agent: false, holdSubmit: true }).modes.submit).toBe('manual');
     // Any other choice is the person's in the agent's window too.
     for (const whenForbidden of ['use-ai', 'profile-only'] as const) {
@@ -123,35 +121,35 @@ describe('settings', () => {
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
-      version: 5, panel: 'in-page', view: 'expanded',
+      version: 6, panel: 'in-page', view: 'expanded',
       // Auto-advance became the Next mode; version 3's `all` answers took their default (All), and act only while
       // answers are on; the other modes take theirs.
       modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' },
       preapprovedConsent: ['privacy', 'marketing'],
       // The AI turned off (tiebreak and classification): answers stay off, drafts as the person set them (MINOR 4).
-      llm: { tiebreak: false, classify: false, drafts: true, answers: false, confirmDrafts: false,
-        whenForbidden: 'profile-only' },
+      llm: { tiebreak: false, classify: false, drafts: true, answers: false, whenForbidden: 'profile-only' },
       telemetry: { optIn: true }, offerToSaveAnswers: false,
       // Interpretation 2 was on version 1's default (off), so it takes version 2's.
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: true, eeoDeclineByDefault: true },
     } } });
   });
 
-  it('migrates version 2 settings to version 4’s, every choice kept and the `all` answers on (the owner’s decision of 2026-11-01)', async () => {
+  it('migrates version 2 settings to version 6’s, every choice kept, the `all` answers on (the owner’s decision of 2026-11-01) and "Ask me each time" Profile only (v4)', async () => {
     const { modes: _modes, view: _view, version: _version, ...rest } = CHOSEN;
-    const v2 = { ...rest, version: 2, autoAdvance: true, llm: { ...CHOSEN.llm, answers: false, whenForbidden: 'ask' } };
+    const v2 = { ...rest, version: 2, autoAdvance: true, llm: { ...CHOSEN.llm, answers: false, confirmDrafts: true,
+      whenForbidden: 'ask' } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v2 }) });
     const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes, next: 'auto', ai: 'all' },
-      llm: { ...CHOSEN.llm, answers: false, whenForbidden: 'ask' } };
+      llm: { ...CHOSEN.llm, answers: false, whenForbidden: 'profile-only' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
       data: { settings: expected } });
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
   });
 
-  it('migrates version 3 settings to version 4’s: auto-advance is the Next mode, the `all` answers the AI answers mode (v3 Phase 3)', async () => {
+  it('migrates version 3 settings to version 6’s: auto-advance is the Next mode, the `all` answers the AI answers mode (v3 Phase 3)', async () => {
     const { modes: _modes, view: _view, ...rest } = CHOSEN;
     for (const [autoAdvance, answerAll] of [[true, false], [false, true]] as const) {
-      const v3 = { ...rest, version: 3, autoAdvance, llm: { ...CHOSEN.llm, answerAll } };
+      const v3 = { ...rest, version: 3, autoAdvance, llm: { ...CHOSEN.llm, confirmDrafts: false, answerAll } };
       const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v3 }) });
       // Every other choice kept; the consents take the owner's default (All); the view its default (Expanded).
       const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes,
@@ -166,9 +164,10 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS.view).toBe('expanded');
   });
 
-  it('migrates version 4 settings to version 5’s, every choice kept and "Résumé already on the page" Keep it, and stores them (the behaviour review of 2026-11-06)', async () => {
+  it('migrates version 4 settings to version 6’s, every choice kept and "Résumé already on the page" Keep it, and stores them (the behaviour review of 2026-11-06)', async () => {
     const { resumeOnPage: _added, ...v4modes } = CHOSEN.modes;
-    const v4 = { ...CHOSEN, version: 4, modes: { ...v4modes, recordOwn: 'off', submit: 'auto' } };
+    const v4 = { ...CHOSEN, version: 4, modes: { ...v4modes, recordOwn: 'off', submit: 'auto' },
+      llm: { ...CHOSEN.llm, confirmDrafts: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v4 }) });
     const expected = { ...CHOSEN, modes: { ...CHOSEN.modes, recordOwn: 'off', submit: 'auto', resumeOnPage: 'keep' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
@@ -179,7 +178,27 @@ describe('settings', () => {
     const oldest = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1':
       { ...v4, modes: older } }) });
     expect(await oldest.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
-      data: { settings: { version: 5, modes: { recordOwn: 'on', resumeOnPage: 'keep' } } } });
+      data: { settings: { version: 6, modes: { recordOwn: 'on', resumeOnPage: 'keep' } } } });
+  });
+
+  it('migrates version 5 settings to version 6’s (v4, D6): "Ask me each time" Profile only, the draft confirmation gone, and stores them', async () => {
+    const v5 = { ...CHOSEN, version: 5, llm: { ...CHOSEN.llm, confirmDrafts: true, whenForbidden: 'ask' } };
+    const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v5 }) });
+    const expected = { ...CHOSEN, llm: { ...CHOSEN.llm, whenForbidden: 'profile-only' } };
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: expected } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+    // A save that still names them is refused: they are gone.
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN,
+      llm: { ...CHOSEN.llm, whenForbidden: 'ask' } } }, OPTIONS)).toEqual({ ok: false, error: 'bad_message' });
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN,
+      llm: { ...CHOSEN.llm, confirmDrafts: false } } }, OPTIONS)).toEqual({ ok: false, error: 'bad_message' });
+  });
+
+  it('acts as Sign-in Auto for a tab Sign up & Autofill granted, unless Sign-in is held (v4)', () => {
+    expect(contentSettingsOf(DEFAULT_SETTINGS, { signUp: true }).modes.signIn).toBe('auto');
+    expect(contentSettingsOf(DEFAULT_SETTINGS, { signUp: true, holdSignIn: true }).modes.signIn).toBe('manual');
+    expect(contentSettingsOf(DEFAULT_SETTINGS).modes.signIn).toBe('manual');
   });
 
   it('saves "Upload mine again", and refuses a version 5 value without "Résumé already on the page" or with a choice it does not know', async () => {

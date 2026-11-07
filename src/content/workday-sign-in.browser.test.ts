@@ -680,3 +680,29 @@ describe('round 3 of the v3 Phase 6/7b review: the guard’s entry list and the 
     expect(signInRefusal(read(), new URL(ACCOUNT))).toBeNull();
   });
 });
+
+describe('v4 (D7): Autofill at Workday’s “Start Your Application” choice, which shows no form', () => {
+  it('presses the adapter’s declared Apply Manually (its entry door), tells the worker of the choice, and nothing else', async () => {
+    const fixture = await served(choiceHtml, ACCOUNT, 'body');
+    const clicks: string[] = [];
+    fixture.doc.addEventListener('click', (event) => {
+      clicks.push((event.target as Element).closest('[data-automation-id]')?.getAttribute('data-automation-id') ?? '');
+      event.preventDefault();
+    }, true);
+    const worker = createFakeWorker({ settings: DEFAULT_SETTINGS });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => ACCOUNT, isTop: true,
+      adapters: () => [workdayAdapter] });
+    try {
+      expect(runtime.page).toBeNull();
+      // The page's choice, told to the worker (frame/wall {choice}), with no wall.
+      await vi.waitFor(() => expect(worker.of('frame/wall')).toEqual([expect.objectContaining({ wall: null,
+        choice: true })]));
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+      await vi.waitFor(() => expect(clicks).toEqual(['applyManually']), { timeout: 5_000 });
+      // Never "Autofill with Resume" or "Use My Last Application"; and no run began on a page with no form.
+      expect(worker.of('run/begin')).toEqual([]);
+    } finally {
+      runtime.stop();
+    }
+  });
+});

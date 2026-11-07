@@ -525,9 +525,11 @@ export interface ConsentContext {
    *  radio group of Yes and No (its Yes chosen by polarity). */
   choice?: string | 'pending' | null;
   /** The field is a list, a combobox or a radio group (absent: a box or a text). With no `choice`, it offers an option
-   *  that does not agree (a Yes and a No): a question, whose Yes consent.required never picks (the audit of
-   *  2026-11-06, S-5). */
+   *  that does not agree (a Yes and a No): a question. */
   list?: boolean;
+  /** v4 (D5): a consent the rules once handed to the person (a binding waiver asked as a Yes/No question, a consent read
+   *  from its help text alone): decided by the Consents mode like any other, All agreeing to it whatever its kind. */
+  decided?: true;
 }
 
 /** A consent's tick (or Yes, or its one option that agrees: `option`), by the rule that gives it. */
@@ -562,17 +564,15 @@ export function consentValue(category: FieldCategory, consentKinds: readonly Fie
   // A true attestation among the label's kinds asks nothing more: the rest decide.
   const kinds = named.filter((kind) => kind !== 'consent.aiAttestation');
   const all = settings.modes.consents === 'all';
-  const approved = kinds.length > 0 && kinds.every((kind) => {
+  const approved = (all && consent.decided === true) || (kinds.length > 0 && kinds.every((kind) => {
     const setting = consentCategoryOf(kind);
     return setting !== null && (all || settings.preapprovedConsent.includes(setting));
-  });
+  }));
   if (!approved && !consent.required) return none('consent-optional-unticked', false);
-  // A Yes/No question is a question, not a consent (SPEC-AMENDMENTS §11 Decision 2): consent.required never chooses
-  // the agreeing answer of a list that also offers one that does not agree; it is the person's (the audit of
-  // 2026-11-06, S-5). A list whose only option agrees, like a lone box, is still chosen.
-  if (!approved && consent.list === true && typeof option !== 'string') {
-    return none('consent-requires-user', true, true);
-  }
+  // v4 (D5, the owner's word of 2026-11-07: "just determine with your own"): a Yes/No question a consent is asked as
+  // (a binding waiver among them) is decided like any consent the form requires: its agreeing answer is chosen (the
+  // Yes, by polarity). It was the person's before (the audit of 2026-11-06, S-5); nothing is the person's now.
+
   if (category === 'consent.signature') {
     const name = profile.identity.fullName.trim();
     if (name === '') return none('no-profile-value');

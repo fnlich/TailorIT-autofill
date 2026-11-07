@@ -1,12 +1,28 @@
 /*
  * The settings versions an install may still hold in storage.local, read only by the worker to migrate them
  * (background/settings.ts; core/types/settings.ts migrateSettings, migrateSettingsV2, migrateSettingsV3,
- * migrateSettingsV4). Apart from ./settings.ts, which content scripts import, so these never reach the content script's
+ * migrateSettingsV4, migrateSettingsV5). Apart from ./settings.ts, which content scripts import, so these never reach the content script's
  * bundle (the behaviour review of 2026-11-06: its size budget, scripts/check-build.mjs).
  */
 import { z } from 'zod';
-import { PANEL_VIEWS, type SettingsV1, type SettingsV2, type SettingsV3, type SettingsV4 } from '../core/types/settings';
-import { Consents, Interpretations, Llm, ModesV4Schema } from './settings';
+import {
+  PANEL_VIEWS, type SettingsV1, type SettingsV2, type SettingsV3, type SettingsV4, type SettingsV5,
+} from '../core/types/settings';
+import { Consents, Interpretations, LlmV5 as Llm, ModesSchema, ModesV4Schema } from './settings';
+
+/** Version 5's stored settings (before v4's version 6: "Ask me each time" and the draft confirmation), read only to
+ *  migrate them. */
+export const SettingsV5Schema = z.strictObject({
+  version: z.literal(5),
+  panel: z.enum(['side', 'in-page']),
+  view: z.enum(PANEL_VIEWS),
+  modes: ModesSchema,
+  preapprovedConsent: Consents,
+  llm: Llm,
+  telemetry: z.strictObject({ optIn: z.boolean() }),
+  offerToSaveAnswers: z.boolean(),
+  interpretations: Interpretations,
+}) satisfies z.ZodType<SettingsV5>;
 
 /** Version 4's stored settings, read only to migrate them. */
 export const SettingsV4Schema = z.strictObject({

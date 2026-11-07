@@ -89,16 +89,17 @@ describe('the report model (the completion)', () => {
     return { ...row(`${status}-${made}`, 'Contact'), status, ...overrides };
   };
 
-  it('needs the person for a flagged, blocked or asking row, whatever its status', () => {
-    expect(needsPerson(at('flagged'))).toBe(true);
-    // A blocked row may come without needsUserAction (core/plan/frame.ts): it still needs the person.
-    expect(needsPerson(at('blocked', { needsUserAction: false }))).toBe(true);
-    expect(needsPerson(at('filled', { provenance: 'llm-draft', needsUserAction: true }))).toBe(true);
+  it('needs the person only for a hard-rule stop (v4, D1: a bot check asked as a question), whatever its status', () => {
+    expect(needsPerson(at('flagged'))).toBe(false);
+    expect(needsPerson(at('flagged', { reason: 'bot-check' }))).toBe(true);
+    expect(needsPerson(at('blocked', { needsUserAction: false }))).toBe(false);
+    expect(needsPerson(at('filled', { provenance: 'llm-draft', needsUserAction: true }))).toBe(false);
     expect(needsPerson(at('verified'))).toBe(false);
     expect(needsPerson(at('skipped'))).toBe(false);
     expect([rowIconOf(at('flagged')), rowIconOf(at('blocked')), rowIconOf(at('verified')), rowIconOf(at('filled')),
       rowIconOf(at('skipped')), rowIconOf(at('skipped', { reason: 'already-correct' }))])
-      .toEqual(['alert', 'x-circle', 'check-circle', 'check', 'minus-circle', 'check']);
+      // v4 (D1): a field not filled shows no alert, and a refused one is left out (no x-circle): the empty icon.
+      .toEqual(['minus-circle', 'minus-circle', 'check-circle', 'check', 'minus-circle', 'check']);
   });
 
   it('counts ready, needing and required rows across frames; a field that held its answer is ready', () => {
@@ -108,12 +109,13 @@ describe('the report model (the completion)', () => {
       report(4, { mode: 'fill', status: 'fill-step', fields: [at('blocked'), at('skipped', { reason: 'end-date-not-applicable' })] }),
     ];
     expect(isReady(at('skipped', { reason: 'already-correct' }))).toBe(true);
-    expect(isReady(at('verified', { needsUserAction: true }))).toBe(false);
+    // v4 (D1): what is written is ready, and only a hard-rule stop needs the person.
+    expect(isReady(at('verified', { needsUserAction: true }))).toBe(true);
     expect(tallyOf(reports)).toEqual({
       byStatus: { verified: 1, filled: 1, skipped: 3, flagged: 1, blocked: 1 },
       ready: 4,
-      needsYou: 2,
-      required: { ready: 2, of: 3 },
+      needsYou: 0,
+      required: { ready: 2, of: 2 },
       dryRun: false,
       working: true,
     });

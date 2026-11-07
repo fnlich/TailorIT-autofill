@@ -85,13 +85,13 @@ function drawnOverFields(runtime: ContentRuntime): Element[] {
 }
 
 describe('drafts', () => {
-  it('writes the draft flagged for confirmation, draws nothing over it, and the run waits for the person at review', async () => {
+  it('writes the draft, accepted as written (v4, D6: no draft waits for confirmation), and draws nothing over it', async () => {
     const started = await start(FORM, 'p6-draft', { settings: DRAFTS_ON });
     expect(await started.runtime.fill()).toBe('review');
     expect(byId<HTMLTextAreaElement>(started.fixture, 'why').value).toBe(FAKE_DRAFT);
-    expect(rowOf(lastReport(started.worker), 'Why do you want to work here?')).toMatchObject({ status: 'flagged',
-      provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation', wrote: true, verification: 'verified',
-      needsUserAction: true });
+    expect(rowOf(lastReport(started.worker), 'Why do you want to work here?')).toMatchObject({ status: 'verified',
+      provenance: 'llm-draft', reason: 'llm-draft-written', wrote: true, verification: 'verified',
+      needsUserAction: false });
     expect(drawnOverFields(started.runtime)).toEqual([]);
   });
 
@@ -124,19 +124,14 @@ describe('drafts', () => {
     }
   });
 
-  it('confirms a waiting draft on draft/confirm: verified, reported, nothing drawn, and only once', async () => {
+  it('answers draft/confirm expired: no draft waits (v4, D6), and nothing is written', async () => {
     const started = await start(FORM, 'p6-confirm', { settings: DRAFTS_ON });
     await started.runtime.fill();
     const key = rowOf(lastReport(started.worker), 'Why do you want to work here?').key;
-    const reports = started.worker.reports.length;
-    expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: key })).toEqual({ ok: true, data: {} });
-    await vi.waitFor(() => expect(started.worker.reports.length).toBeGreaterThan(reports));
-    expect(rowOf(lastReport(started.worker), 'Why do you want to work here?')).toMatchObject({ status: 'verified',
-      provenance: 'llm-draft', reason: 'ok', needsUserAction: false });
-    expect(drawnOverFields(started.runtime)).toEqual([]);
     expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: key }))
       .toEqual({ ok: false, error: 'expired' });
-    // Nothing was written by the confirmation.
+    expect(rowOf(lastReport(started.worker), 'Why do you want to work here?')).toMatchObject({ status: 'verified',
+      provenance: 'llm-draft', reason: 'llm-draft-written', needsUserAction: false });
     expect(byId<HTMLTextAreaElement>(started.fixture, 'why').value).toBe(FAKE_DRAFT);
   });
 
@@ -148,8 +143,8 @@ describe('drafts', () => {
     await vi.waitFor(() => expect(started.worker.reports.length).toBeGreaterThan(reports));
     const row = rowOf(lastReport(started.worker), 'Why do you want to work here?');
     expect(row).toMatchObject({ status: 'flagged', reason: 'changed-by-you', provenance: null, wrote: false });
-    // The draft was flagged for the person: their edit offers Save my answer (a free-text answer, for this company).
-    expect(row.detail?.userEdited).toBe(true);
+    // v4 (D6): the draft was accepted, never flagged for the person, so no Save my answer is marked.
+    expect(row.detail?.userEdited).toBeUndefined();
     expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: row.key }))
       .toEqual({ ok: false, error: 'expired' });
   });

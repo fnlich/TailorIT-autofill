@@ -71,26 +71,18 @@ test('the report page and the options page have no serious or critical accessibi
   }
 });
 
-test('the report page at the policy card has no serious or critical accessibility violation', async ({ extContext, connected: ext, routeLog, tailorit }) => {
-  // TailorIT's stored copy of the posting says no AI tools: with "Ask me" chosen for such a posting (the default fills
-  // from the profile only), the run stops at the card, which the panel mirrors.
-  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
-    llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' } } });
-  try {
-    await tailorit.scenario('lookup-posting-text');
-    const url = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a095/apply';
-    routeLog.serve({ [url]: 'fixtures/synthetic/policy-apply.html' });
-    const page = await extContext.newPage();
-    await page.goto(url);
-    const tabId = await ext.fill(page);
-    expect((await ext.settled(tabId)).status).toBe('policy-notice');
-    const panel = await ext.reportPage(tabId);
-    await panel.bringToFront();
-    await expect(panel.locator('[data-notice="policy"] button')).toHaveCount(2);
-    expect(await seriousViolations(panel), 'the report page at the policy card').toEqual([]);
-  } finally {
-    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
-  }
+test('the report page after a profile-only fill (v4: no policy card) has no serious or critical accessibility violation', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  // TailorIT's stored copy of the posting says no AI tools: the run fills from the profile only, with no card.
+  await tailorit.scenario('lookup-posting-text');
+  const url = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a095/apply';
+  routeLog.serve({ [url]: 'fixtures/synthetic/policy-apply.html' });
+  const page = await extContext.newPage();
+  await page.goto(url);
+  const tabId = await ext.fill(page);
+  expect((await ext.settled(tabId)).status).toBe('review');
+  const panel = await ext.reportPage(tabId);
+  await panel.bringToFront();
+  expect(await seriousViolations(panel), 'the report page after a profile-only fill').toEqual([]);
 });
 
 test('the report page with the job card, its resume picker, the custom question and a problem strip has no serious or critical violation (v2)', async ({ extContext, connected: ext, routeLog, tailorit }) => {

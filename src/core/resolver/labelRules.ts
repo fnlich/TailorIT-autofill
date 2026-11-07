@@ -494,9 +494,24 @@ const HOW_MADE_RULE = { id: 'label.how-application-made', strength: 'strong' } a
 const BINDING_WAIVER_RULE = { id: 'label.binding-waiver', strength: 'strong' } as const;
 
 /** Whether normalized text asks the person to take on a binding waiver or covenant (BINDING_WAIVER with BINDING_ASK):
- *  the person's, in any form but a required lone checkbox (which still follows the Consents mode), never an AI's. */
+ *  never an AI's to answer. v4 (D5): one that asks the person to agree (asksToAgree) is decided by the Consents mode;
+ *  any other (whether one binds them now) stays unanswered. */
 export function namesBindingWaiver(text: string): boolean {
   return BINDING_WAIVER.test(text) && BINDING_ASK.test(text);
+}
+
+// ── v4 run (D5) ──
+/** An ask to take something on now: "Do you agree to", "Will you sign", "Are you willing to", "I agree to", "Do you
+ *  waive". */
+const AGREE_ASK = /\b(?:do|will|would|can)\s+you\s+(?:\w+\s+){0,2}?(?:agree|accept|consent|waive|sign|submit|abide|comply|relinquish|assign|forfeit|release)\b|\bare\s+you\s+willing\b|\bi\s+(?:(?:hereby|also|further|expressly|fully|do)\s+)*(?:agree|accept|consent|waive|acknowledge)\b/;
+/** A question of fact about a commitment: whether one binds the person now, or did ("Are you subject to a
+ *  non-competition agreement", "Have you signed", "Are you bound by", "Do you have"). Its Yes would state a fact. */
+const COMMITMENT_FACT = /\b(?:are|were)\s+you\s+(?:currently\s+|now\s+|still\s+)?(?:subject|bound|party|a\s+party|under)\b|\bhave\s+you\s+(?:ever\s+)?(?:signed|entered|agreed|been)\b|\bdo\s+you\s+(?:currently\s+)?have\b/;
+
+/** v4 (D5): whether normalized text asks the person to agree to something now, never whether something binds them: a
+ *  binding waiver asked so is decided by the Consents mode; one asked as a fact stays unanswered (never a false Yes). */
+export function asksToAgree(text: string): boolean {
+  return AGREE_ASK.test(text) && !COMMITMENT_FACT.test(text);
 }
 /** The core pass of 2026-11-06: a denial that AI made or helped make the work, in two joined participles (Dropzone's AI
  *  policy on Greenhouse, the owner's snapshot "[job-boards.greenhouse.io] ... Forward Deployed Engineer at Dropzone AI":

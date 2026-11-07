@@ -103,6 +103,13 @@ export const REASON_CODES = [
 ] as const;
 export type ReasonCode = (typeof REASON_CODES)[number];
 
+// ── v4 run: "Never flag to the user, just determine with your own" (the owner, 2026-11-07) ──
+/** The reasons of a row that stays the person's whatever the run decides (the hard rules): a bot check or CAPTCHA asked
+ *  as a question (the audit of 2026-11-06, S-2, S-3). The only rows that need the person (shared/report.ts
+ *  needsPerson): every other field the run could not or would not fill is simply not filled, and nothing asks for the
+ *  person. A row's own needsUserAction stays the core's word (the trap specs read it); no count or hold reads it. */
+export const PERSON_ONLY_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['bot-check']);
+
 /** What the worker answers a frame's plan/request with, one per field to write. `origin` is required, so a value without
  *  provenance cannot be typed. */
 export interface PlannedWrite {

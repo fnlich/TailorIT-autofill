@@ -311,7 +311,7 @@ describe('the review’s Submit fixes (v3 Phase 4)', () => {
     expect(submitted(fixture)).toBe(0);
   });
 
-  it('Submit mode Auto holds for policy text only hidden text holds; it submits a posting it could not read, saying so', async () => {
+  it('Submit mode Auto holds for policy text only hidden text holds; it submits a posting it could not read (v4, D9: silently)', async () => {
     const auto = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, submit: 'auto' as const } };
     const hiddenPolicy = greenhousePage({ lastName: 'Rivera' }).replace('<form', `<details><summary>Show more</summary>
       <p>Please do not use AI tools to apply.</p></details><form`);
@@ -319,8 +319,10 @@ describe('the review’s Submit fixes (v3 Phase 4)', () => {
       { policy: { postingPage: 'clear', storedCopy: 'clear' } });
     expect(await held.runtime.fill()).toBe('review');
     const codes = held.worker.reports.at(-1)!.notices.map((notice) => notice.code);
-    expect(codes).toContain('policy-hidden-text');
+    // v4 (D9): the hidden statement is no notice, but the skip rule still reads it; the held Submit's toast says so.
+    expect(codes).not.toContain('policy-hidden-text');
     expect(codes).toContain('submit-held-no-ai');
+    expect(held.runtime.ui!.toasts.shown).toContain('submit-held');
     expect(submitted(held.fixture)).toBe(0);
     // A posting nothing could be read of: the person chose Auto, so it is submitted, and the review says so; the run is
     // done once the confirmation is taken, even when it came while the run still worked.
@@ -329,8 +331,7 @@ describe('the review’s Submit fixes (v3 Phase 4)', () => {
     expect(await unread.runtime.fill()).toBe('review');
     await vi.waitFor(() => expect(submitted(unread.fixture)).toBe(1));
     await vi.waitFor(() => expect(unread.worker.reports.at(-1)!.status).toBe('done'));
-    expect(unread.worker.reports.at(-1)!.notices.map((notice) => notice.code))
-      .toEqual(expect.arrayContaining(['policy-unreadable', 'submit-auto-unchecked']));
+    expect(unread.worker.reports.at(-1)!.notices.map((notice) => notice.code)).not.toContain('submit-auto-unchecked');
     expect(unread.worker.of('submit/armed')).toHaveLength(1);
   });
 

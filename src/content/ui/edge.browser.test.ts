@@ -43,7 +43,7 @@ function mount() {
   const actions: LauncherAction[] = [];
   const placed: number[] = [];
   const hidden: string[] = [];
-  const ui = mountPageUi(document, { onLauncher: (action) => actions.push(action), onPolicyChoice: () => undefined,
+  const ui = mountPageUi(document, { onLauncher: (action) => actions.push(action),
     edge: { placed: (top) => placed.push(top), hidden: (scope) => hidden.push(scope) } });
   mounted.push(ui);
   ui.anchorTo(formRoot());
@@ -162,30 +162,27 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     await seen(ui, ui.launcher.el);
   });
 
-  it('keeps the notices and the policy card at a wide form’s corner clear of the tab and its shadow, so neither covers the other', async () => {
+  it('v4 (D10): keeps the toasts at the viewport’s top-right clear of the tab and its shadow, so neither covers the other', async () => {
     const { ui, edge, actions } = mount();
     const wide = formRoot();
-    // At the window's top, across its width: the column at its corner runs down beside the tab.
     wide.style.cssText = 'display:block;position:absolute;top:0;left:0;right:0;height:600px;margin:0;border:1px solid #888';
     ui.anchorTo(wide);
-    ui.setNotices(['tripwire', 'validation']);
-    ui.showPolicyCard({ fromStoredCopy: false });
+    // The tab at the window's top, beside where the toasts sit.
+    edge.setTop(0.02);
+    ui.setToasts([{ kind: 'tripwire', text: COPY.notices.tripwire }, { kind: 'validation', text: COPY.toasts.validation }]);
     await vi.waitFor(() => {
       const tab = edge.el.getBoundingClientRect();
-      const drawn = [...ui.shadow.querySelectorAll('.notice, [role="alertdialog"], [role="alertdialog"] button')];
+      const drawn = [...ui.shadow.querySelectorAll('.toast, .toast button')];
       expect(drawn.length).toBeGreaterThanOrEqual(4);
-      // It runs down beside the tab's launcher.
-      const column = ui.shadow.querySelector('.anchor')!.getBoundingClientRect();
-      expect(column.bottom).toBeGreaterThan(ui.launcher.el.getBoundingClientRect().bottom);
       for (const el of drawn) expect(el.getBoundingClientRect().right).toBeLessThanOrEqual(tab.left - EDGE_CLEARANCE_PX + 1);
     });
     // The launcher in the tab is still seen, and takes the person's click.
     await ready(ui, ui.launcher.el);
     await trustedClick(ui, ui.launcher.el);
     expect(actions).toEqual(['fill']);
-    // With the tab hidden, the column goes back to the form's corner.
+    // With the tab hidden, the toasts go back to the viewport's own corner.
     ui.setLauncherPrefs({ top: null, hidden: true });
-    await vi.waitFor(() => expect(ui.shadow.querySelector('.notice')!.getBoundingClientRect().right)
+    await vi.waitFor(() => expect(ui.shadow.querySelector('.toast')!.getBoundingClientRect().right)
       .toBeGreaterThan(window.innerWidth - 2 * EDGE_MARGIN_PX - 32));
   });
 
@@ -306,7 +303,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
   });
 
   it('keeps a frame inside another page’s launcher at its form’s corner, with no tab to hide', () => {
-    const ui = mountPageUi(document, { onLauncher: () => undefined, onPolicyChoice: () => undefined });
+    const ui = mountPageUi(document, { onLauncher: () => undefined });
     mounted.push(ui);
     const root = formRoot();
     ui.anchorTo(root);
@@ -315,7 +312,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
   });
 
   it('hides an embedded form’s corner launcher while the button is hidden, except while a run fills (S1)', () => {
-    const ui = mountPageUi(document, { onLauncher: () => undefined, onPolicyChoice: () => undefined });
+    const ui = mountPageUi(document, { onLauncher: () => undefined });
     mounted.push(ui);
     ui.anchorTo(formRoot());
     ui.setLauncher({ state: 'idle', action: 'fill' });
@@ -324,7 +321,7 @@ describe('the launcher’s tab at the window’s right edge (v3 Phase 3)', () =>
     // A run started from the side panel shows it: its being seen is how the run knows the frame is seen.
     ui.setLauncher({ state: 'running', action: null });
     expect(ui.launcher.el.hidden).toBe(false);
-    ui.setLauncher({ state: 'review', action: 'open-review', count: 0 });
+    ui.setLauncher({ state: 'review', action: 'open-review', percent: 100 });
     expect(ui.launcher.el.hidden).toBe(true);
     ui.setLauncherPrefs({ top: null, hidden: false });
     expect(ui.launcher.el.hidden).toBe(false);

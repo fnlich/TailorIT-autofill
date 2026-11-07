@@ -31,7 +31,7 @@ function setUp() {
   const edits: string[] = [];
   const instructions: string[] = [];
   let said: string | null = null;
-  const ui = mountPageUi(document, { onLauncher: () => undefined, onPolicyChoice: () => undefined,
+  const ui = mountPageUi(document, { onLauncher: () => undefined,
     onAiEdit: (key, instruction) => {
       edits.push(key);
       instructions.push(instruction);
