@@ -385,10 +385,11 @@ const REPORT = {
   scanningHelp: 'TailorIT is checking this page for what the application asks.',
   autofilling: 'Autofilling',
   percent: (value: number) => `${value}%`,
+  // v4 ui: Jobright's "7/7 required fields filled" (the owner's screenshot 4).
   progressFilled: (filled: number, of: number, requiredOnly: boolean) =>
-    `${filled} of ${of} ${requiredOnly ? 'required fields' : 'fields'} filled`,
+    `${filled}/${of} ${requiredOnly ? 'required fields' : 'fields'} filled`,
   progressDryRun: (filled: number, of: number, requiredOnly: boolean) =>
-    `${filled} of ${of} ${requiredOnly ? 'required fields' : 'fields'} would be filled`,
+    `${filled}/${of} ${requiredOnly ? 'required fields' : 'fields'} would be filled`,
   progressLabel: 'Progress',
   progressText: (filled: number, of: number, requiredOnly: boolean, percent: number) =>
     `${filled} of ${of} ${requiredOnly ? 'required fields' : 'fields'} filled, ${percent}%`,
@@ -400,8 +401,9 @@ const REPORT = {
   /** The field lists' two groups, as Jobright names them. */
   requiredGroup: 'Required',
   optionalGroup: 'Optional',
-  /** A row's state, said to a screen reader beside its icon. */
-  rowStates: { filled: 'Filled', missing: 'Needs you', working: 'Being filled', none: 'Left alone' },
+  /** A row's state, said to a screen reader beside its icon. v4 ui (D1): a field the run did not fill is "Not filled",
+   *  never "Needs you". */
+  rowStates: { filled: 'Filled', missing: 'Not filled', working: 'Being filled', none: 'Not filled' },
   /** The row's label is a button that shows the field on the page; its chevron folds the details. */
   goTo: (label: string) => `Show "${label}" on the page`,
   details: (label: string) => `Details of "${label}"`,
@@ -419,6 +421,12 @@ const REPORT = {
   allClear: 'Nothing needs you. Check the form, then submit it yourself.',
   /** A form among several, under its own name, when the tab holds more than one or one embedded in its page. */
   frameLine: (name: string, status: string) => `${name} · ${status}`,
+  // ── v4 ui: the résumé and cover-letter rows' Preview and Show (the owner, 2026-11-07). Drafts for the owner. ──
+  preview: 'Preview',
+  previewLabel: (label: string) => `Preview "${label}"`,
+  show: 'Show',
+  showLabel: (label: string) => `Show "${label}" on the page`,
+  // ── end v4 ui ──
 } as const;
 
 /** The side panel (src/ui/panel). */
@@ -999,7 +1007,7 @@ const OPTIONS = {
   },
   panel: {
     heading: 'Review panel',
-    intro: 'Where the list of filled and flagged fields appears.',
+    intro: 'Where the list of filled fields appears.',
     side: "The browser's side panel",
     inPage: 'A panel on the application page',
     inPageHelp: "The panel on the page opens from the launcher beside the form. On a form inside another site's page that is too small for it, the side panel opens instead.",
@@ -1014,13 +1022,13 @@ const OPTIONS = {
       name: 'Next page',
       manual: 'Manual',
       auto: 'Auto',
-      help: 'Auto presses Next once a page of the application is filled, settled and has nothing flagged. The last page\'s Submit is the Submit mode\'s, below.',
+      help: 'Auto presses Next once a page of the application is filled and settled. The last page\'s Submit is the Submit mode\'s.',
     },
     submit: {
       name: 'Submit',
       manual: 'Manual',
       auto: 'Auto',
-      help: 'Auto presses Submit once the last page of the application is filled and checked, unless a required field is still empty, the posting says AI is not allowed, or the page asks you to prove you are human: then the review says why, and you submit. Manual: you submit, on the page or with Submit application in the side panel.',
+      help: 'Auto presses Submit once the last page of the application is filled and checked, unless a required field is still empty, the posting says AI is not allowed, or the page asks you to prove you are human: then a TailorIT notice on the page says why, and you submit. Manual: you submit, on the page or with Submit application in the side panel.',
     },
     signIn: {
       name: 'Sign-in',
@@ -1049,7 +1057,7 @@ const OPTIONS = {
       name: 'Autofill after page turn',
       auto: 'Automatically',
       manual: 'Manually',
-      help: 'On applications with several pages, fill each new page as it appears, or wait until you choose Continue on it.',
+      help: 'On applications with several pages (Workday and others), fill each new page as it appears, or wait until you choose Autofill again on it.',
     },
     consents: {
       name: 'Consent boxes',
@@ -1061,20 +1069,20 @@ const OPTIONS = {
       name: 'AI answers',
       all: 'All',
       profile: 'Profile only',
-      help: 'All lets the AI answer work authorization, sponsorship, visa, clearance, age, criminal history, pay and "select PURPLE to show you read this" questions your profile doesn\'t answer, marked "AI guess" unless your resume settles it: only the question and its options are sent. Profile only answers them from your profile, and leaves the rest for you. It acts while "Answer the questions my profile does not" is on.',
+      help: 'All lets the AI answer work authorization, sponsorship, visa, clearance, age, criminal history, pay and "select PURPLE to show you read this" questions your profile doesn\'t answer, with its best guess unless your resume settles it: only the question and its options are sent. Profile only answers them from your profile, and leaves the rest empty. It acts while "Answer the questions my profile does not" is on.',
     },
     /** The behaviour review of 2026-11-06 (M2), the owner's setting: a résumé the page already shows. */
     resumeOnPage: {
       name: 'Résumé already on the page',
       keep: 'Keep it',
       upload: 'Upload mine again',
-      help: "When the site already shows a résumé in its résumé field: Keep it leaves that file and flags the field for you to check. Upload mine again uploads the résumé you chose in TailorIT into that field through the site's own upload, which replaces the file or adds yours beside it. Neither presses the site's Remove or Delete; where the site gives no way to add a file, the field is left to you.",
+      help: "When the site already shows a résumé in its résumé field: Keep it leaves that file as your résumé there. Upload mine again uploads the résumé you chose in TailorIT into that field through the site's own upload, which replaces the file or adds yours beside it. Neither presses the site's Remove or Delete; where the site gives no way to add a file, the field is left to you.",
     },
     view: {
-      name: 'Side panel view',
+      name: 'Default view',
       expanded: 'Expanded',
       minimized: 'Minimized',
-      help: 'Minimized folds the review to its progress line: choose the line to see the fields.',
+      help: 'Expanded lists every field after Autofill; Minimized folds the list to its progress line, which opens it.',
     },
   },
   /** v3 Phase 5: Options › Auto-apply. Drafts for the owner's review. */
@@ -1107,7 +1115,7 @@ const OPTIONS = {
   },
   ai: {
     heading: 'AI help',
-    intro: 'Through your TailorIT, which asks Claude. Everything the AI writes is marked in the review, and an answer with nothing to go on is marked "AI guess".',
+    intro: 'Through your TailorIT, which asks Claude. When nothing in your resume or profile settles a question, the AI gives its best guess.',
     tiebreak: 'Pick from a list when unsure',
     tiebreakHelp: 'When your answer could match more than one option, the AI picks among the visible options.',
     classify: 'Work out unusual questions',
@@ -1115,7 +1123,7 @@ const OPTIONS = {
     drafts: 'Draft open answers',
     draftsHelp: 'Drafts answers to questions like "Why this company?" from your resume and the posting, and writes them in.',
     answers: 'Answer the questions my profile does not',
-    answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess, marked "AI guess".',
+    answersHelp: 'Questions like "How many years of Go have you used?" or "Are you open to travel?" are answered from your resume and profile. When nothing settles one, the AI gives its best guess.',
     confirmDrafts: 'Wait for me to confirm each draft',
     confirmDraftsHelp: 'A draft waits in the review until you edit or confirm it, and the form is not ready until you have.',
     whenForbidden: {
@@ -1133,11 +1141,11 @@ const OPTIONS = {
     heading: 'Interpretations',
     intro: 'Readings that go further than the rules say. Each is on unless you turn it off.',
     postingCountryForLegal: 'Answer work authorization questions that name no country',
-    postingCountryForLegalHelp: 'Uses your answer for the country of the posting, or for your only country when the posting names none. The field stays flagged for you to check.',
+    postingCountryForLegalHelp: 'Uses your answer for the country of the posting, or for your only country when the posting names none.',
     twoOrMoreRaces: 'Answer "Two or More Races"',
-    twoOrMoreRacesHelp: 'When you gave several races and the question takes one answer. The field stays flagged for you to check.',
+    twoOrMoreRacesHelp: 'When you gave several races and the question takes one answer.',
     eeoDeclineByDefault: 'Decline self-identification questions I have not answered',
-    eeoDeclineByDefaultHelp: 'Chooses the form\'s "Decline to self-identify" option when TailorIT holds no answer of yours. With no such option, the question is left for you.',
+    eeoDeclineByDefaultHelp: 'Chooses the form\'s "Decline to self-identify" option when TailorIT holds no answer of yours. With no such option, the question is left empty.',
   },
   answers: {
     heading: 'Your fixes',
@@ -1323,6 +1331,103 @@ export const PAGE_COPY = {
   inPage: IN_PAGE,
 } as const;
 
+// ── v4 ui: the side panel in Jobright's layout (the owner, 2026-11-07): the set-up view, the main view's new parts,
+// the Settings view and the tooltips. Only the extension's pages show them, so they stay out of PAGE_COPY (the content
+// script's bundle). Drafts for the owner's review. ──
+
+/** "a, b and c". */
+function listed(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items.at(-1)!}`;
+}
+
+/** The "?" buttons (HelpTip): what each explains, as its accessible name. */
+const HELP = {
+  about: (topic: string) => `About ${topic}`,
+} as const;
+
+/** What a complete profile holds, for the set-up view's second step (src/ui/panel/profile-check.ts PROFILE_GAPS). */
+const PROFILE_GAP_WORDS = {
+  first: 'your first name',
+  last: 'your last name',
+  email: 'an email',
+  phone: 'a phone number',
+  place: 'a city or a country',
+} as const;
+
+/** The set-up view (Setup.tsx): shown while the extension is not connected, or the profile is not complete. */
+const SETUP = {
+  heading: 'Autofill with TailorIT',
+  intro: 'Complete your setup to start autofilling applications in one click.',
+  steps: 'Setup steps',
+  account: 'Set up your TailorIT account',
+  accountHelp: 'Opens TailorIT, where you sign in, or sign up if you are new, and connect this browser. Your autofill information and resumes come from there.',
+  /** Why step 1 shows GO again (its tooltip), after the general help. */
+  accountExpired: 'Your connection expired: connections last 90 days. Choose GO to connect again.',
+  accountRevoked: "TailorIT stopped accepting this browser's connection. Choose GO to connect again.",
+  accountDone: (name: string | null) => (name === null ? 'This browser is connected to TailorIT.'
+    : `This browser is connected to TailorIT as ${name}.`),
+  profile: 'Complete your profile details',
+  profileHelp: 'Autofill needs your first and last name, an email, a phone number, and a city or a country. Add them here; they are saved to your TailorIT.',
+  profileMissing: (items: readonly string[]) => `Still missing: ${listed(items)}.`,
+  gaps: PROFILE_GAP_WORDS,
+  profileDone: 'Your autofill information has what Autofill needs.',
+  go: 'GO',
+  /** The pills' accessible names: the step, then what the pill does or says. */
+  goLabel: (step: string) => `${step}: go`,
+  doneLabel: (step: string) => `${step}: done`,
+  waitingLabel: (step: string) => `${step}: waiting for TailorIT`,
+  waiting: 'Waiting…',
+  typeCode: 'Have a connect code? Type it in the settings',
+  start: 'Start applying',
+  /** Step 1's GO shows what connecting means before it connects (docs/PRIVACY.md "First-run disclosure"). */
+  notNow: 'Not now',
+} as const;
+
+/** The main view's new parts (Panel.tsx, JobCard.tsx). */
+const MAIN_VIEW = {
+  settings: 'Settings',
+  signUpFill: 'Sign up & Autofill',
+  signUpHelp: "This site asks you to sign in or create an account first. Sign up & Autofill does it with the job-site sign-in you saved in TailorIT's Settings › Autofill, then fills the application.",
+  ask: 'Ask custom question',
+  addJob: 'Add this job in one click',
+  addHelp: 'Adds this posting to your TailorIT jobs, and to your tracker as Saved, so you can follow it there.',
+  notThisJob: 'Not this job?',
+  resume: 'Résumé:',
+  noResume: 'none',
+  withoutResume: 'none, by your choice',
+  /** The card's meta line: "2 days ago · Austin, TX". */
+  ago: (days: number) => {
+    if (days <= 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 14) return `${days} days ago`;
+    if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+    return `${Math.floor(days / 30)} months ago`;
+  },
+  /** A page Autofill does not work on: its explanations, the "?" beside its heading. */
+  unsupportedHelp: `${PANEL.unsupported.embedded} ${PANEL.unsupported.companySites}`,
+  /** The cover letter's preview (the résumé's words are COPY.job.preview). */
+  letterPreview: {
+    loading: 'Loading the cover letter…',
+    unavailable: "This cover letter's preview couldn't be shown.",
+    title: (label: string) => `Preview of ${label}`,
+  },
+} as const;
+
+/** The Settings view (SettingsView.tsx): the gear's, in place of the main view. */
+const SETTINGS_VIEW = {
+  heading: 'Settings',
+  close: 'Close the settings',
+  save: 'Save',
+  saving: 'Saving…',
+  saved: 'Saved.',
+  notSaved: 'Not saved: the extension did not accept the change. Try again.',
+  loading: 'Loading…',
+  autofillInfo: 'Autofill information',
+  allSettings: 'All settings',
+} as const;
+// ── end v4 ui ──
+
 /** Every sentence: the in-page UI's (PAGE_COPY) and those only the options page and the side panel show. */
 export const COPY = {
   ...PAGE_COPY,
@@ -1333,6 +1438,11 @@ export const COPY = {
   profile: PROFILE,
   options: OPTIONS,
   agent: AGENT,
+  // v4 ui
+  help: HELP,
+  setup: SETUP,
+  mainView: MAIN_VIEW,
+  settingsView: SETTINGS_VIEW,
 } as const;
 
 /**

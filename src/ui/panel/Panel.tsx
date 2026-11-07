@@ -1,91 +1,90 @@
 /*
  * The review panel: the browser's side panel, and the report page (the same page opened as a tab with ?tabId=N, which
  * pins that tab). It follows a tab (tab.ts), shows its reports live (reports.ts) and mounts the report components, laid
- * out like Jobright's sidebar in TailorIT's look (v3 Phase 3): a column on TailorIT's canvas, top to bottom:
+ * out like Jobright's sidebar in TailorIT's look. v4 ui (the owner, 2026-11-07) gives it views, one at a time:
  *
- * - The brand (TailorIT's mark and "TailorIT Autofill") and a gear that opens the menu: the modes (src/ui/page/modes.tsx,
- *   the options page's Modes card: Next page, Autofill after page turn, Consent boxes, AI answers, the view), each
- *   saved at once with settings/save, and a link to all the settings.
- * - Only when something is wrong: the connection (auth/status: why filling cannot work, as a problem strip with a link
- *   to the settings) and the live link.
- * - The launcher hidden by the person on this site or everywhere (panel/launcher): "Show the TailorIT button again"
- *   (panel/showLauncher). The toolbar icon opens this panel, so it is where the button comes back.
- * - What the tab's page holds, when no job card says more: a page Autofill does not work on ("Autofill isn't supported
- *   on this page" and the sites it works on), a page of ours with no form, or the form found; or that there is no tab.
- * - The notices mirrored from the page (the tripwire's exact sentence, the policy card, the couldn't-read notice), above
- *   the main button, so a decision is seen before anything else. A run at policy-notice waits for its card: Fill
- *   anyway and Cancel send panel/policyDecision {tabId, frameId, decision} for the frame whose report is at
- *   policy-notice, which that frame treats exactly as its own card's buttons. Continue only resumes pauses: it never
- *   fills past a card.
- * - The job card (JobCard.tsx and job.ts): what TailorIT knows of the job in the tab's form, read through the worker
- *   (panel/job) only while the tab shows a form of ours and the extension is connected (the worker may already hold it:
- *   it looks a recognised job page up as the page loads); Add this job to TailorIT and Save to tracker (panel/addJob).
- *   Under it Autofill (panel/fill {tabId, dryRun: false}), its label constant, with a spinner while its request is out
- *   or a run works; then, while no run works, Dry run, Continue and Cancel (panel/fill {dryRun: true}, panel/continue,
- *   panel/cancel), Continue marked while a run waits for the person, both off until a run reports. Then what the fill
- *   uses, folded away while a run works: "Your autofill information", the resume with Change (panel/resumes,
- *   panel/setResume), and the cover letter (Phase G, letter.ts) only when the form asks for one (the frame's hello, or
- *   a report's row). Then what the last button did, until a newer report tells more.
- * - The progress and the field lists (Report): "Scanning the page…", "Autofilling… 78%" with Cancel (panel/cancel),
- *   "9 of 12 required fields filled · 75%"; Required then Optional, each row's label showing the field on the page
- *   (panel/focus), Skip on the field being written after 2 s (panel/skip {tabId, frameId, fieldKey}), Confirm draft
- *   (panel/confirmDraft), Save my answer (panel/saveAnswer), the closest options (panel/describe); folded at first
- *   with the Minimized view.
- * - Ask a custom question (v2, Ask.tsx; panel/ask), answered from the tab's active resume: off while AI-written answers
- *   (the drafts setting) are off, and under the posting's no-AI notice when any report of the tab says the posting
- *   forbids AI (saysNoAi) or the answer says so.
- * - v3 Phase 3b: on the job card, "Autofill for another job" (panel/jobSearch, panel/chooseJob), "Apply without
- *   resume" (panel/withoutResume) and the resume's Preview (the `preview` port, preview.ts); "Your autofill information"
- *   opens the profile editor in place of the panel's content (Profile.tsx: panel/profile, panel/saveProfile), with Back;
- *   a page Autofill does not work on offers "Ask TailorIT to support this site" (panel/siteRequest: its host alone); a
- *   recognised posting page with no form shows its card (PageState.posting) and no Autofill.
- * - v3 Phase 4: under the lists, the dock's "Continue to the next page" or "Submit application" (Report's StepDock:
- *   panel/press for the frame whose step offers it, on the person's click here); once the platform confirmed the
- *   application, "Application submitted" with where the tracker stands and "Open tracker" (PageState.submitted).
- * - v3 Phase 5: while Run auto-apply is on, the agent's status line under the head ("Auto-apply: running <job> · N done
- *   today · last: …"), with Stop and a link to TailorIT's Auto-apply page (src/ui/page/agent.tsx), read again whenever
- *   the worker says the agent changed (panel/changed {what: 'agent'}); the gear's modes show Sign-in, its Auto offered
- *   only while the connection may read sign-ins, and the skip rules.
- * - At the foot: "Connected as …", and the link to the person's TailorIT jobs.
+ * - The set-up view (Setup.tsx) while the extension is not connected, or connected with autofill information that is
+ *   not complete (profile-check.ts: a first and last name, an email, a phone number, a city or a country): "Set up your
+ *   TailorIT account" (only when not connected) and "Complete your profile details", each a GO or a tick, then Start
+ *   applying. A panel that opens complete goes straight to the main view; one completed during the session shows both
+ *   ticks and an enabled Start applying, which opens the main view. No gear here.
+ * - The main view: the head (TailorIT's mark and name left, a gear right that opens the Settings view), then, only when
+ *   something says more:
+ *   - a problem that blocks everything (the worker did not answer, a version mismatch, storage the browser would not
+ *     restrict, the live link lost or the extension gone), as a strip;
+ *   - the disclosure shown again when it changed since the person connected, with I understand;
+ *   - the auto-apply agent's status line, while Run auto-apply is on (src/ui/page/agent.tsx);
+ *   - the launcher hidden by the person on this site or everywhere: "Show the TailorIT button again";
+ *   - what the tab's page holds when no job card says more: a page Autofill does not work on (the sites it works on,
+ *     its explanations in a "?", "Ask TailorIT to support this site"), a page of ours with no form, or the form found;
+ *     or that there is no tab;
+ *   - "Application submitted" once the platform confirmed it (PageState.submitted);
+ *   - the job card (JobCard.tsx and job.ts: tile, company, industry, match pill, title, "2 days ago · Austin, TX", the
+ *     Applied badge, "Not this job?"), read through the worker (panel/job) only while the tab shows a form or a posting
+ *     of ours and the extension is connected; "+ Add this job in one click" (panel/addJob) where TailorIT does not have
+ *     the job and can add it;
+ *   - the main button, big and teal: "Autofill" (panel/fill {dryRun: false}); "Sign up & Autofill" (panel/fill
+ *     {dryRun: false, signIn: true}) while the tab's application frame shows an account wall (PageState.wall); and,
+ *     while a run waits to go on (a pause, a sign-in, a new page under Autofill after page turn: Manually), the same
+ *     "Autofill" sends panel/continue. While a run works it spins, and the progress below has Cancel. No Dry run,
+ *     Continue or Cancel buttons (the messages stay);
+ *   - "Ask custom question" (Ask.tsx: panel/ask), an outline button that unfolds the box;
+ *   - "Résumé: <label> · Preview · Change" (JobCard.tsx ResumeLine: panel/resumes, panel/setResume,
+ *     panel/withoutResume, the `preview` port) until a run lists the résumé's own row;
+ *   - what the last button did, until a newer report tells more;
+ *   - the progress and the field lists (Report, without its notices: D10's page notifications say what is left for
+ *     the person): "7/7 required fields filled | 100%", Required then Optional, each row a tick or an empty circle and
+ *     its label, which shows the field on the page (panel/focus); Skip on the field being written after 2 s
+ *     (panel/skip); Preview and Show on the résumé and cover-letter rows (the `preview` port, its kind); the dock's
+ *     "Continue to the next page" or "Submit application" (panel/press); folded at first with the Minimized view.
+ * - The Settings view (SettingsView.tsx) in place of everything under the head: ✕ and "Settings", the modes as radio
+ *   cards with their "?", "Autofill information", the account, "All settings" and Save (settings/save {settings, base}).
+ * - The profile editor (Profile.tsx: panel/profile, panel/saveProfile), from the set-up view's GO or the Settings view's
+ *   "Autofill information"; its Back returns there, and a save checks the profile again.
  * When the worker says the connection or the settings changed (panel/changed, perhaps from another window), they are
  * read again, and the job card read with the old connection is dropped at once.
  *
- * It never shows or receives a field value: reports hold none, and describe's option labels stay in the open row. The
- * job card draws only what TailorIT's lookup said, the resume's title among it (which may be the person's name: it is
- * shown on purpose, as the resume the fill attaches); the custom question's answer is the person's own request.
+ * It never shows or receives a field value: reports hold none. The job card draws only what TailorIT's lookup said, the
+ * resume's title among it (which may be the person's name: it is shown on purpose, as the resume the fill attaches);
+ * the custom question's answer is the person's own request; the profile check keeps which items are missing, never a
+ * value (profile-check.ts); the previews' bytes stay in this page (preview.ts).
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
 import type { Answer } from '../../messaging/envelope';
 import type {
-  AddJobOutcome, AskLength, PageMessage, PageState, PanelLauncherAnswer, SaveAnswerOutcome, SiteRequestOutcome,
+  AddJobOutcome, AskLength, PageMessage, PageState, PanelLauncherAnswer, SiteRequestOutcome,
 } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
-import { fillsFromProfileOnly, saysNoAi, type FrameReport } from '../../shared/report';
+import { saysNoAi, type FrameReport } from '../../shared/report';
 import { Brand } from '../brand/Logo';
 import { Icon } from '../brand/Icon';
 import { AgentStatusLine, useAgentStatus } from '../page/agent';
-import { ModesFields, signInAvailability } from '../page/modes';
+import { DisclosureChanged } from '../page/disclosure';
+import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
-import { isWorking } from '../report/model';
-import { Report, ReportNotices } from '../report/Report';
+import { isWorking, type ReportRow } from '../report/model';
+import { Report, type PreviewKind } from '../report/Report';
 import { AskQuestion } from './Ask';
 import { useTabJob } from './job';
-import { JobCard, type LetterMode } from './JobCard';
+import { JobCard, ResumeLine, ResumePicker } from './JobCard';
 import { useTabLetter } from './letter';
 import { receivePreview } from './preview';
 import { ProfileEditor } from './Profile';
-import { DisclosureChanged } from '../page/disclosure';
+import { ResumePreview } from './ResumePreview';
 import { useTabReports, type LinkState } from './reports';
+import { SettingsView } from './SettingsView';
+import { SetupView } from './Setup';
+import { useProfileCheck } from './profile-check';
 import { useFollowedTab } from './tab';
 
 export interface PanelProps {
   platform: PagePlatform;
   /** The tab ?tabId=N pins (pinnedTabOf); null follows the active tab of the panel's window. */
   pinnedTabId: number | null;
-  /** The clock (ms), for the reconnect limit and the card's "Posted 2 days ago". */
+  /** The clock (ms), for the reconnect limit, the card's "2 days ago" and the pairing's wait. */
   now?: () => number;
   /** Puts text on the clipboard (the custom answer's Copy); the browser's by default. */
   copyText?: (text: string) => Promise<boolean>;
@@ -102,21 +101,18 @@ async function clipboardCopy(text: string): Promise<boolean> {
 }
 
 type RunMessage = Extract<PageMessage, { type: 'panel/fill' | 'panel/continue' | 'panel/cancel' }>;
-type DecisionMessage = Extract<PageMessage, { type: 'panel/policyDecision' }>;
-type RowMessage = Extract<PageMessage, { type: 'panel/confirmDraft' | 'panel/saveAnswer' }>;
 
-/** The person's TailorIT (the build's origin): where their autofill information and their jobs live. */
+/** The person's TailorIT (the build's origin): where their autofill information and their tracker live. */
 const TAILORIT_LINKS = {
   autofillInfo: `${__TAILORIT_ORIGIN__}/settings/autofill`,
-  jobs: `${__TAILORIT_ORIGIN__}/jobs`,
   tracker: `${__TAILORIT_ORIGIN__}/tracker`,
 } as const;
 
-/** The run statuses at which a run waits for the person's Continue (or Cancel). */
+/** The run statuses at which a run waits for the person's word to go on. */
 const PAUSED: ReadonlySet<FrameReport['status']> = new Set<FrameReport['status']>(['handoff', 'auth-needed']);
 
-/** Whether a frame's run waits for the person's Continue: paused (a hand-off, a sign-in), or resting on a new step
- *  under Autofill after page turn: Manually (the page-turned notice, v3 Phase 3). Continue is offered only then. */
+/** Whether a frame's run waits to go on: paused (a hand-off, a sign-in), or resting on a new step under Autofill after
+ *  page turn: Manually (the page-turned notice, v3 Phase 3). The main button then sends panel/continue. */
 const awaitsContinue = (report: FrameReport) => PAUSED.has(report.status)
   || report.notices.some((notice) => notice.code === 'page-turned');
 
@@ -138,22 +134,19 @@ function feedbackOf(message: RunMessage, answer: Answer<{ frames: number }>): st
   return refusalOf(answer.error);
 }
 
-/** What a policy card's answer means: that one form fills or stops, or it no longer waits for the decision. */
-function decisionFeedbackOf(message: DecisionMessage, answer: Answer<unknown>): string {
-  if (answer.ok) return message.decision === 'fill' ? COPY.panel.started(1) : COPY.panel.cancelled(1);
-  return answer.error === 'expired' ? COPY.panel.continued(0) : refusalOf(answer.error);
-}
-
 /** Whether the tab's form asks for a cover letter: its frame said so at hello, or a report's row is one. */
 function asksForLetter(page: PageState | null, reports: readonly FrameReport[]): boolean {
   return page?.letter === true || reports.some((report) => report.fields.some((row) =>
     row.category === 'file.coverLetter' || row.category === 'freeText.coverLetter'));
 }
 
+/** The views under the head: the main view, the Settings view, or the profile editor (and where its Back goes). The
+ *  set-up view is the gate's (`gate`), before the main view. */
+type View = { name: 'main' } | { name: 'settings' } | { name: 'editor'; back: 'setup' | 'settings' };
+
 export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipboardCopy }: PanelProps) {
   const root = useRef<HTMLElement>(null);
   const dashboardId = useId();
-  const menuId = useId();
   const tabId = useFollowedTab(platform, pinnedTabId);
   const { reports, page, link, reconnect, changes, relinked } = useTabReports(platform, tabId, now,
     { side: pinnedTabId === null });
@@ -165,20 +158,18 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
    *  the newest report's time at the click), which says more (the Phase F1 review, 7); a row action's stays. */
   const [feedback, setFeedback] = useState<{ tabId: number | null; text: string; newest: number } | null>(null);
   const [adding, setAdding] = useState(false);
-  /** What the last Add or Save to tracker came to, for the page it was asked on (the audit's m7: `view`). */
+  /** What the last Add came to, for the page it was asked on (the audit's m7: `view`). */
   const [added, setAdded] = useState<{ view: string; outcome: AddJobOutcome } | null>(null);
   /** The settings as last read or saved (null until read): the AI switches, the modes and the view. */
   const [settings, setSettings] = useState<Settings | null>(null);
   /** Whether the first read of the settings has answered, either way: the review waits for it, so the Minimized view
    *  never shows the lists first (v3 Phase 3 review). */
   const [settingsRead, setSettingsRead] = useState(false);
-  const [savingModes, setSavingModes] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   /** Where the person hid the launcher of the followed tab's site, read for that tab. */
   const [launcher, setLauncher] = useState<{ tabId: number; hidden: PanelLauncherAnswer['hidden'] } | null>(null);
   const [launcherShown, setLauncherShown] = useState<number | null>(null);
-  /** v3 Phase 3b: the profile editor shows in place of the panel's content. */
-  const [editing, setEditing] = useState(false);
+  /** v4 ui: the view under the head. */
+  const [view, setView] = useState<View>({ name: 'main' });
   const { refresh } = auth;
   // The card's connection key: the token's expiry, and every change the worker announced (another window may have
   // connected or disconnected), so a card read with the old connection is dropped the moment the change is heard.
@@ -189,14 +180,37 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
    *  an Add's outcome or a custom answer never shows under the next posting the tab moves to. */
   const viewKey = `${tabId ?? ''}|${page?.formKey ?? ''}|${connection ?? ''}`;
   const newestReport = Math.max(0, ...reports.map((report) => report.updatedAt));
-  // The resume preview's loader, one per tab (the review): a preview opened is one transfer, whatever the panel draws.
-  const loadPreview = useCallback((signal: AbortSignal) => (tabId === null ? Promise.resolve({ ok: false as const,
+  // The previews' loaders, one per tab and kind (the review): a preview opened is one transfer, whatever the panel draws.
+  const loadResumePreview = useCallback((signal: AbortSignal) => (tabId === null ? Promise.resolve({ ok: false as const,
     reason: 'unavailable' as const }) : receivePreview(platform, tabId, signal)), [platform, tabId]);
+  const loadLetterPreview = useCallback((signal: AbortSignal) => (tabId === null ? Promise.resolve({ ok: false as const,
+    reason: 'unavailable' as const }) : receivePreview(platform, tabId, signal, 'coverLetter')), [platform, tabId]);
   const settingsUrl = platform.runtime.getURL('/options.html');
   /** AI-written answers (the drafts setting) are off: the custom question is too. */
   const aiOff = settings === null ? null : !settings.llm.drafts;
-  /** Whether a posting that forbids AI is filled from the profile only (Phase G: the cover letter's row says so). */
-  const whenForbidden = settings?.llm.whenForbidden ?? 'profile-only';
+
+  // v4 ui: whether the autofill information is complete (profile-check.ts), read while connected.
+  const accountEmail = auth.status?.connection === 'connected' ? auth.status.account?.email ?? null : null;
+  const { check: profile, recheck } = useProfileCheck(platform, typeof connection === 'string' ? connection : null,
+    accountEmail);
+  /** Whether the set-up view is needed; null while that is not known yet. A profile that could not be read never
+   *  locks the person out: the fill reads it itself. */
+  const needsSetup = auth.status === null ? null : auth.status.connection !== 'connected' ? true
+    : profile.state === 'read' ? profile.gaps.length > 0 : profile.state === 'unreadable' ? false : null;
+  /** The gate before the main view: the set-up view, once needed, stays until Start applying (the owner: both ticks,
+   *  then Start applying); a panel that opens complete shows the main view at once. */
+  const [gate, setGate] = useState<'setup' | 'main' | null>(null);
+  /** The set-up view's first step shows once the person was seen not connected, and stays, ticked, until Start
+   *  applying (the owner: both ticks, then Start applying). */
+  const [withAccount, setWithAccount] = useState(false);
+  if (auth.status !== null && auth.status.connection !== 'connected' && !withAccount) setWithAccount(true);
+  const nextGate = needsSetup === null ? gate : gate === null ? (needsSetup ? 'setup' : 'main')
+    : needsSetup && gate === 'main' ? 'setup' : gate;
+  if (nextGate !== gate) {
+    // React's pattern for state that follows what is read: adjusted while rendering.
+    setGate(nextGate);
+    if (nextGate === 'setup' && view.name === 'settings') setView({ name: 'main' });
+  }
 
   // The connection changed (a token stored or dropped, in this window or another): read it again.
   useEffect(() => {
@@ -248,22 +262,13 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     if (!answer.ok && answer.error === 'not_connected') refresh();
   };
 
-  /** A policy card's decision, for the one frame whose run waits at it. */
-  const decide = async (message: DecisionMessage) => {
-    const newest = newestReport;
-    setBusy(true);
-    const answer = await request(platform, message);
-    setBusy(false);
-    setFeedback({ tabId: message.tabId, text: decisionFeedbackOf(message, answer), newest });
-  };
-
-  /** Add this job to TailorIT, or Save to tracker: what came of it, then the card read again. */
+  /** Add this job to TailorIT: what came of it, then the card read again. */
   const addJob = async (target: number) => {
-    const view = viewKey;
+    const shown = viewKey;
     setAdding(true);
     const answer = await request(platform, { v: 1, type: 'panel/addJob', tabId: target });
     setAdding(false);
-    setAdded({ view, outcome: answer.ok ? answer.data.outcome
+    setAdded({ view: shown, outcome: answer.ok ? answer.data.outcome
       : answer.error === 'not_connected' ? 'not-connected' : 'unavailable' });
     job.reload();
   };
@@ -274,36 +279,15 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     void request(platform, { v: 1, type: 'panel/setResume', tabId: target, resumeId }).then(() => job.reload());
   };
 
+  /** The account's resumes, for Change (the résumé line's, and the résumé row's after a run). */
+  const loadResumes = useCallback(async () => {
+    if (tabId === null) return null;
+    const answer = await request(platform, { v: 1, type: 'panel/resumes', tabId });
+    return answer.ok ? answer.data.items : null;
+  }, [platform, tabId]);
+
   const ask = (target: number, question: string, length: AskLength) =>
     request(platform, { v: 1, type: 'panel/ask', tabId: target, question, length });
-
-  /** A row's Confirm draft or Save my answer, for that frame's field: what came of it, and for an answer not saved,
-   *  why (Phase 6, wave 2). */
-  const act = async (message: RowMessage) => {
-    setBusy(true);
-    const answer = await request(platform, message);
-    setBusy(false);
-    let text: string;
-    if (message.type === 'panel/confirmDraft') text = answer.ok ? COPY.panel.draftConfirmed : COPY.panel.confirmFailed;
-    else if (answer.ok) text = COPY.panel.saveOutcomes[(answer.data as { outcome: SaveAnswerOutcome }).outcome];
-    else text = answer.error === 'not_connected' ? COPY.panel.needsConnection : COPY.panel.saveFailed;
-    setFeedback({ tabId: message.tabId, text, newest: Number.POSITIVE_INFINITY });
-  };
-
-  /** A mode or the view chosen in the gear's menu: saved at once, then shown as the worker stored it. */
-  const saveModes = (next: Settings) => {
-    // The audit's M4: the settings this menu last read go with the change, so the worker applies only the change.
-    const base = settings;
-    setSavingModes(true);
-    setSettings(next);
-    void request(platform, { v: 1, type: 'settings/save', settings: next, ...(base === null ? {} : { base }) }).then((answer) => {
-      setSavingModes(false);
-      if (answer.ok) setSettings(answer.data.settings);
-      else void request(platform, { v: 1, type: 'settings/get' }).then((read) => {
-        if (read.ok) setSettings(read.data.settings);
-      });
-    });
-  };
 
   /** v3 Phase 3b: "Autofill for another job"'s choice, and "Apply without resume": kept for the tab, then the card is
    *  read again. A choice the worker could not keep (the page changed meanwhile, the search is gone) says so (the
@@ -343,52 +327,76 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     });
   };
 
-  const disabled = tabId === null || busy;
   const working = reports.some(isWorking);
-  const paused = reports.some(awaitsContinue);
   const shownFeedback = feedback !== null && feedback.tabId === tabId && newestReport <= feedback.newest ? feedback : null;
-  const dryRun = reports.length > 0 && reports.every((report) => report.mode === 'dry-run');
   const card = job.view.state === 'shown' ? job.view.card : null;
-  // The posting forbids AI, whichever mode the run filled in: the policy card, the notice past it, profile only, the
-  // form's "I did not use AI" attestation, or TailorIT's saved copy.
+  const answered = card !== null && card.state === 'answered' ? card : null;
+  // The posting forbids AI, whichever mode the run filled in: the custom question says so.
   const policy = reports.some(saysNoAi);
-  // Continue and Cancel act on a run: before any report there is none.
-  const noRun = reports.length === 0;
-  // The card's cover letter (Phase G), read with the card's own key, and whether TailorIT's AI may write it here.
+  // The cover letter (Phase G), asked only where the form asks for one: whether there is one to preview.
+  const letterAsked = asksForLetter(page, reports);
   const cardBase = tabId !== null && page !== null && page.support === 'form' && typeof connection === 'string'
-    ? `${tabId}|${page.formKey ?? ''}|${connection}` : null;
+    && letterAsked ? `${tabId}|${page.formKey ?? ''}|${connection}` : null;
   const letter = useTabLetter(platform, tabId, { base: cardBase, card, reports });
-  // Profile only: a posting that forbids AI under the default setting, or a run of the tab that went profile-only ("Ask
-  // me" leaves Write it now to the person; "Use AI anyway" writes).
-  const letterMode: LetterMode = aiOff === true ? 'ai-off'
-    : (policy && whenForbidden === 'profile-only') || reports.some(fillsFromProfileOnly) ? 'profile-only' : 'ai';
   const hidden = launcher !== null && launcher.tabId === tabId ? launcher.hidden : 'none';
 
-  // While a run fills, the progress (the review's, with its Cancel) stands where Autofill was, as Jobright's does
-  // (v3 Phase 3 review).
-  const toolbar = tabId !== null && !working && (
-    <div className="tia-toolbar">
-      <button type="button" className="tia-cta" disabled={disabled} data-working={busy ? 'true' : undefined}
-        onClick={() => void run({ v: 1, type: 'panel/fill', tabId, dryRun: false })}>
-        {busy && <Icon name="spinner" size={20} className="tia-icon tia-spin" />}
-        {COPY.panel.fill}
-      </button>
-      <div className="tia-toolbar__more">
-        <button type="button" className="tia-button tia-button--quiet" disabled={disabled}
-          onClick={() => void run({ v: 1, type: 'panel/fill', tabId, dryRun: true })}>{COPY.panel.dryRun}</button>
-        <button type="button" className="tia-button tia-button--quiet" disabled={disabled || !paused}
-          data-emphasis={paused ? '' : undefined}
-          onClick={() => void run({ v: 1, type: 'panel/continue', tabId })}>{COPY.panel.continue}</button>
-        <button type="button" className="tia-button tia-button--quiet" disabled={disabled || noRun}
-          onClick={() => void run({ v: 1, type: 'panel/cancel', tabId })}>{COPY.panel.cancel}</button>
-      </div>
-    </div>
+  const head = (gear: boolean) => (
+    <header className="tia-panel__head">
+      <h1 className="tia-brand"><Brand markSize={28} large /></h1>
+      {gear && (
+        <button type="button" className="tia-iconbutton" aria-label={COPY.mainView.settings} title={COPY.mainView.settings}
+          aria-pressed={view.name === 'settings'} data-panel-settings=""
+          onClick={() => setView(view.name === 'settings' ? { name: 'main' } : { name: 'settings' })}>
+          <Icon name="gear" size={18} />
+        </button>
+      )}
+    </header>
+  );
+  const problems = (
+    <>
+      <ConnectionProblem auth={auth} settingsUrl={settingsUrl} />
+      <LinkProblem link={link} onReconnect={reconnect} />
+    </>
   );
 
-  if (editing) {
+  if (view.name === 'editor') {
     return (
-      <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}>
-        <ProfileEditor platform={platform} onClose={() => setEditing(false)} tailoritUrl={TAILORIT_LINKS.autofillInfo} />
+      <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined} data-view="editor">
+        {head(false)}
+        {problems}
+        <ProfileEditor platform={platform} tailoritUrl={TAILORIT_LINKS.autofillInfo} onSaved={recheck}
+          onClose={() => setView(view.back === 'settings' ? { name: 'settings' } : { name: 'main' })} />
+      </main>
+    );
+  }
+
+  if (gate !== 'main' || auth.status === null) {
+    return (
+      <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}
+        data-view={gate === 'setup' && auth.status !== null ? 'setup' : 'loading'}>
+        {head(false)}
+        {problems}
+        {gate === 'setup' && auth.status !== null && (
+          <SetupView platform={platform} status={auth.status} refresh={refresh} profile={profile} now={now}
+            withAccount={withAccount} settingsUrl={settingsUrl}
+            onEditProfile={() => setView({ name: 'editor', back: 'setup' })}
+            onStart={() => {
+              setWithAccount(false);
+              setGate('main');
+            }} />
+        )}
+      </main>
+    );
+  }
+
+  if (view.name === 'settings') {
+    return (
+      <main className="tia-page tia-panel tia-panel--settings" ref={root} data-tab-id={tabId ?? undefined} data-view="settings">
+        {head(true)}
+        {problems}
+        <SettingsView platform={platform} settings={settings} status={auth.status} settingsUrl={settingsUrl}
+          onClose={() => setView({ name: 'main' })} onSaved={setSettings}
+          onAutofillInfo={() => setView({ name: 'editor', back: 'settings' })} />
       </main>
     );
   }
@@ -398,36 +406,34 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const postingOnly = page?.support === 'no-form' && (page.posting === true || page.confirmation === true);
   // The platform confirmed the tab's application (the review, Jobright's "Submitted!"): no Autofill, no Cancel or Skip.
   const submitted = page?.submitted !== undefined;
-  const cardJob = card !== null && card.state === 'answered' ? card.job : null;
+  const cardJob = answered?.job ?? null;
+  // v4 ui: the main button's message: Sign up & Autofill at an account wall, else go on with a run that waits, else
+  // Autofill.
+  const wall = page?.wall !== undefined;
+  const paused = reports.some(awaitsContinue);
+  const mainMessage = (target: number): RunMessage => (wall ? { v: 1, type: 'panel/fill', tabId: target, dryRun: false,
+    signIn: true } : paused ? { v: 1, type: 'panel/continue', tabId: target } : { v: 1, type: 'panel/fill', tabId: target,
+    dryRun: false });
+  const offersFill = tabId !== null && page?.support !== 'none' && !postingOnly && !submitted;
+  // The résumé line until a run lists the résumé's own row (which then has its Preview).
+  const resumeRow = reports.some((report) => report.fields.some((row) => row.category === 'file.resume'
+    && row.status !== 'blocked'));
+  /** v4 ui: which file a résumé or cover-letter row previews: the PDF the fill attached or would attach. */
+  const previewOf = (row: ReportRow): PreviewKind | null => {
+    if (row.category === 'file.resume') {
+      return answered !== null && answered.withoutResume !== true && answered.resume?.fileKind === 'pdf' ? 'resume' : null;
+    }
+    const attached = row.wrote && row.status !== 'blocked';
+    return attached || letter.view.outcome === 'yours' || letter.view.outcome === 'written' ? 'coverLetter' : null;
+  };
 
   return (
-    <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined}>
-      <header className="tia-panel__head">
-        <h1 className="tia-brand"><Brand markSize={28} large /></h1>
-        <button type="button" className="tia-iconbutton" aria-label={COPY.panel.menu} title={COPY.panel.menu}
-          aria-expanded={menuOpen} aria-controls={menuId} data-panel-menu="" onClick={() => setMenuOpen((open) => !open)}>
-          <Icon name="gear" size={18} />
-        </button>
-      </header>
-      {menuOpen && (
-        <section className="tia-menu" id={menuId} aria-label={COPY.panel.menu} data-menu="">
-          <h2 className="tia-menu__title">{COPY.panel.modes}</h2>
-          {settings === null ? <p className="tia-help">{COPY.options.loading}</p> : (
-            <ModesFields settings={settings} disabled={savingModes} onChange={saveModes} idPrefix="panel"
-              signIn={signInAvailability(auth.status)} />
-          )}
-          <a className="tia-menu__all" href={`${settingsUrl}#settings-modes`} target="_blank" rel="noreferrer"
-            data-open-settings="">
-            {COPY.panel.allSettings}
-            <Icon name="chevron-right" size={16} />
-          </a>
-        </section>
-      )}
-      <ConnectionProblem auth={auth} settingsUrl={settingsUrl} />
-      {auth.status?.connection === 'connected' && auth.status.disclosure === 'changed' && (
+    <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined} data-view="main">
+      {head(true)}
+      {problems}
+      {auth.status.connection === 'connected' && auth.status.disclosure === 'changed' && (
         <DisclosureChanged onUnderstand={acknowledge} />
       )}
-      <LinkProblem link={link} onReconnect={reconnect} />
       {(agent.status?.on === true || agent.status?.pending === true || agent.status?.paused != null)
         && <AgentStatusLine platform={platform} agent={agent} />}
       {tabId !== null && hidden !== 'none' && (
@@ -454,34 +460,39 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
       {tabId !== null && page?.submitted !== undefined && (
         <Submitted state={page.submitted} job={cardJob} onRetry={() => retryApplied(tabId)} />
       )}
-      {tabId !== null && (
-        <ReportNotices reports={reports} busy={busy}
-          onPolicyDecision={(frameId, decision) => void decide({ v: 1, type: 'panel/policyDecision', tabId, frameId, decision })} />
-      )}
-      {tabId !== null && page?.support !== 'none' && (job.view.state === 'hidden' ? (postingOnly || submitted ? null : toolbar) : (
-        <JobCard view={job.view} platform={page?.platform ?? null} dryRun={dryRun} adding={adding}
-          outcome={added !== null && added.view === viewKey ? added.outcome : null} now={now()}
-          onAdd={() => void addJob(tabId)}
-          loadResumes={async () => {
-            const answer = await request(platform, { v: 1, type: 'panel/resumes', tabId });
-            return answer.ok ? answer.data.items : null;
-          }}
-          chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
-          letter={letter.view} letterMode={letterMode} onWriteLetter={letter.write}
-          letterAsked={asksForLetter(page, reports)} working={working} autofillInfoUrl={TAILORIT_LINKS.autofillInfo}
+      {tabId !== null && page?.support !== 'none' && (
+        <JobCard view={job.view} adding={adding} outcome={added !== null && added.view === viewKey ? added.outcome : null}
+          now={now()} working={working} onAdd={() => void addJob(tabId)}
           searchJobs={async (query) => {
             const answer = await request(platform, { v: 1, type: 'panel/jobSearch', tabId, query });
             return answer.ok ? answer.data : null;
           }}
-          chooseJob={(ref) => chooseJob(tabId, ref)}
-          setWithout={(without) => setWithout(tabId, without)}
-          loadPreview={loadPreview}
-          onAutofillInfo={() => setEditing(true)} submitted={submitted}>
-          {submitted ? null : postingOnly && page?.confirmation !== true
-            ? <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
-            : postingOnly ? null : toolbar}
-        </JobCard>
-      ))}
+          chooseJob={(ref) => chooseJob(tabId, ref)} />
+      )}
+      {tabId !== null && postingOnly && page?.confirmation !== true && (
+        <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
+      )}
+      {offersFill && tabId !== null && (
+        <div className="tia-toolbar">
+          <button type="button" className="tia-cta" disabled={busy || working}
+            data-working={busy || working ? 'true' : undefined} data-main-action={wall ? 'sign-up' : paused ? 'continue' : 'fill'}
+            onClick={() => void run(mainMessage(tabId))}>
+            {(busy || working) && <Icon name="spinner" size={20} className="tia-icon tia-spin" />}
+            {wall ? COPY.mainView.signUpFill : COPY.panel.fill}
+          </button>
+          {wall && <HelpTip text={COPY.mainView.signUpHelp} topic={COPY.mainView.signUpFill} className="tia-toolbar__tip" />}
+        </div>
+      )}
+      {tabId !== null && page?.support !== 'none' && (
+        <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
+          connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
+          noResume={answered !== null && answered.resume === null} policy={policy} />
+      )}
+      {tabId !== null && answered !== null && !submitted && !resumeRow && (
+        <ResumeLine card={answered} loadResumes={loadResumes}
+          chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
+          setWithout={(without) => setWithout(tabId, without)} loadPreview={loadResumePreview} />
+      )}
       {shownFeedback !== null && <p className="tia-feedback" role="status">{shownFeedback.text}</p>}
       {tabId !== null && reports.length > 0 && settingsRead && (
         <section className="tia-dashboard" aria-labelledby={dashboardId}>
@@ -503,35 +514,27 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
                 if (!answer.ok) setFeedback({ tabId, text: COPY.panel.focusFailed, newest: Number.POSITIVE_INFINITY });
               });
             }}
-            describeField={async (frameId, fieldKey) => {
-              const answer = await request(platform, { v: 1, type: 'panel/describe', tabId, frameId, fieldKey });
-              return answer.ok ? answer.data.options : null;
-            }}
-            onConfirmDraft={(frameId, fieldKey) => void act({ v: 1, type: 'panel/confirmDraft', tabId, frameId, fieldKey })}
-            onSaveAnswer={(frameId, fieldKey) => void act({ v: 1, type: 'panel/saveAnswer', tabId, frameId, fieldKey })}
             onPress={async (frameId, target, confirmed) => {
               const answer = await request(platform, { v: 1, type: 'panel/press', tabId, frameId, target, confirmed });
               return answer.ok ? answer.data : null;
             }}
+            previewOf={previewOf}
+            // After a run the résumé's choice lives on its row (the owner): Change, as the résumé line's.
+            rowTool={(each) => (each.category !== 'file.resume' || answered === null || submitted ? null : {
+              label: COPY.job.change, action: 'change',
+              render: (close) => (
+                <ResumePicker card={answered} loadResumes={loadResumes} onClose={close}
+                  chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
+                  setWithout={(without) => setWithout(tabId, without)} />
+              ),
+            })}
+            renderPreview={(kind, label, close) => (
+              <ResumePreview kind={kind} load={kind === 'resume' ? loadResumePreview : loadLetterPreview}
+                label={kind === 'resume' ? answered?.resume?.label ?? label : label} onClose={close} />
+            )}
           />
         </section>
       )}
-      {tabId !== null && page?.support !== 'none' && (
-        <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
-          connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
-          noResume={card !== null && card.state === 'answered' && card.resume === null} policy={policy} />
-      )}
-      <footer className="tia-panel__foot">
-        <ConnectedLine auth={auth} />
-        <p className="tia-links">
-          {job.view.state === 'hidden' && (
-            <button type="button" className="tia-linkbutton" data-open-profile="" onClick={() => setEditing(true)}>
-              {COPY.panel.autofillInfo}
-            </button>
-          )}
-          <a href={TAILORIT_LINKS.jobs} target="_blank" rel="noreferrer" data-tailorit-link="jobs">{COPY.panel.openJobs}</a>
-        </p>
-      </footer>
     </main>
   );
 }
@@ -565,8 +568,8 @@ function Submitted({ state, job, onRetry }: { state: NonNullable<PageState['subm
   );
 }
 
-
-/** v3 Phase 3b: "Ask TailorIT to support this site": the tab's host alone goes to TailorIT; what came of it. */
+/** v3 Phase 3b: "Ask TailorIT to support this site": the tab's host alone goes to TailorIT; what came of it. v4 ui: what
+ *  goes is said in the "?" beside the button. */
 function AskForSite({ ask }: { ask(): Promise<Answer<{ outcome: SiteRequestOutcome }>> }) {
   const [state, setState] = useState<{ sending: boolean; outcome: SiteRequestOutcome | null; failed: boolean }>(
     { sending: false, outcome: null, failed: false });
@@ -579,12 +582,14 @@ function AskForSite({ ask }: { ask(): Promise<Answer<{ outcome: SiteRequestOutco
   return (
     <div className="tia-unsupported__ask" data-site-request={state.outcome ?? undefined}>
       {state.outcome !== 'sent' && (
-        <button type="button" className="tia-button tia-button--primary" disabled={state.sending}
-          data-action="site-request" onClick={() => void send()}>
-          {state.sending ? words.asking : words.ask}
-        </button>
+        <span className="tia-unsupported__askrow">
+          <button type="button" className="tia-button tia-button--primary" disabled={state.sending}
+            data-action="site-request" onClick={() => void send()}>
+            {state.sending ? words.asking : words.ask}
+          </button>
+          <HelpTip text={words.help} topic={words.ask} />
+        </span>
       )}
-      {state.outcome === null && !state.failed && <p className="tia-help">{words.help}</p>}
       {state.outcome !== null && <p className="tia-feedback" role="status">{words.outcomes[state.outcome]}</p>}
       {state.failed && <p className="tia-feedback" role="status">{COPY.panel.failed}</p>}
     </div>
@@ -592,7 +597,7 @@ function AskForSite({ ask }: { ask(): Promise<Answer<{ outcome: SiteRequestOutco
 }
 
 /** A page Autofill does not work on (v3 Phase 3): the sites it works on, and (v3 Phase 3b) asking TailorIT to support
- *  this one. */
+ *  this one. v4 ui: the explanations are the "?" beside the heading. */
 function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
   ask(): Promise<Answer<{ outcome: SiteRequestOutcome }>> }) {
   const headingId = useId();
@@ -600,16 +605,15 @@ function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
   // A page on a supported site the extension did not see load: a reload is all it takes (v3 Phase 3 review). A
   // company's own page while the career sites act (v3 Phase 8 review, B10): a reload lets the sentinel read it.
   if (reload !== null) {
+    const heading = reload === 'site' ? words.reloadSiteHeading : words.reloadHeading;
     return (
       <section className="tia-unsupported" data-unsupported={reload === 'site' ? 'reload-site' : 'reload'}
         aria-labelledby={headingId}>
         <div className="tia-unsupported__head">
           <Icon name="info" size={20} className="tia-icon tia-unsupported__icon" />
-          <h2 className="tia-unsupported__title" id={headingId}>
-            {reload === 'site' ? words.reloadSiteHeading : words.reloadHeading}
-          </h2>
+          <h2 className="tia-unsupported__title" id={headingId}>{heading}</h2>
+          <HelpTip text={reload === 'site' ? words.reloadSiteIntro : words.reloadIntro} topic={heading} />
         </div>
-        <p className="tia-unsupported__intro">{reload === 'site' ? words.reloadSiteIntro : words.reloadIntro}</p>
       </section>
     );
   }
@@ -618,6 +622,7 @@ function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
       <div className="tia-unsupported__head">
         <Icon name="info" size={20} className="tia-icon tia-unsupported__icon" />
         <h2 className="tia-unsupported__title" id={headingId}>{words.heading}</h2>
+        <HelpTip text={COPY.mainView.unsupportedHelp} topic={words.heading} />
       </div>
       <p className="tia-unsupported__intro">{words.intro}</p>
       <ul className="tia-unsupported__sites">
@@ -629,8 +634,6 @@ function Unsupported({ reload, ask }: { reload: 'ats' | 'site' | null;
           </li>
         ))}
       </ul>
-      <p className="tia-help">{words.embedded}</p>
-      <p className="tia-help">{words.companySites}</p>
       <AskForSite ask={ask} />
     </section>
   );
@@ -654,7 +657,9 @@ function PageStrip({ page }: { page: PageState | null }) {
   );
 }
 
-/** Why filling cannot work, as a problem strip with a link to the settings; nothing while all is well. */
+/** What blocks everything, as a problem strip with a link to the settings: the worker did not answer, a version
+ *  mismatch, storage the browser would not restrict. Not connected, expired and revoked are the set-up view's first
+ *  step (v4 ui). Nothing while all is well. */
 function ConnectionProblem({ auth, settingsUrl }: { auth: AuthState; settingsUrl: string }) {
   const { status } = auth;
   if (status === null) {
@@ -665,27 +670,10 @@ function ConnectionProblem({ auth, settingsUrl }: { auth: AuthState; settingsUrl
   const problems: string[] = [];
   if (status.storageAccess === 'refused') problems.push(COPY.panel.storageRefused);
   if (status.versionMismatch) problems.push(COPY.panel.versionMismatch);
-  if (status.connection !== 'connected') {
-    problems.unshift(status.connection === 'expired' ? COPY.panel.expired
-      : status.connection === 'revoked' ? COPY.panel.revoked : COPY.panel.notConnected);
-  }
   if (problems.length === 0) return null;
   return (
     <p className="tia-connection tia-connection--problem tia-strip" data-tone="problem" data-connection={status.connection}>
       {problems.join(' ')} <a href={settingsUrl} target="_blank" rel="noreferrer">{COPY.panel.openSettings}</a>
-    </p>
-  );
-}
-
-/** "Connected as …" with a dot, at the panel's foot, while all is well. */
-function ConnectedLine({ auth }: { auth: AuthState }) {
-  const { status } = auth;
-  if (status === null || status.connection !== 'connected' || status.storageAccess === 'refused' || status.versionMismatch) {
-    return null;
-  }
-  return (
-    <p className="tia-connection" data-connection={status.connection}>
-      {status.account ? COPY.panel.connectedAs(status.account.name) : COPY.panel.connected}
     </p>
   );
 }

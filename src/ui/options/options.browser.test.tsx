@@ -57,10 +57,13 @@ describe('the options page', () => {
     expect(setting(root, 'llm.classify').checked).toBe(true);
     expect(setting(root, 'llm.drafts').checked).toBe(true);
     expect(setting(root, 'llm.answers').checked).toBe(true);
-    expect(setting(root, 'llm.confirmDrafts').checked).toBe(false);
     expect(setting(root, 'llm.whenForbidden.profile-only').checked).toBe(true);
     expect(setting(root, 'interpretations.eeoDeclineByDefault').checked).toBe(true);
     expect(setting(root, 'panel.side').checked).toBe(true);
+    // v4 (D6): no draft confirmation, and no "Ask me each time" for a posting that forbids AI.
+    expect(root.querySelector('input[data-setting="llm.confirmDrafts"], input[data-setting="llm.whenForbidden.ask"]')).toBeNull();
+    expect([...root.querySelectorAll<HTMLInputElement>('input[name="when-forbidden"]')].map((input) => input.value))
+      .toEqual(['profile-only', 'use-ai']);
     // Under Consent boxes: All agreements every kind is ticked: each toggle shows so, fixed, and a line says where the
     // choice is (v3 Phase 3 review).
     for (const category of CONSENT_CATEGORIES) {
@@ -80,38 +83,37 @@ describe('the options page', () => {
     await click(setting(root, 'consent.marketing'));
     await click(setting(root, 'consent.privacy'));
     await click(setting(root, 'llm.drafts'));
-    await click(setting(root, 'llm.confirmDrafts'));
-    await click(setting(root, 'llm.whenForbidden.ask'));
+    await click(setting(root, 'llm.whenForbidden.use-ai'));
     await click(setting(root, 'interpretations.twoOrMoreRaces'));
     await click(setting(root, 'panel.in-page'));
-    expect(saves(worker)).toHaveLength(9);
+    expect(saves(worker)).toHaveLength(8);
     // Each save is the whole settings, built on the last answer; consent stays in the closed list's order.
     expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, next: 'auto',
       consents: 'required' },
       preapprovedConsent: ['terms', 'certify', 'dataRetention', 'marketing', 'backgroundCheck', 'signature'],
-      llm: { ...DEFAULT_SETTINGS.llm, drafts: false, confirmDrafts: true, whenForbidden: 'ask' }, panel: 'in-page',
+      llm: { ...DEFAULT_SETTINGS.llm, drafts: false, whenForbidden: 'use-ai' }, panel: 'in-page',
       interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } });
     expect(root.textContent).toContain(TEXT.saved);
-    for (const name of ['modes.next.auto', 'consent.marketing', 'llm.confirmDrafts', 'llm.whenForbidden.ask', 'panel.in-page']) {
+    for (const name of ['modes.next.auto', 'consent.marketing', 'llm.whenForbidden.use-ai', 'panel.in-page']) {
       expect(setting(root, name).checked, name).toBe(true);
     }
     for (const name of ['consent.privacy', 'llm.drafts', 'interpretations.twoOrMoreRaces', 'llm.whenForbidden.profile-only']) {
       expect(setting(root, name).checked, name).toBe(false);
     }
   });
-
   it('shows the modes in their own card, each saved at once, Submit since v3 Phase 4, Sign-in and the skip rules since v3 Phase 5', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);
     const card = root.querySelector<HTMLElement>('[data-card="modes"]')!;
     expect(card.id).toBe('settings-modes');
     expect(card.querySelector('h2')?.textContent).toBe(TEXT.modes.heading);
+    // v4 ui: the side panel's order and look (radio cards, each title with its "?").
     expect([...card.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => [group.dataset.settingGroup,
-      group.querySelector('legend')?.textContent])).toEqual([['modes.signIn', TEXT.modes.signIn.name],
-      ['modes.next', TEXT.modes.next.name],
-      ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['modes.submit', TEXT.modes.submit.name],
-      ['modes.recordOwn', TEXT.modes.recordOwn.name], ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name],
-      ['modes.resumeOnPage', TEXT.modes.resumeOnPage.name], ['view', TEXT.modes.view.name],
+      group.querySelector('.tia-mode__name')?.textContent])).toEqual([
+      ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['view', TEXT.modes.view.name],
+      ['modes.next', TEXT.modes.next.name], ['modes.submit', TEXT.modes.submit.name], ['modes.signIn', TEXT.modes.signIn.name],
+      ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name],
+      ['modes.resumeOnPage', TEXT.modes.resumeOnPage.name], ['modes.recordOwn', TEXT.modes.recordOwn.name],
       ['modes.agentSkip', TEXT.modes.agentSkip.name]]);
     // Submit is Manual unless the person sets it to Auto.
     expect(setting(root, 'modes.submit.manual').checked).toBe(true);
@@ -133,29 +135,36 @@ describe('the options page', () => {
     await click(setting(root, 'view.minimized'));
     expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, view: 'minimized', modes: { ...DEFAULT_SETTINGS.modes,
       ai: 'profile', consents: 'required', afterPageTurn: 'manual' } });
-    for (const help of [TEXT.modes.next.help, TEXT.modes.consents.help, TEXT.modes.ai.help]) expect(card.textContent).toContain(help);
+    // Each mode's explanation is its "?", describing its group.
+    for (const [group, help] of [['modes.next', TEXT.modes.next.help], ['modes.consents', TEXT.modes.consents.help],
+      ['modes.ai', TEXT.modes.ai.help]] as const) {
+      const shown = card.querySelector<HTMLElement>(`[data-setting-group="${group}"]`)!;
+      const tip = shown.querySelector<HTMLElement>('[role="tooltip"]')!;
+      expect([tip.textContent, shown.getAttribute('aria-describedby')]).toEqual([help, tip.id]);
+    }
+    expect(card.querySelector('.tia-help')).toBeNull();
   });
-
   it('shows "Résumé already on the page" with the modes: Keep it by default, Upload mine again saved at once, each choice said (the behaviour review of 2026-11-06)', async () => {
     const worker = createFakeWorker();
     const root = await open(worker);
     const group = root.querySelector<HTMLElement>('[data-card="modes"] [data-setting-group="modes.resumeOnPage"]')!;
-    expect(group.querySelector('legend')?.textContent).toBe('Résumé already on the page');
+    expect(group.querySelector('.tia-mode__name')?.textContent).toBe('Résumé already on the page');
     expect([...group.querySelectorAll('label')].map((label) => label.textContent)).toEqual(['Keep it', 'Upload mine again']);
     expect(setting(root, 'modes.resumeOnPage.keep').checked).toBe(true);
-    // The help says what each choice does: the page's file kept and flagged; the person's uploaded through the site's
-    // own upload, the site's Remove and Delete never pressed, and a field with no way to add a file left to them.
-    const help = group.querySelector('.tia-mode__help')?.textContent ?? '';
+    // The "?" says what each choice does: the page's file kept; the person's uploaded through the site's own upload,
+    // the site's Remove and Delete never pressed, and a field with no way to add a file left to them.
+    const help = group.querySelector('[role="tooltip"]')?.textContent ?? '';
     expect(help).toBe(TEXT.modes.resumeOnPage.help);
     for (const words of ['Keep it leaves that file', 'Upload mine again uploads the résumé you chose',
       "Neither presses the site's Remove or Delete", 'the field is left to you']) expect(help).toContain(words);
+    // D4: a kept résumé counts as filled: nothing "flags" it.
+    expect(help).not.toContain('flag');
     await click(setting(root, 'modes.resumeOnPage.upload'));
     expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, resumeOnPage: 'upload' } });
     expect(setting(root, 'modes.resumeOnPage.upload').checked).toBe(true);
     await click(setting(root, 'modes.resumeOnPage.keep'));
     expect(saves(worker).at(-1)).toEqual(DEFAULT_SETTINGS);
   });
-
   it('shows the settings the worker stored, not the ones it was sent, and the old ones when a save is refused', async () => {
     const worker = createFakeWorker();
     // The worker stores something else than asked (as storage would after a schema change): the page shows it.
@@ -199,71 +208,30 @@ describe('the options page', () => {
     expect(root.textContent).toContain(TEXT.panel.inPageHelp);
   });
 
-  it('offers to save the person’s fixes, on by default, and saves the change', async () => {
-    const worker = createFakeWorker();
-    const root = await open(worker);
-    expect(setting(root, 'offerToSaveAnswers').checked).toBe(true);
-    expect(root.textContent).toContain(TEXT.answers.offerHelp);
-    await click(setting(root, 'offerToSaveAnswers'));
-    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, offerToSaveAnswers: false });
+  it('offers no "Your fixes" card: Save my answer is not offered any more (v4, D6)', async () => {
+    const root = await open(createFakeWorker());
+    expect(root.querySelector('[data-card="answers"], input[data-setting="offerToSaveAnswers"]')).toBeNull();
+    expect(root.textContent).not.toContain(TEXT.answers.offerHelp);
   });
 
-  describe('the anonymous counters', () => {
-    const counted = [
-      { platform: 'lever', fieldKind: 'text', matcherStage: 'not-applicable', outcome: 'success', tripwireTriggered: false, count: 12 },
-      { platform: 'greenhouse', fieldKind: 'select', matcherStage: 'fuzzy', outcome: 'fail', tripwireTriggered: true, count: 3 },
-    ] as const;
-
-    it('are off by default, and the opt-in lists the five fields counted and nothing more', async () => {
-      const worker = createFakeWorker();
-      const root = await open(worker);
-      expect(setting(root, 'telemetry.optIn').checked).toBe(false);
-      const fields = [...root.querySelectorAll<HTMLElement>('[data-telemetry-fields] li')];
-      expect(fields.map((item) => item.dataset.field)).toEqual(['platform', 'fieldKind', 'matcherStage', 'outcome',
-        'tripwireTriggered']);
-      expect(fields.map((item) => item.textContent)).toEqual(Object.values(TEXT.telemetry.fields));
-      expect(root.textContent).toContain(TEXT.telemetry.never);
-      expect(root.querySelector('[data-telemetry="empty"]')?.textContent).toBe(TEXT.telemetry.empty);
-      expect(root.querySelector('[data-telemetry-export]')).toBeNull();
-
-      await click(setting(root, 'telemetry.optIn'));
-      expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, telemetry: { optIn: true } });
-      // The counts are read again once the opt-in changed.
-      expect(worker.sentOfType('telemetry/get').length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('show the counts kept in this browser, export them as a JSON file, and clear them', async () => {
-      const worker = createFakeWorker();
-      worker.script.settings = { ...DEFAULT_SETTINGS, telemetry: { optIn: true } };
-      worker.script.counts = counted.map((count) => ({ ...count }));
-      const root = await open(worker);
-      const table = root.querySelector('[data-telemetry="counts"]')!;
-      expect([...table.querySelectorAll('th')].map((cell) => cell.textContent)).toEqual(Object.values(TEXT.telemetry.columns));
-      expect([...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((cell) => cell.textContent)))
-        .toEqual([
-          ['Lever', COPY.fieldKinds.text, COPY.stages['not-applicable'], TEXT.telemetry.outcomes.success, TEXT.telemetry.no, '12'],
-          ['Greenhouse', COPY.fieldKinds.select, COPY.stages.fuzzy, TEXT.telemetry.outcomes.fail, TEXT.telemetry.yes, '3'],
-        ]);
-
-      const link = root.querySelector<HTMLAnchorElement>('a[data-telemetry-export]')!;
-      expect(link.getAttribute('download')).toBe(TEXT.telemetry.exportName);
-      expect(link.textContent).toBe(TEXT.telemetry.export);
-      const prefix = 'data:application/json;charset=utf-8,';
-      expect(link.href.startsWith(prefix)).toBe(true);
-      const file = JSON.parse(decodeURIComponent(link.href.slice(prefix.length))) as { fields: string[]; counts: object[] };
-      expect(file).toEqual({ fields: ['platform', 'fieldKind', 'matcherStage', 'outcome', 'tripwireTriggered'], counts: counted });
-      for (const entry of file.counts) {
-        expect(Object.keys(entry).sort()).toEqual(['count', 'fieldKind', 'matcherStage', 'outcome', 'platform', 'tripwireTriggered']);
-      }
-
-      await click(button(root, TEXT.telemetry.clear));
-      expect(worker.sentOfType('telemetry/clear')).toHaveLength(1);
-      expect(root.querySelector('[data-telemetry="counts"]')).toBeNull();
-      expect(root.textContent).toContain(TEXT.telemetry.cleared);
-      expect(root.querySelector('[data-telemetry="empty"]')).not.toBeNull();
-    });
+  it('puts every card\'s and setting\'s explanation in a "?" beside its title or name, still describing it (v4 ui)', async () => {
+    const root = await open(createFakeWorker());
+    // The cards' explanations.
+    for (const [name, help] of [['modes', TEXT.modes.intro], ['ai', TEXT.ai.intro], ['interpretations', TEXT.interpretations.intro],
+      ['runs', TEXT.data.intro], ['telemetry', TEXT.telemetry.intro]] as const) {
+      const head = root.querySelector(`[data-card="${name}"] .tia-card__head`)!;
+      expect([name, head.querySelector('[role="tooltip"]')?.textContent]).toEqual([name, help]);
+    }
+    // A toggle's explanation describes its box.
+    const drafts = setting(root, 'llm.drafts');
+    const tip = document.getElementById(drafts.getAttribute('aria-describedby')!)!;
+    expect([tip.getAttribute('role'), tip.textContent]).toEqual(['tooltip', TEXT.ai.draftsHelp]);
+    expect(tip.closest('[data-helptip]')).not.toBeNull();
+    // What stays as text: the plan's sentence on what never goes to the AI.
+    expect(root.querySelector('[data-ai-never]')?.textContent).toBe(TEXT.ai.never);
+    // No explanatory paragraph left outside the counters' list of what they count.
+    expect([...root.querySelectorAll('.tia-help')].every((help) => help.closest('[data-card="telemetry"]') !== null)).toBe(true);
   });
-
   it('shows the first-run disclosure before Connect, and Connect opens TailorIT with its countdown', async () => {
     const worker = createFakeWorker();
     const time = handFrames();
@@ -397,14 +365,18 @@ describe('Options › Auto-apply and Sign-in (v3 Phase 5)', () => {
     const root = await open(worker);
     expect(setting(root, 'modes.signIn.manual').checked).toBe(true);
     expect(setting(root, 'modes.signIn.auto').disabled).toBe(true);
-    expect(root.querySelector('[data-setting-group="modes.signIn"] [data-mode-blocked]')?.textContent)
-      .toBe(TEXT.modes.signIn.needsScope);
+    // v4 ui: why, in the group's "?".
+    const group = root.querySelector<HTMLElement>('[data-setting-group="modes.signIn"]')!;
+    expect(group.dataset.modeBlocked).toBe('auto');
+    expect(group.querySelector('[role="tooltip"]')?.textContent).toBe(`${TEXT.modes.signIn.help} ${TEXT.modes.signIn.needsScope}`);
     unmountAll();
     const allowed = createFakeWorker();
     allowed.script.auth = authStatus({ scopes: ['profile:read', 'agent:run', 'credentials:read'] });
     const again = await open(allowed);
     expect(setting(again, 'modes.signIn.auto').disabled).toBe(false);
-    expect(again.querySelector('[data-setting-group="modes.signIn"] [data-mode-blocked]')).toBeNull();
+    const open_ = again.querySelector<HTMLElement>('[data-setting-group="modes.signIn"]')!;
+    expect(open_.dataset.modeBlocked).toBeUndefined();
+    expect(open_.querySelector('[role="tooltip"]')?.textContent).toBe(TEXT.modes.signIn.help);
     await click(setting(again, 'modes.signIn.auto'));
     expect(saves(allowed).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' } });
   });

@@ -4,11 +4,13 @@
  * type, nothing of the page), and a choice that makes the job the card, the match, the resume and the fill use for this
  * page (panel/chooseJob). The worker answers each job by its place in the search, never TailorIT's id. A job chosen so
  * says so on the card, with "Use this page's own job" to undo it. Presentational: the requests come in as callbacks.
+ * v4 ui: opened by the card's compact "Not this job?" link; its explanation is the "?" beside its heading.
  */
 import { useId, useState, type FormEvent } from 'react';
 import type { PanelJobSearchAnswer } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
+import { HelpTip } from '../page/HelpTip';
 
 type Found = Extract<PanelJobSearchAnswer, { outcome: 'found' }>['items'];
 
@@ -30,6 +32,7 @@ export function AnotherJob({ search, choose, chosen }: AnotherJobProps) {
     | { state: 'refused'; text: string }>({ state: 'idle' });
   const regionId = useId();
   const inputId = useId();
+  const headingId = useId();
 
   const run = async (words: string) => {
     setState({ state: 'searching' });
@@ -61,10 +64,13 @@ export function AnotherJob({ search, choose, chosen }: AnotherJobProps) {
         </p>
       )}
       <button type="button" className="tia-linkbutton" aria-expanded={open} aria-controls={regionId}
-        data-job-action="another" onClick={toggle}>{WORDS.open}</button>
+        data-job-action="another" onClick={toggle}>{COPY.mainView.notThisJob}</button>
       {open && (
-        <section className="tia-another__box" id={regionId} aria-label={WORDS.heading}>
-          <p className="tia-help">{WORDS.help}</p>
+        <section className="tia-another__box" id={regionId} aria-labelledby={headingId}>
+          <p className="tia-another__heading">
+            <span id={headingId}>{WORDS.heading}</span>
+            <HelpTip text={WORDS.help} topic={WORDS.heading} />
+          </p>
           <form className="tia-another__form" role="search" onSubmit={submit}>
             <label className="tia-visually-hidden" htmlFor={inputId}>{WORDS.label}</label>
             <input id={inputId} className="tia-input" type="search" value={query} maxLength={200}

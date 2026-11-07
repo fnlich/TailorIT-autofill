@@ -6,8 +6,9 @@
  *   message wakes a stopped worker, as the panel's would.
  * - Reports come from the worker (panel/reports); RunState and the frame registry are read from storage, never
  *   written.
- * - A fill starts as a person starts one: a trusted click on the side panel's Fill or Dry run, on the report page
- *   (sidepanel.html?tabId=N, the panel opened as a tab: the one form of it Playwright can drive).
+ * - A fill starts as a person starts one: a trusted click on the side panel's Autofill, on the report page
+ *   (sidepanel.html?tabId=N, the panel opened as a tab: the one form of it Playwright can drive). A dry run, which the
+ *   panel no longer offers (v4 ui), is its page message, panel/fill {dryRun: true}.
  */
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 import { applicationKey } from '../../src/adapters/application-key';
@@ -141,13 +142,19 @@ export class Extension {
     return page;
   }
 
-  /** Starts a fill (or a dry run) of the tab showing `target` with a trusted click on the panel's button, then brings
-   *  the target back to the front. Answers the tab id. */
+  /** Starts a fill of the tab showing `target` with a trusted click on the panel's Autofill, then brings the target back
+   *  to the front. Answers the tab id. A dry run (v4 ui: no longer a button of the panel's) is the same page message the
+   *  panel sent, panel/fill {dryRun: true}, from the extension's own page. */
   async fill(target: Page, options: { dryRun?: boolean } = {}): Promise<number> {
     const tabId = await this.tabIdOf(target);
     await this.frameWithForm(tabId);
+    if (options.dryRun === true) {
+      await this.data({ v: 1, type: 'panel/fill', tabId, dryRun: true });
+      await target.bringToFront();
+      return tabId;
+    }
     const panel = await this.reportPage(tabId);
-    const button = panel.getByRole('button', { name: options.dryRun ? COPY.panel.dryRun : COPY.panel.fill, exact: true });
+    const button = panel.getByRole('button', { name: COPY.panel.fill, exact: true });
     await expect(button).toBeEnabled();
     await button.click();
     await target.bringToFront();

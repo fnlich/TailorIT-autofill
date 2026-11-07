@@ -11,13 +11,13 @@
  *   with none, the field is flagged and nothing is written.
  * - A letter TailorIT could not write: flagged, the input untouched, no file asked for.
  * - A dry run: nothing generated or written; the row says a fill would have TailorIT's AI write one.
- * - The side panel's job card says whose letter a fill attaches.
+ * - v4 ui: the side panel previews the letter a fill attached, from its row in the review, the run's own letter (no
+ *   new ask), in the panel's page only.
  * - Privacy: no word of the letter in a report, RunState, the extension's storage, a console message or any request
  *   the extension made; it is only in the bytes the input holds (assertTrapInvariants, besides).
  */
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
 import { applicationKeyOf, noticeCount, row, type Extension } from '../helpers/extension.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
@@ -188,25 +188,37 @@ test.describe('cover letters', () => {
       applicationKey: applicationKeyOf(url) });
   });
 
-  test('the side panel’s job card says whose letter a fill attaches, and writes one on Write it now', async ({ extContext, connected: ext, routeLog }) => {
+  test('the side panel previews the letter the fill attached, from its row, without asking TailorIT again (v4 ui)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+    await tailorit.scenario('letter-generating-then-ready', { times: 1 });
     const page = await extContext.newPage();
-    await open(page, routeLog, 'cover-letter-card');
-    const tabId = await ext.tabIdOf(page);
-    await ext.frameWithForm(tabId);
+    await open(page, routeLog, 'cover-letter-preview');
+    const tabId = await ext.fill(page);
+    const report = await ext.settled(tabId);
+    const letter = row(report, 'Cover letter');
+    expect(letter).toMatchObject({ category: 'file.coverLetter', status: 'verified', reason: 'cover-letter-written', wrote: true });
     const panel = await ext.reportPage(tabId);
-    const letter = panel.locator('[data-job-letter]');
-    await expect(letter).toHaveAttribute('data-letter-outcome', 'none');
-    await expect(letter).toContainText(COPY.job.letter.whenAsked);
-    expect(await bodies()).toEqual([OWN_ONLY]);
-    await letter.getByRole('button', { name: COPY.job.letter.write }).click();
-    await expect(letter).toHaveAttribute('data-letter-outcome', 'written', { timeout: 15_000 });
-    await expect(letter.locator('[role="status"]')).toHaveText(COPY.job.letter.ready);
-    // Write it now checks first, then asks with generate true.
-    const [, check, written, ...more] = await bodies();
-    expect([check, more]).toEqual([OWN_ONLY, []]);
-    expect(written).toMatchObject({ generate: true, jobId: GOLDEN_JOB.id });
-    expect(String(written!.jobText)).toContain('Northwind builds ordering software for restaurants.');
-    // Nothing of the letter on the card but its state.
-    await expect(letter).not.toContainText(GOLDEN_LETTER.id);
+    await panel.bringToFront();
+    // No row on the card: the letter is the review's.
+    await expect(panel.locator('[data-job-letter]')).toHaveCount(0);
+    const drawn = panel.locator(`li[data-field-key="${letter.key}"]`);
+    await expect(drawn).toHaveAttribute('data-file', 'coverLetter');
+    const written = (await bodies()).filter((body) => body.generate === true).length;
+    const files = (await fileRequests()).length;
+    await drawn.locator('button[data-action="preview"]').click();
+    const frame = drawn.locator('iframe[data-preview-frame]');
+    await expect(frame).toBeVisible();
+    const src = await frame.getAttribute('src');
+    expect(src).toMatch(/^blob:chrome-extension:\/\//);
+    const digest = await panel.evaluate(async (address) => {
+      const bytes = new Uint8Array(await (await fetch(address)).arrayBuffer());
+      const hash = await crypto.subtle.digest('SHA-256', bytes);
+      return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }, src!);
+    expect(digest).toBe(GOLDEN_LETTER.sha256);
+    // The run's own letter: fetched once more for the preview, nothing written or asked to be written.
+    expect((await fileRequests()).length).toBe(files + 1);
+    expect((await bodies()).filter((body) => body.generate === true)).toHaveLength(written);
+    // Nothing of it kept by the extension.
+    expect(JSON.stringify(await ext.storage())).not.toContain(GOLDEN_LETTER.sentinel);
   });
 });

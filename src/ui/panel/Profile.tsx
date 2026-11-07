@@ -42,6 +42,7 @@ import type { PagePlatform } from '../../platform/types';
 import countriesJson from '../../core/vocab/data/countries.json?raw';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
+import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 
 const WORDS = COPY.profile;
@@ -73,6 +74,8 @@ export interface ProfileEditorProps {
   onClose(): void;
   /** TailorIT's Settings › Autofill, for "Open in TailorIT". */
   tailoritUrl: string;
+  /** v4 ui: TailorIT kept a save (the side panel checks again whether the profile is complete). */
+  onSaved?(): void;
 }
 
 /** A path into the profile or the sensitive part, as zod's issues name it. */
@@ -282,7 +285,7 @@ function loadFailedOf(error: ErrorCode): string {
   return WORDS.loadFailed.unavailable;
 }
 
-export function ProfileEditor({ platform, onClose, tailoritUrl }: ProfileEditorProps) {
+export function ProfileEditor({ platform, onClose, tailoritUrl, onSaved }: ProfileEditorProps) {
   const headingId = useId();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
@@ -346,6 +349,8 @@ export function ProfileEditor({ platform, onClose, tailoritUrl }: ProfileEditorP
         {WORDS.back}
       </button>
       <h2 className="tia-profile__title" id={headingId}>{WORDS.heading}</h2>
+      {/* v4 ui: the explanation is the "?" beside the heading. */}
+      <HelpTip text={WORDS.intro} topic={WORDS.heading} />
     </header>
   );
   const foot = (
@@ -422,6 +427,7 @@ export function ProfileEditor({ platform, onClose, tailoritUrl }: ProfileEditorP
     setChecking(false);
     setMerged(null);
     setSave({ kind: 'saved' });
+    onSaved?.();
   };
 
   const p = draft.profile;
@@ -431,7 +437,6 @@ export function ProfileEditor({ platform, onClose, tailoritUrl }: ProfileEditorP
   return (
     <section className="tia-profile" aria-labelledby={headingId} data-profile="ready">
       {header}
-      <p className="tia-help">{WORDS.intro}</p>
       {!canWrite && <p className="tia-strip" data-tone="neutral" data-profile-read-only="">{WORDS.readOnly}</p>}
       <form className="tia-profile__form" noValidate onSubmit={(event) => {
         event.preventDefault();
@@ -552,7 +557,8 @@ export function ProfileEditor({ platform, onClose, tailoritUrl }: ProfileEditorP
             )}
           </Section>
 
-          <Section name={WORDS.sections.sensitive} id="sensitive">
+          <Section name={WORDS.sections.sensitive} id="sensitive"
+            {...(sensitive === null ? {} : { help: WORDS.sensitiveHelp })}>
             {view.sensitive.state === 'not-shared' && (
               <p className="tia-help" data-profile-sensitive="not-shared">{WORDS.sensitiveNotShared}</p>
             )}
@@ -618,12 +624,15 @@ function firstUnder(problems: ReadonlyMap<string, { message: string }>, prefix: 
   return undefined;
 }
 
-/** One section: its heading, then its fields. */
-function Section({ name, id, children }: { name: string; id: string; children: ReactNode }) {
+/** One section: its heading (v4 ui: with a "?" holding its explanation, where it has one), then its fields. */
+function Section({ name, id, help, children }: { name: string; id: string; help?: string; children: ReactNode }) {
   const headingId = useId();
   return (
     <section className="tia-profile__section" aria-labelledby={headingId} data-profile-section={id}>
-      <h3 className="tia-profile__heading" id={headingId}>{name}</h3>
+      <div className="tia-profile__headrow">
+        <h3 className="tia-profile__heading" id={headingId}>{name}</h3>
+        {help !== undefined && <HelpTip text={help} topic={name} />}
+      </div>
       {children}
     </section>
   );
@@ -661,10 +670,13 @@ function Labelled({ label, hideLabel = false, help, error, children }: FieldProp
   const described = [help === undefined ? null : helpId, error === undefined ? null : errorId].filter(Boolean);
   return (
     <div className="tia-profile__field" data-invalid={error === undefined ? undefined : ''}>
-      <label className={hideLabel ? 'tia-visually-hidden' : 'tia-profile__label'} htmlFor={id}>{label}</label>
+      <span className="tia-profile__labelrow">
+        <label className={hideLabel ? 'tia-visually-hidden' : 'tia-profile__label'} htmlFor={id}>{label}</label>
+        {/* v4 ui: a field's explanation is the "?" beside its label, and still describes its control. */}
+        {help !== undefined && <HelpTip text={help} topic={label} id={helpId} />}
+      </span>
       {children({ id, describedBy: described.length === 0 ? undefined : described.join(' '),
         invalid: error === undefined ? undefined : 'true' })}
-      {help !== undefined && <p className="tia-help" id={helpId}>{help}</p>}
       {error !== undefined && <p className="tia-profile__error" id={errorId}>{error}</p>}
     </div>
   );
@@ -857,7 +869,6 @@ function SensitiveFields({ value, edit, problem }: { value: AutofillSensitive; e
   const salaryAt = (part: string): Path => ['compensation', 'expectedSalary', 'value', part];
   return (
     <>
-      <p className="tia-help">{WORDS.sensitiveHelp}</p>
       {value.workAuthorization.map((row, at) => (
         <Entry key={at} name={WORDS.entry.workAuthorization(at + 1)}
           onRemove={() => edit(['workAuthorization'], value.workAuthorization.filter((_, index) => index !== at))}>

@@ -513,8 +513,9 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('panel/chooseJob'), tabId: TabId, ref: JobRefSchema.nullable() }),
   /** v3 Phase 3b, "Ask TailorIT to support this site": the tab's host name, alone, to TailorIT. */
   z.strictObject({ v, type: z.literal('panel/siteRequest'), tabId: TabId }),
-  /** v3 Phase 3b, "Your autofill information": the profile as TailorIT holds it, for the side panel's editor. */
-  z.strictObject({ v, type: z.literal('panel/profile') }),
+  /** v3 Phase 3b, "Your autofill information": the profile as TailorIT holds it, for the side panel's editor. v4 ui:
+   *  `sensitive: false` (the side panel's check that the profile is complete) leaves the sensitive part unread. */
+  z.strictObject({ v, type: z.literal('panel/profile'), sensitive: z.literal(false).optional() }),
   /** v3 Phase 3b: the editor's save, from the revision it loaded; `sensitive` only where the connection may read and
    *  write it. Sent straight to TailorIT, never kept or logged. */
   z.strictObject({ v, type: z.literal('panel/saveProfile'), revision: Count, profile: AutofillProfileSchema,

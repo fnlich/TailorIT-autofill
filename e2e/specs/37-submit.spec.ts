@@ -253,7 +253,9 @@ test.describe('Submit mode Auto (v3 Phase 4)', () => {
     const { report, panel } = await filled(ext, held, routeLog, `${greenhouseAt('05')}?badge`, GREENHOUSE);
     expect(await submittedOn(held)).toBe(0);
     expect(report.notices).toContainEqual({ code: 'submit-held-required', count: 1 });
-    await expect(panel.getByText(COPY.notices['submit-held-required'])).toBeVisible();
+    // v4 ui (D10): why it was held is the page's notification; the side panel mirrors no notice.
+    await expect(panel.locator('[data-view="main"]')).toBeVisible();
+    await expect(panel.getByText(COPY.notices['submit-held-required'])).toHaveCount(0);
     // The person can still submit from the dock.
     await expect(panel.locator('button[data-step-action="submit"]')).toBeVisible();
   });

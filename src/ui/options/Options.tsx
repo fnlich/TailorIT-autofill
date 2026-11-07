@@ -21,22 +21,26 @@
  * - Consent boxes: the core's closed list of categories, for Consent boxes: Required only; the usual ones pre-approved
  *   since settings version 2 (all but marketing and SMS: docs/SPEC-AMENDMENTS.md); certify carries a warning. Nothing
  *   outside the list can be pre-approved, so AI attestations and unrecognised consent never appear.
- * - AI help: pick, classify, drafts and answers (all on), the draft confirmation (off), and what a posting that forbids
- *   AI does (profile only, the default; ask; use the AI anyway), with the plan's sentence on what never goes to the AI.
+ * - AI help: pick, classify, drafts and answers (all on), and what a posting that forbids AI does (profile only, the
+ *   default; use the AI anyway), with the plan's sentence on what never goes to the AI. v4 (D6): "Wait for me to confirm
+ *   each draft" and "Ask me each time" are not offered any more (drafts are written and accepted; no policy card).
  * - Interpretations: all three on (the posting's country, Two or More Races, the decline default for unanswered
  *   self-identification), each saying what it does.
- * - Your fixes: the offer to save an answer after the person fixed a flagged field (Requirement F), on by default.
+ * - v4 (D6): no "Your fixes" card: Save my answer is not offered any more, so its offer has nothing to turn on.
  * - Anonymous counters (Phase 6): the opt-in, off, listing the five fields counted and nothing else; the counts kept in
  *   this browser (telemetry/get), exported as a JSON file through an <a download> link (the page builds it from what it
  *   read: nothing is sent), and cleared (telemetry/clear).
  * - Saved runs: Clear (runs/clear), showing how many went.
+ * v4 ui (the owner, 2026-11-07: "all explanation will be tooltip"): each card's and each setting's explanation is a "?"
+ * (HelpTip) beside its title or its name, still describing its control; what a setting is now, the first-run
+ * disclosure, the plan's sentence on what never goes to the AI and the list of what the counters count stay as text.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatConnectCode, normalizeConnectCode } from '../../contract/tailorit/connect';
 import { CONSENT_CATEGORIES } from '../../core/enums';
 import { TELEMETRY_FIELDS } from '../../core/telemetry/events';
 import type { TelemetryCount } from '../../core/types/telemetry';
-import { AI_FORBIDDEN_MODES, type AiForbiddenMode, type Settings } from '../../core/types/settings';
+import type { AiForbiddenMode, Settings } from '../../core/types/settings';
 import type { ErrorCode } from '../../messaging/envelope';
 import type { SitesState } from '../../messaging/schemas';
 import type { PagePlatform } from '../../platform/types';
@@ -44,6 +48,7 @@ import { COPY } from '../../shared/copy';
 import { SITES_MATCH } from '../../shared/hosts';
 import { LogoMark, Wordmark } from '../brand/Logo';
 import { DisclosureChanged } from '../page/disclosure';
+import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { AgentStatusLine, useAgentStatus, type AgentState } from '../page/agent';
 import { ModesFields, signInAvailability } from '../page/modes';
@@ -85,16 +90,22 @@ export function Options({ platform, now = Date.now, frames = animationFrames }: 
   );
 }
 
-/** One titled card of the page. */
-function Card({ title, children, name }: { title: string; children: ReactNode; name: string }) {
+/** One titled card of the page, with its explanation in a "?" beside the title (v4 ui). */
+function Card({ title, children, name, help }: { title: string; children: ReactNode; name: string; help?: string }) {
   const id = useId();
   return (
     <section className="tia-card" aria-labelledby={id} data-card={name} id={`settings-${name}`}>
-      <h2 className="tia-card__title" id={id}>{title}</h2>
+      <div className="tia-card__head">
+        <h2 className="tia-card__title" id={id}>{title}</h2>
+        {help !== undefined && <HelpTip text={help} topic={title} />}
+      </div>
       {children}
     </section>
   );
 }
+
+/** The choices of what a posting that forbids AI does, as v4 offers them (D6: "Ask me each time" is gone). */
+const SHOWN_FORBIDDEN_MODES = ['profile-only', 'use-ai'] as const satisfies readonly AiForbiddenMode[];
 
 /** A checkbox with its name and help, and anything that belongs under it (a warning). */
 function Toggle({ setting, name, help, checked, disabled, onChange, children }: {
@@ -112,8 +123,10 @@ function Toggle({ setting, name, help, checked, disabled, onChange, children }: 
       <input type="checkbox" id={id} data-setting={setting} checked={checked} disabled={disabled}
         aria-describedby={help ? `${id}-help` : undefined} onChange={(event) => onChange(event.target.checked)} />
       <div>
-        <label htmlFor={id} className="tia-field__name">{name}</label>
-        {help && <p className="tia-help" id={`${id}-help`}>{help}</p>}
+        <span className="tia-field__head">
+          <label htmlFor={id} className="tia-field__name">{name}</label>
+          {help && <HelpTip text={help} topic={name} id={`${id}-help`} />}
+        </span>
         {children}
       </div>
     </div>
@@ -209,12 +222,12 @@ function Connection({ platform, auth, now, frames }: {
                   ? TEXT.connection.connectedAs(status.account.name, status.account.email)
                   : TEXT.connection.connectedNoAccount}
               </p>
-              <p className="tia-help">
+              <p className="tia-note">
                 {status.scopes.includes('profile:sensitive') ? TEXT.connection.sensitiveShared : TEXT.connection.sensitiveNotShared}
               </p>
               {status.disclosure === 'changed' && <DisclosureChanged onUnderstand={() => void acknowledge()} />}
               {status.expiresAt !== null && (
-                <p className="tia-help">
+                <p className="tia-note">
                   {TEXT.connection.lastsUntil(new Date(status.expiresAt).toLocaleDateString(undefined, { dateStyle: 'long' }))}
                 </p>
               )}
@@ -247,10 +260,12 @@ function Connection({ platform, auth, now, frames }: {
                 event.preventDefault();
                 void redeem();
               }}>
-                <label htmlFor={codeId} className="tia-field__name">{TEXT.connection.codeLabel}</label>
+                <span className="tia-field__head">
+                  <label htmlFor={codeId} className="tia-field__name">{TEXT.connection.codeLabel}</label>
+                  <HelpTip text={TEXT.connection.codeHelp} topic={TEXT.connection.codeLabel} id={`${codeId}-help`} />
+                </span>
                 <input id={codeId} className="tia-code__input" value={code} maxLength={24} autoComplete="off" spellCheck={false}
                   aria-describedby={`${codeId}-help`} disabled={working} onChange={(event) => setCode(event.target.value)} />
-                <p className="tia-help" id={`${codeId}-help`}>{TEXT.connection.codeHelp}</p>
                 <div>
                   <button type="submit" className="tia-button" disabled={working || code.trim() === ''}>
                     {TEXT.connection.codeSubmit}
@@ -276,8 +291,7 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
   const set = (patch: Partial<Settings>) => save({ ...shown, ...patch });
   return (
     <>
-      <Card title={TEXT.modes.heading} name="modes">
-        <p className="tia-help">{TEXT.modes.intro}</p>
+      <Card title={TEXT.modes.heading} name="modes" help={TEXT.modes.intro}>
         <ModesFields settings={shown} disabled={saving} onChange={save} idPrefix="options"
           signIn={signInAvailability(auth.status)} />
       </Card>
@@ -286,19 +300,17 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
 
       <WhereItWorks platform={platform} />
 
-      <Card title={TEXT.panel.heading} name="panel">
+      <Card title={TEXT.panel.heading} name="panel" help={`${TEXT.panel.intro} ${TEXT.panel.inPageHelp}`}>
         <fieldset className="tia-fieldset">
-          <legend className="tia-help">{TEXT.panel.intro}</legend>
+          <legend className="tia-visually-hidden">{TEXT.panel.intro}</legend>
           {(['side', 'in-page'] as const).map((placement) => (
             <PlacementChoice key={placement} placement={placement} checked={shown.panel === placement} disabled={saving}
               onChoose={() => set({ panel: placement })} />
           ))}
         </fieldset>
-        <p className="tia-help">{TEXT.panel.inPageHelp}</p>
       </Card>
 
-      <Card title={TEXT.consent.heading} name="consent">
-        <p className="tia-help">{TEXT.consent.intro}</p>
+      <Card title={TEXT.consent.heading} name="consent" help={`${TEXT.consent.intro} ${TEXT.consent.never}`}>
         {/* Under All agreements every kind is ticked, whatever its toggle: each shows ticked and cannot be changed, and
             the line says where the choice is (v3 Phase 3 review). The kinds pre-approved are kept for Required only. */}
         {shown.modes.consents === 'all' && (
@@ -316,11 +328,9 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
             {category === 'certify' && <p className="tia-warning" data-warning="certify">{TEXT.consent.certifyWarning}</p>}
           </Toggle>
         ))}
-        <p className="tia-help">{TEXT.consent.never}</p>
       </Card>
 
-      <Card title={TEXT.ai.heading} name="ai">
-        <p className="tia-help">{TEXT.ai.intro}</p>
+      <Card title={TEXT.ai.heading} name="ai" help={TEXT.ai.intro}>
         <Toggle setting="llm.tiebreak" name={TEXT.ai.tiebreak} help={TEXT.ai.tiebreakHelp} checked={shown.llm.tiebreak}
           disabled={saving} onChange={(tiebreak) => set({ llm: { ...shown.llm, tiebreak } })} />
         <Toggle setting="llm.classify" name={TEXT.ai.classify} help={TEXT.ai.classifyHelp} checked={shown.llm.classify}
@@ -329,12 +339,9 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
           disabled={saving} onChange={(drafts) => set({ llm: { ...shown.llm, drafts } })} />
         <Toggle setting="llm.answers" name={TEXT.ai.answers} help={TEXT.ai.answersHelp} checked={shown.llm.answers}
           disabled={saving} onChange={(answers) => set({ llm: { ...shown.llm, answers } })} />
-        <Toggle setting="llm.confirmDrafts" name={TEXT.ai.confirmDrafts} help={TEXT.ai.confirmDraftsHelp}
-          checked={shown.llm.confirmDrafts} disabled={saving}
-          onChange={(confirmDrafts) => set({ llm: { ...shown.llm, confirmDrafts } })} />
         <fieldset className="tia-fieldset" data-setting-group="llm.whenForbidden">
           <legend className="tia-field__name">{TEXT.ai.whenForbidden.heading}</legend>
-          {AI_FORBIDDEN_MODES.map((mode) => (
+          {SHOWN_FORBIDDEN_MODES.map((mode) => (
             <ForbiddenChoice key={mode} mode={mode} checked={shown.llm.whenForbidden === mode} disabled={saving}
               onChoose={() => set({ llm: { ...shown.llm, whenForbidden: mode } })} />
           ))}
@@ -342,13 +349,7 @@ function SettingsCards({ platform, settings, auth }: { platform: PagePlatform; s
         <p className="tia-note" data-ai-never="">{TEXT.ai.never}</p>
       </Card>
 
-      <Card title={TEXT.answers.heading} name="answers">
-        <Toggle setting="offerToSaveAnswers" name={TEXT.answers.offer} help={TEXT.answers.offerHelp}
-          checked={shown.offerToSaveAnswers} disabled={saving} onChange={(offerToSaveAnswers) => set({ offerToSaveAnswers })} />
-      </Card>
-
-      <Card title={TEXT.interpretations.heading} name="interpretations">
-        <p className="tia-help">{TEXT.interpretations.intro}</p>
+      <Card title={TEXT.interpretations.heading} name="interpretations" help={TEXT.interpretations.intro}>
         <Toggle setting="interpretations.postingCountryForLegal" name={TEXT.interpretations.postingCountryForLegal}
           help={TEXT.interpretations.postingCountryForLegalHelp} checked={shown.interpretations.postingCountryForLegal}
           disabled={saving}
@@ -403,9 +404,8 @@ function AutoApply({ platform, auth }: { platform: PagePlatform; auth: AuthState
   };
 
   return (
-    <Card title={words.heading} name="agent">
+    <Card title={words.heading} name="agent" help={words.intro}>
       <div ref={anchor}>
-        <p className="tia-help">{words.intro}</p>
         {status === null ? <p className="tia-note">{TEXT.loading}</p> : (
           <>
             <Toggle setting="agent.on" name={words.run} help={words.runHelp} checked={pending ?? (status.on || asking)}
@@ -479,8 +479,7 @@ function WhereItWorks({ platform }: { platform: PagePlatform }) {
   };
 
   return (
-    <Card title={words.heading} name="sites">
-      <p className="tia-help">{words.intro}</p>
+    <Card title={words.heading} name="sites" help={words.intro}>
       {state === null ? <p className="tia-note">{TEXT.loading}</p> : (
         <Toggle setting="sites.on" name={words.toggle} help={words.hint} checked={state.on && state.granted}
           disabled={working} onChange={toggle}>
@@ -494,22 +493,22 @@ function WhereItWorks({ platform }: { platform: PagePlatform }) {
 
 /** One choice of what a posting that forbids AI does, with what it means. */
 function ForbiddenChoice({ mode, checked, disabled, onChoose }: {
-  mode: AiForbiddenMode;
+  mode: (typeof SHOWN_FORBIDDEN_MODES)[number];
   checked: boolean;
   disabled: boolean;
   onChoose(): void;
 }) {
   const id = useId();
   const words = TEXT.ai.whenForbidden;
-  const help = mode === 'profile-only' ? words['profile-onlyHelp'] : mode === 'ask' ? words.askHelp : words['use-aiHelp'];
+  const help = mode === 'profile-only' ? words['profile-onlyHelp'] : words['use-aiHelp'];
   return (
     <div className="tia-field">
       <input type="radio" id={id} name="when-forbidden" value={mode} data-setting={`llm.whenForbidden.${mode}`}
         checked={checked} disabled={disabled} aria-describedby={`${id}-help`} onChange={() => onChoose()} />
-      <div>
+      <span className="tia-field__head">
         <label htmlFor={id} className="tia-field__name">{words[mode]}</label>
-        <p className="tia-help" id={`${id}-help`}>{help}</p>
-      </div>
+        <HelpTip text={help} topic={words[mode]} id={`${id}-help`} />
+      </span>
     </div>
   );
 }
@@ -583,8 +582,7 @@ function Counters({ platform, settings }: { platform: PagePlatform; settings: Se
   };
 
   return (
-    <Card title={COUNTERS.heading} name="telemetry">
-      <p className="tia-help">{COUNTERS.intro}</p>
+    <Card title={COUNTERS.heading} name="telemetry" help={COUNTERS.intro}>
       {shown !== null && (
         <Toggle setting="telemetry.optIn" name={COUNTERS.optIn} checked={optIn} disabled={saving}
           onChange={(checked) => save({ ...shown, telemetry: { optIn: checked } })}>
@@ -651,8 +649,7 @@ function SavedRuns({ platform }: { platform: PagePlatform }) {
     setResult(answer.ok ? TEXT.data.cleared(answer.data.cleared) : TEXT.data.failed);
   };
   return (
-    <Card title={TEXT.data.heading} name="runs">
-      <p className="tia-help">{TEXT.data.intro}</p>
+    <Card title={TEXT.data.heading} name="runs" help={TEXT.data.intro}>
       <div className="tia-row-of-buttons">
         <button type="button" className="tia-button" disabled={working} onClick={() => void clear()}>{TEXT.data.clear}</button>
         {result !== null && <span className="tia-note" role="status">{result}</span>}

@@ -83,7 +83,9 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     const tabId = await ext.tabIdOf(page);
     await ext.frameWithForm(tabId);
     const panel = await ext.reportPage(tabId);
-    await panel.locator('[data-job-card] button[data-open-profile]').click();
+    // v4 ui: Settings (the gear) › Autofill information.
+    await panel.locator('button[data-panel-settings]').click();
+    await panel.locator('[data-settings-view] button[data-open-profile]').click();
     const editor = panel.locator('[data-profile]');
     await expect(editor).toBeVisible();
     const note = editor.getByRole('textbox', { name: COPY.profile.fields.anythingElse });
@@ -98,6 +100,8 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     // The worker's copy went: a fill reads the profile again, at its new revision.
     const reads = (await mock.requestsTo('GET /api/autofill/profile')).length;
     await editor.getByRole('button', { name: COPY.profile.back }).first().click();
+    // Back returns to the Settings view; its ✕ to the main view and its Autofill.
+    await panel.locator('button[data-action="close-settings"]').click();
     await ext.fill(page);
     await ext.settled(tabId);
     expect((await mock.requestsTo('GET /api/autofill/profile')).length).toBeGreaterThan(reads);
@@ -114,7 +118,8 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     const tabId = await ext.tabIdOf(page);
     await ext.frameWithForm(tabId);
     const panel = await ext.reportPage(tabId);
-    await panel.locator('[data-job-card] button[data-open-profile]').click();
+    await panel.locator('button[data-panel-settings]').click();
+    await panel.locator('[data-settings-view] button[data-open-profile]').click();
     const editor = panel.locator('[data-profile]');
     await editor.getByRole('textbox', { name: COPY.profile.fields.anythingElse }).fill('Open to relocation.');
     await editor.locator('button[data-profile-save]').click();
@@ -165,7 +170,7 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     const panel = await ext.reportPage(tabId);
     await panel.locator('button[data-job-action="change"]').click();
     await panel.locator('button[data-resume-choice="without"]').click();
-    await expect(panel.locator('[data-job-resume][data-without-resume]')).toContainText(COPY.job.withoutResumeOn);
+    await expect(panel.locator('[data-job-resume][data-without-resume]')).toContainText(COPY.mainView.withoutResume);
     await ext.fill(page);
     const report = await ext.settled(tabId);
     const resume = report.fields.find((field) => field.category === 'file.resume')!;
@@ -226,7 +231,7 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     await expect.poll(async () => (await bodies(LOOKUP)).length).toBeGreaterThanOrEqual(1);
     expect((await bodies(LOOKUP))[0]).toMatchObject({ url: posting, includePostingText: false });
     await expect(panel.locator('[data-job-card]')).toHaveAttribute('data-job-state', 'found');
-    await expect(panel.locator('[data-job-card] [data-strip="no-form"]')).toHaveText(COPY.strip.noForm);
+    await expect(panel.locator('[data-strip="no-form"]')).toHaveText(COPY.strip.noForm);
     await expect(panel.getByRole('button', { name: COPY.panel.fill, exact: true })).toHaveCount(0);
   });
 });

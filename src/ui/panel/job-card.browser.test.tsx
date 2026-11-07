@@ -1,16 +1,16 @@
 /*
- * The side panel's v2 parts: the page strip before a run, the job card (its states, its reads and their key, Add, Save
- * and Change), "Would attach" in a dry run, the custom question, and the run buttons' line that a newer report clears.
+ * The side panel's v2 parts: the page strip before a run, the job card (its states, its reads and their key, Add; v4 ui:
+ * Jobright's card, the Add pill, no chips and no warning), the résumé line and its Change, the custom question, the run
+ * buttons' line that a newer report clears, and (v4 ui) the résumé and cover-letter rows' Preview.
  */
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobCard as Card, PageMessage } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
 import { authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, mount, PROFILE_SENTINELS, row, settle,
-  typeInto, unfoldRows, unmountAll, type FakeWorker } from '../ui.testkit';
+  typeInto, unmountAll, type FakeWorker } from '../ui.testkit';
 import { adoptPageStyles } from '../page/styles';
-import { JobCard, type JobCardProps } from './JobCard';
-import type { LetterView } from './letter';
+import { JobCard, ResumeLine, type JobCardProps } from './JobCard';
 import { Panel } from './Panel';
 
 const NOW = Date.UTC(2026, 9, 31, 12);
@@ -36,9 +36,13 @@ function withForm(card: Card | null = jobCard()): FakeWorker {
 }
 
 async function drawCard(card: Card, props: Partial<JobCardProps> = {}): Promise<HTMLElement> {
-  return mount(<JobCard view={{ state: 'shown', card }} platform="lever" dryRun={false} adding={false} outcome={null} now={NOW}
-    onAdd={() => undefined} loadResumes={async () => []} chooseResume={() => undefined} {...props} />);
+  // In a page of ours, whose tokens the stylesheet reads.
+  return mount(<div className="tia-page"><JobCard view={{ state: 'shown', card }} adding={false} outcome={null} now={NOW}
+    onAdd={() => undefined} {...props} /></div>);
 }
+
+/** The answered card of `card`. */
+const answered = (card: Card) => card as Extract<Card, { state: 'answered' }>;
 
 afterEach(() => unmountAll());
 
@@ -115,7 +119,7 @@ describe('the job card in the side panel (v2)', () => {
     expect(cardOf(root)?.textContent).toContain('Northwind');
   });
 
-  it('shows no card when the worker has none, unavailable when it refuses, and asks to connect when not connected', async () => {
+  it('shows no card when the worker has none, unavailable when it refuses, and the set-up view when not connected', async () => {
     const empty = await open(withForm(null));
     expect(cardOf(empty)).toBeNull();
     const refusing = withForm();
@@ -124,11 +128,11 @@ describe('the job card in the side panel (v2)', () => {
     const offline = withForm();
     offline.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
     const root = await open(offline);
-    expect(cardOf(root)?.dataset.jobState).toBe('disconnected');
-    expect(cardOf(root)?.textContent).toContain(COPY.job.disconnected);
+    // v4 ui: not connected is the set-up view's first step, not a card.
+    expect(root.querySelector('main')?.dataset.view).toBe('setup');
+    expect(cardOf(root)).toBeNull();
     expect(reads(offline, 'panel/job')).toBe(0);
   });
-
   it('reads the card again when a run starts, keeping the card on show meanwhile', async () => {
     const worker = withForm();
     const root = await open(worker);
@@ -139,27 +143,37 @@ describe('the job card in the side panel (v2)', () => {
     expect(cardOf(root)?.dataset.jobState).toBe('found');
   });
 
-  it('says Would attach in a dry run', async () => {
+  it('shows the résumé line before the first run, and leaves the résumé to its row once a run lists it (v4 ui)', async () => {
     const worker = withForm();
-    worker.script.reports.set(5, [frameReport(0, { mode: 'dry-run' })]);
     const root = await open(worker);
-    expect(cardOf(root)?.textContent).toContain(COPY.job.wouldAttach);
-    expect(cardOf(root)?.textContent).not.toContain(`${COPY.job.attaches} `);
+    const line = root.querySelector<HTMLElement>('[data-job-resume]')!;
+    expect(line.querySelector('p')?.textContent).toBe(`${COPY.mainView.resume} Backend resume${COPY.job.preview.open}${COPY.job.change}`);
+    // Under Autofill and Ask custom question, outside the card.
+    expect(line.closest('[data-job-card]')).toBeNull();
+    expect(root.querySelector('.tia-cta')!.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // A run that reported no résumé field keeps it; one that lists the résumé's row leaves it to the row.
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { fields: [row('a')] })],
+      page: formPage({ letter: true }) }));
+    await settle();
+    expect(root.querySelector('[data-job-resume]')).not.toBeNull();
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { fields: [
+      row('cv', { kind: 'file', category: 'file.resume', label: 'Resume/CV' })] })], page: formPage({ letter: true }) }));
+    await settle();
+    expect(root.querySelector('[data-job-resume]')).toBeNull();
+    expect(root.querySelector('li[data-field-key="cv"] button[data-action="preview"]')).not.toBeNull();
   });
-
-  it('adds the job for the tab, says what came of it, and reads the card again', async () => {
+  it('adds the job for the tab with "+ Add this job in one click", says what came of it, and reads the card again', async () => {
     const worker = withForm(jobCard({ job: null, tracked: null, match: null }));
     const root = await open(worker);
     expect(cardOf(root)?.dataset.jobState).toBe('not-found');
-    await click(button(root, COPY.job.add));
+    await click(button(root, COPY.mainView.addJob));
     expect(worker.sentOfType('panel/addJob')).toEqual([{ v: 1, type: 'panel/addJob', tabId: 5 }]);
     expect(cardOf(root)?.textContent).toContain(COPY.job.addOutcomes.added);
     expect(reads(worker, 'panel/job')).toBe(2);
     worker.script.addOutcome = 'closed';
-    await click(button(root, COPY.job.add));
+    await click(button(root, COPY.mainView.addJob));
     expect(cardOf(root)?.textContent).toContain(COPY.job.addOutcomes.closed);
   });
-
   it('lists the resumes on Change, keeps the one chosen for the tab, and reads the card again', async () => {
     const worker = withForm();
     const root = await open(worker);
@@ -174,91 +188,100 @@ describe('the job card in the side panel (v2)', () => {
     expect(reads(worker, 'panel/job')).toBe(2);
   });
 
-  it('draws only what the lookup said: a resume title that is a profile value appears in the card alone', async () => {
+  it('draws only what the lookup said: a resume title that is a profile value appears in the résumé line alone', async () => {
     const [, , , employer] = PROFILE_SENTINELS;
     const worker = withForm(jobCard({ resume: { label: employer, fileKind: 'pdf', reason: 'chosen' } }));
     const root = await open(worker);
-    expect(cardOf(root)?.textContent).toContain(employer);
+    expect(root.querySelector('[data-job-resume]')?.textContent).toContain(employer);
     const outside = root.cloneNode(true) as HTMLElement;
-    outside.querySelector('[data-job-card]')!.remove();
+    outside.querySelector('[data-job-resume]')!.remove();
     for (const sentinel of PROFILE_SENTINELS) expect(outside.textContent).not.toContain(sentinel);
   });
 });
 
 describe('the job card states (v2)', () => {
-  it('shows company, title, the chips, "75% match" and the resume it attaches with "9 of 12 keywords"', async () => {
-    const root = await drawCard(jobCard());
+  it('shows the tile, the company and its industry, "75%" with its tip, the title and "2 days ago · Remote, US" (v4 ui)', async () => {
+    adoptPageStyles(document);
+    const root = await drawCard(jobCard({ job: { ...JOB, industry: 'Software' } }));
     const card = cardOf(root)!;
     expect(card.getAttribute('aria-label')).toBe(COPY.job.region);
+    expect(card.querySelector('.tia-job__tile')?.textContent).toBe('N');
     expect(card.querySelector('.tia-job__company')?.textContent).toBe('Northwind');
-    expect(card.querySelector('.tia-job__via')?.textContent).toBe(COPY.job.via('Lever'));
+    expect(card.querySelector('[data-job-industry]')?.textContent).toBe('Software');
+    expect(getComputedStyle(card.querySelector('[data-job-industry]')!).color).toBe('rgb(102, 102, 102)');
     expect(card.querySelector('.tia-job__title')?.textContent).toBe('Senior Backend Engineer');
-    expect([...card.querySelectorAll('.tia-job__chip')].map((chip) => chip.textContent)).toEqual(['Remote, US',
-      COPY.job.arrangements.hybrid, '$150k - $185k/yr', 'Saved']);
-    expect(card.querySelector('[data-job-posted]')?.textContent).toBe(COPY.job.posted(2));
+    expect(getComputedStyle(card.querySelector('.tia-job__title')!).fontWeight).toBe('800');
+    expect(card.querySelector('[data-job-meta]')?.textContent).toBe(`${COPY.mainView.ago(2)} · Remote, US`);
+    expect(COPY.mainView.ago(2)).toBe('2 days ago');
     const ring = card.querySelector('[role="img"][data-job-match]')!;
     expect(ring.getAttribute('aria-label')).toBe(COPY.job.matchLabel(75, COPY.job.bands.good));
     expect(ring.getAttribute('data-match')).toBe('75');
-    // v3 Phase 3: Jobright's band under the number, and a tip saying what the score counts.
-    expect(ring.querySelector('.tia-ring__caption')?.textContent).toBe(COPY.job.bands.good);
+    expect(ring.textContent).toBe('75%');
+    // Its explanation is the black bubble, also its description.
     const tip = card.querySelector<HTMLElement>('[role="tooltip"][data-match-tip]')!;
     expect(tip.textContent).toBe(COPY.job.matchTip(9, 12));
     expect(ring.getAttribute('aria-describedby')).toBe(tip.id);
-    expect(card.querySelector('[data-job-applied]')).toBeNull();
-    expect(card.querySelector('[data-job-resume]')?.textContent).toContain(`${COPY.job.attaches} Backend resume PDF`);
-    expect(card.textContent).toContain(`${COPY.job.resumeReasons.application} · ${COPY.job.keywords(9, 12)}`);
-    expect(card.querySelector('[data-job-warning]')).toBeNull();
-    // Tracked as Saved: nothing to save.
-    expect(button(card, COPY.job.save)).toBeNull();
+    expect(getComputedStyle(tip).backgroundColor).toBe('rgb(25, 25, 25)');
+    // D1: no chips, no warning, no resume or keywords in the card.
+    expect(card.querySelector('[data-job-applied], [data-job-warning], .tia-job__chip, [data-job-resume]')).toBeNull();
+    expect(card.textContent).not.toContain(COPY.job.resumeReasons.application);
+    // TailorIT names no industry: none, and nothing in its place.
+    const plain = cardOf(await drawCard(jobCard()))!;
+    expect(plain.querySelector('[data-job-industry]')).toBeNull();
+    expect(cardOf(await drawCard(jobCard({ job: { ...JOB, industry: null } })))!.querySelector('[data-job-industry]')).toBeNull();
+    expect(plain.querySelector('.tia-job__who')?.textContent).toBe('Northwind');
   });
-
-  it('warns when the tracker holds it past Saved, naming the status; says closed and archived; no score when unreadable', async () => {
+  it('marks a job the tracker holds as Applied with its badge alone: no warning, no chips; no score when unreadable', async () => {
     const root = await drawCard(jobCard({ job: { ...JOB, closed: true },
       tracked: { status: 2, archived: true }, match: { state: 'unreadable' } }));
     const card = cardOf(root)!;
-    expect(card.querySelector('[data-job-warning="applied"]')?.textContent).toBe(COPY.job.alreadyApplied('Applied'));
-    // v3 Phase 3: the Applied badge beside the title, from the tracker's Applied on.
     expect(card.querySelector('.tia-job__title [data-job-applied]')?.textContent).toBe(COPY.job.applied);
-    expect([...card.querySelectorAll('.tia-job__chip')].map((chip) => chip.textContent)).toEqual(expect.arrayContaining(['Applied',
-      COPY.job.closed, COPY.job.archived]));
+    expect(card.querySelector('[data-job-warning], .tia-job__chip')).toBeNull();
+    for (const text of [COPY.job.alreadyApplied('Applied'), COPY.job.closed, COPY.job.archived, COPY.job.unreadable]) {
+      expect(card.textContent).not.toContain(text);
+    }
     expect(card.querySelector('[data-job-match]')).toBeNull();
-    expect(card.textContent).toContain(COPY.job.unreadable);
-    // A status TailorIT added later: still a warning, unnamed.
+    // A status TailorIT added later: the badge too.
     const later = cardOf(await drawCard(jobCard({ tracked: { status: 31, archived: false } })))!;
-    expect(later.querySelector('[data-job-warning]')?.textContent).toBe(COPY.job.alreadyApplied(null));
+    expect(later.querySelector('[data-job-applied]')).not.toBeNull();
   });
-
-  it('offers Save to tracker for a job not tracked yet, and gives no number for a posting without keywords', async () => {
+  it('offers no Save to tracker (submitting records Applied), and gives no number for a posting without keywords', async () => {
     const card = cardOf(await drawCard(jobCard({ tracked: null, match: { state: 'no-keywords' } })))!;
-    expect(button(card, COPY.job.save)).not.toBeNull();
-    expect(card.textContent).toContain(COPY.job.noKeywords);
+    expect(button(card, COPY.job.save)).toBeNull();
+    expect(card.querySelector('[data-job-action]:not([data-job-action="another"])')).toBeNull();
     expect(card.querySelector('[data-job-match]')).toBeNull();
   });
-
-  it("says TailorIT does not have the job, offers Add where it can, and never contradicts a tracker entry", async () => {
+  it('says TailorIT does not have the job, with the "?" tile, and offers the Add pill where it can (v4 ui)', async () => {
+    adoptPageStyles(document);
     const addable = cardOf(await drawCard(jobCard({ job: null, tracked: null, match: null })))!;
+    expect(addable.querySelector('.tia-job__tile')?.textContent).toBe('?');
     expect(addable.querySelector('.tia-job__company')?.textContent).toBe(COPY.job.notFound);
-    expect(addable.textContent).toContain(COPY.job.notFoundHelp);
-    expect(button(addable, COPY.job.add)).not.toBeNull();
-    expect(addable.textContent).toContain('Backend resume');
+    const pill = addable.querySelector<HTMLButtonElement>('button.tia-addpill')!;
+    expect([pill.textContent, pill.dataset.jobAction]).toEqual([COPY.mainView.addJob, 'add']);
+    expect(COPY.mainView.addJob).toBe('Add this job in one click');
+    // A mint pill with a plus and a sparkle on its corner (screenshot 2).
+    const style = getComputedStyle(pill);
+    expect([style.backgroundColor, style.borderTopLeftRadius]).toEqual(['rgb(204, 246, 255)', '999px']);
+    expect(pill.querySelectorAll('svg')).toHaveLength(2);
+    expect(getComputedStyle(pill.querySelector('.tia-addpill__spark')!).position).toBe('absolute');
+    expect(addable.textContent).not.toContain(COPY.job.notFoundHelp);
     const elsewhere = cardOf(await drawCard(jobCard({ job: null, tracked: null, match: null, addable: false })))!;
-    expect(elsewhere.textContent).toContain(COPY.job.cannotAdd);
-    expect(button(elsewhere, COPY.job.add)).toBeNull();
-    const tracked = cardOf(await drawCard(jobCard({ job: null, tracked: { status: 2, archived: false }, match: null })))!;
-    expect(tracked.textContent).not.toContain(COPY.job.notFoundHelp);
-    expect(tracked.querySelector('[data-job-warning]')).not.toBeNull();
+    expect(elsewhere.querySelector('button.tia-addpill')).toBeNull();
+    expect(elsewhere.textContent).not.toContain(COPY.job.cannotAdd);
+    // A job TailorIT has is never offered again.
+    expect(cardOf(await drawCard(jobCard()))!.querySelector('button.tia-addpill')).toBeNull();
   });
-
   it('says there is no resume to attach, and what came of an Add', async () => {
-    const card = cardOf(await drawCard(jobCard({ resume: null, match: null }), { outcome: 'not-allowed' }))!;
-    expect(card.textContent).toContain(COPY.job.noResume);
+    const line = await mount(<ResumeLine card={answered(jobCard({ resume: null, match: null }))} loadResumes={async () => []}
+      chooseResume={() => undefined} />);
+    expect(line.querySelector('[data-resume-label]')?.textContent).toBe(COPY.mainView.noResume);
+    const card = cardOf(await drawCard(jobCard({ job: null, resume: null, match: null }), { outcome: 'not-allowed' }))!;
     expect(card.querySelector('[data-job-outcome]')?.textContent).toBe(COPY.job.addOutcomes['not-allowed']);
   });
-
   it('offers Change with no resume to attach, so one of the account’s resumes can be chosen', async () => {
     const choose = vi.fn();
-    const root = await drawCard(jobCard({ resume: null, match: null }), { chooseResume: choose, loadResumes: async () => [
-      { id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }] });
+    const root = await mount(<ResumeLine card={answered(jobCard({ resume: null, match: null }))} chooseResume={choose}
+      loadResumes={async () => [{ id: 'resume-2', label: 'Platform resume', fileKind: 'docx', kind: 'uploaded', current: false }]} />);
     const change = button(root, COPY.job.change)!;
     expect(change.getAttribute('aria-expanded')).toBe('false');
     await click(change);
@@ -266,11 +289,11 @@ describe('the job card states (v2)', () => {
     await click(root.querySelector('[data-resume-choice]'));
     expect(choose).toHaveBeenCalledWith('resume-2');
     // None in the account: the picker says so.
-    const empty = await drawCard(jobCard({ resume: null, match: null }), { loadResumes: async () => [] });
+    const empty = await mount(<ResumeLine card={answered(jobCard({ resume: null, match: null }))} loadResumes={async () => []}
+      chooseResume={() => undefined} />);
     await click(button(empty, COPY.job.change));
     expect(empty.textContent).toContain(COPY.job.picker.empty);
   });
-
   it('drops the card read with the old connection the moment the worker says it changed, and reads both again', async () => {
     const worker = withForm();
     const root = await open(worker);
@@ -288,26 +311,25 @@ describe('the job card states (v2)', () => {
     await act(async () => answer({ ok: true, data: { tabId: 5, card: jobCard({ job: { ...JOB, company: 'Contoso' } }) } }));
     await settle();
     expect(cardOf(root)?.querySelector('.tia-job__company')?.textContent).toBe('Contoso');
-    // Disconnected: the card asks to connect.
+    // Disconnected: the set-up view, with no card (v4 ui).
     worker.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
     await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'connection' }));
     await settle();
-    expect(cardOf(root)?.dataset.jobState).toBe('disconnected');
+    expect(root.querySelector('main')?.dataset.view).toBe('setup');
+    expect(cardOf(root)).toBeNull();
   });
-
   it('shows a busy skeleton while loading, and a slim card when TailorIT could not say', async () => {
-    const loading = await mount(<JobCard view={{ state: 'loading' }} platform="lever" dryRun={false} adding={false} outcome={null}
-      now={NOW} onAdd={() => undefined} loadResumes={async () => []} chooseResume={() => undefined} />);
+    const loading = await mount(<JobCard view={{ state: 'loading' }} adding={false} outcome={null} now={NOW}
+      onAdd={() => undefined} />);
     expect(cardOf(loading)?.getAttribute('aria-busy')).toBe('true');
     expect(cardOf(loading)?.textContent).toBe(COPY.job.loading);
     const unavailable = cardOf(await drawCard({ state: 'unavailable' }))!;
     expect(unavailable.textContent).toBe(COPY.job.unavailable);
   });
-
   it('says the resumes could not be read, and hands back TailorIT its choice from a chosen resume', async () => {
     const choose = vi.fn();
-    const failing = await drawCard(jobCard({ resume: { label: 'Backend resume', fileKind: 'pdf', reason: 'chosen' } }),
-      { loadResumes: async () => null, chooseResume: choose });
+    const failing = await mount(<ResumeLine card={answered(jobCard({ resume: { label: 'Backend resume', fileKind: 'pdf',
+      reason: 'chosen' } }))} loadResumes={async () => null} chooseResume={choose} />);
     await click(button(failing, COPY.job.change));
     expect(failing.textContent).toContain(COPY.job.picker.failed);
     await click(button(failing, COPY.job.picker.suggested));
@@ -316,7 +338,7 @@ describe('the job card states (v2)', () => {
 });
 
 describe('Ask a custom question (v2)', () => {
-  const summaryOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-ask] summary');
+  const summaryOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-ask] button[data-ask-action="open"]');
   const QUESTION = 'Why do you want to work at Northwind?';
 
   it('asks with the tab, the question and the length, and shows the answer with the resume it was written from', async () => {
@@ -354,15 +376,10 @@ describe('Ask a custom question (v2)', () => {
     expect(root.querySelector('[data-ask-answer]')).toBeNull();
   });
 
-  it('is disabled with a reason when not connected or there is no resume, and shows the no-AI notice above the box', async () => {
-    const offline = createFakeWorker();
-    offline.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
-    const root = await open(offline);
-    expect(root.querySelector('[data-ask-disabled]')?.textContent).toBe(COPY.ask.notConnected);
-    expect(root.querySelector<HTMLTextAreaElement>('[data-ask] textarea')?.disabled).toBe(true);
-
+  it('is disabled with a reason when there is no resume, and shows the no-AI notice above the box', async () => {
     const noResume = await open(withForm(jobCard({ resume: null, match: null })));
     expect(noResume.querySelector('[data-ask-disabled]')?.textContent).toBe(COPY.ask.outcomes['no-resume']);
+    expect(noResume.querySelector<HTMLTextAreaElement>('[data-ask] textarea')?.disabled).toBe(true);
 
     const policy = withForm();
     policy.script.reports.set(5, [frameReport(0, { status: 'policy-notice', notices: [{ code: 'policy' }] })]);
@@ -370,7 +387,6 @@ describe('Ask a custom question (v2)', () => {
     expect(withPolicy.querySelector('[data-ask-policy]')?.textContent).toBe(COPY.ask.policy);
     expect(withPolicy.querySelector<HTMLTextAreaElement>('[data-ask] textarea')?.disabled).toBe(false);
   });
-
   it('shows the no-AI notice in every mode a run filled in: profile only, the attestation, past the card, the saved copy', async () => {
     for (const code of ['policy-profile-only', 'ai-attestation', 'policy', 'policy-stored-copy'] as const) {
       const worker = withForm();
@@ -418,158 +434,132 @@ describe('Ask a custom question (v2)', () => {
 describe("the run buttons' line (the Phase F1 review, 7)", () => {
   it('holds only until a report newer than the click arrives; a row action’s stays', async () => {
     const worker = createFakeWorker();
-    worker.script.reports.set(5, [frameReport(0, { updatedAt: 10, fields: [row('why', { status: 'flagged', provenance: 'llm-draft',
-      reason: 'llm-draft-needs-confirmation', needsUserAction: true })] })]);
+    worker.script.reports.set(5, [frameReport(0, { updatedAt: 10, fields: [row('why')] })]);
     const root = await open(worker);
     await click(button(root, COPY.panel.fill));
     expect(root.querySelector('.tia-feedback')?.textContent).toBe(COPY.panel.started(1));
     await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { updatedAt: 20,
-      status: 'review', fields: [row('why', { status: 'flagged', provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation',
-        needsUserAction: true })] })] }));
+      status: 'review', fields: [row('why')] })] }));
     expect(root.querySelector('.tia-feedback')).toBeNull();
-    worker.on('panel/confirmDraft', () => ({ ok: true, data: {} }));
-    await unfoldRows(root);
-    await click(button(root, COPY.report.confirmDraft));
-    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { updatedAt: 30 })] }));
-    expect(root.querySelector('.tia-feedback')?.textContent).toBe(COPY.panel.draftConfirmed);
+    // A row's Show on page that could not be done says so, and a newer report keeps the line.
+    worker.on('panel/focus', () => ({ ok: false, error: 'expired' }));
+    await click(root.querySelector('li[data-field-key="why"] button.tia-row__go'));
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { updatedAt: 30,
+      fields: [row('why')] })] }));
+    expect(root.querySelector('.tia-feedback')?.textContent).toBe(COPY.panel.focusFailed);
   });
 });
 
-describe('the cover letter on the job card (Phase G)', () => {
-  const view = (extra: Partial<LetterView> = {}): LetterView => ({ outcome: null, checking: false, writing: false,
-    wrote: null, ...extra });
-  const letterRow = (root: ParentNode) => root.querySelector<HTMLElement>('[data-job-letter]');
-  const writeButton = (root: ParentNode) => root.querySelector<HTMLButtonElement>('[data-job-action="write-letter"]');
-
-  it('sits under the resume and says whose letter a fill attaches, with no button once there is one', async () => {
-    const root = await drawCard(jobCard(), { letter: view({ outcome: 'yours' }), onWriteLetter: () => undefined });
-    const shown = letterRow(root)!;
-    expect(shown.previousElementSibling?.matches('[data-job-resume]')).toBe(true);
-    expect(shown.textContent).toContain(COPY.job.letter.label);
-    expect(shown.textContent).toContain(COPY.job.letter.yours);
-    expect(writeButton(root)).toBeNull();
-    const written = await drawCard(jobCard(), { letter: view({ outcome: 'written' }), onWriteLetter: () => undefined });
-    expect(letterRow(written)!.textContent).toContain(COPY.job.letter.written);
-    expect(writeButton(written)).toBeNull();
-  });
-
-  it('says the AI writes one when the form asks, and offers Write it now: Writing…, then Ready or Couldn’t write it', async () => {
-    const onWriteLetter = vi.fn();
-    const root = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), onWriteLetter });
-    expect(letterRow(root)!.textContent).toContain(COPY.job.letter.whenAsked);
-    expect(writeButton(root)!.textContent).toBe(COPY.job.letter.write);
-    await click(writeButton(root)!);
-    expect(onWriteLetter).toHaveBeenCalledOnce();
-    const writing = await drawCard(jobCard(), { letter: view({ outcome: 'none', writing: true }), onWriteLetter });
-    expect(writeButton(writing)!.disabled).toBe(true);
-    expect(writeButton(writing)!.textContent).toBe(COPY.job.letter.writing);
-    const failed = await drawCard(jobCard(), { letter: view({ outcome: 'none', wrote: 'failed' }), onWriteLetter });
-    expect(letterRow(failed)!.querySelector('[role="status"]')?.textContent).toBe(COPY.job.letter.outcomes.failed);
-    expect(COPY.job.letter.outcomes.failed).toBe(COPY.job.letter.couldNot);
-    const ready = await drawCard(jobCard(), { letter: view({ outcome: 'written', wrote: 'written' }), onWriteLetter });
-    expect(letterRow(ready)!.querySelector('[role="status"]')?.textContent).toBe(COPY.job.letter.ready);
-  });
-
-  it('explains, with no button, where TailorIT’s AI may not write it: profile only, AI-written answers off', async () => {
-    const profileOnly = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), letterMode: 'profile-only',
-      onWriteLetter: () => undefined });
-    expect(letterRow(profileOnly)!.textContent).toContain(COPY.job.letter.profileOnly);
-    expect(writeButton(profileOnly)).toBeNull();
-    const off = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), letterMode: 'ai-off',
-      onWriteLetter: () => undefined });
-    expect(letterRow(off)!.textContent).toContain(COPY.job.letter.aiOff);
-    expect(writeButton(off)).toBeNull();
-    // The person's own letter is still theirs to attach there.
-    const own = await drawCard(jobCard(), { letter: view({ outcome: 'yours' }), letterMode: 'profile-only' });
-    expect(letterRow(own)!.textContent).toContain(COPY.job.letter.yours);
-    const checking = await drawCard(jobCard(), { letter: view({ checking: true }) });
-    expect(letterRow(checking)!.textContent).toContain(COPY.job.letter.checking);
-  });
-
-  it('offers no Write it now in a dry run, which writes nothing', async () => {
-    const dry = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), dryRun: true, onWriteLetter: () => undefined });
-    expect(letterRow(dry)!.dataset.letterMode).toBe('ai');
-    expect(writeButton(dry)).toBeNull();
-    // In the panel: the tab's run is a dry run.
-    const worker = withForm();
-    worker.script.reports.set(5, [frameReport(0, { mode: 'dry-run' })]);
-    const root = await open(worker);
-    expect(letterRow(root)!.dataset.letterOutcome).toBe('none');
-    expect(writeButton(root)).toBeNull();
-  });
-
-  it('in the panel: asks once per card, writes on Write it now, and follows the settings and the posting', async () => {
+describe('the cover letter and the résumé in the review (Phase G; v4 ui: the rows’ Preview)', () => {
+  it('shows no cover-letter row on the card: the letter is the report row’s, with its Preview (v4 ui)', async () => {
     const worker = withForm();
     const root = await open(worker);
-    expect(worker.sentOfType('panel/letter')).toEqual([{ v: 1, type: 'panel/letter', tabId: 5, write: false }]);
-    expect(letterRow(root)!.dataset.letterOutcome).toBe('none');
-    await click(writeButton(root)!);
-    await settle();
-    expect(worker.sentOfType('panel/letter').at(-1)).toEqual({ v: 1, type: 'panel/letter', tabId: 5, write: true });
-    expect(letterRow(root)!.dataset.letterOutcome).toBe('written');
-    expect(letterRow(root)!.querySelector('[role="status"]')?.textContent).toBe(COPY.job.letter.ready);
-    expect(writeButton(root)).toBeNull();
-    // Nothing of the letter but its state: no id, no text.
-    expect(letterRow(root)!.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/);
-
-    const off = withForm();
-    off.script.settings = { ...off.script.settings, llm: { ...off.script.settings.llm, drafts: false } };
-    const offRoot = await open(off);
-    expect(letterRow(offRoot)!.dataset.letterMode).toBe('ai-off');
-    expect(writeButton(offRoot)).toBeNull();
-
-    const forbidden = withForm();
-    forbidden.script.reports.set(5, [frameReport(0, { notices: [{ code: 'policy-profile-only' }] })]);
-    const forbiddenRoot = await open(forbidden);
-    expect(letterRow(forbiddenRoot)!.dataset.letterMode).toBe('profile-only');
-    expect(letterRow(forbiddenRoot)!.textContent).toContain(COPY.job.letter.profileOnly);
-    expect(writeButton(forbiddenRoot)).toBeNull();
-
-    // "Ask me each time": the posting's notice leaves Write it now to the person.
-    const asking = withForm();
-    asking.script.settings = { ...asking.script.settings, llm: { ...asking.script.settings.llm, whenForbidden: 'ask' } };
-    asking.script.reports.set(5, [frameReport(0, { notices: [{ code: 'policy' }] })]);
-    const askingRoot = await open(asking);
-    expect(letterRow(askingRoot)!.dataset.letterMode).toBe('ai');
-    expect(writeButton(askingRoot)).not.toBeNull();
+    expect(root.querySelector('[data-job-letter], [data-job-action="write-letter"], [data-job-docs]')).toBeNull();
   });
 
-  it('folds what the fill uses away while a run works, as Jobright’s sidebar does, the job and Autofill still shown (v3 Phase 3)', async () => {
-    adoptPageStyles(document);
-    const resting = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), autofillInfoUrl: 'http://localhost:3100/settings/autofill' });
-    const docs = resting.querySelector<HTMLElement>('[data-job-docs]')!;
-    expect(docs.checkVisibility()).toBe(true);
-    expect(docs.querySelector<HTMLAnchorElement>('a[data-tailorit-link="autofill"]')?.textContent).toBe(COPY.job.autofillInfo);
-    const working = await drawCard(jobCard(), { letter: view({ outcome: 'none' }), working: true,
-      children: <button type="button" className="tia-cta">{COPY.panel.fill}</button> });
-    expect(working.querySelector<HTMLElement>('[data-job-docs]')!.checkVisibility()).toBe(false);
-    expect(working.querySelector<HTMLElement>('.tia-job')!.checkVisibility()).toBe(true);
-    expect(working.querySelector<HTMLElement>('button.tia-cta')!.checkVisibility()).toBe(true);
+  it('offers Preview on the cover-letter row when the fill attached a letter or TailorIT holds the person’s, Show always', async () => {
+    const attached = withForm();
+    attached.script.reports.set(5, [frameReport(0, { fields: [row('letter', { kind: 'file', category: 'file.coverLetter',
+      label: 'Cover letter', reason: 'cover-letter-attached', wrote: true, status: 'verified' })] })]);
+    const root = await open(attached);
+    const line = root.querySelector<HTMLElement>('li[data-field-key="letter"]')!;
+    expect(line.dataset.file).toBe('coverLetter');
+    const preview = line.querySelector<HTMLButtonElement>('button[data-action="preview"]')!;
+    expect([preview.textContent, preview.getAttribute('aria-label')])
+      .toEqual([COPY.report.preview, COPY.report.previewLabel('Cover letter')]);
+    await click(line.querySelector('button[data-action="show-file"]'));
+    expect(attached.sentOfType('panel/focus')).toEqual([{ v: 1, type: 'panel/focus', tabId: 5, frameId: 0, fieldKey: 'letter' }]);
+    unmountAll();
+
+    // Not written yet, but TailorIT says the person has one (panel/letter): the letter a fill would attach.
+    const yours = withForm();
+    yours.script.letter = { check: 'yours', write: 'written' };
+    yours.script.reports.set(5, [frameReport(0, { fields: [row('letter', { kind: 'file', category: 'file.coverLetter',
+      reason: 'cover-letter-none', wrote: false, status: 'skipped', provenance: null })] })]);
+    const would = await open(yours);
+    expect(would.querySelector('li[data-field-key="letter"] button[data-action="preview"]')).not.toBeNull();
+    unmountAll();
+
+    // No letter at all: Show, no Preview.
+    const none = withForm();
+    none.script.reports.set(5, [frameReport(0, { fields: [row('letter', { kind: 'file', category: 'file.coverLetter',
+      reason: 'cover-letter-none', wrote: false, status: 'skipped', provenance: null })] })]);
+    const empty = await open(none);
+    const bare = empty.querySelector<HTMLElement>('li[data-field-key="letter"]')!;
+    expect(bare.querySelector('button[data-action="preview"]')).toBeNull();
+    expect(bare.querySelector('button[data-action="show-file"]')).not.toBeNull();
   });
 
-  it('shows the cover-letter row only when the form asks for a letter: its hello, or a report’s row (v3 Phase 3)', async () => {
+  it('asks TailorIT about the letter only when the form asks for one', async () => {
     const plain = withForm();
     plain.script.pages.set(5, formPage());
-    const root = await open(plain);
-    expect(cardOf(root)!.dataset.jobState).toBe('found');
-    expect(letterRow(root)).toBeNull();
-    const reported = withForm();
-    reported.script.pages.set(5, formPage());
-    reported.script.reports.set(5, [frameReport(0, { fields: [row('letter', { kind: 'file', category: 'file.coverLetter',
-      reason: 'cover-letter-attached', wrote: true, status: 'verified' })] })]);
-    expect(letterRow(await open(reported))).not.toBeNull();
-    // The card drawn alone shows it by default.
-    expect(letterRow(await drawCard(jobCard(), { letter: view({ outcome: 'none' }) }))).not.toBeNull();
-    expect(letterRow(await drawCard(jobCard(), { letter: view({ outcome: 'none' }), letterAsked: false }))).toBeNull();
+    await open(plain);
+    expect(plain.sentOfType('panel/letter')).toEqual([]);
+    unmountAll();
+    const asking = withForm();
+    await open(asking);
+    expect(asking.sentOfType('panel/letter')).toEqual([{ v: 1, type: 'panel/letter', tabId: 5, write: false }]);
   });
-
-  it('in the panel: a fill’s own letter says more than an earlier answer', async () => {
+  it('previews the résumé row’s PDF and the cover letter’s over the preview port, each with its kind', async () => {
     const worker = withForm();
-    worker.script.reports.set(5, [frameReport(0, { fields: [row('letter', { kind: 'file', category: 'file.coverLetter',
-      reason: 'cover-letter-written', wrote: true, status: 'verified' })] })]);
+    worker.script.reports.set(5, [frameReport(0, { fields: [
+      row('cv', { kind: 'file', category: 'file.resume', label: 'Resume/CV' }),
+      row('letter', { kind: 'file', category: 'file.coverLetter', label: 'Cover letter', reason: 'cover-letter-written',
+        wrote: true, status: 'verified' })] })]);
     const root = await open(worker);
-    expect(letterRow(root)!.dataset.letterOutcome).toBe('written');
-    expect(letterRow(root)!.textContent).toContain(COPY.job.letter.written);
+    const asked = () => worker.posted.filter((message) => (message as { type?: unknown }).type === 'preview/request');
+    await click(root.querySelector('li[data-field-key="cv"] button[data-action="preview"]'));
+    await settle();
+    expect(root.querySelector('li[data-field-key="cv"] [data-row-preview="resume"] [data-resume-preview]')).not.toBeNull();
+    await click(root.querySelector('li[data-field-key="letter"] button[data-action="preview"]'));
+    await settle();
+    expect(asked()).toEqual([{ v: 1, type: 'preview/request', tabId: 5 },
+      { v: 1, type: 'preview/request', tabId: 5, kind: 'coverLetter' }]);
+    const letter = root.querySelector<HTMLElement>('li[data-field-key="letter"] [data-preview-kind="coverLetter"]')!;
+    expect(letter.textContent).toContain(COPY.mainView.letterPreview.loading);
+    // The worker had none to send: the letter's own words.
+    await act(async () => worker.ports.at(-1)!.post({ v: 1, type: 'resume/error', reason: 'resume-unavailable' }));
+    await settle();
+    expect(letter.querySelector('[data-preview-failed]')?.textContent).toBe(COPY.mainView.letterPreview.unavailable);
+    // A résumé that is not a PDF has no Preview on its row.
+    unmountAll();
+    const word = withForm(jobCard({ resume: { label: 'Word resume', fileKind: 'docx', reason: 'application' } }));
+    word.script.reports.set(5, [frameReport(0, { fields: [row('cv', { kind: 'file', category: 'file.resume' })] })]);
+    const docx = await open(word);
+    expect(docx.querySelector('li[data-field-key="cv"] button[data-action="preview"]')).toBeNull();
+    expect(docx.querySelector('li[data-field-key="cv"] button[data-action="show-file"]')).not.toBeNull();
+  });
+});
+
+describe('the résumé’s choice after a run (v4 ui)', () => {
+  it('lives on the résumé row: Change lists the account’s resumes under it, and a choice is kept for the tab', async () => {
+    const worker = withForm();
+    worker.script.reports.set(5, [frameReport(0, { fields: [row('cv', { kind: 'file', category: 'file.resume',
+      label: 'Resume/CV' })] })]);
+    const root = await open(worker);
+    expect(root.querySelector('[data-job-resume]')).toBeNull();
+    const change = root.querySelector<HTMLButtonElement>('li[data-category="file.resume"] button[data-action="change"]')!;
+    expect([change.textContent, change.getAttribute('aria-expanded')]).toEqual([COPY.job.change, 'false']);
+    await click(change);
+    await settle();
+    expect(worker.sentOfType('panel/resumes')).toEqual([{ v: 1, type: 'panel/resumes', tabId: 5 }]);
+    const picker = root.querySelector('li[data-category="file.resume"] [data-row-tool="change"] [data-resume-picker]')!;
+    const choices = [...picker.querySelectorAll<HTMLButtonElement>('[data-resume-choice=""]')];
+    expect(choices.map((each) => each.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+    await click(choices[1]);
+    expect(worker.sentOfType('panel/setResume')).toEqual([{ v: 1, type: 'panel/setResume', tabId: 5, resumeId: 'resume-2' }]);
+    expect(root.querySelector('[data-resume-picker]')).toBeNull();
+    // Apply without resume from the row too: no Preview while none is attached.
+    await click(root.querySelector('li[data-category="file.resume"] button[data-action="change"]'));
+    await settle();
+    worker.on('panel/withoutResume', () => {
+      worker.script.cards.set(5, jobCard({ withoutResume: true }));
+      return { ok: true, data: {} };
+    });
+    await click(root.querySelector('button[data-resume-choice="without"]'));
+    await settle();
+    expect(worker.sentOfType('panel/withoutResume')).toEqual([{ v: 1, type: 'panel/withoutResume', tabId: 5, without: true }]);
+    expect(root.querySelector('li[data-category="file.resume"] button[data-action="preview"]')).toBeNull();
   });
 });
 
@@ -669,9 +659,9 @@ describe('the audit of 2026-11-06 (M1, m7, m8)', () => {
   it("shows an Add's outcome and a custom answer only for the page they were made on", async () => {
     const worker = withForm(jobCard({ job: null, tracked: null, match: null }));
     const root = await open(worker);
-    await click(button(root, COPY.job.add));
+    await click(button(root, COPY.mainView.addJob));
     expect(cardOf(root)?.textContent).toContain(COPY.job.addOutcomes.added);
-    await click(root.querySelector<HTMLElement>('[data-ask] summary'));
+    await click(root.querySelector<HTMLElement>('[data-ask] button[data-ask-action="open"]'));
     await typeInto(root.querySelector<HTMLTextAreaElement>('[data-ask] textarea')!, 'Why Northwind?');
     await click(button(root, COPY.ask.submit));
     expect(root.querySelector('[data-ask-answer]')).not.toBeNull();

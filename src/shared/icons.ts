@@ -92,6 +92,20 @@ export const ICONS = {
     line('M7.75 10.5h4.5M7.75 13.5h4.5')] },
   /** Information: a ring with an "i". */
   info: { viewBox: GRID, stroked: true, parts: [ring(), line('M10 9.1v5'), dot('10', '6.2')] },
+  // ── v4 ui: the side panel in Jobright's layout (our own drawings on the same grid) ──
+  /** Autofill in one click (the set-up view's mark): a lightning bolt, its two strokes joined at a slanted waist. */
+  bolt: { viewBox: GRID, stroked: true, parts: [line('M11.6 1.9L4.4 11.2h5.1l-1.1 6.9 7.2-9.3h-5.1z')] },
+  /** A field not filled (D1): an empty ring alone, drawn grey by the stylesheet. */
+  circle: { viewBox: GRID, stroked: true, parts: [ring()] },
+  /** An explanation on hover or focus (HelpTip): a ring with a question mark. */
+  help: { viewBox: GRID, stroked: true, parts: [ring(), line('M7.9 8a2.15 2.15 0 1 1 3.1 1.95c-.6.3-1 .8-1 1.45v.45'),
+    dot('10', '14.1')] },
+  /** A preview: an eye, its outline and its pupil. */
+  eye: { viewBox: GRID, stroked: true, parts: [line('M1.9 10s3-5.6 8.1-5.6 8.1 5.6 8.1 5.6-3 5.6-8.1 5.6S1.9 10 1.9 10z'),
+    { tag: 'circle', attrs: { cx: '10', cy: '10', r: '2.4' } }] },
+  /** Add: a plus. */
+  plus: { viewBox: GRID, stroked: true, parts: [line('M10 4.5v11M4.5 10h11')] },
+  // ── end v4 ui ──
 } as const satisfies Record<string, IconDef>;
 
 /** An icon's name. */

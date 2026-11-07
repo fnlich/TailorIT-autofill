@@ -6,7 +6,9 @@
  */
 export const PROFILE_CSS = `
 .tia-profile { display: grid; gap: 12px; }
-.tia-profile__head { display: grid; gap: 4px; }
+.tia-profile__head { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px; }
+.tia-profile__head .tia-profile__back { grid-column: 1 / -1; }
+.tia-profile__head .tia-helptip { justify-self: start; }
 .tia-profile__back { justify-self: start; gap: 2px; padding-left: 2px; }
 .tia-profile__back-icon { transform: rotate(180deg); }
 .tia-profile__title { margin: 0; font: 600 18px/1.25 var(--tia-font); color: var(--tia-fg); }

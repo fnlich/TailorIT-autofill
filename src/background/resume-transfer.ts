@@ -277,17 +277,34 @@ export function createResumeTransfer(deps: ResumeTransferDeps) {
    * fill of the tab would attach (`resumeFor`: the person's choice, else the card's), fetched and checked as the
    * resume port's, a PDF only (a Word file is resume-format-unsupported: the panel says it has no preview), and sent the
    * same way. The bytes go to the side panel alone, never a page's process, and are released as the resume port's.
+   * v4 ui: preview/request {kind: 'coverLetter'} sends the cover letter the tab's fill attached or would attach
+   * (`letterFor`, index.ts: a run of the tab's ready letter, else the person's own for the tab's job), checked as the
+   * resume port's letter is; none (or no `letterFor`) is resume-unavailable.
    */
   function acceptPreview(port: PortLike, resumeFor: (tabId: number) => Promise<ResumeChoice | null>,
-    ready: () => Promise<void> = () => Promise.resolve()): void {
+    ready: () => Promise<void> = () => Promise.resolve(),
+    letterFor?: (tabId: number, active: () => boolean) => Promise<string | null>): void {
     const parse = (raw: unknown) => {
       const parsed = PreviewPortMessageSchema.safeParse(raw);
       return parsed.success ? parsed.data : null;
     };
     serve(port, (raw) => {
       const message = parse(raw);
-      return message?.type === 'preview/request' ? { tabId: message.tabId } : null;
+      return message?.type === 'preview/request' ? { tabId: message.tabId, kind: message.kind ?? 'resume' } : null;
     }, async (request, active) => {
+      if (request.kind === 'coverLetter') {
+        // v4 ui: the cover letter the tab's fill attached or would attach (`letterFor`: its id, in this worker's memory
+        // only), fetched and checked as the resume port sends it: a PDF only, its hash TailorIT's.
+        const letterId = letterFor === undefined ? null : await letterFor(request.tabId, active);
+        if (!active()) return 'resume-unavailable';
+        if (letterId === null) {
+          log('resume.preview', { sent: false, letter: true });
+          return 'resume-unavailable';
+        }
+        const letter = await fetchLetter(letterId);
+        log('resume.preview', { sent: typeof letter !== 'string', letter: true });
+        return typeof letter === 'string' ? letter : { ...letter, mime: AUTOFILL_FILE_MIME_TYPES.pdf };
+      }
       const choice = await resumeFor(request.tabId);
       if (!active()) return 'resume-unavailable';
       if (choice === null) {

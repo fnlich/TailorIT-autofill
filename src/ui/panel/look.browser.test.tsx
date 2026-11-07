@@ -1,10 +1,10 @@
 /*
- * The side panel in TailorIT's look, laid out as Jobright's sidebar (v3 Phase 3): the brand header with the gear's menu
- * (the modes, and all the settings), problems only as strips, the notices above Autofill, the main button's constant
- * name with a spinner while it works and Dry run, Continue and Cancel on the strip under it while no run works, the
- * progress and the lists under it (Cancel on the progress line while a run works), a page Autofill does not work on,
- * the launcher brought back, and the person's TailorIT at the foot. The extension's page reads as TailorIT's: light
- * only, on its canvas.
+ * The side panel in TailorIT's look, laid out as Jobright's sidebar (v3 Phase 3; v4 ui, the owner's screenshots): the
+ * brand header with the gear that opens the Settings view (radio cards, Save pinned at the bottom), problems only as
+ * strips, no notice, the big Autofill with its constant name and a spinner while a run works (no Dry run, Continue or
+ * Cancel buttons), "Ask custom question" as an outline button, the progress and the lists under them (Cancel on the
+ * progress line while a run works), a page Autofill does not work on (its explanations in a "?"), the launcher brought
+ * back, and the set-up view's step cards. The extension's page reads as TailorIT's: light only, on its canvas.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
@@ -27,80 +27,69 @@ const before = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node
 describe('the side panel in TailorIT’s look', () => {
   afterEach(() => unmountAll());
 
-  it("heads the panel with TailorIT's mark and name, a gear that opens the modes, and links to the person's TailorIT", async () => {
+  it("heads the panel with TailorIT's mark and name and a gear that opens the Settings view: no menu, no foot (v4 ui)", async () => {
     const worker = createFakeWorker();
     const root = await open(worker, 5);
     const title = root.querySelector('h1')!;
     expect(title.textContent).toBe(COPY.appName);
     expect(title.querySelector('svg.tia-mark')?.getAttribute('aria-hidden')).toBe('true');
     expect(getComputedStyle(title.querySelector('.tia-wordmark__it')!).color).toBe('rgb(8, 117, 140)');
-    const gear = root.querySelector<HTMLButtonElement>('button[data-panel-menu]')!;
-    expect([gear.getAttribute('aria-label'), gear.getAttribute('aria-expanded'), gear.textContent])
-      .toEqual([COPY.panel.menu, 'false', '']);
+    const gear = root.querySelector<HTMLButtonElement>('button[data-panel-settings]')!;
+    expect([gear.getAttribute('aria-label'), gear.getAttribute('aria-pressed'), gear.textContent])
+      .toEqual([COPY.mainView.settings, 'false', '']);
+    // The brand left, the gear right.
+    const head = root.querySelector('.tia-panel__head')!.getBoundingClientRect();
+    expect(gear.getBoundingClientRect().right).toBeCloseTo(head.right, 0);
+    expect(root.querySelector('[data-menu], .tia-panel__foot, a[data-tailorit-link="jobs"]')).toBeNull();
     await click(gear);
-    const menu = root.querySelector<HTMLElement>('[data-menu]')!;
-    expect(menu.querySelector('h2')?.textContent).toBe(COPY.panel.modes);
-    // The modes shown now, as the options page shows them; Submit since v3 Phase 4; Sign-in and the skip rules since
-    // v3 Phase 5.
-    expect([...menu.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
-      .toEqual(['modes.signIn', 'modes.next', 'modes.afterPageTurn', 'modes.submit', 'modes.recordOwn', 'modes.consents',
-        'modes.ai', 'modes.resumeOnPage', 'view', 'modes.agentSkip']);
-    // The behaviour review of 2026-11-06: "Résumé already on the page" beside the other modes, its choices and help
-    // the options page's.
-    const resume = menu.querySelector<HTMLElement>('[data-setting-group="modes.resumeOnPage"]')!;
-    expect([resume.querySelector('legend')?.textContent, ...[...resume.querySelectorAll('label')].map((label) => label.textContent),
-      resume.querySelector('.tia-mode__help')?.textContent]).toEqual([COPY.options.modes.resumeOnPage.name,
-      COPY.options.modes.resumeOnPage.keep, COPY.options.modes.resumeOnPage.upload, COPY.options.modes.resumeOnPage.help]);
-    expect(menu.querySelector<HTMLInputElement>('input[data-setting="modes.resumeOnPage.keep"]')!.checked).toBe(true);
-    await click(menu.querySelector<HTMLInputElement>('input[data-setting="modes.resumeOnPage.upload"]'));
-    expect(worker.sentOfType('settings/save').at(-1)?.settings).toMatchObject({ modes: { resumeOnPage: 'upload' } });
-    const all = menu.querySelector<HTMLAnchorElement>('a[data-open-settings]')!;
-    expect([all.getAttribute('href'), all.target, all.textContent])
-      .toEqual(['chrome-extension://memory-extension/options.html#settings-modes', '_blank', COPY.panel.allSettings]);
-    // A choice is saved at once, the whole settings with the one mode changed.
-    await click(menu.querySelector<HTMLInputElement>('input[data-setting="modes.consents.required"]'));
-    expect(worker.sentOfType('settings/save').at(-1)?.settings).toMatchObject({ modes: { consents: 'required', next: 'manual' } });
-    expect(menu.querySelector<HTMLInputElement>('input[data-setting="modes.consents.required"]')!.checked).toBe(true);
-    // v3 Phase 3b: "Your autofill information" opens the panel's own editor; the jobs link goes to TailorIT.
-    expect([...root.querySelectorAll<HTMLAnchorElement>('a[data-tailorit-link]')].map((link) => [link.textContent, link.href]))
-      .toEqual([[COPY.panel.openJobs, 'http://localhost:3100/jobs']]);
-    expect(root.querySelector('.tia-panel__foot button[data-open-profile]')?.textContent).toBe(COPY.panel.autofillInfo);
-    expect(root.querySelector('[data-connection="connected"]')?.textContent).toBe(COPY.panel.connectedAs('Morgan Lee'));
+    expect(gear.getAttribute('aria-pressed')).toBe('true');
+    // The modes in the side panel's order, as the options page shows them; the view second.
+    const settings = root.querySelector<HTMLElement>('[data-settings-view]')!;
+    expect([...settings.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
+      .toEqual(['modes.afterPageTurn', 'view', 'modes.next', 'modes.submit', 'modes.signIn', 'modes.consents', 'modes.ai',
+        'modes.resumeOnPage', 'modes.recordOwn', 'modes.agentSkip']);
+    // Radio cards (screenshot 5): a grey card per choice, the chosen one's ring holding a teal dot.
+    const keep = settings.querySelector<HTMLInputElement>('input[data-setting="modes.resumeOnPage.keep"]')!;
+    const card = keep.closest<HTMLElement>('.tia-radiocard')!;
+    expect([keep.checked, getComputedStyle(card).backgroundColor, getComputedStyle(card).borderTopLeftRadius])
+      .toEqual([true, 'rgb(242, 242, 242)', '10px']);
+    expect(getComputedStyle(keep).backgroundColor).toBe('rgb(20, 161, 192)');
+    expect(card.textContent).toBe(COPY.options.modes.resumeOnPage.keep);
+    // Save is pinned at the bottom of the view, full width.
+    const save = settings.querySelector<HTMLButtonElement>('button[data-action="save-settings"]')!;
+    expect(getComputedStyle(save.parentElement!).position).toBe('sticky');
+    expect(save.getBoundingClientRect().width).toBeGreaterThan(settings.getBoundingClientRect().width - 40);
     // Light only, on TailorIT's canvas, whatever the system's scheme.
     expect(getComputedStyle(root.querySelector('main')!).backgroundColor).toBe('rgb(252, 252, 252)');
     expect(getComputedStyle(document.documentElement).colorScheme).toBe('light');
   });
-
-  it('puts the progress where Autofill was while a run works, with its Cancel, and Autofill back with Continue marked while one waits', async () => {
+  it('keeps the big Autofill, spinning while a run works with Cancel on the progress, and the same Autofill to go on (v4 ui)', async () => {
     const worker = createFakeWorker();
     worker.script.reports.set(5, [frameReport(0, { status: 'fill-step', fields: [row('first')] })]);
     const root = await open(worker, 5);
-    // While a run works, as Jobright's: no Autofill button, the progress with Cancel on its line in its place.
-    expect(root.querySelector('button.tia-cta')).toBeNull();
-    expect(button(root, COPY.panel.dryRun)).toBeNull();
+    const working = root.querySelector<HTMLButtonElement>('button.tia-cta')!;
+    expect([working.disabled, working.dataset.working, working.querySelector('svg.tia-spin') !== null])
+      .toEqual([true, 'true', true]);
+    for (const gone of [COPY.panel.dryRun, COPY.panel.continue]) expect(button(root, gone)).toBeNull();
     const cancel = root.querySelector<HTMLButtonElement>('.tia-progress-line button[data-action="cancel"]')!;
     expect(cancel.textContent).toBe(COPY.panel.cancel);
     await click(cancel);
     expect(worker.sentOfType('panel/cancel')).toEqual([{ v: 1, type: 'panel/cancel', tabId: 5 }]);
     worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { status: 'handoff', pauseReason: 'captcha' })] });
     await settle();
-    // At rest, the main button is back, its constant name.
+    // At rest, its constant name; it goes on with the paused run.
     const cta = root.querySelector<HTMLButtonElement>('button.tia-cta')!;
     expect(button(root, COPY.panel.fill)).toBe(cta);
-    expect(cta.disabled).toBe(false);
-    expect([cta.textContent, cta.dataset.working, cta.querySelector('svg')]).toEqual([COPY.panel.fill, undefined, null]);
-    for (const name of [COPY.panel.dryRun, COPY.panel.continue, COPY.panel.cancel]) {
-      expect([name, button(root, name)!.disabled]).toEqual([name, false]);
-    }
-    expect(button(root, COPY.panel.continue)!.hasAttribute('data-emphasis')).toBe(true);
-    // The pause says why, under the progress line.
-    expect(root.querySelector('.tia-frame__note--pause')?.textContent).toBe(COPY.pauseReasons.captcha);
-    // Large, bold and white on TailorIT's teal (3.05:1, large text).
+    expect([cta.disabled, cta.textContent, cta.dataset.working, cta.dataset.mainAction, cta.querySelector('svg')])
+      .toEqual([false, COPY.panel.fill, undefined, 'continue', null]);
+    // D10: the pause's instruction is the page's notification, not the panel's.
+    expect(root.querySelector('.tia-frame__note--pause')).toBeNull();
+    // Large, bold and white on TailorIT's teal (3.05:1, large text), full width, rounded (screenshot 3).
     const style = getComputedStyle(cta);
-    expect([style.fontSize, style.fontWeight, style.color, style.backgroundColor])
-      .toEqual(['19px', '800', 'rgb(255, 255, 255)', 'rgb(20, 161, 192)']);
+    expect([style.fontSize, style.fontWeight, style.color, style.backgroundColor, style.borderTopLeftRadius])
+      .toEqual(['19px', '800', 'rgb(255, 255, 255)', 'rgb(20, 161, 192)', '12px']);
+    expect(cta.getBoundingClientRect().width).toBeCloseTo(root.querySelector('main .tia-toolbar')!.getBoundingClientRect().width, 0);
   });
-
   it("shows no tab to follow, a page Autofill does not work on with the sites it does, and the form found", async () => {
     const noTab = await open(createFakeWorker({ activeTabId: null }), null);
     expect([...noTab.querySelectorAll<HTMLElement>('.tia-strip')].map((strip) => [strip.dataset.strip, strip.dataset.tone,
@@ -133,8 +122,10 @@ describe('the side panel in TailorIT’s look', () => {
     expect(new Set([workday, icims, oracle, taleo]).size).toBe(4);
     expect(taleo).toMatch(/coming/);
     expect(successFactors).toBe(taleo);
-    // The Phase 8 review (B10): it says where Company career sites works too.
-    expect([...section.querySelectorAll('.tia-help')].map((help) => help.textContent)).toContain(COPY.panel.unsupported.companySites);
+    // The Phase 8 review (B10): it says where Company career sites works too; v4 ui: in the heading's "?".
+    expect(section.querySelector('.tia-unsupported__head [role="tooltip"]')?.textContent).toBe(COPY.mainView.unsupportedHelp);
+    expect(COPY.mainView.unsupportedHelp).toContain(COPY.panel.unsupported.embedded);
+    expect(section.querySelector('.tia-help')).toBeNull();
     // Nothing to fill there: no Autofill, no custom question.
     expect(unsupported.querySelector('button.tia-cta')).toBeNull();
     expect(unsupported.querySelector('[data-ask]')).toBeNull();
@@ -144,7 +135,8 @@ describe('the side panel in TailorIT’s look', () => {
     const stale = createFakeWorker();
     stale.script.pages.set(5, { support: 'none', platform: null, formKey: null, reload: true });
     const reload = (await open(stale, 5)).querySelector<HTMLElement>('[data-unsupported]')!;
-    expect([reload.dataset.unsupported, reload.querySelector('h2')?.textContent, reload.querySelector('p')?.textContent])
+    expect([reload.dataset.unsupported, reload.querySelector('h2')?.textContent,
+      reload.querySelector('[role="tooltip"]')?.textContent])
       .toEqual(['reload', COPY.panel.unsupported.reloadHeading, COPY.panel.unsupported.reloadIntro]);
     expect(reload.querySelector('.tia-unsupported__sites')).toBeNull();
     unmountAll();
@@ -153,7 +145,7 @@ describe('the side panel in TailorIT’s look', () => {
     const company = createFakeWorker();
     company.script.pages.set(5, { support: 'none', platform: null, formKey: null, reload: true, site: true });
     const site = (await open(company, 5)).querySelector<HTMLElement>('[data-unsupported]')!;
-    expect([site.dataset.unsupported, site.querySelector('h2')?.textContent, site.querySelector('p')?.textContent])
+    expect([site.dataset.unsupported, site.querySelector('h2')?.textContent, site.querySelector('[role="tooltip"]')?.textContent])
       .toEqual(['reload-site', COPY.panel.unsupported.reloadSiteHeading, COPY.panel.unsupported.reloadSiteIntro]);
 
     const found = createFakeWorker();
@@ -162,25 +154,21 @@ describe('the side panel in TailorIT’s look', () => {
     expect(form.querySelector('[data-strip="form"]')?.textContent).toBe(COPY.strip.form('Lever'));
   });
 
-  it('puts the notices and the policy card above Autofill, and the progress and the lists under it', async () => {
+  it('shows no notice and no policy card (D10), the progress and the lists under Autofill and Ask custom question', async () => {
     const worker = createFakeWorker();
     worker.script.reports.set(5, [frameReport(0, { status: 'policy-notice', notices: [{ code: 'policy' }, { code: 'tripwire' }],
       fields: [row('first', { required: true })] })]);
     const root = await open(worker, 5);
     const cta = root.querySelector('button.tia-cta')!;
-    const card = root.querySelector('[data-notice="policy"]')!;
-    const tripwire = root.querySelector('[data-notice="tripwire"]')!;
-    expect([before(card, cta), before(tripwire, cta)]).toEqual([true, true]);
-    expect(root.querySelectorAll('[data-notice="policy"]')).toHaveLength(1);
+    expect(root.querySelector('[data-notice]')).toBeNull();
+    const ask = root.querySelector('[data-ask]')!;
     const review = root.querySelector('section.tia-dashboard')!;
     expect(review.querySelector('h2')!.textContent).toBe(COPY.panelTitle);
     expect(review.querySelector('h2')!.classList.contains('tia-visually-hidden')).toBe(true);
     expect(review.querySelector('[data-progress]')).not.toBeNull();
     expect(review.querySelector('[data-group="required"] li[data-field-key="first"]')).not.toBeNull();
-    expect(review.querySelector('[data-notice]')).toBeNull();
-    expect(before(cta, review)).toBe(true);
+    expect([before(cta, ask), before(ask, review)]).toEqual([true, true]);
   });
-
   it('folds the lists with the Minimized view the person chose', async () => {
     const worker = createFakeWorker();
     worker.script.settings = { ...worker.script.settings, view: 'minimized' };
@@ -230,27 +218,53 @@ describe('the side panel in TailorIT’s look', () => {
     expect(root.textContent).not.toContain(COPY.panel.launcherShown);
   });
 
-  it('shows one chevron on the custom question: down while folded, up while open', async () => {
+  it('draws "Ask custom question" as an outline button under Autofill that unfolds the box (v4 ui)', async () => {
     const worker = createFakeWorker();
     worker.script.pages.set(5, formPage());
     const root = await open(worker, 5);
-    const ask = root.querySelector<HTMLDetailsElement>('[data-ask]')!;
-    const shown = () => [...ask.querySelectorAll('summary .tia-chevron--down, summary .tia-chevron--up')]
-      .filter((chevron) => getComputedStyle(chevron).display !== 'none')
-      .map((chevron) => (chevron.classList.contains('tia-chevron--up') ? 'up' : 'down'));
-    expect(shown()).toEqual(['down']);
-    await click(ask.querySelector('summary'));
-    expect(shown()).toEqual(['up']);
+    const open_ = root.querySelector<HTMLButtonElement>('[data-ask] button[data-ask-action="open"]')!;
+    expect([open_.textContent, open_.getAttribute('aria-expanded')]).toEqual([COPY.mainView.ask, 'false']);
+    const style = getComputedStyle(open_);
+    expect([style.backgroundColor, style.borderTopStyle]).toEqual(['rgb(255, 255, 255)', 'solid']);
+    const body = document.getElementById(open_.getAttribute('aria-controls')!)!;
+    expect(body.hidden).toBe(true);
+    await click(open_);
+    expect([open_.getAttribute('aria-expanded'), body.hidden]).toEqual(['true', false]);
+    expect(body.querySelector('textarea')).not.toBeNull();
+    await click(open_);
+    expect(body.hidden).toBe(true);
   });
-
-  it("draws a connection problem as a strip whose link keeps the strip's own text colour", async () => {
+  it("draws a problem that blocks everything as a strip whose link keeps the strip's own text colour", async () => {
     const worker = createFakeWorker();
-    worker.script.auth = authStatus({ connection: 'expired', account: null });
+    worker.script.auth = authStatus({ versionMismatch: true });
     const root = await open(worker, 5);
-    const line = root.querySelector<HTMLElement>('[data-connection="expired"]')!;
+    const line = root.querySelector<HTMLElement>('.tia-connection--problem')!;
     expect([line.classList.contains('tia-strip'), line.dataset.tone]).toEqual([true, 'problem']);
     const link = line.querySelector('a')!;
     expect(getComputedStyle(link).color).toBe(getComputedStyle(line).color);
     expect(getComputedStyle(link).textDecorationLine).toBe('underline');
+  });
+
+  it('draws the set-up view as Jobright does: centred, a bolt, step cards with a tick or a dark GO, a grey Start applying', async () => {
+    const worker = createFakeWorker();
+    worker.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null });
+    const root = await open(worker, 5);
+    const setup = root.querySelector<HTMLElement>('[data-setup]')!;
+    expect(getComputedStyle(setup).textAlign).toBe('center');
+    expect(setup.querySelector('svg.tia-setup__bolt')?.getAttribute('aria-hidden')).toBe('true');
+    const go = setup.querySelector<HTMLElement>('[data-step="account"] .tia-step__pill--go')!;
+    expect([getComputedStyle(go).backgroundColor, getComputedStyle(go).color, getComputedStyle(go).borderTopLeftRadius])
+      .toEqual(['rgb(25, 25, 25)', 'rgb(255, 255, 255)', '999px']);
+    const step = setup.querySelector<HTMLElement>('[data-step="account"]')!;
+    expect(getComputedStyle(step).borderTopLeftRadius).toBe('999px');
+    const startButton = setup.querySelector<HTMLButtonElement>('button[data-action="start-applying"]')!;
+    expect([startButton.disabled, getComputedStyle(startButton).backgroundColor, startButton.textContent])
+      .toEqual([true, 'rgb(242, 242, 242)', COPY.setup.start]);
+    // A done step's pill is teal with its tick.
+    worker.script.auth = authStatus();
+    worker.push({ v: 1, type: 'panel/changed', what: 'connection' });
+    await settle();
+    const done = setup.querySelector<HTMLElement>('[data-step="account"] .tia-step__pill--done')!;
+    expect([getComputedStyle(done).backgroundColor, done.querySelector('svg') !== null]).toEqual(['rgb(20, 161, 192)', true]);
   });
 });

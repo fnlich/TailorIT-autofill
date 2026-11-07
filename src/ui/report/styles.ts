@@ -180,7 +180,7 @@ ${NOTICE_TONES}
 .tia-progress-block { display: grid; gap: 10px; }
 .tia-progress-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
 .tia-progress-line__toggle {
-  display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 0; margin: 0 0 0 -6px; padding: 4px 6px;
+  display: inline-flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; margin: 0 -6px; padding: 4px 6px;
   border: 0; border-radius: 8px; background: transparent; color: var(--tia-fg); font: 700 14px/1.35 var(--tia-font);
   text-align: left; cursor: pointer;
 }
@@ -190,7 +190,7 @@ ${NOTICE_TONES}
 .tia-progress-line__title { display: inline-flex; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
 .tia-progress-line__rule { flex: none; align-self: center; width: 1px; height: 14px; background: var(--tia-control); }
 .tia-progress-line__percent { flex: none; font-weight: 800; color: var(--tia-ink); font-variant-numeric: tabular-nums; }
-.tia-progress-line__chevron { color: var(--tia-muted); }
+.tia-progress-line__chevron { margin-left: auto; color: var(--tia-fg); }
 .tia-dots { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; align-self: center; }
 .tia-dots span { display: block; width: 3px; height: 3px; border-radius: 50%; background: currentColor;
   animation: tia-dot 1.2s ease-in-out infinite; }
@@ -246,10 +246,12 @@ ${NOTICE_TONES}
 .tia-row[data-current] { background: var(--tia-brand-wash); }
 .tia-row__line { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; }
 .tia-row__state { display: inline-flex; flex: none; padding-top: 1px; }
+/* v4 ui (Jobright's list, D1): a filled field's white tick on a disc of TailorIT's teal (a fill, never a text colour),
+   an empty grey ring for one not filled (the input border's grey: 3.45:1 on white, a graphic's 3:1 and more). */
 .tia-row__state--filled { color: var(--tia-ink); }
-.tia-row__state--missing { color: var(--tia-tone-warning-fg); }
+.tia-row__state--filled circle { fill: var(--tia-brand); }
 .tia-row__state--working { color: var(--tia-ink); }
-.tia-row__state--none, .tia-row__state--optional { color: var(--tia-muted); }
+.tia-row__state--empty { color: var(--tia-input); }
 .tia-progress-details { margin: 0; font: 400 12px/1.4 var(--tia-font); color: var(--tia-muted); }
 .tia-progress-details__summary { cursor: pointer; font-weight: 600; }
 .tia-progress-details__summary:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
@@ -303,6 +305,16 @@ ${STATUS_RULES}
 .tia-suggestions__heading { margin: 0; font-weight: 600; }
 .tia-suggestions__list { margin: 4px 0 0; padding-left: 20px; }
 .tia-suggestions__score { color: var(--tia-muted); }
+
+/* v4 ui: the résumé and cover-letter rows' Preview and Show, on the row's right, and the preview unfolded under it. */
+.tia-row__files { display: inline-flex; flex: none; align-items: center; gap: 2px; margin: -1px 0 0; }
+.tia-row__file {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 26px; margin: 0; padding: 0 8px; border: 0;
+  border-radius: 999px; background: transparent; color: var(--tia-ink); font: 600 12px/1.2 var(--tia-font); cursor: pointer;
+}
+.tia-row__file:hover, .tia-row__file[aria-expanded="true"] { background: var(--tia-brand-wash); }
+.tia-row__file:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-row__preview { margin: 2px 0 8px 26px; }
 
 @media (prefers-reduced-motion: reduce) {
   .tia-strip[data-tone="working"]::before, .tia-spin, .tia-dots span { animation: none; }

@@ -48,7 +48,7 @@ describe('the report rows (Phase F1 review, owner amendments)', () => {
     expect(root.querySelector('h3')?.textContent).toBe(COPY.report.optionalGroup);
   });
 
-  it('marks an answer the AI wrote "AI", one it guessed "AI guess", and keeps the AI draft mark for drafts (E1\'s rule)', async () => {
+  it('marks no answer as the AI\'s, guessed or not, and counts none (v4 ui, D6: the run decides; no flag)', async () => {
     const root = await mount(<Report reports={[frameReport(0, { fields: [
       row('written', { provenance: 'llm-answer', reason: 'llm-answer-written' }),
       row('picked', { provenance: 'llm-pick', matcherStage: 'llm', reason: 'llm-pick-needs-review', status: 'flagged' }),
@@ -56,18 +56,14 @@ describe('the report rows (Phase F1 review, owner amendments)', () => {
       row('drafted', { kind: 'textarea', provenance: 'llm-draft', reason: 'llm-draft-written' }),
       row('profile', { provenance: 'profile' }),
     ] })]} />);
-    const markOf = (key: string) => root.querySelector(`li[data-field-key="${key}"] [data-ai-mark]`);
-    expect(markOf('written')?.textContent).toBe(COPY.aiChip);
-    // A tiebreak pick that still needs the person shows its status, not a mark.
-    expect(markOf('picked')).toBeNull();
-    expect(markOf('guessed')?.getAttribute('data-ai-mark')).toBe('guess');
-    expect(markOf('guessed')?.textContent).toBe(COPY.aiGuessChip);
-    expect(markOf('drafted')).toBeNull();
-    expect(root.querySelector('li[data-field-key="drafted"] .tia-row__draft')?.textContent).toBe(COPY.report.draftMark);
-    expect(markOf('profile')).toBeNull();
-    // The completion counts them: three answers the AI wrote (a draft among them), one a guess.
-    expect(root.querySelector('[data-ai-answers]')?.textContent).toBe(COPY.report.aiAnswers(3, 1));
-    expect([COPY.report.aiAnswers(1, 0), COPY.report.aiAnswers(3, 2)])
-      .toEqual(['1 answer written by AI', '3 answers written by AI · 2 are guesses']);
+    // Each row is its icon and its label alone: every one of them filled.
+    for (const key of ['written', 'picked', 'guessed', 'drafted', 'profile']) {
+      const line = root.querySelector<HTMLElement>(`li[data-field-key="${key}"]`)!;
+      expect([line.dataset.progress, line.textContent]).toEqual(['filled', `${COPY.report.rowStates.filled}Label of ${key}`]);
+    }
+    expect(root.querySelector('[data-ai-mark], .tia-row__draft, [data-ai-answers]')).toBeNull();
+    for (const text of [COPY.aiChip, COPY.aiGuessChip, COPY.report.draftMark]) {
+      expect(root.querySelector('.tia-lists')?.textContent).not.toContain(text);
+    }
   });
 });

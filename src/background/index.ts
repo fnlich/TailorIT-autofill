@@ -21,7 +21,7 @@ import { createAuth, createTokenKeeper } from './auth';
 import { toBase64Url } from './bytes';
 import { createAiTasks } from './ai-tasks';
 import { ASK_LIMIT, createAsk } from './ask';
-import { createPanelLetters, LETTER_LIMIT } from './cover-letters';
+import { checkLetter, createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import {
@@ -256,6 +256,27 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     const list = await server.resumes();
     const item = list.ok ? list.value.items.find((entry) => entry.id === id) : undefined;
     return item === undefined ? null : { id: item.id, fileKind: item.fileKind, fileName: item.fileName };
+  }
+  /** v4 ui: the cover letter a fill of the tab attached or would attach, for the side panel's preview: the ready letter
+   *  of the tab's newest run that holds one (not a dry run's: it reads none), else the person's own letter for the
+   *  tab's job, checked for with generate false (nothing is written). Its id stays in this worker. */
+  async function previewLetterOf(tabId: number, active: () => boolean): Promise<string | null> {
+    const held = [...(await reports.ofTab(tabId))].filter((report) => report.mode === 'fill')
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const report of held) {
+      if ((await runs.documentOf(report.runId)) === undefined) continue;
+      const ready = runs.memo(report.runId).letter?.readyId() ?? null;
+      if (ready !== null) return ready;
+    }
+    if (!active()) return null;
+    const tab = await jobs.tabJob(tabId);
+    if (tab.frame === null || !active()) return null;
+    let resumeId = tab.resume?.id ?? null;
+    if (resumeId === null) {
+      const profile = await profileCache.get();
+      resumeId = profile.ok ? profile.value.resumeId : null;
+    }
+    return checkLetter(letters, { jobId: tab.jobId, company: tab.company, jobTitle: tab.jobTitle, resumeId }, active);
   }
   /** Whether Sign-in mode may act as Auto (v3 Phase 5): the connection holds credentials:read and the person
    *  acknowledged the disclosure as it reads now. */
@@ -839,7 +860,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     }
     // v3 Phase 3b: the side panel's resume preview, an extension page's port only.
     if (port.name === 'preview' && channel?.kind === 'page') {
-      resume.acceptPreview(port, previewResumeOf, () => contentReady());
+      resume.acceptPreview(port, previewResumeOf, () => contentReady(), previewLetterOf);
       return;
     }
     log('port.refused');

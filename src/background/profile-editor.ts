@@ -47,7 +47,7 @@ export interface ProfileEditorDeps {
 export function createProfileEditor(deps: ProfileEditorDeps) {
   return {
     /** panel/profile: the profile as TailorIT holds it, for the editor. */
-    async read(_message: Of<'panel/profile'>): Promise<Answer<ProfileView>> {
+    async read(message: Of<'panel/profile'>): Promise<Answer<ProfileView>> {
       const retry = deps.limit.take('profile');
       if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
       if (!(await deps.connected())) return refuse('not_connected');
@@ -59,7 +59,9 @@ export function createProfileEditor(deps: ProfileEditorDeps) {
           : answer.failure === 'rate-limited' ? 'rate_limited' : 'unavailable');
       }
       let sensitive: ProfileView['sensitive'] = { state: 'not-shared' };
-      if (scopes.includes('profile:sensitive')) {
+      // v4 ui: the side panel's completeness check asks for the profile alone (`sensitive: false`): nothing sensitive
+      // is read for it.
+      if (scopes.includes('profile:sensitive') && message.sensitive !== false) {
         const read = await deps.server.sensitive();
         sensitive = read.ok ? { state: 'shared', value: read.value.sensitive }
           : read.failure === 'forbidden' ? { state: 'not-shared' } : { state: 'unavailable' };

@@ -1,7 +1,7 @@
 /*
- * Phase 6's additions to the report: the step's progress line, the row actions Confirm draft and Save my answer (built
- * here, wired in wave 2), actions limited to one frame (the in-page panel's), and the stored-copy line under the policy
- * notice, as the page's own card says it.
+ * Phase 6's additions to the report: the step's progress line, the row action Confirm draft (in the in-page panel's
+ * drawer; v4 ui, D6: Save my answer is never offered), actions limited to one frame (the in-page panel's), and the
+ * stored-copy line under the policy notice, as the page's own card says it.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
@@ -46,15 +46,16 @@ describe('the report (Phase 6)', () => {
     expect(root.querySelector('p.tia-status')?.getAttribute('data-run-status')).toBe('fill-step');
   });
 
-  it('offers Confirm draft on an AI draft that waits for the person, dashed and marked, and asks with its frame and key', async () => {
+  it('offers Confirm draft in the drawer on an AI draft that waits for the person, unmarked, with its frame and key', async () => {
     const confirmed: Array<[number, string]> = [];
     const root = await mount(<Report reports={[frameReport(2, { fields: [waitingDraft, confirmedDraft, row('plain')] })]}
       onConfirmDraft={(frameId, key) => confirmed.push([frameId, key])} />);
-    // Folded at first (v3 Phase 3 review): its actions are in its detail.
+    // Folded at first (v3 Phase 3 review): its actions are in its drawer.
     expect(action(root, 'why', 'confirm-draft')).toBeNull();
     await unfoldRows(root);
     expect(rowOf(root, 'why').dataset.draft).toBe('true');
-    expect(rowOf(root, 'why').textContent).toContain(COPY.report.draftMark);
+    // v4 ui (D6): no "AI draft" mark.
+    expect(rowOf(root, 'why').textContent).not.toContain(COPY.report.draftMark);
     expect(rowOf(root, 'plain').dataset.draft).toBe('false');
     expect(action(root, 'cover', 'confirm-draft')).toBeNull();
     expect(action(root, 'plain', 'confirm-draft')).toBeNull();
@@ -63,17 +64,14 @@ describe('the report (Phase 6)', () => {
     expect(action(root, 'why', 'confirm-draft')?.textContent).toBe(COPY.report.confirmDraft);
   });
 
-  it('offers Save my answer only on a flagged field the person changed, and never on a question saved answers may not answer', async () => {
-    const saved: Array<[number, string]> = [];
+  it('never offers Save my answer, even with its callback and a field the person fixed (v4 ui, D6)', async () => {
     const root = await mount(<Report reports={[frameReport(0, { fields: [fixed, untouched, eeo, consent, upload, verifiedEdited] })]}
-      onSaveAnswer={(frameId, key) => saved.push([frameId, key])} />);
+      onSaveAnswer={() => undefined} onConfirmDraft={() => undefined} />);
     await unfoldRows(root);
-    expect(action(root, 'notice', 'save-answer')?.textContent).toBe(COPY.report.saveAnswer);
-    for (const key of ['relocate', 'gender', 'privacy', 'portfolio', 'email']) {
+    for (const key of ['notice', 'relocate', 'gender', 'privacy', 'portfolio', 'email']) {
       expect(action(root, key, 'save-answer'), key).toBeNull();
     }
-    await click(action(root, 'notice', 'save-answer'));
-    expect(saved).toEqual([[0, 'notice']]);
+    expect(button(root, COPY.report.saveAnswer)).toBeNull();
   });
 
   it('draws neither action without its callback, and holds them while a request is on its way', async () => {
@@ -82,11 +80,12 @@ describe('the report (Phase 6)', () => {
     // Only the rows' folds and the progress line's (v3 Phase 3): no action.
     expect(plain.querySelectorAll('button[data-action]:not([data-action="toggle-fields"]), button.tia-row__go'))
       .toHaveLength(0);
+    // v4 ui: and no drawer: the rows are plain lines.
+    expect(plain.querySelector('button.tia-row__toggle')).toBeNull();
     const busy = await mount(<Report reports={[frameReport(0, { fields: [waitingDraft, fixed] })]} busy
-      onConfirmDraft={() => undefined} onSaveAnswer={() => undefined} />);
+      onConfirmDraft={() => undefined} />);
     await unfoldRows(busy);
     expect(action(busy, 'why', 'confirm-draft')?.hasAttribute('disabled')).toBe(true);
-    expect(action(busy, 'notice', 'save-answer')?.hasAttribute('disabled')).toBe(true);
   });
 
   it('acts on one frame’s rows only when told to (the in-page panel’s own frame)', async () => {
@@ -95,8 +94,8 @@ describe('the report (Phase 6)', () => {
       frameReport(4, { platform: 'greenhouse', adapter: 'greenhouse', fields: [row('embed-email')] })];
     const root = await mount(<Report reports={reports} actionsFrameId={4} onShowField={(frameId, key) => shown.push([frameId, key])}
       onConfirmDraft={() => undefined} />);
-    await click(rowOf(root, 'top-email').querySelector<HTMLButtonElement>('button.tia-row__toggle'));
-    expect(rowOf(root, 'top-email').querySelector('button[data-action], button.tia-row__go')).toBeNull();
+    // Another frame's row has no action and no drawer.
+    expect(rowOf(root, 'top-email').querySelector('button')).toBeNull();
     expect(action(root, 'why', 'confirm-draft')).toBeNull();
     await click(rowOf(root, 'embed-email').querySelector<HTMLButtonElement>('button.tia-row__toggle'));
     await click(action(root, 'embed-email', 'show-field'));

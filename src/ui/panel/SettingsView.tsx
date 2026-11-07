@@ -1,0 +1,123 @@
+/*
+ * v4 ui: the side panel's Settings view (the owner, 2026-11-07: "If setting is clicked, only show setting. so back
+ * button will be needed to back to main. setting includes Autofill information"; Jobright's screenshot 5, in TailorIT's
+ * words and teal). It replaces everything under the panel's head: a round ✕ and "Settings" (back to the main view),
+ * then the modes as radio-card groups, each title with a "?" holding its explanation (src/ui/page/modes.tsx, the same
+ * groups the options page draws), then "Autofill information" (the profile editor; its Back returns here), the account
+ * ("Connected as …") and "All settings" (the options page), and a full-width Save pinned at the bottom.
+ *
+ * The choices are a draft until Save: Save is grey until something changed, and saves with settings/save {settings,
+ * base}, `base` being the settings this view last read (the audit's M4: the worker applies only the change, so a change
+ * made meanwhile elsewhere is kept). What the worker stored is shown after. ✕ discards an unsaved change. Settings the
+ * worker says changed elsewhere while nothing here is changed are shown at once.
+ */
+import { useId, useState } from 'react';
+import type { Settings } from '../../core/types/settings';
+import type { AuthStatus } from '../../messaging/schemas';
+import type { PagePlatform } from '../../platform/types';
+import { COPY } from '../../shared/copy';
+import { Icon } from '../brand/Icon';
+import { ModesFields, signInAvailability } from '../page/modes';
+import { request } from '../page/request';
+
+const WORDS = COPY.settingsView;
+
+/** Whether two settings say the same. */
+const same = (a: Settings, b: Settings) => JSON.stringify(a) === JSON.stringify(b);
+
+export interface SettingsViewProps {
+  platform: PagePlatform;
+  /** The settings as the panel last read them (null: not read yet). */
+  settings: Settings | null;
+  status: AuthStatus | null;
+  /** ✕: back to the main view, an unsaved change dropped. */
+  onClose(): void;
+  /** What the worker stored after a Save. */
+  onSaved(settings: Settings): void;
+  /** "Autofill information": the profile editor. */
+  onAutofillInfo(): void;
+  /** The options page. */
+  settingsUrl: string;
+}
+
+export function SettingsView({ platform, settings, status, onClose, onSaved, onAutofillInfo, settingsUrl }: SettingsViewProps) {
+  const headingId = useId();
+  /** What this view last read or saved (the save's base), and the person's draft over it. */
+  const [base, setBase] = useState<Settings | null>(settings);
+  const [draft, setDraft] = useState<Settings | null>(settings);
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const dirty = base !== null && draft !== null && !same(base, draft);
+
+  // The panel read the settings (first, or again after a change elsewhere): shown at once while nothing is changed
+  // here; a draft in progress keeps its base, so its Save applies only its own change. (React's pattern for state that
+  // follows a prop: adjusted while rendering, once per new read.)
+  const [seen, setSeen] = useState(settings);
+  if (settings !== seen) {
+    setSeen(settings);
+    if (settings !== null && (base === null || draft === null || same(base, draft))) {
+      setBase(settings);
+      setDraft(settings);
+    }
+  }
+
+  const save = async () => {
+    if (draft === null || base === null || !dirty) return;
+    setSaving(true);
+    setNote(null);
+    const answer = await request(platform, { v: 1, type: 'settings/save', settings: draft, base });
+    setSaving(false);
+    if (answer.ok) {
+      setBase(answer.data.settings);
+      setDraft(answer.data.settings);
+      setNote(WORDS.saved);
+      onSaved(answer.data.settings);
+    } else {
+      setNote(WORDS.notSaved);
+    }
+  };
+
+  const account = status?.connection === 'connected'
+    ? status.account ? COPY.panel.connectedAs(status.account.name) : COPY.panel.connected : null;
+
+  return (
+    <section className="tia-settings" aria-labelledby={headingId} data-settings-view="">
+      <div className="tia-settings__head">
+        <button type="button" className="tia-roundbutton" aria-label={WORDS.close} title={WORDS.close}
+          data-action="close-settings" onClick={onClose}>
+          <Icon name="close" size={16} />
+        </button>
+        <h2 className="tia-settings__heading" id={headingId}>{WORDS.heading}</h2>
+      </div>
+      <div className="tia-settings__body">
+        {draft === null ? <p className="tia-note" role="status">{WORDS.loading}</p> : (
+          <ModesFields settings={draft} disabled={saving} idPrefix="panel" signIn={signInAvailability(status)}
+            onChange={(next) => {
+              setNote(null);
+              setDraft(next);
+            }} />
+        )}
+        <div className="tia-settings__links">
+          <button type="button" className="tia-linkrow" data-open-profile="" onClick={onAutofillInfo}>
+            <Icon name="person" size={18} className="tia-icon tia-linkrow__icon" />
+            <span className="tia-linkrow__label">{WORDS.autofillInfo}</span>
+            <Icon name="chevron-right" size={16} className="tia-icon tia-linkrow__chevron" />
+          </button>
+          {account !== null && <p className="tia-connection" data-connection="connected">{account}</p>}
+          <a className="tia-settings__all" href={settingsUrl} target="_blank" rel="noreferrer" data-open-settings="">
+            {WORDS.allSettings}
+            <Icon name="chevron-right" size={16} />
+          </a>
+        </div>
+      </div>
+      <div className="tia-settings__foot">
+        {note !== null && <p className="tia-settings__note" role="status">{note}</p>}
+        <button type="button" className="tia-cta tia-settings__save" disabled={!dirty || saving} data-action="save-settings"
+          onClick={() => void save()}>
+          {saving && <Icon name="spinner" size={18} className="tia-icon tia-spin" />}
+          {saving ? WORDS.saving : WORDS.save}
+        </button>
+      </div>
+    </section>
+  );
+}

@@ -42,15 +42,16 @@ test.describe('saved answers and drafts', () => {
     const fixed = await ext.settled(tabId, { until: (report) => rowOf(report, QUESTION)?.detail?.userEdited === true });
     expect(fixed.fields.filter((each) => each.detail?.userEdited === true).map((each) => each.label)).toEqual([QUESTION]);
 
-    // The review offers Save my answer on that row alone, and the person clicks it.
+    // v4 ui (D6): the review offers no Save my answer; the save itself stays the worker's (panel/saveAnswer), asked
+    // here as the panel's page message.
     const panel = await ext.reportPage(tabId);
     await panel.bringToFront();
-    // Its row unfolded first: rows are folded at first, their icon and label shown (v3 Phase 3 review).
     const fixedRow = panel.locator(`li[data-field-key="${row(fixed, QUESTION).key}"]`);
-    await fixedRow.locator('button.tia-row__toggle').click();
-    await expect(panel.locator('[data-action="save-answer"]')).toHaveCount(1);
-    await fixedRow.locator('[data-action="save-answer"]').click();
-    await expect(panel.locator('.tia-feedback')).toHaveText(COPY.panel.answerSaved);
+    await expect(fixedRow).toBeVisible();
+    await expect(panel.locator('[data-action="save-answer"]')).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: COPY.report.saveAnswer })).toHaveCount(0);
+    expect(await ext.data({ v: 1, type: 'panel/saveAnswer', tabId, frameId: 0, fieldKey: row(fixed, QUESTION).key }))
+      .toEqual({ outcome: 'saved' });
 
     // What went to TailorIT: the question's key, no option set, every company, the answer as the person typed it.
     const puts = await mock.requestsTo('PUT /api/autofill/answers');
@@ -74,7 +75,7 @@ test.describe('saved answers and drafts', () => {
       labels: LABELS, applicationKey: applicationKeyOf(SAVED.again) });
   });
 
-  test('a draft the person confirms on the report page is theirs: verified, an AI draft still', async ({ extContext, connected: ext, routeLog, logs }) => {
+  test('a draft the person confirms is theirs: verified, an AI draft still (v4 ui: no button in the review)', async ({ extContext, connected: ext, routeLog, logs }) => {
     // Drafts wait for the person only with "Wait for me to confirm each draft" on (the owner's amendments).
     await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
       llm: { ...DEFAULT_SETTINGS.llm, drafts: true, confirmDrafts: true } } });
@@ -88,11 +89,12 @@ test.describe('saved answers and drafts', () => {
       const why = row(report, 'Why do you want to work here?');
       expect(why).toMatchObject({ status: 'flagged', provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation' });
 
+      // v4 ui (D6): the review offers no Confirm draft; the confirmation stays the worker's (panel/confirmDraft).
       const panel = await ext.reportPage(tabId);
       await panel.bringToFront();
-      await panel.locator(`li[data-field-key="${why.key}"] button.tia-row__toggle`).click();
-      await panel.locator(`li[data-field-key="${why.key}"] [data-action="confirm-draft"]`).click();
-      await expect(panel.locator('.tia-feedback')).toHaveText(COPY.panel.draftConfirmed);
+      await expect(panel.locator(`li[data-field-key="${why.key}"]`)).toBeVisible();
+      await expect(panel.locator('[data-action="confirm-draft"]')).toHaveCount(0);
+      expect(await ext.data({ v: 1, type: 'panel/confirmDraft', tabId, frameId: 0, fieldKey: why.key })).toEqual({});
       const confirmed = await ext.settled(tabId, { until: (each) => rowOf(each, why.label)?.status === 'verified' });
       expect(row(confirmed, why.label)).toMatchObject({ status: 'verified', provenance: 'llm-draft', reason: 'ok',
         needsUserAction: false });

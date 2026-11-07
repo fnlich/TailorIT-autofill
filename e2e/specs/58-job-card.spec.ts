@@ -3,11 +3,11 @@
  * mock's version 2 routes:
  * - before Autofill, the card shows the job, its match and the resume it attaches, from one lookup the form frame
  *   relayed (the page's own address, no posting text); Autofill then makes its own lookup and the card stays;
- * - the tracker's Applied, a closed and archived posting, an unreadable resume;
+ * - the tracker's Applied (v4 ui: its badge alone), an unreadable resume (no score);
  * - a job TailorIT does not have: Add on the person's click (POST /jobs with the page's address), the added job then on
  *   the card; Add refused (closed, the ATS down), and no Add where TailorIT cannot add from the address;
- * - Save to tracker for a job not tracked yet;
- * - Change: the chosen resume goes with the lookup, and the card says it was chosen;
+ * - no Save to tracker for a job not tracked yet (v4 ui: submitting records it Applied);
+ * - Change: the chosen resume goes with the lookup, and the résumé line names it;
  * - a single-page application's next posting in the same page: the card is read again for it (the Phase E review);
  * - a custom question answered from the card's resume, and a sensitive one never sent;
  * - a lookup that fails: the card says TailorIT could not say, and Autofill still works.
@@ -58,9 +58,11 @@ test.describe('the job card', () => {
     await expect(card.locator('.tia-job__company')).toHaveText(GOLDEN.job.companyName);
     await expect(card.locator('.tia-job__title')).toHaveText(GOLDEN.job.title);
     await expect(card.getByRole('img', { name: COPY.job.matchLabel(75, COPY.job.bands.good) })).toBeVisible();
-    await expect(card).toContainText(COPY.job.keywords(9, 12));
-    await expect(card).toContainText(GOLDEN_RESUME.label);
-    await expect(card).toContainText(GOLDEN.job.location);
+    // Its tip says what the score counts (v4 ui: the black bubble).
+    await expect(card.locator('[data-match-tip]')).toHaveText(COPY.job.matchTip(9, 12));
+    // v4 ui: the meta line "N days ago · location"; the resume is the résumé line's, under Autofill.
+    await expect(card.locator('[data-job-meta]')).toContainText(GOLDEN.job.location);
+    await expect(panel.locator('[data-job-resume]')).toContainText(GOLDEN_RESUME.label);
     // One lookup: the page's own load asked (with the posting's canonical address, no /apply and no query string: v3
     // Phase 3 review), or, once this run's lookups on load are used up (four a minute across every tab), the panel did
     // (with the page's address).
@@ -81,13 +83,14 @@ test.describe('the job card', () => {
       labels: SYNTHETIC_LABELS['policy-apply'], applicationKey: applicationKeyOf(url) });
   });
 
-  test('warns the posting is already in the tracker as Applied, closed and archived, with no score for an unreadable resume', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  test('marks a posting the tracker holds as Applied with its badge alone, and no score for an unreadable resume (v4 ui)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
     await tailorit.scenario('lookup-applied');
     const { card } = await openPanel(ext, await extContext.newPage(), routeLog, at('a2'));
-    await expect(card.locator('[data-job-warning="applied"]')).toHaveText(COPY.job.alreadyApplied('Applied'));
-    for (const chip of [COPY.job.closed, COPY.job.archived, 'Applied']) await expect(card.locator('.tia-job__chip', { hasText: chip })).toHaveCount(1);
+    await expect(card.locator('[data-job-applied]')).toHaveText(COPY.job.applied);
+    // D1: no warning sentence, no chips.
+    await expect(card.locator('[data-job-warning], .tia-job__chip')).toHaveCount(0);
     await expect(card.locator('[data-job-match]')).toHaveCount(0);
-    await expect(card).toContainText(COPY.job.unreadable);
+    await expect(card).not.toContainText(COPY.job.unreadable);
   });
 
   test('adds a job TailorIT does not have on the person’s click, and then shows it', async ({ extContext, connected: ext, routeLog, tailorit }) => {
@@ -96,9 +99,9 @@ test.describe('the job card', () => {
     const { panel, card } = await openPanel(ext, await extContext.newPage(), routeLog, url);
     await expect(card).toHaveAttribute('data-job-state', 'not-found');
     await expect(card.locator('.tia-job__company')).toHaveText(COPY.job.notFound);
-    await expect(card).toContainText(COPY.job.notFoundHelp);
+    await expect(card.locator('.tia-job__tile')).toHaveText('?');
     expect(await mock.requestsTo(ADD)).toEqual([]);
-    await panel.getByRole('button', { name: COPY.job.add, exact: true }).click();
+    await panel.getByRole('button', { name: COPY.mainView.addJob, exact: true }).click();
     await expect(card.locator('[data-job-outcome]')).toHaveText(COPY.job.addOutcomes.added);
     await expect(card).toHaveAttribute('data-job-state', 'found');
     await expect(card.locator('.tia-job__title')).toHaveText('Staff Platform Engineer');
@@ -112,7 +115,7 @@ test.describe('the job card', () => {
     await tailorit.scenario('add-job-closed', { times: 1 });
     await tailorit.scenario('add-job-ats-down', { times: 1 });
     const { panel, card } = await openPanel(ext, await extContext.newPage(), routeLog, at('a4'));
-    const add = panel.getByRole('button', { name: COPY.job.add, exact: true });
+    const add = panel.getByRole('button', { name: COPY.mainView.addJob, exact: true });
     await add.click();
     await expect(card.locator('[data-job-outcome]')).toHaveText(COPY.job.addOutcomes.closed);
     await add.click();
@@ -121,33 +124,31 @@ test.describe('the job card', () => {
 
     const elsewhere = await openPanel(ext, await extContext.newPage(), routeLog,
       'https://jobs.lever.co/tailorit-fixture/job-card-elsewhere/apply');
-    await expect(elsewhere.card).toContainText(COPY.job.cannotAdd);
-    await expect(elsewhere.panel.getByRole('button', { name: COPY.job.add, exact: true })).toHaveCount(0);
+    await expect(elsewhere.card).toHaveAttribute('data-job-state', 'not-found');
+    await expect(elsewhere.panel.getByRole('button', { name: COPY.mainView.addJob, exact: true })).toHaveCount(0);
     expect(await mock.requestsTo(ADD)).toHaveLength(2);
   });
 
-  test('saves a job not tracked yet to the tracker', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  test('offers no Save to tracker for a job not tracked yet: submitting records it Applied (v4 ui)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
     await tailorit.scenario('lookup-untracked', { times: 1 });
-    await tailorit.scenario('add-job-existing', { times: 1 });
     const url = at('a5');
     const { panel, card } = await openPanel(ext, await extContext.newPage(), routeLog, url);
     await expect(card).toHaveAttribute('data-job-state', 'found');
-    await panel.getByRole('button', { name: COPY.job.save, exact: true }).click();
-    await expect(card.locator('[data-job-outcome]')).toHaveText(COPY.job.addOutcomes.saved);
     await expect(panel.getByRole('button', { name: COPY.job.save, exact: true })).toHaveCount(0);
-    expect(await bodies(ADD)).toEqual([{ url: postingOf(url) }]);
+    await expect(panel.getByRole('button', { name: COPY.mainView.addJob, exact: true })).toHaveCount(0);
+    expect(await bodies(ADD)).toEqual([]);
   });
 
-  test('Change: the chosen resume goes with the lookup, and the card says it was chosen', async ({ extContext, connected: ext, routeLog }) => {
-    const { panel, card } = await openPanel(ext, await extContext.newPage(), routeLog, at('a6'));
-    await expect(card).toContainText(GOLDEN_RESUME.label);
-    await card.getByRole('button', { name: COPY.job.change, exact: true }).click();
+  test('Change: the chosen resume goes with the lookup, and the résumé line names it', async ({ extContext, connected: ext, routeLog }) => {
+    const { panel } = await openPanel(ext, await extContext.newPage(), routeLog, at('a6'));
+    const line = panel.locator('[data-job-resume]');
+    await expect(line.locator('[data-resume-label]')).toHaveText(GOLDEN_RESUME.label);
+    await line.getByRole('button', { name: COPY.job.change, exact: true }).click();
     const choices = panel.locator('[data-resume-choice=""]');
     await expect(choices).toHaveCount(RESUMES.length);
     const other = RESUMES.find((resume) => resume.id !== GOLDEN_RESUME.id)!;
     await choices.filter({ hasText: other.label }).click();
-    await expect(card.locator('.tia-job__resume-label')).toHaveText(other.label);
-    await expect(card).toContainText(COPY.job.resumeReasons.chosen);
+    await expect(line.locator('[data-resume-label]')).toHaveText(other.label);
     await expect.poll(async () => (await bodies(LOOKUP)).at(-1)?.resumeId).toBe(other.id);
   });
 
@@ -174,7 +175,7 @@ test.describe('the job card', () => {
   test('answers a custom question from the card’s resume, and never sends a sensitive one', async ({ extContext, connected: ext, routeLog }) => {
     const { panel } = await openPanel(ext, await extContext.newPage(), routeLog, at('a7'));
     await expect(panel.locator('[data-job-card]')).toHaveAttribute('data-job-state', 'found');
-    await panel.getByText(COPY.ask.heading, { exact: true }).click();
+    await panel.getByRole('button', { name: COPY.mainView.ask, exact: true }).click();
     const box = panel.getByLabel(COPY.ask.label);
     await box.fill('Why do you want to work at Northwind?');
     await panel.getByRole('button', { name: COPY.ask.submit, exact: true }).click();

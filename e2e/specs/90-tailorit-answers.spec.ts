@@ -34,8 +34,14 @@ test.describe("TailorIT's answers", () => {
     await tailorit.scenario('unauthorized');
     const page = await extContext.newPage();
     await page.goto(url);
-    await ext.fill(page);
+    const tabId = await ext.tabIdOf(page);
+    await ext.frameWithForm(tabId);
+    // v4 ui: the side panel reads the person's autofill information as it opens (is it complete?): that 401 already
+    // drops the token, and the panel shows its set-up view; a fill asked anyway is refused.
+    const panel = await ext.reportPage(tabId);
     await expect.poll(async () => (await ext.authStatus()).connection).toBe('revoked');
+    await expect(panel.locator('[data-setup] [data-step="account"]')).toBeVisible();
+    await ext.send({ v: 1, type: 'panel/fill', tabId, dryRun: false });
     expect((await ext.authStatus()).account).toBeNull();
     expect(await writeEvents(page)).toEqual([]);
     for (const id of ['#name', '#email', '#phone']) await expect(page.locator(id)).toHaveValue('');

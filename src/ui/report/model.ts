@@ -3,7 +3,8 @@
  * rows by section, the one run status that most needs the person, the progress (v3 Phase 3, shared/report.ts
  * progressOf: the percent of the required fields filled, one rule for both panels and the launcher) and the field
  * lists (Required, then Optional, each row filled, missing or being filled). Plain functions over the reports, which
- * hold labels, codes and counts and never a value.
+ * hold labels, codes and counts and never a value. v4 ui (the owner's "never flag", D1/D6/D8): no AI marks; blocked
+ * rows are neither listed nor counted (shownReports).
  */
 import { FILL_STATUSES, type FillStatus } from '../../core/enums';
 import { CLASS_POLICIES, policyClassOf } from '../../core/resolver/categories';
@@ -54,29 +55,6 @@ export function sectionName(section: string): string {
   if (/\s|[A-Z]/.test(trimmed)) return trimmed;
   const words = trimmed.replace(/[-_]+/g, ' ').trim();
   return words === '' ? PAGE_COPY.report.untitledSection : `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
-}
-
-/** The reasons of an answer the AI wrote and the run accepted (the owner's amendments; Phase G: a cover letter
- *  TailorIT's AI wrote, during this run or before it, that the person never edited). */
-const AI_WRITTEN: ReadonlySet<ReportRow['reason']> = new Set<ReportRow['reason']>(['llm-draft-written', 'llm-answer-written',
-  'cover-letter-written']);
-
-/**
- * How a row marks the AI, by E1's rule (the review is the one place the marks are shown: nothing is drawn over the
- * page's fields since the owner's decision of 2026-11-01): 'guess' for an answer with nothing to go on ("AI guess"),
- * 'written' for a draft or an answer the AI wrote, verified as written ("AI"); undefined otherwise (a row that needs
- * the person shows its status).
- */
-export function aiMarkOf(row: Pick<ReportRow, 'reason' | 'wrote' | 'status'>): 'written' | 'guess' | undefined {
-  if (!row.wrote || row.status !== 'verified') return undefined;
-  if (row.reason === 'ai-guess') return 'guess';
-  return AI_WRITTEN.has(row.reason) ? 'written' : undefined;
-}
-
-/** The answers the AI wrote across the tab's frames (aiMarkOf), and how many of them were its guesses. */
-export function aiCountsOf(reports: readonly FrameReport[]): { written: number; guesses: number } {
-  const marks = reports.flatMap((report) => report.fields).map(aiMarkOf).filter((mark) => mark !== undefined);
-  return { written: marks.length, guesses: marks.filter((mark) => mark === 'guess').length };
 }
 
 /** Run statuses, the one that most needs the person first: a decision, a sign-in, a hand-off, then work in progress. */
@@ -208,10 +186,18 @@ export interface ListRow {
   current: boolean;
 }
 
+/** v4 ui (D8): the reports as the person is shown them and counted: every row but a blocked one (a honeypot, a field
+ *  with no visible label, a canary, a guard's refusal), which is never filled and is none of the person's business. A
+ *  report with no blocked row is passed as it is. */
+export function shownReports<T extends Pick<FrameReport, 'fields'>>(reports: readonly T[]): T[] {
+  return reports.map((report) => (report.fields.some((row) => row.status === 'blocked')
+    ? { ...report, fields: report.fields.filter((row) => row.status !== 'blocked') } : report));
+}
+
 /** The field lists (v3 Phase 3, Jobright's): the required rows, then the optional ones, each frame's in its report's
- *  order (the form's), frames by id. */
+ *  order (the form's), frames by id; no blocked row (v4 ui, D8: shownReports). */
 export function fieldListsOf(reports: readonly FrameReport[]): { required: ListRow[]; optional: ListRow[] } {
-  const rows = [...reports].sort((a, b) => a.frameId - b.frameId).flatMap((report) => report.fields.map((row) => ({
+  const rows = shownReports([...reports].sort((a, b) => a.frameId - b.frameId)).flatMap((report) => report.fields.map((row) => ({
     frameId: report.frameId, row, progress: rowProgressOf(row, report.filling),
     current: report.filling?.current === row.key })));
   return { required: rows.filter((entry) => entry.row.required), optional: rows.filter((entry) => !entry.row.required) };

@@ -9,6 +9,7 @@
  */
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { EMPTY_AUTOFILL_PROFILE, type AutofillProfile } from '../contract/tailorit';
 import { DEFAULT_SETTINGS, type Settings } from '../core/types/settings';
 import type { TelemetryCount } from '../core/types/telemetry';
 import type {
@@ -83,6 +84,19 @@ export function jobCard(overrides: Partial<Extract<JobCard, { state: 'answered' 
   };
 }
 
+/** v4 ui: a profile complete enough for the side panel's main view (a first and last name, an email, a phone, a city):
+ *  panel/profile answers it by default. Nothing of the golden profile (PROFILE_SENTINELS). */
+export function completeProfile(overrides: Partial<AutofillProfile> = {}): AutofillProfile {
+  return {
+    ...EMPTY_AUTOFILL_PROFILE,
+    name: { ...EMPTY_AUTOFILL_PROFILE.name, first: 'Morgan', last: 'Lee' },
+    contact: { ...EMPTY_AUTOFILL_PROFILE.contact, email: 'morgan@example.test',
+      phone: { ...EMPTY_AUTOFILL_PROFILE.contact.phone, number: '+1 555 0100' },
+      address: { ...EMPTY_AUTOFILL_PROFILE.contact.address, city: 'Austin', country: 'US' } },
+    ...overrides,
+  };
+}
+
 /** A connected status, as auth/status answers it. */
 export function authStatus(overrides: Partial<AuthStatus> = {}): AuthStatus {
   return {
@@ -123,6 +137,8 @@ export interface WorkerScript {
   launcherHidden: 'none' | 'visit' | 'site' | 'everywhere';
   /** The auto-apply agent's status (v3 Phase 5), as agent/status answers it; agent/set and agent/stop change it. */
   agent: AgentStatus;
+  /** v4 ui: the profile panel/profile answers (complete by default; null: refused as unavailable). */
+  profile: AutofillProfile | null;
 }
 
 export interface FakeWorker {
@@ -151,7 +167,7 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       policy: false },
     letter: { check: 'none', write: 'written' }, launcherHidden: 'none',
     agent: { on: false, confirmed: false, phase: 'off', blocked: null, allowed: true, pending: false, job: null,
-      doneToday: 0, last: null } };
+      doneToday: 0, last: null }, profile: completeProfile() };
   /** A tab's page state, when the script names one (an older worker sends none). */
   const pageOf = (tabId: number) => (script.pages.has(tabId) ? { page: script.pages.get(tabId) } : {});
   const replies = new Map<string, (message: Record<string, unknown>) => unknown>();
@@ -198,6 +214,12 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
     'agent/stop': () => {
       script.agent = { ...script.agent, on: false, phase: 'off', job: null };
       return ok(script.agent);
+    },
+    'panel/profile': () => (script.profile === null ? { ok: false, error: 'unavailable' }
+      : ok({ revision: 1, profile: script.profile, flaggedLines: [], canWrite: true, sensitive: { state: 'not-shared' } })),
+    'auth/startPairing': () => {
+      script.auth = { ...script.auth, pairingExpiresAt: Date.now() + 600_000 };
+      return ok({ expiresAt: script.auth.pairingExpiresAt });
     },
     'telemetry/get': () => ok({ counts: script.counts }),
     'telemetry/clear': () => {

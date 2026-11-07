@@ -10,6 +10,9 @@
  * which the worker marks so from the form's visible text even before any run): the person may still ask, since they
  * asked. The question and the answer live in this component's state only: never stored, never logged, gone when the
  * panel closes or follows another tab.
+ *
+ * v4 ui (the owner, 2026-11-07): an outline button, "Ask custom question", under the main Autofill button, unfolds the
+ * box (and folds it again); what was asked stays while the panel shows the same page.
  */
 import { useId, useState } from 'react';
 import type { Answer } from '../../messaging/envelope';
@@ -39,6 +42,8 @@ export interface AskProps {
 
 export function AskQuestion({ ask, copy, connected, aiOff = false, noResume, policy }: AskProps) {
   const questionId = useId();
+  const bodyId = useId();
+  const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [length, setLength] = useState<AskLength>('medium');
   const [result, setResult] = useState<State>({ state: 'idle' });
@@ -69,16 +74,13 @@ export function AskQuestion({ ask, copy, connected, aiOff = false, noResume, pol
   };
 
   return (
-    <details className="tia-ask" data-ask="">
-      <summary className="tia-ask__summary">
+    <section className="tia-ask" data-ask={open ? 'open' : 'closed'}>
+      <button type="button" className="tia-outline" aria-expanded={open} aria-controls={bodyId} data-ask-action="open"
+        onClick={() => setOpen((was) => !was)}>
         <Icon name="sparkle" size={16} className="tia-icon tia-ask__icon" />
-        <span className="tia-ask__heading">{COPY.ask.heading}</span>
-        <span className="tia-row__chevron">
-          <Icon name="chevron-down" size={16} className="tia-icon tia-chevron tia-chevron--down" />
-          <Icon name="chevron-up" size={16} className="tia-icon tia-chevron tia-chevron--up" />
-        </span>
-      </summary>
-      <div className="tia-ask__body">
+        {COPY.mainView.ask}
+      </button>
+      <div className="tia-ask__body" id={bodyId} hidden={!open} role="region" aria-label={COPY.ask.heading}>
         {forbidsAi && <p className="tia-ask__policy" data-ask-policy="">{COPY.ask.policy}</p>}
         {disabledWhy !== null && <p className="tia-ask__why" data-ask-disabled="">{disabledWhy}</p>}
         <label className="tia-ask__label" htmlFor={questionId}>{COPY.ask.label}</label>
@@ -118,6 +120,6 @@ export function AskQuestion({ ask, copy, connected, aiOff = false, noResume, pol
           </div>
         )}
       </div>
-    </details>
+    </section>
   );
 }

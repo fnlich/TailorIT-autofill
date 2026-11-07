@@ -5,9 +5,12 @@
  * same way here (the header's size and chunk count, each chunk's length, the SHA-256), and the panel answers
  * resume/done. The bytes become a Blob the panel shows from a blob: address of its own origin, in its own page: never a
  * job page's, never stored, and the address is revoked when the preview closes.
+ * v4 ui: the cover letter's too (preview/request {tabId, kind: 'coverLetter'}): the letter the tab's fill attached or
+ * would attach, a PDF only, over the same port and checks.
  */
 import { RESUME_CHUNK_BYTES, RESUME_MAX_BYTES, ResumePortMessageSchema } from '../../messaging/schemas';
 import type { PagePlatform, PortLike } from '../../platform/types';
+import type { PreviewKind } from '../report/Report';
 
 /** Why there is no preview: none to show (no resume, or none could be fetched), not a PDF, or the transfer failed. */
 export type PreviewFailure = 'unavailable' | 'not-pdf' | 'failed';
@@ -21,10 +24,12 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/** Receives the tab's resume over the preview port (module header). The worker always ends the transfer (its fetch's
- *  time-out, its release within 60 s), so the panel keeps no clock of its own. `signal` (the review): the preview went
- *  (closed, another resume or tab) before the bytes came: the port is disconnected and nothing is kept. */
-export function receivePreview(platform: PagePlatform, tabId: number, signal?: AbortSignal): Promise<PreviewResult> {
+/** Receives the tab's resume (or, v4 ui, its cover letter: `kind`) over the preview port (module header). The worker
+ *  always ends the transfer (its fetch's time-out, its release within 60 s), so the panel keeps no clock of its own.
+ *  `signal` (the review): the preview went (closed, another resume or tab) before the bytes came: the port is
+ *  disconnected and nothing is kept. */
+export function receivePreview(platform: PagePlatform, tabId: number, signal?: AbortSignal,
+  kind: PreviewKind = 'resume'): Promise<PreviewResult> {
   return new Promise((resolve) => {
     if (signal?.aborted === true) {
       resolve({ ok: false, reason: 'failed' });
@@ -103,7 +108,7 @@ export function receivePreview(platform: PagePlatform, tabId: number, signal?: A
     });
     signal?.addEventListener('abort', () => finish({ ok: false, reason: 'failed' }), { once: true });
     try {
-      port.post({ v: 1, type: 'preview/request', tabId });
+      port.post({ v: 1, type: 'preview/request', tabId, ...(kind === 'coverLetter' ? { kind } : {}) });
     } catch {
       finish({ ok: false, reason: 'failed' });
     }

@@ -149,7 +149,8 @@ test.describe('pairing', () => {
     const code = ((await page.locator('#code').textContent()) ?? '').trim();
     expect(code).toMatch(/^[0-9A-Z]{4}(?:-[0-9A-Z]{4}){3}$/);
     await options.bringToFront();
-    await options.getByLabel(COPY.options.connection.codeLabel).fill(code);
+    // Exactly the box's label (v4 ui: the "?" beside it is named "About …" that label).
+    await options.getByLabel(COPY.options.connection.codeLabel, { exact: true }).fill(code);
     await options.getByRole('button', { name: COPY.options.connection.codeSubmit }).click();
     await expect(options.getByText(COPY.options.connection.connectedAs(ACCOUNT.name, ACCOUNT.email))).toBeVisible();
     expect(await ext.authStatus()).toMatchObject({ connection: 'connected', scopes: NO_SENSITIVE });
@@ -160,7 +161,7 @@ test.describe('pairing', () => {
 
   test('a code TailorIT does not know is refused with its reason', async () => {
     const { ext, options } = fresh;
-    await options.getByLabel(COPY.options.connection.codeLabel).fill('K7QM-2XRD-9VHT-PA3C');
+    await options.getByLabel(COPY.options.connection.codeLabel, { exact: true }).fill('K7QM-2XRD-9VHT-PA3C');
     await options.getByRole('button', { name: COPY.options.connection.codeSubmit }).click();
     await expect(options.getByText(COPY.options.connection.codeRefused)).toBeVisible();
     expect((await ext.authStatus()).connection).toBe('not-connected');

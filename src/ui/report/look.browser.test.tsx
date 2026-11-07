@@ -1,11 +1,10 @@
 /*
- * The report in TailorIT's look, laid out as Jobright's sidebar (v3 Phase 3): the progress line ("Scanning the page…",
- * "Autofilling… 78%", "9 of 12 required fields filled · 75%") over a named bar; the field lists, Required then Optional,
- * each row a line with its state's icon and its label, its status, reason and provenance folded under it, a row that
- * needs the person unfolded at first; the row being written marked and, after 2 s on it, Skip; the lists folded under
- * the line with the Minimized view; the all-clear only when nothing stands against it; notices toned, their words
- * exactly their sentences; AI drafts marked in either layout; and a row that forgets the options it asked for when it
- * folds.
+ * The report in TailorIT's look, laid out as Jobright's sidebar (v3 Phase 3; v4 ui, the owner's screenshot 4): the
+ * progress line ("Scanning the page", "Autofilling 78%", "7/7 required fields filled | 100%") over a named bar; the
+ * field lists, Required then Optional, each row a line with a teal tick or an empty grey circle and its label, nothing
+ * more (D1, D6); the row being written marked and, after 2 s on it, Skip; the lists folded under the line with the
+ * Minimized view; nothing under the lists; notices toned, their words exactly their sentences (the in-page panel's);
+ * and a row of the in-page panel's drawer that forgets the options it asked for when it folds.
  */
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -55,41 +54,29 @@ function testClock() {
 describe('the report in TailorIT’s look', () => {
   afterEach(() => unmountAll());
 
-  it('lists Required then Optional, each row folded to its state and its label (v3 Phase 3 review)', async () => {
+  it('lists Required then Optional, each row a line: a teal tick when filled, an empty grey circle when not (v4 ui)', async () => {
     const root = await mount(<Report reports={[frameReport(0, { fields: [verified, flagged, filled, skipped] })]}
-      onShowField={() => undefined} describeField={async () => []} />);
+      onShowField={() => undefined} />);
     expect([...root.querySelectorAll<HTMLElement>('[data-group]')].map((group) => [group.dataset.group,
       group.querySelector('h3')?.textContent, [...group.querySelectorAll<HTMLElement>('li[data-field-key]')]
         .map((each) => [each.dataset.fieldKey, each.dataset.layout, each.dataset.progress])])).toEqual([
-      ['required', COPY.report.requiredGroup, [['email', 'line', 'filled'], ['school', 'card', 'missing']]],
+      ['required', COPY.report.requiredGroup, [['email', 'line', 'filled'], ['school', 'line', 'missing']]],
       ['optional', COPY.report.optionalGroup, [['phone', 'line', 'filled'], ['website', 'line', 'none']]],
     ]);
-    // Every row keeps its detail folded under its chevron at first, one that needs the person too (Jobright's list):
-    // its icon and its label say it.
-    expect(rowOf(root, 'school').querySelector('.tia-row__reason')).toBeNull();
-    expect(rowOf(root, 'phone').querySelector('.tia-row__reason')).toBeNull();
-    await click(rowOf(root, 'school').querySelector<HTMLButtonElement>('button.tia-row__toggle'));
-    expect(rowOf(root, 'school').querySelector<HTMLElement>('.tia-row__reason')!.checkVisibility()).toBe(true);
-    const toggle = rowOf(root, 'phone').querySelector<HTMLButtonElement>('button.tia-row__toggle')!;
-    expect([toggle.getAttribute('aria-expanded'), toggle.getAttribute('aria-label')])
-      .toEqual(['false', COPY.report.details('Phone')]);
-    await click(toggle);
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    for (const text of ['Phone', COPY.statuses.filled, COPY.reasons['filled-low-confidence'], COPY.stages.fuzzy, '82%',
-      COPY.provenances.profile]) {
-      expect(rowOf(root, 'phone').textContent).toContain(text);
-    }
-    // Each state's icon says its words to a screen reader.
-    expect(rowOf(root, 'school').querySelector('.tia-row__state .tia-visually-hidden')?.textContent)
-      .toBe(COPY.report.rowStates.missing);
-    // An optional field left for the person is a grey dash; a required one the alert (v3 Phase 3 review).
-    const left = await mount(<Report reports={[frameReport(0, { fields: [
-      row('nickname', { required: false, status: 'flagged', provenance: null, reason: 'no-profile-value', wrote: false,
-        verification: 'not-applicable', needsUserAction: true }), flagged] })]} />);
-    expect([...left.querySelectorAll<HTMLElement>('li[data-field-key] .tia-row__state')].map((state) => state.className))
-      .toEqual(['tia-row__state tia-row__state--missing', 'tia-row__state tia-row__state--optional']);
-    expect(getComputedStyle(left.querySelector('.tia-row__state--optional')!).color)
-      .not.toBe(getComputedStyle(left.querySelector('.tia-row__state--missing')!).color);
+    // D1: a field not filled, required or not, is an empty grey circle and "Not filled": never an alert, never
+    // "Needs you", never a reason or a fold.
+    expect(rowsOf(root).map((each) => each.querySelector('.tia-row__state')!.className)).toEqual([
+      'tia-row__state tia-row__state--filled', 'tia-row__state tia-row__state--empty',
+      'tia-row__state tia-row__state--filled', 'tia-row__state tia-row__state--empty']);
+    expect(rowOf(root, 'school').querySelector('.tia-row__state .tia-visually-hidden')?.textContent).toBe('Not filled');
+    expect(COPY.report.rowStates.missing).toBe('Not filled');
+    expect(root.textContent).not.toContain('Needs you');
+    expect(root.querySelector('button.tia-row__toggle, .tia-row__reason, .tia-chip')).toBeNull();
+    // The empty circle is a ring alone (one circle, no mark inside), grey; the tick teal.
+    const empty = rowOf(root, 'school').querySelector('.tia-row__state svg')!;
+    expect([empty.querySelectorAll('circle').length, empty.querySelectorAll('path').length]).toEqual([1, 0]);
+    expect(getComputedStyle(rowOf(root, 'school').querySelector('.tia-row__state')!).color).toBe('rgb(138, 138, 138)');
+    expect(getComputedStyle(rowOf(root, 'email').querySelector('.tia-row__state circle')!).fill).toBe('rgb(20, 161, 192)');
     // Every icon is a drawing with no words, hidden from assistive technology.
     expect(root.querySelectorAll('svg').length).toBeGreaterThan(0);
     for (const svg of root.querySelectorAll('svg')) {
@@ -112,7 +99,10 @@ describe('the report in TailorIT’s look', () => {
       bar.getAttribute('aria-valuetext')]).toEqual(['0', '100', '50', COPY.report.progressText(1, 2, true, 50)]);
     const fill = bar.querySelector<HTMLElement>('.tia-progress__fill')!;
     expect(fill.getBoundingClientRect().width / bar.getBoundingClientRect().width).toBeCloseTo(0.5, 2);
-    expect(block.querySelector('[data-needs]')?.textContent).toBe(COPY.report.needsYou(1));
+    // v4 ui (D1): nothing says what is left: the list shows it.
+    expect(block.querySelector('[data-needs]')).toBeNull();
+    // Jobright's words: "7/7 required fields filled".
+    expect(COPY.report.progressFilled(7, 7, true)).toBe('7/7 required fields filled');
     // No required field: every counted row, "fields filled".
     const optional = await mount(<Report reports={[frameReport(0, { fields: [filled, skipped] })]} />);
     expect(optional.querySelector('.tia-progress-line__title')?.textContent).toBe(COPY.report.progressFilled(1, 1, false));
@@ -219,15 +209,13 @@ describe('the report in TailorIT’s look', () => {
     ]);
   });
 
-  it('says nothing needs the person only when no run is working and no notice stands', async () => {
-    const allClear = async (reports: FrameReport[]) =>
-      (await mount(<Report reports={reports} />)).querySelector('.tia-allclear')?.textContent ?? null;
-    expect(await allClear([frameReport(0, { fields: [verified, filled] })])).toBe(COPY.report.allClear);
-    expect(await allClear([frameReport(0, { fields: [verified, flagged] })])).toBeNull();
-    expect(await allClear([frameReport(0, { status: 'fill-step', fields: [verified] })])).toBeNull();
-    expect(await allClear([frameReport(0, { fields: [verified], notices: [{ code: 'policy-unreadable' }] })])).toBeNull();
-    expect(await allClear([frameReport(0, { fields: [verified] }), frameReport(2, { status: 'policy-notice' })])).toBeNull();
-    expect(await allClear([frameReport(0, { mode: 'dry-run', fields: [verified] })])).toBeNull();
+  it('says nothing under the lists: no fields left for the person, no AI count, no all-clear (v4 ui, D1 and D6)', async () => {
+    for (const reports of [[frameReport(0, { fields: [verified, filled] })], [frameReport(0, { fields: [verified, flagged] })],
+      [frameReport(0, { fields: [row('ai', { provenance: 'llm-answer', reason: 'ai-guess' })] })]]) {
+      const root = await mount(<Report reports={reports} />);
+      expect(root.querySelector('.tia-progress-notes, .tia-allclear, [data-needs], [data-ai-answers]')).toBeNull();
+      expect(root.textContent).not.toContain(COPY.report.allClear);
+    }
   });
 
   it('forgets the closest options when its row folds', async () => {
@@ -244,21 +232,16 @@ describe('the report in TailorIT’s look', () => {
     expect(button(root, COPY.report.showSuggestions(1))).not.toBeNull();
   });
 
-  it('keeps an AI draft’s mark and dashed edge whether its row is a card or a folded line', async () => {
+  it('marks no AI draft: a draft, waiting or not, is a line like any other (v4 ui, D6)', async () => {
     const waiting = row('why', { kind: 'textarea', status: 'flagged', provenance: 'llm-draft', reason: 'llm-draft-needs-confirmation',
       needsUserAction: true });
     const confirmed = row('cover', { kind: 'textarea', status: 'filled', provenance: 'llm-draft', reason: 'ok' });
     const root = await mount(<Report reports={[frameReport(0, { fields: [waiting, confirmed] })]} />);
-    await unfold(root, 'why');
-    await unfold(root, 'cover');
-    for (const [key, layout] of [['why', 'card'], ['cover', 'line']] as const) {
+    for (const key of ['why', 'cover']) {
       const each = rowOf(root, key);
-      expect([key, each.dataset.layout, each.dataset.draft]).toEqual([key, layout, 'true']);
-      expect(each.querySelector('.tia-row__draft')?.textContent).toBe(COPY.report.draftMark);
-      expect(getComputedStyle(each.querySelector('.tia-row__body')!).borderLeftStyle).toBe('dashed');
+      expect([each.dataset.layout, each.dataset.draft]).toEqual(['line', 'true']);
+      expect(each.querySelector('.tia-row__draft, .tia-row__body')).toBeNull();
     }
-    // The folded line shows the mark beside its label.
-    expect(rowOf(root, 'cover').querySelector('.tia-row__go .tia-row__draft')).not.toBeNull();
   });
 
   it('tones each notice, the tripwire a danger, and keeps its words exactly its sentence', async () => {
@@ -274,6 +257,7 @@ describe('the report in TailorIT’s look', () => {
     const root = await mount(<Report reports={[frameReport(0, { fields: [verified] })]} />);
     expect(getComputedStyle(root.querySelector('.tia-progress-line__percent')!).color).toBe('rgb(8, 117, 140)');
     expect(getComputedStyle(root.querySelector('.tia-progress__fill')!).backgroundColor).toBe('rgb(20, 161, 192)');
-    expect(getComputedStyle(root.querySelector('.tia-row__state--filled')!).color).toBe('rgb(8, 117, 140)');
+    // v4 ui: the filled tick's disc is the teal (a fill); text stays the ink.
+    expect(getComputedStyle(root.querySelector('.tia-row__state--filled circle')!).fill).toBe('rgb(20, 161, 192)');
   });
 });

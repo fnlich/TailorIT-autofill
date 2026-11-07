@@ -6,15 +6,22 @@
  * way then ends (its port disconnected: the review). The loader is the container's stable one (one transfer per
  * preview opened, whatever the panel draws meanwhile); a tab opened with Open it larger keeps its own copy of the PDF
  * until that tab is closed (docs/PRIVACY.md).
+ * v4 ui: the cover letter's preview too (`kind` 'coverLetter', under the report's cover-letter row), the same way.
  */
 import { useEffect, useState } from 'react';
 import { COPY } from '../../shared/copy';
+import type { PreviewKind } from '../report/Report';
 import type { PreviewResult } from './preview';
 
-const WORDS = COPY.job.preview;
+/** The words of each kind's preview. */
+const WORDS_OF: Record<PreviewKind, { loading: string; unavailable: string; title(label: string): string }> = {
+  resume: COPY.job.preview,
+  coverLetter: COPY.mainView.letterPreview,
+};
 
-export function ResumePreview({ load, label, onClose }: { load(signal: AbortSignal): Promise<PreviewResult>;
-  label: string; onClose(): void }) {
+export function ResumePreview({ load, label, onClose, kind = 'resume' }: { load(signal: AbortSignal): Promise<PreviewResult>;
+  label: string; onClose(): void; kind?: PreviewKind }) {
+  const words = WORDS_OF[kind];
   const [view, setView] = useState<{ state: 'loading' } | { state: 'shown'; url: string }
     | { state: 'failed'; text: string }>({ state: 'loading' });
 
@@ -25,7 +32,8 @@ export function ResumePreview({ load, label, onClose }: { load(signal: AbortSign
     void load(going.signal).then((result) => {
       if (!live) return;
       if (!result.ok) {
-        setView({ state: 'failed', text: result.reason === 'not-pdf' ? WORDS.notPdf : WORDS.unavailable });
+        setView({ state: 'failed', text: result.reason === 'not-pdf' && kind === 'resume' ? COPY.job.preview.notPdf
+          : words.unavailable });
         return;
       }
       url = URL.createObjectURL(result.blob);
@@ -36,21 +44,21 @@ export function ResumePreview({ load, label, onClose }: { load(signal: AbortSign
       going.abort();
       if (url !== null) URL.revokeObjectURL(url);
     };
-  }, [load]);
+  }, [load, kind, words]);
 
   return (
-    <div className="tia-preview" data-resume-preview={view.state}>
+    <div className="tia-preview" data-resume-preview={view.state} data-preview-kind={kind}>
       <div className="tia-preview__bar">
         {view.state === 'shown' && (
           <a className="tia-button tia-button--quiet" href={view.url} target="_blank" rel="noreferrer"
-            data-preview-open="">{WORDS.openTab}</a>
+            data-preview-open="">{COPY.job.preview.openTab}</a>
         )}
-        <button type="button" className="tia-button tia-button--quiet" onClick={onClose}>{WORDS.close}</button>
+        <button type="button" className="tia-button tia-button--quiet" onClick={onClose}>{COPY.job.preview.close}</button>
       </div>
-      {view.state === 'loading' && <p className="tia-help" role="status">{WORDS.loading}</p>}
+      {view.state === 'loading' && <p className="tia-help" role="status">{words.loading}</p>}
       {view.state === 'failed' && <p className="tia-help" role="status" data-preview-failed="">{view.text}</p>}
       {view.state === 'shown' && (
-        <iframe className="tia-preview__frame" src={view.url} title={WORDS.title(label)} data-preview-frame="" />
+        <iframe className="tia-preview__frame" src={view.url} title={words.title(label)} data-preview-frame="" />
       )}
     </div>
   );

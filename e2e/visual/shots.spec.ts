@@ -4,15 +4,15 @@
  * into e2e/artifacts/shots (git-ignored), with an index.html that shows them side by side. When TIA_SHOTS_REFERENCE
  * names a folder of reference pictures on this computer, the index shows them too, by their file: address; nothing of
  * them enters the repo.
- * - The side panel at 400 px: before Autofill, a real form's review, a trap's review that needs the person, a row
- *   opened, the policy card, and the review again under a dark system scheme (it stays light).
+ * - The side panel at 400 px: before Autofill, a real form's review, the résumé row's preview, the Settings view with a
+ *   "?" showing its bubble, a trap's review (nothing flagged), and the review again under a dark system scheme (it stays
+ *   light); v4 ui: the set-up view and its disclosure (last: it disconnects).
  * - v3 Phase 3 (Jobright's layout): "Autofilling… NN%" with the row being written and Skip (a slow resume), the
- *   Minimized view, the gear's menu of modes, a page Autofill does not work on, the launcher's tab at the page's edge
- *   with its hide menu, and the panel offering it back.
- * - v2: the job card found, not found with Add, already applied, loading, unavailable, a dry run's "Would attach", the
- *   resume picker, and a custom question answered.
- * - Phase G: the job card's cover-letter row: "Written by AI when the form asks for one" with Write it now, Writing…,
- *   then Ready; the person's own letter; and a fill's review with the letter attached, marked "AI".
+ *   Settings view and the Minimized view, a page Autofill does not work on, the launcher's tab at the page's edge with
+ *   its hide menu, and the panel offering it back.
+ * - v2: the job card found, not found with the Add pill, already applied, loading, unavailable, the résumé line's
+ *   picker, and a custom question answered.
+ * - Phase G: a fill's review with the cover letter attached, previewed under its row.
  * - v3 Phases 3b and 4: the dock's "Submit application", its question while required fields are empty, "Application
  *   submitted"; the wizard's "Continue to the next page"; "Autofill for another job" searched; the resume's preview;
  *   "Apply without resume"; "Your autofill information"; a posting page's card; Edit with AI's instruction box; and
@@ -107,7 +107,7 @@ async function around(page: Page, ui: PageUi, selectors: readonly string[], pad 
   return { x, y, width: right - x, height: bottom - y };
 }
 
-test("the side panel: before Autofill, a real form's review, a row opened, and the dark scheme", async ({ extContext, connected: ext, routeLog }) => {
+test("the side panel: before Autofill, a real form's review, the Settings view, and the dark scheme", async ({ extContext, connected: ext, routeLog }) => {
   const snapshot = expectation(SNAPSHOT);
   routeLog.serve(routesFile(`fixtures/${SNAPSHOT}.routes.json`));
   const page = await extContext.newPage();
@@ -125,17 +125,25 @@ test("the side panel: before Autofill, a real form's review, a row opened, and t
   await shoot(panel, '02b-side-panel-review-full.png', 'Side panel, a real form reviewed (whole page)', { fullPage: true });
   await panel.locator('[data-group="required"]').scrollIntoViewIfNeeded();
   await shoot(panel, '02d-side-panel-required-optional.png', 'Side panel, the Required and Optional lists');
-  const folded = panel.locator('li[data-layout="line"] button.tia-row__toggle').first();
-  await folded.click();
-  await folded.scrollIntoViewIfNeeded();
-  await shoot(panel, '02c-side-panel-row-open.png', 'Side panel, a folded row opened');
+  // v4 ui: the résumé row's preview, then the Settings view with a "?" showing its bubble.
+  const preview = panel.locator('li[data-file] button[data-action="preview"]').first();
+  if (await preview.count() > 0) {
+    await preview.click();
+    await preview.scrollIntoViewIfNeeded();
+    await shoot(panel, '02c-side-panel-row-preview.png', 'Side panel, the résumé row\'s Preview opened');
+  }
   await panel.evaluate(() => window.scrollTo(0, 0));
+  await panel.locator('button[data-panel-settings]').click();
+  await expect(panel.locator('[data-settings-view]')).toBeVisible();
+  await panel.locator('[data-setting-group="modes.afterPageTurn"] .tia-helptip__button').focus();
+  await shoot(panel, '02e-side-panel-settings.png', 'Side panel, the Settings view, a "?" showing its explanation');
+  await panel.locator('button[data-action="close-settings"]').click();
   await still(panel, 'dark');
   await shoot(panel, '09-side-panel-dark-scheme.png', 'Side panel under a dark system scheme: it stays light');
   await still(panel);
 });
 
-test("the side panel: a trap's review, with what needs the person", async ({ extContext, connected: ext, routeLog }) => {
+test("the side panel: a trap's review, nothing flagged", async ({ extContext, connected: ext, routeLog }) => {
   const served = trap('01');
   routeLog.serve({ [served.url]: served.file });
   const page = await extContext.newPage();
@@ -144,8 +152,9 @@ test("the side panel: a trap's review, with what needs the person", async ({ ext
   expect((await ext.settled(tabId)).status).toBe('review');
   const panel = await sidePanel(ext, tabId);
   await panel.bringToFront();
-  await expect(panel.locator('[data-notice="tripwire"]')).toBeVisible();
-  await shoot(panel, '03-side-panel-needs-you.png', 'Side panel, a review that needs the person (trap 01)', { fullPage: true });
+  await expect(panel.locator('[data-progress="rest"]')).toBeVisible();
+  await shoot(panel, '03-side-panel-review.png', 'Side panel, a trap\'s review: ticks and empty circles, no flag (trap 01)',
+    { fullPage: true });
 
   // The page's own UI after it: the launcher at review, its badge, and the notices.
   const ui = await PageUi.of(page);
@@ -159,7 +168,7 @@ test("the side panel: a trap's review, with what needs the person", async ({ ext
   await ui.close();
 });
 
-test('the policy card, in the side panel and on the page', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+test('the policy card on the page (v4 ui: the side panel mirrors none)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
   // The card is the "Ask me" choice for a posting that forbids AI (the default fills from the profile only).
   await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
     llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' } } });
@@ -170,11 +179,6 @@ test('the policy card, in the side panel and on the page', async ({ extContext, 
     await page.goto(STORED_COPY_APPLY);
     const tabId = await ext.fill(page);
     expect((await ext.settled(tabId)).status).toBe('policy-notice');
-    const panel = await sidePanel(ext, tabId);
-    await panel.bringToFront();
-    await expect(panel.locator('[data-notice="policy"] button')).toHaveCount(2);
-    await shoot(panel, '04-side-panel-policy.png', 'Side panel, a run waiting at the policy card');
-
     const ui = await PageUi.of(page);
     await still(page);
     await page.bringToFront();
@@ -218,8 +222,6 @@ test('the in-page panel, and the launcher at rest', async ({ extContext, connect
 
 /** A Lever posting TailorIT can add from, for the card's states (the synthetic form, its posting's title above it). */
 const CARD_APPLY = (id: string) => `https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000c${id}/apply`;
-/** The review's notice at a sign-in the person makes. */
-const COPY_AUTH = 'This step needs you to sign in or create an account. Do that yourself, then choose Continue.';
 
 /** The side panel of a fresh tab showing the synthetic form at `url`, once its card is past `state` (or at it). */
 async function cardPanel(ext: Extension, page: Page, routeLog: { serve(routes: Record<string, string>): void }, url: string) {
@@ -235,21 +237,21 @@ async function cardPanel(ext: Extension, page: Page, routeLog: { serve(routes: R
 test('the job card: found, not found with Add, already applied, loading, unavailable', async ({ extContext, connected: ext, routeLog, tailorit }) => {
   const found = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('001'));
   await expect(found.card).toHaveAttribute('data-job-state', 'found');
-  await shoot(found.panel, '10-job-card-found.png', 'Job card: found, with its match and the resume it attaches');
-  await found.card.getByRole('button', { name: 'Change', exact: true }).click();
+  await shoot(found.panel, '10-job-card-found.png', 'Job card: found, its match, Autofill, Ask custom question, the résumé');
+  await found.panel.locator('[data-job-resume]').getByRole('button', { name: 'Change', exact: true }).click();
   await expect(found.panel.locator('[data-resume-choice=""]').first()).toBeVisible();
-  await shoot(found.panel, '10b-job-card-change.png', 'Job card: Change, the resumes to choose from');
+  await shoot(found.panel, '10b-job-card-change.png', 'The résumé line: Change, the resumes to choose from');
 
   await tailorit.scenario('lookup-not-found');
   const missing = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('002'));
   await expect(missing.card).toHaveAttribute('data-job-state', 'not-found');
-  await shoot(missing.panel, '11-job-card-not-found.png', 'Job card: not in TailorIT, with Add this job to TailorIT');
+  await shoot(missing.panel, '11-job-card-not-found.png', 'Job card: not in TailorIT, with "+ Add this job in one click"');
   await tailorit.reset();
 
   await tailorit.scenario('lookup-applied');
   const applied = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('003'));
-  await expect(applied.card.locator('[data-job-warning]')).toBeVisible();
-  await shoot(applied.panel, '12-job-card-applied.png', 'Job card: already applied, closed and archived');
+  await expect(applied.card.locator('[data-job-applied]')).toBeVisible();
+  await shoot(applied.panel, '12-job-card-applied.png', 'Job card: already applied, its badge alone');
   await tailorit.reset();
 
   await tailorit.scenario('lookup-slow', { delayMs: 20_000, times: 1 });
@@ -264,16 +266,10 @@ test('the job card: found, not found with Add, already applied, loading, unavail
   await shoot(unavailable.panel, '14-job-card-unavailable.png', 'Job card: TailorIT could not say');
 });
 
-test('the job card in a dry run, and a custom question answered', async ({ extContext, connected: ext, routeLog }) => {
+test('a custom question answered', async ({ extContext, connected: ext, routeLog }) => {
   const page = await extContext.newPage();
-  const { tabId, panel, card } = await cardPanel(ext, page, routeLog, CARD_APPLY('006'));
-  await ext.fill(page, { dryRun: true });
-  expect((await ext.settled(tabId, { mode: 'dry-run' })).status).toBe('review');
-  await panel.bringToFront();
-  await expect(card).toContainText('Would attach');
-  await shoot(panel, '15-job-card-dry-run.png', 'Job card in a dry run: "Would attach"', { fullPage: true });
-
-  await panel.getByText('Ask a custom question', { exact: true }).click();
+  const { panel } = await cardPanel(ext, page, routeLog, CARD_APPLY('006'));
+  await panel.getByRole('button', { name: 'Ask custom question', exact: true }).click();
   await panel.getByLabel('Your question').fill('Why do you want to work at Northwind?');
   await panel.getByRole('button', { name: 'Get answer', exact: true }).click();
   const answer = panel.locator('[data-ask-answer]');
@@ -282,46 +278,22 @@ test('the job card in a dry run, and a custom question answered', async ({ extCo
   await shoot(panel, '16-custom-question.png', 'Ask a custom question, answered from the resume the card attaches');
 });
 
-test('the cover letter on the job card, and attached in a review', async ({ extContext, connected: ext, routeLog, tailorit }) => {
-  const COVER = (name: string) => `https://jobs.lever.co/tailorit-fixture/cover-shot-${name}/apply`;
-  const serve = (url: string) => routeLog.serve({ [url]: 'fixtures/synthetic/cover-letter-upload.html' });
-  const open = async (url: string) => {
-    serve(url);
-    const page = await extContext.newPage();
-    await page.goto(url);
-    const tabId = await ext.tabIdOf(page);
-    await ext.frameWithForm(tabId);
-    const panel = await sidePanel(ext, tabId);
-    await panel.bringToFront();
-    return { page, tabId, panel, letter: panel.locator('[data-job-letter]') };
-  };
-
-  const none = await open(COVER('none'));
-  await expect(none.letter).toHaveAttribute('data-letter-outcome', 'none');
-  await none.letter.scrollIntoViewIfNeeded();
-  await shoot(none.panel, '17-cover-letter-row.png', 'Job card: the cover letter, written by AI when the form asks, with Write it now');
-  await tailorit.scenario('letter-generating-then-ready', { times: 1, delayMs: 6_000 });
-  await none.letter.getByRole('button', { name: 'Write it now' }).click();
-  await expect(none.letter.getByRole('button', { name: 'Writing…' })).toBeVisible();
-  await shoot(none.panel, '17b-cover-letter-writing.png', 'Job card: Write it now, Writing…');
-  await expect(none.letter).toHaveAttribute('data-letter-outcome', 'written', { timeout: 20_000 });
-  await shoot(none.panel, '17c-cover-letter-ready.png', 'Job card: the cover letter written, Ready');
-  await tailorit.reset();
-
-  await tailorit.scenario('letter-ready');
-  const own = await open(COVER('own'));
-  await expect(own.letter).toHaveAttribute('data-letter-outcome', 'yours');
-  await shoot(own.panel, '17d-cover-letter-yours.png', "Job card: the person's own letter for this job");
-  await tailorit.reset();
-
-  const filled = await open(COVER('filled'));
-  await ext.fill(filled.page);
-  expect((await ext.settled(filled.tabId)).status).toBe('review');
-  await filled.panel.bringToFront();
-  const row = filled.panel.locator('.tia-row', { hasText: 'Cover letter' }).first();
+test('the cover letter attached in a review, previewed from its row (v4 ui)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  const url = 'https://jobs.lever.co/tailorit-fixture/cover-shot-filled/apply';
+  routeLog.serve({ [url]: 'fixtures/synthetic/cover-letter-upload.html' });
+  await tailorit.scenario('letter-generating-then-ready', { times: 1 });
+  const page = await extContext.newPage();
+  await page.goto(url);
+  const tabId = await ext.fill(page);
+  expect((await ext.settled(tabId)).status).toBe('review');
+  const panel = await sidePanel(ext, tabId);
+  await panel.bringToFront();
+  const row = panel.locator('li[data-category="file.coverLetter"]').first();
   await expect(row).toHaveAttribute('data-status', 'verified');
+  await row.locator('button[data-action="preview"]').click();
+  await expect(row.locator('iframe[data-preview-frame]')).toBeVisible();
   await row.scrollIntoViewIfNeeded();
-  await shoot(filled.panel, '17e-cover-letter-review.png', 'Review: the cover letter attached, marked "AI"');
+  await shoot(panel, '17-cover-letter-preview.png', 'Review: the cover letter attached, its Preview opened under its row');
 });
 
 test('v3 Phase 3: Autofilling with a percent, the row being written and Skip; Minimized; the gear’s modes', async ({ extContext, connected: ext, routeLog, tailorit }) => {
@@ -337,7 +309,7 @@ test('v3 Phase 3: Autofilling with a percent, the row being written and Skip; Mi
   await ext.frameWithForm(tabId);
   const panel = await sidePanel(ext, tabId);
   await panel.bringToFront();
-  await shoot(panel, '20-side-panel-ready.png', 'Side panel before Autofill: the job, Autofill, what the fill uses');
+  await shoot(panel, '20-side-panel-ready.png', 'Side panel before Autofill: the job, Autofill, the résumé');
   await panel.getByRole('button', { name: 'Autofill', exact: true }).click();
   await expect(panel.locator('li[data-current="true"]')).toBeVisible({ timeout: 20_000 });
   await shoot(panel, '21-side-panel-autofilling.png', 'Side panel: "Autofilling… NN%", the row being written');
@@ -346,13 +318,14 @@ test('v3 Phase 3: Autofilling with a percent, the row being written and Skip; Mi
   await panel.locator('button[data-action="skip"]').click();
   expect((await ext.settled(tabId, { timeout: 30_000 })).status).toBe('review');
   await panel.bringToFront();
-  await shoot(panel, '23-side-panel-after-skip.png', 'Side panel: the review after Skip, "N of M required fields filled · NN%"');
+  await shoot(panel, '23-side-panel-after-skip.png', 'Side panel: the review after Skip, "N/M required fields filled | NN%"');
 
-  await panel.locator('button[data-panel-menu]').click();
-  await expect(panel.locator('[data-menu]')).toBeVisible();
-  await shoot(panel, '24-side-panel-modes.png', 'Side panel: the gear’s menu, the modes');
+  await panel.locator('button[data-panel-settings]').click();
+  await expect(panel.locator('[data-settings-view]')).toBeVisible();
   await panel.locator('input[data-setting="view.minimized"]').check();
-  await panel.locator('button[data-panel-menu]').click();
+  await shoot(panel, '24-side-panel-settings.png', 'Side panel: the Settings view, a change waiting for Save');
+  await panel.locator('button[data-action="save-settings"]').click();
+  await panel.locator('button[data-action="close-settings"]').click();
   await expect(panel.locator('button[data-action="toggle-fields"]')).toHaveAttribute('aria-expanded', 'false');
   await shoot(panel, '25-side-panel-minimized.png', 'Side panel: the Minimized view, the review folded to its line');
   await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
@@ -463,7 +436,8 @@ test('v3 Phase 3b: another job, the resume’s preview, without resume, the prof
   await shoot(without.panel, '46b-job-card-without-resume.png', 'Job card: applying without a resume');
 
   const profile = await cardPanel(ext, await extContext.newPage(), routeLog, CARD_APPLY('104'));
-  await profile.panel.locator('[data-job-card] button[data-open-profile]').click();
+  await profile.panel.locator('button[data-panel-settings]').click();
+  await profile.panel.locator('[data-settings-view] button[data-open-profile]').click();
   const editor = profile.panel.locator('[data-profile]');
   await expect(editor).toBeVisible();
   await shoot(profile.panel, '47-side-panel-profile.png', 'Side panel: "Your autofill information"');
@@ -551,7 +525,8 @@ test('v3 Phase 5: Sign-in Auto signing in on a sign-in page, and Modes with Sign
   const tabId = await ext.fill(page);
   await ext.settled(tabId);
   const panel = await sidePanel(ext, tabId);
-  await expect(panel.getByText(COPY_AUTH)).toBeVisible();
+  // v4 ui (D10): what the sign-in asks is the page's notification; the panel's main button goes on (or signs up).
+  await expect(panel.locator('button.tia-cta')).toBeVisible();
   await shoot(panel, '57-side-panel-sign-in-manual.png', 'Side panel: a sign-in page, Sign-in on Manual');
 });
 
@@ -592,4 +567,18 @@ test('the options page', async ({ extContext, connected: ext }) => {
   await options.locator('[data-card="modes"]').scrollIntoViewIfNeeded();
   await shoot(options, '07b-options-modes.png', 'The options page: Modes', {
     clip: (await options.locator('[data-card="modes"]').boundingBox()) ?? undefined });
+});
+
+test('v4 ui: the set-up view, not connected, and its first step\'s disclosure', async ({ extContext, connected: ext, routeLog }) => {
+  const page = await extContext.newPage();
+  const { tabId } = await cardPanel(ext, page, routeLog, CARD_APPLY('099'));
+  await ext.data({ v: 1, type: 'auth/disconnect' });
+  const panel = await sidePanel(ext, tabId);
+  await panel.reload();
+  await expect(panel.locator('[data-setup]')).toBeVisible();
+  await still(panel);
+  await shoot(panel, '30-setup-view.png', 'Side panel, not connected: the set-up view');
+  await panel.locator('button[data-step-action="account"]').click();
+  await expect(panel.locator('[data-consent]')).toBeVisible();
+  await shoot(panel, '31-setup-consent.png', 'Set-up view: what connecting means, before Connect');
 });

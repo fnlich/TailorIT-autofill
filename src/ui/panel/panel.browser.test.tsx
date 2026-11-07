@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COPY } from '../../shared/copy';
-import { authStatus, button, click, createFakeWorker, frameReport, mount, PROFILE_SENTINELS, row, settle, unfoldRows,
+import { authStatus, button, click, createFakeWorker, formPage, frameReport, mount, PROFILE_SENTINELS, row, settle, unfoldRows,
   unmountAll, type FakeWorker } from '../ui.testkit';
 import { Panel } from './Panel';
 import { RECONNECTS } from './reports';
@@ -10,7 +10,7 @@ import { pinnedTabOf } from './tab';
 const keysShown = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('li[data-field-key]')].map((each) => each.dataset.fieldKey);
 /** What the page sent other than its reads: the messages its buttons sent. */
 const actions = (worker: FakeWorker) => worker.platform.sent.filter((message) =>
-  !['panel/reports', 'auth/status', 'settings/get', 'agent/status'].includes(String((message as { type?: unknown }).type)));
+  !['panel/reports', 'auth/status', 'settings/get', 'agent/status', 'panel/profile'].includes(String((message as { type?: unknown }).type)));
 const watches = (worker: FakeWorker) => worker.posted.filter((message) => (message as { type?: unknown }).type === 'panel/watch');
 
 async function open(worker: FakeWorker, pinnedTabId: number | null, now?: () => number): Promise<HTMLElement> {
@@ -67,67 +67,75 @@ describe('the review panel', () => {
     expect(keysShown(root)).toEqual(['pinned']);
   });
 
-  it('sends exactly one message per button: Fill, Dry run, Continue, Cancel', async () => {
+  it('has one main button: Autofill sends panel/fill, or panel/continue while a run waits; Cancel only on the progress (v4 ui)', async () => {
     const worker = createFakeWorker();
     worker.script.frames = 2;
-    // Before any run, Continue and Cancel have nothing to act on.
+    // Before any run: Autofill alone, no Dry run, Continue or Cancel.
     const before = await open(createFakeWorker(), 5);
-    expect([button(before, COPY.panel.continue)!.disabled, button(before, COPY.panel.cancel)!.disabled]).toEqual([true, true]);
-    expect([button(before, COPY.panel.fill)!.disabled, button(before, COPY.panel.dryRun)!.disabled]).toEqual([false, false]);
+    expect(button(before, COPY.panel.fill)!.disabled).toBe(false);
+    for (const gone of [COPY.panel.dryRun, COPY.panel.continue, COPY.panel.cancel]) expect(button(before, gone)).toBeNull();
     unmountAll();
-    // A run at review waits for no Continue: it is offered only to a run that waits for it (v3 Phase 3 review).
+    // A run at review waits for nothing: Autofill fills again.
     worker.script.reports.set(5, [frameReport(0, { status: 'review' })]);
     const resting = await open(worker, 5);
-    expect([button(resting, COPY.panel.continue)!.disabled, button(resting, COPY.panel.cancel)!.disabled])
-      .toEqual([true, false]);
+    expect(resting.querySelector<HTMLElement>('.tia-cta')?.dataset.mainAction).toBe('fill');
+    await click(button(resting, COPY.panel.fill));
+    expect(resting.textContent).toContain(COPY.panel.started(2));
     unmountAll();
+    // A run that waits to go on: the same Autofill sends panel/continue (its label stays).
     worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'page-busy' })]);
     const root = await open(worker, 5);
-    expect(button(root, COPY.panel.continue)!.dataset.emphasis).toBe('');
+    expect(root.querySelector<HTMLElement>('.tia-cta')?.dataset.mainAction).toBe('continue');
     await click(button(root, COPY.panel.fill));
-    expect(root.textContent).toContain(COPY.panel.started(2));
-    await click(button(root, COPY.panel.dryRun));
-    expect(root.textContent).toContain(COPY.panel.dryRunStarted(2));
-    await click(button(root, COPY.panel.continue));
-    await click(button(root, COPY.panel.cancel));
-    expect(root.textContent).toContain(COPY.panel.cancelled(2));
+    expect(root.textContent).toContain(COPY.panel.continued(2));
+    unmountAll();
+    // A run that works: the button spins and waits; Cancel is the progress line's.
+    worker.script.reports.set(5, [frameReport(0, { status: 'fill-step', fields: [row('a', { wrote: false })],
+      filling: { current: 'a', pending: ['a'] } })]);
+    const working = await open(worker, 5);
+    const main = working.querySelector<HTMLButtonElement>('.tia-cta')!;
+    expect([main.disabled, main.dataset.working, main.querySelector('svg.tia-spin') !== null]).toEqual([true, 'true', true]);
+    await click(working.querySelector('.tia-progress-line button[data-action="cancel"]'));
+    expect(working.textContent).toContain(COPY.panel.cancelled(2));
     expect(actions(worker)).toEqual([
       { v: 1, type: 'panel/fill', tabId: 5, dryRun: false },
-      { v: 1, type: 'panel/fill', tabId: 5, dryRun: true },
       { v: 1, type: 'panel/continue', tabId: 5 },
       { v: 1, type: 'panel/cancel', tabId: 5 },
-    ]);
+    ].map((message) => expect.objectContaining(message)));
   });
 
-  it("sends Show on page and a row's describe for that row, and the policy card's buttons as its frame's decision", async () => {
+  it('reads "Sign up & Autofill" while the tab\'s form shows an account wall, and sends panel/fill with signIn (v4 ui)', async () => {
     const worker = createFakeWorker();
-    worker.on('panel/describe', () => ({ ok: true, data: { options: [{ index: 1, label: 'Bachelor of Science' }] } }));
-    worker.script.reports.set(5, [frameReport(2, { status: 'policy-notice', notices: [{ code: 'policy' }], fields: [
-      row('degree', { status: 'flagged', provenance: null, matcherStage: 'none', reason: 'ambiguous-options',
-        detail: { suggestions: [{ index: 1, score: 0.8 }] } }),
-    ] })]);
+    worker.script.pages.set(5, formPage({ wall: 'create-account' }));
+    // Even with a run waiting at the sign-in: the wall's button signs up.
+    worker.script.reports.set(5, [frameReport(0, { status: 'auth-needed' })]);
     const root = await open(worker, 5);
-    // v3 Phase 3: the row's label shows the field on the page; its fold holds the closest options.
-    await click(root.querySelector('li[data-field-key="degree"] button.tia-row__go'));
-    await click(root.querySelector('li[data-field-key="degree"] button.tia-row__toggle'));
-    await click(button(root, COPY.report.showSuggestions(1)));
-    expect(root.textContent).toContain('Bachelor of Science (80%)');
-    const card = root.querySelector('[data-notice="policy"]')!;
-    await click(button(card, COPY.policyFillAnyway));
-    expect(root.textContent).toContain(COPY.panel.started(1));
-    await click(button(card, COPY.policyCancel));
-    expect(root.textContent).toContain(COPY.panel.cancelled(1));
-    expect(actions(worker)).toEqual([
-      { v: 1, type: 'panel/focus', tabId: 5, frameId: 2, fieldKey: 'degree' },
-      { v: 1, type: 'panel/describe', tabId: 5, frameId: 2, fieldKey: 'degree' },
-      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 2, decision: 'fill' },
-      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 2, decision: 'cancel' },
-    ]);
-    await click(button(root, COPY.report.hideSuggestions));
-    expect(root.textContent).not.toContain('Bachelor of Science');
+    expect(button(root, COPY.panel.fill)).toBeNull();
+    const main = button(root, COPY.mainView.signUpFill)!;
+    expect(main.dataset.mainAction).toBe('sign-up');
+    // Its explanation is the "?" beside it.
+    expect(root.querySelector('.tia-toolbar [data-helptip] [role="tooltip"]')?.textContent).toBe(COPY.mainView.signUpHelp);
+    await click(main);
+    expect(worker.sentOfType('panel/fill')).toEqual([{ v: 1, type: 'panel/fill', tabId: 5, dryRun: false, signIn: true }]);
+    // No wall: Autofill again.
+    worker.script.pages.set(5, formPage());
+    await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0)], page: formPage() }));
+    await settle();
+    expect(button(root, COPY.panel.fill)).not.toBeNull();
   });
-
-  it('sends Confirm draft and Save my answer for that row’s frame and key, and says what came of each', async () => {
+  it("sends Show on page from a row's label, with no drawer, no policy card and no notice (v4 ui, D1 and D10)", async () => {
+    const worker = createFakeWorker();
+    worker.script.reports.set(5, [frameReport(2, { status: 'policy-notice', notices: [{ code: 'policy' }, { code: 'tripwire' }],
+      fields: [row('degree', { status: 'flagged', provenance: null, matcherStage: 'none', reason: 'ambiguous-options',
+        detail: { suggestions: [{ index: 1, score: 0.8 }] } })] })]);
+    const root = await open(worker, 5);
+    await click(root.querySelector('li[data-field-key="degree"] button.tia-row__go'));
+    expect(root.querySelector('li[data-field-key="degree"] button.tia-row__toggle')).toBeNull();
+    expect(root.querySelector('[data-notice]')).toBeNull();
+    expect(button(root, COPY.policyFillAnyway)).toBeNull();
+    expect(actions(worker)).toEqual([{ v: 1, type: 'panel/focus', tabId: 5, frameId: 2, fieldKey: 'degree' }]);
+  });
+  it('offers no Confirm draft and no Save my answer on any row (v4 ui, D6)', async () => {
     const worker = createFakeWorker();
     worker.script.reports.set(5, [frameReport(3, { platform: 'greenhouse', adapter: 'greenhouse', fields: [
       row('why', { kind: 'textarea', category: 'freeText.whyCompany', status: 'flagged', provenance: 'llm-draft',
@@ -137,92 +145,38 @@ describe('the review panel', () => {
     ] })]);
     const root = await open(worker, 5);
     await unfoldRows(root);
-    // A refusal: the panel says they did not work.
-    await click(button(root, COPY.report.confirmDraft));
-    expect(root.textContent).toContain(COPY.panel.confirmFailed);
-    await click(button(root, COPY.report.saveAnswer));
-    expect(root.textContent).toContain(COPY.panel.saveFailed);
-    worker.on('panel/confirmDraft', () => ({ ok: true, data: {} }));
-    worker.on('panel/saveAnswer', () => ({ ok: true, data: { outcome: 'saved' } }));
-    await click(button(root, COPY.report.confirmDraft));
-    expect(root.textContent).toContain(COPY.panel.draftConfirmed);
-    await click(button(root, COPY.report.saveAnswer));
-    expect(root.textContent).toContain(COPY.panel.answerSaved);
-    // Phase 6, wave 2: an answer TailorIT would not keep says why.
-    worker.on('panel/saveAnswer', () => ({ ok: true, data: { outcome: 'sensitive' } }));
-    await click(button(root, COPY.report.saveAnswer));
-    expect(root.textContent).toContain(COPY.panel.saveOutcomes.sensitive);
-    expect(actions(worker)).toEqual([
-      { v: 1, type: 'panel/confirmDraft', tabId: 5, frameId: 3, fieldKey: 'why' },
-      { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
-      { v: 1, type: 'panel/confirmDraft', tabId: 5, frameId: 3, fieldKey: 'why' },
-      { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
-      { v: 1, type: 'panel/saveAnswer', tabId: 5, frameId: 3, fieldKey: 'notice' },
-    ]);
+    expect(button(root, COPY.report.confirmDraft)).toBeNull();
+    expect(button(root, COPY.report.saveAnswer)).toBeNull();
+    expect(actions(worker)).toEqual([]);
   });
-
-  it('keeps the toolbar’s Continue for pauses: a frame at the policy card gets only its own card’s decision', async () => {
-    // Frame 0 waits at a CAPTCHA pause, frame 3 at the policy card.
-    const worker = createFakeWorker();
-    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'captcha', notices: [{ code: 'captcha' }] }),
-      frameReport(3, { status: 'policy-notice', notices: [{ code: 'policy' }] })]);
-    const root = await open(worker, 5);
-    const cards = [...root.querySelectorAll<HTMLElement>('[data-notice="policy"]')];
-    expect(cards.map((card) => card.dataset.policyFrame)).toEqual(['3']);
-    await click(button(root.querySelector('.tia-toolbar')!, COPY.panel.continue));
-    await click(button(cards[0]!, COPY.policyFillAnyway));
-    expect(actions(worker)).toEqual([
-      { v: 1, type: 'panel/continue', tabId: 5 },
-      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 3, decision: 'fill' },
-    ]);
-    // A frame that no longer waits says so.
-    worker.on('panel/policyDecision', () => ({ ok: false, error: 'expired' }));
-    await click(button(cards[0]!, COPY.policyCancel));
-    expect(root.textContent).toContain(COPY.panel.continued(0));
-  });
-
-  it('gives each frame waiting at the policy card a card of its own, naming it, whose buttons decide for it alone', async () => {
-    const worker = createFakeWorker();
-    worker.script.reports.set(5, [frameReport(4, { status: 'policy-notice', platform: 'greenhouse', adapter: 'greenhouse' }),
-      frameReport(0, { status: 'policy-notice' })]);
-    const root = await open(worker, 5);
-    const cards = [...root.querySelectorAll<HTMLElement>('[data-notice="policy"]')];
-    expect(cards.map((card) => card.dataset.policyFrame)).toEqual(['0', '4']);
-    expect(cards[1]!.textContent).toContain(COPY.report.frame(COPY.platforms.greenhouse, true));
-    await click(button(cards[1]!, COPY.policyCancel));
-    await click(button(cards[0]!, COPY.policyFillAnyway));
-    expect(actions(worker)).toEqual([
-      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 4, decision: 'cancel' },
-      { v: 1, type: 'panel/policyDecision', tabId: 5, frameId: 0, decision: 'fill' },
-    ]);
-  });
-
   it('says why a button did nothing, and reads the connection again when it was not connected', async () => {
     const worker = createFakeWorker();
     worker.on('panel/fill', () => ({ ok: false, error: 'not_connected' }));
-    // A run that waits for the person's Continue, which by then reaches no frame.
-    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'page-busy' })]);
     const root = await open(worker, 5);
     const reads = worker.sentOfType('auth/status').length;
     await click(button(root, COPY.panel.fill));
     expect(root.textContent).toContain(COPY.panel.needsConnection);
     expect(worker.sentOfType('auth/status').length).toBe(reads + 1);
+    unmountAll();
+    // A run that waits to go on, which by then reaches no frame.
+    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'page-busy' })]);
     worker.on('panel/continue', () => ({ ok: true, data: { frames: 0 } }));
-    await click(button(root, COPY.panel.continue));
-    expect(root.textContent).toContain(COPY.panel.continued(0));
+    const paused = await open(worker, 5);
+    await click(button(paused, COPY.panel.fill));
+    expect(paused.textContent).toContain(COPY.panel.continued(0));
   });
-
-  it('offers and marks Continue on a new step the run rests on under Autofill after page turn: Manually', async () => {
+  it('goes on with a new step the run rests on under Autofill after page turn: Manually, from the same Autofill', async () => {
     const worker = createFakeWorker();
     worker.script.reports.set(5, [frameReport(0, { status: 'review', fields: [], notices: [{ code: 'page-turned' }] })]);
     const root = await open(worker, 5);
-    const resume = button(root, COPY.panel.continue)!;
-    expect([resume.disabled, resume.dataset.emphasis]).toEqual([false, '']);
-    // No "0 of 0 fields filled · 0%" for a step nothing was read on.
+    const main = button(root, COPY.panel.fill)!;
+    expect([main.disabled, main.dataset.mainAction]).toEqual([false, 'continue']);
+    await click(main);
+    expect(worker.sentOfType('panel/continue')).toEqual([{ v: 1, type: 'panel/continue', tabId: 5 }]);
+    // No "0/0 fields filled · 0%" for a step nothing was read on.
     expect(root.querySelector('.tia-progress-line')).toBeNull();
     expect(root.textContent).not.toContain('0%');
   });
-
   it('reconnects when the port drops, as a worker restart does, and watches its tab again', async () => {
     const worker = createFakeWorker();
     worker.script.reports.set(5, [frameReport(0, { fields: [row('before')] })]);
@@ -270,24 +224,28 @@ describe('the review panel', () => {
     for (const sentinel of PROFILE_SENTINELS) expect(root.outerHTML).not.toContain(sentinel);
   });
 
-  it('shows the connection, and why filling cannot work', async () => {
+  it('shows what blocks everything as a strip; the connection itself is the set-up view and the Settings view (v4 ui)', async () => {
     const connected = createFakeWorker();
     const shown = await open(connected, 5);
-    expect(shown.querySelector('[data-connection]')?.textContent).toBe(COPY.panel.connectedAs('Morgan Lee'));
+    // No foot: the account shows in Settings.
+    expect(shown.querySelector('.tia-panel__foot, [data-tailorit-link="jobs"]')).toBeNull();
+    await click(shown.querySelector('button[data-panel-settings]'));
+    expect(shown.querySelector('.tia-settings [data-connection]')?.textContent).toBe(COPY.panel.connectedAs('Morgan Lee'));
 
-    const missing = createFakeWorker();
-    missing.script.auth = authStatus({ connection: 'not-connected', account: null, scopes: [], expiresAt: null,
-      storageAccess: 'refused', versionMismatch: true });
-    const problem = await open(missing, 5);
-    const line = problem.querySelector('[data-connection="not-connected"]')!;
-    for (const text of [COPY.panel.notConnected, COPY.panel.storageRefused, COPY.panel.versionMismatch]) expect(line.textContent).toContain(text);
+    const blocked = createFakeWorker();
+    blocked.script.auth = authStatus({ storageAccess: 'refused', versionMismatch: true });
+    const problem = await open(blocked, 5);
+    const line = problem.querySelector('.tia-connection--problem')!;
+    for (const text of [COPY.panel.storageRefused, COPY.panel.versionMismatch]) expect(line.textContent).toContain(text);
     expect(line.querySelector('a')?.getAttribute('href')).toBe('chrome-extension://memory-extension/options.html');
 
+    // Not connected, expired or revoked: the set-up view's first step, its reason in the step's "?".
     const revoked = createFakeWorker();
     revoked.script.auth = authStatus({ connection: 'revoked', account: null });
-    expect((await open(revoked, 5)).textContent).toContain(COPY.panel.revoked);
+    const setup = await open(revoked, 5);
+    expect(setup.querySelector('main')?.dataset.view).toBe('setup');
+    expect(setup.querySelector('[data-step="account"] [role="tooltip"]')?.textContent).toContain(COPY.setup.accountRevoked);
   });
-
   it('says so when the extension is gone, and when there is no tab to follow', async () => {
     const gone = createFakeWorker();
     gone.platform.invalidate();

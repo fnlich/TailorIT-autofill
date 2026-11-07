@@ -48,17 +48,10 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-cta:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
 .tia-cta:disabled { opacity: 0.55; cursor: default; }
 .tia-cta:disabled:hover { background: var(--tia-brand); }
-/* v3 Phase 3 (Jobright's layout): under Autofill, Dry run, Continue and Cancel on a tinted strip, as Jobright's credits
-   row sits under its button. */
-.tia-toolbar { gap: 0; }
-.tia-toolbar .tia-cta { position: relative; z-index: 1; }
-.tia-toolbar__more {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: -10px 0 0; padding: 14px 6px 4px;
-  border-radius: 0 0 var(--tia-r-row) var(--tia-r-row); background: var(--tia-brand-wash);
-  box-shadow: inset 0 0 0 1px var(--tia-ring-track);
-}
-.tia-toolbar__more .tia-button { min-height: 30px; padding: 0 6px; }
-.tia-button[data-emphasis] { border-color: var(--tia-ink); background: var(--tia-bg); color: var(--tia-ink); }
+/* v4 ui: the main button alone (Dry run, Continue and Cancel are gone), with the "?" of Sign up & Autofill beside it. */
+.tia-toolbar { display: flex; align-items: center; gap: 6px; }
+.tia-toolbar .tia-cta { flex: 1 1 auto; }
+.tia-cta[data-working] { cursor: progress; }
 
 .tia-dashboard {
   display: grid; gap: 14px; margin: 0; padding: 12px 16px 14px; border: 1px solid var(--tia-line);
@@ -74,25 +67,30 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 }
 .tia-iconbutton:hover, .tia-iconbutton[aria-expanded="true"] { background: var(--tia-line); }
 .tia-iconbutton:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
-.tia-menu {
-  display: grid; gap: 10px; margin: -4px 0 0; padding: 14px 16px; border: 1px solid var(--tia-line);
-  border-radius: var(--tia-r-card); background: var(--tia-bg); box-shadow: var(--tia-shadow-pop);
+/* v4 ui: the modes as Jobright's radio cards (screenshot 5): a title with its "?", then one grey card per choice, the
+   chosen one's ring holding a teal dot; the skip rules as boxes on the same cards. */
+.tia-modes { display: grid; gap: 18px; }
+.tia-mode { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.tia-mode__head { display: flex; align-items: center; gap: 4px; margin: 0; }
+.tia-mode__name { font: 700 14px/1.4 var(--tia-font); color: var(--tia-fg); }
+.tia-mode__choices { display: grid; gap: 6px; }
+.tia-radiocard {
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 14px; border-radius: var(--tia-r-control);
+  background: var(--tia-track); color: var(--tia-fg); font: 500 14px/1.35 var(--tia-font); cursor: pointer;
 }
-.tia-menu__title { margin: 0; font: 800 15px/1.3 var(--tia-font); }
-.tia-page a.tia-menu__all { display: inline-flex; align-items: center; gap: 2px; justify-self: start; font-size: 13px;
-  font-weight: 600; }
-.tia-modes { display: grid; gap: 12px; }
-.tia-mode { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; min-width: 0; }
-.tia-mode__name { padding: 0; font: 700 13px/1.4 var(--tia-font); }
-.tia-mode__choices { display: flex; flex-wrap: wrap; gap: 6px; }
-.tia-mode__choice {
-  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--tia-control);
-  border-radius: 999px; background: var(--tia-bg); font: 600 13px/1.3 var(--tia-font); cursor: pointer;
+.tia-radiocard:hover { background: var(--tia-chip); }
+.tia-radiocard:has(.tia-radiocard__input:focus-visible) { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-radiocard:has(.tia-radiocard__input:disabled) { color: var(--tia-muted); cursor: default; }
+.tia-radiocard:has(.tia-radiocard__input:disabled):hover { background: var(--tia-track); }
+.tia-radiocard__input {
+  flex: none; width: 18px; height: 18px; margin: 0; border: 1.5px solid var(--tia-input); border-radius: 50%;
+  background: var(--tia-bg); appearance: none; cursor: inherit;
 }
-.tia-mode__choice:has(input:checked) { border-color: var(--tia-ink); background: var(--tia-brand-wash); color: var(--tia-ink); }
-.tia-mode__choice:has(input:focus-visible) { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
-.tia-mode__choice input { margin: 0; accent-color: var(--tia-ink); }
-.tia-mode__help { margin: 0; }
+.tia-radiocard__input:checked { border-color: var(--tia-brand); background: var(--tia-brand); box-shadow: inset 0 0 0 3.5px var(--tia-bg); }
+.tia-radiocard__input:focus-visible { outline: none; }
+.tia-radiocard--box .tia-radiocard__input { border: 0; border-radius: 4px; background: none; box-shadow: none; appearance: auto;
+  accent-color: var(--tia-ink); }
+.tia-radiocard__label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .tia-launcher-hidden { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .tia-launcher-hidden .tia-button { margin-left: 0; }
 .tia-unsupported {
@@ -111,31 +109,9 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-unsupported__name { font-weight: 700; }
 .tia-unsupported__hosts { font-size: 12px; color: var(--tia-muted); overflow-wrap: anywhere; }
 .tia-unsupported__note { font-size: 12px; color: var(--tia-muted); font-style: italic; }
-.tia-panel__foot { display: grid; justify-items: center; gap: 2px; margin-top: 4px; }
-.tia-panel__foot .tia-connection { margin: 0; }
 
-/* The job card (v2; v3 Phase 3 in Jobright's layout): the job in a white card, then Autofill, then what the fill uses in a
-   second card. */
+/* The job card (v2; v4 ui in Jobright's layout, screenshot 3): the job in a white card, the Add pill under it. */
 .tia-jobcol { display: grid; gap: 12px; }
-.tia-docs {
-  display: grid; gap: 0; padding: 4px 16px 12px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-card);
-  background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
-}
-.tia-docs > * + * { margin-top: 10px; }
-.tia-docs[hidden] { display: none; }
-.tia-page a.tia-docs__link, .tia-page button.tia-docs__link {
-  display: flex; align-items: center; gap: 8px; margin: 0 -16px; padding: 10px 16px; color: var(--tia-fg);
-  font-size: 13px; font-weight: 700; text-decoration: none;
-}
-/* v3 Phase 3b: "Your autofill information" opens the panel's editor, a button drawn as the link row it replaces. */
-.tia-page button.tia-docs__link {
-  width: calc(100% + 32px); border: 0; border-radius: 0; background: none; font-family: var(--tia-font);
-  line-height: inherit; text-align: left; cursor: pointer;
-}
-.tia-page a.tia-docs__link:hover, .tia-page button.tia-docs__link:hover { background: var(--tia-hover); color: var(--tia-fg); }
-.tia-page button.tia-docs__link:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: -2px; }
-.tia-docs__label { flex: 1 1 auto; }
-.tia-docs__chevron { color: var(--tia-muted); }
 .tia-job__applied {
   display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
   background: var(--tia-tone-success-bg); color: var(--tia-tone-success-fg); font: 700 11px/1.6 var(--tia-font);
@@ -157,58 +133,43 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-job__company {
   overflow: hidden; font: 700 14px/1.3 var(--tia-font); text-overflow: ellipsis; white-space: nowrap; color: var(--tia-fg);
 }
-.tia-job__via { font-size: 12px; line-height: 1.3; color: var(--tia-muted); }
+.tia-job__industry { overflow: hidden; font-size: 13px; line-height: 1.3; color: var(--tia-muted); text-overflow: ellipsis;
+  white-space: nowrap; }
 .tia-job__title {
-  display: -webkit-box; margin: 0; overflow: hidden; font: 800 17px/1.3 var(--tia-font); overflow-wrap: anywhere;
+  display: -webkit-box; margin: 0; overflow: hidden; font: 800 19px/1.3 var(--tia-font); overflow-wrap: anywhere;
   -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
-.tia-job__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.tia-job__chip { padding: 3px 9px; border-radius: 8px; font-size: 12px; overflow-wrap: anywhere; }
-.tia-job__chip[data-tone="brand"] { color: var(--tia-ink); background: var(--tia-brand-container); }
-.tia-job__chip[data-tone="warning"] { color: var(--tia-tone-warning-fg); background: var(--tia-tone-warning-bg); }
-.tia-job__chip[data-tone="danger"] { color: var(--tia-tone-danger-fg); background: var(--tia-tone-danger-bg); }
-.tia-job__meta { margin: -4px 0 0; font-size: 12px; color: var(--tia-muted); }
-.tia-job__warning {
-  display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control);
-  background: var(--tia-tone-warning-bg); color: var(--tia-fg); font-size: 13px; font-weight: 600;
+.tia-job__meta { margin: -6px 0 0; font-size: 13px; color: var(--tia-fg); }
+/* v4 ui: "Not this job?" under a rule at the card's foot (where Jobright puts its connections row). */
+.tia-job__foot { margin: 2px -16px -4px; padding: 8px 16px 0; border-top: 1px solid var(--tia-line); }
+/* v4 ui: "+ Add this job in one click", a mint pill with a sparkle on its corner (screenshot 2). */
+.tia-addjob { display: flex; justify-content: center; padding: 6px 0 2px; }
+.tia-addpill {
+  position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0; padding: 0 20px;
+  border: 0; border-radius: 999px; background: var(--tia-brand-container); color: var(--tia-fg);
+  font: 700 14px/1.2 var(--tia-font); cursor: pointer;
 }
-.tia-job__warning-icon { flex: none; margin-top: 1px; color: var(--tia-tone-warning-fg); }
-.tia-job__help { margin: 0; font-size: 13px; color: var(--tia-muted); }
-.tia-job__resume { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--tia-line); }
-.tia-docs > .tia-job__resume:first-child { padding-top: 8px; border-top: 0; }
-.tia-job__resume-head { display: flex; align-items: flex-start; gap: 8px; }
-.tia-job__doc { flex: none; margin-top: 1px; color: var(--tia-ink); }
-.tia-job__resume-text { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
-.tia-job__attaches { color: var(--tia-muted); }
-.tia-job__resume-label { font-weight: 700; }
-.tia-job__kind { padding: 0 7px; font-size: 11px; vertical-align: 1px; }
-.tia-job__change { flex: none; margin: -4px -8px 0 0; }
-.tia-job__why { margin: 0 0 0 26px; font-size: 12px; color: var(--tia-muted); }
-/* Phase G: the cover letter, under the resume, laid out as it is: its name above its line. */
-.tia-job__letter { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--tia-line); }
-.tia-job__letter-text {
-  display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere;
-}
-.tia-job__letter-label { font-weight: 700; }
-.tia-job__letter-line { color: var(--tia-muted); }
-.tia-job__letter .tia-button .tia-icon { margin-right: 4px; vertical-align: -2px; }
-.tia-job__resume-line { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; }
-.tia-job__actions { display: flex; }
-.tia-job__actions .tia-button { flex: 1 1 auto; min-height: 36px; }
+.tia-addpill:hover { background: var(--tia-ring-track); }
+.tia-addpill:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-addpill:disabled { cursor: progress; }
+.tia-addpill__spark { position: absolute; top: -9px; right: -6px; color: var(--tia-ink); }
 .tia-job__note { margin: 0; padding: 7px 10px; border-radius: var(--tia-r-control); background: var(--tia-subtle); font-size: 13px; }
 .tia-job--slim { padding: 10px 14px; }
 .tia-job__slim { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; }
 .tia-job__slim-icon { flex: none; margin-top: 1px; color: var(--tia-tone-info-fg); }
 
-/* The match: a pill whose outline fills to the percentage, the number in it and its band under it; its tip on hover or
-   focus (v3 Phase 3). */
+/* The match: a pill whose outline fills to the percentage, the number in it; its tip, the black bubble, on hover or
+   focus (v3 Phase 3; v4 ui). */
 .tia-ringwrap { position: relative; display: inline-flex; flex: none; }
 .tia-ring { display: inline-flex; flex: none; flex-direction: column; align-items: center; gap: 3px; border-radius: 10px; }
 .tia-ring:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
 .tia-ring__tip {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 2; display: none; width: 220px; padding: 8px 10px;
-  border-radius: var(--tia-r-control); background: var(--tia-fg); color: var(--tia-on-ink);
-  font: 400 12px/1.45 var(--tia-font); box-shadow: var(--tia-shadow-pop);
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 2; display: none; width: 220px; padding: 8px 10px;
+  border-radius: 8px; background: var(--tia-fg); color: var(--tia-on-ink);
+  font: 500 12.5px/1.45 var(--tia-font); box-shadow: var(--tia-shadow-pop);
+}
+.tia-ring__tip::after {
+  content: ""; position: absolute; top: -5px; right: 27px; width: 10px; height: 10px; background: inherit; rotate: 45deg;
 }
 .tia-ringwrap:hover .tia-ring__tip, .tia-ring:focus-visible + .tia-ring__tip { display: block; }
 .tia-ring__pill { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 34px; }
@@ -220,7 +181,6 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
   position: relative; font: 800 16px/1 var(--tia-font); color: var(--tia-ink); font-variant-numeric: tabular-nums;
 }
 .tia-ring__pct { font-size: 11px; }
-.tia-ring__caption { font: 700 10px/1 var(--tia-font); color: var(--tia-muted); }
 
 /* The card while TailorIT is asked: grey blocks that breathe, none with reduced motion. */
 .tia-skeleton { display: block; border-radius: 6px; background: var(--tia-track); animation: tia-breathe 1.1s ease-in-out infinite alternate; }
@@ -246,22 +206,21 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-picker__meta { font-size: 12px; color: var(--tia-muted); }
 .tia-picker__actions { display: flex; justify-content: flex-end; gap: 4px; }
 
-/* Ask a custom question: a fold under the buttons. */
-.tia-ask {
-  border: 1px solid var(--tia-line); border-radius: var(--tia-r-card); background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
+/* Ask a custom question (v4 ui): an outline button under Autofill that unfolds the box. */
+.tia-ask { display: grid; gap: 10px; }
+.tia-outline {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin: 0;
+  padding: 0 16px; border: 1.5px solid var(--tia-control); border-radius: var(--tia-r-row); background: var(--tia-bg);
+  color: var(--tia-fg); font: 700 15px/1.2 var(--tia-font); cursor: pointer;
 }
-.tia-ask__summary {
-  display: flex; align-items: center; gap: 8px; padding: 12px 16px; font: 700 14px/1.3 var(--tia-font); cursor: pointer;
-  list-style: none;
-}
-.tia-ask__summary::-webkit-details-marker { display: none; }
-.tia-ask__summary:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: -2px; border-radius: var(--tia-r-card); }
+.tia-outline:hover, .tia-outline[aria-expanded="true"] { border-color: var(--tia-control-hover); background: var(--tia-hover); }
+.tia-outline:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
 .tia-ask__icon { flex: none; color: var(--tia-ink); }
-.tia-ask__heading { flex: 1 1 auto; }
-/* One chevron at a time: down while folded, up while open. */
-.tia-ask .tia-chevron--up, .tia-ask[open] .tia-chevron--down { display: none; }
-.tia-ask[open] .tia-chevron--up { display: block; }
-.tia-ask__body { display: grid; gap: 8px; padding: 0 16px 16px; }
+.tia-ask__body[hidden] { display: none; }
+.tia-ask__body {
+  display: grid; gap: 8px; padding: 14px 16px 16px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-card);
+  background: var(--tia-bg); box-shadow: var(--tia-shadow-card);
+}
 .tia-ask__policy {
   margin: 0; padding: 8px 12px; border-radius: var(--tia-r-control); background: var(--tia-tone-warning-bg); font-size: 13px;
 }
@@ -368,7 +327,6 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
   width: 100%; height: 520px; border: 1px solid var(--tia-line); border-radius: var(--tia-r-control); background: var(--tia-bg);
 }
 .tia-preview__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.tia-job__buttons { display: flex; flex: none; gap: 4px; }
 .tia-unsupported__ask { display: grid; gap: 6px; }
 .tia-unsupported__ask .tia-button { justify-self: start; }
 .tia-submitted {
@@ -387,8 +345,6 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
 .tia-disclosure-changed .tia-button { justify-self: start; }
 /* v3 Phase 5: the skip rules' boxes, the auto-apply agent's status line (the side panel's strip and the options
    page's card) and its one-time confirmation. */
-.tia-mode__rules { display: grid; gap: 6px; }
-.tia-mode__rules .tia-mode__choice { justify-self: start; border-radius: var(--tia-r-row); }
 .tia-agent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .tia-agent__actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .tia-agent__actions .tia-button { margin-left: 0; }
@@ -399,13 +355,133 @@ body { margin: 0; background: ${NEUTRAL.canvas}; }
   border-radius: var(--tia-r-card); background: var(--tia-tone-warning-bg); color: var(--tia-fg); }
 .tia-confirm p { margin: 0; font-size: 13px; }
 
+/* ── v4 ui ── */
+/* The "?" (HelpTip) and its black bubble (screenshot 6): fixed where the script places it, its arrow on the "?", a
+   bridge over the gap so the pointer can move onto it. */
+.tia-helptip { position: relative; display: inline-flex; flex: none; vertical-align: middle; }
+.tia-helptip__button {
+  display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: 0; padding: 0;
+  border: 0; border-radius: 999px; background: transparent; color: var(--tia-muted); cursor: help;
+}
+.tia-helptip__button:hover, .tia-helptip__button[data-open] { background: var(--tia-track); color: var(--tia-fg); }
+.tia-helptip__button:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-helptip__bubble {
+  position: fixed; top: 0; left: 0; z-index: 1000; width: max-content; max-width: min(260px, calc(100vw - 8px));
+  padding: 8px 11px; border-radius: 8px; background: var(--tia-fg); color: var(--tia-on-ink);
+  font: 500 12.5px/1.45 var(--tia-font); text-align: left; white-space: normal; overflow-wrap: anywhere;
+  box-shadow: var(--tia-shadow-pop);
+}
+.tia-helptip__bubble[hidden] { display: none; }
+.tia-helptip__bubble::after {
+  content: ""; position: absolute; left: var(--tia-tip-arrow, 50%); width: 10px; height: 10px; margin-left: -5px;
+  background: inherit; rotate: 45deg;
+}
+.tia-helptip__bubble[data-place="above"]::after { bottom: -5px; }
+.tia-helptip__bubble[data-place="below"]::after { top: -5px; }
+.tia-helptip__bubble::before { content: ""; position: absolute; left: 0; right: 0; height: 10px; }
+.tia-helptip__bubble[data-place="above"]::before { bottom: -10px; }
+.tia-helptip__bubble[data-place="below"]::before { top: -10px; }
+
+/* The set-up view (screenshot 1): centred, a bolt, the steps as cards with a tick or a GO pill, Start applying. */
+.tia-setup { display: grid; justify-items: center; gap: 10px; padding: 40px 4px 12px; text-align: center; }
+.tia-setup__bolt { color: var(--tia-fg); }
+.tia-setup__heading { margin: 6px 0 0; font: 700 18px/1.3 var(--tia-font); }
+.tia-setup__intro { max-width: 300px; margin: 0; font-size: 14px; color: var(--tia-fg); }
+.tia-setup__steps { display: grid; gap: 10px; width: 100%; margin: 14px 0 6px; padding: 0; list-style: none; text-align: left; }
+.tia-step {
+  display: grid; gap: 10px; padding: 10px 10px 10px 12px; border: 1px solid var(--tia-line); border-radius: 999px;
+  background: var(--tia-bg); box-shadow: var(--tia-shadow-control);
+}
+.tia-step:has(.tia-consent), .tia-step:has(.tia-step__more) { border-radius: var(--tia-r-card); }
+.tia-step__row { display: flex; align-items: center; gap: 10px; }
+.tia-step__number {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; width: 24px; height: 24px;
+  border-radius: 50%; background: var(--tia-brand); color: var(--tia-fg); font: 700 13px/1 var(--tia-font);
+}
+.tia-step__name { flex: 1 1 auto; min-width: 0; font: 600 14px/1.3 var(--tia-font); }
+.tia-step__pill {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; min-width: 48px; height: 32px; margin: 0;
+  padding: 0 14px; border: 0; border-radius: 999px; font: 800 13px/1 var(--tia-font);
+}
+.tia-step__pill--done { background: var(--tia-brand); color: var(--tia-on-ink); }
+.tia-step__pill--go { background: var(--tia-fg); color: var(--tia-on-ink); cursor: pointer; }
+.tia-step__pill--go:hover { background: var(--tia-ink); }
+.tia-step__pill--go:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-step__pill--go:disabled { background: var(--tia-track); color: var(--tia-muted); cursor: default; }
+.tia-step__pill--waiting { background: var(--tia-track); color: var(--tia-fg); font-weight: 700; }
+.tia-step__more { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; margin: 0 4px 4px;
+  font-size: 12px; color: var(--tia-muted); }
+.tia-consent { display: grid; gap: 8px; margin: 0 2px 4px; }
+.tia-consent__heading { margin: 0; font: 700 14px/1.3 var(--tia-font); }
+.tia-consent__text {
+  max-height: 220px; overflow-y: auto; padding: 10px 12px; border-radius: var(--tia-r-control); background: var(--tia-subtle);
+  font-size: 12.5px; line-height: 1.5;
+}
+.tia-consent__text:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-consent__text p { margin: 0 0 8px; }
+.tia-consent__line { margin: 0; font-size: 13px; font-weight: 600; }
+.tia-consent__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tia-setup__start { width: auto; min-width: 180px; padding: 0 28px; border-radius: 999px; }
+.tia-setup__start:disabled, .tia-setup__start:disabled:hover { opacity: 1; background: var(--tia-track); color: var(--tia-muted); }
+
+/* The Settings view (screenshot 5): ✕ and "Settings", the groups, the links, and Save pinned at the bottom. */
+.tia-panel--settings { min-height: 100vh; }
+.tia-settings { display: flex; flex: 1 1 auto; flex-direction: column; gap: 14px; margin: -4px -16px -28px; }
+.tia-settings__head { display: flex; align-items: center; gap: 10px; padding: 0 16px 10px; border-bottom: 1px solid var(--tia-line); }
+.tia-roundbutton {
+  display: inline-flex; flex: none; align-items: center; justify-content: center; width: 30px; height: 30px; margin: 0;
+  padding: 0; border: 0; border-radius: 50%; background: var(--tia-track); color: var(--tia-fg); cursor: pointer;
+}
+.tia-roundbutton:hover { background: var(--tia-line); }
+.tia-roundbutton:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-settings__heading { margin: 0; font: 700 16px/1.3 var(--tia-font); }
+.tia-settings__body { display: grid; flex: 1 1 auto; align-content: start; gap: 20px; padding: 4px 16px 16px; }
+.tia-settings__links { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--tia-line); }
+.tia-linkrow {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin: 0; padding: 10px 14px; border: 0;
+  border-radius: var(--tia-r-control); background: var(--tia-track); color: var(--tia-fg); font: 600 14px/1.3 var(--tia-font);
+  text-align: left; cursor: pointer;
+}
+.tia-linkrow:hover { background: var(--tia-chip); }
+.tia-linkrow:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-linkrow__icon { color: var(--tia-ink); }
+.tia-linkrow__label { flex: 1 1 auto; }
+.tia-linkrow__chevron { color: var(--tia-muted); }
+.tia-settings__links .tia-connection { margin: 4px 0 0; }
+.tia-page a.tia-settings__all { display: inline-flex; align-items: center; gap: 2px; justify-self: start; font-size: 13px;
+  font-weight: 600; }
+.tia-settings__foot {
+  position: sticky; bottom: 0; z-index: 2; display: grid; gap: 6px; padding: 12px 16px 14px; border-top: 1px solid var(--tia-line);
+  background: var(--tia-bg);
+}
+.tia-settings__note { margin: 0; font-size: 13px; text-align: center; }
+.tia-settings__save:disabled, .tia-settings__save:disabled:hover { opacity: 1; background: var(--tia-track); color: var(--tia-muted); }
+
+/* The résumé line, under the buttons before the first run: "Résumé: <label> · Preview · Change". */
+.tia-resumeline { display: grid; gap: 6px; }
+.tia-resumeline__line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 0; font-size: 13px; }
+.tia-resumeline__icon { color: var(--tia-ink); }
+.tia-resumeline__text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tia-resumeline__label { font-weight: 700; }
+
+/* "?" beside a heading or a name: the options page's cards and fields, the editor's, the unsupported page's. */
+.tia-card__head, .tia-unsupported__head, .tia-disclosure-changed__head, .tia-profile__headrow { display: flex;
+  align-items: center; gap: 4px; }
+.tia-card__head { margin: 0 0 8px; }
+.tia-card__head .tia-card__title { margin: 0; }
+.tia-field__head, .tia-profile__labelrow { display: inline-flex; align-items: center; gap: 2px; }
+.tia-another__heading { display: flex; align-items: center; gap: 4px; margin: 0; font: 700 13px/1.4 var(--tia-font); }
+.tia-unsupported__askrow { display: inline-flex; align-items: center; gap: 4px; }
+
 @media (prefers-reduced-motion: reduce) {
   .tia-spin, .tia-skeleton { animation: none; }
 }
 @media (forced-colors: active) {
   .tia-cta { border: 1px solid ButtonText; }
   .tia-ring__arc { stroke: Highlight; }
-  .tia-job, .tia-ask { border: 1px solid CanvasText; }
+  .tia-job, .tia-ask__body, .tia-outline, .tia-radiocard, .tia-step { border: 1px solid CanvasText; }
+  .tia-radiocard__input:checked { background: Highlight; }
+  .tia-helptip__bubble { border: 1px solid CanvasText; }
 }
 `;
 

@@ -92,10 +92,11 @@ describe('the copy', () => {
     expect(`${COPY.brand.name.join('')} ${COPY.brand.settings}`).toBe(COPY.optionsTitle);
     expect([COPY.panel.fill, COPY.panel.dryRun, COPY.panel.continue, COPY.panel.cancel]).toEqual(['Autofill', 'Dry run', 'Continue',
       'Cancel']);
-    // Jobright's progress line: "Autofilling… 78%", then "9 of 12 required fields filled · 75%".
-    expect(COPY.report.progressFilled(9, 12, true)).toBe('9 of 12 required fields filled');
-    expect(COPY.report.progressFilled(2, 3, false)).toBe('2 of 3 fields filled');
-    expect(COPY.report.progressDryRun(3, 4, true)).toBe('3 of 4 required fields would be filled');
+    // Jobright's progress line: "Autofilling… 78%", then (v4 ui, the owner's screenshot 4) "7/7 required fields filled
+    // | 100%".
+    expect(COPY.report.progressFilled(9, 12, true)).toBe('9/12 required fields filled');
+    expect(COPY.report.progressFilled(2, 3, false)).toBe('2/3 fields filled');
+    expect(COPY.report.progressDryRun(3, 4, true)).toBe('3/4 required fields would be filled');
     expect(COPY.report.percent(75)).toBe('75%');
     expect(COPY.report.progressText(9, 12, true, 75)).toBe('9 of 12 required fields filled, 75%');
     // While it fills, "required" only when the form has required fields (v3 Phase 3 review).

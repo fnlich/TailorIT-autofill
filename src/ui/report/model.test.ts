@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FrameReport } from '../../shared/report';
 import {
   awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, isReady, needsPerson, offersSave, overallStatus, percent,
-  policyFromStoredCopy, rowIconOf, sectionsOf, stepText, stripToneOf, tallyOf, type ReportRow,
+  policyFromStoredCopy, rowIconOf, sectionsOf, shownReports, fieldListsOf, stepText, stripToneOf, tallyOf, type ReportRow,
 } from './model';
 
 function row(key: string, section: string): ReportRow {
@@ -132,5 +132,17 @@ describe('the report model (the completion)', () => {
       .toEqual(['attention', 'attention', 'attention']);
     expect([stripToneOf('review', 2), stripToneOf('review', 0), stripToneOf('done', 0), stripToneOf('stopped', 3)])
       .toEqual(['attention', 'done', 'done', 'neutral']);
+  });
+});
+
+describe('the report model (v4 ui, D8)', () => {
+  it('leaves blocked rows out of what the person is shown and counted, and passes a report with none as it is', () => {
+    const blocked = { ...row('trap', 'Contact'), status: 'blocked' as const, required: true };
+    const kept = { ...row('name', 'Contact'), status: 'verified' as const, wrote: true, required: true };
+    const clean = report(2, { fields: [kept] });
+    const shown = shownReports([report(0, { fields: [kept, blocked] }), clean]);
+    expect(shown.map((each) => each.fields.map((field) => field.key))).toEqual([['name'], ['name']]);
+    expect(shown[1]).toBe(clean);
+    expect(fieldListsOf([report(0, { fields: [kept, blocked] })]).required.map((entry) => entry.row.key)).toEqual(['name']);
   });
 });

@@ -368,7 +368,9 @@ test.describe('Options: Auto-apply and Sign-in (v3 Phase 5)', () => {
     await expect(signIn.locator('input[data-setting="modes.signIn.manual"]')).toBeChecked();
     // This connection was made with the sign-in box unticked: Auto cannot be chosen, and the group says why.
     await expect(signIn.locator('input[data-setting="modes.signIn.auto"]')).toBeDisabled();
-    await expect(signIn.locator('[data-mode-blocked]')).toHaveText(COPY.options.modes.signIn.needsScope);
+    // v4 ui: why, in the group's "?".
+    await expect(signIn).toHaveAttribute('data-mode-blocked', 'auto');
+    await expect(signIn.locator('[role="tooltip"]')).toContainText(COPY.options.modes.signIn.needsScope);
     const skips = options.locator('[data-setting-group="modes.agentSkip"]');
     await expect(skips.locator('input[data-setting="modes.agentSkip.requiredEmpty"]')).toBeChecked();
     await expect(skips.locator('input[data-setting="modes.agentSkip.noAi"]')).toBeChecked();
