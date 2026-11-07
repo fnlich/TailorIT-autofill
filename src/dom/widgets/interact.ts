@@ -42,7 +42,7 @@ import { WIDGET_CAP_MS, WIDGET_QUIET_MS, WIDGET_READY_CAP_MS, WIDGET_READY_QUIET
 import { monotonicNow, startDeadline } from '../time';
 import type { WidgetTarget } from '../types';
 import { followsItsField, isUserVisible, stopsFollowing } from '../visibility';
-import { listOf } from './aria';
+import { widgetListOf } from './aria';
 import { listState, widgetBusy } from './options';
 
 /** What acting on a widget needs. */
@@ -119,7 +119,7 @@ export interface ActionAnswer {
 /** The widget's list now, when a person can see it: one its adapter says is drawn fixed at its field's place
  *  (WidgetDecl.listFollowsField) judged where its field is (dom/visibility.ts followsItsField). */
 export function openListOf(widget: WidgetTarget): Element | null {
-  const listbox = listOf(widget.element, widget.input);
+  const listbox = widgetListOf(widget);
   if (listbox !== null && widget.listFollowsField === true) followsItsField(listbox, widget.input ?? widget.element);
   return listbox !== null && isUserVisible(listbox) ? listbox : null;
 }
@@ -141,7 +141,7 @@ export async function afterAction(widget: WidgetTarget, ctx: WidgetContext, capM
   const wait: QuietWait<boolean> = quietWait<boolean>({
     view, quietMs: WIDGET_QUIET_MS, capMs, signal: ctx.signal, aborted: false,
     atQuiet: (): boolean | null => {
-      const listbox = listOf(widget.element, widget.input);
+      const listbox = widgetListOf(widget);
       if (listbox !== null && !ctx.root.contains(listbox) && wait.observe(listbox)) return null;
       return widgetBusy(widget, listbox) ? null : true;
     },
@@ -151,7 +151,7 @@ export async function afterAction(widget: WidgetTarget, ctx: WidgetContext, capM
     },
   });
   wait.observe(ctx.root);
-  const listbox = listOf(widget.element, widget.input);
+  const listbox = widgetListOf(widget);
   if (listbox !== null && !ctx.root.contains(listbox)) wait.observe(listbox);
   const done = await wait.done;
   return { mutated, aborted: !done };
@@ -261,11 +261,22 @@ export function pressDeclaredKey(widget: WidgetTarget, key: DeclaredKey, ctx: Wi
   return true;
 }
 
+/** v4 (drop): the declared key a search needs after each typed query (WidgetDecl.queryKey: Lever's location search
+ *  starts on a keydown, never on the input event), sent to its text box as an untrusted keydown and keyup; false, and
+ *  nothing sent, when the widget declares none or assertKeyTarget refuses its box. */
+export function pressQueryKey(widget: WidgetTarget, ctx: WidgetContext): boolean {
+  const key = widget.queryKey;
+  const box = widget.input;
+  if (key === undefined || box === null || !assertKeyTarget(box, ctx).ok) return false;
+  fireKey(box, key);
+  return true;
+}
+
 /** Closes a widget's list if it is open (see the header). Answers whether it is closed now. */
 export async function closeList(widget: WidgetTarget, ctx: WidgetContext, opened: { activated: boolean }):
   Promise<boolean> {
   // The run is done with the list: a list drawn where its field is is judged as fixed again (stopsFollowing).
-  const shown = listOf(widget.element, widget.input);
+  const shown = widgetListOf(widget);
   try {
     return await closeListNow(widget, ctx, opened);
   } finally {
@@ -318,7 +329,7 @@ export async function awaitList(widget: WidgetTarget, ctx: WidgetContext,
   const wait: QuietWait<ListWait['status']> = quietWait<ListWait['status']>({
     view, quietMs: WIDGET_QUIET_MS, capMs: options.capMs, signal: ctx.signal, aborted: 'aborted',
     atQuiet: (): ListWait['status'] | null => {
-      const listbox = listOf(widget.element, widget.input);
+      const listbox = widgetListOf(widget);
       if (listbox !== null && !ctx.root.contains(listbox) && wait.observe(listbox)) return null;
       // The widget's own busy sign counts while its list is hidden too: a search often hides it while it runs.
       if (widgetBusy(widget, listbox)) {
@@ -342,7 +353,7 @@ export async function awaitList(widget: WidgetTarget, ctx: WidgetContext,
     },
   });
   wait.observe(ctx.root);
-  const listbox = listOf(widget.element, widget.input);
+  const listbox = widgetListOf(widget);
   if (listbox !== null && !ctx.root.contains(listbox)) wait.observe(listbox);
   return { status: await wait.done, mutated };
 }

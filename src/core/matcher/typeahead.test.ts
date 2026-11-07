@@ -7,9 +7,10 @@ import { typeaheadQueries } from './typeahead';
 const institution = (name: string) => intendedInstitution(canonicalInstitution({ name }, vocab).value, vocab);
 
 describe('typeaheadQueries (§4.11)', () => {
-  it('tries the full name, the name without "The", the best alias, then the first two weighty words', () => {
+  it('tries the full name, the name without "The", the curated spellings, the name without its campus, then the first two weighty words (v4: the candidate answers)', () => {
     expect(typeaheadQueries(institution('The University of Texas at Austin'), vocab))
-      .toEqual(['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'Texas Austin']);
+      .toEqual(['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
+        'University of Texas', 'Texas Austin']);
   });
 
   it('never searches by a particle of another language ("Universidad de")', () => {
@@ -26,11 +27,11 @@ describe('typeaheadQueries (§4.11)', () => {
       .toEqual(['Massachusetts Institute of Technology', 'MIT']);
   });
 
-  it('gives at most four distinct queries, ignoring case, each at least three characters', () => {
+  it('gives at most six distinct queries (v4: MAX_SEARCH_QUERIES), ignoring case, each at least three characters', () => {
     const names = ['The University of Texas at Austin', 'Georgia Institute of Technology', 'UCLA', 'Rice University'];
     for (const name of names) {
       const queries = typeaheadQueries(institution(name), vocab);
-      expect(queries.length, name).toBeLessThanOrEqual(4);
+      expect(queries.length, name).toBeLessThanOrEqual(6);
       expect(new Set(queries.map((query) => query.toLowerCase())).size, name).toBe(queries.length);
       expect(queries.every((query) => query.length >= 3), name).toBe(true);
     }
@@ -41,18 +42,19 @@ describe('typeaheadQueries (§4.11)', () => {
     expect(typeaheadQueries({ kind: 'boolean', value: true }, vocab)).toEqual([]);
   });
 
-  it("types a place as written, then with its region's name, then by its city alone", () => {
+  it("types a place as written, then with its region's name, its country's name (v4), then by its city alone", () => {
     // Greenhouse's Location lists only the geocoder's results whose label holds the typed text, and spells the region
     // out ("Austin, Texas, United States"), so "Austin, TX" lists nothing there (the live BeyondTrust form, 2026-11-01).
     const austin = { city: 'Austin', region: { code: 'TX', name: 'Texas' }, country: 'US' };
-    expect(typeaheadQueries(intendedText('Austin, TX'), vocab, austin)).toEqual(['Austin, TX', 'Austin, Texas', 'Austin']);
+    expect(typeaheadQueries(intendedText('Austin, TX'), vocab, austin))
+      .toEqual(['Austin, TX', 'Austin, Texas', 'Austin, United States', 'Austin']);
     // A region the table does not hold keeps the name the person wrote; a place with no region gives its city alone.
     expect(typeaheadQueries(intendedText('Munich, Bavaria, Germany'), vocab,
       { city: 'Munich', region: { name: 'Bavaria' }, country: 'DE' }))
-      .toEqual(['Munich, Bavaria, Germany', 'Munich, Bavaria', 'Munich']);
+      .toEqual(['Munich, Bavaria, Germany', 'Munich, Bavaria', 'Munich, Germany', 'Munich']);
     expect(typeaheadQueries(intendedText('London, United Kingdom'), vocab, { city: 'London', country: 'GB' }))
       .toEqual(['London, United Kingdom', 'London']);
-    // At most four, none repeated; a place with no city adds nothing.
+    // None repeated; a place with no city adds nothing.
     expect(typeaheadQueries(intendedText('The Woodlands, TX'), vocab,
       { city: 'The Woodlands', region: { code: 'TX', name: 'Texas' } }))
       .toEqual(['The Woodlands, TX', 'Woodlands, TX', 'The Woodlands, Texas', 'The Woodlands']);

@@ -111,8 +111,13 @@ describe('the Lever adapter: its hooks on the snapshots', () => {
   it('declares the location search a remote typeahead, and no other control a widget', async () => {
     const { doc, root } = await loadLever(spotifyHtml);
     const location = doc.getElementById('location-input')!;
+    // v4 (drop): with its results list (WidgetDecl.results, from the live capture fixtures/lever/location-open.html), the
+    // key that starts its search and its loading row, so the widget helpers search it (was declared without them, so
+    // it was widget-unsupported).
     expect(leverAdapter.widgetFor!(location)).toEqual({ kind: 'typeahead-remote', opener: location,
-      snapshot: 'fixtures/lever/spotify-ny.html' });
+      snapshot: 'fixtures/lever/location-open.html', queryKey: 'Escape', busy: ['.dropdown-loading-results'],
+      results: { list: location.closest('li')!.querySelector('.dropdown-results'), option: '.dropdown-location',
+        choose: 'mousedown' } });
     const others = Array.from(root.querySelectorAll(CONTROL_SELECTOR)).filter((el) => el !== location);
     expect(others.length).toBeGreaterThan(50);
     expect(others.filter((el) => leverAdapter.widgetFor!(el) !== null)).toEqual([]);

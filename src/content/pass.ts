@@ -446,14 +446,15 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
 }
 
 /** A typeahead's results as the worker matches them: the field's spec with the results as its options (their hash its
- *  observed one), partial when their read was cut short, and nothing chosen yet (the box holds our query, which is no
- *  answer). */
+ *  observed one), partial when their read was cut short, marked as a search's results (v4, drop: FieldSpec
+ *  .searchResults, so one is chosen only in the fill band and never by the LLM), and nothing chosen yet (the box holds
+ *  our query, which is no answer). */
 function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[], complete: boolean): FieldSpec {
   const options = results.map((result, index) => ({ index, label: capCodePoints(result.label, TEXT_CAP_LABEL),
     disabled: result.disabled, selected: false }));
   const { optionsPartial: _, ...spec } = toFieldSpec(field);
   return { ...spec, options, optionSetHash: hashOfOptions(options.map((option) => option.label)),
-    current: { kind: 'empty' }, ...(complete ? {} : { optionsPartial: true as const }) };
+    current: { kind: 'empty' }, searchResults: true, ...(complete ? {} : { optionsPartial: true as const }) };
 }
 
 /** One typed query's Guard (a remote typeahead's, or a long list's search): a pause the page shows or the person's
@@ -524,11 +525,19 @@ async function searchOption(env: PassEnv, last: ScanResult, field: ScannedField,
  * typeahead.query), and each result list matched by the worker (plan/request for this field alone, its results as its
  * options), whose choice passes guardWriteInFrame before it is clicked. The row is the worker's for the chosen result,
  * or the planned one flagged (blocked when a Guard refused) with why nothing was chosen.
+ * v4 (drop): a combobox's query write is a long list's search with the value's candidate answers, where the planner
+ * found no option of the list's read to be the value (plan/frame.ts planChoice): searched the same way, but only where
+ * its own text box filters it as typed (dom/widgets' searchesList); any other list is left, with why nothing was
+ * chosen from its read (options-incomplete when it was read only in part, else no-match).
  */
 async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, write: PlannedWrite,
   planned: FillResult, target: FieldTarget, widgets: WidgetWriteEnv, ctx: WidgetFillContext): Promise<WriteResult> {
   if (write.value.kind !== 'query' || !isActionable(target.widget!)) {
     return { row: settleRow(planned, { kind: 'not-written', reason: 'widget-unsupported' }) };
+  }
+  if (target.widget!.kind === 'combobox' && !searchesList(target)) {
+    return { row: settleRow(planned, { kind: 'not-written',
+      reason: target.field.optionsPartial === true ? 'options-incomplete' : 'no-match' }) };
   }
   const wanted = plannedFieldOf(field);
   let chosen: { row: FillResult; write: PlannedWrite } | null = null;

@@ -587,7 +587,10 @@ function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): 
       ...(declared.hidesFormWhileOpen === true ? { hidesFormWhileOpen: true } : {}),
       ...(declared.optionLabel ? { optionLabel: declared.optionLabel } : {}),
       ...(declared.emptyAfterMs !== undefined ? { emptyAfterMs: declared.emptyAfterMs } : {}),
-      ...(declared.highlightIsNoChoice === true ? { highlightIsNoChoice: true } : {}) }),
+      ...(declared.highlightIsNoChoice === true ? { highlightIsNoChoice: true } : {}),
+      // v4 (drop): a results list no ARIA names, and the key that starts a search.
+      ...(declared.results !== undefined ? { results: declared.results } : {}),
+      ...(declared.queryKey !== undefined ? { queryKey: declared.queryKey } : {}) }),
   };
 }
 

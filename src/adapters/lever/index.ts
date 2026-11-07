@@ -12,8 +12,21 @@
  *   div.application-label, which no label element, legend or aria attribute ties to it.
  * - Upload: the resume input sits at opacity 0 inside the visible ATTACH RESUME/CV link, which is its upload widget.
  * - Widgets: "Current location" is Lever's own location search, a remote typeahead. It is declared as one, with no
- *   activation events, so that it is never typed into as plain text. Its results are no ARIA listbox the snapshots
- *   show, so the widget helpers (Phase 4) leave it widget-unsupported and type nothing into it.
+ *   activation events, so that it is never typed into as plain text. v4 (drop): its results are no ARIA listbox, so its
+ *   results list is declared from a read-only live capture of a public Lever application (2026-11-07, jobs.lever.co/
+ *   thinkahead/.../apply; fixtures/lever/location-open.html, its markup with Austin typed in): <div class="... rounded
+ *   dropdown-container" style="display: flex;"><div class="dropdown-results width-full cursor-pointer"><div
+ *   class="break-word dropdown-location width-full py1 px2" id="location-0">Austin, TX, USA</div></div><div
+ *   class="dropdown-no-results ...">No location found. ...</div><div class="dropdown-loading-results ...">...
+ *   <span>Loading</span></div></div>. What the capture's own script (retrieveLocations.js) does, read for behaviour
+ *   only: an input event shows the container; a keydown of any key but the arrows and Enter starts the search, 500 ms
+ *   after the last one, with the loading row shown until its answer; a mousedown on a result chooses it (the text box
+ *   takes its words, the hidden selectedLocation input its record, the container hides); a blur while the container
+ *   shows empties the box. So each typed query is followed by one declared Escape (queryKey: a key that starts the
+ *   search and does nothing else there), a result is chosen with one mousedown (results.choose), and the loading row
+ *   is the widget's busy sign. The hidden selectedLocation input is never written: the page fills it from the chosen
+ *   result. The question's own words name the box (labelFor), so the results shown inside its wrapping label never
+ *   change its label.
  * - Submit: button#btn-submit, identified so it is never clicked. The form is a single step, so a page showing the
  *   form and its Submit is the final step.
  * - Errors: Lever's p.error-message when shown, plus the standard aria-invalid="true".
@@ -33,6 +46,9 @@ import { canonicalApplicationUrl, matchesUrl, parseLeverUrl } from './url';
 
 /** The snapshots the Lever hooks were read from. */
 export const LEVER_SNAPSHOTS = ['fixtures/lever/spotify-ny.html', 'fixtures/lever/zoox-fostercity.html'] as const;
+
+/** v4 (drop): the location search's results list, open, from the read-only live capture of 2026-11-07. */
+export const LEVER_LOCATION_CAPTURE = 'fixtures/lever/location-open.html';
 
 /** Lever's application form in a document, or null when the document shows none. */
 function formOf(doc: Document): Element | null {
@@ -84,9 +100,20 @@ function labelFor(control: Element): Element | null {
   if (type === 'radio' || type === 'checkbox') return ownLabelShows(control) ? label : null;
   // fixtures/lever/*.html: li.application-question.resume, its div.application-label "Resume/CV ✱".
   if (type === 'file') return label;
+  // v4 (drop): the location search's box, whose wrapping <label> also holds its results list and its "No location
+  // found" notice (fixtures/lever/location-open.html): the question's own words name it, whatever the list shows.
+  if (isLocationInput(control)) return label;
   // fixtures/lever/zoox-fostercity.html: <li class="application-question custom-question">. A standard question's
   // other controls (spotify-ny.html's hidden custom-pronouns box, shown only with its placeholder) are not its own.
   return question.classList.contains('custom-question') ? label : null;
+}
+
+/** Lever's location search box (fixtures/lever/*.html): <li class="application-question"
+ *  data-qa="structured-contact-location-question"> ... <input class="location-input" data-qa="location-input"
+ *  id="location-input" type="text" maxlength="100" name="location"> */
+function isLocationInput(control: Element): boolean {
+  return control.matches('input.location-input[data-qa="location-input"]')
+    && control.closest('[data-qa="structured-contact-location-question"]') !== null;
 }
 
 /** The resume input and the visible link that stands for it. */
@@ -100,14 +127,20 @@ function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInpu
   });
 }
 
-/** Lever's location search, declared so it is never filled as plain text before Phase 4 handles it. */
+/** Lever's location search (module header): a remote typeahead whose results list is declared (v4, drop). */
 function widgetFor(control: Element): WidgetDecl | null {
   // fixtures/lever/*.html: <li class="application-question" data-qa="structured-contact-location-question"> ...
   // <input class="location-input" data-qa="location-input" id="location-input" type="text" maxlength="100"
   // name="location"><div class="... dropdown-container"><div class="dropdown-results ..."></div> ...
-  if (!control.matches('input.location-input[data-qa="location-input"]')) return null;
-  if (control.closest('[data-qa="structured-contact-location-question"]') === null) return null;
-  return { kind: 'typeahead-remote', opener: control as HTMLElement, snapshot: LEVER_SNAPSHOTS[0] };
+  if (!isLocationInput(control)) return null;
+  const question = control.closest('[data-qa="structured-contact-location-question"]')!;
+  // fixtures/lever/location-open.html: <div class="dropdown-results width-full cursor-pointer"><div class="break-word
+  // dropdown-location width-full py1 px2" id="location-0">...</div></div>, and its loading row <div
+  // class="dropdown-loading-results ...">.
+  const list = question.querySelector('.dropdown-results');
+  return { kind: 'typeahead-remote', opener: control as HTMLElement, snapshot: LEVER_LOCATION_CAPTURE,
+    ...(list === null ? {} : { results: { list, option: '.dropdown-location', choose: 'mousedown' as const },
+      queryKey: 'Escape' as const, busy: ['.dropdown-loading-results'] }) };
 }
 
 /** The Submit button: identified so it is never clicked. */

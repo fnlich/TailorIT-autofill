@@ -17,7 +17,9 @@
  *   bridge has its planned option chosen by its own React code, then read back (fill.ts); fillWidget tries it first,
  *   and content/pass.ts before a long list's search, once per write (WidgetContext.bridgeTried).
  * A widget is acted on only when standard ARIA says where its list is (or it is a group whose members carry their own
- * state): a widget an adapter declares without that (Lever's location search) is widget-unsupported, never typed into.
+ * state), or its adapter declares where a search's results are from a capture (v4: WidgetDecl.results, Lever's
+ * location search): a widget an adapter declares without either (Workday's prompts) is widget-unsupported, never typed
+ * into.
  * The events are interact.ts's: click() through assertNotSubmit (or the adapter's one declared mousedown, mouseup or
  * focus), the text filler's input, change, focusout and blur, a key the adapter declares for the widget, and a list's
  * own scrollTop set as a property; before any of them, for a widget declared for it, one command to the page-world
@@ -26,7 +28,7 @@
 import type { ValueOrigin, WriteValue } from '../../core/types/intent';
 import { refused } from '../fillers/outcome';
 import { isUsableOption } from '../option-hash';
-import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS, WIDGET_SEARCH_MIN_OPTIONS } from '../thresholds';
+import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS } from '../thresholds';
 import type { FieldTarget, FillOutcome, WidgetReading } from '../types';
 import { filtersAsTyped, isActionable, isMultiselectable } from './aria';
 import { addOptions, chooseOption, keepReading, pressMember, type WidgetFillContext } from './fill';
@@ -34,7 +36,8 @@ import { awaitList, closeList, openList } from './interact';
 import { readList, type ListRead } from './options';
 
 export {
-  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, WIDGET_ROOT_SELECTOR,
+  ariaWidgetKind, editableOf, isActionable, isWidgetPart, listOf, membersOf, searchesList, widgetListOf,
+  WIDGET_ROOT_SELECTOR,
 } from './aria';
 export { chooseThroughBridge, keepReading, remember, type BridgeAttempt, type WidgetFillContext } from './fill';
 export { widgetHolds } from './hold';
@@ -44,16 +47,6 @@ export {
 } from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
 export { searchForOption, searchTypeahead, type TypeaheadHooks, type TypeaheadResult } from './typeahead';
-
-/** Whether a combobox's planned option is searched for rather than chosen from its whole list (see the header): its
- *  adapter declared it, ARIA says where its list is, its text box filters the list as typed (aria-autocomplete list or
- *  both), and its list is long (WIDGET_SEARCH_MIN_OPTIONS options or more) or was read only in part. */
-export function searchesList(target: FieldTarget): boolean {
-  const { widget, field } = target;
-  if (widget === undefined || !widget.declared || widget.kind !== 'combobox' || widget.input === null) return false;
-  if (!isActionable(widget) || !filtersAsTyped(widget.element, widget.input) || field.options === 'lazy') return false;
-  return field.options.length >= WIDGET_SEARCH_MIN_OPTIONS || field.optionsPartial === true;
-}
 
 /** Writes one planned value into a widget (fill.ts); a query is searchTypeahead's. `origin` is the write's: an
  *  llm-pick is checked once more on what the widget shows right before its click (the Phase 4 review, R1). */

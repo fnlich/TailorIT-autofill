@@ -24,7 +24,10 @@ import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFID
 import { attentionHits, botCheckOf, namesConsentTopic } from '../guard/attention';
 import { cutInjected } from '../guard/injected';
 import { hasTripwire } from '../guard/tripwire';
+import { searchCandidates } from '../matcher/candidates';
+import { dialCodeOf } from '../matcher/dialCode';
 import { intendedText } from '../matcher/intended';
+import { SEARCH_LIST_MIN_OPTIONS } from '../matcher/searchLimits';
 import { typeaheadQueries } from '../matcher/typeahead';
 import type { PlanSensitiveState } from '../plan/types';
 import { normalize, normalizeLabel } from '../text/normalize';
@@ -115,7 +118,9 @@ export function classifyField(field: FieldSpec, vocab?: Vocab): FieldClassificat
 /** The value in the shape the field's kind takes. */
 export type Shaped =
   | { shape: 'text'; text: string }
-  | { shape: 'choice'; choice: Choice }
+  /** `search` (v4, drop): the candidate answers a long list's search types when none of its options read is the value
+   *  (listSearchFor). */
+  | { shape: 'choice'; choice: Choice; search?: string[] }
   | { shape: 'set'; set: Choice[] }
   | { shape: 'check'; check: boolean }
   | { shape: 'date'; iso: string }
@@ -237,6 +242,26 @@ export function datePartChoice(label: string, date: DateParts, options: FieldSpe
   return { intended: intendedText(MONTH_NAMES[date.m - 1]!), domain: 'generic' };
 }
 
+/** A dial code as the profile's phone gives it (values.ts contact.phoneCountry: "+1"). */
+const DIAL_CODE_TEXT = /^\+\d{1,4}$/;
+
+/**
+ * v4 (drop): the candidate answers a long list's search types when none of its options read is the value
+ * (plan/frame.ts planChoice; core/matcher/candidates.ts): only for a combobox, the one kind a frame searches (dom/widgets'
+ * searchesList: its adapter declared it and its text box filters its list as typed), whose list is long
+ * (SEARCH_LIST_MIN_OPTIONS options or more) or was read only in part, and only for the profile's value (a typed query is
+ * the profile's, transform typeahead.query). A phone-country list whose options show a dial code ("Canada +1",
+ * Greenhouse's) is also searched by the person's dial code ("+1"). None for a search's own results.
+ */
+function listSearchFor(spec: FieldSpec, candidate: Candidate, choice: Choice, vocab: Vocab): string[] {
+  if (spec.kind !== 'combobox' || spec.options === 'lazy' || spec.searchResults === true
+    || candidate.origin.provenance !== 'profile') return [];
+  if (spec.optionsPartial !== true && spec.options.length < SEARCH_LIST_MIN_OPTIONS) return [];
+  const dial = candidate.text?.trim() ?? '';
+  const showsDialCodes = DIAL_CODE_TEXT.test(dial) && spec.options.some((option) => dialCodeOf(option.label) !== null);
+  return searchCandidates(choice.intended, vocab, choice.place, showsDialCodes ? { dialCode: dial } : {});
+}
+
 /** The value in the shape the field's kind takes (candidate.ts), and whether its layout was guessed; null when the
  *  value has no such shape. A date for a list of months or of years is its part (datePartChoice), and for a text box
  *  that asks for its year (Greenhouse's "Start date year") its four digits. */
@@ -253,7 +278,9 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
     case 'choice': {
       const choice = candidate.choice ?? (candidate.set?.length === 1 ? candidate.set[0] : undefined)
         ?? (candidate.date === undefined ? undefined : datePartChoice(spec.label, candidate.date, spec.options));
-      return choice ? plain({ shape: 'choice', choice }) : null;
+      if (!choice) return null;
+      const search = listSearchFor(spec, candidate, choice, vocab);
+      return plain({ shape: 'choice', choice, ...(search.length > 0 ? { search } : {}) });
     }
     case 'set': {
       const set = candidate.set ?? (candidate.choice ? [candidate.choice] : undefined);

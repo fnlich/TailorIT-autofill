@@ -36,7 +36,7 @@ import { monotonicNow } from '../time';
 import type { OptionLabel, WidgetKind, WidgetOptionRead, WidgetTarget } from '../types';
 import { readVisibleText, visibleText, visibleTextWithout } from '../visible-text';
 import { isUserVisible } from '../visibility';
-import { isChosen, isUnavailable, listOf, optionElementsOf, widgetBox } from './aria';
+import { isChosen, isUnavailable, listOf, optionElementsOf, widgetBox, widgetListOf } from './aria';
 
 /** One option a person can see in a widget's list now. Page content: untrusted. */
 export interface ShownOption extends WidgetOptionRead {
@@ -85,12 +85,13 @@ function positionOf(el: Element): number | null {
 }
 
 /** The options of a list a person can see now, in document order, each labelled by its visible text (or its part's
- *  that `labelOf` names). */
-export function shownOptions(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel): ShownOption[] {
+ *  that `labelOf` names); `option` is the selector of a results list its adapter declared (v4: WidgetDecl.results). */
+export function shownOptions(listbox: Element, cache: ScanCache = newScanCache(), labelOf?: OptionLabel, option?: string):
+  ShownOption[] {
   if (!isUserVisible(listbox, cache)) return [];
   const shown: ShownOption[] = [];
   const top = listbox.getBoundingClientRect().top - listbox.scrollTop;
-  for (const el of optionElementsOf(listbox)) {
+  for (const el of optionElementsOf(listbox, option)) {
     if (!isUserVisible(el, cache)) continue;
     const part = labelOf?.(el) ?? null;
     const named = part !== null && el.contains(part) ? part : el;
@@ -114,10 +115,11 @@ function sameOption(known: Pick<ReadOption, 'label' | 'position' | 'offset'>,
 
 /** Takes the options of the view shown now into `found`, those an earlier view took aside; false once the option cap
  *  stops it. */
-function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache, labelOf?: OptionLabel): boolean {
+function takeView(listbox: Element, found: ReadOption[], cache?: ScanCache, labelOf?: OptionLabel, selector?: string):
+  boolean {
   const at = listbox.scrollTop;
   const earlier = found.length;
-  for (const option of shownOptions(listbox, cache, labelOf)) {
+  for (const option of shownOptions(listbox, cache, labelOf, selector)) {
     let seen = false;
     for (let index = 0; index < earlier && !seen; index += 1) seen = sameOption(found[index]!, option);
     if (seen) continue;
@@ -179,7 +181,7 @@ export function scrollListTo(listbox: Element, top: number): void {
  * minute and more. A list the page empties or removes while it is read ends the read where it is.
  */
 export async function readList(listbox: Element,
-  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel } = {}): Promise<ListRead> {
+  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel; option?: string } = {}): Promise<ListRead> {
   const started = monotonicNow();
   const capMs = options.capMs ?? WIDGET_READ_CAP_MS;
   const found: ReadOption[] = [];
@@ -188,7 +190,7 @@ export async function readList(listbox: Element,
     scrollListTo(listbox, 0);
     await drawn(listbox, options.signal);
   }
-  complete = takeView(listbox, found, undefined, options.labelOf);
+  complete = takeView(listbox, found, undefined, options.labelOf, options.option);
   for (let steps = 0; complete && scrolls(listbox) && listbox.isConnected; steps += 1) {
     if (options.signal?.aborted) break;
     const before = listbox.scrollTop;
@@ -202,7 +204,7 @@ export async function readList(listbox: Element,
     scrollListTo(listbox, Math.min(end, before + Math.max(1, listbox.clientHeight - 8)));
     await drawn(listbox, options.signal);
     if (listbox.scrollTop <= before) break;
-    complete = takeView(listbox, found, undefined, options.labelOf);
+    complete = takeView(listbox, found, undefined, options.labelOf, options.option);
   }
   return { options: ordered(found), complete };
 }
@@ -218,8 +220,9 @@ export function hashOfRead(options: readonly WidgetOptionRead[]): OptionSetHash 
  * list back to where the read saw it. Null when it is not there any more.
  */
 export async function revealOption(listbox: Element, wanted: Pick<ReadOption, 'label' | 'position' | 'scrollTop' | 'offset'>,
-  options: { signal?: AbortSignal; labelOf?: OptionLabel } = {}): Promise<ShownOption | null> {
-  const find = () => shownOptions(listbox, undefined, options.labelOf).find((option) => sameOption(wanted, option)) ?? null;
+  options: { signal?: AbortSignal; labelOf?: OptionLabel; option?: string } = {}): Promise<ShownOption | null> {
+  const find = () => shownOptions(listbox, undefined, options.labelOf, options.option)
+    .find((option) => sameOption(wanted, option)) ?? null;
   const now = find();
   if (now !== null || !scrolls(listbox)) return now;
   scrollListTo(listbox, wanted.scrollTop);
@@ -304,11 +307,11 @@ function hasBox(el: Element): boolean {
  *  options, or what it still waits for. */
 export function listState(widget: WidgetTarget, prevHash: OptionSetHash | null, cache: ScanCache = newScanCache()):
   ListState {
-  const listbox = listOf(widget.element, widget.input);
+  const listbox = widgetListOf(widget);
   if (listbox === null || !listbox.isConnected) return { ready: false, waiting: 'gone' };
   if (!isUserVisible(listbox, cache)) return { ready: false, waiting: 'hidden' };
   if (widgetBusy(widget, listbox, cache)) return { ready: false, waiting: 'busy' };
-  const labels = shownOptions(listbox, cache, widget.optionLabel).map((option) => option.label);
+  const labels = shownOptions(listbox, cache, widget.optionLabel, widget.results?.option).map((option) => option.label);
   if (labels.some(isLoadingOptionLabel)) return { ready: false, waiting: 'loading' };
   if (!labels.some(isUsableOption)) return { ready: false, waiting: 'placeholders' };
   const hash = hashOfOptions(labels);
@@ -340,7 +343,7 @@ export function shownValueOf(widget: WidgetTarget, cache: ScanCache = newScanCac
 /** The chips of a multiselect, or the value an editable combobox draws beside its text box: visible text in its own
  *  box, outside its list, its text box and its label, that is one of `known` labels exactly. */
 function chipsOf(widget: WidgetTarget, known: (text: string) => string | undefined, cache: ScanCache): string[] {
-  const listbox = listOf(widget.element, widget.input);
+  const listbox = widgetListOf(widget);
   const box = widgetBox(widget.element, widget.input, listbox);
   const label = labelOfControl(widget.input ?? widget.element, { cache, adapter: null }).element;
   const outside = [listbox, label].filter((el): el is Element => el !== null);

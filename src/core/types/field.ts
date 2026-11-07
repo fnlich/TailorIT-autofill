@@ -91,6 +91,10 @@ export interface FieldSpec {
    *  an answer may lie past what was read, so the planner chooses only an exact or alias match there, always flagged
    *  (options-incomplete), and never a loose, Other or LLM one. */
   optionsPartial?: true;
+  /** v4 (drop): set only when `options` are what one typed query showed (a remote typeahead's results, or a long list
+   *  its own text box filtered: content/pass.ts resultsSpec), never the field's whole list: one is chosen only in the
+   *  fill band, never by the LLM, and when none is, the frame types its next query (plan/frame.ts planChoice). */
+  searchResults?: true;
   optionSetHash: OptionSetHash;
   constraints: Constraints;
   /** autocomplete tokens, lower case, with section-, shipping and billing prefixes removed. */

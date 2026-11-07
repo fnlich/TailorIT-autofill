@@ -1,0 +1,34 @@
+{
+  "fixture": "synthetic/lever-location",
+  "source": "https://jobs.lever.co/tailorit-fixture/lever-location/apply",
+  "captured": "never: a synthetic page, written by hand on 2026-11-07 (v4, drop) from the read-only live capture of a public Lever application (fixtures/lever/location-open.html)",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "note": "The same page is served at lever-location-names and lever-location-none as well (index.html's header): the variant changes only what the fake server answers. Current location is Lever's location search, declared by the Lever adapter with its results list (WidgetDecl.results), so the widget helpers fill it: fillable in the expectations testkit's terms.",
+  "fields": [
+    {
+      "label": "Full name",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "#name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Current location",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "Submit your application",
+      "fillable": true,
+      "control": "#location-input",
+      "note": "Lever's structured location question: a text input whose results its search draws into div.dropdown-results, with no ARIA roles; a mousedown on a result chooses it."
+    }
+  ]
+}

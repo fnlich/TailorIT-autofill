@@ -918,3 +918,65 @@ describe("React first: Greenhouse's react-selects chosen through the page-world 
     expectOurEventsOnly(page.events);
   });
 });
+
+describe('v4 (drop): a long list with no planned option, searched with candidate answers', () => {
+  /** The field's options as a read a cap cut short: these first few labels, so no option of the read is the value and
+   *  the list is searched (dom/widgets' searchesList: declared, filters as typed, read only in part). */
+  function partly(page: Page, id: string, labels: string[]): FieldTarget {
+    page.readings.set(page.target(id).field.baseKey, { kind: 'options', multiselectable: false, complete: false,
+      options: labels.map((label) => ({ label, disabled: false })) });
+    const target = page.target(id);
+    expect(target.field).toMatchObject({ optionsPartial: true });
+    expect(searchesList(target)).toBe(true);
+    return target;
+  }
+
+  /** The planner's candidate answers (core/matcher/candidates.ts) for the golden profile's values. */
+  const UNITED_STATES = ['United States', 'USA', 'United States of America', 'America', '+1'];
+  const BACHELOR = ['Bachelor of Science', 'B.S.', 'BS', "Bachelor's", "Bachelor's degree"];
+
+  it('finds the phone country the read never reached by its first candidate, and reads it back by its label', async () => {
+    const page = await open();
+    const target = partly(page, 'country', ['Afghanistan +93', 'Åland Islands +358', 'Albania +355']);
+    const result = await searchTypeahead(target, UNITED_STATES, page.ctx(), hooks(page, 'country', 'United States +1'));
+    expect(result).toMatchObject({ verified: true, reason: 'ok', typed: 1, chosen: { cleanLabel: 'United States +1' } });
+    expect(page.log.typed.country).toEqual(['United States']);
+    expect(page.log.values.country).toBe('us');
+    // Chosen among one query's results: its place there is no place in the read, so it is read back by its label.
+    const after = page.target('country');
+    expect(widgetHolds(after, { kind: 'option', index: result.chosen!.index, cleanLabel: 'United States +1' })).toBe(true);
+    expect(widgetHolds(after, { kind: 'option', index: result.chosen!.index, cleanLabel: 'Canada +1' })).toBe(false);
+    expectOurEventsOnly(page.events);
+  });
+
+  it("moves on from candidates that list nothing, and chooses the degree a later one lists (Bachelor's)", async () => {
+    const page = await open();
+    const target = partly(page, 'degree--0', ['High School']);
+    const used = hooks(page, 'degree--0', "Bachelor's Degree");
+    const result = await searchTypeahead(target, BACHELOR, page.ctx(), used);
+    expect(result).toMatchObject({ verified: true, typed: 4, chosen: { cleanLabel: "Bachelor's Degree" } });
+    expect(page.log.typed['degree--0']).toEqual(['Bachelor of Science', 'B.S.', 'BS', "Bachelor's"]);
+    expect(used.seen).toEqual([["Bachelor's Degree"]]);
+    expect(page.log.values['degree--0']).toBe('d1');
+    const after = page.target('degree--0');
+    expect(widgetHolds(after, { kind: 'option', index: 0, cleanLabel: "Bachelor's Degree" })).toBe(true);
+    expectOurEventsOnly(page.events);
+  });
+
+  it('finds the country of residence the same way, and gives the box back what it held when nothing is chosen', async () => {
+    const page = await open();
+    const target = partly(page, RESIDENCE, ['Afghanistan', 'Albania', 'Algeria']);
+    const result = await searchTypeahead(target, UNITED_STATES, page.ctx(), hooks(page, RESIDENCE, 'United States'));
+    expect(result).toMatchObject({ verified: true, typed: 1, chosen: { cleanLabel: 'United States' } });
+    expect(page.log.values[RESIDENCE]).toBe('US');
+    const none = await open();
+    const missing = partly(none, RESIDENCE, ['Afghanistan', 'Albania', 'Algeria']);
+    const nothing = await searchTypeahead(missing, ['Atlantis', 'Lemuria'], none.ctx(), hooks(none, RESIDENCE, 'Atlantis'));
+    expect(nothing).toMatchObject({ chosen: null, reason: 'no-match', typed: 2 });
+    expect(none.log.values[RESIDENCE]).toBeUndefined();
+    expect(none.input(RESIDENCE).value).toBe('');
+    expect(none.input(RESIDENCE).getAttribute('aria-expanded')).toBe('false');
+    expectOurEventsOnly(page.events);
+    expectOurEventsOnly(none.events);
+  });
+});

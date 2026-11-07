@@ -4,6 +4,7 @@
  * a change here must keep every trap green. The text caps match the message schemas (src/messaging/schemas.ts), so a
  * scanned field always fits its plan/request.
  */
+import { SEARCH_LIST_MIN_OPTIONS } from '../core/matcher/searchLimits';
 
 /** A box, a clipped area or an on-screen area under this many CSS pixels on either side is not visible. */
 export const MIN_BOX_PX = 4;
@@ -121,11 +122,15 @@ export const MAX_WIDGET_SCROLLS = 200;
 export const WIDGET_READ_CAP_MS = 10_000;
 /** A remote typeahead: one query's results arrive within this, or the query found nothing. */
 export const TYPEAHEAD_QUERY_CAP_MS = 3_000;
+/** v4 (drop): one field's search, all its queries together, types no further query once it has run this long (checked
+ *  before each query after the first): six queries that each wait their whole cap would hold the form for 18 s. */
+export const SEARCH_FIELD_BUDGET_MS = 15_000;
 /** A combobox its adapter declared, whose text box filters its list as typed, with at least this many options (or a
  *  list read only in part), has its planned option searched for by its words rather than scrolled to: Greenhouse's
  *  phone country lists 244 countries, its country questions about 200, its Yes/No, EEO and month lists a dozen at most
- *  (dom/widgets' searchesList). */
-export const WIDGET_SEARCH_MIN_OPTIONS = 50;
+ *  (dom/widgets' searchesList). The core's own number (core/matcher/searchLimits.ts), which the planner's long-list
+ *  search reads too (v4). */
+export const WIDGET_SEARCH_MIN_OPTIONS = SEARCH_LIST_MIN_OPTIONS;
 /** A file's upload, as the page shows it (fillers/upload.ts): waited for at most this long after the file went in. */
 export const UPLOAD_CONFIRM_CAP_MS = 10_000;
 /** A page that shows a file's upload done counts once it has been quiet this long: its failure message may follow. */

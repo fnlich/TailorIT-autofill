@@ -481,8 +481,10 @@ describe('planFrame: uploads and searches', () => {
 
   it('types queries into a remote search, each a profile value with the typeahead.query transform', () => {
     const search = specOf('School', 'typeahead-remote', { options: [] });
+    // v4 (drop): the school's candidate answers (core/matcher/candidates.ts), six at most.
     expect(fieldOf(planOf([search]), search).write).toMatchObject({ value: { kind: 'query',
-      queries: ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'Texas Austin'] },
+      queries: ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
+        'University of Texas', 'Texas Austin'] },
     origin: { provenance: 'profile', path: 'education[0].institution', transform: 'typeahead.query' } });
   });
 
@@ -509,10 +511,11 @@ describe('planFrame: uploads and searches', () => {
   it("chooses the person's place among a location search's results by its parts (matcher/place.ts)", () => {
     const results = (labels: string[]) => specOf('Location (City)', 'typeahead-remote', { optionLabels: labels });
     const queries = specOf('Location (City)', 'typeahead-remote', { options: [] });
-    // As the profile writes it, then with its region's name, then the city alone: Greenhouse's Location lists only the
-    // results whose label holds the typed text, and its geocoder spells Texas out (the live BeyondTrust form).
+    // As the profile writes it, then with its region's name, its country's (v4), then the city alone: Greenhouse's
+    // Location lists only the results whose label holds the typed text, and its geocoder spells Texas out (the live
+    // BeyondTrust form).
     expect(fieldOf(planOf([queries]), queries).write).toMatchObject({
-      value: { kind: 'query', queries: ['Austin, TX', 'Austin, Texas', 'Austin'] },
+      value: { kind: 'query', queries: ['Austin, TX', 'Austin, Texas', 'Austin, United States', 'Austin'] },
       origin: { provenance: 'profile', path: 'address', transform: 'typeahead.query' } });
     // Greenhouse's geocoder for "Austin, TX": Texas, never Minnesota.
     const geocoded = results(['Austin, Minnesota, United States', 'Austin, Texas, United States',
@@ -605,9 +608,16 @@ describe('a widget list read only in part (the Phase 4 review, R9)', () => {
       'Case Western Reserve University'], ...partial });
     const whole = fieldOf(planOf([{ ...spec, optionsPartial: undefined }], { profile }), spec);
     expect(whole.write?.match.stage).toBe('fuzzy');
-    const { write, row } = fieldOf(planOf([spec], { profile }), spec);
-    expect(write).toBeUndefined();
-    expect(row).toMatchObject({ status: 'flagged', reason: 'options-incomplete', provenance: null });
+    // v4 (drop): no option is chosen from what was read; the list is searched with the school's candidate answers
+    // instead (the frame types them into its own text box, where the list filters as typed), and a result is chosen
+    // only in the fill band.
+    const { write } = fieldOf(planOf([spec], { profile }), spec);
+    expect(write?.value).toMatchObject({ kind: 'query' });
+    expect(write?.value.kind === 'query' ? write.value.queries[0] : null).toBe('Carnegie Mellon University');
+    // Only a combobox is searched (the one kind whose own text box a frame types into): the same list as a select
+    // stays blank.
+    const shortList = { ...spec, kind: 'select' as const };
+    expect(fieldOf(planOf([shortList], { profile }), shortList)).toMatchObject({ write: undefined });
   });
 
   it('asks the LLM nothing about it, and writes no Other', () => {
@@ -617,8 +627,90 @@ describe('a widget list read only in part (the Phase 4 review, R9)', () => {
     const out = planOf([tie]);
     expect(out.awaiting).toEqual([]);
     expect(out.ask).toBeUndefined();
-    expect(fieldOf(out, tie)).toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'options-incomplete' } });
+    // v4 (drop): nothing chosen from what was read; the list is searched with the answer's candidates instead.
+    expect(fieldOf(out, tie).write?.value).toMatchObject({ kind: 'query' });
     const other = specOf('School', 'combobox', { optionLabels: ['Rice University', 'Other'], ...partial });
-    expect(fieldOf(planOf([other]), other)).toMatchObject({ write: undefined, row: { reason: 'options-incomplete' } });
+    expect(fieldOf(planOf([other]), other).write?.value).toMatchObject({ kind: 'query' });
+  });
+});
+
+describe('v4 (drop): a long list with no option that is the value, searched with candidate answers', () => {
+  /** A list of `size` countries that are not the person's, as a combobox (Greenhouse's country questions). */
+  const countries = (size: number, extra: Parameters<typeof specOf>[2] = {}) => specOf('Country', 'combobox', {
+    optionLabels: Array.from({ length: size }, (_, at) => `Elsewhere ${at + 1}`), ...extra });
+
+  it("types the country's candidate answers into a long list whose read holds no option that is it", () => {
+    const long = countries(60);
+    const { write, row } = fieldOf(planOf([long]), long);
+    expect(write).toMatchObject({ value: { kind: 'query' },
+      origin: { provenance: 'profile', transform: 'typeahead.query' } });
+    const queries = write?.value.kind === 'query' ? write.value.queries : [];
+    expect(queries[0]).toBe('United States');
+    expect(queries).toEqual(expect.arrayContaining(['USA', 'United States of America']));
+    expect(queries.length).toBeLessThanOrEqual(6);
+    expect(row).toMatchObject({ status: 'verified', provenance: 'profile', wrote: false });
+    // A list read only in part is searched however short it is.
+    const partial = countries(3, { optionsPartial: true });
+    expect(fieldOf(planOf([partial]), partial).write?.value).toMatchObject({ kind: 'query' });
+  });
+
+  it('chooses from a short list read whole as before: no search, the field blank and flagged', () => {
+    const short = countries(3);
+    expect(fieldOf(planOf([short]), short)).toMatchObject({ write: undefined, row: { status: 'flagged' } });
+  });
+
+  it("adds the person's dial code where the list's options show one (a phone country), never elsewhere", () => {
+    const labels = Array.from({ length: 60 }, (_, at) => `Elsewhere ${at + 1} +${at + 200}`);
+    const phoneCountry = specOf('Country code', 'combobox', { optionLabels: labels });
+    const queries = (spec: FieldSpec) => {
+      const write = fieldOf(planOf([spec]), spec).write;
+      return write?.value.kind === 'query' ? write.value.queries : [];
+    };
+    expect(queries(phoneCountry)).toContain('+1');
+    expect(queries(phoneCountry)[0]).toBe('United States');
+    const plain = specOf('Country code', 'combobox', { optionLabels: labels.map((label) => label.replace(/ \+\d+$/, '')) });
+    expect(queries(plain)).not.toContain('+1');
+  });
+
+  it('leaves a list that already shows the value, and searches over another answer, flagged', () => {
+    const ours = countries(60, { current: { kind: 'selected', labels: ['United States'] } });
+    expect(fieldOf(planOf([ours]), ours)).toMatchObject({ write: undefined,
+      row: { status: 'skipped', reason: 'already-correct' } });
+    const theirs = countries(60, { current: { kind: 'selected', labels: ['Canada'] } });
+    expect(fieldOf(planOf([theirs]), theirs)).toMatchObject({ write: { value: { kind: 'query' } },
+      row: { status: 'flagged', reason: 'prefill-conflict' } });
+  });
+
+  it("chooses among a search's results (FieldSpec.searchResults) only in the fill band, and never asks the LLM", () => {
+    const results = (labels: string[]) => specOf('Country', 'combobox', { optionLabels: labels, searchResults: true });
+    const found = results(['United States Minor Outlying Islands', 'United States of America']);
+    expect(fieldOf(planOf([found]), found)).toMatchObject({
+      write: { value: { kind: 'option', index: 1, cleanLabel: 'United States of America' } },
+      row: { status: 'verified' } });
+    // A misspelt Carnegie Mellon (the matcher's golden case P19) is a fuzzy match below the fill line: a list read whole
+    // chooses it, flagged; a search's results never do, and the frame types its next query.
+    const wire = goldenWire();
+    const cmu = { ...wire.profile, education: wire.profile.education.map((entry) => ({ ...entry,
+      institution: { canonicalName: 'Carnegie Mellon University', aliases: [] } })) };
+    const profile = canonicalizeProfile(cmu, wire.sensitive, vocab, NOW).profile;
+    const school = (searched: boolean) => specOf('School', 'combobox', { optionLabels: ['Carnegie Melon University',
+      'Case Western Reserve University'], ...(searched ? { searchResults: true as const } : {}) });
+    const whole = fieldOf(planOf([school(false)], { profile }), school(false));
+    expect(whole.write).toMatchObject({ value: { kind: 'option', index: 0 }, match: { stage: 'fuzzy' } });
+    expect(whole.row.status).toBe('flagged');
+    expect(fieldOf(planOf([school(true)], { profile }), school(true))).toMatchObject({ write: undefined,
+      row: { status: 'flagged', provenance: null } });
+    // A tie the LLM would be asked about on a whole list is never asked about among a search's results.
+    const tie = specOf('How did you hear about us?', 'combobox', { optionLabels: ['LinkedIn job post',
+      'LinkedIn recruiter message', 'Indeed'] });
+    expect(planOf([tie]).awaiting).toEqual([tie.key]);
+    const searchedTie = { ...tie, searchResults: true as const };
+    const out = planOf([searchedTie]);
+    expect(out.awaiting).toEqual([]);
+    expect(out.ask).toBeUndefined();
+    expect(fieldOf(out, searchedTie).write).toBeUndefined();
+    // Nor is a search's results list searched again.
+    const none = results(Array.from({ length: 60 }, (_, at) => `Elsewhere ${at + 1}`));
+    expect(fieldOf(planOf([none]), none)).toMatchObject({ write: undefined, row: { status: 'flagged' } });
   });
 });

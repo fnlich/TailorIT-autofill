@@ -14,9 +14,13 @@
  *   showing its state with aria-pressed, and no native field control.
  * A widget is a field only when its element is one of these; a native control inside a widget's list or inside an
  * ARIA 1.1 combobox is part of that widget, never a field of its own.
+ * v4 (drop): a search whose results no ARIA names (Lever's location search) is acted on through the results list its
+ * adapter declares from a capture (WidgetDecl.results: the list, the selector of one result): widgetListOf gives that
+ * list where ARIA gives none, optionElementsOf its results, and isActionable accepts it.
  */
 import { CONTROL_SELECTOR, isTextLike } from '../kinds';
-import type { WidgetKind, WidgetTarget } from '../types';
+import { WIDGET_SEARCH_MIN_OPTIONS } from '../thresholds';
+import type { FieldTarget, WidgetKind, WidgetTarget } from '../types';
 
 /** The roles a widget's element can carry, and the containers a toggle-button group can be. */
 export const WIDGET_ROOT_SELECTOR = '[role], fieldset';
@@ -77,10 +81,26 @@ export function filtersAsTyped(el: Element, input: Element | null): boolean {
     && ['list', 'both'].includes((part.getAttribute('aria-autocomplete') ?? '').trim().toLowerCase()));
 }
 
-/** The option elements of a listbox: its role="option" descendants that belong to it, not to a list inside it. */
-export function optionElementsOf(listbox: Element): Element[] {
+/** The option elements of a listbox: its role="option" descendants that belong to it, not to a list inside it; or,
+ *  for a results list its adapter declared (v4: WidgetDecl.results), the elements inside it that the declared selector
+ *  names. */
+export function optionElementsOf(listbox: Element, declared?: string): Element[] {
+  if (declared !== undefined) return Array.from(listbox.querySelectorAll(declared));
   return Array.from(listbox.querySelectorAll('[role~="option" i]'))
     .filter((option) => option.parentElement?.closest('[role~="listbox" i]') === listbox);
+}
+
+/** A widget's list now (v4, drop): the results list its adapter declared (WidgetDecl.results), while it is in the page,
+ *  else the list standard ARIA names (listOf). */
+export function widgetListOf(widget: Pick<WidgetTarget, 'element' | 'input' | 'results'>): Element | null {
+  const declared = widget.results?.list;
+  if (declared !== undefined && declared.isConnected) return declared;
+  return listOf(widget.element, widget.input);
+}
+
+/** The selector of a widget's results, where its adapter declared its list (v4, drop): none for an ARIA list. */
+export function declaredOption(widget: Pick<WidgetTarget, 'results'>): string | undefined {
+  return widget.results?.option;
 }
 
 /** An option, radio or toggle button that is chosen now: aria-selected, aria-checked or aria-pressed "true". */
@@ -182,9 +202,25 @@ export function isWidgetPart(control: Element): boolean {
 export function isActionable(widget: WidgetTarget): boolean {
   if (widget.kind === 'checkbox') return false;
   if (widget.kind === 'radio') return widget.members.length > 0;
+  // v4 (drop): a search whose results list its adapter declared from a capture (WidgetDecl.results), with a text box.
+  if (widget.declared && widget.kind === 'typeahead-remote' && widget.input !== null && widget.results !== undefined) {
+    return true;
+  }
   const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];
   return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input)
     || opensListbox(widget);
+}
+
+/** Whether a combobox's list is searched rather than chosen from whole (dom/widgets' header): its adapter declared it,
+ *  ARIA says where its list is, its text box filters the list as typed (aria-autocomplete list or both), and its list
+ *  is long (WIDGET_SEARCH_MIN_OPTIONS options or more) or was read only in part. A search's planned option is found by
+ *  its words (searchForOption), and a value no option of the read is, by its candidate answers (v4: the planner's
+ *  query write, content/pass.ts searchField). */
+export function searchesList(target: FieldTarget): boolean {
+  const { widget, field } = target;
+  if (widget === undefined || !widget.declared || widget.kind !== 'combobox' || widget.input === null) return false;
+  if (!isActionable(widget) || !filtersAsTyped(widget.element, widget.input) || field.options === 'lazy') return false;
+  return field.options.length >= WIDGET_SEARCH_MIN_OPTIONS || field.optionsPartial === true;
 }
 
 /** A select-only combobox its adapter declares on a button that says it pops up a listbox (aria-haspopup="listbox"),

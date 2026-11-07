@@ -19,6 +19,7 @@ import { AutofillSignInHostSchema, AUTOFILL_SIGN_IN_LIMITS } from '../contract/t
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
 import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
+import { MAX_SEARCH_QUERIES } from '../core/matcher/searchLimits';
 import { SHOWN_CATEGORIES } from '../core/steps/blocks';
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
@@ -100,6 +101,8 @@ export const FieldSpecSchema = z.strictObject({
   options: z.union([z.array(OptionSchema).max(5000), z.literal('lazy')]),
   /** A widget's list read only in part: the planner matches it exactly or not at all. */
   optionsPartial: z.literal(true).optional(),
+  /** v4 (drop): the options are what one typed query showed, not the field's list: chosen from in the fill band only. */
+  searchResults: z.literal(true).optional(),
   optionSetHash: Hash,
   constraints: ConstraintsSchema,
   autocomplete: z.array(Text(60)).max(10),
@@ -120,7 +123,9 @@ export const WriteValueSchema = z.discriminatedUnion('kind', [
    *  option there now reads otherwise. */
   z.strictObject({ kind: z.literal('options'), indices: z.array(Count).max(300), cleanLabels: z.array(Text(300)).max(300) })
     .refine((value) => value.cleanLabels.length === value.indices.length),
-  z.strictObject({ kind: z.literal('query'), queries: z.array(Text(300)).max(4) }),
+  /** v4 (drop): a search's candidate answers, typed one at a time (core/matcher/candidates.ts), MAX_SEARCH_QUERIES at
+   *  most. */
+  z.strictObject({ kind: z.literal('query'), queries: z.array(Text(300)).max(MAX_SEARCH_QUERIES) }),
   z.strictObject({ kind: z.literal('check') }),
   /** The run's resume or its cover letter (Phase G), received over the resume port when it is written. */
   z.strictObject({ kind: z.literal('file'), ref: z.enum(FILE_REFS) }),
