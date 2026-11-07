@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { FrameReport } from '../../shared/report';
 import {
   awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, isReady, needsPerson, offersSave, overallStatus, percent,
-  policyFromStoredCopy, rowIconOf, sectionsOf, shownReports, fieldListsOf, stepText, stripToneOf, tallyOf, type ReportRow,
+  policyFromStoredCopy, progressOf, rowIconOf, sectionsOf, shownReports, fieldListsOf, stepText, stripToneOf, tallyOf,
+  type ReportRow,
 } from './model';
 
 function row(key: string, section: string): ReportRow {
@@ -146,5 +147,24 @@ describe('the report model (v4 ui, D8)', () => {
     expect(shown.map((each) => each.fields.map((field) => field.key))).toEqual([['name'], ['name']]);
     expect(shown[1]).toBe(clean);
     expect(fieldListsOf([report(0, { fields: [kept, blocked] })]).required.map((entry) => entry.row.key)).toEqual(['name']);
+  });
+
+  it('leaves out every row the run leaves out of the counts (shared/report.ts leftOut), so the lists and the progress agree (the v4 review, L-M7)', () => {
+    const kept = { ...row('name', 'Contact'), status: 'verified' as const, wrote: true, required: true };
+    // Each kind by its reason alone, whatever status the run gave it, and a guard's refusal by its status.
+    const left = [
+      { ...row('honeypot', 'Contact'), status: 'flagged' as const, reason: 'honeypot' as const, required: true },
+      { ...row('camouflaged', 'Contact'), status: 'flagged' as const, reason: 'not-user-visible' as const, required: true },
+      { ...row('unseen-label', 'Contact'), status: 'flagged' as const, reason: 'no-visible-label' as const, required: true },
+      { ...row('ai-label', 'Contact'), status: 'flagged' as const, reason: 'tripwire-in-label' as const },
+      { ...row('canary', 'Contact'), status: 'blocked' as const, reason: 'canary-in-value' as const },
+    ];
+    for (const each of left) {
+      const reports = [report(0, { fields: [kept, each] })];
+      expect(shownReports(reports)[0]!.fields.map((field) => field.key), each.key).toEqual(['name']);
+      const lists = fieldListsOf(reports);
+      expect([...lists.required, ...lists.optional].map((entry) => entry.row.key), each.key).toEqual(['name']);
+      expect(progressOf(reports), each.key).toMatchObject({ filled: 1, of: lists.required.length });
+    }
   });
 });

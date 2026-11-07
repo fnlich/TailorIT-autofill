@@ -84,6 +84,9 @@ async function sidePanel(ext: Extension, tabId: number): Promise<Page> {
   await panel.setViewportSize(PANEL_VIEWPORT);
   await still(panel);
   await expect(panel.locator('h1')).toBeVisible();
+  // The main button, where there is one, as it looks once shown long enough to take a click (the v4 review, L4: grey
+  // until then).
+  await expect(panel.locator('button.tia-cta[data-main-action]:disabled:not([data-working])')).toHaveCount(0);
   return panel;
 }
 
@@ -513,11 +516,13 @@ test('v3 Phase 5: Sign-in Auto signing in on a sign-in page, and Modes with Sign
   const url = 'https://tailoritfixture.taleo.net/careersection/ex/jobapply.ftl?job=login&lang=en';
   routeLog.serve({ [url]: 'fixtures/synthetic/signin/sign-in.html' });
   await page.goto(url);
-  const tabId = await ext.fill(page);
+  // A plain Autofill (the page's own launcher's): the panel's button at this wall would sign up.
+  const tabId = await ext.fill(page, { plain: true });
   await ext.settled(tabId);
   const panel = await sidePanel(ext, tabId);
-  // v4 ui (D10): what the sign-in asks is the page's notification; the panel's main button goes on (or signs up).
-  await expect(panel.locator('button.tia-cta')).toBeVisible();
+  // v4 ui (D10): what the sign-in asks is the page's notification; the panel's main button goes on (or signs up), once
+  // shown long enough to take a click (the v4 review, L4).
+  await expect(panel.locator('button.tia-cta')).toBeEnabled();
   await shoot(panel, '57-side-panel-sign-in-manual.png', 'Side panel: a sign-in page, Sign-in on Manual');
 });
 

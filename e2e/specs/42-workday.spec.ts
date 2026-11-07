@@ -115,7 +115,9 @@ test.describe('Sign-in mode Auto on Workday (v3 Phase 6)', () => {
     const page = await extContext.newPage();
     routeLog.serve({ [ACCOUNT]: ACCOUNT_PAGE });
     await page.goto(ACCOUNT);
-    const tabId = await ext.fill(page);
+    // A plain Autofill (the page's own launcher's): at this wall the side panel's button is Sign up & Autofill, which
+    // would grant Sign-in Auto for the run (v4).
+    const tabId = await ext.fill(page, { plain: true });
     const report = await ext.settled(tabId);
     expect(report.status).toBe('auth-needed');
     expect(report.notices.map((notice) => notice.code)).not.toContain('sign-in-auto');

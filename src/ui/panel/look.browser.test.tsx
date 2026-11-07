@@ -10,13 +10,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
 import { adoptPageStyles } from '../page/styles';
 import {
-  authStatus, button, click, createFakeWorker, formPage, frameReport, mount, row, settle, unmountAll, type FakeWorker,
+  authStatus, button, click, createFakeWorker, formPage, frameReport, mount, row, SEEN_AT_ONCE, settle, unmountAll,
+  type FakeWorker,
 } from '../ui.testkit';
 import { Panel } from './Panel';
 
 async function open(worker: FakeWorker, pinnedTabId: number | null): Promise<HTMLElement> {
   adoptPageStyles(document);
-  const root = await mount(<Panel platform={worker.platform} pinnedTabId={pinnedTabId} />);
+  const root = await mount(<Panel platform={worker.platform} pinnedTabId={pinnedTabId} seenClock={SEEN_AT_ONCE} />);
   await settle();
   return root;
 }

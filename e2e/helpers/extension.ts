@@ -6,9 +6,10 @@
  *   message wakes a stopped worker, as the panel's would.
  * - Reports come from the worker (panel/reports); RunState and the frame registry are read from storage, never
  *   written.
- * - A fill starts as a person starts one: a trusted click on the side panel's Autofill, on the report page
- *   (sidepanel.html?tabId=N, the panel opened as a tab: the one form of it Playwright can drive). A dry run, which the
- *   panel no longer offers (v4 ui), is its page message, panel/fill {dryRun: true}.
+ * - A fill starts as a person starts one: a trusted click on the side panel's Autofill (or, at an account wall, its
+ *   Sign up & Autofill), on the report page (sidepanel.html?tabId=N, the panel opened as a tab: the one form of it
+ *   Playwright can drive). A dry run, which the panel no longer offers (v4 ui), is its page message, panel/fill
+ *   {dryRun: true}; so is a plain Autofill at a wall (fill's `plain`), which the panel's button there no longer is.
  */
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 import { applicationKey } from '../../src/adapters/application-key';
@@ -20,7 +21,6 @@ import { parseWorkableUrl } from '../../src/adapters/workable/url';
 import type { RunState } from '../../src/core/types/run';
 import type { Answer } from '../../src/messaging/envelope';
 import type { AuthStatus, PageMessage, TabReports } from '../../src/messaging/schemas';
-import { COPY } from '../../src/shared/copy';
 import { platformOfUrl } from '../../src/shared/hosts';
 import type { FrameReport } from '../../src/shared/report';
 
@@ -142,19 +142,26 @@ export class Extension {
     return page;
   }
 
-  /** Starts a fill of the tab showing `target` with a trusted click on the panel's Autofill, then brings the target back
-   *  to the front. Answers the tab id. A dry run (v4 ui: no longer a button of the panel's) is the same page message the
-   *  panel sent, panel/fill {dryRun: true}, from the extension's own page. */
-  async fill(target: Page, options: { dryRun?: boolean } = {}): Promise<number> {
+  /**
+   * Starts a fill of the tab showing `target` with a trusted click on the side panel's main button where it means a
+   * fill: "Autofill" (data-main-action 'fill'), or "Sign up & Autofill" ('sign-up') while the tab's page shows an
+   * account wall, where it is the panel's only button; never its Continue (a run waiting to go on). The button takes
+   * clicks only once what it says has been shown CONTROL_SEEN_MS (the v4 review, L4: disabled meanwhile), which
+   * toBeEnabled waits for. Then brings the target back to the front, and answers the tab id.
+   * A dry run (v4 ui: no longer a button of the panel's) is the page message the panel sent, panel/fill {dryRun: true},
+   * from the extension's own page; so is `plain`, a plain Autofill (panel/fill {dryRun: false}: Sign-in as its mode
+   * says) at a page whose panel button would read Sign up & Autofill, as the page's own launcher starts one.
+   */
+  async fill(target: Page, options: { dryRun?: boolean; plain?: boolean } = {}): Promise<number> {
     const tabId = await this.tabIdOf(target);
     await this.frameWithForm(tabId);
-    if (options.dryRun === true) {
-      await this.data({ v: 1, type: 'panel/fill', tabId, dryRun: true });
+    if (options.dryRun === true || options.plain === true) {
+      await this.data({ v: 1, type: 'panel/fill', tabId, dryRun: options.dryRun === true });
       await target.bringToFront();
       return tabId;
     }
     const panel = await this.reportPage(tabId);
-    const button = panel.getByRole('button', { name: COPY.panel.fill, exact: true });
+    const button = panel.locator('button.tia-cta:is([data-main-action="fill"], [data-main-action="sign-up"])');
     await expect(button).toBeEnabled();
     await button.click();
     await target.bringToFront();

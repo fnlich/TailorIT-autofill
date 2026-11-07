@@ -7,8 +7,8 @@ import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobCard as Card, PageMessage } from '../../messaging/schemas';
 import { COPY } from '../../shared/copy';
-import { authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, mount, PROFILE_SENTINELS, row, settle,
-  typeInto, unmountAll, type FakeWorker } from '../ui.testkit';
+import { authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, mount, PROFILE_SENTINELS, row,
+  SEEN_AT_ONCE, settle, typeInto, unmountAll, type FakeWorker } from '../ui.testkit';
 import { adoptPageStyles } from '../page/styles';
 import { JobCard, ResumeLine, type JobCardProps } from './JobCard';
 import { Panel } from './Panel';
@@ -21,7 +21,8 @@ const cardOf = (root: ParentNode) => root.querySelector<HTMLElement>('[data-job-
 
 async function open(worker: FakeWorker, tabId: number | null = 5, copyText?: (text: string) => Promise<boolean>):
   Promise<HTMLElement> {
-  const root = await mount(<Panel platform={worker.platform} pinnedTabId={tabId} now={() => NOW} copyText={copyText} />);
+  const root = await mount(<Panel platform={worker.platform} pinnedTabId={tabId} now={() => NOW} copyText={copyText}
+    seenClock={SEEN_AT_ONCE} />);
   await settle();
   return root;
 }

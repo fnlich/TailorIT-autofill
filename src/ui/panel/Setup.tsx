@@ -13,7 +13,8 @@
  * 2. "Complete your profile details": GO opens the profile editor (the panel's, Profile.tsx); its "?" lists what is
  *    missing. GO waits for step 1.
  *
- * Then "Start applying", grey until both are done; it opens the main view. The panel decides when this view shows
+ * Then "Start applying", grey until both are done (or, once connected, the profile could not be read: the v4 review,
+ * M-L6, nothing locks the person out); it opens the main view. The panel decides when this view shows
  * (Panel.tsx). No gear here (Jobright has none). It shows no value: the account's name only, in the done step's "?".
  */
 import { useId, useState } from 'react';
@@ -60,7 +61,10 @@ export function SetupView({ platform, status, refresh, profile, withAccount, onE
   const left = useSecondsLeft(pairingUntil, now, frames);
   const waiting = pairingUntil !== null && (left === null ? pairingUntil > now() : left > 0);
   const profileDone = connected && profile.state === 'read' && profile.gaps.length === 0;
-  const ready = connected && profileDone;
+  // The v4 review (M-L6): a profile that could not be read never locks the person out (the fill reads it itself), here
+  // either: once connected, Start applying opens, step 2 still a GO whose "?" says it could not be read.
+  const unreadable = connected && profile.state === 'unreadable';
+  const ready = connected && (profileDone || unreadable);
 
   const connect = async () => {
     setConnecting(true);
@@ -77,7 +81,7 @@ export function SetupView({ platform, status, refresh, profile, withAccount, onE
     : status.connection === 'expired' ? `${WORDS.accountHelp} ${WORDS.accountExpired}`
       : status.connection === 'revoked' ? `${WORDS.accountHelp} ${WORDS.accountRevoked}` : WORDS.accountHelp;
   const missing = profile.state === 'read' ? profile.gaps.map((gap) => WORDS.gaps[gap]) : [];
-  const profileHelp = profileDone ? WORDS.profileDone
+  const profileHelp = profileDone ? WORDS.profileDone : unreadable ? `${WORDS.profileHelp} ${WORDS.profileUnreadable}`
     : missing.length > 0 ? `${WORDS.profileHelp} ${WORDS.profileMissing(missing)}` : WORDS.profileHelp;
 
   return (
