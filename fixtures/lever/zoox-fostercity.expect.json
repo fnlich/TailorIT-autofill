@@ -71,10 +71,9 @@
       "kind": "typeahead-remote",
       "required": false,
       "section": "Submit your application",
-      "fillable": false,
-      "reason": "widget-phase-4",
+      "fillable": true,
       "control": "#location-input",
-      "note": "Lever's structured location question: a text input whose suggestions come from Lever's location search into div.dropdown-results, with no ARIA roles in the markup. Typing alone may not satisfy it."
+      "note": "Lever's structured location question: a text input whose suggestions come from Lever's location search into div.dropdown-results, with no ARIA roles in the markup. Typing alone may not satisfy it. v4 (drop): the Lever adapter declares that results list (WidgetDecl.results, from the live capture fixtures/lever/location-open.html), so the widget helpers search it: fillable."
     },
     {
       "label": "Current company",

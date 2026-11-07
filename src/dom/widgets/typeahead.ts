@@ -1,7 +1,14 @@
 /*
  * A remote typeahead (Phase 4; docs/SPEC.md Requirement A.5; docs/design/core.md §4.11; docs/ARCHITECTURE.md
  * "Matcher"): a combobox whose options come from a server as the person types (a school search). The planner gives
- * at most four queries in typeaheadQueries' order; here they are tried one at a time, never two at once:
+ * its candidate answers (v4: core/matcher/candidates.ts, at most MAX_SEARCH_QUERIES, six); here they are tried one at a
+ * time, never two at once, and no further one once the field's search has run SEARCH_FIELD_BUDGET_MS (checked before
+ * each query after the first). The same search types a long list's candidates where the planner found no option of
+ * its read to be the value (v4: content/pass.ts searchField, a combobox's query write). A search whose results no ARIA
+ * names is acted on through the results list its adapter declared (WidgetDecl.results: Lever's location search), and
+ * one that starts on a keydown gets its declared key after each query (WidgetDecl.queryKey) once the page has answered
+ * typed text itself (a static page that ignores the input event gets none), its result chosen by the declared event
+ * (results.choose: Lever's mousedown) instead of click():
  * 1. each query is a guarded write (hooks.guard: the DOM guard on a fresh scan, then guardWriteInFrame with provenance
  *    profile and transform typeahead.query), typed with the text filler's setter and its input event
  *    (insertReplacementText). It is never Enter, and no change, focusout or blur follows it while results are awaited,
@@ -45,19 +52,20 @@
  * (optionQuery: "Canada" for "Canada +1"), a guarded write as each of a typeahead's is, and of what the list then shows
  * the one result that is that option as the page shows it (searchedOption) is clicked; no worker matches the results.
  */
-import { TYPEAHEAD_MAX_QUERIES } from '../../core/confidence';
 import { searchedOption } from '../../core/matcher/listSearch';
+import { MAX_SEARCH_QUERIES } from '../../core/matcher/searchLimits';
 import type { ReasonCode } from '../../core/types/fill';
-import { fireChange, fireInput, fireLeave, setValue } from '../fillers/events';
+import { fireChange, fireInput, fireLeave, setValue, windowOf } from '../fillers/events';
 import { assertNotSubmit } from '../fillers/not-submit';
 import { sameOptionLabel } from '../fillers/verify';
-import { TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
+import { SEARCH_FIELD_BUDGET_MS, TYPEAHEAD_QUERY_CAP_MS } from '../thresholds';
+import { monotonicNow } from '../time';
 import type { FieldTarget, WidgetOptionRead } from '../types';
 import { isChosen } from './aria';
 import { cleanOptionLabel } from '../option-hash';
 import {
   activateAndAwait, afterAction, afterBridge, awaitList, bridgeChoose, closeList, closingContext, expandedState,
-  openListOf, skipTidyContext, type WidgetContext,
+  openListOf, pressQueryKey, skipTidyContext, type WidgetContext,
 } from './interact';
 import { chosenLabels, hashOfRead, readList, revealOption, shownOptions } from './options';
 
@@ -96,7 +104,35 @@ function typeQuery(input: HTMLInputElement | HTMLTextAreaElement, query: string)
 /** The option-set hash of what the widget's list shows now, or null when it shows no list. */
 function shownHash(widget: NonNullable<FieldTarget['widget']>): ReturnType<typeof hashOfRead> | null {
   const listbox = openListOf(widget);
-  return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel));
+  return listbox === null ? null : hashOfRead(shownOptions(listbox, undefined, widget.optionLabel, widget.results?.option));
+}
+
+/** Types one query (typeQuery) into a widget that declares a key to start its search (WidgetDecl.queryKey), and
+ *  answers whether the page answered the typed text itself, at once: a change inside the form root while our input
+ *  event ran (Lever shows its results' container in its own input listener). A page whose script does not run there (a
+ *  static snapshot) answers nothing, and gets no key (v4, drop). */
+function typeWatched(box: HTMLInputElement | HTMLTextAreaElement, query: string, root: Element): boolean {
+  const view = windowOf(root);
+  const observer = new view.MutationObserver(() => undefined);
+  observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+  try {
+    typeQuery(box, query);
+    return observer.takeRecords().length > 0;
+  } finally {
+    observer.disconnect();
+  }
+}
+
+/** Chooses a result (v4, drop): the one event its adapter declared for the widget's results (WidgetDecl.results.choose:
+ *  Lever's location search chooses on a mousedown, bubbling to its document's listener, with the main button), else
+ *  click(). assertNotSubmit has passed the result. */
+function chooseResult(widget: NonNullable<FieldTarget['widget']>, option: Element): void {
+  if (widget.results?.choose === 'mousedown') {
+    const view = windowOf(option);
+    option.dispatchEvent(new view.MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+    return;
+  }
+  (option as HTMLElement).click();
 }
 
 /** A box's text as compared: white space collapsed, any case. */
@@ -135,10 +171,12 @@ function restore(input: HTMLInputElement | HTMLTextAreaElement, text: string): v
   fireLeave(input);
 }
 
-/** Searches a remote typeahead with the planner's queries (see the header). */
+/** Searches a remote typeahead with the planner's queries (see the header); `budgetMs` is the time after which no
+ *  further query is typed (SEARCH_FIELD_BUDGET_MS). */
 export async function searchTypeahead(target: FieldTarget, queries: readonly string[], ctx: WidgetContext,
-  hooks: TypeaheadHooks): Promise<TypeaheadResult> {
+  hooks: TypeaheadHooks, budgetMs: number = SEARCH_FIELD_BUDGET_MS): Promise<TypeaheadResult> {
   const input = target.widget?.input ?? null;
+  const started = monotonicNow();
   let typed = 0;
   const none = (reason: ReasonCode, blocked = false): TypeaheadResult =>
     ({ chosen: null, verified: false, reason, blocked, typed });
@@ -162,8 +200,10 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
   const ended = (): Promise<TypeaheadResult> => (skipTidyContext(ctx) === null ? Promise.resolve(none('internal-error'))
     : giveUp('internal-error'));
 
-  for (const query of queries.slice(0, TYPEAHEAD_MAX_QUERIES)) {
+  for (const [at, query] of queries.slice(0, MAX_SEARCH_QUERIES).entries()) {
     if (ctx.signal?.aborted) return ended();
+    // v4 (drop): the field's time budget, checked before each query after the first.
+    if (at > 0 && monotonicNow() - started >= budgetMs) break;
     // The page hid the rest of the form behind the last query's open list: it is closed before the guard scans.
     if (typed > 0 && current.widget?.hidesFormWhileOpen === true) {
       await closeList(current.widget, ctx, { activated: false });
@@ -185,7 +225,14 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
       if (opened.status !== 'answered') return giveUp('needs-your-click');
     }
     const prevHash = shownHash(widget);
-    typeQuery(box, query);
+    // v4 (drop): a search that starts on a keydown gets its declared key (WidgetDecl.queryKey: Lever's), once the page
+    // has answered typed text itself (this query, at once, or an earlier one): a page that ignores the input event gets
+    // no key, and the search stops there as below.
+    if (widget.queryKey === undefined) {
+      typeQuery(box, query);
+    } else if (typeWatched(box, query, ctx.root) || reacted) {
+      pressQueryKey(widget, ctx);
+    }
     typed += 1;
     // A search its adapter says answers "nothing" sooner than the cap (WidgetDecl.emptyAfterMs: Ashby's "No results")
     // ends there.
@@ -198,7 +245,8 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     reacted = true;
     const listbox = openListOf(widget);
     if (wait.status !== 'ready' || listbox === null) continue;
-    const read = await readList(listbox, { signal: ctx.signal, labelOf: widget.optionLabel });
+    const read = await readList(listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
+      ...(widget.results === undefined ? {} : { option: widget.results.option }) });
     if (ctx.signal?.aborted) return ended();
     const results: WidgetOptionRead[] = read.options.map((option) => ({ label: option.label, disabled: option.disabled }));
     if (results.length === 0) continue;
@@ -244,12 +292,13 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
     }
     // After a choice the bridge said it made, nothing ends as "nothing chosen": React may hold it.
     const stop = (why: ReasonCode) => (sent ? Promise.resolve(chosenOf(false)) : giveUp(why));
-    const option = await revealOption(listbox, picked, { signal: ctx.signal, labelOf: widget.optionLabel });
+    const option = await revealOption(listbox, picked, { signal: ctx.signal, labelOf: widget.optionLabel,
+      ...(widget.results === undefined ? {} : { option: widget.results.option }) });
     if (ctx.signal?.aborted) return sent ? stop('internal-error') : ended();
     if (option === null) return stop('options-changed');
     if (!assertNotSubmit(option.el, ctx).ok) return stop('needs-your-click');
     const markedBefore = marked(widget, option.el);
-    (option.el as HTMLElement).click();
+    chooseResult(widget, option.el);
     await afterAction(widget, ctx);
     // The person's Skip cut the wait for the page's answer short: the click was made, so it stands, read back as it
     // shows now, and the list is closed.

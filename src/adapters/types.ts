@@ -81,8 +81,27 @@ export interface WidgetDecl {
    *  before anything is chosen (Ashby's): a result's mark counts as the page's answer to a click only when the click
    *  set it. */
   highlightIsNoChoice?: boolean;
+  // ── v4 (drop) ──
+  /** A search's results list that no ARIA names (Lever's location search: a div of divs, the live capture of
+   *  2026-11-07), as its adapter read it from a capture: the element that holds the results, the selector of one result
+   *  inside it, and the one event that chooses a result where click() does not ('mousedown': Lever chooses on it). The
+   *  widget helpers read, choose from and close this list as they do a listbox (dom/widgets/aria.ts widgetListOf). */
+  results?: WidgetResults;
+  /** A declared key sent, as a keydown and a keyup, to the text box after each typed query, for a search that starts
+   *  on a keydown and never on the input event (Lever's location search: any key but its arrows and Enter starts it). */
+  queryKey?: DeclaredKey;
   /** The snapshot this declaration was written from. */
   snapshot: string;
+}
+
+/** A search's results list that no ARIA names (WidgetDecl.results). */
+export interface WidgetResults {
+  /** The element that holds the results: open while a person can see it. */
+  list: Element;
+  /** A CSS selector for one result inside `list`. */
+  option: string;
+  /** The one event that chooses a result instead of click(). */
+  choose?: 'mousedown';
 }
 
 /** What the page shows of a file the extension put into a file input (Adapter.uploadState). */

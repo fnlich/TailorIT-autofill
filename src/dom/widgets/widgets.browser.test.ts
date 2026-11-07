@@ -273,7 +273,9 @@ describe('searchTypeahead', () => {
       },
     };
   }
-  const QUERIES = ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'Texas Austin'];
+  // v4 (drop): the school's candidate answers (core/matcher/candidates.ts), six at most.
+  const QUERIES = ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
+    'University of Texas', 'Texas Austin'];
   interface Logged { query: string; typedAt: number; answeredAt: number | null }
 
   it('types its queries in order, one at a time, and chooses Austin, never Dallas', async () => {
@@ -298,11 +300,11 @@ describe('searchTypeahead', () => {
     expectOurEventsOnly(page.events);
   });
 
-  it('stops after four queries that find nothing, and leaves the box as it was', async () => {
+  it('stops after six queries that find nothing (v4: MAX_SEARCH_QUERIES), and leaves the box as it was', async () => {
     const page = await open(typeaheadHtml, 'none');
     await readWidget(page.target('School'), page.ctx());
-    const result = await searchTypeahead(page.target('School'), [...QUERIES, 'A fifth query'], page.ctx(), hooks(page));
-    expect(result).toMatchObject({ chosen: null, reason: 'no-match', blocked: false, typed: 4 });
+    const result = await searchTypeahead(page.target('School'), [...QUERIES, 'A seventh query'], page.ctx(), hooks(page));
+    expect(result).toMatchObject({ chosen: null, reason: 'no-match', blocked: false, typed: 6 });
     expect(page.counter<Logged[]>('__queries').map((entry) => entry.query)).toEqual(QUERIES);
     expect((page.fixture.doc.getElementById('school') as HTMLInputElement).value).toBe('');
     expectOurEventsOnly(page.events);

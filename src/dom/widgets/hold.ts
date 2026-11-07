@@ -4,11 +4,13 @@
  * planned clean label at its place among the field's options. What it shows is compared with the planned option as the
  * page shows it, injected text and all, so an option's injected look-alike chosen in its place never reads back as it
  * (the Phase 4 review, R2). A remote typeahead's options were its results, which no scan keeps: its chosen label is
- * read back alone, by its clean label.
+ * read back alone, by its clean label. So is a long list's option chosen among one typed query's results (v4, drop:
+ * dom/widgets' searchesList, content/pass.ts searchField), whose place among the list's own options no scan knows: by
+ * what the widget shows read with no known options, so no adapter maps it onto an option of a read that lacks it.
  */
 import type { WriteValue } from '../../core/types/intent';
 import type { FieldTarget } from '../types';
-import { isChosen } from './aria';
+import { isChosen, searchesList } from './aria';
 import { chosenLabels, labelIdentity, memberLabel, shownIdentity } from './options';
 
 /** Whether a widget holds a planned value now. */
@@ -29,7 +31,12 @@ export function widgetHolds(target: FieldTarget, value: WriteValue): boolean {
         return chosenLabels(widget, [...known, value.cleanLabel]).some((label) => same(label, value.cleanLabel));
       }
       const option = options[value.index];
-      if (option === undefined || !same(option.label, value.cleanLabel)) return false;
+      if (option === undefined || !same(option.label, value.cleanLabel)) {
+        // v4 (drop): an option a search chose among its results, which the list's read may not hold at that place:
+        // what the widget shows, read with no known options (an adapter's reading never maps it onto one of a read
+        // that may lack the right one: Greenhouse's phone country by its dial code alone), is its clean label.
+        return searchesList(target) && chosenLabels(widget, []).some((label) => same(label, value.cleanLabel));
+      }
       return chosenLabels(widget, known).some((label) => shownAs(label, option.label));
     }
     case 'options': {

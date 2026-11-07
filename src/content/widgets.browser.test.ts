@@ -161,7 +161,9 @@ describe('the widgets page', () => {
 
 describe('the remote typeahead', () => {
   interface Logged { query: string; typedAt: number; answeredAt: number | null }
-  const QUERIES = ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'Texas Austin'];
+  // v4 (drop): the school's candidate answers (core/matcher/candidates.ts), six at most.
+  const QUERIES = ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
+    'University of Texas', 'Texas Austin'];
 
   it('searches in the spec\'s order, one query at a time, and chooses Austin, never Dallas', async () => {
     const ran = await fill(typeaheadHtml, 'remote-typeahead');
@@ -185,7 +187,7 @@ describe('the remote typeahead', () => {
       .toEqual([[0, 'combobox'], [1, 'typeahead-remote'], [1, 'typeahead-remote']]);
   });
 
-  it('flags the field after four queries that find nothing, and leaves the box empty', async () => {
+  it('flags the field after six queries that find nothing (v4), and leaves the box empty', async () => {
     const ran = await fill(typeaheadHtml, 'remote-typeahead', { variant: 'none' });
     expectInvariants(ran);
     expect(ran.row('School')).toMatchObject({ status: 'flagged', reason: 'no-match', wrote: false, provenance: null });

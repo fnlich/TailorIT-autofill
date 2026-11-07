@@ -362,17 +362,62 @@ function candidateOf(spec: FieldSpec, input: MatchInput, match: Match): CacheCan
   return [{ fieldKey: spec.key, cacheKey: found.key, entry: { label, stage, confidence } }];
 }
 
+// ── v4 (drop): candidate answers typed into a long list, and a search's results chosen in the fill band ──────────
+
+/** Whether a match reaches the fill band with nothing that forces a flag (planField's action, `fill`): a search's
+ *  results are chosen from only then (§4.11: the first result that reaches it ends the search), and a widget that
+ *  already shows the value counts as already correct only then. */
+function fillsWithoutDoubt(resolution: Resolution, match: Match): boolean {
+  const forced = match.reason !== 'ok' || match.flags.some((item) => FORCING_FLAGS.has(item))
+    || (resolution.reason !== 'ok' && !NOTE_REASONS.has(resolution.reason));
+  return actionFor(round(resolution.confidence * match.confidence), forced) === 'fill';
+}
+
+/**
+ * A long list's search where no option of its read is the value (the owner's words of 2026-11-07: "you can write
+ * possible answer ... and choose the correct answer on dropdown. you can try multiple with possible answer"): the
+ * value's candidate answers (Shaped choice.search, core/matcher/candidates.ts), which the frame types one at a time
+ * into the list's own text box (content/pass.ts searchField, dom/widgets' searchesList), each query's results matched
+ * again here as a search's (FieldSpec.searchResults). A widget that already shows the value is already correct; one
+ * that shows another answer is searched, flagged prefill-conflict, as a remote search is. Null when the list is not
+ * searched: no candidates, not a combobox, a search's own results, or a value whose own confidence cannot reach the
+ * fill band (a search chooses only there).
+ */
+function searchInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, search: readonly string[],
+  ctx: FieldPlanContext, blank: Blank): Planned | FillResult | null {
+  if (search.length === 0 || spec.kind !== 'combobox' || spec.searchResults === true) return null;
+  if (actionFor(round(resolution.confidence), false) !== 'fill') return null;
+  const planned: Planned = { value: { kind: 'query', queries: [...search] }, match: NOT_APPLICABLE };
+  const current = spec.current;
+  const shown = current.kind === 'text' ? [current.text] : current.kind === 'selected' ? current.labels : [];
+  if (shown.every((text) => text.trim() === '')) return planned;
+  const prepared = prepareOptions(shown.map((label, index) => ({ index, label, disabled: false, selected: false })),
+    choice.domain, ctx.input.vocab);
+  const plain = matchValue(matchInputOf(spec, resolution, choice, prepared), ctx);
+  const match = plain === 'waiting' ? plain : orPlace(plain, choice, prepared, ctx);
+  if (match !== 'waiting' && match.optionIndex !== null && fillsWithoutDoubt(resolution, match)) {
+    return blank('skipped', 'already-correct');
+  }
+  return { ...planned, flag: 'prefill-conflict' };
+}
+
+// ── end v4 (drop) ──
+
 /** One answer chosen among a field's options (a select, a radio group, a combobox, a typeahead's results), or the row
- *  it gets instead. With `llm`, a tie may go to the LLM tiebreak: the field then waits for it (Asked). */
+ *  it gets instead. With `llm`, a tie may go to the LLM tiebreak: the field then waits for it (Asked). With `search`
+ *  (v4, drop: a long list's candidate answers), a list with no option that is the value is searched instead
+ *  (searchInstead). A search's own results (FieldSpec.searchResults) never go to the LLM, and one of them is chosen
+ *  only in the fill band. */
 function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext, blank: Blank,
-  llm = false): Planned | Asked | FillResult {
+  llm = false, search: readonly string[] = []): Planned | Asked | FillResult {
   if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
   const prepared = prepareOptions(spec.options, choice.domain, ctx.input.vocab);
   const input = matchInputOf(spec, resolution, choice, prepared);
   const partial = spec.optionsPartial === true;
+  const searched = spec.searchResults === true;
   let matched: Matched;
-  // A list read only in part never goes to the LLM.
-  if (llm && !partial) {
+  // A list read only in part never goes to the LLM, nor does a search's results.
+  if (llm && !partial && !searched) {
     matched = matchChoice(input, ctx);
   } else {
     const plain = matchValue(input, ctx);
@@ -387,9 +432,15 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   }
   const { match, origin } = matched;
   if (partial && (match.stage === 'none' || !PARTIAL_LIST_STAGES.has(match.stage))) {
-    return blank('flagged', 'options-incomplete');
+    return searchInstead(spec, resolution, choice, search, ctx, blank) ?? blank('flagged', 'options-incomplete');
   }
-  if (match.stage === 'none' || match.optionIndex === null) return blank('flagged', match.reason, match);
+  if (match.stage === 'none' || match.optionIndex === null) {
+    return searchInstead(spec, resolution, choice, search, ctx, blank) ?? blank('flagged', match.reason, match);
+  }
+  // A search's result is chosen only in the fill band; anything less leaves it, and the frame types its next query.
+  if (searched && !fillsWithoutDoubt(resolution, match)) {
+    return blank('flagged', match.reason !== 'ok' ? match.reason : 'low-confidence', match);
+  }
   const option = prepared.list.find((candidate) => candidate.index === match.optionIndex)!;
   const selected = selectedIndices(spec, prepared);
   if (selected.has(option.index)) return blank('skipped', 'already-correct');
@@ -472,7 +523,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       return { ...search, flag: 'prefill-conflict' };
     }
     case 'choice':
-      return planChoice(spec, resolution, shaped.choice, ctx, blank, pickCouldFill(resolution));
+      return planChoice(spec, resolution, shaped.choice, ctx, blank, pickCouldFill(resolution), shaped.search);
     case 'set': {
       if (spec.options === 'lazy') return blank('flagged', 'waiting-for-options');
       const preparedBy = new Map<string, PreparedOptions>();

@@ -146,6 +146,10 @@ export interface WidgetTarget {
   readonly emptyAfterMs?: number;
   /** The list's first result carries its mark before anything is chosen (WidgetDecl.highlightIsNoChoice). */
   readonly highlightIsNoChoice?: boolean;
+  /** v4 (drop): its results list that no ARIA names, as its adapter declared it (WidgetDecl.results). */
+  readonly results?: { readonly list: Element; readonly option: string; readonly choose?: 'mousedown' };
+  /** v4 (drop): the declared key sent after each typed query (WidgetDecl.queryKey). */
+  readonly queryKey?: 'Escape' | 'ArrowDown';
 }
 
 /** The part of a list's option that is its label, or null for the whole option (WidgetDecl.optionLabel). */

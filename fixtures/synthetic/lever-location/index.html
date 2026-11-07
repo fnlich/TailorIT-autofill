@@ -1,0 +1,181 @@
+<!doctype html>
+<!--
+  Synthetic (v4, drop): Lever's "Current location" search, as the read-only live capture of a public Lever application
+  showed it on 2026-11-07 (fixtures/lever/location-open.html: the markup with "Austin" typed; its retrieveLocations.js
+  read for behaviour only, none of its code used here). The form is Lever's own markup in brief (form#application-form,
+  li.application-question, the location question's data-qa="structured-contact-location-question", its
+  input.location-input, the hidden selectedLocation input, and div.dropdown-container holding div.dropdown-results, the
+  "No location found" notice and the "Loading" row), so the Lever adapter handles it. A small page script does what the
+  capture's did, written here afresh:
+  - an input event on the location box shows the container (display: flex);
+  - a keydown of any key but the arrows and Enter starts a search 500 ms after the last one (Lever's own debounce):
+    the results are emptied, the "Loading" row shown, and after 150 ms (the fake server) the answer drawn as
+    <div class="break-word dropdown-location width-full py1 px2" id="location-N">NAME</div> rows, or the "No location
+    found" notice; every query is logged (window.__locationQueries: its text and the page's Date.now() when it was
+    asked and answered). An input event alone searches nothing;
+  - a mousedown on a result (a listener on the document) chooses it: the box takes its words, the hidden
+    selectedLocation input its record ({"name": ..., "id": ...}), the container hides and its results are emptied, and
+    the choice is logged (window.__chosen). A click chooses nothing;
+  - a blur on the box while the container shows hides it, empties its results and empties the box and the hidden input,
+    as Lever does when a person leaves without choosing.
+  The script dispatches no event and never focuses, clicks or submits anything. The form posts to /__submitted.
+
+  The fake server's places, in its order: Austin, MN, USA (first: the result a "first one that holds the text" rule
+  would take for "Austin"); Austin, TX, USA; Austin, IN, USA; Austin, AR, USA; Dallas, TX, USA. A query is read as its
+  parts at commas: a place answers when its city holds the first part and each later part names its region or country,
+  by code or by name; by variant (the address's last board part,
+  https://jobs.lever.co/tailorit-fixture/lever-location[-<variant>]/apply, or data-variant on <html>):
+  - default: as above ("Austin, TX" finds Austin, TX, USA);
+  - names: a later part counts only as a full name ("Austin, TX" finds nothing; "Austin, Texas" finds Austin, TX, USA);
+  - none: every query finds nothing.
+  With the golden "Alex Rivera" profile (Austin, TX, US) the planner's queries are "Austin, TX", "Austin, Texas",
+  "Austin, United States" and "Austin": by default Austin, TX, USA is chosen from the first query's results; with the
+  names variant from the second's; with none all four find nothing, and the box is left empty.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Platform Engineer - Application</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 24px auto; padding: 0 16px 360px; }
+    h4 { margin: 28px 0 4px; font-size: 20px; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    .application-question { margin-top: 12px; }
+    .application-question label { display: block; }
+    .application-label { font-weight: 600; }
+    .application-field input[type="text"], .application-field input[type="email"] { display: block; width: 100%;
+      box-sizing: border-box; padding: 6px; border: 1px solid #888; }
+    .dropdown-container { display: none; flex-direction: column; background: #2b2b2b; color: #eee; }
+    .dropdown-results .dropdown-location { padding: 4px 8px; cursor: pointer; }
+    .dropdown-no-results, .dropdown-loading-results { display: none; padding: 4px 8px; }
+    button { margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Platform Engineer</h1>
+    <form id="application-form" action="/__submitted" method="post" enctype="multipart/form-data">
+      <div class="section page-centered application-form">
+        <h4>Submit your application</h4>
+        <ul>
+          <li class="application-question"><label><div class="application-label">Full name<span
+            class="required">✱</span></div><div class="application-field"><input type="text" name="name" id="name"
+            required></div></label></li>
+          <li class="application-question"><label><div class="application-label">Email<span
+            class="required">✱</span></div><div class="application-field"><input type="email" name="email" id="email"
+            required></div></label></li>
+          <li class="application-question" data-qa="structured-contact-location-question"><label><div
+            class="application-label">Current location </div><div class="application-field"><input class="location-input"
+            data-qa="location-input" id="location-input" type="text" maxlength="100" name="location"><input
+            id="selected-location" type="hidden" name="selectedLocation"><div class="momentum-body flex flex-column
+            items-start width-full height-auto bg-gray-800 text-gray-200 rounded dropdown-container"><div
+            class="dropdown-results width-full cursor-pointer"></div><div class="dropdown-no-results width-full break-word
+            py1 px2 pointer-events-none">No location found. Try entering a different location</div><div
+            class="dropdown-loading-results width-full break-word height-full py1 px2 pointer-events-none"><div
+            class="theme-inverse items-center"><span>Loading</span></div></div></div></div></label></li>
+        </ul>
+      </div>
+      <div class="section page-centered last-section-dark">
+        <button id="btn-submit" type="button" class="postings-btn template-btn-submit hex-color"
+          data-qa="btn-submit">Submit application</button>
+      </div>
+    </form>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const VARIANTS = ['default', 'names', 'none'];
+      const fromAddress = /^\/tailorit-fixture\/lever-location(?:-([a-z]+))?\//.exec(location.pathname);
+      const asked = fromAddress?.[1] ?? document.documentElement.getAttribute('data-variant') ?? 'default';
+      const variant = VARIANTS.includes(asked) ? asked : 'default';
+      const PLACES = [
+        { name: 'Austin, MN, USA', city: 'austin', region: ['mn', 'minnesota'], country: ['usa', 'us', 'united states'] },
+        { name: 'Austin, TX, USA', city: 'austin', region: ['tx', 'texas'], country: ['usa', 'us', 'united states'] },
+        { name: 'Austin, IN, USA', city: 'austin', region: ['in', 'indiana'], country: ['usa', 'us', 'united states'] },
+        { name: 'Austin, AR, USA', city: 'austin', region: ['ar', 'arkansas'], country: ['usa', 'us', 'united states'] },
+        { name: 'Dallas, TX, USA', city: 'dallas', region: ['tx', 'texas'], country: ['usa', 'us', 'united states'] },
+      ];
+      const NAMES = new Set(['texas', 'minnesota', 'indiana', 'arkansas', 'united states']);
+      window.__locationQueries = [];
+      window.__chosen = [];
+
+      const box = document.getElementById('location-input');
+      const hidden = document.getElementById('selected-location');
+      const container = document.querySelector('.dropdown-container');
+      const results = document.querySelector('.dropdown-results');
+      const nothing = document.querySelector('.dropdown-no-results');
+      const loading = document.querySelector('.dropdown-loading-results');
+      const show = (el, shown) => { el.style.display = shown ? 'flex' : 'none'; };
+      let found = [];
+      let timer = null;
+      let running = 0;
+
+      function answer(query) {
+        if (variant === 'none') return [];
+        const parts = query.toLowerCase().split(',').map((part) => part.trim()).filter((part) => part !== '');
+        if (parts.length === 0) return [];
+        const [city, ...rest] = parts;
+        return PLACES.filter((place) => place.city.includes(city) && rest.every((part) =>
+          (variant !== 'names' || NAMES.has(part)) && (place.region.includes(part) || place.country.includes(part))));
+      }
+
+      function empty() {
+        results.replaceChildren();
+        show(nothing, false);
+        show(loading, false);
+        found = [];
+      }
+
+      function search() {
+        empty();
+        const query = box.value;
+        if (query === '') return;
+        const entry = { query, askedAt: Date.now(), answeredAt: null };
+        window.__locationQueries.push(entry);
+        show(loading, true);
+        const mine = ++running;
+        setTimeout(() => {
+          if (mine !== running) return;
+          show(loading, false);
+          found = answer(query);
+          found.forEach((place, index) => {
+            const row = document.createElement('div');
+            row.className = 'break-word dropdown-location width-full py1 px2';
+            row.id = `location-${index}`;
+            row.textContent = place.name;
+            results.append(row);
+          });
+          if (found.length === 0) show(nothing, true);
+          entry.answeredAt = Date.now();
+        }, 150);
+      }
+
+      box.addEventListener('input', () => show(container, true));
+      box.addEventListener('keydown', (event) => {
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) return;
+        clearTimeout(timer);
+        timer = setTimeout(search, 500);
+      });
+      box.addEventListener('blur', () => {
+        if (container.style.display !== 'flex') return;
+        show(container, false);
+        empty();
+        box.value = '';
+        hidden.value = '';
+      });
+      document.addEventListener('mousedown', (event) => {
+        const row = event.target instanceof Element ? event.target.closest('.dropdown-location') : null;
+        if (row === null) return;
+        const index = Number(row.id.split('-')[1]);
+        const place = found[index];
+        show(container, false);
+        box.value = row.textContent;
+        hidden.value = JSON.stringify({ name: place?.name ?? row.textContent, id: `place-${index}` });
+        window.__chosen.push(row.textContent);
+        empty();
+      });
+    })();
+  </script>
+</body>
+</html>

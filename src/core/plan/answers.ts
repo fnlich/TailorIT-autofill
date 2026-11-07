@@ -273,9 +273,11 @@ function quote(text: string, max: number): UntrustedText {
 }
 
 /** The options a choice is asked with: every one that can be chosen and has a label, none whose label had injected text
- *  cut; null when the list was not read whole, already holds a choice, or has too few or too many to ask about. */
+ *  cut; null when the list was not read whole, already holds a choice, or has too few or too many to ask about. A
+ *  search's results (v4, drop: FieldSpec.searchResults, one typed query's) are no list to ask about: the frame types its
+ *  next query instead. */
 function choiceOptions(spec: FieldSpec, context: DraftContext): AnswerOption[] | null {
-  if (spec.options === 'lazy' || spec.optionsPartial === true) return null;
+  if (spec.options === 'lazy' || spec.optionsPartial === true || spec.searchResults === true) return null;
   const prepared = prepareOptions(spec.options, 'generic', context.vocab);
   // A list with a choice of its own (the page's, the person's) is theirs. A native select always shows an option, so
   // its selection says something only when it has a placeholder to show instead (planChoice's rule).
