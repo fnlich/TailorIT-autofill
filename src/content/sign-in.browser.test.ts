@@ -395,7 +395,7 @@ describe('a run paused at a sign-in (v3 Phase 5)', () => {
   });
 });
 
-describe('v4: the account wall, its toast, and Sign up & Autofill (docs/_v4/run.md)', () => {
+describe('v4: the account wall, its toast, and Sign up & Autofill (docs/SPEC-AMENDMENTS.md §13)', () => {
   async function start(page: string, signInMode: 'auto' | 'manual', script: Record<string, unknown[]> = {},
     adapters: Adapter[] = [genericAdapter]) {
     const fixture = await loadFixture(document, page, { width: 1100, height: 900 });

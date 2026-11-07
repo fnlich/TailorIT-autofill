@@ -178,7 +178,7 @@ export const LOG_CODES = [
   'content.field-skipped',
   'panel.skip-sent',
   'content.page-turned',
-  // v4 run (docs/_v4/run.md): the pause a run rested at is gone, Workday's entry choice answered, the page's wall told
+  // v4 run (docs/SPEC-AMENDMENTS.md §13): the pause a run rested at is gone, Workday's entry choice answered, the page's wall told
   // to the worker, Sign up & Autofill at a wall with no form.
   'content.pause-gone',
   'content.entry-choice',

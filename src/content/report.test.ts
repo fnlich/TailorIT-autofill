@@ -66,7 +66,7 @@ describe('the report’s step (Phase 6)', () => {
   });
 });
 
-describe('v4: what holds auto-advance, and the notices a report carries (docs/_v4/run.md, D3, D8, D9)', () => {
+describe('v4: what holds auto-advance, and the notices a report carries (docs/SPEC-AMENDMENTS.md §13, D3, D8, D9)', () => {
   const row = (key: string, overrides: Partial<FillResult>): FillResult => ({ key: key as FillResult['key'], label: key,
     kind: 'text', category: 'unknown', section: 'main', required: true, status: 'verified', provenance: 'profile',
     matcherStage: 'not-applicable', confidence: 1, reason: 'ok', wrote: true, verification: 'verified',

@@ -1,7 +1,7 @@
 /*
  * v4 (the owner, 2026-11-07): "If notification is needed, you can make the notification on the page (not extension),
  * but should include brand on notification so that user can't confuse if this notification is extension notification
- * or page notification." The run decides everything it can itself (docs/_v4/run.md, D1-D9); what is left for the person
+ * or page notification." The run decides everything it can itself (docs/SPEC-AMENDMENTS.md §13, D1-D9); what is left for the person
  * is a toast drawn here, in the page UI's closed shadow root (page-ui.ts), never a notice stack or a card:
  * - each toast is a white card led by TailorIT's mark and the word "TailorIT" (the "IT" in TailorIT's ink), so it can
  *   never be taken for the site's own UI, then its one sentence, an optional action and a close ×;

@@ -13,7 +13,7 @@
  * it (src/content/press.ts). Never to a frame whose report does not offer it: a report the run sent at rest says what
  * its step offers (FrameReport.buttons). The frame's answer (its outcome) passes through.
  *
- * v4 (docs/_v4/run.md): panel/fill {signIn: true} is "Sign up & Autofill": the tab is granted Sign-in Auto for one run
+ * v4 (docs/SPEC-AMENDMENTS.md §13): panel/fill {signIn: true} is "Sign up & Autofill": the tab is granted Sign-in Auto for one run
  * (background/sign-up.ts, PanelDeps.signUp) before its frames hear run/start {signIn: true}. Where no frame of the tab
  * has a form but its application frame shows an account wall or a choice of how to apply (frames.ts wallFrameOf), that
  * frame hears run/start (it signs in there, or presses the adapter's declared entry), and the tab's next form is

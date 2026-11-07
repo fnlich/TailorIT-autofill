@@ -10,7 +10,7 @@
  *   value), never a field value. The worker stamps its own updatedAt.
  * A hidden file input beside a visible upload control that did not qualify gets a flagged row of its own here
  * (upload-control-not-recognized); it is never written, focused or sent an event.
- * v4 (the owner, 2026-11-07: "Never flag to the user, just determine with your own"; docs/_v4/run.md):
+ * v4 (the owner, 2026-11-07: "Never flag to the user, just determine with your own"; docs/SPEC-AMENDMENTS.md §13):
  * - a report's rows keep the core's statuses and needsUserAction (the trap specs read them); what asks anything of the
  *   person is shared/report.ts needsPerson alone (a hard-rule stop), and what is filled its isReady;
  * - the notices are the facts the worker reads (the agent's verdict, the posting's AI rule, the counters), never shown:

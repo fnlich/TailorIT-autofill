@@ -137,7 +137,7 @@
  *   leaves the box's row as it was (the AI's draft stays marked as the AI's). The person's later edit makes the text
  *   theirs (changed-by-you), as any draft's.
  *
- * v4 (the owner, 2026-11-07: "Never flag to the user, just determine with your own"; docs/_v4/run.md, D1-D12):
+ * v4 (the owner, 2026-11-07: "Never flag to the user, just determine with your own"; docs/SPEC-AMENDMENTS.md §13, D1-D12):
  * - Nothing is handed to the person but the hard rules: a CAPTCHA, a bot check, an email code (never automated), and a
  *   sign-in the person's Sign-in mode leaves to them. A field the run could not or would not fill is simply not filled
  *   (shared/report.ts notFilled); only a required one left empty holds auto-Next (report.ts lastFillOf).

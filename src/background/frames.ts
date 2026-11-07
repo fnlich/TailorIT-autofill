@@ -57,7 +57,7 @@ export interface FrameEntry {
   chained?: true;
   chainUrl?: string;
   chainedFrom?: number;
-  // ── v4 run (docs/_v4/run.md) ──
+  // ── v4 run (docs/SPEC-AMENDMENTS.md §13) ──
   /** The account wall the frame shows now, as its frame/wall said (a top or claim frame's; absent: none). Kept while
    *  the same document says hello again. */
   wall?: SignInWall;

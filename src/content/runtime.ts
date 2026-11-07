@@ -90,7 +90,7 @@
  * frames the token the worker gave it (core-x items 7 and 14).
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
- * v4 run (the owner, 2026-11-07; docs/_v4/run.md):
+ * v4 run (the owner, 2026-11-07; docs/SPEC-AMENDMENTS.md §13):
  * - The page's account wall (a sign-in, an account's creation, an email gate) and a choice of how to apply its adapter
  *   answers, as the top frame or the frame that claims the application shows them now, go to the worker (frame/wall) at
  *   each change: the side panel's main button then reads "Sign up & Autofill". The page is looked at again on each DOM

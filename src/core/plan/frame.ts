@@ -727,7 +727,7 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   // A remote typeahead chooses one of its results only in the fill band (§4.11: the first result that reaches it ends
   // the search). A weaker match, or one always flagged (an injected label's clean part), is left unchosen with its
   // reason, and the frame types its next query: blank beats wrong. v4: kept as it is, a decision of its own (the
-  // search goes on to a clean result, and never takes one a page aimed at AI tools: docs/_v4/run.md, D2).
+  // search goes on to a clean result, and never takes one a page aimed at AI tools: docs/SPEC-AMENDMENTS.md §13, D2).
   if (spec.kind === 'typeahead-remote' && planned.value.kind === 'option' && action !== 'fill') {
     return { row: rowWithout(spec, resolution.category, 'flagged', flag ?? 'low-confidence', confidence, planned.match) };
   }

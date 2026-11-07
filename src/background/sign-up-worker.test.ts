@@ -1,5 +1,5 @@
 /*
- * v4 (the owner, 2026-11-07; docs/_v4/run.md), the worker's side:
+ * v4 (the owner, 2026-11-07; docs/SPEC-AMENDMENTS.md §13), the worker's side:
  * - "Sign up & Autofill" (panel/fill {signIn: true}): for that one run in that tab, Sign-in acts as Auto (the tab's
  *   content settings, and signin/credential), with every refusal Sign-in Auto has (credentials:read, the disclosure
  *   acknowledged, once per tab, wall and host); another tab, a dry run, and the run's end (its report at review) are

@@ -153,7 +153,7 @@ export function latestReport<T extends Pick<FrameReport, 'updatedAt'>>(reports: 
     : latest), null);
 }
 
-// ── v4 run: "Never flag to the user, just determine with your own" (the owner, 2026-11-07; docs/_v4/run.md) ──
+// ── v4 run: "Never flag to the user, just determine with your own" (the owner, 2026-11-07; docs/SPEC-AMENDMENTS.md §13) ──
 
 /** A report row. */
 type Row = FrameReport['fields'][number];

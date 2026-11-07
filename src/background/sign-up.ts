@@ -1,6 +1,6 @@
 /*
  * v4, "Sign up & Autofill" (the owner, 2026-11-07: "bottom: Autofill button (If new account is needed to apply the
- * application (like workday, iCIMS), `SignUp&Autofill`"; docs/_v4/run.md). The side panel's button sends panel/fill
+ * application (like workday, iCIMS), `SignUp&Autofill`"; docs/SPEC-AMENDMENTS.md §13). The side panel's button sends panel/fill
  * {signIn: true}; for that one run in that tab the worker acts as if Sign-in mode were Auto:
  * - the tab's content settings say Sign-in Auto (index.ts contentSettingsFor), so the run, and the run of the next
  *   document a sign-in brings, sign in at the account wall (content/sign-in.ts, every guard held);

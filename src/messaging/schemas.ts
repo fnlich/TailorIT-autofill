@@ -411,7 +411,7 @@ const contentMessages = [
    *  the document away ends it before agent/enter is answered. The worker takes it from the agent's tab's top frame,
    *  for a document it asked to enter, as the job begun. Nothing else. */
   z.strictObject({ v, type: z.literal('agent/entered') }),
-  // ── v4 run (docs/_v4/run.md) ──
+  // ── v4 run (docs/SPEC-AMENDMENTS.md §13) ──
   /** v4: the frame's account wall (a sign-in, a create-account page, an email gate) as it shows now, or null once it
    *  went; sent by a tab's top frame or the frame that claims its application, at each change (content/runtime.ts). The
    *  worker keeps it on the frame's registry entry, for PageState.wall (the side panel's "Sign up & Autofill"). */

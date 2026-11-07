@@ -1,6 +1,6 @@
 /*
  * Policy notices end to end (docs/ARCHITECTURE.md "Policy notices"; the Testing section's two policy specs). v4 (the
- * owner, 2026-11-07, docs/_v4/run.md D6 and D9): the run decides, and nothing waits or is said on the page; the cases
+ * owner, 2026-11-07, docs/SPEC-AMENDMENTS.md §13 D6 and D9): the run decides, and nothing waits or is said on the page; the cases
  * below were the Phase 2 card's, kept for their pages:
  * - the Lever posting page says "Do not use AI tools to apply" and its /apply page does not: the content script on the
  *   posting page records the hit for the application, and the /apply page's run stops at the policy card before any
