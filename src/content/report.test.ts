@@ -88,6 +88,22 @@ describe('v4: what holds auto-advance, and the notices a report carries (docs/_v
       needsUserAction: true })])).toEqual({ flagged: 0, blocked: 1, unresolved: 0 });
   });
 
+  // The v4 review (L-M7): before v4 `unresolved` held Next for these; v4's notFilled left every skipped row out.
+  it('counts a required field the run skipped as left empty, whatever its status, so it holds Next; an optional one never', () => {
+    for (const reason of ['resume-not-attached', 'disabled-or-readonly', 'field-disappeared'] as const) {
+      const skipped = (required: boolean) => row(reason, { required, status: 'skipped', reason, wrote: false,
+        provenance: null, verification: 'not-applicable', needsUserAction: required });
+      expect(lastFillOf([skipped(true)]), reason).toEqual({ flagged: 1, blocked: 0, unresolved: 0 });
+      expect(lastFillOf([skipped(false)]), reason).toEqual({ flagged: 0, blocked: 0, unresolved: 0 });
+      // Filled by the person since: it no longer holds Next.
+      expect(lastFillOf([{ ...skipped(true), detail: { filledByYou: true } }]), reason)
+        .toEqual({ flagged: 0, blocked: 0, unresolved: 0 });
+    }
+    // A required question already holding its answer is done.
+    expect(lastFillOf([row('kept', { status: 'skipped', reason: 'already-correct', wrote: false, provenance: null })]))
+      .toEqual({ flagged: 0, blocked: 0, unresolved: 0 });
+  });
+
   it('never raises an informational notice (D9): only the facts the worker reads', () => {
     const book = new NoticeBook();
     for (const code of ['policy-unreadable', 'attention-check', 'page-busy', 'needs-click', 'posting-outside-frame',

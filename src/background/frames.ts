@@ -133,10 +133,14 @@ export function wallFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
   return claimFrameOf(frames) ?? frames.find((frame) => frame.frameId === 0) ?? null;
 }
 
-/** v4: the wall the tab's application frame shows now (wallFrameOf), for PageState.wall. */
-function wallOf(frames: readonly FrameEntry[]): { wall?: SignInWall } {
-  const wall = wallFrameOf(frames)?.wall;
-  return wall === undefined ? {} : { wall };
+/** v4: the wall the tab's application frame shows now (wallFrameOf), for PageState.wall; and (the v4 review, behaviour
+ *  M4) on a page with no form, the choice of how to apply it shows (its frame/wall's `choice`), for PageState.choice:
+ *  the side panel then offers Autofill there, a posting page included (Workday's /apply, which its parser reads as a
+ *  posting). Each goes with the frame/wall that cleared it, or with its document. */
+function wallOf(frames: readonly FrameEntry[], noForm: boolean): { wall?: SignInWall; choice?: true } {
+  const frame = wallFrameOf(frames);
+  return { ...(frame?.wall === undefined ? {} : { wall: frame.wall }),
+    ...(noForm && frame?.choice === true ? { choice: true as const } : {}) };
 }
 
 /** The chain an entry holds, as registerFrame takes it again (the same document's next hello keeps it). */
@@ -254,15 +258,15 @@ export async function pageOfTab(session: StorageArea, tabId: number): Promise<Pa
       const nav = navOf(posting);
       return { support: 'no-form', platform: posting.platform,
         ...(posting.confirmation === true ? { confirmation: true as const } : { posting: true as const }),
-        formKey: `${posting.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120), ...wallOf(frames) };
+        formKey: `${posting.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120), ...wallOf(frames, true) };
     }
-    return { support: frames.length > 0 ? 'no-form' : 'none', platform: null, formKey: null, ...wallOf(frames) };
+    return { support: frames.length > 0 ? 'no-form' : 'none', platform: null, formKey: null, ...wallOf(frames, true) };
   }
   const document = (form.documentId ?? `at-${form.registeredAt}`).slice(0, 96);
   const nav = navOf(form);
   return { support: 'form', platform: form.platform,
     formKey: `${form.frameId}:${document}${nav === 0 ? '' : `#${nav}`}`.slice(0, 120),
-    ...(frames.some((frame) => frame.hasForm && frame.letter === true) ? { letter: true } : {}), ...wallOf(frames) };
+    ...(frames.some((frame) => frame.hasForm && frame.letter === true) ? { letter: true } : {}), ...wallOf(frames, false) };
 }
 
 /** One registered frame, or null. */

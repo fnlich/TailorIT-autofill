@@ -99,7 +99,10 @@
  *   is answered with the adapter's declared entry (press.ts pressEntry: Workday's Apply Manually); a wall is signed in
  *   to (sign-in.ts) under Sign up & Autofill or Sign-in mode Auto, else its toast says to sign in here or use Sign up &
  *   Autofill; with no job-site sign-in saved in TailorIT, the toast says to add one (its Open: TailorIT's Settings ›
- *   Autofill). The page that follows fills as usual (the worker starts its run, background/sign-up.ts).
+ *   Autofill); with a challenge on the page, to solve it (the v4 review, M5: any other sign-in it could not make says
+ *   to sign in here). The page that follows fills as usual (the worker starts its run, background/sign-up.ts).
+ * - The v4 review (behaviour H1): run/start that is no dry run, reaching a run that rests offering Continue (a page
+ *   turned under Autofill after page turn: Manually, a pause), continues it (continueRun), as the launcher does.
  * - A run paused at what the page shows carries on by itself once it goes (orchestrator.ts watchPauseGone, through
  *   afterSignIn: continueRun), at most MAX_AUTO_CONTINUES times in a document.
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -383,6 +386,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           void atWall(msg.signIn === true, msg.dryRun).catch(() => undefined);
           return ok({});
         }
+        // The v4 review (behaviour H1): a fill (not a dry run) that reaches a run resting where the launcher offers
+        // Continue (a page turned under "Autofill after page turn: Manually", a pause) continues that run, its RunState,
+        // canaries, step attempts and what it carries kept, as the launcher's Continue does; never a fresh run.
+        if (!msg.dryRun && continueRun('panel', msg.signIn === true, true)) return ok({});
         startRun({ trigger: 'panel', dryRun: msg.dryRun, ...(msg.signIn === true ? { signIn: true } : {}) });
         return ok({});
       case 'agent/enter': {
@@ -882,16 +889,21 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
 
   /** run/continue, or the launcher's Continue: a fresh run after a pause. It never answers the policy card: Continue
    *  goes to every frame that reported, and one waiting at the card must not fill as if Fill anyway was chosen. A dry
-   *  run's Continue is a dry run too (the audit of 2026-11-06, M3): it never writes what the paused run only showed. */
-  function continueRun(trigger: RunRequest['trigger']): void {
-    if (current === null || current.ended !== 'paused') return;
+   *  run's Continue is a dry run too (the audit of 2026-11-06, M3): it never writes what the paused run only showed.
+   *  The v4 review (behaviour H1): run/start (the side panel's Autofill, `fill`) continues a run that rests offering
+   *  Continue too, but never a dry run's (a fill starts afresh there), with Sign up & Autofill as it asks now (`signUp`:
+   *  a plain Autofill, which ends the tab's grant in the worker, continues without it). Answers whether a run was
+   *  continued. */
+  function continueRun(trigger: RunRequest['trigger'], signUp = false, fill = false): boolean {
+    if (current === null || current.ended !== 'paused') return false;
+    if (fill && current.request.dryRun) return false;
     const state = current.runState;
     const carry = current.carryOut(true);
     const { dryRun } = current.request;
-    // v4: Sign up & Autofill holds for the run's Continue too.
-    const signIn = current.request.signIn === true ? { signIn: true } : {};
-    startRun(state === null ? { trigger, dryRun, carry, ...signIn }
-      : { trigger, dryRun, from: { state, event: continueEventOf(state) }, carry, ...signIn });
+    // v4: Sign up & Autofill holds for the run's Continue too; a fill says afresh whether it is one.
+    const signIn = (fill ? signUp : current.request.signIn === true) ? { signIn: true } : {};
+    return startRun(state === null ? { trigger, dryRun, carry, ...signIn }
+      : { trigger, dryRun, from: { state, event: continueEventOf(state) }, carry, ...signIn }) !== null;
   }
 
   /** v3 Phase 5: the auto-apply agent's run (run/start {agent}): from the tab's stored RunState when it holds one for
@@ -948,7 +960,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       const after = detectPause(doc, null, own[0]!);
       return after === null ? { outcome: 'pressed' } : { outcome: 'blocked', block: blockOf(after.kind) };
     }
-    return { outcome: 'blocked', block: outcome === 'failed' ? 'sign-in-failed' : 'sign-in' };
+    // The v4 review (M5): a challenge that held the sign-in back is the agent's CAPTCHA block.
+    return { outcome: 'blocked', block: outcome === 'failed' ? 'sign-in-failed' : outcome === 'challenged' ? 'captcha'
+      : 'sign-in' };
   }
 
   /** run/cancel: stop a run that writes, or stop a paused one for good (C-S6). */
@@ -1267,11 +1281,12 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** A toast of the wall's (no run holds it): what is left for the person there (D10), until its cause goes
-   *  (tellWall). */
-  function showWallToast(said: 'sign-in' | 'failed' | 'unavailable' | 'challenge'): void {
+   *  (tellWall). The v4 review (M5): the one to add a job-site sign-in in TailorIT for 'none-saved' alone (the worker
+   *  holds none for the page); the sign-in to make on the page for any other sign-in the run could not make. */
+  function showWallToast(said: 'sign-in' | 'failed' | 'none-saved' | 'challenge'): void {
     const words = PAGE_COPY.toasts;
     const toast: ToastSpec = said === 'challenge' ? { kind: 'challenge', text: words.challenge }
-      : said === 'unavailable'
+      : said === 'none-saved'
         ? { kind: 'no-sign-in', text: words.noSignIn, action: { label: words.open, run: () => openSignInSettings() } }
         : { kind: 'sign-in', text: said === 'failed' ? words.signInFailed : words.signIn };
     wallToast = toast.kind === 'challenge' ? 'challenge' : toast.kind === 'no-sign-in' ? 'no-sign-in' : 'sign-in';
@@ -1318,7 +1333,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       formAfterWall();
       return;
     }
-    showWallToast(outcome === 'failed' ? 'failed' : 'unavailable');
+    // The v4 review (M5): none saved, a challenge, the site refusing it, or anything else (not allowed now, no form
+    // read): each its own toast.
+    showWallToast(outcome === 'none-saved' ? 'none-saved' : outcome === 'challenged' ? 'challenge'
+      : outcome === 'failed' ? 'failed' : 'sign-in');
   }
 
   /** After a wall or a choice was passed in this document: the form it shows now, else one drawn late. */

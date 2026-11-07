@@ -305,7 +305,8 @@ describe('a CAPTCHA comes first (the v3 Phase 6/7b review, S1)', () => {
     const seen = actAsWorkday(signInPage);
     challenge(signInPage.doc, signInPage.doc.querySelector('form[data-automation-id="signInFormo"]')!);
     const channel = channelAnswering({ ok: true, data: CREDENTIAL });
-    expect(await attempt(signInPage, workdayAdapter, channel, ACCOUNT)).toBe('unavailable');
+    // The v4 review (M5): 'challenged', so the page's toast says to solve the check.
+    expect(await attempt(signInPage, workdayAdapter, channel, ACCOUNT)).toBe('challenged');
     expect(channel.asked).toEqual([]);
     expect(seen.presses).toBe(0);
     for (const input of Array.from(signInPage.doc.querySelectorAll('input'))) expect(input.value).toBe('');
@@ -314,7 +315,7 @@ describe('a CAPTCHA comes first (the v3 Phase 6/7b review, S1)', () => {
     for (const el of Array.from(gate.doc.querySelectorAll<HTMLElement>('.apply-flow'))) el.style.backgroundImage = 'none';
     challenge(gate.doc, gate.doc.querySelector('form:has(input[name="primary-email"])')!);
     const asked = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
-    expect(await attempt(gate, oracleAdapter, asked, GATE)).toBe('unavailable');
+    expect(await attempt(gate, oracleAdapter, asked, GATE)).toBe('challenged');
     expect(asked.asked).toEqual([]);
     expect(gate.doc.querySelector<HTMLInputElement>('input[name="primary-email"]')!.value).toBe('');
   });
@@ -352,6 +353,69 @@ describe('a CAPTCHA comes first (the v3 Phase 6/7b review, S1)', () => {
     expect(await pressEntry(fixture.doc, [workdayAdapter], new AbortController().signal, 300, 300))
       .toEqual({ outcome: 'blocked', block: 'captcha' });
     expect(clicks).toEqual([]);
+  });
+});
+
+// ── The v4 review (L5) ──
+/** reCAPTCHA v2's checkbox, unsolved, built node by node (srcdoc first: its address is read, never loaded). */
+function checkboxCaptcha(doc: Document): HTMLElement {
+  const widget = doc.createElement('div');
+  widget.className = 'g-recaptcha';
+  widget.setAttribute('data-sitekey', 'x');
+  const box = doc.createElement('div');
+  box.style.cssText = 'width:304px;height:78px';
+  const holder = doc.createElement('div');
+  const frame = doc.createElement('iframe');
+  frame.setAttribute('srcdoc', '');
+  frame.title = 'reCAPTCHA';
+  frame.width = '304';
+  frame.height = '78';
+  frame.src = 'https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=normal';
+  holder.append(frame);
+  const response = doc.createElement('textarea');
+  response.name = 'g-recaptcha-response';
+  response.style.display = 'none';
+  box.append(holder, response);
+  widget.append(box);
+  return widget;
+}
+
+describe('the v4 review: a checkbox CAPTCHA beside Workday’s landing holds the prelude too (L5)', () => {
+  /** The landing as served, the unticked box drawn on it, and every click recorded by its control's automation id. */
+  async function landing(): Promise<{ fixture: Fixture; clicks: string[] }> {
+    const fixture = await served(landingHtml, ACCOUNT, 'body');
+    // reCAPTCHA v2's checkbox, unsolved: no pause for detectPause (the behaviour review of 2026-11-06, M6).
+    fixture.doc.querySelector('[data-automation-id="signInContent"]')!.append(checkboxCaptcha(fixture.doc));
+    const clicks: string[] = [];
+    fixture.doc.addEventListener('click', (event) => {
+      clicks.push((event.target as Element).closest('[data-automation-id]')?.getAttribute('data-automation-id') ?? '?');
+      event.preventDefault();
+    }, true);
+    return { fixture, clicks };
+  }
+
+  it('presses nothing, not even "Sign in with email", and asks for nothing: challenged', async () => {
+    const { fixture, clicks } = await landing();
+    expect(workdayAdapter.authState!(fixture.doc)).toBe('sign-in');
+    const channel = channelAnswering({ ok: true, data: CREDENTIAL });
+    const outcome = await attempt(fixture, workdayAdapter, channel, ACCOUNT);
+    expect(clicks).toEqual([]);
+    expect(outcome).toBe('challenged');
+    expect(channel.asked).toEqual([]);
+  });
+
+  it('Sign up & Autofill at that landing (its flow page the run’s form root): nothing pressed, the challenge toast', async () => {
+    const { fixture, clicks } = await landing();
+    const worker = createFakeWorker({ settings: DEFAULT_SETTINGS,
+      script: { 'signin/credential': [{ ok: true, data: CREDENTIAL }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => ACCOUNT, isTop: true,
+      adapters: () => [workdayAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+    await vi.waitFor(() => expect(runtime.ui?.toasts.shown).toEqual(['challenge']), { timeout: 5_000 });
+    expect(runtime.run?.ended).toBe('paused');
+    expect(clicks).toEqual([]);
+    expect(worker.of('signin/credential')).toEqual([]);
   });
 });
 
@@ -494,7 +558,7 @@ describe('round 2 of the v3 Phase 6/7b review: the sign-in’s other gaps', () =
       signInView.querySelector('form')!.append(widget(fixture.doc));
     });
     const channel = channelAnswering({ ok: true, data: CREDENTIAL });
-    expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT)).toBe('unavailable');
+    expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT)).toBe('challenged');
     expect(channel.asked).toEqual([]);
   });
 
@@ -513,7 +577,7 @@ describe('round 2 of the v3 Phase 6/7b review: the sign-in’s other gaps', () =
     solved.append(frame, token);
     fixture.doc.querySelector('form[data-automation-id="signInFormo"]')!.append(solved);
     const channel = channelAnswering({ ok: true, data: CREDENTIAL });
-    expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT)).toBe('unavailable');
+    expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT)).toBe('challenged');
     expect(channel.asked).toEqual([]);
     expect(seen.presses).toBe(0);
   });
@@ -584,7 +648,7 @@ describe('round 3 of the v3 Phase 6/7b review: a frame of another origin that re
         frame.style.cssText = 'width:304px;height:78px;border:0';
         fixture.doc.querySelector('form[data-automation-id="signInFormo"]')!.append(frame);
         const channel = channelAnswering({ ok: true, data: CREDENTIAL });
-        expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT), attribute).toBe('unavailable');
+        expect(await attempt(fixture, workdayAdapter, channel, ACCOUNT), attribute).toBe('challenged');
         expect(channel.asked, attribute).toEqual([]);
         expect(seen.presses, attribute).toBe(0);
         removeFixtures(document);

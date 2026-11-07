@@ -508,10 +508,23 @@ const AGREE_ASK = /\b(?:do|will|would|can)\s+you\s+(?:\w+\s+){0,2}?(?:agree|acce
  *  non-competition agreement", "Have you signed", "Are you bound by", "Do you have"). Its Yes would state a fact. */
 const COMMITMENT_FACT = /\b(?:are|were)\s+you\s+(?:currently\s+|now\s+|still\s+)?(?:subject|bound|party|a\s+party|under)\b|\bhave\s+you\s+(?:ever\s+)?(?:signed|entered|agreed|been)\b|\bdo\s+you\s+(?:currently\s+)?have\b/;
 
+/** The v4 review (security M2): an ask whose object is a "that"-clause ("I acknowledge that I am not bound by …", "Do
+ *  you agree that you are not currently subject to …"): it asks the person to say something is so, not to take
+ *  something on. */
+const AGREE_THAT = /\b(?:agree\w*|accept\w*|consent\w*|acknowledge\w*|waive\w*|confirm\w*|certif\w*|attest\w*|declare\w*|understand\w*|represent\w*)\s+(?:(?:hereby|also|further|expressly|fully)\s+)*that\b/;
+/** The v4 review (security M2): a first- or second-person state now or then, whatever the question around it ("I am /
+ *  I'm / you are / I have (not) … bound, subject, party to, signed, under, entered into"): its Yes would state a fact.
+ *  normalizeLabel deletes apostrophes ("im", "youre", "ive"). */
+const COMMITMENT_STATE = /\b(?:i\s+am|im|i\s+was|you\s+are|youre|you\s+were|i\s+have|ive|i\s+had|you\s+have|youve)\s+(?:\w+\s+){0,3}?(?:bound|subject|party|signed|under|entered)\b/;
+
 /** v4 (D5): whether normalized text asks the person to agree to something now, never whether something binds them: a
- *  binding waiver asked so is decided by the Consents mode; one asked as a fact stays unanswered (never a false Yes). */
+ *  binding waiver asked so is decided by the Consents mode; one asked as a fact stays unanswered (never a false Yes).
+ *  The v4 review (security M2): only when its sole ask is to take something on from now on: a "that"-clause
+ *  (AGREE_THAT), a first- or second-person state (COMMITMENT_STATE) or any word that denies (DENIES: "not bound", "no
+ *  agreement") makes it a statement of fact the run cannot know, never answered. */
 export function asksToAgree(text: string): boolean {
-  return AGREE_ASK.test(text) && !COMMITMENT_FACT.test(text);
+  return AGREE_ASK.test(text) && !COMMITMENT_FACT.test(text) && !AGREE_THAT.test(text)
+    && !COMMITMENT_STATE.test(text) && !DENIES.test(text);
 }
 /** The core pass of 2026-11-06: a denial that AI made or helped make the work, in two joined participles (Dropzone's AI
  *  policy on Greenhouse, the owner's snapshot "[job-boards.greenhouse.io] ... Forward Deployed Engineer at Dropzone AI":

@@ -150,6 +150,34 @@ describe('Autofill after page turn: Manually (v3 Phase 3)', () => {
   });
 });
 
+describe('the v4 review: the side panel’s Autofill after a page turn continues the run (behaviour H1)', () => {
+  it('run/start (not a dry run) on a run resting at a turned page continues it: its RunState, attempts and canaries kept', async () => {
+    const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS,
+      modes: { ...CAUTIOUS_SETTINGS.modes, afterPageTurn: 'manual' as const } } });
+    const loaded = await load(worker);
+    const { fixture, runtime } = loaded;
+    expect(await runtime.fill({ trigger: 'panel' })).toBe('waiting');
+    const before = lastState(worker);
+    expect(before.stepIndex).toBe(0);
+    const firstStep = before.stepSignature!;
+    pageNext(fixture);
+    await vi.waitFor(() => expect(runtime.run!.ended).toBe('paused'), { timeout: 10_000 });
+    const resting = runtime.run!;
+    // The side panel's Autofill: panel/fill reaches the frame as run/start.
+    expect(await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false })).toEqual({ ok: true, data: {} });
+    await vi.waitFor(() => expect(byId(fixture, 'company-0').value).toBe(CURRENT_JOB.company), { timeout: 10_000 });
+    expect(runtime.run).not.toBe(resting);
+    const after = lastState(worker);
+    // The same RunState, gone on: begun when the first step was, the first step's attempt kept, the second counted.
+    expect(after.startedAt).toBe(before.startedAt);
+    expect(after.stepIndex).toBe(1);
+    expect(after.stepAttempts[firstStep]).toBe(1);
+    expect(Object.keys(after.stepAttempts)).toHaveLength(2);
+    expect(after.canarySet).toEqual(expect.arrayContaining(before.canarySet));
+    expectInvariants(worker, loaded);
+  });
+});
+
 describe('auto-advance off: each step filled, then the person moves on', () => {
   it('fills the four steps, adds a position, refuses the typeless Add, and stops at review on the final step',
     async () => {

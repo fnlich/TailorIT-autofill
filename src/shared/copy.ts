@@ -1318,7 +1318,9 @@ export const PAGE_COPY = {
     },
     submitErrors: "The page didn't accept the application: it shows what to fix.",
     validation: "The page shows errors Autofill couldn't fix on this step.",
-    complete: (filled: number, of: number) => `Autofill complete · ${filled}/${of} required fields filled`,
+    // The v4 review (L8): "required fields" only when the count is of the required ones (progressOf's requiredOnly).
+    complete: (filled: number, of: number, requiredOnly: boolean) =>
+      `Autofill complete · ${filled}/${of} ${requiredOnly ? 'required fields' : 'fields'} filled`,
   },
   /** The review's marks of a field the AI wrote, and of one it answered with nothing to go on (the owner's
    *  amendments): its chips beside the row's status. */

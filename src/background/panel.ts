@@ -17,7 +17,9 @@
  * (background/sign-up.ts, PanelDeps.signUp) before its frames hear run/start {signIn: true}. Where no frame of the tab
  * has a form but its application frame shows an account wall or a choice of how to apply (frames.ts wallFrameOf), that
  * frame hears run/start (it signs in there, or presses the adapter's declared entry), and the tab's next form is
- * started once it says hello. A plain panel/fill ends any grant the tab held.
+ * started once it says hello. A plain panel/fill ends any grant the tab held. The v4 review (M1): the grant is given for
+ * the tab's application frame as it is now (wallFrameOf: its origin, and its application key where it has one), so it
+ * holds for that site alone (sign-up.ts).
  * The policy card's decision has its own message, addressed to one frame: panel/policyDecision becomes
  * run/policyDecision for that frame only, and only while its report says its run waits at policy-notice. Continue
  * never stands in for Fill anyway: with one frame at the policy card and another at a CAPTCHA pause, the toolbar's
@@ -30,7 +32,7 @@ import {
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { framesOfTab, wallFrameOf, type FrameEntry } from './frames';
-import type { Grant } from './sign-up';
+import type { Grant, GrantPlace } from './sign-up';
 import type { Reports } from './reports';
 
 type Of<T extends PageMessage['type']> = Extract<PageMessage, { type: T }>;
@@ -43,9 +45,10 @@ export interface PanelDeps {
   connected(): Promise<boolean>;
   /** Checks, in the background, that the tab's frames are still there; what it removes reaches the panel port. */
   check?(tabId: number): void;
-  /** v4: grants the tab Sign up & Autofill and/or the start of its next form (sign-up.ts), its frames told the settings
-   *  as they act then; a grant of nothing ends the tab's grant. */
-  signUp?(tabId: number, grant: Grant): Promise<void>;
+  /** v4: grants the tab Sign up & Autofill and/or the start of its next form (sign-up.ts), for the frame `place` names
+   *  (the v4 review, M1: the tab's application frame now), its frames told the settings as they act then; a grant of
+   *  nothing, or with no place, ends the tab's grant. */
+  signUp?(tabId: number, grant: Grant, place: GrantPlace | null): Promise<void>;
 }
 
 const targetOf = (frame: FrameEntry) =>
@@ -108,10 +111,13 @@ export function createPanelHandlers(deps: PanelDeps) {
       const forms = all.filter((frame) => frame.hasForm);
       // v4: a page with no form whose application frame shows a wall or a choice of how to apply: that frame alone, and
       // the tab's next form is started once it shows (module header).
-      const wall = forms.length === 0 ? wallFrameOf(all) : null;
+      const application = wallFrameOf(all);
+      const wall = forms.length === 0 ? application : null;
       const atWall = wall !== null && (wall.wall !== undefined || wall.choice === true);
       const signIn = message.signIn === true && !message.dryRun;
-      await deps.signUp?.(message.tabId, { signIn, fill: atWall && !message.dryRun });
+      // The v4 review (M1): the grant is for the tab's application frame as it is now, its origin and application.
+      await deps.signUp?.(message.tabId, { signIn, fill: atWall && !message.dryRun }, application === null ? null
+        : { origin: application.origin, applicationKey: application.applicationKey });
       const reached = await sendTo(message.tabId, atWall ? [wall] : forms, { v: 1, type: 'run/start',
         dryRun: message.dryRun, ...(signIn ? { signIn: true as const } : {}) });
       deps.check?.(message.tabId);

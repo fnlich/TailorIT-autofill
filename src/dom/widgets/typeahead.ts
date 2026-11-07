@@ -40,7 +40,9 @@
  * Ashby's floating-ui lists) has its list closed before each later query's guard, whose fresh scan would otherwise
  * find no field but this one, labelled by its placeholder.
  * When no query finds a result to choose, the text box gets back what it held before our first query (the text
- * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason. So it is
+ * filler's events), its list is closed, and the field is left blank and flagged with the last results' reason (v4
+ * review, finding 11: a declared results list whose page empties the box on a blur while it shows, Lever's, gets back
+ * a text it held without the blur, and its list stays open: keepsListOpen). So it is
  * when the person's Skip ends a wait before anything was chosen (v3 Phase 3: interact.ts's skipTidyContext): the text
  * put back and the list closed on a fresh, short-capped signal; a result already clicked stands, its list closed the
  * same way. A page
@@ -162,13 +164,23 @@ function pageChose(widget: NonNullable<FieldTarget['widget']>, option: Element, 
 const sameLabels = (a: readonly string[], b: readonly string[]) => a.length === b.length
   && a.every((label, at) => label === b[at]);
 
-/** Puts back what the text box held before our first query, with the text filler's events, if it holds another text. */
-function restore(input: HTMLInputElement | HTMLTextAreaElement, text: string): void {
+/** Puts back what the text box held before our first query, with the text filler's events, if it holds another text.
+ *  `leave` false: no focusout or blur follows (keepsListOpen). */
+function restore(input: HTMLInputElement | HTMLTextAreaElement, text: string, leave = true): void {
   if (input.value === text) return;
   setValue(input, text);
   fireInput(input, 'text');
   fireChange(input);
-  fireLeave(input);
+  if (leave) fireLeave(input);
+}
+
+/** v4 review (finding 11): whether a search that gives up puts back the text its box held without leaving the box, and
+ *  leaves its list open: a widget whose results list its adapter declared (WidgetDecl.results: Lever's location search,
+ *  whose own script empties the box, and the hidden record of its place, on a blur while its list shows, and closes
+ *  that list on nothing else but a chosen result; adapters/lever) that held a text before our first query. Leaving the
+ *  box, closeList's way, would empty what the person had. An empty box loses nothing to it: its list is closed. */
+function keepsListOpen(widget: NonNullable<FieldTarget['widget']>, before: string): boolean {
+  return widget.results !== undefined && before !== '';
 }
 
 /** Searches a remote typeahead with the planner's queries (see the header); `budgetMs` is the time after which no
@@ -188,11 +200,12 @@ export async function searchTypeahead(target: FieldTarget, queries: readonly str
   const giveUp = async (why: ReasonCode, blocked = false): Promise<TypeaheadResult> => {
     const widget = current.widget!;
     const closing = closingContext(ctx);
+    const keepOpen = keepsListOpen(widget, before);
     if (typed > 0) {
-      restore(widget.input ?? input, before);
+      restore(widget.input ?? input, before, !keepOpen);
       await afterAction(widget, closing);
     }
-    await closeList(widget, closing, { activated: false });
+    if (!keepOpen) await closeList(widget, closing, { activated: false });
     return none(why, blocked);
   };
   // A wait ended early: by the person's Skip, what was typed is put back and the list closed (giveUp on its tidy

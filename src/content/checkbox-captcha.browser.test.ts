@@ -299,7 +299,8 @@ describe('a checkbox widget holds every press but never the fill (M6)', () => {
     const outcome = await signIn({ doc: fixture.doc, adapter: greenhouseAdapter, channel,
       href: () => `https://${host}/en-US/careers/login`, isTop: true, signal: new AbortController().signal,
       settleMs: 300 });
-    expect(outcome).toBe('unavailable');
+    // The v4 review (M5): 'challenged', so the page's toast says to solve the check.
+    expect(outcome).toBe('challenged');
     expect(asked).toEqual([]);
     expect(presses).toEqual([]);
     expect(value(fixture, 'email')).toBe('');

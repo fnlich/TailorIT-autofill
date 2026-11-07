@@ -4,6 +4,7 @@ import type { Explicit, Profile } from '../types/profile';
 import { CONSENT_CATEGORIES } from '../enums';
 import { DEFAULT_SETTINGS, type Settings } from '../types/settings';
 import type { ValueResult } from './candidate';
+import { classifyByRules } from './classifyRules';
 import {
   combinedSponsorship, consentValue, countriesNamed, eeoValue, legalValue, placesNamed, postingCountryOf,
   SENSITIVE_PART_CATEGORIES,
@@ -407,5 +408,33 @@ describe('consent values (§8.7; the owner\'s decisions of 2026-11-01)', () => {
         origin: { provenance: 'rule', ruleId: 'consent.required', path: 'identity.fullName' } });
     expect(reason(consentValue('consent.signature', ['consent.signature'], profile, CAUTIOUS_SETTINGS, optional)))
       .toBe('consent-optional-unticked');
+  });
+
+  // The v4 review (security M3): a consent read from its help text alone was approved under All whatever it covered.
+  it('decides a consent read from its help text alone by its kinds, as any consent: an optional binding one stays unticked under All', () => {
+    const helpOnly = (description: string, required: boolean) =>
+      specOf('Acknowledgement', 'checkbox', { description, required });
+    const binding = 'By checking this box I agree to binding arbitration and waive my right to a jury trial';
+    const sms = 'By checking this box I agree to receive text messages about my application';
+    // Each is read from the help text alone (the rules once handed both to the person: description-only).
+    for (const description of [binding, sms]) {
+      expect(classifyByRules(helpOnly(description, false))).toMatchObject({ matchedOn: 'description',
+        needsUser: 'description-only' });
+    }
+    expect(DEFAULT_SETTINGS.modes.consents).toBe('all');
+    const optionalBinding = helpOnly(binding, false);
+    expect(fieldOf(planOf([optionalBinding], { profile }), optionalBinding)).toMatchObject({ write: undefined,
+      row: { category: 'consent.other', reason: 'consent-optional-unticked', wrote: false, needsUserAction: false } });
+    // A kind the extension recognises (text messages) read there alone is approved under All, optional or not.
+    const optionalSms = helpOnly(sms, false);
+    expect(fieldOf(planOf([optionalSms], { profile }), optionalSms)).toMatchObject({ write: { value: { kind: 'check' },
+      origin: { provenance: 'rule', ruleId: 'consent.preapproved' } }, row: { category: 'consent.sms' } });
+    // And left unticked under Required only, where text messages are not pre-approved.
+    expect(fieldOf(planOf([optionalSms], { profile, settings: requiredOnly() }), optionalSms).row.reason)
+      .toBe('consent-optional-unticked');
+    // A binding clause the form requires is ticked: it is needed to apply (consent.required).
+    const requiredBinding = helpOnly(binding, true);
+    expect(fieldOf(planOf([requiredBinding], { profile }), requiredBinding).write).toMatchObject({
+      value: { kind: 'check' }, origin: { provenance: 'rule', ruleId: 'consent.required' } });
   });
 });

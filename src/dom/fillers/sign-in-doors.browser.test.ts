@@ -88,6 +88,54 @@ describe('the sign-in prelude door', () => {
   });
 });
 
+// ── The v4 review (L5) ──
+/** reCAPTCHA v2's checkbox, unsolved, built node by node (srcdoc first: its address is read, never loaded). */
+function checkboxCaptcha(doc: Document): HTMLElement {
+  const widget = doc.createElement('div');
+  widget.className = 'g-recaptcha';
+  widget.setAttribute('data-sitekey', 'x');
+  const box = doc.createElement('div');
+  box.style.cssText = 'width:304px;height:78px';
+  const holder = doc.createElement('div');
+  const frame = doc.createElement('iframe');
+  frame.setAttribute('srcdoc', '');
+  frame.title = 'reCAPTCHA';
+  frame.width = '304';
+  frame.height = '78';
+  frame.src = 'https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=normal';
+  holder.append(frame);
+  const response = doc.createElement('textarea');
+  response.name = 'g-recaptcha-response';
+  response.style.display = 'none';
+  box.append(holder, response);
+  widget.append(box);
+  return widget;
+}
+
+describe('the sign-in prelude door and a challenge (the v4 review, L5)', () => {
+  it('never presses while the page shows a checkbox CAPTCHA not solved, or any challenge frame', async () => {
+    const { fixture, clicks } = await served(landingHtml);
+    const view = fixture.doc.querySelector('[data-automation-id="signInContent"]')!;
+    const widget = checkboxCaptcha(fixture.doc);
+    view.append(widget);
+    expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)).toBeNull();
+    // A frame of another origin that reads like a challenge holds it too.
+    widget.remove();
+    const shield = fixture.doc.createElement('iframe');
+    shield.setAttribute('srcdoc', '');
+    shield.title = 'Human verification';
+    shield.src = 'https://shield.example/f';
+    shield.style.cssText = 'width:304px;height:78px;border:0';
+    view.append(shield);
+    expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)).toBeNull();
+    expect(clicks).toEqual([]);
+    // Gone: pressed.
+    shield.remove();
+    expect(clickAdapterSignInPrelude(workdayAdapter, fixture.doc, 'sign-in', PAGE)?.getAttribute('data-automation-id'))
+      .toBe('SignInWithEmailButton');
+  });
+});
+
 describe('the sign-in door', () => {
   it('presses the declared Sign In face, and never the Reset Password face Workday draws over its own button', async () => {
     const { fixture, clicks } = await served(signInHtml);
