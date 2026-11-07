@@ -595,6 +595,10 @@ export const PageStateSchema = z.strictObject({
   /** v4 (the owner, 2026-11-07): the tab's application frame shows an account wall (a sign-in, a create-account page,
    *  an email gate) right now: the side panel's main button reads "Sign up & Autofill" (panel/fill {signIn: true}). */
   wall: z.enum(SIGN_IN_WALLS).optional(),
+  /** v4 review: the tab's application frame shows an entry choice and no form (Workday's "Start Your Application":
+   *  Apply Manually and the like, declared by the adapter's authState 'entry-choice'): the side panel offers Autofill
+   *  there, even on a posting page, and the run presses the declared entry. */
+  choice: z.literal(true).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
 
