@@ -1286,7 +1286,8 @@ export const PAGE_COPY = {
   launcherNeedsYou: 'Autofill is waiting for this page. Choose to continue.',
   launcherPolicy: 'This posting says AI-assisted applications are not allowed.',
   launcherReview: (percent?: number) => (percent === undefined || percent >= 100 ? 'Autofill is done. Open the review'
-    : `Autofill is done: ${percent}% of the required fields filled. Open the review`),
+    // The percent is of the required fields, or of every field when none is required (progressOf): "filled" says both.
+    : `Autofill is done: ${percent}% filled. Open the review`),
   launcherError: 'Something went wrong. Choose to try again.',
   launcherNotConnected: 'Connect TailorIT Autofill to TailorIT in its settings, then try again.',
   /** The launcher at the page's right edge (v3 Phase 3): its progress while it fills, its grip and its hide menu.

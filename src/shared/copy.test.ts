@@ -54,7 +54,7 @@ describe('the copy', () => {
 
   it("names the launcher's progress, never a count of fields that need the person (v4, D11), and draws nothing on the page (the owner's decision of 2026-11-01)", () => {
     expect([COPY.launcherReview(), COPY.launcherReview(100), COPY.launcherReview(40)]).toEqual(['Autofill is done. Open the review',
-      'Autofill is done. Open the review', 'Autofill is done: 40% of the required fields filled. Open the review']);
+      'Autofill is done. Open the review', 'Autofill is done: 40% filled. Open the review']);
     expect(COPY.launcherNeedsYou).not.toMatch(/needs you/i);
     expect(Object.keys(COPY)).not.toContain('chips');
     expect(Object.keys(COPY)).not.toContain('removeSelection');
