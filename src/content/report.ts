@@ -153,7 +153,9 @@ export function buildReport(header: ReportHeader, rows: readonly FillResult[]): 
 }
 
 /** RunState's lastFill (v4, D3): what holds auto-advance on the step. `flagged`: the required fields the fill left
- *  empty (shared/report.ts notFilled, a hard-rule stop aside); `blocked`: the hard-rule stops left (a bot check asked
+ *  empty (shared/report.ts notFilled, a hard-rule stop aside), whatever their status (the v4 review, L-M7: a required
+ *  résumé under "Apply without resume", a required field disabled or gone, skipped by the run, still holds Next, as
+ *  `unresolved` did before v4); `blocked`: the hard-rule stops left (a bot check asked
  *  as a question); `unresolved`: nothing (a low-confidence fill, a kept prefill, a hidden or refused field, a value the
  *  page shows differently: none of them holds Next any more). */
 export function lastFillOf(rows: readonly FillResult[]): NonNullable<RunState['lastFill']> {

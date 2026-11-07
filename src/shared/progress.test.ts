@@ -100,6 +100,34 @@ describe('the progress rule', () => {
       .toEqual({ filled: 1, of: 3, requiredOnly: true, percent: 33 });
   });
 
+  // The v4 review (L-M7): "6/6 required … 100%" while the Required list showed an empty circle under it.
+  it('counts a required field the run skipped as missing, whatever its status; an optional one skipped stays out', () => {
+    const skipped = (key: string, reason: 'resume-not-attached' | 'disabled-or-readonly' | 'field-disappeared',
+      required = true) => row(key, { required, status: 'skipped', provenance: null, reason, wrote: false,
+      verification: 'not-applicable', needsUserAction: required });
+    for (const reason of ['resume-not-attached', 'disabled-or-readonly', 'field-disappeared'] as const) {
+      const required = skipped('resume', reason);
+      expect([leftOut(required), isReady(required), notFilled(required), rowProgressOf(required)], reason)
+        .toEqual([false, false, true, 'missing']);
+      expect(progressOf([{ fields: [...Array.from({ length: 6 }, (_, at) => filled(`f${at}`)), required] }]), reason)
+        .toEqual({ filled: 6, of: 7, requiredOnly: true, percent: 85 });
+      // The person's own input since fills it.
+      const theirs = { ...required, detail: { filledByYou: true as const } };
+      expect([notFilled(theirs), rowProgressOf(theirs)], reason).toEqual([false, 'filled']);
+      // An optional field skipped is a question left alone on purpose: out of the counts.
+      const optional = skipped('cover', reason, false);
+      expect([notFilled(optional), rowProgressOf(optional)], reason).toEqual([false, 'none']);
+    }
+    // A required row skipped because it already held its answer, or needed none, is done.
+    for (const done of [row('kept', { required: true, status: 'skipped', reason: 'already-correct', wrote: false }),
+      row('end', { required: true, status: 'skipped', reason: 'end-date-not-applicable', wrote: false })]) {
+      expect(rowProgressOf(done), done.key).toBe('filled');
+    }
+    // A required row left out (a field no visible label names, skipped) stays out.
+    const ghost = row('ghost', { required: true, status: 'skipped', reason: 'no-visible-label', wrote: false });
+    expect([leftOut(ghost), notFilled(ghost), rowProgressOf(ghost)]).toEqual([true, false, 'none']);
+  });
+
   it('says where the progress stands: nothing yet, scanning, filling or at rest', () => {
     expect(progressStateOf([])).toBe('empty');
     expect(progressStateOf([frameReport(0, { status: 'scan-step', filling: { current: null, pending: [] } })])).toBe('scanning');

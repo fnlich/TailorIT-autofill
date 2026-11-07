@@ -191,3 +191,101 @@ describe('a wall with no form (v4)', () => {
     expect(await fill(worker, 12, { signIn: true })).toEqual({ ok: true, data: { frames: 0 } });
   });
 });
+
+// ── The v4 review ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe('the v4 review: a grant holds for the site it was given for (security M1, behaviour M3)', () => {
+  const TENANT = 'https://acme.wd5.myworkdayjobs.com';
+  /** Workday's "Start Your Application" choice (its /apply: a posting by its parser) and its application form. */
+  const CHOICE = `${TENANT}/en-US/careers/job/x/Engineer_JR-0000001/apply`;
+  const FORM = `${CHOICE}/applyManually`;
+  const OTHER_JOB = `${TENANT}/en-US/careers/job/x/Designer_JR-0000002/apply/applyManually`;
+  const LEVER = 'https://jobs.lever.co/othercompany/1b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00/apply';
+  const at = (url: string, documentId: string, tab = 12) => top(tab, { url, tab: { id: tab, url }, documentId });
+  const starts = (worker: TestWorker) => sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'run/start');
+
+  /** A worker whose tab 12 shows a wall with no form at `url`, granted Sign up & Autofill there. */
+  async function walled(url = WORKDAY, choice = false) {
+    const worker = await signUpWorker();
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, at(url, 'doc-wall'));
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: choice ? null : 'sign-in', ...(choice ? { choice: true } : {}) },
+      at(url, 'doc-wall'));
+    expect(await fill(worker, 12, { signIn: true })).toEqual({ ok: true, data: { frames: 1 } });
+    expect(starts(worker)).toHaveLength(1);
+    expect(lastSettingsTo(worker, 12)).toBe('auto');
+    return worker;
+  }
+
+  it('starts no form of another site the tab then shows, and ends the grant there: its settings back to Manual', async () => {
+    const worker = await walled();
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(LEVER, 'doc-lever'));
+    await vi.waitFor(() => expect(lastSettingsTo(worker, 12)).toBe('manual'));
+    expect(starts(worker)).toHaveLength(1);
+    // Nothing of it is left for the tab: the Workday form that follows later is not started either.
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(FORM, 'doc-form'));
+    expect(starts(worker)).toHaveLength(1);
+    expect(await ask(worker, at(FORM, 'doc-form'))).toEqual({ ok: false, error: 'unavailable' });
+  });
+
+  it('starts the form of the application it was given for, never another application of the same site', async () => {
+    const other = await walled(CHOICE, true);
+    await other.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(OTHER_JOB, 'doc-other'));
+    expect(starts(other)).toHaveLength(1);
+
+    const same = await walled(CHOICE, true);
+    await same.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, at(FORM, 'doc-form'));
+    await vi.waitFor(() => expect(starts(same)).toHaveLength(2));
+    expect(starts(same)[1]).toMatchObject({ message: { v: 1, type: 'run/start', dryRun: false, signIn: true },
+      options: { frameId: 0, documentId: 'doc-form' } });
+  });
+
+  it('answers the credential for a sender of the grant’s origin alone, and says Sign-in Auto to its frames alone', async () => {
+    const worker = await walled();
+    // A frame on another site in the same tab (its document never said hello): no Sign-in Auto for it.
+    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'jobs.lever.co', email: 'alex.rivera@example.com',
+      password: PASSWORD } });
+    expect(await ask(worker, at(LEVER, 'doc-lever-unsaid'))).toEqual({ ok: false, error: 'unavailable' });
+    expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
+    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'acme.wd5.myworkdayjobs.com',
+      email: 'alex.rivera@example.com', password: PASSWORD } });
+    // A subframe of another origin hears Sign-in Manual; the grant's own frame Sign-in Auto.
+    expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: true },
+      top(12, { url: LEVER, frameId: 4, documentId: 'doc-sub' })))
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'manual' } } } });
+    expect(await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, at(WORKDAY, 'doc-wall')))
+      .toMatchObject({ ok: true, data: { settings: { modes: { signIn: 'auto' } } } });
+    expect(await ask(worker, at(WORKDAY, 'doc-wall'))).toMatchObject({ ok: true, data: { password: PASSWORD } });
+  });
+
+  it('tells the tab’s frames their settings again once the grant ends by time (its timer, or a read past it)', async () => {
+    const timed = await walled();
+    timed.timers.advance(SIGN_UP_GRANT_MS);
+    await vi.waitFor(() => expect(lastSettingsTo(timed, 12)).toBe('manual'));
+
+    const read = await walled();
+    read.clock.now += SIGN_UP_GRANT_MS;
+    expect(await ask(read, at(WORKDAY, 'doc-wall'))).toEqual({ ok: false, error: 'unavailable' });
+    await vi.waitFor(() => expect(lastSettingsTo(read, 12)).toBe('manual'));
+  });
+});
+
+describe('the v4 review: PageState.choice, the entry choice the side panel offers Autofill at (behaviour M4)', () => {
+  it('is set from the application frame’s frame/wall {choice} at Workday’s /apply (a posting by its parser), and cleared with it', async () => {
+    const CHOICE = 'https://acme.wd5.myworkdayjobs.com/en-US/careers/job/x/Engineer_JR-0000001/apply';
+    const sender = top(12, { url: CHOICE, tab: { id: 12, url: CHOICE }, documentId: 'doc-choice' });
+    const worker = await signUpWorker();
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: false }, sender);
+    expect(await pageOf(worker, 12)).toMatchObject({ support: 'no-form', posting: true });
+    expect((await pageOf(worker, 12))?.choice).toBeUndefined();
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: null, choice: true }, sender);
+    expect(await pageOf(worker, 12)).toMatchObject({ support: 'no-form', posting: true, choice: true });
+    expect((await pageOf(worker, 12))?.wall).toBeUndefined();
+    // The choice went (the person chose): cleared.
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: null }, sender);
+    expect((await pageOf(worker, 12))?.choice).toBeUndefined();
+    // A subframe's choice is not the page's.
+    const sub = top(12, { url: CHOICE, frameId: 3, documentId: 'doc-sub' });
+    await worker.deliver({ v: 1, type: 'frame/hello', isTop: false, hasForm: false }, sub);
+    await worker.deliver({ v: 1, type: 'frame/wall', wall: null, choice: true }, sub);
+    expect((await pageOf(worker, 12))?.choice).toBeUndefined();
+  });
+});

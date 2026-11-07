@@ -224,6 +224,23 @@ describe('the review’s lists flip a field left for the person as they fill it,
   });
 });
 
+describe('the v4 review: a required field the run skipped, filled by the person (behaviour L-M7)', () => {
+  it('counts as missing until the person fills it, then as filled by them', async () => {
+    const office = 'Which of our offices would you visit first?';
+    // A required field the run skips (as a required resume under "Apply without resume", or a box the page disabled).
+    const started = await start(LEFT, 'p3-skipped-required', { editPlan: (plan) => ({ ...plan,
+      results: plan.results.map((row) => (row.label === office ? { ...row, status: 'skipped' as const,
+        reason: 'disabled-or-readonly' as const, needsUserAction: false, wrote: false } : row)) }) });
+    expect(await started.runtime.fill()).toBe('review');
+    expect(rowOf(lastReport(started.worker), office)).toMatchObject({ status: 'skipped', required: true });
+    expect(rowProgressOf(rowOf(lastReport(started.worker), office))).toBe('missing');
+    await personTypes(started.fixture, 'office', 'Lisbon');
+    await vi.waitFor(() => expect(rowOf(lastReport(started.worker), office).detail?.filledByYou).toBe(true));
+    expect(rowProgressOf(rowOf(lastReport(started.worker), office))).toBe('filled');
+    expect(JSON.stringify(lastReport(started.worker))).not.toContain('Lisbon');
+  });
+});
+
 describe('the person’s fix of a flagged field (Requirement F)', () => {
   it('marks the row userEdited once, at rest, and reports it again', async () => {
     const started = await start(FORM, 'p6-fix');

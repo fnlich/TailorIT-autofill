@@ -212,6 +212,46 @@ describe("Lever's location search, searched with candidate answers", () => {
     expectOurEventsOnly(page.events);
   });
 
+  /** The page holding a place already, as its own mousedown on a result leaves it (the box its words, the hidden
+   *  selectedLocation input its record, the list closed): another place than the profile's. */
+  function holding(page: Page, place: string): HTMLInputElement {
+    const hidden = page.fixture.doc.getElementById('selected-location') as HTMLInputElement;
+    page.box().value = place;
+    hidden.value = JSON.stringify({ name: place, id: 'place-4' });
+    return hidden;
+  }
+
+  /** The place the page held is still its own: the box's words, its record, nothing chosen, and no blur of ours on the
+   *  box (Lever empties the box, and its record, on a blur while its list shows; its list closes on nothing else but a
+   *  chosen result, so it stays open: the v4 review's finding 11). */
+  function expectHeld(page: Page, hidden: HTMLInputElement, place: string): void {
+    expect(page.box().value).toBe(place);
+    expect(JSON.parse(hidden.value)).toMatchObject({ name: place });
+    expect(page.counter<string[]>('__chosen')).toEqual([]);
+    expect(page.events.on('location-input').filter((event) => !event.trusted && ['focusout', 'blur'].includes(event.type)))
+      .toEqual([]);
+    expect((page.fixture.doc.querySelector('.dropdown-container') as HTMLElement).style.display).toBe('flex');
+    expectOurEventsOnly(page.events);
+  }
+
+  it('gives back the place the box held when no candidate finds one: its words and the page record kept', async () => {
+    const page = await open(pageHtml, 'none');
+    const hidden = holding(page, 'Dallas, TX, USA');
+    const result = await searchTypeahead(page.target(LOCATION), QUERIES, page.ctx(), hooks(page, 'Austin, TX, USA'));
+    expect(result).toMatchObject({ chosen: null, verified: false, reason: 'no-match', blocked: false, typed: 4 });
+    expect(page.counter<Array<{ query: string }>>('__locationQueries').map((entry) => entry.query)).toEqual(QUERIES);
+    expectHeld(page, hidden, 'Dallas, TX, USA');
+  });
+
+  it('gives back the place the box held when the results it found are none to choose, its list showing them', async () => {
+    const page = await open(pageHtml);
+    const hidden = holding(page, 'Dallas, TX, USA');
+    const result = await searchTypeahead(page.target(LOCATION), ['Austin'], page.ctx(), hooks(page, 'Austin, NV, USA'));
+    expect(result).toMatchObject({ chosen: null, verified: false, reason: 'no-match', blocked: false, typed: 1 });
+    expect(page.counter<Array<{ query: string }>>('__locationQueries').map((entry) => entry.query)).toEqual(['Austin']);
+    expectHeld(page, hidden, 'Dallas, TX, USA');
+  });
+
   it('types no further query once the field has used its time budget', async () => {
     const page = await open(pageHtml, 'none');
     const result = await searchTypeahead(page.target(LOCATION), QUERIES, page.ctx(), hooks(page, 'Austin, TX, USA'), 0);

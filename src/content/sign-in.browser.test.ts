@@ -384,7 +384,8 @@ describe('a run paused at a sign-in (v3 Phase 5)', () => {
   });
 
   it('says so on the page when the worker has none for the page: the branded toast to add one in TailorIT (v4, D10)', async () => {
-    const { worker, runtime } = await start(signInPage(), 'auto', { 'signin/credential': [{ ok: false, error: 'unavailable' }] });
+    // The v4 review (M5): the worker's not_found, none saved, alone says to add one.
+    const { worker, runtime } = await start(signInPage(), 'auto', { 'signin/credential': [{ ok: false, error: 'not_found' }] });
     expect(await runtime.fill()).toBe('paused');
     await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['no-sign-in']));
     expect(runtime.ui!.toasts.button('no-sign-in', 'action')?.textContent).toBe(COPY.toasts.open);
@@ -454,7 +455,7 @@ describe('v4: the account wall, its toast, and Sign up & Autofill (docs/_v4/run.
 
   it('Sign up & Autofill with no job-site sign-in saved: the toast to add one, with its Open', async () => {
     const { worker, runtime } = await start(signInPage(), 'manual', { 'signin/credential': [{ ok: false,
-      error: 'unavailable' }] });
+      error: 'not_found' }] });
     await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
     await vi.waitFor(() => expect(runtime.ui!.toasts.shown).toEqual(['no-sign-in']), { timeout: 5_000 });
     expect(runtime.ui!.shadow.querySelector('.toast[data-kind="no-sign-in"] .notice')?.textContent)
@@ -491,6 +492,175 @@ describe('v4: the account wall, its toast, and Sign up & Autofill (docs/_v4/run.
     await dry.worker.platform.deliver({ v: 1, type: 'run/start', dryRun: true, signIn: true });
     await deadline(300);
     expect(dry.worker.of('signin/credential')).toEqual([]);
+  });
+});
+
+// ── The v4 review ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe('the v4 review: a pause restored in the document the person’s answer brought (behaviour H2)', () => {
+  /** The application's form, as the document a sign-in or a solved check brings shows it: no wall, no challenge. */
+  const FORM_PAGE = `<!doctype html><html><body><main><form id="done">
+    <label for="first">First Name</label><input id="first" name="first" style="width:300px">
+  </form></main></body></html>`;
+  /** A form step a CAPTCHA pauses before anything is filled (a drawn widget, no checkbox). */
+  const CAPTCHA_PAGE = `<!doctype html><html><body><main><form id="done">
+    <label for="first">First Name</label><input id="first" name="first" style="width:300px">
+    <div class="g-recaptcha" data-sitekey="k" style="display:block;width:304px;height:78px;border:1px solid #888"></div>
+  </form></main></body></html>`;
+
+  /** The first document: a run that pauses there; then (`next`) the document that follows in its place, on the same
+   *  worker (the tab's store), at the same address, its runtime started as the page loads. */
+  async function paused(first: string, signInMode: 'auto' | 'manual', script: Record<string, unknown[]> = {}) {
+    const fixture = await loadFixture(document, first, { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: signInMode } };
+    const worker = createFakeWorker({ settings, script: script as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => [genericAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill()).toBe('paused');
+    const next = async () => {
+      runtime.stop();
+      removeFixtures(document);
+      const shown = await loadFixture(document, FORM_PAGE, { width: 1100, height: 900 });
+      const after = await startContentRuntime(worker.platform, shown.doc, { href: () => HREF, isTop: true,
+        adapters: () => [genericAdapter], settle: { quietMs: 40 } });
+      runtimes.push(after);
+      return { fixture: shown, runtime: after };
+    };
+    return { fixture, worker, runtime, next };
+  }
+  const first = (fixture: Fixture) => (fixture.doc.getElementById('first') as HTMLInputElement).value;
+
+  it('carries on at once from a sign-in pause, Sign-in Manual: the form filled, the sign-in toast gone', async () => {
+    const run = await paused(signInPage(), 'manual');
+    expect(run.runtime.ui!.toasts.shown).toEqual(['sign-in']);
+    expect(run.worker.runStates.at(-1)!.status).toBe('auth-needed');
+    const begun = run.worker.of('run/begin').length;
+    const shown = await run.next();
+    await vi.waitFor(() => expect(first(shown.fixture)).not.toBe(''), { timeout: 10_000 });
+    // The restored run, then the one it carried on as (its Continue): the stored RunState's.
+    expect(run.worker.of('run/begin')).toHaveLength(begun + 2);
+    expect(shown.runtime.ui!.toasts.shown).not.toContain('sign-in');
+  });
+
+  it('with Sign-in Auto asks for no sign-in where the page shows no wall, and carries on: no toast to add one', async () => {
+    const run = await paused(signInPage(), 'auto', { 'signin/credential': [{ ok: false, error: 'not_found' }] });
+    await vi.waitFor(() => expect(run.runtime.ui!.toasts.shown).toEqual(['no-sign-in']));
+    const reported = run.worker.reports.length;
+    const shown = await run.next();
+    await vi.waitFor(() => expect(first(shown.fixture)).not.toBe(''), { timeout: 10_000 });
+    expect(run.worker.of('signin/credential')).toHaveLength(1);
+    // The restored run never set out to sign in there (no sign-in-auto said of it).
+    expect(run.worker.reports.slice(reported).flatMap((report) => report.notices.map((notice) => notice.code)))
+      .not.toContain('sign-in-auto');
+    expect(shown.runtime.ui!.toasts.shown).not.toContain('no-sign-in');
+    expect(shown.runtime.ui!.toasts.shown).not.toContain('sign-in');
+  });
+
+  it('carries on at once from a CAPTCHA pause once the new document shows none: the challenge toast gone', async () => {
+    const run = await paused(CAPTCHA_PAGE, 'manual');
+    expect(run.runtime.ui!.toasts.shown).toEqual(['challenge']);
+    expect(run.worker.runStates.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'captcha' });
+    expect(first(run.fixture)).toBe('');
+    const shown = await run.next();
+    await vi.waitFor(() => expect(first(shown.fixture)).not.toBe(''), { timeout: 10_000 });
+    expect(shown.runtime.ui!.toasts.shown).not.toContain('challenge');
+  });
+});
+
+describe('the v4 review: the side panel’s Autofill at a pause (behaviour H1)', () => {
+  it('continues the paused run, with Sign up & Autofill when asked; never a dry run’s, which a fill starts afresh', async () => {
+    const fixture = await loadFixture(document, signInPage(), { width: 1100, height: 900 });
+    const worker = createFakeWorker({ settings: DEFAULT_SETTINGS,
+      script: { 'signin/credential': [{ ok: false, error: 'not_found' }] } as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => [genericAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    expect(await runtime.fill({ dryRun: true })).toBe('paused');
+    const dry = runtime.run!;
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(runtime.run).not.toBe(dry));
+    // A fresh fill, not the dry run's Continue.
+    expect(runtime.run!.request).toMatchObject({ trigger: 'panel', dryRun: false });
+    expect(runtime.run!.request.from).toBeUndefined();
+    await vi.waitFor(() => expect(runtime.run!.ended).toBe('paused'));
+    const paused = runtime.run!;
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+    await vi.waitFor(() => expect(runtime.run).not.toBe(paused));
+    // Its Continue: from the stored RunState, Sign up & Autofill with it.
+    expect(runtime.run!.request).toMatchObject({ dryRun: false, signIn: true, from: { event: { type: 'CONTINUE' } } });
+    await vi.waitFor(() => expect(worker.of('signin/credential')).toHaveLength(1), { timeout: 5_000 });
+    // A plain Autofill then (its panel/fill ends the tab's grant): the run's Continue, without Sign up & Autofill.
+    await vi.waitFor(() => expect(runtime.run!.ended).toBe('paused'));
+    const signedUp = runtime.run!;
+    await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false });
+    await vi.waitFor(() => expect(runtime.run).not.toBe(signedUp));
+    expect(runtime.run!.request.from?.event).toEqual({ type: 'CONTINUE' });
+    expect(runtime.run!.request.signIn).toBeUndefined();
+  });
+});
+
+describe('the v4 review: each sign-in the run could not make says why (behaviour M5)', () => {
+  /** reCAPTCHA v2's checkbox, unsolved: no pause for detectPause, a challenge for Sign-in Auto. */
+  const CHECKBOX = '<div class="g-recaptcha" data-sitekey="x"><div style="width:304px;height:78px"><div><iframe srcdoc="" '
+    + 'title="reCAPTCHA" width="304" height="78" src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=x&amp;'
+    + 'size=normal"></iframe></div><textarea name="g-recaptcha-response" style="display:none"></textarea></div></div>';
+  async function start(page: string, script: Record<string, unknown[]>, adapters: Adapter[] = [genericAdapter]) {
+    const fixture = await loadFixture(document, page, { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
+    const worker = createFakeWorker({ settings, script: script as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => adapters, settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    return { fixture, worker, runtime };
+  }
+  const walled: Adapter = { ...genericAdapter, id: 'workday', detect: () => null,
+    authState: (doc) => (doc.querySelector('input[type=password]') === null ? null : 'sign-in') };
+
+  it('reads the worker’s answer: not_found is none saved, unavailable is not allowed, expired is failed', async () => {
+    const page = await loadFixture(document, signInPage());
+    for (const [error, outcome] of [['not_found', 'none-saved'], ['unavailable', 'unavailable'], ['expired', 'failed']]) {
+      expect(await attempt(page, channelAnswering({ ok: false, error })), error).toBe(outcome);
+    }
+    const checked = await loadFixture(document, signInPage({ before: CHECKBOX }));
+    const channel = channelAnswering({ ok: true, data: CREDENTIAL });
+    expect(await attempt(checked, channel)).toBe('challenged');
+    expect(channel.asked).toEqual([]);
+  });
+
+  it('in a run: none saved says to add one, not allowed says to sign in here, a challenge says to solve it', async () => {
+    const cases: Array<[string, Record<string, unknown[]>, string]> = [
+      [signInPage(), { 'signin/credential': [{ ok: false, error: 'not_found' }] }, 'no-sign-in'],
+      [signInPage(), { 'signin/credential': [{ ok: false, error: 'unavailable' }] }, 'sign-in'],
+      [signInPage({ before: CHECKBOX }), {}, 'challenge'],
+    ];
+    for (const [page, script, toast] of cases) {
+      const { worker, runtime } = await start(page, script);
+      expect(await runtime.fill(), toast).toBe('paused');
+      await vi.waitFor(() => expect(runtime.ui!.toasts.shown, toast).toEqual([toast]), { timeout: 5_000 });
+      if (toast === 'challenge') expect(worker.of('signin/credential')).toEqual([]);
+      runtime.stop();
+      removeFixtures(document);
+    }
+  });
+
+  it('at a wall with no form: the same three toasts', async () => {
+    const cases: Array<[string, Record<string, unknown[]>, string]> = [
+      [signInPage(), { 'signin/credential': [{ ok: false, error: 'not_found' }] }, 'no-sign-in'],
+      [signInPage(), { 'signin/credential': [{ ok: false, error: 'unavailable' }] }, 'sign-in'],
+      [signInPage({ before: CHECKBOX }), {}, 'challenge'],
+    ];
+    for (const [page, script, toast] of cases) {
+      const { worker, runtime } = await start(page, script, [walled]);
+      expect(runtime.page).toBeNull();
+      await worker.platform.deliver({ v: 1, type: 'run/start', dryRun: false, signIn: true });
+      await vi.waitFor(() => expect(runtime.ui?.toasts.shown, toast).toEqual([toast]), { timeout: 5_000 });
+      if (toast === 'no-sign-in') {
+        expect(runtime.ui!.toasts.button('no-sign-in', 'action')?.textContent).toBe(COPY.toasts.open);
+      }
+      if (toast === 'challenge') expect(worker.of('signin/credential')).toEqual([]);
+      runtime.stop();
+      removeFixtures(document);
+    }
   });
 });
 

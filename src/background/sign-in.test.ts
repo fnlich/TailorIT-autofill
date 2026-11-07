@@ -83,7 +83,7 @@ describe('Sign-in Auto on the hosts covered by their candidate paths (TailorITâ€
     for (const url of ['https://workforcenow.adp.com/theme/index.html#/Myself', 'https://workforcenow.adp.com/mascsr/default/mdf/payroll/x.html',
       'https://vafb.clearcompany.com/app/dashboard', 'https://vafb.clearcompany.com/Careers/jobs/1/apply']) {
       expect(await signIn.credential({ v: 1, type: 'signin/credential', wall: 'sign-in' }, frameAt(url)), url)
-        .toEqual({ ok: false, error: 'unavailable' });
+        .toEqual({ ok: false, error: 'not_found' });
     }
     expect(asked).toEqual([['workforcenow.adp.com', undefined], ['workforcenow.adp.com', undefined],
       ['vafb.clearcompany.com', undefined], ['vafb.clearcompany.com', undefined]]);
@@ -104,14 +104,14 @@ describe('Sign-in Auto on the hosts covered by their candidate paths (TailorITâ€
       path: '/mascsr/default/mdf/recruitment/recruitment.html', url: ADP_GUEST } as unknown as
       Parameters<typeof signIn.credential>[0];
     expect(await signIn.credential(message, frameAt('https://workforcenow.adp.com/theme/index.html')))
-      .toEqual({ ok: false, error: 'unavailable' });
+      .toEqual({ ok: false, error: 'not_found' });
     expect(asked).toEqual([['workforcenow.adp.com', undefined]]);
   });
 
   it('never sends the path from a companyâ€™s own page, nor takes `*` there (reach site)', async () => {
     const { signIn, asked } = handler();
     expect(await signIn.credential({ v: 1, type: 'signin/credential', wall: 'sign-in' },
-      frameAt(CC_APPLY, { reach: 'site' }))).toEqual({ ok: false, error: 'unavailable' });
+      frameAt(CC_APPLY, { reach: 'site' }))).toEqual({ ok: false, error: 'not_found' });
     expect(asked).toEqual([['vafb.clearcompany.com', undefined]]);
   });
 

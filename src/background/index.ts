@@ -96,6 +96,15 @@ const AGENT_E2E_SETTLE_MS = 750;
  *  it, such an address (the board the page moved on to) is no application's, so "Application submitted" goes. */
 export const KEEP_KEY_AFTER_PRESS_MS = CONFIRMATION_PAGE_MS;
 
+/** A sender's origin, as its address names it ('' where it names none: no grant is for it). */
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+
 /** Content messages that skip the access-level wait. */
 const UNGATED: ReadonlySet<string> = new Set(['ping', 'panel/open']);
 
@@ -218,14 +227,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     withoutResume: (tabId, applicationKey) => jobs.without(tabId, applicationKey) });
   const resume = createResumeTransfer({ runs, server, profiles: profileCache, timers, sha256: (bytes) => platform.sha256(bytes),
     choose: chooseResume, letters });
-  /** v4: the tabs' Sign up & Autofill grants, and the forms to start after a wall (sign-up.ts). */
-  const signUps = createSignUps(now);
+  /** v4: the tabs' Sign up & Autofill grants, and the forms to start after a wall (sign-up.ts). The v4 review (M1): one
+   *  that held Sign-in Auto and ends by time is told to the tab's frames (pushTab), which stop reading it. */
+  const signUps = createSignUps({ now, timers, ended: (tabId) => void pushTab(tabId).catch(() => undefined) });
   const panel = createPanelHandlers({ platform, reports, connected: () => auth.connected(), check: (tabId) => checkTab(tabId),
-    // v4: Sign up & Autofill grants the tab Sign-in Auto for one run; its frames hear the settings as they act then.
-    signUp: async (tabId, grant) => {
+    // v4: Sign up & Autofill grants the tab Sign-in Auto for one run, for its application frame's site (the v4 review,
+    // M1); its frames hear the settings as they act then.
+    signUp: async (tabId, grant, place) => {
       const before = signUps.live(tabId);
-      signUps.grant(tabId, grant);
-      if (before !== signUps.live(tabId)) await pushTab(tabId);
+      signUps.grant(tabId, grant, place);
+      if (before || signUps.live(tabId)) await pushTab(tabId);
     } });
   // Save my answer and Confirm draft (Phase 6, wave 2): the answer goes from the frame straight to TailorIT.
   const answers = createAnswerHandlers({ platform, reports, runs, server, settings, vocab: () => core.vocab(),
@@ -294,23 +305,28 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** What holds a mode at Manual now: Submit until the disclosure was acknowledged (the v3 Phase 4 review); Sign-in
    *  unless it is allowed (v3 Phase 5). */
   const holds = async () => ({ holdSubmit: !(await auth.disclosed()), holdSignIn: !(await signInAllowed()) });
-  /** The content settings as they act now for a frame of `tabId` showing `applicationKey` in document `documentId`: in
-   *  the auto-apply agent's window, for its task's application and while it may run, the agent's (v3 Phase 5: Next and
-   *  Submit on Auto; Submit on Manual in a document but the one the job's Submit was pressed in, once it was). */
+  /** The content settings as they act now for a frame of `tabId` on `origin` showing `applicationKey` in document
+   *  `documentId`: in the auto-apply agent's window, for its task's application and while it may run, the agent's (v3
+   *  Phase 5: Next and Submit on Auto; Submit on Manual in a document but the one the job's Submit was pressed in, once
+   *  it was); v4: Sign-in Auto under the tab's Sign up & Autofill grant, for a frame of the grant's origin alone (the v4
+   *  review, M1). */
   const contentSettingsFor = async (tabId: number, applicationKey: string | null | undefined,
-    documentId: string | null | undefined) => {
+    documentId: string | null | undefined, origin: string) => {
     const task = await agent.task(tabId, applicationKey, documentId);
     return contentSettingsOf(await settings.get(), { ...(await holds()), agent: task !== null,
-      agentSubmitHeld: task?.submitHeld === true, signUp: signUps.live(tabId) });
+      agentSubmitHeld: task?.submitHeld === true, signUp: signUps.live(tabId, origin) });
   };
-  /** v4: the settings as they act now, told to one tab's frames with a form or a wall (a Sign up & Autofill grant made
-   *  or ended there). A frame that cannot be reached reads them at its next run/begin. */
+  /** v4: the settings as they act now, told to one tab's frames with a form, a wall or (the v4 review) a choice of how
+   *  to apply (a Sign up & Autofill grant made or ended there). A frame that cannot be reached reads them at its next
+   *  run/begin. */
   const pushTab = async (tabId: number) => {
-    const frames = (await framesOfTab(session, tabId)).filter((frame) => frame.hasForm || frame.wall !== undefined);
+    const frames = (await framesOfTab(session, tabId))
+      .filter((frame) => frame.hasForm || frame.wall !== undefined || frame.choice === true);
     await Promise.all(frames.map(async (frame) => {
       try {
         await platform.tabs.sendToFrame(tabId, { v: 1, type: 'settings/changed',
-          settings: await contentSettingsFor(tabId, frame.applicationKey, frame.documentId) }, frameTarget(frame));
+          settings: await contentSettingsFor(tabId, frame.applicationKey, frame.documentId, frame.origin) },
+          frameTarget(frame));
       } catch {
         log('frame.unreachable');
       }
@@ -336,7 +352,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         try {
           await platform.tabs.sendToFrame(tabId, { v: 1, type: 'run/cancel' }, frameTarget(frame));
           await platform.tabs.sendToFrame(tabId, { v: 1, type: 'settings/changed',
-            settings: await contentSettingsFor(tabId, frame.applicationKey, frame.documentId) }, frameTarget(frame));
+            settings: await contentSettingsFor(tabId, frame.applicationKey, frame.documentId, frame.origin) },
+            frameTarget(frame));
         } catch {
           log('frame.unreachable');
         }
@@ -367,7 +384,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
   const signIn = createSignIn({ server, session, now,
     // v4: or the tab's Sign up & Autofill grant (sign-up.ts), every other rule held.
-    signInAuto: async (tabId) => ((await settings.get()).modes.signIn === 'auto' || signUps.live(tabId))
+    // The v4 review (M1): the grant's for a frame of the origin it was given for alone.
+    signInAuto: async (tabId, origin) => ((await settings.get()).modes.signIn === 'auto' || signUps.live(tabId, origin))
       && (await signInAllowed()),
     // core-x, item 3: a subframe that claims the tab's application signs in as a top frame does (frames.ts).
     claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)) });
@@ -377,7 +395,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
    *  the agent's, each as contentSettingsFor builds them for its application and document (the audit's m1: Submit stays
    *  on Manual in every document but the one the job's Submit was pressed in). */
   const pushNow = async () => pushSettings({ session, tabs: platform.tabs },
-    (frame) => contentSettingsFor(frame.tabId, frame.applicationKey, frame.documentId));
+    (frame) => contentSettingsFor(frame.tabId, frame.applicationKey, frame.documentId, frame.origin));
   const beginDeps = {
     jobs,
     generation: () => keeper.generation,
@@ -589,10 +607,18 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           log('frame.registered', { frameId: entry.frameId, top: entry.isTop });
           // v3 Phase 5: the agent's window: a form's document gets the agent's run, a posting's its entry.
           void agent.hello(from.tabId, entry).catch(() => undefined);
+          // The v4 review (M1): the tab's top frame shows a document on another origin than the one a grant was given
+          // for: the grant ends, and the tab's frames hear their settings again.
+          if (from.frameId === 0 && newDocument && signUps.moved(from.tabId, entry.origin)) {
+            void pushTab(from.tabId).catch(() => undefined);
+          }
           // v4: the first form after a wall or a choice that Autofill (or Sign up & Autofill) met with no form starts its
-          // run (sign-up.ts), once its hello is answered.
-          if (entry.hasForm && (newDocument || previous?.hasForm !== true)) {
-            const take = signUps.takeFill(from.tabId);
+          // run (sign-up.ts), once its hello is answered: in the top frame, or the claim frame or one of its chain
+          // frames, of the grant's origin and application alone (the v4 review, M1).
+          if (entry.hasForm && (newDocument || previous?.hasForm !== true)
+            && (entry.frameId === 0 || agentFramesOf(await framesOfTab(session, from.tabId))
+              .some((frame) => frame.frameId === entry.frameId))) {
+            const take = signUps.takeFill(from.tabId, entry);
             if (take !== null) {
               void Promise.resolve().then(() => platform.tabs.sendToFrame(from.tabId, { v: 1, type: 'run/start',
                 dryRun: false, ...(take.signIn ? { signIn: true as const } : {}) }, frameTarget(entry)))
@@ -611,7 +637,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // A top frame that loads beside an open side panel keeps its launcher hidden (v3 Phase 3 review): the panel's
           // panel/side came to the document before, and none comes now.
           return ok({ frameId: from.frameId, connected,
-            settings: await contentSettingsFor(from.tabId, entry.applicationKey, from.documentId),
+            settings: await contentSettingsFor(from.tabId, entry.applicationKey, from.documentId, entry.origin),
             launcher: await launchers.prefsFor(from.url),
             ...(from.frameId === 0 && reports.sideShows(from.tabId) ? { side: true as const } : {}),
             ...(entry.chained === true && entry.applicationKey !== undefined
@@ -627,7 +653,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           }
           if (task !== null) jobs.assign(from.tabId, message.applicationKey, task.jobId, task.resumeId);
           return beginRun({ ...beginDeps, settings: { ...settings,
-            content: () => contentSettingsFor(from.tabId, message.applicationKey, from.documentId) } }, message,
+            content: () => contentSettingsFor(from.tabId, message.applicationKey, from.documentId, originOf(from.url)) } },
+            message,
             // core-x, items 6 and 7: a chain page is looked up by its application's canonical address.
             await tailoritFromNow(from));
         },

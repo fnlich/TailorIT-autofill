@@ -342,9 +342,9 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
       return consentValue(category, rules.consentKinds, profile, settings,
         { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab),
           list: LIST_KINDS.has(spec.kind),
-          // Only DECIDED_CONSENT_CAUSES reach here with a needsUser (resolveField hands every other cause over).
-          ...(rules.needsUser === 'binding-waiver' || rules.needsUser === 'description-only'
-            ? { decided: rules.needsUser } : {}) });
+          // Only DECIDED_CONSENT_CAUSES reach here with a needsUser (resolveField hands every other cause over); a
+          // consent read from its help text alone is decided by its kinds, as any (the v4 review, security M3).
+          ...(rules.needsUser === 'binding-waiver' ? { bindingWaiver: true as const } : {}) });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':

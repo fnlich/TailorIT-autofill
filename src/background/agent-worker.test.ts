@@ -297,14 +297,15 @@ describe('Sign-in Auto’s credential in the worker (v3 Phase 5)', () => {
     expect(worker.tailorit.count('GET /api/autofill/credentials')).toBe(0);
   });
 
-  it('answers sign-in-unavailable while TailorIT is down or has none, and asks again later (only an answer counts)', async () => {
+  it('answers sign-in-unavailable while TailorIT is down, not_found while it has none, and asks again later (only an answer counts)', async () => {
     const worker = await signInWorker();
     worker.tailorit.reply('GET /api/autofill/credentials', { status: 503, json: { error: { code: 'unavailable',
       message: 'Down.' } } }, { once: true });
     expect(await ask(worker)).toEqual({ ok: false, error: 'unavailable' });
     worker.tailorit.reply('GET /api/autofill/credentials', { status: 404, json: { error: { code: 'not_found',
       message: 'None.' } } }, { once: true });
-    expect(await ask(worker)).toEqual({ ok: false, error: 'unavailable' });
+    // The v4 review (M5): none saved is told apart, so the page says to add one.
+    expect(await ask(worker)).toEqual({ ok: false, error: 'not_found' });
     // TailorIT back, with the sign-in saved meanwhile: answered, once.
     expect(await ask(worker)).toMatchObject({ ok: true, data: { password: PASSWORD } });
     expect(await ask(worker)).toEqual({ ok: false, error: 'expired' });
@@ -315,10 +316,11 @@ describe('Sign-in Auto’s credential in the worker (v3 Phase 5)', () => {
     const worker = await signInWorker();
     worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'other.wd5.myworkdayjobs.com',
       email: 'alex.rivera@example.com', password: PASSWORD } }, { once: true });
-    expect(await ask(worker)).toEqual({ ok: false, error: 'unavailable' });
+    // The v4 review (M5): none for this host is saved: not_found, as TailorIT's own 404.
+    expect(await ask(worker)).toEqual({ ok: false, error: 'not_found' });
     worker.tailorit.reply('GET /api/autofill/credentials', { status: 404, json: { error: { code: 'not_found',
       message: 'None.' } } });
-    expect(await ask(worker, top({ tab: { id: 15, url: WORKDAY } }))).toEqual({ ok: false, error: 'unavailable' });
+    expect(await ask(worker, top({ tab: { id: 15, url: WORKDAY } }))).toEqual({ ok: false, error: 'not_found' });
   });
 
   // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6, the every-site sign-in by the page's path ──
@@ -361,8 +363,9 @@ describe('Sign-in Auto’s credential in the worker (v3 Phase 5)', () => {
       // A host covered by its name alone (Workday): its own sign-in, or `*`, asked by the host alone.
       expect(await ask(worker)).toMatchObject({ ok: true, data: { host: '*' } });
       // ClearCompany's own www host serves /careers/ too (the extension's match pattern), but no tenant's candidate page.
+      // The v4 review (M5): the every-site one may not be used here, so none for the page is saved: not_found.
       expect(await ask(worker, at('https://www.clearcompany.com/careers/jobs/1/apply', 24))).toEqual({ ok: false,
-        error: 'unavailable' });
+        error: 'not_found' });
       expect(queries(worker)).toEqual([[['host', 'acme.wd5.myworkdayjobs.com']], [['host', 'www.clearcompany.com']]]);
     });
 

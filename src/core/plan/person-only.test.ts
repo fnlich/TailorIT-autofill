@@ -209,6 +209,43 @@ describe('S-5, v4 (D5): a consent asked as Yes/No and a binding waiver follow th
     expect(asksToAgree(normalizeLabel('Do you agree to sign a non-compete agreement?'))).toBe(true);
   });
 
+  // The v4 review (security M2): an ask worded as an agreement whose object is a fact ("that"-clause), a first- or
+  // second-person state, or a denial is a statement the run cannot know: never answered, under either mode, required
+  // or not, as a commitment asked as a fact is.
+  it.each([
+    ['I acknowledge that I am not bound by any non-compete agreement', 'radio'],
+    ['Do you agree that you are not currently subject to any non-compete or non-solicitation agreement', 'select'],
+    ['I agree that I have not signed a non-compete agreement', 'radio'],
+    ["I'm not party to any non-solicitation agreement, and I agree to notify you if that changes", 'radio'],
+    ['Do you confirm that you are not bound by any arbitration agreement?', 'select'],
+    ['Do you agree you are bound by no non-compete agreement?', 'radio'],
+  ] as const)('%j (%s): a binding waiver worded as a fact is never answered', (label, kind) => {
+    expect(asksToAgree(normalizeLabel(label))).toBe(false);
+    const required = settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } });
+    for (const isRequired of [true, false]) {
+      const list = specOf(label, kind, { optionLabels: ['Yes', 'No'], required: isRequired });
+      for (const out of [planOf([list], { profile }), planOf([list], { profile, ai: unclassified(list) }),
+        planOf([list], { profile, settings: required })]) {
+        askedNothing(out);
+        leftForPerson(out, list, 'consent-requires-user');
+      }
+    }
+  });
+
+  it('the agreement asks themselves still agree: the sole ask is to take something on from now on', () => {
+    for (const label of ['Do you agree to resolve any employment disputes through binding arbitration?',
+      'Do you agree to sign a non-compete agreement?', 'Are you willing to sign a non-solicitation agreement?',
+      'Do you waive your right to bring a class action?',
+      'Are you willing to relinquish ownership of all inventions you create?', 'I agree to waive my right to a jury trial',
+      'Do you agree to waive your right to a jury trial?']) {
+      expect(asksToAgree(normalizeLabel(label)), label).toBe(true);
+    }
+    // Facts never were asks to agree.
+    for (const label of ['I have not signed a non-compete', "I'm not party to any non-solicitation agreement"]) {
+      expect(asksToAgree(normalizeLabel(label)), label).toBe(false);
+    }
+  });
+
   it('a required lone box still follows the Consents mode, binding or not: the person cannot apply without it', () => {
     const box = specOf('I agree to resolve any employment disputes through binding arbitration', 'checkbox',
       { required: true });

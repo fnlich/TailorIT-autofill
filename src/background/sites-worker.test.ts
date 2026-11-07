@@ -310,7 +310,8 @@ describe("a company page's sign-in (the Phase 8 review, P6)", () => {
     expect(await worker.deliver({ v: 1, type: 'page/recognised', reason: 'application-form' }, sender)).toMatchObject({ ok: true });
     worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: '*', email: 'alex.rivera@example.com', password: 'pw-1' } },
       { once: true });
-    expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'sign-in' }, sender)).toEqual({ ok: false, error: 'unavailable' });
+    // The v4 review (M5): the every-site one is never this page's, so none for it is saved: not_found.
+    expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'sign-in' }, sender)).toEqual({ ok: false, error: 'not_found' });
     worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'careers.smartrecruiters.com', email: 'alex.rivera@example.com',
       password: 'pw-2' } }, { once: true });
     expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'create-account' }, sender)).toMatchObject({ ok: true,

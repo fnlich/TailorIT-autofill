@@ -54,6 +54,16 @@
  *   creation) gets its email, its email again, its password and its confirmation typed, and nothing pressed: 'continue',
  *   the run then pausing at the page, where the person answers the rest and presses its button.
  * - A password reset ('forgot-password') is never a wall here: it pauses for the person, and nothing is typed there.
+ * The v4 review:
+ * - L5: a challenge the page shows comes before the prelude too: with one shown and not solved (a checkbox CAPTCHA,
+ *   which detectPause takes for no pause, beside Workday's landing), nothing is pressed, not even the prelude, and the
+ *   sign-in answers 'challenged'.
+ * - M5: what came of it says why the sign-in is the person's: 'none-saved' (the worker holds no job-site sign-in for
+ *   the page: its `not_found`), 'challenged' (a challenge shows: nothing asked, typed or pressed while it does),
+ *   'unavailable' (Sign-in Auto not allowed now, TailorIT not reached, a form refused, none read), 'failed' (the site
+ *   refused it, or the tab was answered already). The page's toast follows it (orchestrator.ts toastsNow, runtime.ts
+ *   showWallToast): the one to add a sign-in in TailorIT for 'none-saved' alone, the check to solve for 'challenged',
+ *   the one to sign in on the page otherwise.
  * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06):
  * - core-x, item 3: a subframe whose adapter claims the tab's application (SignInContext.claimed: the same-host frame an
  *   iCIMS portal draws every step in, below its wrapper) signs in as a top frame does; the worker answers it only as
@@ -105,8 +115,9 @@ const ENABLE_LOOK_MS = 100;
  *  alone and the password never leaves it (a container holds no password box: dom/sign-in-form.ts containerShape). */
 export const CONTAINER_WALL: SignInWall = 'email-gate';
 
-/** What came of a sign-in (module header). */
-export type SignInOutcome = 'continue' | 'failed' | 'unavailable' | 'left';
+/** What came of a sign-in (module header): the v4 review (M5) tells 'none-saved' and 'challenged' apart from
+ *  'unavailable'. */
+export type SignInOutcome = 'continue' | 'failed' | 'unavailable' | 'none-saved' | 'challenged' | 'left';
 
 /** What a sign-in needs. */
 export interface SignInContext {
@@ -167,10 +178,13 @@ function hostFits(credential: Pick<SignInCredential, 'host'>, host: string, path
 }
 
 /** Whether the page shows a challenge not known solved now, anywhere (module header): a vendor's, solved or not, or a
- *  frame of another origin that reads like one (round 3, X9). */
-function challenged(ctx: SignInContext): boolean {
-  return unsolvedCaptchas(ctx.doc, null) > 0 || vendorFramesShown(ctx.doc) > 0 || challengeLikeFramesShown(ctx.doc) > 0;
+ *  frame of another origin that reads like one (round 3, X9). The run reads it too (the v4 review, M5: a sign-in that
+ *  answered 'challenged' is tried again once it no longer shows one). */
+export function signInChallenged(doc: Document): boolean {
+  return unsolvedCaptchas(doc, null) > 0 || vendorFramesShown(doc) > 0 || challengeLikeFramesShown(doc) > 0;
 }
+
+const challenged = (ctx: SignInContext): boolean => signInChallenged(ctx.doc);
 
 /** The page's address now, when it is still on the origin asked for, over https; else null. */
 function samePage(ctx: SignInContext, asked: URL): URL | null {
@@ -193,7 +207,7 @@ function sameForm(form: SignInForm, held: SignInForm): boolean {
  * boxes the password went into are added to `secret`. Answers 'typed', or why not.
  */
 function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm, credential: SignInCredential,
-  secret: HTMLInputElement[]): 'typed' | 'unavailable' | 'failed' {
+  secret: HTMLInputElement[]): 'typed' | 'unavailable' | 'challenged' | 'failed' {
   const now = samePage(ctx, asked);
   if (now === null) {
     log('content.sign-in-refused', { moved: true });
@@ -205,7 +219,7 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
   }
   if (challenged(ctx)) {
     log('content.sign-in-refused', { captcha: true });
-    return 'unavailable';
+    return 'challenged';
   }
   const form = formNow(ctx, wall);
   const refusal = form === null ? 'shape' : refusalOf(ctx, form, now);
@@ -261,7 +275,7 @@ function enabledNow(button: HTMLElement): boolean {
 /** Presses the form's own button through the sign-in door (module header, 3): at once, or, on a declared form whose page
  *  enables it once filled, once it is enabled (SIGN_IN_ENABLE_MS at most), with the page read again first. */
 async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm):
-  Promise<'pressed' | 'unavailable' | 'failed' | 'left'> {
+  Promise<'pressed' | 'unavailable' | 'challenged' | 'failed' | 'left'> {
   const current = () => {
     try {
       return formNow(ctx, wall);
@@ -283,9 +297,13 @@ async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: Sig
   }
   const now = samePage(ctx, asked);
   const form = current();
-  if (now === null || form === null || !sameForm(form, held) || challenged(ctx)) {
+  if (now === null || form === null || !sameForm(form, held)) {
     log('content.sign-in-refused', { pressed: false });
     return 'unavailable';
+  }
+  if (challenged(ctx)) {
+    log('content.sign-in-refused', { pressed: false, captcha: true });
+    return 'challenged';
   }
   return clickAdapterSignIn(ctx.adapter, ctx.doc, wall, now, ctx.container === true ? 'container' : 'wall') === null
     ? 'unavailable' : 'pressed';
@@ -375,6 +393,11 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   const asked = urlOf(ctx.href());
   let wall: SignInWall | null = null;
   let form: SignInForm | null = null;
+  // The v4 review (L5): a challenge shown and not solved comes first, before any press, the prelude's too.
+  if (challenged(ctx)) {
+    log('content.sign-in-refused', { captcha: true, first: true });
+    return 'challenged';
+  }
   try {
     // core-x, item 2: an account section is typed into, never pressed: its declared form's button is the person's.
     wall = ctx.section === true ? (accountFormOf(ctx.adapter, ctx.doc, null)?.personPresses === true
@@ -400,7 +423,7 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   // A prelude may have drawn a challenge with the form: nothing is asked while one shows (round 2, E4).
   if (challenged(ctx)) {
     log('content.sign-in-refused', { captcha: true });
-    return 'unavailable';
+    return 'challenged';
   }
   let answer: Awaited<ReturnType<Channel['request']>>;
   try {
@@ -411,8 +434,9 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   }
   if (ctx.signal.aborted) return 'left';
   if (!answer.ok) {
-    log('content.sign-in', { asked: false, again: answer.error === 'expired' });
-    return answer.error === 'expired' ? 'failed' : 'unavailable';
+    log('content.sign-in', { asked: false, again: answer.error === 'expired', none: answer.error === 'not_found' });
+    // The v4 review (M5): no sign-in saved for the page is told apart from one not allowed or not reached.
+    return answer.error === 'expired' ? 'failed' : answer.error === 'not_found' ? 'none-saved' : 'unavailable';
   }
   // From the typing to the end of the watch the browser never sends the form itself where the rules refuse (module
   // header).

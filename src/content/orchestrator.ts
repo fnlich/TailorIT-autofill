@@ -198,7 +198,7 @@ import {
 import type { ContentPlatform } from '../platform/types';
 import { PAGE_COPY } from '../shared/copy';
 import { log } from '../shared/log';
-import { isReady, leftForPerson, leftOut, notFilled, progressOf } from '../shared/report';
+import { leftForPerson, notFilled, progressOf, unfilledByRun } from '../shared/report';
 import type { ContentSettings } from '../shared/settings';
 import { Invalidated, type AnsweredType, type AnswerData, type Channel, type MessageOf } from './channel';
 import { AI_POLL_MS, AI_WAIT_CAP_MS, CurrentWrite, runLoop, type LoopCarry, type LoopResult, type OptionsTimings,
@@ -215,7 +215,7 @@ import {
 } from './report';
 import { postingNamesOf } from './job-relay';
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
-import type { SignInOutcome } from './sign-in';
+import { signInChallenged, type SignInOutcome } from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
@@ -507,10 +507,11 @@ function heldDraftRow(row: FillResult): boolean {
     && (row.reason === 'llm-draft-needs-confirmation' || row.reason === 'llm-draft-written');
 }
 
-/** v4: whether a row is a field the run did not fill, filled by the person since or not (notFilled, filledByYou
- *  aside): the rows read again after the person's input at rest. */
+/** v4: whether a row is a field the run did not fill, filled by the person since or not (shared/report.ts
+ *  unfilledByRun: notFilled, filledByYou aside; a required field the run skipped among them, the v4 review's L-M7): the
+ *  rows read again after the person's input at rest. */
 function open(row: FillResult): boolean {
-  return !isReady(row) && !leftOut(row) && row.status !== 'skipped';
+  return unfilledByRun(row);
 }
 
 /** Whether a row is one the AI's answer wrote (an llm-answer text, or an llm-pick with an answer's reason). */
@@ -554,8 +555,10 @@ export class FillRun {
   private signInAuto = false;
   /** The run paused at a sign-in and signs in once it rests (sign-in-auto). */
   private signInDue = false;
-  /** v4 (D10): what came of this run's sign-in, for its toast: no job-site sign-in to use, or the site refused it. */
-  private signInSaid: 'unavailable' | 'failed' | null = null;
+  /** v4 (D10): what came of this run's sign-in, for its toast: the v4 review (M5) tells apart no job-site sign-in saved
+   *  ('none-saved': the toast to add one), a challenge on the page ('challenged': the check to solve), the site refusing
+   *  it ('failed'), and anything else ('unavailable': not allowed now, no form read: the sign-in to make on the page). */
+  private signInSaid: 'none-saved' | 'challenged' | 'unavailable' | 'failed' | null = null;
   /** v4: a statement only text a person cannot see yet holds says the posting forbids AI (the Phase 2 review's S6):
    *  no notice any more, but Submit mode Auto's "posting forbids AI" skip rule still reads it. */
   private hiddenPolicy = false;
@@ -1510,10 +1513,13 @@ export class FillRun {
       list.push({ kind: 'challenge', text: words.challenge });
     }
     if (status === 'auth-needed' && this.ended === 'paused' && !this.signInDue) {
-      if (this.signInSaid === 'unavailable' && (this.signInAuto || this.request.signIn === true)) {
+      if (this.signInSaid === 'none-saved' && (this.signInAuto || this.request.signIn === true)) {
         const open = this.env.openSignInSettings;
         list.push({ kind: 'no-sign-in', text: words.noSignIn,
           ...(open === undefined ? {} : { action: { label: words.open, run: () => open() } }) });
+      } else if (this.signInSaid === 'challenged') {
+        // The v4 review (M5): a challenge kept Sign-in Auto from asking: the check is what is left for the person.
+        if (!list.some((toast) => toast.kind === 'challenge')) list.push({ kind: 'challenge', text: words.challenge });
       } else {
         list.push({ kind: 'sign-in', text: this.signInSaid === 'failed' ? words.signInFailed : words.signIn });
       }
@@ -1531,7 +1537,8 @@ export class FillRun {
       const progress = progressOf([{ fields: this.rows }]);
       if (list.length === 0 && this.ended === 'review' && status === 'review' && this.finalStep && !this.submitPending
         && !this.request.dryRun && progress.of > 0) {
-        list.push({ kind: 'complete', text: words.complete(progress.filled, progress.of) });
+        // The v4 review (L8): "required fields" only when the progress counts required fields, as the panel's line.
+        list.push({ kind: 'complete', text: words.complete(progress.filled, progress.of, progress.requiredOnly) });
       }
     }
     // Text on the page addressed to AI tools was ignored: the plan's own sentence, the one notice the hard rules keep
@@ -2565,8 +2572,11 @@ export class FillRun {
   private paused(): null {
     // v3 Phase 5: a sign-in or account page, with Sign-in acting as Auto (or v4's Sign up & Autofill for this run): the
     // run signs in once it rests.
+    // The v4 review (behaviour H2): only while the page shows an account wall now. A run restored at its sign-in pause
+    // in the document the sign-in brought (resumeStored) shows none: it carries on (watchPauseGone), never asking for a
+    // sign-in it no longer needs.
     this.signInDue = this.state.status === 'auth-needed' && (this.signInAuto || this.request.signIn === true)
-      && !this.request.dryRun && this.env.signIn !== undefined && (this.isTop || this.claimed);
+      && !this.request.dryRun && this.env.signIn !== undefined && (this.isTop || this.claimed) && this.wallShown();
     if (this.signInDue) this.notices.add('sign-in-auto');
     if (this.state.pauseReason === 'captcha') {
       const signature = this.signatureNow();
@@ -2577,6 +2587,31 @@ export class FillRun {
     return null;
   }
 
+  /** Whether the page shows an account wall now (a sign-in, an account's creation, an email gate: pauseNow). */
+  private wallShown(): boolean {
+    const kind = this.pauseNow()?.kind;
+    return kind === 'sign-in' || kind === 'create-account' || kind === 'email-gate';
+  }
+
+  /** The pause kinds the machine's own pause stands for (the v4 review, behaviour H2): an auth-needed run's account
+   *  walls, a handoff's reason where the page shows it (a CAPTCHA, an email code, an entry choice, a password reset).
+   *  Null for a pause no page signal names (a page still busy, a Next not taken, a bot check asked as a question). */
+  private restingKinds(): ReadonlySet<PauseSignal['kind']> | null {
+    const state = this.machine;
+    if (state === null) return null;
+    if (state.status === 'auth-needed') return new Set(['sign-in', 'create-account', 'email-gate']);
+    if (state.status !== 'handoff') return null;
+    switch (state.pauseReason) {
+      case 'captcha':
+      case 'email-code':
+      case 'entry-choice':
+      case 'forgot-password':
+        return new Set([state.pauseReason]);
+      default:
+        return null;
+    }
+  }
+
   /**
    * v4 (D10): while the run rests at a pause the page shows (a CAPTCHA, a bot check, an email code, a sign-in or account
    * wall, a password reset, a choice of how to apply), the page is looked at again with the pause detection
@@ -2584,6 +2619,10 @@ export class FillRun {
    * it no longer shows the pause it showed when the run came to rest (gone, or another one), the run carries on by
    * itself (RunEnv.afterSignIn: the runtime's Continue, which scans again and pauses again where it must). Nothing is
    * ever done to the challenge itself: it is only read for being there. A Sign-in Auto on its way first finishes.
+   * The v4 review (behaviour H2): the pause it rests at is the machine's (restingKinds), as the page shows it now; one
+   * the page no longer shows (a run restored at a sign-in, CAPTCHA or email code pause in the new document the person's
+   * answer brought: resumeStored) has gone already, and the run carries on at once, bounded by the runtime's
+   * MAX_AUTO_CONTINUES. A pause no page signal names is read from what the page shows at rest, as before.
    */
   private async watchPauseGone(): Promise<void> {
     const view = this.env.doc.defaultView;
@@ -2592,15 +2631,21 @@ export class FillRun {
     const watch = new AbortController();
     this.pauseWatch = watch;
     const signal = AbortSignal.any([watch.signal, this.controller.signal, this.cancelled.signal]);
-    const from = this.pauseNow()?.kind ?? null;
+    const shown = this.pauseNow()?.kind ?? null;
+    const kinds = this.restingKinds();
+    // The machine's pause the page no longer shows: never equal to what the page shows, so the first look carries on.
+    const from: PauseSignal['kind'] | null | 'gone' = kinds === null ? shown
+      : shown !== null && kinds.has(shown) ? shown : 'gone';
     let looking = false;
     let gone = false;
     const look = () => {
       if (signal.aborted || this.ended !== 'paused' || this.signInDue) return;
       const now = this.pauseNow()?.kind ?? null;
-      if (now === from) return;
+      // A Sign-in Auto a challenge held back (the v4 review, M5) is tried again once the page shows none.
+      const cleared = this.signInSaid === 'challenged' && !signInChallenged(this.env.doc);
+      if (now === from && !cleared) return;
       gone = true;
-      log('content.pause-gone', { other: now !== null });
+      log('content.pause-gone', { other: now !== null, cleared });
       watch.abort();
       resume();
     };
@@ -2699,8 +2744,9 @@ export class FillRun {
       this.env.afterSignIn?.();
       return;
     }
-    // v4 (D10): the toast says what is left: the job-site sign-in to add in TailorIT, or the sign-in to make here.
-    this.signInSaid = outcome === 'failed' ? 'failed' : 'unavailable';
+    // v4 (D10): the toast says what is left: the job-site sign-in to add in TailorIT, the check to solve, or the
+    // sign-in to make here (the v4 review, M5: each told apart).
+    this.signInSaid = outcome;
     if (outcome === 'failed') this.notices.add('sign-in-failed');
     this.drawToasts();
     await this.report();

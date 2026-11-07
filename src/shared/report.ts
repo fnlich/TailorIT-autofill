@@ -192,11 +192,21 @@ export function isReady(row: Pick<Row, 'status' | 'wrote' | 'reason'>): boolean 
     || row.reason === 'end-date-not-applicable' || row.reason === 'prefill-kept';
 }
 
+/** Whether a row is a field the run did not fill, whatever the person did since (notFilled reads their input too): not
+ *  done, not left out, and not an optional question left alone on purpose (skipped: optional, or needing nothing). A
+ *  required field is one whatever its status (the v4 review, L-M7): a résumé the form requires under "Apply without
+ *  resume" (resume-not-attached), a required field the page disabled (disabled-or-readonly) or took away
+ *  (field-disappeared) is skipped by the run, and empty all the same, so it counts as missing and holds auto-Next. A
+ *  hard-rule stop not answered yet is one. */
+export function unfilledByRun(row: Pick<Row, 'status' | 'wrote' | 'reason' | 'required'>): boolean {
+  return !isReady(row) && !leftOut(row) && (row.status !== 'skipped' || row.required);
+}
+
 /** Whether a row is a question the run did not fill and the person still may (D1: an empty circle in the lists, never
- *  "Needs you"): not done, not filled by the person since, not left out, and not a question left alone on purpose
- *  (skipped: optional, disabled, or needing nothing). A hard-rule stop not answered yet is one. */
-export function notFilled(row: Pick<Row, 'status' | 'wrote' | 'reason' | 'detail'>): boolean {
-  return !isReady(row) && !filledByPerson(row) && !leftOut(row) && row.status !== 'skipped';
+ *  "Needs you"): one the run did not fill (unfilledByRun: a required one whatever its status), and not filled by the
+ *  person since. */
+export function notFilled(row: Pick<Row, 'status' | 'wrote' | 'reason' | 'required' | 'detail'>): boolean {
+  return unfilledByRun(row) && !filledByPerson(row);
 }
 
 /** Whether the person filled a field the run did not, with their own input since (v3 Phase 3): it counts as filled in
@@ -212,7 +222,8 @@ export function leftForPerson(row: Pick<Row, 'status' | 'wrote' | 'reason' | 'de
 }
 
 /** A row in the field lists (v3 Phase 3, Jobright's three icons): 'filled' (isReady, or filled by the person since),
- *  'missing' (v4, D1: not filled, notFilled: an empty circle, never "needs you"), 'working' (a write still to come in the
+ *  'missing' (v4, D1: not filled, notFilled: an empty circle, never "needs you"; a required field the run skipped among
+ *  them, the v4 review's L-M7), 'working' (a write still to come in the
  *  run that fills now, or the one being written: `current`), or 'none' (a question left alone on purpose, or a row left
  *  out (D8): no icon of either kind, and the progress leaves it out). */
 export type RowProgress = 'filled' | 'missing' | 'working' | 'none';
