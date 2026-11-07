@@ -27,6 +27,13 @@
  *   (personPresses): the credential typed, the run pauses there for the rest.
  * - Never pressed (neverPress): Apply (the entry door's alone), the cookie banner's buttons, "Show" (the password's),
  *   the password help's Submit and Cancel, the terms dialog's opener, and the employees' sign-in links.
+ * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): the owner's snapshot of DFIN's account creation
+ * (career8.successfactors.com, fixtures/successfactors/donnelleyf-create-account.html) is the same form#careerform,
+ * read by the same hooks: the email twice, the password twice, a first and last name, a country, two notification
+ * boxes, a required reCAPTCHA ("Confirm you are not a robot:", which makes the page a CAPTCHA pause) and the terms'
+ * a#dataPrivacyId ("Read and accept the data privacy statement.", whose dialog no snapshot shows open). The application
+ * after the account (its snapshot "Apply for ... (4984)") is posted to /portalcareer?_s.crb=<token>, an address that
+ * names no job, so no application is read there (url.ts) and the extension stays dormant on it.
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
@@ -38,7 +45,9 @@ import { canonicalApplicationUrl, matchesUrl } from './url';
 /** The snapshots the hooks were written from (fixtures/successfactors/). */
 export const SUCCESSFACTORS_SNAPSHOTS = ['fixtures/successfactors/danfoss-posting.html',
   'fixtures/successfactors/danfoss-sign-in.html', 'fixtures/successfactors/danfoss-create-account.html',
-  'fixtures/successfactors/danfoss-forgot-password.html'] as const;
+  'fixtures/successfactors/danfoss-forgot-password.html',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): DFIN's account creation, read by the same hooks ──
+  'fixtures/successfactors/donnelleyf-create-account.html'] as const;
 
 /** The first of `elements` a person can see. */
 function shown<T extends Element>(elements: readonly T[], cache: ScanCache = newScanCache()): T | null {

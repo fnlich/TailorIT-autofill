@@ -116,7 +116,7 @@ import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
 import { basisPickContradicts, postingCountryOf, type LegalContext } from '../resolver/policy';
-import { withCoverLetter } from '../profile/canonicalize';
+import { RESUME_MIME_TYPES, uploadName, withCoverLetter } from '../profile/canonicalize';
 import { answerItemOf, answerRefusal, answerText, answerWaitsForOptions, type AnswerItem, type AnswerVerdict }
   from './answers';
 import { holdsNoAiAttestation } from './attestation';
@@ -163,6 +163,33 @@ function rowWithout(spec: FieldSpec, category: FieldCategory, status: FillResult
     ...(suggestions.length > 0 ? { detail: { suggestions } } : {}),
   };
 }
+
+// ── behaviour review 2026-11-06 (M2): the owner's setting "Résumé already on the page" ──
+/** Whether the person's résumé goes into a résumé field the page already shows holding a file (CurrentValue `held`:
+ *  Adapter.uploadHeld, not a file in the input itself): only under "Upload mine again" (settings.modes.resumeOnPage
+ *  'upload'); under Keep it (the default) the page's file stays, flagged prefill-kept. The integration of 2026-11-06,
+ *  the duplicate guard: not even then while the page shows a file named as the person's chosen résumé (showsResume),
+ *  which stays, flagged prefill-kept, since their résumé is on the page already. Workday's drop zone takes several
+ *  files, so an upload puts the résumé in beside the page's file, and each later fill would put it in once more. A
+ *  field showing only files of other names is replaced as the setting says. */
+function uploadsHeldResume(spec: FieldSpec, category: FieldCategory, input: PlanInput): boolean {
+  const { current } = spec;
+  return category === 'file.resume' && current.kind === 'files' && current.held === true
+    && input.settings.modes.resumeOnPage === 'upload' && !showsResume(current.names, input.profile.resume);
+}
+
+/** Whether a field's shown file names (CurrentValue `names`, Adapter.uploadHeldNames) include the person's chosen
+ *  résumé's: its name as TailorIT holds it, or as the run uploads it (uploadName: a run's own earlier upload shows
+ *  under that one). A run of spaces counts as one, and nothing else is loosened: the name is the page's, exactly. */
+function showsResume(names: readonly string[] | undefined, resume: PlanInput['profile']['resume']): boolean {
+  if (names === undefined || resume === undefined) return false;
+  const spaced = (name: string) => name.replace(/\s+/g, ' ').trim();
+  const kind = resume.mime === RESUME_MIME_TYPES.pdf ? 'pdf' : resume.mime === RESUME_MIME_TYPES.docx ? 'docx' : null;
+  const mine = new Set([resume.fileName, ...(kind === null ? [] : [uploadName(resume.fileName, kind)])].map(spaced));
+  mine.delete('');
+  return names.some((name) => mine.has(spaced(name)));
+}
+// ── end behaviour review (M2) ──
 
 /** The status of a field the Guard keeps from being written: a honeypot is blocked; a field with no label at all is
  *  skipped, since it may be no question at all; one named only by a label nobody sees is flagged, since it names a
@@ -408,7 +435,11 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       return { value: { kind: 'date', iso: shaped.iso }, match: NOT_APPLICABLE,
         ...(current.kind === 'text' && current.text.trim() !== '' ? { flag: 'prefill-conflict' as const } : {}) };
     case 'file':
-      if (current.kind === 'files' && current.count > 0) return blank('flagged', 'prefill-kept');
+      // A file the field holds is kept (prefill-kept), unless it is a résumé the page shows (not the input's own file)
+      // and the person chose "Résumé already on the page: Upload mine again" (uploadsHeldResume).
+      if (current.kind === 'files' && current.count > 0 && !uploadsHeldResume(spec, category, ctx.input)) {
+        return blank('flagged', 'prefill-kept');
+      }
       return { value: { kind: 'file', ref: shaped.ref }, match: NOT_APPLICABLE };
     case 'check': {
       const checked = current.kind === 'checked' && current.checked;
@@ -619,10 +650,15 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   if (!honeypot.ok) {
     return { row: rowWithout(spec, resolution.category, refusedStatus(spec, honeypot.reason), honeypot.reason, 0) };
   }
+  const fills = resolution.action === 'fill' || resolution.action === 'fill-and-flag';
   if (spec.disabled || spec.readOnly) {
+    // The behaviour review of 2026-11-06 (M2): the person's résumé would go in again, but the page offers no file input
+    // while it shows one (ClearCompany disables its upload while a file is listed: atlas-uploads-saving).
+    if (fills && shaped?.shape === 'file' && uploadsHeldResume(spec, resolution.category, ctx.input)) {
+      return { row: rowWithout(spec, resolution.category, 'flagged', 'resume-held-no-input', resolution.confidence) };
+    }
     return { row: rowWithout(spec, resolution.category, 'skipped', 'disabled-or-readonly', resolution.confidence) };
   }
-  const fills = resolution.action === 'fill' || resolution.action === 'fill-and-flag';
   if (!fills || shaped === null || resolution.origin === null) return { row: rowOfResolution(spec, resolution) };
 
   const planned = plan(spec, resolution, shaped, ctx);

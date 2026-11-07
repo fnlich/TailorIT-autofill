@@ -1,0 +1,171 @@
+{
+  "fixture": "workable/jobs-salvo-apply",
+  "source": "https://jobs.workable.com/view/h3u3XDdUxbcDLb9v7mvmpN/remote-expert-rag-engineer-in-united-states-at-salvo-software",
+  "captured": "2026-11-06T14:48:55.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "note": "The owner's capture of 2026-11-06 ([jobs.workable.com] Expert RAG Engineer - Salvo Software - Jobs by Workable.mht): the job-search site's posting page with Workable's application form open in its modal dialog, at the page's own address. Its fields are the application form's (form[data-ui=application-form]); the page's Hotjar survey form beside it is no application's. Education and Experience show their \"+ Add\" alone (no entry, no input). The dialog's content region scrolls inside a position: fixed wrapper, so a person scrolls it to reach the fields below the viewport: every field here is one a person can reach.",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"firstname\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"lastname\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Headline",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"headline\"]"
+    },
+    {
+      "label": "Phone country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "options": "lazy",
+      "control": ".iti button.iti__selected-country",
+      "note": "intl-tel-input's country button, labelled by the phone's title with \"country code\" (the adapter's labelSuffix); the country it shows (its title, aria-label, flag and dial code) is cleared by the converter, as a chosen value is."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"input_phone\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "[id=\"address\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"city\"]",
+      "note": "The Address's hidden city part, filled by Workable from the address chosen."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"postcode\"]",
+      "note": "The Address's hidden postcode part, filled by Workable from the address chosen."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "Personal information",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"country\"]",
+      "note": "The Address's hidden country part, filled by Workable from the address chosen."
+    },
+    {
+      "label": "Photo",
+      "kind": "file",
+      "required": false,
+      "section": "Personal information",
+      "fillable": true,
+      "control": "input[type=\"file\"][data-ui=\"avatar\"]",
+      "note": "A 1 px file input beside its \"Choose file\" label[role=button] (the upload widget)."
+    },
+    {
+      "label": "Summary",
+      "kind": "textarea",
+      "required": false,
+      "section": "Profile",
+      "fillable": true,
+      "control": "[id=\"summary\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Profile",
+      "fillable": true,
+      "control": "input[type=\"file\"][data-ui=\"resume\"]",
+      "note": "A 1 px file input beside its \"Choose file\" label[role=button] (the upload widget)."
+    },
+    {
+      "label": "Cover letter",
+      "kind": "textarea",
+      "required": false,
+      "section": "Details",
+      "fillable": true,
+      "control": "[id=\"cover_letter\"]"
+    },
+    {
+      "label": "Experience & Core RAG Expertise: 6+ years in backend, ML, or infrastructure with 2+ years building production RAG systems, including end-to-end architecture, hybrid retrieval, reranking, chunking, indexing, and evaluation frameworks.",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12761529\"] input[type=\"radio\"]",
+      "note": "A YES/NO question: two radios (opacity 0, aria-hidden) inside their labels, each in a role=radio div; its fieldset names its title row."
+    },
+    {
+      "label": "Python & Vector Databases: Expert-level Python programming combined with deep knowledge of embeddings, vector databases, and metrics-driven evaluation.",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12761530\"] input[type=\"radio\"]",
+      "note": "A YES/NO question: two radios (opacity 0, aria-hidden) inside their labels, each in a role=radio div; its fieldset names its title row."
+    },
+    {
+      "label": "LLM Optimization & Serving: Hands-on experience serving and optimizing open-source LLMs (Ollama, llama.cpp) with quantization, alongside GPU/CUDA troubleshooting and performance tuning.",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12761531\"] input[type=\"radio\"]",
+      "note": "A YES/NO question: two radios (opacity 0, aria-hidden) inside their labels, each in a role=radio div; its fieldset names its title row."
+    },
+    {
+      "label": "DevOps, Infrastructure & MCP: Strong proficiency in Microsoft Azure, AWS, Docker, Kubernetes, Linux, CI/CD pipelines (Azure DevOps preferred), and Model Context Protocol (MCP).",
+      "kind": "radio",
+      "required": true,
+      "section": "Details",
+      "fillable": true,
+      "options": 2,
+      "control": "[data-ui=\"QA_12761532\"] input[type=\"radio\"]",
+      "note": "A YES/NO question: two radios (opacity 0, aria-hidden) inside their labels, each in a role=radio div; its fieldset names its title row."
+    }
+  ]
+}

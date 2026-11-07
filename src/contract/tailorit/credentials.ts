@@ -14,11 +14,13 @@ export const AUTOFILL_ANY_HOST = '*';
 
 /**
  * The applicant-tracking sites the every-site sign-in (`*`) is used on, by their domain: Workday's two (`myworkdayjobs`,
- * `myworkdaysite`), iCIMS, Taleo, SuccessFactors in both regions, Oracle Recruiting Cloud and SmartRecruiters, the ones
- * whose own sign-in and create-account pages Sign-in mode Auto fills. A domain alone is not enough: signInHostCovered
+ * `myworkdaysite`), iCIMS, Taleo, SuccessFactors in both regions, Oracle Recruiting Cloud (and, version 6, its
+ * government cloud), SmartRecruiters and (version 6) UltiPro, ClearCompany and ADP Workforce Now, the ones whose own
+ * sign-in and create-account pages Sign-in mode Auto fills or presses. A domain alone is not enough: signInHostCovered
  * holds each to the hosts that serve the candidate's sign-in (see there), never the bare domain, its www, an API or a
- * storage host where anyone's uploads are served (Oracle Object Storage is under oraclecloud.com). Any other site gets a
- * sign-in only when the person saved one for that exact host (404 otherwise). The extension uses the same rule.
+ * storage host where anyone's uploads are served (Oracle Object Storage is under oraclecloud.com), and on a host that
+ * also serves an employer's employee pages, to its candidate paths alone. Any other site gets a sign-in only when the
+ * person saved one for that exact host (404 otherwise). The extension uses the same rule.
  */
 export const AUTOFILL_SIGN_IN_HOST_SUFFIXES: readonly string[] = [
   'myworkdayjobs.com',
@@ -29,6 +31,10 @@ export const AUTOFILL_SIGN_IN_HOST_SUFFIXES: readonly string[] = [
   'successfactors.eu',
   'oraclecloud.com',
   'smartrecruiters.com',
+  'oraclegovcloud.com',
+  'ultipro.com',
+  'clearcompany.com',
+  'adp.com',
 ];
 
 /**
@@ -43,8 +49,10 @@ export const AUTOFILL_SIGN_IN_HOST_SUFFIXES: readonly string[] = [
  * - SuccessFactors: the career sites alone, `career<n>.successfactors.com` / `.eu` (`career`, `career2`, `career012`);
  * - Oracle Recruiting Cloud: a Fusion Applications tenant, `<tenant>.fa.<region>.oraclecloud.com` (`.fa.ocs.`
  *   included) or (version 5) `<tenant>.fa.oraclecloud.com` with no region (JPMC's), never Object Storage or another
- *   Oracle Cloud service;
- * - SmartRecruiters: `jobs.smartrecruiters.com` and `careers.smartrecruiters.com`.
+ *   Oracle Cloud service; and (version 6) a tenant on Oracle's government cloud, `<tenant>.fa.ocs.oraclegovcloud.com`,
+ *   by the same tenant rule (the whole tenant host, as the commercial cloud's);
+ * - SmartRecruiters: `jobs.smartrecruiters.com` and `careers.smartrecruiters.com`;
+ * - (version 6) UltiPro: `recruiting.ultipro.com`, UKG Pro Recruiting's candidate host (its account step is there).
  */
 const SIGN_IN_HOSTS: readonly RegExp[] = [
   /^(?!www\.)[a-z0-9-]+(?:\.wd\d{1,3})?\.myworkday(?:jobs|site)\.com$/,
@@ -55,15 +63,50 @@ const SIGN_IN_HOSTS: readonly RegExp[] = [
   /^career\d{0,3}\.successfactors\.(?:com|eu)$/,
   /^[a-z0-9-]+\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com$/,
   /^(?:jobs|careers)\.smartrecruiters\.com$/,
+  /^[a-z0-9-]+\.fa\.ocs\.oraclegovcloud\.com$/,
+  /^recruiting\.ultipro\.com$/,
 ];
 
 /**
- * True when the every-site sign-in covers `host` (a host name, compared in lower case): a candidate sign-in host of one
- * of AUTOFILL_SIGN_IN_HOST_SUFFIXES' domains, by SIGN_IN_HOSTS' patterns.
+ * Version 6: the candidate sign-in hosts that also serve an employer's employee pages, each covered under its candidate
+ * paths alone (compared as written, as Chrome's match patterns and the extension's host list compare them), never on
+ * any other path of the host:
+ * - ADP Workforce Now: `workforcenow.adp.com` under `/mascsr/default/mdf/recruitment/` (the guest page, whose Continue
+ *   mails the code) and `/mascsr/applicant/mdf/recruitment/` (the application's steps);
+ * - ClearCompany: a tenant's host, `<tenant>.clearcompany.com`, never its `cc-` file hosts or `www`, under `/careers/`
+ *   (the application's account step).
  */
-export function signInHostCovered(host: string): boolean {
+const SIGN_IN_PATH_HOSTS: ReadonlyArray<{ host: RegExp; paths: readonly string[] }> = [
+  { host: /^workforcenow\.adp\.com$/, paths: ['/mascsr/default/mdf/recruitment/', '/mascsr/applicant/mdf/recruitment/'] },
+  { host: /^(?!(?:cc-|www\.))[a-z0-9-]+\.clearcompany\.com$/, paths: ['/careers/'] },
+];
+
+/** The longest page path a credential request names (version 6). */
+export const AUTOFILL_SIGN_IN_PATH_MAX = 2048;
+
+/**
+ * Whether a page's path is one a candidate path can be read from: '/' first, no query or fragment, no backslash, space
+ * or control character, no dot segment ('.', '..') and no percent-encoded dot, slash or backslash (which a server may
+ * read as one).
+ */
+function plainPath(path: string): boolean {
+  if (path.length > AUTOFILL_SIGN_IN_PATH_MAX || !path.startsWith('/')) return false;
+  if (/[?#\\\s\p{Cc}]/u.test(path) || /%(?:2e|2f|5c)/i.test(path)) return false;
+  return !path.split('/').some((segment) => segment === '.' || segment === '..');
+}
+
+/**
+ * True when the every-site sign-in covers a page on `host` (a host name, compared in lower case): a candidate sign-in
+ * host of one of AUTOFILL_SIGN_IN_HOST_SUFFIXES' domains, by SIGN_IN_HOSTS' patterns; or (version 6) one of
+ * SIGN_IN_PATH_HOSTS whose candidate paths `path` (the page's path: its pathname alone) is under. Such a host is never
+ * covered without a path, nor for a path that is not plain (plainPath): no employee page is ever covered.
+ */
+export function signInHostCovered(host: string, path?: string): boolean {
   const name = host.toLowerCase();
-  return SIGN_IN_HOSTS.some((pattern) => pattern.test(name));
+  if (SIGN_IN_HOSTS.some((pattern) => pattern.test(name))) return true;
+  const scoped = SIGN_IN_PATH_HOSTS.find((rule) => rule.host.test(name));
+  if (scoped === undefined || path === undefined || !plainPath(path)) return false;
+  return scoped.paths.some((prefix) => path.startsWith(prefix));
 }
 
 /** Caps: the email, the password, and the sign-ins an account may save. */
@@ -85,14 +128,26 @@ const PasswordSchema = z
   .max(AUTOFILL_SIGN_IN_LIMITS.password, 'Use at most 256 characters')
   .regex(/^[^\r\n]*$/, 'A password has no line break');
 
-/** GET /api/autofill/credentials?host= (scope credentials:read): the page's host name, exactly as the page has it. */
-export const AutofillCredentialQuerySchema = z.object({ host: HostNameSchema });
+/**
+ * GET /api/autofill/credentials?host=&path= (scope credentials:read): the page's host name, exactly as the page has it,
+ * and (version 6, optional) its path, the pathname alone (no query, no fragment), which the every-site sign-in needs on
+ * a host it covers by its candidate paths (ADP Workforce Now, ClearCompany: signInHostCovered). TailorIT never stores or
+ * logs the path.
+ */
+export const AutofillCredentialQuerySchema = z.object({
+  host: HostNameSchema,
+  path: z
+    .string()
+    .max(AUTOFILL_SIGN_IN_PATH_MAX)
+    .regex(/^\/[^?#\s]*$/, "A page's path, from its first '/', with no query or fragment")
+    .optional(),
+});
 export type AutofillCredentialQuery = z.infer<typeof AutofillCredentialQuerySchema>;
 
 /**
- * Its answer (Cache-Control: no-store): the sign-in saved for that host, else, for a host signInHostCovered covers,
- * the one for every site (`host` says which); 404 `not_found` otherwise. The extension keeps it in memory for one
- * sign-in and never stores it.
+ * Its answer (Cache-Control: no-store): the sign-in saved for that host, else, for a page signInHostCovered covers (by
+ * its host, and on a path-scoped host by `path`), the one for every site (`host` says which); 404 `not_found`
+ * otherwise. The extension keeps it in memory for one sign-in and never stores it.
  */
 export const AutofillCredentialSchema = z.object({
   host: AutofillSignInHostSchema,

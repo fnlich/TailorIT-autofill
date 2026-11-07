@@ -1,0 +1,12 @@
+{
+  "questionKey": "why do you want to work at northwind",
+  "optionSetHash": "",
+  "scope": "jazzhr:northwind",
+  "fieldKind": "textarea",
+  "questionLabel": "Why do you want to work at Northwind?",
+  "platform": "jazzhr",
+  "answer": {
+    "kind": "text",
+    "text": "Northwind's ordering platform is the kind of system I have spent four years building, and I want to help it grow."
+  }
+}

@@ -4,22 +4,43 @@
  * case's hand-written expectations, and Sign-in Auto's reading of the gate: its email, its required terms box and its
  * NEXT, in a form the page's own script sends (no method, no action), taken only on a host the every-site sign-in
  * covers; its honeypot is never one of them.
+ * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): the owner's snapshots of Fortive's code page
+ * (fixtures/oracle/fortive-email-code.html) and of a section page of a tenant on Oracle's government cloud
+ * (fixtures/oracle/hjf-apply-section.html): the code page is an email-code pause; the section page's flow form, its
+ * labels, its upload, its Submit and its never-pressed controls, and the scanner's reading of it, which equals the
+ * expectation as captured since the core pass of 2026-11-06 (its form is a translucent panel over the tenant's cover
+ * image, which bounds what shows behind its words: dom/camouflage.ts opaqueLayerUnder), and fails closed again under a
+ * thinner panel a page could hide words behind.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import jpmcPostingExpect from '../../../fixtures/oracle/jpmc-posting.expect.json';
 import jpmcPostingHtml from '../../../fixtures/oracle/jpmc-posting.html?raw';
 import elhrEmailGateExpect from '../../../fixtures/oracle/elhr-email-gate.expect.json';
 import elhrEmailGateHtml from '../../../fixtures/oracle/elhr-email-gate.html?raw';
+import fortiveEmailCodeExpect from '../../../fixtures/oracle/fortive-email-code.expect.json';
+import fortiveEmailCodeHtml from '../../../fixtures/oracle/fortive-email-code.html?raw';
+import hjfApplySectionExpect from '../../../fixtures/oracle/hjf-apply-section.expect.json';
+import hjfApplySectionHtml from '../../../fixtures/oracle/hjf-apply-section.html?raw';
+import hjfAfterSubmitExpect from '../../../fixtures/oracle/hjf-after-submit.expect.json';
+import hjfAfterSubmitHtml from '../../../fixtures/oracle/hjf-after-submit.html?raw';
+import { isUserVisible } from '../../dom/visibility';
+import { detectPause } from '../../dom/pause-detect';
+import { scan } from '../../dom/scan';
 import { signInFormOf, signInRefusal } from '../../dom/sign-in-form';
 import { pressEntry } from '../../content/press';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
-import { compareWithExpectation, readExpectation, scanCase, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { compareWithExpectation, fillabilityOf, readExpectation, scanCase, SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { compareHooks, readHooks } from '../test/hooks.testkit';
 import { ORACLE_SNAPSHOTS, oracleAdapter } from './index';
 
 const CASES = [
   { name: 'jpmc-posting', html: jpmcPostingHtml, json: jpmcPostingExpect, address: 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210734835' },
   { name: 'elhr-email-gate', html: elhrEmailGateHtml, json: elhrEmailGateExpect, address: 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/12946/apply/email' },
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  { name: 'fortive-email-code', html: fortiveEmailCodeHtml, json: fortiveEmailCodeExpect, address: 'https://ejta.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/10672/apply/email' },
+  { name: 'hjf-apply-section', html: hjfApplySectionHtml, json: hjfApplySectionExpect, address: 'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1' },
+  // ── behaviour review 2026-11-06 (M4): the same flow 12 s after its Submit ──
+  { name: 'hjf-after-submit', html: hjfAfterSubmitHtml, json: hjfAfterSubmitExpect, address: 'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1' },
 ] as const;
 
 /** A page's own base address (a srcdoc page's is about:srcdoc), after it loaded: its forms and links resolve there. */
@@ -36,18 +57,47 @@ async function load(html: string, address: string) {
 }
 
 /**
- * What the scanner reads differently from the page on these snapshots, and why: Oracle draws its gate in front of the
- * flow's background image, whose colours the trap rules cannot work out, so they read its boxes as camouflaged (failing
- * closed): the email box gets no visible label, and the terms box behind its label no field. The gate is an email gate
- * (a pause): a run fills nothing on it, and Sign-in Auto reads its boxes as the adapter declares them (signInFormOf),
- * held to every honeypot rule but that colour test. Each listed difference must still be there, so the list is emptied
- * once the scanner reads these boxes.
+ * What the scanner reads differently from the page on these snapshots, and why. Oracle draws its gate and its code page
+ * on a translucent panel (rgba(248, 248, 247, 0.75)) over the flow's background image; until the core pass of
+ * 2026-11-06 the trap rules could not work out those colours and read every box there as camouflaged (the gate's email
+ * box with no visible label, its terms box and the code page's "Keep me signed in" no field). The panel now bounds
+ * what shows behind its words (dom/camouflage.ts opaqueLayerUnder), so they read. Left: the code page's six boxes,
+ * named by an aria-label alone (no visible label), are no field a fill writes (the page is the person's anyway: an
+ * email-code pause). Each listed difference must still be there, so the list is emptied once the scanner reads them.
  */
 const KNOWN: Record<string, ReadonlyArray<{ control: string; property: string }>> = {
-  'elhr-email-gate': [{ control: 'input#primary-email-0', property: 'label' },
-    { control: 'input#primary-email-0', property: 'fillable' },
-    { control: 'input#legal-disclaimer-checkbox', property: 'field' }],
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  'fortive-email-code': [1, 2, 3, 4, 5, 6].map((n) => ({ control: `input#pin-code-${n}`, property: 'fillable' })),
 };
+
+/** The flow's panel made thinner (a white veil of alpha 0.2), as a page hiding words behind it would draw it: its words
+ *  then lie between the veil's darkest and lightest, where some image under it may match them (the core pass of
+ *  2026-11-06's adversarial case, fixtures/synthetic/translucent-veil.html, on the real page). */
+function thinPanel(doc: Document): void {
+  for (const el of Array.from(doc.querySelectorAll<HTMLElement>('.apply-flow__content'))) {
+    el.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+  }
+}
+
+/** The flow drawn on plain white (its cover image taken away): its words and boxes then read clear. */
+function plain(doc: Document): void {
+  for (const el of Array.from(doc.querySelectorAll<HTMLElement>('.apply-flow'))) el.style.backgroundImage = 'none';
+}
+
+/** The page once its fade-ins have run (each upload's drop zone fades in over 0.4 s: [dir="ltr"]
+ *  .attachment-upload-button__upload-button { animation: 0.4s ... fade-in-animation }), as a person sees it: every
+ *  finite animation finished. */
+function faded(doc: Document): void {
+  for (const animation of doc.getAnimations()) {
+    const end = animation.effect?.getComputedTiming().endTime;
+    if (typeof end === 'number' && Number.isFinite(end)) animation.finish();
+  }
+}
+
+/** What the scanner reads differently from hjf-apply-section.expect.json once the image is taken away, and why: the
+ *  read-only email box and the phone's number box (borderless inside its composite row) read as camouflaged. */
+const KNOWN_PLAIN: ReadonlyArray<{ control: string; property: string }> = [
+  { control: 'input#email-22', property: 'fillable' }, { control: 'input.phone-row__input', property: 'fillable' }];
 
 afterEach(() => removeFixtures(document));
 
@@ -62,7 +112,8 @@ describe('the Oracle Recruiting Cloud adapter: its hooks on the snapshots', () =
     expect(compareHooks(fixture.doc, oracleAdapter, readHooks(json))).toEqual([]);
   });
 
-  it.each(CASES.filter((each) => readHooks(each.json).detect !== null))('$name: the scan of its root is the expectation',
+  it.each(CASES.filter((each) => readHooks(each.json).detect !== null && each.name !== 'hjf-apply-section'))(
+    '$name: the scan of its root is the expectation',
     async ({ name, html, json, address }) => {
       const scanned = await scanCase(document, html, address);
       expect(scanned.adapter).toBe(oracleAdapter);
@@ -72,6 +123,151 @@ describe('the Oracle Recruiting Cloud adapter: its hooks on the snapshots', () =
       expect(found.filter((each) => !known.some((one) => one.control === each.control && one.property === each.property)))
         .toEqual([]);
     });
+});
+
+// ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+describe("a section page on Oracle's government cloud (the owner's snapshot of 2026-11-06)", () => {
+  const { html, json, address } = CASES[3];
+
+  // The core pass of 2026-11-06: as captured, the form is a panel of rgba(248, 248, 247, 0.75) over the cover image, its
+  // words rgb(90, 108, 119): over any image the panel lies between itself over black and over white, and its words and
+  // boxes read clear against every colour between, so the page reads as it does on plain white.
+  it('reads as the expectation as captured: its translucent panel bounds the cover image under it', async () => {
+    const fixture = await load(html, address);
+    faded(fixture.doc);
+    const result = scan(oracleAdapter.detect(fixture.doc)!.formRoot, oracleAdapter, { platform: 'oracle' });
+    const found = compareWithExpectation(fixture.doc, result, readExpectation(json));
+    for (const each of KNOWN_PLAIN) expect(found, `${each.control} ${each.property}`).toContainEqual(expect.objectContaining(each));
+    expect(found.filter((each) => !KNOWN_PLAIN.some((one) => one.control === each.control && one.property === each.property)))
+      .toEqual([]);
+  });
+
+  it('fails closed under a thinner panel, whose grey words an image under it may hide; black words read on any', async () => {
+    const fixture = await load(html, address);
+    faded(fixture.doc);
+    thinPanel(fixture.doc);
+    const result = scan(oracleAdapter.detect(fixture.doc)!.formRoot, oracleAdapter, { platform: 'oracle' });
+    expect(result.fields.length).toBeGreaterThan(20);
+    const fillable = result.fields.filter((field) => fillabilityOf(field, result.target(field.key)?.widget).fillable);
+    // Every row's label is rgb(90, 108, 119), between the veil's darkest (51) and lightest (255): refused. Three are
+    // worded in black (the drop zone's words and the two agreements), which read even on the veil over black.
+    expect(fillable.map((field) => field.label)).toEqual(['Drop Cover Letter Here',
+      'I agree to receive updates about new job opportunities.', 'I agree to receive marketing communications']);
+  });
+
+  it('reads as the expectation once the image is taken away (labels from the rows, the upload, required pills)', async () => {
+    const fixture = await load(html, address);
+    plain(fixture.doc);
+    faded(fixture.doc);
+    const root = oracleAdapter.detect(fixture.doc)!.formRoot;
+    const result = scan(root, oracleAdapter, { platform: 'oracle' });
+    const found = compareWithExpectation(fixture.doc, result, readExpectation(json));
+    for (const each of KNOWN_PLAIN) expect(found, `${each.control} ${each.property}`).toContainEqual(expect.objectContaining(each));
+    expect(found.filter((each) => !KNOWN_PLAIN.some((one) => one.control === each.control && one.property === each.property)))
+      .toEqual([]);
+  });
+
+  it('is its final step: Submit is its one pagination button, never a Next', async () => {
+    const fixture = await load(html, address);
+    expect(oracleAdapter.isFinalStep!(fixture.doc)).toBe('final');
+    expect(oracleAdapter.submitButton!(fixture.doc.documentElement)).toBe(
+      fixture.doc.querySelector('button.apply-flow-pagination__submit-button'));
+    expect(oracleAdapter.nextButton).toBeUndefined();
+    // The behaviour review of 2026-11-06 (O08): a Submit the page hides is no Submit a person sees, so the step is not
+    // read as final by it.
+    const submit = fixture.doc.querySelector<HTMLElement>('button.apply-flow-pagination__submit-button')!;
+    submit.style.display = 'none';
+    expect(oracleAdapter.submitButton!(fixture.doc.documentElement)).toBeNull();
+    expect(oracleAdapter.isFinalStep!(fixture.doc)).toBe('unknown');
+    submit.style.display = '';
+    expect(oracleAdapter.isFinalStep!(fixture.doc)).toBe('final');
+    // Without its Submit (the gate, the code page) the step says nothing.
+    fixture.doc.querySelector('.apply-flow-pagination')!.remove();
+    expect(oracleAdapter.isFinalStep!(fixture.doc)).toBe('unknown');
+  });
+
+  it("reads the timeline's invalid entry as an error the page shows, and no notification before the Submit", async () => {
+    const fixture = await load(html, address);
+    const root = oracleAdapter.detect(fixture.doc)!.formRoot;
+    const marks = fixture.doc.querySelectorAll('.beautiful-timeline-item--invalid-block');
+    expect(marks.length).toBe(1);
+    // The page's notifications hold no item before a Submit (<notifications><div role="alert" ...> with no list).
+    expect(fixture.doc.querySelectorAll('.notifications').length).toBe(1);
+    expect(fixture.doc.querySelectorAll('li.notifications__item').length).toBe(0);
+    expect(oracleAdapter.errors!(root).map((each) => each.el)).toEqual([marks[0]]);
+  });
+});
+
+// ── behaviour review 2026-11-06 (M4) ──
+describe("the same flow 12 s after its Submit (the owner's later snapshot of 2026-11-06)", () => {
+  const { html, address } = CASES[4];
+  const NOTIFIED = 'li.notifications__item.cx-notifications__item--error';
+
+  /** The Submit's checklist dialog closed, as the page draws it closed before the Submit (hjf-apply-section.html: the
+   *  oj-dialog.apply-flow-checklist-dialog at display none, and no aria-hidden on div.app, which the open modal dialog
+   *  sets). */
+  function closeChecklist(doc: Document): void {
+    for (const dialog of Array.from(doc.querySelectorAll<HTMLElement>('oj-dialog.apply-flow-checklist-dialog'))) {
+      dialog.style.display = 'none';
+    }
+    doc.querySelector('div.app')!.removeAttribute('aria-hidden');
+  }
+
+  it('as captured: the checklist dialog is open over the page, so no form shows and the notification reads as nothing',
+    async () => {
+      const fixture = await load(html, address);
+      const doc = fixture.doc;
+      expect(isUserVisible(doc.querySelector('oj-dialog.apply-flow-checklist-dialog')!)).toBe(true);
+      expect(doc.querySelector('div.app')!.getAttribute('aria-hidden')).toBe('true');
+      expect(oracleAdapter.detect(doc)).toBeNull();
+      expect(oracleAdapter.isFinalStep!(doc)).toBe('unknown');
+      const notified = doc.querySelectorAll(NOTIFIED);
+      expect(notified.length).toBe(1);
+      expect(isUserVisible(notified[0]!)).toBe(false);
+      expect(oracleAdapter.errors!(doc.documentElement).map((each) => each.el)).not.toContain(notified[0]);
+    });
+
+  it('reads the page’s error notification once the dialog closes: no aria-invalid and no timeline mark there', async () => {
+    const fixture = await load(html, address);
+    const doc = fixture.doc;
+    closeChecklist(doc);
+    const root = oracleAdapter.detect(doc)!.formRoot;
+    expect(root.matches('form.apply-flow__content-form')).toBe(true);
+    const notified = doc.querySelector(NOTIFIED)!;
+    expect(notified.querySelector('.notifications__item-message')!.textContent).toBe(
+      'You have 1 issue that needs to be fixed before you can submit your application.');
+    // What the page shows besides: no field marked invalid, the timeline's invalid mark gone.
+    expect(doc.querySelectorAll('[aria-invalid="true"]').length).toBe(0);
+    expect(doc.querySelectorAll('.beautiful-timeline-item--invalid-block').length).toBe(0);
+    expect(oracleAdapter.errors!(root).map((each) => each.el)).toEqual([notified]);
+  });
+
+  it('reads no notification the page hides or took away', async () => {
+    const fixture = await load(html, address);
+    const doc = fixture.doc;
+    closeChecklist(doc);
+    const root = oracleAdapter.detect(doc)!.formRoot;
+    const notified = doc.querySelector<HTMLElement>(NOTIFIED)!;
+    notified.style.display = 'none';
+    expect(oracleAdapter.errors!(root)).toEqual([]);
+    notified.style.display = '';
+    notified.remove();
+    expect(oracleAdapter.errors!(root)).toEqual([]);
+  });
+});
+
+describe("the code page (the owner's snapshot of 2026-11-06)", () => {
+  it('is an email-code pause by its six boxes, at the gate’s own address, and no gate', async () => {
+    const { html, address } = CASES[2];
+    const fixture = await load(html, address);
+    expect(oracleAdapter.authState!(fixture.doc)).toBe('email-code');
+    expect(signInFormOf(oracleAdapter, fixture.doc, 'email-gate')).toBeNull();
+    const root = oracleAdapter.detect(fixture.doc)!.formRoot;
+    expect(detectPause(fixture.doc, root, oracleAdapter)?.kind).toBe('email-code');
+    // The boxes are the sign: without them, no code page.
+    for (const box of Array.from(fixture.doc.querySelectorAll('input.pin-code-input__input'))) box.remove();
+    expect(oracleAdapter.authState!(fixture.doc)).toBeNull();
+  });
 });
 
 describe('the email gate (v3 Phase 7b)', () => {
@@ -90,12 +286,17 @@ describe('the email gate (v3 Phase 7b)', () => {
     for (const el of Array.from(doc.querySelectorAll<HTMLElement>('.apply-flow'))) el.style.backgroundImage = 'none';
   }
 
-  it('refuses the gate as captured: its terms box is reached through a label whose words cannot be read (S6)', async () => {
-    const { fixture, address } = await served();
-    const form = signInFormOf(oracleAdapter, fixture.doc, 'email-gate')!;
-    expect(form.colourUnknown).toEqual([form.email]);
-    expect(signInRefusal(form, new URL(address))).toBe('hidden');
-  });
+  // The core pass of 2026-11-06: the gate's panel over the flow's image bounds what shows behind its words, so its terms
+  // label reads as captured; under a thinner panel it cannot be read, and the gate is refused as before (S6).
+  it('takes the gate as captured, its terms label read through the panel; refuses it where the label cannot be read (S6)',
+    async () => {
+      const { fixture, address } = await served();
+      const form = signInFormOf(oracleAdapter, fixture.doc, 'email-gate')!;
+      expect(form.colourUnknown).toEqual([form.email]);
+      expect(signInRefusal(form, new URL(address))).toBeNull();
+      thinPanel(fixture.doc);
+      expect(signInRefusal(signInFormOf(oracleAdapter, fixture.doc, 'email-gate')!, new URL(address))).toBe('hidden');
+    });
 
   it('takes the gate on a covered tenant, JPMC’s region-less host included (API 5), and refuses it elsewhere and on http',
     async () => {

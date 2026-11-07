@@ -10,14 +10,20 @@ const at = (address: string) => new URL(address);
 const ELHR = 'https://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience';
 const POSTING = `${ELHR}/en/sites/CX_1001/job/12946`;
 const JPMC = 'https://jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/210734835';
+/** A tenant on Oracle's government cloud: the owner's snapshot of 2026-11-06 ([iaaxmg.fa.ocs.oraclegovcloud.com]). */
+const GOV = 'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551';
 
 describe('matchesUrl', () => {
-  it.each([POSTING, JPMC, 'https://fa-abcd-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1'])(
+  it.each([POSTING, JPMC, 'https://fa-abcd-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1',
+    GOV, `${GOV}/apply/section/1`])(
     "takes a tenant's candidate page: %s", (address) => expect(matchesUrl(at(address))).toBe(true));
 
   it.each(['https://elhr.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x',
     'https://www.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/1', `http://elhr.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/x`,
-    'https://elhr.fa.us2.oraclecloud.com:8443/hcmUI/CandidateExperience/x', 'https://elhr.oraclecloud.com/hcmUI/CandidateExperience/x'])(
+    'https://elhr.fa.us2.oraclecloud.com:8443/hcmUI/CandidateExperience/x', 'https://elhr.oraclecloud.com/hcmUI/CandidateExperience/x',
+    // The government cloud: only a tenant's fa.ocs host (the snapshot's), never another of its hosts or a look-alike.
+    'https://iaaxmg.fa.oraclegovcloud.com/hcmUI/CandidateExperience/x', 'https://iaaxmg.fa.us2.oraclegovcloud.com/hcmUI/CandidateExperience/x',
+    'https://iaaxmg.fa.ocs.oraclegovcloud.com/fscmUI/faces/FuseWelcome', 'https://iaaxmg.fa.ocs.oraclegovcloud.com.example.com/hcmUI/CandidateExperience/x'])(
     'refuses %s', (address) => expect(matchesUrl(at(address))).toBe(false));
 });
 
@@ -36,6 +42,9 @@ describe('parseOracleUrl', () => {
       expect(canonicalApplicationUrl(at(address))).toBe(POSTING);
     }
     expect(parseOracleUrl(at(JPMC))).toMatchObject({ board: 'CX_1001', jobId: '210734835', page: 'posting' });
+    // The government cloud's tenant: its section page is the posting's application, keyed on its own host.
+    expect(parseOracleUrl(at(`${GOV}/apply/section/1`))).toEqual({ platform: 'oracle', board: 'CX_2001', jobId: '11551',
+      page: 'application', applicationUrl: GOV });
     expect(canonicalApplicationUrl(at(POSTING))).toBeNull();
   });
 

@@ -94,6 +94,10 @@ export const REASON_CODES = [
   // an extension or anyone's help made it, or a denial that any was used): only the person can say, and the extension
   // is automation itself, so it is never answered, ticked or sent to an AI
   'how-application-made',
+  // the behaviour review of 2026-11-06 (M2): under "Résumé already on the page: Upload mine again", a résumé field the
+  // page shows holding a file while it offers no file input to put the person's in its place (its input disabled, or
+  // gone by the write): left for the person, whose page's own Remove or Replace it is
+  'resume-held-no-input',
   // a bug
   'internal-error',
 ] as const;

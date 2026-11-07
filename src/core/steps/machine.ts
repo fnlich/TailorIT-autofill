@@ -110,6 +110,11 @@ export interface StepFacts {
   /** Profile entries (education, experience) the step's repeatable sections still lack, for the person to add (the
    *  Phase 7a review; absent: 0). Submit mode Auto always holds for them. */
   entriesLeft?: number;
+  /** The snapshot build of 2026-11-06 (core-x, item 2): the required boxes of the form's account section (iCIMS's
+   *  "Create a login") still empty, for the person (or Sign-in Auto) to fill (absent: 0). Auto-advance holds Next for
+   *  them, as for any required field left for the person ('account-left'); the content script counts them among the
+   *  required fields Submit mode Auto's rule reads (requiredEmpty). */
+  accountLeft?: number;
 }
 
 /** What the content script tells the machine. Counts, keys and hashes only: no event carries a value. */
@@ -170,7 +175,9 @@ export const STEP_NOTICES = ['tripwire', 'policy', 'auth', 'captcha', 'page-busy
   // v3 Phase 4: Submit mode Auto held the final Submit back, and why (its notice says so; the person submits).
   'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
   // The Phase 7a review: an attention check left for the person held it, or entries still to add.
-  'submit-held-attention', 'submit-held-entries'] as const;
+  'submit-held-attention', 'submit-held-entries',
+  // The snapshot build of 2026-11-06 (core-x, item 2): the form's account section is the person's, so Next is theirs.
+  'account-left'] as const;
 export type StepNotice = (typeof STEP_NOTICES)[number];
 
 /** Why a run is at review. 'final-step': the adapter says the step is the last (Submit is the person's);
@@ -271,6 +278,9 @@ export interface RunStep {
 /** Why auto-advance would not press Next, in the order they are checked. 'captcha-unsolved': the step shows a CAPTCHA
  *  widget not known to be solved (the Phase 5 review, X-S4 tightened by the coordinator). */
 export const ADVANCE_REFUSALS = ['setting-off', 'final', 'final-unknown', 'no-next', 'errors', 'not-filled',
+  // core-x, item 2: a required box of the form's account section is still empty (StepFacts.accountLeft): checked before
+  // the rows, which never show it, so its notice says why Next is the person's whatever else the step left.
+  'account-left',
   'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled', 'attempts'] as const;
 export type AdvanceRefusal = (typeof ADVANCE_REFUSALS)[number];
 export type AdvanceVerdict = { advance: true } | { advance: false; refusal: AdvanceRefusal };
@@ -366,6 +376,9 @@ export function autoAdvanceVerdict(state: RunState, check: { errors: number; ste
   if (check.errors > 0) return refuse('errors');
   const fill = state.lastFill;
   if (fill === null) return refuse('not-filled');
+  // core-x, item 2: the form's account section still has a required box empty (it is no row: never filled from the
+  // profile), so Next is the person's, as for any required field left for them.
+  if ((step.accountLeft ?? 0) > 0) return refuse('account-left');
   if (fill.flagged > 0) return refuse('flagged');
   if (fill.blocked > 0) return refuse('blocked');
   if (fill.unresolved > 0) return refuse('unresolved');
@@ -606,8 +619,10 @@ function validated(state: RunState, event: Extract<RunEvent, { type: 'VALIDATED'
   }
   const verdict = autoAdvanceVerdict(state, { errors, step: event.step }, ctx);
   if (verdict.advance) return move(enter(state, 'advance'), [{ type: 'press-next' }]);
-  // A CAPTCHA not known solved is the one refusal the person would not expect: the notice says to press Next.
-  const why = verdict.refusal === 'captcha-unsolved' ? [notify('captcha-next')] : [];
+  // A CAPTCHA not known solved is the one refusal the person would not expect: the notice says to press Next. So is an
+  // account section left for them (core-x, item 2), which shows no row.
+  const why = verdict.refusal === 'captcha-unsolved' ? [notify('captcha-next')]
+    : verdict.refusal === 'account-left' ? [notify('account-left')] : [];
   return awaitTransition(state, null, why);
 }
 

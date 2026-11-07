@@ -10,7 +10,7 @@
 // v3 Phase 8 (docs/SPEC-AMENDMENTS.md §12 Decision 13): `scripting` joins the permissions; the optional host permissions
 // are exactly https://*/* and no required host permission is broad; the static content scripts are still the two on
 // the ATS hosts; the sentinel (sentinel.js, an unlisted script the worker registers at run time) is in every build,
-// listed nowhere in the manifest, within its 16 KiB budget, holding no React, no zod and no DOM write; and
+// listed nowhere in the manifest, within its 17 KiB budget, holding no React, no zod and no DOM write; and
 // registrationsFor (src/shared/hosts.ts), read here as the worker reads it, registers that sentinel in the top frame
 // only, on every https page but the ATS hosts and every LinkedIn host (LinkedIn is deferred to v5: nothing of the
 // extension may run there, even with https://*/* granted), inside the optional host permissions.
@@ -27,16 +27,26 @@ const { ATS_MATCHES, CONTENT_SCRIPT_FILE, OPTIONAL_HOST_PERMISSIONS, registratio
   SITES_REGISTRATION_ID } = await import(new URL('../src/shared/hosts.ts', import.meta.url).href);
 const MANIFEST_KEY = readFileSync(join(ROOT, 'keys', 'manifest-key.txt'), 'utf8').trim();
 /** The content script, React included once the in-page panel lands, must stay under this: every file the manifest's
- *  content script lists, together. */
+ *  content script lists, together. The snapshot build's integration (2026-11-06) found it at 1,047,869 bytes in
+ *  production and 1,050,663 in the e2e variant, past the budget; the in-page UI then read only its own words
+ *  (src/shared/copy.ts PAGE_COPY, not the options page's and the side panel's), which made them 1,017,951 and
+ *  1,020,745. */
 const CONTENT_SCRIPT_BUDGET = 1024 * 1024;
 /** The page-world bridge (src/page/bridge.ts and its protocol, and the address parsers it installs by: the v3 Phase
- *  6/7b review, S3) must stay under this. */
-const BRIDGE_BUDGET = 20 * 1024;
+ *  6/7b review, S3) must stay under this. The new ATSs (DESIGN-NEW-ATS §5) raised it from 20 KiB to 30 KiB for their
+ *  fifteen address parsers (src/adapters/address.ts URL_PARSERS): builder C's eight alone were about 4.8 KiB of the
+ *  bundle (16,670 bytes without them, 21,520 with, on Phase 0); with builders A's, B's and C's merged the bundle is
+ *  28,897 bytes in both builds (the integration of 2026-11-06). The snapshot build's core pass Z1 (items 26 and 39)
+ *  slimmed it: the bridge's decision (src/adapters/bridge-address.ts) reads only the parsers of the platforms with a
+ *  host outside the public job hosts (sixteen), so it is 20,921 bytes, under a budget of 24 KiB. */
+const BRIDGE_BUDGET = 24 * 1024;
 /** What the bridge's bundle may never name: the extension's APIs (it runs in the page's world, which has none of
  *  them, and must not look for any) and window messaging. */
 const BRIDGE_NEVER_NAMES = ['chrome.', 'browser.', 'postMessage'];
-/** v3 Phase 8: the sentinel's budget (src/entrypoints/sentinel.ts and what it imports). */
-const SENTINEL_BUDGET = 16 * 1024;
+/** v3 Phase 8: the sentinel's budget (src/entrypoints/sentinel.ts and what it imports). DESIGN-NEW-ATS Phase 0: 16 KiB
+ *  became 17 KiB for the sixteen new ATS match patterns, which the sentinel holds to rule their pages out (shared/hosts.ts
+ *  onAtsMatch, isCompanySiteUrl): about 0.7 KiB of host and path text. */
+const SENTINEL_BUDGET = 17 * 1024;
 /** What the sentinel's bundle may never name: React and zod (it renders and parses nothing), any DOM write, and window
  *  messaging. It reads the page and sends the worker one message. */
 const SENTINEL_NEVER_NAMES = ['react.', '__REACT', 'ZodError', '$ZodType', 'zod', 'createElement', 'appendChild', 'insertBefore',
@@ -211,7 +221,9 @@ const BRIDGE_INSTALLS_AT = ['https://job-boards.greenhouse.io/acme/jobs/4012345'
 const BRIDGE_SILENT_AT = ['https://internal-acme.icims.com/jobs/1/engineer/job',
   'https://performancemanager4.successfactors.com/sf/home', 'https://acme.taleo.net/careersection/2/jobsearch.ftl',
   'https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://wd5.myworkdaysite.com/recruiting/acme/External',
-  'https://careers-acme.icims.com/jobs/search?ss=1', ''];
+  'https://careers-acme.icims.com/jobs/search?ss=1', '',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): a government cloud tenant's own Fusion page ──
+  'https://iaaxmg.fa.ocs.oraclegovcloud.com/fscmUI/faces/FuseWelcome'];
 
 /**
  * The page-world bridge's bundle (src/entrypoints/page-bridge.content.ts): WXT's anonymous wrapper, `(function(){...})();`,
@@ -277,9 +289,26 @@ const LINKEDIN_ADDRESSES = ['https://www.linkedin.com/jobs/view/4012345678/', 'h
   'https://uk.linkedin.com/jobs/search/?currentJobId=4012345678', 'https://lnkd.in/abc', 'https://media.licdn.com/x.js'];
 /** The employee HR systems' hosts (the Phase 8 review, B4), which the registration must exclude too, and addresses on
  *  them it must never reach: a system where a person works for their employer never gets the sentinel. */
-const HR_EXCLUDED = ['https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*', 'https://*.sapsf.eu/*'];
+const HR_EXCLUDED = ['https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*', 'https://*.sapsf.eu/*',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): Oracle's government cloud ──
+  'https://*.oraclegovcloud.com/*',
+  // ── New ATSs (DESIGN-NEW-ATS §4, Phase 0): their employee hosts beside the candidate paths ──
+  'https://workforcenow.adp.com/*', 'https://*.bamboohr.com/*', 'https://www.paycomonline.net/*', 'https://*.clearcompany.com/*',
+  // ── The security fix of 2026-11-06 (S5): the new ATS vendors' employee systems, CareerPlug's employers' host ──
+  'https://*.dayforcehcm.com/*', 'https://*.ultipro.com/*', 'https://*.ukg.net/*', 'https://*.paylocity.com/*',
+  'https://*.paycor.com/*', 'https://*.rippling.com/*', 'https://*.hibob.com/*', 'https://*.adp.com/*',
+  'https://app.careerplug.com/*'];
 const HR_ADDRESSES = ['https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x',
-  'https://wd5.myworkday.com/acme/d/home.htmld', 'https://performancemanager4.sapsf.com/sf/home', 'https://hcm.sapsf.eu/sf/home'];
+  'https://wd5.myworkday.com/acme/d/home.htmld', 'https://performancemanager4.sapsf.com/sf/home', 'https://hcm.sapsf.eu/sf/home',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  'https://iaaxmg.fa.ocs.oraclegovcloud.com/fscmUI/faces/FuseWelcome',
+  // ── New ATSs (DESIGN-NEW-ATS §4, Phase 0) ──
+  'https://workforcenow.adp.com/theme/index.html', 'https://acme.bamboohr.com/home', 'https://www.paycomonline.net/v4/ee/web.php/app/login',
+  'https://acme.clearcompany.com/app/home',
+  // ── The security fix of 2026-11-06 (S5) ──
+  'https://www.dayforcehcm.com/mydayforce/login.aspx', 'https://n12.ultipro.com/default.aspx', 'https://acme.ukg.net/',
+  'https://access.paylocity.com/', 'https://secure.paycor.com/Accounts/Signin', 'https://app.rippling.com/dashboard',
+  'https://app.hibob.com/home', 'https://my.adp.com/', 'https://app.careerplug.com/jobs/1'];
 
 /** Whether a Chrome match pattern (https://<host>/<path>, `*.` a host's first labels) matches an address. */
 function patternMatches(pattern, address) {

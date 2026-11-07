@@ -16,6 +16,7 @@ import { applicationFormOf } from '../../dom/form-score';
 import { newScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { isCompanySiteUrl } from '../../shared/hosts';
+import { originPathAndPosting } from '../ats-address';
 import { genericAdapter } from '../generic';
 import { genericCanonicalUrl } from '../generic/url';
 import type { Adapter } from '../types';
@@ -35,12 +36,10 @@ export function siteCanonicalUrl(url: URL): string | null {
   return matchesSiteUrl(url) ? genericCanonicalUrl(url) : null;
 }
 
-/** The query parameters that name a posting embedded on a company's page (Greenhouse's and Ashby's embeds). */
-const POSTING_PARAMS = ['gh_jid', 'ashby_jid'] as const;
-
 /** The address a company's own page is named to TailorIT by (the Phase 8 review, P3: every lookup, job add and applied
  *  report, background/server-client.ts): its origin and path, and the gh_jid or ashby_jid that names its posting; no
- *  other query parameter and no fragment. Any other address is returned as it is. */
+ *  other query parameter and no fragment (adapters/ats-address.ts originPathAndPosting). Any other address is returned
+ *  as it is. */
 export function addressForTailorIT(url: string): string {
   let parsed: URL;
   try {
@@ -49,12 +48,7 @@ export function addressForTailorIT(url: string): string {
     return url;
   }
   if (!matchesSiteUrl(parsed)) return url;
-  const named = new URL(`${parsed.origin}${parsed.pathname}`);
-  for (const name of POSTING_PARAMS) {
-    const value = parsed.searchParams.get(name);
-    if (value !== null && /^[\w-]{1,64}$/.test(value)) named.searchParams.set(name, value);
-  }
-  return named.href;
+  return originPathAndPosting(parsed);
 }
 
 /** The site's form root by the application-form score, read with the scanner's visibility (one cache per reading). */

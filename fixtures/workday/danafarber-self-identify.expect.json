@@ -1,0 +1,101 @@
+{
+  "fixture": "workday/danafarber-self-identify",
+  "source": "https://danafarber.wd5.myworkdayjobs.com/en-US/dana-farbernonrecruit/job/Boston-Job-Posting-Location/Software-Engineer-II_JR-8845/apply/autofillWithResume",
+  "captured": "2026-11-06T15:13:22.000Z",
+  "fields": [
+    {
+      "label": "Language",
+      "kind": "combobox",
+      "required": true,
+      "section": "self-identify",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"selfIdentifiedDisabilityData--disabilityForm\"]"
+    },
+    {
+      "label": "Name",
+      "kind": "text",
+      "required": false,
+      "section": "self-identify",
+      "fillable": true,
+      "control": "input[id=\"selfIdentifiedDisabilityData--name\"]"
+    },
+    {
+      "label": "Employee ID (if applicable)",
+      "kind": "text",
+      "required": false,
+      "section": "self-identify",
+      "fillable": true,
+      "control": "input[id=\"selfIdentifiedDisabilityData--employeeId\"]"
+    },
+    {
+      "label": "Please check one of the boxes below",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "self-identify",
+      "fillable": true,
+      "options": 3,
+      "control": "[data-automation-id=\"formField-disabilityStatus\"] input[type=\"checkbox\"]"
+    },
+    {
+      "label": "a date part",
+      "kind": "date",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-automation-id=\"dateInputWrapper\"] input[role=\"spinbutton\"]",
+      "note": "Workday's date input: each part an input[role=spinbutton] drawn 1 px wide at scale(0.01) and z-index -1000 under its aria-hidden display (MM, DD, YYYY). A person cannot see it, so it is never a field; a required date is the person's, and Next waits for it."
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"legalNoticeAcceptButton\"]",
+      "[data-automation-id=\"legalNoticeDeclineButton\"]",
+      "[data-automation-id=\"dateIcon\"]",
+      "[data-automation-id=\"utilityMenuButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Self Identify",
+      "progress": "current step 7 of 8",
+      "anchors": [
+        "applyFlowSelfIdentifyPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"selfIdentifiedDisabilityData--disabilityForm\"]",
+        "kind": "combobox",
+        "answered": true
+      }
+    ],
+    "repeatables": []
+  }
+}

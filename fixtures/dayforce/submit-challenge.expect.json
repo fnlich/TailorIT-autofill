@@ -1,0 +1,31 @@
+{
+  "fixture": "dayforce/submit-challenge",
+  "source": "https://jobs.dayforcehcm.com/savealot/candidateportal/jobs/9234/apply/manualApplication?applicationSource=Manual&clientNamespace=savealot&careerSiteXRefCode=candidateportal&id=9234&step=2",
+  "captured": "2026-11-06T15:05:55.000Z",
+  "fields": [
+    {
+      "label": "I agree to the Candidate Acknowledgement",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Candidate Acknowledgement",
+      "fillable": true,
+      "control": "input#jobPostingApplication_userAcknowledged",
+      "note": "Drawn over an opacity-0 input: its wrapping label stands for it; ant-checkbox-wrapper-checked shows it ticked (checked)."
+    }
+  ],
+  "hooks": {
+    "detect": "div#jobPostingApplication",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button[test-id=\"application-cancel\"]",
+      "button[test-id=\"application-previous-step\"]"
+    ],
+    "pressable": [
+      "button[test-id=\"application-submit\"]"
+    ]
+  }
+}

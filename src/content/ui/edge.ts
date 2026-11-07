@@ -18,7 +18,7 @@
  * the page UI's visibility rule; the audit of 2026-11-06, S-1): a menu just opened takes its items' clicks 600 ms on.
  * Nothing here reads or writes the page's own DOM; the tab lives in the closed shadow root.
  */
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import { ICONS } from '../../shared/icons';
 import { svgOf } from './svg';
 
@@ -74,8 +74,8 @@ export function createEdge(doc: Document, launcher: HTMLElement, handlers: EdgeH
   const close = doc.createElement('button');
   close.type = 'button';
   close.className = 'edge__close';
-  close.setAttribute('aria-label', COPY.launcherHide.open);
-  close.title = COPY.launcherHide.open;
+  close.setAttribute('aria-label', PAGE_COPY.launcherHide.open);
+  close.title = PAGE_COPY.launcherHide.open;
   close.setAttribute('aria-haspopup', 'menu');
   close.setAttribute('aria-expanded', 'false');
   close.append(svgOf(doc, ICONS.close, 12));
@@ -83,16 +83,16 @@ export function createEdge(doc: Document, launcher: HTMLElement, handlers: EdgeH
   const grip = doc.createElement('button');
   grip.type = 'button';
   grip.className = 'edge__grip';
-  grip.setAttribute('aria-label', COPY.launcherMove);
-  grip.title = COPY.launcherMove;
+  grip.setAttribute('aria-label', PAGE_COPY.launcherMove);
+  grip.title = PAGE_COPY.launcherMove;
   grip.append(svgOf(doc, ICONS.grip, 14));
 
   const menu = doc.createElement('div');
   menu.className = 'edge__menu';
   menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', COPY.launcherHide.open);
+  menu.setAttribute('aria-label', PAGE_COPY.launcherHide.open);
   menu.hidden = true;
-  const words = COPY.launcherHide;
+  const words = PAGE_COPY.launcherHide;
   const scopes: Array<{ scope: HideScope; text: string }> = [
     { scope: 'next-visit', text: words.nextVisit }, { scope: 'site', text: words.site },
     { scope: 'everywhere', text: words.everywhere }];

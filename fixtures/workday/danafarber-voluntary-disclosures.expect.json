@@ -1,0 +1,96 @@
+{
+  "fixture": "workday/danafarber-voluntary-disclosures",
+  "source": "https://danafarber.wd5.myworkdayjobs.com/en-US/dana-farbernonrecruit/job/Boston-Job-Posting-Location/Software-Engineer-II_JR-8845/apply/autofillWithResume",
+  "captured": "2026-11-06T17:29:32.000Z",
+  "fields": [
+    {
+      "label": "Please select a gender.",
+      "kind": "combobox",
+      "required": false,
+      "section": "voluntary-disclosures",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"personalInfoUS--gender\"]"
+    },
+    {
+      "label": "If you identify with one or more ethnic groups please choose from the list below.",
+      "kind": "checkbox-group",
+      "required": false,
+      "section": "voluntary-disclosures",
+      "fillable": true,
+      "options": 8,
+      "control": "[data-automation-id=\"formField-ethnicityMulti\"] input[type=\"checkbox\"]"
+    },
+    {
+      "label": "If you believe you belong to any of the categories of protected veterans listed below, please indicate by checking the appropriate box below. Submission of this information is voluntary and failing to provide it will not adversely affect your application. The information provided in response will be",
+      "kind": "combobox",
+      "required": false,
+      "section": "voluntary-disclosures",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"personalInfoUS--veteranStatus\"]"
+    },
+    {
+      "label": "I acknowledge and agree to these terms and conditions",
+      "kind": "checkbox",
+      "required": true,
+      "section": "terms-and-conditions",
+      "fillable": true,
+      "control": "input[id=\"termsAndConditions--acceptTermsAndAgreements\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"legalNoticeAcceptButton\"]",
+      "[data-automation-id=\"legalNoticeDeclineButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Voluntary Disclosures",
+      "progress": "current step 6 of 8",
+      "anchors": [
+        "applyFlowVoluntaryDisclosuresPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"personalInfoUS--gender\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"personalInfoUS--veteranStatus\"]",
+        "kind": "combobox",
+        "answered": false
+      }
+    ],
+    "repeatables": []
+  }
+}

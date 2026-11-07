@@ -40,7 +40,10 @@ const IDENTITY: Record<'lever' | 'greenhouse', Array<{ label: string; value: str
 const FILL_ONLY: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['verify-mismatch', 'widget-unsupported', 'needs-your-click',
   'unexpected-selection', 'element-not-found', 'disabled-or-readonly', 'value-rejected-by-site', 'format-unsupported',
   'maxlength-exceeded', 'pdf-only-input', 'resume-unavailable', 'resume-transfer-failed', 'resume-format-unsupported',
-  'field-disappeared', 'value-oscillated', 'page-busy', 'options-never-loaded']);
+  'field-disappeared', 'value-oscillated', 'page-busy', 'options-never-loaded',
+  // A file the page never shows as attached (Greenhouse's uploadState, the snapshot build of 2026-11-06: confirmed once
+  // the group shows the file's name beside "Remove file", which a static snapshot never draws). Only the fill uploads.
+  'upload-not-confirmed']);
 
 /** Spotify's marketing consent box (fixtures/lever/spotify-ny.expect.json). */
 const SPOTIFY_MARKETING = 'Spotify has my consent to contact me about future job opportunities.';

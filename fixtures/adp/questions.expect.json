@@ -1,0 +1,132 @@
+{
+  "fixture": "adp/questions",
+  "source": "https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001&jobId=590196&requisitionId=9207368240764_11&lang=en_US&params=jobId&OTP_login=true",
+  "captured": "2026-11-06T15:25:55.000Z",
+  "fields": [
+    {
+      "label": "Are you legally authorized to work in the USA?",
+      "kind": "radio",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-1-label\"]"
+    },
+    {
+      "label": "This position requires you to obtain and maintain a US Government Security Clearance, which requires US citizenship. Do you meet this requirement?",
+      "kind": "radio",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-2-label\"]"
+    },
+    {
+      "label": "Do you have a security clearance? If yes, please indicate which type (Hold CTRL to select multiple)",
+      "kind": "multiselect",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#question_2"
+    },
+    {
+      "label": "Will you now or in the future require immigration sponsorship for employment visa status?",
+      "kind": "radio",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-3-label\"]"
+    },
+    {
+      "label": "If you do not have a government security clearance, are you eligible to obtain and maintain one?",
+      "kind": "radio",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-4-label\"]"
+    },
+    {
+      "label": "Have you ever been employed by VSolvit before?",
+      "kind": "radio",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-5-label\"]"
+    },
+    {
+      "label": "Have you ever been employed as a civilian employee at a government agency?",
+      "kind": "radio",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-6-label\"]"
+    },
+    {
+      "label": "Do you have experience supporting federal, DoD or defense contractor programs?",
+      "kind": "radio",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-7-label\"]"
+    },
+    {
+      "label": "Based on the salary range provided in the job description for this role, what are your salary expectations?",
+      "kind": "text",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "control": "input#question_8"
+    },
+    {
+      "label": "Select currency type",
+      "kind": "combobox",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#question_currency_type_8",
+      "note": "The salary's currency react-select, named by its own aria-label (shown in its placeholder)."
+    },
+    {
+      "label": "Please explain how your experience and background would make you a good candidate for this position.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "control": "textarea#question_9"
+    },
+    {
+      "label": "Did any of our employees inform you about this position?",
+      "kind": "radio",
+      "required": false,
+      "section": "Please answer the following questions:",
+      "fillable": true,
+      "options": 2,
+      "control": "div#refferalOptions",
+      "note": "The referral question: two wfn-radio-button hosts (widgetRoots, widgetFor), each holding its role=radio in a shadow root; no light-DOM attribute shows the choice, so a press reads back as needs-your-click."
+    }
+  ],
+  "hooks": {
+    "detect": "#jobApplicationSubmit",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button#finishLaterApplication",
+      "button#ja_sv_cw_prev_footer_btn",
+      "#ja_sv_exit_btn",
+      ".mdf-segmented-wizard-header-item"
+    ],
+    "pressable": [
+      "button#ja_sv_cw_next_footer_btn"
+    ]
+  }
+}

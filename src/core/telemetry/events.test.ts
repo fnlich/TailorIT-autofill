@@ -46,7 +46,9 @@ describe('the anonymous counters', () => {
     expect(isTelemetryEvent(event)).toBe(true);
     expect(isTelemetryEvent({ ...event, v: 1 })).toBe(false);
     expect(isTelemetryEvent({ ...event, label: 'Email' })).toBe(false);
-    expect(isTelemetryEvent({ ...event, platform: 'smartrecruiters' })).toBe(false);
+    // ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters is a platform now (and BambooHR, a new ATS); one that is
+    // neither is not ──
+    expect(isTelemetryEvent({ ...event, platform: 'teamtailor' })).toBe(false);
     expect(isTelemetryEvent({ ...event, fieldKind: 'password' })).toBe(false);
     expect(isTelemetryEvent({ ...event, outcome: 'maybe' })).toBe(false);
     expect(isTelemetryEvent({ ...event, tripwireTriggered: 'no' })).toBe(false);

@@ -1,0 +1,34 @@
+{
+  "fixture": "workday/verily-sign-in-verify",
+  "source": "https://verily.wd1.myworkdayjobs.com/en-US/verily_careers/login?redirect=%2Fen-US%2Fverily_careers%2Fjob%2FDallas%252C-Texas%2FSecurity-Operations-Tech-Lead_REQ-966%2Fapply%2FautofillWithResume",
+  "captured": "2026-11-06T14:59:19.000Z",
+  "fields": [],
+  "note": "The tenant's /login page (no application: url.ts reads no posting there), reached after a new account, before its email was verified: the account view above its form shows <div data-automation-id=\"errorMessage\" role=\"alert\"> \"Verify your account before you sign in or request a verification email.\" and \"Resend Account Verification\" (informationalBlurbButton, never pressed). No flow page, so no form root; the account hooks read it all the same. Its glass panel's wd-LoadingPanel is drawn hidden (data-automation-hidden=\"true\").",
+  "hooks": {
+    "detect": null,
+    "authState": "sign-in",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "sign-in",
+      "email": "input[data-automation-id=\"email\"]",
+      "password": "input[data-automation-id=\"password\"]",
+      "confirm": null,
+      "terms": [],
+      "button": "[data-automation-id=\"click_filter\"]",
+      "form": "form[data-automation-id=\"signInFormo\"]",
+      "scriptSubmits": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"createAccountLink\"]",
+      "[data-automation-id=\"forgotPasswordLink\"]",
+      "[data-automation-id=\"informationalBlurbButton\"]",
+      "[data-automation-id=\"legalNoticeAcceptButton\"]",
+      "[data-automation-id=\"legalNoticeDeclineButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"click_filter\"]"
+    ]
+  }
+}

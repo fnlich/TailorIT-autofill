@@ -44,7 +44,16 @@ describe('the side panel in TailorIT’s look', () => {
     // v3 Phase 5.
     expect([...menu.querySelectorAll<HTMLElement>('[data-setting-group]')].map((group) => group.dataset.settingGroup))
       .toEqual(['modes.signIn', 'modes.next', 'modes.afterPageTurn', 'modes.submit', 'modes.recordOwn', 'modes.consents',
-        'modes.ai', 'view', 'modes.agentSkip']);
+        'modes.ai', 'modes.resumeOnPage', 'view', 'modes.agentSkip']);
+    // The behaviour review of 2026-11-06: "Résumé already on the page" beside the other modes, its choices and help
+    // the options page's.
+    const resume = menu.querySelector<HTMLElement>('[data-setting-group="modes.resumeOnPage"]')!;
+    expect([resume.querySelector('legend')?.textContent, ...[...resume.querySelectorAll('label')].map((label) => label.textContent),
+      resume.querySelector('.tia-mode__help')?.textContent]).toEqual([COPY.options.modes.resumeOnPage.name,
+      COPY.options.modes.resumeOnPage.keep, COPY.options.modes.resumeOnPage.upload, COPY.options.modes.resumeOnPage.help]);
+    expect(menu.querySelector<HTMLInputElement>('input[data-setting="modes.resumeOnPage.keep"]')!.checked).toBe(true);
+    await click(menu.querySelector<HTMLInputElement>('input[data-setting="modes.resumeOnPage.upload"]'));
+    expect(worker.sentOfType('settings/save').at(-1)?.settings).toMatchObject({ modes: { resumeOnPage: 'upload' } });
     const all = menu.querySelector<HTMLAnchorElement>('a[data-open-settings]')!;
     expect([all.getAttribute('href'), all.target, all.textContent])
       .toEqual(['chrome-extension://memory-extension/options.html#settings-modes', '_blank', COPY.panel.allSettings]);
@@ -102,13 +111,28 @@ describe('the side panel in TailorIT’s look', () => {
     const unsupported = await open(elsewhere, 5);
     const section = unsupported.querySelector<HTMLElement>('[data-unsupported]')!;
     expect(section.querySelector('h2')?.textContent).toBe(COPY.panel.unsupported.heading);
-    // Workable is listed since v3 Phase 7a; Workday, iCIMS, Taleo, SuccessFactors and Oracle since v3 Phases 6 and 7b,
-    // each saying its application forms are still to come.
+    // Workable is listed since v3 Phase 7a; Workday, iCIMS, Taleo, SuccessFactors and Oracle since v3 Phases 6 and 7b.
+    // Since the owner's snapshots of 2026-11-06 Workday's, iCIMS's and Oracle's application forms are read, each note
+    // saying what is left to the person, while Taleo's and SuccessFactors' still say their forms are to come;
+    // SmartRecruiters follows them, then the new ATSs of DESIGN-NEW-ATS (Phase 0).
     expect([...section.querySelectorAll('.tia-unsupported__name')].map((name) => name.textContent))
       .toEqual(['Greenhouse', 'Lever', 'Ashby', 'Workable', 'Workday', 'iCIMS', 'Taleo', 'SuccessFactors',
-        'Oracle Recruiting Cloud']);
+        'Oracle Recruiting Cloud', 'SmartRecruiters', 'Jobvite', 'JazzHR', 'BambooHR', 'Rippling', 'Breezy HR', 'CareerPlug',
+        'Pinpoint', 'Paycor', 'HiBob', 'UltiPro (UKG Pro)', 'Dayforce', 'Paylocity', 'Dice', 'ClearCompany', 'ADP Workforce Now']);
+    // Each site's note as the copy writes it. The new ATSs (DESIGN-NEW-ATS §5): every one's adapter has landed (builders
+    // A, B and C), so none carries Phase 0's standard-rules draft note; nor does SmartRecruiters.
+    const notes = COPY.panel.unsupported.sites.map((site) => site.note);
     expect([...section.querySelectorAll('.tia-unsupported__site')].map((site) => site.querySelector('.tia-unsupported__note')
-      ?.textContent ?? null)).toEqual([null, null, null, null, ...Array(5).fill(COPY.panel.unsupported.sites[4]!.note)]);
+      ?.textContent ?? null)).toEqual(notes);
+    const [workday, icims, taleo, successFactors, oracle] = notes.slice(4, 9);
+    expect(notes.slice(0, 4)).toEqual([null, null, null, null]);
+    expect(notes.slice(9)).toEqual(Array(16).fill(null));
+    // Workday's, iCIMS's and Oracle's application forms are no longer "coming" (core-x, item 9, and the docs pass), and
+    // each says something of its own; Taleo's and SuccessFactors' share the note that they are.
+    for (const note of [workday, icims, oracle]) expect(note).not.toMatch(/coming/);
+    expect(new Set([workday, icims, oracle, taleo]).size).toBe(4);
+    expect(taleo).toMatch(/coming/);
+    expect(successFactors).toBe(taleo);
     // The Phase 8 review (B10): it says where Company career sites works too.
     expect([...section.querySelectorAll('.tia-help')].map((help) => help.textContent)).toContain(COPY.panel.unsupported.companySites);
     // Nothing to fill there: no Autofill, no custom question.

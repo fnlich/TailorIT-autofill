@@ -1,0 +1,5 @@
+{
+  "https://jobs.ashbyhq.com/rivianvw.tech/3308832c-0b02-4086-a610-2371532e5e99/application": "fixtures/ashby/rivian-submitting.html",
+  "https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1&k=6LezdY0tAAAAAEnollNLCAI0z1VDGwM7AzGrU4XZ&co=aHR0cHM6Ly9qb2JzLmFzaGJ5aHEuY29tOjQ0Mw..&hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&size=invisible&anchor-ms=20000&execute-ms=30000&cb=v75284enxn7v": "fixtures/ashby/rivian-submitting.third-party-frame.html",
+  "https://www.recaptcha.net/recaptcha/enterprise/bframe?hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&k=6LezdY0tAAAAAEnollNLCAI0z1VDGwM7AzGrU4XZ&bft=REDACTED": "fixtures/ashby/rivian-submitting.third-party-frame.html"
+}

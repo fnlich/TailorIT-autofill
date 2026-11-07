@@ -123,7 +123,7 @@ describe('settings', () => {
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
-      version: 4, panel: 'in-page', view: 'expanded',
+      version: 5, panel: 'in-page', view: 'expanded',
       // Auto-advance became the Next mode; version 3's `all` answers took their default (All), and act only while
       // answers are on; the other modes take theirs.
       modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' },
@@ -161,8 +161,38 @@ describe('settings', () => {
       expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
     }
     expect(DEFAULT_SETTINGS.modes).toEqual({ signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual',
-      recordOwn: 'on', consents: 'all', ai: 'all', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
+      recordOwn: 'on', consents: 'all', ai: 'all', resumeOnPage: 'keep',
+      agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
     expect(DEFAULT_SETTINGS.view).toBe('expanded');
+  });
+
+  it('migrates version 4 settings to version 5’s, every choice kept and "Résumé already on the page" Keep it, and stores them (the behaviour review of 2026-11-06)', async () => {
+    const { resumeOnPage: _added, ...v4modes } = CHOSEN.modes;
+    const v4 = { ...CHOSEN, version: 4, modes: { ...v4modes, recordOwn: 'off', submit: 'auto' } };
+    const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v4 }) });
+    const expected = { ...CHOSEN, modes: { ...CHOSEN.modes, recordOwn: 'off', submit: 'auto', resumeOnPage: 'keep' } };
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: expected } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+    // A version 4 value from before "Record applications I submit myself" reads it as on, too.
+    const { recordOwn: _older, ...older } = v4modes;
+    const oldest = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1':
+      { ...v4, modes: older } }) });
+    expect(await oldest.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
+      data: { settings: { version: 5, modes: { recordOwn: 'on', resumeOnPage: 'keep' } } } });
+  });
+
+  it('saves "Upload mine again", and refuses a version 5 value without "Résumé already on the page" or with a choice it does not know', async () => {
+    const worker = await startTestWorker();
+    const upload = { ...CHOSEN, modes: { ...CHOSEN.modes, resumeOnPage: 'upload' as const } };
+    expect(await worker.deliver({ v: 1, type: 'settings/save', settings: upload }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: upload } });
+    const { resumeOnPage: _gone, ...without } = CHOSEN.modes;
+    for (const modes of [without, { ...CHOSEN.modes, resumeOnPage: 'replace' }]) {
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN, modes } }, OPTIONS))
+        .toEqual({ ok: false, error: 'bad_message' });
+    }
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': upload });
   });
 
   it('keeps the AI off for a person who turned it off in version 1: no drafts, no answers (the Phase E review, MINOR 4)', async () => {

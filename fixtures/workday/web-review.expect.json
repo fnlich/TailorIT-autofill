@@ -1,0 +1,36 @@
+{
+  "fixture": "workday/web-review",
+  "source": "https://web.wd1.myworkdayjobs.com/en-US/externalcareersite/job/United-States---Remote/Senior-Backend-Engineer_R15417/apply/autofillWithResume",
+  "captured": "2026-11-06T14:49:34.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Review",
+      "progress": "current step 7 of 7",
+      "anchors": [
+        "applyFlowReviewPage"
+      ]
+    },
+    "final": "final",
+    "next": null,
+    "submit": "[data-automation-id=\"pageFooterNextButton\"]",
+    "widgets": [],
+    "repeatables": []
+  }
+}

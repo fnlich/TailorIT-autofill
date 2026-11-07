@@ -151,8 +151,9 @@ export function createAnswerHandlers(deps: AnswerDeps) {
       scope: company === null ? '' : scopeOf(company),
       fieldKind: row.kind,
       questionLabel: row.label,
-      // A platform TailorIT's contract does not name yet (iCIMS, Taleo, SuccessFactors, Oracle) is no platform it keeps:
-      // the answer is saved without one.
+      // A platform TailorIT's contract does not name (since its API 6, `site` alone: a company's own page) is no
+      // platform it keeps: the answer is saved without one. Every ATS's answer keeps its own (the new ATSs' and
+      // SmartRecruiters' since API 6).
       platform: PLATFORMS_AHEAD_OF_CONTRACT.includes(report.platform) ? null : report.platform,
       answer: value.answer,
       category: serverCategoryOf(row.category),

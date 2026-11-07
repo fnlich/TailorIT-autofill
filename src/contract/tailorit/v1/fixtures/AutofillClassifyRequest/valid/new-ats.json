@@ -1,0 +1,10 @@
+{
+  "platform": "jobvite",
+  "items": [
+    {
+      "key": "jobvite|main|current-city|none|0",
+      "kind": "text",
+      "label": "Current city"
+    }
+  ]
+}

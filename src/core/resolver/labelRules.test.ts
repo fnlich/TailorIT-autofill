@@ -434,8 +434,10 @@ function deadCharacters(source: string): string[] {
 }
 
 describe('the patterns over normalized labels', () => {
-  /** The patterns that read text before normalization: the raw label ("Why Acme?"), attribute text, section ids. */
-  const RAW_TEXT = /WHY_NAME =|OTHER_PERSON_ID =|\(\[a-z0-9\]\)\(\[A-Z\]\)/;
+  /** The patterns that read text before normalization: the raw label ("Why Acme?"), attribute text, section ids, and
+   *  where a passage breaks into sentences before each is normalized (classifyRules SENTENCE_BREAK, the core pass of
+   *  2026-11-06). */
+  const RAW_TEXT = /WHY_NAME =|OTHER_PERSON_ID =|SENTENCE_BREAK =|\(\[a-z0-9\]\)\(\[A-Z\]\)/;
 
   it('need no character normalizeLabel always removes, but the one the design’s AI line still writes', () => {
     const dead = ['./labelRules.ts', './classifyRules.ts'].flatMap((file) => patternsIn(file))
@@ -1012,5 +1014,16 @@ describe('an "I did not use AI" statement (the Phase E review, M5)', () => {
       // Still an AI attestation to the consent policy, which nothing ticks.
       expect(labelHit(text, 'checkbox')?.consentKinds, text).toContain('consent.aiAttestation');
     }
+  });
+
+  // The core pass of 2026-11-06: Dropzone's AI policy on Greenhouse (the owner's snapshot of 2026-11-06) denies AI in two
+  // joined participles, its AI term six words past "not".
+  it('reads a denial in two joined participles (Dropzone\'s), and no warning that names them', () => {
+    for (const text of ['all responses provided are my own original work and were not generated or substantially '
+      + 'assisted by any ai tool', 'my answers were not written or assisted by ai']) {
+      expect(attestsNoAiUse(text), text).toBe(true);
+    }
+    // A warning about such work states nothing of the applicant's.
+    expect(attestsNoAiUse('answers generated or assisted by ai tools will be rejected')).toBe(false);
   });
 });

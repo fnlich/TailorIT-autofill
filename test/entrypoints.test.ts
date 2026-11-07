@@ -40,12 +40,17 @@ describe('entrypoints', () => {
   });
 
   it('keep the page-world bridge to the bridge, its protocol, the hosts and the address parsers: no zod, no React', () => {
-    expect(importsOf(PAGE_BRIDGE)).toEqual(['wxt/utils/define-content-script', '../adapters/address', '../page/bridge',
-      '../shared/hosts']);
+    // The snapshot build of 2026-11-06 (core pass Z1, items 26 and 39): the bridge reads adapters/bridge-address.ts, which
+    // holds only the shared domains' parsers; adapters/address.ts re-exports it.
+    expect(importsOf(PAGE_BRIDGE)).toEqual(['wxt/utils/define-content-script', '../adapters/bridge-address',
+      '../page/bridge', '../shared/hosts']);
     // The v3 Phase 6/7b review (S3): the address reading the bridge installs by holds no adapter and no DOM code.
+    const bridgeAddress = importsOf(join(ENTRYPOINTS, '..', 'adapters', 'bridge-address.ts'));
+    expect(bridgeAddress.filter((source) => !/^\.\/[a-z]+\/url$/.test(source))).toEqual(['../core/enums',
+      '../shared/hosts', './application-key']);
     const address = importsOf(join(ENTRYPOINTS, '..', 'adapters', 'address.ts'));
     expect(address.filter((source) => !/^\.\/[a-z]+\/url$/.test(source))).toEqual(['../core/enums', '../shared/hosts',
-      './application-key']);
+      './application-key', './bridge-address']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'shared', 'hosts.ts'))).toEqual(['../core/enums']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'page', 'bridge.ts'))).toEqual(['../dom/bridge-protocol']);
     expect(importsOf(join(ENTRYPOINTS, '..', 'dom', 'bridge-protocol.ts'))).toEqual([]);

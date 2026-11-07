@@ -1,0 +1,169 @@
+{
+  "fixture": "adp/personal",
+  "source": "https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001&jobId=590196&requisitionId=9207368240764_11&lang=en_US&params=jobId&OTP_login=true",
+  "captured": "2026-11-06T15:25:14.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#personalInfomationFirstName"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#personalInfomationMiddleName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#personalInfomationLastName"
+    },
+    {
+      "label": "I have a preferred or chosen name",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#checkbox_000000000000000000001",
+      "note": "Its label[for] is empty: the visible words are a span beside the .vdl-checkbox (labelFor); the empty label stands for the hidden box (proxies)."
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#personalInfomationEmail",
+      "note": "Disabled: the account is signed in with it (adp-1)."
+    },
+    {
+      "label": "Mobile Number",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#personalInfomationMobileNumberError",
+      "note": "The tel box's own aria-label is \"Phone Number\"; its label is the div.mdf-label's label before its role=group (labelFor), whose star says required. Its country select (name=phoneCountry) is a hidden overlay: never a field."
+    },
+    {
+      "label": "(Optional) I would like to receive text messages to this number about my job application. I can change my text notification preferences at any time. Message and data rates may apply.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#checkbox_000000000000000000002"
+    },
+    {
+      "label": "Home Phone Number",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#personalInfomationMobileNumberErrorMessage",
+      "note": "As Mobile Number, no star."
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#PersonalAddress_country",
+      "note": "react-select (MDFSelectBox), chosen through the page-world bridge; its list is in no snapshot."
+    },
+    {
+      "label": "Address Line 1",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#PersonalAddress_address_line1"
+    },
+    {
+      "label": "Address Line 2",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#PersonalAddress_address_line2"
+    },
+    {
+      "label": "Address Line 3",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#PersonalAddress_address_line3"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#PersonalAddress_city"
+    },
+    {
+      "label": "State / Territory",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#PersonalAddress_state"
+    },
+    {
+      "label": "Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "input#PersonalAddress_postalCode"
+    },
+    {
+      "label": "phone country",
+      "kind": "select",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "select[name=\"phoneCountry\"]",
+      "note": "Both phones' country selects: hidden overlays."
+    },
+    {
+      "label": "react-select required shim",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "input.css-1a0ro4n-requiredInput",
+      "note": "react-select's aria-hidden required input."
+    }
+  ],
+  "hooks": {
+    "detect": "#jobApplicationSubmit",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "#ja_sv_exit_btn",
+      ".mdf-segmented-wizard-header-item"
+    ],
+    "pressable": [
+      "button#ja_sv_cw_next_footer_btn"
+    ]
+  }
+}

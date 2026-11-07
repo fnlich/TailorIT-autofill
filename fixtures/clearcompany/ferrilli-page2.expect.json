@@ -1,0 +1,659 @@
+{
+  "fixture": "clearcompany/ferrilli-page2",
+  "source": "https://ferrilli.clearcompany.com/careers/jobs/5b431c56-73cc-fc8f-6dcd-00326e07264a/apply/e1158680-dfe1-e362-4721-174afa94cb63",
+  "captured": "2026-11-06T17:31:23.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"6b258b81-3016-0fa0-f9a2-30107030489b\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"32ec00de-4f03-4f67-752d-4d2288bb6031\"]"
+    },
+    {
+      "label": "Street Address",
+      "kind": "text",
+      "required": false,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"d34bbdc3-8291-f9d0-7c75-524596b6ea09\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"d90a10ee-7f61-8613-ecd1-b7f788ce54cc\"]"
+    },
+    {
+      "label": "State or Province",
+      "kind": "select",
+      "required": false,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "options": 57,
+      "control": "[id=\"7b209907-3e09-f73e-7961-994dd06793cb\"]"
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": false,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"c41f59a0-5b27-d920-3d87-baca8a38b859\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "options": 250,
+      "control": "[id=\"d7efe7ab-1073-60f8-e40d-21af3bd6816b\"]"
+    },
+    {
+      "label": "Ferrilli Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"af2b082c-d939-6e50-4dd2-5cafe8c20c43\"]"
+    },
+    {
+      "label": "Primary Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"f60957d0-8aa9-94bf-f755-2b1d4689c28e\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "radio",
+      "required": true,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "options": 4,
+      "control": "input[name=\"76906952-9eea-e30d-f88a-2a6210c17af5-0\"]"
+    },
+    {
+      "label": "Secondary Phone Number",
+      "kind": "text",
+      "required": false,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "control": "[id=\"6eb37098-2e18-064f-0412-aa94806ec66e\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "radio",
+      "required": false,
+      "section": "APPLICANT INFORMATION",
+      "fillable": true,
+      "options": 4,
+      "control": "input[name=\"e67abf90-0d12-cb1c-d49b-3e1065745f40-0\"]"
+    },
+    {
+      "label": "Are you authorized to work in the US without a sponsor visa?",
+      "kind": "radio",
+      "required": false,
+      "section": "Additional Information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"a3f5bce9-fca2-72a0-6f28-1152a9206c85-0\"]"
+    },
+    {
+      "label": "Company Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"87977d19-cf17-123c-4ac9-4e73751925f3\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "Company Phone",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"26aa5e8a-77d7-d82e-b44d-018c2e062cd0\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"fa11a1c0-ea0c-0d13-f1f4-8aa6fc2e6842\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"bc16a0ee-204a-0961-5d55-b38c89ada28b\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "State",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"ec724013-edc6-1454-55eb-a0004a382c3e\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "Position Title",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"2dacf80d-2195-9747-b052-cf5ff2accbc4\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "Description, Duties, and Responsibilities",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"83902c16-0900-525e-abf6-ca9ad5b9ef5f\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "Start Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"62a477e1-abc0-5348-9e88-85bcf9d7f753\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "End Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"cf3a4f1b-b44a-8456-8818-8fab9fdf969d\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "Supervisor's Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"10f7df8a-76ba-0795-b231-3133e3a08d5d\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "May we contact for a reference?",
+      "kind": "radio",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"188ce0ff-14be-b3bc-1912-c710fdbc392f-0\"]",
+      "note": "repeated row 0 of experience"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"72d8681f-e0fa-1d9b-2ff7-d4b32bcd2b97\"][data-group=\"0\"]",
+      "note": "repeated row 0 of experience: every row reuses this row's ids, so the browser ties all four rows' label[for] to this control; the scanner reads a repeated id's label[for] within the control's own row (dom/labels.ts explicitLabels, core pass Z2 of 2026-11-06), so it reads its own label once, as rows 1 to 3 do"
+    },
+    {
+      "label": "Company Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"87977d19-cf17-123c-4ac9-4e73751925f3\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Company Phone",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"26aa5e8a-77d7-d82e-b44d-018c2e062cd0\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"fa11a1c0-ea0c-0d13-f1f4-8aa6fc2e6842\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"bc16a0ee-204a-0961-5d55-b38c89ada28b\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "State",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"ec724013-edc6-1454-55eb-a0004a382c3e\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Position Title",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"2dacf80d-2195-9747-b052-cf5ff2accbc4\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Description, Duties, and Responsibilities",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"83902c16-0900-525e-abf6-ca9ad5b9ef5f\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Start Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"62a477e1-abc0-5348-9e88-85bcf9d7f753\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "End Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"cf3a4f1b-b44a-8456-8818-8fab9fdf969d\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Supervisor's Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"10f7df8a-76ba-0795-b231-3133e3a08d5d\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "May we contact for a reference?",
+      "kind": "radio",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"188ce0ff-14be-b3bc-1912-c710fdbc392f-1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"72d8681f-e0fa-1d9b-2ff7-d4b32bcd2b97\"][data-group=\"1\"]",
+      "note": "repeated row 1 of experience"
+    },
+    {
+      "label": "Company Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"87977d19-cf17-123c-4ac9-4e73751925f3\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Company Phone",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"26aa5e8a-77d7-d82e-b44d-018c2e062cd0\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"fa11a1c0-ea0c-0d13-f1f4-8aa6fc2e6842\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"bc16a0ee-204a-0961-5d55-b38c89ada28b\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "State",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"ec724013-edc6-1454-55eb-a0004a382c3e\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Position Title",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"2dacf80d-2195-9747-b052-cf5ff2accbc4\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Description, Duties, and Responsibilities",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"83902c16-0900-525e-abf6-ca9ad5b9ef5f\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Start Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"62a477e1-abc0-5348-9e88-85bcf9d7f753\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "End Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"cf3a4f1b-b44a-8456-8818-8fab9fdf969d\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Supervisor's Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"10f7df8a-76ba-0795-b231-3133e3a08d5d\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "May we contact for a reference?",
+      "kind": "radio",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"188ce0ff-14be-b3bc-1912-c710fdbc392f-2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"72d8681f-e0fa-1d9b-2ff7-d4b32bcd2b97\"][data-group=\"2\"]",
+      "note": "repeated row 2 of experience"
+    },
+    {
+      "label": "Company Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"87977d19-cf17-123c-4ac9-4e73751925f3\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "Company Phone",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"26aa5e8a-77d7-d82e-b44d-018c2e062cd0\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"fa11a1c0-ea0c-0d13-f1f4-8aa6fc2e6842\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"bc16a0ee-204a-0961-5d55-b38c89ada28b\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "State",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"ec724013-edc6-1454-55eb-a0004a382c3e\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "Position Title",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"2dacf80d-2195-9747-b052-cf5ff2accbc4\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "Description, Duties, and Responsibilities",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"83902c16-0900-525e-abf6-ca9ad5b9ef5f\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "Start Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"62a477e1-abc0-5348-9e88-85bcf9d7f753\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "End Date",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"cf3a4f1b-b44a-8456-8818-8fab9fdf969d\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "Supervisor's Name",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"10f7df8a-76ba-0795-b231-3133e3a08d5d\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "May we contact for a reference?",
+      "kind": "radio",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"188ce0ff-14be-b3bc-1912-c710fdbc392f-3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "[id=\"72d8681f-e0fa-1d9b-2ff7-d4b32bcd2b97\"][data-group=\"3\"]",
+      "note": "repeated row 3 of experience"
+    },
+    {
+      "label": "School or Institution",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "[id=\"57384bc0-dab6-9858-a32c-675b919d1b0d\"]",
+      "note": "repeated row 0 of education"
+    },
+    {
+      "label": "Degree",
+      "kind": "select",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "options": 13,
+      "control": "[id=\"e9fff717-1c97-9e5c-ba5d-b8cf16b3a0f4\"]",
+      "note": "repeated row 0 of education"
+    },
+    {
+      "label": "Major/Discipline",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "[id=\"f82d1f8b-40e3-458c-8f54-674b3d42d462\"]",
+      "note": "repeated row 0 of education"
+    },
+    {
+      "label": "End Date",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "[id=\"45adc1ea-35e6-f231-e1bd-2db1471b4e7c\"]",
+      "note": "repeated row 0 of education"
+    },
+    {
+      "label": "Location",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "[id=\"1957f762-e87b-355a-554d-b291b9d7a7c8\"]",
+      "note": "repeated row 0 of education"
+    },
+    {
+      "label": "Did you Graduate?",
+      "kind": "radio",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"76361567-b0da-d1ae-ad8a-26f7911791dc-0\"]",
+      "note": "repeated row 0 of education"
+    },
+    {
+      "label": "GPA",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "[id=\"faa6b030-7893-519d-1d58-4c85ec07c93f\"]",
+      "note": "repeated row 0 of education"
+    },
+    {
+      "label": "First and Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Applicant Agreement",
+      "fillable": true,
+      "control": "[id=\"0e281bcd-b1b3-68bf-642e-bb5229cb9c68\"]"
+    },
+    {
+      "label": "Today's Date",
+      "kind": "text",
+      "required": true,
+      "section": "Applicant Agreement",
+      "fillable": true,
+      "control": "[id=\"6c8b80af-f12f-5bd7-62f3-9f6bb016d5d1\"]"
+    },
+    {
+      "label": "Please confirm you read and understand the above.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Applicant Agreement",
+      "fillable": true,
+      "control": "input[name=\"70a7c05d-3417-4afc-a8ac-ffd905347138-0\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form.section-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.cancel-button[data-localized-key=\"forms.application.finish-later\"]",
+      "button.back-button[data-localized-key=\"forms.application.back\"]",
+      "a.remove-row-button",
+      "a.authenticate-button"
+    ],
+    "pressable": [
+      "button[data-localized-key=\"forms.application.submit\"]",
+      "a.add-row-button"
+    ]
+  }
+}

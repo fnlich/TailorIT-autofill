@@ -46,9 +46,9 @@ async function load(html: string, address: string) {
 afterEach(() => removeFixtures(document));
 
 describe('the iCIMS adapter: its hooks on the snapshots', () => {
-  it('names each snapshot it was written from', () => {
+  it('names each snapshot it was written from (the owner’s of 2026-11-06: icims-steps.browser.test.ts)', () => {
     expect([...new Set(CASES.map((each) => `fixtures/icims/${each.name.replace(/\.frame-\d+$/, '')}.html`))].sort())
-      .toEqual([...ICIMS_SNAPSHOTS].sort());
+      .toEqual([...ICIMS_SNAPSHOTS].filter((path) => /\/(?:eastwestbank|gdms)-/.test(path)).sort());
   });
 
   it.each(CASES)('$name: every hook answers what the page shows', async ({ html, json, address }) => {

@@ -1,0 +1,143 @@
+{
+  "fixture": "rippling/smartsuite-uploaded",
+  "source": "https://ats.rippling.com/smartsuite/jobs/6ea49061-d23c-4adb-95c3-9159c372e000/apply?jobBoardSlug=smartsuite&jobId=6ea49061-d23c-4adb-95c3-9159c372e000&step=application",
+  "captured": "2026-11-06T19:12:46.000Z",
+  "fields": [
+    {
+      "label": "Résumé",
+      "kind": "file",
+      "required": true,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "input[data-testid=\"input-resume\"]",
+      "note": "A file is in (div[data-testid=chip] in its field, the adapter's done sign); the input stays, display:none."
+    },
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "[id=\"field-12\"]"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "[id=\"field-16\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "[id=\"field-20\"]"
+    },
+    {
+      "label": "Pronouns",
+      "kind": "combobox",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "[id=\"field-24\"]"
+    },
+    {
+      "label": "Current company",
+      "kind": "text",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "[id=\"field-31\"]"
+    },
+    {
+      "label": "Phone number country code",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-devops-engineer-remote",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "[id=\"field-38\"]"
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": true,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "[id=\"field-35\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "text",
+      "required": true,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "[id=\"field-46\"]",
+      "note": "Rippling draws the box on the input's wrapper (div.css-1mlcsw inside div[data-testid=<key>], a 1 px border and 16 px padding, 17 px beyond the input's sides), which holds the input and nothing else but decoration: its content box hugs them, so it is the input's box (dom/camouflage.ts drawnByWrapper, core pass Z2 of 2026-11-06; read camouflaged until then). (Location's search icon also sits in that wrapper.)"
+    },
+    {
+      "label": "Cover letter",
+      "kind": "file",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "control": "input[data-testid=\"input-cover_letter\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "[id=\"field-59\"]"
+    },
+    {
+      "label": "Please identify your race",
+      "kind": "combobox",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "[id=\"field-65\"]"
+    },
+    {
+      "label": "Are you Hispanic/Latino?",
+      "kind": "combobox",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "[id=\"field-72\"]"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "[id=\"field-78\"]"
+    },
+    {
+      "label": "Check Yes or No to indicate your agreement to receive text message updates from SmartSuite regarding your job application. Frequency may vary. Message and data rates may apply. Reply HELP for assistance. Reply STOP to opt out of future messaging.",
+      "kind": "radio",
+      "required": false,
+      "section": "application-devops-engineer-remote",
+      "fillable": true,
+      "options": 2,
+      "control": "div[data-testid=\"sms_opt_in\"]",
+      "note": "The SMS consent: a radiogroup of div[role=radio] (aria-checked) over display:none native radios, declared a radio widget (its members the drawn radios), titled by the paragraph before its field."
+    }
+  ]
+}

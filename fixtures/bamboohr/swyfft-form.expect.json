@@ -1,0 +1,207 @@
+{
+  "fixture": "bamboohr/swyfft-form",
+  "source": "https://swyfft.bamboohr.com/careers/1122",
+  "captured": "2026-11-06T15:13:33.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"firstName\"]",
+      "note": "Required by its label's class Mui-required (the star span is aria-hidden, the input has no required attribute)."
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"lastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"phone\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-1\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-2\"]"
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"state.value\"])",
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+    },
+    {
+      "label": "ZIP",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-3\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"countryId.value\"])",
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+    },
+    {
+      "label": "Date Available",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"FabricTextField-4\"]",
+      "note": "The DatePicker's text box (placeholder mm/dd/yyyy, no name); its picker button is never pressed."
+    },
+    {
+      "label": "Desired Pay",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"desiredPay\"]"
+    },
+    {
+      "label": "LinkedIn URL",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"linkedinUrl\"]",
+      "note": "Its bordered wrapper (MuiInputBase-root) also holds the start adornment (data-fabric-component=Nub: an icon and a zero-width space), decoration only, so the wrapper is the input's box (dom/camouflage.ts drawnByWrapper, core pass Z2 of 2026-11-06; read camouflaged until then)."
+    },
+    {
+      "label": "Highest Education Obtained",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"educationLevelId\"])",
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+    },
+    {
+      "label": "College/University",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"educationInstitutionName\"]"
+    },
+    {
+      "label": "Who referred you for this position?",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"referredBy\"]"
+    },
+    {
+      "label": "Are you legally authorized to work in the U.S.?",
+      "kind": "radio",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"customQuestionAnswers.yes_no_2935\"]"
+    },
+    {
+      "label": "Will you now or in the future require visa sponsorship? (Please answer yes or no) If yes, what type of sponsorship will you require?",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"customQuestionAnswers.short_2936\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"genderId\"])",
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+    },
+    {
+      "label": "Ethnicity",
+      "kind": "combobox",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div.fab-Select:has(> select[name=\"ethnicityId\"])",
+      "note": "A Fabric dropdown: its toggle button (aria-haspopup, data-menu-id) opens a role=menu list drawn at the body's end and tied to it by data-helium-id, not aria-controls, so the widget helpers do not act on it yet; titled by its wrapper's label, its hidden select.chzn-ignore (one option, the chosen value) its own part."
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "radio",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\":r1:\"]"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"nickname_hpcsaf\"]",
+      "note": "The honeypot (\"Please leave this field blank\") in an aria-hidden LayoutBox, tabindex -1: never a field."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"g-recaptcha-response\"]",
+      "note": "reCAPTCHA's own answer box (display none): the box is the person's."
+    }
+  ]
+}

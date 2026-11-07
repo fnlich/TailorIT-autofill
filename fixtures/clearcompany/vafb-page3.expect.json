@@ -1,0 +1,288 @@
+{
+  "fixture": "clearcompany/vafb-page3",
+  "source": "https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply/8c16cd46-9b5e-ded1-cf8b-6417fd8e13c7",
+  "captured": "2026-11-06T15:16:50.000Z",
+  "fields": [
+    {
+      "label": "Date Available",
+      "kind": "text",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": true,
+      "control": "[id=\"ee21604c-4afe-2063-39c3-880182d2b016\"]"
+    },
+    {
+      "label": "How did you hear about this position?",
+      "kind": "text",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": true,
+      "control": "[id=\"3c811380-650b-3127-7ca8-15bf96c43d6d\"]"
+    },
+    {
+      "label": "Are you authorized to work in the US without a sponsor visa?",
+      "kind": "radio",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"05651118-f1ff-9823-35b6-a086f4042d48-0\"]"
+    },
+    {
+      "label": "Have you ever worked for this Company or Affiliates?",
+      "kind": "radio",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"7b0c53fa-59a1-fc73-0b67-4fb76c0f6167-0\"]"
+    },
+    {
+      "label": "Do you have any relatives or friends employed by this company?",
+      "kind": "radio",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"61690b3a-42af-10d0-d9b4-81a58310c097-0\"]"
+    },
+    {
+      "label": "Have you ever been convicted of a crime?",
+      "kind": "radio",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"45a69586-14b5-986b-65b1-6d19d00be38c-0\"]"
+    },
+    {
+      "label": "Full Name",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"c4107d16-6ee4-a8df-cb8f-7cb602bccb73\"]"
+    },
+    {
+      "label": "Relationship",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"574d1076-ccdb-3dd0-b1a6-e7add7d43c71\"]"
+    },
+    {
+      "label": "Company",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"bf97fae9-bd0a-6683-4b48-5b89a5e4f1d8\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"66ef95d7-7ccf-0e01-b424-207fdd7deb21\"]"
+    },
+    {
+      "label": "E-mail",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"6c5ba17e-dfa3-7963-d8e5-5542f55dbb60\"]"
+    },
+    {
+      "label": "Years Known",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"d75fe802-b2d5-4c3a-8818-789fd5d93f5f\"]"
+    },
+    {
+      "label": "Full Name",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"8e4203f3-24da-b9a7-1c4d-b61bf5544234\"]"
+    },
+    {
+      "label": "Relationship",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"5f2c79f2-80ed-5082-0f39-a9812bce2966\"]"
+    },
+    {
+      "label": "Company",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"de22e87d-7cbc-0af0-52c0-822f8c6c4535\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"5dd0a1a5-56f4-0e0f-eccc-9c8318ab643b\"]"
+    },
+    {
+      "label": "E-mail",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"ffe80a6b-9b0b-d599-db66-8249cde513b3\"]"
+    },
+    {
+      "label": "Years Known",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"be91b800-98c1-dcb9-0ef6-c15f2bdc4db1\"]"
+    },
+    {
+      "label": "Full Name",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"553d2b74-ab41-296a-f970-e4bd0d975074\"]"
+    },
+    {
+      "label": "Relationship",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"ca9706ac-59fd-bd2f-d293-e6ebf54ac59c\"]"
+    },
+    {
+      "label": "Company",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"7c78d6cc-b67a-a45e-9e77-4767bd58e912\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"9a47ea49-3332-5629-f0c2-87a9e81f7f41\"]"
+    },
+    {
+      "label": "E-mail",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"7f94056c-5336-14c9-fe27-bd53d86b7846\"]"
+    },
+    {
+      "label": "Years Known",
+      "kind": "text",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "control": "[id=\"44709009-c2a7-7b41-33de-0afe4e2a8a0b\"]"
+    },
+    {
+      "label": "May we contact your present employer at this time?",
+      "kind": "radio",
+      "required": true,
+      "section": "References",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"5aa313bf-05ea-e027-010d-19997df79518-0\"]"
+    },
+    {
+      "label": "Race and Ethnicity",
+      "kind": "radio",
+      "required": true,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "options": 8,
+      "control": "input[name=\"e2b2a75d-b0ad-7317-076a-f06e7cfaef7a-0\"]"
+    },
+    {
+      "label": "Veteran Status Pre-Offer",
+      "kind": "radio",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"86679c20-7014-77fd-247f-b4a9a2821c5a-0\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "radio",
+      "required": true,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"b2acdd7e-7e0d-4247-5753-94031faaba94-0\"]"
+    },
+    {
+      "label": "Disability Status Pre-Offer",
+      "kind": "radio",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"c67d94fb-b8ca-ad23-3334-3f6807ccd4db-0\"]"
+    },
+    {
+      "label": "Please confirm you read and understand the above.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Applicant Agreement",
+      "fillable": true,
+      "control": "input[name=\"61e6a2d8-4284-ea1f-6cee-4b010c3f10f8-0\"]"
+    },
+    {
+      "label": "First and Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Applicant Agreement",
+      "fillable": true,
+      "control": "[id=\"0c595628-5656-75ca-ab03-8e61b47beb5c\"]"
+    },
+    {
+      "label": "Today's Date",
+      "kind": "text",
+      "required": true,
+      "section": "Applicant Agreement",
+      "fillable": true,
+      "control": "[id=\"d696fea2-1a5b-3842-a078-d08da0d6dc70\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form.section-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.cancel-button[data-localized-key=\"forms.application.finish-later\"]",
+      "button.back-button[data-localized-key=\"forms.application.back\"]",
+      "a.authenticate-button"
+    ],
+    "pressable": [
+      "button[data-localized-key=\"forms.application.submit\"]"
+    ]
+  }
+}

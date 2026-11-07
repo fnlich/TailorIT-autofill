@@ -24,7 +24,9 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { applicationOf } from '../adapters';
-import { agentApplicationUrl, type AutofillAgentResultBody, type AutofillAgentTask } from '../contract/tailorit';
+import {
+  agentApplicationUrl, AUTOFILL_AGENT_ATS, type AutofillAgentResultBody, type AutofillAgentTask,
+} from '../contract/tailorit';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import { COPY } from '../shared/copy';
 import type { FrameReport } from '../shared/report';
@@ -1253,6 +1255,24 @@ describe('the audit of 2026-11-06: outages, the person closing the window, and t
     expect(await runRecord(h)).toMatchObject({ result: null, starts: 0 });
   });
 
+  // The behaviour review of 2026-11-06 (minor 13).
+  it('after the job’s Submit, a page of the posting with no form is never entered: the confirmation is awaited', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, form(key, 'doc-1'));
+    await h.agent.pressed(tabId, key, 'doc-1');
+    // The posting's own page again (not the page after submitting), no form on it, in a new document.
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-2', hasForm: false, applicationKey: key });
+    expect(h.sent.filter((sent) => sent.message.type === 'agent/enter')).toEqual([]);
+    expect(await runRecord(h)).toMatchObject({ result: null });
+    expect((await runRecord(h))!.heldAt).not.toBeNull();
+    h.clock.now += AGENT_CONFIRM_MS;
+    await h.agent.tick();
+    // Sent, its confirmation not seen: the person's to look at, never a page error.
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'needs-you', reason: 'other', aiGuesses: 0 } }]);
+  });
+
   it('after the job’s Submit, a page that names no posting awaits the confirmation (pressedAt in noPosting)', async () => {
     const h = harness({ tasks: [task(1)], atsPage: BOARD });
     await on(h);
@@ -1268,3 +1288,169 @@ describe('the audit of 2026-11-06: outages, the person closing the window, and t
     expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0 } }]);
   });
 });
+
+// ── snapshot build 2026-11-06 (core-x, item 3) ──
+describe('the frame that claims a company wrapper’s application (core-x, item 3)', () => {
+  /** The frames the agent acts in, as frames.ts agentFramesOf would answer them; and where each message went. */
+  function claiming(h: Harness, frames: () => Array<{ frameId: number; documentId: string; hasForm: boolean;
+    applicationKey: string }>): Array<{ frameId: number; type: string }> {
+    const to: Array<{ frameId: number; type: string }> = [];
+    const send = h.deps.send;
+    h.deps.agentFrames = async () => frames().map((frame) => ({ ...frame, tabId: 0, origin: 'https://x', platform: null,
+      isTop: frame.frameId === 0, registeredAt: 0 }));
+    h.deps.send = async (tabId, message, target) => {
+      to.push({ frameId: target.frameId, type: (message as { type: string }).type });
+      return send(tabId, message, target);
+    };
+    return to;
+  }
+
+  it('acts in the claim frame, never in the wrapper, whichever hello comes first', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    const claim = { frameId: 3, documentId: 'doc-frame', hasForm: false, applicationKey: key };
+    let registered: Array<typeof claim> = [];
+    const to = claiming(h, () => registered);
+    // The claim frame's hello before the wrapper's: not one of the agent's frames yet (no wrapper registered).
+    await h.agent.hello(tabId, claim);
+    expect(to).toEqual([]);
+    // The wrapper's hello: never an entry there; the claim frame, registered now, is entered.
+    registered = [claim];
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-wrapper', hasForm: false, applicationKey: key, wraps: true });
+    expect(to).toEqual([{ frameId: 3, type: 'agent/enter' }]);
+    // Its form's document gets the agent's run, in that frame.
+    const form = { ...claim, documentId: 'doc-form', hasForm: true };
+    registered = [form];
+    await h.agent.hello(tabId, form);
+    expect(to).toEqual([{ frameId: 3, type: 'agent/enter' }, { frameId: 3, type: 'run/start' }]);
+    // A wrapper's hello again starts nothing more (each document once).
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-wrapper', hasForm: false, applicationKey: key, wraps: true });
+    expect(to).toHaveLength(2);
+  });
+
+  it('never acts in a subframe that is not one of its frames, nor in one at another application', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    const to = claiming(h, () => [{ frameId: 3, documentId: 'doc-frame', hasForm: true, applicationKey: key }]);
+    await h.agent.hello(tabId, { frameId: 4, documentId: 'doc-other', hasForm: true, applicationKey: key });
+    await h.agent.hello(tabId, { frameId: 3, documentId: 'doc-old', hasForm: true, applicationKey: key });
+    await h.agent.hello(tabId, { frameId: 3, documentId: 'doc-frame', hasForm: true,
+      applicationKey: 'greenhouse:00000000000000ff' });
+    expect(to).toEqual([]);
+    expect(await runRecord(h)).toMatchObject({ result: null });
+  });
+
+  it('reads the claim frame’s report where the top frame has none, and retries the Submit there', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    const to = claiming(h, () => [{ frameId: 3, documentId: 'doc-frame', hasForm: true, applicationKey: key }]);
+    await h.agent.hello(tabId, { frameId: 3, documentId: 'doc-frame', hasForm: true, applicationKey: key });
+    h.reports.set(tabId, [report({ frameId: 3, runId: 'run-3', notices: notices('submit-errors') })]);
+    await h.agent.reported(tabId);
+    expect(to.at(-1)).toEqual({ frameId: 3, type: 'run/start' });
+    expect(to.filter((sent) => sent.type === 'run/start')).toHaveLength(2);
+  });
+  // The security fix of 2026-11-06 (S12): with no report from the top frame or a frame the agent acts in, the latest
+  // subframe's report is read, but its retry goes to the top frame, never to that subframe.
+  it('retries in the top frame, never in a subframe outside its frames, when only such a subframe reported', async () => {
+    const h = harness({ tasks: [task(1)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    const to = claiming(h, () => [{ frameId: 3, documentId: 'doc-frame', hasForm: true, applicationKey: key }]);
+    h.reports.set(tabId, [report({ frameId: 4, runId: 'run-4', notices: notices('submit-errors') })]);
+    await h.agent.reported(tabId);
+    const starts = to.filter((sent) => sent.type === 'run/start');
+    expect(starts).toEqual([{ frameId: 0, type: 'run/start' }]);
+    expect(to.some((sent) => sent.frameId === 4)).toBe(false);
+  });
+});
+
+// ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 adds iCIMS and Pinpoint to AUTOFILL_AGENT_ATS ──
+describe('the agent on iCIMS and Pinpoint (TailorIT’s API 6)', () => {
+  // The owner's snapshots' addresses (fixtures/icims eastwestbank-*, githubinc-*, nyu-submitted; fixtures/pinpoint
+  // prophetx-*): every page of one application, as TailorIT may queue it and as the walk shows it.
+  const ICIMS = 'https://careers-eastwestbank.icims.com/jobs/13634/job';
+  const ICIMS_PAGES = ['https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job',
+    'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?in_iframe=1&mobile=false',
+    'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/login?in_iframe=1',
+    'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/candidate?from=login&eem=x&code=y&in_iframe=1',
+    'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/questions?global=1&in_iframe=1',
+    'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/eeo?in_iframe=1',
+    'https://careers-eastwestbank.icims.com/jobs/13634/credit-reviewer-ii/job?mode=submit_apply&in_iframe=1'];
+  const PIN = 'https://prophetexchange.pinpointhq.com/en/postings/c0dae85d-514e-490a-be0e-133196663338';
+  const PIN_FORM = `${PIN}/applications/new`;
+  const PIN_PAGES = [PIN, PIN_FORM, `${PIN}/applications/thanks?token=REDACTED`];
+
+  it('accepts their tasks from any page of the application, opening the address TailorIT’s agentApplicationUrl gives',
+    async () => {
+      expect(AUTOFILL_AGENT_ATS).toEqual(['greenhouse', 'lever', 'ashby', 'workable', 'icims', 'pinpoint']);
+      for (const [pages, opened, platform] of [[ICIMS_PAGES, ICIMS, 'icims'], [PIN_PAGES, PIN_FORM, 'pinpoint']] as const) {
+        const key = applicationOf(new URL(opened))!.applicationKey;
+        expect(key.startsWith(`${platform}:`)).toBe(true);
+        for (const url of pages) {
+          expect(agentApplicationUrl(url), url).toBe(opened);
+          // Each page the walk shows is the task's own application.
+          expect(applicationOf(new URL(url))?.applicationKey, url).toBe(key);
+          const h = harness({ tasks: [task(1, url)] });
+          await on(h);
+          expect(h.windows.opened, url).toEqual([opened]);
+          expect((await running(h)).key, url).toBe(key);
+          expect(h.results, url).toEqual([]);
+        }
+      }
+    });
+
+  it('iCIMS: presses the posting’s entry, starts the run in a step’s form, and takes .iCIMS_SuccessMessage’s sign',
+    async () => {
+      const h = harness({ tasks: [task(1, ICIMS_PAGES[0])] });
+      await on(h);
+      const { tabId, key } = await running(h);
+      // The posting ("Apply for this job online", the adapter's entry): agent/enter, once for its document.
+      await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-posting', hasForm: false, applicationKey: key, posting: true });
+      expect(h.sent.map((sent) => sent.message.type)).toEqual(['agent/enter']);
+      // A step after the gate: the run is started there.
+      await h.agent.hello(tabId, form(key, 'doc-candidate'));
+      expect(h.sent.map((sent) => sent.message.type)).toEqual(['agent/enter', 'run/start']);
+      // Its Submit pressed, then the page after submitting (/job?mode=submit_apply) is a confirmation: nothing pressed.
+      h.reports.set(tabId, [report({ platform: 'icims', adapter: 'icims', ...pressedSubmit })]);
+      await h.agent.reported(tabId);
+      await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-done', hasForm: false, applicationKey: key, confirmation: true });
+      expect(h.sent.map((sent) => sent.message.type)).toEqual(['agent/enter', 'run/start']);
+      expect(await h.agent.submitted(tabId, key)).toBe('recorded');
+      expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0 } }]);
+      expect(h.windows.closedTabs).toEqual([tabId]);
+    });
+
+  it('Pinpoint: starts the run in the form it opened, and takes section#application-thanks’s sign', async () => {
+    const h = harness({ tasks: [task(1, PIN)] });
+    await on(h);
+    const { tabId, key } = await running(h);
+    await h.agent.hello(tabId, form(key, 'doc-form'));
+    expect(h.sent).toEqual([{ tabId, message: { v: 1, type: 'run/start', dryRun: false, agent: true } }]);
+    h.reports.set(tabId, [report({ platform: 'pinpoint', adapter: 'pinpoint', ...pressedSubmit })]);
+    await h.agent.reported(tabId);
+    await h.agent.hello(tabId, { frameId: 0, documentId: 'doc-thanks', hasForm: false, applicationKey: key, confirmation: true });
+    expect(await h.agent.submitted(tabId, key)).toBe('recorded');
+    expect(h.results).toEqual([{ id: ID(1), body: { state: 'submitted', reason: null, aiGuesses: 0 } }]);
+  });
+
+  it('still claims nothing on the ATSs API 6 did not add to the agent (failed, unsupported_site)', async () => {
+    const others = ['https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply',
+      'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1',
+      'https://concurrent-technologies-corporation.breezy.hr/p/4362758f2795-senior-software-engineer-specialist/apply'];
+    for (const url of others) expect(agentApplicationUrl(url), url).toBeNull();
+    const h = harness({ tasks: others.map((url, n) => task(n + 1, url)) });
+    await on(h);
+    for (let n = 0; n < others.length; n += 1) {
+      h.timers.advance(1_000);
+      await h.agent.tick();
+    }
+    expect(h.windows.opened).toEqual([]);
+    expect(h.results).toEqual(others.map((_, n) => ({ id: ID(n + 1), body: { state: 'failed', reason: 'unsupported_site',
+      aiGuesses: 0 } })));
+  });
+});
+// ── end contract6 ──

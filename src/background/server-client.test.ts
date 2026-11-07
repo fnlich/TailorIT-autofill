@@ -312,3 +312,38 @@ describe('the AI routes (Phase 4)', () => {
     expect(tailorit.requests.length).toBe(before);
   });
 });
+
+// ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 ──
+describe('GET /credentials (version 6: the page path)', () => {
+  const CREDENTIAL = { host: '*', email: 'alex.rivera@example.com', password: 'dummy-password-not-real' };
+  const GUEST = '/mascsr/default/mdf/recruitment/recruitment.html';
+
+  it('names the host, and the page path as &path= where the caller names one: the pathname, never a query', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('GET /api/autofill/credentials', { json: CREDENTIAL });
+    expect(await server.credential('workforcenow.adp.com', GUEST)).toEqual({ ok: true, value: CREDENTIAL });
+    expect(await server.credential('acme.wd5.myworkdayjobs.com')).toMatchObject({ ok: true });
+    const [adp, workday] = tailorit.requests.map((request) => new URL(request.url));
+    expect([adp!.pathname, [...adp!.searchParams]]).toEqual(['/api/autofill/credentials',
+      [['host', 'workforcenow.adp.com'], ['path', GUEST]]]);
+    expect([...workday!.searchParams]).toEqual([['host', 'acme.wd5.myworkdayjobs.com']]);
+  });
+
+  it('never sends a path the contract would refuse (a query, a fragment, a space, no leading slash): the host alone', async () => {
+    const { server, tailorit } = client();
+    tailorit.reply('GET /api/autofill/credentials', { json: CREDENTIAL });
+    for (const path of [`${GUEST}?cid=1`, `${GUEST}#top`, '/careers/my jobs', 'careers/', `/${'a'.repeat(2048)}`]) {
+      expect(await server.credential('workforcenow.adp.com', path), path).toMatchObject({ ok: true });
+    }
+    for (const request of tailorit.requests) {
+      expect([...new URL(request.url).searchParams]).toEqual([['host', 'workforcenow.adp.com']]);
+      expect(request.url).not.toContain('cid=1');
+      expect(request.url).not.toContain('#');
+    }
+    // A host that is no host name is still refused before any request.
+    const before = tailorit.requests.length;
+    expect(await server.credential('workforcenow.adp.com/x', GUEST)).toMatchObject({ ok: false, failure: 'refused-path' });
+    expect(tailorit.requests.length).toBe(before);
+  });
+});
+// ── end contract6 ──

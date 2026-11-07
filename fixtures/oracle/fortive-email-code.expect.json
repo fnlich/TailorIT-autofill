@@ -1,0 +1,84 @@
+{
+  "fixture": "oracle/fortive-email-code",
+  "source": "https://ejta.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/10672/apply/email?src=Eightfold",
+  "captured": "2026-11-06T16:49:20.000Z",
+  "note": "The code page Oracle draws at the gate's own address after its NEXT (\"Confirm Your Identity\"; the email it was sent to is redacted).",
+  "fields": [
+    {
+      "label": "Enter verification code digit 1 of six.",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#pin-code-1",
+      "note": "One of the code's six boxes (aria-label, aria-required; no maxlength). The code is the person's: the page is an email-code pause."
+    },
+    {
+      "label": "Enter verification code digit 2 of six.",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#pin-code-2",
+      "note": "One of the code's six boxes (aria-label, aria-required; no maxlength). The code is the person's: the page is an email-code pause."
+    },
+    {
+      "label": "Enter verification code digit 3 of six.",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#pin-code-3",
+      "note": "One of the code's six boxes (aria-label, aria-required; no maxlength). The code is the person's: the page is an email-code pause."
+    },
+    {
+      "label": "Enter verification code digit 4 of six.",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#pin-code-4",
+      "note": "One of the code's six boxes (aria-label, aria-required; no maxlength). The code is the person's: the page is an email-code pause."
+    },
+    {
+      "label": "Enter verification code digit 5 of six.",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#pin-code-5",
+      "note": "One of the code's six boxes (aria-label, aria-required; no maxlength). The code is the person's: the page is an email-code pause."
+    },
+    {
+      "label": "Enter verification code digit 6 of six.",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#pin-code-6",
+      "note": "One of the code's six boxes (aria-label, aria-required; no maxlength). The code is the person's: the page is an email-code pause."
+    },
+    {
+      "label": "Keep me signed in",
+      "kind": "checkbox",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input#af-checkbox-keep-signed-in-3",
+      "note": "A hidden native box behind its visible label."
+    }
+  ],
+  "hooks": {
+    "detect": "main[aria-labelledby=\"apply-flow-main-heading\"] section.apply-flow__content",
+    "authState": "email-code",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.pin-code-form__action-button",
+      "button.app-header__close"
+    ],
+    "pressable": []
+  }
+}

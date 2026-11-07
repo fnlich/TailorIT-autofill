@@ -7,6 +7,9 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   ATS_KINDS,
+  ATS_NAMES,
+  AutofillCredentialQuerySchema,
+  AUTOFILL_SIGN_IN_PATH_MAX,
   AUTOFILL_AI_LIMITS,
   AUTOFILL_API_VERSION,
   AUTOFILL_FIELD_CATEGORIES,
@@ -34,6 +37,7 @@ import {
 } from '../src/core/confidence';
 import { REASON_CODES } from '../src/core/types/fill';
 import { MAX_POSTING_TEXT } from '../src/messaging/schemas';
+import { COPY } from '../src/shared/copy';
 import { PICK_CATEGORIES } from '../src/core/matcher/types';
 import { SERVER_CATEGORY_MAP } from '../src/core/resolver/classify';
 import { cutAtWord } from '../src/core/text/fold';
@@ -109,9 +113,9 @@ describe("the copy of TailorIT's contract (src/contract/tailorit)", () => {
     }
   });
 
-  it('names API version 5 and the zod this extension pins, as SOURCE.json does', () => {
+  it('names API version 6 and the zod this extension pins, as SOURCE.json does', () => {
     const zod = (createRequire(import.meta.url)('zod/package.json') as { version: string }).version;
-    expect(record.apiVersion).toBe(5);
+    expect(record.apiVersion).toBe(6);
     expect(AUTOFILL_API_VERSION).toBe(record.apiVersion);
     expect(zod).toBe('4.6.7');
     expect(record.zod).toBe(zod);
@@ -172,14 +176,59 @@ describe("the every-site sign-in's hosts (TailorIT's API 5)", () => {
   });
 });
 
+// ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 ──
+describe("the every-site sign-in's hosts and paths (TailorIT's API 6)", () => {
+  // The owner's snapshots' pages (fixtures/adp, fixtures/clearcompany, fixtures/ultipro, the Oracle government cloud's).
+  const ADP = 'workforcenow.adp.com';
+  const ADP_GUEST = '/mascsr/default/mdf/recruitment/recruitment.html';
+  const ADP_STEPS = '/mascsr/applicant/mdf/recruitment/postLogin.html';
+  const CC = 'vafb.clearcompany.com';
+  const CC_APPLY = '/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply';
+
+  it('cover UltiPro and the government cloud by their host, ADP and ClearCompany by their candidate paths alone', () => {
+    for (const host of ['recruiting.ultipro.com', 'iaaxmg.fa.ocs.oraclegovcloud.com']) {
+      expect(signInHostCovered(host), host).toBe(true);
+    }
+    const candidate: Array<[string, string]> = [[ADP, ADP_GUEST], [ADP, ADP_STEPS], [CC, CC_APPLY],
+      ['atlas-tech.clearcompany.com', '/careers/']];
+    for (const [host, path] of candidate) {
+      expect(signInHostCovered(host, path), `${host}${path}`).toBe(true);
+      // Never without the page's path.
+      expect(signInHostCovered(host), host).toBe(false);
+    }
+    // An employee's page of the same hosts, a path that only looks like a candidate one, the file hosts.
+    const other: Array<[string, string]> = [[ADP, '/theme/index.html'], [ADP, '/mascsr/default/mdf/payroll/'],
+      [ADP, '/mascsr/default/mdf/'], [ADP, `/x${ADP_GUEST}`], [ADP, '/mascsr/default/mdf/recruitment/../../../payroll/'],
+      [ADP, '/mascsr/default/mdf/recruitment%2F'], [ADP, `${ADP_GUEST}?cid=1`], [CC, '/app/dashboard'], [CC, '/Careers/jobs'],
+      ['cc-app-static.clearcompany.com', CC_APPLY], ['www.clearcompany.com', '/careers/'], ['www.ultipro.com', '/'],
+      ['iaaxmg.fa.oraclegovcloud.com', '/']];
+    for (const [host, path] of other) {
+      expect(signInHostCovered(host, path), `${host}${path}`).toBe(false);
+    }
+  });
+
+  it('take the path alone, the pathname, as the credential query (no query, no fragment)', () => {
+    expect(AutofillCredentialQuerySchema.safeParse({ host: ADP, path: ADP_GUEST }).success).toBe(true);
+    expect(AutofillCredentialQuerySchema.safeParse({ host: ADP }).success).toBe(true);
+    for (const path of [`${ADP_GUEST}?cid=1`, `${ADP_GUEST}#top`, 'mascsr/', `/${'a'.repeat(AUTOFILL_SIGN_IN_PATH_MAX)}`]) {
+      expect(AutofillCredentialQuerySchema.safeParse({ host: ADP, path }).success, path).toBe(false);
+    }
+  });
+});
+// ── end contract6 ──
+
 describe('the value lists the two sides share', () => {
   // TailorIT's test holds the same lists (as this extension's src/core/enums.ts writes them): change both sides at once.
   it("are this extension's, value for value and in its order", () => {
     expect(AUTOFILL_FIELD_KINDS).toEqual(FIELD_KINDS);
     // A platform ahead of the contract is named to TailorIT nowhere until it lists it: this fails once it does, and the
-    // list is emptied then (iCIMS, Taleo, SuccessFactors and Oracle, listed since TailorIT's API 5).
+    // list is emptied then (iCIMS, Taleo, SuccessFactors and Oracle, listed since TailorIT's API 5; the new ATSs and
+    // SmartRecruiters since its API 6, which leaves `site` alone, a company's own page, which is no ATS).
     expect(ATS_KINDS).toEqual(PLATFORMS.filter((platform) => !PLATFORMS_AHEAD_OF_CONTRACT.includes(platform)));
     expect(PLATFORMS_AHEAD_OF_CONTRACT.some((platform) => (ATS_KINDS as readonly string[]).includes(platform))).toBe(false);
+    expect(PLATFORMS_AHEAD_OF_CONTRACT).toEqual(['site']);
+    // Each ATS's name, as TailorIT's pages write it (its ATS_NAMES, version 6), is the one the panel and the report show.
+    expect(ATS_KINDS.filter((kind) => ATS_NAMES[kind] !== COPY.platforms[kind])).toEqual([]);
     expect(CONTRACT_DEGREE_LEVELS).toEqual(DEGREE_LEVELS);
     expect(LANGUAGE_PROFICIENCIES).toEqual(PROFICIENCIES);
     expect(RACE_CATEGORIES).toEqual(RACES);

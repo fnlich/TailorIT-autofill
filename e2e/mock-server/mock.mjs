@@ -59,9 +59,10 @@
  *   unchanged (204) and any other 409. Each connection the mock mints is a new claimant (its `generation`). GET
  *   /__mock/agent lists the queue, the running task, every row and the results taken (204: {id, body}) and refused
  *   ({id, body, status}). POST /__mock/credentials {items} replaces the saved sign-ins ({host, email,
- *   password}; by default the contract's example for every site, `*`, every-site.json); GET /credentials?host= answers the host's
- *   own, else `*` on a host signInHostCovered covers (its patterns, copied below), else 404 not_found; without a host it
- *   answers the golden example, as the route table's check reads it.
+ *   password}; by default the contract's example for every site, `*`, every-site.json); GET /credentials?host=&path=
+ *   answers the host's own, else `*` on a page signInHostCovered covers (its patterns, copied below; API 6: on
+ *   ADP's and ClearCompany's hosts by the optional `path`, the pathname alone, which a query or fragment makes 400),
+ *   else 404 not_found; without a host it answers the golden example, as the route table's check reads it.
  * - Scripted answers per test (POST /__mock/scenario {name, times?, delayMs?, value?}): see MOCK_SCENARIOS.
  * - A request log with Authorization redacted (GET /__mock/requests), cleared with everything else by POST
  *   /__mock/reset, which every test calls first.
@@ -89,7 +90,7 @@ export function example(schema, name = 'golden') {
 }
 
 /** The API version TailorIT speaks, as the contract's version.ts names it. */
-export const MOCK_API_VERSION = 5;
+export const MOCK_API_VERSION = 6;
 /** The header TailorIT names its version in, on every answer to a request that presents a `tia_` bearer. */
 export const API_HEADER = 'X-TailorIT-Autofill-Api';
 const FILE_KIND_HEADER = 'X-TailorIT-File-Kind';
@@ -471,15 +472,46 @@ const versionMessage = (theirs, ours) =>
   `this server speaks ${ours}. Update the extension or TailorIT.`;
 
 /** The candidate sign-in hosts the every-site sign-in covers: a copy of the contract's SIGN_IN_HOSTS (credentials.ts
- *  signInHostCovered), which this plain-JavaScript mock cannot import. */
+ *  signInHostCovered), which this plain-JavaScript mock cannot import; test/mock-server.test.ts holds the copy to it.
+ *  (The snapshot build of 2026-11-06, contract6: as of TailorIT's API 6.) */
 const SIGN_IN_HOSTS = [
   /^(?!www\.)[a-z0-9-]+(?:\.wd\d{1,3})?\.myworkday(?:jobs|site)\.com$/,
   /^(?!(?:www|api|login)\.)[a-z0-9-]+\.icims\.com$/,
-  /^(?!www\.)[a-z0-9-]+\.taleo\.net$/,
+  /^login\.icims\.com$/,
+  /^(?!(?:www|tbe)\.)[a-z0-9-]+\.taleo\.net$/,
+  /^[a-z0-9-]+\.tbe\.taleo\.net$/,
   /^career\d{0,3}\.successfactors\.(?:com|eu)$/,
-  /^[a-z0-9-]+\.fa\.[a-z0-9-]+\.oraclecloud\.com$/,
+  /^[a-z0-9-]+\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com$/,
   /^(?:jobs|careers)\.smartrecruiters\.com$/,
+  /^[a-z0-9-]+\.fa\.ocs\.oraclegovcloud\.com$/,
+  /^recruiting\.ultipro\.com$/,
 ];
+
+/** API 6: the candidate sign-in hosts covered under their candidate paths alone (credentials.ts SIGN_IN_PATH_HOSTS). */
+const SIGN_IN_PATH_HOSTS = [
+  { host: /^workforcenow\.adp\.com$/, paths: ['/mascsr/default/mdf/recruitment/', '/mascsr/applicant/mdf/recruitment/'] },
+  { host: /^(?!(?:cc-|www\.))[a-z0-9-]+\.clearcompany\.com$/, paths: ['/careers/'] },
+];
+
+/** The longest page path a credential request names (credentials.ts AUTOFILL_SIGN_IN_PATH_MAX). */
+const SIGN_IN_PATH_MAX = 2048;
+
+/** credentials.ts plainPath: '/' first, no query, fragment, backslash, space or control character, no dot segment and
+ *  no percent-encoded dot, slash or backslash. @param {string} path */
+function plainPath(path) {
+  if (path.length > SIGN_IN_PATH_MAX || !path.startsWith('/')) return false;
+  if (/[?#\\\s\p{Cc}]/u.test(path) || /%(?:2e|2f|5c)/i.test(path)) return false;
+  return !path.split('/').some((segment) => segment === '.' || segment === '..');
+}
+
+/** credentials.ts signInHostCovered, as of API 6. @param {string} host @param {string | undefined} [path] */
+export function mockSignInHostCovered(host, path) {
+  const name = host.toLowerCase();
+  if (SIGN_IN_HOSTS.some((pattern) => pattern.test(name))) return true;
+  const scoped = SIGN_IN_PATH_HOSTS.find((rule) => rule.host.test(name));
+  if (scoped === undefined || path === undefined || !plainPath(path)) return false;
+  return scoped.paths.some((prefix) => path.startsWith(prefix));
+}
 
 /** The token routes, as TailorIT's tokenScope allows them: anchored, case-sensitive, no dot segments or encoding. */
 const TOKEN_PATH = /^\/api\/autofill\/[a-z0-9/-]+$/;
@@ -1216,8 +1248,13 @@ export function createMock() {
     'GET /api/autofill/credentials': ({ query }) => {
       const host = query.get('host');
       if (host === null) return jsonAnswer(200, example('AutofillCredential'));
+      // API 6: the page's path, optional, the pathname alone (AutofillCredentialQuerySchema).
+      const path = query.get('path') ?? undefined;
+      if (path !== undefined && (path.length > SIGN_IN_PATH_MAX || !/^\/[^?#\s]*$/.test(path))) {
+        return invalid("Name the page's path, from its first '/', with no query or fragment.");
+      }
       const own = state.credentials.find((saved) => saved.host === host);
-      const any = SIGN_IN_HOSTS.some((pattern) => pattern.test(host))
+      const any = mockSignInHostCovered(host, path)
         ? state.credentials.find((saved) => saved.host === '*') : undefined;
       const found = own ?? any;
       return found === undefined ? refusal(404, 'not_found', 'No sign-in is saved for that site.') : jsonAnswer(200, found);

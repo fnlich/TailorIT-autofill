@@ -1,0 +1,23 @@
+{
+  "fixture": "dice/d-step1-menu",
+  "source": "https://www.dice.com/job-applications/edf24268-9e60-4fad-a3cf-2c6439c82ff1/wizard",
+  "captured": "2026-11-06T14:56:48.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "div[data-testid=\"job-data\"] a",
+      "nav[aria-label=\"Account\"] button",
+      "nav[aria-label=\"Account\"] [role=\"menuitem\"]",
+      "button[aria-label=\"File options\"]",
+      "[role=\"menuitem\"][data-key=\"replace\"]",
+      "[role=\"menuitem\"][data-key=\"delete\"]"
+    ],
+    "pressable": []
+  }
+}

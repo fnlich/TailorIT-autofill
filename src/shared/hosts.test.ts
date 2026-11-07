@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MatchPattern } from 'wxt/utils/match-patterns';
 import {
-  ATS_MATCHES, careerSiteOf, isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, OPTIONAL_HOST_PERMISSIONS, platformOfUrl,
-  registrationsFor, SITES_MATCH,
+  ATS_MATCHES, careerSiteOf, HR_HOST_MATCHES, isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, OPTIONAL_HOST_PERMISSIONS,
+  platformOfUrl, registrationsFor, SITES_MATCH,
 } from './hosts';
 
 describe('the ATS host list', () => {
@@ -21,7 +21,8 @@ describe('the ATS host list', () => {
     }
     expect(platformOfUrl('https://apply.workable.com/acme/j/0123456789/apply/')).toBe('workable');
     // Workable's job-search site and the addresses that only redirect to its application host are not matched.
-    expect(platformOfUrl('https://jobs.workable.com/view/abc/engineer')).toBeNull();
+    // Snapshot build, boards (the owner's captures of 2026-11-06): Workable's job-search site is Workable's.
+    expect(platformOfUrl('https://jobs.workable.com/view/abc/engineer')).toBe('workable');
     expect(platformOfUrl('https://acme.workable.com/j/0123456789')).toBeNull();
     expect(platformOfUrl('https://evil.example/jobs.lever.co')).toBeNull();
     expect(platformOfUrl('http://jobs.lever.co/acme')).toBeNull();
@@ -49,7 +50,9 @@ describe('the ATS host list', () => {
   it('matches through the manifest patterns for exactly the hosts it names', () => {
     const patterns = ATS_MATCHES.map((p) => new MatchPattern(p));
     for (const url of ['https://wlu.wd5.myworkdayjobs.com/x', 'https://jobs.lever.co/a/b/apply',
-      'https://apply.workable.com/acme/j/0123456789/apply/']) {
+      'https://apply.workable.com/acme/j/0123456789/apply/',
+      // Snapshot build, boards (the owner's captures of 2026-11-06).
+      'https://jobs.workable.com/view/h3u3XDdUxbcDLb9v7mvmpN/remote-expert-rag-engineer']) {
       expect(patterns.some((p) => p.includes(url)), url).toBe(true);
     }
     expect(patterns.some((p) => p.includes('https://careers.example.com/jobs/1'))).toBe(false);
@@ -64,6 +67,108 @@ describe('the ATS host list', () => {
     expect(patterns.some((p) => p.includes('https://icims.com/x'))).toBe(true);
     expect(platformOfUrl('https://icims.com/x')).toBeNull();
   });
+
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  it("names Oracle's government cloud tenants by their candidate pages, and SmartRecruiters' jobs host", () => {
+    const patterns = ATS_MATCHES.map((p) => new MatchPattern(p));
+    // [iaaxmg.fa.ocs.oraclegovcloud.com]: the same Candidate Experience application, by its path alone.
+    const gov = 'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1';
+    expect(platformOfUrl(gov)).toBe('oracle');
+    expect(patterns.some((p) => p.includes(gov))).toBe(true);
+    for (const url of ['https://iaaxmg.fa.ocs.oraclegovcloud.com/fscmUI/faces/FuseWelcome',
+      'https://iaaxmg.fa.ocs.oraclegovcloud.com/', 'https://iaaxmg.fa.us2.oraclegovcloud.com/hcmUI/CandidateExperience/en/x',
+      'https://www.oraclegovcloud.com/hcmUI/CandidateExperience/en/x']) {
+      expect(platformOfUrl(url), url).toBeNull();
+    }
+    expect(patterns.some((p) => p.includes('https://iaaxmg.fa.ocs.oraclegovcloud.com/fscmUI/faces/FuseWelcome'))).toBe(false);
+    expect(patterns.some((p) => p.includes('https://www.oraclegovcloud.com/hcmUI/CandidateExperience/en/x'))).toBe(false);
+    // [jobs.smartrecruiters.com]: a posting and the one-click application; no other SmartRecruiters host.
+    for (const url of ['https://jobs.smartrecruiters.com/Xplor/744000159905715-senior-site-reliability-engineer',
+      'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1/screening']) {
+      expect(platformOfUrl(url), url).toBe('smartrecruiters');
+      expect(patterns.some((p) => p.includes(url)), url).toBe(true);
+    }
+    for (const url of ['https://careers.smartrecruiters.com/Xplor', 'https://www.smartrecruiters.com/',
+      'https://jobs.smartrecruiters.com.evil.example/x', 'http://jobs.smartrecruiters.com/Xplor/1']) {
+      expect(platformOfUrl(url), url).toBeNull();
+      expect(patterns.some((p) => p.includes(url)), url).toBe(false);
+    }
+  });
+
+  // ── New ATSs (DESIGN-NEW-ATS §4, Phase 0) ──
+  /** Each new platform's candidate addresses (the snapshots' shapes, made up ids), and addresses of the same host or
+   *  domain off its candidate paths, which are no platform's. */
+  const NEW_ATS: Array<[string, string[], string[]]> = [
+    ['jobvite', ['https://jobs.jobvite.com/acme/job/oAbC1dEf', 'https://jobs.jobvite.com/acme/job/oAbC1dEf/apply'],
+      ['https://www.jobvite.com/support/job-seeker-support/', 'https://app.jobvite.com/x']],
+    ['jazzhr', ['https://acme.applytojob.com/apply/AbCdEf1234/Senior-Engineer'],
+      ['https://acme.applytojob.com/', 'https://acme.applytojob.com/careers', 'https://www.applytojob.com/apply/x']],
+    ['rippling', ['https://ats.rippling.com/acme/jobs/00000000-0000-4000-8000-000000000001',
+      'https://ats.rippling.com/acme/jobs/00000000-0000-4000-8000-000000000001/apply?step=application'],
+    ['https://app.rippling.com/login', 'https://www.rippling.com/']],
+    ['breezy', ['https://acme.breezy.hr/p/0123456789ab-senior-engineer', 'https://acme.breezy.hr/p/0123456789ab-senior-engineer/apply'],
+      ['https://acme.breezy.hr/', 'https://app.breezy.hr/signin']],
+    ['careerplug', ['https://acme.careerplug.com/jobs/1234567/apps/new'],
+      ['https://acme.careerplug.com/account/sign_in', 'https://acme.careerplug.com/',
+        // The security fix of 2026-11-06 (S5): CareerPlug's employers' host is no tenant's.
+        'https://app.careerplug.com/jobs/1234567/apps/new']],
+    ['pinpoint', ['https://acme.pinpointhq.com/en/postings/00000000-0000-4000-8000-000000000001',
+      'https://acme.pinpointhq.com/en/postings/00000000-0000-4000-8000-000000000001/applications/new'],
+    ['https://app.pinpointhq.com/en/postings/x', 'https://acme.pinpointhq.com/', 'https://acme.pinpointhq.com/fr/postings/x']],
+    ['paycor', ['https://recruitingbypaycor.com/career/JobIntroduction.action?clientId=x&id=y'],
+      ['https://recruitingbypaycor.com/', 'https://www.recruitingbypaycor.com/career/x']],
+    ['hibob', ['https://acme.careers.hibob.com/jobs/00000000-0000-4000-8000-000000000001'],
+      ['https://app.hibob.com/home', 'https://careers.hibob.com/x']],
+    ['ultipro', ['https://recruiting.ultipro.com/ACM1000ACME/JobBoard/00000000-0000-4000-8000-000000000001/OpportunityApply?opportunityId=x'],
+      ['https://acme.ultipro.com/login', 'https://www.ultipro.com/']],
+    ['dayforce', ['https://jobs.dayforcehcm.com/en-US/acme/CANDIDATEPORTAL/jobs/1234/apply'],
+      ['https://www.dayforcehcm.com/', 'https://acme.dayforcehcm.com/x']],
+    ['paylocity', ['https://recruiting.paylocity.com/Recruiting/Jobs/Apply/1234567'],
+      ['https://recruiting.paylocity.com/recruiting/Jobs/Apply/1234567', 'https://access.paylocity.com/', 'https://recruiting.paylocity.com/']],
+    ['dice', ['https://www.dice.com/job-applications/00000000-0000-4000-8000-000000000001/wizard'],
+      ['https://www.dice.com/job-detail/00000000-0000-4000-8000-000000000001', 'https://www.dice.com/dashboard/login', 'https://dice.com/job-applications/x']],
+    ['clearcompany', ['https://acme.clearcompany.com/careers/jobs/00000000-0000-4000-8000-000000000001/apply'],
+      ['https://acme.clearcompany.com/blank/page', 'https://acme.clearcompany.com/app/home', 'https://cc-app-static.clearcompany.com/careers/x']],
+    ['adp', ['https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=x&ccId=y&jobId=1',
+      'https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/recruitment.html?cid=x'],
+    ['https://workforcenow.adp.com/theme/index.html', 'https://workforcenow.adp.com/mascsr/default/mdf/x.html', 'https://online.adp.com/signin']],
+    ['bamboohr', ['https://acme.bamboohr.com/careers/123', 'https://acme.bamboohr.com/careers/123?source=x'],
+      ['https://acme.bamboohr.com/home', 'https://acme.bamboohr.com/employees/', 'https://www.bamboohr.com/']],
+  ];
+
+  it('names the new ATSs on their candidate hosts and paths alone (DESIGN-NEW-ATS §4)', () => {
+    for (const [platform, inside, outside] of NEW_ATS) {
+      for (const url of inside) expect(platformOfUrl(url), url).toBe(platform);
+      for (const url of outside) expect(platformOfUrl(url), url).toBeNull();
+    }
+    // Paycom waits for its snapshots and DFIN stays a company's own host: neither is an ATS host.
+    expect(platformOfUrl('https://www.paycomonline.net/v4/ats/web.php/portal/x/career-page')).toBeNull();
+    expect(platformOfUrl('https://jobs.dfinsolutions.com/job/x/1/')).toBeNull();
+    // A path-scoped host's path is compared as written, as Chrome's match pattern compares it.
+    expect(platformOfUrl('https://acme.bamboohr.com/Careers/123')).toBeNull();
+  });
+
+  it("matches the new ATSs through the manifest patterns on their candidate paths, and stays off their hosts' other paths", () => {
+    const patterns = ATS_MATCHES.map((p) => new MatchPattern(p));
+    for (const [, inside, outside] of NEW_ATS) {
+      for (const url of inside) {
+        expect(patterns.some((p) => p.includes(url)), url).toBe(true);
+        expect(onAtsMatch(url), url).toBe(true);
+      }
+      for (const url of outside) {
+        expect(onAtsMatch(url), url).toBe(patterns.some((p) => p.includes(url)));
+        // The static script may match a domain pattern's other host (dormant there, no platform), never a candidate
+        // path's other paths.
+        if (onAtsMatch(url)) expect(platformOfUrl(url), url).toBeNull();
+      }
+    }
+    for (const url of ['https://acme.bamboohr.com/home', 'https://workforcenow.adp.com/theme/index.html',
+      'https://acme.clearcompany.com/blank/page', 'https://www.dice.com/dashboard/login', 'https://acme.applytojob.com/',
+      'https://www.paycomonline.net/v4/ee/web.php/app/login']) {
+      expect(onAtsMatch(url), url).toBe(false);
+    }
+  });
+  // ── end New ATSs ──
 });
 
 describe('the company career sites (v3 Phase 8)', () => {
@@ -78,7 +183,18 @@ describe('the company career sites (v3 Phase 8)', () => {
     expect(registrationsFor({ sites: true })).toEqual([{ id: 'tailorit-sites', js: ['sentinel.js'], matches: [SITES_MATCH],
       excludeMatches: [...ATS_MATCHES, 'https://*.linkedin.com/*', 'https://*.linkedin.cn/*', 'https://*.lnkd.in/*',
         'https://*.licdn.com/*', 'https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*',
-        'https://*.sapsf.eu/*'], allFrames: false, runAt: 'document_idle', persistAcrossSessions: true, world: 'ISOLATED' }]);
+        'https://*.sapsf.eu/*',
+        // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+        'https://*.oraclegovcloud.com/*',
+        // ── New ATSs ──
+        'https://workforcenow.adp.com/*', 'https://*.bamboohr.com/*', 'https://www.paycomonline.net/*',
+        'https://*.clearcompany.com/*',
+        // ── The security fix of 2026-11-06 (S5) ──
+        'https://*.dayforcehcm.com/*', 'https://*.ultipro.com/*', 'https://*.ukg.net/*', 'https://*.paylocity.com/*',
+        'https://*.paycor.com/*', 'https://*.rippling.com/*', 'https://*.hibob.com/*', 'https://*.adp.com/*',
+        'https://app.careerplug.com/*'], allFrames: false, runAt: 'document_idle', persistAcrossSessions: true,
+      world: 'ISOLATED' }]);
+    expect(HR_HOST_MATCHES).toHaveLength(18);
   });
 
   // Every address the registration reaches is one isCompanySiteUrl takes, and the other way round.
@@ -89,21 +205,55 @@ describe('the company career sites (v3 Phase 8)', () => {
     'https://acme.fa.us2.oraclecloud.com/fscmUI/faces/x', 'https://objectstorage.us-ashburn-1.oraclecloud.com/n/x',
     'https://oraclecloud.com/', 'https://acme.myworkday.com/acme/d/home.htmld', 'https://wd5.myworkday.com/acme/login.htmld',
     'https://performancemanager4.sapsf.com/sf/home', 'https://hcm.sapsf.eu/sf/home', 'https://career5.successfactors.eu/career?x=1',
-    'https://acme.wd5.myworkdayjobs.com/x', 'http://careers.acme.example/jobs/1'];
+    'https://acme.wd5.myworkdayjobs.com/x', 'http://careers.acme.example/jobs/1',
+    // ── snapshot build 2026-11-06 (oracle-sf-sr): a government cloud tenant's pages, SmartRecruiters' jobs host ──
+    'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/x', 'https://iaaxmg.fa.ocs.oraclegovcloud.com/fscmUI/faces/x',
+    'https://jobs.smartrecruiters.com/Xplor/744000159905715-x',
+    // New ATSs (DESIGN-NEW-ATS §4): their candidate paths are ATS matches, their employee pages HR systems', and the
+    // other hosts of their vendors (no snapshot names them an HR system) company pages.
+    'https://jobs.jobvite.com/acme/job/x/apply', 'https://acme.bamboohr.com/careers/1', 'https://acme.bamboohr.com/home',
+    'https://bamboohr.com/', 'https://workforcenow.adp.com/theme/index.html',
+    'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html', 'https://www.paycomonline.net/v4/ee/web.php/app/login',
+    'https://www.paycomonline.net/v4/ats/web.php/portal/x/career-page', 'https://acme.clearcompany.com/app/home',
+    'https://acme.clearcompany.com/careers/jobs/1/apply', 'https://cc-app-static.clearcompany.com/x.css',
+    'https://acme.applytojob.com/', 'https://app.rippling.com/login', 'https://jobs.dfinsolutions.com/job/x/1/',
+    // ── The security fix of 2026-11-06 (S5): the new ATS vendors' employee systems (the review's probe), never reached;
+    // their candidate hosts stay ATS matches ──
+    'https://www.dayforcehcm.com/mydayforce/login.aspx', 'https://n12.ultipro.com/default.aspx', 'https://acme.ukg.net/',
+    'https://access.paylocity.com/', 'https://secure.paycor.com/Accounts/Signin', 'https://app.rippling.com/dashboard',
+    'https://app.hibob.com/home', 'https://my.adp.com/', 'https://app.careerplug.com/jobs/1/apps/new',
+    'https://app.careerplug.com/login', 'https://jobs.dayforcehcm.com/en-US/acme/candidateportal/jobs/1',
+    'https://recruiting.ultipro.com/ACME/JobBoard/abc/OpportunityDetail?opportunityId=1',
+    'https://recruiting.paylocity.com/Recruiting/Jobs/Apply/1', 'https://ats.rippling.com/acme/jobs/1',
+    'https://acme.careers.hibob.com/jobs/1', 'https://acme.careerplug.com/jobs/1/apps/new'];
 
   it('reaches a company page, and never LinkedIn (deferred to v5), an employee HR system, an ATS host or an http page', () => {
     const [sites] = registrationsFor({ sites: true });
     const reached = addresses.filter((url) => reaches(sites!, url));
-    expect(reached).toEqual(['https://careers.acme.example/jobs/1', 'https://www.amazon.jobs/en/jobs/1/x']);
+    expect(reached).toEqual(['https://careers.acme.example/jobs/1', 'https://www.amazon.jobs/en/jobs/1/x',
+      'https://acme.applytojob.com/', 'https://jobs.dfinsolutions.com/job/x/1/']);
     for (const url of addresses) expect(isCompanySiteUrl(url), url).toBe(reached.includes(url));
   });
 
   it("knows the employee HR systems' hosts (the Phase 8 review, B4)", () => {
     for (const host of ['acme.fa.us2.oraclecloud.com', 'oraclecloud.com', 'acme.myworkday.com', 'hcm.sapsf.com', 'hcm.sapsf.eu',
-      'X.SAPSF.COM.']) {
+      'X.SAPSF.COM.',
+      // ── snapshot build 2026-11-06 (oracle-sf-sr): Oracle's government cloud ──
+      'iaaxmg.fa.ocs.oraclegovcloud.com', 'oraclegovcloud.com',
+      // ── New ATSs ──
+      'workforcenow.adp.com', 'WorkforceNow.ADP.com.', 'acme.bamboohr.com', 'bamboohr.com',
+      'www.paycomonline.net', 'acme.clearcompany.com', 'cc-app-static.clearcompany.com',
+      // ── The security fix of 2026-11-06 (S5) ──
+      'www.dayforcehcm.com', 'jobs.dayforcehcm.com', 'n12.ultipro.com', 'recruiting.ultipro.com', 'acme.ukg.net',
+      'access.paylocity.com', 'secure.paycor.com', 'app.rippling.com', 'ats.rippling.com', 'app.hibob.com', 'my.adp.com',
+      'x.workforcenow.adp.com', 'online.adp.com', 'adp.com', 'app.careerplug.com', 'APP.CareerPlug.com.']) {
       expect(isHrHost(host), host).toBe(true);
     }
-    for (const host of ['acme.wd5.myworkdayjobs.com', 'sapsf.com.evil.example', 'notoraclecloud.com', 'careers.acme.example']) {
+    for (const host of ['acme.wd5.myworkdayjobs.com', 'sapsf.com.evil.example', 'notoraclecloud.com', 'careers.acme.example',
+      'notoraclegovcloud.com',
+      // HR_HOST_MATCHES names these hosts alone, never one under or beside them.
+      'paycomonline.net', 'x.www.paycomonline.net', 'x.app.careerplug.com', 'acme.careerplug.com', 'careerplug.com',
+      'bamboohr.com.evil.example', 'jobs.jobvite.com', 'adp.com.evil.example', 'notrippling.com']) {
       expect(isHrHost(host), host).toBe(false);
     }
   });

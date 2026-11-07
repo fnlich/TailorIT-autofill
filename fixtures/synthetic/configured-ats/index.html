@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<!-- TailorIT fixture (written by hand, never converted): the configured-adapter layer's own synthetic page
+     (DESIGN-NEW-ATS Phase 0). Its markup is the framework's own vocabulary (cf-*), no snapshot's: one page that holds
+     every kind of rule an AtsConfig declares (src/adapters/configured/configured.browser.test.ts): page states (a
+     consent gate with its entry, a residence choice filled like a step, an account form for Sign-in Auto, an emailed
+     code), the posting with its Apply, the application root, questions titled in their container or before it, help,
+     a checkbox question with no fieldset, required marks and classes, sections, a drawn dropdown, drawn radios,
+     a clipped checkbox and its proxy, an upload with its signs, a repeatable block, two steps with Next, Back and
+     Submit, never-pressed buttons, errors, a busy sign and the success sign. The test shows and hides its parts with
+     the hidden attribute. Nothing here is a person's value. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Configured ATS synthetic page</title>
+<style>
+  body { font: 16px/1.4 sans-serif; margin: 16px; }
+  [hidden] { display: none !important; }
+  .cf-q, .cf-q-plain, .cf-block { margin: 8px 0; }
+  .cf-q-title { display: block; font-weight: 600; }
+  .cf-star { color: #b00; font-style: normal; }
+  .cf-star--unseen { visibility: hidden; }
+  .cf-drawn { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+  .cf-radio { display: inline-block; padding: 4px 8px; border: 1px solid #888; }
+  .cf-radio--on { background: #cde; }
+  .cf-clip { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); margin: -1px; }
+  .cf-box-face { display: inline-block; width: 16px; height: 16px; border: 1px solid #333; }
+  .cf-select { display: inline-block; min-width: 200px; border: 1px solid #888; }
+  .cf-select-native { display: none; }
+  .cf-file { position: absolute; opacity: 0; width: 1px; height: 1px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="#" class="cf-linkedin">Apply with LinkedIn</a>
+  <button type="button" class="cf-cookies">Accept cookies</button>
+</header>
+
+<section id="cf-consent" hidden>
+  <h1>Data consent</h1>
+  <form class="cf-consent-form" action="/__submitted" method="post">
+    <label for="cf-residence">Location of residence</label>
+    <select id="cf-residence" name="residence"><option value="">Select…</option><option value="us">United States</option>
+      <option value="ca">Canada</option></select>
+  </form>
+  <div class="cf-consent-choice" hidden>
+    <p>We keep your application for two years.</p>
+    <button type="button" class="cf-accept">I Accept</button>
+    <button type="button" class="cf-decline">I Decline</button>
+  </div>
+</section>
+
+<section id="cf-account" hidden>
+  <h1>Create your account</h1>
+  <form id="cf-account-form" action="/__submitted" method="post">
+    <label for="cf-acct-email">Email</label><input id="cf-acct-email" name="email" type="email" autocomplete="email">
+    <label for="cf-acct-pass">Password</label><input id="cf-acct-pass" name="password" type="password"
+      autocomplete="new-password">
+    <label for="cf-acct-confirm">Confirm password</label><input id="cf-acct-confirm" name="confirm" type="password"
+      autocomplete="new-password">
+    <label><input type="checkbox" class="cf-acct-terms" name="terms"> I agree to the account terms</label>
+    <button type="button" id="cf-create">Create account</button>
+  </form>
+</section>
+
+<section id="cf-code" hidden>
+  <h1>Check your email</h1>
+  <label for="cf-otp">Verification code</label><input id="cf-otp" name="otp" type="text" autocomplete="one-time-code">
+</section>
+
+<article id="cf-posting" hidden>
+  <h1>Senior Engineer</h1>
+  <div class="cf-description"><p>You build the things our customers use every day.</p></div>
+  <a href="#apply" class="cf-apply">Apply for this job</a>
+</article>
+
+<main id="cf-app">
+  <p class="cf-progress">Step 1 of 2</p>
+  <div class="cf-steps">
+    <section class="cf-step" data-step="details">
+      <h2 class="cf-step-title">Your details</h2>
+      <div class="cf-section">
+        <h3 class="cf-section-title">Personal information</h3>
+        <div class="cf-q"><span class="cf-q-title">First name <i class="cf-star">*</i></span>
+          <input type="text" name="first"></div>
+        <div class="cf-q cf-q--required"><span class="cf-q-title">Last name</span>
+          <input type="text" name="last"><p class="cf-help">As written on your passport.</p></div>
+        <div class="cf-q"><span class="cf-q-title">Middle name <i class="cf-star cf-star--unseen">*</i></span>
+          <input type="text" name="middle"></div>
+        <h4 class="cf-before">Preferred contact time</h4>
+        <div class="cf-q-plain"><input type="text" name="contactTime"></div>
+        <div class="cf-q cf-q--group"><label class="cf-q-title">Are you authorized to work here? <i class="cf-star">*</i></label>
+          <label><input type="checkbox" name="authorized_yes" value="yes"> Yes</label>
+          <label><input type="checkbox" name="authorized_no" value="no"> No</label></div>
+        <div class="cf-q"><span class="cf-q-title">Will you need sponsorship?</span>
+          <label class="cf-radio"><input type="radio" name="sponsor" value="yes" class="cf-drawn"><span>Yes</span></label>
+          <label class="cf-radio cf-radio--on"><input type="radio" name="sponsor" value="no" class="cf-drawn"><span>No</span></label></div>
+        <div class="cf-q"><span class="cf-q-title">Country</span>
+          <div class="cf-select"><button type="button" class="cf-select-toggle" aria-expanded="false">Choose a country</button>
+            <select class="cf-select-native" name="country"><option value="">-</option><option>Canada</option></select></div></div>
+        <div class="cf-q"><span class="cf-q-title">I agree to the terms of this application</span>
+          <span class="cf-box"><input type="checkbox" id="cf-terms" name="terms" class="cf-clip"><span class="cf-box-face"></span></span></div>
+        <div class="cf-q cf-upload"><span class="cf-q-title">Resume</span>
+          <button type="button" class="cf-upload-button">Choose file</button>
+          <input type="file" class="cf-file" name="resume">
+          <span class="cf-upload-busy" hidden>Uploading…</span>
+          <span class="cf-upload-done" hidden>Uploaded</span>
+          <span class="cf-upload-error" hidden>That upload failed</span></div>
+        <div class="cf-q"><span class="cf-q-title">Email</span><input type="email" name="email" aria-invalid="true">
+          <p class="cf-error">Enter an email address.</p></div>
+      </div>
+      <div class="cf-section cf-experience">
+        <h3 class="cf-section-title">Work experience</h3>
+        <div class="cf-block">
+          <div class="cf-q"><span class="cf-q-title">Job title</span><input type="text" name="title-0"></div>
+          <label><input type="checkbox" class="cf-current" name="current-0"> I currently work here</label>
+          <button type="button" class="cf-block-save">Save</button>
+        </div>
+        <button type="button" class="cf-add">Add experience</button>
+      </div>
+      <div class="cf-parser"><button type="button" class="cf-parse">Autofill from resume</button>
+        <input type="text" name="parsed" placeholder="Paste your resume"></div>
+    </section>
+    <section class="cf-step" data-step="review" hidden>
+      <h2 class="cf-step-title">Review</h2>
+      <p>Check your answers.</p>
+    </section>
+  </div>
+  <div class="cf-saving" hidden>Saving…</div>
+  <div class="cf-footer">
+    <button type="button" class="cf-back">Back</button>
+    <button type="button" class="cf-later">Finish later</button>
+    <button type="button" class="cf-next">Next</button>
+    <button type="submit" class="cf-submit" hidden>Submit application</button>
+  </div>
+</main>
+
+<div class="cf-thanks" hidden><h2>Thank you for applying.</h2></div>
+</body>
+</html>

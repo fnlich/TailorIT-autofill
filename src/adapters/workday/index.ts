@@ -3,13 +3,11 @@
  * tenant's public pages, its posting, its "Start Your Application" choice and its account views. Every hook was read
  * from the public capture of 2026-11-04/05 (docs/FIXTURES.md, "The Workday, iCIMS, Taleo, SuccessFactors and Oracle
  * capture"; three tenants: Workday's own on wd5, Salesforce's on wd12 and Snap's on myworkdaysite.com, converted as
- * fixtures/workday/*.html) and names the markup it relies on. The application's steps after the account (My
- * Information, My Experience, Application Questions, Voluntary Disclosures, Self Identify, Review) need a signed-in
- * session, so they wait for the owner's snapshots: no hook below is written for them, and they are read with the
- * standard semantics the generic adapter gives (the scanner's own rules, aria-invalid errors, the final step 'unknown',
- * so nothing is ever pressed there). The pages are client-rendered React: the posting's description is drawn 6 to 11 s
- * after the address commits, the account view 5 to 11 s after Apply Manually (quirks.formLateMs: the runtime's 30 s
- * cap).
+ * fixtures/workday/*.html) and names the markup it relies on. The application's steps after the account (Autofill with
+ * Resume, My Information, My Experience, Application Questions, Voluntary Disclosures, Self Identify, Review) are read
+ * by ./application.ts, written from the owner's signed-in snapshots of 2026-11-06 (its header says what each hook reads).
+ * The pages are client-rendered React: the posting's description is drawn 6 to 11 s after the address commits, the
+ * account view 5 to 11 s after Apply Manually (quirks.formLateMs: the runtime's 30 s cap).
  * - Form root: main > [data-automation-id=applyFlowPage], the application's flow page, which holds the account view
  *   (step 1 of its progress bar, "Create Account/Sign In") and, by that bar, every step after it in the same document:
  *   the root stays as the steps change in place. The posting and its choice have none.
@@ -52,7 +50,14 @@ import { newScanCache, type ScanCache } from '../../dom/scan-cache';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, SignInForm, SignInWall } from '../types';
+import {
+  accountErrors, descriptionFor, isBusy, isFinalStep, labelFor, neverPressedOnSteps, nextButton, repeatables,
+  requiredFor, sections, stepSignature, submitButton, uploadHeld, uploadHeldNames, uploadState, uploadWidgets, widgetFor,
+  widgetRoots,
+} from './application';
 import { canonicalApplicationUrl, matchesUrl, parseWorkdayUrl } from './url';
+
+export { WORKDAY_STEP_SNAPSHOTS } from './application';
 
 /** The snapshots the hooks were written from (fixtures/workday/). */
 export const WORKDAY_SNAPSHOTS = ['fixtures/workday/workday-posting.html', 'fixtures/workday/workday-apply-choice.html',
@@ -226,6 +231,9 @@ function neverPress(root: Element): Element[] {
       if (sibling.getAttribute('data-automation-id') === 'click_filter') found.push(sibling);
     }
   }
+  // The application steps' (./application.ts): Back, the cookie notice, the verification's resend, uploads' and
+  // pills' and blocks' Delete, "Select files", the calendar and the phone's terms link.
+  found.push(...neverPressedOnSteps(doc));
   return [...new Set(found)];
 }
 
@@ -240,8 +248,27 @@ export const workdayAdapter: Adapter = {
   signInForm,
   signInPrelude,
   neverPress,
-  errors: (root) => genericAdapter.errors?.(root) ?? [],
-  isFinalStep: () => 'unknown',
+  // The generic aria-invalid errors, and on the account view the sign-in's error above its form (./application.ts).
+  errors: (root) => [...(genericAdapter.errors?.(root) ?? []), ...accountErrors(root).map((el) => ({ el }))],
+  // The application's steps (./application.ts).
+  stepSignature,
+  isFinalStep,
+  nextButton,
+  submitButton,
+  sections,
+  labelFor,
+  requiredFor,
+  descriptionFor,
+  widgetRoots,
+  widgetFor,
+  uploadWidgets,
+  uploadState,
+  // The core pass of 2026-11-06: a field showing a file Workday took is answered, never uploaded again.
+  uploadHeld,
+  // The integration of 2026-11-06: the names beside those files, so the person's résumé never goes in twice.
+  uploadHeldNames,
+  repeatables,
+  isBusy,
   quirks: { formLateMs: WORKDAY_FORM_LATE_MS, entryPresses: 2, entryWaitMs: WORKDAY_ENTRY_WAIT_MS },
   entryControl,
   // Apply and Apply Manually are never pressed by a run (neverPress): the entry door presses that element alone.

@@ -1,0 +1,24 @@
+{
+  "fixture": "dice/d-review",
+  "source": "https://www.dice.com/job-applications/edf24268-9e60-4fad-a3cf-2c6439c82ff1/wizard",
+  "captured": "2026-11-06T17:11:47.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": "div:has(> div[role=\"meter\"][aria-label=\"Application progress\"])",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "div[data-testid=\"job-data\"] a",
+      "nav[aria-label=\"Account\"] button",
+      "nav[aria-label=\"Account\"] [role=\"menuitem\"]",
+      "button[aria-label^=\"Set application wizard to step \"]",
+      "#react-aria0000000001-_r_2o_"
+    ],
+    "pressable": [
+      "#react-aria0000000001-_r_2q_"
+    ]
+  }
+}

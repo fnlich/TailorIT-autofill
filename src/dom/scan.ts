@@ -34,10 +34,12 @@
  */
 import type { Adapter, WidgetDecl } from '../adapters/types';
 import type { FieldFormat, FieldKind, FieldVisibility, Platform } from '../core/enums';
+import { statesNoAiUse } from '../core/resolver/classifyRules';
 import { assignOrdinals, baseKey, fieldKey, labelSlug, OPTION_SET_LAZY, OPTION_SET_NONE } from '../core/text/keys';
 import { capCodePoints } from '../core/text/fold';
 import type { BaseKey, Constraints, CurrentValue, FieldKey, FieldSpec, Option, SectionRef } from '../core/types/field';
 import { isControlCamouflaged } from './camouflage';
+import { composedOrder, holdsComposed } from './composed';
 import { constraintsOf } from './constraints';
 import {
   ariaReadOnly, autocompleteTokens, CONTROL_SELECTOR, inputModeFormatOf, isDisabled, isReadOnly, isTextLike, kindOf,
@@ -49,6 +51,7 @@ import {
 } from './labels';
 import { hashOfOptions } from './option-hash';
 import { isInOwnUi } from './own-ui';
+import { isCaptchaResponseField } from './pause-detect';
 import { proxyOf, type Proxy, unrecognisedUploadControl } from './proxy';
 import { newScanCache, styleOf, type ScanCache } from './scan-cache';
 import { sectionFinder } from './sections';
@@ -138,7 +141,8 @@ interface Draft {
 /** Scans a frame's form root. */
 export function scan(root: Element, adapter: Adapter | null, options: ScanOptions): ScanResult {
   const cache = newScanCache();
-  const ctx: LabelContext = { cache, adapter, ...(options.heldPlaceholders ? { heldPlaceholders: options.heldPlaceholders } : {}) };
+  const ctx: LabelContext = { cache, adapter, root,
+    ...(options.heldPlaceholders ? { heldPlaceholders: options.heldPlaceholders } : {}) };
   const counters: ScanCounters = { hiddenControlsIgnored: 0, deferredFields: 0 };
   let authFields = 0;
   const candidates: Candidate[] = [];
@@ -169,6 +173,13 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
     const native = el.matches(CONTROL_SELECTOR);
     // A native control inside a widget's list, or an ARIA 1.1 combobox's text box, is that widget's.
     if (native && isWidgetPart(el)) continue;
+    // The behaviour review of 2026-11-06 (M6): a CAPTCHA vendor's response field is the widget's, shown or not (a fill
+    // now goes on beside a checkbox widget): never a field. A field kind is counted with the hidden controls ignored, as
+    // it was while hidden (Turnstile's hidden input never was).
+    if (native && isCaptchaResponseField(el)) {
+      if (kindOf(el).field) counters.hiddenControlsIgnored += 1;
+      continue;
+    }
     const kind = native ? kindOf(el) : { field: false as const, auth: false };
     if (native && !kind.field) {
       if (kind.auth && isUserVisible(el, cache)) authFields += 1;
@@ -237,12 +248,15 @@ export function scan(root: Element, adapter: Adapter | null, options: ScanOption
         : hashOfOptions(draft.options.map((option) => option.label));
     const key = fieldKey({ ...parts, optionSetHash });
     const current: CurrentValue = draft.widget !== null ? widgetCurrent(draft, cache)
-      : currentValueOf(draft.kind, draft.control, draft.selectable, checkedOf);
+      : heldFile(draft.kind, draft.control, adapter, currentValueOf(draft.kind, draft.control, draft.selectable, checkedOf));
     const field: ScannedField = {
       key, baseKey: base, platform: options.platform, section: draft.section, kind: draft.kind,
       label: draft.label.text, labelSource: draft.label.source, labelVisible: draft.label.visible,
       description: draft.description, required: draft.required, options: draft.options ?? [], optionSetHash,
       ...(draft.optionsPartial ? { optionsPartial: true as const } : {}),
+      // The core pass of 2026-11-06: an "I did not use AI" statement past the label's 300 characters (Dropzone's).
+      ...(draft.label.whole !== undefined && statesNoAiUse({ label: draft.label.whole, description: '' })
+        ? { statesNoAi: true as const } : {}),
       constraints: draft.constraints, autocomplete: draft.autocomplete, nameAttr: draft.nameAttr, idAttr: draft.idAttr,
       ordinal: ordinals[i]!, domOrder: i, visibility: draft.visibility, disabled: draft.disabled,
       readOnly: draft.readOnly, current,
@@ -287,6 +301,7 @@ export function toFieldSpec(field: ScannedField): FieldSpec {
     autocomplete: field.autocomplete, nameAttr: field.nameAttr, idAttr: field.idAttr, ordinal: field.ordinal,
     domOrder: field.domOrder, visibility: field.visibility, disabled: field.disabled, readOnly: field.readOnly,
     current: field.current, ...(field.optionsPartial ? { optionsPartial: true as const } : {}),
+    ...(field.statesNoAi === true ? { statesNoAi: true as const } : {}),
   };
 }
 
@@ -324,7 +339,10 @@ function collectFields(root: Element): Element[] {
 }
 
 /** The elements an adapter's hook names inside the form root (its widget roots, its excluded parts), the extension's
- *  own UI left out; none when it names none or its hook fails. */
+ *  own UI left out; none when it names none or its hook fails. Inside counts across open shadow roots, as the scan's
+ *  own collection reads them (the core pass of 2026-11-06: SmartRecruiters' screening Yes/No groups, spl-radio-group in
+ *  sr-screening-questions-form's shadow root, fixtures/smartrecruiters/xplor-screening.html; Node.contains stops at a
+ *  shadow root). */
 function adapterParts(hook: ((root: Element) => Element[]) | undefined, root: Element): Element[] {
   if (hook === undefined) return [];
   let parts: Element[];
@@ -333,29 +351,16 @@ function adapterParts(hook: ((root: Element) => Element[]) | undefined, root: El
   } catch {
     return [];
   }
-  return [...new Set(parts)].filter((el) => (el === root || root.contains(el)) && !isInOwnUi(el));
+  return [...new Set(parts)].filter((el) => holdsComposed(root, el) && !isInOwnUi(el));
 }
 
-/** Whether `el` is `container` or inside it, open shadow roots crossed (Node.contains stops at a shadow root). */
-function holdsComposed(container: Element, el: Element): boolean {
-  let at: Node | null = el;
-  while (at !== null) {
-    if (at === container) return true;
-    const parent: Node | null = at.parentNode;
-    // A shadow root's parent is its host (a document fragment of any other kind has none).
-    const host: Element | null = parent !== null && parent.nodeType === 11 ? (parent as Partial<ShadowRoot>).host ?? null : null;
-    at = host ?? parent;
-  }
-  return false;
-}
-
-/** Elements without repeats, in document order. */
+/** Elements without repeats, in document order: the order collect() reads them in, open shadow roots included (a
+ *  host, then its shadow tree, then its own children). compareDocumentPosition orders nodes of two trees by no rule,
+ *  so it is used only between nodes of one tree (the core pass of 2026-11-06: a widget root in a shadow root;
+ *  holdsComposed and composedOrder live in ./composed since core pass Z2, shared with the section finder). */
 function inDocumentOrder(elements: readonly Element[]): Element[] {
-  return [...new Set(elements)].sort((a, b) => (a === b ? 0 : (a.compareDocumentPosition(b) & FOLLOWING) !== 0 ? -1 : 1));
+  return [...new Set(elements)].sort(composedOrder);
 }
-
-/** Node.DOCUMENT_POSITION_FOLLOWING, without reaching for a page global. */
-const FOLLOWING = 4;
 
 /** Whether a native radio or checkbox shows chosen: as its adapter reads it (checkedOf), else its own checked. A hook
  *  that fails reads as the input's own state. */
@@ -382,7 +387,9 @@ interface Entry {
  * two or more share a form and name, or when two or more sit in one fieldset (or role=group) that has a label and
  * holds no other kind of field; any other checkbox is a lone checkbox. A fieldset with no legend that its adapter
  * labels groups its own boxes before any name does, and makes its only box a lone checkbox (Ashby's). Each group sits
- * at its first member's place.
+ * at its first member's place. DESIGN-NEW-ATS Phase 0: the element the adapter names one question's group
+ * (Adapter.groupOf: JazzHR's div.form-group around two Yes/No boxes with different names) stands where a fieldset
+ * would, for a checkbox or a nameless radio, before any fieldset or group around it.
  */
 function group(candidates: readonly Candidate[], root: Element, ctx: LabelContext): Entry[] {
   const entries: Entry[] = [];
@@ -392,12 +399,16 @@ function group(candidates: readonly Candidate[], root: Element, ctx: LabelContex
     if (!ids.has(item)) ids.set(item, ids.size);
     return ids.get(item)!;
   };
+  // Workday's snapshots of 2026-11-06 (src/adapters/workday): each Work Experience block's "I currently work here" is
+  // a lone box named currentlyWorkHere, the same name in every block and no form: boxes that share a name are one
+  // question only inside one repeatable block (or outside them all).
+  const blockOf = repeatableBlockOf(root, ctx.adapter);
   const nameCount = new Map<string, number>();
   for (const candidate of candidates) {
     if (candidate.kind !== 'checkbox' || candidate.widget !== null) continue;
     const input = candidate.el as HTMLInputElement;
     if (input.name === '') continue;
-    const id = `${idOf(input.form)}|${input.name}`;
+    const id = `${idOf(input.form)}|${blockOf(input)}|${input.name}`;
     nameCount.set(id, (nameCount.get(id) ?? 0) + 1);
   }
   const boxContainers = new Map<Element, number>();
@@ -416,11 +427,12 @@ function group(candidates: readonly Candidate[], root: Element, ctx: LabelContex
       continue;
     }
     if (candidate.kind === 'radio') {
-      id = input.name !== '' ? `radio|${idOf(input.form)}|${input.name}`
-        : `radio-box|${idOf(input.closest('fieldset, [role="radiogroup"]'))}`;
-      if (input.name === '' && input.closest('fieldset, [role="radiogroup"]') === null) id = null;
+      const box = input.name !== '' ? null
+        : adapterGroupOf(input, root, ctx) ?? input.closest('fieldset, [role="radiogroup"]');
+      id = input.name !== '' ? `radio|${idOf(input.form)}|${input.name}` : `radio-box|${idOf(box)}`;
+      if (input.name === '' && box === null) id = null;
     } else if (candidate.kind === 'checkbox') {
-      const named = input.name === '' ? 0 : nameCount.get(`${idOf(input.form)}|${input.name}`) ?? 0;
+      const named = input.name === '' ? 0 : nameCount.get(`${idOf(input.form)}|${blockOf(input)}|${input.name}`) ?? 0;
       const container = checkboxContainer(input, root, ctx);
       const boxed = container !== null && (boxContainers.get(container) ?? 0) >= 2;
       // A fieldset its adapter labels is one question, whatever its boxes are named, and its only box a question of
@@ -428,7 +440,7 @@ function group(candidates: readonly Candidate[], root: Element, ctx: LabelContex
       // one "I agree" in each of two one-box questions, with no form, would be one name.
       if (container !== null && legendOf(container) === null && adapterLabelOf(container, ctx) !== null) {
         id = boxed ? `checkbox-box|${idOf(container)}` : null;
-      } else if (named >= 2) id = `checkbox|${idOf(input.form)}|${input.name}`;
+      } else if (named >= 2) id = `checkbox|${idOf(input.form)}|${blockOf(input)}|${input.name}`;
       else if (boxed) id = `checkbox-box|${idOf(container)}`;
       kind = id === null ? 'checkbox' : 'checkbox-group';
     }
@@ -446,15 +458,47 @@ function group(candidates: readonly Candidate[], root: Element, ctx: LabelContex
     entries.push(entry);
   }
   for (const entry of entries) {
-    if (entry.kind === 'radio' || entry.kind === 'checkbox-group') entry.container = groupContainer(entry.members, root);
+    if (entry.kind === 'radio' || entry.kind === 'checkbox-group') entry.container = groupContainer(entry.members, root, ctx);
   }
   return entries;
 }
 
-/** The fieldset or role=group around a checkbox that can hold a checkbox group: it has a label (its legend, an ARIA
- *  label, or the adapter's visible label for it: Ashby's question title) and holds no field of another kind. */
+/** Which of the adapter's repeatable blocks holds an element, as "<kind>:<index>", '' outside them all (or when the
+ *  adapter names none or its hook fails): checkboxes that share a name group only inside one block (group()). */
+function repeatableBlockOf(root: Element, adapter: Adapter | null): (el: Element) => string {
+  let blocks: Array<{ kind: string; el: Element; index: number }> = [];
+  try {
+    blocks = (adapter?.repeatables?.(root) ?? []).flatMap((section) => section.blocks()
+      .map((el, index) => ({ kind: section.kind, el, index })));
+  } catch {
+    blocks = [];
+  }
+  if (blocks.length === 0) return () => '';
+  return (el) => {
+    const block = blocks.find((each) => each.el.contains(el));
+    return block === undefined ? '' : `${block.kind}:${block.index}`;
+  };
+}
+
+/** The element the adapter names a control's group (Adapter.groupOf), when it holds the control inside the form root;
+ *  null without the hook, or where it names none (a hook that throws names none). */
+function adapterGroupOf(control: Element, root: Element, ctx: LabelContext): Element | null {
+  const adapter = ctx.adapter;
+  if (adapter?.groupOf === undefined) return null;
+  let found: Element | null;
+  try {
+    found = adapter.groupOf(control);
+  } catch {
+    found = null;
+  }
+  return found !== null && found !== control && found.contains(control) && root.contains(found) ? found : null;
+}
+
+/** The fieldset or role=group around a checkbox (or the element its adapter names its group: groupOf) that can hold a
+ *  checkbox group: it has a label (its legend, an ARIA label, or the adapter's visible label for it: Ashby's question
+ *  title) and holds no field of another kind. */
 function checkboxContainer(input: Element, root: Element, ctx: LabelContext): Element | null {
-  const container = input.closest('fieldset, [role="group"]');
+  const container = adapterGroupOf(input, root, ctx) ?? input.closest('fieldset, [role="group"]');
   if (container === null || !root.contains(container)) return null;
   const labelled = legendOf(container) !== null || container.hasAttribute('aria-labelledby')
     || container.hasAttribute('aria-label') || adapterLabelOf(container, ctx) !== null;
@@ -463,10 +507,13 @@ function checkboxContainer(input: Element, root: Element, ctx: LabelContext): El
   return fields.every((el) => el.localName === 'input' && (el as HTMLInputElement).type === 'checkbox') ? container : null;
 }
 
-/** The nearest fieldset, radiogroup or group that holds every member of a group, inside the form root. */
-function groupContainer(members: readonly Candidate[], root: Element): Element | null {
+/** The element the adapter names the group's (groupOf) when it holds every member, else the nearest fieldset,
+ *  radiogroup or group that does, inside the form root. */
+function groupContainer(members: readonly Candidate[], root: Element, ctx: LabelContext): Element | null {
   const first = members[0]?.el;
   if (first === undefined) return null;
+  const declared = adapterGroupOf(first, root, ctx);
+  if (declared !== null && members.every((member) => declared.contains(member.el))) return declared;
   for (let at = first.closest('fieldset, [role="radiogroup"], [role="group"]'); at !== null;
     at = at.parentElement?.closest('fieldset, [role="radiogroup"], [role="group"]') ?? null) {
     if (!root.contains(at) && at !== root) return null;
@@ -520,10 +567,12 @@ function draftOf(entry: Entry, ctx: LabelContext, cache: ScanCache, sections: Re
 /** A widget's parts as this scan finds them: by ARIA, or as the adapter declared them. */
 function anatomyOf(el: Element, kind: WidgetKind, declared: WidgetDecl | null): WidgetTarget {
   // A group: an ARIA radio group or Yes/No group, or a 'radio' its adapter declares with its members, each inside its
-  // element and none the extension's own.
+  // element and none the extension's own. Inside counts across open shadow roots (core pass Z2 of 2026-11-06: ADP's
+  // referral radios, sdf-radio-button[role=radio] in each wfn-radio-button's shadow root, fixtures/adp/questions.html;
+  // Node.contains stops at a shadow root, as adapterParts' did).
   const group = kind === 'radio' && (declared === null || declared.members !== undefined);
   const members = declared?.members === undefined ? membersOf(el)
-    : declared.members.filter((member) => member !== el && el.contains(member) && !isInOwnUi(member));
+    : declared.members.filter((member) => member !== el && holdsComposed(el, member) && !isInOwnUi(member));
   return {
     kind, element: el, input: group ? null : editableOf(el),
     opener: group || roleOf(el) === 'listbox' ? null : declared?.opener ?? (el as HTMLElement),
@@ -721,6 +770,28 @@ function optionOf(index: number, label: string, value: string, disabled: boolean
 function isRequired(el: Element): boolean {
   if ((el as HTMLInputElement).required === true) return true;
   return (el.getAttribute('aria-required') ?? '').trim().toLowerCase() === 'true';
+}
+
+/** The most file names a held field's value carries (heldFile; messaging/schemas.ts CurrentValueSchema's cap). */
+const MAX_HELD_NAMES = 20;
+
+/** The core pass of 2026-11-06: an empty file input whose field the page shows holding a file it took
+ *  (Adapter.uploadHeld: Workday's resume read at "Autofill with Resume") holds that file, marked `held` (the behaviour
+ *  review of 2026-11-06, M2), so no upload is planned for it unless the person's "Résumé already on the page" setting
+ *  says to upload theirs again; any other value stands, as does every field when the hook fails. The names the page
+ *  shows beside those files (Adapter.uploadHeldNames, the integration of 2026-11-06) go with it, at most 20, each whole
+ *  (a longer one than a label's cap could never be a file's name, so it is left out), so the planner never puts the
+ *  person's résumé in beside a file of its name. */
+function heldFile(kind: FieldKind, control: Element, adapter: Adapter | null, current: CurrentValue): CurrentValue {
+  if (kind !== 'file' || current.kind !== 'empty' || adapter?.uploadHeld === undefined) return current;
+  try {
+    if (!adapter.uploadHeld(control as HTMLInputElement)) return current;
+    const names = (adapter.uploadHeldNames?.(control as HTMLInputElement) ?? [])
+      .filter((name) => name.length <= TEXT_CAP_LABEL).slice(0, MAX_HELD_NAMES);
+    return { kind: 'files', count: 1, held: true, ...(names.length > 0 ? { names } : {}) };
+  } catch {
+    return current;
+  }
 }
 
 /** Whether the adapter reads a required mark the page draws for this control (requiredFor); false when its hook

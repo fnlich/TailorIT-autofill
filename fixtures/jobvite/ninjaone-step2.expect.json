@@ -1,0 +1,87 @@
+{
+  "fixture": "jobvite/ninjaone-step2",
+  "source": "https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply",
+  "captured": "2026-11-06T14:05:33.000Z",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "radio",
+      "required": false,
+      "section": "Equal Opportunity",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"f3\"]"
+    },
+    {
+      "label": "What race or ethnicity do you most closely identify with?",
+      "kind": "radio",
+      "required": false,
+      "section": "Equal Opportunity",
+      "fillable": true,
+      "options": 8,
+      "control": "input[name=\"f5\"]"
+    },
+    {
+      "label": "Your Name signature",
+      "kind": "text",
+      "required": true,
+      "section": "Equal Opportunity",
+      "fillable": true,
+      "control": "#jv-field-f7",
+      "note": "The equal-opportunity signature: its sub-section heading (an h4 in a sibling block) tells it from the veteran one The self-identification form's closing name and date are its signature: the adapter reads their own label[for] with \"signature\" after it, first (labelFirst, core pass Z2 of 2026-11-06), so the name classifies as the signature consent, never the profile's full name, and the date as the person's."
+    },
+    {
+      "label": "Today's Date signature",
+      "kind": "date",
+      "required": true,
+      "section": "Equal Opportunity",
+      "fillable": true,
+      "control": "#jv-field-date8",
+      "note": "The self-identification form's closing name and date are its signature: the adapter reads their own label[for] with \"signature\" after it, first (labelFirst, core pass Z2 of 2026-11-06), so the name classifies as the signature consent, never the profile's full name, and the date as the person's."
+    },
+    {
+      "label": "Choose One",
+      "kind": "radio",
+      "required": false,
+      "section": "Pre-Employment request for Veteran Classification",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"f18\"]"
+    },
+    {
+      "label": "Your Name signature",
+      "kind": "text",
+      "required": true,
+      "section": "Pre-Employment request for Veteran Classification",
+      "fillable": true,
+      "control": "#jv-field-f20",
+      "note": "The veteran signature The self-identification form's closing name and date are its signature: the adapter reads their own label[for] with \"signature\" after it, first (labelFirst, core pass Z2 of 2026-11-06), so the name classifies as the signature consent, never the profile's full name, and the date as the person's."
+    },
+    {
+      "label": "Today's Date signature",
+      "kind": "date",
+      "required": true,
+      "section": "Pre-Employment request for Veteran Classification",
+      "fillable": true,
+      "control": "#jv-field-date21",
+      "note": "The self-identification form's closing name and date are its signature: the adapter reads their own label[for] with \"signature\" after it, first (labelFirst, core pass Z2 of 2026-11-06), so the name classifies as the signature consent, never the profile's full name, and the date as the person's."
+    }
+  ],
+  "hooks": {
+    "detect": "body.jv-page-apply",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "div.jv-current-openings a",
+      "div.jv-apply-error a",
+      "div.jv-add-attachment[role=\"dialog\"] > div.jv-add-attachment-item > span[role=\"button\"]",
+      "div.jv-add-attachment[role=\"dialog\"] a.jv-close"
+    ],
+    "pressable": [
+      "div.jv-apply-form-actions > button[aria-label=\"Next\"]"
+    ]
+  }
+}

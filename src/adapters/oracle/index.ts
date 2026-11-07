@@ -37,6 +37,40 @@
  * - Never pressed (neverPress): APPLY NOW (the entry door's alone), the gate's CANCEL, the dialogs' buttons (the cookie
  *   preferences, the session's end, the agreement's Close), the map's controls, the Digital Assistant's chat button and
  *   the copyright links.
+ * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06), from the owner's snapshots: Fortive's code page
+ * ([ejta.fa.us6.oraclecloud.com], still at .../apply/email: fixtures/oracle/fortive-email-code.html) and a tenant's
+ * application on Oracle's government cloud ([iaaxmg.fa.ocs.oraclegovcloud.com] .../apply/section/1: the one-page flow,
+ * every section on one page and Submit at its foot: fixtures/oracle/hjf-apply-section.html):
+ * - Form root: also the flow's own form on a section page, main#main > section.apply-flow__content-container >
+ *   form.apply-flow__content.apply-flow__content-form.
+ * - authState 'email-code': the code page ("Confirm Your Identity"), div.apply-flow-pin-code-required holding the six
+ *   boxes input.pin-code-input__input (each aria-label "Enter verification code digit <n> of six.", no maxlength: the
+ *   one-character reading Jobright's gave is not Oracle's and was dropped). The code is the person's alone.
+ * - Labels (labelFor, requiredFor): an answer-pill group (Oracle's cx-select-pills: ul[role=radiogroup] of
+ *   button[role=radio][aria-checked], its question in the row's label.input-row__label, whose for names no control),
+ *   and the phone's number box (input.phone-row__input, its row's label "Phone Number"), each read from its own
+ *   .input-row's label; the row's label.input-row__label--required marks it required.
+ * - Uploads (uploadWidgets): a document's hidden input[type=file].file-form-element__input behind its visible "Upload
+ *   Cover Letter" label[for], labelled by its drop zone's words ("Drop Cover Letter Here"). The resume's own, once
+ *   attached, shows its file's name and "Remove Resume" instead (no input): what an upload in progress or a failed one
+ *   shows is not in any snapshot.
+ * - Submit (submitButton, isFinalStep): the one-page flow's only pagination button,
+ *   button.apply-flow-pagination__submit-button ("Submit"), never pressed by a fill; a flow that shows it is on its
+ *   final step.
+ * - Errors: the timeline's invalid entry, .beautiful-timeline-item--invalid-block (an entry the page marks
+ *   data-profile-item-invalid), besides the standard ones; and (the behaviour review of 2026-11-06, M4) the page's own
+ *   error notification after a Submit it refused, li.notifications__item.cx-notifications__item--error ("You have 1
+ *   issue that needs to be fixed before you can submit your application."), the same tenant's snapshot 12 s after its
+ *   Submit (fixtures/oracle/hjf-after-submit.html: no aria-invalid there, and the timeline's mark gone). Read while a
+ *   person can see it: as captured, the Submit's checklist dialog (oj-dialog.apply-flow-checklist-dialog, modal) is
+ *   still open over the page, whose layer div.app it makes aria-hidden, so the notification reads once that dialog
+ *   closes (display none and no aria-hidden on div.app, as hjf-apply-section.html shows them before the Submit).
+ * - Never pressed: the code page's "Send New Code" (it emails a new code), the flow's "Import Profile Again", the
+ *   attached resume's name (a download) and "Remove Resume", each combobox's "Remove value for the <field> field"
+ *   (button.icon-clear), the email's "Edit email address", the header's "Back to Job Details", the timeline's "Add
+ *   Experience" and "Add Education", the licences' "Add License" and the links' "Add Another Link".
+ * What the scanner reads there, and why most of it is not fillable (the flow's form is a 75% translucent panel over the
+ * tenant's cover image, so the trap rules cannot work out its colours), is oracle.browser.test.ts's KNOWN list.
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
@@ -46,14 +80,16 @@ import type { Adapter, SignInForm, SignInWall } from '../types';
 import { canonicalApplicationUrl, isOracleEmailGate, matchesUrl } from './url';
 
 /** The snapshots the hooks were written from (fixtures/oracle/). */
-export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/oracle/elhr-email-gate.html'] as const;
+export const ORACLE_SNAPSHOTS = ['fixtures/oracle/jpmc-posting.html', 'fixtures/oracle/elhr-email-gate.html',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  'fixtures/oracle/fortive-email-code.html', 'fixtures/oracle/hjf-apply-section.html',
+  // ── behaviour review 2026-11-06 (M4): the same flow 12 s after its Submit ──
+  'fixtures/oracle/hjf-after-submit.html'] as const;
 
 /** The longest an Oracle page takes to draw its posting or its gate: the runtime's cap. */
 export const ORACLE_FORM_LATE_MS = 30_000;
 /** How long the agent's entry waits for APPLY NOW (the posting is drawn 5 to 6 s after the address commits). */
 export const ORACLE_ENTRY_WAIT_MS = 15_000;
-/** The fewest one-character boxes that make a code's page (Jobright's sign: no snapshot shows it yet). */
-const CODE_BOXES = 4;
 
 /** The first of `elements` a person can see. */
 function shown<T extends Element>(elements: readonly T[], cache: ScanCache = newScanCache()): T | null {
@@ -61,10 +97,12 @@ function shown<T extends Element>(elements: readonly T[], cache: ScanCache = new
 }
 
 /** The flow's content: fixtures/oracle/elhr-email-gate.html's <main id="main" aria-labelledby="apply-flow-main-heading"
- *  ...><section class="apply-flow__content" ...>. */
+ *  ...><section class="apply-flow__content" ...>; on a section page (fixtures/oracle/hjf-apply-section.html) the flow's
+ *  own <form class="apply-flow__content apply-flow__content-form" novalidate>. */
 function flowOf(doc: Document): Element | null {
   return shown(Array.from(doc.querySelectorAll(
-    'main[aria-labelledby="apply-flow-main-heading"] section.apply-flow__content')));
+    'main[aria-labelledby="apply-flow-main-heading"] section.apply-flow__content, '
+    + 'main[aria-labelledby="apply-flow-main-heading"] form.apply-flow__content-form')));
 }
 
 function detect(doc: Document): { formRoot: Element } | null {
@@ -111,10 +149,82 @@ function authState(doc: Document): ReturnType<NonNullable<Adapter['authState']>>
   const flow = flowOf(doc);
   if (flow === null) return null;
   if (gateEmail(doc) !== null) return 'email-gate';
+  // fixtures/oracle/fortive-email-code.html: <div class="apply-flow-pin-code-required ..."> ... <input class="input-row__control
+  // pin-code-input__input" type="text" inputmode="numeric" ... id="pin-code-1" aria-required="true">, six of them.
   const cache = newScanCache();
-  const boxes = Array.from(flow.querySelectorAll<HTMLInputElement>('input')).filter((input) => input.maxLength === 1
-    && ['text', 'tel', 'number', ''].includes(input.type) && isUserVisible(input, cache));
-  return boxes.length >= CODE_BOXES ? 'email-code' : null;
+  const boxes = Array.from(flow.querySelectorAll<HTMLInputElement>('.apply-flow-pin-code-required input.pin-code-input__input'))
+    .filter((input) => isUserVisible(input, cache));
+  return boxes.length > 0 ? 'email-code' : null;
+}
+
+/** The controls whose label is their row's own label, which names no control by its for: an answer-pill group (<ul
+ *  role="radiogroup" ... class="cx-select-pills-container">) and the phone's number box (<input type="tel"
+ *  class="input-row__control phone-row__input" ...>), in hjf-apply-section.html. */
+const ROW_LABELLED = 'ul.cx-select-pills-container[role="radiogroup"], input.phone-row__input';
+
+/** A document's upload input: hjf-apply-section.html's <input type="file" class="file-form-element__input upload-button"
+ *  multiple="" id="attachment-upload-3" name="attachment-upload" ...>, drawn hidden behind its <label
+ *  class="file-form-element__label attachment-upload-button__label ..." for="attachment-upload-3">Upload Cover
+ *  Letter</label>, in a drop zone <div class="attachment-upload-button ..."> that names the document: <span
+ *  class="attachment-upload-button__drag-and-drop-label ...">Drop Cover Letter Here</span>. */
+const UPLOAD_INPUT = 'input[type="file"].file-form-element__input';
+
+/** Each upload input with its visible "Upload <document>" label (UPLOAD_INPUT). */
+function uploadWidgets(root: Element): Array<{ control: Element; input: HTMLInputElement }> {
+  const labels = Array.from(root.querySelectorAll<HTMLLabelElement>('label.file-form-element__label[for]'));
+  return Array.from(root.querySelectorAll<HTMLInputElement>(UPLOAD_INPUT)).flatMap((input) => {
+    const control = input.id === '' ? undefined : labels.find((label) => label.htmlFor === input.id);
+    return control === undefined ? [] : [{ control, input }];
+  });
+}
+
+/** A row-labelled control's question (module header): its row's (<div class="input-row ...">) <form-element-label><label
+ *  class="input-row__label ...">; an upload input's, its drop zone's words (UPLOAD_INPUT). */
+function labelFor(control: Element): Element | null {
+  if (control.matches(UPLOAD_INPUT)) {
+    return control.closest('.attachment-upload-button')?.querySelector('.attachment-upload-button__drag-and-drop-label')
+      ?? null;
+  }
+  if (!control.matches(ROW_LABELLED)) return null;
+  return control.closest('.input-row')?.querySelector(':scope > form-element-label > label.input-row__label') ?? null;
+}
+
+/** Whether the page marks a row-labelled control required: its row's label has input-row__label--required (drawn with
+ *  its star, <span class="input-row__label--required-star" aria-hidden="true">). */
+function requiredFor(control: Element): boolean {
+  return labelFor(control)?.classList.contains('input-row__label--required') ?? false;
+}
+
+/** Submit: the one-page flow's <div class="apply-flow-pagination"> ... <button type="button" class="button
+ *  apply-flow-pagination__button apply-flow-pagination__submit-button ...">Submit</button> (hjf-apply-section.html). */
+function submitButton(root: Element): HTMLElement | null {
+  return shown(Array.from(root.ownerDocument.querySelectorAll<HTMLElement>(
+    '.apply-flow-pagination button.apply-flow-pagination__submit-button')));
+}
+
+/** A flow that shows its Submit is on its final step; the gate, the code page and the posting say nothing. */
+function isFinalStep(doc: Document): 'final' | 'not-final' | 'unknown' {
+  return flowOf(doc) !== null && submitButton(doc.documentElement) !== null ? 'final' : 'unknown';
+}
+
+/** The page's error notification after a Submit it refused (module header, M4): hjf-after-submit.html's <notifications>
+ *  <div role="alert" ... class="notifications font-family-primary notifications--active"> <ul class="notification__list">
+ *  <li class="notifications__item text-color-primary focused-with-keyboard cx-notifications__item--error
+ *  cx-notifications__item--dismiss"> ... <div class="notifications__item-message">You have 1 issue that needs to be fixed
+ *  before you can submit your application.</div>, outside the flow's form. */
+const NOTIFIED_ERROR = 'li.notifications__item.cx-notifications__item--error';
+
+/** The page's own errors, besides the standard ones: hjf-apply-section.html's timeline entry the page marks invalid,
+ *  <div class="beautiful-timeline-item--invalid-block icon-alert-error">, and its error notification after a refused
+ *  Submit (NOTIFIED_ERROR), each while a person can see it. */
+function errors(root: Element): Array<{ el: Element; fieldKeyHint?: string }> {
+  const cache = newScanCache();
+  const marks = Array.from(root.ownerDocument.querySelectorAll('.beautiful-timeline-item--invalid-block'))
+    .filter((el) => isUserVisible(el, cache)).map((el) => ({ el }));
+  // ── behaviour review 2026-11-06 (M4) ──
+  const notified = Array.from(root.ownerDocument.querySelectorAll(NOTIFIED_ERROR))
+    .filter((el) => isUserVisible(el, cache)).map((el) => ({ el }));
+  return [...(genericAdapter.errors?.(root) ?? []), ...marks, ...notified];
 }
 
 /** Sign-in Auto's form at the gate (module header): fixtures/oracle/elhr-email-gate.html's <form novalidate=""> (no
@@ -143,7 +253,17 @@ function signInForm(doc: Document, wall: SignInWall): SignInForm | null {
 const NEVER_PRESSED = ['.job-details__section-apply-button button.apply-now-button',
   '[data-qa="emailVerificationCancelButton"]', 'button.app-dialog__close', '.app-dialog__footer-button',
   '[class*="maplibregl-ctrl"]', 'button.maplibregl-popup-close-button', '.oda-chat-button', 'a.oracle-copyright',
-  'a.oracle-copyright__terms', 'a.oracle-copyright__legal'];
+  'a.oracle-copyright__terms', 'a.oracle-copyright__legal',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr; module header) ──
+  // fortive-email-code.html: <button class="pin-code-form__action-button text-color-primary" type="button">Send New Code.
+  'button.pin-code-form__action-button',
+  // hjf-apply-section.html: "Import Profile Again", the attached resume's name and "Remove Resume", each combobox's
+  // "Remove value for the <field> field", "Edit email address", "Back to Job Details", the timeline's, the licences'
+  // and the links' Add buttons.
+  'button.apply-flow-profile-import-again-button', 'button.attachment-upload-button__download',
+  'button.attachment-upload-button__bottom-button', 'button.icon-clear', 'button.communication-channel__value-edit',
+  'button.app-header__close', '#timeline-add-experience-button', '#timeline-add-education-button',
+  'button.apply-flow-profile-item-tile__new-tile', 'button.candidate-links__add-link'];
 
 function neverPress(root: Element): Element[] {
   return Array.from(root.ownerDocument.querySelectorAll(NEVER_PRESSED.join(', ')));
@@ -159,8 +279,13 @@ export const oracleAdapter: Adapter = {
   authState,
   signInForm,
   neverPress,
-  errors: (root) => genericAdapter.errors?.(root) ?? [],
-  isFinalStep: () => 'unknown',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr; module header) ──
+  labelFor,
+  requiredFor,
+  uploadWidgets,
+  submitButton,
+  errors,
+  isFinalStep,
   quirks: { formLateMs: ORACLE_FORM_LATE_MS, entryWaitMs: ORACLE_ENTRY_WAIT_MS },
   entryControl,
   // APPLY NOW is never pressed by a run (neverPress): the entry door presses that element alone.

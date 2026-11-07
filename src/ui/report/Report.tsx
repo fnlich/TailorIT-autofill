@@ -20,7 +20,7 @@
  * The field lists: the repeatable sections ("Education · 2 of 3 added"), then "Required", then "Optional", each row a
  * line: its state's icon (filled, needs you, being filled with a spinner, left alone), its label as a button that shows
  * the field on the page (Show on page: scrolled into view and focused, nothing drawn), the AI's marks, and a chevron
- * that unfolds the detail: its status chip, the reason sentence (COPY), its provenance, matcher stage and confidence,
+ * that unfolds the detail: its status chip, the reason sentence (PAGE_COPY), its provenance, matcher stage and confidence,
  * then its actions. Every row is folded at first, its icon and label shown (Jobright's list); an optional field left
  * empty shows a grey dash, a required one the alert. The row being written scrolls into view, and
  * after SKIP_AFTER_MS on the same field it offers Skip, which gives up that one write (never a guard).
@@ -41,7 +41,7 @@
  * them.
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import type { IconName } from '../../shared/icons';
 import { noticeToneOf } from '../../shared/palette';
 import type { FrameReport } from '../../shared/report';
@@ -143,7 +143,7 @@ export function Report({ reports, notices = true, minimized = false, ...actions 
     <div className="tia-report" ref={root}>
       {notices && <ReportNotices reports={frames} onPolicyDecision={actions.onPolicyDecision} busy={actions.busy ?? false} />}
       {frames.length === 0 ? (
-        <p className="tia-empty">{COPY.panelEmpty}</p>
+        <p className="tia-empty">{PAGE_COPY.panelEmpty}</p>
       ) : (
         <Progress reports={frames} actions={actions} minimized={minimized} />
       )}
@@ -166,7 +166,7 @@ export function RunStatusLine({ reports, className = 'tia-status' }: { reports: 
   return (
     <p className={`${className} tia-strip`} data-run-status={status}
       data-tone={stripToneOf(status, tallyOf(reports)?.needsYou ?? 0)}>
-      {COPY.runStatuses[status]}
+      {PAGE_COPY.runStatuses[status]}
       {step && ` · ${stepText(step)}`}
     </p>
   );
@@ -196,19 +196,19 @@ export function ReportNotices({ reports, onPolicyDecision, busy = false }: {
           data-policy-frame={report.frameId} role="alert">
           <Icon name="alert" size={18} className="tia-icon tia-notice__icon" />
           <div className="tia-notice__body">
-            <p className="tia-notice__text">{COPY.notices.policy}</p>
+            <p className="tia-notice__text">{PAGE_COPY.notices.policy}</p>
             {policyFromStoredCopy(report) && (
-              <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>
+              <p className="tia-notice__source" data-notice-source="stored-copy">{PAGE_COPY.policyFromStoredCopy}</p>
             )}
             {waiting.length > 1 && (
-              <p className="tia-notice__text">{COPY.report.frame(COPY.platforms[report.platform], report.frameId !== 0)}</p>
+              <p className="tia-notice__text">{PAGE_COPY.report.frame(PAGE_COPY.platforms[report.platform], report.frameId !== 0)}</p>
             )}
             {onPolicyDecision && (
               <div className="tia-notice__actions">
                 <button type="button" className="tia-button tia-button--primary" disabled={busy}
-                  onClick={() => onPolicyDecision(report.frameId, 'fill')}>{COPY.policyFillAnyway}</button>
+                  onClick={() => onPolicyDecision(report.frameId, 'fill')}>{PAGE_COPY.policyFillAnyway}</button>
                 <button type="button" className="tia-button" disabled={busy}
-                  onClick={() => onPolicyDecision(report.frameId, 'cancel')}>{COPY.policyCancel}</button>
+                  onClick={() => onPolicyDecision(report.frameId, 'cancel')}>{PAGE_COPY.policyCancel}</button>
               </div>
             )}
           </div>
@@ -218,23 +218,23 @@ export function ReportNotices({ reports, onPolicyDecision, busy = false }: {
         <div key={code} className="tia-notice tia-notice--policy" data-notice={code} data-tone="warning" role="alert">
           <Icon name="alert" size={18} className="tia-icon tia-notice__icon" />
           <div className="tia-notice__body">
-            <p className="tia-notice__text">{COPY.notices.policy}</p>
-            {storedOnly(code) && <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>}
+            <p className="tia-notice__text">{PAGE_COPY.notices.policy}</p>
+            {storedOnly(code) && <p className="tia-notice__source" data-notice-source="stored-copy">{PAGE_COPY.policyFromStoredCopy}</p>}
           </div>
         </div>
       ) : code === 'policy-profile-only' && storedOnly(code) ? (
         <div key={code} className={`tia-notice tia-notice--${code}`} data-notice={code} data-tone={noticeToneOf(code)}>
           <Icon name={noticeToneOf(code) === 'info' ? 'info' : 'alert'} size={18} className="tia-icon tia-notice__icon" />
           <div className="tia-notice__body">
-            <p className="tia-notice__text">{COPY.notices[code]}</p>
-            <p className="tia-notice__source" data-notice-source="stored-copy">{COPY.policyFromStoredCopy}</p>
+            <p className="tia-notice__text">{PAGE_COPY.notices[code]}</p>
+            <p className="tia-notice__source" data-notice-source="stored-copy">{PAGE_COPY.policyFromStoredCopy}</p>
           </div>
         </div>
       ) : (
         <p key={code} className={`tia-notice tia-notice--${code}`} data-notice={code} data-tone={noticeToneOf(code)}
           role={code === 'tripwire' ? 'alert' : undefined}>
           <Icon name={noticeToneOf(code) === 'info' ? 'info' : 'alert'} size={18} className="tia-icon tia-notice__icon" />
-          {COPY.notices[code]}
+          {PAGE_COPY.notices[code]}
         </p>
       )))}
     </div>
@@ -268,7 +268,7 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
   const tally = tallyOf(reports);
   const dryRun = reports.every((report) => report.mode === 'dry-run');
   const working = state === 'scanning' || state === 'filling';
-  const words = COPY.report;
+  const words = PAGE_COPY.report;
   const lists = fieldListsOf(reports);
   const sections = repeatablesOf(reports);
   const hasRows = lists.required.length + lists.optional.length + sections.length > 0;
@@ -318,7 +318,7 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
             )}
             {working && actions.onCancel && (
               <button type="button" className="tia-linkbutton" data-action="cancel" onClick={actions.onCancel}>
-                {COPY.panel.cancel}
+                {PAGE_COPY.panel.cancel}
               </button>
             )}
           </div>
@@ -401,12 +401,12 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
  *  names its form, its own run status beside it. */
 function FrameLines({ reports, named }: { reports: readonly FrameReport[]; named: boolean }) {
   const lines = reports.map((report) => {
-    const status = `${COPY.runStatuses[report.status]}${report.step ? ` · ${stepText(report.step)}` : ''}`;
+    const status = `${PAGE_COPY.runStatuses[report.status]}${report.step ? ` · ${stepText(report.step)}` : ''}`;
     const notes: Array<{ key: string; text: string; tone: string }> = [];
     if (report.status === 'handoff' && report.pauseReason !== null) {
-      notes.push({ key: 'pause', text: COPY.pauseReasons[report.pauseReason], tone: 'pause' });
+      notes.push({ key: 'pause', text: PAGE_COPY.pauseReasons[report.pauseReason], tone: 'pause' });
     }
-    if (report.mode === 'dry-run') notes.push({ key: 'dry-run', text: COPY.report.dryRun, tone: 'dry-run' });
+    if (report.mode === 'dry-run') notes.push({ key: 'dry-run', text: PAGE_COPY.report.dryRun, tone: 'dry-run' });
     return { report, status, notes, telling: TELLING_STATUSES.has(report.status) || report.step !== undefined };
   }).filter((line) => named || line.telling || line.notes.length > 0);
   if (lines.length === 0) return null;
@@ -416,7 +416,7 @@ function FrameLines({ reports, named }: { reports: readonly FrameReport[]; named
         <section key={report.frameId} className="tia-frame" data-frame-id={report.frameId}>
           {(named || telling) && (
             <p className="tia-frame__head">
-              {named && <span className="tia-frame__name">{COPY.report.frame(COPY.platforms[report.platform],
+              {named && <span className="tia-frame__name">{PAGE_COPY.report.frame(PAGE_COPY.platforms[report.platform],
                 report.frameId !== 0)}</span>}
               <span className="tia-frame__status" data-run-status={report.status}>{status}</span>
             </p>
@@ -463,7 +463,7 @@ function StateIcon({ progress, required = true }: { progress: RowProgress; requi
   return (
     <span className={`tia-row__state tia-row__state--${optionalLeft ? 'optional' : progress}`}>
       <Icon name={icon} size={18} className={`tia-icon${progress === 'working' ? ' tia-spin' : ''}`} />
-      <span className="tia-visually-hidden">{COPY.report.rowStates[progress]}</span>
+      <span className="tia-visually-hidden">{PAGE_COPY.report.rowStates[progress]}</span>
     </span>
   );
 }
@@ -493,7 +493,7 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
   const busy = actions.busy ?? false;
   const draft = row.provenance === 'llm-draft';
   const describe = describeField !== undefined && scores.length > 0;
-  const label = row.label || COPY.report.noLabel;
+  const label = row.label || PAGE_COPY.report.noLabel;
 
   // The row being written comes into view (Jobright's list follows the fill): in the side panel, its own page; in the
   // in-page panel, only the panel's own scrolling list, never the page around it (v3 Phase 3 review).
@@ -534,20 +534,20 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
   const confirmButton = onConfirmDraft !== undefined && awaitsDraftConfirmation(row) && (
     <button type="button" className="tia-button tia-button--primary" data-action="confirm-draft" disabled={busy}
       onClick={() => onConfirmDraft(frameId, row.key)}>
-      {COPY.report.confirmDraft}
+      {PAGE_COPY.report.confirmDraft}
     </button>
   );
   const saveButton = onSaveAnswer !== undefined && offersSave(row) && (
     <button type="button" className="tia-button tia-button--primary" data-action="save-answer" disabled={busy}
       onClick={() => onSaveAnswer(frameId, row.key)}>
-      {COPY.report.saveAnswer}
+      {PAGE_COPY.report.saveAnswer}
     </button>
   );
 
   const draftMark = draft && (
     <span className="tia-row__draft">
       <Icon name="sparkle" size={12} />
-      {COPY.report.draftMark}
+      {PAGE_COPY.report.draftMark}
     </span>
   );
   // The owner's amendments: an answer the AI wrote is marked "AI" (a draft keeps its own mark); one it guessed with
@@ -556,17 +556,17 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
   const aiMark = mark === 'guess' ? (
     <span className="tia-row__ai tia-row__ai--guess" data-ai-mark="guess">
       <Icon name="sparkle" size={12} />
-      {COPY.aiGuessChip}
+      {PAGE_COPY.aiGuessChip}
     </span>
   ) : mark === 'written' && !draft ? (
     <span className="tia-row__ai" data-ai-mark="ai">
       <Icon name="sparkle" size={12} />
-      {COPY.aiChip}
+      {PAGE_COPY.aiChip}
     </span>
   ) : null;
   // A cover letter (Phase G) comes from the person's TailorIT letters, whoever wrote it (the AI's has its mark).
-  const source = row.provenance === null ? COPY.report.noSource
-    : row.category === 'file.coverLetter' ? COPY.report.coverLetterSource : COPY.provenances[row.provenance];
+  const source = row.provenance === null ? PAGE_COPY.report.noSource
+    : row.category === 'file.coverLetter' ? PAGE_COPY.report.coverLetterSource : PAGE_COPY.provenances[row.provenance];
   const title = (
     <>
       <span className="tia-row__label">{label}</span>
@@ -578,24 +578,24 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
   const body: ReactNode = (
     <div className="tia-row__body" id={bodyId}>
       <p className="tia-row__reason">
-        <span className={`tia-chip tia-chip--${row.status}`}>{COPY.statuses[row.status]}</span>
+        <span className={`tia-chip tia-chip--${row.status}`}>{PAGE_COPY.statuses[row.status]}</span>
         {' '}
-        {COPY.reasons[row.reason]}
+        {PAGE_COPY.reasons[row.reason]}
         {row.detail?.letterLength !== undefined && (
-          <> {COPY.report.letterLength(row.detail.letterLength.length, row.detail.letterLength.limit)}</>
+          <> {PAGE_COPY.report.letterLength(row.detail.letterLength.length, row.detail.letterLength.limit)}</>
         )}
       </p>
       <dl className="tia-row__facts">
         <div className="tia-row__fact">
-          <dt>{COPY.report.source}</dt>
+          <dt>{PAGE_COPY.report.source}</dt>
           <dd>{source}</dd>
         </div>
         <div className="tia-row__fact">
-          <dt>{COPY.report.match}</dt>
-          <dd>{COPY.stages[row.matcherStage]}</dd>
+          <dt>{PAGE_COPY.report.match}</dt>
+          <dd>{PAGE_COPY.stages[row.matcherStage]}</dd>
         </div>
         <div className="tia-row__fact">
-          <dt>{COPY.report.confidence}</dt>
+          <dt>{PAGE_COPY.report.confidence}</dt>
           <dd>{percent(row.confidence)}</dd>
         </div>
       </dl>
@@ -606,24 +606,24 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
           {onShowField && (
             <button type="button" className="tia-button tia-button--quiet" data-action="show-field"
               onClick={() => onShowField(frameId, row.key)}>
-              {COPY.report.showOnPage}
+              {PAGE_COPY.report.showOnPage}
             </button>
           )}
           {describe && (
             <button type="button" className="tia-button tia-button--quiet" data-action="suggestions"
               aria-expanded={suggestions.state !== 'closed'} aria-controls={panelId} onClick={toggle}>
-              {suggestions.state === 'closed' ? COPY.report.showSuggestions(scores.length) : COPY.report.hideSuggestions}
+              {suggestions.state === 'closed' ? PAGE_COPY.report.showSuggestions(scores.length) : PAGE_COPY.report.hideSuggestions}
             </button>
           )}
         </div>
       )}
       {suggestions.state !== 'closed' && (
         <div className="tia-suggestions" id={panelId}>
-          {suggestions.state === 'loading' && <p className="tia-suggestions__heading">{COPY.report.suggestionsLoading}</p>}
-          {suggestions.state === 'failed' && <p className="tia-suggestions__heading">{COPY.report.suggestionsFailed}</p>}
+          {suggestions.state === 'loading' && <p className="tia-suggestions__heading">{PAGE_COPY.report.suggestionsLoading}</p>}
+          {suggestions.state === 'failed' && <p className="tia-suggestions__heading">{PAGE_COPY.report.suggestionsFailed}</p>}
           {suggestions.state === 'shown' && (
             <>
-              <p className="tia-suggestions__heading">{COPY.report.suggestionsHeading}</p>
+              <p className="tia-suggestions__heading">{PAGE_COPY.report.suggestionsHeading}</p>
               <ol className="tia-suggestions__list">
                 {suggestions.labels.map((option) => {
                   const score = scores.find((suggestion) => suggestion.index === option.index)?.score;
@@ -650,7 +650,7 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
       <div className="tia-row__line">
         <StateIcon progress={progress} required={row.required} />
         {onShowField ? (
-          <button type="button" className="tia-row__go" title={COPY.report.goTo(label)}
+          <button type="button" className="tia-row__go" title={PAGE_COPY.report.goTo(label)}
             onClick={() => onShowField(frameId, row.key)}>
             {title}
           </button>
@@ -661,7 +661,7 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
           <SkipButton frameId={frameId} row={row} onSkip={actions.onSkip} clock={actions.clock ?? BROWSER_CLOCK} />
         )}
         <button type="button" className="tia-row__toggle" aria-expanded={open} aria-controls={bodyId}
-          aria-label={COPY.report.details(label)} title={COPY.report.details(label)} onClick={fold}>
+          aria-label={PAGE_COPY.report.details(label)} title={PAGE_COPY.report.details(label)} onClick={fold}>
           <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} className="tia-icon" />
         </button>
       </div>
@@ -683,17 +683,17 @@ function SkipButton({ frameId, row, onSkip, clock }: { frameId: number; row: Rep
   const { now, frames } = clock;
   useEffect(() => afterFrames(SKIP_AFTER_MS, () => setShown(true), now, frames), [now, frames]);
   if (!shown) return null;
-  const label = row.label || COPY.report.noLabel;
+  const label = row.label || PAGE_COPY.report.noLabel;
   return (
     <button type="button" className="tia-linkbutton tia-row__skip" data-action="skip" disabled={sent}
-      aria-label={COPY.report.skipLabel(label)} onClick={() => {
+      aria-label={PAGE_COPY.report.skipLabel(label)} onClick={() => {
         setSent(true);
         // A Skip the run did not take (m5): offered again, so the person's word is never lost silently.
         void Promise.resolve(onSkip(frameId, row.key)).then((taken) => {
           if (taken === false) setSent(false);
         }, () => setSent(false));
       }}>
-      {COPY.report.skip}
+      {PAGE_COPY.report.skip}
     </button>
   );
 }

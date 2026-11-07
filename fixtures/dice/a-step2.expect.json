@@ -1,0 +1,48 @@
+{
+  "fixture": "dice/a-step2",
+  "source": "https://www.dice.com/job-applications/3a06d5dd-fb34-4b05-b96c-47bf093651e0/wizard",
+  "captured": "2026-11-06T14:33:57.000Z",
+  "fields": [
+    {
+      "label": "Work Authorization",
+      "kind": "combobox",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div.group[data-rac]:has(> div[data-testid=\"hidden-select-container\"])",
+      "note": "React Aria's Select: its trigger button (labelled by its chosen value and the question) and an aria-hidden mirror select, declared as one widget on their group, the question from span[slot=label]. The widget helpers act only where standard ARIA names the list (a combobox or listbox role, aria-controls or aria-owns); the trigger names its portal listbox only while open, which no snapshot shows: the person's"
+    },
+    {
+      "label": "What is your current city of residence?",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Additional Information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input[name=\"candidateLocation\"]",
+      "note": "A search as it is typed (aria-autocomplete=list, a \"Powered by Google\" template)"
+    }
+  ],
+  "hooks": {
+    "detect": "div:has(> div[role=\"meter\"][aria-label=\"Application progress\"])",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "div[data-testid=\"job-data\"] a",
+      "nav[aria-label=\"Account\"] button",
+      "nav[aria-label=\"Account\"] [role=\"menuitem\"]",
+      "button[data-testid=\"disclosure-trigger\"]",
+      "[data-testid=\"apply-button\"]",
+      "[data-testid=\"job-detail-save-btn\"]",
+      "#react-aria0000000001-_r_1o_"
+    ],
+    "pressable": [
+      "#react-aria0000000001-_r_1q_"
+    ]
+  }
+}

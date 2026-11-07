@@ -14,13 +14,16 @@ describe('matchesUrl', () => {
   it.each([
     FORM, `${HF}/`, HF, 'https://apply.workable.com/huggingface/', 'https://apply.workable.com/',
     'https://APPLY.WORKABLE.COM/x', 'https://apply.workable.com:443/x', 'https://apply.workable.com/api/v1/jobs/F88446C814/form',
-  ])("takes every page on Workable's application host: %s", (address) => {
+    // Snapshot build, boards (the owner's captures of 2026-11-06): the job-search site.
+    'https://jobs.workable.com/view/h3u3XDdUxbcDLb9v7mvmpN/remote-expert-rag-engineer-in-united-states-at-salvo-software',
+    'https://jobs.workable.com/', 'https://jobs.workable.com/view/abc/engineer',
+  ])("takes every page on Workable's application host and its job-search site: %s", (address) => {
     expect(matchesUrl(at(address))).toBe(true);
   });
 
   it.each([
     `http://apply.workable.com/huggingface/j/F88446C814/apply/`, 'https://huggingface.workable.com/j/F88446C814',
-    'https://www.workable.com/j/F88446C814', 'https://jobs.workable.com/view/abc/engineer', 'https://workable.com/x',
+    'https://www.workable.com/j/F88446C814', 'https://workable.com/x', 'http://jobs.workable.com/view/h3u3XDdUxbcDLb9v7mvmpN',
     'https://apply.workable.com.tailorit-fixture.example/x', 'https://apply.workable.com:8443/x',
     'https://someone@apply.workable.com/huggingface/', 'https://jobs.lever.co/spotify',
   ])('refuses %s', (address) => {
@@ -57,6 +60,29 @@ describe('parseWorkableUrl', () => {
     'https://apply.workable.com/hugging_face/j/F88446C814/', 'https://apply.workable.com/hugging%20face/j/F88446C814/',
     'https://apply.workable.com/huggingface/jobs/F88446C814/', 'https://apply.workable.com/api/v1/jobs/F88446C814/form',
     'https://apply.workable.com/huggingface/gdpr_policy?lng=en', 'https://huggingface.workable.com/j/F88446C814',
+  ])('reads no posting from %s', (address) => {
+    expect(parseWorkableUrl(at(address))).toBeNull();
+  });
+});
+
+describe("the job-search site (snapshot build, boards: the owner's captures of 2026-11-06)", () => {
+  const SALVO = 'https://jobs.workable.com/view/h3u3XDdUxbcDLb9v7mvmpN';
+  const posting = { platform: 'workable', board: null, jobId: 'h3u3XDdUxbcDLb9v7mvmpN', page: 'application',
+    applicationUrl: SALVO };
+
+  it('reads a posting page, its form shown in a dialog at the same address, as the application, its slug dropped', () => {
+    for (const address of [`${SALVO}/remote-expert-rag-engineer-in-united-states-at-salvo-software`, SALVO, `${SALVO}/`,
+      `${SALVO}/remote-expert-rag-engineer-in-united-states-at-salvo-software?utm_source=x#apply`]) {
+      expect(parseWorkableUrl(at(address)), address).toEqual(posting);
+      expect(canonicalApplicationUrl(at(address)), address).toBe(SALVO);
+    }
+  });
+
+  it.each([
+    'https://jobs.workable.com/', 'https://jobs.workable.com/search?query=engineer', 'https://jobs.workable.com/login',
+    'https://jobs.workable.com/company/iNNW8MH46uFLdta8kHbK5x/jobs-at-salvo-software', 'https://jobs.workable.com/view',
+    'https://jobs.workable.com/view/abc/engineer', 'https://jobs.workable.com/view/h3u3XDdU_bcDLb9v7mvmpN/x',
+    `${SALVO}/Remote-Expert`, `${SALVO}/remote/expert`, 'https://jobs.workable.com/j/F88446C814',
   ])('reads no posting from %s', (address) => {
     expect(parseWorkableUrl(at(address))).toBeNull();
   });

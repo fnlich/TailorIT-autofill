@@ -1,0 +1,243 @@
+{
+  "fixture": "dayforce/candidate-info",
+  "source": "https://jobs.dayforcehcm.com/en-US/savealot/candidateportal/jobs/9234/apply/manualApplication?applicationSource=Manual",
+  "captured": "2026-11-06T15:05:27.000Z",
+  "fields": [
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_email"
+    },
+    {
+      "label": "Confirm Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_confirmEmail"
+    },
+    {
+      "label": "Prefix",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#jobPostingApplication_personalInfo_prefixId",
+      "note": "A select-only Ant select: its text box readonly at opacity 0, its box .ant-select-selector (widgets)."
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_firstName"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_middleName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_lastName"
+    },
+    {
+      "label": "Suffix",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#jobPostingApplication_personalInfo_suffixId"
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_linkedInURL"
+    },
+    {
+      "label": "Home Phone Number country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#rc_select_4",
+      "note": "The dial-code select, labelled \"Country dialing code\" alone: its phone's label and \"country code\" (labelFor, labelSuffix)."
+    },
+    {
+      "label": "Home Phone Number",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_homePhone"
+    },
+    {
+      "label": "Mobile Phone Number country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#rc_select_5"
+    },
+    {
+      "label": "Mobile Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_mobilePhone"
+    },
+    {
+      "label": "Preferred Contact Method",
+      "kind": "combobox",
+      "required": true,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#jobPostingApplication_personalInfo_preferredContactMethod"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#jobPostingApplication_personalInfo_countryCode"
+    },
+    {
+      "label": "State/Province",
+      "kind": "combobox",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#jobPostingApplication_personalInfo_stateCode"
+    },
+    {
+      "label": "Address Line 1",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_address1"
+    },
+    {
+      "label": "Address Line 2",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_address2"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_city"
+    },
+    {
+      "label": "County",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_county"
+    },
+    {
+      "label": "Zip / Postal Code",
+      "kind": "text",
+      "required": false,
+      "section": "Personal Information*",
+      "fillable": true,
+      "control": "input#jobPostingApplication_personalInfo_postalCode"
+    },
+    {
+      "label": "How did you hear about this job?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Personal Information*",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#jobPostingApplication_personalInfo_candidateSource"
+    },
+    {
+      "label": "Resume Upload",
+      "kind": "file",
+      "required": false,
+      "section": "Resume Upload",
+      "fillable": true,
+      "control": "section[test-id=\"resume-upload-section\"] input[type=\"file\"]",
+      "note": "Its label[for] \"Attachment:\" names the Import Resume parser's input, which shares its id: titled by its section's h2 (labelFor), its button the upload widget."
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Cover Letter",
+      "fillable": true,
+      "control": "input#jobPostingApplication_files_coverLetter"
+    },
+    {
+      "label": "Additional Documents",
+      "kind": "file",
+      "required": false,
+      "section": "Additional Documents",
+      "fillable": true,
+      "control": "input#jobPostingApplication_files_additionalDocument"
+    },
+    {
+      "label": "Import Resume",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "div[test-id=\"import-resume-section\"] input[type=\"file\"]",
+      "note": "The résumé parser's input (excluded, never pressed)."
+    }
+  ],
+  "hooks": {
+    "detect": "div#jobPostingApplication",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button[test-id=\"application-cancel\"]",
+      "button[test-id=\"import-resume-section-button\"]",
+      "button[test-id=\"personal-info-update-button\"]",
+      "button[test-id=\"personal-info-cancel-button\"]",
+      "button[test-id=\"workHistory-edit-button\"]",
+      "button[test-id=\"workHistory-delete-button\"]",
+      "button[test-id=\"educationHistory-delete-button\"]",
+      ".ant-upload-list-item-actions button[title=\"Remove file\"]",
+      "div[test-id=\"header-sign-in\"] a",
+      "a[test-id=\"cookie-prefs-link\"]"
+    ],
+    "pressable": [
+      "button[test-id=\"application-next-step\"]"
+    ]
+  }
+}

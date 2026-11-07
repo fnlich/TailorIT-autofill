@@ -1,0 +1,41 @@
+{
+  "fixture": "adp/code-dialog",
+  "source": "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001",
+  "captured": "2026-11-06T15:22:42.000Z",
+  "fields": [
+    {
+      "label": "Enter the Verification Code",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#oneTimePassWord",
+      "note": "The emailed one-time code: the state is email-code (authState), a pause, so nothing is filled; read here only as the dialog's field."
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "input#guestFirstName",
+      "note": "The guest page behind the dialog's aria-hidden."
+    }
+  ],
+  "hooks": {
+    "detect": "sdf-focus-pane#login_view_show_opt_dialog div.otpDialogContent",
+    "authState": "email-code",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button#recruitment_login_verifyOTP",
+      "button#recruitment_login_resendOTP"
+    ],
+    "pressable": [
+      "sdf-button#recruitment_login_recaptcha"
+    ]
+  }
+}

@@ -296,7 +296,9 @@ describe('what TailorIT hears of a company page (the Phase 8 review, P3)', () =>
 });
 
 describe("a company page's sign-in (the Phase 8 review, P6)", () => {
-  const SMART = 'https://jobs.smartrecruiters.com/Northwind/744000012345-engineer';
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): jobs.smartrecruiters.com is an ATS host now; its companies' careers host
+  // is still a company page (no snapshot shows a posting there), one TailorIT's every-site sign-in covers ──
+  const SMART = 'https://careers.smartrecruiters.com/Northwind/744000012345-engineer';
   it('takes a sign-in saved for its own host alone, never the one for every site', async () => {
     worker = await startTestWorker({ token: tokenRecord(), before: async (fakes) => {
       fakes.granted.add(SITES_MATCH);
@@ -309,10 +311,10 @@ describe("a company page's sign-in (the Phase 8 review, P6)", () => {
     worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: '*', email: 'alex.rivera@example.com', password: 'pw-1' } },
       { once: true });
     expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'sign-in' }, sender)).toEqual({ ok: false, error: 'unavailable' });
-    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'jobs.smartrecruiters.com', email: 'alex.rivera@example.com',
+    worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: 'careers.smartrecruiters.com', email: 'alex.rivera@example.com',
       password: 'pw-2' } }, { once: true });
     expect(await worker.deliver({ v: 1, type: 'signin/credential', wall: 'create-account' }, sender)).toMatchObject({ ok: true,
-      data: { host: 'jobs.smartrecruiters.com' } });
+      data: { host: 'careers.smartrecruiters.com' } });
   });
 });
 

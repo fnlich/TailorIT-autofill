@@ -1,0 +1,314 @@
+{
+  "fixture": "oracle/hjf-apply-section",
+  "source": "https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1",
+  "captured": "2026-11-06T15:07:23.000Z",
+  "note": "Written as the page reads with the flow's cover image taken away (oracle.browser.test.ts plain()): as captured, the form is a 75% translucent panel over that image, and the scanner reads no field fillable there.",
+  "fields": [
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#lastName-18"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#firstName-19"
+    },
+    {
+      "label": "Title",
+      "kind": "radio",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 5,
+      "control": "ul.cx-select-pills-container[aria-label=\"Title\"]",
+      "note": "Oracle's answer pills: button[role=radio] in ul[role=radiogroup]; its question is its row's label (labelFor), whose for names no control."
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#middleNames-21"
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#email-22",
+      "note": "readonly=\"readonly\": the email the gate took, changed only through \"Edit email address\" (never pressed)."
+    },
+    {
+      "label": "Phone Number",
+      "kind": "combobox",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input#country-codes-dropdownphoneNumber",
+      "note": "The phone's \"Country code\" (cx-select: input[role=combobox] aria-haspopup=grid aria-controls=<id>-listbox), named by the row's label[for]; its list is drawn only when opened, and no snapshot shows it."
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input.phone-row__input",
+      "note": "Its row's label (labelFor): the box itself has only aria-label."
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address.",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input#country-17"
+    },
+    {
+      "label": "Address Line 1",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address.",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input#addressLine1-39",
+      "note": "An address search: \"Enter your street name and other address details to see suggestions\"."
+    },
+    {
+      "label": "Address Line 2",
+      "kind": "text",
+      "required": false,
+      "section": "Address Please enter your home address.",
+      "fillable": true,
+      "control": "input#addressLine2-40"
+    },
+    {
+      "label": "Address Line 3",
+      "kind": "text",
+      "required": false,
+      "section": "Address Please enter your home address.",
+      "fillable": true,
+      "control": "input#addressLine3-41"
+    },
+    {
+      "label": "ZIP Code",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address.",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input#postalCode-42"
+    },
+    {
+      "label": "City",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address.",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input#city-43"
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address.",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input#region2-44"
+    },
+    {
+      "label": "County",
+      "kind": "combobox",
+      "required": true,
+      "section": "Address Please enter your home address.",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input#region1-45"
+    },
+    {
+      "label": "Were you referred by an HJF employee? If so, please provide their name.",
+      "kind": "textarea",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "control": "textarea[name=\"300000110219886\"]"
+    },
+    {
+      "label": "I hereby certify that the information on my resume is true and correct to the best of my knowledge to include the education listed on my resume or CV. Employment with HJF is contingent upon successful completion of a background check, which will include education verification on the highest level de",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"I hereby certify\"]"
+    },
+    {
+      "label": "Do you now or will you at any time in the future require sponsorship?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"Do you now or will you\"]"
+    },
+    {
+      "label": "Are you currently employed by HJF's subsidiaries or affiliates to include CAMRIS?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"Are you currently employed\"]"
+    },
+    {
+      "label": "Are you a current or former government employee or active duty military? If you are a current or former government employee, are there any post-employment restrictions?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"Are you a current or former government\"]"
+    },
+    {
+      "label": "Do you have any family members, close personal relationships, or business relationships with someone who is employed by HJF or applicable programs/affiliates?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"Do you have any family members\"]"
+    },
+    {
+      "label": "Have you previously been employed by HJF or any of our subsidiaries or affiliates?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"Have you previously been employed\"]"
+    },
+    {
+      "label": "Are you 18 years of age or older?",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"Are you 18 years\"]"
+    },
+    {
+      "label": "Some of our positions and/or work sites require U.S. Citizenship. Are you a citizen of the United States? We prohibit any job posting that requires US citizenship or lawful permanent residency in the US as a condition of employment, unless otherwise required in order to comply with law, regulation, ",
+      "kind": "radio",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "ul.cx-select-pills-container[aria-label^=\"Some of our positions\"]"
+    },
+    {
+      "label": "What is your target salary range?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Application Questions",
+      "fillable": true,
+      "control": "textarea[name=\"300000242840408\"]"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "textarea.input-row__control--helper",
+      "note": "Oracle's auto-height mirrors of each answer box: aria-hidden, out of the tab order."
+    },
+    {
+      "label": "Drop Cover Letter Here",
+      "kind": "file",
+      "required": false,
+      "section": "Supporting Documents and URLs",
+      "fillable": true,
+      "control": "input#attachment-upload-3",
+      "note": "Hidden behind its \"Upload Cover Letter\" label[for] (uploadWidgets), labelled by its drop zone's words (labelFor). The resume's own shows the attached file's name and \"Remove Resume\" instead, with no input."
+    },
+    {
+      "label": "Link 1",
+      "kind": "text",
+      "required": false,
+      "section": "Supporting Documents and URLs",
+      "fillable": true,
+      "control": "input#siteLink-1-38"
+    },
+    {
+      "label": "I agree to receive updates about new job opportunities.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Supporting Documents and URLs",
+      "fillable": true,
+      "control": "input#job-alerts-checkbox",
+      "note": "A hidden native box behind its visible label; the agreements block has no heading of its own."
+    },
+    {
+      "label": "I agree to receive marketing communications",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Supporting Documents and URLs",
+      "fillable": true,
+      "control": "opt-in input[type=\"checkbox\"]",
+      "note": "Its label's \"marketing communications\" opens the agreement's dialog."
+    },
+    {
+      "label": "Full Name",
+      "kind": "text",
+      "required": true,
+      "section": "E-Signature",
+      "fillable": true,
+      "control": "input#fullName-4",
+      "note": "The e-signature."
+    }
+  ],
+  "hooks": {
+    "detect": "form.apply-flow__content-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.apply-flow-profile-import-again-button",
+      "button.attachment-upload-button__download",
+      "button.attachment-upload-button__bottom-button",
+      "button.icon-clear",
+      "button.communication-channel__value-edit",
+      "button.app-header__close",
+      "#timeline-add-experience-button",
+      "#timeline-add-education-button",
+      "button.apply-flow-profile-item-tile__new-tile",
+      "button.candidate-links__add-link",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button"
+    ],
+    "pressable": []
+  }
+}

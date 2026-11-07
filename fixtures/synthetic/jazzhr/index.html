@@ -1,0 +1,144 @@
+<!doctype html>
+<!--
+  Synthetic (DESIGN-NEW-ATS, builder C): a JazzHR posting and its one-page application, written by hand in the shapes
+  the JazzHR adapter reads (src/adapters/jazzhr/config.ts, from the owner's snapshots jazzhr-0 to -4): the posting's
+  #job-description beside form#form_submit_new_resume, each question a div.form-group whose label.control-label ends in
+  an i.asterisk when required, City/State/Postal named by their placeholders, a visible résumé input with its "Paste
+  resume" switch, a select question whose first option is "-- No answer --", a checkbox question whose title names no
+  element and whose two boxes are named apart (the adapter's groupOf), and Submit as a link, a#resumator-submit-resume.
+  No reCAPTCHA: the snapshots' "Human Check" is the person's, which the DOM tests hold. Served at
+  https://tailorit-fixture.applytojob.com/apply/0000000A0<n>/Senior-Backend-Engineer.
+  The page's own script stands for JazzHR's: a click on the Submit link puts "Submitting...please wait..." in its place
+  (jazzhr-4) and counts it; a click on any other button or link of the page is recorded in window.__jazz.pressed. It
+  posts nothing, dispatches no event, and clicks, focuses or submits nothing itself.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Senior Backend Engineer - Career Page</title>
+  <style>
+    body { margin: 0; background: #fff; color: #222; font: 15px/1.45 system-ui, sans-serif; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+    .row { display: flex; gap: 24px; }
+    .description { flex: 7; }
+    .job-application-form { flex: 5; }
+    .form-group { margin: 12px 0; }
+    .control-label { display: block; font-weight: 600; margin-bottom: 4px; }
+    .asterisk { color: #b00; font-style: normal; margin-left: 2px; }
+    .form-control { display: block; width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #888;
+      border-radius: 3px; background: #fff; color: #222; font: inherit; }
+    .address-parts { display: flex; gap: 8px; margin-top: 8px; }
+    .checkbox { display: inline-block; margin-right: 16px; font-weight: 400; }
+    .none { display: none; }
+    .btn { display: inline-block; padding: 8px 16px; border: 1px solid #555; border-radius: 3px; color: #222;
+      text-decoration: none; background: #eee; }
+    .mobile { display: none; }
+    #tracking-consent-banner { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 16px; background: #f4f4f4;
+      border-top: 1px solid #555; display: flex; gap: 8px; align-items: center; }
+  </style>
+</head>
+<body>
+  <header class="container"><a id="resumator-back-button" class="btn btn-link" href="#all-jobs">View All Jobs</a></header>
+  <main class="container">
+    <h2>Senior Backend Engineer</h2>
+    <a class="btn" data-test="job-board-responsive-share" href="#share">Share</a>
+    <div class="row">
+      <div id="job-description" class="description">
+        <p><strong>About the role</strong></p>
+        <p>Build and run the services behind Northwind's order platform.</p>
+      </div>
+      <div class="resumator-mobile-apply-wrapper mobile">
+        <button id="resumator-mobile-apply-button" class="btn" type="button">Apply</button>
+      </div>
+      <div id="job-application-form-container" class="job-application-form">
+        <h3 id="resumator-resumes-title">Apply for this position</h3>
+        <div class="required-help-text">Required <i class="asterisk">*</i></div>
+        <form id="form_submit_new_resume" data-test="form_submit_new_resume" method="POST" enctype="multipart/form-data">
+          <div class="job-form-fields">
+            <div class="form-group">
+              <label id="resumator-firstname-label" for="resumator-firstname-value" class="control-label">First Name<i class="asterisk">*</i></label>
+              <input type="text" id="resumator-firstname-value" name="resumator-firstname-value" class="form-control">
+            </div>
+            <div class="form-group">
+              <label id="resumator-lastname-label" for="resumator-lastname-value" class="control-label">Last Name<i class="asterisk">*</i></label>
+              <input type="text" id="resumator-lastname-value" name="resumator-lastname-value" class="form-control">
+            </div>
+            <div class="form-group">
+              <label id="resumator-email-label" for="resumator-email-value" class="control-label">Email Address<i class="asterisk">*</i></label>
+              <input type="email" id="resumator-email-value" name="resumator-email-value" class="form-control">
+            </div>
+            <div class="form-group">
+              <label id="resumator-phone-label" for="resumator-phone-value" class="control-label">Phone<i class="asterisk">*</i></label>
+              <input type="tel" id="resumator-phone-value" name="resumator-phone-value" class="form-control" maxlength="50">
+            </div>
+            <div id="resumator-address" class="form-group">
+              <label id="resumator-address-label" for="resumator-address-value" class="control-label">Address</label>
+              <input type="text" id="resumator-address-value" name="resumator-address-value" class="form-control" placeholder="Address" maxlength="255">
+              <div class="address-parts">
+                <input type="text" id="resumator-city-value" name="resumator-city-value" class="form-control" placeholder="City" maxlength="255">
+                <input type="text" id="resumator-state-value" name="resumator-state-value" class="form-control" placeholder="State/Province" maxlength="50">
+                <input type="text" id="resumator-postal-value" name="resumator-postal-value" class="form-control" placeholder="Postal" maxlength="50">
+              </div>
+            </div>
+            <div id="resumator-resume" class="form-group">
+              <label id="resumator-resume-label" for="resumator-resume-value" class="control-label">Resume<i class="asterisk">*</i></label>
+              <div id="resumator-resume-upload-wrapper">
+                <div class="resumator-resume-text">Attach resume as .pdf, .doc, .docx, .odt, .txt, or .rtf (limit 5MB) or
+                  <a id="resumator-resume-switch-paste" class="resumator-resume-action" href="#paste">Paste resume</a></div>
+                <input type="file" id="resumator-resume-value" name="resumator-resume-value">
+              </div>
+              <div id="resumator-resume-paste-wrapper" class="none">
+                <p>Paste your resume here or <a id="resumator-resume-switch-upload" class="resumator-resume-action" href="#attach">Attach resume file</a></p>
+                <textarea id="resumator-resumetext-value" name="resumator-resumetext-value" class="form-control"></textarea>
+              </div>
+            </div>
+            <div class="form-group">
+              <label id="resumator-questionnaire-q7001-label" for="resumator-questionnaire-q7001" class="control-label">Are you legally authorized to work in the United States?<i class="asterisk">*</i></label>
+              <label class="checkbox" for="resumator-checkbox-7001-1"><input type="checkbox" id="resumator-checkbox-7001-1" name="resumator-checkbox-7001-1" class="resumator-questionnaire-checkbox" value="Yes">Yes</label>
+              <label class="checkbox" for="resumator-checkbox-7001-2"><input type="checkbox" id="resumator-checkbox-7001-2" name="resumator-checkbox-7001-2" class="resumator-questionnaire-checkbox" value="No">No</label>
+            </div>
+            <div class="form-group">
+              <label id="resumator-questionnaire-q7002-label" for="resumator-questionnaire-q7002" class="control-label">Will you now or in the future require sponsorship for employment visa status?<i class="asterisk">*</i></label>
+              <select id="resumator-questionnaire-q7002" name="resumator-questionnaire[7002]" class="form-control resumator-select-field">
+                <option value="resumator_no_selection">-- No answer --</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div id="resumator-submit" class="form-group">
+              <a href="#" id="resumator-submit-resume" class="btn">Submit Application</a>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+  <div id="tracking-consent-banner">
+    <span>This website uses cookies.</span>
+    <button class="tracking-consent-button allow" type="button">Allow</button>
+    <button class="tracking-consent-button reject" type="button">Reject All</button>
+  </div>
+  <script>
+    (() => {
+      const log = { pressed: [], submitted: 0 };
+      window.__jazz = log;
+      document.body.dataset.submitted = '0';
+      const submit = document.getElementById('resumator-submit-resume');
+      document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target.closest('a, button') : null;
+        if (target === null) return;
+        event.preventDefault();
+        if (target === submit) {
+          log.submitted += 1;
+          document.body.dataset.submitted = String(log.submitted);
+          // JazzHR's own: the link gives way to its in-flight words (jazzhr-4).
+          const area = document.getElementById('resumator-submit');
+          area.textContent = 'Submitting...please wait...';
+          return;
+        }
+        log.pressed.push(target.id || target.className || target.textContent.trim());
+      }, true);
+    })();
+  </script>
+</body>
+</html>

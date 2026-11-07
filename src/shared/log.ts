@@ -229,6 +229,14 @@ export const LOG_CODES = [
   'content.sign-in',
   'content.sign-in-refused',
   'content.sign-in-prelude',
+  // The snapshot build of 2026-11-06 (core-x): Sign-in Auto typed into a form's account section (a flag, never a value);
+  // the worker keyed a page whose address names no job by its tab's chain, or refused to (flags and counts only).
+  'content.account-section',
+  'content.chained',
+  'frame.chained',
+  'frame.chain-refused',
+  // Core pass Z1, item 24: Sign-in Auto pressed a page's declared sign-in container (a flag, never a value).
+  'content.sign-in-container',
   // v3 Phase 8: the company career sites (background/sites.ts): flags only, never an address or a host.
   'sites.reconciled',
   'sites.reconcile-failed',

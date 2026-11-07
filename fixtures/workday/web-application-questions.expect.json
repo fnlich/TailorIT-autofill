@@ -1,0 +1,114 @@
+{
+  "fixture": "workday/web-application-questions",
+  "source": "https://web.wd1.myworkdayjobs.com/en-US/externalcareersite/job/United-States---Remote/Senior-Backend-Engineer_R15417/apply/autofillWithResume",
+  "captured": "2026-11-06T17:15:11.000Z",
+  "note": "Application Questions before fill (the snapshot the coordinator asked for: no answer on the page). Each question is a fieldset whose legend holds its rich-text words and <abbr title=\"required\">*</abbr>; the dropdowns have no label[for], so labelFor names the legend.",
+  "fields": [
+    {
+      "label": "Have you ever been employed by Newfold Digital (or any of its subsidararies) as an employee, temporary employee, contractor, or intern?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d2366c530000\"]"
+    },
+    {
+      "label": "Are you subject to any restrictive covenants from prior employment, such as agreements to protect confidential or proprietary information or non competition/non-solicitation agreements?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d2d0674e0002\"]"
+    },
+    {
+      "label": "What are your salary expectations?",
+      "kind": "textarea",
+      "required": false,
+      "section": "application-questions",
+      "fillable": true,
+      "control": "textarea[id=\"primaryQuestionnaire--dcc9099b9b2710016266d36a47f50000\"]"
+    },
+    {
+      "label": "Are you currently legally authorized to work in the location where you are applying to the job?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d36a47f50001\"]"
+    },
+    {
+      "label": "Do you foresee any change to your work authorization status?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d4042fbf0000\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Application Questions",
+      "progress": "current step 4 of 7",
+      "anchors": [
+        "applyFlowPrimaryQuestionsPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d2366c530000\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d2d0674e0002\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d36a47f50001\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"primaryQuestionnaire--dcc9099b9b2710016266d4042fbf0000\"]",
+        "kind": "combobox",
+        "answered": false
+      }
+    ],
+    "repeatables": []
+  }
+}

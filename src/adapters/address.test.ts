@@ -23,6 +23,10 @@ describe('bridgeInstallsAt', () => {
   it('installs on a shared domain only at a posting or its application form', () => {
     for (const href of ['https://careers-acme.icims.com/jobs/1/engineer/job',
       'https://careers-acme.icims.com/jobs/1/engineer/login?in_iframe=1',
+      // iCIMS's pages after the gate (the owner's snapshots of 2026-11-06, docs/ARCHITECTURE.md, the snapshot build of 2026-11-06).
+      'https://careers-acme.icims.com/jobs/1/engineer/candidate?from=login&in_iframe=1',
+      'https://careers-acme.icims.com/jobs/1/engineer/questions?global=1', 'https://careers-acme.icims.com/jobs/1/engineer/eeo?back=',
+      'https://careers-acme.icims.com/jobs/1/engineer/form?form=Voluntary_Self_Identification_Forms&step=6&in_iframe=1',
       'https://acme.taleo.net/careersection/ex/jobdetail.ftl?job=1&lang=en',
       'https://career2.successfactors.eu/career?company=acme&career_job_req_id=1&career_ns=job_listing',
       'https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1',
@@ -30,18 +34,58 @@ describe('bridgeInstallsAt', () => {
       expect(bridgeInstallsAt(href), href).toBe(true);
     }
     for (const href of ['https://internal-acme.icims.com/jobs/1/engineer/job', 'https://careers-acme.icims.com/jobs/search?ss=1',
-      'https://careers-acme.icims.com/jobs/1/engineer/candidate', 'https://performancemanager4.successfactors.com/sf/home',
+      // iCIMS: the page after submitting, and an IForm's own form frame, which names no posting (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06).
+      'https://careers-acme.icims.com/jobs/1/engineer/job?mode=submit_apply&in_iframe=1',
+      'https://acme.icims.com/forms?module=Forms&action=showForm&form=X&in_iframe=1&step=6',
+      'https://careers-acme.icims.com/jobs/1/engineer/referral', 'https://performancemanager4.successfactors.com/sf/home',
       'https://career2.successfactors.eu/career?company=acme&career_ns=job_search', 'https://acme.taleo.net/careersection/2/jobsearch.ftl',
       'https://acme.fa.us2.oraclecloud.com/fscmUI/faces/FuseWelcome', 'https://wd5.myworkdaysite.com/recruiting/acme/External']) {
       expect(bridgeInstallsAt(href), href).toBe(false);
     }
   });
 
+  // ── New ATSs (DESIGN-NEW-ATS §4, Phase 0) ──
+  it("installs on any path of the new ATSs' candidate-only hosts, and on a shared host's candidate paths alone", () => {
+    for (const href of ['https://jobs.jobvite.com/acme/jobs', 'https://ats.rippling.com/acme/jobs',
+      'https://recruiting.ultipro.com/ACM1000ACME/JobBoard/x/?q=', 'https://jobs.dayforcehcm.com/en-US/acme/CANDIDATEPORTAL',
+      'https://acme.careers.hibob.com/', 'https://acme.bamboohr.com/careers/123',
+      // New ATSs, builder A: ADP's shared host, where its parser (adp/url.ts) reads a posting's application.
+      'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=00000000-0000-4000-8000-000000000001&jobId=1']) {
+      expect(bridgeInstallsAt(href), href).toBe(true);
+    }
+    for (const href of ['https://acme.bamboohr.com/home', 'https://workforcenow.adp.com/theme/index.html',
+      // New ATSs, builder A: a recruitment page of ADP's that names no posting.
+      'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=x',
+      'https://acme.clearcompany.com/app/home', 'https://www.dice.com/dashboard/login', 'https://acme.applytojob.com/',
+      'https://www.paycomonline.net/v4/ats/web.php/portal/x/career-page']) {
+      expect(bridgeInstallsAt(href), href).toBe(false);
+    }
+  });
+  // ── end New ATSs ──
+
   it('never installs off the ATS hosts, over http or at an address that does not parse', () => {
     for (const href of ['https://example.com/jobs/1', 'http://jobs.lever.co/acme', 'https://www.myworkdayjobs.com/x',
       'https://wd5.myworkdayjobs.com/x', '', 'not an address', 'about:blank']) {
       expect(bridgeInstallsAt(href), href).toBe(false);
     }
+  });
+
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  it("installs on SmartRecruiters' jobs host, any path, and on a government cloud tenant's posting and application alone", () => {
+    for (const href of ['https://jobs.smartrecruiters.com/Xplor', 'https://jobs.smartrecruiters.com/Xplor/744000159905715-x',
+      'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1/screening',
+      'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1']) {
+      expect(bridgeInstallsAt(href), href).toBe(true);
+    }
+    for (const href of ['https://iaaxmg.fa.ocs.oraclegovcloud.com/fscmUI/faces/FuseWelcome',
+      'https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/requisitions',
+      'https://careers.smartrecruiters.com/Xplor']) {
+      expect(bridgeInstallsAt(href), href).toBe(false);
+    }
+    // The posting and its application each read as their own (url.ts: their addresses name no common id).
+    expect(postingAddressOf(new URL('https://jobs.smartrecruiters.com/Xplor/744000159905715-x'))?.page).toBe('posting');
+    expect(postingAddressOf(new URL('https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1'))
+      ?.page).toBe('application');
   });
 
   it('reads the page of a posting as its platform’s parser does', () => {
@@ -99,6 +143,20 @@ describe('a frame below an employer’s own page (the audit of 2026-11-06, S-9)'
     expect(framedByEmployerPage(`${POSTING.icims}?in_iframe=1`, [POSTING.icims])).toBe(false);
     expect(framedByEmployerPage('https://careers-acme.icims.com/jobs/1234/x/login?in_iframe=1',
       ['https://careers-acme.icims.com/jobs/1234/x/login'])).toBe(false);
+    // iCIMS's frames as the owner's snapshots of 2026-11-06 show them (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): each step's page in the
+    // wrapper of its own address (careers-githubinc's profile, uscareers-nyu's EEO and IForm page, the page after
+    // submitting); the IForm's own form frame (nyu.icims.com/forms) is another origin, so it reads no ancestor.
+    const nyu = 'https://uscareers-nyu.icims.com/jobs/16462/x';
+    for (const [frame, top] of [[`${nyu}/candidate?from=login&eem=E&code=C&in_iframe=1`, `${nyu}/candidate?from=login&eem=E&code=C`],
+      [`${nyu}/eeo?back=&in_iframe=1`, `${nyu}/eeo?back=`], [`${nyu}/questions?global=1&in_iframe=1`, `${nyu}/questions?global=1`],
+      [`${nyu}/form?form=US_Employment_Application&step=2&hashed=1&in_iframe=1`, `${nyu}/form?form=US_Employment_Application&step=2&hashed=1`],
+      [`${nyu}/job?mode=submit_apply&in_iframe=1`, `${nyu}/job?mode=submit_apply`]] as const) {
+      expect(framedByEmployerPage(frame, [top]), frame).toBe(false);
+    }
+    // The same step framed by a page of the portal that shows no posting (its search, its home) stays silent.
+    expect(framedByEmployerPage(`${nyu}/candidate?from=login&in_iframe=1`, ['https://uscareers-nyu.icims.com/jobs/search?ss=1']))
+      .toBe(true);
+    expect(framedByEmployerPage(`${nyu}/eeo?back=&in_iframe=1`, ['https://uscareers-nyu.icims.com/'])).toBe(true);
     expect(framedByEmployerPage(POSTING.oracle, [])).toBe(false);
   });
 

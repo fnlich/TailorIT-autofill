@@ -10,7 +10,8 @@
  *    local of this function, typed into the page's password box (and its confirmation) and dropped; it is never kept,
  *    logged, reported or sent anywhere.
  * 3. With nothing awaited between: the page's address checked again (the same origin as when asked, https), the
- *    sign-in's host held to the page's (its own host, or `*` on a host signInHostCovered covers), the form read and
+ *    sign-in's host held to the page's (its own host, or `*` on a page signInHostCovered covers: since TailorIT's API
+ *    6, on ADP's and ClearCompany's hosts by the page's path, its pathname, a candidate one alone), the form read and
  *    refused or not again (the same password box), then the email, the password and the confirmation written with the
  *    elements' own setters and the plain events a page listens for (dom/fillers/events.ts), each read back; the
  *    account's required terms ticked (clickIfAllowed: a box's click); and the form's own button pressed through
@@ -53,16 +54,32 @@
  *   creation) gets its email, its email again, its password and its confirmation typed, and nothing pressed: 'continue',
  *   the run then pausing at the page, where the person answers the rest and presses its button.
  * - A password reset ('forgot-password') is never a wall here: it pauses for the person, and nothing is typed there.
+ * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06):
+ * - core-x, item 3: a subframe whose adapter claims the tab's application (SignInContext.claimed: the same-host frame an
+ *   iCIMS portal draws every step in, below its wrapper) signs in as a top frame does; the worker answers it only as
+ *   the tab's claim frame (background/frames.ts claimFrameOf). Any other subframe never signs in.
+ * - core-x, item 2: a create-account section inside an application form (SignInContext.section; Adapter.accountSection:
+ *   iCIMS's "Create a login") is typed into as an account's creation whose press is the person's (its declared form must
+ *   say personPresses): nothing is pressed, no prelude, and the run fills the rest of the form.
+ * - core pass Z1, item 24: a declared sign-in container on a page the run filled like a step (SignInContext.container;
+ *   Adapter.signInContainer: ADP's guest page, whose Continue mails a code; UltiPro's account step, whose Create account
+ *   makes the account) is signed in to once the run rests there: the worker is asked as at an email gate (CONTAINER_WALL:
+ *   the email alone, never a password, for a host whose sign-in the person saved or the every-site one covers), the
+ *   saved email typed into the container's email box where it declares one, its terms ticked, and its button pressed
+ *   through the sign-in door (not-submit.ts clickAdapterSignIn, from 'container'), every guard above held: a challenge
+ *   first and right before the press, challenge frames, no password box (dom/sign-in-form.ts containerShape),
+ *   guardSubmission over the <form> the press would send, https and the host.
  */
 import { signInHostCovered } from '../contract/tailorit/credentials';
 import type { Adapter, SignInForm } from '../adapters/types';
 import { clickIfAllowed } from '../dom/fillers';
 import { fireChange, fireInput, fireLeave, setValue } from '../dom/fillers/events';
+import { accountFormOf } from '../dom/account-section';
 import { clickAdapterSignIn, clickAdapterSignInPrelude } from '../dom/fillers/not-submit';
 import { challengeLikeFramesShown, detectPause, unsolvedCaptchas, vendorFramesShown } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
 import {
-  anchorOf, guardSubmission, passwordBoxIn, SIGN_IN_REFUSALS, signInFormOf, signInRefusal,
+  anchorOf, guardSubmission, passwordBoxIn, SIGN_IN_REFUSALS, signInContainerOf, signInFormOf, signInRefusal,
 } from '../dom/sign-in-form';
 import { deadline, monotonicNow } from '../dom/time';
 import { isUserVisible } from '../dom/visibility';
@@ -84,6 +101,10 @@ const LOOK_MS = 250;
 /** How often a button that is still disabled is looked at. */
 const ENABLE_LOOK_MS = 100;
 
+/** Core pass Z1, item 24: the wall a sign-in container is asked for: an email gate's, so the worker answers the email
+ *  alone and the password never leaves it (a container holds no password box: dom/sign-in-form.ts containerShape). */
+export const CONTAINER_WALL: SignInWall = 'email-gate';
+
 /** What came of a sign-in (module header). */
 export type SignInOutcome = 'continue' | 'failed' | 'unavailable' | 'left';
 
@@ -95,6 +116,16 @@ export interface SignInContext {
   /** The frame's address now (location.href; tests pass the one they stand for). */
   href(): string;
   isTop: boolean;
+  /** The snapshot build of 2026-11-06 (core-x, item 3): a subframe whose adapter claims the tab's application (the
+   *  same-host frame an iCIMS portal draws every step in, below its own wrapper: runtime.ts claimsApplication). It may
+   *  sign in as a top frame does; any other subframe may not. */
+  claimed?: boolean;
+  /** core-x, item 2: sign in to the form's account section (Adapter.accountSection: iCIMS's "Create a login") rather
+   *  than to an account page the run paused at: its declared create-account form, whose button is the person's. */
+  section?: true;
+  /** Core pass Z1, item 24: sign in through the page's declared sign-in container (Adapter.signInContainer) on a page the
+   *  run filled like a step, rather than at an account page it paused at. */
+  container?: true;
   /** Aborted when the document goes. */
   signal: AbortSignal;
   settleMs?: number;
@@ -128,9 +159,11 @@ function typeInto(input: HTMLInputElement, text: string): boolean {
   return input.value === text;
 }
 
-/** Whether the sign-in's own host is the page's: the same host, or the one for every site on a covered host. */
-function hostFits(credential: Pick<SignInCredential, 'host'>, host: string): boolean {
-  return credential.host === host || (credential.host === '*' && signInHostCovered(host));
+/** Whether the sign-in's own host is the page's: the same host, or the one for every site on a covered page (TailorIT's
+ *  API 6, contract6: on ADP's and ClearCompany's hosts, at a candidate path alone; `path` is the page's pathname, no
+ *  query and no fragment). */
+function hostFits(credential: Pick<SignInCredential, 'host'>, host: string, path: string): boolean {
+  return credential.host === host || (credential.host === '*' && signInHostCovered(host, path));
 }
 
 /** Whether the page shows a challenge not known solved now, anywhere (module header): a vendor's, solved or not, or a
@@ -145,6 +178,16 @@ function samePage(ctx: SignInContext, asked: URL): URL | null {
   return now === null || now.origin !== asked.origin || now.protocol !== 'https:' ? null : now;
 }
 
+/** The form the sign-in reads now: the declared container (core pass Z1, item 24), else the wall's form. */
+function formNow(ctx: SignInContext, wall: SignInWall): SignInForm | null {
+  return ctx.container === true ? signInContainerOf(ctx.adapter, ctx.doc) : signInFormOf(ctx.adapter, ctx.doc, wall);
+}
+
+/** Whether `form` is the one the sign-in read first: the same box it hangs on, and (a container) the same container. */
+function sameForm(form: SignInForm, held: SignInForm): boolean {
+  return anchorOf(form) === anchorOf(held) && (form.container ?? null) === (held.container ?? null);
+}
+
 /**
  * Writes the credential into the form (module header, 3), with nothing awaited between the checks and the writes; the
  * boxes the password went into are added to `secret`. Answers 'typed', or why not.
@@ -156,7 +199,7 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
     log('content.sign-in-refused', { moved: true });
     return 'unavailable';
   }
-  if (!hostFits(credential, now.hostname.toLowerCase())) {
+  if (!hostFits(credential, now.hostname.toLowerCase(), now.pathname)) {
     log('content.sign-in-refused', { host: true });
     return 'unavailable';
   }
@@ -164,9 +207,9 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
     log('content.sign-in-refused', { captcha: true });
     return 'unavailable';
   }
-  const form = signInFormOf(ctx.adapter, ctx.doc, wall);
-  const refusal = form === null ? 'shape' : signInRefusal(form, now);
-  if (form === null || refusal !== null || anchorOf(form) !== anchorOf(held)) {
+  const form = formNow(ctx, wall);
+  const refusal = form === null ? 'shape' : refusalOf(ctx, form, now);
+  if (form === null || refusal !== null || !sameForm(form, held)) {
     log('content.sign-in-refused', { refusal: refusal === null ? -1 : SIGN_IN_REFUSALS.indexOf(refusal), again: true });
     return 'unavailable';
   }
@@ -200,6 +243,15 @@ function fill(ctx: SignInContext, wall: SignInWall, asked: URL, held: SignInForm
   return 'typed';
 }
 
+/** signInRefusal, but (core-x, item 2) in an account section, whose button is never pressed here (its declared form's
+ *  press is the person's), the button's own state is no reason to refuse the boxes: the page may disable "Submit
+ *  Profile" while it reads a resume (githubinc-profile.frame-1.html's input#cp_form_submit_i disabled="disabled"). Every
+ *  other rule holds as it is. */
+function refusalOf(ctx: SignInContext, form: SignInForm, address: URL): ReturnType<typeof signInRefusal> {
+  return signInRefusal(ctx.section === true && form.personPresses === true ? { ...form, enablesWhenFilled: true } : form,
+    address);
+}
+
 /** Whether a button can be pressed now: connected, and not disabled. */
 function enabledNow(button: HTMLElement): boolean {
   return button.isConnected && (button as HTMLButtonElement).disabled !== true
@@ -212,7 +264,7 @@ async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: Sig
   Promise<'pressed' | 'unavailable' | 'failed' | 'left'> {
   const current = () => {
     try {
-      return signInFormOf(ctx.adapter, ctx.doc, wall);
+      return formNow(ctx, wall);
     } catch {
       return null;
     }
@@ -221,7 +273,7 @@ async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: Sig
     const until = monotonicNow() + SIGN_IN_ENABLE_MS;
     for (;;) {
       const form = current();
-      if (form !== null && anchorOf(form) === anchorOf(held) && enabledNow(form.button)) break;
+      if (form !== null && sameForm(form, held) && enabledNow(form.button)) break;
       if (monotonicNow() >= until) {
         log('content.sign-in', { enabled: false });
         return 'failed';
@@ -231,11 +283,12 @@ async function press(ctx: SignInContext, wall: SignInWall, asked: URL, held: Sig
   }
   const now = samePage(ctx, asked);
   const form = current();
-  if (now === null || form === null || anchorOf(form) !== anchorOf(held) || challenged(ctx)) {
+  if (now === null || form === null || !sameForm(form, held) || challenged(ctx)) {
     log('content.sign-in-refused', { pressed: false });
     return 'unavailable';
   }
-  return clickAdapterSignIn(ctx.adapter, ctx.doc, wall, now) === null ? 'unavailable' : 'pressed';
+  return clickAdapterSignIn(ctx.adapter, ctx.doc, wall, now, ctx.container === true ? 'container' : 'wall') === null
+    ? 'unavailable' : 'pressed';
 }
 
 /** Writes the password boxes empty again (module header, 4), where they are still in the page. Nothing is read. */
@@ -271,7 +324,8 @@ function errorShown(ctx: SignInContext, form: SignInForm): boolean {
 /** What came of the press (module header, 4). */
 async function outcomeAfter(ctx: SignInContext, form: SignInForm): Promise<SignInOutcome> {
   const until = monotonicNow() + (ctx.settleMs ?? SIGN_IN_SETTLE_MS);
-  const anchor = anchorOf(form);
+  // Core pass Z1, item 24: a box-less container's press is watched by the container itself.
+  const anchor = anchorOf(form) ?? form.container ?? null;
   for (;;) {
     if ((await deadline(LOOK_MS, ctx.signal)) === 'aborted') return 'left';
     // A challenge the press raised is the person's: the run scans again and pauses at it.
@@ -317,13 +371,20 @@ async function formAfterPrelude(ctx: SignInContext, wall: SignInWall, asked: URL
 
 /** Signs in once on the page the run paused at (module header). */
 export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
-  if (!ctx.isTop || ctx.signal.aborted) return 'unavailable';
+  if ((!ctx.isTop && ctx.claimed !== true) || ctx.signal.aborted) return 'unavailable';
   const asked = urlOf(ctx.href());
   let wall: SignInWall | null = null;
   let form: SignInForm | null = null;
   try {
-    wall = wallOf(ctx.doc, ctx.adapter);
-    form = wall === null || asked === null ? null : await formAfterPrelude(ctx, wall, asked);
+    // core-x, item 2: an account section is typed into, never pressed: its declared form's button is the person's.
+    wall = ctx.section === true ? (accountFormOf(ctx.adapter, ctx.doc, null)?.personPresses === true
+      ? 'create-account' : null)
+      // Core pass Z1, item 24: a declared container is asked for as an email gate (CONTAINER_WALL); no prelude.
+      : ctx.container === true ? (signInContainerOf(ctx.adapter, ctx.doc) === null ? null : CONTAINER_WALL)
+        : wallOf(ctx.doc, ctx.adapter);
+    form = wall === null || asked === null ? null : ctx.section === true || ctx.container === true ? formNow(ctx, wall)
+      : await formAfterPrelude(ctx, wall, asked);
+    if (ctx.section === true && form !== null && (form.personPresses !== true || form.declared !== true)) form = null;
   } catch {
     // A page that breaks the reading of its form (a control named as one of the form's own methods): never filled.
     log('content.sign-in-refused', { read: false });
@@ -331,7 +392,7 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   }
   if (ctx.signal.aborted) return 'left';
   if (wall === null || asked === null) return 'unavailable';
-  const refusal = form === null ? null : signInRefusal(form, asked);
+  const refusal = form === null ? null : refusalOf(ctx, form, asked);
   if (form === null || refusal !== null) {
     log('content.sign-in-refused', { form: form !== null, refusal: refusal === null ? -1 : SIGN_IN_REFUSALS.indexOf(refusal) });
     return 'unavailable';

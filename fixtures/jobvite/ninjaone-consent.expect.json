@@ -1,0 +1,19 @@
+{
+  "fixture": "jobvite/ninjaone-consent",
+  "source": "https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply",
+  "captured": "2026-11-06T13:54:15.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": "entry-choice",
+    "postingText": null,
+    "entryControl": "form[name=\"consentForm\"] button[type=\"submit\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "form[name=\"consentForm\"] a.jv-button",
+      "form[name=\"consentForm\"] button[type=\"submit\"]"
+    ],
+    "pressable": []
+  }
+}

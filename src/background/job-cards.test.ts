@@ -13,6 +13,7 @@ import {
   contentSender,
   goldens,
   LEVER_KEY,
+  LEVER_POSTING_URL,
   LEVER_URL,
   pageSender,
   sentToFrames,
@@ -67,7 +68,7 @@ describe('the job card (v2)', () => {
       match: { state: 'ok', matchedCount: 9, total: 12, percentage: 75 },
       addable: true,
     } } });
-    expect(bodyOf(worker, LOOKUP)).toEqual([{ url: LEVER_URL, includePostingText: false }]);
+    expect(bodyOf(worker, LOOKUP)).toEqual([{ url: LEVER_POSTING_URL, includePostingText: false }]);
     // The frame was asked to relay, and nothing it was sent holds what TailorIT said.
     const toFrames = sentToFrames(worker);
     expect(toFrames.map((sent) => sent.message)).toEqual([{ v: 1, type: 'job/refresh', action: 'lookup' }]);
@@ -184,7 +185,8 @@ describe('the job card (v2)', () => {
     expect(JSON.stringify(port.received)).not.toContain('5f6e3c2b1a01');
     const answer = (await card(worker)) as { data: { card: { job: { company: string; title: string } } } };
     expect(answer.data.card.job).toMatchObject({ company: 'Contoso', title: 'Platform Engineer' });
-    expect(bodyOf(worker, LOOKUP).map((body) => body.url)).toEqual([LEVER_URL, next]);
+    expect(bodyOf(worker, LOOKUP).map((body) => body.url)).toEqual([LEVER_POSTING_URL,
+      LEVER_POSTING_URL.replace('5f6e3c2b1a00', '5f6e3c2b1a01')]);
     // The same count again (a hello that changes nothing): the card is answered from memory.
     await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true, nav: 1 }, moved);
     await card(worker);
@@ -252,7 +254,7 @@ describe('Add this job to TailorIT and Save to tracker (v2)', () => {
     const worker = await withForm();
     worker.tailorit.reply(ADD, { json: { created: true, lookup: { ...golden, job: { ...golden.job, title: 'Added job' } } } });
     expect(await add(worker)).toEqual({ ok: true, data: { outcome: 'added' } });
-    expect(bodyOf(worker, ADD)).toEqual([{ url: LEVER_URL }]);
+    expect(bodyOf(worker, ADD)).toEqual([{ url: LEVER_POSTING_URL }]);
     expect(((await card(worker)) as { data: { card: { job: { title: string } } } }).data.card.job.title).toBe('Added job');
     expect(worker.tailorit.count(LOOKUP)).toBe(0);
     worker.tailorit.reply(ADD, { json: { created: false, lookup: golden } });
@@ -281,6 +283,27 @@ describe('Add this job to TailorIT and Save to tracker (v2)', () => {
     expect(worker.tailorit.count(ADD)).toBe(0);
     expect(((await card(worker)) as { data: { card: { addable: boolean } } }).data.card.addable).toBe(false);
   });
+
+  // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 ──
+  it("offers no Add on the ATSs TailorIT's API 6 reads but cannot add from, and sends none", async () => {
+    // The owner's snapshots' forms (fixtures/pinpoint, jobvite, smartrecruiters, adp) and Workable's job-search site:
+    // TailorIT reads each posting (parseAtsUrl) and finds it by its address, but has no posting API to add one from.
+    for (const url of ['https://prophetexchange.pinpointhq.com/en/postings/c0dae85d-514e-490a-be0e-133196663338/applications/new',
+      'https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply',
+      'https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1',
+      'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001',
+      'https://jobs.workable.com/view/h3u3XDdUxbcDLb9v7mvmpN/remote-expert-rag-engineer']) {
+      expect(recognisedPosting(url), url).toBe(true);
+      const worker = await startTestWorker({ token: tokenRecord() });
+      const page = contentSender({ url });
+      await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, page);
+      relayFrom(worker, true, page);
+      expect(((await card(worker)) as { data: { card: { addable: boolean } } }).data.card.addable, url).toBe(false);
+      expect(await add(worker), url).toEqual({ ok: true, data: { outcome: 'unsupported' } });
+      expect(worker.tailorit.count(ADD), url).toBe(0);
+    }
+  });
+  // ── end contract6 ──
 
   it('says too many when the frame relayed more than six a minute', async () => {
     const worker = await withForm();
@@ -345,7 +368,7 @@ describe('the resume the person chose (v2)', () => {
       fileKind: other.fileKind, fileName: other.fileName, reason: 'chosen' } } });
     await upload(2);
     expect(files()[1]).toBe(`/api/autofill/resumes/${other.id}/file`);
-    expect(bodyOf(worker, LOOKUP).at(-1)).toEqual({ url: LEVER_URL, includePostingText: false, resumeId: other.id });
+    expect(bodyOf(worker, LOOKUP).at(-1)).toEqual({ url: LEVER_POSTING_URL, includePostingText: false, resumeId: other.id });
   });
 });
 
@@ -486,7 +509,7 @@ describe('a lookup a fill reads (v2)', () => {
     await vi.waitFor(() => expect(port.received.length).toBeGreaterThanOrEqual(1));
     const lookups = bodyOf(worker, LOOKUP);
     expect(lookups).toHaveLength(2);
-    expect(lookups[1]).toEqual({ url: LEVER_URL, includePostingText: false });
+    expect(lookups[1]).toEqual({ url: LEVER_POSTING_URL, includePostingText: false });
   });
 });
 

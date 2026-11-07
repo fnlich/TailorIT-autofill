@@ -26,6 +26,9 @@ import type { RouteLog } from '../routes.ts';
 const FORM = 'fixtures/synthetic/policy-apply.html';
 /** A Lever posting TailorIT can add from (its id is a posting id). */
 const at = (id: string) => `https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-0000000058${id}/apply`;
+// The snapshot build of 2026-11-06 (core pass Z1, item 37): TailorIT is asked with the posting's canonical address,
+// its own (adapters/tailorit-address.ts): a Lever application form's posting page.
+const postingOf = (url: string) => url.replace(/\/apply$/, '');
 const LOOKUP = 'POST /api/autofill/lookup';
 const ADD = 'POST /api/autofill/jobs';
 const DRAFT = 'POST /api/autofill/ai/draft';
@@ -99,7 +102,7 @@ test.describe('the job card', () => {
     await expect(card.locator('[data-job-outcome]')).toHaveText(COPY.job.addOutcomes.added);
     await expect(card).toHaveAttribute('data-job-state', 'found');
     await expect(card.locator('.tia-job__title')).toHaveText('Staff Platform Engineer');
-    expect(await bodies(ADD)).toEqual([{ url }]);
+    expect(await bodies(ADD)).toEqual([{ url: postingOf(url) }]);
     // The add's own lookup became the card: no lookup after it.
     expect(await mock.requestsTo(LOOKUP)).toHaveLength(1);
   });
@@ -132,7 +135,7 @@ test.describe('the job card', () => {
     await panel.getByRole('button', { name: COPY.job.save, exact: true }).click();
     await expect(card.locator('[data-job-outcome]')).toHaveText(COPY.job.addOutcomes.saved);
     await expect(panel.getByRole('button', { name: COPY.job.save, exact: true })).toHaveCount(0);
-    expect(await bodies(ADD)).toEqual([{ url }]);
+    expect(await bodies(ADD)).toEqual([{ url: postingOf(url) }]);
   });
 
   test('Change: the chosen resume goes with the lookup, and the card says it was chosen', async ({ extContext, connected: ext, routeLog }) => {

@@ -208,6 +208,32 @@ describe('disappearances', () => {
     expect(after.pending).toEqual([]);
     expect(after.state.fields.get(fields[1]!.baseKey)?.status).toBe('oscillating');
   });
+
+  // The core pass of 2026-11-06 (fixtures/greenhouse/axle-attached.html): Greenhouse takes the file input out of the
+  // page once a file is in it, and shows the file done in its place.
+  it('keep the row of an upload the page took with its input, and only of one we wrote', () => {
+    const resume = field('Resume/CV', 'file');
+    const name = field('Full name', 'text');
+    const fields = inOrder(name, resume);
+    const state = written(settled(fields), fields[1]!, 'resume');
+    const seen = observeScan(state, [fields[0]!], { uploaded: new Set([fields[1]!.baseKey]) });
+    expect(seen.events).toEqual([]);
+    expect(seen.state.fields.get(fields[1]!.baseKey)).toMatchObject({ present: false, taken: true, wrote: true,
+      status: 'resolved' });
+    expect(loopRows(seen.state, seen.verdict).find((row) => row.label === 'Resume/CV'))
+      .toMatchObject({ status: 'verified', reason: 'ok', verification: 'verified' });
+    // Not named as taken: gone, as before.
+    const gone = observeScan(state, [fields[0]!]);
+    expect(types(gone.events)).toEqual(['field-disappeared']);
+    expect(loopRows(gone.state, gone.verdict).find((row) => row.label === 'Resume/CV'))
+      .toMatchObject({ reason: 'field-disappeared', verification: 'not-checked' });
+    // A field we did not write is never kept so, nor one that is no file.
+    const unwritten = observeScan(settled(fields), [fields[0]!], { uploaded: new Set([fields[1]!.baseKey]) });
+    expect(types(unwritten.events)).toEqual(['field-disappeared']);
+    const text = observeScan(written(settled(fields), fields[0]!, 'Alex'), [fields[1]!],
+      { uploaded: new Set([fields[0]!.baseKey]) });
+    expect(types(text.events)).toEqual(['field-disappeared']);
+  });
 });
 
 describe('options that change', () => {

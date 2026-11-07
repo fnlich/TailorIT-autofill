@@ -9,6 +9,10 @@
  * in which nothing receives, twice, a grace period apart. It never goes by arrival order: a subframe of the new page
  * can say hello, and report, before its top frame does, and it answers, so it stays. A panel that reads or starts to
  * follow a tab asks the same of all its frames, because a page with none of our frames says no hello at all.
+ * The snapshot build of 2026-11-06 (core-x; docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): an entry also says whether the top frame is a
+ * company's wrapper (`wraps`) and a subframe claims its application (`claimed`: claimFrameOf), and, for a document whose
+ * address names no job, the application the tab's chain gave it (`chained`, background/chain.ts) with that application's
+ * canonical posting address (`chainUrl`, the one TailorIT is asked with for it), never the page's own address.
  */
 import { applicationOf } from '../adapters';
 import { parseAtsUrl } from '../contract/tailorit';
@@ -42,15 +46,34 @@ export interface FrameEntry {
   /** The review (M2): the application the frame's address belongs to, as the worker's parser reads it at the hello (a
    *  hash, never the address): the job chosen and "Apply without resume" follow it. */
   applicationKey?: string;
+  // ── snapshot build 2026-11-06 (core-x, items 3, 7 and 14) ──
+  /** The top frame is a company's wrapper that draws the application in a frame of its own (its hello said so). */
+  wraps?: true;
+  /** A subframe whose adapter claims the tab's application (its hello said so; claimFrameOf checks it). */
+  claimed?: true;
+  /** The frame's document took its application from the tab's chain (background/chain.ts): its key is that one, and
+   *  `chainUrl` the application's canonical address, the one TailorIT is asked with for it (never the page's own); a
+   *  subframe's names the frame that framed it (`chainedFrom`). */
+  chained?: true;
+  chainUrl?: string;
+  chainedFrom?: number;
 }
 
 const keyOf = (tabId: number, frameId: number) => `frames:${tabId}:${frameId}`;
+
+/** The application a chain gave a frame's document (background/chain.ts): its key, its canonical address and the frame
+ *  that framed it (a subframe's). */
+export interface FrameChain {
+  applicationKey: string;
+  url: string;
+  parentFrameId?: number;
+}
 
 /** Records a frame. One key per frame, so frames of one tab registering at once never overwrite each other. */
 export async function registerFrame(
   session: StorageArea,
   frame: { tabId: number; frameId: number; documentId: string | undefined; url: string; isTop: boolean; hasForm: boolean;
-    nav?: number; letter?: true; keepKey?: string },
+    nav?: number; letter?: true; keepKey?: string; wraps?: true; claimed?: true; chain?: FrameChain },
   now: number,
 ): Promise<FrameEntry> {
   const entry: FrameEntry = {
@@ -66,11 +89,52 @@ export async function registerFrame(
     ...(frame.nav === undefined || frame.nav === 0 ? {} : { nav: frame.nav }),
     ...(frame.letter === true && frame.hasForm ? { letter: true as const } : {}),
     ...(!frame.hasForm && frame.frameId === 0 && postingAddress(frame.url) ? { posting: true as const } : {}),
-    ...(!frame.hasForm && frame.frameId === 0 && confirmationAddress(frame.url) ? { confirmation: true as const } : {}),
+    // core-x, item 3: the frame that claims a wrapper's application shows its page after submitting as a top frame does.
+    ...(!frame.hasForm && (frame.frameId === 0 || frame.claimed === true) && confirmationAddress(frame.url)
+      ? { confirmation: true as const } : {}),
     ...applicationKeyOf(frame.url, frame.keepKey),
+    ...(frame.wraps === true && frame.frameId === 0 ? { wraps: true as const } : {}),
+    ...(frame.claimed === true && frame.frameId !== 0 ? { claimed: true as const } : {}),
+    // core-x, items 7 and 14: a chain's application, in place of the address's own.
+    ...(frame.chain === undefined ? {} : { applicationKey: frame.chain.applicationKey, chained: true as const,
+      chainUrl: frame.chain.url, ...(frame.chain.parentFrameId === undefined ? {}
+        : { chainedFrom: frame.chain.parentFrameId }) }),
   };
   await session.set({ [keyOf(frame.tabId, frame.frameId)]: entry });
   return entry;
+}
+
+/** The chain an entry holds, as registerFrame takes it again (the same document's next hello keeps it). */
+export function chainOf(entry: FrameEntry): FrameChain | undefined {
+  if (entry.chained !== true || entry.applicationKey === undefined || entry.chainUrl === undefined) return undefined;
+  return { applicationKey: entry.applicationKey, url: entry.chainUrl,
+    ...(entry.chainedFrom === undefined ? {} : { parentFrameId: entry.chainedFrom }) };
+}
+
+/**
+ * The snapshot build of 2026-11-06 (core-x, item 3): the frame whose adapter claims the tab's application, where the
+ * agent's presses, Next and Submit, the success read and Sign-in Auto act. The tab's top frame, when it holds an
+ * application and draws it itself; when it is a company's wrapper drawing it in a frame of its own (its hello's `wraps`:
+ * iCIMS's iframe#icims_content_iframe), the one subframe whose hello says it claims it (`claimed`: directly below the
+ * wrapper, on its origin), on the wrapper's origin and at the wrapper's application. Null when there is none, or more
+ * than one (if unsure, none).
+ */
+export function claimFrameOf(frames: readonly FrameEntry[]): FrameEntry | null {
+  const top = frames.find((frame) => frame.frameId === 0) ?? null;
+  if (top === null || top.applicationKey === undefined) return null;
+  if (top.wraps !== true) return top;
+  const claimed = frames.filter((frame) => frame.frameId !== 0 && frame.claimed === true && frame.origin === top.origin
+    && frame.applicationKey === top.applicationKey && frame.chained !== true);
+  return claimed.length === 1 ? claimed[0]! : null;
+}
+
+/** core-x, items 3 and 7: the frames the agent may act in for the tab's application: its claim frame, and a chain
+ *  subframe the claim frame framed (iCIMS's IForm frame) at the same application. */
+export function agentFramesOf(frames: readonly FrameEntry[]): FrameEntry[] {
+  const claim = claimFrameOf(frames);
+  if (claim === null) return [];
+  return [claim, ...frames.filter((frame) => frame.chained === true && frame.chainedFrom === claim.frameId
+    && frame.applicationKey === claim.applicationKey)];
 }
 
 /** The site platform of a company's own page (v3 Phase 8: applicationOf's `site` application), else null. */
@@ -90,8 +154,9 @@ export async function framesOfTab(session: StorageArea, tabId: number): Promise<
 /** Whether an address shows a posting with no form that a platform's own parser reads (v3 Phase 3b): Lever's and
  *  Ashby's overviews, as the adapter's parser and TailorIT's parseAtsUrl both read them (the lookup on load's own rule,
  *  job-cards.ts recognisedPosting), and since TailorIT's API 5 Workday's, iCIMS's, Taleo's, SuccessFactors' and
- *  Oracle's. A posting TailorIT's parseAtsUrl does not read (a platform ahead of its contract) is no card frame here:
- *  the card reads through its form frame. */
+ *  Oracle's; since its API 6 (contract6) those of the new ATSs that have one, and SmartRecruiters' (Jobvite's,
+ *  Rippling's, Breezy's, Pinpoint's, UltiPro's and SmartRecruiters' postings). A posting TailorIT's parseAtsUrl does
+ *  not read (a platform ahead of its contract) is no card frame here: the card reads through its form frame. */
 export function postingAddress(url: string): boolean {
   try {
     const ref = applicationOf(new URL(url));

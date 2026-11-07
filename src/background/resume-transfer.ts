@@ -19,6 +19,7 @@
  * again from the frame's address), and sends that one, or answers resume-unavailable (the Phase G review, MINOR 7).
  */
 import { AUTOFILL_COVER_LETTER_MAX_BYTES, AUTOFILL_FILE_MIME_TYPES, AUTOFILL_RESUME_MAX_BYTES } from '../contract/tailorit';
+import { uploadName } from '../core/profile/canonicalize';
 import { PreviewPortMessageSchema, RESUME_CHUNK_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
 import type { PortLike } from '../platform/types';
 import { log } from '../shared/log';
@@ -50,15 +51,9 @@ export interface ResumeTransferDeps {
   letters?: LetterDeps;
 }
 
-/** The name the file is uploaded under: no path or control characters, the kind's extension, at most 255 characters;
- *  `fallback` when nothing is left (a resume's 'Resume', a cover letter's 'Cover Letter'). */
-export function uploadName(fileName: string, kind: 'pdf' | 'docx', fallback = 'Resume'): string {
-  const extension = `.${kind}`;
-  let base = fileName.replace(/[\p{Cc}\p{Cf}\\/:*?"<>|]+/gu, ' ').replace(/\s+/g, ' ').trim();
-  if (base.toLowerCase().endsWith(extension)) base = base.slice(0, -extension.length).trim();
-  base = base.replace(/[. ]+$/, '');
-  return `${(base || fallback).slice(0, 255 - extension.length)}${extension}`;
-}
+// The name the file is uploaded under (core/profile/canonicalize.ts, where the planner reads it too: the duplicate
+// guard of "Résumé already on the page").
+export { uploadName };
 
 /** A cover letter's name when TailorIT names none (TailorIT's own fallback for a Download). */
 const LETTER_NAME = 'Cover Letter';

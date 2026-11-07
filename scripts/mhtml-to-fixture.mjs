@@ -28,21 +28,80 @@
 //   dropped), in data-sitekey and in its frames' addresses (sitekey=), and each hCaptcha widget's id (its
 //   data-hcaptcha-widget-id and the id= of its frames' addresses: the v3 Phase 6/7b review, S9). Taleo's JSF state is
 //   in hidden inputs, which are redacted anyway.
-// - iCIMS, Taleo, SuccessFactors and Oracle (the v3 Phase 6/7b review, C10): the style rules no element of the frame
-//   matches are dropped (pruneCssInPage), their sheets being most of each capture's weight. A rule is kept wherever its
+// - iCIMS, Taleo, SuccessFactors and Oracle (the v3 Phase 6/7b review, C10), and the platforms the snapshot build added
+//   to PRUNED_CSS_PLATFORMS (SmartRecruiters and the new ATSs): the style rules no element of the frame matches are
+//   dropped (pruneCssInPage), their sheets being most of each capture's weight. A rule is kept wherever its
 //   selector, read without its dynamic pseudo-classes (:hover, :focus, :checked, :disabled, ...) and its pseudo-elements,
 //   names an element, and wherever the browser cannot read it so; every at-rule but @media, @supports, @container and
 //   @layer blocks (whose own rules are pruned the same way) is kept whole. The reload's visibility check below holds the
 //   result. Workday's sheets are kept whole: its tests stage one capture's view inside another's page (the choice in the
 //   posting, the landing in the Sign In page), whose rules the page itself would not keep.
-// It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string or a found
-// email remains (also percent- or entity-encoded), if the page still finds an email or phone number, if the page
-// requests anything the route map does not answer, or if any element's visibility changed. Leftover suspicious tokens
-// are printed for review. Counts are printed, never values.
+// - The snapshot build of 2026-11-06 (the owner's captures, taken signed in and filled in, with other extensions
+//   active; docs/FIXTURES.md, the owner's snapshots of 2026-11-06), on every platform, in this order:
+//   - before anything is measured: what is not the site's page goes (stripInjectedInPage): other extensions' UI
+//     (INJECTED_UI), an overlay's shadow host on <body> that holds no control where the platform does not keep shadow
+//     roots, and the per-load values of PER_LOAD_PARAMS (REDACTED); and the choices a page mirrors are cleared
+//     (clearChoicesInPage: aria-checked, aria-pressed and data-checked, a chosen phone country's flag and button, and
+//     the chosen marks of the new ATSs' drawn controls and lists, CHOSEN_MARKS);
+//   - each frame is converted before the frame that holds it (a parent's conversion points its frames at their real
+//     addresses, which navigates them away from the document measured: iCIMS's IForm, a company page's embed);
+//   - the applicant's own text the redaction list may not hold becomes REDACTED where the markup shows it
+//     (redactApplicantTextInPage): an upload's file name, wherever the frame repeats it (FILE_NAME_PLACES), a resume's
+//     entries shown as text (ENTRY_SUMMARY_PLACES), chosen answers drawn outside a native control (CHOSEN_PLACES), the
+//     account's and the profile's own text (PROFILE_PLACES), the controls that name a file or an entry, a custom
+//     element's value and default-value, data-date-value and data-gtm-form-interact-*, a searchable Ant select's open
+//     list and UltiPro's Race row (drawn open);
+//   - a tel: or sms: link's number becomes REDACTED whatever its spelling, and so does a per-visitor id a script wrote
+//     into a stylesheet (--sa-uid, Dice's) once the sheet is inlined (transformInPage);
+//   - another extension's parameters (INJECTED_PARAMS: Jobright's jr_id, Simplify's utm_source) leave every address and
+//     each frame's written text by one rule (stripInjectedParams), plain, as &amp; entities or percent-encoded once or
+//     twice; a file that still names jr_id anywhere is refused;
+//   - a sign-in token (SIGN_IN_TOKEN_SOURCES: an OpenID id_token, a JWT whose claims name the account, and a
+//     silent-callback page's one-time code=; UltiPro's signed-in pages) becomes REDACTED by one rule
+//     (redactSignInTokens) in every address and each frame's written text, plain, after &amp; or percent-encoded once
+//     or twice; a file that still holds one is refused;
+//   - --folder <name> writes a case beside others of its kind (fixtures/sites: a company page around an ATS frame,
+//     pruned as iCIMS's are), the platform still deciding how its frames are normalised.
+// - Per platform (PLATFORM_REDACTIONS, dispatched by --platform), what the generic passes miss there:
+//   - Workday's application steps (docs/OWNER-QUESTIONS.md 93), before the transformation (redactWorkdayInPage): the
+//     Review step's value cells, read-only summaries and the account menu, an upload's announcement and delete label,
+//     any word ending in a document's extension, a dropdown's chosen option id and aria-label, a prompt's "1 item
+//     selected, <answer>" and its pill's labels, an open list's chosen option, an exclusive group's disabled boxes, and a
+//     date's displayed digits and help text, back to MM/DD/YYYY. Counts go in the header (redacted.workday).
+//   - iCIMS's signed-in pages, after it (icimsRedactInPage): the header's name, a current file's name, and iCIMS's
+//     dropdowns' chosen options, results and searched lists; normaliseTokens adds their per-person address values.
+//   - Oracle and SmartRecruiters, after it (redactPlatformInPage): Oracle's apply flow's personal text (its work and
+//     education timeline's titles, employers, schools, dates and year axis, an attached file's name, the submission
+//     checklist's greeting by first name) and its chosen answer pills; SmartRecruiters' form elements' value attributes,
+//     a select's chosen value on its trigger, and its phone field's 245 country flags, each a grey SVG of its own size.
+// - Shadow roots (the snapshot build of 2026-11-06: oracle-sf-sr's, and the new ATSs' DESIGN-NEW-ATS §6.2): Chrome's
+//   serializer saves an open shadow root as <template shadowmode="open"> and its MHTML loader attaches it again. For the
+//   platforms of SHADOW_ROOT_PLATFORMS (SmartRecruiters, whose one-click application is drawn in them, and the new ATSs:
+//   ADP's, Dice's and UltiPro's pages) the converter keeps them all: deepenInPage makes every query and walk of the
+//   passes above, the visibility check and the rescan reach into each open shadow root, nested ones too, and
+//   serializeDeepInPage writes them as declarative shadow roots (<template shadowrootmode="open">), which the HTML parser
+//   attaches when the fixture loads. A platform whose pages draw in shadow roots joins by adding its name there. Every
+//   other platform's page loses its form-less overlays on <body> (above) and is refused for any other shadow root. A
+//   shadow tree's styles are lost in the capture already (Chrome drops adoptedStyleSheets), so it shows unstyled in the
+//   capture and in the fixture alike. A closed shadow root (Cloudflare Turnstile's on UltiPro's account page), which no
+//   page code can read and no fixture keep, is stood in on every platform by its host's own box (markClosedShadowHosts,
+//   through the DevTools protocol, and transformInPage), as a large image is by a same-size placeholder.
+// - Every animation and transition is settled before each visibility measurement (measureInPage), on both sides.
+// - The new ATSs (DESIGN-NEW-ATS §6, Phase 0): their hosts and candidate paths (NEW_ATS_HOSTS), and their per-load
+//   values made fixed (normaliseNewAts), beside normaliseTokens' of the v3 Phase 6/7b platforms; a per-session value
+//   that also stands in addresses becomes REDACTED there and in the page (redactNewAtsAddress, by platform:
+//   NEW_ATS_ADDRESS_VALUES: ClearCompany's xdChannel, Pinpoint's and CareerPlug's csrf-token and csp-nonce metas,
+//   Pinpoint's confirmation token and per-render link keys).
+// It then reloads the result as the e2e harness serves it and refuses to write anything if a listed string, a found
+// email or a found file name remains (also percent- or entity-encoded), if jr_id, another extension's parameter or UI,
+// an unredacted per-load token, a sign-in token or any JWT remains, if the page still finds an email or phone number,
+// if the page requests anything the route map does not answer, or if any element's visibility changed. Leftover
+// suspicious tokens are printed for review. Counts are printed, never values.
 //
 // Usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <greenhouse|lever|ashby|workday|workable|icims|taleo|
-//          successfactors|oracle> --case <name>
-//          [--redact <file>] [--out <folder>]
+//          successfactors|oracle|smartrecruiters|jobvite|jazzhr|bamboohr|rippling|breezy|careerplug|pinpoint|paycor|hibob|
+//          ultipro|dayforce|paylocity|dice|clearcompany|adp> --case <name>
+//          [--redact <file>] [--out <folder>] [--folder <name>]
 // The redact file holds one string per line (blank lines and lines starting with # are skipped); a string that looks
 // like a phone number matches whatever its punctuation. --out defaults to fixtures/.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -56,18 +115,325 @@ const ROOT = resolve(import.meta.dirname, '..');
 
 /** The platforms a fixture can belong to (src/core/enums.ts PLATFORMS). */
 export const FIXTURE_PLATFORMS = ['greenhouse', 'lever', 'ashby', 'workday', 'workable', 'icims', 'taleo', 'successfactors',
-  'oracle'];
+  'oracle',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters ──
+  'smartrecruiters',
+  // ── New ATSs (DESIGN-NEW-ATS §6.1, Phase 0) ──
+  'jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor', 'hibob', 'ultipro', 'dayforce',
+  'paylocity', 'dice', 'clearcompany', 'adp',
+  // ── end New ATSs ──
+];
 
 /** The hosts the extension runs on (src/shared/hosts.ts, the one list): only frames on these are converted. */
 const ATS_HOST = new RegExp('^(?:(?:job-)?boards\\.greenhouse\\.io|jobs\\.(?:eu\\.)?lever\\.co|jobs\\.ashbyhq\\.com'
   + '|(?!(?:www|wd\\d{1,3})\\.)[a-z0-9-]+\\.(?:wd\\d{1,3}\\.)?myworkdayjobs\\.com|wd\\d{1,3}\\.myworkdaysite\\.com'
-  + '|apply\\.workable\\.com'
+  // Snapshot build, boards (2026-11-06): jobs.workable.com beside apply.workable.com.
+  + '|(?:apply|jobs)\\.workable\\.com'
   // v3 Phase 7b: the candidate hosts of src/shared/hosts.ts's HOST_PLATFORMS.
   + '|(?!(?:www|api|login)\\.)(?!internal-)[a-z0-9-]+\\.icims\\.com|(?!www\\.)[a-z0-9-]+\\.taleo\\.net'
-  + '|career\\d{0,3}\\.successfactors\\.(?:com|eu)|[a-z0-9-]+\\.fa(?:\\.[a-z0-9-]+)?\\.oraclecloud\\.com)$');
+  + '|career\\d{0,3}\\.successfactors\\.(?:com|eu)|[a-z0-9-]+\\.fa(?:\\.[a-z0-9-]+)?\\.oraclecloud\\.com'
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): Oracle's government cloud, SmartRecruiters ──
+  + '|[a-z0-9-]+\\.fa\\.ocs\\.oraclegovcloud\\.com|jobs\\.smartrecruiters\\.com)$');
+
+// ── New ATSs (DESIGN-NEW-ATS §6.1, Phase 0) ──
+/** The new ATSs' candidate hosts, as src/shared/hosts.ts HOST_PLATFORMS reads them, each by its candidate paths where
+ *  the host serves other pages too: a frame on such a host off those paths (ClearCompany's /blank/page) is a
+ *  third-party stand-in, one on them (UltiPro's RelyingPartyIframe) is converted. */
+export const NEW_ATS_HOSTS = [
+  { host: /^jobs\.jobvite\.com$/ },
+  { host: /^(?!www\.)[a-z0-9-]+\.applytojob\.com$/, paths: ['/apply/'] },
+  { host: /^ats\.rippling\.com$/ },
+  { host: /^[a-z0-9-]+\.breezy\.hr$/, paths: ['/p/'] },
+  { host: /^[a-z0-9-]+\.careerplug\.com$/, paths: ['/jobs/'] },
+  { host: /^(?!app\.)[a-z0-9-]+\.pinpointhq\.com$/, paths: ['/en/postings/'] },
+  { host: /^recruitingbypaycor\.com$/, paths: ['/career/'] },
+  { host: /^[a-z0-9-]+\.careers\.hibob\.com$/ },
+  { host: /^recruiting\.ultipro\.com$/ },
+  { host: /^jobs\.dayforcehcm\.com$/ },
+  { host: /^recruiting\.paylocity\.com$/, paths: ['/Recruiting/'] },
+  { host: /^www\.dice\.com$/, paths: ['/job-applications/'] },
+  { host: /^(?!cc-)[a-z0-9-]+\.clearcompany\.com$/, paths: ['/careers/'] },
+  { host: /^workforcenow\.adp\.com$/, paths: ['/mascsr/default/mdf/recruitment/', '/mascsr/applicant/mdf/recruitment/'] },
+  { host: /^[a-z0-9-]+\.bamboohr\.com$/, paths: ['/careers/'] },
+];
+/** The new ATSs' fixture platforms (normaliseNewAts). */
+export const NEW_ATS_PLATFORMS = ['jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor',
+  'hibob', 'ultipro', 'dayforce', 'paylocity', 'dice', 'clearcompany', 'adp'];
+// ── end New ATSs ──
 
 /** The platforms whose fixtures keep only the style rules their own elements match (pruneCssInPage). */
-export const PRUNED_CSS_PLATFORMS = ['icims', 'taleo', 'successfactors', 'oracle'];
+export const PRUNED_CSS_PLATFORMS = ['icims', 'taleo', 'successfactors', 'oracle',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  'smartrecruiters',
+  // ── New ATSs (DESIGN-NEW-ATS §5), their sheets most of each capture's weight; an open shadow root's own <style>s are
+  // left whole (pruneCssInPage reads the document's) ──
+  // Builder A: ADP's, Dayforce's and UltiPro's (3.3 MB of adp-6's 3.5 MB).
+  'adp', 'dayforce', 'ultipro',
+  // Builder B: ClearCompany's (a whole icon font's rules and more, about 0.6 MB of style a page: clearcompany-*).
+  'clearcompany',
+  // Builder C: JazzHR's, BambooHR's, Rippling's, Breezy's, CareerPlug's, Pinpoint's, Paycor's and HiBob's (Pinpoint's
+  // 2.8 MB a page, Breezy's, HiBob's and BambooHR's over 1.3 MB); the icon fonts' unused rules hold class names that read
+  // as words of the redaction list (Font Awesome's star icon in breezy-0, careerplug-0 and -1, pinpoint-0 to -2).
+  'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor', 'hibob',
+  // ── end New ATSs ──
+];
+
+/** The platforms whose pages keep their open shadow roots (the snapshot build of 2026-11-06: SmartRecruiters, oracle-sf-sr,
+ *  and the new ATSs, DESIGN-NEW-ATS §6.2): every query and walk reaches into them (deepenInPage) and they are written as
+ *  declarative shadow roots (serializeDeepInPage). Any other platform's page loses the overlays stripInjectedInPage
+ *  drops and is refused for any other shadow root. A platform whose pages draw in shadow roots joins by adding its name
+ *  here (keepsShadowRoots). */
+export const SHADOW_ROOT_PLATFORMS = ['smartrecruiters', ...NEW_ATS_PLATFORMS];
+
+/** Whether a platform's fixtures keep their open shadow roots (SHADOW_ROOT_PLATFORMS). @param {string} platform */
+export const keepsShadowRoots = (platform) => SHADOW_ROOT_PLATFORMS.includes(platform);
+
+// ── The snapshot build of 2026-11-06 (the owner's captures): what the owner's own browser added to a page, and an
+// upload's file name. Each rule names the capture it was read from; every platform runs them. ────────────────────────
+/** Other extensions' UI the owner's browser drew into a captured page, never the site's: Jobright's
+ *  <plasmo-csui id="jobright-helper-plugin"> and Swooped's <div id="swooped-extension-root">, both shadow hosts on
+ *  <body> ([jobs.ashbyhq.com] Security Engineer @ Blueberry Pediatrics.mht). Removed before anything is measured or
+ *  serialized (stripInjectedInPage), so a fixture holds the site's page alone and none of their markup. */
+export const INJECTED_UI = ['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root'];
+/** Query parameters an extension added to a page's address and its links: Jobright's jr_id (a per-person tracking
+ *  value; [job-boards.greenhouse.io] ... Cloud Administrator at Nuvem.mht holds it in the page's own address and in
+ *  its links, [jobs.ashbyhq.com] Security Operations Engineer @ Critical Loop.mht likewise; Workday's links repeat it,
+ *  plain, as an &amp; entity, or percent-encoded inside /login?redirect=), and Simplify's utm_source=Simplify, an entry
+ *  "name=value" dropped with that value alone ([apply.workable.com] Infrastructure Engineer - Raydar - Application.mht's
+ *  own address). One rule for every platform (stripInjectedParams): dropped from every address (the page's and its
+ *  frames', the header, the route map) and from each frame's written text, and refused if any remains. */
+export const INJECTED_PARAMS = ['jr_id', 'utm_source=Simplify'];
+
+/** The pattern source of INJECTED_PARAMS entries (`entries`), wherever an address holds one: its separator before (?, &,
+ *  &amp;, or percent-encoded once or twice inside another address: %3F, %26, %253F, %2526), its name, = (or %3D,
+ *  %253D), its value (a name alone: any value up to the next separator; name=value: that value alone) and the
+ *  separator after it, if any. Groups: 1 the separator before, 2 the one after. @param {string[]} entries */
+const injectedParamSource = (entries) => `(\\?|&amp;|&|%3F|%26|%253F|%2526)(?:${entries.map((entry) => {
+  const [name = '', value] = entry.split('=');
+  return value === undefined ? `${escapeSource(name)}(?:=|%3D|%253D)(?:(?!%26|%23|%2526|%2523)[^&#"'\\s<])*`
+    : `${escapeSource(name)}(?:=|%3D|%253D)${escapeSource(value)}(?![\\w-])`;
+}).join('|')})((?:&amp;|&|%26|%2526)?)`;
+
+/** Escapes a string for a RegExp source (escapeRegExp, which is declared further down). @param {string} text */
+function escapeSource(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The one rule that drops another extension's parameters (INJECTED_PARAMS, or the `entries` given) from a text: an
+ * address, an attribute or a frame's whole serialized HTML, on every platform. Each goes with its separator and the
+ * rest of the query stays: "?jr_id=x&y=1" keeps "?y=1", "?jr_id=x" and "&jr_id=x" leave nothing, "&jr_id=x&y=1" keeps
+ * "&y=1", and the same with &amp; or percent-encoded separators, once or twice (a share link's address inside another).
+ * Words that only name a parameter ("jr_id stays in words") stay here; the conversion refuses a file that still names
+ * jr_id. Answers the text and each parameter dropped (its name and value, kept in memory so the suspicious-token list
+ * leaves them out; never printed or written).
+ * @param {string} text @param {string[]} [entries]
+ * @returns {{ text: string; removed: Array<{ name: string; value: string }> }}
+ */
+export function stripInjectedParams(text, entries = INJECTED_PARAMS) {
+  /** @type {Array<{ name: string; value: string }>} */
+  const removed = [];
+  const pattern = new RegExp(injectedParamSource(entries), 'gi');
+  const names = entries.map((entry) => entry.split('=')[0] ?? entry);
+  let out = text;
+  // Again until nothing changes: "?jr_id=1&jr_id=2&b=3" needs two passes.
+  for (let previous = ''; previous !== out;) {
+    previous = out;
+    out = out.replace(pattern, (whole, before, after) => {
+      const body = whole.slice(before.length, whole.length - after.length);
+      const name = names.find((each) => body.toLowerCase().startsWith(each.toLowerCase())) ?? body;
+      removed.push({ name, value: body.slice(name.length).replace(/^(?:=|%253D|%3D)/i, '') });
+      return /^(?:\?|%3F|%253F)$/i.test(before) ? (after === '' ? '' : before) : after;
+    });
+  }
+  return { text: out, removed };
+}
+
+/** Jobright's jr_id alone, by the one rule (stripInjectedParams): the text and how many it stripped (the new ATSs'
+ *  DESIGN-NEW-ATS §6.5 reading). @param {string} text @returns {{ text: string; stripped: number }} */
+export function stripJrId(text) {
+  const { text: out, removed } = stripInjectedParams(text, ['jr_id']);
+  return { text: out, stripped: removed.length };
+}
+
+/** Where an upload widget shows the applicant's own file's name (the owner's resumes are named after them): its text
+ *  becomes REDACTED as a chosen widget value's does, and the name (the place's whole text) wherever else the page
+ *  repeats it (redactApplicantTextInPage, every platform). Greenhouse: <div class="file-upload__filename"><svg/><p
+ *  class="body body__secondary">NAME</p><button aria-label="Remove file"> ([job-boards.greenhouse.io] ... at Axle
+ *  (1).mht); Ashby: <p class="... ashby-application-form-input-file-item-name"><svg/><span>NAME</span></p>
+ *  ([jobs.ashbyhq.com] ... @ Owner.com.mht); Workable: <div data-id="filename"><span>HEAD</span><span>TAIL</span></div>
+ *  in the drop zone ([apply.workable.com] Infrastructure Engineer - Raydar - Application.mht); Workday: the upload's
+ *  preview, [data-automation-id="file-upload-item-name"], whose name the page repeats in "<name> successfully
+ *  uploaded", "Delete <name>" and "Category for <name>" (web.wd1's My Experience, "Additional Attachments"). */
+export const FILE_NAME_PLACES = ['.file-upload__filename', '.ashby-application-form-input-file-item-name',
+  '[data-role="dropzone"] [data-id="filename"]', '[data-automation-id="file-upload-item-name"]',
+  // The new ATSs (DESIGN-NEW-ATS §6.4): each element's text and title, the name of a file the applicant attached.
+  'ul.jv-file-list .jv-file > span:not(.jv-spinner)', // jobvite-2: the résumé's name beside "remove"
+  '[data-fabric-component="FileUploadList"] span[class*="-name"]', // bamboohr-0..2
+  'a[ng-if*="file_name"] > span:not(.fa)', // breezy-0, -1: a.bzyLinkColor beside its paperclip
+  '.filename', // careerplug-1 (div.file-result-area), paycor-0 (#resumeDropped), hibob-0 (b-file)
+  '[data-testid="chip"] [id$="-content"]', // rippling-0, -1, -3: the chip's name (its "Preview file" label repeats it)
+  'tr.file-row td.file-name', // clearcompany-0
+  '.ant-upload-list-item-name', // dayforce-2: its text and its title
+  '[data-automation="file-row"] [data-automation="file-name"]', // ultipro-0: span#FileName<N>
+  '[data-automation-id*="_uploaded"]', // paylocity-1: its data-automation-id is built from the name too
+  'div:has(> button[aria-label="File options"]) > div.min-w-0', // dice-2, -8: the résumé card
+  '[data-test-id="sc-resume"] > .text-font-light', // dice-1, -4, -6, -7: the review step's résumé
+];
+/** Chosen answers drawn outside a native control (a select's shown value, a chip; the new ATSs, DESIGN-NEW-ATS §6.4):
+ *  cleared, their words (aria-label, title, alt) and all, a list's own options kept (redactApplicantTextInPage). */
+export const CHOSEN_PLACES = [
+  'button.fab-SelectToggle', // bamboohr-0..2: Fabric selects, their shown value and their aria-label
+  'button[aria-haspopup="dialog"][aria-label^="Pick a date"]', // bamboohr-0..2: "The current value is <date>."
+  '[data-testid="screen-reader-only"][role="status"]', // rippling-0, -1, -3: the announced choice or upload
+  '.ant-select-selection-item', // dayforce-2: Ant selects (text and title)
+  '.rw-input', // paylocity-0: react-widgets
+  '[data-automation-id*="-tag-item-"]', // paylocity-0: input-select chips, with their Dismiss labels
+  '.rrui__select__button', // adp-6, -0, -1: the phone country's aria-label, its flag's alt and title
+  'b-single-select .bfe-input', // hibob-0: the chosen country
+  '[data-automation="selected-item"]', // ultipro-0, -1: skill chips and their Remove labels (option texts kept)
+  // Builder B, dice-0, -3, -5: the React Aria select's shown option (span#<valueId> div.ListItemTemplate) repeats the
+  // chosen option's label in its title, beside the text the trigger's rule clears.
+  'button[aria-haspopup="listbox"] .ListItemTemplate',
+];
+
+// ── The security fix of 2026-11-06 (S2, S3, S10): chosen marks keyed by markup, cleared and refused ──
+/** A CSS module's chosen class, whatever its hash (Ashby's `_checked_132c8_44`). */
+export const MODULE_CHOSEN_SOURCE = '^_(?:checked|selected|active)_[A-Za-z0-9_-]+$';
+/** MUI's chosen and focus classes. */
+export const MUI_CHOSEN = ['Mui-checked', 'Mui-selected', 'Mui-focusVisible'];
+/** A BEM modifier that marks an option or a choice chosen, highlighted or active. */
+export const BEM_CHOSEN_SOURCE = '^[\\w-]+--(?:checked|selected|is-selected|is-focused|is-checked|active|is-active)$';
+/** The roles of an option or a choice. */
+export const CHOICE_ROLES = ['option', 'radio', 'checkbox', 'switch', 'menuitem', 'menuitemradio', 'menuitemcheckbox'];
+/** The words of a class that names an option or a choice. */
+export const CHOICE_CLASS_SOURCE = 'option|choice|radio|checkbox';
+/** An option or a choice: its role says so, or a class names one. */
+export const CHOICE_ELEMENTS = [...CHOICE_ROLES.map((role) => `[role="${role}" i]`),
+  ...CHOICE_CLASS_SOURCE.split('|').map((word) => `[class*="${word}" i]`)].join(', ');
+/** The roles whose aria-selected="true" is a chosen value: an option, a calendar's day, a tree's item. */
+export const CHOSEN_OPTION_ROLES = ['option', 'gridcell', 'treeitem'];
+/** Those, but Workday's own "Select One" (data-value=""), which is no answer. */
+export const CHOSEN_OPTIONS = CHOSEN_OPTION_ROLES.map((role) => `[role="${role}" i]:not([data-value=""])`).join(', ');
+// ── end of the security fix's block ──
+
+/** The marks a drawn control or a list shows on the chosen answer, beside the input whose checked or selected state is
+ *  dropped (the new ATSs, keyed by markup): every element `selector` names loses `classes` and the classes `patterns`
+ *  match, and the attributes `attributes` names; and, unless `aria` is false, its aria-selected="true" becomes "false"
+ *  (clearChoicesInPage, before anything is measured). The security fix of 2026-11-06 (S2, S3, S10) adds the generic
+ *  marks of every platform; chosenMarksIn refuses a written fixture that still holds one.
+ *  @type {Array<{ selector: string; classes?: string[]; patterns?: string[]; attributes?: string[]; aria?: boolean }>} */
+export const CHOSEN_MARKS = [
+  // Builder A: Ant Design's drawn radios and boxes, chosen by their wrapper's and span's classes (dayforce-0: the
+  // questionnaire's answers; dayforce-1: the acknowledgement).
+  { selector: '.ant-radio-wrapper-checked, .ant-radio-checked, .ant-checkbox-wrapper-checked, .ant-checkbox-checked',
+    classes: ['ant-radio-wrapper-checked', 'ant-radio-checked', 'ant-checkbox-wrapper-checked', 'ant-checkbox-checked'] },
+  // Builder A: an Ant select's list, drawn at the end of the body once it was opened (dayforce-2): its options' chosen
+  // and active marks (a searchable select's option words are redactApplicantTextInPage's).
+  { selector: '.ant-select-dropdown [role="option"], .ant-select-dropdown .ant-select-item-option',
+    classes: ['ant-select-item-option-selected', 'ant-select-item-option-active'] },
+  // Builder B: a react-widgets list, kept hidden in its widget once opened (paylocity-0, -1), marks the chosen option.
+  { selector: 'li.rw-list-option[role="option"]', classes: ['rw-state-selected'] },
+  // Core pass Z1, item 36: HiBob's drawn radios (hibob-0: <b-radio-button><div role="radiogroup"><div class="flx min-w-0
+  // selected"><input type="radio" class="brd-input"><label class="... brd-label min-w-0 selected">), the chosen one's
+  // wrapper and label marked selected: the applicant's answer to a screening question.
+  { selector: 'b-radio-button [role="radiogroup" i] .selected', classes: ['selected'] },
+  // ── The security fix of 2026-11-06 (S2, S3, S10): the chosen marks of every platform, keyed by markup ──
+  // CSS modules' chosen classes, whatever the module's hash: Ashby's (rivian-submitting: a chosen radio's or box's
+  // label and span `_checked_<hash>`, a Yes/No's pressed button and the open tab `_active_<hash>`).
+  { selector: '[class*="_checked_"], [class*="_selected_"], [class*="_active_"]', patterns: [MODULE_CHOSEN_SOURCE],
+    aria: false },
+  // MUI's (swyfft-form: a chosen radio's span Mui-checked; Mui-selected and Mui-focusVisible likewise).
+  { selector: MUI_CHOSEN.map((name) => `.${name}`).join(', '), classes: [...MUI_CHOSEN], aria: false },
+  // BEM modifiers on an option or a choice (CHOICE_ELEMENTS): Oracle's apply-flow-input-checkbox__button--checked
+  // (hjf-apply-section), react-select's select__option--is-selected and --is-focused (Greenhouse), BambooHR's
+  // fab-MenuOption--active menu items (swyfft-form).
+  { selector: CHOICE_ELEMENTS, patterns: [BEM_CHOSEN_SOURCE], aria: false },
+  // An open list's chosen or highlighted option and a calendar's chosen day (role option, gridcell or treeitem):
+  // aria-selected="true" becomes "false" (SmartRecruiters' phone country, xplor-one-click; Greenhouse's, Workday's and
+  // Workable's lists). Workday's own "Select One" (data-value="") is no answer (redactWorkdayInPage keeps it).
+  { selector: CHOSEN_OPTIONS, classes: [] },
+  // SmartRecruiters' chosen list item (xplor-one-click: <spl-dropdown-item selected>, its option's aria-selected inside
+  // its shadow root).
+  { selector: 'spl-dropdown-item[selected]', attributes: ['selected'], aria: false },
+  // ── end of the security fix's block ──
+];
+
+/** The account's and the profile's own text (the new ATSs, DESIGN-NEW-ATS §6.4): a welcome line, an account menu, a
+ *  signature's date stamp, read-only summaries of what was entered or parsed. Cleared, words and all. */
+export const PROFILE_PLACES = [
+  'div.welcome-alert-message-box', // adp-1: "Welcome! <first name>,"
+  '.self-review-signature-label > div', // adp-4, -5: the e-signature's date-time stamp
+  'nav[aria-label="Account"] button[aria-haspopup]', // dice-0..8: the account holder's name and initials
+  'nav[aria-label="Account"] [role="menu"] > div:first-child', // dice-0..8: the account menu's header
+  '#profile-button-menu', // ultipro-0, -1: the name, in its text and its shadow root's button label
+  ['title-and-company', 'location', 'date-range', 'description', 'degree-major-minor', 'school']
+    .map((label) => `[data-automation="panel-list-item"] [data-automation="${label}-label"]`).join(', '), // ultipro-0
+  'form[test-id$="-record"] [test-id*="-read-"]', // dayforce-2: the education and employment record cards
+  '#pcty-wr-preview-jobapplication .no-wrap-value, #pcty-wr-preview-jobapplication h3[id^="info."]', // paylocity-1
+  'careers-ui-experience-display-item .b-heading, careers-ui-experience-display-item .b-bold-body', // hibob-0
+  '[data-automation="global-notification"] [data-bind*="message"]', // ultipro-1: the résumé pre-fill notice
+  '[data-test-id^="sc-"] > .text-font-light', // dice-1, -4, -6, -7: the review step's answers
+  'tr.file-row td.file-created-date', // clearcompany-0: when the file was uploaded
+];
+
+/** The controls beside an uploaded file that name it, and link to it: Workable's <a data-action="view" href="<the
+ *  file's signed storage address>" aria-label="view NAME"> and <button data-action="delete" aria-label="delete NAME">
+ *  (the Raydar capture). Their aria-label and title become "<their data-action> REDACTED", their address "#". */
+export const FILE_LINK_PLACES = ['[data-role="dropzone"] [role="menu"] [data-action]'];
+/** Where a page shows an entry it read from the applicant's resume, as text: Workable's saved Education and Experience
+ *  entries, <li><div data-ui="group"><dl><dt>School</dt><dd data-ui="school"><span>NAME</span></dd></dl> ... <dd
+ *  data-ui="period"> ... (and title, company, summary, field_of_study, degree), filled by its "Import resume from"
+ *  ([apply.workable.com] Infrastructure Engineer - Raydar - Application.mht): every dd's text becomes REDACTED. */
+export const ENTRY_SUMMARY_PLACES = ['[data-ui="education"] li [data-ui="group"] dd',
+  '[data-ui="experience"] li [data-ui="group"] dd'];
+/** The controls beside such an entry that name it: Workable's <a data-ui="edit-section" title="Edit" aria-label="Edit
+ *  NAME"> and <a data-ui="remove-section" title="Delete" aria-label="Delete NAME"> (the Raydar capture): their
+ *  aria-label becomes "<their title> REDACTED". */
+export const ENTRY_SUMMARY_CONTROLS = ['[data-ui="education"] li [data-ui$="-section"]',
+  '[data-ui="experience"] li [data-ui$="-section"]'];
+/** Query parameters whose value is a token made for one page load, or a visitor's tracking id, in a frame's address or
+ *  a link: the value becomes REDACTED wherever it stands, in the page, its frames' addresses, the header and the route
+ *  map alike (so a frame's src still finds its route). Greenhouse's embed, validityToken= (job-boards.greenhouse.io/
+ *  embed/job_app?for=<board>&validityToken=<token>&token=<id>, the frame of [abclegal.com] ABC Legal - Job Openings
+ *  (1).mht and of [seatgeek.com] ...SeatGeek.mht; /embed/job_board?for=<board>&validityToken=<token> in [weka.io]
+ *  ...WEKA.mht); reCAPTCHA's challenge frame, bft= (recaptcha.net/recaptcha/enterprise/bframe in [jobs.ashbyhq.com]
+ *  Head of Technology Foundations @ Rivian ....mht; and Dayforce's, google.com/recaptcha/api2/bframe in dayforce-0 to -2);
+ *  HubSpot's visitor ids in a company page's links, hsutk=, __hstc=, __hssc=, __hsfp= (the ABC Legal capture). */
+export const PER_LOAD_PARAMS = ['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp'];
+
+/** The pattern source of a PER_LOAD_PARAMS value in an address (group 1: its separator, name and =), as
+ *  withoutInjectedParams and stripInjectedInPage read it. */
+const PER_LOAD_SOURCE = `([?&](?:${PER_LOAD_PARAMS.join('|')})=)[^&#]*`;
+
+/** An address with the INJECTED_PARAMS dropped from its query (stripInjectedParams), the PER_LOAD_PARAMS' values and
+ *  its sign-in tokens REDACTED (redactSignInTokens; a relative address too), the rest as written. @param {string} url */
+export function withoutInjectedParams(url) {
+  return redactSignInTokens(stripInjectedParams(url).text.replace(new RegExp(PER_LOAD_SOURCE, 'g'), `$1${REDACTED}`));
+}
+
+/** Sign-in tokens an address carries, which no other check reads, being base64: an OpenID Connect id_token, a JWT whose
+ *  claims hold the account's name, email and ids (the new ATSs, builder A: UltiPro's hidden iframe#rp,
+ *  RelyingPartyIframe?id_token=<JWT>, ultipro-0 and -1), and the one-time sign-in code= of an OpenID silent-callback
+ *  page (UltiPro's silent-callback.html?code=, the same captures); another code= is the page's own. One rule for every
+ *  platform (redactSignInTokens): each value becomes REDACTED wherever it stands, plain, after an &amp; entity or
+ *  percent-encoded once or twice, in each frame's written text, its frames' addresses, the header and the route map,
+ *  and the conversion refuses a file that still holds one. Group 1 is what stands before the value, group 2 the value. */
+export const SIGN_IN_TOKEN_SOURCES = [
+  '((?:[?&;#]|%3F|%26|%23|%253F|%2526|%2523)id_token(?:=|%3D|%253D))([A-Za-z0-9_.-]+)',
+  '(silent-callback\\.html(?:\\?|%3F|%253F)code(?:=|%3D|%253D))([A-Za-z0-9_-]+)',
+];
+
+/** A text (an address, or a frame's whole written HTML) with its sign-in tokens REDACTED (SIGN_IN_TOKEN_SOURCES), on
+ *  every platform; the values replaced go into `ids` (kept in memory so the suspicious-token list leaves them out; never
+ *  printed or written). @param {string} text @param {string[]} [ids] */
+export function redactSignInTokens(text, ids = []) {
+  return SIGN_IN_TOKEN_SOURCES.reduce((out, source) => out.replace(new RegExp(source, 'gi'), (whole, key, value) => {
+    if (value === REDACTED) return whole;
+    ids.push(value);
+    return `${key}${REDACTED}`;
+  }), text);
+}
 
 /** Images larger than this become a same-size placeholder: the box is what visibility needs, not the pixels. */
 export const IMAGE_INLINE_MAX = 100 * 1024;
@@ -219,11 +585,24 @@ export function normaliseTokens(platform, html) {
     renumber(/\b(input)-(\d+)\b/g, (prefix, index) => `${prefix}-${index + 1}`);
     renumber(/()\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, (_prefix, index) =>
       `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
+    // (Jobright's jr_id, which Workday's links repeat, goes by the one rule every platform runs: stripInjectedParams.)
   } else if (platform === 'icims') {
     redactValue(/\bdata-sitekey="([^"]+)"/g);
     redactValue(/\bhashed=(-?\d+)/g);
     redactValue(/\bstate=([^&"'\s<]+)/g);
     redactCaptcha();
+    // --- iCIMS, the owner's snapshots of 2026-11-06 (signed in, the pages after the gate) ---------------------------
+    // The addresses' per-person and per-load values: the profile's link from the email (eem=, an encrypted email, and
+    // code=), each step's csrf=, an IForm frame's token=, user= (the person's id), item=, aid= and applicationStartId=,
+    // and the analytics ids a portal's links carry (_ga=, ga=, _gl=, _sp=, _jsqid=); each select's hash="..." and the
+    // hCaptcha response a frame holds (data-hcaptcha-response).
+    redactValue(/\b(?:csrf|eem|code|token|user|item|aid|applicationStartId)=([^&"'\s<]+)/g);
+    redactValue(/\b(?:_ga|ga|_gl|_sp|_jsqid)=([^&"'\s<]+)/g);
+    redactValue(/\bhash="([^"]+)"/g);
+    redactValue(/\bdata-hcaptcha-response="([^"]+)"/g);
+    // (Jobright's jr_id, wherever a page copied it into an address, goes by the one rule every platform runs:
+    // stripInjectedParams.)
+    // --- end iCIMS --------------------------------------------------------------------------------------------------
   } else if (platform === 'successfactors') {
     redactValue(/\b_s\.crb=([^&"'\s<]+)/g);
     redactValue(/\brequestParams=([^&"'\s<]+)/g);
@@ -235,6 +614,207 @@ export function normaliseTokens(platform, html) {
   }
   return { text, renderIds };
 }
+
+// --- iCIMS, the owner's snapshots of 2026-11-06 ----------------------------------------------------------------------
+/**
+ * What a signed-in iCIMS page shows of the person beyond its typed values, redacted in the page (run after
+ * transformInPage, before serialisation, on iCIMS frames only): the header's name (.iCIMS_userMenuName, beside
+ * "Dashboard | Logout"); a file field's current file name (.iCIMS_CurrentFile's span: the resume's, the cover
+ * letter's); and iCIMS's own dropdowns (a select marked icimsdropdown-enabled="1", drawn as a.dropdown-select with its
+ * list ul.dropdown-results): the select holds only the option the person chose (its list loads from the server:
+ * icimsdropdown-ajax="1"), so its options' text and values become REDACTED; its anchor's aria-activedescendant names the
+ * chosen result; a result's aria-selected and its result-focus or result-selected class mark it; and a list that is
+ * searched (icimsdropdown-search="1") shows what the person's search found, so its results' text, title and aria-label
+ * become REDACTED. Elements stay (visibility is compared after); only text and attributes change. Counts only.
+ * @param {string} redacted @returns {{ names: number; files: number; options: number; choices: number; results: number }}
+ */
+export function icimsRedactInPage(redacted) {
+  const doc = globalThis.document;
+  const counts = { names: 0, files: 0, options: 0, choices: 0, results: 0 };
+  /** Its text nodes' words become one REDACTED, every element inside kept (the visibility check counts them).
+   *  @param {Element} el */
+  const blank = (el) => {
+    if ((el.textContent ?? '').trim() === '' || (el.textContent ?? '').trim() === redacted) return false;
+    const walker = doc.createTreeWalker(el, 4 /* NodeFilter.SHOW_TEXT */);
+    let first = true;
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if ((node.nodeValue ?? '').trim() === '') continue;
+      node.nodeValue = first ? redacted : '';
+      first = false;
+    }
+    return true;
+  };
+  for (const name of doc.querySelectorAll('.iCIMS_userMenuName')) if (blank(name)) counts.names += 1;
+  for (const file of doc.querySelectorAll('.iCIMS_CurrentFile > span')) if (blank(file)) counts.files += 1;
+  // A dropdown's trigger shows the chosen value (a.dropdown-select > span.dropdown-text, its fakeSelected span), with or
+  // without the role the converter's widget rule reads.
+  for (const shownValue of doc.querySelectorAll('.dropdown-select .dropdown-text')) if (blank(shownValue)) counts.choices += 1;
+  // Every select's icimsdropdown-selected names the option chosen (a native one's too: icimsdropdown-enabled="0",
+  // careers-githubinc's Job Specific Questions held an answer there), and its aria-activedescendant the result.
+  for (const select of doc.querySelectorAll('select[icimsdropdown-selected], select[aria-activedescendant]')) {
+    for (const attribute of ['icimsdropdown-selected', 'aria-activedescendant']) {
+      if ((select.getAttribute(attribute) ?? '') === '') continue;
+      select.setAttribute(attribute, redacted);
+      counts.choices += 1;
+    }
+  }
+  for (const select of doc.querySelectorAll('select[icimsdropdown-enabled="1"]')) {
+    for (const option of select.querySelectorAll('option')) {
+      if (blank(option)) counts.options += 1;
+      if (option.hasAttribute('value')) option.setAttribute('value', redacted);
+      if (option.hasAttribute('label')) option.setAttribute('label', redacted);
+    }
+    const id = select.id;
+    const anchor = id === '' ? null : doc.getElementById(`${id}_icimsDropdown`);
+    if (anchor !== null && anchor.hasAttribute('aria-activedescendant')) {
+      anchor.setAttribute('aria-activedescendant', redacted);
+      counts.choices += 1;
+    }
+    const list = id === '' ? null : doc.getElementById(`${id}_dropdown-results`);
+    if (list === null) continue;
+    const searched = select.getAttribute('icimsdropdown-search') === '1';
+    for (const result of list.querySelectorAll('li')) {
+      if (result.hasAttribute('aria-selected') || result.classList.contains('result-focus')
+        || result.classList.contains('result-selected')) {
+        result.removeAttribute('aria-selected');
+        result.classList.remove('result-focus', 'result-selected');
+        counts.choices += 1;
+      }
+      if (!searched) continue;
+      if (blank(result)) counts.results += 1;
+      for (const attribute of ['title', 'aria-label']) {
+        if (result.hasAttribute(attribute)) result.setAttribute(attribute, redacted);
+      }
+    }
+  }
+  return counts;
+}
+// --- end iCIMS -------------------------------------------------------------------------------------------------------
+
+// ── New ATSs (DESIGN-NEW-ATS §6.6, Phase 0) ──
+/** Renumbers `pattern`'s matches in `text` in first-seen order (its first group the prefix, each prefix counted on its
+ *  own), each replaced by `fixed(prefix, index)`; the values replaced go into `ids`.
+ *  @param {string} text @param {RegExp} pattern @param {(prefix: string, index: number) => string} fixed
+ *  @param {string[]} ids */
+function renumberIn(text, pattern, fixed, ids) {
+  /** @type {Map<string, string>} */
+  const seen = new Map();
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  return text.replace(pattern, (whole, prefix) => {
+    if (!seen.has(whole)) {
+      const index = counts.get(prefix) ?? 0;
+      counts.set(prefix, index + 1);
+      seen.set(whole, fixed(prefix, index));
+      ids.push(whole);
+    }
+    return seen.get(whole) ?? whole;
+  });
+}
+
+/** `index + 1`, padded with zeros to `width`. @param {number} index @param {number} width */
+const pad = (index, width) => String(index + 1).padStart(width, '0');
+
+/**
+ * The new ATSs' per-load values (§6.6), each from a two-load comparison of the owner's snapshots, made fixed: every new
+ * platform's reCAPTCHA frame names (a-<12>, c-<12>: jazzhr-0 vs -1; bamboohr-0 vs -2), BambooHR's FabricTextField-<n>
+ * and fab-select<n> (bamboohr-0 vs -2), Rippling's per-load input names (rippling-0 vs -1), ADP's MDFContentPane-,
+ * react-select-instance-, emptyFocusDivId- and MDFSimpleHelpIcon-<uuid>, checkbox_<21> and sdf-radio-group-<n>
+ * (adp-4 vs -5, adp-6 vs -0; builder A: adp-1's nanoid), UltiPro's ukg-<part>-id-<22>, FileUpload_<10>, cf-chl-widget-<5>
+ * (ultipro-0 vs -1) and its name inputs' autocomplete GUIDs, Dayforce's header-menu ids (dayforce-0 to -2),
+ * Dice's react-aria<10 digits>, _R_<x>_ and batBeacon<12> (dice-*), ClearCompany's subscriberid views and form<n> names
+ * (clearcompany-*) and the LinkedIn frame's xdChannel (REDACTED, also in addresses: redactNewAtsAddress). Another
+ * platform's page is unchanged. Answers the text and the values replaced (never printed).
+ * @param {string} platform @param {string} html @returns {{ text: string; renderIds: string[] }}
+ */
+export function normaliseNewAts(platform, html) {
+  /** @type {string[]} */
+  const renderIds = [];
+  if (!NEW_ATS_PLATFORMS.includes(platform)) return { text: html, renderIds };
+  let text = redactNewAtsAddress(platform, html, renderIds);
+  text = renumberIn(text, /\bname="([ac])-[a-z0-9]{12}"/g, (prefix, index) => `name="${prefix}-${pad(index, 12)}"`, renderIds);
+  if (platform === 'bamboohr') {
+    text = renumberIn(text, /\b(FabricTextField-)\d+\b/g, (prefix, index) => `${prefix}${index + 1}`, renderIds);
+    text = renumberIn(text, /\b(fab-select)\d+\b/g, (prefix, index) => `${prefix}${index + 1}`, renderIds);
+  } else if (platform === 'rippling') {
+    // Each text and combobox input's name, drawn afresh on every load (rippling-0 vs -1: name="<9 or 10 characters>"
+    // with a digit or both cases); a word like sms_opt_in stays.
+    text = text.replace(/(<(?:input|select|textarea)\b[^>]*?\sname=")([A-Za-z0-9_-]{9,10})(")/g, (whole, before, name, after) => {
+      if (!/\d|[a-z].*[A-Z]|[A-Z].*[a-z]/.test(name)) return whole;
+      renderIds.push(name);
+      return `${before}${REDACTED}${after}`;
+    });
+  } else if (platform === 'adp') {
+    text = renumberIn(text, /\b(MDFContentPane-|react-select-instance-|emptyFocusDivId-|MDFSimpleHelpIcon-)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g,
+      (prefix, index) => `${prefix}00000000-0000-4000-8000-${pad(index, 12)}`, renderIds);
+    // checkbox_<21>: a nanoid, whose alphabet holds '-' and '_' too (builder A: adp-1's preferred-name box).
+    text = renumberIn(text, /\b(checkbox_)[A-Za-z0-9_-]{21}(?![A-Za-z0-9_-])/g, (prefix, index) => `${prefix}${pad(index, 21)}`,
+      renderIds);
+    text = renumberIn(text, /\b(sdf-radio-group-)\d+\b/g, (prefix, index) => `${prefix}${index + 1}`, renderIds);
+  } else if (platform === 'ultipro') {
+    // The signed-in candidate's account id in the documents panel's Knockout params (ultipro-1: currentUserId).
+    text = text.replace(/\b(currentUserId:\s*(?:&quot;|"))([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g,
+      (_whole, key, value) => {
+        renderIds.push(value);
+        return `${key}${REDACTED}`;
+      });
+    text = renumberIn(text, /\b(ukg-[a-z0-9-]+?-id-)[A-Za-z0-9]{9}\d{13}\b/g, (prefix, index) => `${prefix}${pad(index, 22)}`,
+      renderIds);
+    text = renumberIn(text, /\b(FileUpload_)[A-Za-z0-9]{10}\b/g, (prefix, index) => `${prefix}${pad(index, 10)}`, renderIds);
+    text = renumberIn(text, /\b(cf-chl-widget-)[a-z0-9]{5}\b/g, (prefix, index) => `${prefix}${pad(index, 5)}`, renderIds);
+    // Builder A: autocomplete="<uuid>-ukg-no-autocomplete-<token>" on the name inputs (ultipro-0, -1: a GUID whose source
+    // no snapshot tells, the account's or the load's).
+    text = renumberIn(text, /\b()[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=-ukg-no-autocomplete-)/g,
+      (_prefix, index) => `00000000-0000-4000-8000-${pad(index, 12)}`, renderIds);
+  } else if (platform === 'dayforce') {
+    // Builder A: the header menu's data-menu-id="rc-menu-uuid-<n>-<n>-<item>" (a session counter, the same in dayforce-0
+    // to -2).
+    text = renumberIn(text, /\b(rc-menu-uuid-)\d+-\d+(?=-)/g, (prefix) => `${prefix}00000-0`, renderIds);
+  } else if (platform === 'dice') {
+    text = renumberIn(text, /\b(react-aria)\d{10}(?=-)/g, (prefix, index) => `${prefix}${pad(index, 10)}`, renderIds);
+    text = renumberIn(text, /(?<![\w-])(_R_)[A-Za-z0-9]+_/g, (prefix, index) => `${prefix}${index + 1}_`, renderIds);
+    text = renumberIn(text, /\b(batBeacon)\d{12}\b/g, (prefix, index) => `${prefix}${pad(index, 12)}`, renderIds);
+  } else if (platform === 'clearcompany') {
+    // Core pass Z1, item 35: Backbone's view names are camelCase too (clearcompany-*: formFieldView-view<N>,
+    // formSectionView-view<N>, appView-view<N>), so the name takes either case.
+    text = renumberIn(text, /\b(subscriberid="[A-Za-z-]+-view)\d+"/g, (prefix, index) => `${prefix}${index + 1}"`, renderIds);
+    text = renumberIn(text, /\b(name="form)\d+"/g, (prefix, index) => `${prefix}${index + 1}"`, renderIds);
+  }
+  return { text, renderIds };
+}
+
+/** A session's secrets a Rails page writes in its head (builder C: Pinpoint's, pinpoint-0 to -2, and CareerPlug's,
+ *  careerplug-0, -1): the csrf-token and csp-nonce metas' content. */
+const SESSION_METAS = /(<meta\b[^>]*?\bname="(?:csrf-token|csp-nonce)"[^>]*?\bcontent=")([^"]+)(")/g;
+
+/** The new ATSs' per-session values that also stand in addresses, by platform, each REDACTED wherever it stands (so a
+ *  page, the header's source and the frame address its route map serves stay alike; redactNewAtsAddress). Group 1 is
+ *  what stands before the value, group 2 the value, group 3 what follows it (empty where nothing does). (UltiPro's
+ *  sign-in tokens are every platform's rule, redactSignInTokens; Dayforce's reCAPTCHA bft= is a PER_LOAD_PARAMS one.)
+ *  @type {Record<string, RegExp[]>} */
+const NEW_ATS_ADDRESS_VALUES = {
+  // ClearCompany's LinkedIn frame's xdChannel (clearcompany-*).
+  clearcompany: [/(\bxdChannel(?:=|%3D|&quot;:&quot;|":"))([A-Za-z0-9_-]+)()/g],
+  // Builder C: Pinpoint's session metas; the token of its confirmation address (/applications/thanks?token=<24>,
+  // pinpoint-2, also in its og:url), which names the applicant's own application; its per-render link keys: the "Apply
+  // with LinkedIn" link's cache_key (pinpoint-0) and the og:image's presigned X-Amz-Credential and X-Amz-Signature
+  // (pinpoint-0 to -2).
+  pinpoint: [SESSION_METAS, /(\/applications\/thanks\?(?:[^"'\s<>#]*?(?:&amp;|&))?token=|[?&;]cache_key=|\bX-Amz-(?:Credential|Signature)=)([A-Za-z0-9_%-]+)()/g],
+  // Builder C: CareerPlug's session metas.
+  careerplug: [SESSION_METAS],
+};
+
+/** The new ATSs' per-session values (NEW_ATS_ADDRESS_VALUES) REDACTED in a page or an address; the values replaced go
+ *  into `ids`. Another platform's text is unchanged. @param {string} platform @param {string} text @param {string[]} [ids] */
+export function redactNewAtsAddress(platform, text, ids = []) {
+  return (NEW_ATS_ADDRESS_VALUES[platform] ?? []).reduce((out, pattern) => out.replace(pattern,
+    (whole, before, value, after) => {
+      if (value === REDACTED) return whole;
+      ids.push(value);
+      return `${before}${REDACTED}${after}`;
+    }), text);
+}
+// ── end New ATSs ──
 
 /** @param {string} message @returns {never} */
 function fail(message) {
@@ -470,9 +1050,294 @@ export function redactSources(strings) {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /**
+ * The snapshot build of 2026-11-06 (boards): takes out of the frame, before anything is measured, what is not the site's
+ * page (INJECTED_UI), so the visibility check compares the site's own elements, on every platform:
+ * - every element INJECTED_UI names (another extension's UI);
+ * - where the platform does not keep shadow roots (`dropOverlays`; SHADOW_ROOT_PLATFORMS keep them all, written as
+ *   declarative ones), a shadow host that is a child of <body> and whose open shadow tree holds no form control, form,
+ *   frame or nested shadow root: an overlay a page or an extension draws over itself, whose shadow content the
+ *   serializer would lose (an accessibility widget, [abclegal.com] ABC Legal - Job Openings.mht's four
+ *   <access-widget-ui>; a cookie banner, [seatgeek.com] ...SeatGeek.mht's <aside class="dg-consent-banner">; a route
+ *   announcer, [weka.io] ...WEKA.mht's <next-route-announcer>). Any other shadow root is still refused there;
+ * - the PER_LOAD_PARAMS' values (REDACTED) in every attribute that holds them (`perLoad`: PER_LOAD_SOURCE).
+ * Another extension's parameters (INJECTED_PARAMS) go from the frame's written text by the one rule, stripInjectedParams.
+ * Returns how many of each it took (never what they held).
+ * @param {{ selectors: string[]; perLoad: string; dropOverlays: boolean; redacted: string }} input
+ * @returns {{ injected: number; shadowOverlays: number; injectedParams: number }}
+ */
+export function stripInjectedInPage(input) {
+  const doc = globalThis.document;
+  const counts = { injected: 0, shadowOverlays: 0, injectedParams: 0 };
+  for (const element of doc.querySelectorAll(input.selectors.join(', '))) {
+    element.remove();
+    counts.injected += 1;
+  }
+  for (const host of input.dropOverlays ? [...(doc.body?.children ?? [])] : []) {
+    const shadow = host.shadowRoot;
+    if (!shadow || shadow.querySelector('input, select, textarea, form, iframe, frame, object, embed')
+      || [...shadow.querySelectorAll('*')].some((element) => element.shadowRoot)) continue;
+    host.remove();
+    counts.shadowOverlays += 1;
+  }
+  const perLoad = new RegExp(input.perLoad, 'g');
+  for (const element of doc.querySelectorAll('*')) {
+    for (const attribute of [...element.attributes]) {
+      const text = attribute.value.replace(perLoad, `$1${input.redacted}`);
+      if (text === attribute.value) continue;
+      element.setAttribute(attribute.name, text);
+      counts.injectedParams += 1;
+    }
+  }
+  return counts;
+}
+
+/**
+ * The snapshot build of 2026-11-06: the choices a page shows besides a control's own checked and selected state,
+ * cleared on every platform before anything is measured, since a person's real answers are the applicant's data (the
+ * owner's captures were taken filled in). The one generic pass for choice mirrors; a platform's own widgets add theirs
+ * (PLATFORM_REDACTIONS: Workday's exclusive groups and open lists, iCIMS's dropdown results, Oracle's pills):
+ * - aria-checked="true" and aria-pressed="true" become "false" (Workable's role=radio and role=checkbox, Ashby's Yes/No
+ *   buttons, Workday's radios and boxes, SmartRecruiters' spl-radio and spl-checkbox inside their shadow roots), and
+ *   data-checked="true" becomes "false" while a bare data-checked (Ashby's span beside a chosen radio or box) goes;
+ * - a chosen value's flag (intl-tel-input's iti__<region> class inside a widget's chosen value: Greenhouse's phone
+ *   country, [job-boards.greenhouse.io] ...at Axle (1).mht) loses its region;
+ * - intl-tel-input's country button names the chosen country in its title and aria-label, beside its flag and dial code
+ *   (Workable's phone, the Raydar and Salvo captures): they become REDACTED, the flag's region dropped;
+ * - the marks `marks` names (CHOSEN_MARKS: the new ATSs' drawn controls and lists) lose their chosen classes, and an
+ *   option's aria-selected="true" becomes "false".
+ * Returns how many it cleared.
+ * @param {{ redacted: string; marks?: Array<{ selector: string; classes?: string[]; patterns?: string[];
+ *   attributes?: string[]; aria?: boolean }> }} input
+ * @returns {{ choices: number }}
+ */
+export function clearChoicesInPage(input) {
+  const doc = globalThis.document;
+  let choices = 0;
+  for (const element of doc.querySelectorAll('[aria-checked="true" i], [aria-pressed="true" i]')) {
+    for (const name of ['aria-checked', 'aria-pressed']) {
+      if ((element.getAttribute(name) ?? '').trim().toLowerCase() === 'true') element.setAttribute(name, 'false');
+    }
+    choices += 1;
+  }
+  for (const element of doc.querySelectorAll('[data-checked]')) {
+    const value = (element.getAttribute('data-checked') ?? '').trim().toLowerCase();
+    if (value === '') element.removeAttribute('data-checked');
+    else if (value === 'true') element.setAttribute('data-checked', 'false');
+    else continue;
+    choices += 1;
+  }
+  // The marks a drawn control or a list shows on the chosen answer (CHOSEN_MARKS): their classes and attributes go, and
+  // an option's aria-selected="true" becomes "false".
+  for (const { selector, classes = [], patterns = [], attributes = [], aria = true } of input.marks ?? []) {
+    const matchers = patterns.map((source) => new RegExp(source));
+    for (const element of doc.querySelectorAll(selector)) {
+      const named = [...element.classList].filter((name) => classes.includes(name)
+        || matchers.some((matcher) => matcher.test(name)));
+      const held = attributes.filter((name) => element.hasAttribute(name));
+      const selected = aria && (element.getAttribute('aria-selected') ?? '').trim().toLowerCase() === 'true';
+      if (selected) element.setAttribute('aria-selected', 'false');
+      if (named.length > 0) element.classList.remove(...named);
+      for (const name of held) element.removeAttribute(name);
+      if (selected || named.length > 0 || held.length > 0) choices += 1;
+    }
+  }
+  const region = /^iti__[a-z]{2}$/;
+  const chosen = '[class*="single-value" i], [class*="singlevalue" i], [class*="multi-value" i], [class*="multivalue" i], '
+    + '.iti__selected-country';
+  for (const flag of doc.querySelectorAll('[class*="iti__"]')) {
+    if (!flag.closest(chosen)) continue;
+    const regions = [...flag.classList].filter((name) => region.test(name));
+    if (regions.length === 0) continue;
+    flag.classList.remove(...regions);
+    choices += 1;
+  }
+  for (const button of doc.querySelectorAll('.iti__selected-country')) {
+    for (const name of ['title', 'aria-label']) if (button.getAttribute(name)) button.setAttribute(name, input.redacted);
+    for (const code of button.querySelectorAll('.iti__selected-dial-code')) {
+      if ((code.textContent ?? '').trim() !== '') code.textContent = input.redacted;
+    }
+    choices += 1;
+  }
+  return { choices };
+}
+
+/**
+ * The applicant's own text the redaction list may not hold, cleared where the markup shows it, on every platform after
+ * the visibility is measured and before transformInPage: the one generic pass for an upload's file name and the texts
+ * a page shows of a person's answers (the snapshot build of 2026-11-06: boards' and Workday's places, and the new ATSs'
+ * DESIGN-NEW-ATS §6.4). Each place is keyed by its markup, never by a value, and its list names the snapshot it was read
+ * from (FILE_NAME_PLACES, ENTRY_SUMMARY_PLACES, CHOSEN_PLACES, PROFILE_PLACES, FILE_LINK_PLACES, ENTRY_SUMMARY_CONTROLS);
+ * a platform adds its own (PLATFORM_REDACTIONS: Workday's announcement and Review cells, iCIMS's current file, Oracle's
+ * timeline):
+ * - each file-name place's text becomes REDACTED (every element kept; an option's, a list's and a stylesheet's text
+ *   kept), and every name it held (its whole text, each text and title in it) wherever else the frame repeats it, as
+ *   written and percent-encoded, in text, comments and attributes (Workday's "<name> successfully uploaded", "Delete
+ *   <name>", "Category for <name>"; a link's address), and a data-automation-id built from the name (paylocity-1). The
+ *   names are answered, so the reload, the rescan and the written files are checked for them as for a found email;
+ * - each entry summary's text becomes REDACTED; each chosen or profile place's text, and its aria-label, title and alt
+ *   words, in it and its descendants (an open shadow root's too, where the platform keeps them);
+ * - an open searchable Ant select's options' words and titles (dayforce-2), and UltiPro's Race row drawn open (its
+ *   state told the Hispanic-origin answer: ultipro-0, -1);
+ * - each file or entry control keeps the words before the name that say what it does (its data-action, or its title,
+ *   which names nothing else) in its aria-label and title, the rest REDACTED; its address becomes "#" and its download
+ *   name REDACTED;
+ * - a custom element's typed or chosen value and default-value (ukg-input, an answered sdf-radio-group; never an
+ *   option's own element: -button, -option, -item, -radio, -checkbox, -tab), a date widget's data-date-value, and the
+ *   data-gtm-form-interact-* attributes a tag manager adds once a form is typed into.
+ * Returns how many places and repeats it cleared, and the file names (kept in memory, never printed or written).
+ * @param {{ fileNames: string[]; entries: string[]; chosen: string[]; profile: string[]; links: string[];
+ *   redacted: string }} input
+ * @returns {{ applicantText: number; names: string[] }}
+ */
+export function redactApplicantTextInPage(input) {
+  const doc = globalThis.document;
+  const { redacted } = input;
+  let applicantText = 0;
+  /** Clears a place: each of its text nodes becomes REDACTED (an option's, a list's and a stylesheet's kept), and with
+   *  `words` its aria-label, title and alt, in it and its descendants. Answers the texts and titles it held.
+   *  @param {Element} place @param {boolean} words */
+  const clearPlace = (place, words) => {
+    /** @type {string[]} */
+    const held = [];
+    const walker = doc.createTreeWalker(place, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.nodeValue?.trim() ?? '';
+      if (text === '' || text === redacted || node.parentElement?.closest('option, style, [role="option"], [role="listbox"]')) {
+        continue;
+      }
+      held.push(text);
+      node.nodeValue = redacted;
+    }
+    for (const element of [place, ...place.querySelectorAll('*')]) {
+      const title = element.getAttribute('title');
+      if (title !== null && title.trim() !== '' && title !== redacted) held.push(title.trim());
+      if (!words) continue;
+      for (const name of ['aria-label', 'title', 'alt']) {
+        const value = element.getAttribute(name);
+        if (value !== null && value.trim() !== '' && value !== redacted) element.setAttribute(name, redacted);
+      }
+    }
+    if (held.length > 0) applicantText += 1;
+    return held;
+  };
+  /** Every element `selectors` names (none for an empty list). @param {string[]} selectors */
+  const placesOf = (selectors) => (selectors.length > 0 ? Array.from(doc.querySelectorAll(selectors.join(', '))) : []);
+
+  /** @type {Set<string>} */
+  const names = new Set();
+  for (const place of placesOf(input.fileNames)) {
+    const whole = (place.textContent ?? '').trim();
+    for (const text of [whole, ...clearPlace(place, false)]) if (text.length >= 3 && text !== redacted) names.add(text);
+    // Paylocity builds the uploaded file's data-automation-id from its name (paylocity-1: "<name>_uploaded").
+    const id = place.getAttribute('data-automation-id');
+    if (id !== null && id.includes('_uploaded')) {
+      place.setAttribute('data-automation-id', id.replace(/^("?)[\s\S]*?(_uploaded"?)$/, `$1${redacted}$2`));
+    }
+  }
+  // Builder B, clearcompany-0: an uploaded file's row names the file's id on the site's server (tr.file-row[data-id]).
+  for (const row of doc.querySelectorAll('tr.file-row[data-id]')) {
+    if (row.getAttribute('data-id') === redacted) continue;
+    row.setAttribute('data-id', redacted);
+    applicantText += 1;
+  }
+  for (const place of placesOf(input.entries)) clearPlace(place, false);
+  for (const place of placesOf([...input.chosen, ...input.profile])) clearPlace(place, true);
+  // The new ATSs, builder A: an open Ant select's list (dayforce-2), whose chosen marks clearChoicesInPage took. A
+  // searchable select's (Country, State/Province, the dial codes: its .ant-select carries ant-select-show-search) holds
+  // only what its search matched, the applicant's answer among it, so its options' words and titles go too; a
+  // select-only list is the page's own words, whole: kept.
+  for (const option of doc.querySelectorAll('.ant-select-dropdown [role="option"]')) {
+    const list = option.closest('[role="listbox"][id$="_list"]');
+    const control = list === null ? null : doc.getElementById(list.id.slice(0, -'_list'.length));
+    if (!control?.closest('.ant-select')?.classList.contains('ant-select-show-search')) continue;
+    const walker = doc.createTreeWalker(option, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeValue?.trim()) node.nodeValue = redacted;
+    }
+    for (const element of [option, ...option.querySelectorAll('*')]) {
+      if (element.hasAttribute('title')) element.setAttribute('title', redacted);
+    }
+    applicantText += 1;
+  }
+  // The new ATSs, builder A: UltiPro's self-identification survey opens its Race row unless the Hispanic origin answer
+  // is "No" (data-bind "collapse: isHispanic() != 'No'"): open in ultipro-0, closed in ultipro-1, where the row sits in
+  // the hidden application. Drawn open in every fixture, as before any answer, so the row's state tells nothing. It is
+  // opened after the measure, so where that would change what a person sees the reload's visibility check refuses the
+  // conversion.
+  for (const row of doc.querySelectorAll('.collapse[data-bind*="isHispanic()"]')) {
+    if (row.classList.contains('in')) continue;
+    row.classList.add('in');
+    applicantText += 1;
+  }
+  for (const control of placesOf(input.links)) {
+    for (const element of [control, ...control.querySelectorAll('*')]) {
+      // The words before the name that say what the control does ("view", "delete": its data-action; "Edit", "Delete":
+      // its title, which names nothing else) stay.
+      const action = (element.getAttribute('data-action') ?? '').trim() || (element.getAttribute('title') ?? '').trim();
+      for (const name of ['aria-label', 'title']) {
+        const value = element.getAttribute(name);
+        if (!value || (name === 'title' && value.trim() === action && !element.hasAttribute('data-action'))) continue;
+        const kept = action !== '' && value.toLowerCase().startsWith(`${action.toLowerCase()} `) ? value.slice(0, action.length + 1) : '';
+        element.setAttribute(name, `${kept}${redacted}`);
+      }
+      for (const name of ['href', 'src', 'download']) if (element.hasAttribute(name)) element.setAttribute(name, name === 'download' ? redacted : '#');
+    }
+    applicantText += 1;
+  }
+  // A custom element's typed or chosen value and its default (ukg-input, ukg-date-input-text: ultipro-0..2; an
+  // answered sdf-radio-group: adp-2), never an option's own (sdf-radio-button, wfn-radio-button), and a date widget's
+  // data-date-value (ultipro-0, -1); the attributes a tag manager adds once a form is typed into (data-gtm-form-interact-*).
+  for (const element of doc.querySelectorAll('*')) {
+    const tag = element.localName;
+    for (const name of ['value', 'default-value']) {
+      if (tag.includes('-') && element.hasAttribute(name) && !/-(?:button|option|item|radio|checkbox|tab)$/.test(tag)
+        && element.getAttribute(name) !== '') {
+        element.setAttribute(name, '');
+        applicantText += 1;
+      }
+    }
+    if (element.getAttribute('data-date-value')) {
+      element.setAttribute('data-date-value', '');
+      applicantText += 1;
+    }
+    for (const attribute of [...element.attributes]) {
+      if (attribute.name.toLowerCase().startsWith('data-gtm-form-interact')) element.removeAttribute(attribute.name);
+    }
+  }
+  // Each file name wherever else the frame repeats it, longest first, as written and percent-encoded.
+  const variants = [...names].sort((a, b) => b.length - a.length)
+    .flatMap((name) => [...new Set([name, encodeURIComponent(name)])]);
+  if (variants.length > 0) {
+    /** @param {string} text */
+    const scrub = (text) => variants.reduce((out, name) => out.split(name).join(redacted), text);
+    const walker = doc.createTreeWalker(doc, 4 | 128 /* NodeFilter.SHOW_TEXT | SHOW_COMMENT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const clean = scrub(node.nodeValue ?? '');
+      if (clean === node.nodeValue) continue;
+      node.nodeValue = clean;
+      applicantText += 1;
+    }
+    for (const element of doc.querySelectorAll('*')) {
+      for (const attribute of [...element.attributes]) {
+        const clean = scrub(attribute.value);
+        if (clean === attribute.value) continue;
+        element.setAttribute(attribute.name, clean);
+        applicantText += 1;
+      }
+    }
+  }
+  return { applicantText, names: [...names] };
+}
+
+/**
  * Each body element's tag and whether Chromium shows it: checkVisibility (display, visibility, opacity,
  * content-visibility) and a box of at least 4 by 4 pixels. Elements the converter removes are left out on both sides,
  * so the two lists line up element for element.
+ * First the page's CSS animations and transitions are settled (the integration of 2026-11-06), so the capture and the
+ * reloaded fixture are compared in the same state however long after loading each is measured: a finite one jumps to
+ * its end, an endless one (a spinner, a pulse) is held at its start. Without it the comparison depended on timing:
+ * oracle/jpmc-posting's similar-jobs tiles (job-event-tile-slide-up, 0.8 s) measured shown or hidden by how soon the
+ * capture was measured after loading, and the converter refused it under load once passes ran before the measure.
  * @returns {string[]}
  */
 export function measureInPage() {
@@ -481,6 +1346,18 @@ export function measureInPage() {
   /** @type {string[]} */
   const states = [];
   if (!doc.body) return states;
+  for (const animation of doc.getAnimations?.() ?? []) {
+    try {
+      if (animation.effect?.getComputedTiming().endTime === Infinity) {
+        animation.pause();
+        animation.currentTime = 0;
+      } else {
+        animation.finish();
+      }
+    } catch {
+      // An animation that cannot be settled (no effect, a zero playback rate) is measured as it stands.
+    }
+  }
   for (const element of doc.body.querySelectorAll('*')) {
     if (element.closest(skip)) continue;
     const rect = element.getBoundingClientRect();
@@ -490,6 +1367,183 @@ export function measureInPage() {
   }
   return states;
 }
+
+// --- Workday's application steps (the owner's snapshots of 2026-11-06; docs/OWNER-QUESTIONS.md 93) ------------------
+
+/**
+ * What the generic redaction misses on Workday's application steps, done in the page after the generic file-name pass
+ * (redactApplicantTextInPage, which takes an upload's preview, [data-automation-id=file-upload-item-name], and its name
+ * wherever the page repeats it) and before transformInPage (PLATFORM_REDACTIONS.workday). Every value Workday shows
+ * outside an input's own value, as the owner's snapshots of 2026-11-06 hold it, becomes REDACTED or the empty state
+ * Workday draws:
+ * - the Review step: every text in [data-automation-id=applyFlowReviewPage] outside a label, a legend, a heading and a
+ *   button (its value cells: <label for="jobTitle">Job Title</label> <span id="jobTitle">...</span>, the address and
+ *   the phone under an h4, a role's description, the attachments' names);
+ * - any other read-only summary: an element that is no control, named by a label[for] (My Information's signed-in
+ *   address, <span id="emailAddress">), and the header's account menu ([data-automation-id=
+ *   utilityButtonAccountTasksMenu], which names the signed-in person), its words and labels;
+ * - an upload's announcement and controls, after Workday took a resume or read it ("Autofill with Resume", My
+ *   Experience's Resume/CV): the polite announcement [data-automation-id^=ariaLive] ("<file name> successfully
+ *   uploaded") and the delete button's aria-label ("Delete <file name>"), and any other word ending in a document's
+ *   extension, in text and labelling attributes (never an address);
+ * - a dropdown (button[aria-haspopup=listbox]) that holds an answer: its words, its value (the chosen option's id) and
+ *   its aria-label ("<question> <answer> Required");
+ * - a multiselect prompt's answer: its pill's words ([data-automation-id=selectedItem], a role=option the generic rule
+ *   leaves alone), aria-label and title, its promptOption's data-automation-label, and [data-automation-id=
+ *   promptAriaInstruction] ("1 item selected, <answer>");
+ * - an open dropdown's list: a chosen option's aria-selected and the list's aria-activedescendant naming it;
+ * - in an exclusive group (Self Identify's disability status: the other boxes disabled once one is ticked, their labels
+ *   cursor "default"), those boxes enabled and their labels "pointer" again, as Workday draws the group before an
+ *   answer (a radio's or checkbox's aria-checked="true" is the generic pass's, clearChoicesInPage);
+ * - a date input's parts: each display's digits, each spin button's aria-valuetext and aria-valuenow, and the hidden help
+ *   "current value is 11/6/2026", back to the placeholders (MM, DD, YYYY) Workday draws while it holds nothing.
+ * Returns counts, never values.
+ * @param {{ redacted: string }} input
+ */
+export function redactWorkdayInPage(input) {
+  const doc = globalThis.document;
+  const { redacted } = input;
+  // The placeholder each part of Workday's date input shows while it holds nothing (the empty My Experience of
+  // "[resolvetech.wd1.myworkdayjobs.com] Devops Engineer (4)": dateSectionMonth-display "MM", dateSectionYear-display
+  // "YYYY"; the Self Identify step's Day, "DD"), by the part's data-automation-id prefix. In the function: it runs in
+  // the page.
+  /** @type {Record<string, string>} */
+  const WORKDAY_DATE_PARTS = { dateSectionMonth: 'MM', dateSectionDay: 'DD', dateSectionYear: 'YYYY' };
+  const counts = { reviewCells: 0, summaries: 0, account: 0, uploads: 0, dropdowns: 0, prompts: 0, options: 0, choices: 0,
+    dates: 0 };
+  /** Every non-blank text node under `root` outside the elements `keep` names becomes REDACTED; answers how many.
+   *  @param {Element} root @param {string} keep */
+  const redactText = (root, keep) => {
+    let changed = 0;
+    const walker = doc.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.nodeValue?.trim() || node.nodeValue === redacted) continue;
+      if (keep !== '' && node.parentElement?.closest(keep)) continue;
+      node.nodeValue = redacted;
+      changed += 1;
+    }
+    return changed;
+  };
+  for (const page of doc.querySelectorAll('[data-automation-id="applyFlowReviewPage"]')) {
+    counts.reviewCells += redactText(page, 'label, legend, h1, h2, h3, h4, h5, h6, button, style');
+  }
+  // A read-only summary anywhere else: an element no control is, named by a label[for] (My Information's
+  // <label for="emailAddress"></label> <span id="emailAddress">...</span>, the signed-in account's address).
+  for (const label of doc.querySelectorAll('label[for]')) {
+    const id = label.getAttribute('for') ?? '';
+    const shown = id === '' ? null : doc.getElementById(id);
+    if (shown === null || shown.matches('input, select, textarea, button, [role]')) continue;
+    counts.summaries += redactText(shown, 'style');
+  }
+  // The header's account menu, which names the signed-in person: <div data-automation-id="utilityButtonAccountTasksMenu">
+  // <button data-automation-id="utilityMenuButton" ...><span>...</span></button> (every signed-in snapshot).
+  for (const menu of doc.querySelectorAll('[data-automation-id="utilityButtonAccountTasksMenu"]')) {
+    counts.account += redactText(menu, 'style');
+    for (const element of [menu, ...menu.querySelectorAll('*')]) {
+      for (const name of ['aria-label', 'title', 'value']) {
+        if (!element.hasAttribute(name) || element.getAttribute(name) === '' || element.getAttribute(name) === redacted) continue;
+        element.setAttribute(name, redacted);
+        counts.account += 1;
+      }
+    }
+  }
+  // Any other file's name the page shows (a chip or a list Workday draws otherwise): a word ending in a document's
+  // extension, in text and in labelling attributes (never in an address: a tenant links its own PDFs).
+  const fileLike = /[^\s"'<>/\\|:]+\.(?:pdf|docx?|rtf|odt|txt|pages)\b/gi;
+  const textWalker = doc.createTreeWalker(doc, 4 | 128 /* NodeFilter.SHOW_TEXT | SHOW_COMMENT */);
+  for (let node = textWalker.nextNode(); node; node = textWalker.nextNode()) {
+    if (node.parentElement?.closest('style')) continue;
+    const clean = (node.nodeValue ?? '').replace(fileLike, () => redacted);
+    if (clean === node.nodeValue) continue;
+    node.nodeValue = clean;
+    counts.uploads += 1;
+  }
+  for (const element of doc.querySelectorAll('*')) {
+    for (const attribute of [...element.attributes]) {
+      const name = attribute.name.toLowerCase();
+      if (!['aria-label', 'title', 'alt', 'value', 'placeholder'].includes(name) && !name.startsWith('data-')) continue;
+      const clean = attribute.value.replace(fileLike, () => redacted);
+      if (clean === attribute.value) continue;
+      element.setAttribute(attribute.name, clean);
+      counts.uploads += 1;
+    }
+  }
+  for (const preview of doc.querySelectorAll('[data-automation-id^="ariaLive"]')) {
+    counts.uploads += redactText(preview, 'style');
+  }
+  for (const remove of doc.querySelectorAll('[data-automation-id="delete-file"][aria-label]')) {
+    if (remove.getAttribute('aria-label') === redacted) continue;
+    remove.setAttribute('aria-label', redacted);
+    counts.uploads += 1;
+  }
+  for (const button of doc.querySelectorAll('button[aria-haspopup="listbox" i]')) {
+    if ((button.getAttribute('value') ?? '') === '') continue;
+    // The chosen option's words on the button itself, here too (the generic rule's, wherever that rule's ARIA test
+    // stands), its id and its "<question> <answer> Required".
+    redactText(button, 'style');
+    button.setAttribute('value', redacted);
+    if (button.hasAttribute('aria-label')) button.setAttribute('aria-label', redacted);
+    counts.dropdowns += 1;
+  }
+  for (const element of doc.querySelectorAll('[data-automation-id="promptAriaInstruction"]')) {
+    counts.prompts += redactText(element, 'style');
+  }
+  for (const pill of doc.querySelectorAll('[data-automation-id="selectedItem"], [data-automation-label]')) {
+    // The pill's own words: the generic rule leaves every text inside a role=option alone (a list's own options), and
+    // Workday's pill is a role=option in its selectedItemList.
+    if (pill.matches('[data-automation-id="selectedItem"]')) counts.prompts += redactText(pill, 'style');
+    for (const name of ['aria-label', 'title', 'data-automation-label']) {
+      if (!pill.hasAttribute(name) || pill.getAttribute(name) === '') continue;
+      pill.setAttribute(name, redacted);
+      counts.prompts += 1;
+    }
+  }
+  for (const list of doc.querySelectorAll('[role="listbox" i]:not([data-automation-id="selectedItemList"])')) {
+    for (const option of list.querySelectorAll('[role="option" i][aria-selected="true" i]')) {
+      // Workday's own "Select One" (data-value="") is no answer.
+      if ((option.getAttribute('data-value') ?? '') === '') continue;
+      option.setAttribute('aria-selected', 'false');
+      if (option.id !== '' && list.getAttribute('aria-activedescendant') === option.id) {
+        list.removeAttribute('aria-activedescendant');
+      }
+      counts.options += 1;
+    }
+  }
+  for (const group of doc.querySelectorAll('[data-automation-id$="-CheckboxGroup"]')) {
+    if (group.querySelector('input[disabled]') === null) continue;
+    for (const disabled of group.querySelectorAll('input[disabled], div[disabled]')) disabled.removeAttribute('disabled');
+    for (const label of group.querySelectorAll('label[cursor]')) label.setAttribute('cursor', 'pointer');
+    counts.choices += 1;
+  }
+  for (const wrapper of doc.querySelectorAll('[data-automation-id="dateInputWrapper"]')) {
+    /** @type {string[]} */
+    const shown = [];
+    for (const [part, placeholder] of Object.entries(WORKDAY_DATE_PARTS)) {
+      const display = wrapper.querySelector(`[data-automation-id="${part}-display"]`);
+      const spin = wrapper.querySelector(`[data-automation-id="${part}-input"]`);
+      if (display === null && spin === null) continue;
+      shown.push(placeholder);
+      if (display !== null && (display.textContent ?? '') !== placeholder) {
+        display.textContent = placeholder;
+        counts.dates += 1;
+      }
+      if (spin !== null) {
+        spin.setAttribute('aria-valuetext', placeholder);
+        spin.removeAttribute('aria-valuenow');
+      }
+    }
+    // <div aria-hidden="true" id="helpText-<field id>">current value is MM/YYYY</div>, the wrapper's id its field's.
+    const help = wrapper.id === '' ? null : doc.getElementById(`helpText-${wrapper.id}`);
+    // The parts in the order the page shows them.
+    const ordered = Array.from(wrapper.querySelectorAll('[data-automation-id$="-display"]'))
+      .map((display) => WORKDAY_DATE_PARTS[(display.getAttribute('data-automation-id') ?? '').replace(/-display$/, '')])
+      .filter((part) => part !== undefined);
+    if (help !== null) help.textContent = `current value is ${(ordered.length > 0 ? ordered : shown).join('/')}`;
+  }
+  return counts;
+}
+
+// --- end Workday -------------------------------------------------------------------------------------------------------
 
 /**
  * Turns the frame's document into a fixture in place: inlining, removal, form actions and redaction. Returns counts,
@@ -507,6 +1561,8 @@ export function transformInPage(input) {
     scripts: 0, eventHandlers: 0, javascriptUrls: 0, bases: 0, metaHttpEquiv: 0, metaRefresh: 0, embeds: 0,
     links: 0, srcdoc: 0, stylesheets: 0, images: 0, placeholders: 0, missing: 0, forms: 0, frames: 0,
     framesDropped: 0, shadowRoots: 0,
+    // The new ATSs (DESIGN-NEW-ATS §6.2): the closed shadow roots stood in by their hosts' boxes.
+    closedRoots: 0,
   };
   /** @type {Set<string>} */
   const found = new Set();
@@ -564,8 +1620,19 @@ export function transformInPage(input) {
       });
   };
 
-  // Shadow roots would be lost on serialization: refuse rather than drop them silently.
+  // Open shadow roots: kept where the platform keeps them (SHADOW_ROOT_PLATFORMS, deepenInPage), refused elsewhere rather
+  // than dropped silently; counted here either way.
   for (const element of doc.querySelectorAll('*')) if (element.shadowRoot) counts.shadowRoots += 1;
+  // The new ATSs (DESIGN-NEW-ATS §6.2), every platform: a closed shadow root's host (marked by markClosedShadowHosts)
+  // keeps its box, its root being one no page code can read or write.
+  for (const host of doc.querySelectorAll('[data-fixture-closed-root]')) {
+    const rect = host.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) continue;
+    const style = (host.getAttribute('style') ?? '').trim();
+    host.setAttribute('style', [...(style === '' ? [] : [style.endsWith(';') ? style : `${style};`]),
+      `box-sizing: border-box; min-width: ${rect.width}px; min-height: ${rect.height}px;`].join(' '));
+    counts.closedRoots += 1;
+  }
 
   // Active content.
   for (const element of doc.querySelectorAll('script, noscript')) {
@@ -636,9 +1703,13 @@ export function transformInPage(input) {
       counts.links += 1;
     }
   }
+  // The new ATSs, builder B (dice-2, -7, -8): a per-visitor id a script writes into a stylesheet
+  // (:root { --sa-uid: '<base64 of a uuid>' }), which the capture keeps as a sheet of its own: read once inlined.
+  const visitor = new RegExp(`(--sa-uid:\\s*['"])(?!${redacted}['"])[^'"]*(['"])`, 'g');
   for (const style of doc.querySelectorAll('style')) {
-    const text = style.textContent ?? '';
-    if (/<\/style/i.test(text)) style.textContent = text.replace(/<\/style/gi, '<\\/style');
+    let text = (style.textContent ?? '').replace(visitor, `$1${redacted}$2`);
+    if (/<\/style/i.test(text)) text = text.replace(/<\/style/gi, '<\\/style');
+    if (text !== style.textContent) style.textContent = text;
   }
   for (const element of doc.querySelectorAll('[style]')) {
     const value = element.getAttribute('style') ?? '';
@@ -766,6 +1837,25 @@ export function transformInPage(input) {
       changed = true;
     }
     if (changed) counts.widgetText += 1;
+  }
+
+  // (An upload widget's file name and a resume's entries were redacted before, by redactApplicantTextInPage.)
+  // Snapshot build, boards: a tel: or sms: link names a phone number whatever its spelling, percent-encoded too
+  // (<a href="tel:+1(NNN)%20NNN-NNNN"> in [abclegal.com] ABC Legal - Job Openings (1).mht, which the phone pattern below
+  // reads only unencoded): one whose address holds 7 digits or more becomes tel:REDACTED.
+  for (const link of doc.querySelectorAll('[href]')) {
+    const href = (link.getAttribute('href') ?? '').trim();
+    const scheme = /^(tel|sms):/i.exec(href)?.[1];
+    if (scheme === undefined || href.slice(scheme.length + 1) === redacted) continue;
+    let address = href;
+    try {
+      address = decodeURIComponent(href);
+    } catch {
+      address = href;
+    }
+    if (address.replace(/\D/g, '').length < 7) continue;
+    link.setAttribute('href', `${scheme.toLowerCase()}:${redacted}`);
+    counts.phones += 1;
   }
 
   // Emails, phone numbers and the listed strings, in text, comments and attributes.
@@ -930,6 +2020,165 @@ export function pruneCssInPage() {
   return { kept, dropped };
 }
 
+// ── snapshot build 2026-11-06 (oracle-sf-sr): shadow roots, and the per-platform redactions ──────────────────────────
+
+/**
+ * For SHADOW_ROOT_PLATFORMS (see the header): makes the frame's querySelectorAll and createTreeWalker reach into every
+ * open shadow root below the element or document they start from, nested ones included, each root's matches after its
+ * tree's own, in the order the roots are found; so transformInPage, measureInPage and rescanInPage read, redact and
+ * compare a shadow tree as they do the document. Run once per frame, before the first of them. Answers how many open
+ * shadow roots the frame holds.
+ * @returns {number}
+ */
+export function deepenInPage() {
+  const view = /** @type {any} */ (globalThis);
+  const doc = view.document;
+  if (view.__deepened) return view.__deepened.roots(doc).length;
+  const all = { doc: view.Document.prototype.querySelectorAll, el: view.Element.prototype.querySelectorAll,
+    frag: view.DocumentFragment.prototype.querySelectorAll };
+  const walker = view.Document.prototype.createTreeWalker;
+  /** The native querySelectorAll of a scope. @param {any} scope @param {string} selector */
+  const native = (scope, selector) => (scope.nodeType === 9 ? all.doc : scope.nodeType === 11 ? all.frag : all.el)
+    .call(scope, selector);
+  /** Every open shadow root below a scope, nested ones included. @param {any} scope @returns {any[]} */
+  const roots = (scope) => {
+    const found = [];
+    const visit = (/** @type {any} */ at) => {
+      for (const element of native(at, '*')) {
+        if (element.shadowRoot) {
+          found.push(element.shadowRoot);
+          visit(element.shadowRoot);
+        }
+      }
+    };
+    if (scope.shadowRoot) {
+      found.push(scope.shadowRoot);
+      visit(scope.shadowRoot);
+    }
+    visit(scope);
+    return found;
+  };
+  /** @this {any} @param {string} selector */
+  function deepAll(selector) {
+    const found = [...native(this, selector)];
+    for (const root of roots(this)) found.push(...all.frag.call(root, selector));
+    return found;
+  }
+  view.Document.prototype.querySelectorAll = deepAll;
+  view.Element.prototype.querySelectorAll = deepAll;
+  view.DocumentFragment.prototype.querySelectorAll = deepAll;
+  /** @this {any} @param {any} root @param {number} what @param {any} filter */
+  view.Document.prototype.createTreeWalker = function deepWalker(root, what, filter) {
+    /** @type {any[]} */
+    const nodes = [];
+    for (const scope of [root, ...(root.nodeType === 1 || root.nodeType === 9 || root.nodeType === 11 ? roots(root) : [])]) {
+      const inner = walker.call(this, scope, what, filter);
+      for (let node = inner.nextNode(); node; node = inner.nextNode()) nodes.push(node);
+    }
+    let at = -1;
+    return { nextNode: () => (at + 1 < nodes.length ? nodes[(at += 1)] : null), get currentNode() { return nodes[at] ?? root; } };
+  };
+  view.__deepened = { roots };
+  return roots(doc).length;
+}
+
+/** For SHADOW_ROOT_PLATFORMS: the frame's document as text with its open shadow roots written as declarative ones
+ *  (<template shadowrootmode="open">), its doctype first if it had one. @returns {string} */
+export function serializeDeepInPage() {
+  const view = /** @type {any} */ (globalThis);
+  const doc = view.document;
+  const type = doc.doctype;
+  let doctype = '';
+  if (type) {
+    const ids = type.publicId ? ` PUBLIC "${type.publicId}"${type.systemId ? ` "${type.systemId}"` : ''}`
+      : type.systemId ? ` SYSTEM "${type.systemId}"` : '';
+    doctype = `<!DOCTYPE ${type.name}${ids}>`;
+  }
+  const roots = view.__deepened ? view.__deepened.roots(doc) : [];
+  const shell = doc.documentElement.cloneNode(false).outerHTML;
+  const close = `</${doc.documentElement.localName}>`;
+  const inner = doc.documentElement.getHTML({ serializableShadowRoots: false, shadowRoots: roots });
+  return JSON.stringify({ doctype, html: `${shell.slice(0, shell.length - close.length)}${inner}${close}` });
+}
+
+/**
+ * The per-platform redactions (see the header), after transformInPage: each named element's text becomes REDACTED (its
+ * box kept), and a chosen answer the page draws on a button or a custom element is unchosen. Answers counts (never
+ * values) to add to the frame's own.
+ * @param {{ platform: string; redacted: string }} input
+ * @returns {{ widgetText: number; checked: number; typedValues: number; placeholders: number }}
+ */
+export function redactPlatformInPage(input) {
+  const doc = globalThis.document;
+  const counts = { widgetText: 0, checked: 0, typedValues: 0, placeholders: 0 };
+  /** Every non-blank text node inside `element` becomes REDACTED. @param {Element} element */
+  const redactText = (element) => {
+    const walker = doc.createTreeWalker(element, 4 /* NodeFilter.SHOW_TEXT */);
+    let changed = false;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.nodeValue?.trim() || node.nodeValue === input.redacted) continue;
+      node.nodeValue = input.redacted;
+      changed = true;
+    }
+    if (changed) counts.widgetText += 1;
+  };
+  if (input.platform === 'oracle') {
+    // [iaaxmg.fa.ocs.oraclegovcloud.com] apply/section/1: the Work and Education History timeline's tiles (each title,
+    // its employer or school, and the hidden "From <month year> to <month year>"), the attached resume's file name
+    // (<button class="attachment-upload-button__download">) and the submission checklist's greeting by first name
+    // (<h1 class="standard-apply-flow-dialog__header">, drawn hidden until Submit).
+    // The timeline's year axis (<span class="beautiful-timeline__year-title">) is drawn from the applicant's own dates.
+    for (const element of doc.querySelectorAll('.beautiful-timeline-item__info, .attachment-upload-button__download, '
+      + '.standard-apply-flow-dialog__header, .beautiful-timeline__year-title')) redactText(element);
+    for (const element of doc.querySelectorAll('.attachment-upload-button__download[title], .attachment-upload-button__download[aria-label]')) {
+      for (const name of ['title', 'aria-label']) if (element.hasAttribute(name)) element.setAttribute(name, input.redacted);
+    }
+    // The answer pills (<ul role="radiogroup" class="cx-select-pills-container"><button role="radio" aria-checked="true"
+    // class="cx-select-pill-section cx-select-pill-section--selected">): every one unchosen.
+    for (const pill of doc.querySelectorAll('.cx-select-pill-section')) {
+      if (pill.getAttribute('aria-checked') === 'true' || pill.classList.contains('cx-select-pill-section--selected')) {
+        counts.checked += 1;
+      }
+      pill.setAttribute('aria-checked', 'false');
+      pill.classList.remove('cx-select-pill-section--selected');
+    }
+  } else if (input.platform === 'smartrecruiters') {
+    // [jobs.smartrecruiters.com] the one-click application: its form elements carry what was typed or chosen in their
+    // value attribute (<spl-input ... value>, <spl-phone-field value='{"country":"US"}'>, <spl-radio-group value="0">,
+    // <spl-checkbox value="false">); an option's own value (spl-radio, spl-select-option) is kept. A custom element's
+    // value is the generic pass's (redactApplicantTextInPage), which keeps a -checkbox element's as an option's: the box's
+    // own spl-checkbox value, its chosen state, is cleared here.
+    for (const field of doc.querySelectorAll('spl-checkbox[value]')) {
+      if ((field.getAttribute('value') ?? '') !== '') counts.typedValues += 1;
+      field.setAttribute('value', '');
+    }
+    // (A chosen spl-radio's or spl-checkbox's aria-checked="true" is the generic pass's, clearChoicesInPage.)
+    // The phone field's country list draws a flag per country (<spl-country-flag ...><img class="c-spl-country-flag"
+    // width="24" height="18" src="...">, 245 of them, nearly all of the one-click page's weight): each becomes a grey
+    // SVG of its own size, as an image over IMAGE_INLINE_MAX does, so its box is unchanged.
+    for (const flag of doc.querySelectorAll('img.c-spl-country-flag')) {
+      const width = Number(flag.getAttribute('width')) || /** @type {HTMLImageElement} */ (flag).naturalWidth;
+      const height = Number(flag.getAttribute('height')) || /** @type {HTMLImageElement} */ (flag).naturalHeight;
+      if (!width || !height) continue;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`
+        + '<rect width="100%" height="100%" fill="#d0d0d0"/></svg>';
+      flag.setAttribute('src', `data:image/svg+xml;base64,${globalThis.btoa(svg)}`);
+      counts.placeholders += 1;
+    }
+    // A select's chosen value as its trigger shows it (<div slot="triggerPrefix" class="c-spl-phone-field-selected">: the
+    // phone's country, its flag's alt and code and its dialling code): its words and the attributes that name it.
+    for (const chosen of doc.querySelectorAll('[slot="triggerPrefix"]')) {
+      redactText(chosen);
+      for (const element of [chosen, ...chosen.querySelectorAll('*')]) {
+        for (const name of ['alt', 'title', 'aria-label', 'countryisocode', 'label']) {
+          if (element.hasAttribute(name) && element.getAttribute(name) !== '') element.setAttribute(name, input.redacted);
+        }
+      }
+    }
+  }
+  return counts;
+}
+
 /** The frame's document as text: its doctype, if it had one, then the root element. @returns {string} */
 export function serializeInPage() {
   const doc = globalThis.document;
@@ -945,9 +2194,11 @@ export function serializeInPage() {
 
 /**
  * Searches the loaded fixture the way the redaction did: text, comments and attributes, for emails, phone numbers and
- * the listed strings. Returns how many of each it found, never the values.
+ * the listed strings, and the file names the page showed (redactApplicantTextInPage). Returns how many of each it found,
+ * never the values.
  * @param {{ redact: string[]; email: string; notEmail: string; phone: string;
- *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; found: string[] }} input
+ *   phoneDigits: { min: number; minWithPlus: number; max: number }; phoneAttributes: string[]; found: string[];
+ *   fileNames?: string[] }} input
  */
 export function rescanInPage(input) {
   const doc = globalThis.document;
@@ -961,6 +2212,7 @@ export function rescanInPage(input) {
   /** @param {string} text @param {boolean} phones */
   const check = (text, phones) => {
     if (listed.some((pattern) => pattern.test(text))) hits.listed += 1;
+    if ((input.fileNames ?? []).some((name) => text.includes(name))) hits.found += 1;
     const lower = text.toLowerCase();
     if (foundEmails.some((value) => lower.includes(value)) || (phones && foundPhones.some((value) => text.includes(value)))) {
       hits.found += 1;
@@ -1029,9 +2281,129 @@ export function checkedForms(text) {
   return [masked, entities, decodePercents(entities)].map((form) => form.toLowerCase());
 }
 
+// ── snapshot build 2026-11-06 (core pass Z1, item 38): the token checks, one list for the conversion and the sweep ──
+/**
+ * The final check's needles that read no owner's list: Jobright's jr_id anywhere (DESIGN-NEW-ATS §6.4, §6.5); and (the
+ * snapshot build of 2026-11-06, every platform) no other extension's parameter or UI and no per-load token
+ * (INJECTED_PARAMS, after any separator, plain or percent-encoded; INJECTED_UI's ids; PER_LOAD_PARAMS, whose value must
+ * be REDACTED and nothing after it: a token's percent-encoded padding left behind is refused), no sign-in token
+ * (SIGN_IN_TOKEN_SOURCES) and no JWT under any name. Each is read over checkedForms' forms. The conversion adds the
+ * owner's strings, the emails and the file names it found; test/mhtml-to-fixture.test.ts sweeps every committed
+ * fixture with these. @returns {Array<{ label: string; pattern: RegExp }>}
+ */
+export function tokenNeedles() {
+  return [
+    { label: 'jr_id', pattern: /jr_id/i },
+    { label: 'another extension\'s parameter', pattern: new RegExp(`(?:[?&;]|%3F|%26)(?:${INJECTED_PARAMS.map((entry) => {
+      const [name = '', value] = entry.split('=');
+      return `${escapeSource(name)}(?:=|%3D)${value === undefined ? '' : `${escapeSource(value)}(?![\\w-])`}`;
+    }).join('|')})`, 'i') },
+    { label: 'another extension\'s UI',
+      pattern: new RegExp(INJECTED_UI.map((selector) => escapeSource(selector.split('#').pop() ?? selector)).join('|'), 'i') },
+    // (checkedForms lower-cases what it decodes, so REDACTED is compared in any case.)
+    { label: 'a per-load token', pattern: new RegExp(`[?&;](?:${PER_LOAD_PARAMS.join('|')})=(?!${REDACTED}(?:[&#"'\\s<]|$))`, 'i') },
+    // Every platform: no sign-in token (SIGN_IN_TOKEN_SOURCES), plain or percent-encoded.
+    { label: 'a sign-in token', pattern: new RegExp(`(?:[?&;#]|%3F|%26|%23)id_token(?:=|%3D)(?!${REDACTED}(?![\\w.-]))`
+      + `|silent-callback\\.html(?:\\?|%3F)code(?:=|%3D)(?!${REDACTED}(?![\\w-]))`, 'i') },
+    // Every platform: no JWT under any name (its header and claims base64url JSON, each starting "eyJ": UltiPro's
+    // id_token named the account in its claims), outside an inlined image or stylesheet.
+    { label: 'a JWT', pattern: /(?<![\w-])eyj[\w-]{8,}\.eyj[\w-]{8,}\./i },
+  ];
+}
+// ── end core pass Z1, item 38 ──
+
+// ── The security fix of 2026-11-06 (S2, S3, S10): the chosen marks a written fixture may not hold ──
+/** The attributes of a start tag's text: name (lower case) to value, entities as written (none of the checks need them
+ *  decoded). @param {string} text @returns {Map<string, string>} */
+function attributesOf(text) {
+  /** @type {Map<string, string>} */
+  const attributes = new Map();
+  for (const [, name = '', double, single, bare] of text.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
+    attributes.set(name.toLowerCase(), double ?? single ?? bare ?? '');
+  }
+  return attributes;
+}
+
+/**
+ * The kinds of chosen mark a written fixture still holds (the security fix of 2026-11-06, S2, S3, S10), by their
+ * labels alone (never a value): the conversion refuses a file that holds one, as it refuses jr_id, and
+ * test/mhtml-to-fixture.test.ts sweeps every committed fixture with it. Read over the markup, stylesheets, scripts and
+ * comments aside:
+ * - a CSS module's chosen class (MODULE_CHOSEN_SOURCE), MUI's (MUI_CHOSEN), a CHOSEN_MARKS class of its own name (Ant's,
+ *   react-widgets');
+ * - a BEM chosen modifier (BEM_CHOSEN_SOURCE) on an option or a choice (CHOICE_ROLES, or a class naming one);
+ * - aria-selected="true" on an option, a calendar's day or a tree's item (CHOSEN_OPTION_ROLES; Workday's own
+ *   data-value="" "Select One" aside);
+ * - aria-checked="true", aria-pressed="true", data-checked="true" or a bare data-checked;
+ * - a custom list item or option that says it is selected (<spl-dropdown-item selected>), and a radio or box input that
+ *   says it is checked.
+ * @param {string} text @returns {string[]}
+ */
+export function chosenMarksIn(text) {
+  const markup = text.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+  const module = new RegExp(MODULE_CHOSEN_SOURCE);
+  const bem = new RegExp(BEM_CHOSEN_SOURCE);
+  const choiceClass = new RegExp(CHOICE_CLASS_SOURCE, 'i');
+  const named = new Set(CHOSEN_MARKS.flatMap((mark) => mark.classes ?? []).filter((name) => name !== 'selected'
+    && !MUI_CHOSEN.includes(name)));
+  /** @type {Set<string>} */
+  const found = new Set();
+  for (const [, tag = '', rest = ''] of markup.matchAll(/<([a-zA-Z][\w-]*)((?:\s[^<>]*?)?)\/?>/g)) {
+    const name = tag.toLowerCase();
+    const attributes = attributesOf(rest);
+    const classes = (attributes.get('class') ?? '').split(/\s+/).filter((each) => each !== '');
+    const role = (attributes.get('role') ?? '').trim().toLowerCase().split(/\s+/)[0] ?? '';
+    const is = (/** @type {string} */ attribute) => (attributes.get(attribute) ?? '').trim().toLowerCase() === 'true';
+    if (classes.some((each) => module.test(each))) found.add("a CSS module's chosen class");
+    if (classes.some((each) => MUI_CHOSEN.includes(each))) found.add("MUI's chosen class");
+    if (classes.some((each) => named.has(each))) found.add('a chosen class CHOSEN_MARKS names');
+    const choice = CHOICE_ROLES.includes(role) || classes.some((each) => choiceClass.test(each));
+    if (choice && classes.some((each) => bem.test(each))) found.add("an option's or a choice's chosen modifier");
+    if (CHOSEN_OPTION_ROLES.includes(role) && is('aria-selected') && attributes.get('data-value') !== '') {
+      found.add('a chosen option (aria-selected)');
+    }
+    if (is('aria-checked') || is('aria-pressed')) found.add('a ticked or pressed control (aria-checked, aria-pressed)');
+    const dataChecked = attributes.get('data-checked');
+    if (dataChecked !== undefined && ['', 'true'].includes(dataChecked.trim().toLowerCase())) {
+      found.add('a ticked control (data-checked)');
+    }
+    if (name.includes('-') && /(?:item|option)$/.test(name) && attributes.has('selected')) {
+      found.add('a list item that says it is selected');
+    }
+    if (name === 'input' && attributes.has('checked') && /^(?:radio|checkbox)$/i.test(attributes.get('type') ?? '')) {
+      found.add('a radio or box input that says it is checked');
+    }
+  }
+  return [...found];
+}
+// ── end of the security fix's block ──
+
 // ---------------------------------------------------------------------------------------------------------------------
 // The conversion
 // ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * @typedef {{ when: 'before' | 'after'; run: (arg: any) => Record<string, number>; arg: (platform: string) => unknown;
+ *   counts: 'header' | 'frame' | 'none' }} PlatformRedaction
+ */
+
+/**
+ * The in-page redactions a platform adds to the generic passes (stripInjectedInPage, clearChoicesInPage,
+ * redactApplicantTextInPage and transformInPage), dispatched by --platform: each runs in every converted frame, `before` or
+ * `after` transformInPage, given what `arg` builds. Its counts go under redacted.<platform> in the fixture's header
+ * ('header'), are added to the frame's own counts ('frame'), or are not recorded ('none').
+ * @type {Record<string, PlatformRedaction>}
+ */
+const PLATFORM_REDACTIONS = {
+  // Workday's application steps (the owner's snapshots of 2026-11-06): what the generic redaction misses there.
+  workday: { when: 'before', run: redactWorkdayInPage, arg: () => ({ redacted: REDACTED }), counts: 'header' },
+  // iCIMS's signed-in pages (the owner's snapshots of 2026-11-06): the header's name, a current file, its dropdowns.
+  icims: { when: 'after', run: icimsRedactInPage, arg: () => REDACTED, counts: 'none' },
+  // Oracle's apply flow and SmartRecruiters' one-click application (the snapshot build of 2026-11-06, oracle-sf-sr).
+  oracle: { when: 'after', run: redactPlatformInPage, arg: (platform) => ({ platform, redacted: REDACTED }), counts: 'frame' },
+  smartrecruiters: { when: 'after', run: redactPlatformInPage, arg: (platform) => ({ platform, redacted: REDACTED }),
+    counts: 'frame' },
+};
 
 /** The URL without its fragment, as a request carries it. @param {string} url */
 const withoutFragment = (url) => {
@@ -1040,14 +2412,55 @@ const withoutFragment = (url) => {
   return parsed.href;
 };
 
+// ── New ATSs (DESIGN-NEW-ATS §6.2, Phase 0) ──
+/** The attribute that marks the host of a closed shadow root in the capture (Cloudflare Turnstile's, ultipro-2). */
+export const CLOSED_ROOT_MARK = 'data-fixture-closed-root';
+
+/**
+ * Marks every host of a closed shadow root in the capture's frames (CLOSED_ROOT_MARK), read through the DevTools
+ * protocol, the only reader of a closed root. Page code cannot read such a root and the fixture cannot keep it, so
+ * transformInPage stands its host in by its box (as a large image is by a same-size placeholder), which keeps the
+ * layout around it, and the visibility check, as the capture rendered them. Answers how many it marked.
+ * @param {import('playwright').BrowserContext} context @param {import('playwright').Page} page
+ */
+async function markClosedShadowHosts(context, page) {
+  const session = await context.newCDPSession(page);
+  try {
+    const { root } = await session.send('DOM.getDocument', { depth: -1, pierce: true });
+    /** @type {number[]} */
+    const hosts = [];
+    /** @param {any} node */
+    const walk = (node) => {
+      for (const shadow of node.shadowRoots ?? []) {
+        if (shadow.shadowRootType === 'closed') hosts.push(node.nodeId);
+        walk(shadow);
+      }
+      for (const child of node.children ?? []) walk(child);
+      if (node.contentDocument) walk(node.contentDocument);
+    };
+    walk(root);
+    for (const nodeId of hosts) await session.send('DOM.setAttributeValue', { nodeId, name: CLOSED_ROOT_MARK, value: '' });
+    return hosts.length;
+  } finally {
+    await session.detach();
+  }
+}
+// ── end New ATSs ──
+
 /** Whether an address is on a host the extension runs on (https only, as the manifest matches). @param {string} url */
 export function onAtsHost(url) {
   try {
     const parsed = new URL(url);
     // Oracle's candidate pages by their path too, as src/shared/hosts.ts platformOfUrl reads them.
-    if (parsed.hostname.endsWith('.oraclecloud.com') && !parsed.pathname.startsWith('/hcmUI/CandidateExperience/')) {
+    if ((parsed.hostname.endsWith('.oraclecloud.com') || parsed.hostname.endsWith('.oraclegovcloud.com'))
+      && !parsed.pathname.startsWith('/hcmUI/CandidateExperience/')) {
       return false;
     }
+    // ── New ATSs (DESIGN-NEW-ATS §6.1): their hosts, path-scoped as src/shared/hosts.ts reads them ──
+    const host = parsed.hostname.toLowerCase();
+    if (parsed.protocol === 'https:' && NEW_ATS_HOSTS.some((entry) => entry.host.test(host)
+      && (entry.paths === undefined || entry.paths.some((path) => parsed.pathname.startsWith(path))))) return true;
+    // ── end New ATSs ──
     return parsed.protocol === 'https:' && ATS_HOST.test(parsed.hostname);
   } catch {
     return false;
@@ -1067,12 +2480,14 @@ const commentJson = (value) => JSON.stringify(value).replace(/--/g, '-\\u002d');
  * Converts a capture into fixture files, in memory: nothing is written. Throws a ConversionError, naming each failed
  * check, when the result would leak a listed string, an email or a phone number, when it would make a request, or when
  * visibility changed.
- * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string }} options
+ * @param {{ file: string; platform: string; caseName: string; redact?: string[]; outDir?: string; folderName?: string }} options
  * @returns {Promise<Conversion>}
  */
-export async function convertMhtml({ file, platform, caseName, redact = [], outDir = join(ROOT, 'fixtures') }) {
+export async function convertMhtml({ file, platform, caseName, redact = [], outDir = join(ROOT, 'fixtures'),
+  folderName = platform }) {
   if (!FIXTURE_PLATFORMS.includes(platform)) fail(`--platform must be one of ${FIXTURE_PLATFORMS.join(', ')}`);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(caseName)) fail('--case must be lower-case words joined by hyphens');
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(folderName)) fail('--folder must be lower-case words joined by hyphens');
   if (!/\.mht(?:ml)?$/i.test(file)) fail('the capture must be an .mhtml file');
   const mhtml = parseMhtml(readFileSync(file));
   const htmlParts = mhtml.parts.filter((part) => part.contentType === 'text/html');
@@ -1081,10 +2496,18 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   if (!main || !mainUrl || !/^https?:/i.test(mainUrl)) fail('the capture names no web address for its page');
   const captured = mhtml.date && !Number.isNaN(Date.parse(mhtml.date)) ? new Date(mhtml.date).toISOString() : null;
 
-  const folder = join(outDir, platform);
+  // Snapshot build, boards: --folder puts a case beside others of its kind (fixtures/sites: a company's page and the
+  // ATS frame it embeds), its header named so; the platform still decides how the frames are normalised.
+  const folder = join(outDir, folderName);
   /** A frame's address as its fixture is served and named: its per-load tokens normalised as the page's are (the
    *  frames' src attributes hold the same), so the header and the route map keep none (v3 Phase 7b). */
-  const addressOf = (/** @type {string} */ url) => normaliseTokens(platform, url).text;
+  const addressOf = (/** @type {string} */ url) => redactNewAtsAddress(platform,
+    normaliseTokens(platform, withoutInjectedParams(url)).text);
+  /** A third-party frame's address as the page's src now writes it (another extension's parameters dropped, a sign-in
+   *  token or a new ATS's per-load token redacted: DESIGN-NEW-ATS §6.5, §6.6), so the route map answers the address the
+   *  fixture asks for. */
+  const thirdPartyAddressOf = (/** @type {string} */ url) => redactNewAtsAddress(platform,
+    redactSignInTokens(stripInjectedParams(url).text));
   /** The path a route map gives for a file: repo-relative with forward slashes, or absolute outside the repo. */
   const routePath = (/** @type {string} */ path) => {
     const rel = relative(ROOT, path);
@@ -1095,11 +2518,18 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
   /** @type {Record<string, string | null>} */
   const frameUrls = {};
   for (const part of htmlParts.slice(1)) {
-    if (part.contentId) frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location) ? part.location : null;
+    // Snapshot build, boards: a frame's address without another extension's parameters (INJECTED_PARAMS).
+    if (part.contentId) {
+      frameUrls[part.contentId] = part.location && /^https?:/i.test(part.location) ? withoutInjectedParams(part.location)
+        : null;
+    }
   }
   const resources = resourcesOf(mhtml);
   const patterns = { redact: redactSources(redact), email: EMAIL_SOURCE, notEmail: NOT_EMAIL_SOURCE, phone: PHONE_SOURCE,
     phoneDigits: PHONE_DIGITS, phoneAttributes: PHONE_ATTRIBUTES };
+  // The snapshot build of 2026-11-06: a platform keeping shadow roots (oracle-sf-sr), and the platform's own redactions.
+  const deep = keepsShadowRoots(platform);
+  const own = PLATFORM_REDACTIONS[platform];
 
   const browser = await chromium.launch({ headless: true });
   try {
@@ -1110,6 +2540,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     await context.route(/^https?:/i, (route) => route.abort());
     const page = await context.newPage();
     await page.goto(pathToFileURL(resolve(file)).href, { waitUntil: 'load' });
+    // The new ATSs (DESIGN-NEW-ATS §6.2), every platform: each closed shadow root's host, marked for its stand-in.
+    await markClosedShadowHosts(context, page);
 
     // The frames to convert: the page, and each frame on an ATS host inside a converted frame.
     /** @type {Array<{ frame: import('playwright').Frame; url: string; path: string }>} */
@@ -1134,16 +2566,55 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     const thirdParty = new Set();
     /** @type {string[][]} */
     const before = [];
+    // Before anything is measured, on every platform: a shadow-root platform's frames are read with their shadow trees
+    // (deepenInPage, oracle-sf-sr); then what is not the site's page goes (stripInjectedInPage: another extension's UI,
+    // an overlay's shadow host where shadow roots are not kept, per-load values) and the choices a page mirrors are
+    // cleared (clearChoicesInPage), so the visibility check compares the site's own page (the snapshot build, boards).
+    /** @type {Array<{ injected: number; shadowOverlays: number; injectedParams: number; choices: number }>} */
+    const stripped = [];
+    for (const { frame } of converted) {
+      if (deep) await frame.evaluate(deepenInPage);
+      stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
+        dropOverlays: !deep, redacted: REDACTED }), ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
+        marks: CHOSEN_MARKS }) });
+    }
     for (const { frame } of converted) before.push(await frame.evaluate(measureInPage));
 
     /** @type {Set<string>} */
     const found = new Set();
+    /** The file names the pages showed (redactApplicantTextInPage), checked for as the found emails are.
+     *  @type {Set<string>} */
+    const fileNames = new Set();
     const thirdPartyPath = join(folder, `${caseName}.third-party-frame.html`);
-    for (const [index, { frame, url, path }] of converted.entries()) {
+    // Each frame is converted before the frame that holds it (the reverse of the order they were found in), on every
+    // platform. A parent's conversion points its frames' src at their real addresses, which navigates them (from the
+    // archive when it holds that address, else nowhere: the route aborts it, or a per-load token REDACTED in it), so a
+    // frame converted after its parent would be another document than the one measured, and a frame inside it detached:
+    // iCIMS's IForm frames its form a level deeper (<co>.icims.com/forms inside the portal's iframe#icims_formFrame,
+    // "Frame was detached" on every IForm snapshot), and a company page's Greenhouse embed carries a validityToken.
+    /** @type {OutputFile[]} */
+    const written = [];
+    for (const [index, { frame, url, path }] of [...converted.entries()].reverse()) {
+      // The generic applicant-text pass, then the platform's own redactions around the transformation
+      // (PLATFORM_REDACTIONS).
+      const applicant = await frame.evaluate(redactApplicantTextInPage, { fileNames: FILE_NAME_PLACES,
+        entries: ENTRY_SUMMARY_PLACES, chosen: CHOSEN_PLACES, profile: PROFILE_PLACES,
+        links: [...FILE_LINK_PLACES, ...ENTRY_SUMMARY_CONTROLS], redacted: REDACTED });
+      for (const name of applicant.names) fileNames.add(name);
+      const ownBefore = own?.when === 'before' ? await frame.evaluate(own.run, own.arg(platform)) : null;
       const outcome = await frame.evaluate(transformInPage, { resources, frameUrls, frameUrl: url, redacted: REDACTED,
         ...patterns });
-      const pruned = PRUNED_CSS_PLATFORMS.includes(platform) ? await frame.evaluate(pruneCssInPage) : null;
-      if (outcome.counts.shadowRoots > 0) fail(`${basename(path)}: the page has shadow roots, which the converter cannot keep yet`);
+      const ownAfter = own?.when === 'after' ? await frame.evaluate(own.run, own.arg(platform)) : null;
+      const ownCounts = ownBefore ?? ownAfter;
+      if (own?.counts === 'frame' && ownCounts !== null) {
+        for (const [key, count] of Object.entries(ownCounts)) {
+          outcome.counts[/** @type {keyof typeof outcome.counts} */ (key)] += count;
+        }
+      }
+      // A company's page (--folder sites, the snapshot build: boards) is pruned too, its sheets being most of its weight.
+      const pruned = PRUNED_CSS_PLATFORMS.includes(platform) || folderName === 'sites'
+        ? await frame.evaluate(pruneCssInPage) : null;
+      if (outcome.counts.shadowRoots > 0 && !deep) fail(`${basename(path)}: the page has shadow roots, which the converter cannot keep yet`);
       for (const link of outcome.linkedFrames) {
         if (!onAtsHost(link)) thirdParty.add(link);
         else if (!converted.some((entry) => entry.url === link)) {
@@ -1152,41 +2623,70 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
       for (const value of outcome.found) found.add(value);
       result.notes.push(...outcome.notes.map((note) => `${basename(path)}: ${note}`));
-      const serialized = JSON.parse(await frame.evaluate(serializeInPage));
+      const serialized = JSON.parse(await frame.evaluate(deep ? serializeDeepInPage : serializeInPage));
       const { doctype } = serialized;
-      const normalised = platform === 'ashby' ? normaliseAshby(serialized.html)
-        : platform === 'workable' ? { ...normaliseWorkable(serialized.html), nonces: 0 }
+      // Another extension's parameters leave the frame's text by the one rule, wherever they stand (stripInjectedParams),
+      // and so do its sign-in tokens (redactSignInTokens), on every platform.
+      const injected = stripInjectedParams(serialized.html);
+      /** @type {string[]} */
+      const signInTokens = [];
+      const pageText = redactSignInTokens(injected.text, signInTokens);
+      const normalised = platform === 'ashby' ? normaliseAshby(pageText)
+        : platform === 'workable' ? { ...normaliseWorkable(pageText), nonces: 0 }
           : ['workday', 'icims', 'taleo', 'successfactors', 'oracle'].includes(platform)
-            ? { ...normaliseTokens(platform, serialized.html), nonces: 0 } : null;
-      const html = normalised?.text ?? serialized.html;
-      // A token the normalisation replaced (a render id, the CSP nonce) is gone from the files: it is not listed.
-      result.tokens.push(...outcome.tokens.filter(({ token }) => normalised === null
-        || !normalised.renderIds.some((id) => token.includes(id)) && !(normalised.nonces > 0 && !html.includes(token)))
+            ? { ...normaliseTokens(platform, pageText), nonces: 0 }
+            // The new ATSs' per-load values (DESIGN-NEW-ATS §6.6).
+            : NEW_ATS_PLATFORMS.includes(platform) ? { ...normaliseNewAts(platform, pageText), nonces: 0 } : null;
+      const html = normalised?.text ?? pageText;
+      // A token the normalisation replaced (a render id, the CSP nonce), another extension's parameter dropped or a
+      // sign-in token redacted is gone from the files: it is not listed.
+      result.tokens.push(...outcome.tokens.filter(({ token }) => !injected.removed.some(({ value }) => value !== ''
+        && token.includes(value)) && !signInTokens.some((value) => token.includes(value))
+        && (normalised === null || !normalised.renderIds.some((id) => token.includes(id))
+        && !(normalised.nonces > 0 && !html.includes(token))))
         .map((token) => ({ ...token, file: basename(path) })));
       const { counts } = outcome;
+      const { choices = 0, ...took } = stripped[index] ?? { injected: 0, shadowOverlays: 0, injectedParams: 0 };
+      took.injectedParams += injected.removed.length;
+      // Jobright's jr_id among them, counted as the new ATSs' header names it (removed.jrIds).
+      const jrIds = injected.removed.filter(({ name }) => name === 'jr_id').length;
       const header = {
-        fixture: `${platform}/${basename(path, '.html')}`,
+        fixture: `${folderName}/${basename(path, '.html')}`,
         source: addressOf(url),
         captured,
         chrome,
         redacted: { typedValues: counts.typedValues, checked: counts.checked, selected: counts.selected,
           hiddenValues: counts.hiddenValues, widgetText: counts.widgetText, emails: counts.emails, phones: counts.phones,
-          listed: counts.listed },
+          listed: counts.listed, ...(applicant.applicantText > 0 ? { applicantText: applicant.applicantText } : {}),
+          ...(signInTokens.length > 0 ? { signInTokens: signInTokens.length } : {}),
+          ...(own?.counts === 'header' && ownCounts !== null ? { [platform]: ownCounts } : {}) },
         removed: { scripts: counts.scripts, eventHandlers: counts.eventHandlers, javascriptUrls: counts.javascriptUrls,
           bases: counts.bases, metaRefresh: counts.metaRefresh, metaHttpEquiv: counts.metaHttpEquiv,
-          embeds: counts.embeds, links: counts.links, srcdoc: counts.srcdoc },
+          embeds: counts.embeds, links: counts.links, srcdoc: counts.srcdoc, ...(jrIds > 0 ? { jrIds } : {}) },
         inlined: { stylesheets: counts.stylesheets, images: counts.images, placeholders: counts.placeholders,
           missing: counts.missing },
         ...(pruned === null ? {} : { pruned: { rulesKept: pruned.kept, rulesDropped: pruned.dropped } }),
         frames: { linked: counts.frames, blanked: counts.framesDropped },
         forms: counts.forms,
         ...(normalised === null ? {} : { normalised: { renderIds: normalised.renderIds.length, nonces: normalised.nonces } }),
+        // The open shadow roots kept, written as declarative ones (SHADOW_ROOT_PLATFORMS).
+        ...(deep ? { shadowRoots: counts.shadowRoots } : {}),
+        // The closed shadow roots stood in by their hosts' boxes (DESIGN-NEW-ATS §6.2).
+        ...(counts.closedRoots > 0 ? { closedShadowRoots: counts.closedRoots } : {}),
+        // What was taken as not the site's (another extension's UI and parameters, overlays, per-load values) and the
+        // choices cleared, each named only when there was something.
+        ...(Object.values(took).some((count) => count > 0) ? { injected: took } : {}),
+        ...(choices > 0 ? { cleared: { choices } } : {}),
       };
-      result.counts[basename(path)] = { ...counts };
+      result.counts[basename(path)] = { ...counts, ...took, choices, applicantText: applicant.applicantText, jrIds };
       const comment = `<!-- TailorIT fixture, converted by scripts/mhtml-to-fixture.mjs: convert the capture again ` +
         `rather than editing it.\n${commentJson(header)} -->`;
       // LF line ends throughout: HTML parsing treats CR LF as LF anyway, and git stores the fixture with LF.
-      result.files.push({ path, text: `${doctype ? `${doctype}\n` : ''}${comment}\n${html.replace(/\r\n?/g, '\n')}\n` });
+      written[index] = { path, text: `${doctype ? `${doctype}\n` : ''}${comment}\n${html.replace(/\r\n?/g, '\n')}\n` };
+    }
+    for (const [index, { url, path }] of converted.entries()) {
+      const file = written[index];
+      if (file !== undefined) result.files.push(file);
       if (index > 0 && withoutFragment(addressOf(url)) in result.routes) {
         result.notes.push(`${basename(path)}: another frame has the same address, so the route map serves the first`);
       } else {
@@ -1194,13 +2694,13 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
       }
     }
     if (thirdParty.size > 0) {
-      const header = { fixture: `${platform}/${caseName}.third-party-frame`, source: 'a stand-in for third-party frames',
+      const header = { fixture: `${folderName}/${caseName}.third-party-frame`, source: 'a stand-in for third-party frames',
         captured, chrome, hosts: [...new Set([...thirdParty].map((url) => new URL(url).hostname))].sort() };
       result.files.push({ path: thirdPartyPath, text: `<!DOCTYPE html>\n<!-- TailorIT fixture: the extension never runs ` +
         `in a third-party frame, so its content is not kept.\n${commentJson(header)} -->\n<html><head><meta ` +
         `charset="utf-8"><title>Third-party frame</title></head><body></body></html>\n` });
       for (const url of thirdParty) {
-        const key = withoutFragment(url);
+        const key = withoutFragment(thirdPartyAddressOf(url));
         if (!(key in result.routes)) result.routes[key] = routePath(thirdPartyPath);
       }
     }
@@ -1229,6 +2729,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         reasons.push(`${basename(path)}: the frame did not load from the route map`);
         continue;
       }
+      if (deep) await frame.evaluate(deepenInPage);
       const after = await frame.evaluate(measureInPage);
       const was = before[index] ?? [];
       result.notes.push(`${basename(path)}: visibility compared for ${was.length} elements ` +
@@ -1239,7 +2740,7 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
         const changed = after.flatMap((state, at) => (state === was[at] ? [] : [`#${at} ${was[at]} -> ${state}`]));
         if (changed.length > 0) reasons.push(`${basename(path)}: visibility changed for ${changed.length} elements (${changed.slice(0, 5).join(', ')})`);
       }
-      const hits = await frame.evaluate(rescanInPage, { ...patterns, found: [...found] });
+      const hits = await frame.evaluate(rescanInPage, { ...patterns, found: [...found], fileNames: [...fileNames] });
       for (const [kind, count] of Object.entries(hits)) {
         if (count > 0) reasons.push(`${basename(path)}: ${count} ${kind === 'found' ? 'redacted values' : kind} still in the page`);
       }
@@ -1249,12 +2750,17 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
 
     // The written text itself, with encodings undone: no listed string and no found email may remain.
     const needles = [...redact.map((entry, index) => ({ label: `redact entry ${index + 1}`, pattern: new RegExp(redactSources([entry])[0] ?? '', 'i') })),
-      ...[...found].filter((value) => value.includes('@')).map((value) => ({ label: 'a redacted email', pattern: new RegExp(escapeRegExp(value), 'i') }))];
+      ...[...found].filter((value) => value.includes('@')).map((value) => ({ label: 'a redacted email', pattern: new RegExp(escapeRegExp(value), 'i') })),
+      // A file name the page showed (redactApplicantTextInPage), and Jobright's jr_id anywhere (DESIGN-NEW-ATS §6.4, §6.5).
+      ...[...fileNames].map((value) => ({ label: 'a redacted file name', pattern: new RegExp(escapeRegExp(value), 'i') })),
+      ...tokenNeedles()];
     for (const output of [...result.files, { path: join(folder, `${caseName}.routes.json`), text: JSON.stringify(result.routes) }]) {
       const forms = checkedForms(output.text);
       for (const { label, pattern } of needles) {
         if (forms.some((form) => pattern.test(form))) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
       }
+      // The security fix of 2026-11-06 (S2): no chosen mark (an answer drawn on a control or a list) is written.
+      for (const label of chosenMarksIn(output.text)) reasons.push(`${basename(output.path)}: ${label} is still in the file`);
     }
     if (reasons.length > 0) throw new ConversionError(reasons);
     return result;
@@ -1298,7 +2804,7 @@ function parseArgs(argv) {
   const positional = [];
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? '';
-    if (['--platform', '--case', '--redact', '--out'].includes(arg)) {
+    if (['--platform', '--case', '--redact', '--out', '--folder'].includes(arg)) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) fail(`${arg} needs a value`);
       options[arg.slice(2)] = value;
@@ -1310,20 +2816,20 @@ function parseArgs(argv) {
     }
   }
   if (positional.length !== 1 || !options.platform || !options.case) {
-    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>]');
+    fail('usage: node scripts/mhtml-to-fixture.mjs <file.mhtml> --platform <platform> --case <name> [--redact <file>] [--out <folder>] [--folder <name>]');
   }
   return { file: positional[0] ?? '', platform: options.platform, caseName: options.case, redactFile: options.redact,
-    outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures') };
+    outDir: options.out ? resolve(options.out) : join(ROOT, 'fixtures'), folderName: options.folder ?? options.platform };
 }
 
 async function main() {
   try {
-    const { file, platform, caseName, redactFile, outDir } = parseArgs(process.argv.slice(2));
+    const { file, platform, caseName, redactFile, outDir, folderName } = parseArgs(process.argv.slice(2));
     if (!existsSync(file)) fail(`${file} does not exist`);
     if (redactFile !== undefined && !existsSync(redactFile)) fail(`${redactFile} does not exist`);
     const redact = redactFile === undefined ? [] : readRedactList(readFileSync(redactFile, 'utf8'));
-    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir });
-    const written = writeConversion(conversion, join(outDir, platform), caseName);
+    const conversion = await convertMhtml({ file, platform, caseName, redact, outDir, folderName });
+    const written = writeConversion(conversion, join(outDir, folderName), caseName);
     console.log(paint('green', `✓ ${basename(file)} -> ${platform}/${caseName} (Chromium ${conversion.chrome})`));
     for (const path of written) {
       console.log(`  ${relative(ROOT, path).split('\\').join('/')}  ${(statSync(path).size / 1024).toFixed(1)} KiB`);

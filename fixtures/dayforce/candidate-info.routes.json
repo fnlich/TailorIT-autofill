@@ -1,0 +1,5 @@
+{
+  "https://jobs.dayforcehcm.com/en-US/savealot/candidateportal/jobs/9234/apply/manualApplication?applicationSource=Manual": "fixtures/dayforce/candidate-info.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LefHBYnAAAAADeXPZsiYH6oWbixfkQ2Te8pkJt7&co=aHR0cHM6Ly9qb2JzLmRheWZvcmNlaGNtLmNvbTo0NDM.&hl=en&type=image&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&theme=light&size=invisible&badge=bottomright&anchor-ms=20000&execute-ms=30000&cb=321bzntx8v00": "fixtures/dayforce/candidate-info.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&k=6LefHBYnAAAAADeXPZsiYH6oWbixfkQ2Te8pkJt7&bft=REDACTED": "fixtures/dayforce/candidate-info.third-party-frame.html"
+}

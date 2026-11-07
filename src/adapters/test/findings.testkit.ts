@@ -49,6 +49,16 @@ export const DRAWN_BY_WRAPPER: Readonly<Record<string, readonly string[]>> = {
     '#question_70213332'],
 };
 
+/*
+ * Snapshot build, boards (the owner's capture of 2026-11-06, fixtures/workable/jobs-salvo-apply.html): Workable's
+ * application form open in jobs.workable.com's modal dialog, whose content region scrolls (overflow-y: auto, 791 px
+ * tall, 2,530 px of content) inside a position: fixed wrapper. Its eight controls below the dialog's fold (Photo,
+ * Summary, Resume, Cover letter and the four YES/NO questions) were no fields while dom/visibility.ts judged a box with
+ * a fixed ancestor by the viewport alone. Fixed in the scanner by the core pass of 2026-11-06 (rule 5: a scroll
+ * container between a box and its fixed ancestor makes its scroll area reachable; rule 6: the clips above that
+ * container cut its content across only), so its entry is gone.
+ */
+
 /** The differences a scan of this case's snapshot is known to show until the scanner changes, in the order
  *  compareWithExpectation reports them. */
 export function awaitingScanner(expectation: Expectation): Mismatch[] {

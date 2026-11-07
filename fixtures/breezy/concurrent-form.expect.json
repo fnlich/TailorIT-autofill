@@ -1,0 +1,134 @@
+{
+  "fixture": "breezy/concurrent-form",
+  "source": "https://concurrent-technologies-corporation.breezy.hr/p/4362758f2795-senior-software-engineer-specialist/apply",
+  "captured": "2026-11-06T17:28:35.000Z",
+  "fields": [
+    {
+      "label": "",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#main-attachment",
+      "note": "KNOWN, pinned by the test: no visible words name the résumé (its opener a.button.resume in the apply buttons reads \"Attached\" once a file is in; its words before that are in no snapshot), so it reads with no label and is the person's. Its display:none input is required; the opener is the adapter's upload control."
+    },
+    {
+      "label": "Full Name",
+      "kind": "text",
+      "required": true,
+      "section": "personal-details",
+      "fillable": true,
+      "control": "input[name=\"cName\"]",
+      "note": "Titled by the h3 just before it (the placeholder repeats it); required by its required attribute and the h3's star."
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "personal-details",
+      "fillable": true,
+      "control": "input[name=\"cEmail\"]"
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "personal-details",
+      "fillable": true,
+      "control": "input[name=\"cPhoneNumber\"]"
+    },
+    {
+      "label": "By providing your phone number you agree to receive informational text messages from Concurrent Technologies Corporation. Concurrent Technologies Corporation will send updates about your application via SMS. Message & data rates may apply, reply STOP to opt out at any time.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "personal-details",
+      "fillable": true,
+      "control": "input[name=\"smsConsent\"]",
+      "note": "A lone consent box, its words the span beside it (ng-bind getSmsConsentText())."
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "personal-details",
+      "fillable": true,
+      "control": "[id=\"fullAddress\"]"
+    },
+    {
+      "label": "Desired Salary currency",
+      "kind": "select",
+      "required": false,
+      "section": "personal-details",
+      "fillable": true,
+      "options": 119,
+      "control": "select[name=\"salaryCurrency\"]",
+      "note": "One h3 (Desired Salary) titles three controls; the currency select (ng-model candidate.salary.currency) is told apart by \"currency\"."
+    },
+    {
+      "label": "Desired Salary",
+      "kind": "text",
+      "required": false,
+      "section": "personal-details",
+      "fillable": true,
+      "control": "input[name=\"cSalary\"]"
+    },
+    {
+      "label": "Desired Salary period",
+      "kind": "select",
+      "required": false,
+      "section": "personal-details",
+      "fillable": true,
+      "options": 4,
+      "control": "div.desired-salary select:not([name=\"salaryCurrency\"])",
+      "note": "The period select (ng-model candidate.salary.period, no name): \"period\"."
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "textarea",
+      "required": false,
+      "section": "cover-letter",
+      "fillable": true,
+      "control": "textarea[name=\"cCoverLetter\"]",
+      "note": "Titled by the div.section-header before it (no placeholder)."
+    },
+    {
+      "label": "Race or Ethnicity",
+      "kind": "radio",
+      "required": true,
+      "section": "were-an-equal-opportunity-employer",
+      "fillable": true,
+      "options": 8,
+      "control": "input[name=\"race_ethnicity\"]",
+      "note": "Required while unanswered (ng-required=\"!eeoc.race_ethnicity\"; its required attribute comes and goes with the answer)."
+    },
+    {
+      "label": "Gender",
+      "kind": "radio",
+      "required": true,
+      "section": "were-an-equal-opportunity-employer",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"gender\"]"
+    },
+    {
+      "label": "Veteran status",
+      "kind": "radio",
+      "required": true,
+      "section": "were-an-equal-opportunity-employer",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"eeoc.veteran_status\"]",
+      "note": "Titled by the h3 above the legal text that separates it from its radios."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"hp_7f2b\"]",
+      "note": "The honeypot (div.apply-field-extra: aria-hidden, 9999 px off the left, opacity 0): never a field."
+    }
+  ]
+}

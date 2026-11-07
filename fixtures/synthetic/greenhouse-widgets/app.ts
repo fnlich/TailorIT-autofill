@@ -34,7 +34,9 @@
  *   setting .checked does not;
  * - choosing No for "Are you Hispanic/Latino?" reveals the Race question;
  * - the buttons the extension must never press ("Autofill my application", "Locate me", Dropbox, Google Drive, "Enter
- *   manually", "Clear selections", a chip's remove button) record every press.
+ *   manually", "Clear selections", a chip's remove button, and an attached resume's "Remove file") record every press;
+ * - a file put into the resume's input takes the input out of the page and shows the file's name beside "Remove file"
+ *   (the owner's captures of 2026-11-06: GhUpload).
  * Which questions (MountOptions.form): 'standard' draws the ones above; 'beyondtrust' draws the three the live
  * BeyondTrust form (2026-11-01, fixtures/greenhouse/beyondtrust-job) left for the person, beside the names and email:
  * "Please confirm the basis of your right to work in the country of employment" with its three sentences, "Please
@@ -438,22 +440,36 @@ function never(words: string, env: Env, props: Record<string, unknown> = {}): Re
   return h('button', { type: 'button', ...props, onClick: () => env.log.pressed.push(words) }, words);
 }
 
-/** The resume's upload group, as Greenhouse draws it. */
+/** The resume's upload group, as Greenhouse draws it. Once a file is in its input, Greenhouse takes the input out of the
+ *  page and shows the file's name beside "Remove file" in its place (the owner's captures of 2026-11-06,
+ *  fixtures/greenhouse/axle-attached.html: <div class="file-upload__filename"><svg/><p class="body
+ *  body__secondary">NAME</p><button type="button" class="icon-button icon-button--sm" aria-label="Remove file">). */
 function GhUpload({ env }: { env: Env }): ReactElement {
-  return h('div', { className: 'field-wrapper' }, h('div', { role: 'group', 'aria-labelledby': 'upload-label-resume',
-    'aria-required': 'true', className: 'file-upload' },
+  const [attached, setAttached] = useState<string | null>(null);
+  const group = (body: ReactElement) => h('div', { className: 'field-wrapper' }, h('div', { role: 'group',
+    'aria-labelledby': 'upload-label-resume', 'aria-required': 'true', className: 'file-upload' },
   h('div', { id: 'upload-label-resume', className: 'label upload-label' }, 'Resume/CV', h('span', { className: 'required' }, '*')),
-  h('div', { className: 'file-upload__wrapper' }, h('div', { className: 'button-container' },
+  h('div', { className: 'file-upload__wrapper' }, body)));
+  if (attached !== null) {
+    return group(h('div', { className: 'file-upload__filename' }, h('p', { className: 'body body__secondary' }, attached),
+      h('button', { type: 'button', className: 'icon-button icon-button--sm', 'aria-label': 'Remove file',
+        onClick: () => env.log.pressed.push('Remove file') }, '×')));
+  }
+  return group(h('div', { className: 'button-container' },
     h('div', { className: 'secondary-button' }, h('div', null,
       h('button', { type: 'button', className: 'btn btn--rounded' }, 'Attach'),
       h('label', { className: 'visually-hidden', htmlFor: 'resume' }, 'Attach'),
       h('input', { id: 'resume', className: 'visually-hidden', type: 'file', accept: '.pdf,.doc,.docx,.txt,.rtf',
-        onChange: (event: ChangeEvent<HTMLInputElement>) => env.setValue('resume', event.target.files?.[0]?.name ?? null) }))),
+        onChange: (event: ChangeEvent<HTMLInputElement>) => {
+          const name = event.target.files?.[0]?.name ?? null;
+          env.setValue('resume', name);
+          if (name !== null) setAttached(name);
+        } }))),
     h('div', { className: 'secondary-button' }, never('Dropbox', env, { className: 'btn btn--rounded', 'data-testid': 'resume-dropbox' })),
     h('div', { className: 'secondary-button' }, never('Google Drive', env, { className: 'btn btn--rounded' })),
     h('div', { className: 'secondary-button' }, h('div', null,
       never('Enter manually', env, { className: 'btn btn--rounded', 'data-testid': 'resume-text' }),
-      h('label', { className: 'visually-hidden', htmlFor: 'resume_text' }, 'Enter manually')))))));
+      h('label', { className: 'visually-hidden', htmlFor: 'resume_text' }, 'Enter manually')))));
 }
 
 /** A number as the phone draws it once a +1 country is chosen from the list (MountOptions.phonePicks): its ten national

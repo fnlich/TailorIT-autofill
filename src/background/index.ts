@@ -12,7 +12,7 @@ import { planFrame } from '../core/plan/frame';
 import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize';
 import type { RunState } from '../core/types/run';
 import { ok, refuse } from '../messaging/envelope';
-import { ExternalMessageSchema } from '../messaging/schemas';
+import { ExternalMessageSchema, type ContentMessage } from '../messaging/schemas';
 import { createWorkerPlatform } from '../platform/chrome';
 import type { PortLike, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
@@ -25,9 +25,10 @@ import { createPanelLetters, LETTER_LIMIT } from './cover-letters';
 import { createAnswerHandlers } from './row-actions';
 import type { CoreFunctions } from './core';
 import {
-  cardFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames, frameEntry, framesOfTab, frameTarget, navOf,
-  registerFrame,
+  agentFramesOf, cardFrameOf, chainOf, claimFrameOf, createFrameSweep, forgetFrames, forgetTab as forgetTabFrames,
+  frameEntry, framesOfTab, frameTarget, navOf, registerFrame, type FrameChain, type FrameEntry,
 } from './frames';
+import { createChains } from './chain';
 import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
 import { createLauncherStore, LAUNCHER_LIMIT } from './launcher';
 import { createKeyedQueue, createRateLimit } from './locks';
@@ -278,6 +279,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     disclosed: () => auth.disclosed(),
     reports: (tabId) => reports.ofTab(tabId),
     topFrame: (tabId) => topFrameOf(tabId),
+    // core-x, item 3: the frames the agent acts in for the tab's application (frames.ts agentFramesOf).
+    agentFrames: async (tabId) => agentFramesOf(await framesOfTab(session, tabId)),
     ...(platform.tabs.atsPageOf === undefined ? {} : { atsPageOf: (tabId: number) => platform.tabs.atsPageOf!(tabId) }),
     // The audit of 2026-11-06 (M5): no job is taken while the browser says it is offline.
     online: () => (globalThis as { navigator?: { onLine?: boolean } }).navigator?.onLine !== false,
@@ -320,7 +323,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     ...(__E2E__ ? { note: (event) => noteE2e(event) } : {}) });
   /** v3 Phase 5: Sign-in mode Auto's credential, for a paused run's top frame. */
   const signIn = createSignIn({ server, session, now,
-    signInAuto: async () => (await settings.get()).modes.signIn === 'auto' && (await signInAllowed()) });
+    signInAuto: async () => (await settings.get()).modes.signIn === 'auto' && (await signInAllowed()),
+    // core-x, item 3: a subframe that claims the tab's application signs in as a top frame does (frames.ts).
+    claimFrame: async (tabId) => claimFrameOf(await framesOfTab(session, tabId)) });
+  /** core-x, items 7 and 14: the tabs' chains (chain.ts). */
+  const chains = createChains({ session, now });
   /** Every frame with a form hears the settings as they act now for it (settings/changed): the agent's tab's documents
    *  the agent's, each as contentSettingsFor builds them for its application and document (the audit's m1: Submit stays
    *  on Manual in every document but the one the job's Submit was pressed in). */
@@ -397,6 +404,37 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   /** Whether a frame may speak for this application (its key's platform is the frame host's). */
   const fits = (applicationKey: string, from: ContentChannel) => keyFitsFrame(applicationKey, from.url);
 
+  // ── snapshot build 2026-11-06 (core-x, items 3, 6, 7 and 14) ──
+  /** The chain a hello's page takes (background/chain.ts): the same document's chain, kept; a top chain page's by its
+   *  referrer's hash, a subframe's by its company's one claimed portal frame in the tab (the security fix of
+   *  2026-11-06, S4: the registry alone, no token); none for a private tab or any other page. */
+  async function chainOfHello(message: Extract<ContentMessage, { type: 'frame/hello' }>, from: ContentChannel,
+    held: FrameEntry | null): Promise<FrameChain | undefined> {
+    if (held !== null && held.documentId === (from.documentId ?? null)) {
+      const kept = chainOf(held);
+      if (kept !== undefined) return kept;
+    }
+    if (message.chain === undefined || from.incognito === true) return undefined;
+    const frame = { url: from.url, documentId: from.documentId ?? null, frameId: from.frameId };
+    const inherited = 'from' in message.chain
+      ? (from.frameId === 0 ? await chains.inheritTop(from.tabId, frame, message.chain.from) : null)
+      : await chains.inheritFrame(from.tabId, frame, () => framesOfTab(session, from.tabId));
+    return inherited ?? undefined;
+  }
+
+  /** The frame as TailorIT is asked about it (core-x, items 6 and 7): a frame whose document took its application from
+   *  the tab's chain is named by that application's canonical address, never its own (a session token, the person's
+   *  iCIMS id); any other by its own, which server-client.ts names by tailoritAddressOf. */
+  function tailoritFrom<T extends { url: string }>(from: T, entry: Pick<FrameEntry, 'chained' | 'chainUrl'> | null): T {
+    return entry?.chained === true && entry.chainUrl !== undefined ? { ...from, url: entry.chainUrl } : from;
+  }
+
+  /** tailoritFrom, with the frame's entry read from the registry (the same document's only). */
+  async function tailoritFromNow<T extends ContentChannel>(from: T): Promise<T> {
+    const entry = await frameEntry(session, from.tabId, from.frameId);
+    return tailoritFrom(from, entry !== null && entry.documentId === (from.documentId ?? null) ? entry : null);
+  }
+
   /** The tab's top frame, when it is one of ours: the one that draws the launcher at the page's edge (v3 Phase 3). */
   /** The tab's top frame of ours: frame 0, whatever a frame's hello said of itself. */
   async function topFrameOf(tabId: number) {
@@ -451,10 +489,26 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
             // the page moved on to) it is no application's (the audit's m6).
             const keep = held !== null && held.documentId === (from.documentId ?? null) && held.applicationKey !== undefined
               && (await pressedLately(from.tabId, held.applicationKey, held.documentId)) ? held.applicationKey : undefined;
+            // core-x, items 7 and 14 (background/chain.ts): a page whose address names no job takes the application of
+            // the claimed page it was reached from, by the tab's chain; the same document's later hellos keep it.
+            const chain = await chainOfHello(message, from, held);
             return { previous: held, entry: await registerFrame(session, { ...from, isTop: message.isTop,
               hasForm: message.hasForm, nav: message.nav, ...(message.letter === true ? { letter: true } : {}),
-              ...(keep === undefined ? {} : { keepKey: keep }) }, now()) };
+              ...(keep === undefined ? {} : { keepKey: keep }),
+              ...(message.wraps === true ? { wraps: true } : {}), ...(message.claimed === true ? { claimed: true } : {}),
+              ...(chain === undefined ? {} : { chain }) }, now()) };
           });
+          // core-x, items 7 and 14: a top document with an application is the tab's chain from now on; a portal frame
+          // whose pages frame chain pages keeps its application's canonical address for them (the security fix of
+          // 2026-11-06, S4: no token, nothing handed to a page).
+          if (from.frameId === 0 && entry.applicationKey !== undefined && from.incognito !== true) {
+            await chains.noteTop(from.tabId, { url: from.url, documentId: entry.documentId,
+              applicationKey: entry.applicationKey, ...(entry.chainUrl === undefined ? {} : { applicationUrl: entry.chainUrl }) });
+          }
+          if (entry.applicationKey !== undefined && entry.chained !== true && from.incognito !== true) {
+            await chains.notePortal(from.tabId, { frameId: entry.frameId, documentId: entry.documentId,
+              applicationKey: entry.applicationKey, url: from.url });
+          }
           const newDocument = previous === null || previous.documentId !== entry.documentId;
           // The document it left goes; anything this document began before its hello stays.
           if (previous !== null && newDocument) await forgetDocument(from.tabId, from.frameId, previous.documentId);
@@ -493,14 +547,16 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           // reading of the frame's address).
           // The review: not until the person acknowledged the disclosure as it reads now.
           if (lookupOnLoad && (entry.hasForm || entry.posting === true) && connected && (await auth.disclosed())) {
-            void jobs.loadCard(from.tabId, from).catch(() => undefined);
+            void jobs.loadCard(from.tabId, tailoritFrom(from, entry)).catch(() => undefined);
           }
           // A top frame that loads beside an open side panel keeps its launcher hidden (v3 Phase 3 review): the panel's
           // panel/side came to the document before, and none comes now.
           return ok({ frameId: from.frameId, connected,
             settings: await contentSettingsFor(from.tabId, entry.applicationKey, from.documentId),
             launcher: await launchers.prefsFor(from.url),
-            ...(from.frameId === 0 && reports.sideShows(from.tabId) ? { side: true as const } : {}) });
+            ...(from.frameId === 0 && reports.sideShows(from.tabId) ? { side: true as const } : {}),
+            ...(entry.chained === true && entry.applicationKey !== undefined
+              ? { chained: { applicationKey: entry.applicationKey } } : {}) });
         },
         'run/begin': async (message, from) => {
           // v3 Phase 5: the agent's run only in the agent's own window, for its task's application, while it may run;
@@ -512,7 +568,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
           }
           if (task !== null) jobs.assign(from.tabId, message.applicationKey, task.jobId, task.resumeId);
           return beginRun({ ...beginDeps, settings: { ...settings,
-            content: () => contentSettingsFor(from.tabId, message.applicationKey, from.documentId) } }, message, from);
+            content: () => contentSettingsFor(from.tabId, message.applicationKey, from.documentId) } }, message,
+            // core-x, items 6 and 7: a chain page is looked up by its application's canonical address.
+            await tailoritFromNow(from));
         },
         'plan/request': (message, from) => planner.request(message, from),
         'plan/poll': (message, from) => planner.poll(message, from),
@@ -572,8 +630,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // The in-page panel's Save my answer (Phase 6, wave 2), for the sending frame's own field.
         'answer/save': (message, from) => answers.saveOwn(message.fieldKey, from),
         // The job card's relay (v2): the frame a job/refresh asked, with its own address as Chrome reports it.
-        'job/lookup': (_message, from) => jobs.relay('lookup', from),
-        'job/add': (_message, from) => jobs.relay('add', from),
+        // core-x, items 6 and 7: a chain page is looked up, and added, by its application's canonical address.
+        'job/lookup': async (_message, from) => jobs.relay('lookup', await tailoritFromNow(from)),
+        'job/add': async (_message, from) => jobs.relay('add', await tailoritFromNow(from)),
         // The launcher (v3 Phase 3): its place and hiding for the sending frame's site, from the person's trusted drag
         // and click.
         // Only the top frame draws the tab (an embedded form's launcher has neither), and a person's drags and hides
@@ -593,12 +652,12 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         },
         // v3 Phase 4: a Submit pressed in the frame, and the platform's confirmation after it (submissions.ts).
         'submit/armed': async (message, from) => {
-          const answer = await submitted.armed(message, from);
+          const answer = await submitted.armed(message, await tailoritFromNow(from));
           // v3 Phase 5: the agent's job's one Submit (agent.ts pressed).
           if (answer.ok) await agent.pressed(from.tabId, message.applicationKey, from.documentId).catch(() => undefined);
           return answer;
         },
-        'submit/detected': (message, from) => submitted.detected(message, from),
+        'submit/detected': async (message, from) => submitted.detected(message, await tailoritFromNow(from)),
         // v3 Phase 5: Sign-in mode Auto's credential, to the asking top frame alone (sign-in.ts).
         'signin/credential': (message, from) => signIn.credential(message, from),
         // Round 3 of the v3 Phase 6/7b review (X8): the agent's entry pressed in the top frame, told before the entry
@@ -606,7 +665,11 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // v3 Phase 8: the sentinel's one message (sites.ts).
         'page/recognised': (message, from) => sites.recognised(message, from),
         'agent/entered': async (_message, from) => {
-          if (from.frameId !== 0) return refuse('bad_sender');
+          // core-x, item 3: the tab's top frame, or the frame that claims its application (agent.ts checks it is the
+          // agent's own).
+          if (from.frameId !== 0 && claimFrameOf(await framesOfTab(session, from.tabId))?.frameId !== from.frameId) {
+            return refuse('bad_sender');
+          }
           await agent.entered(from.tabId, from.documentId).catch(() => undefined);
           return ok({});
         },
@@ -810,6 +873,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   platform.tabs.onRemoved((tabId) => {
     void agent.tabRemoved(tabId).catch(() => undefined);
     void signIn.forgetTab(tabId).catch(() => undefined);
+    void chains.forgetTab(tabId).catch(() => undefined);
     beginLimit.forget(`${tabId}/`);
     launcherLimit.forget(`${tabId}/`);
     void session.remove([visitKey(tabId)]).catch(() => undefined);

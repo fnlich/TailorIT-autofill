@@ -1,0 +1,76 @@
+{
+  "fixture": "dayforce/questionnaire",
+  "source": "https://jobs.dayforcehcm.com/savealot/candidateportal/jobs/9234/apply/manualApplication?applicationSource=Manual&clientNamespace=savealot&careerSiteXRefCode=candidateportal&id=9234&step=1",
+  "captured": "2026-11-06T15:05:50.000Z",
+  "fields": [
+    {
+      "label": "ARBITRATION AGREEMENT In exchange for Moran Foods, LLC d/b/a Save-A-Lot, Ltd. (the “Company”) considering my application for employment, hiring me, or continuing my employment, I agree to all terms of the Company’s Dispute Resolution Rules and Procedures (the “Rules and Procedures”). The Rules and P",
+      "kind": "radio",
+      "required": false,
+      "section": "Additional Information External v3",
+      "fillable": true,
+      "options": 2,
+      "control": "input[value=\"41\"]"
+    },
+    {
+      "label": "Save A Lot asks the following question in order to ensure we can comply with state and local laws regulating employment of minors or establishing age requirements for certain tasks. Are you age 18 or over? Save A Lot asks the following question in order to ensure we can comply with state and local l",
+      "kind": "radio",
+      "required": false,
+      "section": "Additional Information External v3",
+      "fillable": true,
+      "options": 2,
+      "control": "input[value=\"43\"]"
+    },
+    {
+      "label": "Can you provide legal documentation establishing your identity and eligibility to be legally employed in the United States? Can you provide legal documentation establishing your identity and eligibility to be legally employed in the United States?",
+      "kind": "radio",
+      "required": false,
+      "section": "Additional Information External v3",
+      "fillable": true,
+      "options": 2,
+      "control": "input[value=\"45\"]"
+    },
+    {
+      "label": "Are you able to perform the essential functions of the job for which you are applying with or without reasonable accomodation? Are you able to perform the essential functions of the job for which you are applying with or without reasonable accommodation?",
+      "kind": "radio",
+      "required": false,
+      "section": "Additional Information External v3",
+      "fillable": true,
+      "options": 2,
+      "control": "input[value=\"47\"]"
+    },
+    {
+      "label": "Were you referred by a current Team Member?",
+      "kind": "radio",
+      "required": false,
+      "section": "Additional Information External v3",
+      "fillable": true,
+      "options": 2,
+      "control": "input[value=\"31\"]"
+    },
+    {
+      "label": "If yes, please provide Team Member's full name.",
+      "kind": "text",
+      "required": false,
+      "section": "Additional Information External v3",
+      "fillable": true,
+      "control": "input#jobPostingApplication_sections_0_questionnaire_questions_5_answerText"
+    }
+  ],
+  "hooks": {
+    "detect": "div#jobPostingApplication",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button[test-id=\"application-cancel\"]",
+      "button[test-id=\"application-previous-step\"]",
+      ".ant-steps-item-container[role=\"button\"]"
+    ],
+    "pressable": [
+      "button[test-id=\"application-next-step\"]"
+    ]
+  }
+}

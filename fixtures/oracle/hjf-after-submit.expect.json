@@ -1,0 +1,30 @@
+{
+  "fixture": "oracle/hjf-after-submit",
+  "source": "https://iaaxmg.fa.ocs.oraclegovcloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/11551/apply/section/1",
+  "captured": "2026-11-06T15:07:35.000Z",
+  "note": "The one-page flow of hjf-apply-section 12 s after its Submit, as captured: the Submit's checklist dialog (\"Creating candidate info\", \"Saving job application info\"; the greeting's name redacted) is open and modal, so the page's layer div.app is aria-hidden and no form shows (detect null, nothing to scan). Under it the page's error notification (li.notifications__item.cx-notifications__item--error), which reads once the dialog closes (oracle.browser.test.ts), and the invalid education entry opened in place in its editor.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.apply-flow-profile-import-again-button",
+      "button.attachment-upload-button__download",
+      "button.attachment-upload-button__bottom-button",
+      "button.icon-clear",
+      "button.communication-channel__value-edit",
+      "button.app-header__close",
+      "#timeline-add-experience-button",
+      "#timeline-add-education-button",
+      "button.apply-flow-profile-item-tile__new-tile",
+      "button.candidate-links__add-link",
+      "button.app-dialog__close",
+      ".app-dialog__footer-button"
+    ],
+    "pressable": []
+  }
+}

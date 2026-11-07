@@ -394,6 +394,18 @@ export const RESUME_MIME_TYPES: Readonly<Record<AutofillResumeChoice['fileKind']
   doc: 'application/msword',
 };
 
+/** The name a file is uploaded under: no path or control characters, the kind's extension, at most 255 characters;
+ *  `fallback` when nothing is left (a resume's 'Resume', a cover letter's 'Cover Letter'). The worker's file transfer
+ *  names the file it sends so (background/resume-transfer.ts), and the planner reads the person's résumé under that
+ *  name among the files a page shows (core/plan/frame.ts showsResume). */
+export function uploadName(fileName: string, kind: 'pdf' | 'docx', fallback = 'Resume'): string {
+  const extension = `.${kind}`;
+  let base = fileName.replace(/[\p{Cc}\p{Cf}\\/:*?"<>|]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (base.toLowerCase().endsWith(extension)) base = base.slice(0, -extension.length).trim();
+  base = base.replace(/[. ]+$/, '');
+  return `${(base || fallback).slice(0, 255 - extension.length)}${extension}`;
+}
+
 /** The profile with the resume the worker will upload: the lookup's suggestedResume. Its size is the file
  *  transfer's to give (0 until then). A null choice leaves the profile without a resume, so an upload field is
  *  flagged. */

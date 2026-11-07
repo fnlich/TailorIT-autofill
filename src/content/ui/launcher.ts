@@ -11,7 +11,7 @@
  * click handler: Open review must reach the worker (panel/open) before anything is awaited, or the browser no longer
  * counts the click as the person's gesture.
  */
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import { ICONS, LOGO_GLYPH } from '../../shared/icons';
 import type { ToneName } from '../../shared/palette';
 import { svgOf } from './svg';
@@ -69,15 +69,15 @@ function badgeOf(view: LauncherView): { tone: ToneName; text: string | null } | 
 function titleOf(view: LauncherView): string {
   switch (view.state) {
     case 'idle':
-      return COPY.launcherFill;
+      return PAGE_COPY.launcherFill;
     case 'running':
-      return view.percent === undefined ? COPY.launcherRunning : COPY.launcherFilling(view.percent);
+      return view.percent === undefined ? PAGE_COPY.launcherRunning : PAGE_COPY.launcherFilling(view.percent);
     case 'needs-you':
-      return view.reason === 'policy' ? COPY.launcherPolicy : COPY.launcherNeedsYou;
+      return view.reason === 'policy' ? PAGE_COPY.launcherPolicy : PAGE_COPY.launcherNeedsYou;
     case 'review':
-      return COPY.launcherReview(view.count ?? 0);
+      return PAGE_COPY.launcherReview(view.count ?? 0);
     case 'error':
-      return view.reason === 'not-connected' ? COPY.launcherNotConnected : COPY.launcherError;
+      return view.reason === 'not-connected' ? PAGE_COPY.launcherNotConnected : PAGE_COPY.launcherError;
   }
 }
 

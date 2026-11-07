@@ -67,6 +67,15 @@
  *   either; the form is one step, so a page showing it is the final step.
  * - After Submit the same address shows .ashby-application-form-success-container (ashbySubmitted, read by
  *   content/submitted.ts after a Submit was pressed).
+ * The owner's captures of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06) add:
+ * - Sending (isBusy): while Ashby sends the application its Submit is disabled and classed _loading_, with a spinner
+ *   before its words, <button class="... ashby-application-form-submit-button _loading_zyh3g_82" disabled=""><svg
+ *   class="loadingSvg " ...>, and every input of the form is disabled (fixtures/ashby/rivian-submitting.html).
+ * - An uploaded file shows as the live probe of 2026-11-02 had it (uploadState): the question's
+ *   .ashby-application-form-input-file-item, its -item-name's <span>NAME</span> and its button title="Delete file"
+ *   (rivian-submitting.html; the converter redacts NAME). Ashby's "Autofill from resume" then shows "Autofill completed!
+ *   Please review the information we filled in for you below." in its pane (.ashby-application-form-autofill-input-form-
+ *   alert): the pane is excluded as before, and what it filled is the page's prefill.
  * The SMS consent's radios save the consent the moment one is clicked. Nothing here reads, logs or sends a value.
  */
 import { askBridge } from '../../dom/bridge';
@@ -456,6 +465,17 @@ function isFinalStep(doc: Document): 'final' | 'unknown' {
   return root !== null && submitButton(root) !== null ? 'final' : 'unknown';
 }
 
+/** Ashby is sending the application: its Submit shows its spinner (see the header). */
+function isBusy(doc: Document): boolean {
+  const root = formOf(doc);
+  const button = root === null ? null : submitButton(root);
+  if (button === null) return false;
+  // rivian-submitting.html: <button class="... ashby-application-form-submit-button _loading_zyh3g_82" disabled=""><svg
+  // class="loadingSvg " viewBox="0 0 38 38" ...>...</svg><span>Submit Application</span> ...
+  const cache = newScanCache();
+  return Array.from(button.querySelectorAll('svg.loadingSvg')).some((spinner) => isUserVisible(spinner, cache));
+}
+
 /** Whether the page shows Ashby's message after Submit (.ashby-application-form-success-container, at the form's own
  *  address, as Jobright 1.25.2 reads it: not seen live, since nothing was submitted). v3 Phase 4's submission
  *  detection reads it (content/submitted.ts), only after a Submit was pressed. */
@@ -490,6 +510,7 @@ export const ashbyAdapter: Adapter = {
   submitButton,
   neverPress,
   isFinalStep,
+  isBusy,
   errors: (root) => genericAdapter.errors?.(root) ?? [],
   quirks: { formLateMs: ASHBY_FORM_LATE_MS },
   // v3 Phase 5, the agent's entry on the overview: fixtures/ashby/openai-closed.html's tabs, <a id="job-application-form"

@@ -165,6 +165,8 @@ import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, type RepeatableKind, type RunState, type RunStatus }
   from '../core/types/run';
+import { accountLeft } from '../dom/account-section';
+import { signInContainerOf } from '../dom/sign-in-form';
 import { clickIfAllowed } from '../dom/fillers';
 import { policyClassOf } from '../core/resolver/categories';
 import { captchaElements, detectPause, pageChallenged, type PauseSignal } from '../dom/pause-detect';
@@ -289,8 +291,13 @@ export interface RunEnv {
   channel: Channel;
   limiter: ReportLimiter;
   ui(): PageUi | null;
-  /** The frame's id from frame/hello (sent again if it went unanswered), and whether it is the top frame. */
-  frame(): Promise<{ frameId: number; isTop: boolean }>;
+  /** The frame's id from frame/hello (sent again if it went unanswered), and whether it is the top frame; `claimed`
+   *  (core-x, item 3): a subframe whose adapter claims the tab's application (runtime.ts claimsApplication), which acts
+   *  as a top frame does for Sign-in Auto. */
+  frame(): Promise<{ frameId: number; isTop: boolean; claimed?: boolean }>;
+  /** The behaviour review of 2026-11-06 (minor 7): no run began in this document before this one, so nothing the page
+   *  shows was written by the extension (runtime.ts). Absent: not known, read as false. */
+  firstInDocument?: boolean;
   /** Whether a person can see this frame's launcher on its page (IntersectionObserver v2; false without a launcher).
    *  `fresh`: from a notification after this call, not what was known before. */
   frameShown(signal: AbortSignal, fresh?: boolean): Promise<boolean>;
@@ -331,7 +338,43 @@ export interface RunEnv {
   signIn?(signal: AbortSignal): Promise<SignInOutcome>;
   /** v3 Phase 5: the site took the sign-in in this document: the run goes on (the runtime's Continue). */
   afterSignIn?(): void;
+  /** core-x, item 2, Sign-in mode Auto: types the saved job-site sign-in into the form's account section
+   *  (content/sign-in.ts, SignInContext.section), pressing nothing, until `signal` aborts. */
+  signInSection?(signal: AbortSignal): Promise<SignInOutcome>;
+  /** Core pass Z1, item 24, Sign-in mode Auto: presses the page's declared sign-in container's button (ADP's guest
+   *  Continue, UltiPro's Create account) once the run rests on the step it fills (content/sign-in.ts,
+   *  SignInContext.container), until `signal` aborts. */
+  signInContainer?(signal: AbortSignal): Promise<SignInOutcome>;
 }
+
+// ── snapshot build 2026-11-06 (core pass Z1, item 24) ──
+/** How many of a sign-in container's own required boxes a person can see are still empty (marked required or
+ *  aria-required, in its light DOM and its open shadow roots), whatever the scan read of their labels: a container's
+ *  button is never pressed before its page's own required boxes hold an answer. */
+function containerLeft(container: Element): number {
+  const cache = newScanCache();
+  const boxes: Element[] = [];
+  const scopes: ParentNode[] = [container];
+  for (let at = 0; at < scopes.length; at += 1) {
+    for (const el of Array.from(scopes[at]!.querySelectorAll('*'))) {
+      if (el.shadowRoot !== null) scopes.push(el.shadowRoot);
+      if (['input', 'select', 'textarea'].includes(el.localName)) boxes.push(el);
+    }
+  }
+  // A radio group is answered by any of its radios.
+  const chosen = new Set(boxes.filter((el) => (el as HTMLInputElement).type === 'radio' && (el as HTMLInputElement).checked)
+    .map((el) => (el as HTMLInputElement).name));
+  return boxes.filter((el) => {
+    const box = el as HTMLInputElement;
+    if (!box.required && el.getAttribute('aria-required') !== 'true') return false;
+    if (box.disabled || ['hidden', 'submit', 'button', 'image', 'reset'].includes(box.type) || !isUserVisible(el, cache)) {
+      return false;
+    }
+    if (box.type === 'radio') return !box.checked && (box.name === '' || !chosen.has(box.name));
+    return box.type === 'checkbox' ? !box.checked : box.value.trim() === '';
+  }).length;
+}
+// ── end core pass Z1, item 24 ──
 
 /** An AI answer written in the document (RunEnv.answers): its value MAC as written, and its row's provenance and
  *  reason. */
@@ -360,7 +403,7 @@ const STEP_NOTICE_CODES: readonly NoticeCode[] = ['attention-check', 'needs-clic
   'page-busy', 'auth', 'captcha', 'step-retry-limit', 'final-unknown', 'max-steps', 'next-hidden', 'captcha-next',
   'submit-held-required', 'submit-held-no-ai', 'submit-held-guess', 'submit-held-captcha', 'submit-held-check',
   'submit-held-attention', 'submit-held-entries', 'submit-unconfirmed', 'submit-errors', 'submit-auto-unchecked',
-  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed', 'bot-check'];
+  'sign-in-auto', 'sign-in-unavailable', 'sign-in-failed', 'bot-check', 'account-left', 'errors-on-load'];
 
 /** The notices that say the posting itself forbids AI (v3 Phase 4: Submit mode Auto's skip rule), whichever way the
  *  run went on: profile only, AI anyway, or the saved copy's word; and (the v3 Phase 4 review) a statement only text a
@@ -468,6 +511,12 @@ export class FillRun {
   private started: Promise<RunEnd> | null = null;
   private restedOnce: ((how: RunEnd) => void) | null = null;
   private isTop = true;
+  /** core-x, item 3: a subframe whose adapter claims the tab's application (RunEnv.frame's `claimed`). */
+  private claimed = false;
+  /** core-x, item 2: the steps (by signature) whose account section Sign-in Auto typed into, once each. */
+  private readonly accountTyped = new Set<string>();
+  /** Core pass Z1, item 24: the steps whose sign-in container this run pressed (or tried): at most once each. */
+  private readonly containerPressed = new Set<string>();
   private autoAdvance = false;
   /** Autofill after page turn (modes.afterPageTurn): a new step is filled as it appears; off: Continue fills it. */
   private fillAfterTurn = true;
@@ -535,6 +584,10 @@ export class FillRun {
   private savedBlocks: ReadonlySet<string> = new Set();
   private settledStep = true;
   private lastErrors = 0;
+  /** The behaviour review of 2026-11-06 (minor 7): the errors the validation read last, and those the page showed at
+   *  the step's first scan before the extension wrote anything in the document (noteLoadErrors). */
+  private lastErrorEls: readonly Element[] = [];
+  private loadErrors: { signature: string | null; errors: ReadonlySet<Element> } | null = null;
   /** The policy card at the first scan said only TailorIT's stored copy carried the statement. */
   private fromStoredCopy = false;
   /** The step's progress line as the adapter read it at the last scan ("Step 2 of 4"), for the report; null: none. */
@@ -1886,6 +1939,8 @@ export class FillRun {
     }
     this.launcher({ state: 'review', action: 'open-review', count: this.needing() });
     this.end('review');
+    // Core pass Z1, item 24: Sign-in mode Auto presses the step's declared sign-in container now it rests.
+    if (status === 'review') void this.signInContainerNow().catch(() => undefined);
     if (status !== 'review' || !this.stepped || this.request.dryRun) return null;
     // A page whose step keeps changing with nothing to fill is no longer followed (X-S5).
     if (this.idleTransitions >= MAX_IDLE_TRANSITIONS) {
@@ -2070,8 +2125,36 @@ export class FillRun {
     const hits = Math.max(0, this.tripwireHits - this.hitsCounted);
     this.hitsCounted = this.tripwireHits;
     const signature = this.signatureNow();
+    this.noteLoadErrors(signature);
     this.stepProgress = this.progressRead;
     return { type: 'SCANNED', signature, policyHits, tripwireHits: hits, canaries: this.sent };
+  }
+
+  /** The adapter's errors a person can see now, on the step's root. */
+  private errorsNow(root: Element, cache = newScanCache()): Element[] {
+    try {
+      return (this.env.page.adapter.errors?.(root) ?? []).map((error) => error.el).filter((el) => isUserVisible(el, cache));
+    } catch {
+      return [];
+    }
+  }
+
+  /** The behaviour review of 2026-11-06 (minor 7): at a step's first scan in the run, the errors the page shows before
+   *  the extension wrote anything (the document's first run, not resumed nor continued, no write on the step): an item
+   *  the page marks invalid on load (Oracle's profile item, fixtures/oracle/hjf-apply-section's
+   *  .beautiful-timeline-item--invalid-block) is the person's, never the run's failure. */
+  private noteLoadErrors(signature: string | null): void {
+    if (this.loadErrors !== null && this.loadErrors.signature === signature) return;
+    const fresh = this.env.firstInDocument === true && this.request.from === undefined
+      && this.request.carry === undefined && (signature === null || !this.carries.has(signature));
+    this.loadErrors = { signature, errors: new Set(fresh ? this.errorsNow(this.rootNow()) : []) };
+  }
+
+  /** Whether every error the validation read last was shown at the step's first scan, before anything was written. */
+  private errorsOnLoad(): boolean {
+    const load = this.loadErrors;
+    return load !== null && load.signature === this.state.stepSignature && this.lastErrorEls.length > 0
+      && this.lastErrorEls.every((el) => load.errors.has(el));
   }
 
   /** fill-step: the repeatable sections, the reactive loop and the final Guard (module header, 5). */
@@ -2082,6 +2165,11 @@ export class FillRun {
     this.idleTransitions = 0;
     const paused = this.pauseNow();
     if (paused !== null) return pauseEventOf(paused);
+    if (this.stopRequested) return { type: 'USER_STOPPED' };
+    // core-x, item 2: the form's account section follows Sign-in mode: on Auto, the saved sign-in typed into it once per
+    // step (nothing pressed), before the rest of the form fills; on Manual it is the person's (validate holds Next).
+    await this.signInAccountSection();
+    this.alive();
     if (this.stopRequested) return { type: 'USER_STOPPED' };
     this.loopCut = null;
     this.fillStartedAt = monotonicNow();
@@ -2270,12 +2358,8 @@ export class FillRun {
     const paused = this.pauseNow();
     if (paused !== null) return pauseEventOf(paused);
     const cache = newScanCache();
-    let errors: Element[] = [];
-    try {
-      errors = (adapter.errors?.(root) ?? []).map((error) => error.el).filter((el) => isUserVisible(el, cache));
-    } catch {
-      errors = [];
-    }
+    const errors = this.errorsNow(root, cache);
+    this.lastErrorEls = errors;
     let finality: StepFacts['finality'] = 'unknown';
     try {
       finality = adapter.isFinalStep?.(env.doc) ?? 'unknown';
@@ -2292,10 +2376,13 @@ export class FillRun {
     this.lastErrors = errors.length;
     // v3 Phase 4, for Submit mode Auto: what its verdict reads of the final step (the core decides).
     const submitFacts = finality === 'final' && this.autoSubmitOn && !this.request.dryRun ? this.submitFacts() : {};
+    // core-x, item 2: the form's account section's required boxes still empty (dom/account-section.ts).
+    const accountLeftNow = accountLeft(adapter, env.doc, root);
     return { type: 'VALIDATED', errors: errors.length, fixable: this.fixable(errors), step: { finality, nextVisible,
       settled: this.settledStep,
       unconfirmedDrafts: this.rows.filter((row) => row.provenance === 'llm-draft' && row.needsUserAction).length,
-      captchaUnsolved: this.challengedNow(cache), ...submitFacts } };
+      captchaUnsolved: this.challengedNow(cache), ...submitFacts,
+      ...(accountLeftNow > 0 ? { accountLeft: accountLeftNow } : {}) } };
   }
 
   /** What Submit mode Auto's verdict reads of the final step (v3 Phase 4): Submit shown, the required questions still
@@ -2308,7 +2395,10 @@ export class FillRun {
     const noAi = POSTING_NO_AI.some((code) => this.notices.has(code));
     const legalGuess = this.rows.some((row) => row.reason === 'ai-guess' && policyClassOf(row.category) === 'legal');
     const attentionLeft = this.rows.some((row) => row.reason === 'attention-check' && leftForPerson(row));
-    return { submitVisible: buttons.submit, requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()), noAi,
+    // core-x, item 2: an account section's required boxes still empty count as required fields left (they are no rows).
+    const account = accountLeft(this.env.page.adapter, this.env.doc, this.rootNow());
+    return { submitVisible: buttons.submit,
+      requiredEmpty: requiredLeftOf(this.scanNow(), this.leftRequired()) + account, noAi,
       legalGuess, attentionLeft, entriesLeft: this.addsLeft };
   }
 
@@ -2486,7 +2576,7 @@ export class FillRun {
   private paused(): null {
     // v3 Phase 5: a sign-in or account page, with Sign-in acting as Auto: the run signs in once it rests.
     this.signInDue = this.state.status === 'auth-needed' && this.signInAuto && !this.request.dryRun
-      && this.env.signIn !== undefined && this.isTop;
+      && this.env.signIn !== undefined && (this.isTop || this.claimed);
     if (this.signInDue) this.notices.add('sign-in-auto');
     if (this.state.pauseReason === 'captcha') {
       const signature = this.signatureNow();
@@ -2499,10 +2589,51 @@ export class FillRun {
 
   private notify(notice: StepNotice, count?: number): void {
     if (notice === 'tripwire') this.notices.add('tripwire', this.tripwireHits);
-    else if (notice === 'validation') this.notices.add('validation', this.lastErrors);
-    else this.notices.add(notice, count);
+    else if (notice === 'validation') {
+      this.notices.add('validation', this.lastErrors);
+      // The behaviour review of 2026-11-06 (minor 7): errors the page showed before anything was written are the
+      // person's to fix (the agent leaves the job for them, never failed).
+      if (this.errorsOnLoad()) this.notices.add('errors-on-load', this.lastErrors);
+    } else this.notices.add(notice, count);
     this.showNotices();
   }
+
+  /** core-x, item 2 (dom/account-section.ts): with Sign-in acting as Auto, not in a dry run, in a frame that may sign in
+   *  (the top one, or the subframe that claims the tab's application), the saved job-site sign-in typed once per step
+   *  into the form's account section while one of its required boxes is empty (content/sign-in.ts, section mode:
+   *  nothing pressed). Whatever comes of it, the fill goes on; a box still empty holds Next at validation. */
+  private async signInAccountSection(): Promise<void> {
+    const signInSection = this.env.signInSection;
+    const step = this.state.stepSignature ?? '';
+    if (!this.signInAuto || this.request.dryRun || signInSection === undefined || (!this.isTop && !this.claimed)
+      || this.accountTyped.has(step)) return;
+    if (accountLeft(this.env.page.adapter, this.env.doc, this.rootNow()) === 0) return;
+    this.accountTyped.add(step);
+    const outcome = await signInSection(AbortSignal.any([this.controller.signal, this.stopping.signal,
+      this.cancelled.signal]));
+    log('content.account-section', { typed: outcome === 'continue' });
+  }
+
+  // ── snapshot build 2026-11-06 (core pass Z1, item 24) ──
+  /** Sign-in mode Auto on a step the adapter declares a sign-in container on (Adapter.signInContainer: ADP's guest page,
+   *  UltiPro's account step), once the run rests there at review: with Sign-in acting as Auto, not in a dry run, in a
+   *  frame that may sign in, once per step, and only while the step's required questions are all answered, no error
+   *  shows and no challenge does (the person's otherwise), the container's button is pressed through content/sign-in.ts
+   *  (every Sign-in Auto guard held there). The page it brings is the run's to follow (its watch of the step); whatever
+   *  comes of it, nothing else is pressed. Sign-in Manual leaves the button to the person. */
+  private async signInContainerNow(): Promise<void> {
+    const press = this.env.signInContainer;
+    const step = this.state.stepSignature ?? '';
+    const declared = press === undefined ? null : signInContainerOf(this.env.page.adapter, this.env.doc);
+    if (!this.signInAuto || this.request.dryRun || press === undefined || (!this.isTop && !this.claimed)
+      || this.containerPressed.has(step) || declared?.container === undefined) return;
+    if (this.lastErrors > 0 || this.challengedNow() || requiredLeftOf(this.scanNow(), this.leftRequired()) > 0
+      || containerLeft(declared.container) > 0) return;
+    this.containerPressed.add(step);
+    const outcome = await press(AbortSignal.any([this.controller.signal, this.stopping.signal, this.cancelled.signal]));
+    log('content.sign-in-container', { pressed: outcome === 'continue' });
+  }
+  // ── end core pass Z1, item 24 ──
 
   /** Sign-in mode Auto, once the run rests at its sign-in pause (module header): the site took it, and the run goes on;
    *  or the notice says why the sign-in is the person's, and the report goes out again. */
@@ -2749,6 +2880,7 @@ export class FillRun {
       this.alive();
       this.frameId = frame.frameId;
       this.isTop = frame.isTop;
+      this.claimed = frame.claimed === true;
       await this.begin();
 
       // 1b. A frame inside another page fills only while its launcher can be seen on that page (S1): the page around it

@@ -14,7 +14,7 @@
  */
 import { useId, useState } from 'react';
 import type { PressAnswer, StepTarget } from '../../messaging/schemas';
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
 import { Icon } from '../brand/Icon';
 import { isWorking } from './model';
@@ -49,10 +49,10 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false }
   const [said, setSaid] = useState<string | null>(null);
   if (submitted) {
     return (
-      <section className="tia-dock" data-step-dock="submitted" aria-label={COPY.panel.step.submitted}>
+      <section className="tia-dock" data-step-dock="submitted" aria-label={PAGE_COPY.panel.step.submitted}>
         <button type="button" className="tia-dock__button tia-dock__button--done" disabled data-step-action="submitted">
           <Icon name="check-circle" size={18} className="tia-icon" />
-          {COPY.panel.step.submitted}
+          {PAGE_COPY.panel.step.submitted}
         </button>
       </section>
     );
@@ -65,7 +65,7 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false }
     const answer = await onPress(dock.frameId, dock.target, confirmed);
     setBusy(false);
     if (answer === null) {
-      setSaid(COPY.panel.failed);
+      setSaid(PAGE_COPY.panel.failed);
       return;
     }
     if (answer.outcome === 'required-empty' && !confirmed) {
@@ -73,30 +73,30 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false }
       return;
     }
     setConfirming(null);
-    if (answer.outcome === 'not-accepted') setSaid(COPY.panel.step.notAccepted(answer.count ?? 1));
-    else if (answer.outcome !== 'pressed') setSaid(COPY.panel.step.outcomes[answer.outcome]);
+    if (answer.outcome === 'not-accepted') setSaid(PAGE_COPY.panel.step.notAccepted(answer.count ?? 1));
+    else if (answer.outcome !== 'pressed') setSaid(PAGE_COPY.panel.step.outcomes[answer.outcome]);
   };
 
   const submit = dock.target === 'submit';
   const waiting = submit && dock.pressed;
   const asking = confirming !== null && confirming.frameId === dock.frameId && submit && !waiting;
   return (
-    <section className="tia-dock" data-step-dock={dock.target} aria-label={submit ? COPY.panel.step.submit : COPY.panel.step.next}>
+    <section className="tia-dock" data-step-dock={dock.target} aria-label={submit ? PAGE_COPY.panel.step.submit : PAGE_COPY.panel.step.next}>
       {asking ? (
         <div className="tia-dock__confirm" role="alertdialog" aria-labelledby={questionId} data-step-confirm="">
-          <p className="tia-dock__question" id={questionId}>{COPY.panel.step.confirmEmpty(confirming.count)}</p>
+          <p className="tia-dock__question" id={questionId}>{PAGE_COPY.panel.step.confirmEmpty(confirming.count)}</p>
           <div className="tia-dock__actions">
             <button type="button" className="tia-button tia-button--primary" disabled={busy} data-step-action="confirm"
-              onClick={() => void press(true)}>{COPY.panel.step.submitAnyway}</button>
+              onClick={() => void press(true)}>{PAGE_COPY.panel.step.submitAnyway}</button>
             <button type="button" className="tia-button tia-button--quiet" disabled={busy}
-              onClick={() => setConfirming(null)}>{COPY.panel.step.keepEditing}</button>
+              onClick={() => setConfirming(null)}>{PAGE_COPY.panel.step.keepEditing}</button>
           </div>
         </div>
       ) : (
         <button type="button" className="tia-dock__button" disabled={busy || waiting}
           data-step-action={dock.target} aria-busy={busy || waiting ? 'true' : undefined} onClick={() => void press(false)}>
           {(busy || waiting) && <Icon name="spinner" size={18} className="tia-icon tia-spin" />}
-          {waiting ? COPY.panel.step.submitting : submit ? COPY.panel.step.submit : COPY.panel.step.next}
+          {waiting ? PAGE_COPY.panel.step.submitting : submit ? PAGE_COPY.panel.step.submit : PAGE_COPY.panel.step.next}
           {!submit && !busy && <Icon name="chevron-right" size={18} className="tia-icon" />}
         </button>
       )}

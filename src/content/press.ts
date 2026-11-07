@@ -38,6 +38,7 @@
 import type { Adapter } from '../adapters/types';
 import type { EntryAnswer, EntryBlock, StepTarget, PressAnswer } from '../messaging/schemas';
 import type { FrameReport } from '../shared/report';
+import { accountLeft } from '../dom/account-section';
 import { clickIfAllowed } from '../dom/fillers';
 import { clickAdapterEntry, clickAdapterSubmit } from '../dom/fillers/not-submit';
 import { detectPause, pageChallenged, type PauseKind } from '../dom/pause-detect';
@@ -172,7 +173,9 @@ export function pressStep(page: PressPage, target: StepTarget, options: { confir
   const button = buttonOf(page, target);
   if (!pressable(button, cache)) return { outcome: 'not-offered' };
   if (target === 'submit' && !options.confirmed) {
-    const count = requiredLeftOf(page.scan(), page.leftRequired?.() ?? []);
+    // core-x, item 2: an account section's required boxes still empty count as required fields left (no rows).
+    const count = requiredLeftOf(page.scan(), page.leftRequired?.() ?? [])
+      + accountLeft(page.adapter, page.doc, page.root);
     if (count > 0) return { outcome: 'required-empty', count };
   }
   const { acted, invalid } = invalidDuring(page, () => (target === 'next'

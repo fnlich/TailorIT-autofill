@@ -10,6 +10,7 @@ import {
   fileReply,
   goldens,
   LEVER_KEY,
+  LEVER_POSTING_URL,
   restartTestWorker,
   sha256Hex,
   startTestWorker,
@@ -297,7 +298,7 @@ describe('the resume transfer', () => {
     expect([...bytes]).toEqual([...pdf]);
     expect(restarted.tailorit.count('POST /api/autofill/lookup')).toBe(2);
     const relookup = restarted.tailorit.requests.filter((entry) => entry.path === '/api/autofill/lookup').at(-1)!;
-    expect(JSON.parse(relookup.body!)).toEqual({ url: contentSender().url, includePostingText: false });
+    expect(JSON.parse(relookup.body!)).toEqual({ url: LEVER_POSTING_URL, includePostingText: false });
   });
 
   it('refuses a port from a page that is not an ATS frame, and any other port name', async () => {

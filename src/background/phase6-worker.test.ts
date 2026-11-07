@@ -9,6 +9,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import golden from '../contract/tailorit/v1/fixtures/AutofillSavedAnswerList/valid/golden.json';
+import { PutAutofillSavedAnswerBodySchema } from '../contract/tailorit';
+import type { FrameReport } from '../shared/report';
 import type { DraftItem } from '../core/plan/drafts';
 import type { PlanOutput } from '../core/plan/types';
 import type { UntrustedText } from '../core/types/text';
@@ -154,14 +156,16 @@ describe('drafts', () => {
 
 // ── Save my answer and Confirm draft ──────────────────────────────────────────────────────────────────────────────
 
-/** A frame with a report holding `row`, and the frame's answers to the worker's messages. */
-async function reported(worker: TestWorker, row: Record<string, unknown>, sender = contentSender()) {
+/** A frame with a report holding `row`, and the frame's answers to the worker's messages. `platform`: the report's
+ *  (the snapshot build of 2026-11-06, contract6). */
+async function reported(worker: TestWorker, row: Record<string, unknown>, sender = contentSender(),
+  platform: FrameReport['platform'] = 'lever') {
   await worker.deliver({ v: 1, type: 'frame/hello', isTop: true, hasForm: true }, sender);
   const runId = await beginRun(worker, {}, sender);
   // A plan, so the run knows its company.
   await request(worker, runId, [fieldSpec(1)], {}, sender);
   const base = skippedRow(fieldSpec(1));
-  const report = frameReport(runId, 0, { fields: [{ ...base, ...row } as never] });
+  const report = frameReport(runId, 0, { platform, fields: [{ ...base, ...row } as never] });
   expect(await worker.deliver({ v: 1, type: 'report/put', runId, report }, sender)).toEqual({ ok: true, data: {} });
   return runId;
 }
@@ -187,6 +191,24 @@ describe('Save my answer', () => {
     const stored = JSON.stringify({ ...(await fakeBrowser.storage.local.get(null)), ...(await fakeBrowser.storage.session.get(null)) });
     expect(stored).not.toContain('Lisbon');
   });
+
+  // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 ──
+  it("names the new ATSs' and SmartRecruiters' platform since TailorIT's API 6, and none for a company's own page",
+    async () => {
+      for (const [platform, kept] of [['pinpoint', 'pinpoint'], ['adp', 'adp'], ['smartrecruiters', 'smartrecruiters'],
+        ['site', null]] as const) {
+        const worker = await startTestWorker({ token: tokenRecord() });
+        await reported(worker, FIXED, contentSender(), platform);
+        worker.fakes.frameAnswers = () => ({ ok: true, data: { optionSetHash: 'none', answer: { kind: 'text', text: 'Mine.' } } });
+        expect(await worker.deliver({ v: 1, type: 'panel/saveAnswer', tabId: 7, frameId: 0, fieldKey: FIXED.key }, PANEL),
+          platform).toEqual({ ok: true, data: { outcome: 'saved' } });
+        const put = worker.tailorit.requests.find((call) => `${call.method} ${call.path}` === PUT)!;
+        const body = JSON.parse(put.body!) as Record<string, unknown>;
+        expect([body.platform, body.scope], platform).toEqual([kept, '']);
+        expect(PutAutofillSavedAnswerBodySchema.safeParse(body).success, platform).toBe(true);
+      }
+    });
+  // ── end contract6 ──
 
   it("scopes a free-text answer to the frame's company, and refuses one whose address names none", async () => {
     const worker = await startTestWorker({ token: tokenRecord() });

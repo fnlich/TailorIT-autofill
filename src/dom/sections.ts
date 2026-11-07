@@ -9,6 +9,7 @@ import type { Adapter } from '../adapters/types';
 import { headingSlug } from '../core/text/keys';
 import type { SectionRef } from '../core/types/field';
 import { capCodePoints } from '../core/text/fold';
+import { composedOrder, holdsComposed } from './composed';
 import { legendOf } from './labels';
 import type { ScanCache } from './scan-cache';
 import { TEXT_CAP_SECTION } from './thresholds';
@@ -61,9 +62,6 @@ export function sectionFinder(root: Element, adapter: Adapter | null, cache: Sca
   };
 }
 
-/** Node.DOCUMENT_POSITION_FOLLOWING, without reaching for a page global. */
-const FOLLOWING = 4;
-
 function slugOf(text: string): string {
   return capCodePoints(headingSlug(text), TEXT_CAP_SECTION);
 }
@@ -76,7 +74,9 @@ function precedingHeading(headings: ReadonlyArray<{ el: Element; slug: string }>
   while (low <= high) {
     const mid = (low + high) >> 1;
     const heading = headings[mid]!;
-    const follows = (heading.el.compareDocumentPosition(target) & FOLLOWING) !== 0 && !heading.el.contains(target);
+    // In composed order (core pass Z2 of 2026-11-06): a field in a shadow root is ordered after a heading before its
+    // host, never by compareDocumentPosition across two trees, which follows no rule (./composed).
+    const follows = composedOrder(heading.el, target) < 0 && !holdsComposed(heading.el, target);
     if (follows) {
       found = heading.slug;
       low = mid + 1;

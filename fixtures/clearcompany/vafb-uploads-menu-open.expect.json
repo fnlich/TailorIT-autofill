@@ -1,0 +1,42 @@
+{
+  "fixture": "clearcompany/vafb-uploads-menu-open",
+  "source": "https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply/8c16cd46-9b5e-ded1-cf8b-6417fd8e13c7",
+  "captured": "2026-11-06T15:14:45.000Z",
+  "fields": [
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "div.qa-resume-upload.resume input[type=\"file\"]"
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "div.qa-resume-upload.coverletter input[type=\"file\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form.section-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.cancel-button[data-localized-key=\"forms.application.finish-later\"]",
+      "li.js-dropbox a",
+      "li.js-google-drive a",
+      "div.custom-handler-linkedin-v2",
+      "a.authenticate-button"
+    ],
+    "pressable": [
+      "button[data-localized-key=\"forms.application.continue\"]",
+      "div.qa-resume-upload.resume button.dropdown-toggle"
+    ]
+  }
+}

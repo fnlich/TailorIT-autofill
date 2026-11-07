@@ -14,7 +14,9 @@
  *   element inside one) whose control is refused.
  * The only exceptions are the adapter's Next button, and only when the caller passes allowNext: the step machine does
  * so on a step the adapter declared not final, after the auto-advance checks; even then the Submit button and the
- * submit words stay refused. And (v3 Phase 4, docs/SPEC-AMENDMENTS.md §12 Decision 6) the adapter's Submit button
+ * submit words stay refused, but for one case (the snapshot build of 2026-11-06, core-x item 1: stepSubmitNext): the
+ * adapter's own Next whose words say Submit on every step (iCIMS's), named by its per-step id, on a step whose bar
+ * shows a later step. And (v3 Phase 4, docs/SPEC-AMENDMENTS.md §12 Decision 6) the adapter's Submit button
  * itself, through clickAdapterSubmit alone: no flag a caller can pass opens it. That function finds the adapter's own
  * Submit itself (a caller names no element) and passes this module's unexported SUBMIT_PRESS key to the check, so
  * nothing outside this file can make assertNotSubmit or clickIfAllowed let Submit through. One module alone may call
@@ -42,7 +44,8 @@
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
 import type { Adapter, SignInWall } from '../../adapters/types';
-import { signInFormOf, signInRefusal } from '../sign-in-form';
+import { flatContains } from '../scan-cache';
+import { signInContainerOf, signInFormOf, signInRefusal } from '../sign-in-form';
 import { isUserVisible } from '../visibility';
 
 /** The words that make a control a submit control (the plan's list). */
@@ -114,7 +117,7 @@ export function clickAdapterSubmit(adapter: Adapter, root: Element): HTMLElement
 
 /** Whether `el` is the application form's own Submit, Next or a button the adapter names never to press, or holds or
  *  sits inside one, on the form the adapter finds in `doc` now (none shown: none of them). */
-function nearApplicationButtons(el: Element, adapter: Adapter, doc: Document): boolean {
+function nearApplicationButtons(el: Element, adapter: Adapter, doc: Document, composed = false): boolean {
   let root: Element | null = null;
   try {
     root = adapter.detect(doc)?.formRoot ?? null;
@@ -122,7 +125,8 @@ function nearApplicationButtons(el: Element, adapter: Adapter, doc: Document): b
     return true;
   }
   if (root === null) return false;
-  const near = (other: Element | null | undefined) => other != null && (other === el || other.contains(el) || el.contains(other));
+  const near = (other: Element | null | undefined) => other != null && (other === el || holdsIn(other, el, composed)
+    || holdsIn(el, other, composed));
   try {
     return near(adapter.submitButton?.(root)) || near(adapter.nextButton?.(root))
       || (adapter.neverPress?.(root) ?? []).some((button) => near(button));
@@ -140,7 +144,8 @@ function pressableNow(el: HTMLElement): boolean {
 /**
  * v3 Phase 5, the auto-apply agent: on a posting page that shows no application form, presses the adapter's declared
  * entry control once (Adapter.entryControl: Greenhouse's and Lever's Apply, Ashby's Application tab), with an untrusted
- * click(). It finds the control itself (a caller names no element); never one that submits a form, never while the
+ * click(). It finds the control itself (a caller names no element); never one that submits a form (but, the snapshot
+ * build of 2026-11-06, core pass Z1 item 27, an entry-choice's declared consent form: consentEntryAllowed), never while the
  * adapter finds an application form on the page (its Submit, Next and never-pressed buttons stay refused), never one a
  * person cannot see or press, and never one of the adapter's never-pressed controls (neverPress, read over the whole
  * page), or one holding or inside one, unless the adapter marks its entry as that one (entryNeverPressed: Ashby's
@@ -155,7 +160,10 @@ export function clickAdapterEntry(adapter: Adapter, doc: Document): HTMLElement 
   } catch {
     return null;
   }
-  if (control === null || control.ownerDocument !== doc || !pressableNow(control) || submitsForm(control)) return null;
+  if (control === null || control.ownerDocument !== doc || !pressableNow(control)) return null;
+  // Core pass Z1, item 27: a control that submits a form, only where that is the adapter's declared consent form holding
+  // nothing but the consent choice and its declared selects (consentEntryAllowed).
+  if (submitsForm(control) && !consentEntryAllowed(adapter, doc, control)) return null;
   let formShown: Element | null = null;
   try {
     formShown = adapter.detect(doc)?.formRoot ?? null;
@@ -177,6 +185,42 @@ export function clickAdapterEntry(adapter: Adapter, doc: Document): HTMLElement 
   return control;
 }
 
+// ── snapshot build 2026-11-06 (core pass Z1, item 27): an entry that submits a consent form ──
+/** A property read through the getter of the element's window's `ctor` prototype, which a form's named controls (an
+ *  input named "elements") cannot shadow. */
+function protoGet(el: Element, ctor: string, name: string): unknown {
+  const view = el.ownerDocument.defaultView as unknown as Record<string, { prototype: object } | undefined> | null;
+  const proto = view?.[ctor]?.prototype;
+  const getter = proto === undefined ? undefined : Object.getOwnPropertyDescriptor(proto, name)?.get;
+  return getter === undefined ? undefined : getter.call(el);
+}
+
+/**
+ * Whether the entry door may press `control`, which submits a form (the Taleo precedent; Jobvite's Data Consent,
+ * fixtures/jobvite/ninjaone-consent.html: <form name="consentForm" method="post"> holding the residence select and
+ * <button type="submit">I Accept</button>): only on a page whose adapter reads it as an entry-choice (authState), whose
+ * declared consent form (Adapter.entryConsentForm) is the control's own form owner, and only while that form holds no
+ * control but this one, the selects the adapter declares and fieldsets (each read through its prototype: HTMLFormElement's
+ * elements, the form-associated controls a form= attribute names included). A form holding an application's field, a
+ * hidden input, another button or an undeclared select is never submitted. A hook that throws refuses.
+ */
+function consentEntryAllowed(adapter: Adapter, doc: Document, control: HTMLElement): boolean {
+  try {
+    if (adapter.authState?.(doc) !== 'entry-choice') return false;
+    const declared = adapter.entryConsentForm?.(doc) ?? null;
+    if (declared === null || declared.form.ownerDocument !== doc || declared.form.localName !== 'form') return false;
+    const ctor = control.localName === 'input' ? 'HTMLInputElement' : 'HTMLButtonElement';
+    if (protoGet(control, ctor, 'form') !== declared.form) return false;
+    const elements = protoGet(declared.form, 'HTMLFormElement', 'elements') as HTMLFormControlsCollection | undefined;
+    if (elements === undefined) return false;
+    return Array.from(elements).every((el) => el === control || el.localName === 'fieldset'
+      || (el.localName === 'select' && declared.selects.includes(el)));
+  } catch {
+    return false;
+  }
+}
+// ── end core pass Z1, item 27 ──
+
 /**
  * v3 Phase 5, Sign-in mode Auto: presses the sign-in or create-account form's one button (Sign in, Create account), as
  * the adapter declares it or the standard rule reads it (dom/sign-in-form.ts signInFormOf), with an untrusted click().
@@ -185,28 +229,39 @@ export function clickAdapterEntry(adapter: Adapter, doc: Document): HTMLElement 
  * a person cannot see or press. Answers the element clicked, or null. Only src/content/sign-in.ts may call it
  * (eslint.config.mjs), after it filled the form.
  */
-export function clickAdapterSignIn(adapter: Adapter, doc: Document, wall: SignInWall, address: URL): HTMLElement | null {
-  const form = signInFormOf(adapter, doc, wall);
+export function clickAdapterSignIn(adapter: Adapter, doc: Document, wall: SignInWall, address: URL,
+  from: 'wall' | 'container' = 'wall'): HTMLElement | null {
+  // Core pass Z1, item 24: `container`, the adapter's declared sign-in container on a page the run fills like a step
+  // (dom/sign-in-form.ts signInContainerOf: ADP's guest Continue, UltiPro's Create account), read and refused as a form.
+  const form = from === 'container' ? signInContainerOf(adapter, doc) : signInFormOf(adapter, doc, wall);
   // A form whose press is the person's (SignInForm.personPresses) is never pressed here.
   if (form === null || form.personPresses === true || signInRefusal(form, address) !== null) return null;
   const button = form.button;
-  if (button.ownerDocument !== doc || !pressableNow(button) || nearApplicationButtons(button, adapter, doc)
-    || nearNeverPressed(button, adapter, doc)) return null;
+  // A container's button may sit outside it, but never in another document than the container's, and (read across
+  // shadow roots: UltiPro's sits in its host's) never one the never-press list holds or the form's Submit or Next.
+  if (from === 'container' && button.ownerDocument !== form.container?.ownerDocument) return null;
+  const composed = from === 'container';
+  if (button.ownerDocument !== doc || !pressableNow(button) || nearApplicationButtons(button, adapter, doc, composed)
+    || nearNeverPressed(button, adapter, doc, composed)) return null;
   button.click();
   return button;
 }
 
+/** Whether `outer` holds `inner`: in its light DOM, or (`composed`) across shadow roots too. */
+const holdsIn = (outer: Element, inner: Element, composed: boolean) => outer.contains(inner)
+  || (composed && flatContains(outer, inner));
+
 /** v3 Phase 7b: whether `el` is one of the controls the adapter names never to press anywhere on the page (neverPress,
  *  read over the whole document), or holds or sits inside one: a reset's button, a social sign-in, an Apply with
  *  LinkedIn. A hook that throws refuses. */
-function nearNeverPressed(el: Element, adapter: Adapter, doc: Document): boolean {
+function nearNeverPressed(el: Element, adapter: Adapter, doc: Document, composed = false): boolean {
   let never: Element[] = [];
   try {
     never = adapter.neverPress?.(doc.documentElement) ?? [];
   } catch {
     return true;
   }
-  return never.some((other) => other === el || other.contains(el) || el.contains(other));
+  return never.some((other) => other === el || holdsIn(other, el, composed) || holdsIn(el, other, composed));
 }
 
 /**
@@ -243,15 +298,19 @@ export function submitPressAllowed(el: Element, adapter: Adapter, root: Element)
 
 function refusalOf(el: Element, ctx: NotSubmitContext, depth: number, ownWords = false): ClickRefusal | null {
   if (depth === 0 && submitException(el, ctx)) return null;
+  // The security fix of 2026-11-06 (S9): the adapter's Submit, its Next and the never-pressed list are read across
+  // shadow roots (flatContains), so a native button a Submit host draws in its shadow root (UltiPro's ukg-button) is
+  // that Submit whatever its words say.
   const submitButton = ctx.root !== null ? ctx.adapter?.submitButton?.(ctx.root) ?? null : null;
-  if (submitButton !== null && (submitButton.contains(el) || el.contains(submitButton))) return 'adapter-submit';
-  if (SUBMIT_WORDS.test(ownWords && depth === 0 ? ownText(el) : shownText(el))) return 'submit-word';
+  if (submitButton !== null && (flatContains(submitButton, el) || flatContains(el, submitButton))) return 'adapter-submit';
+  if (SUBMIT_WORDS.test(ownWords && depth === 0 ? ownText(el) : shownText(el))
+    && !(depth === 0 && !ownWords && stepSubmitNextException(el, ctx))) return 'submit-word';
   if (submitsForm(el) && !nextException(el, ctx)) return 'submits-form';
   // Next itself, on the step machine's word on a step declared not final, is the one click near it that may be made.
   const next = ctx.root !== null ? ctx.adapter?.nextButton?.(ctx.root) ?? null : null;
-  if (next !== null && (next.contains(el) || el.contains(next)) && !nextException(el, ctx)) return 'adapter-next';
+  if (next !== null && (flatContains(next, el) || flatContains(el, next)) && !nextException(el, ctx)) return 'adapter-next';
   const never = ctx.root !== null ? ctx.adapter?.neverPress?.(ctx.root) ?? [] : [];
-  if (never.some((button) => button.contains(el))) return 'adapter-never-press';
+  if (never.some((button) => flatContains(button, el))) return 'adapter-never-press';
   const button = el.parentElement?.closest('button') ?? null;
   if (button !== null && depth < 4 && refusalOf(button, ctx, depth + 1) !== null) return 'inside-submit';
   const label = el.closest('label');
@@ -327,9 +386,9 @@ function submitException(el: Element, ctx: SubmitPressContext): boolean {
   const submit = ctx.adapter.submitButton?.(ctx.root) ?? null;
   if (submit === null || submit !== el) return false;
   const next = ctx.adapter.nextButton?.(ctx.root) ?? null;
-  if (next !== null && (next.contains(el) || el.contains(next))) return false;
+  if (next !== null && (flatContains(next, el) || flatContains(el, next))) return false;
   const never = ctx.adapter.neverPress?.(ctx.root) ?? [];
-  if (never.some((button) => button.contains(el) || el.contains(button))) return false;
+  if (never.some((button) => flatContains(button, el) || flatContains(el, button))) return false;
   return ctx.adapter.isFinalStep?.(el.ownerDocument) === 'final';
 }
 
@@ -339,4 +398,27 @@ function nextException(el: Element, ctx: NotSubmitContext): boolean {
   const next = ctx.adapter.nextButton?.(ctx.root) ?? null;
   if (next === null || next !== el) return false;
   return ctx.adapter.isFinalStep?.(el.ownerDocument) === 'not-final';
+}
+
+// ── snapshot build 2026-11-06 (core-x, item 1): a declared step button whose words say Submit ──
+/**
+ * The one case a submit word does not refuse (Adapter.stepSubmitNext; iCIMS's "Submit Profile" and "Submit", the
+ * owner's snapshots of 2026-11-06): the step machine's Next press (allowNext) of exactly the adapter's own nextButton,
+ * on a step isFinalStep reads 'not-final' (nextException), that button one of the adapter's per-step ids, and the
+ * page's own step bar showing a later step a person can see (laterStep: connected, in the button's document, neither
+ * the button nor inside or around it). The adapter's Submit, a button holding or inside either, the never-pressed list
+ * and every other submit word stay refused; a hook that throws refuses. A bar that does not show a later step (none,
+ * hidden, one the adapter cannot read with certainty) leaves the button a Submit, pressed only through the Submit gates.
+ */
+function stepSubmitNextException(el: Element, ctx: NotSubmitContext): boolean {
+  const declared = ctx.adapter?.stepSubmitNext;
+  if (declared === undefined || ctx.root === null) return false;
+  try {
+    if (!nextException(el, ctx) || !declared.buttons.some((selector) => el.matches(selector))) return false;
+    const later = declared.laterStep(el.ownerDocument);
+    return later !== null && later.isConnected && later.ownerDocument === el.ownerDocument && later !== el
+      && !el.contains(later) && !later.contains(el) && isUserVisible(later);
+  } catch {
+    return false;
+  }
 }

@@ -10,6 +10,9 @@ export interface Rgba {
   g: number;
   b: number;
   a: number;
+  /** The core pass of 2026-11-06: an opaque colour known only between bounds (camouflage.ts, a translucent layer over
+   *  an image): any colour whose every channel lies between this colour's and `hi`'s. Compositing (over) carries it. */
+  hi?: Rgba;
 }
 
 /** Opaque white, the default canvas. */
@@ -74,16 +77,26 @@ export function fade(color: Rgba, factor: number): Rgba {
   return { ...color, a: clamp01(color.a * factor) };
 }
 
-/** `top` composited over an opaque `bottom`: the opaque colour the eye sees. */
+/** `top` composited over an opaque `bottom`: the opaque colour the eye sees. Over a colour known only between bounds
+ *  (Rgba.hi), the result is known between `top` over each bound: compositing is increasing in every channel below. */
 export function over(top: Rgba, bottom: Rgba): Rgba {
   const a = clamp01(top.a);
-  return {
-    r: top.r * a + bottom.r * (1 - a),
-    g: top.g * a + bottom.g * (1 - a),
-    b: top.b * a + bottom.b * (1 - a),
+  const mix = (under: Rgba): Rgba => ({
+    r: top.r * a + under.r * (1 - a),
+    g: top.g * a + under.g * (1 - a),
+    b: top.b * a + under.b * (1 - a),
     a: 1,
-  };
+  });
+  return bottom.hi === undefined ? mix(bottom) : { ...mix(bottom), hi: mix(bottom.hi) };
 }
+
+/** The core pass of 2026-11-06: an opaque colour known only between `lo` and `hi`, channel by channel. */
+export function between(lo: Rgba, hi: Rgba): Rgba {
+  return { r: lo.r, g: lo.g, b: lo.b, a: 1, hi: { r: hi.r, g: hi.g, b: hi.b, a: 1 } };
+}
+
+/** Opaque black, the darkest an unknown colour may be. */
+export const BLACK: Rgba = { r: 0, g: 0, b: 0, a: 1 };
 
 /** WCAG 2 relative luminance of an opaque colour. */
 export function luminance(color: Rgba): number {
@@ -99,6 +112,22 @@ export function contrast(a: Rgba, b: Rgba): number {
   const la = luminance(a);
   const lb = luminance(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * The core pass of 2026-11-06: the least WCAG contrast `text` (faded) can have, composited over any colour `behind`
+ * may be (Rgba.hi: between its bounds), against that colour. Luminance increases with every channel, so the colour
+ * behind lies between its bounds' luminances, and the text over it between the text's over each bound: where the two
+ * ranges meet, some colour behind may match the text (1); else the nearest ends. Never above the true least contrast.
+ */
+export function leastContrast(text: Rgba, behind: Rgba): number {
+  if (behind.hi === undefined) return contrast(over(text, behind), behind);
+  const low: Rgba = { r: behind.r, g: behind.g, b: behind.b, a: 1 };
+  const back = [luminance(low), luminance(behind.hi)] as const;
+  const ink = [luminance(over(text, low)), luminance(over(text, behind.hi))] as const;
+  if (ink[1] < back[0]) return (back[0] + 0.05) / (ink[1] + 0.05);
+  if (ink[0] > back[1]) return (ink[0] + 0.05) / (back[1] + 0.05);
+  return 1;
 }
 
 /** The colours of a computed background-image's gradients, in order; null when it holds anything but gradients (an

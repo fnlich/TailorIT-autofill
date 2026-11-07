@@ -1,10 +1,10 @@
 # TailorIT Autofill
 
-A Manifest V3 browser extension that fills job applications on Greenhouse, Lever, Ashby and Workday from the profile you keep in [TailorIT](../TailorIT). One click fills what it is sure of, with TailorIT's AI answering what your profile does not; everything is listed for you to review in the side panel. It submits an application only when you press Submit application in its panel, or turn Submit mode to Auto (Manual by default).
+A Manifest V3 browser extension that fills job applications on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany and ADP Workforce Now (and, once you turn it on, on employers' own careers sites) from the profile you keep in [TailorIT](../TailorIT). One click fills what it is sure of, with TailorIT's AI answering what your profile does not; everything is listed for you to review in the side panel. It submits an application only when you press Submit application in its panel, turn Submit mode to Auto (Manual by default), or turn on Run auto-apply for the jobs you queue in TailorIT (off by default).
 
 The specification is [docs/SPEC.md](docs/SPEC.md); the design is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Work proceeds in phases 0-6, each ending with a report.
 
-**Status:** Phase 0 (scaffold). The extension builds, loads and registers the application pages it sees; it does not fill anything yet.
+**Status:** v3, through Phase 8 (LinkedIn deferred to v5), and the snapshot build of 2026-11-06: it fills one-page and multi-step applications on the 25 sites above, and submits them only as described; the auto-apply agent, Sign-in Auto and Company career sites are built. [docs/OWNER-QUESTIONS.md](docs/OWNER-QUESTIONS.md) lists what still waits for the owner.
 
 ## Setup
 Node 24 (`>=24.11 <25`), Windows first.

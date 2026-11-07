@@ -1,0 +1,24 @@
+{
+  "ats": {
+    "kind": "ultipro",
+    "board": "northwind",
+    "externalId": "6b2f8e1a-4c7d-4e9b-a3f0-1d5c8b7e2a96"
+  },
+  "job": null,
+  "application": null,
+  "suggestedResume": {
+    "id": "3f6a9c2e-81d4-4b7f-a5e0-2c9d8b1e4f73",
+    "label": "Data Engineer",
+    "kind": "built",
+    "fileKind": "pdf",
+    "fileName": "Elena Ruiz Resume.pdf",
+    "reason": "profile"
+  },
+  "match": null,
+  "page": {
+    "kind": "ats",
+    "linkedInUrl": null,
+    "employer": null,
+    "addWith": "page"
+  }
+}

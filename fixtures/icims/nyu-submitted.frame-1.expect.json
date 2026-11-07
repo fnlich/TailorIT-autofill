@@ -1,0 +1,23 @@
+{
+  "fixture": "icims/nyu-submitted.frame-1",
+  "source": "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/job?mode=submit_apply&in_iframe=1",
+  "captured": "2026-11-06T14:00:24.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": ".iCIMS_JobContent",
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_JobShareButton",
+      "a[href*=\"/referral\"]",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Faq_Link",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": []
+  }
+}

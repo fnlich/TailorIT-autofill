@@ -15,6 +15,12 @@
  * v3 Phase 4 (docs/SPEC-AMENDMENTS.md §12, Decision 6), with the skip rules it reads. The v3 Phase 4 review adds
  * `modes.recordOwn` ("Record applications I submit myself", on by default): a stored version 4 value without it reads
  * as on (shared/settings.ts).
+ * Version 5 (the owner's word on the behaviour review of 2026-11-06, M2): "Résumé already on the page" (`modes.resumeOnPage`,
+ * shown with the modes): Keep it (the default) leaves a résumé the page already shows (a field holding a file the page
+ * took: Adapter.uploadHeld) and flags it prefill-kept; Upload mine again uploads the person's chosen résumé into that
+ * field through the same upload path, as the page's own file input takes it, never pressing the page's Remove or Delete,
+ * and leaves the field to the person (resume-held-no-input) where the page offers no file input while it shows one. A
+ * version 4 value takes Keep it (migrateSettingsV4).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -33,6 +39,7 @@ export const MODE_CHOICES = {
   recordOwn: ['on', 'off'],
   consents: ['all', 'required'],
   ai: ['all', 'profile'],
+  resumeOnPage: ['keep', 'upload'],
 } as const;
 
 /** The modes the person chooses (the owner's correction at the v3 plan's review, docs/SPEC-AMENDMENTS.md §12). */
@@ -59,6 +66,11 @@ export interface Modes {
   /** With the AI's answers on, also the legal, pay and attention-check questions the profile does not answer ('all',
    *  version 3's llm.answerAll), or those from the profile only ('profile'). */
   ai: (typeof MODE_CHOICES.ai)[number];
+  /** Version 5: a résumé the page already shows in a résumé field (Adapter.uploadHeld) is kept, flagged prefill-kept
+   *  ('keep'), or the person's chosen résumé is uploaded into that field anyway ('upload'), through the page's own file
+   *  input; the page's Remove and Delete are never pressed, and where the page offers no file input while it shows one
+   *  the field is left to the person (resume-held-no-input). */
+  resumeOnPage: (typeof MODE_CHOICES.resumeOnPage)[number];
   /** When Submit mode Auto (v3 Phase 4) and the auto-apply agent (Phase 5) leave a job for the person instead of
    *  submitting it: a required field still empty, a posting that forbids AI, a legal answer that was an AI guess. Not
    *  shown until the agent's phase: their defaults act. */
@@ -70,7 +82,7 @@ export const PANEL_VIEWS = ['expanded', 'minimized'] as const;
 export type PanelView = (typeof PANEL_VIEWS)[number];
 
 export interface Settings {
-  version: 4;
+  version: 5;
   /** Where the review report shows: the browser's side panel (default) or a panel on the page. */
   panel: 'side' | 'in-page';
   /** The side panel's review at first: whole ('expanded'), or folded to its progress line ('minimized'). */
@@ -117,14 +129,14 @@ export const DEFAULT_PREAPPROVED_CONSENT: readonly ConsentCategory[] = ['privacy
 /** The modes' defaults (the owner's, 2026-11-01): the person signs in and presses Next and Submit; each new step is
  *  filled as it appears; every agreement is ticked; the AI answers what the profile does not, legal and pay included;
  *  the agent leaves a job with an empty required field or a posting that forbids AI, and submits one with an
- *  AI-guessed legal answer. */
+ *  AI-guessed legal answer; a résumé the page already shows is kept (version 5, the owner's word of 2026-11-06). */
 export const DEFAULT_MODES: Modes = {
   signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual', recordOwn: 'on', consents: 'all', ai: 'all',
-  agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false },
+  resumeOnPage: 'keep', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false },
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  version: 4,
+  version: 5,
   panel: 'side',
   view: 'expanded',
   modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip } },
@@ -147,6 +159,13 @@ export interface SettingsV1 {
   interpretations: { postingCountryForLegal: boolean; twoOrMoreRaces: boolean };
 }
 
+/** Version 4's settings, as an install stored them before "Résumé already on the page" (the behaviour review of
+ *  2026-11-06, M2). */
+export interface SettingsV4 extends Omit<Settings, 'version' | 'modes'> {
+  version: 4;
+  modes: Omit<Modes, 'resumeOnPage'>;
+}
+
 /** Version 3's settings, as an install stored them before the modes (v3 Phase 3). */
 export interface SettingsV3 extends Omit<Settings, 'version' | 'view' | 'modes' | 'llm'> {
   version: 3;
@@ -165,19 +184,43 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
 }
 
 /**
- * Version 3's settings as version 4's (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto), the AI's legal, pay
- * and attention-check answers the AI answers mode (on: All, off: Profile only), each as the person had it; the other
- * modes and the default view take their defaults. Consents: All among them is a change, not a choice kept (the owner's
- * decision: every agreement box is ticked, like Jobright): an optional box version 3 left unticked is ticked from then
- * on unless the person chooses Required only, which the pre-approved kinds, kept, still govern.
+ * Version 4's settings as version 5's (the behaviour review of 2026-11-06, M2): every choice is kept, and "Résumé already
+ * on the page" takes its default, Keep it, which is what version 4 did with a résumé the page showed.
+ */
+export function migrateSettingsV4(old: SettingsV4): Settings {
+  return {
+    version: 5,
+    panel: old.panel,
+    view: old.view,
+    modes: { ...old.modes, resumeOnPage: DEFAULT_MODES.resumeOnPage, agentSkip: { ...old.modes.agentSkip } },
+    preapprovedConsent: [...old.preapprovedConsent],
+    llm: { ...old.llm },
+    telemetry: { ...old.telemetry },
+    offerToSaveAnswers: old.offerToSaveAnswers,
+    interpretations: { ...old.interpretations },
+  };
+}
+
+/**
+ * Version 3's settings as version 5's, through version 4's (v3 Phase 3). Auto-advance becomes the Next mode (on: Auto),
+ * the AI's legal, pay and attention-check answers the AI answers mode (on: All, off: Profile only), each as the person
+ * had it; the other modes and the default view take their defaults. Consents: All among them is a change, not a choice
+ * kept (the owner's decision: every agreement box is ticked, like Jobright): an optional box version 3 left unticked is
+ * ticked from then on unless the person chooses Required only, which the pre-approved kinds, kept, still govern.
  */
 export function migrateSettingsV3(old: SettingsV3): Settings {
+  return migrateSettingsV4(settingsV4Of(old));
+}
+
+/** Version 3's settings as version 4's (migrateSettingsV3). */
+function settingsV4Of(old: SettingsV3): SettingsV4 {
   const { answerAll, ...llm } = old.llm;
+  const { resumeOnPage: _later, ...modes } = DEFAULT_MODES;
   return {
     version: 4,
     panel: old.panel,
     view: DEFAULT_SETTINGS.view,
-    modes: { ...DEFAULT_MODES, agentSkip: { ...DEFAULT_MODES.agentSkip }, next: old.autoAdvance ? 'auto' : 'manual',
+    modes: { ...modes, agentSkip: { ...DEFAULT_MODES.agentSkip }, next: old.autoAdvance ? 'auto' : 'manual',
       ai: answerAll ? 'all' : 'profile' },
     preapprovedConsent: [...old.preapprovedConsent],
     llm: { ...llm },
@@ -188,7 +231,7 @@ export function migrateSettingsV3(old: SettingsV3): Settings {
 }
 
 /**
- * Version 2's settings as version 4's, through version 3's: every choice is kept, and version 3's switch,
+ * Version 2's settings as version 5's, through versions 3 and 4: every choice is kept, and version 3's switch,
  * llm.answerAll, takes its default (on, as the owner chose), so the AI answers mode is All. It acts only while answers
  * are on, so a person who turned the AI's answers off keeps them off.
  */
@@ -197,7 +240,7 @@ export function migrateSettingsV2(old: SettingsV2): Settings {
 }
 
 /**
- * Version 1's settings as version 4's, through versions 2 and 3: each choice still on version 1's default (drafts off,
+ * Version 1's settings as version 5's, through versions 2, 3 and 4: each choice still on version 1's default (drafts off,
  * nothing pre-approved, the two interpretations off) takes version 2's, and every choice the person changed is kept.
  * The new switches take their defaults, but a person who had turned the AI off (the tiebreak and classification both
  * off) keeps answers off and drafts as they were (off unless they turned them on: the lead's decision on the Phase E

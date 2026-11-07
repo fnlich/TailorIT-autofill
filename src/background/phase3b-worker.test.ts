@@ -17,7 +17,7 @@ import { createSiteRequests } from './site-requests';
 import { CONFIRMATION_PAGE_MS, SUBMIT_ARM_MS } from './submissions';
 import { AUTOFILL_APPLIED_REFUSALS } from '../contract/tailorit';
 import {
-  contentSender, fakeDocx, fieldSpec, fileReply, frameReport, goldens, LEVER_URL, pageSender, restartTestWorker,
+  contentSender, fakeDocx, fieldSpec, fileReply, frameReport, goldens, LEVER_POSTING_URL, LEVER_URL, pageSender, restartTestWorker,
   sentToFrames, startTestWorker, tokenRecord, typeOfSent, beginRun, type TestWorker,
 } from './worker.testkit';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
@@ -67,14 +67,14 @@ describe('"Autofill for another job" (v3 Phase 3b)', () => {
 
     expect(await page(worker, { type: 'panel/chooseJob', tabId: 7, ref: 'j1' })).toEqual({ ok: true, data: {} });
     await page(worker, { type: 'panel/job', tabId: 7 });
-    expect(bodyOf(worker, LOOKUP).at(-1)).toEqual({ url: LEVER_URL, includePostingText: false, jobId: 1077 });
+    expect(bodyOf(worker, LOOKUP).at(-1)).toEqual({ url: LEVER_POSTING_URL, includePostingText: false, jobId: 1077 });
     await beginRun(worker, { applicationKey: KEY });
-    expect(bodyOf(worker, LOOKUP).at(-1)).toMatchObject({ url: LEVER_URL, includePostingText: true, jobId: 1077 });
+    expect(bodyOf(worker, LOOKUP).at(-1)).toMatchObject({ url: LEVER_POSTING_URL, includePostingText: true, jobId: 1077 });
     // A reference the last search did not give is refused; null chooses the page's own job again.
     expect(await page(worker, { type: 'panel/chooseJob', tabId: 7, ref: 'j7' })).toEqual({ ok: false, error: 'expired' });
     expect(await page(worker, { type: 'panel/chooseJob', tabId: 7, ref: null })).toEqual({ ok: true, data: {} });
     await page(worker, { type: 'panel/job', tabId: 7 });
-    expect(bodyOf(worker, LOOKUP).at(-1)).toEqual({ url: LEVER_URL, includePostingText: false });
+    expect(bodyOf(worker, LOOKUP).at(-1)).toEqual({ url: LEVER_POSTING_URL, includePostingText: false });
     // A reference that is not one is refused by the schema.
     expect(await page(worker, { type: 'panel/chooseJob', tabId: 7, ref: '1042' })).toEqual({ ok: false, error: 'bad_message' });
   });

@@ -1,0 +1,164 @@
+{
+  "fixture": "jazzhr/invaluable-form",
+  "source": "https://invaluable.applytojob.com/apply/bopFMbElHx/Senior-Backend-Engineer",
+  "captured": "2026-11-06T15:07:41.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-firstname-value\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-lastname-value\"]"
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-email-value\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-phone-value\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-address-value\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-city-value\"]",
+      "note": "City, State/Province and Postal have no label of their own, only a placeholder, under the one \"Address\" label."
+    },
+    {
+      "label": "State/Province",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-state-value\"]"
+    },
+    {
+      "label": "Postal",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-postal-value\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-resume-value\"]",
+      "note": "A visible file input beside \"Attach resume as .pdf, .doc, .docx, .odt, .txt, or .rtf (limit 5MB) or Paste resume\"; required by the label's star."
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-coverletter-value\"]"
+    },
+    {
+      "label": "Will you be working from inside the United States?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "[id=\"resumator-questionnaire-q3021276\"]"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "[id=\"resumator-questionnaire-q3021277\"]"
+    },
+    {
+      "label": "Will you now or in the future require sponsorship for employment visa status (for example, H-1B visa status)?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "[id=\"resumator-questionnaire-q3021279\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "[id=\"resumator-eeo_gender-value\"]"
+    },
+    {
+      "label": "Race/Ethnicity",
+      "kind": "select",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 9,
+      "control": "[id=\"resumator-eeo_race-value\"]"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"resumator-resumetext-value\"]",
+      "note": "The resume's paste box, in the hidden #resumator-resume-paste-wrapper (class none) until its \"Paste resume\" switch, which no run presses."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"resumator-xml-value\"]",
+      "note": "The page's own hidden XML box (class none)."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"g-recaptcha-response\"]",
+      "note": "reCAPTCHA's own answer box (display none): the \"Human Check\" is the person's."
+    }
+  ]
+}

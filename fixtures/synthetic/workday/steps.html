@@ -1,0 +1,233 @@
+<!doctype html>
+<!--
+  Synthetic (the Workday application steps, from the owner's signed-in snapshots of 2026-11-06): a Workday tenant's
+  flow page after the account, drawn with the markup the snapshots show (fixtures/workday/resolvetech-source-open.html, resolvetech-my-experience.html and web-review.html: the same data-automation-id names,
+  the same nesting, the same ARIA), served at
+  https://tailoritfixture.wd5.myworkdayjobs.com/en-US/careers/job/x/Fixture-Steps_JR-0000002/apply/applyManually and read
+  by the Workday adapter (src/adapters/workday/application.ts). Three steps in one document, drawn in place as Workday's
+  React does, the address never changing:
+  - My Information (applyFlowMyInfoPage): the Country dropdown (button[aria-haspopup=listbox]; its click draws
+    ul[role=listbox] at the end of the body and names it by aria-expanded and aria-controls, as the open source list of
+    resolvetech's snapshot; an option's click writes it on the button, its value the option's data-value, and closes the
+    list), First Name, Last Name, City and Postal Code under their h4 groups, each label's star an aria-hidden abbr;
+  - My Experience (applyFlowMyExpPage): Work Experience with one block (Job Title, Company, "I currently work here",
+    the required From date drawn as Workday draws it: aria-hidden displays over 1 px spin buttons, and Role Description)
+    and its "Add Another", which adds a block;
+  - Review (applyFlowReviewPage), the bar's last step: its footer button reads "Submit".
+  The footer's pageFooterNextButton ("Save and Continue", "Submit" on Review) moves on once the step's required boxes hold
+  something; Back (pageFooterBackButton) goes back. window.__wd records each press of them and of Add Another with
+  whether a person made it (isTrusted): { step, next: [{ step, trusted }], back: [...], add: [...], submit: [...] }, and
+  what each step held when its Next was pressed (values[step], by box id: the test's dummy profile only). Nothing is
+  ever posted: there is no form.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fixture Engineer</title>
+  <style>
+    body { margin: 0; background: #fff; color: #333d47; font: 14px/1.5 system-ui, sans-serif; }
+    main { max-width: 720px; margin: 24px auto; padding: 0 16px; }
+    ol { display: flex; gap: 12px; list-style: none; padding: 0; }
+    ol label { display: block; font-size: 12px; }
+    [data-automation-id^="formField-"] { margin-top: 12px; }
+    [data-automation-id^="formField-"] > label, legend label { display: block; font-weight: 600; }
+    input[type="text"], textarea { display: block; width: 100%; box-sizing: border-box; padding: 6px;
+      border: 1px solid #7b858f; border-radius: 4px; }
+    button { padding: 8px 16px; margin-top: 8px; }
+    abbr { color: #de2e21; text-decoration: none; margin-left: 2px; }
+    .wrap { position: relative; display: inline-flex; gap: 4px; padding: 6px; border: 1px solid #7b858f; border-radius: 4px; }
+    .part { position: relative; width: 48px; height: 24px; }
+    .display { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 1; }
+    .spin { position: absolute; color: rgba(255, 255, 255, 0.01); left: 0; overflow: hidden; top: 0; transform: scale(0.01);
+      width: 1px; z-index: -1000; }
+    .mirror { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+    .popup { position: absolute; z-index: 30; background: #fff; border: 1px solid #7b858f; }
+    .popup ul { list-style: none; margin: 0; padding: 4px 0; }
+    .popup li { padding: 4px 12px; cursor: pointer; }
+    footer, [data-automation-id="pageFooter"] { display: flex; gap: 12px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div data-automation-id="applyFlowPage">
+      <div><button type="button" data-automation-id="backToJobPosting" role="link">Back to Job Posting</button>
+        <h2 data-automation-id="jobTitleHeading">Fixture Engineer</h2></div>
+      <div aria-label="Application Progress"><ol data-automation-id="progressBar" id="bar"></ol></div>
+      <div><div><h3 tabindex="-1" id="title"></h3><div><abbr>*</abbr> Indicates a required field</div>
+        <div id="step"></div>
+        <div data-automation-id="pageFooter" id="footer"></div></div></div>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const NAMES = ['My Information', 'My Experience', 'Review'];
+      const PAGES = ['applyFlowMyInfoPage', 'applyFlowMyExpPage', 'applyFlowReviewPage'];
+      const record = { step: 1, next: [], back: [], add: [], submit: [], values: {} };
+      window.__wd = record;
+      const make = (tag, attributes = {}, ...children) => {
+        const el = document.createElement(tag);
+        for (const [name, value] of Object.entries(attributes)) el.setAttribute(name, value);
+        el.append(...children);
+        return el;
+      };
+      const star = () => make('abbr', { 'aria-hidden': 'true' }, '*');
+      const label = (id, words, required) => make('label', { for: id }, make('span', {}, words, ...(required ? [star()] : [])));
+      const text = (group, name, words, required) => make('div', { 'data-automation-id': `formField-${name}`,
+        'data-fkit-id': `${group}--${name}` }, label(`${group}--${name}`, words, required),
+        make('div', {}, make('input', { type: 'text', id: `${group}--${name}`, name, 'aria-required': String(required),
+          value: '' })));
+      const group = (id, heading, ...fields) => make('div', { role: 'group', 'aria-labelledby': id },
+        make('h4', { id }, heading), ...fields);
+      // The dropdown: resolvetech-source-open.html's button and its list at the end of the body.
+      const OPTIONS = [['', 'Select One'], ['c0a1', 'Canada'], ['c0a2', 'United States of America']];
+      const dropdown = (group, name, words, required) => {
+        const id = `${group}--${name}`;
+        const button = make('button', { 'aria-haspopup': 'listbox', type: 'button', value: '',
+          'aria-label': `${words} Select One${required ? ' Required' : ''}`, name, id }, 'Select One');
+        return make('div', { 'data-automation-id': `formField-${name}`, 'data-fkit-id': id }, label(id, words, required),
+          make('div', {}, button, make('input', { type: 'text', class: 'mirror', value: '' })));
+      };
+      let open = null;
+      const closeList = () => {
+        if (open === null) return;
+        open.popup.remove();
+        open.button.removeAttribute('aria-expanded');
+        open.button.removeAttribute('aria-controls');
+        open = null;
+      };
+      const openList = (button) => {
+        const list = make('ul', { role: 'listbox', tabindex: '-1', id: 'list-1', 'aria-required': 'true' },
+          ...OPTIONS.map(([value, words]) => make('li', { 'data-value': value, role: 'option', id: value === '' ? 'select-one' : value,
+            ...(value === '' ? { 'aria-disabled': 'true' } : {}),
+            ...(button.getAttribute('value') === value ? { 'aria-selected': 'true' } : {}) }, make('div', {}, words))));
+        const box = button.getBoundingClientRect();
+        const popup = make('div', { class: 'popup', 'data-popper-placement': 'bottom',
+          style: `left:${box.left + window.scrollX}px;top:${box.bottom + window.scrollY}px` }, make('div', {}, list));
+        document.body.append(popup);
+        button.setAttribute('aria-expanded', 'true');
+        button.setAttribute('aria-controls', 'list-1');
+        open = { button, popup };
+      };
+      // The date: resolvetech-my-experience.html's dateInputWrapper.
+      const date = (group, name, words) => {
+        const id = `${group}--${name}`;
+        const part = (section, placeholder, labelWords, max) => make('div', { id: `${id}-${section}`, class: 'part' },
+          make('div', { 'aria-hidden': 'true', class: 'display', 'data-automation-id': `${section}-display` }, placeholder),
+          make('input', { role: 'spinbutton', class: 'spin', 'aria-label': labelWords, 'aria-valuemax': max, 'aria-valuemin': '1',
+            'aria-valuetext': placeholder, 'aria-required': 'true', id: `${id}-${section}-input`,
+            'data-automation-id': `${section}-input`, value: '' }));
+        return make('div', { 'data-automation-id': `formField-${name}`, 'data-fkit-id': id },
+          make('fieldset', {}, make('legend', {}, make('label', { id: `label-${id}` }, make('span', {}, words, star()))),
+            make('div', { 'aria-hidden': 'true', id: `helpText-${id}` }, 'current value is MM/YYYY'),
+            make('div', { id, role: 'group', 'data-automation-id': 'dateInputWrapper', class: 'wrap' },
+              part('dateSectionMonth', 'MM', 'Month', '12'), make('div', {}, '/'), part('dateSectionYear', 'YYYY', 'Year', '9999'))));
+      };
+      let blocks = 0;
+      const block = () => {
+        blocks += 1;
+        const g = `workExperience-${60 + blocks}`;
+        const box = make('input', { id: `${g}--currentlyWorkHere`, type: 'checkbox', 'aria-checked': 'false',
+          name: 'currentlyWorkHere', 'aria-required': 'false' });
+        box.addEventListener('change', () => box.setAttribute('aria-checked', String(box.checked)));
+        return make('div', { role: 'group', 'aria-labelledby': `Work-Experience-${blocks}-panel` },
+          make('div', {}, make('h5', { id: `Work-Experience-${blocks}-panel` }, `Work Experience ${blocks}`),
+            make('button', { type: 'button' }, 'Delete')),
+          make('div', { 'data-fkit-id': `${g}--null` }, text(g, 'jobTitle', 'Job Title', true),
+            text(g, 'companyName', 'Company', true),
+            make('div', { 'data-automation-id': 'formField-currentlyWorkHere' }, label(`${g}--currentlyWorkHere`,
+              'I currently work here', false), box),
+            date(g, 'startDate', 'From'),
+            make('div', { 'data-automation-id': 'formField-roleDescription' }, label(`${g}--roleDescription`,
+              'Role Description', false), make('textarea', { id: `${g}--roleDescription`, 'aria-required': 'false' }))));
+      };
+      const steps = [
+        () => make('div', { 'data-automation-id': PAGES[0] },
+          make('div', { role: 'group', 'aria-labelledby': 'country-section' }, dropdown('country', 'country', 'Country', true)),
+          group('Legal-Name-section', 'Legal Name', text('name', 'legalName--firstName', 'First Name', true),
+            text('name', 'legalName--lastName', 'Last Name', true)),
+          group('Address-section', 'Address', text('address', 'city', 'City', true),
+            text('address', 'postalCode', 'Postal Code', true))),
+        () => {
+          const add = make('button', { 'data-automation-id': 'add-button', type: 'button' }, 'Add Another');
+          const work = make('div', { role: 'group', 'aria-labelledby': 'Work-Experience-section' },
+            make('h4', { id: 'Work-Experience-section' }, 'Work Experience'), block(), add);
+          add.addEventListener('click', (event) => {
+            record.add.push({ step: record.step, trusted: event.isTrusted });
+            add.before(block());
+          });
+          return make('div', { 'data-automation-id': PAGES[1] }, work);
+        },
+        () => make('div', { 'data-automation-id': PAGES[2] }, make('h3', { tabindex: '-1' }, 'My Information'),
+          make('label', { for: 'country' }, 'Country'), make('span', { id: 'country' }, '')),
+      ];
+      const show = (step) => {
+        closeList();
+        record.step = step;
+        const bar = document.getElementById('bar');
+        bar.replaceChildren(...NAMES.map((name, index) => {
+          const at = index + 1;
+          const kind = at < step ? 'Completed' : at === step ? 'Active' : 'Inactive';
+          const words = at < step ? `completed step ${at} of 3` : at === step ? `current step ${at} of 3` : `step ${at} of 3`;
+          return make('li', { 'data-automation-id': `progressBar${kind}Step` }, make('div', {}),
+            make('label', { 'aria-live': 'polite' }, words), make('label', {}, name));
+        }));
+        document.getElementById('title').textContent = NAMES[step - 1];
+        document.getElementById('step').replaceChildren(steps[step - 1]());
+        const footer = document.getElementById('footer');
+        footer.replaceChildren(...(step > 1 ? [make('div', {}, make('button', { 'data-automation-id': 'pageFooterBackButton' }, 'Back'))] : []),
+          make('div', {}, make('button', { 'data-automation-id': 'pageFooterNextButton' }, step === 3 ? 'Submit' : 'Save and Continue')));
+      };
+      /** Whether every required box of the step holds something (Workday keeps the step otherwise). */
+      const complete = () => Array.from(document.querySelectorAll('#step input[aria-required="true"]'))
+        .every((input) => input.value.trim() !== '')
+        && Array.from(document.querySelectorAll('#step button[aria-haspopup="listbox"]'))
+          .every((button) => !/Required$/.test(button.getAttribute('aria-label') ?? '') || button.getAttribute('value') !== '');
+      document.addEventListener('click', (event) => {
+        const target = event.target;
+        const option = target.closest('.popup [role="option"]');
+        if (option !== null && open !== null) {
+          if (option.getAttribute('aria-disabled') === 'true') return;
+          const words = option.textContent.trim();
+          open.button.textContent = words;
+          open.button.setAttribute('value', option.getAttribute('data-value'));
+          open.button.setAttribute('aria-label', `Country ${words} Required`);
+          open.button.nextElementSibling.value = words;
+          closeList();
+          return;
+        }
+        const button = target.closest('button[aria-haspopup="listbox"]');
+        if (button !== null) {
+          if (open !== null && open.button === button) closeList();
+          else {
+            closeList();
+            openList(button);
+          }
+          return;
+        }
+        if (target.closest('[data-automation-id="pageFooterNextButton"]') !== null) {
+          const entry = { step: record.step, trusted: event.isTrusted };
+          if (record.step === 3) {
+            record.submit.push(entry);
+            return;
+          }
+          record.next.push(entry);
+          // What the step held when Next was pressed (the test's dummy profile only), by box id: the step leaves.
+          record.values[record.step] = Object.fromEntries([
+            ...Array.from(document.querySelectorAll('#step input[type="text"][id], #step textarea[id]'))
+              .map((box) => [box.id, box.value]),
+            ...Array.from(document.querySelectorAll('#step button[aria-haspopup="listbox"]'))
+              .map((button) => [button.id, button.getAttribute('value') === '' ? '' : button.textContent.trim()]),
+            ...Array.from(document.querySelectorAll('#step input[type="checkbox"]')).map((box) => [box.id, box.checked])]);
+          if (complete()) show(record.step + 1);
+          return;
+        }
+        if (target.closest('[data-automation-id="pageFooterBackButton"]') !== null) {
+          record.back.push({ step: record.step, trusted: event.isTrusted });
+          show(record.step - 1);
+        }
+      });
+      show(1);
+    })();
+  </script>
+</body>
+</html>

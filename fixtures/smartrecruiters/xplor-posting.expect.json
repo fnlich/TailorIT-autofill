@@ -1,0 +1,23 @@
+{
+  "fixture": "smartrecruiters/xplor-posting",
+  "source": "https://jobs.smartrecruiters.com/Xplor/744000159905715-senior-site-reliability-engineer",
+  "captured": "2026-11-06T14:58:40.000Z",
+  "note": "The posting: its \"I'm interested\" (three copies: bottom, aside, and an aria-hidden header copy) opens the one-click application.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": "main.jobad-main .job-sections",
+    "entryControl": "a.js-oneclick[data-sr-track-position=\"bottom\"]",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.js-oneclick",
+      "a.js-smartr-oneclick",
+      "a#st-refer",
+      "a.social-link",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": []
+  }
+}

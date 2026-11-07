@@ -1,0 +1,155 @@
+{
+  "fixture": "workday/aep-application-questions-2",
+  "source": "https://aep.wd1.myworkdayjobs.com/en-US/aepcareersite/job/Gahanna%2C-OH/Infrastructure-Engineer-Lead---Cloud-AI_R19366/apply/autofillWithResume",
+  "captured": "2026-11-06T16:28:33.000Z",
+  "fields": [
+    {
+      "label": "Will you now or in the future require sponsorship for an immigration-related employment benefit? (Sponsorship for immigration-related employment benefits include, but are not limited to, H1B petition, employer offer letter for TN status, Form I-485 Supplement J for job portability, I-983 training pl",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b485b54fa0000\"]"
+    },
+    {
+      "label": "Will you be using Optional Practical Training (OPT) or STEM OPT to begin employment at AEP?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4a28e6390000\"]"
+    },
+    {
+      "label": "Are you now or have you ever been a contractor at AEP?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4ac349f50000\"]"
+    },
+    {
+      "label": "Please indicate the highest level of education you possess",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4ac349f50004\"]"
+    },
+    {
+      "label": "Please indicate the number of years work experience you possess related to this position",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4bf7f3390005\"]"
+    },
+    {
+      "label": "Please state your desired compensation",
+      "kind": "text",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "control": "input[id=\"secondaryQuestionnaire--928b890cf8051001b31b4d2b88140006\"]"
+    },
+    {
+      "label": "Do you have relatives employed by American Electric Power?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4dc5fc260000\"]"
+    },
+    {
+      "label": "Do you have military training or a military certification related to this position?",
+      "kind": "combobox",
+      "required": true,
+      "section": "application-questions-2-of-2",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b51fcee7d0004\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"utilityMenuButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Application Questions 2 of 2",
+      "progress": "current step 5 of 7",
+      "anchors": [
+        "applyFlowSecondaryQuestionsPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b485b54fa0000\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4a28e6390000\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4ac349f50000\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4ac349f50004\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4bf7f3390005\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b4dc5fc260000\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"secondaryQuestionnaire--928b890cf8051001b31b51fcee7d0004\"]",
+        "kind": "combobox",
+        "answered": false
+      }
+    ],
+    "repeatables": []
+  }
+}

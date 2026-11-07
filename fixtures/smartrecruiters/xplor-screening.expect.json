@@ -1,0 +1,197 @@
+{
+  "fixture": "smartrecruiters/xplor-screening",
+  "source": "https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1/screening?dcr_ci=Xplor",
+  "captured": "2026-11-06T15:27:48.000Z",
+  "note": "Controls are written as shadow-piercing chains, \" >>> \" between steps: the first step is looked for anywhere in the document, each next one anywhere inside the open shadow root of the element before it (smartrecruiters.browser.test.ts deepControl).",
+  "fields": [
+    {
+      "label": "How did you first hear about this opportunity?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "spl-autocomplete#question_a0151063-d62b-49e7-9c6f-d17e59b99090 >>> input[role=\"combobox\"]",
+      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+    },
+    {
+      "label": "What is your expected annual base salary?",
+      "kind": "text",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-number-field#question_50e1127d-b2fb-417a-92e1-adbb47d92f9d >>> input",
+      "note": "spl-number-field: input type=number min=0 (aria-label \"Salary in USD\" on its host)."
+    },
+    {
+      "label": "Which of the following statements best describes your right to work in the United States?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "spl-autocomplete#question_562715e2-4960-44f3-9e8d-2750ae765f9a >>> input[role=\"combobox\"]",
+      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+    },
+    {
+      "label": "Have you applied to or been referred to Xplor for another role in the past 12 months?",
+      "kind": "radio",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_21",
+      "note": "Its options are the spl-radio elements, its own children, slotted into the fieldset[role=radiogroup] of its shadow root (widgetRoots, widgetFor); the scanner crosses shadow roots for a widget root since the core pass of 2026-11-06, and the adapter names its question (labelFor, the label its fieldset names) and its required mark (requiredFor, the fieldset's aria-required)."
+    },
+    {
+      "label": "Are you a current or former employee or contractor of Xplor Technologies, Clubessential Holdings, Ezypay, or any affiliated brand?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "spl-autocomplete#question_9320d6d5-0b22-4e3f-b913-e7076e5e8083 >>> input[role=\"combobox\"]",
+      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+    },
+    {
+      "label": "If you answered 'yes' above, please provide the name of your (former) manager and the part of the business you work(ed) in.",
+      "kind": "text",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-input#question_616221fb-724f-4d4d-8f0b-c5c367958c13 >>> input"
+    },
+    {
+      "label": "Think about the industry or part of the business this role serves. In your own words, what's one real challenge companies in that space face right now, and how does your experience relate?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-textarea#question_6588cd07-fafd-41a7-8c35-c7f234c69c74 >>> textarea"
+    },
+    {
+      "label": "Intellectual Property: Do you own or have a partial interest in any intellectual properties, patents, licenses, or copyrights that could be relevant to your work at Xplor?",
+      "kind": "radio",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_27",
+      "note": "Its options are the spl-radio elements, its own children, slotted into the fieldset[role=radiogroup] of its shadow root (widgetRoots, widgetFor); the scanner crosses shadow roots for a widget root since the core pass of 2026-11-06, and the adapter names its question (labelFor, the label its fieldset names) and its required mark (requiredFor, the fieldset's aria-required)."
+    },
+    {
+      "label": "Outside Employment: Do you have any outside employment or consulting arrangements with any potential competitors or companies that may be perceived to conflict with your responsibilities at Xplor?",
+      "kind": "radio",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_30",
+      "note": "Its options are the spl-radio elements, its own children, slotted into the fieldset[role=radiogroup] of its shadow root (widgetRoots, widgetFor); the scanner crosses shadow roots for a widget root since the core pass of 2026-11-06, and the adapter names its question (labelFor, the label its fieldset names) and its required mark (requiredFor, the fieldset's aria-required)."
+    },
+    {
+      "label": "Board Memberships: Are you involved or serve on the board of directors or advisory board for any vendors, suppliers, or competitor companies that may have any current or potential business dealings with Xplor?",
+      "kind": "radio",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_33",
+      "note": "Its options are the spl-radio elements, its own children, slotted into the fieldset[role=radiogroup] of its shadow root (widgetRoots, widgetFor); the scanner crosses shadow roots for a widget root since the core pass of 2026-11-06, and the adapter names its question (labelFor, the label its fieldset names) and its required mark (requiredFor, the fieldset's aria-required)."
+    },
+    {
+      "label": "Personal Relationships: Do you have any personal relationships, such as friendships, family connections, or other close associations, with vendors, contractors, competitors, or individuals within Xplor that could be perceived as leading to preferential treatment, biased decisions, or conflicts of in",
+      "kind": "radio",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 2,
+      "control": "spl-radio-group#spl-form-element_36",
+      "note": "Its question is cut at 300 characters, as every label is. Its options are the spl-radio elements, its own children, slotted into the fieldset[role=radiogroup] of its shadow root (widgetRoots, widgetFor); the scanner crosses shadow roots for a widget root since the core pass of 2026-11-06, and the adapter names its question (labelFor, the label its fieldset names) and its required mark (requiredFor, the fieldset's aria-required)."
+    },
+    {
+      "label": "If yes, please list the names of the individual(s) and relationship.",
+      "kind": "textarea",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-textarea#question_39f0ccb9-1881-4687-9b24-aaee7aefb9b3 >>> textarea"
+    },
+    {
+      "label": "Is there anything else you’d like us to know about you that is not captured in your application?",
+      "kind": "textarea",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-textarea#question_a53a58f1-d41e-42be-a65d-f1e51bb1ec28 >>> textarea"
+    },
+    {
+      "label": "Additional attachments",
+      "kind": "file",
+      "required": false,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-dropzone[data-spl-field] >>> input[type=\"file\"]",
+      "note": "Labelled by its question (labelFor); its drop zone label[for] \"Choose a file or drop it here\" opens it (uploadWidgets)."
+    },
+    {
+      "label": "What best describes your ethnicity or race?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "spl-autocomplete#question_5d965982-4693-4ca6-91ff-9dde3767755c >>> input[role=\"combobox\"]",
+      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+    },
+    {
+      "label": "What best describes your gender?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "spl-autocomplete#question_d9203a60-8103-4251-8402-eb366923db58 >>> input[role=\"combobox\"]",
+      "note": "spl-autocomplete: its list (div[slot=menu][role=listbox]) is empty until opened, and no snapshot shows it open."
+    },
+    {
+      "label": "Are you a protected veteran? (definitions)",
+      "kind": "radio",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "options": 3,
+      "control": "spl-radio-group#spl-form-element_43",
+      "note": "Yes, No, \"Prefer not to answer\"; \"(definitions)\" is a link in its question. Its options are the spl-radio elements, its own children, slotted into the fieldset[role=radiogroup] of its shadow root (widgetRoots, widgetFor); the scanner crosses shadow roots for a widget root since the core pass of 2026-11-06, and the adapter names its question (labelFor, the label its fieldset names) and its required mark (requiredFor, the fieldset's aria-required)."
+    },
+    {
+      "label": "You declare that you have read and understand the privacy notice of Xplor.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Preliminary questions",
+      "fillable": true,
+      "control": "spl-checkbox#spl-form-element_17 >>> input[type=\"checkbox\"]",
+      "note": "The privacy notice's required consent."
+    }
+  ],
+  "hooks": {
+    "detect": "oc-screening-questions",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "oc-button[data-test=\"footer-back\"] spl-button",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": [
+      "oc-button[data-test=\"footer-submit\"]"
+    ]
+  }
+}

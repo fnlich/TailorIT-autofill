@@ -3,7 +3,9 @@
  * such a step nothing is filled, not even the email, and the run hands control back until a trusted Continue.
  * - Sign-in and accounts: a visible password field means a sign-in; two of them, or a "confirm password" label, an
  *   account creation. A visible one-time-code field (autocomplete="one-time-code", or a label naming a verification,
- *   security or one-time code) means an email code. The adapter's authState adds what a platform's snapshots show.
+ *   security or one-time code) means an email code. The adapter's authState adds what a platform's snapshots show. A
+ *   create-account section an adapter declares inside its application form (Adapter.accountSection, core-x item 2:
+ *   iCIMS's "Create a login") is no account page: its boxes are left out of this reading (dom/account-section.ts).
  * - CAPTCHA: recognised only from the vendors' documented markup. A visible challenge frame from reCAPTCHA
  *   (google.com or recaptcha.net under /recaptcha/), hCaptcha (hcaptcha.com), Cloudflare Turnstile
  *   (challenges.cloudflare.com), Arkose Labs (arkoselabs.com, and FunCaptcha's legacy funcaptcha.com), DataDome
@@ -14,15 +16,25 @@
  *   vendor's empty response field (g-recaptcha-response, h-captcha-response, cf-turnstile-response) that no documented
  *   container holds: a widget rendered into the page's own element. A closed shadow root cannot be read, nor an Arkose
  *   custom domain recognised: a known limit. The invisible reCAPTCHA badge and a widget
- *   bound to a button (invisible mode) do not pause. Phase 5 confirms this markup against the vendors' documentation.
+ *   bound to a button (invisible mode) do not pause: a <button>, an <input>, a link, or (the snapshot build of
+ *   2026-11-06, core pass Z1 item 20: ADP's guest Continue, an sdf-button) any element whose role is button carrying
+ *   the binding class and holding no frame. The challenge such a button raises is a vendor frame (reCAPTCHA's bframe),
+ *   which pauses once shown. Phase 5 confirms this markup against the vendors' documentation.
  *   A widget the person solved holds its response token in the field the vendor puts inside it (g-recaptcha-response,
  *   h-captcha-response, cf-turnstile-response): it does not pause, and neither does its frame (the Phase 5 review,
  *   X-S4). The token is only read for being there: it is never kept, sent or logged. A widget that holds no token
  *   (Arkose's, DataDome's, PerimeterX's, GeeTest's) is never known solved.
+ *   The behaviour review of 2026-11-06 (M6, the owner's decision; docs/SPEC-AMENDMENTS.md §12): a checkbox widget not
+ *   yet solved (reCAPTCHA v2's and hCaptcha's checkbox, as the snapshots show them: checkboxFrame) does not pause the
+ *   fill. It still counts in unsolvedCaptchas and pageChallenged, so every press (Next, Submit, the entry, a sign-in,
+ *   the agent's) holds until the person solves it; the run never touches it. A token lasts about two minutes, so the
+ *   person solves it last, after the fill. Its challenge popup (reCAPTCHA's bframe, hCaptcha's challenge frame) is no
+ *   checkbox: once shown, it pauses as every challenge does.
  * - vendorFramesShown: every visible frame on a vendor's challenge host, solved or not (the invisible reCAPTCHA badge
  *   aside): Sign-in Auto types nothing while one shows (round 2, E10). challengeLikeFramesShown (round 3, X9): every
  *   visible frame of another origin whose address, title, name or label reads like a challenge (CHALLENGE_WORDS: a
- *   vendor this module does not know, a site's own), which Sign-in Auto also waits out; a fill does not pause for one.
+ *   vendor this module does not know, a site's own), the badge aside too (the behaviour review of 2026-11-06, B1), which
+ *   Sign-in Auto also waits out; a fill does not pause for one.
  * - pageChallenged (the audit of 2026-11-06, S-7): a challenge not known solved anywhere on the page, or a frame that
  *   reads like one; every Next, Submit and entry press holds while one shows (orchestrator.ts, press.ts).
  * - Workday's entry choice is the adapter's to declare, and so are (v3 Phase 7b) an email gate (an email-first identity
@@ -40,8 +52,9 @@
  * Detection never touches the challenge: it only reads where it is.
  */
 import type { Adapter } from '../adapters/types';
+import { accountSectionOf } from './account-section';
 import { isAuthField } from './kinds';
-import { labelOfControl } from './labels';
+import { labelOfControl, referenced } from './labels';
 import { isInOwnUi } from './own-ui';
 import { flatContains, type ScanCache, viewOf, newScanCache } from './scan-cache';
 import { isUserVisible } from './visibility';
@@ -70,6 +83,12 @@ const CAPTCHA_CONTAINERS = '.g-recaptcha, .h-captcha, .cf-turnstile, [data-sitek
 const RESPONSE_FIELDS = 'textarea[name="g-recaptcha-response"], textarea[name="h-captcha-response"], '
   + 'input[name="cf-turnstile-response"]';
 
+/** The behaviour review of 2026-11-06 (M6): whether `el` is a vendor's response field (RESPONSE_FIELDS). The scan never
+ *  takes one for a field of the step, shown or not (dom/scan.ts): the run never writes into a widget. */
+export function isCaptchaResponseField(el: Element): boolean {
+  return el.matches(RESPONSE_FIELDS);
+}
+
 /** What else detectPause reads. */
 export interface PauseOptions {
   /** The CAPTCHA frames and containers the person was handed on this step (captchaElements, at their Continue). */
@@ -82,13 +101,19 @@ export function detectPause(doc: Document, root: Element | null, adapter: Adapte
   // A challenge shown and not solved comes first, before any account page the adapter names (the v3 Phase 6/7b
   // review, S1): nothing is typed or pressed while one shows.
   const scopes = scopesOf(doc);
-  const captcha = shownCaptchas(scopes, root, cache).find((shown) => !isHanded(shown.el, options.handed));
+  // The behaviour review of 2026-11-06 (M6): a checkbox widget not yet solved, with no challenge popup shown, is no
+  // pause: the step fills, and every press holds until the person solves it (pageChallenged, unsolvedCaptchas).
+  const captcha = shownCaptchas(scopes, root, cache)
+    .find((shown) => !shown.checkbox && !isHanded(shown.el, options.handed));
   if (captcha !== undefined) return { kind: 'captcha', evidence: captcha.evidence };
   const declared = adapter?.authState?.(doc) ?? null;
   if (declared !== null) return { kind: declared, evidence: 'adapter' };
-  // Account fields are the page's own: a frame of its origin is read for challenges alone.
+  // Account fields are the page's own: a frame of its origin is read for challenges alone. The snapshot build of
+  // 2026-11-06 (core-x, item 2): an account section the adapter declares inside the application form (iCIMS's "Create
+  // a login") is a section of the form, never an account page: its boxes are not read here (dom/account-section.ts).
+  const account = accountSectionOf(adapter, doc, root);
   const inputs = all<HTMLInputElement>(scopes.filter((each) => each.frame === null), 'input').map(({ el }) => el)
-    .filter((input) => isUserVisible(input, cache));
+    .filter((input) => (account === null || !account.contains(input)) && isUserVisible(input, cache));
   const passwords = inputs.filter((input) => input.type === 'password');
   if (passwords.length >= 2) return { kind: 'create-account', evidence: 'password' };
   if (passwords.length === 1) {
@@ -169,23 +194,32 @@ function showsAt(el: Element, frame: Element | null, root: Element | null, cache
   return isUserVisible(frame, cache) && overOrInside(frame, root);
 }
 
+/** A challenge shown: its element, what showed it, and (M6) whether it is a checkbox widget (checkboxFrame,
+ *  checkboxWidget). */
+interface ShownCaptcha {
+  el: Element;
+  evidence: PauseEvidence;
+  checkbox: boolean;
+}
+
 /** The visible challenge frames, then the visible containers, over or inside the form, none of them solved. */
-function shownCaptchas(scopes: readonly Scope[], root: Element | null, cache: ScanCache):
-  Array<{ el: Element; evidence: PauseEvidence }> {
-  const shown: Array<{ el: Element; evidence: PauseEvidence }> = [];
+function shownCaptchas(scopes: readonly Scope[], root: Element | null, cache: ScanCache): ShownCaptcha[] {
+  const shown: ShownCaptcha[] = [];
   for (const { el: frame, frame: host } of all<HTMLIFrameElement>(scopes, 'iframe')) {
     if (frame.closest('.grecaptcha-badge') !== null) continue;
     const vendor = challengeVendor(frame.src, viewOf(frame.ownerDocument));
     if (vendor === null || !showsAt(frame, host, root, cache)) continue;
-    // Only a vendor that puts a response token in its widget can be known solved; Arkose's never is.
-    const container = frame.closest(CAPTCHA_CONTAINERS);
+    // Only a vendor that puts a response token in its widget can be known solved; Arkose's never is. The behaviour
+    // review of 2026-11-06 (M6): a widget rendered into the page's own element is known by its response field (below),
+    // so its frame is known solved with it (fixtures/bamboohr/swyfft-form, successfactors/donnelleyf-create-account).
+    const container = frame.closest(CAPTCHA_CONTAINERS) ?? responseParentOf(frame);
     if (vendor === 'token' && container !== null && solved(container)) continue;
-    shown.push({ el: frame, evidence: 'captcha-frame' });
+    shown.push({ el: frame, evidence: 'captcha-frame', checkbox: checkboxFrame(frame) });
   }
   for (const { el: container, frame: host } of all(scopes, CAPTCHA_CONTAINERS)) {
     if (!drawnWidget(container)) continue;
     if (showsAt(container, host, root, cache) && !solved(container)) {
-      shown.push({ el: container, evidence: 'captcha-container' });
+      shown.push({ el: container, evidence: 'captcha-container', checkbox: checkboxWidget(container, cache) });
     }
   }
   // The audit of 2026-11-06 (S-7): a widget drawn in a container none of the documented classes names (an explicit
@@ -198,9 +232,20 @@ function shownCaptchas(scopes: readonly Scope[], root: Element | null, cache: Sc
     if (parent === null || parents.has(parent) || field.value.trim() !== '' || isInOwnUi(parent)) continue;
     if (parent.closest(CAPTCHA_CONTAINERS) !== null || !drawnWidget(parent)) continue;
     parents.add(parent);
-    if (showsAt(parent, host, root, cache) && !solved(parent)) shown.push({ el: parent, evidence: 'captcha-container' });
+    if (showsAt(parent, host, root, cache) && !solved(parent)) {
+      shown.push({ el: parent, evidence: 'captcha-container', checkbox: checkboxWidget(parent, cache) });
+    }
   }
   return shown;
+}
+
+/** The behaviour review of 2026-11-06 (M6): the nearest element around `frame` that holds a vendor's response field as
+ *  a child of its own (the S-7 rule's container of a widget rendered into the page's own element), or null. */
+function responseParentOf(frame: Element): Element | null {
+  for (let at = frame.parentElement; at !== null; at = at.parentElement) {
+    if (Array.from(at.children).some((child) => child.matches(RESPONSE_FIELDS))) return at;
+  }
+  return null;
 }
 
 /** Whether a widget's container draws a challenge: not invisible mode (a widget bound to a button or a link, or one
@@ -208,9 +253,64 @@ function shownCaptchas(scopes: readonly Scope[], root: Element | null, cache: Sc
 function drawnWidget(container: Element): boolean {
   const tag = container.localName;
   if (tag === 'button' || tag === 'input' || tag === 'a') return false;
+  if (boundButton(container)) return false;
   if ((container.getAttribute('data-size') ?? '').toLowerCase() === 'invisible') return false;
   return container.closest('.grecaptcha-badge') === null;
 }
+
+// ── snapshot build 2026-11-06 (core pass Z1, item 20) ──
+/** reCAPTCHA's and hCaptcha's invisible binding: the class put on the button the widget runs from. */
+const BINDING_CLASSES = ['g-recaptcha', 'h-captcha'];
+
+/**
+ * Whether `el` is a button that carries a vendor's invisible binding (BINDING_CLASSES) rather than a widget it draws:
+ * an element whose own role is button and that holds no frame (a drawn widget renders its challenge's frame into its
+ * container). ADP's guest Continue (fixtures/adp/guest.html, adp-6: <sdf-button id="recruitment_login_recaptcha"
+ * class="g-recaptcha ..." role="button" aria-label="Continue">) is one, as a <button class="g-recaptcha"> is. The
+ * challenge such a binding raises is a frame on the vendor's host (reCAPTCHA's bframe), read as every challenge frame
+ * is (shownCaptchas): once shown it pauses, and a checkbox widget drawn anywhere on the page pauses as before.
+ */
+function boundButton(el: Element): boolean {
+  const role = (el.getAttribute('role') ?? '').trim().toLowerCase().split(/\s+/)[0];
+  return role === 'button' && BINDING_CLASSES.some((name) => el.classList.contains(name))
+    && !holdsFrame(el) && ownName(el) && buttonSized(el);
+}
+// ── end core pass Z1, item 20 ──
+
+// ── The security fix of 2026-11-06 (S7): a bound button is named and button-sized ──
+/**
+ * The tallest box a button bound to a widget may have: under the shortest drawn widget the vendors bind (reCAPTCHA's
+ * and hCaptcha's checkbox, 78 px; their compact one, 144 px). ADP's guest Continue (adp-6) is a one-line button.
+ */
+const BOUND_BUTTON_MAX_HEIGHT_PX = 64;
+
+/** Whether `el` holds a frame in its light DOM or its open shadow roots (a drawn widget renders its frame into its
+ *  container). A closed shadow root cannot be read: such a host is held to ownName and buttonSized instead. */
+function holdsFrame(el: Element): boolean {
+  const scopes: Array<Element | ShadowRoot> = [el];
+  for (let at = 0; at < scopes.length; at += 1) {
+    const scope = scopes[at]!;
+    if (scope.querySelector('iframe, frame') !== null) return true;
+    if (scope instanceof Element && scope.shadowRoot !== null) scopes.push(scope.shadowRoot);
+    for (const inner of Array.from(scope.querySelectorAll('*'))) if (inner.shadowRoot !== null) scopes.push(inner.shadowRoot);
+  }
+  return false;
+}
+
+/** Whether `el` has an accessible name of its own: its aria-label, the words its aria-labelledby names, or its own text
+ *  (ADP's Continue: aria-label="Continue"). A widget drawn in a closed shadow root says none of these. */
+function ownName(el: Element): boolean {
+  if ((el.getAttribute('aria-label') ?? '').trim() !== '') return true;
+  if (referenced(el, 'aria-labelledby').some((target) => (target.textContent ?? '').trim() !== '')) return true;
+  return (el.textContent ?? '').trim() !== '';
+}
+
+/** Whether `el`'s box is a button's, not a drawn widget's: drawn, and no taller than BOUND_BUTTON_MAX_HEIGHT_PX. */
+function buttonSized(el: Element): boolean {
+  const box = el.getBoundingClientRect();
+  return box.width > 0 && box.height > 0 && box.height <= BOUND_BUTTON_MAX_HEIGHT_PX;
+}
+// ── end of the security fix's block (S7) ──
 
 /**
  * The audit of 2026-11-06 (S-7): whether the page shows, anywhere (no form root: over the form or not, in the
@@ -237,9 +337,19 @@ const CHALLENGE_WORDS = /captcha|challenge|verify|human|arkose|turnstile|\bbots?
 
 /** How many visible frames of another origin than their document's the page shows whose address, title, name or
  *  aria-label reads like a challenge (CHALLENGE_WORDS), in the document, its open shadow roots and the frames of its own
- *  origin (module header): Sign-in Auto types nothing while one shows. Its address is read, never loaded. */
+ *  origin (module header): Sign-in Auto types nothing while one shows. Its address is read, never loaded. A frame on a
+ *  vendor's challenge host is the vendor rules' (vendorFramesShown, unsolvedCaptchas), never counted here. */
 export function challengeLikeFramesShown(doc: Document, cache: ScanCache = newScanCache()): number {
-  return all<HTMLIFrameElement>(scopesOf(doc), 'iframe').filter(({ el, frame }) => crossOrigin(el)
+  // The behaviour review of 2026-11-06:
+  // - B1: the invisible reCAPTCHA's badge (.grecaptcha-badge, whose anchor frame says title="reCAPTCHA" and
+  //   size=invisible: every Greenhouse fixture, Dayforce's, CareerPlug's) draws no challenge, as vendorFramesShown and
+  //   shownCaptchas already read it. The challenge it raises is its bframe, outside the badge, which shownCaptchas
+  //   counts once shown (fixtures/dayforce/submit-challenge.html).
+  // - M6: a frame on a vendor's challenge host is read by the vendor's rules, which know a solved widget (its token
+  //   there): reCAPTCHA's checkbox anchor says title="reCAPTCHA" whether solved or not, so read here it held every
+  //   press after the person solved it. Sign-in Auto still counts every such frame (vendorFramesShown).
+  return all<HTMLIFrameElement>(scopesOf(doc), 'iframe').filter(({ el, frame }) => el.closest('.grecaptcha-badge') === null
+    && !challengeHost(el.src, viewOf(el.ownerDocument)) && crossOrigin(el)
     && [el.src, el.title, el.name, el.getAttribute('aria-label') ?? ''].some((text) => CHALLENGE_WORDS.test(text))
     && showsAt(el, frame, null, cache)).length;
 }
@@ -320,6 +430,57 @@ function challengeVendor(src: string, view: (Window & typeof globalThis) | null)
   if (onDomain(host, 'hcaptcha.com') || host === 'challenges.cloudflare.com') return 'token';
   return NO_TOKEN_HOSTS.some((domain) => onDomain(host, domain)) ? 'no-token' : null;
 }
+
+// ── The behaviour review of 2026-11-06 (M6): a checkbox widget holds every press, never the fill ──
+/**
+ * Whether a frame is a checkbox widget's own frame, as the owner's snapshots show it (the owner's decision of
+ * 2026-11-06; docs/SPEC-AMENDMENTS.md §12):
+ * - reCAPTCHA v2's checkbox: its anchor frame, `https://www.google.com/recaptcha/api2/anchor?...&size=normal`
+ *   (fixtures/jazzhr/*-form, bamboohr/swyfft-form, successfactors/donnelleyf-create-account: title="reCAPTCHA",
+ *   304 x 78). Its challenge popup is another frame, `/recaptcha/api2/bframe` ("recaptcha challenge expires in two
+ *   minutes"), no checkbox, which pauses once shown (fixtures/dayforce/submit-challenge).
+ * - hCaptcha's checkbox: `https://newassets.hcaptcha.com/captcha/v1/<build>/static/hcaptcha.html#frame=checkbox`
+ *   (fixtures/icims/*, drawn hidden there in invisible mode). Its challenge popup is `#frame=challenge` ("hCaptcha
+ *   challenge"), which pauses once shown.
+ * Any other address (an enterprise anchor, a compact or sizeless anchor, hCaptcha's enclave, Turnstile, Arkose, ...)
+ * is not known to be a checkbox: it pauses as before.
+ */
+function checkboxFrame(frame: HTMLIFrameElement): boolean {
+  const url = frameUrl(frame.src, viewOf(frame.ownerDocument));
+  if (url === null) return false;
+  const host = url.hostname.toLowerCase();
+  if (['google.com', 'www.google.com', 'recaptcha.net', 'www.recaptcha.net'].includes(host)) {
+    return url.pathname === '/recaptcha/api2/anchor' && url.searchParams.get('size') === 'normal';
+  }
+  if (onDomain(host, 'hcaptcha.com')) {
+    return /\/static\/hcaptcha\.html$/.test(url.pathname)
+      && new URLSearchParams(url.hash.replace(/^#/, '')).get('frame') === 'checkbox';
+  }
+  return false;
+}
+
+/** The frames `el` holds, in its light DOM and its open shadow roots. */
+function framesIn(el: Element): HTMLIFrameElement[] {
+  const found: HTMLIFrameElement[] = [];
+  const scopes: Array<Element | ShadowRoot> = [el];
+  for (let at = 0; at < scopes.length; at += 1) {
+    const scope = scopes[at]!;
+    found.push(...Array.from(scope.querySelectorAll<HTMLIFrameElement>('iframe')));
+    if (scope instanceof Element && scope.shadowRoot !== null) scopes.push(scope.shadowRoot);
+    for (const inner of Array.from(scope.querySelectorAll('*'))) if (inner.shadowRoot !== null) scopes.push(inner.shadowRoot);
+  }
+  return found;
+}
+
+/** Whether a widget's container draws a checkbox widget: it shows a frame, and every frame it shows is a checkbox's
+ *  (checkboxFrame). reCAPTCHA's own hidden helper frame beside its anchor (`<iframe style="display: none;">`, no
+ *  address: fixtures/jazzhr/invaluable-form, bamboohr/swyfft-form) draws nothing. A container that shows none (not
+ *  drawn yet, or drawn where it cannot be read) is not known to be one, and pauses as before. */
+function checkboxWidget(container: Element, cache: ScanCache): boolean {
+  const frames = framesIn(container).filter((frame) => isUserVisible(frame, cache));
+  return frames.length > 0 && frames.every((frame) => checkboxFrame(frame));
+}
+// ── end of the behaviour review's block (M6) ──
 
 /** Inside the form root (shadow roots crossed), or drawn over it. Anywhere on the page when there is no form root. */
 function overOrInside(el: Element, root: Element | null): boolean {

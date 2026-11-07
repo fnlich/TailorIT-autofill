@@ -1,0 +1,5 @@
+{
+  "https://invaluable.applytojob.com/apply/bopFMbElHx/Senior-Backend-Engineer": "fixtures/jazzhr/invaluable-form.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LeCbWYsAAAAALW1NxDRq4uvy3jv81sqB16i0gDm&co=aHR0cHM6Ly9pbnZhbHVhYmxlLmFwcGx5dG9qb2IuY29tOjQ0Mw..&hl=en&v=kxxK8h62TERPFgxXTKenDcjR&size=normal&anchor-ms=20000&execute-ms=30000&cb=2qenm0juzs0b": "fixtures/jazzhr/invaluable-form.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=kxxK8h62TERPFgxXTKenDcjR&k=6LeCbWYsAAAAALW1NxDRq4uvy3jv81sqB16i0gDm&bft=REDACTED": "fixtures/jazzhr/invaluable-form.third-party-frame.html"
+}

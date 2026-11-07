@@ -1,0 +1,43 @@
+{
+  "fixture": "icims/nyu-voluntary-information.frame-1",
+  "source": "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/eeo?back=&in_iframe=1",
+  "captured": "2026-11-06T13:57:41.000Z",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"CandProfileFields.Gender\"]"
+    },
+    {
+      "label": "Race/Ethnicity",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 9,
+      "control": "select[id=\"CandProfileFields.Race\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input#eeop_form_save_i",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Faq_Link",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#eeop_form_submit_i"
+    ]
+  }
+}

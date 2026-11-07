@@ -1,0 +1,111 @@
+{
+  "fixture": "jobvite/ninjaone-step1-resume",
+  "source": "https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply",
+  "captured": "2026-11-06T14:05:09.000Z",
+  "fields": [
+    {
+      "label": "Chosen First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "#jv-field-yH3T0fwn"
+    },
+    {
+      "label": "Chosen Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "#jv-field-yG3T0fwm"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "#jv-field-yF3T0fwl"
+    },
+    {
+      "label": "Cell Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "#jv-field-yI3T0fwo"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "options": 251,
+      "control": "#jv-field-yL3T0fwr"
+    },
+    {
+      "label": "State",
+      "kind": "select",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "options": 53,
+      "control": "#jv-field-yK3T0fwq"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "control": "#jv-field-yJ3T0fwp"
+    },
+    {
+      "label": "Can NinjaOne text you about your application?",
+      "kind": "select",
+      "required": true,
+      "section": "Personal Information",
+      "fillable": true,
+      "options": 3,
+      "control": "#jv-field-yx0q2fwJ"
+    },
+    {
+      "label": "Add Resume",
+      "kind": "file",
+      "required": true,
+      "section": "Add Resume",
+      "fillable": true,
+      "control": "#file-input-0",
+      "note": "A resume is in: the opener is ng-hide, and the file's row (ul.jv-file-list) stands for the upload"
+    },
+    {
+      "label": "Add Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "Additional Files (optional)",
+      "fillable": true,
+      "control": "#file-input-1",
+      "note": "Outside the form, in the second body-level popover; labelled by its opener"
+    }
+  ],
+  "hooks": {
+    "detect": "body.jv-page-apply",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "div.jv-current-openings a",
+      "div.jv-apply-error a",
+      "div.jv-add-attachment[role=\"dialog\"] > div.jv-add-attachment-item > span[role=\"button\"]",
+      "div.jv-add-attachment[role=\"dialog\"] a.jv-close",
+      "ul.jv-file-list span.jv-text-link",
+      "ul.jv-file-list a.jv-text-action"
+    ],
+    "pressable": [
+      "div.jv-apply-form-actions > button[aria-label=\"Next\"]"
+    ]
+  }
+}

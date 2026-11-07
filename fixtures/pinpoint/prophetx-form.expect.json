@@ -1,0 +1,121 @@
+{
+  "fixture": "pinpoint/prophetx-form",
+  "source": "https://prophetexchange.pinpointhq.com/en/postings/c0dae85d-514e-490a-be0e-133196663338/applications/new",
+  "captured": "2026-11-06T14:41:27.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_first_name\"]",
+      "note": "Each panel fades in (animate.css fadeIn from opacity 0): read once it shows."
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_last_name\"]"
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_phone\"]"
+    },
+    {
+      "label": "LinkedIn URL",
+      "kind": "text",
+      "required": false,
+      "section": "1.Personal Details We'll need these details in order to be able to contact you. Apply with LinkedIn",
+      "fillable": true,
+      "control": "[id=\"application_form_application_linkedin_url\"]"
+    },
+    {
+      "label": "Résumé / CV",
+      "kind": "file",
+      "required": true,
+      "section": "2. Profile",
+      "fillable": true,
+      "control": "input.file-field__input",
+      "note": "Titled by the div.external-form__label above it (required by its class, no star), its label.file-field__label \"Attach Résumé / CV\" the adapter's upload control; the help span is its description."
+    },
+    {
+      "label": "Personal Summary This section is optional. Use it to tell us a little more about yourself.",
+      "kind": "textarea",
+      "required": false,
+      "section": "2. Profile",
+      "fillable": true,
+      "control": "[id=\"personal-summary\"]",
+      "note": "Its label[for] holds its help span too, so the label reads both."
+    },
+    {
+      "label": "Are you legally authorized to work in the U.S.?",
+      "kind": "radio",
+      "required": true,
+      "section": "3.Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"application_form[application][answers_attributes][0][boolean_answer]\"]",
+      "note": "A Yes/No question: its title label's for names no element and its radios name hidden divs; one group (groupOf: div.pad-v-3), required by its title span's class alone."
+    },
+    {
+      "label": "Will you now or in the future require employer sponsorship for work authorization?",
+      "kind": "radio",
+      "required": true,
+      "section": "3.Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"application_form[application][answers_attributes][1][boolean_answer]\"]"
+    },
+    {
+      "label": "What are your base salary expectations for this role?",
+      "kind": "textarea",
+      "required": true,
+      "section": "3.Questions",
+      "fillable": true,
+      "control": "[id=\"application_form_application_answers_attributes_2_text_answer\"]"
+    },
+    {
+      "label": "How many years of DevOps, SRE, or platform engineering experience do you have running production systems at scale? Choose up to 1",
+      "kind": "combobox",
+      "required": true,
+      "section": "3.Questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input.react-select__input[role=\"combobox\"]",
+      "note": "A react-select, declared for the page-world bridge's react-select code (its box div.react-select__control); its label[for] holds \"Choose up to 1\" too. Required by its title span's class alone."
+    },
+    {
+      "label": "(Required) Allow us to process your personal information.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"application_process_information\"]"
+    },
+    {
+      "label": "",
+      "kind": "select",
+      "required": false,
+      "section": "3.Questions",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"application_form_application_answers_attributes_3_mobile_select\"]",
+      "note": "The single select's native twin for narrow screens (select.hide-at-sm-block), hidden at this width."
+    }
+  ]
+}

@@ -453,6 +453,52 @@ describe('the review’s Submit fixes (v3 Phase 4)', () => {
   });
 });
 
+// ── The behaviour review of 2026-11-06 (M1): a press is armed with the signs shown at it ──
+describe('a confirmation the form page holds hidden from the start (M1: Breezy’s ng-hide, fixtures/breezy)', () => {
+  /** The Greenhouse-shaped form with its confirmation already in the page, hidden, which the page's Submit shows in the
+   *  form's place (as Breezy's `applied` does). */
+  const hiddenConfirmation = () => greenhousePage({ lastName: 'Rivera' })
+    .replace('</form></main>', `</form><div class="confirmation" id="done" hidden><div class="confirmation__content">
+      <h1>Thank you for applying to Northwind!</h1></div></div></main>`)
+    .replace(`      const main = document.querySelector('main');
+      main.replaceChildren();`, `      form.hidden = true;
+      document.getElementById('done').hidden = false;
+      return;
+      const main = document.querySelector('main');`);
+
+  it('the panel’s Submit: the confirmation shown after it is new, and the run is done', async () => {
+    const { fixture, worker, runtime } = await start(hiddenConfirmation(), `${GREENHOUSE}21`, [greenhouseAdapter]);
+    expect(await runtime.fill()).toBe('review');
+    expect(fixture.doc.querySelector('.confirmation__content')).not.toBeNull();
+    expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+      .toEqual({ ok: true, data: { outcome: 'pressed' } });
+    await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({
+      evidence: 'success-message' })]));
+    await vi.waitFor(() => expect(worker.reports.at(-1)!.status).toBe('done'));
+  });
+
+  it('the person’s own Submit: the same', async () => {
+    const { fixture, worker, runtime } = await start(hiddenConfirmation(), `${GREENHOUSE}22`, [greenhouseAdapter]);
+    expect(await runtime.fill()).toBe('review');
+    const at = byId(fixture, 'submit').getBoundingClientRect();
+    await userEvent.click(fixture.frame, { position: { x: at.left + at.width / 2, y: at.top + at.height / 2 } });
+    await vi.waitFor(() => expect(worker.of('submit/armed')).toEqual([expect.objectContaining({ by: 'page' })]));
+    await vi.waitFor(() => expect(worker.of('submit/detected')).toEqual([expect.objectContaining({
+      evidence: 'success-message' })]));
+  });
+
+  it('a confirmation already shown at the press is still never this Submit’s', async () => {
+    const shown = hiddenConfirmation().replace('id="done" hidden', 'id="done"');
+    const { worker, runtime } = await start(shown, `${GREENHOUSE}23`, [greenhouseAdapter]);
+    expect(await runtime.fill()).toBe('review');
+    expect(await worker.platform.deliver({ v: 1, type: 'run/press', target: 'submit', confirmed: true }))
+      .toEqual({ ok: true, data: { outcome: 'pressed' } });
+    await deadline(400);
+    expect(worker.of('submit/detected')).toEqual([]);
+  });
+});
+// ── end of the behaviour review's block (M1) ──
+
 describe('Ashby’s success message (v3 Phase 4)', () => {
   it('is the sign after a Submit, and nothing without one', async () => {
     const page = `<!doctype html><html><body><h1>Engineer</h1>

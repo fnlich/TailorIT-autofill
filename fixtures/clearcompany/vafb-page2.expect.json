@@ -1,0 +1,149 @@
+{
+  "fixture": "clearcompany/vafb-page2",
+  "source": "https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply/8c16cd46-9b5e-ded1-cf8b-6417fd8e13c7",
+  "captured": "2026-11-06T15:15:45.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"d718d7a5-d2ba-1343-eef2-b9db41d5331a\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"10bc0788-4257-5d4f-6091-7f192d1559e1\"]"
+    },
+    {
+      "label": "Street Address",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"54e2e6ce-d4d9-cc0f-e0e3-41138f18d68d\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"0fec8d47-2347-a50b-4ae4-5c0d31a7456b\"]"
+    },
+    {
+      "label": "State or Province",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 57,
+      "control": "[id=\"42ca1cf8-5884-0489-b358-b75ea0f33f8d\"]"
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"f7ee1a63-0d15-8951-ed9f-d40f45394ea8\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 250,
+      "control": "[id=\"7da8b5e9-ae9e-6c77-07d2-bf89219333cb\"]"
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"99a8754e-a5d1-56b1-d088-9d50b0150fd3\"]"
+    },
+    {
+      "label": "Primary Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"366036f0-241e-ba36-fbd8-1263ebd4b8d1\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "radio",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 4,
+      "control": "input[name=\"840b5e81-83a6-f67a-34e5-5dd7bdbd5bf2-0\"]"
+    },
+    {
+      "label": "Secondary Phone Number",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"ff8d7c6a-569c-4529-263b-e747b84007c3\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "radio",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 4,
+      "control": "input[name=\"adfe76d4-1a34-5d7c-a7a7-94e350193065-0\"]"
+    },
+    {
+      "label": "Why are you looking for a new job opportunity?",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 8,
+      "control": "[id=\"99cc1f03-1fbd-5203-5d6e-856a67f16605\"]"
+    },
+    {
+      "label": "What kind of work are you looking for?",
+      "kind": "radio",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 3,
+      "control": "input[name=\"5efaf84b-57a5-c3cc-b887-f2b4a452e072-0\"]"
+    },
+    {
+      "label": "Desired Salary Range",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "[id=\"58c27624-525a-be7e-ddb8-e6feb8925ed3\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form.section-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.cancel-button[data-localized-key=\"forms.application.finish-later\"]",
+      "button.back-button[data-localized-key=\"forms.application.back\"]",
+      "a.authenticate-button"
+    ],
+    "pressable": [
+      "button[data-localized-key=\"forms.application.continue\"]"
+    ]
+  }
+}

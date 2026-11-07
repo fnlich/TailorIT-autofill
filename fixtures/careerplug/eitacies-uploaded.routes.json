@@ -1,0 +1,6 @@
+{
+  "https://eitacies-inc.careerplug.com/jobs/3481777/apps/new": "fixtures/careerplug/eitacies-uploaded.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6Lel5h4UAAAAAHY2i5Sgq9x0dyHu8K0RJJv95Ij5&co=aHR0cHM6Ly9laXRhY2llcy1pbmMuY2FyZWVycGx1Zy5jb206NDQz&hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&size=invisible&anchor-ms=20000&execute-ms=30000&cb=ii6kc5xeavrb": "fixtures/careerplug/eitacies-uploaded.third-party-frame.html",
+  "https://www.google.com/maps/embed/v1/place?key=AIzaSyBJuTQZclSW33-RlC75FaW_PM9iGwI4dtQ&q=37.3924%2C-121.9623": "fixtures/careerplug/eitacies-uploaded.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&k=6Lel5h4UAAAAAHY2i5Sgq9x0dyHu8K0RJJv95Ij5&bft=REDACTED": "fixtures/careerplug/eitacies-uploaded.third-party-frame.html"
+}

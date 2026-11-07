@@ -1,0 +1,361 @@
+{
+  "fixture": "icims/nyu-profile.frame-1",
+  "source": "https://uscareers-nyu.icims.com/jobs/16462/continual-service-improvement-manager%2c-global-infrastructure-and-operations/candidate?from=login&eem=REDACTED&code=REDACTED&in_iframe=1",
+  "captured": "2026-11-06T13:53:39.000Z",
+  "fields": [
+    {
+      "label": "Upload your resume from a computer file, Google Drive, or via Dropbox. (Max size: 5 MB)",
+      "kind": "file",
+      "required": true,
+      "section": "Resume Provide your resume below to auto-fill your profile. Once your profile has been created, please review and edit the fields to make sure your information is accurate. You can provide a new resume at any time, which will replace the resume you already have on file. If you provide a new resume, please also review and update your profile.",
+      "fillable": true,
+      "control": "input[id=\"PortalProfileFields.Resume_File\"]"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.FirstName\"]"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.MiddleName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.LastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.Email\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "options": 3,
+      "control": "select[id=\"-1_PersonProfileFields.PhoneType\"]"
+    },
+    {
+      "label": "Number (Area Code & Number)",
+      "kind": "text",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.PhoneNumber\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet1\"]"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet2\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressCity\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "State/Province",
+      "kind": "combobox",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressZip\"]"
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "options": 6,
+      "control": "select#rcf3048"
+    },
+    {
+      "label": "Please specify further",
+      "kind": "select",
+      "required": false,
+      "section": "Enter your information",
+      "fillable": true,
+      "options": 1,
+      "control": "select#rcf3049"
+    },
+    {
+      "label": "School",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.School_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "Enter school name if not in the list above",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[id=\"-1_CandProfileFields.Minor\"]"
+    },
+    {
+      "label": "Degree",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.Degree_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "Major",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.Major_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "Did You Graduate?",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 2,
+      "control": "select[id=\"-1_CandProfileFields.IsGraduated\"]"
+    },
+    {
+      "label": "If no degree recieved, number of years completed",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[id=\"-1_CandProfileFields.YearsCompleted\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "input[id=\"-1_CandProfileFields.EducationCity\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.EducationCountry_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": false,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_CandProfileFields.EducationState_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "Employer",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.rcf3212\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.rcf3216\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": false,
+      "section": "Experience",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.rcf3218_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "State/Province",
+      "kind": "combobox",
+      "required": false,
+      "section": "Experience",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.rcf3217_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "Title",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.rcf3213\"]"
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1)",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-1_PersonProfileFields.rcf3214_Month\"]"
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1)",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-1_PersonProfileFields.rcf3214_Date\"]"
+    },
+    {
+      "label": "Start Date (if you do not know the day, enter 1)",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.rcf3214_Year\"]"
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1)",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 12,
+      "control": "select[id=\"-1_PersonProfileFields.rcf3215_Month\"]"
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1)",
+      "kind": "select",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "options": 31,
+      "control": "select[id=\"-1_PersonProfileFields.rcf3215_Date\"]"
+    },
+    {
+      "label": "End Date (if you do not know the day, enter 1)",
+      "kind": "text",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.rcf3215_Year\"]"
+    },
+    {
+      "label": "Reason for Leaving",
+      "kind": "textarea",
+      "required": false,
+      "section": "Experience",
+      "fillable": true,
+      "control": "textarea[id=\"-1_PersonProfileFields.rcf3268\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "a.iCIMS_Faq_Link",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i",
+      "a[id=\"CandProfileFields.EducationButton_-1\"]",
+      "a#rcf3211Button_-1"
+    ]
+  }
+}

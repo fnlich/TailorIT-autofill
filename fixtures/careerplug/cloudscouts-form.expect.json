@@ -1,0 +1,192 @@
+{
+  "fixture": "careerplug/cloudscouts-form",
+  "source": "https://cloudscouts-software-solutions-llc.careerplug.com/jobs/3677935/apps/new",
+  "captured": "2026-11-06T16:07:04.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_firstname\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_lastname\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_phone\"]"
+    },
+    {
+      "label": "Text me updates about my application",
+      "kind": "radio",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "[id=\"app_user_phone_number_attributes_applicant_agrees_sms_1\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "location",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_address\"]",
+      "note": "Its label[for] is drawn out of sight (fieldset.placeholder, legend \"Location\"); its aria-label is visible as its placeholder."
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "location",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_city\"]"
+    },
+    {
+      "label": "States",
+      "kind": "select",
+      "required": false,
+      "section": "location",
+      "fillable": true,
+      "options": 60,
+      "control": "[id=\"app_applicant_attributes_state\"]",
+      "note": "Its label[for] \"States\" is drawn out of sight (fieldset.placeholder), its aria-label \"States\" is not the words the select shows (its prompt option, value \"\", reads \"State\"): a select's prompt is its visible placeholder (DOM-10: the aria-label names it, the prompt makes it fillable; dom/labels.ts selectPrompt, core pass Z2 of 2026-11-06). It read no visible label until then."
+    },
+    {
+      "label": "ZIP Code",
+      "kind": "text",
+      "required": false,
+      "section": "location",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_zip\"]"
+    },
+    {
+      "label": "Resume/CV",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_has_attachments_attributes_0_attachment\"]",
+      "note": "Titled by the for-less label.form-label of its div.form-group (\"Resume/CV *\", its star the only mark of required); its own label[for] \"Upload File\" is the adapter's upload control."
+    },
+    {
+      "label": "Cover Letter",
+      "kind": "file",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_has_attachments_attributes_1_attachment\"]",
+      "note": "Titled like the résumé; no star."
+    },
+    {
+      "label": "Recent Job Title",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_recent_title\"]"
+    },
+    {
+      "label": "Recent Employer",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_applicant_attributes_recent_employer\"]"
+    },
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": false,
+      "section": "U.S. Equal Opportunity Employment Information (Completion is voluntary)",
+      "fillable": true,
+      "options": 4,
+      "control": "[id=\"app_eeoc_gender\"]",
+      "note": "The EEO block div.eeoc-area, sectioned by its p.eeoc-title."
+    },
+    {
+      "label": "Race/Ethnicity",
+      "kind": "select",
+      "required": false,
+      "section": "U.S. Equal Opportunity Employment Information (Completion is voluntary)",
+      "fillable": true,
+      "options": 8,
+      "control": "[id=\"app_eeoc_race\"]"
+    },
+    {
+      "label": "Disability Status",
+      "kind": "select",
+      "required": false,
+      "section": "U.S. Equal Opportunity Employment Information (Completion is voluntary)",
+      "fillable": true,
+      "options": 3,
+      "control": "[id=\"app_eeoc_disability\"]"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "select",
+      "required": false,
+      "section": "U.S. Equal Opportunity Employment Information (Completion is voluntary)",
+      "fillable": true,
+      "options": 3,
+      "control": "[id=\"app_eeoc_veteran\"]"
+    },
+    {
+      "label": "Referral code from a current employee",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"app_referral_employee_key\"]"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"app_applicant_attributes_resume_text\"]",
+      "note": "The résumé's paste editor (div.file-area__paste-content, collapsed until \"Type/Paste Text\", which no run presses), excluded by the adapter."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"app_applicant_attributes_cover_letter\"]",
+      "note": "The cover letter's paste editor, likewise."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"g-recaptcha-response\"]",
+      "note": "The invisible reCAPTCHA's answer box (display none)."
+    }
+  ]
+}

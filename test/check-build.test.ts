@@ -347,12 +347,14 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
     }
   });
 
-  it("fail a page-world bridge over its 20 KiB budget, or one whose file is missing", () => {
+  // (The snapshot build of 2026-11-06, core pass Z1 items 26 and 39: the bridge reads only the shared domains' address
+  // parsers, under a budget of 24 KiB.)
+  it("fail a page-world bridge over its 24 KiB budget, or one whose file is missing", () => {
     const big = checkBuild(project((write) => {
-      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(20 * 1024)}";`);
+      for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/page-bridge.js`, `var big="${'a'.repeat(24 * 1024)}";`);
     }));
     expect(big.output).toContain('.output/chrome-mv3: the page-world bridge is');
-    expect(big.output).toContain('over the 20480-byte budget');
+    expect(big.output).toContain('over the 24576-byte budget');
     expect(big.status).toBe(1);
 
     const missing = checkBuild(project((write) => everyManifest(write, (changed) => {
@@ -457,7 +459,7 @@ describe("check-build's v3 Phase 8 assertions: the optional hosts, the sentinel 
 
   it('fail a sentinel that is missing, listed in the manifest, over its budget, or that names React, zod or a DOM write', () => {
     const cases: Array<[string, string]> = [
-      [`var big="${'a'.repeat(16 * 1024)}";`, 'the sentinel is 16395 bytes, over the 16384-byte budget'],
+      [`var big="${'a'.repeat(17 * 1024)}";`, 'the sentinel is 17419 bytes, over the 17408-byte budget'],
       ['(function(){document.body.appendChild(document.createElement("div"))})();', 'the sentinel names "createElement"'],
       ['(function(){e.innerHTML="x"})();', 'the sentinel names "innerHTML"'],
       ['(function(){e.setAttribute("x","y")})();', 'the sentinel names "setAttribute"'],

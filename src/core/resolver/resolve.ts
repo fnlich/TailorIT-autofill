@@ -46,6 +46,7 @@ import { statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { previouslyEmployedValue, profileValue, type BlockEntries } from './values';
+import { askedAs } from './yesNoPair';
 
 /** What the resolver reads besides the field. */
 export interface ResolveContext {
@@ -85,7 +86,9 @@ export type FieldClassification =
 /** Step 0 and steps 1 to 3 (§8.1): the tripwire in the field's own text, then attention checks, then the rules; with
  *  the vocabulary, a consent asked as a choice where the rules leave it open (classifyRules consentChoice: one
  *  option that plainly agrees, as the live BeyondTrust form's "Acknowledge/Confirm"). */
-export function classifyField(spec: FieldSpec, vocab?: Vocab): FieldClassification {
+export function classifyField(field: FieldSpec, vocab?: Vocab): FieldClassification {
+  // Core pass Z2 of 2026-11-06: a Yes/No pair of checkboxes is classified as the Yes/No radio it asks (yesNoPair.ts).
+  const spec = askedAs(field);
   if (hasTripwire(spec.label as VisibleText) || hasTripwire(spec.description as VisibleText)) {
     return { by: 'tripwire', rules: classifyByRules(spec) };
   }
@@ -434,7 +437,9 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
       needsSensitive = true;
       result = none('no-profile-value');
     } else if (gate === 'ready') {
-      result = valueOf(category, rules, spec, ctx);
+      // A Yes/No pair of checkboxes is answered as the Yes/No radio it asks (yesNoPair.ts); its value is shaped for
+      // the group itself below (a set of the one box).
+      result = valueOf(category, rules, askedAs(spec), ctx);
     } else {
       // A self-identification question this browser may not read the answer for takes the decline default; one whose
       // answer could not be read (the fetch failed) stays blank and flagged.

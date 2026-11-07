@@ -1,0 +1,59 @@
+{
+  "fixture": "icims/aaalife-eeo-final",
+  "source": "https://careers-aaalife.icims.com/jobs/2227/engineering-manager%2c-devops/eeo?back=",
+  "captured": "2026-11-06T16:14:09.000Z",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"CandProfileFields.Gender\"]"
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 11,
+      "control": "select[id=\"CandProfileFields.Race\"]"
+    },
+    {
+      "label": "Disability",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"CandProfileFields.Disability\"]"
+    },
+    {
+      "label": "Veteran",
+      "kind": "select",
+      "required": true,
+      "section": "Voluntary Information",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"CandProfileFields.Veteran\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input#keepMeAliveButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#eeop_form_submit_i"
+    ]
+  }
+}

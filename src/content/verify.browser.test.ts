@@ -8,7 +8,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
-import type { UploadState } from '../adapters/types';
+import { genericAdapter } from '../adapters/generic';
+import type { Adapter, UploadState } from '../adapters/types';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
 import { scan } from '../dom/scan';
 import type { ScanResult } from '../dom/types';
@@ -80,5 +81,47 @@ describe('verifyWritten', () => {
     expect(verifyWritten(read(), withUpload('failed', 'confirmed'))).toMatchObject({ reason: 'upload-failed' });
     // Confirmed at the write: read back as before.
     expect(verifyWritten(read(), withUpload('confirmed', 'confirmed'))).toMatchObject({ status: 'verified' });
+  });
+
+  // The core pass of 2026-11-06 (fixtures/greenhouse/axle-attached.html): Greenhouse takes the file input out of the
+  // page once a file is in it and shows the file's name beside "Remove file"; nothing is left to read back.
+  it('verifies a file the page shows done whose input it took out of the page, and only that one', async () => {
+    const { fixture, read } = await loaded();
+    const field = read().fields.find((candidate) => candidate.label === 'Resume')!;
+    const input = fixture.doc.getElementById('cv') as HTMLInputElement;
+    const written = (upload: UploadState, now: UploadState, inputLeft?: () => boolean): WrittenField => ({ key: field.key,
+      field: plannedFieldOf(field), value: { kind: 'file', ref: 'resume' as never },
+      origin: { provenance: 'profile', path: 'resume' as never },
+      planned: plannedRow(field.key, 'Resume', 'file', 'file.resume'), rule: undefined,
+      file: { name: 'Alex Rivera Resume.pdf', size: 1200 }, resume: null, textBefore: null, selectedBefore: [],
+      readBackVerified: true, optionShown: null, upload, uploadNow: () => now, ...(inputLeft ? { inputLeft } : {}) });
+    const left = () => !input.isConnected;
+    input.remove();
+    expect(verifyWritten(read(), written('confirmed', 'confirmed', left))).toMatchObject({ status: 'verified',
+      verification: 'verified', reason: 'ok', wrote: true, needsUserAction: false });
+    // Done only by the read-back: the same.
+    expect(verifyWritten(read(), written('pending', 'confirmed', left))).toMatchObject({ status: 'verified' });
+    // Not shown done: never verified, whatever became of the input.
+    expect(verifyWritten(read(), written('pending', 'pending', left))).toMatchObject({ reason: 'upload-not-confirmed' });
+    expect(verifyWritten(read(), written('confirmed', 'failed', left))).toMatchObject({ reason: 'upload-failed' });
+    // A write that cannot say where its input went: gone from the scan, as before.
+    expect(verifyWritten(read(), written('confirmed', 'confirmed'))).toMatchObject({ reason: 'field-disappeared' });
+  });
+
+  // The core pass of 2026-11-06: on a page whose field shows the file it took (Adapter.uploadHeld: Workday's), the scan
+  // reads that field as holding a file; an input the upload emptied is still the upload taken (LC-3), by its own files.
+  it('reads an input its upload emptied as the upload taken, though its field shows the file', async () => {
+    const { fixture, root } = await loaded();
+    const shows: Adapter = { ...genericAdapter, uploadHeld: (input) => input.id === 'cv' };
+    const read = (): ScanResult => scan(root, shows, { platform: 'workday', frameId: 0 });
+    const field = read().fields.find((candidate) => candidate.label === 'Resume')!;
+    expect(field.current).toEqual({ kind: 'files', count: 1, held: true });
+    expect((fixture.doc.getElementById('cv') as HTMLInputElement).files?.length ?? 0).toBe(0);
+    const written: WrittenField = { key: field.key, field: plannedFieldOf(field), value: { kind: 'file', ref: 'resume' as never },
+      origin: { provenance: 'profile', path: 'resume' as never },
+      planned: plannedRow(field.key, 'Resume', 'file', 'file.resume'), rule: undefined,
+      file: { name: 'Alex Rivera Resume.pdf', size: 1200 }, resume: null, textBefore: null, selectedBefore: [],
+      readBackVerified: true, optionShown: null, upload: null, uploadNow: null };
+    expect(verifyWritten(read(), written)).toMatchObject({ status: 'verified', verification: 'verified', reason: 'ok' });
   });
 });

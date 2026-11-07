@@ -190,6 +190,21 @@ describe('translation: classify', () => {
       .toEqual([['workable', ['k1']], ['lever', ['k2']]]);
   });
 
+  // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 ──
+  it("asks every new ATS's and SmartRecruiters' items under their own platform (API 6); a company's own page none", () => {
+    const added = ['jobvite', 'jazzhr', 'bamboohr', 'rippling', 'breezy', 'careerplug', 'pinpoint', 'paycor', 'hibob',
+      'ultipro', 'dayforce', 'paylocity', 'dice', 'clearcompany', 'adp', 'smartrecruiters'] as const;
+    const items = added.map((platform, n) => ({ ...classifyItem(`k${n}`, 'Are you represented by an agency?'), platform }));
+    const site = { ...classifyItem('k-site', 'Are you represented by an agency?'), platform: 'site' as const };
+    const { batches, withheld } = classifyBatches([...items, site]);
+    expect(batches.map((batch) => [batch.body.platform, batch.body.items.map((entry) => entry.key)]))
+      .toEqual(added.map((platform, n) => [platform, [`k${n}`]]));
+    for (const batch of batches) expect(AutofillClassifyRequestSchema.safeParse(batch.body).success).toBe(true);
+    // A company's own page is no platform TailorIT lists: its item goes on to the AI answer, which names none.
+    expect(withheld).toEqual([{ key: 'k-site', category: null, why: 'unknown-field' }]);
+  });
+  // ── end contract6 ──
+
   it('screens the section’s words and the hint again, and the shared terms (the review, T-F1)', () => {
     const bySection = { ...classifyItem('k1', 'Please select one', ['Yes', 'No']), section: u('voluntary self identification') };
     const byHint = { ...classifyItem('k2', 'Please select one', ['Yes', 'No']), hint: u('Do you identify as LGBTQ+?') };

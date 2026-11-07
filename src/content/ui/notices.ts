@@ -1,6 +1,6 @@
 /*
  * Notices (docs/design/runtime.md §10.1; docs/ARCHITECTURE.md "UI"): a stack under the launcher holding the run's
- * notices in the plan's words (COPY.notices: the tripwire banner, "couldn't read this posting", "this form sits inside
+ * notices in the plan's words (PAGE_COPY.notices: the tripwire banner, "couldn't read this posting", "this form sits inside
  * another site's page", and the rest), and the policy card: "This posting says AI-assisted applications are not
  * allowed. Filling is your decision." with Fill anyway and Cancel. Every button takes trusted clicks only, so a page
  * can neither accept the policy for the person nor dismiss what it was told; the card's two also count only while a
@@ -13,7 +13,7 @@
  * (aria-labelledby), then an alert icon, its sentence and the stored-copy line. Icons are drawings with no text, so a
  * notice's text is exactly its sentence and the card's paragraphs are exactly its two lines.
  */
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import { ICONS, LOGO_MARK } from '../../shared/icons';
 import { noticeToneOf } from '../../shared/palette';
 import type { FrameReport } from '../../shared/report';
@@ -47,7 +47,7 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
   const el = doc.createElement('div');
   el.className = 'notices';
   el.setAttribute('role', 'region');
-  el.setAttribute('aria-label', COPY.appName);
+  el.setAttribute('aria-label', PAGE_COPY.appName);
   const card = doc.createElement('div');
   card.className = 'card';
   card.setAttribute('role', 'alertdialog');
@@ -58,17 +58,17 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
   brand.id = 'tailorit-policy-card-name';
   const it = doc.createElement('span');
   it.className = 'it';
-  it.textContent = COPY.brand.name[1];
+  it.textContent = PAGE_COPY.brand.name[1];
   const name = doc.createElement('span');
   name.className = 'name';
-  name.append(COPY.brand.name[0], it, ` ${COPY.brand.product}`);
+  name.append(PAGE_COPY.brand.name[0], it, ` ${PAGE_COPY.brand.product}`);
   brand.append(svgOf(doc, LOGO_MARK, 16, 'mark'), name);
   card.setAttribute('aria-labelledby', brand.id);
   const sentence = doc.createElement('p');
-  sentence.textContent = COPY.notices.policy;
+  sentence.textContent = PAGE_COPY.notices.policy;
   const source = doc.createElement('p');
   source.className = 'source';
-  source.textContent = COPY.policyFromStoredCopy;
+  source.textContent = PAGE_COPY.policyFromStoredCopy;
   const text = doc.createElement('div');
   text.className = 'card__text';
   text.append(sentence, source);
@@ -77,8 +77,8 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
   body.append(svgOf(doc, ICONS.alert, 18), text);
   const actions = doc.createElement('div');
   actions.className = 'actions';
-  const cancel = button(doc, COPY.policyCancel, 'action secondary');
-  const fill = button(doc, COPY.policyFillAnyway, 'action');
+  const cancel = button(doc, PAGE_COPY.policyCancel, 'action secondary');
+  const fill = button(doc, PAGE_COPY.policyFillAnyway, 'action');
   actions.append(cancel, fill);
   card.append(brand, body, actions);
   card.hidden = true;
@@ -106,12 +106,12 @@ export function createNotices(doc: Document, onPolicyChoice: (choice: PolicyChoi
       item.dataset.tone = tone;
       item.setAttribute('role', code === 'tripwire' ? 'alert' : 'status');
       const text = doc.createElement('p');
-      text.textContent = COPY.notices[code];
+      text.textContent = PAGE_COPY.notices[code];
       // The icons are drawings with no text, so the notice's text is exactly its sentence.
       const close = button(doc, '', 'dismiss');
       close.append(svgOf(doc, ICONS.close, 14));
-      close.setAttribute('aria-label', COPY.dismiss);
-      close.title = COPY.dismiss;
+      close.setAttribute('aria-label', PAGE_COPY.dismiss);
+      close.title = PAGE_COPY.dismiss;
       close.addEventListener('click', (event) => {
         if (!event.isTrusted) return;
         dismissed.add(code);

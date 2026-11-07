@@ -99,4 +99,25 @@ describe('a page\'s save applies only its own change (the audit, M4)', () => {
     // Nothing changed: the stored settings, whole.
     expect(mergeSettings(current, base, base)).toEqual(current);
   });
+
+  it('carries "Résumé already on the page" field by field, as every mode (the behaviour review of 2026-11-06)', async () => {
+    const base = DEFAULT_SETTINGS;
+    // The gear chose Upload mine again; the options page, still on what it read, changes Next page: both stand.
+    const current: Settings = { ...base, modes: { ...base.modes, resumeOnPage: 'upload' } };
+    const options: Settings = { ...base, modes: { ...base.modes, next: 'auto' } };
+    expect(mergeSettings(current, base, options).modes).toEqual({ ...base.modes, next: 'auto', resumeOnPage: 'upload' });
+    // The page that changed it wins over what is stored.
+    const back: Settings = { ...base, modes: { ...base.modes, resumeOnPage: 'upload' } };
+    expect(mergeSettings({ ...base, modes: { ...base.modes, submit: 'auto' } }, base, back).modes)
+      .toEqual({ ...base.modes, submit: 'auto', resumeOnPage: 'upload' });
+    // Through the worker: the panel's gear and the options page each save from what they read.
+    const worker = await startTestWorker();
+    const read = await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS) as { data: { settings: Settings } };
+    const was = read.data.settings;
+    await worker.deliver({ v: 1, type: 'settings/save', base: was,
+      settings: { ...was, modes: { ...was.modes, resumeOnPage: 'upload' as const } } }, PANEL);
+    expect(await worker.deliver({ v: 1, type: 'settings/save', base: was,
+      settings: { ...was, modes: { ...was.modes, consents: 'required' as const } } }, OPTIONS)).toMatchObject({ ok: true,
+      data: { settings: { modes: { resumeOnPage: 'upload', consents: 'required' } } } });
+  });
 });

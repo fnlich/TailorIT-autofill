@@ -280,6 +280,34 @@ describe('scan: labels, sections and keys', () => {
       { kind: 'checked', checked: true }, { kind: 'selected', labels: ['Go'] }, { kind: 'empty' },
     ]);
   });
+
+  // The core pass of 2026-11-06: Dropzone's AI policy on Greenhouse (the owner's snapshot of 2026-11-06) is a label far
+  // longer than the 300 characters a label keeps, its attestation in its last sentences. The frame alone reads past the
+  // cut, and says so (FieldSpec.statesNoAi); a long label that states nothing says nothing.
+  it('reads an "I did not use AI" statement past the 300 characters a label keeps', async () => {
+    const policy = 'Policy on the Use of Artificial Intelligence (AI): At Acme, we require all job applicants to provide '
+      + 'authentic, human-generated content throughout the entire application and interviewing process. The use of '
+      + 'generative AI tools or AI assistance to create, draft, edit, or significantly modify application materials is '
+      + 'strictly prohibited. Acknowledgment and Agreement: By selecting "I Agree" below and submitting this '
+      + 'application, I acknowledge that I have read and understood this policy. I attest that all materials submitted '
+      + 'are my own original work and were not generated or substantially assisted by any AI tool.';
+    const notice = policy.replace(/ I attest that[^.]*\./, ' We thank you for your interest in this role, and wish you well.');
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <label for="a">${policy}</label><select id="a"><option value="">Select...</option><option>I Agree</option></select>
+      <label for="b">${notice}</label><select id="b"><option value="">Select...</option><option>I Agree</option></select>
+      <select id="c" aria-label="${policy.replace(/"/g, '')}"><option value="">Select...</option><option>I Agree</option></select>
+    </form></body>`);
+    const [attests, states, unseen] = scan(fixture.doc.querySelector('form')!, null, OPTIONS).fields;
+    expect([...attests!.label].length).toBe(300);
+    expect(attests!.label).not.toContain('attest');
+    expect(attests!.statesNoAi).toBe(true);
+    expect(FieldSpecSchema.parse(toFieldSpec(attests!))).toMatchObject({ statesNoAi: true });
+    expect(states!.statesNoAi).toBeUndefined();
+    expect(toFieldSpec(states!)).not.toHaveProperty('statesNoAi');
+    // Words nobody sees (an aria-label the page shows nowhere) say nothing.
+    expect(unseen!.labelVisible).toBe(false);
+    expect(unseen!.statesNoAi).toBeUndefined();
+  });
 });
 
 describe('scan: re-finding and handing over', () => {
@@ -409,5 +437,43 @@ describe('scan: what an adapter declares (the Phase 2 review)', () => {
     const { result } = await declared();
     expect(result.fields.some((field) => field.label === 'Shadowed')).toBe(false);
     expect(result.unrecognisedUploads).toEqual([]);
+  });
+
+  // The core pass of 2026-11-06 (SmartRecruiters' screening Yes/No groups, fixtures/smartrecruiters/xplor-screening.html:
+  // spl-radio-group in sr-screening-questions-form's shadow root): a widget root the adapter names inside an open
+  // shadow root of the form is a field, read in the place a person meets it, between the box before its host and the
+  // box after it (Chromium's compareDocumentPosition puts a node of a shadow tree after the host's later siblings).
+  it('takes a widget root inside an open shadow root, in its place in the form', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body><form>
+      <label for="before">Before</label><input id="before">
+      <div id="host"></div>
+      <label for="after">After</label><input id="after">
+    </form></body>`);
+    const doc = fixture.doc;
+    const shadow = doc.getElementById('host')!.attachShadow({ mode: 'open' });
+    const group = doc.createElement('div');
+    const question = doc.createElement('span');
+    question.id = 'question';
+    question.textContent = 'Authorized?';
+    group.append(question);
+    for (const words of ['Yes', 'No']) {
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.textContent = words;
+      group.append(button);
+    }
+    shadow.append(group);
+    const adapter: Adapter = {
+      ...genericAdapter,
+      widgetRoots: () => [group],
+      widgetFor: (el) => (el === group ? { kind: 'radio', opener: group,
+        members: Array.from(group.querySelectorAll<HTMLElement>('button')), snapshot: 'the test page' } : null),
+      labelFor: (el) => (el === group ? shadow.getElementById('question') : null),
+    };
+    const result = scan(doc.querySelector('form')!, adapter, OPTIONS);
+    expect(result.fields.map((field) => [field.label, field.kind, field.domOrder])).toEqual([['Before', 'text', 0],
+      ['Authorized?', 'radio', 1], ['After', 'text', 2]]);
+    const field = result.fields[1]!;
+    expect(result.target(field.key)!.widget!.members.map((member) => member.textContent)).toEqual(['Yes', 'No']);
   });
 });

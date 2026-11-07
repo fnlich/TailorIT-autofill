@@ -4,6 +4,7 @@ import { loadFixture, removeFixtures } from './fixture.testkit';
 import {
   captchaElements, challengeLikeFramesShown, detectPause, pageChallenged, unsolvedCaptchas, vendorFramesShown,
 } from './pause-detect';
+import { scan } from './scan';
 
 async function pauseOf(body: string, adapter: Adapter | null = null) {
   const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
@@ -35,7 +36,11 @@ describe('detectPause', () => {
     // srcdoc wins over src, so these frames never load anything from the network; only their address is read.
     const frame = (src: string, style = 'width:300px;height:80px') =>
       `<form><iframe srcdoc="" src="${src}" style="${style}"></iframe></form>`;
-    expect(await pauseOf(frame('https://www.google.com/recaptcha/api2/anchor?k=x&size=normal')))
+    // The behaviour review of 2026-11-06 (M6): reCAPTCHA's checkbox (its anchor, size=normal) no longer pauses the fill
+    // (the block below); its challenge popup (the bframe) and an anchor not known to be a checkbox still do.
+    expect(await pauseOf(frame('https://www.google.com/recaptcha/api2/bframe?k=x')))
+      .toEqual({ kind: 'captcha', evidence: 'captcha-frame' });
+    expect(await pauseOf(frame('https://www.google.com/recaptcha/api2/anchor?k=x&size=compact')))
       .toEqual({ kind: 'captcha', evidence: 'captcha-frame' });
     expect(await pauseOf(frame('https://newassets.hcaptcha.com/captcha/v1/x/static/hcaptcha.html')))
       .toEqual({ kind: 'captcha', evidence: 'captcha-frame' });
@@ -107,6 +112,124 @@ describe('detectPause', () => {
     expect(await pauseOf('<form><div class="h-captcha" data-sitekey="x" data-size="invisible" style="width:300px;height:80px"></div></form>'))
       .toBeNull();
   });
+
+  // ── snapshot build 2026-11-06 (core pass Z1, item 20) ──
+  describe('a button carrying the invisible binding, whatever its tag (ADP\'s guest Continue, adp-6)', () => {
+    /** ADP's markup (fixtures/adp/guest.html): a custom element whose role is button, bound to the invisible reCAPTCHA. */
+    const BOUND = '<sdf-button id="continue" class="g-recaptcha layout-inline" role="button" aria-label="Continue" '
+      + 'style="display:inline-block;width:120px;height:36px">Continue</sdf-button>';
+    const page = async (extra = '') => {
+      const fixture = await loadFixture(document, `<!doctype html><body><div id="guest"><label for="e">Email</label>
+        <input id="e">${BOUND}</div>${extra}</body>`);
+      return { pause: detectPause(fixture.doc, null, null), challenged: pageChallenged(fixture.doc) };
+    };
+
+    it('is no drawn challenge: the page fills, and no press is held for it', async () => {
+      expect(await page()).toEqual({ pause: null, challenged: false });
+    });
+
+    it('still pauses for a visible checkbox widget beside it (adversarial)', async () => {
+      expect(await page('<div class="g-recaptcha" data-sitekey="x" style="width:304px;height:78px"></div>'))
+        .toEqual({ pause: { kind: 'captcha', evidence: 'captcha-container' }, challenged: true });
+    });
+
+    it('still pauses once the challenge it raised shows (its bframe), and not while reCAPTCHA keeps it off-screen',
+      async () => {
+        const bframe = (style: string) => `<div style="${style}"><iframe srcdoc="" title="recaptcha challenge expires in two minutes"
+          src="https://www.google.com/recaptcha/api2/bframe?hl=en&amp;k=x" style="width:400px;height:580px"></iframe></div>`;
+        expect(await page(bframe('position:absolute;left:0;top:0;visibility:visible')))
+          .toEqual({ pause: { kind: 'captcha', evidence: 'captcha-frame' }, challenged: true });
+        removeFixtures(document);
+        expect(await page(bframe('position:absolute;left:0;top:-10000px;visibility:hidden')))
+          .toEqual({ pause: null, challenged: false });
+      });
+
+    it('still pauses for a widget drawn into an element that says it is a button, and for the vendors with no binding',
+      async () => {
+        // A checkbox drawn into the bound element (its anchor frame inside it) is a drawn widget.
+        const drawnInto = await loadFixture(document, `<!doctype html><body><div class="g-recaptcha" role="button"
+          data-sitekey="x" style="width:304px;height:78px"><iframe srcdoc="" src="https://www.google.com/recaptcha/api2/anchor?k=x"
+          style="width:304px;height:78px"></iframe></div></body>`);
+        expect(detectPause(drawnInto.doc, null, null)).toEqual({ kind: 'captcha', evidence: 'captcha-frame' });
+        removeFixtures(document);
+        // Turnstile and PerimeterX bind to no button: their widget with role=button is still a challenge (PerimeterX's
+        // is a button to press and hold).
+        for (const widget of ['<div class="cf-turnstile" role="button" data-sitekey="x" style="width:300px;height:65px"></div>',
+          '<div id="px-captcha" role="button" style="width:300px;height:80px"></div>']) {
+          const fixture = await loadFixture(document, `<!doctype html><body>${widget}</body>`);
+          expect(detectPause(fixture.doc, null, null), widget).toEqual({ kind: 'captcha', evidence: 'captcha-container' });
+          removeFixtures(document);
+        }
+      });
+  });
+  // ── end core pass Z1, item 20 ──
+
+  // ── The security fix of 2026-11-06 (S7): a bound button is named and button-sized ──
+  describe('an element that says it is a bound button but is no button (S7)', () => {
+    const ANCHOR = 'https://www.google.com/recaptcha/api2/anchor?k=x&size=normal';
+    /** The review's probe P1: a .g-recaptcha element, with or without role=button, drawing reCAPTCHA's anchor frame in a
+     *  closed shadow root (which no scan reads). */
+    async function closedWidget(attributes: string, style = 'display:block;width:304px;height:78px') {
+      const fixture = await loadFixture(document, `<!doctype html><body><form><label for="e">Email</label><input id="e">
+        <div id="w" class="g-recaptcha" ${attributes} data-sitekey="x" style="${style}"></div></form></body>`);
+      const shadow = fixture.doc.getElementById('w')!.attachShadow({ mode: 'closed' });
+      const frame = fixture.doc.createElement('iframe');
+      frame.setAttribute('srcdoc', '');
+      frame.setAttribute('src', ANCHOR);
+      frame.style.cssText = 'width:304px;height:78px;border:0';
+      shadow.append(frame);
+      return { pause: detectPause(fixture.doc, fixture.doc.querySelector('form'), null), challenged: pageChallenged(fixture.doc) };
+    }
+    const PAUSED = { pause: { kind: 'captcha', evidence: 'captcha-container' }, challenged: true };
+
+    it('P1: still pauses for a widget-sized, nameless role=button host drawing its frame in a closed shadow root', async () => {
+      expect(await closedWidget('')).toEqual(PAUSED);
+      removeFixtures(document);
+      expect(await closedWidget('role="button"')).toEqual(PAUSED);
+    });
+
+    it('still pauses for a named host as tall as a widget, and for a button-sized one with no name of its own', async () => {
+      expect(await closedWidget('role="button" aria-label="Continue"')).toEqual(PAUSED);
+      removeFixtures(document);
+      expect(await closedWidget('role="button"', 'display:block;width:120px;height:36px')).toEqual(PAUSED);
+      removeFixtures(document);
+      // An aria-labelledby naming nothing with words is no name.
+      expect(await closedWidget('role="button" aria-labelledby="none"', 'display:block;width:120px;height:36px'))
+        .toEqual(PAUSED);
+    });
+
+    it('still pauses for a frame drawn in the open shadow root of a named, button-sized host', async () => {
+      const fixture = await loadFixture(document, `<!doctype html><body><div id="w" class="g-recaptcha" role="button"
+        aria-label="Continue" data-sitekey="x" style="display:block;width:120px;height:36px"></div></body>`);
+      const shadow = fixture.doc.getElementById('w')!.attachShadow({ mode: 'open' });
+      const frame = fixture.doc.createElement('iframe');
+      frame.setAttribute('srcdoc', '');
+      frame.setAttribute('src', ANCHOR);
+      frame.style.cssText = 'width:304px;height:78px;border:0';
+      shadow.append(fixture.doc.createElement('div'));
+      shadow.firstElementChild!.append(frame);
+      // No bound button: the frame and its host both count, and every press holds.
+      expect(pageChallenged(fixture.doc)).toBe(true);
+      expect(unsolvedCaptchas(fixture.doc, null)).toBeGreaterThan(0);
+      // The behaviour review of 2026-11-06 (M6): that frame is reCAPTCHA's checkbox, which holds every press but no
+      // longer pauses the fill; any other challenge frame drawn there still pauses it.
+      expect(detectPause(fixture.doc, null, null)).toBeNull();
+      frame.setAttribute('src', 'https://www.google.com/recaptcha/api2/bframe?k=x');
+      expect(detectPause(fixture.doc, null, null)?.kind).toBe('captcha');
+    });
+
+    it('takes a named, button-sized host whose words are its own or those its aria-labelledby names as bound', async () => {
+      for (const attributes of ['role="button" aria-labelledby="t"', 'role="button"']) {
+        const fixture = await loadFixture(document, `<!doctype html><body><span id="t">Continue</span>
+          <div class="g-recaptcha" ${attributes} data-sitekey="x" style="display:block;width:120px;height:36px">${
+  attributes.includes('labelledby') ? '' : 'Continue'}</div></body>`);
+        expect({ pause: detectPause(fixture.doc, null, null), challenged: pageChallenged(fixture.doc) }, attributes)
+          .toEqual({ pause: null, challenged: false });
+        removeFixtures(document);
+      }
+    });
+  });
+  // ── end of the security fix's block (S7) ──
 
   it("takes the adapter's word for what its snapshots show", async () => {
     const adapter = { authState: () => 'entry-choice' } as unknown as Adapter;
@@ -271,3 +394,144 @@ describe('detectPause', () => {
     expect(await challenged(form)).toEqual([false, false]);
   });
 });
+
+// ── The behaviour review of 2026-11-06 (B1, M6) ──
+describe('the invisible reCAPTCHA badge holds no press (B1)', () => {
+  afterEach(() => removeFixtures(document));
+
+  /** The badge as every Greenhouse fixture draws it (fixtures/greenhouse/discord-job.html: div.grecaptcha-badge >
+   *  div.grecaptcha-logo > iframe title="reCAPTCHA", an enterprise anchor with size=invisible), fixed at the corner. */
+  const BADGE = `<div class="grecaptcha-badge" data-style="bottomright" style="width:256px;height:60px;position:fixed;
+    bottom:14px;right:0"><div class="grecaptcha-logo"><iframe srcdoc="" title="reCAPTCHA" width="256" height="60"
+    src="https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1&amp;k=x&amp;size=invisible"></iframe></div></div>`;
+  /** Its challenge popup, as fixtures/dayforce/submit-challenge.html shows it once raised. */
+  const BFRAME = (style: string) => `<div style="${style}"><div style="z-index:2000000000;position:relative;width:400px;
+    height:580px"><iframe srcdoc="" title="recaptcha challenge expires in two minutes" style="width:400px;height:580px"
+    src="https://www.google.com/recaptcha/api2/bframe?hl=en&amp;k=x"></iframe></div></div>`;
+  const FORM = '<form><label for="n">Full name</label><input id="n"></form>';
+
+  const read = async (body: string) => {
+    const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
+    const found = { like: challengeLikeFramesShown(fixture.doc), challenged: pageChallenged(fixture.doc),
+      pause: detectPause(fixture.doc, fixture.doc.querySelector('form'), null)?.kind ?? null };
+    removeFixtures(document);
+    return found;
+  };
+
+  it('reads the badge as no challenge-like frame: nothing holds, nothing pauses', async () => {
+    expect(await read(`${FORM}${BADGE}`)).toEqual({ like: 0, challenged: false, pause: null });
+    // A frame in the badge, whatever its address says.
+    expect(await read(`${FORM}${BADGE.replace('https://www.recaptcha.net/recaptcha/enterprise/anchor',
+      'https://badge.example/anchor')}`)).toEqual({ like: 0, challenged: false, pause: null });
+  });
+
+  it('still reads its challenge popup once shown, a frame reading like a challenge beside it, and neither hidden',
+    async () => {
+      // The popup is a vendor's frame (shownCaptchas), no longer a challenge-like one (M6 below).
+      expect(await read(`${FORM}${BADGE}${BFRAME('position:absolute;left:0;top:0;visibility:visible')}`))
+        .toEqual({ like: 0, challenged: true, pause: 'captcha' });
+      expect(await read(`${FORM}${BADGE}${BFRAME('position:absolute;left:0;top:-10000px;visibility:hidden')}`))
+        .toEqual({ like: 0, challenged: false, pause: null });
+      expect(await read(`${FORM}${BADGE}<iframe srcdoc="" src="https://shield.example/f" title="Human verification"
+        style="width:300px;height:80px"></iframe>`)).toEqual({ like: 1, challenged: true, pause: null });
+    });
+});
+
+describe('a checkbox widget holds every press but never the fill (M6, the owner’s decision of 2026-11-06)', () => {
+  afterEach(() => removeFixtures(document));
+
+  /** reCAPTCHA v2's checkbox as fixtures/jazzhr/invaluable-form.html draws it: .g-recaptcha > div 304 x 78 > div >
+   *  iframe (api2/anchor, size=normal), the empty response field beside it, and reCAPTCHA's hidden helper frame. */
+  const RECAPTCHA = (token = '', size = 'normal', path = 'api2') => `<div class="g-recaptcha" data-sitekey="x"><div
+    style="width:304px;height:78px"><div><iframe srcdoc="" title="reCAPTCHA" width="304" height="78"
+    src="https://www.google.com/recaptcha/${path}/anchor?ar=1&amp;k=x&amp;size=${size}"></iframe></div><textarea
+    id="g-recaptcha-response" name="g-recaptcha-response" class="g-recaptcha-response" style="display:none">${token}</textarea>
+    </div><iframe style="display:none"></iframe></div>`;
+  /** The same widget rendered into the page's own element (fixtures/bamboohr/swyfft-form.html: no documented class). */
+  const EXPLICIT = (token = '') => `<div><div style="width:304px;height:78px"><div><iframe srcdoc="" title="reCAPTCHA"
+    width="304" height="78" src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=x&amp;size=normal"></iframe></div>
+    <textarea name="g-recaptcha-response" class="g-recaptcha-response" style="display:none">${token}</textarea></div></div>`;
+  /** hCaptcha's checkbox or its challenge frame, at the addresses fixtures/icims/* show. */
+  const HCAPTCHA = (frame: string) => `<div class="h-captcha" data-sitekey="x"><iframe srcdoc="" width="303" height="78"
+    style="width:303px;height:78px" src="https://newassets.hcaptcha.com/captcha/v1/b/static/hcaptcha.html#frame=${frame}&amp;id=x"
+    ></iframe><textarea name="h-captcha-response" style="display:none"></textarea></div>`;
+  const POPUP = `<div style="position:absolute;left:0;top:0;visibility:visible"><iframe srcdoc=""
+    title="recaptcha challenge expires in two minutes" style="width:400px;height:580px"
+    src="https://www.google.com/recaptcha/api2/bframe?hl=en&amp;k=x"></iframe></div>`;
+  const FORM = (widget: string) => `<form><label for="n">Full name</label><input id="n">${widget}</form>`;
+
+  const read = async (body: string, adapter: Adapter | null = null) => {
+    const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
+    const form = fixture.doc.querySelector('form');
+    const found = { pause: detectPause(fixture.doc, form, adapter)?.kind ?? null,
+      unsolved: unsolvedCaptchas(fixture.doc, form), challenged: pageChallenged(fixture.doc),
+      handed: captchaElements(fixture.doc, form).length };
+    removeFixtures(document);
+    return found;
+  };
+
+  it('fills a step whose only challenge is reCAPTCHA’s checkbox, holding every press until it is solved', async () => {
+    // Its anchor frame and its container: two widgets not known solved; no pause.
+    expect(await read(FORM(RECAPTCHA()))).toEqual({ pause: null, unsolved: 2, challenged: true, handed: 2 });
+    expect(await read(FORM(EXPLICIT()))).toEqual({ pause: null, unsolved: 2, challenged: true, handed: 2 });
+    // Solved (its token there): nothing holds, its frame included (its title still says reCAPTCHA).
+    expect(await read(FORM(RECAPTCHA('03AFcWeA-token')))).toEqual({ pause: null, unsolved: 0, challenged: false,
+      handed: 0 });
+    expect(await read(FORM(EXPLICIT('03AFcWeA-token')))).toEqual({ pause: null, unsolved: 0, challenged: false,
+      handed: 0 });
+  });
+
+  it('fills beside hCaptcha’s checkbox too, and pauses once its challenge frame shows', async () => {
+    expect(await read(FORM(HCAPTCHA('checkbox')))).toEqual({ pause: null, unsolved: 2, challenged: true, handed: 2 });
+    expect((await read(FORM(HCAPTCHA('challenge')))).pause).toBe('captcha');
+  });
+
+  it('pauses everything once the challenge popup shows, the checkbox beside it or not (adversarial)', async () => {
+    expect((await read(`${FORM(RECAPTCHA())}${POPUP}`)).pause).toBe('captcha');
+    expect((await read(`${FORM('')}${POPUP}`)).pause).toBe('captcha');
+  });
+
+  it('pauses for every widget not known to be a checkbox (adversarial)', async () => {
+    // reCAPTCHA's anchor in another size, or Enterprise's (no snapshot shows either as a checkbox).
+    expect((await read(FORM(RECAPTCHA('', 'compact')))).pause).toBe('captcha');
+    expect((await read(FORM(RECAPTCHA('', 'normal', 'enterprise')))).pause).toBe('captcha');
+    // A container that shows no frame (not drawn yet, or drawn where it cannot be read).
+    expect((await read(FORM('<div class="g-recaptcha" data-sitekey="x" style="width:304px;height:78px"></div>')))
+      .pause).toBe('captcha');
+    // A checkbox's container that also shows another frame.
+    expect((await read(FORM(RECAPTCHA().replace('<iframe style="display:none"></iframe>',
+      '<iframe srcdoc="" src="https://www.example.com/x" style="width:300px;height:80px"></iframe>')))).pause)
+      .toBe('captcha');
+    // Another vendor beside the checkbox: Turnstile's widget, an Arkose frame.
+    expect((await read(FORM(`${RECAPTCHA()}<div class="cf-turnstile" data-sitekey="x" style="width:300px;height:65px">
+      </div>`))).pause).toBe('captcha');
+    expect((await read(FORM(`${RECAPTCHA()}<iframe srcdoc="" src="https://client-api.arkoselabs.com/fc/gc/?token=x"
+      style="width:300px;height:200px"></iframe>`))).pause).toBe('captcha');
+  });
+
+  it('leaves an account page the adapter names its own pause, with Sign-in Auto’s challenge frames still shown', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>${FORM(RECAPTCHA())}</body>`);
+    const adapter = { authState: () => 'create-account' } as unknown as Adapter;
+    expect(detectPause(fixture.doc, fixture.doc.querySelector('form'), adapter)).toEqual({ kind: 'create-account',
+      evidence: 'adapter' });
+    // What Sign-in Auto reads (content/sign-in.ts challenged): it types nothing while these show.
+    expect(vendorFramesShown(fixture.doc)).toBe(1);
+    expect(pageChallenged(fixture.doc)).toBe(true);
+  });
+
+  it('never makes the vendor’s response field a field of the step, shown or not (the run never touches the widget)',
+    async () => {
+      const fixture = await loadFixture(document, `<!doctype html><body>${FORM(RECAPTCHA())}</body>`);
+      const form = fixture.doc.querySelector('form')!;
+      const field = fixture.doc.querySelector<HTMLTextAreaElement>('textarea[name="g-recaptcha-response"]')!;
+      // A page that shows it, labelled as a question.
+      field.style.cssText = 'display:block;width:250px;height:40px';
+      const label = fixture.doc.createElement('label');
+      label.htmlFor = 'g-recaptcha-response';
+      label.textContent = 'Cover letter';
+      field.before(label);
+      const fields = scan(form, null, { platform: 'greenhouse' }).fields;
+      expect(fields.map((each) => each.label)).toEqual(['Full name']);
+    });
+});
+// ── end of the behaviour review's block ──

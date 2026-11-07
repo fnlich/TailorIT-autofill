@@ -320,4 +320,59 @@ describe('Sign-in Auto’s credential in the worker (v3 Phase 5)', () => {
       message: 'None.' } } });
     expect(await ask(worker, top({ tab: { id: 15, url: WORKDAY } }))).toEqual({ ok: false, error: 'unavailable' });
   });
+
+  // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6, the every-site sign-in by the page's path ──
+  describe('on the hosts the every-site sign-in covers by their candidate paths (TailorIT’s API 6)', () => {
+    /** The owner's snapshots' pages (fixtures/adp guest and personal, fixtures/clearcompany vafb-account), as Chrome
+     *  reports their frames: their queries included, which never reach TailorIT. */
+    const ADP_GUEST = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001';
+    const ADP_STEPS = 'https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&OTP_login=true';
+    const CC = 'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply';
+    const everySite = async () => {
+      const worker = await signInWorker();
+      worker.tailorit.reply('GET /api/autofill/credentials', { json: { host: '*', email: 'alex.rivera@example.com',
+        password: PASSWORD } });
+      return worker;
+    };
+    const queries = (worker: TestWorker) => worker.tailorit.requests
+      .filter((request) => request.path === '/api/autofill/credentials')
+      .map((request) => [...new URL(request.url).searchParams]);
+    const at = (url: string, id: number) => top({ url, tab: { id, url }, documentId: `doc-${id}` });
+
+    it('answers the every-site sign-in at a candidate path, the frame’s pathname sent with its host, never its query',
+      async () => {
+        const worker = await everySite();
+        expect(await ask(worker, at(ADP_GUEST, 21), 'email-gate')).toEqual({ ok: true,
+          data: { host: '*', email: 'alex.rivera@example.com' } });
+        expect(await ask(worker, at(ADP_STEPS, 22))).toMatchObject({ ok: true, data: { host: '*', password: PASSWORD } });
+        expect(await ask(worker, at(CC, 23), 'create-account')).toMatchObject({ ok: true, data: { host: '*' } });
+        expect(queries(worker)).toEqual([
+          [['host', 'workforcenow.adp.com'], ['path', '/mascsr/default/mdf/recruitment/recruitment.html']],
+          [['host', 'workforcenow.adp.com'], ['path', '/mascsr/applicant/mdf/recruitment/postLogin.html']],
+          [['host', 'vafb.clearcompany.com'], ['path', '/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply']]]);
+        for (const request of worker.tailorit.requests) {
+          expect(request.url).not.toContain('cid=');
+          expect(request.url).not.toContain('OTP_login');
+        }
+      });
+
+    it('sends no path where it decides nothing, and takes `*` on no page it does not cover', async () => {
+      const worker = await everySite();
+      // A host covered by its name alone (Workday): its own sign-in, or `*`, asked by the host alone.
+      expect(await ask(worker)).toMatchObject({ ok: true, data: { host: '*' } });
+      // ClearCompany's own www host serves /careers/ too (the extension's match pattern), but no tenant's candidate page.
+      expect(await ask(worker, at('https://www.clearcompany.com/careers/jobs/1/apply', 24))).toEqual({ ok: false,
+        error: 'unavailable' });
+      expect(queries(worker)).toEqual([[['host', 'acme.wd5.myworkdayjobs.com']], [['host', 'www.clearcompany.com']]]);
+    });
+
+    it('takes the path from Chrome’s address for the frame, never from the message', async () => {
+      const worker = await everySite();
+      const answer = await worker.deliver({ v: 1, type: 'signin/credential', wall: 'sign-in',
+        path: '/mascsr/default/mdf/recruitment/recruitment.html' }, at('https://www.clearcompany.com/careers/x', 25));
+      expect(answer).toMatchObject({ ok: false });
+      expect(queries(worker)).toEqual([]);
+    });
+  });
+  // ── end contract6 ──
 });

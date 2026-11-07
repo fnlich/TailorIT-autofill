@@ -1,0 +1,104 @@
+{
+  "fixture": "successfactors/donnelleyf-create-account",
+  "source": "https://career8.successfactors.com/career?company=donnelleyf&site=&lang=en_US&requestParams=REDACTED&login_ns=register&career_ns=job%5fapplication&career_job_req_id=4984&jobPipeline=Direct&clientId=jobs2web&_s.crb=REDACTED",
+  "captured": "2026-11-06T17:03:56.000Z",
+  "fields": [
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_userName"
+    },
+    {
+      "label": "Retype Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_emailConf"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_fName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_lName"
+    },
+    {
+      "label": "Country/Region of Residence",
+      "kind": "select",
+      "required": true,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "options": 233,
+      "control": "select#fbclc_country",
+      "note": "DFIN's form asks for no phone (Danfoss's does): its country list holds 232 countries and \"- Select -\"."
+    },
+    {
+      "label": "Notification",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_emailEnabled",
+      "note": "\"Receive new job posting notifications\", ticked by the page (the capture's checked dropped by the converter)."
+    },
+    {
+      "label": "Hear more about career opportunities",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Career Opportunities: Create an Account",
+      "fillable": true,
+      "control": "input#fbclc_campaignEmailEnabled",
+      "note": "A marketing consent."
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "textarea#g-recaptcha-response",
+      "note": "reCAPTCHA's response field (display:none) under \"Confirm you are not a robot:\" (required): a CAPTCHA, never solved for the person; its widget is a google.com frame."
+    }
+  ],
+  "hooks": {
+    "detect": "form#careerform",
+    "authState": "create-account",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input#fbclc_userName",
+      "confirmEmail": "input#fbclc_emailConf",
+      "password": "input#fbclc_pwd",
+      "confirm": "input#fbclc_pwdConf",
+      "terms": [],
+      "button": "button#fbclc_createAccountButton",
+      "form": "form#careerform",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "#show_button",
+      "#show_conf_button",
+      "a#dataPrivacyId",
+      "#cookie-accept",
+      "#cookie-reject",
+      "#cookie-bannershow"
+    ],
+    "pressable": []
+  }
+}

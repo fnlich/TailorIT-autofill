@@ -1,0 +1,119 @@
+{
+  "fixture": "paycor/regard-form",
+  "source": "https://recruitingbypaycor.com/career/SubmitResume.action?clientId=8a7883c69d4ae9f9019d747e31cf11ee&id=8a7885aca18473fa01a1ad2e0f2f6720&specialization=",
+  "captured": "2026-11-06T17:14:43.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"firstName\"]"
+    },
+    {
+      "label": "Preferred Name",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"preferredName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"lastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"email\"]"
+    },
+    {
+      "label": "Mobile Phone",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"mobile\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"address1\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"city\"]"
+    },
+    {
+      "label": "State",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 62,
+      "control": "[id=\"state\"]",
+      "note": "A native select of two-letter codes as their own words (AA … WY), no blank option."
+    },
+    {
+      "label": "Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"zipCode\"]"
+    },
+    {
+      "label": "Comments",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"originalComments\"]",
+      "note": "No label: titled by its section's dt (\"Comments\")."
+    },
+    {
+      "label": "Acceptance",
+      "kind": "checkbox",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"gnewotn_input_11\"]",
+      "note": "Titled by its for-less label in div.gnewtonQuestionLabelClass, the privacy statement above it its help; required=\"required\" and the star."
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"fax_number\"]",
+      "note": "The honeypot (div.nt-aux-contact, aria-hidden, tabindex -1): never a field."
+    },
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"uploadResumeInput\"]",
+      "note": "paycor-0: the résumé is in (#resumeDropped, the adapter's done sign), its drop box and its \"Choose a File\" control hidden, the input off-screen: no field to fill."
+    }
+  ]
+}

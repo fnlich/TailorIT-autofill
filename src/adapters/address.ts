@@ -3,11 +3,14 @@
  * adapter and no DOM (the v3 Phase 6/7b review, S3): the registry's applicationOf hashes its key from this reading, and
  * the page-world bridge's entry (src/entrypoints/page-bridge.content.ts) installs the bridge where bridgeInstallsAt
  * says. On a host that serves only public job postings (PUBLIC_JOB_HOSTS: Greenhouse's, Lever's, Ashby's, Workable's
- * application host and a Workday tenant's own <tenant>[.wd<n>].myworkdayjobs.com), on any path: a board's client-side
+ * application host, a Workday tenant's own <tenant>[.wd<n>].myworkdayjobs.com and, since DESIGN-NEW-ATS Phase 0, the
+ * new ATSs' candidate-only hosts: Jobvite's, Rippling's, UltiPro's, Dayforce's and HiBob's), on any path: a board's client-side
  * route to a posting keeps its React widgets' bridge (round 2, E9). On a domain that also holds an employer's own pages
  * (iCIMS, Taleo, SuccessFactors, Oracle Cloud, Workday's shared myworkdaysite.com), only where the address, read at
  * document_start, is a posting or its application form: there is no listener elsewhere, not even a silent one, which a
- * page could probe after a pushState to a posting-looking address. Pure and small: the bridge's bundle holds it.
+ * page could probe after a pushState to a posting-looking address. The snapshot build of 2026-11-06 (core pass Z1,
+ * items 26 and 39): that decision is adapters/bridge-address.ts's, which reads only the shared domains' parsers, so the
+ * bridge's bundle holds those alone; this module re-exports it.
  * - The platform is the address's candidate host's (shared/hosts.ts platformOfUrl): no platform, nothing.
  * - Its parser reads the address; one it does not read is nothing (W2: a board, a page after submitting it does not
  *   name, an upper-case /APPLY), except on the reserved `tailorit-fixture` Lever board (FIXTURE_BOARD), which the trap
@@ -23,18 +26,59 @@ import { parseAshbyUrl } from './ashby/url';
 import { genericCanonicalUrl } from './generic/url';
 import { parseGreenhouseUrl } from './greenhouse/url';
 import { parseIcimsUrl } from './icims/url';
+// ── New ATSs, builder C (DESIGN-NEW-ATS §5) ──
+import { parseJazzhrUrl } from './jazzhr/url';
+import { parseBambooHrUrl } from './bamboohr/url';
+import { parseRipplingUrl } from './rippling/url';
+import { parseBreezyUrl } from './breezy/url';
+import { parseCareerPlugUrl } from './careerplug/url';
+import { parsePinpointUrl } from './pinpoint/url';
+import { parsePaycorUrl } from './paycor/url';
+import { parseHiBobUrl } from './hibob/url';
+// ── end New ATSs, builder C ──
 import { matchesUrl as matchesLeverUrl, parseLeverUrl } from './lever/url';
 import { parseOracleUrl } from './oracle/url';
+// ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters ──
+import { parseSmartRecruitersUrl } from './smartrecruiters/url';
 import { parseSuccessFactorsUrl } from './successfactors/url';
 import { parseTaleoUrl } from './taleo/url';
 import { parseWorkableUrl } from './workable/url';
 import { parseWorkdayUrl } from './workday/url';
+// ── New ATSs, builder A (DESIGN-NEW-ATS §5) ──
+import { parseAdpUrl } from './adp/url';
+import { parseDayforceUrl } from './dayforce/url';
+import { parseUltiproUrl } from './ultipro/url';
+// ── end New ATSs, builder A ──
+// ── New ATSs, builder B (DESIGN-NEW-ATS §5) ──
+import { parseClearCompanyUrl } from './clearcompany/url';
+import { parseDiceUrl } from './dice/url';
+import { parseJobviteUrl } from './jobvite/url';
+import { parsePaylocityUrl } from './paylocity/url';
+// ── end New ATSs, builder B ──
 
 /** The platforms whose addresses are read by a parser of their own (each platform's url.ts). */
 const URL_PARSERS: Partial<Record<Platform, (url: URL) => ApplicationUrl | null>> = {
   greenhouse: parseGreenhouseUrl, lever: parseLeverUrl, ashby: parseAshbyUrl, workday: parseWorkdayUrl,
   workable: parseWorkableUrl, icims: parseIcimsUrl, taleo: parseTaleoUrl, successfactors: parseSuccessFactorsUrl,
   oracle: parseOracleUrl,
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters ──
+  smartrecruiters: parseSmartRecruitersUrl,
+  // ── New ATSs, builder A (DESIGN-NEW-ATS §5) ──
+  adp: parseAdpUrl, dayforce: parseDayforceUrl, ultipro: parseUltiproUrl,
+  // ── end New ATSs, builder A ──
+  // ── New ATSs, builder B (DESIGN-NEW-ATS §5) ──
+  jobvite: parseJobviteUrl, dice: parseDiceUrl, clearcompany: parseClearCompanyUrl, paylocity: parsePaylocityUrl,
+  // ── end New ATSs, builder B ──
+  // ── New ATSs, builder C (DESIGN-NEW-ATS §5) ──
+  jazzhr: parseJazzhrUrl,
+  bamboohr: parseBambooHrUrl,
+  rippling: parseRipplingUrl,
+  breezy: parseBreezyUrl,
+  careerplug: parseCareerPlugUrl,
+  pinpoint: parsePinpointUrl,
+  paycor: parsePaycorUrl,
+  hibob: parseHiBobUrl,
+  // ── end New ATSs, builder C ──
 };
 
 /** The reserved Lever board the trap and synthetic fixtures are served on (https://jobs.lever.co/tailorit-fixture/...).
@@ -67,97 +111,12 @@ export function postingAddressOf(url: URL): PostingAddress | null {
   return canonical === null ? null : { platform, page: 'application', applicationUrl: canonical };
 }
 
-/** The hosts that serve only public job postings (module header), each on its platform's own candidate host. */
-const PUBLIC_JOB_HOSTS: ReadonlyArray<RegExp> = [/^(?:job-)?boards\.greenhouse\.io$/, /^jobs\.(?:eu\.)?lever\.co$/,
-  /^jobs\.ashbyhq\.com$/, /^jobs\.smartrecruiters\.com$/, /^apply\.workable\.com$/,
-  /^(?!(?:www|wd\d{1,3})\.)[a-z0-9-]+\.(?:wd\d{1,3}\.)?myworkdayjobs\.com$/];
-
-/** Whether the page-world bridge installs at `href` (module header): an https address on an ATS host, any path of one
- *  that serves only public job postings, else only a posting or its application form. */
-export function bridgeInstallsAt(href: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return false;
-  }
-  if (platformOfUrl(url.href) === null) return false;
-  const host = url.hostname.toLowerCase();
-  return PUBLIC_JOB_HOSTS.some((pattern) => pattern.test(host)) || showsPostingOrForm(href);
-}
-
-/** How many ancestors readableAncestors reads: far more than any posting's frames nest. */
-const ANCESTOR_DEPTH = 8;
-
-/** The addresses of the ancestors of the frame `view` shows that it may read, nearest first: those of its own origin
- *  (another origin's throws, and is passed over). [] in a top frame, or for a window that names no parent. Reads
- *  nothing but `parent` and `location.href`, so the page-world bridge can call it. */
-export function readableAncestors(view: unknown): string[] {
-  const hrefs: string[] = [];
-  let at = view as AncestorView | null | undefined;
-  for (let depth = 0; depth < ANCESTOR_DEPTH && at !== null && at !== undefined; depth += 1) {
-    const parent = parentOf(at);
-    if (parent === null || parent === at) break;
-    const href = hrefOf(parent);
-    if (href !== null) hrefs.push(href);
-    at = parent;
-  }
-  return hrefs;
-}
-
-/** A window as readableAncestors reads it. */
-interface AncestorView {
-  parent?: unknown;
-  location?: { href?: unknown };
-}
-
-/** A window's parent, or null where it names none. */
-function parentOf(view: AncestorView): AncestorView | null {
-  try {
-    return (view.parent ?? null) as AncestorView | null;
-  } catch {
-    return null;
-  }
-}
-
-/** A window's address, or null where it may not be read (another origin's throws). */
-function hrefOf(view: AncestorView): string | null {
-  try {
-    const href = view.location?.href;
-    return typeof href === 'string' ? href : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The audit of 2026-11-06 (S-9): whether a frame at `href` stays silent (no bridge, no frame/hello, no UI) because it
- * sits on a domain that also holds an employer's own pages (iCIMS, Taleo, SuccessFactors, Oracle Cloud, Workday's
- * shared myworkdaysite.com: every candidate host but PUBLIC_JOB_HOSTS) below an ancestor it can read (`ancestors`:
- * readableAncestors, its own origin's) that is not itself a posting's page (a posting, its application form or the page
- * after submitting, as postingAddressOf reads it): an HR portal framing a posting-looking address of its own origin to
- * learn whether the extension is installed. A posting's own wrapper (iCIMS's, which frames the posting at the same
- * address) is a posting's page, so its frame is not silent; a frame below another origin's page is read as before.
- */
-export function framedByEmployerPage(href: string, ancestors: readonly string[]): boolean {
-  if (ancestors.length === 0) return false;
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return false;
-  }
-  if (platformOfUrl(url.href) === null) return false;
-  const host = url.hostname.toLowerCase();
-  if (PUBLIC_JOB_HOSTS.some((pattern) => pattern.test(host))) return false;
-  return ancestors.some((ancestor) => {
-    try {
-      return postingAddressOf(new URL(ancestor)) === null;
-    } catch {
-      return true;
-    }
-  });
-}
+// ── snapshot build 2026-11-06 (core pass Z1, items 26 and 39): where the page-world bridge installs ──
+// bridgeInstallsAt, readableAncestors and framedByEmployerPage moved, unchanged in what they answer, to
+// adapters/bridge-address.ts, which reads only the parsers of the platforms on shared domains, so the bridge's bundle holds
+// those alone; re-exported here for the content runtime.
+export { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from './bridge-address';
+// ── end core pass Z1, items 26 and 39 ──
 
 /** Whether `href` shows a posting or its application form (never the page after submitting). Any address that does
  *  not parse: false. */

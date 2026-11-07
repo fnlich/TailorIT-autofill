@@ -1,0 +1,230 @@
+{
+  "fixture": "workday/resolvetech-source-open",
+  "source": "https://resolvetech.wd1.myworkdayjobs.com/en-US/RTS/job/US-Remote---TX/Devops-Engineer_R1120/apply/applyManually",
+  "captured": "2026-11-06T14:39:33.000Z",
+  "fields": [
+    {
+      "label": "How Did You Hear About Us?",
+      "kind": "combobox",
+      "required": true,
+      "section": "my-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"source--source\"]"
+    },
+    {
+      "label": "Have you previously been employed by RTS? CURRENT EMPLOYEES: Please reach out to your Recruiting Manager to discuss your options.",
+      "kind": "radio",
+      "required": true,
+      "section": "my-information",
+      "fillable": true,
+      "options": 2,
+      "control": "input[type=\"radio\"][name=\"candidateIsPreviousWorker\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "my-information",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"country--country\"]"
+    },
+    {
+      "label": "Prefix",
+      "kind": "combobox",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"name--legalName--title\"]"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--legalName--firstName\"]"
+    },
+    {
+      "label": "Middle Name",
+      "kind": "text",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--legalName--middleName\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--legalName--lastName\"]"
+    },
+    {
+      "label": "Suffix",
+      "kind": "combobox",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"name--legalName--social\"]"
+    },
+    {
+      "label": "I have a preferred name",
+      "kind": "checkbox",
+      "required": false,
+      "section": "legal-name",
+      "fillable": true,
+      "control": "input[id=\"name--preferredCheck\"]"
+    },
+    {
+      "label": "Address Line 1",
+      "kind": "text",
+      "required": false,
+      "section": "address",
+      "fillable": true,
+      "control": "input[id=\"address--addressLine1\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "address",
+      "fillable": true,
+      "control": "input[id=\"address--city\"]"
+    },
+    {
+      "label": "State",
+      "kind": "combobox",
+      "required": false,
+      "section": "address",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"address--countryRegion\"]"
+    },
+    {
+      "label": "Postal Code",
+      "kind": "text",
+      "required": false,
+      "section": "address",
+      "fillable": true,
+      "control": "input[id=\"address--postalCode\"]"
+    },
+    {
+      "label": "Phone Device Type",
+      "kind": "combobox",
+      "required": true,
+      "section": "phone",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"phoneNumber--phoneType\"]"
+    },
+    {
+      "label": "Country Phone Code",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "phone",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input[id=\"phoneNumber--countryPhoneCode\"]"
+    },
+    {
+      "label": "Phone Number",
+      "kind": "text",
+      "required": true,
+      "section": "phone",
+      "fillable": true,
+      "control": "input[id=\"phoneNumber--phoneNumber\"]"
+    },
+    {
+      "label": "Phone Extension",
+      "kind": "text",
+      "required": false,
+      "section": "phone",
+      "fillable": true,
+      "control": "input[id=\"phoneNumber--extension\"]"
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"DELETE_charm\"]",
+      "[data-automation-id=\"phone-terms-and-condition-link\"]",
+      "[data-automation-id=\"utilityMenuButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "My Information",
+      "progress": "current step 1 of 6",
+      "anchors": [
+        "applyFlowMyInfoPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"source--source\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"country--country\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "button[id=\"name--legalName--title\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"name--legalName--social\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"address--countryRegion\"]",
+        "kind": "combobox",
+        "answered": false
+      },
+      {
+        "control": "button[id=\"phoneNumber--phoneType\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "input[id=\"phoneNumber--countryPhoneCode\"]",
+        "kind": "typeahead-remote",
+        "answered": true
+      }
+    ],
+    "repeatables": []
+  }
+}

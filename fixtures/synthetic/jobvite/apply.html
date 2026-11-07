@@ -1,0 +1,183 @@
+<!doctype html>
+<!--
+  Synthetic: a Jobvite application in three steps (DESIGN-NEW-ATS §5, builder B), written by hand in the markup the
+  owner's Jobvite snapshots show (fixtures/jobvite: body.jv-page-apply, form[name="scopeData.applyForm"], one
+  div.jv-apply-step[ng-form="scopeData.step<N>"] shown at a time, div.jv-apply-form-actions with Next and Send
+  Application, the resume's opener in #attachResume and its file input in a body-level popover outside the form, its
+  file list once the page has the file). No snapshot's text or value is copied: the questions are made up, and every
+  answer comes from the e2e golden profile.
+  Served at https://jobs.jobvite.com/tailorit-fixture/job/oFixture<N>/apply (one application per e2e case), where the
+  Jobvite adapter (src/adapters/jobvite) reads it.
+
+  The steps, as Jobvite's own show them (ng-hide hides what is not shown):
+  1. scopeData.step1: "Add Resume*" (its opener "Select", the popover's "File" label and the hidden file input
+     #file-input-0 at the end of the body), then "Personal Information": Chosen First Name*, Chosen Last Name*, Email*,
+     Cell Phone* (type=tel).
+  2. scopeData.step2: "Location", whose sub-section h4 "Where you live" heads City*.
+  3. scopeData.step3: "Application Questions": "How did you hear about this job?" (text). The last step: Next is
+     ng-hide and "Send Application" (type=submit) shows.
+  A small page script reacts only to clicks on Next and to the file input's change events, as the page's own: Next
+  shows the next step and swaps the buttons; a file put into #file-input-0 shows its row (its name, "remove") in
+  #attachResume's ul.jv-file-list and hides the opener's wrapper. It dispatches no event and never focuses, clicks or
+  submits anything. Nothing checks the answers before Next. The form posts to /__submitted, and its submit event is
+  cancelled.
+
+  window.__jv keeps what the page saw: `step`, the step shown; `next`, each Next click as {step, trusted}; `files`, the
+  file names put into #file-input-0, in order.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fixture Co Careers - Apply for Platform Engineer</title>
+  <style>
+    .ng-hide { display: none !important; }
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui, sans-serif; }
+    .jv-page-body { max-width: 760px; margin: 24px auto; padding: 0 16px 200px; }
+    .jv-step-header { margin: 24px 0 8px; font-size: 18px; }
+    h4 { margin: 16px 0 4px; font-size: 16px; }
+    .jv-form-field { margin: 12px 0; }
+    .jv-form-field-label { display: block; font-weight: 600; }
+    .jv-form-field-control input { width: 320px; padding: 6px; border: 1px solid #888; border-radius: 3px; }
+    .jv-button { padding: 8px 16px; border: 1px solid #357; border-radius: 3px; background: #fff; color: #135; }
+    .jv-button-primary { background: #2b6cb0; color: #fff; }
+    .jv-apply-form-actions { margin-top: 24px; }
+    ul.jv-file-list { list-style: none; padding: 0; }
+    .jv-add-attachment { position: absolute; left: 1em; right: 1em; z-index: 100; padding: 0 1em; background: #fff;
+      border: 1px solid #ccc; }
+    #file-input-0 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+  </style>
+</head>
+<body class="jv-desktop jv-page-apply">
+  <article class="jv-page-body" role="main">
+    <h2 class="jv-header">Platform Engineer</h2>
+    <div class="jv-form jv-apply-form">
+      <form name="scopeData.applyForm" action="/__submitted" method="post" novalidate>
+        <div class="jv-apply-step" ng-form="scopeData.step1" data-step="1">
+          <div class="jv-apply-section">
+            <h3 class="jv-step-header" id="jv-resume-header">Add Resume*</h3>
+            <div class="jv-apply-with jv-apply-section" id="attachResume">
+              <div class="opener">
+                <button attachment-label="Resume" class="jv-button" type="button" aria-haspopup="true" aria-expanded="false"
+                  aria-labelledby="jv-resume-header" aria-required="true">Select</button>
+              </div>
+              <ul class="jv-file-list"></ul>
+            </div>
+          </div>
+          <div class="jv-apply-section">
+            <h3 class="jv-step-header">Personal Information</h3>
+            <div class="jv-form-field">
+              <label for="jv-field-first" class="jv-form-field-label">Chosen First Name<span class="jv-required-label">*</span></label>
+              <div class="jv-form-field-control"><input id="jv-field-first" name="input-first" type="text" autocomplete="given-name"
+                required aria-required="true"></div>
+            </div>
+            <div class="jv-form-field">
+              <label for="jv-field-last" class="jv-form-field-label">Chosen Last Name<span class="jv-required-label">*</span></label>
+              <div class="jv-form-field-control"><input id="jv-field-last" name="input-last" type="text" autocomplete="family-name"
+                required aria-required="true"></div>
+            </div>
+            <div class="jv-form-field">
+              <label for="jv-field-email" class="jv-form-field-label">Email<span class="jv-required-label">*</span></label>
+              <div class="jv-form-field-control"><input id="jv-field-email" name="input-email" type="text" autocomplete="email"
+                required aria-required="true"></div>
+            </div>
+            <div class="jv-form-field">
+              <label for="jv-field-phone" class="jv-form-field-label">Cell Phone<span class="jv-required-label">*</span></label>
+              <div class="jv-form-field-control"><input id="jv-field-phone" name="input-phone" type="tel" autocomplete="tel"
+                required aria-required="true"></div>
+            </div>
+          </div>
+        </div>
+        <div class="jv-apply-step ng-hide" ng-form="scopeData.step2" data-step="2" tabindex="-1">
+          <div class="jv-apply-section">
+            <h3 class="jv-step-header">Location</h3>
+            <div class="jv-prescreen-element jv-prescreen-element-sectiontitle">
+              <div class="jv-form-field"><div class="jv-form-field-control"><h4>Where you live</h4></div></div>
+            </div>
+            <div class="jv-prescreen-element jv-prescreen-element-textentryfield">
+              <div class="jv-form-field">
+                <label for="jv-field-f1" class="jv-form-field-label">City<span class="jv-required-label">*</span></label>
+                <div class="jv-form-field-control"><input id="jv-field-f1" name="input-f1" type="text" autocomplete="address-level2"
+                  required aria-required="true"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="jv-apply-step ng-hide" ng-form="scopeData.step3" data-step="3" tabindex="-1">
+          <div class="jv-apply-section">
+            <h3 class="jv-step-header">Application Questions</h3>
+            <div class="jv-prescreen-element jv-prescreen-element-textentryfield">
+              <div class="jv-form-field">
+                <label for="jv-field-f2" class="jv-form-field-label">How did you hear about this job?</label>
+                <div class="jv-form-field-control"><input id="jv-field-f2" name="input-f2" type="text"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="jv-apply-form-actions">
+          <div class="jv-apply-error ng-hide"><p role="alert"><strong>The above information is required.</strong></p></div>
+          <button class="jv-button jv-button-primary jv-button-large" type="button" aria-controls="applyForm" aria-label="Next"
+            id="jv-next">Next &rarr;</button>
+          <button class="jv-button jv-button-primary jv-button-large ng-hide" type="submit" aria-label="Send Application"
+            id="jv-send"><span>Send Application</span><span class="ng-hide">Sending Application <span class="jv-submit-spinner"></span></span></button>
+          <div class="jv-current-openings"><a href="https://jobs.jobvite.com/tailorit-fixture/jobs">&larr; Back to Current Openings</a></div>
+        </div>
+      </form>
+    </div>
+  </article>
+  <div id="attachmentDropdown" class="jv-add-attachment ng-hide" role="dialog" aria-label="Attachment Options" aria-hidden="true"
+    tabindex="-1">
+    <div class="jv-add-attachment-item"><span class="jv-text-block jv-text-link" role="button" tabindex="0">Dropbox</span></div>
+    <div class="jv-add-attachment-item">
+      <label for="file-input-0" class="jv-text-block jv-text-link"><span role="button" tabindex="0">File</span></label>
+      <input id="file-input-0" type="file">
+    </div>
+    <a class="jv-close" href="#" tabindex="0">Close</a>
+  </div>
+  <script>
+    (() => {
+      const record = { step: 1, next: [], files: [] };
+      window.__jv = record;
+      const steps = Array.from(document.querySelectorAll('div.jv-apply-step'));
+      const next = document.getElementById('jv-next');
+      const send = document.getElementById('jv-send');
+      const show = (step) => {
+        record.step = step;
+        steps.forEach((el) => el.classList.toggle('ng-hide', Number(el.dataset.step) !== step));
+        const last = step === steps.length;
+        next.classList.toggle('ng-hide', last);
+        send.classList.toggle('ng-hide', !last);
+      };
+      next.addEventListener('click', (event) => {
+        record.next.push({ step: record.step, trusted: event.isTrusted });
+        if (record.step < steps.length) show(record.step + 1);
+      });
+      document.querySelector('form').addEventListener('submit', (event) => event.preventDefault());
+      const input = document.getElementById('file-input-0');
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        record.files.push(file.name);
+        const list = document.querySelector('#attachResume ul.jv-file-list');
+        list.textContent = '';
+        const item = document.createElement('li');
+        const row = document.createElement('div');
+        row.className = 'jv-file';
+        const name = document.createElement('span');
+        name.className = 'jv-text-link';
+        // As ninjaone-step1-resume draws it: <span ... ng-click="editOrPreviewResume()" ...>(the file's name)</span>,
+        // the name the adapter reads (the behaviour review of 2026-11-06, M2).
+        name.setAttribute('ng-click', 'editOrPreviewResume()');
+        name.textContent = file.name;
+        const remove = document.createElement('a');
+        remove.className = 'jv-text-link jv-text-action';
+        remove.href = '#';
+        remove.textContent = 'remove';
+        row.append(name, ' ', remove);
+        item.append(row);
+        list.append(item);
+        document.querySelector('#attachResume > div.opener').classList.add('ng-hide');
+      });
+    })();
+  </script>
+</body>
+</html>

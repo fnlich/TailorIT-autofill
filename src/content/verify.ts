@@ -11,7 +11,9 @@
  *   never written again (the Phase 3 review, LC-3; a widget's text chips that clear themselves are Phase 4's). A file
  *   whose page says its upload failed (Adapter.uploadState, waited for at the write and read again now) is
  *   upload-failed, one it never showed done upload-not-confirmed: written, never verified. One still pending at the
- *   write that the page shows done by the read-back is read back as any file is (the audit of 2026-11-06, m2).
+ *   write that the page shows done by the read-back is read back as any file is (the audit of 2026-11-06, m2). One the
+ *   page shows done whose input it took out of the page is verified by that word (the core pass of 2026-11-06:
+ *   Greenhouse), never field-disappeared.
  * - finalGuard: guardReady reads back every value in the form, ours and the person's own alike, before the run says it
  *   is ready for review. A value holding a canary that we wrote is blocked: a text is set back to what it held before
  *   our write (a write with provenance rule guard.revert, through both Guards, cleared to empty if that earlier value
@@ -47,11 +49,16 @@ export function verifyWritten(fresh: ScanResult, written: WrittenField): FillRes
     if (written.upload === 'failed' || now === 'failed') return uploadRow(written.planned, 'failed');
     // Pending at the write and shown done since (the audit of 2026-11-06, m2): read back as any file is, below.
     if (written.upload === 'pending' && now !== 'confirmed') return uploadRow(written.planned, 'pending');
+    // The core pass of 2026-11-06: the page shows our file done and took its input out of the page (Greenhouse does,
+    // fixtures/greenhouse/axle-attached.html): nothing is left to read back, and the page's word is the read-back.
+    if (now === 'confirmed' && written.inputLeft?.() === true) return settleRow(written.planned, { kind: 'verified' });
   }
   if (written.value.kind === 'file' && written.readBackVerified) {
-    // Upload widgets empty their input once they have the file: the upload taken, not a mismatch (LC-3).
-    const now = fresh.target(written.key)?.field.current;
-    if (now !== undefined && (now.kind === 'empty' || (now.kind === 'files' && now.count === 0))) {
+    // Upload widgets empty their input once they have the file: the upload taken, not a mismatch (LC-3). The input's
+    // own files say so: its scanned value may be a file its field shows (Adapter.uploadHeld, the core pass of
+    // 2026-11-06), the one just taken among them.
+    const target = fresh.target(written.key);
+    if (target !== null && ((target.control as HTMLInputElement).files?.length ?? 0) === 0) {
       return settleRow(written.planned, { kind: 'verified' });
     }
   }

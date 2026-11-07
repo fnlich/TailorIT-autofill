@@ -4,7 +4,9 @@
  * Start-up:
  * 1. The worker's messages are listened for first, then frame/hello {isTop, hasForm} goes out: the worker pings a
  *    tab's registered frames (frame/ping) when another frame says hello, and forgets one where nothing listens.
- * 2. The adapter is the registry's first whose detect() finds a form root (adaptersFor). No form root: no launcher and
+ * 2. The adapter is the registry's first whose detect() finds a form root (adaptersFor); where none does while what holds
+ *    a form's controls is still fading in, the page is read again once those entrance animations end, at most
+ *    ENTRANCE_CAP_MS later (core pass Z2 of 2026-11-06: Pinpoint's panel; dom/entrance.ts). No form root: no launcher and
  *    no run, unless an adapter of the address says its page draws the form late (quirks.formLateMs: Ashby's React
  *    draws it seconds after the page loads, and after its Application tab changes the address): the document is then
  *    watched for it until that wait is over (late-form.ts), only the adapters that say so may claim it meanwhile (the
@@ -79,7 +81,16 @@
  * (press a posting page's declared entry control: press.ts pressEntry) are taken from the worker's own script alone,
  * like run/press; a page, a frame or an extension page can send neither. The agent's one retry (run/start {agent,
  * retry}) lets Submit mode Auto press the step once more. Sign-in mode Auto: a run that rests at a sign-in pause signs in
- * through content/sign-in.ts (the top frame only), and the site taking it continues the run.
+ * through content/sign-in.ts (the top frame only, or the frame that claims a wrapper's application: below), and the site
+ * taking it continues the run.
+ * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): a subframe directly below a same-origin top frame whose
+ * adapter names it its application frame (an iCIMS portal's iframe#icims_content_iframe) claims the application
+ * (chain-frame.ts claimsApplication; frame/hello `claimed`, the wrapper's `wraps`): it signs in and takes the agent's
+ * entry as a top frame does (core-x item 3). A page whose address names no job but continues an application
+ * (adapters/chain.ts) names its chain in its hello (a top frame's referrer by its hash, a subframe's token from its
+ * claimed parent frame, chain-frame.ts), and takes the application key the worker's answer gives it (`chained`) while its
+ * address stays such a page of the same family; a claimed frame whose pages frame chain pages hands its own child
+ * frames the token the worker gave it (core-x items 7 and 14).
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
@@ -103,6 +114,7 @@
  */
 import { adaptersFor, applicationOf, type ApplicationRef } from '../adapters';
 import { bridgeInstallsAt, framedByEmployerPage, readableAncestors } from '../adapters/address';
+import { chainPageOf, hrefHash } from '../adapters/chain';
 import { companyOfUrl, scopeOf } from '../adapters/company';
 import type { Adapter } from '../adapters/types';
 import type { Platform } from '../core/enums';
@@ -111,6 +123,7 @@ import type { BaseKey, FieldKey } from '../core/types/field';
 import type { FillResult } from '../core/types/fill';
 import type { ValueMac } from '../core/types/loop';
 import type { RunState } from '../core/types/run';
+import { awaitEntrance } from '../dom/entrance';
 import { embedsAts, jobSignalOf } from '../dom/page-signals';
 import { detectPause } from '../dom/pause-detect';
 import { scan, toFieldSpec } from '../dom/scan';
@@ -124,7 +137,7 @@ import {
 } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
-import { COPY } from '../shared/copy';
+import { PAGE_COPY } from '../shared/copy';
 import { isCompanySiteUrl } from '../shared/hosts';
 import { log } from '../shared/log';
 import { createChannel, Invalidated } from './channel';
@@ -136,9 +149,10 @@ import {
   FillRun, RunFailure, type HeldAnswer, type RunEnd, type RunOptions, type RunPage, type RunRequest,
 } from './orchestrator';
 import { readPostingPage } from './policy';
-import { newSuccessSign, signsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot } from './submitted';
+import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot } from './submitted';
 import { blockOf, entryWaitOf, pressEntry, refusalAfter } from './press';
 import { signIn } from './sign-in';
+import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
 import { showField } from './targets';
 import { TouchLog } from './touches';
@@ -167,6 +181,14 @@ export interface RuntimeOptions extends RunOptions {
   /** The addresses of the frame's ancestors it may read (address.ts readableAncestors over its window by default;
    *  tests serve fixtures in frames of the test page, whose own address is no posting's). */
   ancestors?: () => readonly string[];
+  // ── snapshot build 2026-11-06 (core-x) ──
+  /** The wrapper this subframe is the application frame of, when it is one (core-x item 3, claimsApplication: its
+   *  parent is the top frame, of its own origin, whose adapter names this frame its application frame): the wrapper's
+   *  document and address. Read from the window by default; tests stand in for the top frame. */
+  wrapper?: () => { doc: Document; href: string; frame: Element | null } | null;
+  /** The browser's referrer for this document (document.referrer by default): a top chain page names its hash
+   *  (core-x items 7 and 14). */
+  referrer?: () => string;
 }
 
 /** The running content script, as tests drive it. */
@@ -186,12 +208,18 @@ export interface ContentRuntime {
   restored(): Promise<void>;
 }
 
-/** The first adapter whose detect() finds a form root, with that root. */
+/** The first adapter whose detect() finds a form root, with that root. The behaviour review of 2026-11-06 (M3): an
+ *  adapter of the address other than the generic one (adaptersFor: the platform's own, which matches the address) that
+ *  finds no root but reads a page state (authState: ClearCompany's account step, fixtures/clearcompany/vafb-account;
+ *  Jobvite's Data Consent, jobvite/ninjaone-consent) holds the page: its state's rules decide, and a state with no
+ *  root of its own is no form, so none is (adapters/configured/types.ts PageState.root). The generic adapter never takes
+ *  it: an account's boxes are never filled from the profile, and an entry choice stays the agent's entry door's. */
 function pickAdapter(doc: Document, url: URL, adapters: (url: URL) => Adapter[]): { adapter: Adapter; root: Element } | null {
   for (const adapter of adapters(url)) {
     try {
       const found = adapter.detect(doc);
       if (found !== null) return { adapter, root: found.formRoot };
+      if (adapter.id !== 'generic' && (adapter.authState?.(doc) ?? null) !== null) return null;
     } catch {
       // An adapter that fails on this page gives way to the next.
     }
@@ -274,6 +302,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** The browser's side panel shows this tab (panel/side): the launcher's tab hides meanwhile. */
   let sideOpen = false;
   let lastRows = new Map<FieldKey, FillResult>();
+  // ── snapshot build 2026-11-06 (core-x, items 3, 7 and 14) ──
+  /** This subframe claims the tab's application for its wrapper (chain-frame.ts claimsApplication), read with the page. */
+  let claimed = false;
+  /** The application key the worker's chain gave this document (background/chain.ts), and the family it holds for. */
+  let chained: { applicationKey: string; family: string } | null = null;
+  /** What this document's hello names of its chain: a top chain page's referrer hash, or that a subframe is a chain
+   *  page (the security fix of 2026-11-06, S4: the worker keys it from its frame registry; no message to any page). */
+  let chainHello: { from: string } | { frame: true } | null = null;
 
   const channel = createChannel(platform, () => teardown('invalidated'));
   const limiter = createReportLimiter();
@@ -312,6 +348,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const msg = parsed.data;
     switch (msg.type) {
       case 'frame/ping':
+        // The security fix of 2026-11-06 (S4): a chain subframe the worker could not key yet (its portal frame said
+        // hello after it) says hello again when the worker's sweep asks, once another frame of the tab said hello.
+        if (chainHello !== null && 'frame' in chainHello && chained === null && !stopped) void hello().catch(() => undefined);
         return ok({ pong: true as const });
       case 'run/start':
         if (msg.agent === true) {
@@ -416,7 +455,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // platform's candidate host (applicationOf: a posting, its application or the page after submitting), the same
     // reading the page-world bridge installs by; one whose address never did stays silent (an employer's own pages on
     // an ATS domain, a board). One that said hello before says it again, so the worker hears its form go.
-    if (app === null && told === null) return null;
+    if (app === null && told === null && chainHello === null) return null;
     // v3 Phase 8: on a company's own page (injected once the sentinel recognised it) nothing is said until the site
     // adapter claims an application form there, but by a top frame a job signal recognised (the review's B10): it says
     // a form-less hello, so the side panel shows its "No application form" strip. A page embedding an ATS says none:
@@ -424,11 +463,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (app?.platform === 'site' && page === null && told === null && !siteJobPage()) return null;
     const hasForm = page !== null;
     const letter = hasForm && asksForLetter();
+    const at = urlOf(readHref());
     const answer = await channel.request({ v: 1, type: 'frame/hello', isTop, hasForm, ...(nav === 0 ? {} : { nav }),
-      ...(letter ? { letter: true as const } : {}) });
+      ...(letter ? { letter: true as const } : {}),
+      // core-x, items 3, 7 and 14 (chain-frame.ts, background/chain.ts).
+      ...(isTop && page === null && wrapsApplication(doc, at, adapters) ? { wraps: true as const } : {}),
+      ...(claimed ? { claimed: true as const } : {}),
+      ...(chainHello !== null && chained === null ? { chain: chainHello } : {}) });
     if (!answer.ok) return answer.error === 'bad_sender' ? 'refused' : null;
     told = hasForm;
     frameId = answer.data.frameId;
+    tookChain(answer.data.chained?.applicationKey);
     placementChanged(answer.data.settings.panel);
     signInMode = answer.data.settings.modes.signIn;
     if (answer.data.launcher !== undefined) {
@@ -442,6 +487,23 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       ui?.setSidePanel(true);
     }
     return null;
+  }
+
+  /** core-x, items 7 and 14: the worker's answer to a hello. A chain page it keyed takes that application: the page is
+   *  read again with it, and the worker told of its form. */
+  function tookChain(applicationKey: string | undefined): void {
+    const url = urlOf(readHref());
+    const chainPage = url === null ? null : chainPageOf(url);
+    if (applicationKey === undefined || chained !== null || chainPage === null || stopped) return;
+    chained = { applicationKey, family: chainPage.family };
+    log('content.chained');
+    const before = page;
+    resolvePage(readHref());
+    if (page !== null && before === null) {
+      mountUi();
+      void hello().catch(() => undefined);
+      void resumeStored().catch(() => undefined);
+    }
   }
 
   /** Back from the back/forward cache (a trusted pageshow with persisted set): it says hello again (W1). A company's
@@ -551,7 +613,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // What the page showed at the press: its click may have moved it since (a confirmation drawn in place, an address
     // the parser does not read), which is the sign this arm waits for.
     const at = before ?? (app === null || page === null ? null : { applicationKey: app.applicationKey,
-      platform: app.platform, root: page.root, adapter: page.adapter, signs: new Set(signsOf(doc, app.platform)) });
+      // The behaviour review of 2026-11-06 (M1): the signs shown at the press; one hidden then is new once shown.
+      platform: app.platform, root: page.root, adapter: page.adapter, signs: shownSignsOf(doc, app.platform) });
     if (stopped || at === null || !channel.valid()) return;
     log('content.submit-armed', { page: by === 'page', panel: by === 'panel', auto: by === 'auto' });
     // The resume is named to the tracker only when the run's own upload row verified on this form.
@@ -690,9 +753,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   async function saveFromPanel(key: FieldKey): Promise<string> {
     try {
       const answer = await channel.request({ v: 1, type: 'answer/save', fieldKey: key });
-      return answer.ok ? COPY.panel.saveOutcomes[answer.data.outcome] : COPY.panel.saveFailed;
+      return answer.ok ? PAGE_COPY.panel.saveOutcomes[answer.data.outcome] : PAGE_COPY.panel.saveFailed;
     } catch {
-      return COPY.panel.saveFailed;
+      return PAGE_COPY.panel.saveFailed;
     }
   }
 
@@ -704,11 +767,14 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }
 
   /** The frame's id, saying hello again first if the first one went unanswered. */
-  async function ensureFrame(): Promise<{ frameId: number; isTop: boolean }> {
+  async function ensureFrame(): Promise<{ frameId: number; isTop: boolean; claimed?: boolean }> {
     if (frameId === null) await hello();
     if (frameId === null) throw new RunFailure('unavailable');
-    return { frameId, isTop };
+    return { frameId, isTop, ...(claimed ? { claimed: true } : {}) };
   }
+
+  /** How many runs began in this document (the behaviour review of 2026-11-06, minor 7: RunEnv.firstInDocument). */
+  let runsBegun = 0;
 
   function startRun(request: RunRequest): FillRun | null {
     // The form root as the adapter finds it now: a run never starts on one the page replaced.
@@ -726,6 +792,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       limiter,
       ui: () => ui,
       frame: ensureFrame,
+      firstInDocument: runsBegun === 0,
       // Without its launcher (the UI failed, or the page removed it for good) a frame cannot show it is seen: it fills
       // nothing inside another page.
       frameShown: (signal, fresh) => (ui === null ? Promise.resolve(false) : ui.launcherShown(signal, fresh)),
@@ -750,16 +817,23 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // v3 Phase 4: a Submit this run pressed is armed here, so its platform's sign is watched for.
       submitPressed: (by, runId, before) => arm(by, runId, before ?? undefined),
       beforePress: () => (app === null || page === null ? null : { applicationKey: app.applicationKey,
-        platform: app.platform, root: page.root, adapter: page.adapter, signs: new Set(signsOf(doc, app.platform)) }),
+        platform: app.platform, root: page.root, adapter: page.adapter, signs: shownSignsOf(doc, app.platform) }),
       autoPressed,
       // v3 Phase 5, Sign-in mode Auto: once, on the page this run paused at, until the run stops or is cancelled; the
       // site taking it continues the run.
-      signIn: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop,
+      signIn: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
         signal: AbortSignal.any([signal, lifetime.signal]) }),
+      // core-x, item 2: Sign-in Auto types into the form's account section, pressing nothing.
+      signInSection: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
+        section: true, signal: AbortSignal.any([signal, lifetime.signal]) }),
+      // Core pass Z1, item 24: Sign-in Auto presses the step's declared sign-in container once the run rests there.
+      signInContainer: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
+        container: true, signal: AbortSignal.any([signal, lifetime.signal]) }),
       afterSignIn: () => {
         if (current === run) continueRun(run.trigger);
       },
     }, request);
+    runsBegun += 1;
     current = run;
     lastRows = new Map();
     void run.start();
@@ -813,7 +887,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
    *  before any form is signed in to with Sign-in mode Auto (sign-in.ts), else it blocks. */
   async function enterForAgent(): Promise<EntryAnswer> {
     const at = urlOf(readHref());
-    if (stopped || page !== null || at === null || !isTop) return { outcome: 'not-offered' };
+    // core-x, item 3: the tab's top frame, or the frame that claims its wrapper's application.
+    if (stopped || page !== null || at === null || (!isTop && !claimed)) return { outcome: 'not-offered' };
     const own = adapters(at);
     // The press is told the worker as it is made, with nothing awaited (round 3 of the v3 Phase 6/7b review, X8): one
     // that takes the page away ends this document before the entry's answer.
@@ -822,7 +897,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     if (entered.outcome !== 'blocked' || entered.block !== 'sign-in' || signInMode !== 'auto' || own.length === 0) {
       return entered;
     }
-    const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, signal: lifetime.signal });
+    const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
+      signal: lifetime.signal });
     if (outcome === 'left') return { outcome: 'pressed' };
     if (outcome === 'continue') {
       // What the page shows after the sign-in: a challenge its press raised, an email code, another account page is
@@ -938,10 +1014,26 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   function resolvePage(href: string): void {
     const url = urlOf(href);
     app = url === null ? null : applicationOf(url);
+    // core-x, items 7 and 14: a chain page the worker keyed takes its application's key, while its address stays a chain
+    // page of the same family.
+    const chainPage = url === null ? null : chainPageOf(url);
+    if (chained !== null && chainPage !== null && chainPage.family === chained.family) {
+      app = { platform: chainPage.platform, page: 'application', applicationUrl: app?.applicationUrl ?? '',
+        applicationKey: chained.applicationKey };
+    }
+    // core-x, item 3: a subframe that draws its wrapper's application.
+    claimed = !isTop && claimsApplication(app, options.wrapper !== undefined ? options.wrapper() : wrapperOf(view),
+      adapters);
     // While the page's own adapter waits for a form it draws late, only the adapters that say so may claim the page.
     const claim = (at: URL) => (lateClosed === href ? adapters(at) : lateAdapters(adapters(at)));
     const picked = url !== null && app !== null && app.page === 'application' ? pickAdapter(doc, url, claim) : null;
     page = picked === null || app === null ? null : { app, adapter: picked.adapter, root: picked.root };
+  }
+
+  /** An application page whose adapters found no form root (core pass Z2 of 2026-11-06: the first scan's entrance
+   *  wait). */
+  function noFormYet(): boolean {
+    return page === null && app !== null && app.page === 'application';
   }
 
   /** The watch for a form root, or a posting's text, drawn late (module header, 2), while one runs. */
@@ -1011,9 +1103,9 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         },
         // Edit with AI (the owner's amendments): the current run rewrites that field, if it may now.
         onAiEdit(key, instruction) {
-          if (!channel.valid() || current === null) return Promise.resolve(COPY.aiEdit.outcomes.refused);
+          if (!channel.valid() || current === null) return Promise.resolve(PAGE_COPY.aiEdit.outcomes.refused);
           return current.rewrite(key as FieldKey, instruction).then((outcome) => (outcome === 'rewritten' ? null
-            : COPY.aiEdit.outcomes[outcome]), () => COPY.aiEdit.outcomes.failed);
+            : PAGE_COPY.aiEdit.outcomes[outcome]), () => PAGE_COPY.aiEdit.outcomes.failed);
         },
         onPolicyChoice(choice) {
           if (choice === 'accepted') current?.accept();
@@ -1037,7 +1129,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           describeField: async (key) => describeField(key as FieldKey).options,
           // Phase 6, wave 2: this frame's draft, confirmed here; its answer, saved through the worker.
           confirmDraft: async (key) => ((await current?.confirmDraft(key as FieldKey)) === true
-            ? COPY.panel.draftConfirmed : COPY.panel.confirmFailed),
+            ? PAGE_COPY.panel.draftConfirmed : PAGE_COPY.panel.confirmFailed),
           saveAnswer: async (key) => saveFromPanel(key as FieldKey),
           closed: () => closePanel(),
           // v3 Phase 4: the dock's Next and Submit, for this frame's own run.
@@ -1181,6 +1273,21 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   }, { signal: lifetime.signal });
 
   resolvePage(readHref());
+  // Core pass Z2 of 2026-11-06 (item 33): an application page whose first scan finds no form while what holds a form's
+  // controls is still fading in (Pinpoint's panel, animate.css fadeIn over 1 s) is read again once those entrance
+  // animations end, at most ENTRANCE_CAP_MS later (dom/entrance.ts). A page whose form shows at once is not delayed.
+  if (noFormYet() && await awaitEntrance(doc, { signal: lifetime.signal }) && !stopped) resolvePage(readHref());
+  // core-x, items 7 and 14: a chain page names its chain in its hello: a top frame's the browser's referrer by its hash;
+  // a subframe's says only that it is one (the security fix of 2026-11-06, S4: the worker reads its frame registry,
+  // and nothing is posted to the page or a parent window).
+  const startUrl = urlOf(readHref());
+  const startChain = startUrl === null ? null : chainPageOf(startUrl);
+  if (startChain?.role === 'top' && isTop) {
+    const from = hrefHash(options.referrer?.() ?? doc.referrer);
+    if (from !== null) chainHello = { from };
+  } else if (startChain?.role === 'frame' && !isTop) {
+    chainHello = { frame: true };
+  }
   try {
     await hello();
     if (__E2E__) {

@@ -409,11 +409,19 @@ function fitsAll(box: ClientRect, clips: readonly ClientRect[]): boolean {
  * across, the viewport's width only, at the document's origin or where the page is scrolled to now. A box placed far
  * to the right (left: 10000px) widens the page's scroll width itself, so the scroll width proves nothing (a honeypot
  * there was filled). Negative coordinates are never reachable.
+ * The core pass of 2026-11-06 (jobs.workable.com's application dialog, fixtures/workable/jobs-salvo-apply.html: its
+ * div.styles__content-region scrolls, overflow-y: auto, 791 px tall over 2,530 px of content, inside a position: fixed
+ * wrapper): where a box scrolls with a container that a person can scroll, between it and its fixed ancestor (that
+ * ancestor itself included), the reachable area is that container's scroll area, judged as the page's is (scrollIn);
+ * the container's own visible part must be reachable in turn. A fixed container that does not scroll still holds its
+ * content to the viewport: a box placed off-screen in one stays hidden.
  */
 function onScreen(box: ClientRect, el: Element, cache: ScanCache): boolean {
   const view = viewOf(el)!;
   const doc = el.ownerDocument;
   if (fixedToViewport(el, cache)) {
+    const scroller = scrollerBelowFixed(el, cache);
+    if (scroller !== null) return scrollIn(box, scroller, cache);
     return overlap(box.left, box.right, 0, view.innerWidth) >= MIN_BOX_PX
       && overlap(box.top, box.bottom, 0, view.innerHeight) >= MIN_BOX_PX;
   }
@@ -432,6 +440,67 @@ function reachableHeight(doc: Document, view: Window, cache: ScanCache): number 
   const clipped = styles.some((style) => style !== null && (style.overflowY === 'hidden' || style.overflowY === 'clip'));
   return clipped ? view.innerHeight : Math.max(root.scrollHeight, body?.scrollHeight ?? 0, view.innerHeight);
 }
+
+// ── The core pass of 2026-11-06: a scroll container inside a fixed box (rule 5) ──
+
+/** Whether `el` is fixed to the viewport by its own position (followsItsField's boxes aside). */
+function ownFixed(el: Element, cache: ScanCache): boolean {
+  return styleOf(el, cache)?.position === 'fixed' && !FOLLOWING_FIELDS.has(el);
+}
+
+/** Whether a person can scroll `el` down to more content: overflow-y auto or scroll, more content than it shows, and a
+ *  height a person can scroll in (MIN_BOX_PX, as rule 6 reads it). */
+function scrollsDown(el: Element, cache: ScanCache): boolean {
+  const style = styleOf(el, cache);
+  if (style === null || !(style.overflowY === 'auto' || style.overflowY === 'scroll')) return false;
+  return el.clientHeight >= MIN_BOX_PX && el.scrollHeight > el.clientHeight;
+}
+
+/**
+ * The nearest container a person can scroll down (scrollsDown) that `el`'s box moves with, up to and including the
+ * fixed box that holds it; null when there is none, or when `el` is that fixed box. It follows the containing blocks
+ * (an absolutely positioned box moves with the scroller only when its containing block does), so a box positioned
+ * against the fixed box past a scroller beside it never counts as that scroller's.
+ */
+function scrollerBelowFixed(el: Element, cache: ScanCache): Element | null {
+  return cache.memo('scroller-below-fixed', el, (): Element | null => {
+    if (ownFixed(el, cache)) return null;
+    let at = containingBlockOf(el, cache);
+    while (at !== null) {
+      if (scrollsDown(at, cache)) return at;
+      if (ownFixed(at, cache)) return null;
+      at = containingBlockOf(at, cache);
+    }
+    return null;
+  });
+}
+
+/** The element whose content box holds `el`'s: an absolute box's positioned ancestor, else its flat parent; null for a
+ *  fixed box (the viewport, or a transformed ancestor, which scrollerBelowFixed never passes). */
+function containingBlockOf(el: Element, cache: ScanCache): Element | null {
+  const position = styleOf(el, cache)?.position;
+  if (position === 'fixed') return null;
+  return position === 'absolute' ? absoluteContainingBlock(el, cache) : flatParent(el);
+}
+
+/** Rule 5 inside a scroller (onScreen): downwards, its scroll area from its top to its scroll height; across, its own
+ *  width, at its origin or where it is scrolled to now (the page's reading, held to the container); and the
+ *  container's own visible part reachable where it stands. */
+function scrollIn(box: ClientRect, scroller: Element, cache: ScanCache): boolean {
+  const r = scroller.getBoundingClientRect();
+  const left = r.left + scroller.clientLeft;
+  const top = r.top + scroller.clientTop;
+  const areaTop = top - scroller.scrollTop;
+  const down = overlap(box.top, box.bottom, areaTop, areaTop + scroller.scrollHeight) >= MIN_BOX_PX;
+  const inner = box.left - left + scroller.scrollLeft;
+  const across = overlap(inner, inner + (box.right - box.left), 0, scroller.clientWidth) >= MIN_BOX_PX
+    || overlap(box.left, box.right, left, left + scroller.clientWidth) >= MIN_BOX_PX;
+  if (!down || !across) return false;
+  const shown: ClientRect = { left, top, right: left + scroller.clientWidth, bottom: top + scroller.clientHeight };
+  return onScreen(shown, scroller, cache);
+}
+
+// ── end of the core pass's block ──
 
 /** True when `el` or an ancestor is `position: fixed`, so it stays put while the page scrolls; a fixed box that holds a
  *  declared widget's list drawn at its field's place (followsItsField) counts as its parent does. */
@@ -474,13 +543,37 @@ function overflowClipsOf(el: Element, cache: ScanCache): ClientRect[] {
   });
 }
 
-/** The clip rectangles that apply to the content of `el`: its own clips plus its own overflow clip. */
+/** The clip rectangles that apply to the content of `el`: its own clips plus its own overflow clip. Content a person
+ *  scrolls into view inside a fixed box (scrolledWithin) meets the clips above its scroller where the scroller shows
+ *  it, not where it sits now. */
 function contentClipsOf(el: Element, cache: ScanCache): ClientRect[] {
   return cache.memo('content-clips', el, (): ClientRect[] => {
-    const inherited = overflowClipsOf(el, cache);
+    const inherited = scrolledWithin(el, overflowClipsOf(el, cache), cache);
     const own = ownOverflowClip(el, cache);
     return own === null ? inherited : [...inherited, own];
   });
+}
+
+/**
+ * The core pass of 2026-11-06 (rule 5's scroller in a fixed box, onScreen): the clips above a container a person can
+ * scroll down, inside a fixed box, as they apply to its content. Its content moves down and up through the
+ * container's own visible part, so a clip above it cuts that content across (it does not scroll sideways) but not
+ * downwards, wherever the container's visible part shows through that clip by MIN_BOX_PX or more (jobs.workable.com's
+ * dialog: its div.styles__modal-content, overflow: hidden and as tall as the scrolling content region inside it, would
+ * otherwise cut every field below the fold as the content sits now). A clip the visible part does not show through
+ * still cuts it where it is. Any other element's clips stand as they are.
+ * The security fix of 2026-11-06 (S1): a clip is lifted only where it shows the container's whole visible part
+ * vertically (its top at or above the part's top and its bottom at or below the part's bottom, half a pixel either
+ * way). A clip that shows only a slit of it (an overflow: hidden band 4 px tall over a 290 px scroller) shows a person
+ * only that slit however far the content scrolls, so it still cuts the content where it is.
+ */
+function scrolledWithin(el: Element, clips: ClientRect[], cache: ScanCache): ClientRect[] {
+  if (clips.length === 0 || !scrollsDown(el, cache) || !fixedToViewport(el, cache)) return clips;
+  const r = el.getBoundingClientRect();
+  const top = r.top + el.clientTop;
+  const bottom = top + el.clientHeight;
+  return clips.map((clip) => (clip.top <= top + 0.5 && clip.bottom >= bottom - 0.5
+    ? { left: clip.left, right: clip.right, top: -Infinity, bottom: Infinity } : clip));
 }
 
 /**

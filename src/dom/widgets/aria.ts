@@ -183,5 +183,17 @@ export function isActionable(widget: WidgetTarget): boolean {
   if (widget.kind === 'checkbox') return false;
   if (widget.kind === 'radio') return widget.members.length > 0;
   const roles = [roleOf(widget.element), widget.input === null ? '' : roleOf(widget.input)];
-  return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input);
+  return roles.includes('combobox') || roles.includes('listbox') || referencesList(widget.element, widget.input)
+    || opensListbox(widget);
+}
+
+/** A select-only combobox its adapter declares on a button that says it pops up a listbox (aria-haspopup="listbox"),
+ *  which names its list by aria-controls only once it is open: Workday's dropdowns (the owner's snapshots of
+ *  2026-11-06, "[resolvetech.wd1.myworkdayjobs.com] Devops Engineer (3)": <button aria-haspopup="listbox"
+ *  aria-expanded="true" aria-controls="..."> while open, neither attribute while closed). Its list is still found by
+ *  ARIA alone once it shows (listOf); one that never names it is 'no-list', so widget-unsupported, as any other. */
+function opensListbox(widget: WidgetTarget): boolean {
+  const opener = widget.opener;
+  return widget.declared && widget.kind === 'combobox' && opener !== null && opener === widget.element
+    && opener.localName === 'button' && (opener.getAttribute('aria-haspopup') ?? '').trim().toLowerCase() === 'listbox';
 }

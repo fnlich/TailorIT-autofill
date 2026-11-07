@@ -1,0 +1,138 @@
+{
+  "fixture": "smartrecruiters/xplor-one-click",
+  "source": "https://jobs.smartrecruiters.com/oneclick-ui/company/Xplor/publication/189a97ff-58b4-4671-bd81-6ed11d3bcfd1?dcr_ci=Xplor",
+  "captured": "2026-11-06T15:24:57.000Z",
+  "note": "Controls are written as shadow-piercing chains, \" >>> \" between steps: the first step is looked for anywhere in the document, each next one anywhere inside the open shadow root of the element before it (smartrecruiters.browser.test.ts deepControl).",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#first-name-input >>> input"
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#last-name-input >>> input"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#email-input >>> input"
+    },
+    {
+      "label": "Confirm your email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#confirm-email-input >>> input"
+    },
+    {
+      "label": "City",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "spl-autocomplete[data-test=\"location-autocomplete\"] >>> input[role=\"combobox\"]",
+      "note": "A location search whose suggestions no snapshot shows."
+    },
+    {
+      "label": "Country code",
+      "kind": "combobox",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "spl-phone-field >>> spl-select >>> button[role=\"combobox\"]",
+      "note": "The phone's country (United States by default): a list of 245 countries drawn in the capture, hidden by style on the live page; no snapshot shows it open."
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-phone-field >>> spl-input >>> input[type=\"tel\"]",
+      "note": "Labelled by spl-phone-field's label[slot=label] (labelFor)."
+    },
+    {
+      "label": "LinkedIn",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#linkedin-input >>> input"
+    },
+    {
+      "label": "Facebook",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#facebook-input >>> input"
+    },
+    {
+      "label": "X (fka Twitter)",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#twitter-input >>> input"
+    },
+    {
+      "label": "Website",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-input#website-input >>> input"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-dropzone[data-test=\"resume-upload\"] >>> input[type=\"file\"]",
+      "note": "Labelled by its section's title, required by its section's mark (labelFor, requiredFor). The \"Easy Apply\" block's drop zone (spl-dropzone[data-test=apply-with-resume-container]) is kept out of the fields (excluded)."
+    },
+    {
+      "label": "Let the company know about your interest working there",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "spl-textarea#hiring-manager-message-input >>> textarea"
+    }
+  ],
+  "hooks": {
+    "detect": "oc-oneclick-form",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button.external-apply-button",
+      "oc-apply-with-linked-in iframe",
+      "oc-button[data-test=\"add-experience\"] spl-button",
+      "oc-button[data-test=\"add-education\"] spl-button",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": [
+      "oc-button[data-test=\"footer-next\"]"
+    ]
+  }
+}

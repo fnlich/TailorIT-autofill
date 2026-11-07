@@ -85,14 +85,14 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 
 64. **Lead.** A reload at review or after done never refills by itself; you press Continue. (Phase 5)
 65. **Lead.** A sign-in or account step, an email code or a CAPTCHA hands the page to you with its notice; only your Continue ends a pause (nothing resumes when sign-in clears), and Continue starts a fresh run. (Phases 2, 3, 5)
-66. **Ask.** CAPTCHA markup comes from vendor documentation, unchecked on real pages (the Arkose host is unconfirmed). Defaults: Continue at a CAPTCHA pause stops pausing for those widgets (you solve it before submitting); Next is never pressed for you past one not known to be solved. (Phases 2, 5)
+66. **Ask.** CAPTCHA markup comes from vendor documentation, unchecked on real pages (the Arkose host is unconfirmed). Defaults: Continue at a CAPTCHA pause stops pausing for those widgets (you solve it before submitting); Next is never pressed for you past one not known to be solved. (Phases 2, 5) **Answered in part (the snapshots of 2026-11-06):** reCAPTCHA's checkbox and invisible badge and hCaptcha's invisible frames are now seen on real pages, and an unsolved checkbox widget no longer stops the fill, only every press (item 155); Arkose's host is still unconfirmed.
 67. **Lead.** After 8 page changes with no fill, the run stops watching (MAX_IDLE_TRANSITIONS). (Phase 5)
 68. **Departure.** Repeatable sections: Add is clicked no more times than your profile has entries; an experience entry is matched by company and start year; filled fields are stored hashed, at most 50 per step. (Phase 5)
 69. **Departure.** Validation errors left after the fix pass send the run to review; step changes are counted only when a scan sees them. (Phase 5)
 70. **Lead.** Turning auto-advance off takes effect at once: saving settings waits until the tab's frames have the change. (Phase 5)
 71. **Lead.** No script click may land on the adapter's Next or Submit, or on anything inside or around them (an Add matching Next is refused); nothing is written once another step shows. (Phase 5)
 72. **Lead.** An Add button that needs your click shows as a notice, plus a row only if a fitting field kind exists. (Phase 5)
-73. **Ask.** A form that appears after the page loads (likely on Workday) gets no resume after a reload, and nothing watches for a form appearing later at the same address. Handle it in the Workday adapter? (Phases 2, 5)
+73. **Ask.** A form that appears after the page loads (likely on Workday) gets no resume after a reload, and nothing watches for a form appearing later at the same address. Handle it in the Workday adapter? (Phases 2, 5) **Answered (the snapshots of 2026-11-06):** Workday's flow page is drawn late and its steps change in place; `quirks.formLateMs` (30 s) and the step watch cover the snapshots' flows, and a form that fades in is waited for up to 2 s (item 154).
 
 ## 6. Review UI and copy to review
 
@@ -118,7 +118,7 @@ Tags: **Ask** = needs your answer. **Lead** = decided by the lead; tell the owne
 90. **Lead.** Each plan request sends the whole form as context with current values, so free text you typed goes back to the worker. (Phase 3)
 91. **Lead.** Limits: policy hits 10 per 10 s per frame and at most 200 records (oldest dropped); run state at most 256 KiB with capped lists; up to 1,024 canaries in memory, the 32 nearest saved; a paused or stopped run saves raw canaries for the worker to filter. (Phase 2)
 92. **Departure.** A posting page with no visible text sends no reading; confirmation pages send nothing. (Phase 2)
-93. **Ask.** The snapshot converter never keeps typed values, but it doesn't yet redact Workday review cells (planned for Phase 5; no note says done), so a Workday review-step snapshot may hold personal data. Default: not redacted yet. (Phase 2)
+93. **Ask.** The snapshot converter never keeps typed values, but it doesn't yet redact Workday review cells (planned for Phase 5; no note says done), so a Workday review-step snapshot may hold personal data. Default: not redacted yet. (Phase 2) **Answered (the snapshots of 2026-11-06):** the converter now redacts Workday's Review cells, an upload's name wherever repeated, and its other shown answers; a test holds every Workday step fixture to it.
 
 ## 8. TailorIT server side
 
@@ -166,52 +166,164 @@ The security and correctness audits of the extension at `94c5ba6`, fixed as docs
 124. **Lead (M4).** A settings save from the options page or the side panel's gear sends what it read with its change, and the worker applies only that change, field by field, so neither undoes the other. The options page reads the settings again when they change elsewhere and when you come back to it.
 125. **Lead (m3, m10).** A run found after a reload that offers Continue says "review" and offers no Next or Submit until you choose Continue (a turned page under "Autofill after page turn: Manually" shows none either). A site's confirmation that comes more than 45 s after Submit (the panel has by then said to check the page) is still recorded as Applied if it comes within ten minutes of the press.
 
+## 12. Snapshot build of 2026-11-06 (decided under your standing approval; each yours to overrule)
+
+Your 249 signed-in snapshots, built into adapters for about 25 platforms, then fixed after a security and a behaviour review, as docs/SPEC-AMENDMENTS.md §12 Decisions 15 to 18 say (docs/ARCHITECTURE.md "The snapshot build of 2026-11-06"). Each item states what was built; answer by number as above. What the snapshots did not show is under "Snapshots and owner-only inputs still needed" below.
+
+**Workday**
+
+126. **Lead.** Next is not pressed for you on a step whose required date is empty: dates and search prompts (How Did You Hear, Phone Code, School, Skills, Field of Study) are yours until a snapshot shows how they take an answer, so Next mode Auto waits for you there rather than meet Workday's error.
+127. **Your decision, built.** "Résumé already on the page" (Options › Modes and the side panel's gear; settings version 5): **Keep it** (the default) leaves a résumé the site already shows and flags it for you to check, whatever its name; **Upload mine again** uploads the résumé you chose into that field through the site's own upload, never pressing its Remove or Delete; where the site gives no way to add a file, the field is left to you. A cover letter or other file the page shows is always kept. Workday's Resume/CV on My Experience is now recognised as the résumé (its group heading), so a fill uploads your résumé into an empty one, which it never did before. **Ask:**
+    - Workday's résumé input takes several files, so Upload mine again adds yours beside the one Workday shows, not in its place, and a later fill of the same page uploads it again (it cannot tell the shown file is yours). Default: as built. The alternative: compare the shown file's name with your résumé's and keep a field that already shows it.
+    - Where a résumé shows with no file input at all (iCIMS hides it with its buttons; Oracle's attached résumé has none), neither choice changes anything and the review shows no row for it. Default: no row. The alternative needs a new adapter hook.
+    - **Copy:** the mode keeps your "Résumé"; the rest of the extension writes "resume". Default: as is. One spelling?
+128. **Lead.** The "verify your account" sign-in page (`/login?redirect=…`) is not read as the application, so Sign-in Auto does not act there; it reads the error and ends at once, and "Resend Account Verification" is yours.
+
+**iCIMS**
+
+129. **Lead.** Each step's "Submit" is pressed as Next (Next mode Auto) only where the step bar shows a later step, and only when every item of the bar reads true (one bar, known steps, each "Step N of M" fitting); otherwise nothing is pressed and you press Next and Submit. The last step's Submit follows Submit mode as on every site.
+130. **Lead.** The profile's "Create a login" is never filled from your profile. With Sign-in on Auto it gets your saved job-site sign-in (the email, which may differ from your profile's, and the password twice), once per step, nothing pressed; on Manual it is yours. While its boxes are empty, Next is not pressed for you ("account-left") and Submit counts them as required.
+131. **Lead.** A gate that also asks for a consent's scope ("this job only" or "other opportunities too") or a phone: Sign-in Auto types the email, and the choice, the phone and Next are yours.
+132. **Lead.** No upload where a résumé is already on file (the page hides its upload), since iCIMS would read it afresh over your profile. iCIMS's own dropdowns are yours (their list loads from iCIMS's server; no snapshot shows one open).
+133. **Lead.** The self-identification form inside a portal step (its own frame on `<co>.icims.com/forms`) takes the application of the tab's one portal frame of that company; two portal frames of the company in one tab give it none. Its signature box is yours.
+
+**Oracle Recruiting Cloud**
+
+134. **Lead.** The government cloud is matched as `*.fa.ocs.oraclegovcloud.com` only (the one region seen), and all of `oraclegovcloud.com` counts as an employee HR system.
+135. **Lead.** The gate, the code page and the one-page form now read as captured (their words over the cover image): Sign-in Auto types the email and ticks the terms box on the gate, where it refused before; the code page stays yours. An entry the page marks invalid before anything was written is yours (the agent: "needs you, validation error", never failed).
+
+**SuccessFactors**
+
+136. **Lead.** The application form after the account (`/portalcareer`, an address that names no job) is not read at all until a snapshot of it unfilled lets its rules be written; a `/career` post-back takes the application of the page before it in the tab only where the browser's referrer is that page's exact address (untested live).
+
+**SmartRecruiters**
+
+137. **Lead.** Only `jobs.smartrecruiters.com` is matched (`careers.smartrecruiters.com` shows no posting in any snapshot), its Easy Apply (résumé parsing) is never used, and a one-click application reached from its posting in the same tab takes the posting's key (so its "no AI" note reaches the form); opened directly, it keeps its own.
+
+**Greenhouse, Ashby, Lever and Workable**
+
+138. **Lead.** `jobs.workable.com` is a Workable host: an application there and one on apply.workable.com for the same job are two applications to the extension. TailorIT's API 6 reads it, but Add job is not offered there.
+139. **Lead.** Greenhouse's email code after a Submit is a pause: nothing in it is filled, Next and Submit wait for you. A Greenhouse upload the page shows done is verified though its input left the page.
+140. **Lead.** A company-knowledge true/false (SeatGeek's "founded in 2008") is an ordinary question, answered as an AI guess. An "I did not use AI" statement past the label's first 300 characters (Dropzone's policy) is read: the run goes profile-only and its "I Agree" list is yours. "Require employer-sponsored work authorization" is a sponsorship question.
+
+**The new ATSs (all fifteen)**
+
+141. **Lead.** Static, path-scoped matches for Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany and ADP Workforce Now (16 patterns), plus SmartRecruiters, Oracle's government cloud and jobs.workable.com. The install prompt grows, Chrome grants each host whole, and a store update that adds required hosts disables the extension until you accept. The alternative was reaching them through Company career sites only.
+142. **Lead.** The employee HR systems never reached: ADP Workforce Now's, BambooHR's, Paycom's and ClearCompany's hosts, and (the security review) `*.dayforcehcm.com`, `*.ultipro.com`, `*.ukg.net`, `*.paylocity.com`, `*.paycor.com`, `*.rippling.com`, `*.hibob.com`, `*.adp.com` and `app.careerplug.com` (now no CareerPlug tenant). **Ask:** do `recruiting.ultipro.com` and `jobs.dayforcehcm.com` also serve employees' internal job boards, and are other CareerPlug hosts employer-only? Default: both stay ATS matches; only `app.` is excluded.
+143. **Lead.** A dropdown whose open list no snapshot shows is yours, labelled and marked required: BambooHR's, HiBob's Country and Skills, Dice's Work Authorization, Rippling's. Résumé parsers, Apply with LinkedIn or Indeed, and Finish later are never pressed; e-signatures count as signature consents.
+144. **Lead.** Paycom and DFIN wait for snapshots (Paycom's employee host is excluded meanwhile; DFIN stays a company career site).
+
+**ADP Workforce Now and UltiPro**
+
+145. **Lead.** ADP's guest page and UltiPro's account step are filled from your profile like a step. Their button (ADP's Continue, which emails you a code; UltiPro's Create account) is pressed only with Sign-in on Auto, once the step is filled with nothing required left, no error and no CAPTCHA, and only where TailorIT answers a sign-in for the site (since API 6 the every-site sign-in covers ADP's candidate pages and UltiPro); otherwise it is yours, with no notice at review. While the button shows, the step is not read as the last, so the run waits for the page to move on. No email is typed there by Sign-in Auto (the email your profile filled is the one ADP mails the code to), and no password ever leaves the worker for them.
+146. **Lead.** UltiPro's Create account is pressed on the native button its component draws, where a person's click lands. Its Turnstile sits in a closed shadow root the extension cannot see: if it must pass first, the page may refuse the press, and the step is yours.
+147. **Lead.** ADP's "Please type your full name." is an electronic signature (typed only where you pre-approve signatures); its "I agree to sign electronically" box is always yours.
+
+**Dayforce, Jobvite, Dice, ClearCompany and Paylocity**
+
+148. **Lead.** Dayforce's "Update" (Personal Information) is never pressed, and no education or employment record is added, edited or deleted (no snapshot shows the editor).
+149. **Lead.** Jobvite's Data Consent "I Accept" is pressed by the auto-apply agent in either Consents mode, only while its form holds nothing but the consent choice and your residence; "I Decline" never. Its self-identification forms' closing "Your Name" and "Today's Date" are a signature (no word says so; their place and markup do): the name is typed only under the signature pre-approval, the date is yours.
+150. **Lead.** Dice needs your own Dice account; Sign-in Auto does not cover it. Its posting pages (`/job-detail/<uuid>`) are not read until TailorIT's `parseAtsUrl` reads them.
+151. **Ask.** ClearCompany's account step is found and paused as an account's creation, with nothing filled from your profile; Sign-in Auto would type the email twice, but its form has no password box, so it types nothing there yet, and the names, emails, phone, Yes/No answers and Continue are yours. Default: as built. The alternative: fill the page from your profile as a step and leave Continue to you.
+152. **Lead.** Paylocity's step 1 (contact details and résumé) gets the standard rules until you snapshot it.
+
+**JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor and HiBob**
+
+153. **Lead.** A Yes/No question asked with two checkboxes (JazzHR's) is answered from your profile: the matching box ticked, the other never unticked by a run.
+154. **Lead.** Rippling's Apply is its Submit, but its step is never read as the last (its progress bar stands at 50 % on every page seen, and no snapshot shows what follows), so Submit mode Auto never presses it: you do. Breezy's EEO questions are required (the page refuses a Submit without an answer; "I don't wish to answer" is offered). CareerPlug's State select is filled from your profile. Pinpoint's form is waited for up to 2 s while it fades in.
+
+**Core**
+
+155. **Lead.** A checkbox CAPTCHA (reCAPTCHA's or hCaptcha's "I'm not a robot", as your snapshots show them) no longer stops the fill: the form is filled, the box is never touched, and nothing is pressed (Next, Submit, sign-in, the agent's entry) until you tick it; a picture challenge, an Enterprise or compact widget, Turnstile and the other vendors still stop everything. On an account page the pause is the account's. The invisible reCAPTCHA badge stops nothing. **Ask:** should a last step whose only hold is an unticked box say so in the review when Submit is Manual? Default: the panel's Submit answers "The page asks you to do something first".
+156. **Lead.** A page that names no job takes the job of the tab's page before it: only in the same tab, on the same platform and company (SuccessFactors: the same career host), within 30 minutes of that page, from the last six pages of the tab, and only where the browser's referrer is that page's exact address.
+157. **Lead.** TailorIT is asked with its own canonical address of the posting (so Lever's `/apply` and Workday's steps are named by the posting page), else the platform's application address, else the page's origin and path with no query and no per-application id. The page's path goes to TailorIT with a sign-in request only on ADP's and ClearCompany's candidate pages, where TailorIT's every-site sign-in depends on it; a path its query would refuse is left out. Saved answers keep a company scope on Greenhouse, Lever, Ashby and Workable alone, though API 6 would take one for the new sites.
+158. **Lead.** Reading what a person sees: a translucent panel over an image is read only where words pass over every colour the image could give (Oracle's reads; a thin veil still hides grey words), and not where another box sits at the words; a modal dialog's lower fields are read when you can scroll to them, never through a slit; a box drawn by a wrapper holding only icons (each at most 32 px) counts as drawn; a bound CAPTCHA button is at most 64 px tall and named. A sibling box under words on an opaque panel is a known gap (documented by a failing test).
+159. **Lead.** Sizes: the page-world bridge's budget is 24 KiB (about 21 KB used), the sentinel's 17 KiB.
+160. **Lead.** The disclosure is version 7 (SmartRecruiters and fifteen more sites, the job pages alone on hosts that also serve employees, the path sent for the sign-in on ADP's and ClearCompany's pages, the tab's chain records, the fill beside an unticked CAPTCHA box), so a connected browser shows it again with I understand. **Copy** to review, with the "where it works" notes (Workday's, iCIMS's and Oracle's say what is left to you), the notices "account-left" and "errors-on-load", the résumé mode's words and its reason `resume-held-no-input`, and "Record applications I submit myself", which now names the seven sites that show a submission went through. The résumé mode handles no new data, so the disclosure did not change for it.
+161. **Ask (TailorIT's side).** A Submit the site never confirms ("submitted, unconfirmed") has no reason in TailorIT's contract to report it by; the agent reports what it can today. Default: as is, until the contract gains one.
+162. **Lead.** Where a site's own adapter reads a page state (an account step, a choice before the form), the generic rules never take the page; after the auto-apply agent pressed a job's Submit it presses no other entry and waits for the confirmation; an error the page showed before anything was written leaves the job to you ("needs you"), never failed. The new notice's wording is a draft.
+163. **Lead (fixtures).** The converter clears a person's chosen marks wherever a page draws them, defaults included (Workday's "Select One" aside), and refuses a file that still holds one; it drops other extensions' UI and their parameters, a page's own overlays drawn in shadow roots, sign-in tokens (UltiPro's hidden sign-in frame carried the account's name and email in base64), per-load tokens and file names. The public captures of 2026-11-01/02 keep their test choices as listed exceptions; a dummy-data "-chosen" capture converted again would lose its chosen state. Your Yes/No answer on HiBob and your text-message opt-in on Rippling were cleared from the committed fixtures too, and one snapshot (iCIMS's US Employment Application, whose state lists reveal where you worked) was not committed.
+
 ## Snapshots and owner-only inputs still needed
+
+### Still lacking, per platform (after the snapshots of 2026-11-06)
+
+One line per platform: what no snapshot shows yet, and (live) what only a live check can show. A throwaway account and dummy data, submitting nothing, as before.
+
+- **Greenhouse:** a school search showing results; an upload error; a second education block after "Add another"; an embed's confirmation inside a company page; what the email-code step does once the code is typed.
+- **Lever:** the location search with suggestions open (and whether it takes typed text without a pick); the résumé parse's busy sign and what it fills (m12); a failed Submit's errors.
+- **Ashby:** its résumé parse in progress; a ValueSelect open on these forms.
+- **Workable:** a failed upload; what "Apply now" does on jobs.workable.com; the success panel on either host; the job-search site's dialog after scrolling.
+- **Workday:** the page after Review's Submit; a validation error after Next; a prompt's list open; how a date part takes typed digits (live); the "Autofill with Resume" step before its upload and while Workday reads it; a failed upload; Languages' and Certifications' blocks; a CAPTCHA on an account form; the loading panel shown.
+- **iCIMS:** login.icims.com and a returning candidate's path; the gate's errors and a visible hCaptcha; a dropdown open (and the event that opens it), "Add More" and the date parts in use; a failed résumé read; the page after a last IForm's Submit; errors on the profile, EEO and IForm pages; what the consent and phone gates show next; the step bar on a narrow (mobile) layout.
+- **Taleo:** the New User registration, the application's flow (`flow.jsf`, `application.jss`) and its confirmation, and "Apply as Guest".
+- **SuccessFactors:** the application form after the account, unfilled; the DPCS dialog at Apply and the registration's terms dialog; any email verification; the confirmation; a Career Site Builder site's hand-off; the referrer a `/career` post-back carries (live).
+- **Oracle Recruiting Cloud:** a multi-page flow's Next; Easy Apply; the confirmation; a list open (Country, a date's Month, School); an upload in progress or failed; a tenant without a cover image.
+- **SmartRecruiters:** the page after Submit; a list open (`spl-autocomplete`, `spl-select`); the Experience and Education editors; an upload in progress; a field error; a sign-in; `careers.smartrecruiters.com`; the referrer from a posting to its one-click page (live).
+- **Jobvite:** the page after Send Application; a validation error; checkbox, text-area or currency questions; the cover letter's row after an upload; what the consent form sends (live).
+- **JazzHR:** a chosen start date (its format); the page after a successful submit; an error; what the page does with both boxes of a Yes/No pair ticked.
+- **BambooHR:** the résumé control before any upload; a dropdown open; the confirmation.
+- **Rippling:** a dropdown open; whatever follows Apply; the confirmation; an error; whether its apply address loads without its query (live).
+- **Breezy HR:** the posting page and its Apply; the résumé opener before a file is attached; the confirmation shown.
+- **CareerPlug:** the confirmation; an error.
+- **Pinpoint:** an error; the react-select open; the résumé after an upload; how soon the content script runs during the fade-in (live).
+- **Paycor:** the confirmation; a second load; an error after Submit.
+- **HiBob:** the Overview tab; the Languages editor; the résumé control before an upload; the Country list open; Skills with no chip; the confirmation.
+- **UltiPro:** the Add Experience and Add Education editors; the school, degree and skills lists open; the posting (OpportunityDetail); an error; the confirmation; a returning applicant's sign-in; whether Create account submits on its inner button, whether Turnstile must pass first, and what draws the account boxes (live).
+- **Dayforce:** a select list open; Candidate Info before Import Resume; the record editor; an error; the page after the reCAPTCHA (the confirmation); the posting and its Apply; whether its address loads without `applicationSource` (live).
+- **Paylocity:** step 1; a DropdownList and an input-select open; an empty multi-answer input-select; the page after Submit.
+- **Dice:** the Work Authorization list open; the city's suggestions; the cover letter after a file is in; step 1 with no résumé on the profile; a screener step; the page after Submit; the login page.
+- **ClearCompany:** a posting; an error after Continue; the page after Submit; the Yes/No buttons chosen; "I Already Have An Account".
+- **ADP Workforce Now:** step 2 "Resume" and step 5 "Review your application"; a list open; the referral's "Yes" follow-up; an error after Next; the confirmation; the posting and its Apply; what Continue does on a script's click, and whether the guest page loads with only `cid`, `jobId` and `ccId` (live).
+- **Paycom and DFIN:** any snapshot of an application.
+- **CAPTCHAs, every site:** a visible hCaptcha checkbox, reCAPTCHA Enterprise's checkbox and its compact size; what reCAPTCHA leaves in its field when a token expires.
+
+The lists below are the earlier requests, kept as asked; each is marked where the snapshots of 2026-11-06 answered it.
 
 Copied as the notes give them.
 
 ### Greenhouse and Ashby
 
-- Phase 4: "Greenhouse and Ashby snapshots (a dropdown open, a school search showing results, Yes/No buttons, the upload area), for the widget adapters and Ashby's URL parser."
+- Phase 4: "Greenhouse and Ashby snapshots (a dropdown open, a school search showing results, Yes/No buttons, the upload area), for the widget adapters and Ashby's URL parser." **Answered (the snapshots of 2026-11-06):** Greenhouse's country list open, the upload area after a file went in (Greenhouse, Ashby, Workable) and Yes/No answered (Ashby, Workable); still wanted: a school search showing results.
 
 ### Lever and Greenhouse
 
-- Phase 2 (adapters): "Snapshots needed (report): Lever + Greenhouse after a failed submit (validation errors); Lever location search with suggestions open (Phase 4); Greenhouse react-select open (Phase 4); both just after a resume upload (busy hint; Phase 5 reconcile); Greenhouse with MyGreenhouse "Autofill with Greenhouse" applied."
-- Phase 2 (adapters): "Hooks left out (no markup in snapshots): stepSignature, nextButton, repeatables, prefill, authState on both; isBusy on Greenhouse. proxyFor not needed."
-- Phase 2 (fixtures): "Snapshots still missing: a Lever posting page without its form (policy check); a Greenhouse form with an education section; a company page with the Greenhouse iframe in it."
+- Phase 2 (adapters): "Snapshots needed (report): Lever + Greenhouse after a failed submit (validation errors); Lever location search with suggestions open (Phase 4); Greenhouse react-select open (Phase 4); both just after a resume upload (busy hint; Phase 5 reconcile); Greenhouse with MyGreenhouse "Autofill with Greenhouse" applied." **Answered (the snapshots of 2026-11-06):** Greenhouse after a failed Submit (ABC Legal's frame), its react-select open, after an upload, and with MyGreenhouse's Autofill applied; still wanted: Lever after a failed Submit and its location suggestions open.
+- Phase 2 (adapters): "Hooks left out (no markup in snapshots): stepSignature, nextButton, repeatables, prefill, authState on both; isBusy on Greenhouse. proxyFor not needed." **Answered (the snapshots of 2026-11-06):** Greenhouse's isBusy (its Submit's spinner) and its email code (`authState` 'email-code').
+- Phase 2 (fixtures): "Snapshots still missing: a Lever posting page without its form (policy check); a Greenhouse form with an education section; a company page with the Greenhouse iframe in it." **Answered (the snapshots of 2026-11-06):** all three (a Lever posting, Nuvem's education section, three company pages around a Greenhouse frame).
 
 ### Lever
 
 - Phase 2 (fixtures): "Lever "Current location" = remote typeahead (Phase 4): does Lever accept typed text without picking a suggestion? (dry run)"
-- The audit of 2026-11-06 (m12, skipped): Lever may still be reading the resume just uploaded (its own "autofill from resume") while the extension writes the other fields, so it could write over them. Not fixed: no snapshot shows that moment. Wanted: a snapshot of a Lever form just after a resume is put in, while it still shows its busy sign, and the same form after it settles, to read its busy sign and what it fills.
+- The audit of 2026-11-06 (m12, skipped): Lever may still be reading the resume just uploaded (its own "autofill from resume") while the extension writes the other fields, so it could write over them. Not fixed: no snapshot shows that moment. Wanted: a snapshot of a Lever form just after a resume is put in, while it still shows its busy sign, and the same form after it settles, to read its busy sign and what it fills. **Still open after the snapshots of 2026-11-06:** neither Lever capture shows "Analyzing resume..." or a busy sign.
 
 ### Workday
 
 From the plan and the Phase 5 report, taken with a throwaway candidate account holding only the golden dummy profile (never your real data; type the dummy data where a step needs it, and submit nothing):
 
-- ~~the sign-in and create-account pages~~: public, captured on 2026-11-04/05 (v3 Phase 6: the landing, Sign In, Create Account, Forgot Password); still wanted: the sign-in's error text, and the "verify your account" message after a new account;
-- every step: My Information, My Experience with an added block, Application Questions, Voluntary Disclosures, Self Identify, Review, with each step's Next and Review's Submit and the confirmation after it;
-- an open multi-select and a date field;
-- a tenant whose account form shows a CAPTCHA, if you meet one.
+- ~~the sign-in and create-account pages~~: public, captured on 2026-11-04/05 (v3 Phase 6: the landing, Sign In, Create Account, Forgot Password); ~~the sign-in's error text, and the "verify your account" message after a new account~~: **Answered (the snapshots of 2026-11-06):** verily's `/login` (Sign-in Auto reads the error and ends at once);
+- ~~every step: My Information, My Experience with an added block, Application Questions, Voluntary Disclosures, Self Identify, Review, with each step's Next and Review's Submit~~: **Answered (the snapshots of 2026-11-06):** built from 79 pages of 11 tenants; still wanted: the confirmation after Review's Submit;
+- an open multi-select and a date field (a date seen closed and filled, never written; no prompt's list seen open: both still wanted);
+- a tenant whose account form shows a CAPTCHA, if you meet one (none met).
 
 Related notes:
 
-- Phase 2 (fixtures): "Workday review cells not redacted yet (Phase 5)"
-- Phase 5 (review): "Plausible gap (Workday): a form that renders after the content script starts gets no resume after a reload (resumeStored runs only at start-up and on address changes). Record it for the Workday adapter, and ideally observe for a form root appearing later."
+- Phase 2 (fixtures): "Workday review cells not redacted yet (Phase 5)" **Answered (the snapshots of 2026-11-06):** the converter redacts them now (item 93).
+- Phase 5 (review): "Plausible gap (Workday): a form that renders after the content script starts gets no resume after a reload (resumeStored runs only at start-up and on address changes). Record it for the Workday adapter, and ideally observe for a form root appearing later." **Answered (the snapshots of 2026-11-06):** the flow page is drawn late and its steps change in place; `quirks.formLateMs` (30 s) and the step watch cover the snapshots' flows (item 73).
 
 ### iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud (v3 Phase 7b)
 
 Their public pages were captured on 2026-11-04/05 (docs/FIXTURES.md); their adapters know the posting, the entry and the account pages. With a throwaway candidate account and the golden dummy profile, submitting nothing:
 
-- **iCIMS:** what follows the email gate's Next, for a new candidate (the profile with "Create a login") and a returning one (the password step on login.icims.com, or a code); the profile, questions and EEO steps; the page after Submit.
+- **iCIMS:** what follows the email gate's Next, for a new candidate (the profile with "Create a login") and a returning one (the password step on login.icims.com, or a code); the profile, questions and EEO steps; the page after Submit. **Answered (the snapshots of 2026-11-06):** the gate's Next sends a link to open the profile (or the profile follows at once), the account is made inside the profile ("Create a login"), and the profile, questions, EEO and IForm steps and the page after Submit are built; still wanted: a returning candidate's path and login.icims.com.
 - **Taleo:** the New User registration (reachable only by Taleo's own post-back), the application's flow (`flow.jsf`, `application.jss`) and its confirmation, and "Apply as Guest".
-- **SuccessFactors:** the data-privacy dialog at Apply, the registration's terms dialog, the `job_application` steps, any email verification, the confirmation; one Career Site Builder company site's hand-off.
-- **Oracle Recruiting Cloud:** the code page after the gate's NEXT ("Confirm your identity"), the `/apply/section/<n>` steps, Easy Apply, the confirmation.
+- **SuccessFactors:** the data-privacy dialog at Apply, the registration's terms dialog, the `job_application` steps, any email verification, the confirmation; one Career Site Builder company site's hand-off. **Answered (the snapshots of 2026-11-06):** a second account creation (DFIN's, the same form) and the application form after it, filled, at `/portalcareer` (an address that names no job: not read); still wanted: the rest, and that form unfilled.
+- **Oracle Recruiting Cloud:** the code page after the gate's NEXT ("Confirm your identity"), the `/apply/section/<n>` steps, Easy Apply, the confirmation. **Answered (the snapshots of 2026-11-06):** the code page (six boxes, built: the code stays yours) and a one-page section with its Submit (built); still wanted: a multi-page flow's Next, Easy Apply and the confirmation.
 
 Decided by the coordinator on 2026-11-05 under your standing approval (docs/SPEC-AMENDMENTS.md §12 Decision 12 holds what was built); each is yours to overrule:
 
 - **Sign-in Auto may press a form the page's own script sends** (Workday's and Oracle's: no method, no action), under the narrow rules: declared by the platform's adapter, on https, on a host the every-site sign-in covers, every native submission of it cancelled while Sign-in watches, and the password written empty again unless the sign-in goes on.
-- **Sign-in Auto may press an email gate's Next** (Oracle's), which makes the site email you a code: only with Sign-in on Auto; with Manual you press it. The code is yours. (On the captured tenants the gate's terms label reads over a background image the extension cannot judge, so it refuses those gates and they stay yours.)
+- **Sign-in Auto may press an email gate's Next** (Oracle's), which makes the site email you a code: only with Sign-in on Auto; with Manual you press it. The code is yours. (On the captured tenants the gate's terms label reads over a background image the extension could not judge, so it refused those gates; since the snapshot build it reads them as captured: item 135.)
 - **Taleo's user-name box** gets the saved sign-in's email; there is no separate user-name field in a saved sign-in.
 - **Taleo's Privacy Agreement** is a required consent to apply: the agent's entry presses its I Accept, in either Consents mode; I Decline never.
 - **SuccessFactors' account creation** follows Sign-in Auto as Workday's does: the email typed twice (its "Retype Email Address", the `confirmEmail` slot) and the password twice. The form also asks for a name, a phone and a country, and its terms are accepted in a dialog; those and the DPCS dialog at Apply stay yours until there are snapshots, so its Create Account is yours to press.
@@ -222,8 +334,8 @@ Decisions still wanted:
 
 - Taleo's "Apply as Guest": whether the agent may prefer it where a portal offers it (waits for snapshots).
 - iCIMS's own sign-in, login.icims.com, and its password step: TailorIT's contract API 5 covers it in `signInHostCovered` (a sign-in saved for every site answers there), but the extension does not run on it (its page names the company but no job); whether Sign-in Auto may act on its identifier-first flow waits for snapshots.
-- TailorIT's side: reading the five platforms' addresses (`ATS_KINDS`, `parseAtsUrl`, Add job from Workday's public posting API; contract API 5 is adding them), and the agent's addresses (Workday's `/apply/applyManually`, Taleo's `jobapply.ftl?job=`, SuccessFactors' Sign In link, Oracle's `/apply/email`).
-- iCIMS's pages after the gate: until a snapshot names their address word (`/jobs/<id>/<slug>/<word>`), only the posting and the gate are read as the posting's (the v3 Phase 6/7b review), so the extension does not fill them yet.
+- ~~TailorIT's side: reading the five platforms' addresses (`ATS_KINDS`, `parseAtsUrl`, Add job from Workday's public posting API; contract API 5 is adding them)~~ (done in API 5; API 6 gives the agent iCIMS's), and the agent's addresses (Workday's `/apply/applyManually`, Taleo's `jobapply.ftl?job=`, SuccessFactors' Sign In link, Oracle's `/apply/email`).
+- ~~iCIMS's pages after the gate: until a snapshot names their address word (`/jobs/<id>/<slug>/<word>`), only the posting and the gate are read as the posting's (the v3 Phase 6/7b review), so the extension does not fill them yet.~~ **Answered (the snapshots of 2026-11-06):** `candidate`, `questions`, `eeo`, `form` and `job?mode=submit_apply`, read and filled.
 
 ### Company career sites and LinkedIn (v3 Phase 8)
 
@@ -243,10 +355,10 @@ The company career sites are built from the read-only research of 2026-11-04 (do
   - Turning it off, or Chrome's permission taken back, stops every injected page and every running sentinel.
   - The employee HR systems are never reached: all of `oraclecloud.com`, `myworkday.com`, `sapsf.com`, `sapsf.eu` (their candidate pages are ATS matches, served as before).
   - The disclosure moved to version 6, so a connected browser shows it again with I understand.
-- **Other ATSs and job boards without an adapter** (the review's B11, Claude's decision, overridable): Greenhouse EU (`job-boards.eu.greenhouse.io`), SmartRecruiters (`jobs.smartrecruiters.com`, `careers.smartrecruiters.com`), `jobs.workable.com`, BambooHR, Recruitee, Teamtailor, Indeed's smartapply, Glassdoor and ZipRecruiter get the company career sites' generic handling (the sentinel, the score, the site adapter's standard rules) until each gets an adapter of its own. Greenhouse EU should join `ATS_MATCHES` with the Greenhouse adapter later; it is not in this phase.
+- **Other ATSs and job boards without an adapter** (the review's B11, Claude's decision, overridable): Greenhouse EU (`job-boards.eu.greenhouse.io`), `careers.smartrecruiters.com`, Recruitee, Teamtailor, Indeed's smartapply, Glassdoor and ZipRecruiter get the company career sites' generic handling (the sentinel, the score, the site adapter's standard rules) until each gets an adapter of its own (since the snapshot build of 2026-11-06, `jobs.smartrecruiters.com`, `jobs.workable.com` and BambooHR's careers pages have theirs, with fourteen more ATSs). Greenhouse EU should join `ATS_MATCHES` with the Greenhouse adapter later; it is not in this phase.
 
 ### Real pages and the dry run
 
 - Phase 4: "The dry run itself, now possible with `npm run build:worktree` plus docs/DRY-RUN.md." (`build:worktree` went with the worktree: the dry run now uses `npm run build` against your own TailorIT on 3100, docs/DRY-RUN.md.)
-- Phase 2 (DOM): "CAPTCHA markup from vendor docs as known, unverified (Arkose host unconfirmed) — Phase 5 confirms." (The Phase 5 notes do not say it was confirmed.)
+- Phase 2 (DOM): "CAPTCHA markup from vendor docs as known, unverified (Arkose host unconfirmed) — Phase 5 confirms." (The Phase 5 notes do not say it was confirmed.) **Answered (the snapshots of 2026-11-06):** reCAPTCHA's and hCaptcha's frames as real pages draw them (item 66); Arkose still unconfirmed.
 - Phase 2 (UI): "Not verifiable without a build / by hand: dev manifest; whether the shortcut closes a page's open widget (Alt+Shift+D is the way round); background tab keeps the dropdown open; pageCapture includes cross-origin frames; real side panel's active-tab read; reconnect after Chrome stops the idle worker (~30 s)."

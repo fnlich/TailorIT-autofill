@@ -32,9 +32,14 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  pages read, the postings on platforms TailorIT reads told to it as they load, and Sign-in Auto at an email-first
  *  step: the email typed there alone); 6, v3 Phase 8 (Company career sites: every https page read, LinkedIn and the
  *  employee HR systems never, to recognise an application form on an employer's own site, filled as on the other sites,
- *  its origin and path (and the posting's id) told to TailorIT when its side panel opens or Autofill starts). Raise it
- *  whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 6;
+ *  its origin and path (and the posting's id) told to TailorIT when its side panel opens or Autofill starts); 7, the
+ *  snapshot build of 2026-11-06 (SmartRecruiters, fifteen more applicant-tracking sites, Oracle's government cloud and
+ *  Workable's job-search site read and filled, only their job pages on sites that also hold an employer's staff pages;
+ *  Workday's, iCIMS's and Oracle's application forms filled by their own rules; the page's path told to TailorIT for
+ *  the sign-in on ADP Workforce Now's and ClearCompany's job pages; a page that names no job taken as the job of the
+ *  tab's page before it, kept per tab in session storage; a form filled beside an unticked checkbox CAPTCHA, every press
+ *  waiting for the person). Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 7;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */

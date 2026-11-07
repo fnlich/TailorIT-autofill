@@ -4,10 +4,12 @@
  * case-folded for emails, as a number for amounts, with collapsed white space for other text, the option's identity
  * (its place among the visible options and its clean label) for choices, and the file's name and size for uploads.
  * A multi-option write is read back the same way: every planned place selected and still carrying its planned clean
- * label, so a list re-ordered or re-labelled under our write never verifies. An ARIA widget is read back by what it
- * shows chosen (widgets/hold.ts).
+ * label, so a list re-ordered or re-labelled under our write never verifies. A Yes/No pair of checkboxes (core pass Z2
+ * of 2026-11-06: core/resolver/yesNoPair.ts, JazzHR's two-box questions) is read back as the Yes/No radio it asks: its
+ * planned box ticked and the other not. An ARIA widget is read back by what it shows chosen (widgets/hold.ts).
  * A page that reformats a value equivalently still verifies; one that rejects it (an empty value, aria-invalid) does not.
  */
+import { isYesNoPair } from '../../core/resolver/yesNoPair';
 import { qualifiedLabel } from '../../core/text/keys';
 import type { FieldKey } from '../../core/types/field';
 import type { WriteValue } from '../../core/types/intent';
@@ -94,11 +96,14 @@ export function holds(target: FieldTarget, value: WriteValue, rule: ReadBackRule
     }
     case 'options': {
       const options = field.options === 'lazy' ? [] : field.options;
-      return value.indices.length === value.cleanLabels.length && value.indices.every((index, at) => {
+      const planned = value.indices.length === value.cleanLabels.length && value.indices.every((index, at) => {
         const option = options[index];
         if (option === undefined || !sameOptionLabel(option.label, value.cleanLabels[at]!)) return false;
         return field.kind === 'checkbox-group' ? checked(target.members[index]) : target.options[index]?.selected ?? false;
       });
+      // A Yes/No pair holds its answer only while the other box is not ticked (see the header).
+      if (!planned || !isYesNoPair(field)) return planned;
+      return target.members.every((member, index) => value.indices.includes(index) || !checked(member));
     }
     case 'file': {
       const held = (control as HTMLInputElement).files?.[0];

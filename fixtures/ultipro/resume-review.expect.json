@@ -1,0 +1,624 @@
+{
+  "fixture": "ultipro/resume-review",
+  "source": "https://recruiting.ultipro.com/cam1010csii/JobBoard/54a25c3a-e399-42b0-a553-16ed056e0517/OpportunityApply?opportunityId=772ddf9d-79f1-4752-bf3b-688ded6980c7",
+  "captured": "2026-11-06T16:22:15.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#FirstName"
+    },
+    {
+      "label": "Preferred Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#PreferredName"
+    },
+    {
+      "label": "Middle",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#MiddleName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#FamilyName"
+    },
+    {
+      "label": "Suffix",
+      "kind": "select",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 12,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select#Suffix"
+    },
+    {
+      "label": "Former Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#FormerName"
+    },
+    {
+      "label": "Primary Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#Phone"
+    },
+    {
+      "label": "Secondary Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#SecondaryPhone"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 16,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select#Country"
+    },
+    {
+      "label": "Address 1",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#AddressLine1"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#AddressLine2"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#City"
+    },
+    {
+      "label": "State / Province",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 59,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select#State"
+    },
+    {
+      "label": "Zip / Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#PostalCode"
+    },
+    {
+      "label": "Willing to relocate",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input#WillingToRelocate"
+    },
+    {
+      "label": "Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"job-title-textbox\"]"
+    },
+    {
+      "label": "Company / Organization",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"company-textbox\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "text",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"location-textbox\"]"
+    },
+    {
+      "label": "Month",
+      "kind": "select",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"from-month-dropdown\"]"
+    },
+    {
+      "label": "Year (YYYY)",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"from-year-textbox\"]"
+    },
+    {
+      "label": "To Month",
+      "kind": "select",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"to-month-dropdown\"]"
+    },
+    {
+      "label": "To Year (YYYY)",
+      "kind": "text",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"to-year-textbox\"]"
+    },
+    {
+      "label": "Description",
+      "kind": "textarea",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 1\"] [data-automation=\"description-textarea\"]"
+    },
+    {
+      "label": "Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"job-title-textbox\"]"
+    },
+    {
+      "label": "Company / Organization",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"company-textbox\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "text",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"location-textbox\"]"
+    },
+    {
+      "label": "Month",
+      "kind": "select",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"from-month-dropdown\"]"
+    },
+    {
+      "label": "Year (YYYY)",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"from-year-textbox\"]"
+    },
+    {
+      "label": "To Month",
+      "kind": "select",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"to-month-dropdown\"]"
+    },
+    {
+      "label": "To Year (YYYY)",
+      "kind": "text",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"to-year-textbox\"]"
+    },
+    {
+      "label": "Description",
+      "kind": "textarea",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 2\"] [data-automation=\"description-textarea\"]"
+    },
+    {
+      "label": "Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"job-title-textbox\"]"
+    },
+    {
+      "label": "Company / Organization",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"company-textbox\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "text",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"location-textbox\"]"
+    },
+    {
+      "label": "Month",
+      "kind": "select",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"from-month-dropdown\"]"
+    },
+    {
+      "label": "Year (YYYY)",
+      "kind": "text",
+      "required": true,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"from-year-textbox\"]"
+    },
+    {
+      "label": "To Month",
+      "kind": "select",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"to-month-dropdown\"]"
+    },
+    {
+      "label": "To Year (YYYY)",
+      "kind": "text",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"to-year-textbox\"]"
+    },
+    {
+      "label": "Description",
+      "kind": "textarea",
+      "required": false,
+      "section": "Work Experience",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Work Experience 3\"] [data-automation=\"description-textarea\"]"
+    },
+    {
+      "label": "School Name",
+      "kind": "combobox",
+      "required": true,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"school-textbox\"]"
+    },
+    {
+      "label": "Level of Education / Degree",
+      "kind": "combobox",
+      "required": true,
+      "section": "Education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"degree-textbox\"]"
+    },
+    {
+      "label": "Major",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 270,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"major-dropdown\"]"
+    },
+    {
+      "label": "Minor",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 270,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"minor-dropdown\"]"
+    },
+    {
+      "label": "From Month",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"from-month-dropdown\"]"
+    },
+    {
+      "label": "From Year (YYYY)",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"from-year-textbox\"]"
+    },
+    {
+      "label": "To Month",
+      "kind": "select",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "options": 13,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"to-month-dropdown\"]"
+    },
+    {
+      "label": "To Year (YYYY)",
+      "kind": "text",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"to-year-textbox\"]"
+    },
+    {
+      "label": "Description",
+      "kind": "textarea",
+      "required": false,
+      "section": "Education",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] [aria-label=\"Education 1\"] [data-automation=\"description-textarea\"]"
+    },
+    {
+      "label": "Skills",
+      "kind": "text",
+      "required": true,
+      "section": "Skills",
+      "fillable": true,
+      "control": "div[data-bind=\"if: isParsingResume()\"] input[data-automation=\"item-typeahead\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill0\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill1\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill2\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill3\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill4\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill5\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill6\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill7\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill8\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill9\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill10\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill11\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill12\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill13\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill14\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill15\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill16\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill17\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill18\"]"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "select",
+      "required": false,
+      "section": "Skills",
+      "fillable": true,
+      "options": 6,
+      "control": "div[data-bind=\"if: isParsingResume()\"] select[data-automation=\"proficiency-dropdown\"][aria-describedby=\"Skill19\"]"
+    },
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "div.row[data-bind=\"visible: !isParsingResume()\"] input#FirstName",
+      "note": "The application below the review: display: none while the review shows."
+    }
+  ],
+  "hooks": {
+    "detect": "div[data-bind=\"if: isParsingResume()\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "div[data-bind=\"if: isParsingResume()\"] .actions > button[data-automation=\"cancel-button\"]",
+      "button[data-automation=\"remove-button\"]",
+      "a[data-automation=\"btn-cancel\"]",
+      "#ResumeParsingUploader upload-button",
+      "#profile-button-menu"
+    ],
+    "pressable": [
+      "div[data-bind=\"if: isParsingResume()\"] .actions > button.btn-primary[data-automation=\"save-button\"]"
+    ]
+  }
+}

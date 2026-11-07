@@ -1,0 +1,108 @@
+{
+  "fixture": "synthetic/jazzhr",
+  "source": "https://tailorit-fixture.applytojob.com/apply/0000000A01/Senior-Backend-Engineer",
+  "captured": "2026-11-06T00:00:00.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-firstname-value\"]"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-lastname-value\"]"
+    },
+    {
+      "label": "Email Address",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-email-value\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-phone-value\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-address-value\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-city-value\"]"
+    },
+    {
+      "label": "State/Province",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-state-value\"]"
+    },
+    {
+      "label": "Postal",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-postal-value\"]"
+    },
+    {
+      "label": "Resume",
+      "kind": "file",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "[id=\"resumator-resume-value\"]"
+    },
+    {
+      "label": "Are you legally authorized to work in the United States?",
+      "kind": "checkbox-group",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "[id^=\"resumator-checkbox-7001-\"]",
+      "note": "A JazzHR checkbox question: one group through the adapter’s groupOf."
+    },
+    {
+      "label": "Will you now or in the future require sponsorship for employment visa status?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "[id=\"resumator-questionnaire-q7002\"]"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"resumator-resumetext-value\"]",
+      "note": "The paste box, hidden until its switch, which no run presses."
+    }
+  ]
+}

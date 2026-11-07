@@ -38,6 +38,9 @@ import { manualTimers } from './timers';
 export const ORIGIN = 'http://localhost:3100';
 export const EXTENSION_ID = 'test-extension-id';
 export const LEVER_URL = 'https://jobs.lever.co/tailorit-fixture/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00/apply';
+/** The address TailorIT is asked with on LEVER_URL's page (adapters/tailorit-address.ts: the snapshot build of 2026-11-06,
+ *  core pass Z1 item 37): the posting's canonical address, TailorIT's own (its parseAtsUrl's first canonical). */
+export const LEVER_POSTING_URL = 'https://jobs.lever.co/tailorit-fixture/0b9f2d3e-1c4a-4e8b-9a7d-5f6e3c2b1a00';
 export const LEVER_KEY = 'lever:0123456789abcdef';
 /** The golden redeem answer's token: the one the fake TailorIT hands out. */
 export const GOLDEN_TOKEN = redeemGolden.token;

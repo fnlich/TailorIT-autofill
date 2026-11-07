@@ -377,6 +377,11 @@ const WORK_AUTH_LEGAL = /authori[sz]ed\s+to\s+work|right\s+to\s+work|work\s+auth
 /** Sponsorship in the immigration sense: a visa or work authorization named, or sponsorship required or needed.
  *  Without one it is sponsorship in the business sense ("sponsorship sales"). */
 const VISA_SPONSORSHIP = /\bvisas?\b|\bimmigra\w*|\bh\s?1\s?b\b|\bgreen\s+card\b|\bpermanent\s+residen\w*|\bcitizen\w*|\bwork\s+(?:authori[sz]\w*|permits?|status|eligibility)\b|\bemployment\s+(?:authori[sz]\w*|visas?|status|eligibility|based)\b|\bto\s+work\b|\bfor\s+employment\b|\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+sponsor\w*|\bsponsor\w*\s+(?:\w+\s+){0,2}?(?:required|needed|status)\b|^(?:visa\s+)?sponsorship\b|\bsponsorship\s+(?:now|in\s+the\s+future|to\s+work)\b/;
+/** The core pass of 2026-11-06: a need for sponsored authorization, sponsorship asked about the work authorization
+ *  itself (ClassPass on Greenhouse, the owner's snapshot "[job-boards.greenhouse.io] ... Sr Software Engineer - Backend
+ *  at ClassPass": "Do you now, or will you in the future, require employer-sponsored work authorization to legally work
+ *  in the country where this role is located?"). §8.3's authorization rule, read first, took it for authorization. */
+const SPONSORED_NEED = /\b(?:require|requires|required|requiring|need|needs|needed|needing)\b(?:\s+\w+){0,3}?\s+sponsored\s+(?:work|employment|visas?|immigration)\b/;
 
 // Self-identification wordings: a topic word without one ("experience supporting individuals with disabilities") is a
 // question about the job, which the person answers; it never takes their self-identification answer.
@@ -493,9 +498,14 @@ const BINDING_WAIVER_RULE = { id: 'label.binding-waiver', strength: 'strong' } a
 export function namesBindingWaiver(text: string): boolean {
   return BINDING_WAIVER.test(text) && BINDING_ASK.test(text);
 }
+/** The core pass of 2026-11-06: a denial that AI made or helped make the work, in two joined participles (Dropzone's AI
+ *  policy on Greenhouse, the owner's snapshot "[job-boards.greenhouse.io] ... Forward Deployed Engineer at Dropzone AI":
+ *  "... are my own original work and were not generated or substantially assisted by any AI tool"), whose AI term sits
+ *  six words past its negation, one more than AI_ATTESTATION's own reach. */
+const NOT_MADE_BY_AI = String.raw`\b(?:not|never)\s+(?:been\s+)?(?:written|generated|assisted)\s+(?:or|nor)\s+(?:\w+\s+)?(?:written|generated|assisted)\s+(?:by|with|using)\s+(?:any\s+|an\s+)?${AI_TERM}\b`;
 /** An "I did not use AI" attestation as normalizeLabel writes it (no apostrophes: "didnt", "havent"), with a few words
  *  between the negation and the AI term, either way round; or a statement that it is the applicant's own (OWN_WORK). */
-const AI_ATTESTATION = new RegExp(String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+${AI_TERM}\b|\b${AI_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved)\b|${OWN_WORK}`);
+const AI_ATTESTATION = new RegExp(String.raw`\b${NEGATION}\b(?:\s+\w+){0,5}?\s+${AI_TERM}\b|\b${AI_TERM}\b(?:\s+\w+){0,4}?\s+(?:was|were|has\s+been|have\s+been|is|are)\s+(?:not|never)\s+(?:used|involved)\b|${OWN_WORK}|${NOT_MADE_BY_AI}`);
 /** AI named anywhere in consent wording: that box is an AI attestation, which is never pre-approved (§8.7). */
 const AI_NAMED = new RegExp(String.raw`\b${AI_TERM}\b`);
 /** Unrecognised-consent wordings beyond §8.3's "I agree, consent, acknowledge, accept, understand". */
@@ -595,8 +605,9 @@ const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.portfolio': { only: PORTFOLIO_NOUN, ask: true },
   // The Phase 7a review: "legally eligible to be employed" is authorization too (a work authorization status is read
   // before this rule: matchLabelRules).
-  'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL },
-  'label.sponsorship': { only: VISA_SPONSORSHIP, readsQualifiers: true,
+  // The core pass of 2026-11-06: a need for employer-sponsored work authorization is sponsorship (SPONSORED_NEED).
+  'label.work-auth': { also: WORK_AUTH_WIDE, only: WORK_AUTH_LEGAL, unless: SPONSORED_NEED },
+  'label.sponsorship': { also: SPONSORED_NEED, only: VISA_SPONSORSHIP, readsQualifiers: true,
     needsUser: (c) => (sponsorshipTime(c.label) === 'unclear' ? 'unclear-time' : null) },
   'label.over18': { also: OVER18_WIDE },
   'label.criminal': { also: CRIMINAL_WIDE },
@@ -795,6 +806,13 @@ function consentVerdict(entries: readonly ConsentEntry[], kind: FieldKind): Labe
       needsUser: 'kind-mismatch' };
   }
   return { ...hitOf(winner.rule, winner.category), consentKinds: fitting.map((entry) => entry.category) };
+}
+
+/** The core pass of 2026-11-06: the hit for an "I did not use AI" statement a field's own label makes past the 300
+ *  characters the worker sees (FieldSpec.statesNoAi; Dropzone's AI policy): label.consent-ai's on a field of `kind`, as
+ *  consentVerdict gives it there (the person's where the kind cannot hold an AI attestation). */
+export function noAiStatementHit(kind: FieldKind): LabelRuleHit {
+  return consentVerdict([{ rule: AI_CONSENT_RULE, category: 'consent.aiAttestation' }], kind);
 }
 
 /** Words that deny a lone checkbox's statement or say it does not hold ("I am not authorized", "unable to relocate",

@@ -1,0 +1,5 @@
+{
+  "https://swyfft.bamboohr.com/careers/1122": "fixtures/bamboohr/swyfft-form.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LfZ4KEsAAAAAP7osErua7mOIzcdDjnUdaZfp08m&co=aHR0cHM6Ly9zd3lmZnQuYmFtYm9vaHIuY29tOjQ0Mw..&hl=en&v=kxxK8h62TERPFgxXTKenDcjR&size=normal&anchor-ms=20000&execute-ms=30000&cb=vzd9toeadtw": "fixtures/bamboohr/swyfft-form.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=kxxK8h62TERPFgxXTKenDcjR&k=6LfZ4KEsAAAAAP7osErua7mOIzcdDjnUdaZfp08m&bft=REDACTED": "fixtures/bamboohr/swyfft-form.third-party-frame.html"
+}

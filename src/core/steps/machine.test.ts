@@ -677,6 +677,8 @@ describe('auto-advance', () => {
     ['captcha-unsolved', ready, { ...ok, step: facts({ captchaUnsolved: true }) }, true],
     ['not-settled', ready, { ...ok, step: facts({ settled: false }) }, true],
     ['attempts', at('validate', { lastFill: CLEAN }, MAX_STEP_ATTEMPTS), ok, true],
+    // core-x, item 2: the form's account section still has a required box empty.
+    ['account-left', ready, { ...ok, step: facts({ accountLeft: 2 }) }, true],
   ] as const)('refuses with %s', (refusal, state, check, autoAdvance) => {
     expect(autoAdvanceVerdict(state, check, { autoAdvance })).toEqual({ advance: false, refusal });
     // The reducer never presses Next when the verdict refuses.
@@ -687,7 +689,23 @@ describe('auto-advance', () => {
 
   it('lists every refusal it can give', () => {
     expect([...ADVANCE_REFUSALS]).toEqual(['setting-off', 'final', 'final-unknown', 'no-next', 'errors', 'not-filled',
-      'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled', 'attempts']);
+      'account-left', 'flagged', 'blocked', 'unresolved', 'unconfirmed-draft', 'captcha-unsolved', 'not-settled',
+      'attempts']);
+  });
+
+  // core-x, item 2: an account section left for the person holds Next with a notice that says why (it shows no row),
+  // and an empty count (or none) holds nothing.
+  it('holds Next for an account section left for the person, and says so', () => {
+    const held = reduceRun(ready, { type: 'VALIDATED', errors: 0, fixable: 0, step: facts({ accountLeft: 1 }) },
+      { autoAdvance: true, now: T0 + 1 });
+    expect(types(held.effects)).not.toContain('press-next');
+    expect(held.effects).toContainEqual({ type: 'notify', notice: 'account-left' });
+    expect(STEP_NOTICES).toContain('account-left');
+    expect(autoAdvanceVerdict(ready, { errors: 0, step: facts({ accountLeft: 0 }) }, { autoAdvance: true }))
+      .toEqual({ advance: true });
+    // Before the rows: a step that also left fields for the person says why the account section holds Next.
+    expect(autoAdvanceVerdict(at('validate', { lastFill: { ...CLEAN, flagged: 2 } }),
+      { errors: 0, step: facts({ accountLeft: 1 }) }, { autoAdvance: true })).toEqual({ advance: false, refusal: 'account-left' });
   });
 });
 

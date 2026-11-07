@@ -120,8 +120,13 @@ export interface SignInForm {
    *  submit button), inside the form. */
   button: HTMLElement;
   /** v3 Phase 7b: on a form an adapter declares, the adapter's own <form> element, by its snapshot's markup: every box
-   *  and the button must belong to it (the v3 Phase 6/7b review, S8). Required of a declared form. */
+   *  and the button must belong to it (the v3 Phase 6/7b review, S8). Required of a declared form, but a container's. */
   form?: HTMLFormElement;
+  /** The snapshot build of 2026-11-06 (core pass Z1, item 24): a declared sign-in container (Adapter.signInContainer)
+   *  in place of `form`, the adapter's own element around the account part (ADP's div.guest-login-container, no <form>;
+   *  UltiPro's form#registrationDetailsForm, its Create account outside it). Every box inside it, none of them a password
+   *  box (a password goes only into an adapter's own <form>); its button the one the adapter names, in its document. */
+  container?: Element;
   /** v3 Phase 7b: set by dom/sign-in-form.ts signInFormOf on a form an adapter declares (never by the standard rule).
    *  Its terms are at most one box. */
   declared?: true;
@@ -160,6 +165,11 @@ export interface Adapter {
   /** Words added after the adapter's label (labelFor) for a control that shares its label element with others
    *  (Ashby's month and year lists under one "Start Date"): "month", "year". */
   labelSuffix?(control: Element): string | null;
+  /** Core pass Z2 of 2026-11-06 (CORE-BLOCKERS item 28): the adapter's label (labelFor, with its labelSuffix) is read
+   *  before the control's label[for], aria-labelledby and wrapping label, where this says so (Jobvite's signature
+   *  name and date pairs: their own label[for] with the words that make it a signature). A visible label only: where
+   *  the adapter's label is hidden or empty, the standard order stands. */
+  labelFirst?(control: Element): boolean;
   /** The visible help text of a control, or of a group's container, that no aria-describedby names. */
   descriptionFor?(control: Element): Element[];
   /** Whether the page marks a control, or a group's container, required where no attribute says so (a mark drawn by
@@ -173,6 +183,13 @@ export interface Adapter {
    *  value is written, and once more after its events, which closes what the page opened. One of DECLARED_KEYS, never
    *  Enter (a date mask reads Enter as today); null for any other control. */
   keyAroundWrite?(control: Element): DeclaredKey | null;
+  /** DESIGN-NEW-ATS Phase 0: the element that holds one question's options where the page draws no fieldset,
+   *  radiogroup or group around them (JazzHR's Yes/No checkbox questions: two boxes with different names in a
+   *  div.form-group, the question a label whose for names nothing), for a checkbox, or a radio with no name; null where
+   *  the page's own markup decides. The scanner asks it before closest('fieldset, [role=group]') (dom/scan.ts
+   *  checkboxContainer, groupContainer): its boxes form one checkbox group when the adapter labels that element
+   *  (labelFor), its only box a lone checkbox, as a legend-less fieldset the adapter labels does (Ashby's). */
+  groupOf?(control: Element): Element | null;
   /** Whether the page shows a native radio or checkbox chosen, where its own checked property may not say it (Ashby
    *  draws the answer on the span beside an opacity-0 input, and setting .checked changes only the input); null for
    *  the input's own state. */
@@ -192,6 +209,17 @@ export interface Adapter {
    *  or still under way, as the page shows it; null when the adapter reads no upload for this input (the input's own
    *  files decide, as for any page). */
   uploadState?(input: HTMLInputElement, fileName: string): UploadState | null;
+  /** The core pass of 2026-11-06: whether the page shows `input`'s field already holding a file it took (its upload
+   *  shown done), whatever the file's name, while the input itself may hold none. Read by every scan, so before any
+   *  upload is planned: such a field holds a file (CurrentValue 'files'), which the planner keeps (prefill-kept) and
+   *  never uploads again. Workday's My Experience shows the resume Workday read at "Autofill with Resume" so
+   *  (fixtures/workday/web-my-experience.html). Absent or false: the input's own files decide. */
+  uploadHeld?(input: HTMLInputElement): boolean;
+  /** The integration of 2026-11-06: the names the page shows beside the files of uploadHeld, as a person reads them
+   *  (CurrentValue `names`). Under "Résumé already on the page: Upload mine again" a field showing a file named as the
+   *  person's chosen résumé keeps it, since a field that takes several files (Workday's) would otherwise hold it twice.
+   *  Absent, or no name read: a file the page shows is replaced as the setting says. */
+  uploadHeldNames?(input: HTMLInputElement): string[];
   /** The element that shows the posting's own text (its description), or null while the page shows none. With this
    *  hook a posting page is read once it shows it (a page that draws it late), and on a page with a form only it counts
    *  as the posting read there: the rest of the page (a pane of facts, a header) is no posting. */
@@ -210,6 +238,32 @@ export interface Adapter {
   neverPress?(root: Element): Element[];
   /** 'unknown' is treated as final: nothing is pressed. */
   isFinalStep?(doc: Document): 'final' | 'not-final' | 'unknown';
+  // ── snapshot build 2026-11-06 (core-x, items 1 and 2) ──
+  /** The platform's step buttons whose words say Submit on every step, the last one's or not (iCIMS's "Submit Profile"
+   *  and "Submit": docs/ARCHITECTURE.md, the snapshot build of 2026-11-06), and the page's own step bar. Only on a step isFinalStep reads 'not-final' is
+   *  such a button the step machine's Next (dom/fillers/not-submit.ts), and only when it is the adapter's nextButton
+   *  itself, matches one of `buttons` (CSS selectors, each naming one step's button by its own id: never "the form's
+   *  submit button") and `laterStep` answers the bar's item after the current one, which a person can see. On 'final' or
+   *  'unknown' it is the application's Submit, under every Submit gate. */
+  stepSubmitNext?: {
+    buttons: readonly string[];
+    /** The step bar's item after the current one, a person can see; null when the bar shows none (the last step, no
+     *  bar, a bar the adapter cannot read with certainty). */
+    laterStep(doc: Document): Element | null;
+  };
+  /** The create-account part an application form holds inside one of its steps (iCIMS's Candidate Profile, "Create a
+   *  login": Login, Password, Password (Re-enter)), an element inside the form root that holds the adapter's declared
+   *  create-account form (signInForm 'create-account') and nothing else of the application; null where the step shows
+   *  none. Its password boxes never make the page an account's creation (dom/pause-detect.ts): the rest of the form
+   *  fills as usual. Nothing in it is filled from the profile (the adapter excludes it from the fields); it follows
+   *  Sign-in mode (Auto types the saved job-site sign-in into it, its button the person's; Manual leaves it to the
+   *  person), and Next and Submit hold while one of its required boxes is empty (dom/account-section.ts). */
+  accountSection?(root: Element): Element | null;
+  /** core-x, item 3: on a company's wrapper page (never a root), the frame of the same host it draws the application
+   *  in (iCIMS's iframe#icims_content_iframe, at the posting's own address with ?in_iframe=1); null on any other page.
+   *  The agent's presses, Next, Submit, the success read and Sign-in Auto act in that frame (content/runtime.ts
+   *  claimsApplication, background/frames.ts claimFrameOf), never in the wrapper. */
+  applicationFrame?(doc: Document): HTMLIFrameElement | null;
   errors?(root: Element): Array<{ el: Element; fieldKeyHint?: string }>;
   repeatables?(root: Element): Array<{
     kind: 'experience' | 'education' | 'language';
@@ -249,6 +303,21 @@ export interface Adapter {
    *  Application tab, which no run presses), and the entry door may press that one element, nothing beside it. Without
    *  this mark an entry control neverPress lists, holds or sits in is refused. */
   entryNeverPressed?: true;
+  // ── snapshot build 2026-11-06 (core pass Z1, items 24 and 27) ──
+  /** Core pass Z1, item 27: on an entry-choice consent state (authState 'entry-choice'), the consent form its entry
+   *  control submits (Jobvite's form[name=consentForm], whose "I Accept" is a type=submit button) and the selects that
+   *  form holds beside the consent choice (its residence select); null on any other page. The agent's entry door
+   *  (dom/fillers/not-submit.ts) may submit that form only, by the entry control alone, and only while
+   *  it holds no control but that one and those selects: nothing else is submitted. */
+  entryConsentForm?(doc: Document): { form: HTMLFormElement; selects: readonly Element[] } | null;
+  /** Core pass Z1, item 24: on a page the run fills like a step (no pause), its account or code-sending part (ADP's
+   *  guest page, whose Continue mails a code; UltiPro's account step, whose Create account makes the account), declared
+   *  as a SignInForm whose `container` stands for the adapter's own <form>: its boxes inside the container, its button
+   *  one the adapter names, in the container's document, inside the container or not. Its button follows Sign-in mode:
+   *  Auto presses it once the step is filled and rests (content/sign-in.ts, container mode, every Sign-in Auto guard
+   *  held), Manual leaves it to the person. Null on any other page. */
+  signInContainer?(doc: Document): SignInForm | null;
+  // ── end core pass Z1, items 24 and 27 ──
   quirks?: {
     settleCapMs?: number;
     transitionCapMs?: number;

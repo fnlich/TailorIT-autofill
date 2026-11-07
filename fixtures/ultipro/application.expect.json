@@ -1,0 +1,367 @@
+{
+  "fixture": "ultipro/application",
+  "source": "https://recruiting.ultipro.com/cam1010csii/JobBoard/54a25c3a-e399-42b0-a553-16ed056e0517/OpportunityApply?opportunityId=772ddf9d-79f1-4752-bf3b-688ded6980c7",
+  "captured": "2026-11-06T16:23:17.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FirstName",
+      "note": "The account's name: read-only (readonly=\"readonly\"), never typed."
+    },
+    {
+      "label": "Preferred Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#PreferredName"
+    },
+    {
+      "label": "Middle",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#MiddleName"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FamilyName"
+    },
+    {
+      "label": "Suffix",
+      "kind": "select",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 12,
+      "control": "select#Suffix"
+    },
+    {
+      "label": "Former Name",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": false,
+      "reason": "disabled-or-readonly",
+      "control": "input#FormerName"
+    },
+    {
+      "label": "Primary Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#Phone"
+    },
+    {
+      "label": "Secondary Phone",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#SecondaryPhone"
+    },
+    {
+      "label": "Country",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 16,
+      "control": "select#Country",
+      "note": "Required by its label's class required alone (no required attribute)."
+    },
+    {
+      "label": "Address 1",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#AddressLine1"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#AddressLine2"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#City"
+    },
+    {
+      "label": "State / Province",
+      "kind": "select",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "options": 59,
+      "control": "select#State"
+    },
+    {
+      "label": "Zip / Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#PostalCode"
+    },
+    {
+      "label": "Willing to relocate",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Contact Information",
+      "fillable": true,
+      "control": "input#WillingToRelocate"
+    },
+    {
+      "label": "REDACTED",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Documents",
+      "fillable": true,
+      "control": "div.file.row.hidden-print[data-automation=\"file-row\"] input[data-automation=\"select-document-checkbox\"]"
+    },
+    {
+      "label": "REDACTED Document Type",
+      "kind": "select",
+      "required": false,
+      "section": "Documents",
+      "fillable": true,
+      "options": 4,
+      "control": "div.file.row.hidden-print[data-automation=\"file-row\"] select[data-automation=\"file-type\"]"
+    },
+    {
+      "label": "REDACTED Description",
+      "kind": "text",
+      "required": false,
+      "section": "Documents",
+      "fillable": true,
+      "control": "div.file.row.hidden-print[data-automation=\"file-row\"] input[data-automation=\"file-description\"]"
+    },
+    {
+      "label": "Upload a file",
+      "kind": "file",
+      "required": false,
+      "section": "Documents",
+      "fillable": true,
+      "control": "input#FileUpload_0000000002",
+      "note": "The Documents upload: its label[for][role=button] stands for the hidden input."
+    },
+    {
+      "label": "How did you hear about this opportunity?",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 16,
+      "control": "select#ApplicantSource"
+    },
+    {
+      "label": "Were you referred by a current employee?",
+      "kind": "radio",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[data-automation=\"yes-employee-referral-radio\"]"
+    },
+    {
+      "label": "When can you start? (MM/DD/YYYY) month",
+      "kind": "text",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "ukg-date-input-text >>> input[data-automation=\"ukg-date-input-text-month\"]",
+      "note": "The start date's month box, in ukg-date-input-text's open shadow root (the selector steps into it with \" >>> \"), labelled by the light label[data-automation=start-date-label] in its form group with \"month\" after it (the adapter's labelFor and labelSuffix); required by its aria-required."
+    },
+    {
+      "label": "When can you start? (MM/DD/YYYY) day",
+      "kind": "text",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "ukg-date-input-text >>> input[data-automation=\"ukg-date-input-text-day\"]",
+      "note": "The start date's day box, in ukg-date-input-text's open shadow root (the selector steps into it with \" >>> \"), labelled by the light label[data-automation=start-date-label] in its form group with \"day\" after it (the adapter's labelFor and labelSuffix); required by its aria-required."
+    },
+    {
+      "label": "When can you start? (MM/DD/YYYY) year",
+      "kind": "text",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "ukg-date-input-text >>> input[data-automation=\"ukg-date-input-text-year\"]",
+      "note": "The start date's year box, in ukg-date-input-text's open shadow root (the selector steps into it with \" >>> \"), labelled by the light label[data-automation=start-date-label] in its form group with \"year\" after it (the adapter's labelFor and labelSuffix); required by its aria-required."
+    },
+    {
+      "label": "Are you legally authorized to work in the US?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 4,
+      "control": "input[name=\"MultipleChoiceResponse0\"]"
+    },
+    {
+      "label": "Where are you currently located?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "textarea#TextResponse1"
+    },
+    {
+      "label": "Are you comfortable working in a fully remote setting?",
+      "kind": "radio",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"MultipleChoiceResponse2\"]"
+    },
+    {
+      "label": "What are your annual salary requirements?",
+      "kind": "textarea",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "textarea#TextResponse3"
+    },
+    {
+      "label": "Do you have experience with SQL, APIs, data mapping, validation, transformation, and integration troubleshooting? Please briefly explain",
+      "kind": "textarea",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "control": "textarea#TextResponse4"
+    },
+    {
+      "label": "Gender",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Gender"
+    },
+    {
+      "label": "I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"gender-decline-checkbox\"]"
+    },
+    {
+      "label": "Ethnic Origin",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#HispanicOrigin"
+    },
+    {
+      "label": "I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"ethnic-origin-decline-checkbox\"]"
+    },
+    {
+      "label": "Race",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 7,
+      "control": "select#EthnicOrigin"
+    },
+    {
+      "label": "I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"race-decline-checkbox\"]"
+    },
+    {
+      "label": "Are you a protected veteran?",
+      "kind": "select",
+      "required": true,
+      "section": "Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "select#USFederalContractor"
+    },
+    {
+      "label": "I decline to say",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Questions",
+      "fillable": true,
+      "control": "input[data-automation=\"us-federal-contractor-question-decline-checkbox\"]"
+    },
+    {
+      "label": "template",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#MultipleChoiceTemplate input[type=\"radio\"]",
+      "note": "A per-question template (display: none)."
+    },
+    {
+      "label": "Upload Resume",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "#ResumeParsingUploader input[type=\"file\"]",
+      "note": "The résumé parser (hidden; never pressed)."
+    }
+  ],
+  "hooks": {
+    "detect": "#OpportunityApply",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a[data-automation=\"btn-cancel\"]",
+      "[data-automation=\"application-incorrect-name-text-signout-link\"]",
+      "a[data-automation=\"delete-file-link\"]",
+      "#ResumeParsingUploader upload-button",
+      "[data-automation=\"existing-resume-selector\"]",
+      "#CandidatePresenceMenuButton",
+      "#profile-button-menu",
+      "#EEOCModalLink",
+      "[data-automation=\"accessibility-banner-dismiss\"]"
+    ],
+    "pressable": [
+      "ukg-button[data-automation=\"btn-submit\"]"
+    ]
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "fixture": "adp/self-id",
+  "source": "https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001&jobId=590196&requisitionId=9207368240764_11&lang=en_US&params=jobId&OTP_login=true",
+  "captured": "2026-11-06T15:26:49.000Z",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Notice of Rights",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#vsidGender"
+    },
+    {
+      "label": "I decline to identify my race and ethnicity",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Ethnicity & Race",
+      "fillable": true,
+      "control": "input#checkbox_000000000000000000001"
+    },
+    {
+      "label": "Ethnicity",
+      "kind": "combobox",
+      "required": false,
+      "section": "Ethnicity & Race",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#vsidEthinicity"
+    },
+    {
+      "label": "Race",
+      "kind": "combobox",
+      "required": false,
+      "section": "Ethnicity & Race",
+      "fillable": true,
+      "options": "lazy",
+      "control": "input#vsidRace"
+    },
+    {
+      "label": "Protected Veteran Status",
+      "kind": "radio",
+      "required": false,
+      "section": "Protected Veteran Status",
+      "fillable": true,
+      "options": 3,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-1-label\"]"
+    },
+    {
+      "label": "Disability Status",
+      "kind": "radio",
+      "required": false,
+      "section": "Disability Status",
+      "fillable": true,
+      "options": 3,
+      "control": "div[role=\"radiogroup\"][aria-labelledby=\"sdf-radio-group-2-label\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "#jobApplicationSubmit",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button#finishLaterApplication",
+      "button#ja_sv_cw_prev_footer_btn",
+      "sdf-button#vsidWhy",
+      "sdf-button#vsidWhyAreWe",
+      "sdf-button#vsidVet",
+      ".raceHelp-icon [role=\"button\"]"
+    ],
+    "pressable": [
+      "button#ja_sv_cw_next_footer_btn"
+    ]
+  }
+}

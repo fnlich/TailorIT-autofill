@@ -78,7 +78,10 @@ import {
   type PutAutofillSavedAnswerBody,
   type AutofillSession,
 } from '../contract/tailorit';
-import { addressForTailorIT } from '../adapters/site';
+// The snapshot build of 2026-11-06 (core-x, item 6): every address named to TailorIT goes through tailoritAddressOf, which
+// keeps v3 Phase 8's company-page rule (addressForTailorIT) and names iCIMS's, SmartRecruiters' and jobs.workable.com's
+// pages by their posting's canonical address.
+import { tailoritAddressOf } from '../adapters/tailorit-address';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 
@@ -206,8 +209,12 @@ export interface ServerClient {
   agentResult(id: string, body: AutofillAgentResultBody): Promise<ServerResult<null>>;
   /** GET /credentials?host= (version 3, scope credentials:read, v3 Phase 5): the job-site sign-in for that host, else
    *  the one for every site on a host signInHostCovered covers; none is not-found (404). The answer holds a password:
-   *  it is never logged, and a host that is not a host name is refused before any request. */
-  credential(host: string): Promise<ServerResult<AutofillCredential>>;
+   *  it is never logged, and a host that is not a host name is refused before any request. Version 6 (the snapshot
+   *  build of 2026-11-06, contract6): `path`, the page's pathname alone, goes as &path= where the caller names one (a
+   *  host the every-site sign-in covers by its candidate paths: ADP Workforce Now, ClearCompany); one the contract's
+   *  query would refuse (a query, a fragment, a space, no leading '/', too long) is never sent: the host is asked
+   *  alone, which still finds the sign-in saved for it. */
+  credential(host: string, path?: string): Promise<ServerResult<AutofillCredential>>;
 }
 
 /** What the server client needs. */
@@ -471,12 +478,12 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
       // v3 Phase 8 (the review's P3): a company's own page is named by its origin and path (and a gh_jid or ashby_jid)
       // alone, whichever lookup asks: the side panel's, a run's, the resume choice's.
       const raw = await json({ method: 'POST', path: '/api/autofill/lookup', token: 'current',
-        json: { ...body, url: addressForTailorIT(body.url) } }, LookupWireSchema);
+        json: { ...body, url: tailoritAddressOf(body.url) } }, LookupWireSchema);
       return raw.ok ? { ok: true, value: lookupOf(raw.value) } : raw;
     },
     async addJob(body) {
       const raw = await json({ method: 'POST', path: '/api/autofill/jobs', token: 'current',
-        json: { ...body, url: addressForTailorIT(body.url) } }, AddJobWireSchema);
+        json: { ...body, url: tailoritAddressOf(body.url) } }, AddJobWireSchema);
       return raw.ok ? { ok: true, value: { created: raw.value.created, lookup: lookupOf(raw.value.lookup) } } : raw;
     },
     resumes: () => json({ method: 'GET', path: '/api/autofill/resumes', token: 'current' }, AutofillResumeListSchema),
@@ -530,7 +537,7 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
       query: { q: [...query].slice(0, AUTOFILL_JOB_SEARCH_QUERY_MAX).join('') } }, AutofillJobSearchResponseSchema),
     async applied(body) {
       const raw = await json({ method: 'POST', path: '/api/autofill/applied', token: 'current',
-        json: body.url === undefined ? body : { ...body, url: addressForTailorIT(body.url) } }, LookupWireSchema);
+        json: body.url === undefined ? body : { ...body, url: tailoritAddressOf(body.url) } }, LookupWireSchema);
       return raw.ok ? { ok: true, value: lookupOf(raw.value) } : raw;
     },
     async siteRequest(host) {
@@ -550,13 +557,15 @@ export function createServerClient(deps: ServerClientDeps): ServerClient {
         answer: { kind: 'none' } });
       return raw.ok ? { ok: true, value: null } : raw;
     },
-    credential(host) {
+    credential(host, path) {
       if (!AutofillCredentialQuerySchema.safeParse({ host }).success) {
         log('server.path-refused');
         return Promise.resolve(failure('refused-path'));
       }
-      return json({ method: 'GET', path: '/api/autofill/credentials', token: 'current', query: { host } },
-        AutofillCredentialSchema);
+      // Version 6 (contract6): the page's pathname, only as the contract's query takes it (method header).
+      const named = path !== undefined && AutofillCredentialQuerySchema.safeParse({ host, path }).success ? path : null;
+      return json({ method: 'GET', path: '/api/autofill/credentials', token: 'current',
+        query: named === null ? { host } : { host, path: named } }, AutofillCredentialSchema);
     },
     async coverLetterFile(id, maxBytes = AUTOFILL_COVER_LETTER_MAX_BYTES) {
       if (!AutofillCoverLetterIdSchema.safeParse(id).success) {

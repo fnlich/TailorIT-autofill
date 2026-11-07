@@ -27,6 +27,13 @@ export const MIN_SHADOW_REACH_PX = 1;
 /** A wrapper draws a control's box only when it hugs the control and its own labels: it reaches no more than this
  *  many pixels past them on any side (Greenhouse's outlined div.input-wrapper holds its label and its input). */
 export const WRAPPER_HUG_PX = 8;
+// ── The security fix of 2026-11-06 (S6): a wide wrapper's decorations ──
+/** A wrapper whose only content is a control and its decorations draws the control's box only when each decoration
+ *  is an icon's size, no wider and no taller than this (Rippling's search icon, BambooHR's start adornment)... */
+export const WRAPPER_DECORATION_MAX_PX = 32;
+/** ...and the control spans more than this share of the wrapper's content box on each axis. */
+export const WRAPPER_CONTROL_MIN_SHARE = 0.5;
+// ── end of the security fix's block (S6) ──
 /** The canvas behind a page that uses a dark colour scheme while the browser prefers dark (Chromium's default). */
 export const DARK_CANVAS_RGB: readonly [number, number, number] = [0x12, 0x12, 0x12];
 /** At most this many candidate backgrounds are kept while compositing gradient stops; past it the answer is unknown. */
@@ -68,6 +75,11 @@ export const RAW_SCAN_MAX_NODES = 50_000;
 export const RAW_SCAN_SLICE_MS = 8;
 /** An attribute value the raw scan reads is cut to this many code points. */
 export const RAW_ATTRIBUTE_CAP = 2_000;
+
+// ── Core pass Z2 of 2026-11-06 (CORE-BLOCKERS item 33) ──
+/** A document's first scan finds no form while a form fades in: it waits at most this long for the entrance animations
+ *  running on what holds a form's controls to finish (dom/entrance.ts; Pinpoint's panel fades in over 1 s). */
+export const ENTRANCE_CAP_MS = 2_000;
 
 /** settle(): the quiet window with no mutation and no busy sign; a busy sign seen at its end starts another. */
 export const SETTLE_QUIET_MS = 250;

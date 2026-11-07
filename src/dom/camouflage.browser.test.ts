@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { genericAdapter } from '../adapters/generic';
+import { fillabilityOf } from '../adapters/test/expectations.testkit';
 import { isCamouflaged, isControlCamouflaged, optionCamouflage, type CamouflageVerdict } from './camouflage';
 import { loadFixture, removeFixtures } from './fixture.testkit';
+import { scan } from './scan';
 import { readVisibleText, visiblePlaceholder } from './visible-text';
 
 /** One positive and one negative case for every camouflage rule; each target is the element with the case's id. */
@@ -45,9 +48,27 @@ const CASES: Array<{ id: string; html: string; verdict: CamouflageVerdict }> = [
   { id: 'opaque-camouflaged-over-image', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)">'
     + '<div style="background:#fff"><p id="opaque-camouflaged-over-image" style="color:#fff">White on white over an '
     + 'image</p></div></div>', verdict: 'camouflaged' },
+  // The core pass of 2026-11-06: a translucent layer bounds the image under it (between the layer over black and over
+  // white), so dark ink on a 90 % white veil reads; light ink on a thin veil, which some image under it may match, does
+  // not; nor does ink between a veil's two ends, though it reads against each end.
   { id: 'translucent-over-image', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)"><div '
     + 'style="background:rgba(255,255,255,0.9)"><p id="translucent-over-image" style="color:#222">Through a veil</p></div></div>',
-    verdict: 'unknown' },
+    verdict: 'clear' },
+  { id: 'thin-veil-over-image', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)"><div '
+    + 'style="background:rgba(255,255,255,0.2)"><p id="thin-veil-over-image" style="color:#9b9b9b">Through a thin veil</p>'
+    + '</div></div>', verdict: 'unknown' },
+  { id: 'veil-between-ends', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)"><div '
+    + 'style="background:rgba(255,255,255,0.5)"><p id="veil-between-ends" style="color:#b0b0b0">Grey on a half veil</p>'
+    + '</div></div>', verdict: 'unknown' },
+  { id: 'veil-rounded-over-image', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)"><div '
+    + 'style="background:rgba(255,255,255,0.9);border-radius:8px"><p id="veil-rounded-over-image" style="color:#222">'
+    + 'Rounded veil</p></div></div>', verdict: 'unknown' },
+  { id: 'veil-faded-over-image', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)"><div '
+    + 'style="opacity:0.9"><div style="background:rgba(255,255,255,0.9)"><p id="veil-faded-over-image" style="color:#222">'
+    + 'Faded veil</p></div></div></div>', verdict: 'unknown' },
+  { id: 'veil-camouflaged-on-white', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)">'
+    + '<div style="background:rgba(255,255,255,0.9)"><div style="background:#fff"><p id="veil-camouflaged-on-white" '
+    + 'style="color:#fff">White on white</p></div></div></div>', verdict: 'camouflaged' },
   { id: 'faded-opaque-over-image', html: '<div style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)"><div '
     + 'style="opacity:0.9"><div style="background:#fff"><p id="faded-opaque-over-image" style="color:#222">Faded white</p>'
     + '</div></div></div>', verdict: 'unknown' },
@@ -124,6 +145,22 @@ describe('isCamouflaged', () => {
       <p id="dark-ink" style="color:#151515">Lost in the dark</p><p id="light-ink" style="color:#eee">Readable</p></body></html>`);
     expect(isCamouflaged(fixture.doc.getElementById('dark-ink')!)).toBe('camouflaged');
     expect(isCamouflaged(fixture.doc.getElementById('light-ink')!)).toBe('clear');
+  });
+
+  it('judges words slotted into a shadow root where they are drawn, not at the slot\'s empty box (core pass Z2)', async () => {
+    // UltiPro's account step (fixtures/ultipro/register.html): a ukg-label whose words are slotted into its shadow
+    // root's <slot> (display: contents, its own box empty at the page's origin), inside a card with overflow: hidden far
+    // from the origin. The words' own box is judged: dark words read, white words on the white card stay camouflaged.
+    const label = (id: string, color: string) => `<x-label id="${id}" style="color:${color}"><template
+      shadowrootmode="open"><slot></slot><span aria-hidden="true" style="color:#333"> *</span></template>First name</x-label>`;
+    const fixture = await loadFixture(document, `<!doctype html><body style="margin:0;background:#f5f5f5">
+      <div style="margin:400px 0 0 400px;width:300px;padding:16px;background:#fff;border-radius:16px;overflow:hidden">
+        ${label('dark', 'rgba(0,0,0,0.95)')}<br>${label('white', '#fff')}</div></body>`, { height: 600 });
+    const slotOf = (id: string) => fixture.doc.getElementById(id)!.shadowRoot!.querySelector('slot')!;
+    expect(isCamouflaged(slotOf('dark'))).toBe('clear');
+    expect(readVisibleText(fixture.doc.getElementById('dark')!).text).toBe('First name');
+    expect(isCamouflaged(slotOf('white'))).toBe('camouflaged');
+    expect(readVisibleText(fixture.doc.getElementById('white')!).text).toBe('');
   });
 });
 
@@ -503,6 +540,38 @@ describe('isControlCamouflaged', () => {
     expect(isControlCamouflaged(fixture.doc.getElementById('hugged')!, false)).toBe(false);
   });
 
+  it('takes a wide wrapper whose only content is the control and its decorations for its box, and nothing else (core pass Z2)',
+    async () => {
+      const plain = 'border:0;background:transparent;outline:none;box-shadow:none';
+      const box = 'display:flex;align-items:center;border:1px solid rgba(0,0,0,0.2);background:#fff;padding:8px 16px;width:544px;'
+        + 'box-sizing:border-box;margin:8px 0';
+      const icon = '<span style="display:inline-block;width:20px;height:20px;margin-right:4px"><span aria-hidden="true" '
+        + 'style="display:inline-block;width:16px;height:16px;background:#716f6c"></span></span>';
+      const fixture = await loadFixture(document, `<!doctype html><body style="background:#fff"><form>
+        <div style="${box}"><input id="padded" style="${plain};flex:1"></div>
+        <div style="${box}">${icon}<input id="with-icon" style="${plain};flex:1"></div>
+        <div style="${box};padding:0"><div style="width:28px;height:22px"><span>\u200b</span><svg aria-hidden="true"
+          viewBox="0 0 10 10" width="14" height="14"><path d="M0 0h10v10H0z"></path></svg></div><input id="adorned"
+          style="${plain};flex:1;height:33px"></div>
+        <div style="${box}"><input id="beside-a-drawn-box" style="border:1px solid #333;flex:1"><input id="hidden-beside"
+          style="${plain};flex:1"></div>
+        <div style="${box}"><span>Website</span><input id="beside-words" style="${plain};flex:1"></div>
+        <div style="${box}"><input id="beside-a-button" style="${plain};flex:1"><button type="button" style="${plain}">×</button></div>
+        <div style="${box}"><input id="narrow-in-wide" style="${plain};width:100px"></div>
+        <div style="${box}"><input id="beside-a-hidden-box" style="${plain};flex:1"><input type="hidden" name="x" value="1"></div>
+      </form></body>`);
+      const camouflaged = (id: string) => isControlCamouflaged(fixture.doc.getElementById(id)!, false);
+      // Rippling's padded box (fixtures/rippling/qu-careers-form.html), its search icon beside the input, and BambooHR's
+      // start adornment (fixtures/bamboohr/swyfft-form.html): each wrapper holds the input and decorations alone.
+      for (const id of ['padded', 'with-icon', 'adorned']) expect([id, camouflaged(id)]).toEqual([id, false]);
+      // A wide wrapper never makes another input a box: one around a drawn box hides the input beside it, as does one
+      // with words, a button or a hidden input in it, or whose content box is far wider than the input it holds.
+      expect(camouflaged('beside-a-drawn-box')).toBe(false);
+      for (const id of ['hidden-beside', 'beside-words', 'beside-a-button', 'narrow-in-wide', 'beside-a-hidden-box']) {
+        expect([id, camouflaged(id)]).toEqual([id, true]);
+      }
+    });
+
   it('fails closed on what it cannot judge: a filter on the control, a blend, or colours behind it it cannot work out (DOM-3, S2)',
     async () => {
       const image = 'background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)';
@@ -535,3 +604,90 @@ describe('optionCamouflage', () => {
     expect(optionCamouflage(fixture.doc.getElementById('normal') as HTMLOptionElement, select)).toBe('clear');
   });
 });
+
+// ── The security fix of 2026-11-06 (S6): a wide wrapper's decorations are icons, and the control spans its box ──
+describe('a tiny clear input inside a wide bordered wrapper full of decoration (S6)', () => {
+  afterEach(() => removeFixtures(document));
+
+  const plain = 'padding:0;border:0;background:transparent;outline:none';
+  /** The review's probe P6b: a 4x4 clear input beside a 288x30 empty box inside a 300x44 bordered wrapper. */
+  const wrapper = (inside: string) => `<!doctype html><body style="margin:0;background:#fff;font:16px sans-serif">
+    <form id="f" style="margin:40px;width:600px">
+      <label for="ok">Email</label><input id="ok" style="border:1px solid #888">
+      <div style="margin-top:20px"><span id="lbl">Website</span>
+        <div style="display:flex;align-items:center;width:300px;height:44px;padding:4px;border:1px solid #888;box-sizing:border-box">
+          ${inside}</div></div>
+    </form></body>`;
+
+  it('P6b: is camouflaged, and no field a person sees to type into', async () => {
+    const f = await loadFixture(document, wrapper(`<div style="width:288px;height:30px"></div>
+      <input id="hp" aria-labelledby="lbl" style="width:4px;height:4px;${plain}">`));
+    expect(isControlCamouflaged(f.doc.getElementById('hp')!, false)).toBe(true);
+    const result = scan(f.doc.getElementById('f')!, genericAdapter, { platform: 'lever' });
+    const hp = result.fields.find((field) => field.idAttr === 'hp');
+    expect(hp === undefined ? 'none' : fillabilityOf(hp)).not.toEqual({ fillable: true });
+  });
+
+  it('a wrapper whose decoration is an icon but whose input spans little of it, or whose icon is wide, draws no box',
+    async () => {
+      const icon = '<span style="display:inline-block;width:20px;height:20px;background:#716f6c"></span>';
+      for (const inside of [`${icon}<input id="c" style="width:40px;height:30px;${plain}">`,
+        `<span style="display:inline-block;width:60px;height:20px;background:#716f6c"></span><input id="c" style="flex:1;height:30px;${plain}">`,
+        `${icon}<input id="c" style="flex:1;height:8px;${plain}">`]) {
+        const f = await loadFixture(document, wrapper(inside));
+        expect(isControlCamouflaged(f.doc.getElementById('c')!, false), inside).toBe(true);
+        removeFixtures(document);
+      }
+      // An icon's size beside an input that spans the box: the wrapper is its box (Rippling's, BambooHR's).
+      const f = await loadFixture(document, wrapper(`${icon}<input id="c" style="flex:1;height:30px;${plain}">`));
+      expect(isControlCamouflaged(f.doc.getElementById('c')!, false)).toBe(false);
+    });
+});
+// ── end of the security fix's block (S6) ──
+
+// ── The security fix of 2026-11-06 (S8): the translucent layer's bound and a box at the words ──
+describe('words on a box of their own colour that is not their ancestor (S8; the review P-1)', () => {
+  afterEach(() => removeFixtures(document));
+  // A 2x2 dark PNG, inline: no network.
+  const IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNkYGD4z8DAwMDEwMDAAAAhBAMBm3eFagAAAABJRU5ErkJggg==';
+  /** The review's probe P6a: a panel (translucent over an image, or opaque) holding a positioned box under the words,
+   *  which are #111. */
+  const page = (panel: string, box = 'position:absolute;inset:0;background:#111') => `<!doctype html>
+    <body style="margin:0;background:url('${IMG}') repeat;background-size:40px">
+    <form id="f" style="position:relative;margin:40px;padding:20px;width:600px;background:${panel};color:#111;font:16px sans-serif">
+      <div style="position:relative">
+        <div id="box" style="${box}"></div>
+        <p id="words" style="position:relative;margin:0">PANEL-MARKER words drawn on a box of their colour.</p>
+      </div>
+      <p id="free" style="margin:8px 0">Words on the panel alone.</p>
+      <label for="a">Email</label><input id="a" style="border:1px solid #888">
+    </form></body>`;
+  const TRANSLUCENT = 'rgba(255,255,255,0.9)';
+
+  it('P6a: on a translucent panel over an image, words at a box that is not their ancestor are not read clear',
+    async () => {
+      for (const box of ['position:absolute;inset:0;background:#111', 'height:24px;background:#111;margin-bottom:-24px',
+        'position:absolute;inset:0;background:#111;z-index:2']) {
+        const f = await loadFixture(document, page(TRANSLUCENT, box));
+        expect(isCamouflaged(f.doc.getElementById('words')!), box).not.toBe('clear');
+        expect(String(readVisibleText(f.doc.body).text).includes('PANEL-MARKER'), box).toBe(false);
+        // The panel's own words and label beside it still read clear, on the translucent layer's bound.
+        expect(isCamouflaged(f.doc.getElementById('free')!), box).toBe('clear');
+        expect(isCamouflaged(f.doc.querySelector('label')!), box).toBe('clear');
+        removeFixtures(document);
+      }
+    });
+
+  it('reads words on the translucent panel clear where no box is at them, a box beside them included', async () => {
+    const f = await loadFixture(document, page(TRANSLUCENT, 'position:absolute;left:0;top:40px;width:200px;height:20px;background:#111'));
+    expect(isCamouflaged(f.doc.getElementById('words')!)).toBe('clear');
+  });
+
+  // Known limit, older than the translucent bound (the review's P-1): on an opaque panel the compositing follows the
+  // words' ancestors alone, not painted layers, so a positioned sibling in their colour under them is not seen.
+  it.fails('P-1 (known gap): words on a box of their colour on an opaque panel read clear', async () => {
+    const f = await loadFixture(document, page('#fff'));
+    expect(isCamouflaged(f.doc.getElementById('words')!)).not.toBe('clear');
+  });
+});
+// ── end of the security fix's block (S8) ──

@@ -1,0 +1,62 @@
+{
+  "fixture": "paylocity/sourcepass-step2-eeo",
+  "source": "https://recruiting.paylocity.com/Recruiting/Jobs/Apply/4640311",
+  "captured": "2026-11-06T15:28:57.000Z",
+  "fields": [
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": true,
+      "section": "Equal Employment Opportunity",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"acknowledgements.eeoGender\"]",
+      "note": "react-widgets DropdownList: its question a sibling label with no for, \"(required)\" cut"
+    },
+    {
+      "label": "Race and/or Ethnicity",
+      "kind": "combobox",
+      "required": true,
+      "section": "Equal Employment Opportunity",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"acknowledgements.racialOrEthnicGroup\"]"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": true,
+      "section": "Voluntary Self-Identification of “Protected” Veteran Status",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"acknowledgements.militaryService\"]"
+    },
+    {
+      "label": "Disability Status",
+      "kind": "combobox",
+      "required": true,
+      "section": "Voluntary Self-Identification of Disability",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"acknowledgements.disability\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "#app",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button[data-automation-id=\"btn-forceResume\"]",
+      "button.react-share__ShareButton",
+      "#onetrust-accept-btn-handler",
+      "#onetrust-pc-btn-handler",
+      "#btn-previous"
+    ],
+    "pressable": [
+      "button[data-automation-id=\"btnNext\"]"
+    ]
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "fixture": "ultipro/register",
+  "source": "https://recruiting.ultipro.com/CAM1010CSII/AuthCode/Register?state=returnUrl%3D%2Fcam1010csii%2FJobBoard%2F54a25c3a-e399-42b0-a553-16ed056e0517%2FOpportunityApply%3FopportunityId%3D772ddf9d-79f1-4752-bf3b-688ded6980c7%7Cta%3DCAM1010CSII",
+  "captured": "2026-11-06T16:16:28.000Z",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[name=\"firstName\"]",
+      "note": "Labelled by the ukg-label its aria-labelledby names (light text, a shadow star), whose colour the camouflage rules cannot work out in front of the account card (camouflage 'unknown'): read today with no visible label, so nothing is filled (the test's KNOWN list). Create account is the person's either way."
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[name=\"lastName\"]",
+      "note": "Labelled by the ukg-label its aria-labelledby names (light text, a shadow star), whose colour the camouflage rules cannot work out in front of the account card (camouflage 'unknown'): read today with no visible label, so nothing is filled (the test's KNOWN list). Create account is the person's either way."
+    },
+    {
+      "label": "Phone number",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input[name=\"phoneNumber\"]",
+      "note": "Labelled by the ukg-label its aria-labelledby names (light text, a shadow star), whose colour the camouflage rules cannot work out in front of the account card (camouflage 'unknown'): read today with no visible label, so nothing is filled (the test's KNOWN list). Create account is the person's either way."
+    }
+  ],
+  "hooks": {
+    "detect": "form#registrationDetailsForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "#SignInButton",
+      "#OpportunitiesMenuButton",
+      "#language-picker-link",
+      "[data-automation=\"accessibility-banner-link\"]"
+    ],
+    "pressable": [
+      "[data-automation=\"registrationDetails-submit-button\"]"
+    ]
+  }
+}

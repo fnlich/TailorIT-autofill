@@ -1,0 +1,240 @@
+{
+  "fixture": "workday/web-my-experience",
+  "source": "https://web.wd1.myworkdayjobs.com/en-US/externalcareersite/job/United-States---Remote/Senior-Backend-Engineer_R15417/apply/autofillWithResume",
+  "captured": "2026-11-06T14:47:36.000Z",
+  "fields": [
+    {
+      "label": "Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-58--jobTitle\"]"
+    },
+    {
+      "label": "Company",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-58--companyName\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-58--location\"]"
+    },
+    {
+      "label": "I currently work here",
+      "kind": "checkbox",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-58--currentlyWorkHere\"]"
+    },
+    {
+      "label": "Role Description",
+      "kind": "textarea",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"workExperience-58--roleDescription\"]"
+    },
+    {
+      "label": "Job Title",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-59--jobTitle\"]"
+    },
+    {
+      "label": "Company",
+      "kind": "text",
+      "required": true,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-59--companyName\"]"
+    },
+    {
+      "label": "Location",
+      "kind": "text",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-59--location\"]"
+    },
+    {
+      "label": "I currently work here",
+      "kind": "checkbox",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "input[id=\"workExperience-59--currentlyWorkHere\"]"
+    },
+    {
+      "label": "Role Description",
+      "kind": "textarea",
+      "required": false,
+      "section": "experience",
+      "fillable": true,
+      "control": "textarea[id=\"workExperience-59--roleDescription\"]"
+    },
+    {
+      "label": "School or University",
+      "kind": "text",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "control": "input[id=\"education-73--schoolName\"]"
+    },
+    {
+      "label": "Degree",
+      "kind": "combobox",
+      "required": true,
+      "section": "education",
+      "fillable": true,
+      "options": "lazy",
+      "control": "button[id=\"education-73--degree\"]"
+    },
+    {
+      "label": "Field of Study",
+      "kind": "typeahead-remote",
+      "required": false,
+      "section": "education",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input[id=\"education-73--fieldOfStudy\"]"
+    },
+    {
+      "label": "Overall Result (GPA)",
+      "kind": "text",
+      "required": false,
+      "section": "education",
+      "fillable": true,
+      "control": "input[id=\"education-73--gradeAverage\"]"
+    },
+    {
+      "label": "Upload a file (5MB max)",
+      "kind": "file",
+      "required": true,
+      "section": "resume-cv",
+      "fillable": true,
+      "control": "[data-fkit-id=\"resumeAttachments--attachments\"] input[type=\"file\"]"
+    },
+    {
+      "label": "Upload a file (5MB max)",
+      "kind": "file",
+      "required": true,
+      "section": "additional-attachments",
+      "fillable": true,
+      "control": "[data-fkit-id=\"additionalAttachments--attachments\"] input[type=\"file\"]"
+    },
+    {
+      "label": "Category",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "additional-attachments",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "input[id=\"additionalAttachments--attachments-12--category\"]"
+    },
+    {
+      "label": "URL",
+      "kind": "text",
+      "required": true,
+      "section": "websites-1",
+      "fillable": true,
+      "control": "input[id=\"webAddress-57--url\"]"
+    },
+    {
+      "label": "a date part",
+      "kind": "date",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[data-automation-id=\"dateInputWrapper\"] input[role=\"spinbutton\"]",
+      "note": "Workday's date input: each part an input[role=spinbutton] drawn 1 px wide at scale(0.01) and z-index -1000 under its aria-hidden display (MM, DD, YYYY). A person cannot see it, so it is never a field; a required date is the person's, and Next waits for it."
+    },
+    {
+      "label": "a dropdown's mirror",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "button[aria-haspopup=\"listbox\"] + input",
+      "note": "The hidden text box beside each dropdown's button, which mirrors its answer: the button is the widget."
+    }
+  ],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"pageFooterBackButton\"]",
+      "[data-automation-id=\"delete-file\"]",
+      "[data-automation-id=\"select-files\"]",
+      "[data-automation-id=\"DELETE_charm\"]",
+      "[data-automation-id=\"dateIcon\"]",
+      "[data-automation-id=\"utilityMenuButton\"]",
+      "h5[id$=\"-panel\"] + button"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]",
+      "[data-automation-id=\"add-button\"]",
+      "[data-automation-id^=\"formField-\"] button[aria-haspopup=\"listbox\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "My Experience",
+      "progress": "current step 3 of 7",
+      "anchors": [
+        "applyFlowMyExpPage"
+      ]
+    },
+    "final": "not-final",
+    "next": null,
+    "submit": null,
+    "widgets": [
+      {
+        "control": "button[id=\"education-73--degree\"]",
+        "kind": "combobox",
+        "answered": true
+      },
+      {
+        "control": "input[id=\"education-73--fieldOfStudy\"]",
+        "kind": "typeahead-remote",
+        "answered": false
+      },
+      {
+        "control": "input[id=\"additionalAttachments--attachments-12--category\"]",
+        "kind": "typeahead-remote",
+        "answered": true
+      }
+    ],
+    "repeatables": [
+      {
+        "kind": "experience",
+        "blocks": 2,
+        "add": "Add Another"
+      },
+      {
+        "kind": "education",
+        "blocks": 1,
+        "add": "Add Another"
+      }
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "fixture": "icims/ars-gate-phone",
+  "source": "https://careers-ars.icims.com/jobs/69503/azure-infrastructure-engineer/login",
+  "captured": "2026-11-06T16:08:28.000Z",
+  "fields": [
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input#email"
+    },
+    {
+      "label": "Country Code — Make a Selection —",
+      "kind": "combobox",
+      "required": true,
+      "section": "main",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a#dropdown"
+    },
+    {
+      "label": "Number",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "input#phoneNumber"
+    },
+    {
+      "label": "",
+      "kind": "textarea",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "textarea[name=\"h-captcha-response\"]",
+      "note": "The invisible hCaptcha's response field, bound to Next."
+    }
+  ],
+  "hooks": {
+    "detect": "form#enterEmailForm",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#email",
+      "password": null,
+      "confirm": null,
+      "terms": [],
+      "button": "input#enterEmailSubmitButton",
+      "form": "form#enterEmailForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Faq_Link",
+      "a.iCIMS_Anchor_Nav"
+    ],
+    "pressable": [
+      "input#enterEmailSubmitButton"
+    ]
+  }
+}

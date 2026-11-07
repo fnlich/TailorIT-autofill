@@ -1,0 +1,20 @@
+{
+  "fixture": "smartrecruiters/bertelsmann-expired",
+  "source": "https://jobs.smartrecruiters.com/Bertelsmann-Jobs/744000159908317--senior-infrastructure-engineer-ai-ml-penguin-random-house-open-to-remote-",
+  "captured": "2026-11-06T14:16:25.000Z",
+  "note": "An expired posting: \"Sorry, this job has expired\" on a disabled button where \"I'm interested\" would be, so no entry.",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": "main.jobad-main .job-sections",
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.social-link",
+      ".ot-sdk-show-settings"
+    ],
+    "pressable": []
+  }
+}

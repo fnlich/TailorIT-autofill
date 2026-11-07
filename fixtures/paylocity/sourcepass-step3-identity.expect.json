@@ -1,0 +1,71 @@
+{
+  "fixture": "paylocity/sourcepass-step3-identity",
+  "source": "https://recruiting.paylocity.com/Recruiting/Jobs/Apply/4640311",
+  "captured": "2026-11-06T15:29:33.000Z",
+  "fields": [
+    {
+      "label": "What is your ethnic/racial identity?",
+      "kind": "multiselect",
+      "required": false,
+      "section": "Optional Identity Questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"ethnicityOptions-select-wrapper\"]",
+      "note": "Paylocity's input-select with a chip: several answers; its question the sibling label before its wrapper"
+    },
+    {
+      "label": "Do you identify by your legal gender?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Optional Identity Questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"expandedIdentityQuestions.identifyAsLegalGender.0\"]"
+    },
+    {
+      "label": "What are your pronouns?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Optional Identity Questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"pronounOptions-select-wrapper\"]",
+      "note": "An input-select with a single value; its question the label's own span (the label[for] wraps the widget and its value)"
+    },
+    {
+      "label": "Display pronouns to hiring team",
+      "kind": "checkbox",
+      "required": false,
+      "section": "Optional Identity Questions",
+      "fillable": true,
+      "control": "#sharePronounsWithHiringTeam"
+    },
+    {
+      "label": "What is your Sexual Orientation?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Optional Identity Questions",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"sexualOrientationOptions-select-wrapper\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "#app",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button[data-automation-id=\"btn-forceResume\"]",
+      "button.react-share__ShareButton",
+      "#onetrust-accept-btn-handler",
+      "#onetrust-pc-btn-handler",
+      "#btn-previous"
+    ],
+    "pressable": [
+      "button[data-automation-id=\"btnNext\"]"
+    ]
+  }
+}

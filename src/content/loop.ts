@@ -481,10 +481,22 @@ class ReactiveLoop {
     const touched = this.touchedIn(scanned, wrote);
     const cleared = new Set(wrote.filter((field) => isCleared(field.current)).map((field) => field.baseKey));
     const observed = observeScan(this.state, scanned.fields, { valueMacs, attribution: this.attribution.take(),
-      touched, cleared });
+      touched, cleared, uploaded: this.uploadsTaken() });
     this.state = observed.state;
     this.afterScan(observed.events);
     return observed;
+  }
+
+  /** The core pass of 2026-11-06: the files written whose upload the page shows done and whose input it has taken out
+   *  of the page (Greenhouse: fixtures/greenhouse/axle-attached.html), by base key (ScanInput.uploaded). */
+  private uploadsTaken(): Set<BaseKey> {
+    const taken = new Set<BaseKey>();
+    for (const [baseKey, entry] of this.written) {
+      if (entry.value.kind === 'file' && entry.inputLeft?.() === true && entry.uploadNow?.() === 'confirmed') {
+        taken.add(baseKey);
+      }
+    }
+    return taken;
   }
 
   /** What a scan's events change here: written fields' resumes released, and the boxes named for this pass's free

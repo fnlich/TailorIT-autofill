@@ -455,7 +455,43 @@ describe('an "I did not use AI" attestation in the frame', () => {
     expect(out.ask?.answers?.map((item) => item.key)).toEqual([KUBERNETES.key]);
     expect(fieldOf(out, attest).write).toBeUndefined();
   });
+
+  // The core pass of 2026-11-06: Dropzone's required "I Agree" list on Greenhouse (the owner's snapshot of 2026-11-06)
+  // states its attestation in the last sentences of a policy far longer than the 300 characters a label keeps; the frame
+  // reads the whole label (FieldSpec.statesNoAi). Its first 300 characters alone name AI but state nothing.
+  it('reads an attestation the frame found past the label\'s 300 characters (Dropzone\'s policy)', () => {
+    const cut = specOf([...DROPZONE_POLICY].slice(0, 300).join(''), 'combobox', { options: 'lazy', required: true });
+    const plain = planOf(inOrder([cut, KUBERNETES]), { ai: classified() });
+    expect(plain.aiAttestation).toBeUndefined();
+    expect(plain.ask?.answers?.map((item) => item.key)).toContain(KUBERNETES.key);
+    const policy = { ...cut, statesNoAi: true as const };
+    const out = planOf(inOrder([policy, KUBERNETES]), { ai: classified() });
+    expect(out.aiAttestation).toBe(true);
+    // A profile-only frame: nothing asked of the AI.
+    expect(out.awaiting).toEqual([]);
+    expect(out.ask).toBeUndefined();
+    // The list itself is never chosen by a rule or asked of the AI: an AI attestation a combobox cannot hold is yours.
+    expect(fieldOf(out, policy)).toMatchObject({ write: undefined, row: { wrote: false, needsUserAction: true } });
+    expect(out.ask?.answers?.map((item) => item.key) ?? []).not.toContain(policy.key);
+  });
 });
+
+/** Dropzone's "Policy on the Use of Artificial Intelligence (AI)" (its Greenhouse question's label, the owner's snapshot
+ *  of 2026-11-06, "[job-boards.greenhouse.io] ... Forward Deployed Engineer at Dropzone AI"): the employer's words. */
+const DROPZONE_POLICY = 'Policy on the Use of Artificial Intelligence (AI): At Dropzone, we require all job applicants to '
+  + 'provide authentic, human-generated content throughout the entire application and interviewing process. The use of '
+  + 'generative AI tools or AI assistance to create, draft, edit, or significantly modify application materials '
+  + '(including resumes, cover letters, writing and code samples, and answers to screening questions) or during any '
+  + 'interview stage is strictly prohibited. This policy is in place to evaluate your non-AI-assisted communication '
+  + 'skills, original thought, and genuine qualifications for the position. Acknowledgment and Agreement: By selecting '
+  + '"I Agree" below and submitting this application, I acknowledge that I have read and understood Dropzone\'s policy '
+  + 'prohibiting the use of AI in the application and interviewing process. I attest that all materials submitted and '
+  + 'all responses provided during the application and interview process are my own original work and were not '
+  + 'generated or substantially assisted by any AI tool. I understand that if I have used AI in any part of the process, '
+  + 'I am required to disclose the extent and nature of that use to Dropzone in advance. I further understand and agree '
+  + 'that any failure to disclose the use of AI, or any violation of this policy, is a material misrepresentation and is '
+  + 'grounds for immediate removal from consideration or, if hired, for immediate termination of employment, regardless '
+  + 'of when the violation is discovered.';
 
 describe('Edit with AI (aiEditable and the rewrite)', () => {
   const WHY = specOf('Why do you want to work here?', 'textarea');

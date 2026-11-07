@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import trap02 from '../../fixtures/traps/02-zero-and-offscreen.html?raw';
+import { genericAdapter } from '../adapters/generic';
+import { fillabilityOf } from '../adapters/test/expectations.testkit';
 import { loadFixture, removeFixtures, withoutCheckVisibility, type Fixture } from './fixture.testkit';
 import { registerOwnUiHost } from './own-ui';
+import { rawScan } from './raw-scan';
+import { scan } from './scan';
 import { newScanCache } from './scan-cache';
 import { followsItsField, isTextVisible, isUserVisible, stopsFollowing, visibilityOf, type VisibilityRule }
   from './visibility';
+import { visibleText } from './visible-text';
 
 /**
  * One positive and one negative case for every rule the walk applies. Each case's target is the element with the
@@ -305,3 +310,175 @@ describe('a declared list drawn where its field is (followsItsField; the Phase 7
       }
     });
 });
+
+// The core pass of 2026-11-06 (rule 5 and rule 6): jobs.workable.com's application dialog (fixtures/workable/
+// jobs-salvo-apply.html) scrolls its content region (overflow-y: auto) inside a position: fixed wrapper, under a
+// div.styles__modal-content with overflow: hidden as tall as the region. A person scrolls the region to every box in it.
+describe('a box in a container that scrolls inside a fixed box', () => {
+  afterEach(() => removeFixtures(document));
+
+  /** The dialog's shape, the viewport 700 px high: a fixed wrapper, a clipping box, a region scrolling 1,500 px of
+   *  content in 400 px, and `inner` inside the content. */
+  async function dialog(inner: string, region = 'position:absolute;inset:0;overflow-y:auto') {
+    const fixture = await loadFixture(document, `<!doctype html><body style="margin:0;overflow:hidden">
+      <div id="wrapper" style="position:fixed;top:0;left:0;width:1000px;height:700px;overflow:hidden">
+        <div id="clip" style="position:relative;margin:100px auto;width:600px;height:400px;overflow:hidden">
+          <div id="region" style="${region}">
+            <div style="position:relative;height:1500px">${inner}</div>
+          </div>
+        </div>
+      </div></body>`, { width: 1000, height: 700 });
+    return fixture.doc;
+  }
+
+  it('reaches a box below the fold of the region, and the words beside it', async () => {
+    const doc = await dialog(`<div style="height:1200px"></div><label id="words" for="box">Summary</label>
+      <input id="box" style="display:block;width:300px;height:30px">`);
+    expect(visibilityOf(doc.getElementById('box')!)).toEqual({ visible: true, rule: null, deferred: false });
+    const words = doc.getElementById('words')!;
+    expect(isTextVisible(Array.from(words.childNodes).find((node) => node.nodeType === 3) as Text)).toBe(true);
+    // A person sees it once the region is scrolled to it, and the verdict stays.
+    doc.getElementById('region')!.scrollTop = 1000;
+    expect(isUserVisible(doc.getElementById('box')!)).toBe(true);
+  });
+
+  it('still hides a box placed off-screen in a fixed box that does not scroll, above the region, or beside it', async () => {
+    // The region does not scroll (overflow hidden): its content is held to what it shows.
+    const still = await dialog('<div style="height:1200px"></div><input id="box" style="display:block;width:300px;height:30px">',
+      'position:absolute;inset:0;overflow:hidden');
+    expect(visibilityOf(still.getElementById('box')!).visible).toBe(false);
+    removeFixtures(document);
+    // Above the region's scroll origin, or far to its side: nothing scrolls there.
+    for (const place of ['top:-600px;left:0', 'top:900px;left:-2000px', 'top:900px;left:3000px']) {
+      const doc = await dialog(`<input id="box" style="position:absolute;${place};width:300px;height:30px">`);
+      expect(visibilityOf(doc.getElementById('box')!).visible, place).toBe(false);
+      removeFixtures(document);
+    }
+    // Positioned against the fixed wrapper (its containing block), past the viewport: it never moves with the region.
+    const pinned = await dialog('');
+    const box = pinned.createElement('input');
+    box.setAttribute('style', 'position:absolute;top:1200px;left:0;width:300px;height:30px');
+    pinned.getElementById('wrapper')!.append(box);
+    expect(visibilityOf(box)).toMatchObject({ visible: false, rule: 'off-screen' });
+  });
+
+  it('hides everything in a scrolling region whose own place is off-screen', async () => {
+    const doc = await dialog('<div style="height:1200px"></div><input id="box" style="display:block;width:300px;height:30px">');
+    doc.getElementById('wrapper')!.style.top = '-2000px';
+    expect(visibilityOf(doc.getElementById('box')!).visible).toBe(false);
+  });
+});
+
+// ── The security fix of 2026-11-06 (S1): a scroller in a fixed box seen through a slit (trap) ──
+// The review's probes P3 and P3b: an overflow: hidden band a few pixels tall between a fixed box and the scroller in
+// it. A person sees only the band, however far the scroller scrolls, so a passage and a field deep in the scroller are
+// hidden, never visible text or a field to fill. The band as tall as the scroller (the Workable dialog's shape) still
+// shows all of it.
+describe('trap: a scroller in a fixed box seen through a slit (S1)', () => {
+  afterEach(() => removeFixtures(document));
+
+  /** P3: the slit inside the fixed box, a 600 px form scrolling inside it. */
+  const inFixedBox = (slit: number) => `<!doctype html><body style="margin:0">
+    <div style="position:fixed;top:40px;left:40px;width:600px;height:700px;background:#fff">
+      <div id="slit" style="overflow:hidden;height:${slit}px;background:#fff">
+        <form id="f" style="display:block;height:600px;overflow-y:auto;background:#fff;color:#222;font:16px sans-serif">
+          <label for="ok">Email</label><input id="ok" style="border:1px solid #888">
+          <div style="height:200px"></div>
+          <p id="msg">SLIT-MARKER-P3 a passage below the slit.</p>
+          <label for="trap">Website</label><input id="trap" style="border:1px solid #888">
+          <div style="height:1500px"></div>
+          <label for="deep">Fax</label><input id="deep" style="border:1px solid #888">
+        </form>
+      </div>
+    </div></body>`;
+
+  it('P3: nothing past the slit is visible, visible text or a field to fill; a band as tall as the form shows it all',
+    async () => {
+      for (const slit of [4, 2000]) {
+        const f = await loadFixture(document, inFixedBox(slit), { width: 1280, height: 900 });
+        const result = scan(f.doc.getElementById('f')!, genericAdapter, { platform: 'lever' });
+        const field = (id: string) => result.fields.find((each) => each.idAttr === id);
+        const shown = slit === 2000;
+        expect(isUserVisible(f.doc.getElementById('msg')!), `${slit} msg`).toBe(shown);
+        expect(isUserVisible(f.doc.getElementById('trap')!), `${slit} trap`).toBe(shown);
+        expect(isUserVisible(f.doc.getElementById('deep')!), `${slit} deep`).toBe(shown);
+        expect(String(visibleText(f.doc)).includes('SLIT-MARKER-P3'), `${slit} text`).toBe(shown);
+        for (const id of ['trap', 'deep']) {
+          const verdict = field(id) === undefined ? 'none' : fillabilityOf(field(id)!);
+          if (shown) expect(verdict, `${slit} ${id}`).toEqual({ fillable: true });
+          else expect(verdict, `${slit} ${id}`).not.toEqual({ fillable: true });
+        }
+        removeFixtures(document);
+      }
+    });
+
+  /** P3b: a fixed box at the bottom right, the slit inside it, a 290 px scroller holding a passage and a box 1,400 px
+   *  down that a form= attribute ties to the page's form. */
+  const cornerSlit = (slit: number) => `<!doctype html><body style="margin:0;background:#fff;color:#222;font:16px sans-serif">
+    <main><h1>Support Engineer</h1>
+    <form id="f"><label for="email">Email</label><input id="email" name="email" type="email" style="border:1px solid #888">
+    <button type="submit">Submit application</button></form></main>
+    <div style="position:fixed;bottom:0;right:0;width:400px;height:300px">
+      <div id="slit" style="overflow:hidden;height:${slit}px">
+        <div id="scroller" style="height:290px;overflow-y:auto">
+          <div style="height:1400px"></div>
+          <p id="msg">SLIT-MARKER-P3B a passage deep in the scroller.</p>
+          <label for="hp">Website</label><input id="hp" name="website" form="f" style="border:1px solid #888">
+          <div style="height:20px"></div>
+        </div>
+      </div>
+    </div></body>`;
+
+  it('P3b: the passage and the box seen only through a 4 px slit are hidden, as with no slit at all', async () => {
+    for (const slit of [0, 4, 290]) {
+      const f = await loadFixture(document, cornerSlit(slit), { width: 1280, height: 900 });
+      const result = scan(f.doc.getElementById('f')!, genericAdapter, { platform: 'lever' });
+      const hp = result.fields.find((field) => field.idAttr === 'hp');
+      const raw = await rawScan(f.doc);
+      const passage = raw.passages.find((each) => each.text.includes('SLIT-MARKER-P3B'));
+      const shown = slit === 290;
+      expect(isUserVisible(f.doc.getElementById('hp')!), `${slit} hp`).toBe(shown);
+      expect(String(visibleText(f.doc)).includes('SLIT-MARKER-P3B'), `${slit} text`).toBe(shown);
+      if (!shown) {
+        expect(hp === undefined ? 'none' : fillabilityOf(hp), `${slit} field`).not.toEqual({ fillable: true });
+        expect(passage?.origin ?? 'none', `${slit} passage`).not.toBe('visible');
+      }
+      removeFixtures(document);
+    }
+  });
+});
+// ── end of the security fix's block (S1) ──
+
+// ── The behaviour review of 2026-11-06 (M8): rule 5's guards with no clip to hide behind ──
+// The review's probe: a fixed, scrolling dialog with no clipping box between the fixed wrapper and the region, so that
+// only scrollIn's `across` check and containingBlockOf's absolute branch can refuse a honeypot placed in it.
+describe('a box in a scrolling region inside a fixed box, no clip but the region (M8: visibility rule 5)', () => {
+  afterEach(() => removeFixtures(document));
+
+  async function dialog(inner: string) {
+    const fixture = await loadFixture(document, `<!doctype html><body style="margin:0;overflow:hidden">
+      <div id="wrapper" style="position:fixed;top:0;left:0;width:1000px;height:700px">
+        <div id="region" style="width:600px;height:400px;overflow-y:auto;margin:100px">
+          <div style="height:1500px">${inner}</div>
+        </div>
+      </div></body>`, { width: 1000, height: 700 });
+    return fixture.doc;
+  }
+
+  it('control: reaches a box below the region’s fold', async () => {
+    const doc = await dialog('<div style="height:1200px"></div><input id="box" style="display:block;width:300px;height:30px">');
+    expect(visibilityOf(doc.getElementById('box')!).visible).toBe(true);
+  });
+
+  it('hides a box far to the side of the region, which scrolls only down (scrollIn’s across)', async () => {
+    const doc = await dialog('<input id="box" style="position:relative;top:900px;left:3000px;width:300px;height:30px">');
+    expect(visibilityOf(doc.getElementById('box')!).visible).toBe(false);
+  });
+
+  it('hides a box positioned against the fixed wrapper though it sits in the region in the DOM (its containing block)',
+    async () => {
+      const doc = await dialog('<input id="box" style="position:absolute;top:1200px;left:0;width:300px;height:30px">');
+      expect(visibilityOf(doc.getElementById('box')!).visible).toBe(false);
+    });
+});
+// ── end of the behaviour review's block (M8) ──

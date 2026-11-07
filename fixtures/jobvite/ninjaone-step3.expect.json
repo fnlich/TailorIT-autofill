@@ -1,0 +1,94 @@
+{
+  "fixture": "jobvite/ninjaone-step3",
+  "source": "https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply",
+  "captured": "2026-11-06T14:06:53.000Z",
+  "fields": [
+    {
+      "label": "Were you referred to this role by a current NinjaOne employee?",
+      "kind": "select",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "options": 3,
+      "control": "#jv-field-f0"
+    },
+    {
+      "label": "If yes, please provide their name or enter N/A if you were not referred.",
+      "kind": "text",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "control": "#jv-field-f1"
+    },
+    {
+      "label": "What are your salary expectations for this opportunity?",
+      "kind": "text",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "control": "#jv-field-f3"
+    },
+    {
+      "label": "Do you now or in the future will you require sponsorship for work in the United States?",
+      "kind": "select",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "options": 4,
+      "control": "#jv-field-f4"
+    },
+    {
+      "label": "What is your US Work Authorization type?",
+      "kind": "select",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "options": 10,
+      "control": "#jv-field-f5"
+    },
+    {
+      "label": "In which state do you currently live?",
+      "kind": "select",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "options": 21,
+      "control": "#jv-field-f6"
+    },
+    {
+      "label": "If you live in Illinois, is your address in the City of Chicago?",
+      "kind": "select",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "options": 4,
+      "control": "#jv-field-f7"
+    },
+    {
+      "label": "Are you a current NinjaOne Employee",
+      "kind": "radio",
+      "required": true,
+      "section": "Engineering North America - Application Questions",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"f8\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "body.jv-page-apply",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "div.jv-current-openings a",
+      "div.jv-apply-error a",
+      "div.jv-add-attachment[role=\"dialog\"] > div.jv-add-attachment-item > span[role=\"button\"]",
+      "div.jv-add-attachment[role=\"dialog\"] a.jv-close"
+    ],
+    "pressable": [
+      "div.jv-apply-form-actions > button[aria-label=\"Send Application\"]"
+    ]
+  }
+}

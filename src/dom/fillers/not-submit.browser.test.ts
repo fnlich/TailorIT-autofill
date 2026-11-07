@@ -159,3 +159,49 @@ describe('assertKeyTarget: a declared key to a list (the Phase 7a review)', () =
     expect(verdict('in-submit')).toBe('adapter-submit');
   });
 });
+
+// ── The security fix of 2026-11-06 (S9): the adapter's Submit, Next and never-pressed list across shadow roots ──
+// The review's probe P2: UltiPro draws its Submit as a ukg-button host whose native button sits in the host's open
+// shadow root. That button is the Submit whatever its words (a localised label says no submit word).
+describe('assertNotSubmit across shadow roots (S9)', () => {
+  afterEach(() => removeFixtures(document));
+
+  async function hosted() {
+    const fixture = await loadFixture(document, `<!doctype html><body><form id="app"><label for="n">Name</label><input id="n">
+      <ukg-button id="submit" data-automation="btn-submit"></ukg-button>
+      <ukg-button id="next" data-automation="btn-next"></ukg-button>
+      <ukg-button id="never" data-automation="btn-social"></ukg-button>
+      <ukg-button id="other" data-automation="btn-other"></ukg-button></form></body>`);
+    const inner: Record<string, HTMLElement> = {};
+    for (const id of ['submit', 'next', 'never', 'other']) {
+      const shadow = fixture.doc.getElementById(id)!.attachShadow({ mode: 'open' });
+      const button = fixture.doc.createElement('button');
+      button.className = 'ukg-button-native';
+      button.type = 'button';
+      button.setAttribute('aria-label', 'Weiter');
+      button.textContent = 'Weiter';
+      shadow.append(button);
+      inner[id] = button;
+    }
+    return { fixture, root: fixture.doc.getElementById('app')!, inner };
+  }
+
+  it('P2: refuses the native button inside the Submit host, the Next host and a never-pressed host, whatever its words',
+    async () => {
+      const { fixture, root, inner } = await hosted();
+      const adapter = { submitButton: () => fixture.doc.getElementById('submit'),
+        nextButton: () => fixture.doc.getElementById('next'),
+        neverPress: () => [fixture.doc.getElementById('never')!], isFinalStep: () => 'final' } as unknown as Adapter;
+      const refusal = (el: Element) => {
+        const verdict = assertNotSubmit(el, { adapter, root });
+        return verdict.ok ? null : verdict.refusal;
+      };
+      expect(refusal(fixture.doc.getElementById('submit')!)).toBe('adapter-submit');
+      expect(refusal(inner.submit!)).toBe('adapter-submit');
+      expect(refusal(inner.next!)).toBe('adapter-next');
+      expect(refusal(inner.never!)).toBe('adapter-never-press');
+      // A host the adapter names nowhere stays a plain button.
+      expect(refusal(inner.other!)).toBeNull();
+    });
+});
+// ── end of the security fix's block (S9) ──

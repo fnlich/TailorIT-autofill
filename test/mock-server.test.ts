@@ -36,6 +36,7 @@ import {
   AutofillTaskViewSchema,
   ConnectCodeSchema,
   normalizeConnectCode,
+  signInHostCovered,
 } from '../src/contract/tailorit';
 import {
   AMOUNT_ANSWER,
@@ -309,6 +310,32 @@ describe('pairing', () => {
     const bad = await call('/api/autofill/connect', { method: 'POST', json: { includeSensitive: true, allowSignIn: 'yes' } });
     expect([bad.status, await errorCode(bad)]).toEqual([400, 'validation_failed']);
   });
+
+  // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 ──
+  it("answers the every-site sign-in where the contract's signInHostCovered covers the page, its path included (API 6)",
+    async () => {
+      await scenario('sign-in-allowed');
+      const pages: Array<[string, string | undefined]> = [['acme.wd5.myworkdayjobs.com', undefined], ['login.icims.com', undefined],
+        ['acme.tbe.taleo.net', undefined], ['jpmc.fa.oraclecloud.com', undefined], ['iaaxmg.fa.ocs.oraclegovcloud.com', undefined],
+        ['recruiting.ultipro.com', undefined], ['jobs.smartrecruiters.com', undefined], ['example.com', undefined],
+        ['workforcenow.adp.com', '/mascsr/default/mdf/recruitment/recruitment.html'],
+        ['workforcenow.adp.com', '/mascsr/applicant/mdf/recruitment/postLogin.html'], ['workforcenow.adp.com', '/theme/index.html'],
+        ['workforcenow.adp.com', undefined], ['vafb.clearcompany.com', '/careers/jobs/x/apply'],
+        ['vafb.clearcompany.com', '/app/dashboard'], ['cc-app-static.clearcompany.com', '/careers/x'],
+        ['workforcenow.adp.com', '/mascsr/default/mdf/recruitment/../../payroll/']];
+      for (const [host, path] of pages) {
+        const query = new URLSearchParams({ host, ...(path === undefined ? {} : { path }) });
+        const response = await call(`/api/autofill/credentials?${query.toString()}`, { headers: asToken() });
+        expect(response.status, `${host}${path ?? ''}`).toBe(signInHostCovered(host, path) ? 200 : 404);
+      }
+      // The pathname alone: a query or a fragment in it is refused.
+      for (const path of ['/mascsr/default/mdf/recruitment/recruitment.html?cid=1', '/careers/#x', 'careers/']) {
+        const query = new URLSearchParams({ host: 'workforcenow.adp.com', path });
+        const response = await call(`/api/autofill/credentials?${query.toString()}`, { headers: asToken() });
+        expect([response.status, await errorCode(response)], path).toEqual([400, 'validation_failed']);
+      }
+    });
+  // ── end contract6 ──
 
   it('revokes the token on DELETE /session, until a code is redeemed again', async () => {
     const ended = await call('/api/autofill/session', { method: 'DELETE', headers: asToken() });

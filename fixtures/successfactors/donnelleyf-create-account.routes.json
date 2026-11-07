@@ -1,0 +1,6 @@
+{
+  "https://career8.successfactors.com/career?company=donnelleyf&site=&lang=en_US&requestParams=REDACTED&login_ns=register&career_ns=job%5fapplication&career_job_req_id=4984&jobPipeline=Direct&clientId=jobs2web&_s.crb=REDACTED": "fixtures/successfactors/donnelleyf-create-account.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LcIRvssAAAAABQFcFPxVEwioK9odHeHybgtzHjz&co=aHR0cHM6Ly9jYXJlZXI4LnN1Y2Nlc3NmYWN0b3JzLmNvbTo0NDM.&hl=en&type=image&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&theme=light&size=normal&anchor-ms=20000&execute-ms=30000&cb=7lqfq398hnch": "fixtures/successfactors/donnelleyf-create-account.third-party-frame.html",
+  "https://jobs.dfinsolutions.com/widgets/cookiemanageriframe/": "fixtures/successfactors/donnelleyf-create-account.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&k=6LcIRvssAAAAABQFcFPxVEwioK9odHeHybgtzHjz&bft=REDACTED": "fixtures/successfactors/donnelleyf-create-account.third-party-frame.html"
+}

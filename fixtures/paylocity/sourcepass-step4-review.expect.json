@@ -1,0 +1,45 @@
+{
+  "fixture": "paylocity/sourcepass-step4-review",
+  "source": "https://recruiting.paylocity.com/Recruiting/Jobs/Apply/4640311",
+  "captured": "2026-11-06T15:29:41.000Z",
+  "fields": [
+    {
+      "label": "Are you authorized to work lawfully in the United States?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Work Authorization",
+      "fillable": true,
+      "options": "lazy",
+      "control": "[id=\"acknowledgements.authorizedToWorkInUs\"]",
+      "note": "In #appFooterDiv, outside the step page"
+    },
+    {
+      "label": "I have read and accept the above acknowledgement",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Acknowledgement",
+      "fillable": true,
+      "control": "#applyAcknowledgement"
+    }
+  ],
+  "hooks": {
+    "detect": "#app",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button[data-automation-id=\"btn-forceResume\"]",
+      "button.react-share__ShareButton",
+      "#onetrust-accept-btn-handler",
+      "#onetrust-pc-btn-handler",
+      "[data-automation-id=\"information-section\"] div.button.form-button",
+      "[data-automation-id=\"eeo-section\"] div.button.form-button",
+      "#appFooterDiv a:has(> i.icon-edit)"
+    ],
+    "pressable": [
+      "button[data-automation-id=\"btnSubmit\"]"
+    ]
+  }
+}

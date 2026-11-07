@@ -8,7 +8,7 @@
 import { FILL_STATUSES, type FillStatus } from '../../core/enums';
 import { CLASS_POLICIES, policyClassOf } from '../../core/resolver/categories';
 import type { RunStatus } from '../../core/types/run';
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import type { IconName } from '../../shared/icons';
 import {
   filledByPerson, isReady, leftForPerson, needsPerson, NOTICE_CODES, progressOf, rowProgressOf, type FrameReport,
@@ -53,7 +53,7 @@ export function sectionName(section: string): string {
   const trimmed = section.trim();
   if (/\s|[A-Z]/.test(trimmed)) return trimmed;
   const words = trimmed.replace(/[-_]+/g, ' ').trim();
-  return words === '' ? COPY.report.untitledSection : `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  return words === '' ? PAGE_COPY.report.untitledSection : `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
 }
 
 /** The reasons of an answer the AI wrote and the run accepted (the owner's amendments; Phase G: a cover letter
@@ -100,7 +100,7 @@ export function percent(value: number): string {
 /** A step as the person reads it: the adapter's progress line where the report has one ("Step 2 of 4"), else the
  *  step's index ("Step 2", counting from 1). */
 export function stepText(step: NonNullable<FrameReport['step']>): string {
-  return step.progress ?? COPY.report.step(step.index, step.of);
+  return step.progress ?? PAGE_COPY.report.step(step.index, step.of);
 }
 
 /** Whether a row is an AI draft that still waits for the person to edit or confirm it. */

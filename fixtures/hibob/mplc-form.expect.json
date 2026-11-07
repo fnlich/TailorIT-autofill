@@ -1,0 +1,88 @@
+{
+  "fixture": "hibob/mplc-form",
+  "source": "https://mplc.careers.hibob.com/jobs/fb07659b-6853-478f-bc06-ecff991a09c5/apply",
+  "captured": "2026-11-06T16:25:33.000Z",
+  "fields": [
+    {
+      "label": "First name",
+      "kind": "text",
+      "required": true,
+      "section": "personal-information",
+      "fillable": true,
+      "control": "[id=\"/candidate/firstName\"]",
+      "note": "One of the four section forms under careers-ui-job-ad-application-form (the root); sectioned by its b-collapsible-section's title."
+    },
+    {
+      "label": "Last name",
+      "kind": "text",
+      "required": true,
+      "section": "personal-information",
+      "fillable": true,
+      "control": "[id=\"/candidate/lastName\"]"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "personal-information",
+      "fillable": true,
+      "control": "[id=\"/candidate/email\"]"
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": false,
+      "section": "personal-information",
+      "fillable": true,
+      "control": "[id=\"/candidate/phone\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "personal-information",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "b-single-select div[role=\"button\"]",
+      "note": "b-single-select's opener (role=button, aria-haspopup, labelled by its label; required by the host's required attribute), declared a combobox: its list is drawn in the CDK overlay container, empty in the snapshot, so the helpers do not act on it: the person's."
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "personal-information",
+      "fillable": true,
+      "control": "[id=\"/candidate/address\"]"
+    },
+    {
+      "label": "Are you based in the United States?",
+      "kind": "radio",
+      "required": true,
+      "section": "questionnaire",
+      "fillable": true,
+      "options": 2,
+      "control": "input[name=\"bfe-7jeb-14\"]",
+      "note": "Titled by careers-ui-yes-no-question-control's div.label (required by its class); native radios at tabindex -1 under their drawn labels, the chosen one's wrapper showing class selected (the adapter's checkedOf)."
+    },
+    {
+      "label": "By checking this box, I consent to the use of my personal data in accordance with the privacy policies outlined above.",
+      "kind": "checkbox",
+      "required": false,
+      "section": "questionnaire",
+      "fillable": true,
+      "control": "[id=\"initialConsent\"]",
+      "note": "Its state is aria-checked on the input (the adapter's checkedOf); no required mark in the markup."
+    },
+    {
+      "label": "",
+      "kind": "combobox",
+      "required": false,
+      "section": "Professional profile",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "[id=\"/candidate/skills\"]",
+      "note": "Skills' text box (role=combobox) is drawn 0 px high beside the snapshot's four chips: no field in this state; its suggestions are in no snapshot."
+    }
+  ]
+}

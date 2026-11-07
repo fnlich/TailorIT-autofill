@@ -43,7 +43,11 @@ export type CurrentValue =
   | { kind: 'checked'; checked: boolean }
   /** The visible labels of the selected options or chips. */
   | { kind: 'selected'; labels: string[] }
-  | { kind: 'files'; count: number };
+  /** `held` (the behaviour review of 2026-11-06, M2): the input itself holds no file, and the page shows one it took
+   *  (Adapter.uploadHeld): the person's setting "Résumé already on the page" decides whether it stays. `names`: the
+   *  names the page shows beside those files (Adapter.uploadHeldNames), which the planner compares with the person's
+   *  chosen résumé's so it never puts it in a second time (the integration of 2026-11-06). */
+  | { kind: 'files'; count: number; held?: true; names?: string[] };
 
 /** `${platform}|${sectionId}|${labelSlug}|${optionSetHash}|${ordinal}`, the spec's composition. Page text and hashes only. */
 export type FieldKey = string & { readonly __brand: 'FieldKey' };
@@ -76,6 +80,11 @@ export interface FieldSpec {
   labelVisible: boolean;
   /** Visible help text (aria-describedby or an adjacent hint); '' when none. */
   description: string;
+  /** The core pass of 2026-11-06: set only when the field's own visible label, past the 300 characters `label` keeps,
+   *  states that no AI was used (resolver/classifyRules statesNoAiUse over the whole label, which the frame alone
+   *  reads): Dropzone's AI policy states its attestation in its last sentences. The field is then an "I did not use
+   *  AI" attestation (plan/attestation.ts). */
+  statesNoAi?: true;
   required: boolean;
   options: Option[] | 'lazy';
   /** Set only when a widget's list was read in part (a cap stopped the read before its end, the Phase 4 review, R9):

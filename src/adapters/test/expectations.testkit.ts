@@ -4,7 +4,8 @@
  * blanked so nothing reaches the network, at the size the converter checked it (1280 x 900). Its form root comes from
  * the first adapter the registry offers for the snapshot's address whose detect() finds one, and the scan runs with
  * that adapter. The scan is then held against the case's hand-written <case>.expect.json:
- * - every entry's control must be on the page;
+ * - every entry's control must be on the page; its selector may step into an open shadow root with " >>> "
+ *   (selectComposed, core pass Z2 of 2026-11-06: UltiPro's start-date boxes, "ukg-date-input-text >>> input[...]");
  * - an entry the page hides from a person ('not-user-visible') must not be part of any field;
  * - every other entry must be exactly one field, with the entry's label and required, and fillable as the entry says.
  *   A fillable entry must be a field the Phase 2 fillers write, or a widget its adapter declares that the widget
@@ -127,6 +128,25 @@ export function fillabilityOf(field: ScannedField, widget?: WidgetTarget): { fil
   return { fillable: true };
 }
 
+/** How an entry's selector steps into a host's open shadow root: "host >>> inner" (core pass Z2 of 2026-11-06). */
+export const SHADOW_STEP = ' >>> ';
+
+/**
+ * The elements an entry's selector names, open shadow roots included (core pass Z2 of 2026-11-06): each " >>> " steps
+ * from the elements the part before it names into their open shadow roots, where the next part is read
+ * ("ukg-date-input-text >>> input[data-automation=\"ukg-date-input-text-month\"]": UltiPro's start date). A selector
+ * without one reads the document as querySelectorAll does. In document order, without repeats; a host with no open
+ * shadow root names nothing past it.
+ */
+export function selectComposed(doc: Document, selector: string): Element[] {
+  const [first, ...rest] = selector.split(SHADOW_STEP);
+  let found: Element[] = Array.from(doc.querySelectorAll(first!));
+  for (const part of rest) {
+    found = found.flatMap((host) => (host.shadowRoot === null ? [] : Array.from(host.shadowRoot.querySelectorAll(part))));
+  }
+  return [...new Set(found)];
+}
+
 /** The section id the scanner gives a heading's text (sections.ts slugs headings the same way). */
 export function sectionIdOf(heading: string): string {
   return capCodePoints(headingSlug(heading), TEXT_CAP_SECTION);
@@ -161,7 +181,7 @@ export function compareWithExpectation(doc: Document, result: ScanResult, expect
 
   const claims = new Map<ScannedField, number>();
   for (const entry of expectation.fields) {
-    const elements = Array.from(doc.querySelectorAll(entry.control));
+    const elements = selectComposed(doc, entry.control);
     if (elements.length === 0) {
       push(entry.control, 'present', 'on the page', 'no element');
       continue;

@@ -1,22 +1,24 @@
 /*
- * Settings version 4 (v3 Phase 3, the owner's modes): the defaults, and each older version migrated with every choice
- * kept: auto-advance becomes the Next mode, the `all` answers the AI answers mode, the rest takes its default (the
- * consents' All among them, the owner's decision).
+ * Settings version 5 (version 4: v3 Phase 3, the owner's modes; version 5: "Résumé already on the page", the behaviour
+ * review of 2026-11-06): the defaults, and each older version migrated with every choice kept: auto-advance becomes the
+ * Next mode, the `all` answers the AI answers mode, the rest takes its default (the consents' All among them, the
+ * owner's decision; Résumé already on the page, Keep it).
  */
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_MODES, DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, type SettingsV1, type SettingsV2,
-  type SettingsV3,
+  DEFAULT_MODES, DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, type SettingsV1,
+  type SettingsV2, type SettingsV3, type SettingsV4,
 } from './settings';
 
 const { modes: _modes, view: _view, version: _version, llm, ...shared } = DEFAULT_SETTINGS;
 const V3: SettingsV3 = { ...shared, version: 3, autoAdvance: false, llm: { ...llm, answerAll: true } };
 
-describe('settings version 4', () => {
-  it('defaults every mode as the owner chose: Manual Next, Submit and sign-in; a new step filled; every consent; all AI answers', () => {
-    expect(DEFAULT_SETTINGS.version).toBe(4);
+describe('settings version 5', () => {
+  it('defaults every mode as the owner chose: Manual Next, Submit and sign-in; a new step filled; every consent; all AI answers; a résumé on the page kept', () => {
+    expect(DEFAULT_SETTINGS.version).toBe(5);
     expect(DEFAULT_SETTINGS.modes).toEqual({ signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual',
-      recordOwn: 'on', consents: 'all', ai: 'all', agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
+      recordOwn: 'on', consents: 'all', ai: 'all', resumeOnPage: 'keep',
+      agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
     expect(DEFAULT_SETTINGS.view).toBe('expanded');
     // The defaults are copies: changing one never changes the other.
     expect(DEFAULT_SETTINGS.modes).not.toBe(DEFAULT_MODES);
@@ -28,7 +30,7 @@ describe('settings version 4', () => {
       llm: { ...V3.llm, answerAll: false, drafts: false, whenForbidden: 'ask' }, offerToSaveAnswers: false,
       telemetry: { optIn: true }, interpretations: { ...V3.interpretations, twoOrMoreRaces: false } };
     const migrated = migrateSettingsV3(chosen);
-    expect(migrated).toEqual({ version: 4, panel: 'in-page', view: 'expanded',
+    expect(migrated).toEqual({ version: 5, panel: 'in-page', view: 'expanded',
       modes: { ...DEFAULT_MODES, next: 'auto', ai: 'profile' }, preapprovedConsent: ['privacy', 'sms'],
       llm: { ...llm, drafts: false, whenForbidden: 'ask' }, offerToSaveAnswers: false, telemetry: { optIn: true },
       interpretations: { ...V3.interpretations, twoOrMoreRaces: false } });
@@ -38,6 +40,21 @@ describe('settings version 4', () => {
     expect(migrateSettingsV3(V3).modes).toEqual(DEFAULT_MODES);
     // Nothing of the old object is shared.
     expect(migrated.preapprovedConsent).not.toBe(chosen.preapprovedConsent);
+  });
+
+  it('migrates version 4: every choice kept, "Résumé already on the page" Keep it (the behaviour review of 2026-11-06)', () => {
+    const { resumeOnPage: _added, ...v4modes } = DEFAULT_MODES;
+    const v4: SettingsV4 = { ...DEFAULT_SETTINGS, version: 4, panel: 'in-page', view: 'minimized',
+      modes: { ...v4modes, next: 'auto', submit: 'auto', recordOwn: 'off', consents: 'required', ai: 'profile',
+        agentSkip: { requiredEmpty: false, noAi: true, legalGuess: true } },
+      preapprovedConsent: ['privacy'], llm: { ...llm, drafts: false }, telemetry: { optIn: true },
+      offerToSaveAnswers: false, interpretations: { ...DEFAULT_SETTINGS.interpretations, twoOrMoreRaces: false } };
+    const migrated = migrateSettingsV4(v4);
+    expect(migrated).toEqual({ ...v4, version: 5, modes: { ...v4.modes, resumeOnPage: 'keep' } });
+    // Nothing of the old object is shared.
+    expect(migrated.modes.agentSkip).not.toBe(v4.modes.agentSkip);
+    expect(migrated.preapprovedConsent).not.toBe(v4.preapprovedConsent);
+    expect(migrated.llm).not.toBe(v4.llm);
   });
 
   it('migrates version 2 through version 3 (the `all` answers on) and version 1 through both', () => {

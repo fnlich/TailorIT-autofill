@@ -1,0 +1,121 @@
+{
+  "fixture": "icims/githubinc-candidate-questions.frame-1",
+  "source": "https://careers-githubinc.icims.com/jobs/6961/senior-software-engineer%2c-compute-platform/questions?global=1&in_iframe=1",
+  "captured": "2026-11-06T15:14:25.000Z",
+  "fields": [
+    {
+      "label": "Are you 18 years of age or older?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q6"
+    },
+    {
+      "label": "Are you legally eligible to work in the country in which you are applying?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q8"
+    },
+    {
+      "label": "Do you now or will you at any time in the future require sponsorship?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q9"
+    },
+    {
+      "label": "Have you signed or are you restricted by a non-compete or non-solicit provision that may become an obstacle to your acceptance or initiation of employment with GitHub?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q31"
+    },
+    {
+      "label": "Who is your current or most recent employer?",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "input#Q55"
+    },
+    {
+      "label": "Are you a current Full-Time GitHub employee?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q54"
+    },
+    {
+      "label": "Have you previously been employed as a Full-Time Employee or Intern at GitHub?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q34"
+    },
+    {
+      "label": "Are you a current Full-Time employee at Microsoft or a Microsoft subsidiary other than GitHub (i.e., Activision, Blizzard, Gaming Studios, King, LinkedIn)?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 22,
+      "control": "select#Q2957"
+    },
+    {
+      "label": "Have you previously been employed as a Full-Time Employee or Intern at Microsoft?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q48"
+    },
+    {
+      "label": "Are you currently or have you previously worked as a contractor / external staff / vendor (through an agency) on assignment at Microsoft?",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 3,
+      "control": "select#Q39"
+    },
+    {
+      "label": "Do you have a GitHub Profile / Personal Website / Personal Portfolio you'd like to share? If so, please provide.",
+      "kind": "textarea",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "textarea#Q33"
+    }
+  ],
+  "hooks": {
+    "detect": "form#questions",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input#quesp_form_save_i",
+      "input#keepMeAliveButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": [
+      "input#quesp_form_submit_i"
+    ]
+  }
+}

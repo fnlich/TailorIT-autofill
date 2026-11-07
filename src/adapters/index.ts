@@ -32,15 +32,38 @@ import { ashbyAdapter } from './ashby';
 import { genericAdapter } from './generic';
 import { greenhouseAdapter } from './greenhouse';
 import { icimsAdapter } from './icims';
+// ── New ATSs, builder C (DESIGN-NEW-ATS §5) ──
+import { jazzhrAdapter } from './jazzhr';
+import { bambooHrAdapter } from './bamboohr';
+import { ripplingAdapter } from './rippling';
+import { breezyAdapter } from './breezy';
+import { careerPlugAdapter } from './careerplug';
+import { pinpointAdapter } from './pinpoint';
+import { paycorAdapter } from './paycor';
+import { hiBobAdapter } from './hibob';
+// ── end New ATSs, builder C ──
 import { leverAdapter } from './lever';
 import { oracleAdapter } from './oracle';
 import { siteAdapter, siteCanonicalUrl } from './site';
+// ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters ──
+import { smartRecruitersAdapter } from './smartrecruiters';
 import { successFactorsAdapter } from './successfactors';
 import { taleoAdapter } from './taleo';
 import { e2eAdaptersFor } from './test';
 import type { Adapter } from './types';
 import { workableAdapter } from './workable';
 import { workdayAdapter } from './workday';
+// ── New ATSs, builder A (DESIGN-NEW-ATS §5) ──
+import { adpAdapter } from './adp';
+import { dayforceAdapter } from './dayforce';
+import { ultiproAdapter } from './ultipro';
+// ── end New ATSs, builder A ──
+// ── New ATSs, builder B (DESIGN-NEW-ATS §5) ──
+import { clearCompanyAdapter } from './clearcompany';
+import { diceAdapter } from './dice';
+import { jobviteAdapter } from './jobvite';
+import { paylocityAdapter } from './paylocity';
+// ── end New ATSs, builder B ──
 
 export { FIXTURE_BOARD } from './address';
 
@@ -49,6 +72,24 @@ const PLATFORM_ADAPTERS: Partial<Record<Platform, Adapter>> = {
   greenhouse: greenhouseAdapter, lever: leverAdapter, ashby: ashbyAdapter, workday: workdayAdapter,
   workable: workableAdapter, icims: icimsAdapter, taleo: taleoAdapter, successfactors: successFactorsAdapter,
   oracle: oracleAdapter,
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): SmartRecruiters' postings and one-click application ──
+  smartrecruiters: smartRecruitersAdapter,
+  // ── New ATSs, builder A (DESIGN-NEW-ATS §5) ──
+  adp: adpAdapter, dayforce: dayforceAdapter, ultipro: ultiproAdapter,
+  // ── end New ATSs, builder A ──
+  // ── New ATSs, builder B (DESIGN-NEW-ATS §5) ──
+  jobvite: jobviteAdapter, dice: diceAdapter, clearcompany: clearCompanyAdapter, paylocity: paylocityAdapter,
+  // ── end New ATSs, builder B ──
+  // ── New ATSs, builder C (DESIGN-NEW-ATS §5): their configured adapters ──
+  jazzhr: jazzhrAdapter,
+  bamboohr: bambooHrAdapter,
+  rippling: ripplingAdapter,
+  breezy: breezyAdapter,
+  careerplug: careerPlugAdapter,
+  pinpoint: pinpointAdapter,
+  paycor: paycorAdapter,
+  hibob: hiBobAdapter,
+  // ── end New ATSs, builder C ──
 };
 
 /** The adapters that may handle a frame at `url`, in the order the content runtime tries their detect(). A company's

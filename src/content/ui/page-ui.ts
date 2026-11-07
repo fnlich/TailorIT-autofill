@@ -35,7 +35,7 @@
  *   alike). A frame inside another page keeps its launcher at the form's corner, never hidden: it is how its
  *   run knows the frame is seen (S1).
  */
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import { log } from '../../shared/log';
 import type { FrameReport } from '../../shared/report';
 import type { LauncherPrefs } from '../../messaging/schemas';
@@ -210,9 +210,9 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     for (const button of removed) visibility.unobserve(button);
     for (const button of added) visibility.observe(button);
   }, (key, instruction, generate) => whenSeen(generate, () => {
-    aiEdits.promptSaid(key, COPY.editingWithAi);
+    aiEdits.promptSaid(key, PAGE_COPY.editingWithAi);
     void Promise.resolve(handlers.onAiEdit?.(key, instruction)).then((said) => aiEdits.promptSaid(key, said ?? null),
-      () => aiEdits.promptSaid(key, COPY.aiEdit.outcomes.failed));
+      () => aiEdits.promptSaid(key, PAGE_COPY.aiEdit.outcomes.failed));
   }), (shown, hidden) => {
     if (hidden !== null) visibility.unobserve(hidden);
     if (shown !== null) visibility.observe(shown);

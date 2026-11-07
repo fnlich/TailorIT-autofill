@@ -136,6 +136,9 @@ export interface WrittenField {
    *  again; null for any other write, and for a page whose adapter reads no upload. */
   upload: UploadState | null;
   uploadNow: (() => UploadState | null) | null;
+  /** The core pass of 2026-11-06: whether the file input written has left the page since (Greenhouse takes it out once
+   *  a file is in it: fixtures/greenhouse/axle-attached.html); set only beside uploadNow. */
+  inputLeft?: () => boolean;
 }
 
 /** What a widget's write needs from its loop (Phase 4). */
@@ -223,6 +226,18 @@ function refusal(reason: ReasonCode, blocks: ReadonlySet<ReasonCode>): FillOutco
   return blocks.has(reason) ? { kind: 'blocked', reason } : { kind: 'not-written', reason };
 }
 
+// ── behaviour review 2026-11-06 (M2): the owner's setting "Résumé already on the page" ──
+/** The DOM guard's refusals that mean the field's file input is no longer one to put a file in. */
+const NO_INPUT: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['element-not-found', 'disabled-or-readonly']);
+
+/** A refusal of the DOM guard, said plainly for a résumé the page showed held (CurrentValue `held`) that the planner
+ *  sent again (Upload mine again): the input gone or disabled by the write is the person's, resume-held-no-input. */
+function guardRefusal(field: ScannedField, write: PlannedWrite, reason: ReasonCode): FillOutcome {
+  const held = write.value.kind === 'file' && field.current.kind === 'files' && field.current.held === true;
+  return refusal(held && NO_INPUT.has(reason) ? 'resume-held-no-input' : reason, GUARD_BLOCKS);
+}
+// ── end behaviour review (M2) ──
+
 /** A written field that reads back differently, keeping the specific reason. */
 export function mismatchRow(planned: FillResult, reason: ReasonCode): FillResult {
   const row = settleRow(planned, { kind: 'mismatch' });
@@ -289,7 +304,7 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
   const hold = env.heldBy?.() ?? null;
   if (hold !== null) return { row: settleRow(planned, { kind: 'not-written', reason: hold }) };
   let verdict = domGuardBeforeWrite(last, wanted);
-  if (!verdict.ok) return { row: settleRow(planned, refusal(verdict.reason, GUARD_BLOCKS)) };
+  if (!verdict.ok) return { row: settleRow(planned, guardRefusal(field, write, verdict.reason)) };
   // A follow-up box the person (or the page) typed into since the pass's scan keeps that text: compared on the DOM
   // guard's fresh scan, right before the write.
   const now = verdict.target.field.current;
@@ -329,7 +344,7 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
     verdict = domGuardBeforeWrite(last, wanted);
     if (!verdict.ok) {
       resume.release();
-      return { row: settleRow(planned, refusal(verdict.reason, GUARD_BLOCKS)) };
+      return { row: settleRow(planned, guardRefusal(field, write, verdict.reason)) };
     }
     check = guardWriteInFrame(write, toFieldSpec(verdict.target.field), env.canaries);
     if (!check.ok) {
@@ -376,7 +391,8 @@ export async function writeField(env: PassEnv, last: ScanResult, field: ScannedF
     written: { key: write.key, field: wanted, value: write.value, origin: write.origin, planned, rule,
       file: file === undefined ? null : { name: file.name, size: file.size }, resume, textBefore, selectedBefore,
       readBackVerified: outcome.verification === 'verified', optionShown, upload,
-      uploadNow: upload === null || named === undefined ? null : () => uploadStateOf(env.adapter, input, named) },
+      uploadNow: upload === null || named === undefined ? null : () => uploadStateOf(env.adapter, input, named),
+      ...(upload === null || named === undefined ? {} : { inputLeft: () => !input.isConnected }) },
     readBack: readBack(target),
   };
 }

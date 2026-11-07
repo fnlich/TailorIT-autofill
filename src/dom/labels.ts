@@ -32,7 +32,7 @@ import { capCodePoints, foldLetters, removeInvisibles } from '../core/text/fold'
 import { CONTROL_SELECTOR, kindOf } from './kinds';
 import type { ScanCache } from './scan-cache';
 import { MIN_ARIA_LABEL_CHARS, TEXT_CAP_DESCRIPTION, TEXT_CAP_LABEL } from './thresholds';
-import { heldPlaceholder, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
+import { heldPlaceholder, readSelectOptions, visiblePlaceholder, visibleText, visibleTextWithout } from './visible-text';
 import { isUserVisible } from './visibility';
 
 /** What the scanner reads labels with. */
@@ -42,6 +42,9 @@ export interface LabelContext {
   /** Controls the extension wrote into while a visible placeholder showed, with that placeholder's text
    *  (ScanOptions.heldPlaceholders). */
   heldPlaceholders?: WeakMap<Element, string>;
+  /** The scan's form root, which the adapter's repeatable blocks are asked of (explicitLabels); without it a
+   *  label[for] is read as the browser ties it. */
+  root?: Element;
 }
 
 /** A field's label as read. */
@@ -57,9 +60,19 @@ export interface ResolvedLabel {
   /** The element the label was read from (a label, a labelledby target, a legend, the adapter's label); null for
    *  aria-label, placeholder and none. Highlights point at it. */
   element: Element | null;
+  /** The core pass of 2026-11-06: the whole label as read (white space collapsed, at most TEXT_CAP_DESCRIPTION), set
+   *  only where `text` cut it at TEXT_CAP_LABEL. Memory only: the scan reads an attestation past the cut from it
+   *  (FieldSpec.statesNoAi). */
+  whole?: string;
 }
 
 const NONE: ResolvedLabel = { text: '', source: 'none', visible: false, required: false, element: null };
+
+/** The core pass of 2026-11-06: the whole label as read, where cleanLabel cut it at TEXT_CAP_LABEL (ResolvedLabel.whole). */
+function wholeOf(raw: string, cut: string): { whole?: string } {
+  const whole = raw.replace(/\s+/g, ' ').trim();
+  return [...whole].length > TEXT_CAP_LABEL && [...cut].length >= TEXT_CAP_LABEL ? { whole } : {};
+}
 
 /** A trailing required mark: '*', Lever's heavy asterisk '\u{2731}' (its span.required, the only sign that Lever's
  *  Resume/CV is required), and the asterisk operator and full-width asterisk that other forms draw instead. */
@@ -88,7 +101,8 @@ export function cleanLabel(raw: string): { text: string; required: boolean } {
 
 function fromText(raw: string, source: LabelSource, element: Element | null, visible = true): ResolvedLabel | null {
   const { text, required } = cleanLabel(raw);
-  return text === '' ? null : { text, source, visible, required, element };
+  // The whole label only where a person can see it (never an aria-label nobody sees beside the control).
+  return text === '' ? null : { text, source, visible, required, element, ...(visible ? wholeOf(raw, text) : {}) };
 }
 
 /** The visible text of an element on one line ('' when it is hidden). */
@@ -104,6 +118,39 @@ export function tiedLabels(control: Element): { explicit: HTMLLabelElement[]; wr
     explicit: all.filter((label) => label.hasAttribute('for')),
     wrapping: all.filter((label) => !label.hasAttribute('for')),
   };
+}
+
+/**
+ * Core pass Z2 of 2026-11-06 (CORE-BLOCKERS item 28): a control's label[for] elements, read within its own repeatable
+ * block where its id repeats in the page. ClearCompany draws each repeated row with the first row's ids
+ * (fixtures/clearcompany/ferrilli-page2.html: four Employment History rows, each with label[for="87977d19-..."] "Company
+ * Name" and an input of that id), and the browser ties every row's label to the first row's control, which then read
+ * "Company Name Company Name Company Name Company Name" while the other rows' controls had none. Inside one of the
+ * adapter's repeatable blocks (Adapter.repeatables, asked of the scan's root), such a control's label[for] elements are
+ * the block's own that name its id; anywhere else, or where its id is the page's only one, the browser's.
+ */
+function explicitLabels(control: Element, tied: HTMLLabelElement[], ctx: LabelContext): HTMLLabelElement[] {
+  const id = control.id;
+  const root = ctx.root;
+  if (id === '' || root === undefined || ctx.adapter?.repeatables === undefined) return tied;
+  const tree = control.getRootNode() as Document | ShadowRoot;
+  if (typeof tree.querySelectorAll !== 'function') return tied;
+  const counts = ctx.cache.memo('id-counts', tree, () => {
+    const seen = new Map<string, number>();
+    for (const el of Array.from(tree.querySelectorAll('[id]'))) seen.set(el.id, (seen.get(el.id) ?? 0) + 1);
+    return seen;
+  });
+  if ((counts.get(id) ?? 0) < 2) return tied;
+  const blocks = ctx.cache.memo('repeat-blocks', root, (): Element[] => {
+    try {
+      return (ctx.adapter?.repeatables?.(root) ?? []).flatMap((section) => section.blocks());
+    } catch {
+      return [];
+    }
+  });
+  const block = blocks.find((each) => each !== control && each.contains(control));
+  if (block === undefined) return tied;
+  return Array.from(block.querySelectorAll<HTMLLabelElement>('label[for]')).filter((label) => label.htmlFor === id);
 }
 
 /** The joined visible text of a list of elements ('' when none of them shows any), leaving out the text of
@@ -162,7 +209,15 @@ function uploadControlsAmong(elements: readonly Element[], ctx: LabelContext): S
 
 /** The label of a single control (a text field, a select, a lone checkbox, a file input). */
 export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLabel {
-  const { explicit, wrapping } = tiedLabels(control);
+  // Core pass Z2 of 2026-11-06 (CORE-BLOCKERS item 28): the adapter's own label first, where it says so
+  // (Adapter.labelFirst: Jobvite's signature pairs, whose label[for] alone reads as a name).
+  if (labelsFirst(control, ctx)) {
+    const first = adapterLabelOf(control, ctx);
+    if (first !== null) return first;
+  }
+  const tied = tiedLabels(control);
+  const explicit = explicitLabels(control, tied.explicit, ctx);
+  const { wrapping } = tied;
   const ownFor = uploadControlsAmong(explicit, ctx);
   const forLabel = joinedText(explicit.filter((label) => !ownFor.has(label)), ctx);
   const byFor = fromText(forLabel.text, 'for', forLabel.first);
@@ -192,6 +247,14 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
   const held = ctx.heldPlaceholders?.get(control);
   const placeholder = visiblePlaceholder(control, ctx.cache)
     ?? (held === undefined ? null : heldPlaceholder(control, held, ctx.cache));
+  // Core pass Z2 of 2026-11-06: a select's prompt (selectPrompt) that shows its aria-label's own words is its visible
+  // placeholder for DOM-10 alone: the aria-label names it, the prompt a person sees makes it fillable. A prompt in
+  // other words ("Select...", "Choose...") shows nothing of the aria-label, which stays unseen (DOM-11).
+  if (placeholder === null && ariaLabelOf(control) !== '') {
+    const prompt = selectPrompt(control, ctx);
+    const named = prompt !== null && sameWords(prompt, ariaLabelOf(control)) ? ariaLabel(control, ctx) : null;
+    if (named !== null) return { ...named, visible: true };
+  }
   if (placeholder !== null) {
     // DOM-10: the aria-label names the field, the visible placeholder makes it fillable.
     const named = ariaLabel(control, ctx);
@@ -200,6 +263,44 @@ export function labelOfControl(control: Element, ctx: LabelContext): ResolvedLab
     if (byPlaceholder) return byPlaceholder;
   }
   return ariaLabel(control, ctx) ?? NONE;
+}
+
+/** Whether two texts are the same words in the same order, a word and its plural "s" alike (CareerPlug's prompt
+ *  "State" for its aria-label "States"), and at least MIN_ARIA_LABEL_CHARS letters or digits in all. */
+function sameWords(a: string, b: string): boolean {
+  const left = wordsOf(a);
+  const right = wordsOf(b);
+  if (left.length === 0 || left.length !== right.length || left.join('').length < MIN_ARIA_LABEL_CHARS) return false;
+  return left.every((word, at) => {
+    const other = right[at]!;
+    return word === other || word === `${other}s` || other === `${word}s`;
+  });
+}
+
+/** A control's aria-label attribute, trimmed. */
+function ariaLabelOf(el: Element): string {
+  return (el.getAttribute('aria-label') ?? '').trim();
+}
+
+/**
+ * Core pass Z2 of 2026-11-06: the prompt a select shows where nothing is chosen, as an input shows its placeholder: a
+ * single-choice select's (no multiple, no list size) first option, of empty value, listed with words (readSelectOptions:
+ * a person can see the select and the option reads clear in its list). It stays in the list once an answer is chosen,
+ * so the field keeps its visible name across our own write (as a held placeholder does, DOM-7); it makes the aria-label
+ * visible only where it shows the aria-label's own words (sameWords). CareerPlug's State select
+ * (fixtures/careerplug/cloudscouts-form.html, eitacies-uploaded.html): <select id="app_applicant_attributes_state"
+ * aria-label="States" ...><option value="">State</option> ..., its label[for] "States" drawn out of sight
+ * (fieldset.placeholder label { display: none }), as the Address and City inputs beside it show their placeholders.
+ * Null for any other control.
+ */
+function selectPrompt(control: Element, ctx: LabelContext): string | null {
+  if (control.localName !== 'select') return null;
+  const select = control as HTMLSelectElement;
+  if (select.multiple || select.size > 1) return null;
+  const first = select.options[0];
+  if (first === undefined || first.getAttribute('value') !== '') return null;
+  const shown = readSelectOptions(select, ctx.cache)[0];
+  return shown !== undefined && shown.el === first && shown.label.trim() !== '' ? shown.label : null;
 }
 
 /** The question of a radio or checkbox group: from its container, then the adapter, then the container's aria-label. */
@@ -224,7 +325,9 @@ export function labelOfGroup(members: readonly HTMLInputElement[], container: El
 /** The visible label of one radio or checkbox as an option of its group: its label[for], else its wrapping label, else
  *  the adapter's. '' when it shows none. */
 export function optionLabelOf(input: HTMLInputElement, ctx: LabelContext): { text: string; element: Element | null } {
-  const { explicit, wrapping } = tiedLabels(input);
+  const tied = tiedLabels(input);
+  const explicit = explicitLabels(input, tied.explicit, ctx);
+  const { wrapping } = tied;
   for (const list of [explicit, wrapping]) {
     const joined = joinedText(list, ctx);
     const { text } = cleanLabel(joined.text);
@@ -269,15 +372,26 @@ function soleFieldLegend(control: Element, ctx: LabelContext): ResolvedLabel | n
   return fromText(textOf(legend, ctx), 'legend', legend);
 }
 
+/** Whether the adapter reads its label before the control's own (Adapter.labelFirst); false when its hook fails. */
+function labelsFirst(control: Element, ctx: LabelContext): boolean {
+  try {
+    return ctx.adapter?.labelFirst?.(control) === true;
+  } catch {
+    return false;
+  }
+}
+
 /** The adapter's visible label for a control or a group's container (labelFor, with its labelSuffix), or null. */
 export function adapterLabelOf(el: Element, ctx: LabelContext): ResolvedLabel | null {
   const labelEl = ctx.adapter?.labelFor?.(el) ?? null;
   if (labelEl === null || !isUserVisible(labelEl, ctx.cache)) return null;
-  const cleaned = cleanLabel(textOf(labelEl, ctx));
+  const raw = textOf(labelEl, ctx);
+  const cleaned = cleanLabel(raw);
   if (cleaned.text === '') return null;
   const suffix = (ctx.adapter?.labelSuffix?.(el) ?? '').replace(/\s+/g, ' ').trim();
   const text = suffix === '' ? cleaned.text : capCodePoints(`${cleaned.text} ${suffix}`, TEXT_CAP_LABEL);
-  return { text, source: 'adapter', visible: true, required: cleaned.required, element: labelEl };
+  return { text, source: 'adapter', visible: true, required: cleaned.required, element: labelEl,
+    ...wholeOf(raw, cleaned.text) };
 }
 
 /** An aria-label: it may drive the rules, and counts as visible only when its words are visible beside the control

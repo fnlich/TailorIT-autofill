@@ -14,12 +14,13 @@
  * rounded corner, stands for everything beneath it (opaqueLayerUnder); a layer the content overflows or lies outside
  * does not (the v3 Phase 6/7b review, S4).
  */
-import { contrast, fade, gradientStops, over, parseColor, type Rgba, WHITE } from './color';
+import { BLACK, between, contrast, fade, gradientStops, leastContrast, over, parseColor, type Rgba, WHITE } from './color';
 import { CONTROL_SELECTOR, kindOf } from './kinds';
-import { flatParent, type ScanCache, styleOf, viewOf, newScanCache } from './scan-cache';
+import { isInOwnUi } from './own-ui';
+import { flatContains, flatParent, type ScanCache, styleOf, viewOf, newScanCache } from './scan-cache';
 import {
-  CAMOUFLAGE_MAX_CONTRAST, CONTROL_DRAWN_MIN_CONTRAST, DARK_CANVAS_RGB, MAX_BACKGROUND_CANDIDATES, MIN_FONT_PX,
-  MIN_OPACITY, MIN_OUTLINE_PX, MIN_SHADOW_REACH_PX, WRAPPER_HUG_PX,
+  CAMOUFLAGE_MAX_CONTRAST, CONTROL_DRAWN_MIN_CONTRAST, DARK_CANVAS_RGB, MAX_BACKGROUND_CANDIDATES, MIN_BOX_PX, MIN_FONT_PX,
+  MIN_OPACITY, MIN_OUTLINE_PX, MIN_SHADOW_REACH_PX, WRAPPER_CONTROL_MIN_SHARE, WRAPPER_DECORATION_MAX_PX, WRAPPER_HUG_PX,
 } from './thresholds';
 import { isMasked, isUserVisible, opacityOf } from './visibility';
 
@@ -48,9 +49,99 @@ export function isCamouflaged(el: Element, cache: ScanCache = newScanCache()): C
     const text = fade(fill ?? color, opacity);
     const verdict = against(text, backdrop);
     if (verdict !== 'clear' && !outlined(style, backdrop, opacity, doc)) return verdict;
+    // The security fix of 2026-11-06 (S8): words read clear on a translucent layer's bound only where no other box is
+    // painted on that layer where they are.
+    if (backdrop.some((colour) => colour.hi !== undefined) && boxAtTheWords(el, cache)) return 'unknown';
     return firstLineVerdict(el, backdrop, opacity, cache);
   });
 }
+
+// ── The security fix of 2026-11-06 (S8): the translucent layer's bound, no wider than before for a box at the words ──
+/** A box painted inside a panel (paintedBoxesIn). */
+interface PaintedBox {
+  el: Element;
+  box: Box;
+}
+
+/**
+ * Whether a box of colour that is not one of `el`'s ancestors (paintedBoxesIn) is painted, inside the layer the
+ * translucent ones lie on (panelOf: the nearest of `el` and its ancestors that paints an image or an opaque colour),
+ * where a line of `el`'s words is, by MIN_BOX_PX or more on both axes. The translucent layer's bound
+ * (opaqueLayerUnder, the core pass of 2026-11-06) reads only the words' ancestors, so on such a box it would read
+ * words clear that a person cannot see (the review's P6a:
+ * #111 words over a #111 box on a translucent panel over an image); before that bound such words read 'unknown', and
+ * so they do again. Known limit (the review's P-1, older than the bound): on an opaque panel, or with no image below,
+ * the compositing still follows ancestors alone, not painted layers, so such a box there is not seen.
+ */
+function boxAtTheWords(el: Element, cache: ScanCache): boolean {
+  const lines = ownTextLines(el);
+  if (lines.length === 0) return false;
+  return paintedBoxesIn(panelOf(el, cache), cache).some((painted) => painted.el !== el && !flatContains(painted.el, el)
+    && lines.some((line) => overlap(line.left, line.right, painted.box.left, painted.box.right) >= MIN_BOX_PX
+      && overlap(line.top, line.bottom, painted.box.top, painted.box.bottom) >= MIN_BOX_PX));
+}
+
+/** The nearest of `el` and its ancestors that paints an image or an opaque colour, else the document's root: the layer
+ *  the translucent layers over it lie on, which every box inside it may show through. */
+function panelOf(el: Element, cache: ScanCache): Element {
+  for (let at: Element | null = el; at !== null; at = flatParent(at)) {
+    const style = styleOf(at, cache);
+    if (style === null) continue;
+    const bg = parseColor(style.backgroundColor, at.ownerDocument);
+    if ((bg !== null && bg.a >= 1) || (style.backgroundImage !== '' && style.backgroundImage !== 'none')) return at;
+  }
+  return el.ownerDocument.documentElement;
+}
+
+/** The boxes painted inside `panel` (its descendants, open shadow roots included, the panel itself and the extension's
+ *  own UI left out): visible, making a box, and a background colour that shows at their opacity or an image. */
+function paintedBoxesIn(panel: Element, cache: ScanCache): readonly PaintedBox[] {
+  return cache.memo('painted-boxes', panel, (): readonly PaintedBox[] => {
+    const found: PaintedBox[] = [];
+    const scopes: Array<Element | ShadowRoot> = [panel];
+    if (panel.shadowRoot !== null) scopes.push(panel.shadowRoot);
+    for (let at = 0; at < scopes.length; at += 1) {
+      for (const el of Array.from(scopes[at]!.querySelectorAll('*'))) {
+        if (el.shadowRoot !== null) scopes.push(el.shadowRoot);
+        if (isInOwnUi(el)) continue;
+        const style = styleOf(el, cache);
+        if (style === null || style.visibility !== 'visible' || style.display === 'contents') continue;
+        const image = style.backgroundImage !== '' && style.backgroundImage !== 'none';
+        const bg = parseColor(style.backgroundColor, el.ownerDocument);
+        if (!image && (bg === null || bg.a === 0)) continue;
+        if (opacityOf(el, cache) * (image ? 1 : bg!.a) < MIN_OPACITY) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0) continue;
+        found.push({ el, box: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } });
+      }
+    }
+    return found;
+  });
+}
+
+/** Each line box of `el`'s own words (its own text nodes, or the nodes assigned to a slot, as ownTextBox reads them). */
+function ownTextLines(el: Element): Box[] {
+  const doc = el.ownerDocument;
+  const lines: Box[] = [];
+  const assigned = el.localName === 'slot' ? (el as HTMLSlotElement).assignedNodes() : [];
+  for (const node of assigned.length > 0 ? assigned : Array.from(el.childNodes)) {
+    if (node.nodeType !== 3 || (node.textContent ?? '').trim() === '') continue;
+    const range = doc.createRange();
+    range.selectNodeContents(node);
+    for (const rect of Array.from(range.getClientRects())) {
+      if (rect.width > 0 && rect.height > 0) {
+        lines.push({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom });
+      }
+    }
+  }
+  return lines;
+}
+
+/** How far two spans overlap (negative when apart). */
+function overlap(start: number, end: number, from: number, to: number): number {
+  return Math.min(end, to) - Math.max(start, from);
+}
+// ── end of the security fix's block (S8) ──
 
 /** How a ::first-line or ::first-letter draws text differently from its element. */
 interface PseudoText {
@@ -168,6 +259,16 @@ export function isControlCamouflaged(control: Element, placeholderVisible: boole
  * the control and its own labels: it encloses them, within WRAPPER_HUG_PX on every side. A wrapper shared with another
  * control, a box the control spills out of, and a card around a whole section (a heading and a paragraph above a
  * borderless input: DOM-4) do not count.
+ * Core pass Z2 of 2026-11-06: a wrapper whose only content is the control and its decorations (onlyDecorations: no
+ * word, digit or other control, nothing to press) is the control's box when its content box (inside its border and
+ * padding) hugs them within WRAPPER_HUG_PX: Rippling draws each text box's border on a wrapper 17 px wider than the
+ * input on each side, its padding (fixtures/rippling/qu-careers-form.html: div.css-1mlcsw, 16 px padding and a 1 px
+ * border around Location's search icon and input, or a custom question's input alone); BambooHR's LinkedIn URL shares
+ * its bordered MuiInputBase-root with a start adornment, an icon (fixtures/bamboohr/swyfft-form.html). A wrapper that
+ * holds words, another control or a button, or whose content box is wider than what it holds, still does not count.
+ * The security fix of 2026-11-06 (S6): each decoration is an icon's size (WRAPPER_DECORATION_MAX_PX on each axis), and
+ * the control spans most of the wrapper's content box (more than WRAPPER_CONTROL_MIN_SHARE of it on each axis): a 4 px
+ * input beside a wide empty box inside a bordered wrapper is no box a person sees to type into.
  */
 function drawnByWrapper(control: Element, cache: ScanCache): boolean {
   const inner = control.getBoundingClientRect();
@@ -177,8 +278,12 @@ function drawnByWrapper(control: Element, cache: ScanCache): boolean {
     if (holdsAnotherControl(at, control, cache)) return false;
     const style = styleOf(at, cache);
     const outer = at.getBoundingClientRect();
-    if (style === null || style.visibility !== 'visible' || !encloses(outer, inner)
-      || !hugs(outer, fieldBox(control, at, inner, cache))) continue;
+    if (style === null || style.visibility !== 'visible' || !encloses(outer, inner)) continue;
+    if (!hugs(outer, fieldBox(control, at, inner, cache))) {
+      const decorated = onlyDecorations(at, control, inner);
+      const content = contentBox(outer, style);
+      if (decorated === null || !hugs(content, decorated) || !spansMost(inner, content)) continue;
+    }
     const parent = flatParent(at);
     const behind = parent === null ? [canvasOf(doc, cache)] : backdropOf(parent, cache, outer);
     if (behind === 'unknown') continue;
@@ -215,8 +320,71 @@ function fieldBox(control: Element, wrapper: Element, inner: DOMRect, cache: Sca
   return box;
 }
 
+/** What can be pressed or typed into, besides a native control: such an element is no decoration. */
+const PRESSABLE = 'a[href], button, label, summary, [contenteditable]:not([contenteditable="false" i]), [role="button" i], '
+  + '[role="link" i], [role="checkbox" i], [role="radio" i], [role="switch" i], [role="combobox" i], [role="textbox" i], '
+  + '[role="menuitem" i], [role="option" i], [role="tab" i], [tabindex]:not([tabindex="-1"])';
+
+/** A letter or a digit: words, numbers, a label's text. */
+const WORDISH = /[\p{L}\p{N}]/u;
+
+/**
+ * Core pass Z2 of 2026-11-06 (drawnByWrapper): the box of `control` and of everything else `wrapper` holds, when all of
+ * that else is decoration: no text with a letter or a digit (shown or not), no native control (a hidden input
+ * included), nothing a person can press or type into (PRESSABLE), open shadow roots read too; else null. Stricter than
+ * it need be: text no one can see still disqualifies the wrapper.
+ */
+function onlyDecorations(wrapper: Element, control: Element, inner: DOMRect): Box | null {
+  const box: Box = { left: inner.left, top: inner.top, right: inner.right, bottom: inner.bottom };
+  const stack: Node[] = [...Array.from(wrapper.shadowRoot?.childNodes ?? []), ...Array.from(wrapper.childNodes)];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node === control) continue;
+    if (node.nodeType === 3) {
+      if (WORDISH.test(node.textContent ?? '')) return null;
+      continue;
+    }
+    if (node.nodeType !== 1) continue;
+    const el = node as Element;
+    if (el.contains(control)) {
+      // An element around the control: its own other content is read, the control's own is not.
+      stack.push(...Array.from(el.shadowRoot?.childNodes ?? []), ...Array.from(el.childNodes));
+      continue;
+    }
+    if (el.matches(CONTROL_SELECTOR) || el.matches(PRESSABLE)) return null;
+    const r = el.getBoundingClientRect();
+    // The security fix of 2026-11-06 (S6): a decoration is an icon's size.
+    if (r.width > WRAPPER_DECORATION_MAX_PX || r.height > WRAPPER_DECORATION_MAX_PX) return null;
+    if (r.width > 0 && r.height > 0) {
+      box.left = Math.min(box.left, r.left);
+      box.top = Math.min(box.top, r.top);
+      box.right = Math.max(box.right, r.right);
+      box.bottom = Math.max(box.bottom, r.bottom);
+    }
+    stack.push(...Array.from(el.shadowRoot?.childNodes ?? []), ...Array.from(el.childNodes));
+  }
+  return box;
+}
+
+/** The security fix of 2026-11-06 (S6): whether the control's box spans more than WRAPPER_CONTROL_MIN_SHARE of the
+ *  wrapper's content box on each axis. */
+function spansMost(inner: DOMRect, content: Box): boolean {
+  const width = content.right - content.left;
+  const height = content.bottom - content.top;
+  return width > 0 && height > 0 && inner.width > width * WRAPPER_CONTROL_MIN_SHARE
+    && inner.height > height * WRAPPER_CONTROL_MIN_SHARE;
+}
+
+/** A box's content box: inside its border and its padding. */
+function contentBox(outer: DOMRect, style: CSSStyleDeclaration): Box {
+  const inset = (side: 'top' | 'right' | 'bottom' | 'left') => (parseFloat(style.getPropertyValue(`border-${side}-width`)) || 0)
+    + (parseFloat(style.getPropertyValue(`padding-${side}`)) || 0);
+  return { left: outer.left + inset('left'), top: outer.top + inset('top'), right: outer.right - inset('right'),
+    bottom: outer.bottom - inset('bottom') };
+}
+
 /** `outer` reaches no more than WRAPPER_HUG_PX past `inner` on any side. */
-function hugs(outer: DOMRect, inner: { left: number; top: number; right: number; bottom: number }): boolean {
+function hugs(outer: Box, inner: Box): boolean {
   return inner.left - outer.left <= WRAPPER_HUG_PX && inner.top - outer.top <= WRAPPER_HUG_PX
     && outer.right - inner.right <= WRAPPER_HUG_PX && outer.bottom - inner.bottom <= WRAPPER_HUG_PX;
 }
@@ -283,14 +451,19 @@ export function inkAgainst(ink: Rgba, behind: Rgba): CamouflageVerdict {
 
 // ── Compositing ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** How a colour reads against each colour that may be behind it: under `threshold` contrast it is lost. */
+/** How a colour reads against each colour that may be behind it: under `threshold` contrast it is lost. Against a
+ *  colour known only between bounds (a translucent layer over an image: opaqueLayerUnder), it reads clear only where
+ *  its least contrast over every colour between them passes (leastContrast); else what shows is unknown. */
 function against(text: Rgba, backdrop: readonly Rgba[], threshold: number = CAMOUFLAGE_MAX_CONTRAST):
   CamouflageVerdict {
   let camouflaged = 0;
+  let unsure = false;
   for (const behind of backdrop) {
-    if (contrast(over(text, behind), behind) < threshold) camouflaged += 1;
+    if (behind.hi !== undefined) {
+      if (leastContrast(text, behind) < threshold) unsure = true;
+    } else if (contrast(over(text, behind), behind) < threshold) camouflaged += 1;
   }
-  if (camouflaged === 0) return 'clear';
+  if (camouflaged === 0 && !unsure) return 'clear';
   return camouflaged === backdrop.length ? 'camouflaged' : 'unknown';
 }
 
@@ -580,9 +753,12 @@ function paintsUnder(el: Element, style: CSSStyleDeclaration, subject: Box): boo
   return shown === null || holds(paintedBox(el, style), shown);
 }
 
-/** A backdrop's colours as one string, near-equal ones alike (dedupe's rounding), in order. */
-const keyOf = (colours: readonly Rgba[]) => dedupe([...colours]).map((colour) => `${Math.round(colour.r / 3)},`
-  + `${Math.round(colour.g / 3)},${Math.round(colour.b / 3)}`).sort().join(';');
+/** A backdrop's colours as one string, near-equal ones alike (dedupe's rounding), in order; a colour known between
+ *  bounds by both of them. */
+const keyOf = (colours: readonly Rgba[]) => dedupe([...colours]).map((colour) => {
+  const own = (c: Rgba) => `${Math.round(c.r / 3)},${Math.round(c.g / 3)},${Math.round(c.b / 3)}`;
+  return colour.hi === undefined ? own(colour) : `${own(colour)}~${own(colour.hi)}`;
+}).sort().join(';');
 
 /** Whether `outer` holds `inner`, half a pixel either way. */
 function holds(outer: Box, inner: Box): boolean {
@@ -652,9 +828,18 @@ function drawsOver(el: Element, style: CSSStyleDeclaration, subject: Box): boole
  * an effect this code cannot work out or turns, skews or draws in 3D what it holds (turned), or where the layer or
  * anything between draws over the content (drawsOver) or changes what shows behind it without painting where it is.
  * Content with a negative z-index never gets here (backdropOf).
+ * The core pass of 2026-11-06 (Oracle's apply flow on a government-cloud tenant, fixtures/oracle/hjf-apply-section.html:
+ * its form a panel of rgba(248, 248, 247, 0.75) over the tenant's cover image): where no opaque layer gives the answer,
+ * a translucent layer of plain colour painted wholly under the content, under the same rules (translucentOver), bounds
+ * what shows behind it: whatever the image, the layer over it lies between the layer over black and over white
+ * (Rgba.hi), and the content reads clear only where its least contrast over every colour between passes (against).
+ * The farthest such layer is tried first (more of what lies over the image is then known); any layer it cannot follow
+ * between it and the content leaves the next nearer one to try.
  */
 function opaqueLayerUnder(el: Element, subject: Box, cache: ScanCache): Backdrop {
   const chain: Array<{ el: Element; style: CSSStyleDeclaration }> = [];
+  // The translucent layers met on the way, nearest first: each with its colour and the chain below it.
+  const translucent: Array<{ colour: Rgba; below: number }> = [];
   for (let at: Element | null = el; at !== null; at = flatParent(at)) {
     const style = styleOf(at, cache);
     if (style === null || hasUnknownEffect(style) || turned(style) || thickDecoration(style)) return 'unknown';
@@ -662,21 +847,50 @@ function opaqueLayerUnder(el: Element, subject: Box, cache: ScanCache): Backdrop
     if (paints && drawsOver(at, style, subject)) return 'unknown';
     const colour = paints ? opaqueOver(at, style, subject, cache) : null;
     if (colour !== null) {
-      let result: Backdrop = [colour];
-      for (let index = chain.length - 1; index >= 0 && result !== 'unknown'; index -= 1) {
-        const { el: inner, style: innerStyle } = chain[index]!;
-        const before: Backdrop = result;
-        result = layer(inner, innerStyle, result, cache);
-        // A layer between that changes what shows must paint where the content is (X3).
-        if (result !== 'unknown' && keyOf(result) !== keyOf(before) && !paintsUnder(inner, innerStyle, subject)) {
-          return 'unknown';
-        }
-      }
-      return result;
+      const result = composedOver([colour], chain, chain.length, subject, cache);
+      if (result !== 'unknown') return result;
+      break;
     }
+    const tint = paints ? translucentOver(at, style, subject, cache) : null;
+    if (tint !== null) translucent.push({ colour: tint, below: chain.length });
     chain.push({ el: at, style });
   }
+  for (let index = translucent.length - 1; index >= 0; index -= 1) {
+    const { colour, below } = translucent[index]!;
+    const result = composedOver([between(over(colour, BLACK), over(colour, WHITE))], chain, below, subject, cache);
+    if (result !== 'unknown') return result;
+  }
   return 'unknown';
+}
+
+/** `base` with the first `count` layers of `chain` (the content's nearest first) composited over it, outermost first;
+ *  'unknown' where one cannot be followed, or changes what shows without painting where the content is (X3). */
+function composedOver(base: Rgba[], chain: ReadonlyArray<{ el: Element; style: CSSStyleDeclaration }>, count: number,
+  subject: Box, cache: ScanCache): Backdrop {
+  let result: Backdrop = base;
+  for (let index = count - 1; index >= 0 && result !== 'unknown'; index -= 1) {
+    const { el: inner, style: innerStyle } = chain[index]!;
+    const before: Backdrop = result;
+    result = layer(inner, innerStyle, result, cache);
+    if (result !== 'unknown' && keyOf(result) !== keyOf(before) && !paintsUnder(inner, innerStyle, subject)) {
+      return 'unknown';
+    }
+  }
+  return result;
+}
+
+/** The core pass of 2026-11-06: `el`'s background colour when it is a translucent layer of plain colour painted wholly
+ *  under `subject` (opaqueLayerUnder): as opaqueOver asks of an opaque one (visible, no image or gradient, at full
+ *  opacity, no effect above it, its painted area holding `subject` clear of its rounded corners), with a colour that is
+ *  neither opaque nor transparent; else null. */
+function translucentOver(el: Element, style: CSSStyleDeclaration, subject: Box, cache: ScanCache): Rgba | null {
+  if (style.visibility !== 'visible') return null;
+  const bg = parseColor(style.backgroundColor, el.ownerDocument);
+  const stops = gradientStops(style.backgroundImage, el.ownerDocument);
+  if (bg === null || !(bg.a > 0 && bg.a < 1) || stops === null || stops.length > 0 || opacityOf(el, cache) < 1) return null;
+  if (effectAbove(el, cache)) return null;
+  if (!paintsUnder(el, style, subject) || cornersOver(el, style, subject)) return null;
+  return bg;
 }
 
 /** `el`'s background colour when it is an opaque layer painted wholly under `subject` (opaqueLayerUnder): visible, an
@@ -743,11 +957,16 @@ function paintedBox(el: Element, style: CSSStyleDeclaration): Box {
     bottom: box.bottom - inset('bottom') };
 }
 
-/** The box of `el`'s own text (a Range over its own text nodes), or of `el` itself when it holds none. */
+/** The box of `el`'s own text (a Range over its own text nodes), or of `el` itself when it holds none. A slot's own
+ *  text is what it renders: the nodes assigned to it (else its fallback content). Core pass Z2 of 2026-11-06: a slot
+ *  is display: contents, its own box empty at the page's origin, so text slotted into a shadow root (UltiPro's
+ *  ukg-label, fixtures/ultipro/register.html: "First name" slotted into its shadow root's <slot>) was judged where it is
+ *  not, cut by the account card's overflow: hidden, and read 'unknown'. */
 function ownTextBox(el: Element): Box {
   const doc = el.ownerDocument;
   let box: Box | null = null;
-  for (const node of Array.from(el.childNodes)) {
+  const assigned = el.localName === 'slot' ? (el as HTMLSlotElement).assignedNodes() : [];
+  for (const node of assigned.length > 0 ? assigned : Array.from(el.childNodes)) {
     if (node.nodeType !== 3 || (node.textContent ?? '').trim() === '') continue;
     const range = doc.createRange();
     range.selectNodeContents(node);
@@ -815,9 +1034,13 @@ function dedupe(colours: Rgba[]): Rgba[] {
   // Near-equal colours are one (each channel within NEAR_COLOUR of a kept one: round 3, X5), so faint nested shadows
   // never pass the candidates' cap.
   const kept: Rgba[] = [];
+  const near = (a: Rgba, b: Rgba) => Math.abs(a.r - b.r) <= NEAR_COLOUR && Math.abs(a.g - b.g) <= NEAR_COLOUR
+    && Math.abs(a.b - b.b) <= NEAR_COLOUR;
+  // A colour known between bounds is one with another only where both bounds are (the core pass of 2026-11-06).
+  const same = (a: Rgba, b: Rgba) => near(a, b) && (a.hi === undefined ? b.hi === undefined
+    : b.hi !== undefined && near(a.hi, b.hi));
   for (const colour of colours) {
-    if (!kept.some((other) => Math.abs(other.r - colour.r) <= NEAR_COLOUR && Math.abs(other.g - colour.g) <= NEAR_COLOUR
-      && Math.abs(other.b - colour.b) <= NEAR_COLOUR)) kept.push(colour);
+    if (!kept.some((other) => same(other, colour))) kept.push(colour);
   }
   return kept;
 }

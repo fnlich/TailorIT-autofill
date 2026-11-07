@@ -1,0 +1,34 @@
+{
+  "fixture": "icims/aon-gate-consent.frame-1",
+  "source": "https://us-careers-aon.icims.com/jobs/109113/login?_sp=REDACTED&_jsqid=REDACTED&in_iframe=1&mobile=false&width=940&height=500&bga=true&needsRedirect=false&jan1offset=-480&jun1offset=-420",
+  "captured": "2026-11-06T16:08:25.000Z",
+  "note": "Hooks only: the GDPR consent list (select#gdpr_consent_type, two scopes of consent) sits inside a label holding nothing else, so it has no visible label (the scanner leaves it to the person: no fillable reason the expectations name says so). The gate pauses for the person anyway (email-gate).",
+  "fields": [],
+  "hooks": {
+    "detect": "form#enterEmailForm",
+    "authState": "email-gate",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "email-gate",
+      "email": "input#email",
+      "password": null,
+      "confirm": null,
+      "terms": [
+        "input#accept_gdpr"
+      ],
+      "button": "input#enterEmailSubmitButton",
+      "form": "form#enterEmailForm",
+      "enablesWhenFilled": true,
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "a.iCIMS_Faq_Link",
+      "a.iCIMS_Anchor_Nav"
+    ],
+    "pressable": [
+      "input#enterEmailSubmitButton"
+    ]
+  }
+}

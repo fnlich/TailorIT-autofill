@@ -1,0 +1,21 @@
+{
+  "fixture": "icims/edgewater-self-id-veteran.frame-1",
+  "source": "https://careers-edgewaterit.icims.com/jobs/4828/full-stack-platform-engineer/form?form=Voluntary_Self_Identification_Forms&step=6&isPacket=1&type=4&hashed=REDACTED&in_iframe=1",
+  "captured": "2026-11-06T16:48:39.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input#keepMeAliveButton",
+      "a.iCIMS_Faq_Link",
+      "a.iCIMS_Anchor_Nav",
+      ".iCIMS_userMenuLink a"
+    ],
+    "pressable": []
+  }
+}

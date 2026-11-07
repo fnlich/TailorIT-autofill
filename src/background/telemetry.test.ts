@@ -106,7 +106,9 @@ describe('the anonymous counters', () => {
     await fakeBrowser.storage.local.set({ [TELEMETRY_KEY]: { counts: [
       { platform: 'lever', fieldKind: 'text', matcherStage: 'exact', outcome: 'success', tripwireTriggered: false, count: 4 },
       { platform: 'lever', fieldKind: 'text', matcherStage: 'exact', outcome: 'fail', tripwireTriggered: false, count: 1, label: 'Email' },
-      { platform: 'smartrecruiters', fieldKind: 'text', matcherStage: 'exact', outcome: 'fail', tripwireTriggered: false, count: 1 },
+      // ── snapshot build 2026-11-06 (oracle-sf-sr): a platform with no adapter (SmartRecruiters and BambooHR are platforms
+      // now) ──
+      { platform: 'teamtailor', fieldKind: 'text', matcherStage: 'exact', outcome: 'fail', tripwireTriggered: false, count: 1 },
     ] } });
     expect(await counts(worker)).toEqual([
       { platform: 'lever', fieldKind: 'text', matcherStage: 'exact', outcome: 'success', tripwireTriggered: false, count: 4 },

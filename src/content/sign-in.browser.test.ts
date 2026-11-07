@@ -17,10 +17,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInst
 import { ashbyAdapter } from '../adapters/ashby';
 import { genericAdapter } from '../adapters/generic';
 import { greenhouseAdapter } from '../adapters/greenhouse';
-import type { Adapter } from '../adapters/types';
+import type { Adapter, SignInForm } from '../adapters/types';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures, type Fixture } from '../dom/fixture.testkit';
-import { standardSignInForm, signInRefusal } from '../dom/sign-in-form';
+import { guardSubmission, signInContainerOf, standardSignInForm, signInRefusal } from '../dom/sign-in-form';
 import { deadline } from '../dom/time';
 import type { SignInCredential } from '../messaging/schemas';
 import createAccountHtml from '../../fixtures/synthetic/signin/create-account.html?raw';
@@ -284,6 +284,49 @@ describe('Sign-in mode Auto (sign-in.ts)', () => {
     expect((fixture.doc.getElementById('email') as HTMLInputElement).value).toBe('');
     expect(submitsOn(fixture)).toBe(0);
   });
+
+  // ── snapshot build 2026-11-06 (contract6): TailorIT's API 6 ──
+  it('takes the every-site sign-in on ADP’s and ClearCompany’s candidate paths, by the page’s pathname, and on none of their other pages',
+    async () => {
+      const everySite = () => channelAnswering({ ok: true, data: { ...CREDENTIAL, host: '*' } });
+      // Their employee pages (the paths no candidate rule names), the hosts' other spellings of a candidate path.
+      for (const href of ['https://workforcenow.adp.com/theme/index.html#/Myself_ttd_MyselfTabTimecard',
+        'https://workforcenow.adp.com/mascsr/default/mdf/payroll/x.html?p=/mascsr/default/mdf/recruitment/',
+        'https://vafb.clearcompany.com/app/dashboard', 'https://www.clearcompany.com/careers/x',
+        'https://cc-app-static.clearcompany.com/careers/x']) {
+        const fixture = await loadFixture(document, signInPage());
+        expect(await attempt(fixture, everySite(), href), href).toBe('unavailable');
+        expect((fixture.doc.getElementById('password') as HTMLInputElement).value, href).toBe('');
+        expect(submitsOn(fixture), href).toBe(0);
+      }
+      // Their candidate pages (fixtures/adp's guest and steps, fixtures/clearcompany's account step, as the snapshots
+      // name them): typed and pressed.
+      for (const href of ['https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=x&jobId=1',
+        'https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=x&jobId=1&OTP_login=true',
+        'https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply']) {
+        const fixture = await loadFixture(document, signInPage());
+        expect(await attempt(fixture, everySite(), href), href).toBe('continue');
+        expect(typedOn(fixture), href).toEqual({ email: CREDENTIAL.email, password: CREDENTIAL.password, terms: true });
+      }
+    });
+
+  it('lets a declared form its page’s script sends through on ADP’s candidate paths alone, by the page’s pathname',
+    async () => {
+      // No method and no action written: a GET to the page itself, were the browser to send it (dom/sign-in-form.ts).
+      const fixture = await loadFixture(document, signInPage({ method: '' }));
+      const owner = fixture.doc.getElementById('sign-in') as HTMLFormElement;
+      const form = { ...standardSignInForm(fixture.doc, 'sign-in')!, declared: true as const, scriptSubmits: true as const,
+        form: owner };
+      expect(signInRefusal(form, new URL(HREF))).toBeNull();
+      expect(signInRefusal(form, new URL('https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=x')))
+        .toBeNull();
+      expect(signInRefusal(form, new URL('https://vafb.clearcompany.com/careers/jobs/1/apply'))).toBeNull();
+      for (const href of ['https://workforcenow.adp.com/theme/index.html', 'https://vafb.clearcompany.com/app/x',
+        'https://careers.example.com/careers/']) {
+        expect(signInRefusal(form, new URL(href)), href).toBe('method');
+      }
+    });
+  // ── end contract6 ──
 });
 
 describe('a run paused at a sign-in (v3 Phase 5)', () => {
@@ -511,3 +554,362 @@ describe('the agent’s messages (v3 Phase 5)', () => {
     await vi.waitFor(() => expect(worker.of('run/begin')).toEqual([expect.objectContaining({ trigger: 'agent' })]));
   });
 });
+
+// ── snapshot build 2026-11-06 (core pass Z1, item 24): a declared sign-in container ──
+/** A page the run fills like a step whose account part has no <form> (ADP's guest page, adp-6): its names and email
+ *  inside div#guest, and its Continue (role=button) there, which the page's script answers by showing a code dialog.
+ *  `inside` goes in the container, `after` after it. */
+function guestPage(options: { inside?: string; after?: string } = {}): string {
+  return `<!doctype html><html><head><style>
+    body { margin: 0; background: #fff; color: #222; font: 16px/1.5 system-ui; }
+    input { display: block; width: 300px; padding: 6px; border: 1px solid #888; }
+    #continue { display: inline-block; padding: 6px 12px; border: 1px solid #333; }
+  </style></head><body><main>
+  <div id="guest"><h1>Tell us about yourself.</h1>
+    <label for="first">First Name</label><input id="first" type="text" required>
+    <label for="em">Email</label><input id="em" type="text" required>
+    ${options.inside ?? ''}
+    <div id="continue" role="button" tabindex="0" aria-label="Continue">Continue</div>
+  </div>${options.after ?? ''}</main>
+  <script>
+    window.presses = 0;
+    document.getElementById('continue').addEventListener('click', () => {
+      window.presses += 1;
+      window.typed = { first: document.getElementById('first').value, em: document.getElementById('em').value };
+      const dialog = document.createElement('div');
+      dialog.innerHTML = '<label for="otp">Verification code</label><input id="otp" autocomplete="one-time-code">';
+      document.getElementById('guest').replaceWith(dialog);
+    });
+  </script></body></html>`;
+}
+
+/** The adapter of guestPage: div#guest its root and its one step (final 'unknown': no Next, no Submit), its sign-in
+ *  container that div with Continue its button, no box (a declared container: Adapter.signInContainer). `button` and
+ *  `never` stand a test's change in. */
+function guestAdapter(options: { button?: (doc: Document) => HTMLElement | null; never?: (doc: Document) => Element[];
+  container?: (doc: Document) => Element | null } = {}): Adapter {
+  const containerOf = options.container ?? ((doc: Document) => doc.getElementById('guest'));
+  return {
+    ...genericAdapter,
+    id: 'generic',
+    detect: (doc) => {
+      const root = doc.getElementById('guest');
+      return root === null ? null : { formRoot: root };
+    },
+    stepSignature: (doc) => ({ anchors: [doc.getElementById('guest') === null ? 'gone' : 'guest'] }),
+    isFinalStep: () => 'unknown',
+    nextButton: () => null,
+    submitButton: () => null,
+    neverPress: (root) => options.never?.(root.ownerDocument) ?? [],
+    signInContainer(doc) {
+      const container = containerOf(doc);
+      const button = (options.button ?? ((each: Document) => each.getElementById('continue')))(doc);
+      return container === null || button === null ? null
+        : { email: null, password: null, confirm: null, terms: [], button, container };
+    },
+  };
+}
+
+const pressesOn = (fixture: Fixture) => (fixture.view as unknown as { presses?: number }).presses ?? 0;
+
+describe('a declared sign-in container (core pass Z1, item 24)', () => {
+  async function pressAt(fixture: Fixture, adapter: Adapter, answer: unknown = { ok: true, data: { host: HOST,
+    email: CREDENTIAL.email } }, href = HREF) {
+    const channel = channelAnswering(answer);
+    const outcome = await signIn({ doc: fixture.doc, adapter, channel, href: () => href, isTop: true, container: true,
+      signal: new AbortController().signal, settleMs: 1_500 });
+    return { outcome, asked: channel.asked };
+  }
+
+  it('asks as an email gate, presses the button the adapter names, and goes on once the container is gone', async () => {
+    const fixture = await loadFixture(document, guestPage(), { width: 1100, height: 900 });
+    const pressed = await pressAt(fixture, guestAdapter());
+    expect(pressed).toEqual({ outcome: 'continue', asked: [{ v: 1, type: 'signin/credential', wall: 'email-gate' }] });
+    expect(pressesOn(fixture)).toBe(1);
+    // A container is no wall: without container mode the page offers Sign-in Auto nothing.
+    const again = await loadFixture(document, guestPage(), { width: 1100, height: 900 });
+    expect(await attempt(again, channelAnswering({ ok: true, data: CREDENTIAL }))).toBe('unavailable');
+    expect(pressesOn(again)).toBe(0);
+  });
+
+  it('keeps every Sign-in Auto guard: a challenge first, a challenge frame, https, the host, the worker’s word',
+    async () => {
+      const refused: Array<[string, string, Partial<{ answer: unknown; href: string }>]> = [
+        ['a CAPTCHA shown', '<div class="g-recaptcha" data-sitekey="k" style="width:304px;height:78px"></div>', {}],
+        ['a frame reading like a challenge', '<iframe srcdoc="" src="https://shield.example/captcha/frame" '
+          + 'style="width:300px;height:80px"></iframe>', {}],
+        ['an http page', '', { href: `http://${HOST}/en-US/careers/job/x/Engineer_JR-0000001/apply/applyManually` }],
+        ['a sign-in for another host', '', { answer: { ok: true, data: { host: 'other.wd5.myworkdayjobs.com',
+          email: CREDENTIAL.email } } }],
+        ['no sign-in saved for the host', '', { answer: { ok: false, error: 'unavailable' } }],
+      ];
+      for (const [what, after, change] of refused) {
+        const fixture = await loadFixture(document, guestPage({ after }), { width: 1100, height: 900 });
+        const { outcome, asked } = await pressAt(fixture, guestAdapter(), change.answer, change.href);
+        expect(outcome, what).not.toBe('continue');
+        expect(pressesOn(fixture), what).toBe(0);
+        // A challenge or http: nothing is even asked.
+        if (after !== '' || change.href !== undefined) expect(asked, what).toEqual([]);
+        removeFixtures(document);
+      }
+    });
+
+  it('never presses a button outside the container’s document, or one the never-press list holds (adversarial)',
+    async () => {
+      // The button of a frame's document named as the container's: refused as a form, and by the door.
+      const framed = await loadFixture(document, guestPage({ after: '<iframe id="inner" style="width:400px;height:120px" '
+        + 'srcdoc="&lt;div id=&quot;away&quot; role=&quot;button&quot; style=&quot;padding:6px&quot;&gt;Continue&lt;/div&gt;">'
+        + '</iframe>' }), { width: 1100, height: 900 });
+      const inner = (framed.doc.getElementById('inner') as HTMLIFrameElement).contentDocument!;
+      await vi.waitFor(() => expect(inner.getElementById('away')).not.toBeNull());
+      let awayPressed = 0;
+      inner.getElementById('away')!.addEventListener('click', () => {
+        awayPressed += 1;
+      });
+      const outside = guestAdapter({ button: () => inner.getElementById('away') });
+      expect(signInRefusal(signInContainerOf(outside, framed.doc)!, new URL(HREF))).toBe('shape');
+      expect((await pressAt(framed, outside)).outcome).toBe('unavailable');
+      expect([awayPressed, pressesOn(framed)]).toEqual([0, 0]);
+      removeFixtures(document);
+      // The button the adapter names never to press, or one inside or around one.
+      for (const never of [(doc: Document) => [doc.getElementById('continue')!],
+        (doc: Document) => [doc.getElementById('guest')!]]) {
+        const fixture = await loadFixture(document, guestPage(), { width: 1100, height: 900 });
+        expect((await pressAt(fixture, guestAdapter({ never }))).outcome).toBe('unavailable');
+        expect(pressesOn(fixture)).toBe(0);
+        removeFixtures(document);
+      }
+    });
+
+  it('is no place for a password, and holds its boxes, its button’s form and its own form to the rules of one',
+    async () => {
+      const refusal = async (options: Parameters<typeof guestPage>[0], adapter: Adapter = guestAdapter(),
+        base = `https://${HOST}/`) => {
+        const fixture = await loadFixture(document, guestPage(options), { width: 1100, height: 900 });
+        setBase(fixture.doc, base);
+        const read = signInContainerOf(adapter, fixture.doc);
+        const answer = read === null ? 'none' : signInRefusal(read, new URL(HREF));
+        removeFixtures(document);
+        return answer;
+      };
+      expect(await refusal({})).toBeNull();
+      // A password box inside the container (the "password box" guard).
+      expect(await refusal({ inside: '<label for="pw">Password</label><input id="pw" type="password">' })).toBe('shape');
+      // A native button outside the container that belongs to another form.
+      expect(await refusal({ after: '<form id="other" method="post"><input name="q"><button id="b" type="submit">Go'
+        + '</button></form>' }, guestAdapter({ button: (doc) => doc.getElementById('b') }))).toBe('shape');
+      // A container that is a <form>: its method and action as a sign-in form's.
+      const formContainer = (doc: Document) => doc.getElementById('guest-form');
+      const asForm = (method: string, action = '') => ({ after: `<form id="guest-form" method="${method}"${action}>`
+        + '<input id="x" aria-label="X" style="width:300px"></form>' });
+      expect(await refusal(asForm('post'), guestAdapter({ container: formContainer }))).toBeNull();
+      expect(await refusal(asForm('get'), guestAdapter({ container: formContainer }))).toBe('method');
+      expect(await refusal(asForm('post', ' action="https://collector.example/x"'), guestAdapter({ container: formContainer })))
+        .toBe('cross-origin');
+      // Only a declared form names a container (the standard rule never does).
+      const fixture = await loadFixture(document, guestPage(), { width: 1100, height: 900 });
+      const plain = { email: null, password: null, confirm: null, terms: [], button: fixture.doc.getElementById('continue')!,
+        container: fixture.doc.getElementById('guest')! };
+      expect(signInRefusal(plain, new URL(HREF))).toBe('shape');
+    });
+
+  it('guards the <form> a box-less container stands for: a submission as anything but a POST home is cancelled',
+    async () => {
+      const fixture = await loadFixture(document, guestPage({ after: '<form id="guest-form" method="post">'
+        + '<input name="first" aria-label="First" style="width:300px"></form>' }), { width: 1100, height: 900 });
+      setBase(fixture.doc);
+      const form = fixture.doc.getElementById('guest-form') as HTMLFormElement;
+      const read = signInContainerOf(guestAdapter({ container: () => form }), fixture.doc)!;
+      const watching = new AbortController();
+      const stop = guardSubmission(read, new URL(HREF), watching.signal);
+      const sent: boolean[] = [];
+      fixture.view.addEventListener('submit', (event) => {
+        sent.push(!event.defaultPrevented);
+        event.preventDefault();
+      });
+      form.setAttribute('method', 'get');
+      // eslint-disable-next-line no-restricted-syntax -- the test drives the browser's own submission, as a page would
+      form.requestSubmit();
+      form.setAttribute('method', 'post');
+      // eslint-disable-next-line no-restricted-syntax -- the test drives the browser's own submission, as a page would
+      form.requestSubmit();
+      stop();
+      expect(sent).toEqual([false, true]);
+    });
+
+  async function startRun(page: string, signInMode: 'auto' | 'manual', adapter: Adapter, script: Record<string, unknown[]> = {}) {
+    const fixture = await loadFixture(document, page, { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: signInMode } };
+    const worker = createFakeWorker({ settings, script: script as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => [adapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    return { fixture, worker, runtime };
+  }
+
+  it('with Sign-in Auto, presses the container’s button once the run filled the step and rests', async () => {
+    const { fixture, worker, runtime } = await startRun(guestPage(), 'auto', guestAdapter(),
+      { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] });
+    await runtime.fill();
+    await vi.waitFor(() => expect(pressesOn(fixture)).toBe(1), { timeout: 5_000 });
+    // The step's fields were the profile's, filled before the press.
+    const typed = (fixture.view as unknown as { typed?: { first: string; em: string } }).typed!;
+    expect(typed.first).not.toBe('');
+    expect(typed.em).not.toBe('');
+    expect(worker.of('signin/credential')).toEqual([expect.objectContaining({ wall: 'email-gate' })]);
+  });
+
+  it('with Sign-in Manual leaves the button to the person, asking for nothing', async () => {
+    const { fixture, worker, runtime } = await startRun(guestPage(), 'manual', guestAdapter());
+    await runtime.fill();
+    await deadline(800);
+    expect(pressesOn(fixture)).toBe(0);
+    expect(worker.of('signin/credential')).toEqual([]);
+  });
+
+  it('with Sign-in Auto, never presses while a required question of the step is left unanswered', async () => {
+    const { fixture, worker, runtime } = await startRun(guestPage({ inside: '<label for="ssn">Social Security Number</label>'
+      + '<input id="ssn" type="text" required>' }), 'auto', guestAdapter(),
+    { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] });
+    await runtime.fill();
+    await deadline(800);
+    expect((fixture.doc.getElementById('ssn') as HTMLInputElement).value).toBe('');
+    expect(pressesOn(fixture)).toBe(0);
+    expect(worker.of('signin/credential')).toEqual([]);
+  });
+
+  it('with Sign-in Auto, never presses while one of the container’s own required boxes is empty, labelled or not',
+    async () => {
+      // A required box no label names (the scan reads no question there, as UltiPro's register labels read today).
+      const { fixture, worker, runtime } = await startRun(guestPage({ inside: '<input id="unnamed" type="text" '
+        + 'aria-required="true">' }), 'auto', guestAdapter(),
+      { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] });
+      await runtime.fill();
+      await deadline(800);
+      expect((fixture.doc.getElementById('unnamed') as HTMLInputElement).value).toBe('');
+      expect(pressesOn(fixture)).toBe(0);
+      expect(worker.of('signin/credential')).toEqual([]);
+    });
+});
+// ── end core pass Z1, item 24 ──
+
+// ── The behaviour review of 2026-11-06 (M7): the sign-in container's safety gates, each pinned ──
+describe('a declared sign-in container’s gates (the behaviour review of 2026-11-06, M7)', () => {
+  /** A step whose root (main#step) is wider than its sign-in container (div#guest): `after` goes in the step, outside
+   *  the container. */
+  const stepPage = (after = '', required = true) => guestPage({ after }).replace('<main>', '<main id="step">')
+    .replace(/ required>/g, required ? ' required>' : '>');
+  const stepAdapter: Adapter = { ...guestAdapter(),
+    detect: (doc) => {
+      const root = doc.getElementById('step');
+      return root === null ? null : { formRoot: root };
+    } };
+  const SAVED = { 'signin/credential': [{ ok: true, data: { host: HOST, email: CREDENTIAL.email } }] };
+
+  async function run(page: string, request: { dryRun?: boolean } = {}) {
+    const fixture = await loadFixture(document, page, { width: 1100, height: 900 });
+    const settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, signIn: 'auto' as const } };
+    const worker = createFakeWorker({ settings, script: SAVED as never });
+    const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => HREF, isTop: true,
+      adapters: () => [stepAdapter], settle: { quietMs: 40 } });
+    runtimes.push(runtime);
+    await runtime.fill(request);
+    return { fixture, worker };
+  }
+
+  /** Whether the run went to the container's press at all (content.sign-in-container: its outcome, logged). */
+  const containerTried = () => logs.mock.calls.some(([line]) => line === '[tailorit-autofill] content.sign-in-container');
+
+  it('control: presses once the step around it is filled and rests', async () => {
+    logs.mockClear();
+    const { fixture } = await run(stepPage());
+    await vi.waitFor(() => expect(pressesOn(fixture)).toBe(1), { timeout: 5_000 });
+    await vi.waitFor(() => expect(containerTried()).toBe(true), { timeout: 10_000 });
+  });
+
+  it('never presses in a dry run, whatever the container holds (Z1w)', async () => {
+    const { fixture, worker } = await run(stepPage('', false), { dryRun: true });
+    await deadline(1_200);
+    expect(pressesOn(fixture)).toBe(0);
+    expect(worker.of('signin/credential')).toEqual([]);
+  });
+
+  it('never presses while a required question of the step outside the container is empty (Z1q)', async () => {
+    const { fixture, worker } = await run(stepPage('<label for="ssn">Social Security Number</label>'
+      + '<input id="ssn" type="text" required>'));
+    await deadline(1_200);
+    expect((fixture.doc.getElementById('ssn') as HTMLInputElement).value).toBe('');
+    expect(pressesOn(fixture)).toBe(0);
+    expect(worker.of('signin/credential')).toEqual([]);
+  });
+
+  it('never presses while the step shows an error outside the container (Z1t)', async () => {
+    const { fixture, worker } = await run(stepPage('<label for="colour">Favourite colour</label>'
+      + '<input id="colour" type="text" aria-invalid="true">'));
+    await deadline(1_200);
+    expect(pressesOn(fixture)).toBe(0);
+    expect(worker.of('signin/credential')).toEqual([]);
+  });
+
+  it('never presses while a checkbox CAPTCHA on the step is unsolved, though the step was filled (M6)', async () => {
+    const widget = '<div class="g-recaptcha" data-sitekey="x"><div style="width:304px;height:78px"><div><iframe srcdoc="" '
+      + 'title="reCAPTCHA" width="304" height="78" src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=x&amp;'
+      + 'size=normal"></iframe></div><textarea name="g-recaptcha-response" style="display:none"></textarea></div></div>';
+    logs.mockClear();
+    const { fixture, worker } = await run(stepPage(widget));
+    await vi.waitFor(() => expect((fixture.doc.getElementById('first') as HTMLInputElement).value).not.toBe(''));
+    await deadline(1_200);
+    expect(pressesOn(fixture)).toBe(0);
+    expect(worker.of('signin/credential')).toEqual([]);
+    // Held by the run's own gate (Z1s), before Sign-in Auto's own challenge guard is reached.
+    expect(containerTried()).toBe(false);
+  });
+
+  /** A page holding the application's form and a container, read as the adapter declares it. */
+  async function refusalOf(html: string, declared: (doc: Document) => Partial<SignInForm>) {
+    const fixture = await loadFixture(document, `<!doctype html><html><head><style>
+      input { display: block; width: 300px; padding: 6px; border: 1px solid #888; }
+      button { padding: 6px 12px; border: 1px solid #333; }</style></head><body>${html}</body></html>`);
+    setBase(fixture.doc);
+    const adapter: Adapter = { ...genericAdapter, id: 'generic',
+      detect: (doc) => ({ formRoot: doc.getElementById('app') ?? doc.body }),
+      submitButton: (root) => root.ownerDocument.getElementById('apply'),
+      signInContainer: (doc) => ({ email: null, password: null, confirm: null, terms: [],
+        button: doc.getElementById('continue')!, container: doc.getElementById('guest')!, ...declared(doc) }) };
+    const read = signInContainerOf(adapter, fixture.doc)!;
+    const answer = signInRefusal(read, new URL(HREF));
+    removeFixtures(document);
+    return answer;
+  }
+  const GUEST_FORM = '<form id="guest" method="post"><label for="em">Email</label><input id="em" type="email">'
+    + '<button id="continue" type="submit">Continue</button></form>';
+  const email = (doc: Document) => ({ email: doc.getElementById('em') as HTMLInputElement });
+
+  it('control: a container that is its own form, its box and its terms inside it, passes', async () => {
+    expect(await refusalOf(GUEST_FORM, email)).toBeNull();
+    expect(await refusalOf(GUEST_FORM.replace('<button', '<label><input id="t" type="checkbox"> I agree</label><button'),
+      (doc) => ({ ...email(doc), terms: [doc.getElementById('t') as HTMLInputElement] }))).toBeNull();
+  });
+
+  it('refuses a container inside the application’s form, whose press would send it (Z1g)', async () => {
+    expect(await refusalOf(`<form id="app" method="post"><label for="first">First</label><input id="first">
+      <div id="guest"><label for="em">Email</label><input id="em" type="email">
+      <button id="continue" type="submit">Continue</button></div>
+      <button id="apply" type="submit">Submit application</button></form>`, email)).toBe('shape');
+  });
+
+  it('refuses a declared box or terms box outside the container, though the container’s form owns it (Z1f, Z1i)',
+    async () => {
+      expect(await refusalOf(`<form id="guest" method="post"><label for="x">X</label><input id="x">
+        <button id="continue" type="submit">Continue</button></form>
+        <label for="em">Email</label><input id="em" type="email" form="guest">`, email)).toBe('shape');
+      expect(await refusalOf(`${GUEST_FORM}<label><input id="t" type="checkbox" form="guest"> I agree</label>`,
+        (doc) => ({ ...email(doc), terms: [doc.getElementById('t') as HTMLInputElement] }))).toBe('shape');
+    });
+
+  it('refuses a declared container that also names a <form> (Z1e)', async () => {
+    expect(await refusalOf(GUEST_FORM, (doc) => ({ ...email(doc),
+      form: doc.getElementById('guest') as HTMLFormElement }))).toBe('shape');
+  });
+});
+// ── end of the behaviour review's block (M7) ──

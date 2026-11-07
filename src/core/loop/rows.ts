@@ -82,8 +82,9 @@ export function loopRows(state: LoopState, verdict: LoopVerdict): FillResult[] {
       rows.push(withRevealer(field.row === null ? unplannedRow(field, reason)
         : unresolvedRow(field.row, reason, field.key), field));
     } else if (field.row !== null) {
-      // A stopped field that went keeps its own reason; a frozen one still holding our value went like any other.
-      const row = field.present ? field.row
+      // A stopped field that went keeps its own reason; a frozen one still holding our value went like any other. An
+      // upload the page took with its input (TrackedField.taken, the core pass of 2026-11-06) keeps its row.
+      const row = field.present || field.taken === true ? field.row
         : field.status === 'disappeared' || field.reason === null ? disappearedRow(field.row)
           : unresolvedRow(field.row, field.reason);
       rows.push(withRevealer(row, field));

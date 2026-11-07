@@ -1,0 +1,28 @@
+{
+  "fixture": "jobvite/ninjaone-consent-empty",
+  "source": "https://jobs.jobvite.com/ninjaone/job/o5b1AfwB/apply",
+  "captured": "2026-11-06T13:54:03.000Z",
+  "fields": [
+    {
+      "label": "Location of Residence and Language",
+      "kind": "select",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "options": 2,
+      "control": "#jv-country-select"
+    }
+  ],
+  "hooks": {
+    "detect": "form[name=\"consentForm\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "form[name=\"consentForm\"] a.jv-button"
+    ],
+    "pressable": []
+  }
+}

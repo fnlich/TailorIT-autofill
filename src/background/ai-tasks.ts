@@ -204,7 +204,8 @@ const textOf = (item: AutofillClassifyItem) => [item.key, item.kind, item.label,
   .reduce((sum, text) => sum + text.length, 0);
 
 /** Whether TailorIT's contract names a platform (its ATS_KINDS): a classify request names the form's platform, and one
- *  it does not list yet (PLATFORMS_AHEAD_OF_CONTRACT, empty since its API 5) would be refused. */
+ *  it does not list (PLATFORMS_AHEAD_OF_CONTRACT: since its API 6, `site` alone, a company's own page) would be
+ *  refused. Every ATS's items, the new ATSs' and SmartRecruiters' included, are asked under their own platform. */
 const knownToTailorIt = (platform: Platform): platform is AtsKind => (ATS_KINDS as readonly string[]).includes(platform);
 
 /** A pass's classify items as batches, per platform, at most 20 items each and under the text cap, and the verdicts

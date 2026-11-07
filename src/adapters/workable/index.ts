@@ -72,6 +72,25 @@
  * - The posting (postingText): the overview's description, requirements and benefits (section[data-ui=job-*]).
  * - Entry (entryControl): on the overview, "Apply for this job" (a[data-ui=apply-button][role=button]) or the
  *   APPLICATION tab, read by the address it opens; both are never pressed by a run (entryNeverPressed).
+ * The owner's captures of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06) add:
+ * - An upload that worked (uploadState: fixtures/workable/raydar-attached.html): the drop zone shows the file's name cut
+ *   in two spans, <div data-id="filename"><span>HEAD</span><span>TAIL</span></div>, beside <a data-action="view"
+ *   href="<the file's signed storage address>" aria-label="view NAME"> and <button data-action="delete" aria-label="delete
+ *   NAME"> (the converter redacts NAME and the address). The confirmed sign is now this page's, no longer only the
+ *   synthetic page's guess.
+ * - Workable's job-search site, jobs.workable.com/view/<id>/<slug> (fixtures/workable/jobs-salvo-apply.html): the
+ *   posting's page, showing the same application form in a modal dialog at the same address (both captures show it
+ *   open, the page's "Apply now", button[data-ui=overview-apply-now], behind it): <dialog role="dialog"
+ *   aria-modal="true" ...><h2 data-ui="application-form-title">Apply
+ *   for TITLE</h2> ... <div data-ui="application-form-actions"><button data-ui="application-form-cancel">Cancel</button>
+ *   <button data-ui="application-form-submit">Submit application</button></div> ... <form data-ui="application-form">
+ *   ... the same sections, fields, uploads and <button data-ui="apply-button" type="submit">Submit application</button>
+ *   (its CSS module classes spelled styles__x--hash, not styles--hash: nothing here reads them). Every hook above
+ *   reads it as it is; Submit is the form's own, and the dialog's own Cancel and Submit beside the title, the page's
+ *   "Apply now" (overview-apply-now, sticky-apply-now), "Share job" and "Search for jobs" are never pressed. The
+ *   posting (postingText) is its job breakdown: [data-ui=job-breakdown-description-parsed-html] and
+ *   [data-ui=job-breakdown-requirements-parsed-html], side by side. No entryControl there: TailorIT's agent does not
+ *   queue Workable, and no capture shows what "Apply now" does but the dialog already open.
  * Nothing here reads, logs or sends a value.
  */
 import { newScanCache, type ScanCache } from '../../dom/scan-cache';
@@ -408,8 +427,11 @@ function uploadState(input: HTMLInputElement, fileName: string): UploadState | n
     && UPLOAD_FAILED.test(text));
   if (errors.some(namesIt)) return 'failed';
   if (errors.length > 0) return 'pending';
-  const named = name !== '' && Array.from(zone.querySelectorAll('*')).some((el) => el.children.length === 0
-    && words(el) === name);
+  // The owner's capture of 2026-11-06 (raydar-attached.html), an upload that worked: <div data-id="filename"><span>HEAD
+  // </span><span>TAIL</span></div>, the name cut in two (see the header): the name is the two spans' text together.
+  const split = Array.from(zone.querySelectorAll('[data-id="filename"]')).some((el) => (el.textContent ?? '').trim() === name);
+  const named = name !== '' && (split || Array.from(zone.querySelectorAll('*')).some((el) => el.children.length === 0
+    && words(el) === name));
   const removable = Array.from(zone.querySelectorAll('button, [role="button" i]')).some((el) =>
     REMOVES.test(`${el.getAttribute('aria-label') ?? ''} ${el.getAttribute('title') ?? ''} ${words(el)}`));
   const busy = zone.querySelector('[aria-busy="true" i], [role="progressbar" i]') !== null;
@@ -423,10 +445,25 @@ function postingText(doc: Document): Element | null {
   // data-ui="job-description"><h2 id="job-description-title">Description</h2> ... </section><section ...
   // data-ui="job-requirements"> ... </section><section ... data-ui="job-benefits"> ... </section>, side by side.
   const description = doc.querySelector('[data-ui="job-description"]');
-  if (description === null) return null;
+  if (description === null) return jobsSitePosting(doc);
   const parent = description.parentElement;
   return parent !== null && parent.querySelector('[data-ui="job-requirements"], [data-ui="job-benefits"]') !== null
     && parent.querySelector(FORM) === null ? parent : description;
+}
+
+/** The posting's own text on jobs.workable.com (see the header): the part of the page that holds its description and
+ *  its requirements and no form, else the description alone; null where it shows neither. */
+function jobsSitePosting(doc: Document): Element | null {
+  // jobs-salvo-apply.html: <div class="jobBreakdown__job-breakdown--31MGR"><section><h3>Description</h3><div
+  // class="parsedHtml__content--OWD2W" data-ui="job-breakdown-description-parsed-html"> ... </div></section><section>
+  // <h3>Requirements</h3><div ... data-ui="job-breakdown-requirements-parsed-html"> ... </div></section></div>
+  const description = doc.querySelector('[data-ui="job-breakdown-description-parsed-html"]');
+  if (description === null) return null;
+  for (let at = description.parentElement; at !== null && at !== doc.body; at = at.parentElement) {
+    if (at.querySelector(FORM) !== null) break;
+    if (at.querySelector('[data-ui="job-breakdown-requirements-parsed-html"]') !== null) return at;
+  }
+  return description;
 }
 
 /** The never-pressed buttons and links (see the header). */
@@ -447,7 +484,11 @@ function neverPress(root: Element): Element[] {
   // job</a> (the same data-ui as Submit's, so a link here).
   const around = Array.from(doc.querySelectorAll(['[data-ui^="cookie-consent"] button', 'button[data-ui^="cookie-consent"]',
     '[data-ui="update-cookie-preferences"]', 'a[data-ui="role-overview-tab"]', 'a[data-ui="application-form-tab"]',
-    'a[data-ui="company-logo"]', 'a[data-ui="view-jobs-url"]', 'a[data-ui="apply-button"]'].join(', ')));
+    'a[data-ui="company-logo"]', 'a[data-ui="view-jobs-url"]', 'a[data-ui="apply-button"]',
+    // jobs.workable.com (jobs-salvo-apply.html, see the header): the dialog's own Cancel and Submit beside its title,
+    // and the posting page's buttons behind it.
+    '[data-ui="application-form-cancel"]', '[data-ui="application-form-submit"]', '[data-ui="overview-apply-now"]',
+    '[data-ui="sticky-apply-now"]', '[data-ui="share-now"]', '[data-ui="search-for-jobs-button"]'].join(', ')));
   return [...new Set([...autofillBoxes(root), ...inForm, ...around])];
 }
 

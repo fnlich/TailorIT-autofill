@@ -1,0 +1,6 @@
+{
+  "https://cloudscouts-software-solutions-llc.careerplug.com/jobs/3677935/apps/new": "fixtures/careerplug/cloudscouts-form.html",
+  "https://www.google.com/recaptcha/api2/anchor?ar=1&k=6Lel5h4UAAAAAHY2i5Sgq9x0dyHu8K0RJJv95Ij5&co=aHR0cHM6Ly9jbG91ZHNjb3V0cy1zb2Z0d2FyZS1zb2x1dGlvbnMtbGxjLmNhcmVlcnBsdWcuY29tOjQ0Mw..&hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&size=invisible&anchor-ms=20000&execute-ms=30000&cb=5bnwffw5xdwd": "fixtures/careerplug/cloudscouts-form.third-party-frame.html",
+  "https://www.google.com/maps/embed/v1/place?key=AIzaSyBJuTQZclSW33-RlC75FaW_PM9iGwI4dtQ&q=33.1499%2C-96.8241": "fixtures/careerplug/cloudscouts-form.third-party-frame.html",
+  "https://www.google.com/recaptcha/api2/bframe?hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&k=6Lel5h4UAAAAAHY2i5Sgq9x0dyHu8K0RJJv95Ij5&bft=REDACTED": "fixtures/careerplug/cloudscouts-form.third-party-frame.html"
+}

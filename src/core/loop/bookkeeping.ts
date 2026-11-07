@@ -149,6 +149,9 @@ export interface TrackedField {
   revealCertain: boolean;
   /** Its latest write chose an option with free text (Other, self-describe), for the box that write reveals. */
   followUp: boolean;
+  /** The core pass of 2026-11-06: a file of ours the page showed done, whose input it then took out of the page
+   *  (ScanInput.uploaded): gone from the scan, it keeps its row. */
+  taken?: true;
 }
 
 /** "Filling parent revealed child" ('revealed'), or "changed child's options" ('options'). */
@@ -206,6 +209,10 @@ export interface ScanInput {
   touched?: ReadonlySet<BaseKey>;
   /** The written fields that now hold nothing, or only their placeholder: a reset, after which a write is allowed. */
   cleared?: ReadonlySet<BaseKey>;
+  /** The core pass of 2026-11-06: the written file fields whose upload the page shows done and whose input it took out
+   *  of the page (Greenhouse: fixtures/greenhouse/axle-attached.html). Missing from the scan, each is the upload taken,
+   *  not a field gone: its row stands (TrackedField.taken). */
+  uploaded?: ReadonlySet<BaseKey>;
 }
 
 /** Whether the loop is over, and what it leaves unresolved. */
@@ -522,6 +529,11 @@ export function observeScan(state: LoopState, scanned: readonly LoopField[], inp
     if (seen.has(baseKey) || !old.present) continue;
     if (isStopped(old)) {
       fields.set(baseKey, { ...old, present: false });
+      continue;
+    }
+    // The core pass of 2026-11-06: an upload the page took, its input gone with it (ScanInput.uploaded).
+    if (old.wrote && old.kind === 'file' && input.uploaded?.has(baseKey) === true) {
+      fields.set(baseKey, { ...old, present: false, taken: true });
       continue;
     }
     fields.set(baseKey, { ...old, present: false, status: 'disappeared', cause: null, reason: 'field-disappeared',

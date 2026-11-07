@@ -4,7 +4,8 @@
  * amendments, docs/SPEC-AMENDMENTS.md) is migrated, each choice still on version 1's default taking version 2's
  * (migrateSettings), a version 2 value takes version 3's new switch at its default (migrateSettingsV2, §11), and a
  * version 3 value takes the modes (migrateSettingsV3, §12: auto-advance is the Next mode, the `all` answers the AI
- * answers mode); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
+ * answers mode), and a version 4 value takes "Résumé already on the page" at its default, Keep it (migrateSettingsV4,
+ * the behaviour review of 2026-11-06); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
  * switches, the offer to save answers) with frame/hello and run/begin, and again with settings/changed whenever the
  * person saves them (pushSettings: every registered frame with a form, so a run in progress reads the Next mode as it
  * is now: the Phase 5 review, C-S2), each frame the settings as they act for it (contentSettingsFor: the agent's tab's
@@ -14,13 +15,12 @@
  * side panel's gear changed meanwhile.
  */
 import {
-  DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, type Settings,
+  DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, type Settings,
 } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import {
-  SETTINGS_KEY, SettingsSchema, SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, type ContentSettings,
-} from '../shared/settings';
+import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
+import { SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema } from '../shared/settings-stored';
 import { frameTarget, type FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
 
@@ -111,11 +111,15 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
         cached = withShippedModes(parsed.data);
         return cached;
       }
-      const v3 = SettingsV3Schema.safeParse(stored);
-      const v2 = v3.success ? null : SettingsV2Schema.safeParse(stored);
-      const v1 = v3.success || v2?.success === true ? null : SettingsV1Schema.safeParse(stored);
-      let from: 1 | 2 | 3;
-      if (v3.success) {
+      const v4 = SettingsV4Schema.safeParse(stored);
+      const v3 = v4.success ? null : SettingsV3Schema.safeParse(stored);
+      const v2 = v4.success || v3?.success === true ? null : SettingsV2Schema.safeParse(stored);
+      const v1 = v4.success || v3?.success === true || v2?.success === true ? null : SettingsV1Schema.safeParse(stored);
+      let from: 1 | 2 | 3 | 4;
+      if (v4.success) {
+        from = 4;
+        cached = migrateSettingsV4(v4.data);
+      } else if (v3?.success === true) {
         from = 3;
         cached = migrateSettingsV3(v3.data);
       } else if (v2?.success === true) {
@@ -131,10 +135,10 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       }
       try {
         await local.set({ [SETTINGS_KEY]: cached });
-        log('settings.migrated', { from, to: 4 });
+        log('settings.migrated', { from, to: 5 });
       } catch {
         // Kept in memory only: the next start migrates the stored value again.
-        log('settings.migrated', { from, to: 4, stored: false });
+        log('settings.migrated', { from, to: 5, stored: false });
       }
       return cached;
     },

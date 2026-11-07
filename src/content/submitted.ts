@@ -13,14 +13,25 @@
  *   adapters/ashby ashbySubmitted).
  * - Workable: [data-ui=successful-submit] drawn in the page, the same address (Jobright 1.25.2's selector, not seen live:
  *   adapters/workable workableSubmitted).
+ * - The configured platforms (DESIGN-NEW-ATS Phase 0): the `success` element their config names (adapters/configured
+ *   ATS_CONFIGS), drawn in the form's place, under the same rules as every sign drawn in the form's own document; a
+ *   confirmation page their address reading names is a new document's to confirm, as Lever's is.
+ * - iCIMS (the owner's snapshots of 2026-11-06, docs/ARCHITECTURE.md, the snapshot build of 2026-11-06; core-x, item 5): the page after the last step's
+ *   Submit, /jobs/<id>/<slug>/job?mode=submit_apply (adapters/icims/url.ts reads it as the confirmation page), shows
+ *   div.iCIMS_Message.iCIMS_SuccessMessage "Your application has been submitted successfully." (uscareers-nyu's,
+ *   adapters/icims icimsSubmitted); the same block drawn in the form's own document counts too.
  * Workday and the generic adapter read none yet.
  *
  * A sign drawn in the form's own document (the v3 Phase 4 review, M1 and M6) counts only when it is new: not one of the
- * signs the page showed when the Submit was pressed (signsOf, read at the press), shown where the form was (the form
+ * signs the page showed when the Submit was pressed (shownSignsOf, read at the press: the behaviour review of
+ * 2026-11-06, M1, a sign hidden then is not among them), shown where the form was (the form
  * root, as the press found it, is gone or hidden), and never inside the posting's own text (Adapter.postingText), which
  * a posting's author writes.
  */
 import { ashbySubmitted } from '../adapters/ashby';
+import { configuredSuccessSigns } from '../adapters/configured';
+import { ATS_CONFIGS } from '../adapters/configured/registry';
+import { icimsSubmitted } from '../adapters/icims';
 import type { Adapter } from '../adapters/types';
 import { workableSubmitted } from '../adapters/workable';
 import type { Platform } from '../core/enums';
@@ -59,7 +70,20 @@ export function signsOf(doc: Document, platform: Platform): Element[] {
   if (platform === 'workable') {
     return workableSubmitted(doc) ? [...doc.querySelectorAll('[data-ui="successful-submit"]')] : [];
   }
-  return [];
+  // ── snapshot build 2026-11-06 (core-x, item 5): iCIMS's success message (fixtures/icims/nyu-submitted.frame-1.html) ──
+  if (platform === 'icims') {
+    return icimsSubmitted(doc) ? [...doc.querySelectorAll('.iCIMS_Message.iCIMS_SuccessMessage')] : [];
+  }
+  // DESIGN-NEW-ATS Phase 0: a configured platform's own sign (AtsConfig.success).
+  return configuredSuccessSigns(doc, ATS_CONFIGS[platform]);
+}
+
+/** The behaviour review of 2026-11-06 (M1): the platform's success signs a person can see now, what a press is armed
+ *  with (PressSnapshot.signs). A sign the page holds hidden from the start (Breezy's confirmation, ng-hide in the form
+ *  page: fixtures/breezy/concurrent-form) is not among them, so once the page shows it after the Submit it is new. */
+export function shownSignsOf(doc: Document, platform: Platform): Set<Element> {
+  const cache = newScanCache();
+  return new Set(signsOf(doc, platform).filter((sign) => isUserVisible(sign, cache)));
 }
 
 /** Whether the document shows the platform's success message (shown, anywhere). */

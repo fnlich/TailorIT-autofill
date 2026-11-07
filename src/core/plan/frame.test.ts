@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalizeProfile } from '../profile/canonicalize';
+import { attachResume, canonicalizeProfile } from '../profile/canonicalize';
 import type { FieldSpec } from '../types/field';
 import { DEFAULT_SETTINGS } from '../types/settings';
 import { planFrame } from './frame';
 import {
-  fieldOf, goldenProfile, goldenWire, inOrder, inputOf, NOW, planOf, settingsWith, specOf, vocab,
+  fieldOf, GOLDEN_RESUME, goldenProfile, goldenWire, inOrder, inputOf, NOW, planOf, settingsWith, specOf, vocab,
 } from './plan.testkit';
 
 const NAME = specOf('First name', 'text');
@@ -374,6 +374,109 @@ describe('planFrame: uploads and searches', () => {
     expect(fieldOf(out, cover)).toMatchObject({ write: undefined, row: { status: 'flagged', category: 'file.coverLetter' } });
     expect(fieldOf(planOf([RESUME], { profile: goldenProfile({ resume: false }) }), RESUME).row)
       .toMatchObject({ status: 'flagged', reason: 'resume-unavailable' });
+  });
+
+  // The core pass of 2026-11-06: a resume field that already holds a file (the scan reads one where the page shows a file
+  // it took: Workday's resume read at "Autofill with Resume", dom/scan.ts heldFile) is kept, never uploaded again.
+  it('keeps a file the resume field already holds: nothing uploaded, the row flagged prefill-kept', () => {
+    const held = { ...RESUME, current: { kind: 'files' as const, count: 1 } };
+    expect(fieldOf(planOf([held]), held)).toMatchObject({ write: undefined,
+      row: { category: 'file.resume', status: 'flagged', reason: 'prefill-kept', wrote: false } });
+  });
+
+  // The behaviour review of 2026-11-06 (M2), the owner's setting "Résumé already on the page".
+  describe('"Résumé already on the page"', () => {
+    const shown = { ...RESUME, current: { kind: 'files' as const, count: 1, held: true as const } };
+    const upload = { settings: settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, resumeOnPage: 'upload' } }) };
+
+    it('Keep it (the default): a résumé the page shows is kept, flagged prefill-kept, never uploaded again', () => {
+      expect(DEFAULT_SETTINGS.modes.resumeOnPage).toBe('keep');
+      expect(fieldOf(planOf([shown]), shown)).toMatchObject({ write: undefined,
+        row: { category: 'file.resume', status: 'flagged', reason: 'prefill-kept', wrote: false, needsUserAction: true } });
+    });
+
+    it('Upload mine again: the person\'s résumé is planned into that field, as an empty one\'s is', () => {
+      expect(fieldOf(planOf([shown], upload), shown)).toMatchObject({
+        write: { value: { kind: 'file', ref: 'resume' }, origin: { provenance: 'profile', path: 'resume' } },
+        row: { category: 'file.resume', status: 'verified', reason: 'ok' } });
+    });
+
+    it('Upload mine again: a file in the input itself (the person\'s, or ours) and a cover letter the page shows stay', () => {
+      const own = { ...RESUME, current: { kind: 'files' as const, count: 1 } };
+      expect(fieldOf(planOf([own], upload), own)).toMatchObject({ write: undefined, row: { reason: 'prefill-kept' } });
+      const letter = specOf('Cover letter', 'file', { current: { kind: 'files', count: 1, held: true } });
+      expect(fieldOf(planOf([letter], upload), letter).write).toBeUndefined();
+      // The person's own letter for the job ready: still the page's file stays (the setting is the résumé's alone).
+      expect(fieldOf(planOf([letter], { ...upload, coverLetter: { state: 'ready', aiWritten: false } }), letter))
+        .toMatchObject({ write: undefined, row: { reason: 'prefill-kept' } });
+      expect(fieldOf(planOf([{ ...letter, current: { kind: 'empty' } }], { ...upload,
+        coverLetter: { state: 'ready', aiWritten: false } }), letter).write?.value).toEqual({ kind: 'file', ref: 'cover-letter' });
+    });
+
+    it('Upload mine again: where the page offers no file input while it shows a résumé (a disabled one), the field is the person\'s', () => {
+      const fixed = { ...shown, disabled: true };
+      expect(fieldOf(planOf([fixed], upload), fixed)).toMatchObject({ write: undefined,
+        row: { category: 'file.resume', status: 'flagged', reason: 'resume-held-no-input', wrote: false,
+          needsUserAction: true } });
+      // Keep it: as before, a disabled field is skipped.
+      expect(fieldOf(planOf([fixed]), fixed).row).toMatchObject({ status: 'skipped', reason: 'disabled-or-readonly' });
+      // No résumé of the person's to put there: nothing claims one would go in.
+      expect(fieldOf(planOf([fixed], { ...upload, profile: goldenProfile({ resume: false }) }), fixed).row.reason)
+        .not.toBe('resume-held-no-input');
+    });
+
+    // The integration of 2026-11-06, the duplicate guard: Workday's drop zone takes several files, so the person's
+    // résumé uploaded again goes in beside the page's file, and a later fill would put it in once more.
+    describe('the duplicate guard: a résumé the page shows under the chosen résumé\'s own name', () => {
+      const named = (...names: string[]) =>
+        ({ ...RESUME, current: { kind: 'files' as const, count: 1, held: true as const, names } });
+      const kept = { write: undefined,
+        row: { category: 'file.resume', status: 'flagged', reason: 'prefill-kept', wrote: false, needsUserAction: true } };
+      const uploaded = { write: { value: { kind: 'file', ref: 'resume' }, origin: { provenance: 'profile', path: 'resume' } },
+        row: { category: 'file.resume', status: 'verified', reason: 'ok' } };
+
+      it('Upload mine again: a field showing a file named exactly as the chosen résumé keeps it, never uploading it twice', () => {
+        const same = named(GOLDEN_RESUME.fileName);
+        expect(fieldOf(planOf([same], upload), same)).toMatchObject(kept);
+        // Beside another file, and spaced as the page spaces it: still the person's résumé on the page.
+        const beside = named('Cover Letter.pdf', `  ${GOLDEN_RESUME.fileName.replace(/ /g, '   ')} `);
+        expect(fieldOf(planOf([beside], upload), beside)).toMatchObject(kept);
+        // A disabled input showing it: nothing to ask of the person, the field skipped as any disabled one is.
+        expect(fieldOf(planOf([{ ...same, disabled: true }], upload), same).row)
+          .toMatchObject({ status: 'skipped', reason: 'disabled-or-readonly' });
+      });
+
+      it('Upload mine again: the name the run uploads the résumé under (uploadName) counts as its name', () => {
+        // TailorIT holds the résumé without its extension; the run's earlier upload shows with it.
+        const profile = attachResume(goldenProfile({ resume: false }), { ...GOLDEN_RESUME, fileName: 'Alex Rivera Resume' });
+        const ours = named('Alex Rivera Resume.pdf');
+        expect(fieldOf(planOf([ours], { ...upload, profile }), ours)).toMatchObject(kept);
+        expect(fieldOf(planOf([named('Alex Rivera Resume')], { ...upload, profile }), ours)).toMatchObject(kept);
+        // A Word résumé's upload name ends in .docx, not .pdf.
+        const word = attachResume(goldenProfile({ resume: false }), { ...GOLDEN_RESUME, fileName: 'Alex Rivera Resume',
+          fileKind: 'docx' });
+        expect(fieldOf(planOf([ours], { ...upload, profile: word }), ours)).toMatchObject(uploaded);
+        expect(fieldOf(planOf([named('Alex Rivera Resume.docx')], { ...upload, profile: word }), ours))
+          .toMatchObject(kept);
+      });
+
+      it('Upload mine again: a field showing only files of other names gets the person\'s résumé, as the setting says', () => {
+        for (const other of [named('Resume.pdf'), named('alex rivera resume.pdf'), named('Alex Rivera Resume (1).pdf'),
+          named('Alex Rivera Resume.pdf.pdf')]) {
+          expect(fieldOf(planOf([other], upload), other)).toMatchObject(uploaded);
+        }
+        // No résumé chosen: nothing of the person's to compare, and nothing to upload either.
+        expect(fieldOf(planOf([named(GOLDEN_RESUME.fileName)], { ...upload, profile: goldenProfile({ resume: false }) }),
+          RESUME).write).toBeUndefined();
+      });
+
+      it('Keep it (the default) is unchanged: the page\'s file stays whatever its name', () => {
+        expect(DEFAULT_SETTINGS.modes.resumeOnPage).toBe('keep');
+        for (const shownFile of [named(GOLDEN_RESUME.fileName), named('Resume.pdf')]) {
+          expect(fieldOf(planOf([shownFile]), shownFile)).toMatchObject(kept);
+        }
+      });
+    });
   });
 
   it('types queries into a remote search, each a profile value with the typeahead.query transform', () => {

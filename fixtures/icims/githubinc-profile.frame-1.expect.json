@@ -1,0 +1,226 @@
+{
+  "fixture": "icims/githubinc-profile.frame-1",
+  "source": "https://careers-githubinc.icims.com/jobs/6961/senior-software-engineer%2c-compute-platform/candidate?from=login&csrf=REDACTED&in_iframe=1&hashed=REDACTED&uploadResume=1&uploadResume=1",
+  "captured": "2026-11-06T15:09:39.000Z",
+  "fields": [
+    {
+      "label": "Legal First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.FirstName\"]"
+    },
+    {
+      "label": "Preferred First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input#rcf2003"
+    },
+    {
+      "label": "Legal Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.LastName\"]"
+    },
+    {
+      "label": "Preferred Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input#rcf2034"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input[id=\"PersonProfileFields.Email\"]"
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "options": 4,
+      "control": "select[id=\"-1_PersonProfileFields.PhoneType\"]"
+    },
+    {
+      "label": "Number",
+      "kind": "text",
+      "required": true,
+      "section": "Phones (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.PhoneNumber\"]"
+    },
+    {
+      "label": "Do you wish to receive text message notifications in regards to your application?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a#rcf3553_icimsDropdown",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "Type",
+      "kind": "select",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "options": 2,
+      "control": "select[id=\"-1_PersonProfileFields.AddressType\"]"
+    },
+    {
+      "label": "Address",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet1\"]"
+    },
+    {
+      "label": "Address 2",
+      "kind": "text",
+      "required": false,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressStreet2\"]"
+    },
+    {
+      "label": "City",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressCity\"]"
+    },
+    {
+      "label": "Zip/Postal Code",
+      "kind": "text",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": true,
+      "control": "input[id=\"-1_PersonProfileFields.AddressZip\"]"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressCountry_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "State/Province",
+      "kind": "combobox",
+      "required": true,
+      "section": "Addresses (1)",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a[id=\"-1_PersonProfileFields.AddressState_icimsDropdown\"]",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "LinkedIn Profile (URL)",
+      "kind": "text",
+      "required": false,
+      "section": "Enter your information",
+      "fillable": true,
+      "control": "input#rcf2031"
+    },
+    {
+      "label": "Do you consent to use of Automated Employment Decision Tools (Assisted/Artificial Intelligence)? Selecting 'No' does not disqualify you from the hiring process.",
+      "kind": "combobox",
+      "required": true,
+      "section": "Enter your information",
+      "fillable": false,
+      "reason": "widget-phase-4",
+      "options": "lazy",
+      "control": "a#rcf3339_icimsDropdown",
+      "note": "iCIMS's own dropdown: a.dropdown-select[role=combobox] over a hidden select (dropdown-hide), its list ul.dropdown-results in a container beside it that no aria-controls names; no widget is declared until its behaviour is seen (docs/FIXTURES.md, the owner’s snapshots of 2026-11-06), so the person answers it."
+    },
+    {
+      "label": "How did you hear about us?",
+      "kind": "select",
+      "required": true,
+      "section": "Source",
+      "fillable": true,
+      "options": 6,
+      "control": "select#rcf3048"
+    },
+    {
+      "label": "Please specify",
+      "kind": "select",
+      "required": true,
+      "section": "Source",
+      "fillable": true,
+      "options": 1,
+      "control": "select#rcf3049"
+    },
+    {
+      "label": "",
+      "kind": "select",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "select#rcf3553",
+      "note": "The hidden select (dropdown-hide) behind iCIMS's dropdown a#rcf3553_icimsDropdown: never a field of its own."
+    },
+    {
+      "label": "",
+      "kind": "file",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "reason": "not-user-visible",
+      "control": "input[id=\"PortalProfileFields.Resume_File\"]",
+      "note": "A resume was read already (?uploadResume): its upload buttons are hidden (#PortalProfileFields.Resume_UploadButtons.upload-buttons.iCIMS_NoDisplay, the adapter’s excluded part) beside the current file and \"Replace Resume\": no field until the person replaces it."
+    }
+  ],
+  "hooks": {
+    "detect": "form#profileForm",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "input[id=\"PersonProfileFields.Login\"]",
+      "password": "input[id=\"PersonProfileFields.Password\"]",
+      "confirm": "input[id=\"PersonProfileFields.Password_Confirm\"]",
+      "terms": [],
+      "button": "input#cp_form_submit_i",
+      "form": "form#profileForm",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "button.icims-social-login",
+      "button.iCIMS_googleDriveButton",
+      "button.iCIMS_dropboxButton",
+      "button.iCIMS_oneDriveButton",
+      "button.iCIMS_DeleteButton",
+      "a.iCIMS_Faq_Link",
+      ".iCIMS_userMenuLink a",
+      "a[href*=\"loginOnly=1\"]"
+    ],
+    "pressable": [
+      "input#cp_form_submit_i",
+      "a[id=\"PersonProfileFields.PhonesButton_-1\"]"
+    ]
+  }
+}

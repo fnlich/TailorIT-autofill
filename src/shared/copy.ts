@@ -77,6 +77,10 @@ const NOTICES = {
   'sign-in-failed': "Signing in with your saved job-site sign-in didn't work, and it won't be tried again here. Check it in TailorIT's Settings › Autofill, then sign in yourself.",
   // The audit of 2026-11-06 (S-2, S-3): a draft for the owner's review.
   'bot-check': "A question checks that a person is filling in this form, so it was left for you. Next and Submit won't be pressed for you until you answer it.",
+  // The snapshot build of 2026-11-06 (core-x, item 2): a draft for the owner's review.
+  'account-left': "This form asks you to create a login for the site, which is left to you, so I won't press Next. Fill in your login and password, then press Next yourself.",
+  // The behaviour review of 2026-11-06 (minor 7): a draft for the owner's review.
+  'errors-on-load': 'The page showed these errors before anything was filled in (an entry of your profile on this site, for example). Fix them yourself, then continue.',
 } as const satisfies Record<NoticeCode, string>;
 
 /** Why a field ended as it did: one sentence per reason code, shown on its row. */
@@ -204,6 +208,7 @@ const REASONS = {
   'skipped-by-you': 'You skipped this field while it was being filled, so it was left for you.',
   // v3 Phase 3b: drafts for the owner's review.
   'resume-not-attached': 'You chose to apply without a resume, so none was attached. Attach one yourself if the form needs it.',
+  'resume-held-no-input': "The page shows a resume and gives no way to add yours, so yours wasn't uploaded. Replace it on the page if you want yours there.",
   'cover-letter-typed': 'Your cover letter for this job was typed in from TailorIT.',
   'cover-letter-too-long': "Your cover letter for this job is longer than this box allows, so it wasn't typed in or cut short. Shorten it in TailorIT, or write a shorter one here.",
   // The Phase 7a review: a draft for the owner's review.
@@ -277,6 +282,22 @@ const PAUSE_REASONS = {
 /** v3 Phases 6 and 7b: a site whose sign-in and posting pages Autofill knows, its application forms not yet. */
 const SIGN_IN_AND_POSTING = 'Sign-in and posting pages; its application forms are coming.';
 
+// ── snapshot build 2026-11-06 (core-x, item 9): Workday's application steps are read (docs/ARCHITECTURE.md) ──
+/** Workday's application steps, read from the owner's snapshots of 2026-11-06: filled, with its dates and its search
+ *  lists (How Did You Hear, Phone Code, School, Skills) left to the person, since no snapshot shows how they take an
+ *  answer. A draft for the owner. */
+const WORKDAY_STEPS = 'Its application steps are filled; dates and search lists are left to you.';
+
+// ── snapshot build 2026-11-06 (the docs pass, core-x's item 9 left to it): iCIMS's and Oracle's forms are read ──
+/** iCIMS's application steps after the email gate (the Candidate Profile, the questions, EEO), read from the owner's
+ *  snapshots of 2026-11-06: filled, with iCIMS's own dropdowns (their lists load from its server; no snapshot shows one
+ *  open) left to the person. A draft for the owner. */
+const ICIMS_STEPS = 'Its application steps are filled; its own dropdowns are left to you.';
+/** Oracle Recruiting Cloud's one-page application (`/apply/section/<n>`), read from the owner's snapshots of
+ *  2026-11-06: filled, with its lists (Country, the dates' Month and Year, School: no snapshot shows one open) left to
+ *  the person. A draft for the owner. */
+const ORACLE_FORM = 'Its application form is filled; its lists are left to you.';
+
 /** The kinds of field, as the options page's counters name them. */
 const FIELD_KIND_NAMES = {
   text: 'Text',
@@ -302,7 +323,26 @@ const PLATFORM_NAMES = {
   taleo: 'Taleo',
   successfactors: 'SuccessFactors',
   oracle: 'Oracle Recruiting Cloud',
+  // ── New ATSs (DESIGN-NEW-ATS Phase 0) ──
+  jobvite: 'Jobvite',
+  jazzhr: 'JazzHR',
+  bamboohr: 'BambooHR',
+  rippling: 'Rippling',
+  breezy: 'Breezy HR',
+  careerplug: 'CareerPlug',
+  pinpoint: 'Pinpoint',
+  paycor: 'Paycor',
+  hibob: 'HiBob',
+  ultipro: 'UltiPro (UKG Pro)',
+  dayforce: 'Dayforce',
+  paylocity: 'Paylocity',
+  dice: 'Dice',
+  clearcompany: 'ClearCompany',
+  adp: 'ADP Workforce Now',
+  // ── end New ATSs ──
   site: 'Company site',
+  // ── snapshot build 2026-11-06 (oracle-sf-sr): the new platform's name, as the report and the panel show it ──
+  smartrecruiters: 'SmartRecruiters',
 } as const satisfies Record<Platform, string>;
 
 /** The report's own words (src/ui/report), shared by the side panel and the in-page panel. */
@@ -431,17 +471,38 @@ const PANEL = {
     heading: "Autofill isn't supported on this page",
     intro: 'TailorIT Autofill fills job applications on these sites:',
     // v3 Phases 6 and 7b: Workday, iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud, their sign-in and posting
-    // pages known, their application forms filled by the standard rules until the owner's snapshots show them.
+    // pages known. The owner's snapshots of 2026-11-06 showed the application forms of Workday, iCIMS and Oracle (each
+    // note says what is left to the person) and added SmartRecruiters and Workable's job-search site; Taleo's and
+    // SuccessFactors' application forms still wait for snapshots.
     sites: [
       { name: 'Greenhouse', hosts: 'job-boards.greenhouse.io, boards.greenhouse.io', note: null },
       { name: 'Lever', hosts: 'jobs.lever.co', note: null },
       { name: 'Ashby', hosts: 'jobs.ashbyhq.com', note: null },
-      { name: 'Workable', hosts: 'apply.workable.com', note: null },
-      { name: 'Workday', hosts: 'myworkdayjobs.com, myworkdaysite.com', note: SIGN_IN_AND_POSTING },
-      { name: 'iCIMS', hosts: 'careers-<company>.icims.com', note: SIGN_IN_AND_POSTING },
+      { name: 'Workable', hosts: 'apply.workable.com, jobs.workable.com', note: null },
+      { name: 'Workday', hosts: 'myworkdayjobs.com, myworkdaysite.com', note: WORKDAY_STEPS },
+      { name: 'iCIMS', hosts: 'careers-<company>.icims.com', note: ICIMS_STEPS },
       { name: 'Taleo', hosts: '<company>.taleo.net', note: SIGN_IN_AND_POSTING },
       { name: 'SuccessFactors', hosts: 'career<n>.successfactors.com, .eu', note: SIGN_IN_AND_POSTING },
-      { name: 'Oracle Recruiting Cloud', hosts: '<company>.fa.<region>.oraclecloud.com', note: SIGN_IN_AND_POSTING },
+      { name: 'Oracle Recruiting Cloud', hosts: '<company>.fa.<region>.oraclecloud.com, <company>.fa.ocs.oraclegovcloud.com',
+        note: ORACLE_FORM },
+      { name: 'SmartRecruiters', hosts: 'jobs.smartrecruiters.com', note: null },
+      // ── New ATSs (DESIGN-NEW-ATS Phase 0): their candidate pages, as src/shared/hosts.ts matches them ──
+      { name: 'Jobvite', hosts: 'jobs.jobvite.com', note: null },
+      { name: 'JazzHR', hosts: '<company>.applytojob.com', note: null },
+      { name: 'BambooHR', hosts: '<company>.bamboohr.com/careers', note: null },
+      { name: 'Rippling', hosts: 'ats.rippling.com', note: null },
+      { name: 'Breezy HR', hosts: '<company>.breezy.hr', note: null },
+      { name: 'CareerPlug', hosts: '<company>.careerplug.com', note: null },
+      { name: 'Pinpoint', hosts: '<company>.pinpointhq.com', note: null },
+      { name: 'Paycor', hosts: 'recruitingbypaycor.com', note: null },
+      { name: 'HiBob', hosts: '<company>.careers.hibob.com', note: null },
+      { name: 'UltiPro (UKG Pro)', hosts: 'recruiting.ultipro.com', note: null },
+      { name: 'Dayforce', hosts: 'jobs.dayforcehcm.com', note: null },
+      { name: 'Paylocity', hosts: 'recruiting.paylocity.com', note: null },
+      { name: 'Dice', hosts: 'dice.com (its job applications)', note: null },
+      { name: 'ClearCompany', hosts: '<company>.clearcompany.com/careers', note: null },
+      { name: 'ADP Workforce Now', hosts: 'workforcenow.adp.com (its recruitment pages)', note: null },
+      // ── end New ATSs ──
     ],
     embedded: 'A company page that shows one of these forms inside it works too.',
     /** v3 Phase 8 review (B10): the company career sites, off or not reaching this page. */
@@ -537,7 +598,8 @@ const PANEL = {
 const STRIP = {
   form: (platform: string | null) => (platform === null ? 'Application form found' : `${platform} application form found`),
   noForm: 'No application form on this page. Open its application to use Autofill.',
-  none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors or Oracle Recruiting Cloud to use Autofill.',
+  // DESIGN-NEW-ATS Phase 0: the new ATSs too.
+  none: 'Open a job application on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany or ADP Workforce Now to use Autofill.',
 } as const;
 
 /** "Posted 2 days ago", from whole days since it was posted. */
@@ -905,8 +967,8 @@ const OPTIONS = {
     /** The first-run disclosure, shown before Connect (the store's "prominent disclosure"). A draft for the owner. */
     disclosureHeading: 'Before you connect',
     disclosure: [
-      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud from the profile you keep in your own TailorIT (on the last five it knows the sign-in and posting pages so far; their application forms get its standard rules). It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. If you turn on Company career sites in its settings, it also looks at each https page you open (never LinkedIn or an employer\'s HR system) for an application form on an employer\'s own careers site, says and sends nothing about a page it does not recognise, and fills a form it recognises as it does on those sites, telling your TailorIT that page\'s address, without its other query parameters, when you open its side panel or choose Autofill. It submits an application only when you choose Submit application in its side panel, set Submit to Auto under Modes, or turn on Run auto-apply; once the site confirms it, it tells your TailorIT tracker the job is Applied. With Run auto-apply on, it takes the jobs you queue in TailorIT one at a time, opens each in a window of its own while this browser is open, fills it, and submits it without you watching, AI guesses included, unless the rules under Modes leave it for you; it tells your TailorIT how each one went, never what it filled in. With Sign-in on Auto (only if you allowed it when connecting), it reads the job-site email and password you saved in TailorIT for the site you are on, types them into that site\'s own sign-in or new-account form (ticking the new account\'s terms box), and keeps them in memory only for that sign-in; where a site asks for your email alone first and then emails you a code (Oracle Recruiting Cloud), it types the email, ticks that step\'s terms box and goes on, and the code is yours; checks that you are human, password resets and email codes stay yours. Unless you choose Required only under Modes, it ticks every agreement box a form shows, news, job alerts and text messages included, except a binding clause the form does not require (an arbitration agreement, say) and a box saying you did not use AI, which it ticks only when the fill used no AI. Some sites (Ashby) send a text message consent to the employer the moment it is ticked. Some sites keep what is filled before you submit: Ashby saves answers and files as they go in; Workable uploads an attached file at once and keeps the answers in this browser for an hour.',
-      'When an application page or a job posting on those sites loads, and again while its side panel shows one, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match before you open the panel; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job, or mark it Applied after you submit. Its side panel can show and change your autofill information in your TailorIT, and preview the resume it attaches. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings, where you put or hid its button on each site, notes on each application\'s progress and, until you close the browser, a sealed record of the list options you submitted, which it can match again but never read: never your answers.',
+      'TailorIT Autofill fills job applications on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany and ADP Workforce Now from the profile you keep in your own TailorIT (on Taleo and SuccessFactors it knows the sign-in and posting pages so far; their application forms get its standard rules). It reads the job pages you open on those sites, fills what it is sure of and lists the rest for you to review. Where such a site also holds an employer\'s own pages for its staff (ADP Workforce Now, BambooHR, ClearCompany, Oracle Recruiting Cloud and others), it runs only on the job pages, though Chrome\'s prompt names the whole site. If you turn on Company career sites in its settings, it also looks at each https page you open (never LinkedIn or an employer\'s HR system) for an application form on an employer\'s own careers site, says and sends nothing about a page it does not recognise, and fills a form it recognises as it does on those sites, telling your TailorIT that page\'s address, without its other query parameters, when you open its side panel or choose Autofill. It submits an application only when you choose Submit application in its side panel, set Submit to Auto under Modes, or turn on Run auto-apply; once the site confirms it, it tells your TailorIT tracker the job is Applied. With Run auto-apply on, it takes the jobs you queue in TailorIT one at a time, opens each in a window of its own while this browser is open, fills it, and submits it without you watching, AI guesses included, unless the rules under Modes leave it for you; it tells your TailorIT how each one went, never what it filled in. With Sign-in on Auto (only if you allowed it when connecting), it reads the job-site email and password you saved in TailorIT for the site you are on, types them into that site\'s own sign-in or new-account form (ticking the new account\'s terms box), and keeps them in memory only for that sign-in; where a site asks for your email first and then emails you a code (Oracle Recruiting Cloud, ADP Workforce Now), it fills in that step and goes on, and the code is yours; on ADP Workforce Now\'s and ClearCompany\'s job pages it also tells your TailorIT the page\'s path (never its query), so TailorIT can tell a job page from the employer\'s own; checks that you are human, password resets and email codes stay yours. Where a form shows an "I\'m not a robot" box you have not ticked yet, it fills the form but never touches the box, and presses nothing (no Next, Submit, sign-in or Apply) until you tick it. Unless you choose Required only under Modes, it ticks every agreement box a form shows, news, job alerts and text messages included, except a binding clause the form does not require (an arbitration agreement, say) and a box saying you did not use AI, which it ticks only when the fill used no AI. Some sites (Ashby) send a text message consent to the employer the moment it is ticked. Some sites keep what is filled before you submit: Ashby saves answers and files as they go in; Workable uploads an attached file at once and keeps the answers in this browser for an hour.',
+      'When an application page or a job posting on those sites loads, and again while its side panel shows one, it tells your TailorIT which job page you are on, so TailorIT can name the job, your tracker entry for it and your match before you open the panel; it does so again when you choose Autofill or Dry run, add the job or change the resume. TailorIT does not keep the page\'s address unless you add the job, or mark it Applied after you submit. When a page names no job (a form reached from its posting), it takes the job of the tab\'s page before it: this browser keeps which job the tab\'s recent pages were until you close the tab, and TailorIT hears that job\'s posting address, never the page\'s own. Its side panel can show and change your autofill information in your TailorIT, and preview the resume it attaches. When you choose Autofill, it fetches your profile from TailorIT, and your resume and your cover letter for the job when the form asks for them. It keeps them in memory only, never on disk: your profile until five minutes after its last use, and the files only for the seconds it takes to attach them. This browser keeps your settings, where you put or hid its button on each site, notes on each application\'s progress and, until you close the browser, a sealed record of the list options you submitted, which it can match again but never read: never your answers.',
       'Its AI help sends the visible text of a question and its visible options, with the answer from your profile it is trying to match, to your TailorIT, which asks Claude. Picking from lists, working out unusual questions, drafting open answers (a cover letter too, when the form asks for one and you have none for the job) and answering the questions your profile does not are on unless you turn them off below; drafts, cover letters and answers also give Claude the posting\'s visible text, and TailorIT gives it your resume and profile to write from. An answer with nothing to go on is marked "AI guess". On a posting that says AI is not allowed, nothing goes to the AI unless you choose otherwise below, or ask a question of your own in the side panel. That question, and Edit with AI in a text box, go to the AI only when you ask, and only while AI-written answers (Draft open answers, below) are on. Unless you choose Profile only for AI answers under Modes, questions about work authorization, sponsorship, a visa, a clearance, age, criminal history or pay that your profile does not answer, and attention checks, get the AI\'s best guess too, from the question and its options alone. Your self-identification, work authorization, sponsorship, criminal record, pay and consent answers never go to the AI. The extension talks only to your TailorIT.',
     ],
     consentLine: 'Choosing Connect means you agree to this.',
@@ -981,7 +1043,7 @@ const OPTIONS = {
       name: 'Record applications I submit myself',
       on: 'On',
       off: 'Off',
-      help: 'On: when you submit an application on Greenhouse, Lever, Ashby or Workable yourself, without Autofill, and the site confirms it, your TailorIT tracker marks the job Applied. Off: only applications Autofill filled are recorded.',
+      help: 'On: when you submit an application yourself, without Autofill, on a site that shows it went through (today Greenhouse, Lever, Ashby, Workable, iCIMS, Breezy HR and Pinpoint), your TailorIT tracker marks the job Applied. Off: only applications Autofill filled are recorded.',
     },
     afterPageTurn: {
       name: 'Autofill after page turn',
@@ -1000,6 +1062,13 @@ const OPTIONS = {
       all: 'All',
       profile: 'Profile only',
       help: 'All lets the AI answer work authorization, sponsorship, visa, clearance, age, criminal history, pay and "select PURPLE to show you read this" questions your profile doesn\'t answer, marked "AI guess" unless your resume settles it: only the question and its options are sent. Profile only answers them from your profile, and leaves the rest for you. It acts while "Answer the questions my profile does not" is on.',
+    },
+    /** The behaviour review of 2026-11-06 (M2), the owner's setting: a résumé the page already shows. */
+    resumeOnPage: {
+      name: 'Résumé already on the page',
+      keep: 'Keep it',
+      upload: 'Upload mine again',
+      help: "When the site already shows a résumé in its résumé field: Keep it leaves that file and flags the field for you to check. Upload mine again uploads the résumé you chose in TailorIT into that field through the site's own upload, which replaces the file or adds yours beside it. Neither presses the site's Remove or Delete; where the site gives no way to add a file, the field is left to you.",
     },
     view: {
       name: 'Side panel view',
@@ -1081,7 +1150,7 @@ const OPTIONS = {
     optIn: 'Keep anonymous counters',
     optInHelp: 'Each field the extension fills, or leaves for you, adds one to a count of these five things, and nothing else:',
     fields: {
-      platform: 'the site: Greenhouse, Lever, Ashby, Workday, Workable, iCIMS, Taleo, SuccessFactors or Oracle Recruiting Cloud;',
+      platform: 'the site: Greenhouse, Lever, Ashby, Workday, Workable, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now or a company\'s own careers site;',
       fieldKind: 'the kind of field: a text box, a list, a checkbox and so on;',
       matcherStage: 'how its answer was matched: exactly, by a known alias, by a close match and so on;',
       outcome: 'whether it was filled or left for you;',
@@ -1105,9 +1174,9 @@ const OPTIONS = {
   /** v3 Phase 8: Options › "Where Autofill works". Drafts for the owner's review. */
   sites: {
     heading: 'Where Autofill works',
-    intro: "Autofill always works on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud. Turn this on to use it on employers' own careers sites too. Chrome asks for its permission when you turn it on, and gets it back when you turn it off.",
+    intro: "Autofill always works on Greenhouse, Lever, Ashby, Workable, Workday, iCIMS, Taleo, SuccessFactors, Oracle Recruiting Cloud, SmartRecruiters, Jobvite, JazzHR, BambooHR, Rippling, Breezy HR, CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany and ADP Workforce Now. Turn this on to use it on employers' own careers sites too. Chrome asks for its permission when you turn it on, and gets it back when you turn it off.",
     toggle: 'Company career sites',
-    hint: "On employers' own careers pages, Autofill recognises an application form (a resume upload, or your name, email and phone on a job page) and fills it as it fills any form. Chrome calls this reading your data on all websites: the extension's watcher reads each https page you open, and says and does nothing until it recognises one. It never runs on LinkedIn or on an employer's HR system (Workday, SAP SuccessFactors, Oracle).",
+    hint: "On employers' own careers pages, Autofill recognises an application form (a resume upload, or your name, email and phone on a job page) and fills it as it fills any form. Chrome calls this reading your data on all websites: the extension's watcher reads each https page you open, and says and does nothing until it recognises one. It never runs on LinkedIn or on an employer's HR system (Workday, SAP SuccessFactors, Oracle, and the employee pages of ADP Workforce Now, BambooHR, Paycom and ClearCompany).",
     needsPermission: "Chrome's permission is off, so this does nothing. Turn it on again to give it back.",
     refused: "Chrome didn't give the permission, so this stays off.",
     failed: "This couldn't be changed just now. Try again.",
@@ -1177,7 +1246,14 @@ const AGENT = {
   },
 } as const;
 
-export const COPY = {
+/**
+ * The words of the in-page UI (src/content/ui) and the review (src/ui/report), which the content script shows: it
+ * imports these alone, so the words only the options page and the side panel show (COPY's job card, Ask, profile
+ * editor, settings and agent) stay out of its bundle, which has a size budget (scripts/check-build.mjs; the integration
+ * of 2026-11-06 took about 34 KB of those words out of it). Every page but the content script reads COPY, which holds
+ * these too.
+ */
+export const PAGE_COPY = {
   appName: 'TailorIT Autofill',
   /** The name as the headers draw it: "Tailor", then "IT" in TailorIT's ink, then the product's word. */
   brand: { name: ['Tailor', 'IT'], product: 'Autofill', settings: 'Autofill settings' },
@@ -1242,14 +1318,19 @@ export const COPY = {
   runStatuses: RUN_STATUSES,
   pauseReasons: PAUSE_REASONS,
   platforms: PLATFORM_NAMES,
-  fieldKinds: FIELD_KIND_NAMES,
   report: REPORT,
   panel: PANEL,
+  inPage: IN_PAGE,
+} as const;
+
+/** Every sentence: the in-page UI's (PAGE_COPY) and those only the options page and the side panel show. */
+export const COPY = {
+  ...PAGE_COPY,
+  fieldKinds: FIELD_KIND_NAMES,
   strip: STRIP,
   job: JOB,
   ask: ASK,
   profile: PROFILE,
-  inPage: IN_PAGE,
   options: OPTIONS,
   agent: AGENT,
 } as const;

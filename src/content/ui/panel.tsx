@@ -34,7 +34,7 @@
 import { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import { log } from '../../shared/log';
 import type { PressAnswer, StepTarget } from '../../messaging/schemas';
 import type { FrameReport } from '../../shared/report';
@@ -146,7 +146,7 @@ function PanelView({ reports, frameId, actions, seenAtClick }: {
       <header className="panel__head">
         <div className="panel__bar">
           <h2 className="panel__title tia-brand"><Brand markSize={24} /></h2>
-          <button type="button" className="panel__close" aria-label={COPY.inPage.close} title={COPY.inPage.close}
+          <button type="button" className="panel__close" aria-label={PAGE_COPY.inPage.close} title={PAGE_COPY.inPage.close}
             onClick={() => actions.closed()}>
             <Icon name="chevron-up" size={18} />
           </button>
@@ -156,7 +156,7 @@ function PanelView({ reports, frameId, actions, seenAtClick }: {
       </header>
       <div className="panel__body">
         {reports === null ? (
-          <p className="panel__loading" role="status">{COPY.inPage.loading}</p>
+          <p className="panel__loading" role="status">{PAGE_COPY.inPage.loading}</p>
         ) : (
           <Report
             reports={reports}
@@ -195,7 +195,7 @@ export function createInPagePanel(doc: Document, shadow: ShadowRoot, options: {
   const el = doc.createElement('section');
   el.className = 'panel tia-page';
   el.setAttribute('role', 'region');
-  el.setAttribute('aria-label', COPY.inPage.region);
+  el.setAttribute('aria-label', PAGE_COPY.inPage.region);
   el.dataset.panel = 'in-page';
   el.hidden = true;
   const container = doc.createElement('div');

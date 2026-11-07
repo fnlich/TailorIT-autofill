@@ -65,8 +65,25 @@ export type AutofillAgentReason = (typeof AUTOFILL_AGENT_REASONS)[number];
  */
 export const AUTOFILL_AGENT_RUN_TIMEOUT_MS = 30 * 60_000;
 
-/** The platforms whose application forms the agent fills: a job queues only when its posting is on one of them. */
-export const AUTOFILL_AGENT_ATS = ['greenhouse', 'lever', 'ashby', 'workable'] as const satisfies readonly AtsKind[];
+/**
+ * The platforms whose application forms the agent fills: a job queues only when its posting is on one of them. A
+ * platform joins only when the extension can walk its application end to end: an address that opens it (the posting
+ * with its entry, or the form), its steps' Next, its Submit, and a sign of success its adapter reads, seen in a capture
+ * or snapshot of the page after submitting. Version 6 (the owner's snapshots of 2026-11-06): iCIMS (its posting's
+ * "Apply for this job online", the email gate, the steps' Submit, and /job?mode=submit_apply's .iCIMS_SuccessMessage)
+ * and Pinpoint (its one-page form, and /applications/thanks's section#application-thanks). Not yet: Workday, Taleo,
+ * SuccessFactors, Oracle Recruiting Cloud and SmartRecruiters (no page after submitting seen, so no success sign), Breezy
+ * HR (its confirmation is in the form's markup, hidden in both snapshots: never seen shown), and the other new ATSs (no
+ * confirmation in any snapshot).
+ */
+export const AUTOFILL_AGENT_ATS = [
+  'greenhouse',
+  'lever',
+  'ashby',
+  'workable',
+  'icims',
+  'pinpoint',
+] as const satisfies readonly AtsKind[];
 
 /** The longest application address the agent opens. */
 export const AUTOFILL_AGENT_URL_MAX = 2048;
@@ -80,7 +97,10 @@ export const AUTOFILL_AGENT_URL_MAX = 2048;
  * of its hosts. Ashby: `…/application`, the board in lower case (percent-encoded), from the posting, its form or the
  * board naming it in ?ashby_jid=. Workable: apply.workable.com/{account}/j/{shortcode}/apply/, the account in lower case
  * and the shortcode in capitals, from the posting or its form on apply.workable.com or the account's own host; never
- * from a /j/{shortcode} link that names no account. Read with parseAtsUrl, so the extension and TailorIT agree: the
+ * from a /j/{shortcode} link that names no account, nor from Workable's job-search site. Version 6: iCIMS, the
+ * posting's own page, https://<portal>/jobs/<id>/job (its entry opens the email gate), from the posting, its gate or
+ * any step after it; Pinpoint, the form, https://<tenant>.pinpointhq.com/en/postings/<uuid>/applications/new, from the
+ * posting, the form or the page after submitting. Read with parseAtsUrl, so the extension and TailorIT agree: the
  * answer reads as itself again.
  */
 export function agentApplicationUrl(url: string): string | null {
@@ -107,6 +127,10 @@ function formAddress({ kind, board, externalId, canonical }: ParsedAtsUrl): stri
     case 'workable':
       // The account is a host name's label and the shortcode hexadecimal: nothing to encode.
       return `https://apply.workable.com/${board}/j/${externalId}/apply/`;
+    case 'icims':
+    case 'pinpoint':
+      // The posting's own page (iCIMS) or its form (Pinpoint), as parseAtsUrl builds it from the host and the id alone.
+      return canonical[0] ?? null;
     default:
       return null;
   }
@@ -129,8 +153,9 @@ export const AutofillAgentIdSchema = z
 
 /**
  * The job the agent applies to now: open `url`, the application form's address (agentApplicationUrl: Greenhouse's job
- * page on job-boards.greenhouse.io, Lever's `…/apply`, Ashby's `…/application`, Workable's `…/apply/`), and attach
- * `resumeId` when set.
+ * page on job-boards.greenhouse.io, Lever's `…/apply`, Ashby's `…/application`, Workable's `…/apply/`, and since
+ * version 6 iCIMS's posting page `…/jobs/<id>/job` and Pinpoint's `…/applications/new`), and attach `resumeId` when
+ * set.
  */
 export const AutofillAgentTaskSchema = z.object({
   id: AutofillAgentIdSchema,

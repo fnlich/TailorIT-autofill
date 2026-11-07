@@ -1,0 +1,180 @@
+{
+  "fixture": "greenhouse/axle-attached",
+  "source": "https://job-boards.greenhouse.io/axle/jobs/5286265007",
+  "captured": "2026-11-06T16:24:07.000Z",
+  "readBy": "hand, from the page itself (not from any scanner); docs/FIXTURES.md says what each property means",
+  "note": "The owner's capture of 2026-11-06 ([job-boards.greenhouse.io] ...Data Scientist, Medical Imaging at Axle.mht), filled before Submit: the Resume/CV group shows its attached file (div.file-upload__filename: the name, redacted, and \"Remove file\") and holds no file input any more, so the question has no control here; the header's \"Autofill my application\" sits in div.autofill_button.autofill_button--filled. The form asks for no cover letter.",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#first_name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#last_name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#email"
+    },
+    {
+      "label": "Country",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#country",
+      "options": "lazy",
+      "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country, chosen (its chosen value redacted), so react-select draws no required shim beside it."
+    },
+    {
+      "label": "Search",
+      "kind": "combobox",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": false,
+      "control": "#iti-0__search-input",
+      "reason": "not-user-visible",
+      "note": "intl-tel-input's own country search, inside its country dropdown, which stays hidden (iti__hide)."
+    },
+    {
+      "label": "Phone",
+      "kind": "text",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#phone"
+    },
+    {
+      "label": "Location (City)",
+      "kind": "typeahead-remote",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#candidate-location",
+      "options": "lazy",
+      "note": "Greenhouse's location search, required here; chosen, so no required shim. \"Locate me\" beside it is never pressed."
+    },
+    {
+      "label": "LinkedIn Profile",
+      "kind": "text",
+      "required": false,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352342007"
+    },
+    {
+      "label": "Have you previously worked at Axle?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352343007",
+      "options": "lazy",
+      "note": "Each chosen react-select of this capture shows its answer (redacted) beside a \"Clear selections\" button, and react-select draws no required shim while it holds a value: the required mark is aria-required=\"true\" on the input and the label's span aria-hidden=\"true\" holding \"*\", as in the 2026-11-01 capture."
+    },
+    {
+      "label": "Do you have the legal authorization to work on a full-time, indefinite basis in the country where this role is located?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352344007",
+      "options": "lazy"
+    },
+    {
+      "label": "Can you perform the essential functions of this job without reasonable accommodation?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352345007",
+      "options": "lazy"
+    },
+    {
+      "label": "Are you willing and able to work at the specified job location, or are you open to relocation if required?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352346007",
+      "options": "lazy"
+    },
+    {
+      "label": "Does accepting employment with Axle or performing the duties required for this role conflict with any non-compete, non-solicitation, or other contractual agreements you may have?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352347007",
+      "options": "lazy"
+    },
+    {
+      "label": "Do you meet the eligibility requirements for obtaining a US Government Security Clearance?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352348007",
+      "options": "lazy"
+    },
+    {
+      "label": "Do you now, or will you in the future, require sponsorship for employment authorization in the United States?",
+      "kind": "combobox",
+      "required": true,
+      "section": "Apply for this job",
+      "fillable": true,
+      "control": "#question_13352349007",
+      "options": "lazy"
+    },
+    {
+      "label": "Gender",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "control": "#gender",
+      "options": "lazy"
+    },
+    {
+      "label": "Are you Hispanic/Latino?",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "control": "#hispanic_ethnicity",
+      "options": "lazy"
+    },
+    {
+      "label": "Veteran Status",
+      "kind": "combobox",
+      "required": false,
+      "section": "Voluntary Self-Identification",
+      "fillable": true,
+      "control": "#veteran_status",
+      "options": "lazy"
+    },
+    {
+      "label": "",
+      "kind": "text",
+      "required": false,
+      "section": "",
+      "fillable": false,
+      "control": "#g-recaptcha-response-100000",
+      "reason": "not-user-visible",
+      "note": "invisible reCAPTCHA's response field, outside the form."
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "fixture": "adp/self-attest",
+  "source": "https://workforcenow.adp.com/mascsr/applicant/mdf/recruitment/postLogin.html?cid=267cfc8f-e6d3-499b-8a38-c6abe8ee3d82&jobId=590196&ccId=19000101_000001&jobId=590196&requisitionId=9207368240764_11&lang=en_US&params=jobId&OTP_login=true",
+  "captured": "2026-11-06T15:26:59.000Z",
+  "fields": [
+    {
+      "label": "Yes, I agree to sign electronically.",
+      "kind": "checkbox",
+      "required": true,
+      "section": "Self Attestation is required.",
+      "fillable": true,
+      "control": "input#checkbox_000000000000000000001",
+      "note": "Consent the person ticks (unrecognised consent: \"I agree\")."
+    },
+    {
+      "label": "Please type your full name. electronic signature",
+      "kind": "text",
+      "required": true,
+      "section": "Self Attestation is required.",
+      "fillable": true,
+      "control": "input#electronicSignature",
+      "note": "The e-signature: \"electronic signature\" is the adapter's labelSuffix, from its markup (span.self-review-signature beside \"Yes, I agree to sign electronically.\"), so it is classified as the signature consent."
+    }
+  ],
+  "hooks": {
+    "detect": "#jobApplicationSubmit",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "button#ja_sv_cw_prev_footer_btn",
+      "#selfReviewView .more-label button",
+      "#ja_sv_exit_btn"
+    ],
+    "pressable": [
+      "button#submitApplication"
+    ]
+  }
+}

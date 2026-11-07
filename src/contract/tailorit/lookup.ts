@@ -17,7 +17,15 @@ import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from './resumes';
 // server never requests LinkedIn, for anything: LinkedIn's robots.txt disallows automated access, so its addresses
 // are only compared, never fetched.
 
-/** The applicant-tracking systems the extension fills. Equals the extension's PLATFORMS, in its order. */
+// Version 6 (the new ATSs of the owner's snapshots of 2026-11-06): Jobvite, JazzHR, BambooHR, Rippling, Breezy HR,
+// CareerPlug, Pinpoint, Paycor, HiBob, UltiPro (UKG Pro), Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now
+// and SmartRecruiters, read exactly as the extension's adapters read them; Oracle Recruiting Cloud on Oracle's
+// government cloud; Workable's job-search site; and iCIMS's application steps after its email gate.
+
+/**
+ * The applicant-tracking systems the extension fills. Equals the extension's PLATFORMS, in its order, without `site` (a
+ * company's own careers page, which is no ATS).
+ */
 export const ATS_KINDS = [
   'greenhouse',
   'lever',
@@ -28,8 +36,53 @@ export const ATS_KINDS = [
   'taleo',
   'successfactors',
   'oracle',
+  'jobvite',
+  'jazzhr',
+  'bamboohr',
+  'rippling',
+  'breezy',
+  'careerplug',
+  'pinpoint',
+  'paycor',
+  'hibob',
+  'ultipro',
+  'dayforce',
+  'paylocity',
+  'dice',
+  'clearcompany',
+  'adp',
+  'smartrecruiters',
 ] as const;
 export type AtsKind = (typeof ATS_KINDS)[number];
+
+/** Each ATS's name as TailorIT's pages and prompts write it (the extension's COPY.platforms). */
+export const ATS_NAMES: Readonly<Record<AtsKind, string>> = {
+  greenhouse: 'Greenhouse',
+  lever: 'Lever',
+  ashby: 'Ashby',
+  workday: 'Workday',
+  workable: 'Workable',
+  icims: 'iCIMS',
+  taleo: 'Taleo',
+  successfactors: 'SuccessFactors',
+  oracle: 'Oracle Recruiting Cloud',
+  jobvite: 'Jobvite',
+  jazzhr: 'JazzHR',
+  bamboohr: 'BambooHR',
+  rippling: 'Rippling',
+  breezy: 'Breezy HR',
+  careerplug: 'CareerPlug',
+  pinpoint: 'Pinpoint',
+  paycor: 'Paycor',
+  hibob: 'HiBob',
+  ultipro: 'UltiPro (UKG Pro)',
+  dayforce: 'Dayforce',
+  paylocity: 'Paylocity',
+  dice: 'Dice',
+  clearcompany: 'ClearCompany',
+  adp: 'ADP Workforce Now',
+  smartrecruiters: 'SmartRecruiters',
+};
 
 /** The longest page address a lookup takes. */
 export const AUTOFILL_LOOKUP_URL_MAX = 2048;
@@ -295,8 +348,8 @@ export const AUTOFILL_FROM_PAGE_LIMITS = {
 
 /**
  * POST /api/autofill/jobs/from-page (version 5, scope jobs:add): add the job a page the person has open shows, when
- * no ATS API can read it (a LinkedIn job, an iCIMS, Taleo, SuccessFactors or Oracle posting, a company's careers
- * page), to TailorIT's jobs and to the person's tracker as Saved. `url` is the page's https address (a LinkedIn
+ * no ATS API can read it (a LinkedIn job, an iCIMS, Taleo, SuccessFactors or Oracle posting, (version 6) a posting on
+ * one of the new ATSs, a company's careers page), to TailorIT's jobs and to the person's tracker as Saved. `url` is the page's https address (a LinkedIn
  * address must be a job's: parseLinkedInJobUrl); `employerUrl` the employer's own link when the page shows it. The
  * text is what the person sees on the page, read from the page by the extension: TailorIT keeps it as untrusted text
  * (never fetched, expanded or followed, its markup shown as text) and its AI reads it as data. A job TailorIT has
@@ -353,16 +406,25 @@ export interface ParsedAtsUrl {
   /**
    * The Greenhouse board or the Lever site, as the address writes it, or the Ashby job board or the Workable account in
    * lower case; (version 5) the Workday tenant in lower case, the iCIMS or Taleo portal's host label, the SuccessFactors
-   * company as written, or the Oracle Recruiting Cloud site in capitals, as the extension's adapters read them; null
-   * when the address does not name it.
+   * company as written, or the Oracle Recruiting Cloud site in capitals; (version 6) the Jobvite company, the Rippling
+   * board, the Dayforce client namespace and the SmartRecruiters company as written, the tenant's host label on JazzHR,
+   * BambooHR, Breezy, CareerPlug, Pinpoint, HiBob and ClearCompany, the Paycor client id, the UltiPro tenant in lower
+   * case and the ADP client id (cid) in lower case; as the extension's adapters read them. Null when the address does
+   * not name it (a Workable link naming no account, Workable's job-search site, Paylocity, Dice).
    */
   board: string | null;
   /**
    * The posting's id on that ATS (a Workable shortcode in capitals; a Workday requisition id, the text after the last
-   * '_' of the posting's name).
+   * '_' of the posting's name; version 6: the Workable job-search site's own id, a Jobvite id and a JazzHR code as
+   * written, a Breezy position's 12 hexadecimal digits, a SmartRecruiters posting's number or its one-click
+   * application's publication UUID in lower case, an UltiPro opportunity in lower case).
    */
   externalId: string;
-  /** The posting's own addresses, to find the job by its stored link (compare them through `linkKey`). */
+  /**
+   * The posting's own addresses, to find the job by its stored link (compare them through `linkKey`). The first is the
+   * one the extension names the page by (version 6: its adapter's application address for the platform): built from
+   * the posting's board and id alone, never holding a page's token, state, code, OTP or session parameter.
+   */
   canonical: string[];
 }
 
@@ -413,6 +475,12 @@ const WORKABLE_HOST = 'apply.workable.com';
 const WORKABLE_ACCOUNT = /^[a-z0-9](?:[a-z0-9-]{0,62})$/i;
 /** A Workable posting's shortcode: ten hexadecimal digits, served in either case and written in capitals. */
 const WORKABLE_SHORTCODE = /^[0-9a-f]{10}$/i;
+/** Workable's job-search site (version 6): its posting pages, /view/<id>/<slug>, show the application form in a dialog. */
+const WORKABLE_JOBS_HOST = 'jobs.workable.com';
+/** The job-search site's own id for a posting (22 letters and digits in the owner's capture), kept as written. */
+const WORKABLE_VIEW_ID = /^[A-Za-z0-9]{8,64}$/;
+/** The title's words after it. */
+const WORKABLE_VIEW_SLUG = /^[a-z0-9-]+$/;
 
 /**
  * Names that are Workable's own, never an account's: its hosts' labels (www.workable.com, apply., jobs., help., …)
@@ -537,9 +605,10 @@ function ashbyPosting(url: UrlLike): ParsedAtsUrl | null {
  * www.workable.com/j/{shortcode}, are read with no board: Workable redirects them to the account's pages, and the
  * shortcode alone names the posting. An account is never one of Workable's own names (WORKABLE_SERVICE_NAMES: its
  * job-search site jobs.workable.com, help., api., apply.workable.com/api/…), which are not read. The query never
- * matters.
+ * matters. Version 6: the job-search site's posting pages (workableJobsSitePosting).
  */
 function workablePosting(url: UrlLike): ParsedAtsUrl | null {
+  if (url.hostname === WORKABLE_JOBS_HOST) return plainHttps(url) ? workableJobsSitePosting(url) : null;
   const parts = segmentsOf(url);
   let named: string | null = null;
   let path = parts;
@@ -569,6 +638,19 @@ function workablePosting(url: UrlLike): ParsedAtsUrl | null {
   );
   const canonical = [...pages.flatMap((page) => [page, `${page}apply/`]), ...links];
   return { kind: 'workable', board, externalId, canonical };
+}
+
+/**
+ * Workable's job-search site (version 6, the owner's captures of 2026-11-06): jobs.workable.com/view/<id>, then the
+ * title's words or not, a posting's page that shows its application form in a dialog. The page names no account and
+ * no shortcode, so it is read as the extension reads it: no board, the site's own id as written, its canonical address
+ * https://jobs.workable.com/view/<id>. Any other page of the site (its search, a company's jobs) names no posting.
+ */
+function workableJobsSitePosting(url: UrlLike): ParsedAtsUrl | null {
+  const [view, id, ...rest] = segmentsOf(url);
+  if (view !== 'view' || id === undefined || !WORKABLE_VIEW_ID.test(id)) return null;
+  if (rest.length > 1 || (rest.length === 1 && !WORKABLE_VIEW_SLUG.test(rest[0]!))) return null;
+  return { kind: 'workable', board: null, externalId: id, canonical: [`https://${WORKABLE_JOBS_HOST}/view/${id}`] };
 }
 
 /** A company's own careers page that embeds a Greenhouse form names the posting in ?gh_jid=. */
@@ -711,14 +793,21 @@ function workdayPosting(url: UrlLike): ParsedAtsUrl | null {
  *  employees' internal-<co> portal. */
 const ICIMS_HOST = /^(?!(?:www|api|login)\.)(?!internal-)[a-z0-9-]+\.icims\.com$/;
 const ICIMS_POSTING_ID = /^\d{1,12}$/;
-/** The words a posting's pages end in, as the extension reads them: its posting (job) and its email gate (login). */
-const ICIMS_PAGES: ReadonlySet<string> = new Set(['job', 'login']);
+/**
+ * The words a posting's pages end in, as the extension reads them: its posting (job, and job?mode=submit_apply, the
+ * page after submitting), its email gate (login) and (version 6, the owner's snapshots of 2026-11-06) the application's
+ * steps after the gate: the Candidate Profile (candidate), the Candidate and Job Specific Questions (questions), EEO
+ * (eeo) and an IForm's page (form).
+ */
+const ICIMS_PAGES: ReadonlySet<string> = new Set(['job', 'login', 'candidate', 'questions', 'eeo', 'form']);
 
 /**
  * iCIMS (version 5): /jobs/<id>/[<slug>/]job, the posting, and /jobs/<id>/[<slug>/]login, its email gate (the slug is
- * free); never "Log back in" (login?loginOnly=1, iCIMS's own sign-in, which names no job) nor any other page under a
- * posting. The board is the portal's host label (careers-<co>), the id the posting's number; the query (the wrapper's
- * layout, in_iframe, hashed) never matters.
+ * free); version 6: the steps after the gate, /jobs/<id>/[<slug>/]candidate, questions, eeo and form; never "Log back
+ * in" (login?loginOnly=1, iCIMS's own sign-in, which names no job) nor any other page under a posting (its referral).
+ * The board is the portal's host label (careers-<co>), the id the posting's number; every page reads as the posting
+ * (its /jobs/<id>/job), and the query (the wrapper's layout, in_iframe, hashed, a step's eem, code and csrf, the
+ * page after submitting's mode) never matters and is never kept.
  */
 function icimsPosting(url: UrlLike): ParsedAtsUrl | null {
   const parts = segmentsOf(url);
@@ -807,8 +896,12 @@ function successFactorsPosting(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'successfactors', board: company, externalId: id, canonical: [page] };
 }
 
-/** An Oracle Recruiting Cloud tenant: <tenant>.fa.<region>.oraclecloud.com or <tenant>.fa.oraclecloud.com. */
-const ORACLE_HOST = /^[a-z0-9-]+\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com$/;
+/**
+ * An Oracle Recruiting Cloud tenant: <tenant>.fa.<region>.oraclecloud.com or <tenant>.fa.oraclecloud.com; and (version
+ * 6, the owner's snapshots of 2026-11-06) one on Oracle's government cloud, <tenant>.fa.ocs.oraclegovcloud.com, which
+ * serves the same Candidate Experience.
+ */
+const ORACLE_HOST = /^[a-z0-9-]+\.fa(?:(?:\.[a-z0-9-]+)?\.oraclecloud|\.ocs\.oraclegovcloud)\.com$/;
 const ORACLE_ROOT = '/hcmUI/CandidateExperience/';
 const ORACLE_LANGUAGE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/;
 const ORACLE_SITE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -841,6 +934,353 @@ function oraclePosting(url: UrlLike): ParsedAtsUrl | null {
   return { kind: 'oracle', board, externalId: id, canonical: pages };
 }
 
+// Version 6: the new ATSs of the owner's snapshots of 2026-11-06, read exactly as the extension's adapters read them
+// (its src/adapters/<platform>/url.ts): the same hosts, pages, board and id, so a posting's platform, board and id are
+// one reading in both, and the first canonical address is the adapter's own application address. Paths and query
+// parameter names are compared as written, as the adapters compare them. A page's token, state, code, OTP or session
+// parameter (UltiPro's AuthCode/Register state, ADP's OTP_login, a ClearCompany application's id) is never kept.
+
+/** Every value of a query parameter named exactly `name` (URLSearchParams.getAll). */
+function exactQueryValues(url: UrlLike, name: string): string[] {
+  const values: string[] = [];
+  for (const [key, value] of url.searchParams) if (key === name) values.push(value);
+  return values;
+}
+
+/** A lower-case UUID, as Rippling, Pinpoint and HiBob write their postings'. */
+const LOWER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** A UUID in either case. */
+const ANY_UUID = LEVER_POSTING_ID;
+/** A host's first label: the tenant on the platforms whose tenants are hosts of their own. */
+const tenantOf = (url: UrlLike) => url.hostname.split('.')[0]!;
+
+/** Jobvite: its candidate host. */
+const JOBVITE_HOST = 'jobs.jobvite.com';
+const JOBVITE_COMPANY = /^[A-Za-z0-9-]+$/;
+const JOBVITE_JOB_ID = /^[A-Za-z0-9]+$/;
+
+/**
+ * Jobvite: jobs.jobvite.com/<company>/job/<id>, the posting, and .../apply, its application (its consent gate and its
+ * three steps at that one address). The company and the id as written (the id is mixed case).
+ */
+function jobvitePosting(url: UrlLike): ParsedAtsUrl | null {
+  const [company, job, id, ...rest] = segmentsOf(url);
+  if (company === undefined || job !== 'job' || id === undefined || !JOBVITE_COMPANY.test(company)) return null;
+  const tail = rest.join('/');
+  if (!JOBVITE_JOB_ID.test(id) || (tail !== '' && tail !== 'apply')) return null;
+  const posting = `https://${JOBVITE_HOST}/${company}/job/${id}`;
+  return { kind: 'jobvite', board: company, externalId: id, canonical: [`${posting}/apply`, posting] };
+}
+
+/** JazzHR: a tenant's host, <tenant>.applytojob.com, never www. */
+const JAZZHR_HOST = /^(?!www\.)[a-z0-9-]+\.applytojob\.com$/;
+/** A JazzHR posting's code: ten letters and digits, as written. */
+const JAZZHR_CODE = /^[A-Za-z0-9]{10}$/;
+
+/** JazzHR: /apply/<code>/<slug>, a posting and its form on one page (the tenant's board, /apply/, names none). */
+function jazzhrPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/apply/')) return null;
+  const [apply, code, slug, ...rest] = segmentsOf(url);
+  if (apply !== 'apply' || code === undefined || !JAZZHR_CODE.test(code) || !slug || rest.length > 0) return null;
+  const canonical = [`https://${url.hostname}/apply/${code}/${slug}`];
+  return { kind: 'jazzhr', board: tenantOf(url), externalId: code, canonical };
+}
+
+/** BambooHR: a tenant's host, <tenant>.bamboohr.com, under /careers/ alone (every other path is its employee system). */
+const BAMBOOHR_HOST = /^[a-z0-9-]+\.bamboohr\.com$/;
+const DIGITS = /^\d+$/;
+
+/** BambooHR: /careers/<id>, a posting's application form (the job list, /careers, names none). */
+function bambooHrPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/careers/')) return null;
+  const [careers, id, ...rest] = segmentsOf(url);
+  if (careers !== 'careers' || id === undefined || !DIGITS.test(id) || rest.length > 0) return null;
+  return { kind: 'bamboohr', board: tenantOf(url), externalId: id, canonical: [`https://${url.hostname}/careers/${id}`] };
+}
+
+/** Rippling: its one candidate host. */
+const RIPPLING_HOST = 'ats.rippling.com';
+const RIPPLING_BOARD = /^[a-z0-9-]+$/;
+
+/**
+ * Rippling: ats.rippling.com/<board>/jobs/<uuid>, the posting, and .../apply, its form (whose query the path
+ * decides). The form's address names the board and the posting again in its query, which its canonical address keeps
+ * (jobBoardSlug, jobId and step=application, in that order): whether the form loads without them is not known.
+ */
+function ripplingPosting(url: UrlLike): ParsedAtsUrl | null {
+  const [board, jobs, id, ...rest] = segmentsOf(url);
+  const tail = rest.join('/');
+  if (board === undefined || !RIPPLING_BOARD.test(board) || jobs !== 'jobs' || id === undefined) return null;
+  if (!LOWER_UUID.test(id) || (tail !== '' && tail !== 'apply')) return null;
+  const posting = `https://${RIPPLING_HOST}/${board}/jobs/${id}`;
+  const form = `${posting}/apply?jobBoardSlug=${board}&jobId=${id}&step=application`;
+  return { kind: 'rippling', board, externalId: id, canonical: [form, posting] };
+}
+
+/** Breezy HR: a tenant's host, <tenant>.breezy.hr, under /p/. */
+const BREEZY_HOST = /^[a-z0-9-]+\.breezy\.hr$/;
+/** A position's segment: its 12 hexadecimal digits, then its slug. */
+const BREEZY_POSITION = /^([0-9a-f]{12})-[^/]+$/;
+
+/** Breezy HR: /p/<id>-<slug>, the posting, and .../apply, its form; the id is the position's 12 hexadecimal digits. */
+function breezyPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/p/')) return null;
+  const [p, position, ...rest] = segmentsOf(url);
+  const tail = rest.join('/');
+  const match = position === undefined ? null : BREEZY_POSITION.exec(position);
+  if (p !== 'p' || match === null || (tail !== '' && tail !== 'apply')) return null;
+  const posting = `https://${url.hostname}/p/${position!}`;
+  return { kind: 'breezy', board: tenantOf(url), externalId: match[1]!, canonical: [`${posting}/apply`, posting] };
+}
+
+/** CareerPlug: a tenant's host, <tenant>.careerplug.com, under /jobs/. */
+const CAREERPLUG_HOST = /^[a-z0-9-]+\.careerplug\.com$/;
+
+/** CareerPlug: /jobs/<id>/apps/new, a posting and its form on one page (?loc=es is the same page in Spanish). */
+function careerPlugPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/jobs/')) return null;
+  const [jobs, id, apps, isNew, ...rest] = segmentsOf(url);
+  if (jobs !== 'jobs' || id === undefined || !DIGITS.test(id) || apps !== 'apps' || isNew !== 'new' || rest.length > 0) {
+    return null;
+  }
+  const canonical = [`https://${url.hostname}/jobs/${id}/apps/new`];
+  return { kind: 'careerplug', board: tenantOf(url), externalId: id, canonical };
+}
+
+/** Pinpoint: a tenant's host, <tenant>.pinpointhq.com, never app. (Pinpoint's own), under /en/postings/. */
+const PINPOINT_HOST = /^(?!app\.)[a-z0-9-]+\.pinpointhq\.com$/;
+/** What follows a Pinpoint posting's id: nothing (the posting), its form, and the page after submitting. */
+const PINPOINT_PAGES: ReadonlySet<string> = new Set(['', 'applications/new', 'applications/thanks']);
+
+/**
+ * Pinpoint: /en/postings/<uuid>, the posting, .../applications/new, its form, and .../applications/thanks, the page
+ * after submitting (its ?token= never kept).
+ */
+function pinpointPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/en/postings/')) return null;
+  const [locale, postings, id, ...rest] = segmentsOf(url);
+  if (locale !== 'en' || postings !== 'postings' || id === undefined || !LOWER_UUID.test(id)) return null;
+  if (!PINPOINT_PAGES.has(rest.join('/'))) return null;
+  const posting = `https://${url.hostname}/en/postings/${id}`;
+  return { kind: 'pinpoint', board: tenantOf(url), externalId: id, canonical: [`${posting}/applications/new`, posting] };
+}
+
+/** Paycor Recruiting: its one host, and its application form's path. */
+const PAYCOR_HOST = 'recruitingbypaycor.com';
+const PAYCOR_FORM = '/career/SubmitResume.action';
+/** An employer's (clientId) or a posting's (id) id: 32 hexadecimal digits. */
+const PAYCOR_ID = /^[0-9a-f]{32}$/;
+
+/** Paycor: /career/SubmitResume.action?clientId=<employer>&id=<posting>, a posting's one-page application. */
+function paycorPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (url.pathname !== PAYCOR_FORM) return null;
+  const clientId = exactQueryValue(url, 'clientId');
+  const id = exactQueryValue(url, 'id');
+  if (clientId === null || id === null || !PAYCOR_ID.test(clientId) || !PAYCOR_ID.test(id)) return null;
+  const canonical = [`https://${PAYCOR_HOST}${PAYCOR_FORM}?clientId=${clientId}&id=${id}&specialization=`];
+  return { kind: 'paycor', board: clientId, externalId: id, canonical };
+}
+
+/** HiBob: a tenant's careers host, <tenant>.careers.hibob.com. */
+const HIBOB_HOST = /^[a-z0-9-]+\.careers\.hibob\.com$/;
+
+/** HiBob: /jobs/<uuid>/apply, a posting's Application tab (its form). */
+function hiBobPosting(url: UrlLike): ParsedAtsUrl | null {
+  const [jobs, id, apply, ...rest] = segmentsOf(url);
+  if (jobs !== 'jobs' || id === undefined || !LOWER_UUID.test(id) || apply !== 'apply' || rest.length > 0) return null;
+  const tenant = url.hostname.slice(0, -'.careers.hibob.com'.length);
+  return { kind: 'hibob', board: tenant, externalId: id, canonical: [`https://${url.hostname}/jobs/${id}/apply`] };
+}
+
+/** UltiPro (UKG Pro Recruiting): its candidate host. */
+const ULTIPRO_HOST = 'recruiting.ultipro.com';
+const ULTIPRO_TENANT = /^[A-Za-z0-9_-]{1,64}$/;
+/** A board's pages that name a posting in ?opportunityId=: its application and its posting. */
+const ULTIPRO_PAGES: ReadonlySet<string> = new Set(['OpportunityApply', 'OpportunityDetail']);
+
+/**
+ * /<tenant>/JobBoard/<board uuid>/<page> with its opportunityId (read by `param`): the posting it names, and whether
+ * the page is its application; or null.
+ */
+function ultiproBoardPosting(
+  path: string,
+  param: (name: string) => string | null,
+): { posting: ParsedAtsUrl; apply: boolean } | null {
+  const [tenant, jobBoard, board, page, ...rest] = path.split('/').slice(1);
+  const id = param('opportunityId') ?? '';
+  if (tenant === undefined || !ULTIPRO_TENANT.test(tenant) || jobBoard !== 'JobBoard' || board === undefined) return null;
+  if (!ANY_UUID.test(board) || page === undefined || !ULTIPRO_PAGES.has(page) || rest.length > 0 || !ANY_UUID.test(id)) {
+    return null;
+  }
+  const lower = tenant.toLowerCase();
+  const externalId = id.toLowerCase();
+  const pages = `https://${ULTIPRO_HOST}/${lower}/JobBoard/${board.toLowerCase()}`;
+  const canonical = [
+    `${pages}/OpportunityApply?opportunityId=${externalId}`,
+    `${pages}/OpportunityDetail?opportunityId=${externalId}`,
+  ];
+  return { posting: { kind: 'ultipro', board: lower, externalId, canonical }, apply: page === 'OpportunityApply' };
+}
+
+/** A raw query's parameter (`a=1&b=2`) named exactly `name`, decoded once ('+' a space), or null. */
+function rawQueryValue(query: string, name: string): string | null {
+  for (const pair of query.split('&')) {
+    const at = pair.indexOf('=');
+    if (at < 0 || pair.slice(0, at) !== name) continue;
+    return decodedSegment(pair.slice(at + 1).replace(/\+/g, ' '));
+  }
+  return null;
+}
+
+/**
+ * UltiPro: /<tenant>/JobBoard/<board uuid>/OpportunityApply?opportunityId=<uuid>, the application, and its
+ * OpportunityDetail, the posting; and the account step, /<TENANT>/AuthCode/Register?state=returnUrl=<that
+ * application's path and query>|ta=<TENANT>, read as the application its returnUrl names on the same tenant, as Taleo's
+ * account pages are (its state is never kept). The board is the tenant in lower case, the id the opportunity in lower
+ * case.
+ */
+function ultiproPosting(url: UrlLike): ParsedAtsUrl | null {
+  const direct = ultiproBoardPosting(url.pathname, (name) => exactQueryValue(url, name));
+  if (direct !== null) return direct.posting;
+  const [tenant, auth, register, ...rest] = url.pathname.split('/').slice(1);
+  if (tenant === undefined || !ULTIPRO_TENANT.test(tenant) || auth !== 'AuthCode' || register !== 'Register') return null;
+  if (rest.length > 0) return null;
+  // state=returnUrl=/<tenant>/JobBoard/<uuid>/OpportunityApply?opportunityId=<uuid>|ta=<TENANT>, decoded once.
+  const parts = (exactQueryValue(url, 'state') ?? '').split('|');
+  const returnUrl = parts.find((part) => part.startsWith('returnUrl='))?.slice('returnUrl='.length) ?? '';
+  const ta = parts.find((part) => part.startsWith('ta='))?.slice('ta='.length) ?? '';
+  const [path, query] = returnUrl.split('?', 2) as [string, string | undefined];
+  const read = path.startsWith('/') && query !== undefined ? ultiproBoardPosting(path, (name) => rawQueryValue(query, name)) : null;
+  const tenantBoard = tenant.toLowerCase();
+  if (read === null || !read.apply || read.posting.board !== tenantBoard) return null;
+  return ta === '' || ta.toLowerCase() === tenantBoard ? read.posting : null;
+}
+
+/** Dayforce: its candidate host. */
+const DAYFORCE_HOST = 'jobs.dayforcehcm.com';
+const DAYFORCE_LOCALE = /^[A-Za-z]{2,3}-[A-Za-z]{2}$/;
+const DAYFORCE_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
+const DAYFORCE_POSTING_ID = /^\d{1,15}$/;
+
+/**
+ * Dayforce: /[<locale>/]<client namespace>/<career site>/jobs/<id>/apply/manualApplication, every step of a guest
+ * application (step 1 with its locale, the later steps without it, their query naming the step). The board is the
+ * client namespace as written; the canonical address is step 1's, in en-US, with ?applicationSource=Manual.
+ */
+function dayforcePosting(url: UrlLike): ParsedAtsUrl | null {
+  const segments = url.pathname.split('/').slice(1);
+  if (segments.length === 7 && DAYFORCE_LOCALE.test(segments[0]!)) segments.shift();
+  if (segments.length !== 6) return null;
+  const [namespace, site, jobs, id, apply, manual] = segments as [string, string, string, string, string, string];
+  if (!DAYFORCE_SEGMENT.test(namespace) || !DAYFORCE_SEGMENT.test(site) || jobs !== 'jobs') return null;
+  if (!DAYFORCE_POSTING_ID.test(id) || apply !== 'apply' || manual !== 'manualApplication') return null;
+  const canonical = [`https://${DAYFORCE_HOST}/en-US/${namespace}/${site}/jobs/${id}/apply/manualApplication?applicationSource=Manual`];
+  return { kind: 'dayforce', board: namespace, externalId: id, canonical };
+}
+
+/** Paylocity: its recruiting host, under /Recruiting/ (compared as written). */
+const PAYLOCITY_HOST = 'recruiting.paylocity.com';
+
+/** Paylocity: /Recruiting/Jobs/Apply/<id>, every step of the application; it names no board. */
+function paylocityPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/Recruiting/')) return null;
+  const [recruiting, jobs, apply, id, ...rest] = segmentsOf(url);
+  if (recruiting !== 'Recruiting' || jobs !== 'Jobs' || apply !== 'Apply' || !id || !DIGITS.test(id) || rest.length > 0) {
+    return null;
+  }
+  return { kind: 'paylocity', board: null, externalId: id, canonical: [`https://${PAYLOCITY_HOST}/Recruiting/Jobs/Apply/${id}`] };
+}
+
+/** Dice: its host, under /job-applications/ alone (its postings, /job-detail/, and its sign-in are not read). */
+const DICE_HOST = 'www.dice.com';
+
+/** Dice: /job-applications/<uuid>/wizard, every step of an Easy Apply; it names no board, the uuid as written. */
+function dicePosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/job-applications/')) return null;
+  const [section, id, wizard, ...rest] = segmentsOf(url);
+  if (section !== 'job-applications' || !id || !ANY_UUID.test(id) || wizard !== 'wizard' || rest.length > 0) return null;
+  return { kind: 'dice', board: null, externalId: id, canonical: [`https://${DICE_HOST}/job-applications/${id}/wizard`] };
+}
+
+/** ClearCompany: a tenant's host, never its cc- file hosts, under /careers/ alone (its other pages are not a candidate's). */
+const CLEARCOMPANY_HOST = /^(?!cc-)[a-z0-9-]+\.clearcompany\.com$/;
+
+/**
+ * ClearCompany: /careers/jobs/<uuid>/apply, the application's account step, and /careers/jobs/<uuid>/apply/<application
+ * uuid>, every page after it: one application, its own uuid (the person's) never kept. The uuids as written.
+ */
+function clearCompanyPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (!url.pathname.startsWith('/careers/')) return null;
+  const [careers, jobs, id, apply, application, ...rest] = segmentsOf(url);
+  if (careers !== 'careers' || jobs !== 'jobs' || !id || !ANY_UUID.test(id) || apply !== 'apply' || rest.length > 0) {
+    return null;
+  }
+  if (application !== undefined && !ANY_UUID.test(application)) return null;
+  const canonical = [`https://${url.hostname}/careers/jobs/${id}/apply`];
+  return { kind: 'clearcompany', board: tenantOf(url), externalId: id, canonical };
+}
+
+/** ADP Workforce Now: its host, and its two candidate pages (the guest page, and every step after the emailed code). */
+const ADP_HOST = 'workforcenow.adp.com';
+const ADP_GUEST = '/mascsr/default/mdf/recruitment/recruitment.html';
+const ADP_STEPS = '/mascsr/applicant/mdf/recruitment/postLogin.html';
+const ADP_JOB_ID = /^\d{1,15}$/;
+const ADP_CC_ID = /^\d{8}_\d{6}$/;
+
+/**
+ * ADP Workforce Now: the guest page (recruitment.html) and every step after the emailed code (postLogin.html), both
+ * naming the employer (cid, a uuid) and the posting (jobId; twice on the steps, the same both times), with the client's
+ * ccId; never two different jobIds. The board is the cid in lower case; the canonical address is the guest page's with
+ * cid, jobId and ccId alone (never the steps' OTP_login, requisitionId or params). Every other path of the host (an
+ * employer's employee pages among them) is not read.
+ */
+function adpPosting(url: UrlLike): ParsedAtsUrl | null {
+  if (url.pathname !== ADP_GUEST && url.pathname !== ADP_STEPS) return null;
+  const cid = exactQueryValue(url, 'cid') ?? '';
+  const jobIds = [...new Set(exactQueryValues(url, 'jobId'))];
+  const ccId = exactQueryValue(url, 'ccId');
+  if (!ANY_UUID.test(cid) || jobIds.length !== 1 || !ADP_JOB_ID.test(jobIds[0]!)) return null;
+  if (ccId !== null && !ADP_CC_ID.test(ccId)) return null;
+  const board = cid.toLowerCase();
+  const tail = ccId === null ? '' : `&ccId=${ccId}`;
+  return { kind: 'adp', board, externalId: jobIds[0]!, canonical: [`https://${ADP_HOST}${ADP_GUEST}?cid=${board}&jobId=${jobIds[0]!}${tail}`] };
+}
+
+/** SmartRecruiters: the one host the snapshots show. */
+const SMARTRECRUITERS_HOST = 'jobs.smartrecruiters.com';
+const SMARTRECRUITERS_COMPANY = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+/** A posting's own segment: its number, then its slug after a hyphen. */
+const SMARTRECRUITERS_POSTING = /^(\d{6,20})(?:-.*)?$/;
+/** The one-click application's steps after its publication: its first page and its screening questions. */
+const SMARTRECRUITERS_STEPS: ReadonlySet<string> = new Set(['', 'screening']);
+/** The host's own first segments, which are no company. */
+const SMARTRECRUITERS_RESERVED: ReadonlySet<string> = new Set(['oneclick-ui', 'external-referrals']);
+
+/**
+ * SmartRecruiters: a posting, /<Company>/<number>-<slug> (its own canonical address /<Company>/<number>), and its
+ * one-click application, /oneclick-ui/company/<Company>/publication/<uuid>[/screening] (its canonical address without
+ * the screening step and the query). Neither names the other's id, so they are two readings, as the extension keys
+ * them: the posting by its number, the application by its publication's uuid in lower case; the company as written.
+ */
+function smartRecruitersPosting(url: UrlLike): ParsedAtsUrl | null {
+  const parts = segmentsOf(url);
+  const origin = `https://${SMARTRECRUITERS_HOST}`;
+  if (parts[0] === 'oneclick-ui') {
+    const [, company, board, publication, id, ...tail] = parts;
+    if (company !== 'company' || publication !== 'publication' || board === undefined || id === undefined) return null;
+    if (!SMARTRECRUITERS_COMPANY.test(board) || !ANY_UUID.test(id) || !SMARTRECRUITERS_STEPS.has(tail.join('/'))) return null;
+    const externalId = id.toLowerCase();
+    return { kind: 'smartrecruiters', board, externalId, canonical: [`${origin}/oneclick-ui/company/${board}/publication/${externalId}`] };
+  }
+  if (parts.length !== 2) return null;
+  const [board, segment] = parts as [string, string];
+  const posting = SMARTRECRUITERS_POSTING.exec(segment);
+  if (!SMARTRECRUITERS_COMPANY.test(board) || SMARTRECRUITERS_RESERVED.has(board) || posting === null) return null;
+  const externalId = posting[1]!;
+  const canonical = [...new Set([`${origin}/${board}/${externalId}`, `${origin}/${board}/${segment}`])];
+  return { kind: 'smartrecruiters', board, externalId, canonical };
+}
+
 /**
  * The ATS posting an application page's address names, or null. Greenhouse: its boards and job boards (and their
  * .eu. twins) at /{board}/jobs/{id}, the embedded form at /embed/job_app?for={board}&token={id}, and a company page
@@ -851,8 +1291,11 @@ function oraclePosting(url: UrlLike): ParsedAtsUrl | null {
  * /j/{shortcode} links naming no account are read with no board (see workablePosting). Version 5: Workday (a tenant's
  * <tenant>.wd<n>.myworkdayjobs.com, company career sites such as Cisco's, Adobe's and NVIDIA's among them, and
  * wd<n>.myworkdaysite.com with the tenant in the path), iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud, as
- * the extension's adapters read them (see each reader). Hosts are compared in lower case, and the query parameter
- * names of Greenhouse, Lever, Ashby and Workable too; the fragment never matters.
+ * the extension's adapters read them (see each reader). Version 6: Jobvite, JazzHR, BambooHR, Rippling, Breezy HR,
+ * CareerPlug, Pinpoint, Paycor, HiBob, UltiPro, Dayforce, Paylocity, Dice, ClearCompany, ADP Workforce Now and
+ * SmartRecruiters, Oracle's government cloud, Workable's job-search site and iCIMS's steps after its gate, likewise.
+ * Hosts are compared in lower case, and the query parameter names of Greenhouse, Lever, Ashby and Workable too; the
+ * fragment never matters.
  */
 export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   const url = webUrl(address);
@@ -863,25 +1306,45 @@ export function parseAtsUrl(address: string): ParsedAtsUrl | null {
   if (LEVER_HOSTS.has(host)) return leverPosting(url);
   if (host === ASHBY_HOST) return ashbyPosting(url);
   if (host === WORKABLE_HOST || host.endsWith('.workable.com')) return workablePosting(url);
-  const reader = VERSION_5_READERS.find(([pattern]) => pattern.test(host))?.[1];
-  if (reader) {
-    const plain = url.protocol === 'https:' && url.port === '' && url.username === '' && url.password === '';
-    return plain ? reader(url) : null;
-  }
+  const reader = HOST_READERS.find(([pattern]) => (typeof pattern === 'string' ? pattern === host : pattern.test(host)))?.[1];
+  if (reader) return plainHttps(url) ? reader(url) : null;
   return greenhouseOnCompanyPage(url);
 }
 
+/** Whether an address is https on the default port, without a user name or password, as the adapters read theirs. */
+function plainHttps(url: UrlLike): boolean {
+  return url.protocol === 'https:' && url.port === '' && url.username === '' && url.password === '';
+}
+
 /**
- * Version 5's platforms by host, each read over https on the default port and without a user name or password, as
- * the adapters read them (a stored link is compared as linkKey writes it, https, so an http spelling loses nothing).
+ * Version 5's and 6's platforms by host (a host's own name, or a pattern over it), each read over https on the default
+ * port and without a user name or password, as the adapters read them (a stored link is compared as linkKey writes it,
+ * https, so an http spelling loses nothing). A host here is the platform's alone: a page of it no reader reads is no
+ * posting (never a company page's ?gh_jid=).
  */
-const VERSION_5_READERS: ReadonlyArray<readonly [RegExp, (url: UrlLike) => ParsedAtsUrl | null]> = [
+const HOST_READERS: ReadonlyArray<readonly [RegExp | string, (url: UrlLike) => ParsedAtsUrl | null]> = [
   [WORKDAY_JOBS_HOST, workdayPosting],
   [WORKDAY_SITE_HOST, workdayPosting],
   [ICIMS_HOST, icimsPosting],
   [TALEO_HOST, taleoPosting],
   [SUCCESSFACTORS_HOST, successFactorsPosting],
   [ORACLE_HOST, oraclePosting],
+  [JOBVITE_HOST, jobvitePosting],
+  [JAZZHR_HOST, jazzhrPosting],
+  [BAMBOOHR_HOST, bambooHrPosting],
+  [RIPPLING_HOST, ripplingPosting],
+  [BREEZY_HOST, breezyPosting],
+  [CAREERPLUG_HOST, careerPlugPosting],
+  [PINPOINT_HOST, pinpointPosting],
+  [PAYCOR_HOST, paycorPosting],
+  [HIBOB_HOST, hiBobPosting],
+  [ULTIPRO_HOST, ultiproPosting],
+  [DAYFORCE_HOST, dayforcePosting],
+  [PAYLOCITY_HOST, paylocityPosting],
+  [DICE_HOST, dicePosting],
+  [CLEARCOMPANY_HOST, clearCompanyPosting],
+  [ADP_HOST, adpPosting],
+  [SMARTRECRUITERS_HOST, smartRecruitersPosting],
 ];
 
 /** A LinkedIn job, as parseLinkedInJobUrl reads its address. */
@@ -980,8 +1443,9 @@ export interface AddablePosting {
  * addresses that name the account (one read of the posting from Workable's API, which needs the account), never from
  * a /j/{shortcode} link that names none; Workday (version 5) from a posting's page on either kind of host (one read of
  * the posting from the tenant's own job API, the read the posting's page makes, when the tenant's robots.txt allows
- * it: the server checks that before it reads). iCIMS, Taleo, SuccessFactors and Oracle have no public posting API:
- * POST /api/autofill/jobs/from-page adds theirs.
+ * it: the server checks that before it reads). iCIMS, Taleo, SuccessFactors and Oracle have no public posting API, and
+ * neither have (version 6) the new ATSs but SmartRecruiters, whose Posting API's robots.txt (api.smartrecruiters.com)
+ * allows no reader but LinkedIn's: POST /api/autofill/jobs/from-page adds theirs, and a Workable job-search page's.
  */
 export function addablePosting(parsed: ParsedAtsUrl | null): AddablePosting | null {
   if (!parsed || parsed.board === null) return null;

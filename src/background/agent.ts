@@ -50,6 +50,12 @@
  *   dropped connection does too, and turns Run auto-apply off (its confirmation asked again). The person closing the
  *   agent's tab or window is their Stop (the audit's m14): the agent pauses (window-closed) until they turn Run
  *   auto-apply on again, so no next job opens by itself.
+ * - The snapshot build of 2026-11-06 (core-x, item 3; docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): where the tab's top frame is a company's
+ *   wrapper that draws the application in a frame of its own (its hello's `wraps`: an iCIMS portal's
+ *   iframe#icims_content_iframe), "the top frame" above is that frame, the one that claims the application (frames.ts
+ *   claimFrameOf: its hello's `claimed`, on the wrapper's origin and at its application), and a chain frame it framed
+ *   (agentFramesOf): its run, its entry, its report, its retry and its Submit's document are there, never the
+ *   wrapper's. Any other subframe is never acted on.
  * Commands come only from the worker's own poll of TailorIT with its token: no page, frame or message can start the
  * agent, choose its job or make it submit. Nothing here logs a job, an address or a value: states and reasons are
  * logged as their places in the contract's lists.
@@ -211,8 +217,10 @@ const WAIT: AgentVerdict = { kind: 'wait' };
  *   rules' notices (no-AI posting: skipped posting_forbids_ai; then a bot check asked as a question, the audit's S-2
  *   and S-3: needs-you captcha; a required field empty: needs-you required_field_empty;
  *   an AI-guessed legal answer: needs-you ai_guess_legal), a CAPTCHA (needs-you captcha), a sign-in (needs-you sign_in),
- *   the page refusing the Submit pressed (one retry, then failed validation_error), errors shown before any Submit
- *   (failed validation_error: the run's own fix pass came first), a Submit no confirmation followed (needs-you other),
+ *   the page refusing the Submit pressed (one retry, then failed validation_error), errors the page showed before
+ *   anything was written (needs-you validation_error: the behaviour review of 2026-11-06, minor 7), other errors shown
+ *   before any Submit (failed validation_error: the run's own fix pass came first), a Submit no confirmation followed
+ *   (needs-you other),
  *   a last step the adapter cannot tell (needs-you unsupported_site), a step tried to its limit or a runaway wizard
  *   (failed validation_error), a form gone out of view (failed page_error), a Submit held for another check (needs-you
  *   other); nothing of these: settle.
@@ -266,6 +274,9 @@ function atRest(report: ReportView, has: (code: FrameReport['notices'][number]['
   if (has('submit-held-captcha') || has('captcha-next') || has('captcha')) return finish('needs-you', 'captcha');
   if (has('auth')) return finish('needs-you', 'sign_in');
   if (has('submit-errors')) return context.retried ? finish('failed', 'validation_error') : { kind: 'retry' };
+  // The behaviour review of 2026-11-06 (minor 7): errors the page showed before anything was written (Oracle's profile
+  // item it marks invalid on load) are the person's to fix: needs-you, never the agent's failure.
+  if (has('errors-on-load')) return finish('needs-you', 'validation_error');
   if (has('validation')) return finish('failed', 'validation_error');
   if (has('submit-unconfirmed')) return finish('needs-you', 'other');
   if (has('final-unknown')) return finish('needs-you', 'unsupported_site');
@@ -321,6 +332,10 @@ export interface AgentDeps {
   atsPageOf?(tabId: number): Promise<AtsPage | null>;
   /** The tab's top frame of ours, as the frame registry holds it. */
   topFrame(tabId: number): Promise<Pick<FrameEntry, 'frameId' | 'documentId'> | null>;
+  /** The snapshot build of 2026-11-06 (core-x, item 3): the frames the agent acts in for the tab's application besides
+   *  its top frame (frames.ts agentFramesOf: the frame that claims a company wrapper's application, and a chain frame
+   *  it framed). Absent: the top frame alone. */
+  agentFrames?(tabId: number): Promise<FrameEntry[]>;
   /** One message to one frame of a tab: its answer, or a throw when it cannot be reached. */
   send(tabId: number, message: unknown, target: { frameId: number; documentId?: string }): Promise<unknown>;
   /** The agent lets go of its tab before closing it: run/cancel and the person's own settings to its frames. */
@@ -720,8 +735,17 @@ export function createAgent(deps: AgentDeps) {
   async function evaluate(run: AgentRun): Promise<void> {
     if (run.tabId === null || run.result !== null) return;
     const reports = await deps.reports(run.tabId);
+    // core-x, item 3: the top frame's report, else the latest of the frames the agent acts in (a wrapper's application
+    // frame), else the latest.
+    const frames = (await deps.agentFrames?.(run.tabId).catch(() => [])) ?? [];
+    const latest = (list: readonly FrameReport[]) => [...list].sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const top = reports.find((report) => report.frameId === 0)
-      ?? [...reports].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      ?? latest(reports.filter((report) => frames.some((frame) => frame.frameId === report.frameId)))
+      ?? latest(reports);
+    /** The frame that report came from, as the registry holds it (its document), for a retry and the job's Submit. */
+    const tabId = run.tabId;
+    const reportFrame = async () => frames.find((frame) => frame.frameId === top?.frameId)
+      ?? (top?.frameId === 0 || top === undefined ? await deps.topFrame(tabId) : { frameId: top.frameId, documentId: null });
     if (top === undefined || top.runId === run.staleRunId) return;
     const now = deps.now();
     const step = String(Math.min(top.step?.index ?? 0, 999));
@@ -739,7 +763,7 @@ export function createAgent(deps: AgentDeps) {
       lastReportAt: top.updatedAt,
       progressAt: fresh ? now : run.progressAt,
       pressedAt: pressedNow ? now : run.pressedAt,
-      pressedDoc: pressedNow ? (await deps.topFrame(run.tabId))?.documentId ?? null : run.pressedDoc,
+      pressedDoc: pressedNow ? (await reportFrame())?.documentId ?? null : run.pressedDoc,
     };
     switch (verdict.kind) {
       case 'wait':
@@ -750,7 +774,10 @@ export function createAgent(deps: AgentDeps) {
         return;
       case 'retry': {
         await saveRun({ ...next, retried: true, staleRunId: top.runId, waiting: null });
-        const frame = await deps.topFrame(run.tabId);
+        // The security fix of 2026-11-06 (S12): the retry goes to the report's frame only when it is one the agent
+        // acts in (agentFramesOf) or the top frame; a report from any other subframe retries in the top frame, never
+        // in that subframe.
+        const frame = frames.find((each) => each.frameId === top.frameId) ?? await deps.topFrame(tabId);
         log('agent.retried');
         const answer = await sendTo(run.tabId, frame, { v: 1, type: 'run/start', dryRun: false, agent: true, retry: true });
         if ((answer as { ok?: unknown } | undefined)?.ok !== true) {
@@ -852,6 +879,70 @@ export function createAgent(deps: AgentDeps) {
     return ok(await status());
   }
 
+  /** A frame the agent acts in said hello (hello: the tab's top frame, or core-x item 3's claim frame and its chain
+   *  frame), at the task's application: a form's document gets its run (once each, at most AGENT_MAX_STARTS, never
+   *  after the job's Submit); one with no form its entry (once each, at most AGENT_MAX_ENTRIES), never the platform's
+   *  page after submitting, nor (minor 13) any page after the job's Submit. Called inside serial(). */
+  async function act(tabId: number, run: AgentRun, entry: Pick<FrameEntry, 'frameId' | 'documentId' | 'hasForm'
+    | 'confirmation'>): Promise<void> {
+    const doc = entry.documentId ?? '';
+    const now = deps.now();
+    const heard: AgentRun = { ...run, heardAt: run.heardAt ?? now, progressAt: now };
+    deps.assign(tabId, run.applicationKey, { jobId: run.jobId, resumeId: run.resumeId });
+    if (entry.hasForm) {
+      const shown: AgentRun = { ...heard, formAt: run.formAt ?? now };
+      if (run.started.includes(doc)) {
+        await saveRun(shown);
+        return;
+      }
+      if (run.pressedAt !== null) {
+        // One Submit per job: a form that shows again after it is never filled again; its confirmation is awaited.
+        await saveRun({ ...shown, heldAt: run.heldAt ?? now });
+        deps.timers.after(AGENT_CONFIRM_MS + 100, () => void tick().catch(() => undefined));
+        return;
+      }
+      if (run.starts >= AGENT_MAX_STARTS) {
+        await finishRun(shown, 'needs-you', 'other');
+        return;
+      }
+      await saveRun({ ...shown, starts: run.starts + 1, started: [...run.started, doc].slice(-AGENT_MAX_STARTS) });
+      log('agent.run-started');
+      await sendTo(tabId, entry, { v: 1, type: 'run/start', dryRun: false, agent: true });
+      return;
+    }
+    if (entry.confirmation === true || run.entered.includes(doc)) {
+      await saveRun(heard);
+      return;
+    }
+    if (run.pressedAt !== null) {
+      // The behaviour review of 2026-11-06 (minor 13): after the job's Submit, a page with no form is never entered (an
+      // entry pressed there would begin the application again); its confirmation is awaited, as a form's is.
+      await saveRun({ ...heard, heldAt: run.heldAt ?? now });
+      deps.timers.after(AGENT_CONFIRM_MS + 100, () => void tick().catch(() => undefined));
+      return;
+    }
+    if (run.entered.length >= AGENT_MAX_ENTRIES) {
+      await finishRun(heard, 'failed', 'page_error');
+      return;
+    }
+    await saveRun({ ...heard, entered: [...run.entered, doc] });
+    const answer = await sendTo(tabId, entry, { v: 1, type: 'agent/enter' });
+    const data = (answer as { ok?: boolean; data?: EntryAnswer } | undefined)?.data;
+    log('agent.entered', { pressed: data?.outcome === 'pressed' });
+    if (data?.outcome === 'pressed') {
+      const now = await runOf();
+      if (now !== null && now.id === run.id && (now.pressedEntryAt ?? null) === null) {
+        await saveRun({ ...now, pressedEntryAt: deps.now() });
+      }
+    }
+    // A CAPTCHA, a sign-in or a code before the form: the person's. Not offered (a form drawn late, a page still
+    // loading): the form's wait covers it.
+    if (data?.outcome === 'blocked') {
+      const result = ENTRY_RESULTS[data.block ?? 'other'];
+      await finishRun((await runOf()) ?? heard, result.state, result.reason);
+    }
+  }
+
   return {
     status,
     tick,
@@ -911,10 +1002,21 @@ export function createAgent(deps: AgentDeps) {
      *  the job; a form's document gets its run (once each, at most AGENT_MAX_STARTS, never after the job's Submit); one
      *  with no form its entry (once each, at most AGENT_MAX_ENTRIES), never the platform's page after submitting. */
     async hello(tabId: number, entry: Pick<FrameEntry, 'frameId' | 'documentId' | 'hasForm' | 'posting' | 'confirmation'
-      | 'applicationKey'> & Partial<Pick<FrameEntry, 'platform'>>): Promise<void> {
+      | 'applicationKey'> & Partial<Pick<FrameEntry, 'platform' | 'wraps'>>): Promise<void> {
       await serial(async () => {
         const run = await activeRun();
-        if (run === null || run.tabId !== tabId || entry.frameId !== 0) return;
+        if (run === null || run.tabId !== tabId) return;
+        // The snapshot build of 2026-11-06 (core-x, item 3): a subframe only where it is one of the frames the agent acts
+        // in for the tab's application (frames.ts agentFramesOf: the frame that claims a company wrapper's application,
+        // an iCIMS portal's iframe#icims_content_iframe, and a chain frame it framed); the S-9 rules keep any other
+        // silent, and nothing a frame says of itself makes it one but the registry's own checks.
+        if (entry.frameId !== 0) {
+          const frames = (await deps.agentFrames?.(tabId).catch(() => [])) ?? [];
+          if (!frames.some((frame) => frame.frameId === entry.frameId && frame.documentId === entry.documentId)) return;
+          if (entry.applicationKey !== run.applicationKey) return;
+          await act(tabId, run, entry);
+          return;
+        }
         if (entry.applicationKey === undefined) {
           await noPosting(run, entry.platform === null || entry.platform === undefined ? null
             : onJobPlatform(run, entry.platform));
@@ -925,55 +1027,22 @@ export function createAgent(deps: AgentDeps) {
           await finishRun(run, 'needs-you', 'other');
           return;
         }
-        const doc = entry.documentId ?? '';
-        const now = deps.now();
-        const heard: AgentRun = { ...run, heardAt: run.heardAt ?? now, progressAt: now };
-        deps.assign(tabId, run.applicationKey, { jobId: run.jobId, resumeId: run.resumeId });
-        if (entry.hasForm) {
-          const shown: AgentRun = { ...heard, formAt: run.formAt ?? now };
-          if (run.started.includes(doc)) {
-            await saveRun(shown);
-            return;
+        if (entry.wraps === true) {
+          // core-x, item 3: a company's wrapper draws the application in a frame of its own: the agent acts there, never
+          // here. That frame's hello may have come first: it is acted on now, once each document.
+          const now = deps.now();
+          let held: AgentRun = { ...run, heardAt: run.heardAt ?? now, progressAt: now };
+          await saveRun(held);
+          for (const frame of (await deps.agentFrames?.(tabId).catch(() => [])) ?? []) {
+            if (frame.frameId === 0 || frame.applicationKey !== run.applicationKey) continue;
+            const current = await runOf();
+            if (current === null || current.id !== run.id || current.result !== null) return;
+            held = current;
+            await act(tabId, held, frame);
           }
-          if (run.pressedAt !== null) {
-            // One Submit per job: a form that shows again after it is never filled again; its confirmation is awaited.
-            await saveRun({ ...shown, heldAt: run.heldAt ?? now });
-            deps.timers.after(AGENT_CONFIRM_MS + 100, () => void tick().catch(() => undefined));
-            return;
-          }
-          if (run.starts >= AGENT_MAX_STARTS) {
-            await finishRun(shown, 'needs-you', 'other');
-            return;
-          }
-          await saveRun({ ...shown, starts: run.starts + 1, started: [...run.started, doc].slice(-AGENT_MAX_STARTS) });
-          log('agent.run-started');
-          await sendTo(tabId, entry, { v: 1, type: 'run/start', dryRun: false, agent: true });
           return;
         }
-        if (entry.confirmation === true || run.entered.includes(doc)) {
-          await saveRun(heard);
-          return;
-        }
-        if (run.entered.length >= AGENT_MAX_ENTRIES) {
-          await finishRun(heard, 'failed', 'page_error');
-          return;
-        }
-        await saveRun({ ...heard, entered: [...run.entered, doc] });
-        const answer = await sendTo(tabId, entry, { v: 1, type: 'agent/enter' });
-        const data = (answer as { ok?: boolean; data?: EntryAnswer } | undefined)?.data;
-        log('agent.entered', { pressed: data?.outcome === 'pressed' });
-        if (data?.outcome === 'pressed') {
-          const now = await runOf();
-          if (now !== null && now.id === run.id && (now.pressedEntryAt ?? null) === null) {
-            await saveRun({ ...now, pressedEntryAt: deps.now() });
-          }
-        }
-        // A CAPTCHA, a sign-in or a code before the form: the person's. Not offered (a form drawn late, a page still
-        // loading): the form's wait covers it.
-        if (data?.outcome === 'blocked') {
-          const result = ENTRY_RESULTS[data.block ?? 'other'];
-          await finishRun((await runOf()) ?? heard, result.state, result.reason);
-        }
+        await act(tabId, run, entry);
       });
     },
 

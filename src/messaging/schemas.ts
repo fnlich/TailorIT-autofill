@@ -79,7 +79,8 @@ export const CurrentValueSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('text'), text: Text(20_000) }),
   z.strictObject({ kind: z.literal('checked'), checked: z.boolean() }),
   z.strictObject({ kind: z.literal('selected'), labels: z.array(Text(300)).max(300) }),
-  z.strictObject({ kind: z.literal('files'), count: Count }),
+  z.strictObject({ kind: z.literal('files'), count: Count, held: z.literal(true).optional(),
+    names: z.array(Text(300)).max(20).optional() }),
 ]);
 
 export const FieldSpecSchema = z.strictObject({
@@ -93,6 +94,8 @@ export const FieldSpecSchema = z.strictObject({
   /** A visible source names the field: one that is false is never written and never asks for the sensitive part. */
   labelVisible: z.boolean(),
   description: Text(2000),
+  /** The core pass of 2026-11-06: the field's own label, past its 300 characters, states that no AI was used. */
+  statesNoAi: z.literal(true).optional(),
   required: z.boolean(),
   options: z.union([z.array(OptionSchema).max(5000), z.literal('lazy')]),
   /** A widget's list read only in part: the planner matches it exactly or not at all. */
@@ -283,7 +286,20 @@ const contentMessages = [
   z.strictObject({ v, type: z.literal('frame/hello'), isTop: z.boolean(), hasForm: z.boolean(), nav: Count.optional(),
     /** v3 Phase 3: the frame's form asks for a cover letter (a file or text box its label names one), so the side panel
      *  shows the card's cover-letter row. A flag, never a label. */
-    letter: z.literal(true).optional() }),
+    letter: z.literal(true).optional(),
+    // ── snapshot build 2026-11-06 (core-x, items 3, 7 and 14) ──
+    /** The top frame is a company's wrapper that draws the application in a frame of its own (Adapter.applicationFrame:
+     *  iCIMS's iframe#icims_content_iframe): the agent acts in that frame, not here. */
+    wraps: z.literal(true).optional(),
+    /** A subframe whose adapter claims the tab's application: the wrapper's own application frame, directly below it,
+     *  on its origin, at the same application (content/runtime.ts claimsApplication). */
+    claimed: z.literal(true).optional(),
+    /** A page whose address names no job but continues an application (adapters/chain.ts): a top frame's names its
+     *  referrer's hash (`from`, 16 hex digits, never an address), a subframe's says only that it is one (`frame`: the
+     *  security fix of 2026-11-06, S4, the worker reads the tab's frame registry). The worker keys it by that
+     *  application where its rules allow (background/chain.ts). */
+    chain: z.union([z.strictObject({ from: z.string().regex(/^[0-9a-f]{16}$/) }),
+      z.strictObject({ frame: z.literal(true) })]).optional() }),
   /** Answers a run id and the content settings; never the profile. */
   z.strictObject({ v, type: z.literal('run/begin'), applicationKey: z.string().max(80),
     /** 'agent' (v3 Phase 5): the auto-apply agent's run, which the worker takes only from the tab it opened. */
@@ -659,6 +675,9 @@ export const FrameHelloAnswerSchema = z.strictObject({
   /** v3 Phase 3 review: the browser's side panel shows the tab now (a top frame's hello only), so a page that loads
    *  beside it keeps its launcher hidden. */
   side: z.literal(true).optional(),
+  // ── snapshot build 2026-11-06 (core-x, items 7 and 14) ──
+  /** A chain page the worker keyed (background/chain.ts): the application key it takes (a hash, never an address). */
+  chained: z.strictObject({ applicationKey: z.string().regex(/^[a-z]+:[0-9a-f]{16}$/) }).optional(),
 });
 export const RunBeginAnswerSchema = z.strictObject({
   runId: Id,

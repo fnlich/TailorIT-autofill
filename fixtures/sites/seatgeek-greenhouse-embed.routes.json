@@ -1,0 +1,8 @@
+{
+  "https://seatgeek.com/jobs/8357322?gh_jid=8357322": "fixtures/sites/seatgeek-greenhouse-embed.html",
+  "https://job-boards.greenhouse.io/embed/job_app?for=seatgeek&validityToken=REDACTED&token=8357322": "fixtures/sites/seatgeek-greenhouse-embed.frame-1.html",
+  "https://content.googleapis.com/static/proxy.html?usegapi=1&jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.en.etOqPKhAhvg.O%2Fd%3D1%2Frs%3DAHpOoo-l5JrVgGKVELwC844E6riBHX86-w%2Fm%3D__features__": "fixtures/sites/seatgeek-greenhouse-embed.third-party-frame.html",
+  "https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1&k=6LfmcbcpAAAAAChNTbhUShzUOAMj_wY9LQIvLFX0&co=aHR0cHM6Ly9qb2ItYm9hcmRzLmdyZWVuaG91c2UuaW86NDQz&hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&size=invisible&anchor-ms=20000&execute-ms=30000&cb=pai50eowyan": "fixtures/sites/seatgeek-greenhouse-embed.third-party-frame.html",
+  "https://widget.trustpilot.com/trustboxes/54197383fd9dceac42a68694/index.html?templateId=54197383fd9dceac42a68694&businessunitId=4c083b0800006400050d32b9": "fixtures/sites/seatgeek-greenhouse-embed.third-party-frame.html",
+  "https://api.sardine.ai/assets/collector.min.432a306.html?r=2026-11-04-432a306": "fixtures/sites/seatgeek-greenhouse-embed.third-party-frame.html"
+}

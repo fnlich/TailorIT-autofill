@@ -23,7 +23,7 @@
  * The page's own DOM is never annotated: no attribute, class or style is set on a page element.
  */
 import { MAX_EDIT_INSTRUCTION } from '../../messaging/schemas';
-import { COPY } from '../../shared/copy';
+import { PAGE_COPY } from '../../shared/copy';
 import { LOGO_MARK } from '../../shared/icons';
 import { svgOf } from './svg';
 
@@ -121,15 +121,15 @@ export function createAiEdits(doc: Document, layer: HTMLElement, onClick: (key: 
     const el = doc.createElement('div');
     el.className = 'ai-prompt';
     el.setAttribute('role', 'dialog');
-    el.setAttribute('aria-label', COPY.editWithAi);
+    el.setAttribute('aria-label', PAGE_COPY.editWithAi);
     const label = doc.createElement('label');
     label.className = 'ai-prompt__label';
-    label.textContent = COPY.aiEdit.label;
+    label.textContent = PAGE_COPY.aiEdit.label;
     const textarea = doc.createElement('textarea');
     textarea.className = 'ai-prompt__input';
     textarea.maxLength = MAX_EDIT_INSTRUCTION;
     textarea.rows = 3;
-    textarea.placeholder = COPY.aiEdit.placeholder;
+    textarea.placeholder = PAGE_COPY.aiEdit.placeholder;
     const id = `ai-prompt-${Math.floor(Math.random() * 1e9).toString(36)}`;
     textarea.id = id;
     label.htmlFor = id;
@@ -137,15 +137,15 @@ export function createAiEdits(doc: Document, layer: HTMLElement, onClick: (key: 
     foot.className = 'ai-prompt__foot';
     const count = doc.createElement('span');
     count.className = 'ai-prompt__count';
-    count.textContent = COPY.aiEdit.count(0);
+    count.textContent = PAGE_COPY.aiEdit.count(0);
     const cancel = doc.createElement('button');
     cancel.type = 'button';
     cancel.className = 'ai-prompt__cancel';
-    cancel.textContent = COPY.aiEdit.cancel;
+    cancel.textContent = PAGE_COPY.aiEdit.cancel;
     const generate = doc.createElement('button');
     generate.type = 'button';
     generate.className = 'ai-prompt__generate';
-    generate.textContent = COPY.aiEdit.generate;
+    generate.textContent = PAGE_COPY.aiEdit.generate;
     const status = doc.createElement('p');
     status.className = 'ai-prompt__status';
     status.setAttribute('role', 'status');
@@ -159,7 +159,7 @@ export function createAiEdits(doc: Document, layer: HTMLElement, onClick: (key: 
       onGenerate(key, textarea.value.trim().slice(0, MAX_EDIT_INSTRUCTION), generate);
     };
     textarea.addEventListener('input', () => {
-      count.textContent = COPY.aiEdit.count(textarea.value.length);
+      count.textContent = PAGE_COPY.aiEdit.count(textarea.value.length);
     });
     textarea.addEventListener('keydown', (event) => {
       if (!event.isTrusted) return;
@@ -187,8 +187,8 @@ export function createAiEdits(doc: Document, layer: HTMLElement, onClick: (key: 
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'ai-edit';
-    button.setAttribute('aria-label', COPY.editWithAi);
-    button.title = COPY.editWithAi;
+    button.setAttribute('aria-label', PAGE_COPY.editWithAi);
+    button.title = PAGE_COPY.editWithAi;
     const label = doc.createElement('span');
     label.className = 'ai-edit__label';
     label.setAttribute('aria-hidden', 'true');
@@ -207,7 +207,7 @@ export function createAiEdits(doc: Document, layer: HTMLElement, onClick: (key: 
     const busy = entry.item.busy === true;
     entry.button.disabled = busy;
     entry.button.setAttribute('aria-busy', busy ? 'true' : 'false');
-    entry.label.textContent = busy ? COPY.editingWithAi : COPY.editWithAi;
+    entry.label.textContent = busy ? PAGE_COPY.editingWithAi : PAGE_COPY.editWithAi;
   }
 
   return {
@@ -220,8 +220,8 @@ export function createAiEdits(doc: Document, layer: HTMLElement, onClick: (key: 
         return;
       }
       prompt.status.textContent = said;
-      prompt.generate.disabled = said === COPY.editingWithAi;
-      prompt.textarea.disabled = said === COPY.editingWithAi;
+      prompt.generate.disabled = said === PAGE_COPY.editingWithAi;
+      prompt.textarea.disabled = said === PAGE_COPY.editingWithAi;
     },
     get prompt() {
       return prompt;

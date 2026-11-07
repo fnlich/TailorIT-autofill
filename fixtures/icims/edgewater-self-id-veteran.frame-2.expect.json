@@ -1,0 +1,21 @@
+{
+  "fixture": "icims/edgewater-self-id-veteran.frame-2",
+  "source": "https://edgewaterit.icims.com/forms?module=Forms&action=showForm&brandtype=ccc&portalid=17&form=Voluntary_Self_Identification_Forms&user=REDACTED&item=REDACTED&token=REDACTED&csrf=REDACTED&isPacket=1&in_iframe=1&step=6&aid=REDACTED",
+  "captured": "2026-11-06T16:48:39.000Z",
+  "note": "Hooks only: an IForm's own form, on edgewaterit.icims.com/forms, which src/adapters/icims/url.ts reads as no application (its address names no posting). Since core-x the frame is chained (src/adapters/chain.ts chainPageOf: role 'frame', family icims:edgewaterit), keyed by the portal page around it, so a run reads its fields; icims-steps.browser.test.ts pins what it reads: the Signature box, a consent left to the person, and no field it could write besides (the name box's aria-label is not the words a person sees above it, and its radios, labelled by bare text after each, and its date parts, by labels a person does not see, have no visible label). Their fields are not listed here: no element holds the radios' words, so no entry could name them as a person reads them.",
+  "fields": [],
+  "hooks": {
+    "detect": "form[name=\"icims_form\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "input[name=\"icims_save\"]"
+    ],
+    "pressable": [
+      "input[name=\"icims_submit\"]"
+    ]
+  }
+}

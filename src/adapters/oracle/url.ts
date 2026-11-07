@@ -11,6 +11,9 @@
  *   (.../apply/section/<n>, Jobright's reading) is not public: every address under .../job/<id>/apply is read as the
  *   posting's application, and so is .../job/<id>/easy-apply, the quick apply's (the v3 Phase 6/7b review, C11);
  * - .../sites/<site>/my-profile/sign-in ("Manage Your Profile") names no job: no application.
+ * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): Oracle's government cloud serves the same application
+ * on <tenant>.fa.ocs.oraclegovcloud.com (the owner's snapshots of a tenant's .../job/<id>/apply/section/1, a step after
+ * the emailed code, read as the posting's application as every address under .../apply is).
  * The key is the host, the site in upper case (as the application writes it) and the posting's id, the language
  * dropped. The canonical application URL is https://<host>/hcmUI/CandidateExperience/en/sites/<SITE>/job/<id>. The content
  * script runs on these candidate pages alone (src/shared/hosts.ts). TailorIT's parseAtsUrl reads the same posting since
@@ -18,8 +21,9 @@
  */
 import type { ApplicationUrl } from '../application-key';
 
-/** A Fusion Applications tenant: <tenant>.fa.<region>.oraclecloud.com or <tenant>.fa.oraclecloud.com. */
-const HOST = /^[a-z0-9-]+\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com$/;
+/** A Fusion Applications tenant: <tenant>.fa.<region>.oraclecloud.com or <tenant>.fa.oraclecloud.com; and (the snapshot
+ *  build of 2026-11-06) one on Oracle's government cloud, <tenant>.fa.ocs.oraclegovcloud.com. */
+const HOST = /^[a-z0-9-]+\.fa(?:(?:\.[a-z0-9-]+)?\.oraclecloud|\.ocs\.oraclegovcloud)\.com$/;
 const ROOT = '/hcmUI/CandidateExperience/';
 const LANGUAGE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/;
 const SITE = /^[A-Za-z0-9_-]{1,40}$/;

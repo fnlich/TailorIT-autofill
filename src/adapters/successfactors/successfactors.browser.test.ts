@@ -3,6 +3,10 @@
  * SuccessFactors and Oracle capture"): its hooks on each snapshot (the posting, the sign-in, the account's creation, the
  * password help), held against the case's hand-written expectations, and Sign-in Auto's reading of the sign-in, which
  * the standard rule reads the same way; the account's creation stays the person's.
+ * The snapshot build of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06): the owner's snapshot of DFIN's account creation on
+ * career8.successfactors.com (fixtures/successfactors/donnelleyf-create-account.html), the same form#careerform with no
+ * phone, two notification boxes, a required reCAPTCHA and the terms' link: the adapter reads it as it reads Danfoss's,
+ * and the page is a CAPTCHA pause before it is an account page.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import danfossPostingExpect from '../../../fixtures/successfactors/danfoss-posting.expect.json';
@@ -13,6 +17,9 @@ import danfossCreateAccountExpect from '../../../fixtures/successfactors/danfoss
 import danfossCreateAccountHtml from '../../../fixtures/successfactors/danfoss-create-account.html?raw';
 import danfossForgotPasswordExpect from '../../../fixtures/successfactors/danfoss-forgot-password.expect.json';
 import danfossForgotPasswordHtml from '../../../fixtures/successfactors/danfoss-forgot-password.html?raw';
+import donnelleyfCreateAccountExpect from '../../../fixtures/successfactors/donnelleyf-create-account.expect.json';
+import donnelleyfCreateAccountHtml from '../../../fixtures/successfactors/donnelleyf-create-account.html?raw';
+import { detectPause, pageChallenged, vendorFramesShown } from '../../dom/pause-detect';
 import { signInFormOf, standardSignInForm, signInRefusal } from '../../dom/sign-in-form';
 import { pressEntry } from '../../content/press';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
@@ -25,6 +32,8 @@ const CASES = [
   { name: 'danfoss-sign-in', html: danfossSignInHtml, json: danfossSignInExpect, address: 'https://career2.successfactors.eu/career?career_company=danfossas&company=danfossas&loginFlowRequired=true&career_job_req_id=48659' },
   { name: 'danfoss-create-account', html: danfossCreateAccountHtml, json: danfossCreateAccountExpect, address: 'https://career2.successfactors.eu/career?company=danfossas&login_ns=register&career_job_req_id=48659' },
   { name: 'danfoss-forgot-password', html: danfossForgotPasswordHtml, json: danfossForgotPasswordExpect, address: 'https://career2.successfactors.eu/career?company=danfossas&login_ns=forgot_pwd&career_job_req_id=48659' },
+  // ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+  { name: 'donnelleyf-create-account', html: donnelleyfCreateAccountHtml, json: donnelleyfCreateAccountExpect, address: 'https://career8.successfactors.com/career?company=donnelleyf&login_ns=register&career_ns=job%5fapplication&career_job_req_id=4984' },
 ] as const;
 
 /** A page's own base address (a srcdoc page's is about:srcdoc), after it loaded: its forms and links resolve there. */
@@ -100,6 +109,30 @@ describe('the sign-in (v3 Phase 7b)', () => {
       expect(signInFormOf(successFactorsAdapter, forgot.doc, wall)).toBeNull();
     }
   });
+});
+
+// ── snapshot build 2026-11-06 (oracle-sf-sr) ──
+describe("DFIN's account creation (the owner's snapshot of 2026-11-06)", () => {
+  it('types the email twice and the password twice, and leaves the rest and the press to the person', async () => {
+    const { html, address } = CASES[4];
+    const fixture = await load(html, address);
+    const form = signInFormOf(successFactorsAdapter, fixture.doc, 'create-account')!;
+    expect([form.email?.id, form.confirmEmail?.id, form.password?.id, form.confirm?.id, form.button.id])
+      .toEqual(['fbclc_userName', 'fbclc_emailConf', 'fbclc_pwd', 'fbclc_pwdConf', 'fbclc_createAccountButton']);
+    expect(form.personPresses).toBe(true);
+  });
+
+  // The behaviour review of 2026-11-06 (M6, the owner's decision): its reCAPTCHA is a checkbox widget, which no longer
+  // pauses before the page's own reading; it still holds Sign-in Auto (a vendor's frame shown) and every press.
+  it('is the account page’s own pause; its required reCAPTCHA shows, so nothing is typed or pressed for the person',
+    async () => {
+      const { html, address } = CASES[4];
+      const fixture = await load(html, address);
+      const root = successFactorsAdapter.detect(fixture.doc)!.formRoot;
+      expect(detectPause(fixture.doc, root, successFactorsAdapter)?.kind).toBe('create-account');
+      expect(vendorFramesShown(fixture.doc)).toBe(1);
+      expect(pageChallenged(fixture.doc)).toBe(true);
+    });
 });
 
 describe("the agent's entry (v3 Phase 7b)", () => {

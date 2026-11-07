@@ -1,0 +1,20 @@
+{
+  "fixture": "jobvite/ninjaone-posting",
+  "source": "https://jobs.jobvite.com/ninjaone/job/o5b1AfwB",
+  "captured": "2026-11-06T13:53:58.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": "div.jv-job-detail-description",
+    "entryControl": "a.jv-button-apply @0",
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "a.jv-button-apply-later",
+      "div.jv-job-detail-share a",
+      "a.jv-button-apply"
+    ],
+    "pressable": []
+  }
+}

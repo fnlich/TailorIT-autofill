@@ -5,7 +5,8 @@
  *
  * Shown: Sign-in (Manual / Auto, since v3 Phase 5), Next page (Manual / Auto), Autofill after page turn (Automatically /
  * Manually), Submit (Manual / Auto, since v3 Phase 4), Record applications I submit myself (On / Off, the v3 Phase 4
- * review), Consent boxes (All agreements / Required only), AI answers (All / Profile only), the side panel's view
+ * review), Consent boxes (All agreements / Required only), AI answers (All / Profile only), Résumé already on the page
+ * (Keep it / Upload mine again, the behaviour review of 2026-11-06: the owner's setting), the side panel's view
  * (Expanded / Minimized), and (v3 Phase 5) the skip rules Submit mode Auto and the auto-apply agent read, each a box.
  * Sign-in's Auto can be chosen only while it may act (signInAvailability: a connection holding credentials:read, the
  * disclosure acknowledged); otherwise the group says how to allow it, and the worker holds it Manual anyway.
@@ -18,8 +19,8 @@ import { COPY } from '../../shared/copy';
 const WORDS = COPY.options.modes;
 
 /** The modes shown now, in the order they are drawn. */
-export const SHOWN_MODES = ['signIn', 'next', 'afterPageTurn', 'submit', 'recordOwn', 'consents', 'ai'] as const satisfies
-  ReadonlyArray<keyof Modes>;
+export const SHOWN_MODES = ['signIn', 'next', 'afterPageTurn', 'submit', 'recordOwn', 'consents', 'ai', 'resumeOnPage'] as
+  const satisfies ReadonlyArray<keyof Modes>;
 type ShownMode = (typeof SHOWN_MODES)[number];
 
 /** The skip rules, in the order they are drawn. */

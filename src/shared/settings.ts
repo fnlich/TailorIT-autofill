@@ -1,26 +1,27 @@
 /*
  * The settings schema and where they are kept. The worker reads and writes them; content scripts receive the part
- * they need with run/begin and never touch storage. Version 4 (the modes, docs/SPEC-AMENDMENTS.md §12) is stored under
- * the same key; a version 1, 2 or 3 value read there is migrated (core/types/settings.ts migrateSettings,
- * migrateSettingsV2, migrateSettingsV3) and stored again.
+ * they need with run/begin and never touch storage. Version 5 ("Résumé already on the page", the behaviour review of
+ * 2026-11-06) is stored under the same key; a version 1, 2, 3 or 4 value read there is migrated
+ * (core/types/settings.ts migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4) and stored again.
+ * The older versions' schemas, which only the worker reads, are in ./settings-stored.ts (the behaviour review of
+ * 2026-11-06: kept out of the content script's bundle, and its budget).
  */
 import { z } from 'zod';
 import { CONSENT_CATEGORIES } from '../core/enums';
-import {
-  AI_FORBIDDEN_MODES, MODE_CHOICES, PANEL_VIEWS, type Settings, type SettingsV1, type SettingsV2, type SettingsV3,
-} from '../core/types/settings';
+import { AI_FORBIDDEN_MODES, MODE_CHOICES, PANEL_VIEWS, type Settings } from '../core/types/settings';
 
 export const SETTINGS_KEY = 'settings:v1';
 
-const Consents = z.array(z.enum(CONSENT_CATEGORIES)).max(CONSENT_CATEGORIES.length);
+export const Consents = z.array(z.enum(CONSENT_CATEGORIES)).max(CONSENT_CATEGORIES.length);
 
-const Llm = z.strictObject({ tiebreak: z.boolean(), classify: z.boolean(), drafts: z.boolean(), answers: z.boolean(),
+export const Llm = z.strictObject({ tiebreak: z.boolean(), classify: z.boolean(), drafts: z.boolean(), answers: z.boolean(),
   confirmDrafts: z.boolean(), whenForbidden: z.enum(AI_FORBIDDEN_MODES) });
 
-const Interpretations = z.strictObject({ postingCountryForLegal: z.boolean(), twoOrMoreRaces: z.boolean(),
+export const Interpretations = z.strictObject({ postingCountryForLegal: z.boolean(), twoOrMoreRaces: z.boolean(),
   eeoDeclineByDefault: z.boolean() });
 
-export const ModesSchema = z.strictObject({
+/** Version 4's modes (stored before version 5's resumeOnPage). */
+export const ModesV4Schema = z.strictObject({
   signIn: z.enum(MODE_CHOICES.signIn),
   next: z.enum(MODE_CHOICES.next),
   afterPageTurn: z.enum(MODE_CHOICES.afterPageTurn),
@@ -32,8 +33,11 @@ export const ModesSchema = z.strictObject({
   agentSkip: z.strictObject({ requiredEmpty: z.boolean(), noAi: z.boolean(), legalGuess: z.boolean() }),
 });
 
+/** Version 5 (the behaviour review of 2026-11-06): "Résumé already on the page". */
+export const ModesSchema = ModesV4Schema.extend({ resumeOnPage: z.enum(MODE_CHOICES.resumeOnPage) });
+
 export const SettingsSchema = z.strictObject({
-  version: z.literal(4),
+  version: z.literal(5),
   panel: z.enum(['side', 'in-page']),
   view: z.enum(PANEL_VIEWS),
   modes: ModesSchema,
@@ -43,42 +47,6 @@ export const SettingsSchema = z.strictObject({
   offerToSaveAnswers: z.boolean(),
   interpretations: Interpretations,
 }) satisfies z.ZodType<Settings>;
-
-/** Version 3's stored settings, read only to migrate them. */
-export const SettingsV3Schema = z.strictObject({
-  version: z.literal(3),
-  panel: z.enum(['side', 'in-page']),
-  autoAdvance: z.boolean(),
-  preapprovedConsent: Consents,
-  llm: Llm.extend({ answerAll: z.boolean() }),
-  telemetry: z.strictObject({ optIn: z.boolean() }),
-  offerToSaveAnswers: z.boolean(),
-  interpretations: Interpretations,
-}) satisfies z.ZodType<SettingsV3>;
-
-/** Version 2's stored settings, read only to migrate them. */
-export const SettingsV2Schema = z.strictObject({
-  version: z.literal(2),
-  panel: z.enum(['side', 'in-page']),
-  autoAdvance: z.boolean(),
-  preapprovedConsent: Consents,
-  llm: Llm,
-  telemetry: z.strictObject({ optIn: z.boolean() }),
-  offerToSaveAnswers: z.boolean(),
-  interpretations: Interpretations,
-}) satisfies z.ZodType<SettingsV2>;
-
-/** Version 1's stored settings, read only to migrate them. */
-export const SettingsV1Schema = z.strictObject({
-  version: z.literal(1),
-  panel: z.enum(['side', 'in-page']),
-  autoAdvance: z.boolean(),
-  preapprovedConsent: Consents,
-  llm: z.strictObject({ tiebreak: z.boolean(), classify: z.boolean(), drafts: z.boolean() }),
-  telemetry: z.strictObject({ optIn: z.boolean() }),
-  offerToSaveAnswers: z.boolean(),
-  interpretations: z.strictObject({ postingCountryForLegal: z.boolean(), twoOrMoreRaces: z.boolean() }),
-}) satisfies z.ZodType<SettingsV1>;
 
 /** The modes a content script acts on (v3 Phase 3 review): Next, and whether a new step fills as it appears; since v3
  *  Phase 4, Submit and the skip rules it reads; since v3 Phase 5, Sign-in (as it acts: Manual unless the connection may

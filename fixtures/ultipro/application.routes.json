@@ -1,0 +1,5 @@
+{
+  "https://recruiting.ultipro.com/cam1010csii/JobBoard/54a25c3a-e399-42b0-a553-16ed056e0517/OpportunityApply?opportunityId=772ddf9d-79f1-4752-bf3b-688ded6980c7": "fixtures/ultipro/application.html",
+  "https://recruiting.ultipro.com/cam1010csii/JobBoard/54a25c3a-e399-42b0-a553-16ed056e0517/RelyingPartyIframe?id_token=REDACTED": "fixtures/ultipro/application.frame-1.html",
+  "https://recruiting.ultipro.com/content/silent-callback.html?code=REDACTED&state=ta%3DCAM1010CSII": "fixtures/ultipro/application.frame-2.html"
+}

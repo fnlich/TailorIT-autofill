@@ -7,8 +7,9 @@
  *   password twice and the unrequired terms box ticked; its landing: "Sign in with email" pressed first, then the form;
  *   its Forgot Password: a pause for the person, nothing typed and nothing asked;
  * - Oracle's email gate: the email alone (the worker sends no password for one), the terms ticked, NEXT pressed, the
- *   honeypot never typed into; the code that follows is the person's; refused as captured, its terms label's words
- *   unreadable over the flow's image (the v3 Phase 6/7b review, S6);
+ *   honeypot never typed into; the code that follows is the person's; taken as captured since the core pass of
+ *   2026-11-06 (its panel over the flow's image bounds what shows behind its words), refused under a thin veil, its
+ *   terms label's words then unreadable (the v3 Phase 6/7b review, S6);
  * - a CAPTCHA shown before the press comes first: nothing asked or typed; one the press raises is the person's
  *   ('continue', the run then pausing at it), on Workday's Sign In and on Oracle's gate, and the agent's entry presses
  *   nothing past one (S1);
@@ -232,8 +233,23 @@ describe('Sign-in Auto at Oracle’s email gate (v3 Phase 7b)', () => {
     expect(seen).toEqual({ presses: 1, typed: { email: CREDENTIAL.email, honeypot: '', terms: true } });
   });
 
-  it('is refused as captured: the terms box is reached through a label whose words cannot be read over the image', async () => {
+  // The core pass of 2026-11-06: the gate's panel (rgba(248, 248, 247, 0.75)) over the flow's image bounds what shows
+  // behind its words (dom/camouflage.ts opaqueLayerUnder), so its terms label reads as captured and the gate is taken;
+  // under a thin veil (alpha 0.2) its grey words may vanish into the image, and the gate is refused (S6).
+  it('is taken as captured, its terms label read through the panel over the image', async () => {
     const fixture = await served(elhrGateHtml, GATE, 'form:has(input[name="primary-email"])');
+    const seen = actAsOracle(fixture);
+    const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
+    expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('continue');
+    expect(channel.asked).toEqual([{ v: 1, type: 'signin/credential', wall: 'email-gate' }]);
+    expect(seen).toEqual({ presses: 1, typed: { email: CREDENTIAL.email, honeypot: '', terms: true } });
+  });
+
+  it('is refused under a thin veil: the terms box is reached through a label whose words cannot be read (S6)', async () => {
+    const fixture = await served(elhrGateHtml, GATE, 'form:has(input[name="primary-email"])');
+    for (const el of Array.from(fixture.doc.querySelectorAll<HTMLElement>('.apply-flow__content'))) {
+      el.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+    }
     const seen = actAsOracle(fixture);
     const channel = channelAnswering({ ok: true, data: { host: '*', email: CREDENTIAL.email } });
     expect(await attempt(fixture, oracleAdapter, channel, GATE)).toBe('unavailable');

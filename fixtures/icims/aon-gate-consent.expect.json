@@ -1,0 +1,16 @@
+{
+  "fixture": "icims/aon-gate-consent",
+  "source": "https://us-careers-aon.icims.com/jobs/109113/login?_sp=REDACTED&_jsqid=REDACTED&mobile=false&width=940&height=500&bga=true&needsRedirect=false&jan1offset=-480&jun1offset=-420",
+  "captured": "2026-11-06T16:08:25.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": null,
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [],
+    "pressable": []
+  }
+}

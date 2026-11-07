@@ -27,9 +27,11 @@ import { normalize, normalizeLabel } from '../text/normalize';
 import type { Vocab } from '../vocab/types';
 import { autocompleteRule } from './autocomplete';
 import { kindAllowed, policyClassOf } from './categories';
+import { FOLD_MAX_CODE_POINTS } from '../text/fold';
 import {
-  affirmativeOption, attestsNoAiUse, consentChoiceHit, matchLabelRules, sectionKindOf, unlabelledTextarea,
-  unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit, type NeedsUserCause,
+  affirmativeOption, attestsNoAiUse, consentChoiceHit, matchLabelRules, noAiStatementHit, sectionKindOf,
+  unlabelledTextarea, unrecognisedField, withDescriptionConsent, type LabelContext, type LabelRuleHit,
+  type NeedsUserCause,
 } from './labelRules';
 import { nameIdRule, nameIdText } from './nameId';
 
@@ -260,13 +262,34 @@ export function namesAnotherPerson(spec: FieldSpec): boolean {
 }
 
 /** Whether a field's own words state "I did not use AI" (labelRules attestsNoAiUse): its normalized label with its
- *  parentheticals, or its description (the Phase E review, M5). */
-export function statesNoAiUse(spec: Pick<FieldSpec, 'label' | 'description'>): boolean {
-  const normalized = normalize(spec.label, 'label');
-  const label = [ruleText(normalized.key), ...normalized.qualifiers.map((qualifier) => qualifier.tokens.join(' '))]
-    .join(' ').trim();
+ *  parentheticals, or its description (the Phase E review, M5). The core pass of 2026-11-06: the whole of each, sentence
+ *  by sentence past what normalization reads at once (FOLD_MAX_CODE_POINTS), and the frame's reading of the label past
+ *  its 300 characters (FieldSpec.statesNoAi: Dropzone's policy attests in its last sentences). The same rules read each. */
+export function statesNoAiUse(spec: Pick<FieldSpec, 'label' | 'description' | 'statesNoAi'>): boolean {
+  if (spec.statesNoAi === true) return true;
   const description = ruleText(normalizeLabel(spec.description));
-  return [label, description].some((text) => text !== '' && attestsNoAiUse(text));
+  if ([labelText(spec.label), description].some((text) => text !== '' && attestsNoAiUse(text))) return true;
+  return [spec.label, spec.description].some((whole) => [...whole].length > FOLD_MAX_CODE_POINTS
+    && sentencesOf(whole).some((sentence) => {
+      const text = labelText(sentence);
+      return text !== '' && attestsNoAiUse(text);
+    }));
+}
+
+/** A label as the attestation is read in it: normalized, with its parentheticals. */
+function labelText(label: string): string {
+  const normalized = normalize(label, 'label');
+  return [ruleText(normalized.key), ...normalized.qualifiers.map((qualifier) => qualifier.tokens.join(' '))]
+    .join(' ').trim();
+}
+
+/** Where a passage's raw text (before normalization) breaks between sentences: after a full stop, a question or
+ *  exclamation mark, a semicolon or a colon, or at a line break. */
+const SENTENCE_BREAK = /(?<=[.!?;:])\s+|\n+/;
+
+/** The sentences of a passage (SENTENCE_BREAK). */
+function sentencesOf(text: string): string[] {
+  return text.split(SENTENCE_BREAK).map((sentence) => sentence.trim()).filter((sentence) => sentence !== '');
 }
 
 /** The applicant's own details: none of them belongs in a field about another person. Referral fields stay. */
@@ -323,6 +346,9 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   }
   const combined = combine(votes);
   if (combined !== null) return combined;
+  // The core pass of 2026-11-06: an "I did not use AI" statement past the label's 300 characters, which the frame read
+  // (FieldSpec.statesNoAi): an AI attestation, as label.consent-ai reads one in a label.
+  if (spec.statesNoAi === true) return combine([labelVote(noAiStatementHit(spec.kind), 'label')]);
   const sensitive = SENSITIVE_TOPIC.test(`${label} ${normalizeLabel(spec.description)}`);
   // A telephone box (input type=tel) whose label no rule reads ("Best Contact Number", multiverse 2026-11-01) is a
   // phone, weakly (filled and flagged for a look): never another person's, a fax or an extension.

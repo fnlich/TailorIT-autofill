@@ -39,11 +39,32 @@
  *   no id) and intl-tel-input's hidden country search are no fields: neither is declared, and neither is visible.
  * - Buttons never pressed (neverPress, all type="button", so assertNotSubmit alone would allow them): the header's
  *   "Autofill my application", "Locate me", each upload group's Dropbox, Google Drive and "Enter manually", a chosen
- *   select's "Clear selections" and a chip's remove button.
+ *   select's "Clear selections" and a chip's remove button; and (the owner's captures of 2026-11-06) an attached file's
+ *   "Remove file".
  * - Submit: the button in .application--submit, identified so it is never clicked. The form is a single step, so a
  *   page showing the form and its Submit is the final step.
- * - Errors: the standard aria-invalid="true", which every control in the snapshots carries (as "false"). No snapshot
- *   shows Greenhouse's error text, so none is read.
+ * - Errors: the standard aria-invalid="true", which every control in the snapshots carries (as "false"). The owner's
+ *   capture of 2026-11-06 after a Submit (fixtures/sites/abclegal-greenhouse-embed.frame-1.html) shows Greenhouse's
+ *   error text, <p id="<id>-error" class="helper-text helper-text--error">This field is required.</p>, beside a control
+ *   that says aria-invalid="true" and names it in aria-errormessage: the control is the error read.
+ * The owner's captures of 2026-11-06 (docs/ARCHITECTURE.md, the snapshot build of 2026-11-06; fixtures/greenhouse/axle-attached.html,
+ * axle-verification.html, rushdown-country-open.html, fixtures/sites/*-greenhouse-*.html) add:
+ * - An attached file (uploadState): Greenhouse takes the group's file input out of the page once a file is in it and
+ *   shows <div class="file-upload__filename"><svg/><p class="body body__secondary">NAME</p><button type="button"
+ *   class="icon-button icon-button--sm" aria-label="Remove file"></div> in the group instead (axle-attached.html, the
+ *   resume; the converter redacts NAME). No upload error is shown in any capture, so none is read.
+ * - The email code (authState 'email-code', excluded): after a Submit the form may show <div
+ *   class="email-verification"><fieldset id="email-verification"><legend>A verification code was sent to EMAIL. To
+ *   submit your application, enter the 8-character code to confirm you're a human.</legend><label
+ *   id="email-verification-label" for="security-input-0">Security code</label><div class="email-verification__wrapper">
+ *   <input id="security-input-0" maxlength="1" aria-required="true"> ... security-input-7 (axle-verification.html).
+ *   The code is the person's (CAPTCHA, bot checks and email codes are never automated): nothing in the block is a field
+ *   (its legend holds the person's email), and the step pauses as an email code.
+ * - Submitting (isBusy): the Submit button disabled with a spinner in place of its words, <button type="submit"
+ *   class="btn btn--pill btn__disabled" disabled=""><div class="loading-spinner loading-spinner--small
+ *   loading-spinner--white"></div></button> (fixtures/sites/seatgeek-greenhouse-embed.frame-1.html).
+ * - "Autofill my application" after MyGreenhouse filled the form: the same button, its wrapper classed
+ *   autofill_button autofill_button--filled (axle-attached.html): still never pressed.
  * No proxyFor: the native checkboxes (discord-job.html's consent, the checkbox questions of twitch-job.html and
  * gusto-job.html) are drawn visible (appearance: none with a border) beside their label[for], and a click() on the box
  * ticks it as React sees it (setting .checked does not).
@@ -54,7 +75,7 @@ import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
-import type { Adapter, WidgetDecl } from '../types';
+import type { Adapter, UploadState, WidgetDecl } from '../types';
 import { canonicalApplicationUrl, matchesUrl } from './url';
 
 /** The snapshots the Greenhouse hooks were read from. */
@@ -245,13 +266,74 @@ function neverPress(root: Element): Element[] {
   // class="icon-button icon-button--sm" aria-label="Clear selections" data-testid="clear-selection">;
   // twitch.multi-open-after-two-chips: <div role="button" class="select__multi-value__remove ..." aria-label="Remove
   // Canada"><button type="button" ... aria-label="Remove selection">.
+  // The owner's captures of 2026-11-06 (axle-attached.html): an attached file's <div class="file-upload__filename"> ...
+  // <button type="button" class="icon-button icon-button--sm" aria-label="Remove file">.
   const marked = Array.from(scope.querySelectorAll(['.application--header--autofill-with-greenhouse button',
     '.autofill_button button', '.field-wrapper > button.btn--tertiary', '.file-upload button[data-testid$="-dropbox"]',
     '.file-upload button[data-testid$="-text"]', 'button[data-testid="clear-selection"]',
-    '.select__indicators button[aria-label="Clear selections" i]', '.select__multi-value__remove'].join(', ')));
+    '.select__indicators button[aria-label="Clear selections" i]', '.select__multi-value__remove',
+    '.file-upload .file-upload__filename button'].join(', ')));
   const named = Array.from(scope.querySelectorAll('.file-upload button, .field-wrapper > button'))
     .filter((button) => NEVER_PRESS_WORDS.test((button.textContent ?? '').replace(/\s+/g, ' ').trim()));
   return [...new Set([...marked, ...named])].sort((a, b) => ((a.compareDocumentPosition(b) & FOLLOWING) !== 0 ? -1 : 1));
+}
+
+/** The upload group of a file input, found by the input's id: Greenhouse takes the input out of the page once a file is
+ *  in it, so the group is the one its id names (aria-labelledby="upload-label-<id>"), not an ancestor. */
+function groupOf(input: HTMLInputElement): Element | null {
+  const inPage = input.closest('div.file-upload[role="group"]');
+  if (inPage !== null) return inPage;
+  if (input.id === '' || /["\\\s]/.test(input.id)) return null;
+  return input.ownerDocument.querySelector(`div.file-upload[role="group"][aria-labelledby="upload-label-${input.id}"]`);
+}
+
+/**
+ * Whether Greenhouse shows the file `fileName` attached in the group of `input` (see the header): confirmed once the
+ * group shows that name in its file-upload__filename beside its "Remove file" button; pending otherwise (no capture
+ * shows an upload error, so none is read). Null for a file input outside every upload group.
+ */
+function uploadState(input: HTMLInputElement, fileName: string): UploadState | null {
+  if (input.type !== 'file') return null;
+  const group = groupOf(input);
+  if (group === null) return null;
+  // axle-attached.html: <div class="file-upload__wrapper"><div class="file-upload__filename"><svg .../><p class="body
+  // body__secondary">NAME</p><button type="button" class="icon-button icon-button--sm" aria-label="Remove file">.
+  const words = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
+  const wanted = words(fileName);
+  const shown = group.querySelector('.file-upload__filename');
+  const named = wanted !== '' && words(shown?.querySelector('p')?.textContent) === wanted;
+  const removable = shown?.querySelector('button[aria-label="Remove file" i]') != null;
+  return named && removable ? 'confirmed' : 'pending';
+}
+
+/** The email code's block (see the header), in the form: nothing in it is a field. */
+function excluded(root: Element): Element[] {
+  // axle-verification.html: <div class="email-verification"><div class="divider" role="separator"></div><fieldset
+  // id="email-verification"> ... <input id="security-input-0" ...> ...
+  return Array.from(root.querySelectorAll('div.email-verification, fieldset#email-verification'));
+}
+
+/** 'email-code' while the form shows its email code's boxes (see the header); null otherwise. */
+function authState(doc: Document): 'email-code' | null {
+  const root = formOf(doc);
+  if (root === null) return null;
+  const cache = newScanCache();
+  const block = root.querySelector('fieldset#email-verification');
+  return block !== null && isUserVisible(block, cache)
+    && Array.from(block.querySelectorAll('input[id^="security-input-"]')).some((input) => isUserVisible(input, cache))
+    ? 'email-code' : null;
+}
+
+/** Greenhouse is sending the application: its Submit shows the spinner in place of its words (see the header). */
+function isBusy(doc: Document): boolean {
+  const root = formOf(doc);
+  if (root === null) return false;
+  // seatgeek-greenhouse-embed.frame-1.html: <div class="application--submit"><button type="submit" class="btn btn--pill
+  // btn__disabled" aria-disabled="true" disabled=""><div class="loading-spinner loading-spinner--small
+  // loading-spinner--white"></div></button></div>
+  const cache = newScanCache();
+  return Array.from(root.querySelectorAll('.application--submit button[type="submit"] .loading-spinner'))
+    .some((spinner) => isUserVisible(spinner, cache));
 }
 
 /** The Submit button: identified so it is never clicked. */
@@ -290,10 +372,14 @@ export const greenhouseAdapter: Adapter = {
   sections,
   labelFor,
   uploadWidgets,
+  uploadState,
+  excluded,
   widgetFor,
   submitButton,
   neverPress,
   isFinalStep,
+  authState,
+  isBusy,
   // fixtures/greenhouse/*.html: every input carries aria-invalid="false" and aria-describedby="<id>-error ...".
   errors: (root) => genericAdapter.errors?.(root) ?? [],
   entryControl,

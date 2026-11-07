@@ -8,6 +8,7 @@ import {
   fieldSpec,
   goldens,
   LEVER_KEY,
+  LEVER_POSTING_URL,
   LEVER_URL,
   pageSender,
   runState,
@@ -43,7 +44,7 @@ describe('run/begin', () => {
     // The saved answers are read with the profile (Phase 6).
     expect(routes).toEqual(['GET /api/autofill/answers', 'GET /api/autofill/profile', 'POST /api/autofill/lookup']);
     const lookup = worker.tailorit.requests.find((request) => request.path === '/api/autofill/lookup')!;
-    expect(JSON.parse(lookup.body!)).toEqual({ url: LEVER_URL, includePostingText: true });
+    expect(JSON.parse(lookup.body!)).toEqual({ url: LEVER_POSTING_URL, includePostingText: true });
   });
 
   it('answers neither the profile nor the lookup, and stores the run without its address', async () => {

@@ -1,0 +1,36 @@
+{
+  "fixture": "workday/cisive-autofill-resume",
+  "source": "https://cisive.wd108.myworkdayjobs.com/en-US/cisive/job/Headquarters-MD/Associate-Software-Developer_JR100449-1/apply/autofillWithResume",
+  "captured": "2026-11-06T15:06:24.000Z",
+  "fields": [],
+  "hooks": {
+    "detect": "main [data-automation-id=\"applyFlowPage\"]",
+    "authState": null,
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": null,
+    "signInPrelude": null,
+    "neverPress": [
+      "[data-automation-id=\"backToJobPosting\"]",
+      "[data-automation-id=\"delete-file\"]",
+      "[data-automation-id=\"utilityMenuButton\"]"
+    ],
+    "pressable": [
+      "[data-automation-id=\"pageFooterNextButton\"]"
+    ]
+  },
+  "steps": {
+    "signature": {
+      "heading": "Autofill with Resume",
+      "progress": "current step 1 of 7",
+      "anchors": [
+        "applyFlowAutoFillPage"
+      ]
+    },
+    "final": "not-final",
+    "next": "[data-automation-id=\"pageFooterNextButton\"]",
+    "submit": null,
+    "widgets": [],
+    "repeatables": []
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "fixture": "clearcompany/vafb-account",
+  "source": "https://vafb.clearcompany.com/careers/jobs/9485c936-3d5f-0a3b-27a4-708fe87203d8/apply",
+  "captured": "2026-11-06T14:55:57.000Z",
+  "fields": [
+    {
+      "label": "First Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "form#personal-info-form input.first-name"
+    },
+    {
+      "label": "Last Name",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "form#personal-info-form input.last-name"
+    },
+    {
+      "label": "Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "form#personal-info-form input.email"
+    },
+    {
+      "label": "Re-enter Email",
+      "kind": "text",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "form#personal-info-form input.email-confirm"
+    },
+    {
+      "label": "Mobile Phone",
+      "kind": "text",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "form#personal-info-form input.mobile-number"
+    },
+    {
+      "label": "May we use this number to send you text messages from Virginia Farm Bureau that pertain to your job application?",
+      "kind": "radio",
+      "required": false,
+      "section": "main",
+      "fillable": true,
+      "control": "form#personal-info-form input[name=\"sms-opt-in\"]"
+    },
+    {
+      "label": "Would you like to be considered for other positions now or in the future?",
+      "kind": "radio",
+      "required": true,
+      "section": "main",
+      "fillable": true,
+      "control": "form#personal-info-form input[name=\"future-consideration\"]"
+    }
+  ],
+  "hooks": {
+    "detect": "form#personal-info-form",
+    "authState": "create-account",
+    "postingText": null,
+    "entryControl": null,
+    "signInForm": {
+      "wall": "create-account",
+      "email": "form#personal-info-form input.email",
+      "confirmEmail": "form#personal-info-form input.email-confirm",
+      "password": null,
+      "confirm": null,
+      "terms": [],
+      "button": "form#personal-info-form button.submit-button",
+      "form": "form#personal-info-form",
+      "personPresses": true
+    },
+    "signInPrelude": null,
+    "neverPress": [
+      "button.have-account-button",
+      "a.authenticate-button"
+    ],
+    "pressable": []
+  }
+}

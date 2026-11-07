@@ -40,7 +40,16 @@
  * - a form the page's own script sends (SignInForm.scriptSubmits): one with no method and no action written, which the
  *   browser would read as a GET to the page itself, passes the method rule on an https page of a host the every-site
  *   sign-in covers (contract signInHostCovered: the candidate hosts of Workday, iCIMS, Taleo, SuccessFactors and
- *   Oracle), and nowhere else. A written method other than POST, or a written action, is still refused.
+ *   Oracle; since TailorIT's API 6, contract6, also UltiPro's and, by the page's path, its pathname, ADP's and
+ *   ClearCompany's candidate pages alone, never their employee pages), and nowhere else. A written method other than
+ *   POST, or a written action, is still refused.
+ * The snapshot build of 2026-11-06 (core pass Z1, item 24) adds, for a declared form alone, a sign-in container
+ * (SignInForm.container, Adapter.signInContainer, signInContainerOf) in place of the adapter's own <form>: ADP's guest
+ * page (no <form>) and UltiPro's account step (its Create account outside its form). Every box inside the container, the
+ * <form> its press would send (its boxes' owner, else the container itself when it is one) the container or inside it,
+ * held to the method and origin rules above; the button the one the adapter names, in the container's document, inside
+ * it or not, a native one belonging to no other form; no password, no confirmation and no password box inside it
+ * (containerShape: a password goes only into an adapter's own <form>); and it may hold no box at all, its press alone.
  * While a sign-in presses and watches its button, guardSubmission (every form) cancels a native submission of the form
  * that would put the password in an address or send it elsewhere: any one of a form the page's own script sends, and
  * any one of another form that would go as anything but a POST to the page's own origin; and where such a submission
@@ -160,6 +169,30 @@ export function signInFormOf(adapter: Adapter, doc: Document, wall: SignInWall, 
   return standardSignInForm(doc, wall, cache);
 }
 
+// ── snapshot build 2026-11-06 (core pass Z1, item 24) ──
+/** The adapter's sign-in container on a page the run fills like a step (Adapter.signInContainer: ADP's guest page,
+ *  UltiPro's account step), marked declared; null where it declares none, or names no container. A hook that throws
+ *  declares none. */
+export function signInContainerOf(adapter: Adapter, doc: Document): SignInForm | null {
+  if (adapter.signInContainer === undefined) return null;
+  try {
+    const declared = adapter.signInContainer(doc);
+    return declared === null || declared.container === undefined ? null : { ...declared, declared: true };
+  } catch {
+    return null;
+  }
+}
+
+/** The <form> a declared container's press would send: the form its boxes belong to, else the container itself when it
+ *  is a <form> (UltiPro's form#registrationDetailsForm, its Create account outside it), else none (ADP's guest page). */
+function containerOwner(form: SignInForm): HTMLFormElement | null {
+  const anchor = anchorOf(form);
+  if (anchor !== null) return viaPrototype(anchor, 'HTMLInputElement', 'form') as HTMLFormElement | null;
+  const container = form.container ?? null;
+  return container !== null && container.localName === 'form' ? container as HTMLFormElement : null;
+}
+// ── end core pass Z1, item 24 ──
+
 /** Whether a box looks like a trap for a program rather than a field for a person: out of the tab order, under
  *  aria-hidden, too small to type into, or drawn invisible against its background. A box a declared form names in
  *  colourUnknown (never a password box) is held to every rule but the last (module header). */
@@ -262,12 +295,14 @@ function submissionHome(form: HTMLFormElement, submitter: Element | null, page: 
  */
 export function guardSubmission(form: SignInForm, page: URL, signal: AbortSignal): () => void {
   const anchor = anchorOf(form);
-  const view = anchor?.ownerDocument.defaultView ?? null;
-  if (anchor === null || view === null) return () => undefined;
-  const held = viaPrototype(anchor, 'HTMLInputElement', 'form');
+  // Core pass Z1, item 24: a declared container with no box guards the <form> its press would send (containerOwner).
+  const container = anchor === null && form.declared === true ? containerOwner(form) : null;
+  const view = (anchor ?? container)?.ownerDocument.defaultView ?? null;
+  if ((anchor === null && container === null) || view === null) return () => undefined;
+  const held = anchor === null ? container : viaPrototype(anchor, 'HTMLInputElement', 'form');
   /** The guarded form `target` is, at this moment, or null. */
   const guarded = (target: EventTarget | null): HTMLFormElement | null => {
-    const owner = viaPrototype(anchor, 'HTMLInputElement', 'form');
+    const owner = anchor === null ? container : viaPrototype(anchor, 'HTMLInputElement', 'form');
     return target !== null && (target === owner || target === held) ? target as HTMLFormElement : null;
   };
   const refused = (sent: HTMLFormElement, submitter: Element | null) => form.scriptSubmits === true
@@ -346,9 +381,15 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
   const anchor = anchorOf(form);
   const declared = form.declared === true;
   const confirmEmail = form.confirmEmail ?? null;
+  // Core pass Z1, item 24: a declared container in place of the adapter's own <form> (containerShape).
+  const container = form.container ?? null;
+  if (container !== null) {
+    const shape = containerShape(form, container, declared);
+    if (shape !== null) return shape;
+  }
   // An email gate has its email and no password (or confirmation); every other form its password box. The email typed
-  // again only beside the email, on a declared form.
-  if (anchor === null || (form.password === null && form.confirm !== null)) return 'shape';
+  // again only beside the email, on a declared form. A declared container may hold no box at all: its press alone.
+  if ((anchor === null && container === null) || (form.password === null && form.confirm !== null)) return 'shape';
   if (confirmEmail !== null && (!declared || form.email === null)) return 'shape';
   if ((form.password !== null && form.password.type !== 'password')
     || (form.confirm !== null && form.confirm.type !== 'password')
@@ -364,17 +405,26 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
     if (field.disabled || field.readOnly) return 'disabled';
     if (honeypotLike(field, cache, unread.includes(field))) return 'honeypot';
   }
-  const owner = anchor.form;
-  if (fields.some((field) => field.form !== owner || field.ownerDocument !== anchor.ownerDocument)) {
+  // The document the form is read in: its anchor box's, or (a box-less container) the container's.
+  const doc = (anchor ?? container)!.ownerDocument;
+  const owner = anchor !== null ? anchor.form : containerOwner(form);
+  if (fields.some((field) => field.form !== owner || field.ownerDocument !== doc)) {
     return 'shape';
   }
-  // A declared form is the adapter's own <form>, and its boxes' owner (the v3 Phase 6/7b review, S8).
-  if (declared && (owner === null || form.form === undefined || owner !== form.form)) return 'shape';
+  if (container !== null) {
+    // Core pass Z1, item 24: every box inside the container, and the <form> its press would send the container itself
+    // or inside it, never one around it holding more of the page.
+    if (fields.some((field) => !holds(container, field))) return 'shape';
+    if (owner !== null && owner !== container && !holds(container, owner)) return 'shape';
+  } else if (declared && (owner === null || form.form === undefined || owner !== form.form)) {
+    // A declared form is the adapter's own <form>, and its boxes' owner (the v3 Phase 6/7b review, S8).
+    return 'shape';
+  }
   // The terms, each the form's own checkbox a person can see or reach by its label; a declared form's one at most.
   if (declared && form.terms.length > 1) return 'shape';
   for (const box of form.terms) {
     if (box.localName !== 'input' || box.type !== 'checkbox' || box.form !== owner
-      || box.ownerDocument !== anchor.ownerDocument) return 'shape';
+      || box.ownerDocument !== doc || (container !== null && !holds(container, box))) return 'shape';
     if (!box.isConnected) return 'hidden';
     if (declared ? !reachableTerms(box, cache) : !shownOrLabelled(box, cache)) return 'hidden';
     if (box.disabled) return 'disabled';
@@ -382,7 +432,8 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
   }
   if (owner !== null && !sendsHome(owner, 'HTMLFormElement', 'action', 'action', address)) return 'cross-origin';
   if (owner !== null && methodOf(owner) !== 'post'
-    && !(form.scriptSubmits === true && declared && scriptSent(owner) && signInHostCovered(address.hostname))) {
+    && !(form.scriptSubmits === true && declared && scriptSent(owner)
+      && signInHostCovered(address.hostname, address.pathname))) {
     return 'method';
   }
   const button = form.button;
@@ -391,7 +442,7 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
   // header): the sign-in door of dom/fillers/not-submit.ts presses it only once enabled.
   if (((button as HTMLButtonElement).disabled === true || button.getAttribute('aria-disabled') === 'true')
     && !(declared && form.enablesWhenFilled === true)) return 'disabled';
-  if (!pressControl(button) || button.ownerDocument !== anchor.ownerDocument) return 'shape';
+  if (!pressControl(button) || button.ownerDocument !== doc) return 'shape';
   const ctor = controlCtor(button);
   const native = ['button', 'input'].includes(button.localName);
   if (native) {
@@ -404,8 +455,30 @@ function refusalOf(form: SignInForm, address: URL, cache: ScanCache): SignInRefu
   } else if (!declared) {
     return 'shape';
   }
+  if (container !== null) {
+    // Core pass Z1, item 24: a container's button, the one the adapter names, sits in its document, inside it or not
+    // (UltiPro's Create account, outside its form); a native one never belongs to another form than the container's.
+    const buttonForm = native ? viaPrototype(button, ctor, 'form') : null;
+    return buttonForm === null || buttonForm === undefined || buttonForm === owner ? null : 'shape';
+  }
   // A native control belongs to the form (its owner, or inside it); any other pressed element sits inside it.
   if (owner !== null && (native ? (button as HTMLButtonElement).form !== owner && !holds(owner, button)
     : !holds(owner, button))) return 'shape';
   return null;
 }
+
+// ── snapshot build 2026-11-06 (core pass Z1, item 24) ──
+/**
+ * Why a declared container may not stand for the adapter's own <form>, or null: only an adapter declares one, never
+ * beside a <form>; it is connected; and it is no place for a password (the "password box" guard: no password or
+ * confirmation slot, and no password box inside it; a password goes only into an adapter's own <form>, which
+ * guardSubmission holds to a POST to the page's own origin). Every other rule of signInRefusal holds it as a form.
+ */
+function containerShape(form: SignInForm, container: Element, declared: boolean): SignInRefusal | null {
+  if (!declared || form.form !== undefined) return 'shape';
+  if (form.password !== null || form.confirm !== null || (form.confirmEmail ?? null) !== null) return 'shape';
+  if (within<HTMLInputElement>(container, 'input').some((input) => viaPrototype(input, 'HTMLInputElement', 'type')
+    === 'password')) return 'shape';
+  return container.isConnected ? null : 'hidden';
+}
+// ── end core pass Z1, item 24 ──

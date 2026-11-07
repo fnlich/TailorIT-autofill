@@ -1,0 +1,5 @@
+{
+  "https://us-careers-aon.icims.com/jobs/109113/login?_sp=REDACTED&_jsqid=REDACTED&mobile=false&width=940&height=500&bga=true&needsRedirect=false&jan1offset=-480&jun1offset=-420": "fixtures/icims/aon-gate-consent.html",
+  "https://us-careers-aon.icims.com/jobs/109113/login?_sp=REDACTED&_jsqid=REDACTED&in_iframe=1&mobile=false&width=940&height=500&bga=true&needsRedirect=false&jan1offset=-480&jun1offset=-420": "fixtures/icims/aon-gate-consent.frame-1.html",
+  "https://newassets.hcaptcha.com/captcha/v1/58a2633848099317cef7deac21e607b1a41a5b9d/static/hcaptcha.html": "fixtures/icims/aon-gate-consent.third-party-frame.html"
+}

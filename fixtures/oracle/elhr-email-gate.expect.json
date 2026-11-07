@@ -7,9 +7,10 @@
       "label": "Email Address",
       "kind": "text",
       "required": true,
-      "section": "main",
+      "section": "You don't need to have an account",
       "fillable": true,
-      "control": "input#primary-email-0"
+      "control": "input#primary-email-0",
+      "note": "Its section is the gate's own header (h1.apply-flow-dialog__header), drawn on the flow's translucent panel over its background image: read since the core pass of 2026-11-06 (dom/camouflage.ts opaqueLayerUnder), \"main\" while those colours could not be worked out."
     },
     {
       "label": "honeypot",
@@ -25,7 +26,7 @@
       "label": "I agree with the terms and conditions",
       "kind": "checkbox",
       "required": true,
-      "section": "main",
+      "section": "You don't need to have an account",
       "fillable": true,
       "control": "input#legal-disclaimer-checkbox",
       "note": "Drawn at 0 by 0 behind its visible label."

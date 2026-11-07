@@ -110,7 +110,8 @@ describe('the options page', () => {
       group.querySelector('legend')?.textContent])).toEqual([['modes.signIn', TEXT.modes.signIn.name],
       ['modes.next', TEXT.modes.next.name],
       ['modes.afterPageTurn', TEXT.modes.afterPageTurn.name], ['modes.submit', TEXT.modes.submit.name],
-      ['modes.recordOwn', TEXT.modes.recordOwn.name], ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name], ['view', TEXT.modes.view.name],
+      ['modes.recordOwn', TEXT.modes.recordOwn.name], ['modes.consents', TEXT.modes.consents.name], ['modes.ai', TEXT.modes.ai.name],
+      ['modes.resumeOnPage', TEXT.modes.resumeOnPage.name], ['view', TEXT.modes.view.name],
       ['modes.agentSkip', TEXT.modes.agentSkip.name]]);
     // Submit is Manual unless the person sets it to Auto.
     expect(setting(root, 'modes.submit.manual').checked).toBe(true);
@@ -133,6 +134,26 @@ describe('the options page', () => {
     expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, view: 'minimized', modes: { ...DEFAULT_SETTINGS.modes,
       ai: 'profile', consents: 'required', afterPageTurn: 'manual' } });
     for (const help of [TEXT.modes.next.help, TEXT.modes.consents.help, TEXT.modes.ai.help]) expect(card.textContent).toContain(help);
+  });
+
+  it('shows "Résumé already on the page" with the modes: Keep it by default, Upload mine again saved at once, each choice said (the behaviour review of 2026-11-06)', async () => {
+    const worker = createFakeWorker();
+    const root = await open(worker);
+    const group = root.querySelector<HTMLElement>('[data-card="modes"] [data-setting-group="modes.resumeOnPage"]')!;
+    expect(group.querySelector('legend')?.textContent).toBe('Résumé already on the page');
+    expect([...group.querySelectorAll('label')].map((label) => label.textContent)).toEqual(['Keep it', 'Upload mine again']);
+    expect(setting(root, 'modes.resumeOnPage.keep').checked).toBe(true);
+    // The help says what each choice does: the page's file kept and flagged; the person's uploaded through the site's
+    // own upload, the site's Remove and Delete never pressed, and a field with no way to add a file left to them.
+    const help = group.querySelector('.tia-mode__help')?.textContent ?? '';
+    expect(help).toBe(TEXT.modes.resumeOnPage.help);
+    for (const words of ['Keep it leaves that file', 'Upload mine again uploads the résumé you chose',
+      "Neither presses the site's Remove or Delete", 'the field is left to you']) expect(help).toContain(words);
+    await click(setting(root, 'modes.resumeOnPage.upload'));
+    expect(saves(worker).at(-1)).toEqual({ ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, resumeOnPage: 'upload' } });
+    expect(setting(root, 'modes.resumeOnPage.upload').checked).toBe(true);
+    await click(setting(root, 'modes.resumeOnPage.keep'));
+    expect(saves(worker).at(-1)).toEqual(DEFAULT_SETTINGS);
   });
 
   it('shows the settings the worker stored, not the ones it was sent, and the old ones when a save is refused', async () => {

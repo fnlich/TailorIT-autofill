@@ -4,8 +4,9 @@ import { normalizeLabel } from '../text/normalize';
 import type { BaseKey, FieldKey, FieldSpec, OptionSetHash } from '../types/field';
 import type { FieldCategory } from '../types/intent';
 import {
-  classifyByRules, combine, ruleText, SENSITIVE_TOPIC, type RuleClassification, type RuleVote,
+  classifyByRules, combine, ruleText, SENSITIVE_TOPIC, statesNoAiUse, type RuleClassification, type RuleVote,
 } from './classifyRules';
+import { attentionHits, botCheckOf } from '../guard/attention';
 import { policyClassOf } from './categories';
 import { NEEDS_USER_CAUSES, type NeedsUserCause } from './labelRules';
 
@@ -80,6 +81,14 @@ const LABELS: Array<[string, FieldKind, FieldCategory, number, string, Partial<F
   ['Will you require visa sponsorship in the future?', 'radio', 'workAuth.sponsorshipFuture', 0.97,
     'label.sponsorship'],
   ['Do you require H1B sponsorship?', 'select', 'workAuth.sponsorship', 0.97, 'label.sponsorship'],
+  // The core pass of 2026-11-06: ClassPass on Greenhouse (the owner's snapshot of 2026-11-06), a need for sponsored work
+  // authorization, now or in the future.
+  ['Do you now, or will you in the future, require employer-sponsored work authorization to legally work in the country '
+    + 'where this role is located?', 'combobox', 'workAuth.sponsorship', 0.97, 'label.sponsorship'],
+  ['Will you require employer-sponsored work authorization in the future?', 'radio', 'workAuth.sponsorshipFuture', 0.97,
+    'label.sponsorship'],
+  ['Do you have work authorization that is not employer-sponsored?', 'radio', 'workAuth.authorized', 0.97,
+    'label.work-auth'],
   ['What is your current visa status?', 'select', 'workAuth.visaType', 0.92, 'label.visa-type'],
   ['Are you a U.S. citizen?', 'radio', 'workAuth.status', 0.92, 'label.citizenship'],
   ['Do you hold an active security clearance?', 'radio', 'workAuth.clearance', 0.92, 'label.clearance'],
@@ -575,3 +584,63 @@ describe('classifyByRules: a closing "#"', () => {
   });
 });
 
+
+// ── The core pass of 2026-11-06: the resolver gaps the owner's Greenhouse snapshots of 2026-11-06 showed ──
+
+/** Dropzone's "Policy on the Use of Artificial Intelligence (AI)" ("[job-boards.greenhouse.io] ... Forward Deployed
+ *  Engineer at Dropzone AI"), a required "I Agree" list: the employer's words. Its attestation is in its last sentences. */
+const DROPZONE_POLICY = 'Policy on the Use of Artificial Intelligence (AI): At Dropzone, we require all job applicants to '
+  + 'provide authentic, human-generated content throughout the entire application and interviewing process. The use of '
+  + 'generative AI tools or AI assistance to create, draft, edit, or significantly modify application materials '
+  + '(including resumes, cover letters, writing and code samples, and answers to screening questions) or during any '
+  + 'interview stage is strictly prohibited. This policy is in place to evaluate your non-AI-assisted communication '
+  + 'skills, original thought, and genuine qualifications for the position. Acknowledgment and Agreement: By selecting '
+  + '"I Agree" below and submitting this application, I acknowledge that I have read and understood Dropzone\'s policy '
+  + 'prohibiting the use of AI in the application and interviewing process. I attest that all materials submitted and '
+  + 'all responses provided during the application and interview process are my own original work and were not '
+  + 'generated or substantially assisted by any AI tool. I understand that if I have used AI in any part of the process, '
+  + 'I am required to disclose the extent and nature of that use to Dropzone in advance. I further understand and agree '
+  + 'that any failure to disclose the use of AI, or any violation of this policy, is a material misrepresentation and is '
+  + 'grounds for immediate removal from consideration or, if hired, for immediate termination of employment, regardless '
+  + 'of when the violation is discovered.';
+
+describe('an "I did not use AI" statement past what a label keeps (Dropzone)', () => {
+  const cut = [...DROPZONE_POLICY].slice(0, 300).join('');
+
+  it('reads the whole label and description sentence by sentence, with the same rules', () => {
+    // Its first 300 characters (what a label keeps) name AI but state nothing.
+    expect(statesNoAiUse({ label: cut, description: '' })).toBe(false);
+    expect(statesNoAiUse({ label: DROPZONE_POLICY, description: '' })).toBe(true);
+    expect(statesNoAiUse({ label: 'Policy on AI', description: DROPZONE_POLICY })).toBe(true);
+    // The frame's word for what lies past the cut.
+    expect(statesNoAiUse({ label: cut, description: '', statesNoAi: true })).toBe(true);
+    // A long policy that forbids AI but has the person state nothing is no statement.
+    const noStatement = DROPZONE_POLICY.replace(/I attest that[^.]*\./, '');
+    expect(statesNoAiUse({ label: noStatement, description: '' })).toBe(false);
+  });
+
+  it('is an AI attestation where the frame read it: the person\'s on a list, as on its own label', () => {
+    expect(classifyByRules(field(cut, 'combobox'))).toBeNull();
+    expect(classifyByRules(field(cut, 'combobox', { statesNoAi: true }))).toMatchObject({
+      asks: 'consent.aiAttestation', rule: 'label.consent-ai', needsUser: 'kind-mismatch',
+      consentKinds: ['consent.aiAttestation'] });
+    expect(classifyByRules(field(cut, 'checkbox', { statesNoAi: true }))).toMatchObject({
+      category: 'consent.aiAttestation', rule: 'label.consent-ai' });
+    // The same reading as a label that states it within its 300 characters.
+    const own = classifyByRules(field('I attest that my answers were not generated or substantially assisted by any AI tool.',
+      'combobox'));
+    expect(own).toMatchObject({ asks: 'consent.aiAttestation', rule: 'label.consent-ai', needsUser: 'kind-mismatch' });
+  });
+});
+
+describe('SeatGeek\'s knowledge check: an ordinary question (S-2, CORE-10)', () => {
+  // SeatGeek's Greenhouse embed (fixtures/sites/seatgeek-greenhouse-embed.frame-1.html, question_70496297): a true or
+  // false about the company. No bot check (it tests no humanity), no attention check (it states no proof that the
+  // reader read anything): nothing the rules know, left to classification and the AI's answer as any question is.
+  it('is no bot check, no attention check and no topic only the person answers', () => {
+    const label = 'Is the following statement True or False? SeatGeek was founded in 2008';
+    expect(classifyByRules(field(label, 'combobox'))).toBeNull();
+    expect(botCheckOf(label, '', 'combobox')).toBeNull();
+    expect(attentionHits(label, '')).toEqual([]);
+  });
+});

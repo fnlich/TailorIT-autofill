@@ -61,6 +61,7 @@
  */
 import { applicationOf } from '../adapters';
 import { addressForTailorIT, matchesSiteUrl } from '../adapters/site';
+import { tailoritAddressOf } from '../adapters/tailorit-address';
 import {
   addablePosting, AUTOFILL_LOOKUP_URL_MAX, cutAtWord, parseAtsUrl, type AutofillLookupResponse,
 } from '../contract/tailorit';
@@ -90,8 +91,9 @@ export const LOOKUP_ON_LOAD_LIMIT = { count: 4, windowMs: 60_000 } as const;
 /** Whether an address names an application or a posting a platform's parser reads (parseAtsUrl, or the application
  *  parsers of adapters/index.ts): a lookup as the page loads asks only for one. The reserved fixture board, read by
  *  the generic rule, is not. A platform TailorIT's parseAtsUrl does not read (one ahead of its contract: none since its
- *  API 5) is looked up by its canonical address, which TailorIT finds no job for: the card says the posting is not in
- *  TailorIT. */
+ *  API 6, which reads every ATS of PLATFORMS) is looked up by its canonical address, which TailorIT finds no job for:
+ *  the card says the posting is not in TailorIT. Add is offered only where addablePosting reads the address (none of
+ *  the ATSs API 6 added: none has a posting API TailorIT may read). */
 export function recognisedPosting(url: string): boolean {
   let ref: ReturnType<typeof applicationOf>;
   try {
@@ -444,7 +446,8 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
       || read.epoch !== epochOf(from.tabId, key) || job !== jobFor(from.tabId, app)) return;
     cards.set(key, {
       lookup: lookup === null ? null : withoutPostingText(lookup),
-      addable: addablePosting(parseAtsUrl(from.url)) !== null,
+      // core-x, item 6: TailorIT is asked with the address server-client.ts names the page by (tailoritAddressOf).
+      addable: addablePosting(parseAtsUrl(tailoritAddressOf(from.url))) !== null,
       at: deps.now(),
       generation: read.generation,
       chosen: read.chosen,
@@ -509,7 +512,7 @@ export function createJobCards(deps: JobCardsDeps): JobCards {
 
   async function addFrom(from: ContentChannel, relay: Relay): Promise<void> {
     // Only an address TailorIT can add from is sent: any other gets the same answer TailorIT would give, unasked.
-    if (from.url.length > AUTOFILL_LOOKUP_URL_MAX || addablePosting(parseAtsUrl(from.url)) === null) {
+    if (from.url.length > AUTOFILL_LOOKUP_URL_MAX || addablePosting(parseAtsUrl(tailoritAddressOf(from.url))) === null) {
       relay.outcome = 'unsupported';
       return;
     }
