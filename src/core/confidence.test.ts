@@ -81,7 +81,6 @@ describe('the confidence constants', () => {
     // Matcher limits (§4.8, §4.10, §4.11, §4.13).
     ['MAX_SUGGESTIONS', 3],
     ['MATCH_CACHE_MAX_ENTRIES', 5000],
-    ['TYPEAHEAD_MAX_QUERIES', 4],
     ['TYPEAHEAD_MIN_QUERY_LENGTH', 3],
     ['TYPEAHEAD_TOKEN_MIN_WEIGHT', 0.3],
     ['MATCH_BUDGET_MS', 20],

@@ -178,8 +178,7 @@ export const CLASSIFY_MAX_OPTIONS = 20;
 export const MAX_SUGGESTIONS = 3;
 /** The match cache keeps at most this many entries (least recently used goes first). */
 export const MATCH_CACHE_MAX_ENTRIES = 5000;
-/** A remote typeahead tries at most this many queries. */
-export const TYPEAHEAD_MAX_QUERIES = 4;
+/* A remote typeahead's query cap is MAX_SEARCH_QUERIES (core/matcher/searchLimits.ts, v4: 6). */
 /** Each typeahead query has at least this many characters. */
 export const TYPEAHEAD_MIN_QUERY_LENGTH = 3;
 /** The fourth typeahead query uses the first two tokens of at least this weight. */
