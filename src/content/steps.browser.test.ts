@@ -127,7 +127,7 @@ function expectInvariants(worker: FakeWorker, loaded: Loaded, personClicks: stri
 }
 
 describe('Autofill after page turn: Manually (v3 Phase 3)', () => {
-  it('leaves a new step for the person’s Continue: the review says so, nothing on it is written, and Continue fills it', async () => {
+  it('leaves a new step for the person’s Continue, silently (v4, D7: no page-turned notice), nothing on it written, and Continue fills it', async () => {
     const worker = createFakeWorker({ settings: { ...CAUTIOUS_SETTINGS,
       modes: { ...CAUTIOUS_SETTINGS.modes, afterPageTurn: 'manual' as const } } });
     const loaded = await load(worker);
@@ -136,8 +136,9 @@ describe('Autofill after page turn: Manually (v3 Phase 3)', () => {
     expect(lastReport(worker).fields.length).toBeGreaterThan(0);
     // The person's Next: step 2 shows, and is not read or filled.
     pageNext(fixture);
-    await vi.waitFor(() => expect(codes(lastReport(worker))).toContain('page-turned'), { timeout: 10_000 });
-    expect(lastReport(worker)).toMatchObject({ status: 'review', fields: [] });
+    await vi.waitFor(() => expect(lastReport(worker)).toMatchObject({ status: 'review', fields: [] }), { timeout: 10_000 });
+    expect(codes(lastReport(worker))).not.toContain('page-turned');
+    expect(runtime.ui!.toasts.shown).toEqual([]);
     await vi.waitFor(() => expect(runtime.run!.ended).toBe('paused'));
     expect(runtime.ui!.launcher.view).toMatchObject({ state: 'needs-you', action: 'continue' });
     expect(record(fixture).added).toEqual({ experience: 0, education: 0 });
@@ -208,10 +209,12 @@ describe('auto-advance off: each step filled, then the person moves on', () => {
       const three = lastReport(worker);
       expect(three.fields.map((row) => row.label)).not.toContain('Add education');
       expect(three.fields.filter((row) => row.reason === 'needs-your-click')).toEqual([]);
-      expect(three.notices).toContainEqual({ code: 'needs-click', count: 1 });
+      // v4 (D7, D9): the typeless Add is simply not pressed: no needs-click notice.
+      expect(three.notices.map((notice) => notice.code)).not.toContain('needs-click');
       expect(three.fields.find((row) => row.label === SHIFT)).toMatchObject({ status: 'flagged', wrote: false });
-      // The shift question and the school left to the person: never pressed on.
-      expect(state.lastFill).toMatchObject({ flagged: 2 });
+      // v4 (D3): the required field left empty holds Next (never pressed on); the education entry the run could not add
+      // holds nothing.
+      expect(state.lastFill).toMatchObject({ flagged: 1, blocked: 0, unresolved: 0 });
 
       // Step 4: the final step. Review, Submit the person's, nothing pressed.
       pageNext(fixture);
@@ -296,7 +299,7 @@ describe('auto-advance on', () => {
     expect(record(loaded.fixture).step).toBe(3);
   });
 
-  it('pauses with needs-click when its Next leaves the step as it was, at the transition cap', async () => {
+  it('rests for the person’s Next when its Next leaves the step as it was, at the transition cap (v4, D7: no hand-off)', async () => {
     // A page whose first Next does nothing.
     const page = html.replace("button.addEventListener('click', (event) => {\n          wizard.next.push(",
       "button.addEventListener('click', (event) => {\n          if (wizard.next.length === 0) { wizard.next.push({ step: 0, trusted: event.isTrusted }); return; }\n          wizard.next.push(");
@@ -306,10 +309,12 @@ describe('auto-advance on', () => {
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => WIZARD_URL, isTop: true,
       adapters: () => [ADAPTER], settle: { quietMs: 60 }, transition: { capMs: 600 } });
     runtimes.push(runtime);
-    expect(await runtime.fill()).toBe('paused');
-    expect(lastState(worker)).toMatchObject({ status: 'handoff', pauseReason: 'needs-click', resumeStatus: 'wait-transition' });
-    expect(codes(lastReport(worker))).toContain('needs-click');
-    expect(runtime.ui!.launcher.view).toMatchObject({ state: 'needs-you', action: 'continue' });
+    expect(await runtime.fill()).toBe('waiting');
+    // Validated again, its lastFill cleared: Next is never pressed again by itself; nothing is handed over.
+    expect(lastState(worker)).toMatchObject({ status: 'wait-transition', pauseReason: null, lastFill: null });
+    expect(codes(lastReport(worker))).not.toContain('needs-click');
+    expect(runtime.ui!.launcher.view.state).toBe('review');
+    expect(runtime.ui!.toasts.shown).toEqual([]);
     expect(record(fixture).next).toHaveLength(1);
   });
 });

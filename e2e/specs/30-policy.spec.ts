@@ -1,7 +1,7 @@
 /*
- * Policy notices end to end (docs/ARCHITECTURE.md "Policy notices"; the Testing section's two policy specs). A posting
- * that says AI-assisted applications are not allowed is the person's decision, but they are told before anything is
- * written:
+ * Policy notices end to end (docs/ARCHITECTURE.md "Policy notices"; the Testing section's two policy specs). v4 (the
+ * owner, 2026-11-07, docs/_v4/run.md D6 and D9): the run decides, and nothing waits or is said on the page; the cases
+ * below were the Phase 2 card's, kept for their pages:
  * - the Lever posting page says "Do not use AI tools to apply" and its /apply page does not: the content script on the
  *   posting page records the hit for the application, and the /apply page's run stops at the policy card before any
  *   write, until the person's own click on Fill anyway;
@@ -15,7 +15,6 @@
  */
 import { readFileSync } from 'node:fs';
 import { DEFAULT_SETTINGS } from '../../src/core/types/settings';
-import { COPY } from '../../src/shared/copy';
 import { expect, test } from '../fixtures.ts';
 import { mock } from '../helpers/mock.ts';
 import { applicationKeyOf, noticeCount, row } from '../helpers/extension.ts';
@@ -23,7 +22,6 @@ import { GOLDEN } from '../helpers/golden.ts';
 import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { SYNTHETIC_LABELS } from '../helpers/labels.ts';
 import { PageUi } from '../helpers/page-ui.ts';
-import { writeEvents } from '../helpers/page-state.ts';
 
 const POSTING = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a001';
 const APPLY_AFTER_POSTING = `${POSTING}/apply`;
@@ -59,17 +57,14 @@ test.describe('policy notices, the default: fill from the profile only', () => {
   });
 });
 
-test.describe('policy notices', () => {
-  // The policy card is the "Ask me each time" setting's.
-  test.beforeEach(async ({ connected: ext }) => {
-    await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
-      llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' } } });
-  });
+test.describe('policy notices (v4, D6 and D9: no card and nothing on the page; the run decides)', () => {
   test.afterEach(async ({ connected: ext }) => {
     await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
   });
 
-  test('a posting page that says "Do not use AI tools to apply" stops its /apply page at the card, before any write', async ({ extContext, connected: ext, routeLog, logs }) => {
+  test('"Use AI anyway": a posting page that says "Do not use AI tools to apply" fills its /apply page at once, no card', async ({ extContext, connected: ext, routeLog, logs }) => {
+    await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
+      llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'use-ai' } } });
     routeLog.serve({ [POSTING]: POSTING_FILE, [APPLY_AFTER_POSTING]: APPLY_FILE });
     const page = await extContext.newPage();
     await page.goto(POSTING);
@@ -81,77 +76,52 @@ test.describe('policy notices', () => {
     await page.getByRole('link', { name: 'Apply for this job' }).click();
     await page.waitForURL(APPLY_AFTER_POSTING);
     const tabId = await ext.fill(page);
-    const waiting = await ext.settled(tabId);
-    expect(waiting.status).toBe('policy-notice');
-    expect(noticeCount(waiting, 'policy')).toBe(1);
-    expect(waiting.fields.filter((field) => field.wrote)).toEqual([]);
-    expect(await writeEvents(page), 'a write before the person chose').toEqual([]);
-    for (const id of ['#name', '#email', '#phone']) await expect(page.locator(id)).toHaveValue('');
-    const ui = await PageUi.of(page);
-    expect(await ui.policyCardShown()).toBe(true);
-
-    // Only the person's own click lets the fill go on.
-    await ui.clickButton(COPY.policyFillAnyway);
-    const filled = await ext.settled(tabId, { until: (report) => report.status !== 'policy-notice' });
+    const filled = await ext.settled(tabId);
     expect(filled.status).toBe('review');
+    expect(noticeCount(filled, 'policy')).toBe(1);
     expect(row(filled, 'Full name')).toMatchObject({ status: 'verified', provenance: 'profile' });
     await expect(page.locator('#name')).toHaveValue(GOLDEN.full);
     await expect(page.locator('#email')).toHaveValue(GOLDEN.email);
-    expect((await ext.runState(key))?.policyDecision).toBe('accepted');
+    const ui = await PageUi.of(page);
+    expect(await ui.policyCardShown()).toBe(false);
+    expect((await ui.noticeTexts()).filter((text) => !text.startsWith('Autofill complete'))).toEqual([]);
     await ui.close();
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: key });
   });
 
-  test('the same /apply page opened directly, with no stored copy, shows the couldn’t-read notice before any write', async ({ extContext, connected: ext, routeLog, logs }) => {
+  test('the same /apply page opened directly, with no stored copy, fills with nothing said of the unread posting', async ({ extContext, connected: ext, routeLog, logs }) => {
     routeLog.serve({ [APPLY_DIRECTLY]: APPLY_FILE });
     const page = await extContext.newPage();
     await page.goto(APPLY_DIRECTLY);
-    const tabId = await ext.tabIdOf(page);
-    const pushed = await ext.watchReports(tabId);
-    await ext.fill(page);
+    const tabId = await ext.fill(page);
     const report = await ext.settled(tabId);
     expect(report.status).toBe('review');
-    expect(noticeCount(report, 'policy-unreadable')).toBe(1);
+    expect(noticeCount(report, 'policy-unreadable')).toBe(0);
     expect(noticeCount(report, 'policy')).toBe(0);
     expect(row(report, 'Email')).toMatchObject({ status: 'verified', provenance: 'profile' });
-    // Every version of the report the panel was sent: none shows a write without the notice beside it.
-    const versions = (await pushed()).flat().filter((frame) => frame.frameId === 0 && frame.mode === 'fill');
-    expect(versions.length).toBeGreaterThan(0);
-    expect(versions.filter((frame) => frame.fields.some((field) => field.wrote) && noticeCount(frame, 'policy-unreadable') === 0))
-      .toEqual([]);
     const ui = await PageUi.of(page);
-    expect(await ui.noticeTexts()).toContain(COPY.notices['policy-unreadable']);
+    expect((await ui.noticeTexts()).filter((text) => !text.startsWith('Autofill complete'))).toEqual([]);
     await ui.close();
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(APPLY_DIRECTLY) });
   });
 
-  test("TailorIT's stored copy saying it stops the run at the card too, and Cancel writes nothing", async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
+  test("TailorIT's stored copy saying it fills from the profile only, with no card and no AI request", async ({ extContext, connected: ext, routeLog, logs, tailorit }) => {
     await tailorit.scenario('lookup-posting-text');
     routeLog.serve({ [APPLY_STORED_COPY]: APPLY_FILE });
     const page = await extContext.newPage();
     await page.goto(APPLY_STORED_COPY);
     const tabId = await ext.fill(page);
-    const waiting = await ext.settled(tabId);
-    expect(waiting.status).toBe('policy-notice');
-    expect(noticeCount(waiting, 'policy')).toBe(1);
-    expect(noticeCount(waiting, 'policy-stored-copy')).toBe(1);
+    const filled = await ext.settled(tabId);
+    expect(filled.status).toBe('review');
+    expect(noticeCount(filled, 'policy-profile-only')).toBe(1);
+    expect(noticeCount(filled, 'policy-stored-copy')).toBe(1);
+    expect(row(filled, 'Full name')).toMatchObject({ status: 'verified', provenance: 'profile' });
+    expect(await mock.requestsTo('POST /api/autofill/ai/*'), 'an AI request').toEqual([]);
     const ui = await PageUi.of(page);
-    expect(await ui.policyCardShown()).toBe(true);
-    // The page's card says it, the stored-copy line included (Phase 6); v4 ui (D10): the side panel mirrors no notice.
-    const cardLines = (await ui.elements('[role="alertdialog"] p')).filter((line) => line.shown).map((line) => line.text);
-    expect(cardLines).toEqual([COPY.notices.policy, COPY.policyFromStoredCopy]);
-    const panel = await ext.reportPage(tabId);
-    await expect(panel.locator('[data-view="main"]')).toBeVisible();
-    await expect(panel.locator('[data-notice]')).toHaveCount(0);
-    await page.bringToFront();
-    await ui.clickButton(COPY.policyCancel);
-    const stopped = await ext.settled(tabId, { until: (report) => report.status !== 'policy-notice' });
-    expect(stopped.status).toBe('stopped');
-    expect(stopped.fields.filter((field) => field.wrote)).toEqual([]);
-    expect(await writeEvents(page)).toEqual([]);
-    for (const id of ['#name', '#email', '#phone']) await expect(page.locator(id)).toHaveValue('');
+    expect(await ui.policyCardShown()).toBe(false);
+    expect((await ui.noticeTexts()).filter((text) => !text.startsWith('Autofill complete'))).toEqual([]);
     await ui.close();
     await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
       applicationKey: applicationKeyOf(APPLY_STORED_COPY) });

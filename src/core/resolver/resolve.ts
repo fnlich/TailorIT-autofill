@@ -42,7 +42,7 @@ import { policyClassOf } from './categories';
 import { screenForClassify, type LlmClassification } from './classify';
 import { classifyByRules, consentChoice, consentChoiceOption, type RuleClassification } from './classifyRules';
 import { dateIso, dateText, type DateParts } from './format';
-import { statementPolarity, type NeedsUserCause } from './labelRules';
+import { asksToAgree, statementPolarity, type NeedsUserCause } from './labelRules';
 import { consentValue, eeoDeclineDefault, eeoValue, legalValue, sensitiveGate } from './policy';
 import { findSavedAnswer, type CompanyScope } from './saved';
 import { previouslyEmployedValue, profileValue, type BlockEntries } from './values';
@@ -133,12 +133,20 @@ export interface ResolvedField {
 }
 
 /** The action a confidence gives (§8.6): fill at FILL_AT or more, fill and flag from FLAG_AT, else leave blank. A
- *  value that must always be flagged is filled and flagged at most. */
+ *  value that must always be flagged is filled and flagged at most. v4 (D2): 'fill-and-flag' fills like 'fill' (the
+ *  planner rows it verified, with its reason), so the band only says how sure the fill was; below FLAG_AT the field is
+ *  left empty, silently, unless the AI answers it where the person's AI mode allows (plan/answers.ts). */
 export function actionFor(confidence: number, alwaysFlag: boolean): Action {
   if (confidence >= FILL_AT && !alwaysFlag) return 'fill';
   if (confidence >= FLAG_AT) return 'fill-and-flag';
   return 'leave-blank';
 }
+
+/** v4 (D5): the causes for which a consent the rules hand over is decided by the Consents mode instead. A kind that
+ *  cannot hold the answer, a reading another source contradicts and a question about how the application was made stay
+ *  unanswered (never ticked: the extension is automation itself). */
+const DECIDED_CONSENT_CAUSES: ReadonlySet<NeedsUserCause> = new Set<NeedsUserCause>(['binding-waiver',
+  'description-only']);
 
 /** Why a field handed to the person is so, as the panel words it: by the class of what it asks, or a conflict. */
 function needsUserReason(cause: NeedsUserCause, asks: FieldCategory): ReasonCode {
@@ -306,7 +314,7 @@ function valueOf(category: FieldCategory, rules: RuleClassification, spec: Field
     case 'consent':
       return consentValue(category, rules.consentKinds, profile, settings,
         { required: spec.required, aiFree: ctx.aiFree === true, choice: consentChoiceOption(spec, vocab),
-          list: LIST_KINDS.has(spec.kind) });
+          list: LIST_KINDS.has(spec.kind), ...(rules.needsUser !== undefined ? { decided: true as const } : {}) });
     case 'attention':
       return none('attention-check', true, true);
     case 'free-text':
@@ -410,12 +418,18 @@ export function resolveField(spec: FieldSpec, ctx: ResolveContext, classificatio
   }
   if (classification.by === 'llm') return answerFromLlm(spec, ctx, classification.llm);
   const rules = classification.by === 'rules' ? classification.rules : null;
-  if (rules?.needsUser !== undefined) {
+  // v4 (D5): a consent the rules hand to the person for a cause the Consents mode can decide (a binding waiver asked as
+  // a Yes/No question, a consent read from its help text alone) is decided by it, like any consent.
+  const decided = rules?.needsUser !== undefined && DECIDED_CONSENT_CAUSES.has(rules.needsUser)
+    && policyClassOf(rules.asks) === 'consent'
+    // A binding waiver asked as a fact ("Are you subject to a non-compete?") is never answered: its Yes would state one.
+    && (rules.needsUser !== 'binding-waiver' || asksToAgree(normalizeLabel(spec.label)));
+  if (rules?.needsUser !== undefined && !decided) {
     return answer({ key: spec.key, category: rules.asks, classifiedBy: rules.classifiedBy, rule: rules.rule,
       intended: null, origin: null, confidence: rules.confidence, policy: policyClassOf(rules.asks),
       action: 'needs-user', reason: needsUserReason(rules.needsUser, rules.asks), awaiting: null });
   }
-  const category: FieldCategory = rules?.category ?? 'unknown';
+  const category: FieldCategory = rules === null ? 'unknown' : rules.category ?? rules.asks ?? 'unknown';
   const policy = policyClassOf(category);
   // A screened question never takes a saved answer (T6-1): screened only when one would apply, which is rare.
   const found = findSavedAnswer(spec, ctx.savedAnswers, policy, ctx.company);

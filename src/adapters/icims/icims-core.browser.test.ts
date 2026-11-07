@@ -320,8 +320,8 @@ describe('item 2: the profile’s "Create a login" is a section of the profile',
     expect((fixture.doc.getElementById('PersonProfileFields.Login') as HTMLInputElement).value).toBe('');
     expect(worker.of('signin/credential')).toEqual([]);
     expect(clicked).not.toHaveBeenCalled();
-    // Next is the person's, and the notice says why.
-    expect(report.notices.map((notice) => notice.code)).toContain('account-left');
+    // Next is the person's (a required box empty), silently (v4, D9: no account-left notice).
+    expect(report.notices.map((notice) => notice.code)).not.toContain('account-left');
   });
 
   it('a run with Sign-in on Auto types the saved sign-in into the section, presses nothing, and fills the rest', async () => {

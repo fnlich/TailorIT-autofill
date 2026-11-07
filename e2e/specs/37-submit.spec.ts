@@ -233,10 +233,11 @@ test.describe('Continue to the next page (v3 Phase 4)', () => {
     const panel = await ext.reportPage(tabId);
     await panel.locator('button[data-step-action="next"]').click();
     await expect.poll(async () => (await wizardRecord(page)).next.length).toBe(1);
-    await expect.poll(async () => (await ext.reports(tabId)).find((report) => report.frameId === 0)?.notices
-      .map((notice) => notice.code)).toContain('page-turned');
+    // v4 (D7): the new page rests silently (no page-turned notice), nothing on it read or filled.
+    await expect.poll(async () => (await ext.reports(tabId)).find((report) => report.frameId === 0)?.fields.length)
+      .toBe(0);
     const turned = (await ext.reports(tabId)).find((report) => report.frameId === 0)!;
-    expect(turned.fields).toEqual([]);
+    expect(turned.notices.map((notice) => notice.code)).not.toContain('page-turned');
   });
 });
 

@@ -248,6 +248,28 @@ export function blockOf(kind: PauseKind): EntryBlock {
   }
 }
 
+/** v4 (D7): a run at a choice of how to apply (authState 'entry-choice': Workday's "Start Your Application") presses the
+ *  adapter's declared entry on it (its Apply Manually) through the entry door, every guard of it held (never while a
+ *  form or a challenge shows, never a control the adapter never presses): 'pressed', else 'none' (the run then rests
+ *  silently, and follows the person's own choice). Called by src/content/runtime.ts alone (RunEnv.enterChoice). */
+export function pressEntryChoice(doc: Document, adapter: Adapter): 'pressed' | 'none' {
+  if (pageChallenged(doc)) return 'none';
+  let state: ReturnType<NonNullable<Adapter['authState']>> = null;
+  try {
+    state = adapter.authState?.(doc) ?? null;
+  } catch {
+    state = null;
+  }
+  if (state !== 'entry-choice') return 'none';
+  return pressDoor(adapter, doc) === null ? 'none' : 'pressed';
+}
+
+/** The entry door (not-submit.ts clickAdapterEntry), opened from this one place: the agent's entry and v4's entry
+ *  choice alike. */
+function pressDoor(adapter: Adapter, doc: Document): HTMLElement | null {
+  return clickAdapterEntry(adapter, doc);
+}
+
 /** How long the entry waits for a control the address's adapters draw late: the longest quirks.entryWaitMs of those
  *  that declare an entry control, ENTRY_WAIT_MS where none says (v3 Phase 6/7b review, C7), at most ENTRY_WAIT_CAP_MS. */
 export function entryWaitOf(adapters: readonly Adapter[]): number {
@@ -303,7 +325,7 @@ export function pressEntry(doc: Document, adapters: readonly Adapter[], signal: 
         offered = null;
       }
       if (offered === null || pressed.has(offered)) continue;
-      const clicked = clickAdapterEntry(adapter, doc);
+      const clicked = pressDoor(adapter, doc);
       if (clicked !== null) {
         pressed.add(clicked);
         return adapter;

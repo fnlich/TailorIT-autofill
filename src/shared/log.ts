@@ -10,6 +10,8 @@ export const LOG_CODES = [
   'router.bad-sender',
   'router.handler-failed',
   'frame.registered',
+  // v4 run: a frame's account wall told (frame/wall).
+  'frame.wall',
   'content.started',
   'content.context-invalidated',
   'content.forged-wxt-event',
@@ -176,6 +178,12 @@ export const LOG_CODES = [
   'content.field-skipped',
   'panel.skip-sent',
   'content.page-turned',
+  // v4 run (docs/_v4/run.md): the pause a run rested at is gone, Workday's entry choice answered, the page's wall told
+  // to the worker, Sign up & Autofill at a wall with no form.
+  'content.pause-gone',
+  'content.entry-choice',
+  'content.wall',
+  'content.sign-up',
   'launcher.placed',
   'launcher.hidden',
   'launcher.shown',

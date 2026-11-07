@@ -63,7 +63,8 @@ test.describe('ARIA widgets', () => {
     expect(row(report, 'Degree')).toMatchObject({ category: 'education.degree', status: 'flagged',
       reason: 'needs-your-click', wrote: false });
     expect((await eventsOn(page, '#degree')).map((event) => [event.type, event.trusted])).toEqual([['click', false]]);
-    expect(noticeCount(report, 'needs-click')).toBe(1);
+    // v4 (D7, D9): the row is simply not filled; no needs-click notice.
+    expect(noticeCount(report, 'needs-click')).toBe(0);
 
     // Pass 0 found the lazy widgets waiting for their options; pass 1 planned the two that were read.
     expect(report.counters.passes).toBe(2);

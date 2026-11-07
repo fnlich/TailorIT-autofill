@@ -73,7 +73,8 @@ test.describe("TailorIT's answers", () => {
     const tabId = await ext.fill(page);
     const report = await ext.settled(tabId, { timeout: 60_000 });
     expect(report.status).toBe('review');
-    expect(noticeCount(report, 'policy-unreadable')).toBe(1);
+    // v4 (D9): the unread posting is no notice.
+    expect(noticeCount(report, 'policy-unreadable')).toBe(0);
     expect(row(report, 'Full name')).toMatchObject({ status: 'verified', provenance: 'profile' });
     await expect(page.locator('#email')).toHaveValue(GOLDEN.email);
     // The worker gave up on both (v2: the side panel's job card asked first): the mock never got to answer either.
@@ -91,7 +92,8 @@ test.describe("TailorIT's answers", () => {
     const tabId = await ext.fill(page);
     const report = await ext.settled(tabId);
     expect(report.status).toBe('review');
-    expect(noticeCount(report, 'policy-unreadable')).toBe(1);
+    // v4 (D9): the unread posting is no notice.
+    expect(noticeCount(report, 'policy-unreadable')).toBe(0);
     expect(row(report, 'Full name')).toMatchObject({ status: 'verified', provenance: 'profile' });
     expect(row(report, 'Resume')).toMatchObject({ reason: 'resume-unavailable', wrote: false });
     expect(await mock.requestsTo(RESUME_FILE_ROUTE)).toEqual([]);

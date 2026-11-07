@@ -97,6 +97,20 @@ test('the side panel’s Settings view, a tooltip and its set-up view have no se
   expect(await seriousViolations(panel), 'the set-up view').toEqual([]);
 });
 
+test('the report page after a profile-only fill (v4: no policy card) has no serious or critical accessibility violation', async ({ extContext, connected: ext, routeLog, tailorit }) => {
+  // TailorIT's stored copy of the posting says no AI tools: the run fills from the profile only, with no card.
+  await tailorit.scenario('lookup-posting-text');
+  const url = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-00000000a095/apply';
+  routeLog.serve({ [url]: 'fixtures/synthetic/policy-apply.html' });
+  const page = await extContext.newPage();
+  await page.goto(url);
+  const tabId = await ext.fill(page);
+  expect((await ext.settled(tabId)).status).toBe('review');
+  const panel = await ext.reportPage(tabId);
+  await panel.bringToFront();
+  expect(await seriousViolations(panel), 'the report page after a profile-only fill').toEqual([]);
+});
+
 test('the report page with the job card, its resume picker, the custom question and a problem strip has no serious or critical violation (v2)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
   await tailorit.scenario('lookup-applied');
   const url = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-0000000a095c/apply';

@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { progressStateOf } from '../ui/report/model';
 import { frameReport, row } from '../ui/ui.testkit';
-import { isReady, progressOf, rowProgressOf } from './report';
+import { isReady, leftOut, needsPerson, notFilled, progressOf, rowProgressOf } from './report';
 
 const filled = (key: string, required = true) => row(key, { required });
 const missing = (key: string, required = true) => row(key, { required, status: 'flagged', provenance: null,
@@ -73,12 +73,31 @@ describe('the progress rule', () => {
     expect(progressOf([top, embedded])).toEqual({ filled: 2, of: 4, requiredOnly: true, percent: 50 });
   });
 
-  it('treats a flagged row whose value was written as filled: it only says "check it" (SPEC-AMENDMENTS §11)', () => {
+  it('treats a flagged row whose value was written as filled (v4, D3: no "check it", and no draft waits for the person)', () => {
     const checkIt = row('phone', { required: true, status: 'flagged', reason: 'filled-low-confidence', wrote: true });
     expect([isReady(checkIt), rowProgressOf(checkIt)]).toEqual([true, 'filled']);
-    const draftWaiting = row('why', { required: true, status: 'flagged', provenance: 'llm-draft',
+    const draft = row('why', { required: true, status: 'flagged', provenance: 'llm-draft',
       reason: 'llm-draft-needs-confirmation', wrote: true, needsUserAction: true });
-    expect([isReady(draftWaiting), rowProgressOf(draftWaiting)]).toEqual([false, 'missing']);
+    expect([isReady(draft), rowProgressOf(draft)]).toEqual([true, 'filled']);
+  });
+
+  it('v4 (D1, D4, D8): a field not filled is "missing" (an empty circle, never "needs you"); a kept prefill is filled; a hidden or refused field is left out', () => {
+    const empty = row('city', { required: true, status: 'flagged', reason: 'low-confidence', wrote: false,
+      needsUserAction: true });
+    expect([needsPerson(empty), notFilled(empty), rowProgressOf(empty)]).toEqual([false, true, 'missing']);
+    const kept = row('about', { required: false, status: 'flagged', reason: 'prefill-kept', wrote: false,
+      needsUserAction: true });
+    expect([isReady(kept), rowProgressOf(kept)]).toEqual([true, 'filled']);
+    for (const out of [row('trap', { required: true, status: 'blocked', reason: 'honeypot', wrote: false }),
+      row('ghost', { required: true, status: 'flagged', reason: 'no-visible-label', wrote: false }),
+      row('ai', { required: true, status: 'flagged', reason: 'tripwire-in-label', wrote: false })]) {
+      expect([leftOut(out), notFilled(out), rowProgressOf(out)], out.key).toEqual([true, false, 'none']);
+    }
+    // The one row that needs the person: a bot check asked as a question.
+    const bot = row('robot', { required: true, status: 'flagged', reason: 'bot-check', wrote: false });
+    expect([needsPerson(bot), rowProgressOf(bot)]).toEqual([true, 'missing']);
+    expect(progressOf([{ fields: [empty, kept, bot, row('done', { required: true, status: 'verified', wrote: true })] }]))
+      .toEqual({ filled: 1, of: 3, requiredOnly: true, percent: 33 });
   });
 
   it('says where the progress stands: nothing yet, scanning, filling or at rest', () => {

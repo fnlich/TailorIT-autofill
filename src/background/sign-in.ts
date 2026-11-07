@@ -19,6 +19,8 @@
  *   /mascsr/default|applicant/mdf/recruitment/, a ClearCompany tenant's /careers/), the frame's path, the pathname of
  *   Chrome's address for it (never a query, a fragment or anything the message says), decides it: it goes to TailorIT
  *   as &path= at such a path alone, and `*` is taken there alone, never on that host's employee pages.
+ * v4 (background/sign-up.ts): "Sign up & Autofill" grants a tab Sign-in Auto for one run: signInAuto(tabId) then says
+ * Auto for that tab alone, every other rule above held.
  * The answer to that frame's message is the one place the password goes: it is held in this function's memory only
  * until the answer is sent, never stored, logged, cached, put in a report or sent anywhere else, and the frame types it
  * into the page's password field only (src/content/sign-in.ts). At an email gate (v3 Phase 7b: wall 'email-gate', the
@@ -50,8 +52,9 @@ export interface SignInDeps {
   server: Pick<ServerClient, 'credential'>;
   session: StorageArea;
   now(): number;
-  /** Sign-in mode as it acts now: Auto, and allowed (credentials:read, the disclosure acknowledged). */
-  signInAuto(): Promise<boolean>;
+  /** Sign-in mode as it acts now for the tab: Auto (the person's mode, or v4's Sign up & Autofill grant for that tab),
+   *  and allowed (credentials:read, the disclosure acknowledged). */
+  signInAuto(tabId: number): Promise<boolean>;
   /** core-x, item 3: the tab's claim frame (frames.ts claimFrameOf), or null; absent: only a top frame is answered. */
   claimFrame?(tabId: number): Promise<Pick<FrameEntry, 'frameId' | 'documentId'> | null>;
 }
@@ -91,7 +94,7 @@ export function createSignIn(deps: SignInDeps) {
         return refuse('bad_sender');
       }
       const { host, path } = page;
-      if (!(await deps.signInAuto())) {
+      if (!(await deps.signInAuto(from.tabId))) {
         log('signin.refused', { allowed: false });
         return refuse('unavailable');
       }

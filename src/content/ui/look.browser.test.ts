@@ -45,7 +45,6 @@ function mount(options: { panel?: boolean } = {}) {
   const confirmed: string[] = [];
   const ui = mountPageUi(document, {
     onLauncher: (action) => actions.push(action),
-    onPolicyChoice: () => undefined,
     ...(options.panel ? { panel: {
       frameId: () => 2,
       showField: () => undefined,
@@ -82,10 +81,12 @@ describe('the page’s own UI in TailorIT’s look', () => {
     const views: Array<[LauncherView, string, string | null, string | null]> = [
       [{ state: 'idle', action: 'fill' }, COPY.launcherFill, null, null],
       [{ state: 'running', action: null }, COPY.launcherRunning, null, null],
-      [{ state: 'needs-you', action: 'continue', reason: 'pause' }, COPY.launcherNeedsYou, 'warning', '!'],
-      [{ state: 'review', action: 'open-review', count: 3 }, COPY.launcherReview(3), 'warning', '3'],
-      [{ state: 'review', action: 'open-review', count: 120 }, COPY.launcherReview(120), 'warning', '99+'],
-      [{ state: 'review', action: 'open-review', count: 0 }, COPY.launcherReview(0), 'success', ''],
+      // v4 (D11): progress only, never a "needs you" count or "!".
+      [{ state: 'needs-you', action: 'continue', reason: 'pause' }, COPY.launcherNeedsYou, null, null],
+      [{ state: 'needs-you', action: 'continue', reason: 'pause', percent: 50 }, COPY.launcherNeedsYou, 'brand', '50%'],
+      [{ state: 'review', action: 'open-review', percent: 75 }, COPY.launcherReview(75), 'brand', '75%'],
+      [{ state: 'review', action: 'open-review', percent: 100 }, COPY.launcherReview(100), 'success', ''],
+      [{ state: 'review', action: 'open-review' }, COPY.launcherReview(), 'success', ''],
       [{ state: 'error', action: 'fill', reason: 'not-connected' }, COPY.launcherNotConnected, 'danger', '!'],
     ];
     for (const [view, name, tone, text] of views) {
@@ -95,15 +96,15 @@ describe('the page’s own UI in TailorIT’s look', () => {
         .toEqual([view.state, tone, text]);
       expect(launcher.getBoundingClientRect().width).toBe(32);
     }
-    // Nothing to count: a tick, drawn, with no words.
-    ui.setLauncher({ state: 'review', action: 'open-review', count: 0 });
+    // Every required field filled: a tick, drawn, with no words.
+    ui.setLauncher({ state: 'review', action: 'open-review', percent: 100 });
     expect(badge.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(badge.getAttribute('aria-hidden')).toBe('true');
   });
 
   it("does nothing for a click on the badge outside the launcher's box", async () => {
     const { ui, actions } = mount();
-    ui.setLauncher({ state: 'review', action: 'open-review', count: 5 });
+    ui.setLauncher({ state: 'review', action: 'open-review', percent: 50 });
     const badge = ui.launcher.el.querySelector<HTMLElement>('.badge')!;
     expect(getComputedStyle(badge).pointerEvents).toBe('none');
     // A click counts once the launcher has been seen for CONTROL_SEEN_MS (the audit of 2026-11-06, S-1).
@@ -118,23 +119,21 @@ describe('the page’s own UI in TailorIT’s look', () => {
     expect(actions).toEqual(['open-review']);
   });
 
-  it("names the policy card by TailorIT's mark and name, and draws the notices' icons with no words", () => {
+  it("v4 (D10): brands each toast with TailorIT's mark and name on a white card, and draws its icons with no words", () => {
     const { ui } = mount();
-    ui.setNotices(['tripwire', 'posting-outside-frame']);
-    ui.showPolicyCard({ fromStoredCopy: true });
-    const card = ui.shadow.querySelector<HTMLElement>('.card')!;
-    const name = ui.shadow.getElementById(card.getAttribute('aria-labelledby')!)!;
-    expect([name.tagName, name.textContent]).toEqual(['DIV', COPY.appName]);
-    expect([...card.querySelectorAll('p')].map((p) => p.textContent)).toEqual([COPY.notices.policy, COPY.policyFromStoredCopy]);
-    const notices = [...ui.shadow.querySelectorAll<HTMLElement>('.notice')];
-    expect(notices.map((notice) => [notice.dataset.code, notice.dataset.tone, notice.textContent])).toEqual([
-      ['tripwire', 'danger', COPY.notices.tripwire], ['posting-outside-frame', 'info', COPY.notices['posting-outside-frame']]]);
-    for (const svg of ui.shadow.querySelectorAll('.notices svg')) {
+    ui.setToasts([{ kind: 'tripwire', text: COPY.notices.tripwire }, { kind: 'sign-in', text: COPY.toasts.signIn }]);
+    const toasts = [...ui.shadow.querySelectorAll<HTMLElement>('.toast')];
+    expect(toasts.map((toast) => [toast.dataset.kind, toast.querySelector('.toast__brand .name')!.textContent,
+      toast.querySelector('.toast__text')!.textContent])).toEqual([['tripwire', 'TailorIT', COPY.notices.tripwire],
+      ['sign-in', 'TailorIT', COPY.toasts.signIn]]);
+    for (const svg of ui.shadow.querySelectorAll('.toasts svg')) {
       expect([svg.getAttribute('aria-hidden'), svg.textContent]).toEqual(['true', '']);
     }
-    expect(notices[0]!.querySelector('button.dismiss svg')).not.toBeNull();
-    expect(getComputedStyle(notices[0]!).backgroundColor).toBe('rgb(251, 229, 229)');
-    expect(getComputedStyle(card).borderRadius).toBe('12px');
+    // The "IT" in TailorIT's ink, as every header of TailorIT's draws it.
+    expect(getComputedStyle(toasts[0]!.querySelector('.toast__brand .it')!).color).toBe('rgb(8, 117, 140)');
+    expect(toasts[0]!.querySelector('button.toast__close svg')).not.toBeNull();
+    expect([getComputedStyle(toasts[0]!).backgroundColor, getComputedStyle(toasts[0]!).borderRadius])
+      .toEqual(['rgb(255, 255, 255)', '12px']);
   });
 
   it('draws only the shapes and attributes icons.ts allows, node by node', () => {
@@ -172,8 +171,10 @@ describe('the page’s own UI in TailorIT’s look', () => {
   it('styles its status and feedback lines inside the closed root', async () => {
     const { ui } = mount({ panel: true });
     ui.openPanel();
+    // v4 (D1): only a hard-rule stop (a bot check asked as a question) still makes the strip ask for the person.
     ui.updatePanel([report(2, { fields: [row('why', { kind: 'textarea', status: 'flagged', provenance: 'llm-draft',
-      reason: 'llm-draft-needs-confirmation', needsUserAction: true })] })]);
+      reason: 'llm-draft-needs-confirmation', needsUserAction: true }), row('robot', { status: 'flagged',
+      reason: 'bot-check', needsUserAction: true, wrote: false })] })]);
     const panel = panelOf(ui);
     const strip = panel.querySelector<HTMLElement>('.tia-run-status')!;
     expect([strip.dataset.tone, getComputedStyle(strip).borderRadius, getComputedStyle(strip).backgroundColor])
@@ -196,15 +197,17 @@ describe('the page’s own UI in TailorIT’s look', () => {
       .toEqual([COPY.panel.draftConfirmed, '10px', 'rgb(248, 248, 248)']);
   });
 
-  it("is seen under the launcher and the policy card, and leaves the card's buttons seen: no shadow of ours covers another",
+  it("is seen with the launcher and a toast, and leaves the toast's buttons seen: no shadow of ours covers another (v4)",
     async () => {
       const { ui } = mount({ panel: true });
-      ui.setLauncher({ state: 'review', action: 'open-review', count: 2 });
-      ui.showPolicyCard({ fromStoredCopy: true });
+      ui.setLauncher({ state: 'review', action: 'open-review', percent: 50 });
+      ui.setToasts([{ kind: 'no-sign-in', text: COPY.toasts.noSignIn, action: { label: COPY.toasts.open,
+        run: () => undefined } }]);
       ui.openPanel();
-      ui.updatePanel([report(2, { status: 'policy-notice', notices: [{ code: 'policy' }], fields: [row('own')] })]);
-      const [cancel, fill] = [...ui.shadow.querySelectorAll<HTMLButtonElement>('.card button')];
-      await vi.waitFor(() => expect([ui.visibleNow(ui.launcher.el), ui.visibleNow(cancel!), ui.visibleNow(fill!),
+      ui.updatePanel([report(2, { fields: [row('own')] })]);
+      const open = ui.toasts.button('no-sign-in', 'action')!;
+      const close = ui.toasts.button('no-sign-in', 'close')!;
+      await vi.waitFor(() => expect([ui.visibleNow(ui.launcher.el), ui.visibleNow(open), ui.visibleNow(close),
         ui.visibleNow(panelOf(ui))]).toEqual([true, true, true, true]), { timeout: 3000 });
     });
 });

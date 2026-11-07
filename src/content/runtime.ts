@@ -18,9 +18,7 @@
  *    clicks (counted only while a person can see it: S5) or from run/start (the side panel's Fill, to every frame with
  *    a form). One run at a time (orchestrator.ts). In a frame inside another page a run fills only while the launcher
  *    can be seen on that page (S1). A form root the page replaces (it drew its whole form again, Twitch's way) is found
- *    again by the adapter's hook (pageNow; a run tells of one it found, rootMoved), and the launcher moves to it. Fill
- *    anyway at a policy card that a later pass of a run showed ends that run and starts a fresh one, whose gate takes
- *    the decision (fillAgain, the Phase 3 review's L-S2).
+ *    again by the adapter's hook (pageNow; a run tells of one it found, rootMoved), and the launcher moves to it.
  * 4. The multi-step machine (Phase 5): with a form root, this tab's RunState for the application is read (runstate/get)
  *    and resumeMode decides. 'auto' (the same tab, within RESUME_AUTO_MS, not at review): a run starts by itself on
  *    the step it was on (trigger 'resume', RESUMED by the load), its attempts counted, so the step after two attempts
@@ -35,11 +33,10 @@
  * they were handed: the Phase 5 review, C-S3 and X-S4). Cancel at a pause stops that run for good: USER_STOPPED, stored
  * and reported, and Continue has nothing left to resume (C-S6). The person's trusted input on the document is heard
  * for the document's whole life (touches.ts), so a run knows what they typed while it rested.
- * The worker's messages are answered: frame/ping {pong}; run/start; run/continue (Continue after a pause, never Fill
- * anyway: a policy card waits for the person's own decision); run/cancel (stops a run, a policy card's wait included,
- * a run that waits for the next step, or a paused one); settings/changed (the person saved their settings: the
- * current run reads auto-advance from them, C-S2); run/policyDecision (the side panel's policy card, addressed to this frame: Fill anyway or Cancel,
- * answered `expired` when no run here waits at the card); field/focus (scroll the field or its proxy into view and
+ * The worker's messages are answered: frame/ping {pong}; run/start; run/continue (Continue after a pause); run/cancel
+ * (stops a run, a run that waits for the next step, or a paused one); settings/changed (the person saved their
+ * settings: the current run reads auto-advance from them, C-S2); run/policyDecision (v4: no run waits at a policy card
+ * any more, so it is answered `expired`); field/focus (scroll the field or its proxy into view and
  * focus it, at the person's request: Show on page draws nothing); field/describe (the visible labels of a row's suggested options, from a fresh
  * scan, never kept); draft/confirm (Phase 6: the run's waiting draft of that field is the person's now; `expired` when
  * none waits); answer/read (Phase 6: the field's answer as it holds it now, for Save my answer, straight to the worker
@@ -93,6 +90,18 @@
  * frames the token the worker gave it (core-x items 7 and 14).
  * Only this extension's own messages from outside any tab (the worker) are taken.
  *
+ * v4 run (the owner, 2026-11-07; docs/_v4/run.md):
+ * - The page's account wall (a sign-in, an account's creation, an email gate) and a choice of how to apply its adapter
+ *   answers, as the top frame or the frame that claims the application shows them now, go to the worker (frame/wall) at
+ *   each change: the side panel's main button then reads "Sign up & Autofill". The page is looked at again on each DOM
+ *   change, coalesced (WALL_LOOK_MS), never while a run works (its own pause says it), for the document's life.
+ * - run/start at such a page with no form (Autofill, or Sign up & Autofill: run/start {signIn}): a choice of how to apply
+ *   is answered with the adapter's declared entry (press.ts pressEntry: Workday's Apply Manually); a wall is signed in
+ *   to (sign-in.ts) under Sign up & Autofill or Sign-in mode Auto, else its toast says to sign in here or use Sign up &
+ *   Autofill; with no job-site sign-in saved in TailorIT, the toast says to add one (its Open: TailorIT's Settings ›
+ *   Autofill). The page that follows fills as usual (the worker starts its run, background/sign-up.ts).
+ * - A run paused at what the page shows carries on by itself once it goes (orchestrator.ts watchPauseGone, through
+ *   afterSignIn: continueRun), at most MAX_AUTO_CONTINUES times in a document.
  * WXT's content-script context is never used (a page can reach it): no context timers, listeners, onInvalidated or
  * wxt:locationchange. The runtime owns its lifetime (one AbortController), reads address changes from location.href
  * (location.ts), and logs forged WXT events without letting them change anything (forged.ts), listening for them only
@@ -126,14 +135,15 @@ import type { RunState } from '../core/types/run';
 import { awaitEntrance } from '../dom/entrance';
 import { embedsAts, jobSignalOf } from '../dom/page-signals';
 import { detectPause } from '../dom/pause-detect';
+import { newScanCache } from '../dom/scan-cache';
 import { scan, toFieldSpec } from '../dom/scan';
 import { deadline, monotonicNow, startDeadline, type Cancel } from '../dom/time';
 import { visibleText } from '../dom/visible-text';
 import type { ScanResult } from '../dom/types';
 import { ok, refuse } from '../messaging/envelope';
 import {
-  WorkerToContentSchema, type EntryAnswer, type LauncherPrefs, type PolicyDecision, type PressAnswer, type StepTarget,
-  type SubmitEvidence, type SubmitPresser,
+  SIGN_IN_WALLS, WorkerToContentSchema, type EntryAnswer, type LauncherPrefs, type PressAnswer, type SignInWall,
+  type StepTarget, type SubmitEvidence, type SubmitPresser,
 } from '../messaging/schemas';
 import { probeStorageLocalFromContent } from '../platform/chrome';
 import type { ContentPlatform, Sender } from '../platform/types';
@@ -150,13 +160,14 @@ import {
 } from './orchestrator';
 import { readPostingPage } from './policy';
 import { newSuccessSign, shownSignsOf, SUBMIT_CONFIRM_MS, SUBMIT_WATCH_MS, type PressSnapshot } from './submitted';
-import { blockOf, entryWaitOf, pressEntry, refusalAfter } from './press';
+import { blockOf, entryWaitOf, pressEntry, pressEntryChoice, refusalAfter } from './press';
 import { signIn } from './sign-in';
 import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
 import { showField } from './targets';
 import { TouchLog } from './touches';
 import { mountPageUi, type PageUi } from './ui/page-ui';
+import type { ToastSpec } from './ui/toasts';
 import { createValueHasher, type ValueHasher } from './values';
 
 /** The worker's script, as the built extension names it (wxt: entrypoints/background.ts): run/press is taken only from
@@ -164,6 +175,11 @@ import { createValueHasher, type ValueHasher } from './values';
 const WORKER_SCRIPT_PATH = '/background.js';
 /** v3 Phase 5 review: how long the agent's run/start waits for a run the page's load resumed by itself to rest. */
 export const AGENT_RESUMED_WAIT_MS = 30_000;
+/** v4: how long after a DOM change the page is looked at again for its account wall (frame/wall). */
+export const WALL_LOOK_MS = 300;
+/** v4: how many times in a document a paused run carries on by itself once its pause went (orchestrator.ts
+ *  watchPauseGone): a page that keeps showing and hiding a check never loops. */
+export const MAX_AUTO_CONTINUES = 20;
 
 /** How the runtime is set up; every part defaults to the real one. */
 export interface RuntimeOptions extends RunOptions {
@@ -361,7 +377,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           }
           return (await startAgentRun(msg.retry === true)) ? ok({}) : refuse('expired');
         }
-        startRun({ trigger: 'panel', dryRun: msg.dryRun });
+        // v4: a page that shows an account wall or a choice of how to apply, with no form (atWall); else a run, which
+        // Sign up & Autofill (msg.signIn) lets sign in at its wall as Sign-in mode Auto would.
+        if (page === null) {
+          void atWall(msg.signIn === true, msg.dryRun).catch(() => undefined);
+          return ok({});
+        }
+        startRun({ trigger: 'panel', dryRun: msg.dryRun, ...(msg.signIn === true ? { signIn: true } : {}) });
         return ok({});
       case 'agent/enter': {
         // v3 Phase 5: the agent's press on a posting page's entry control, from the worker's own script alone.
@@ -385,7 +407,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
         signInMode = msg.settings.modes.signIn;
         return ok({});
       case 'run/policyDecision':
-        return decidePolicy(msg.decision) ? ok({}) : refuse('expired');
+        // v4 (D6): no run waits at a policy card any more.
+        return refuse('expired');
       case 'field/focus':
         focusField(msg.fieldKey as FieldKey);
         return ok({});
@@ -802,10 +825,6 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       onRows(rows) {
         lastRows = new Map(rows.map((row) => [row.key, row]));
       },
-      // Fill anyway at a policy card a later pass showed: a fresh run, on this run's own ended state (L-S2).
-      fillAgain(next) {
-        if (current === run) startRun(next);
-      },
       // The run found the form root again as a new element (the page drew its whole form again): the launcher follows.
       rootMoved(root) {
         if (current === run) moveRoot(root);
@@ -830,14 +849,35 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       signInContainer: (signal) => signIn({ doc, adapter: on.adapter, channel, href: readHref, isTop, claimed,
         container: true, signal: AbortSignal.any([signal, lifetime.signal]) }),
       afterSignIn: () => {
-        if (current === run) continueRun(run.trigger);
+        if (current !== run) return;
+        // v4: a pause that went carries the run on by itself, a bounded number of times in a document.
+        if (autoContinues >= MAX_AUTO_CONTINUES) return;
+        autoContinues += 1;
+        continueRun(run.trigger);
       },
+      // v4 (D7): at an entry choice, the adapter's declared entry ("Apply manually"), through the entry door.
+      enterChoice: () => pressEntryChoice(doc, on.adapter),
+      // v4 (D10): the no-sign-in toast's Open.
+      openSignInSettings: () => openSignInSettings(),
     }, request);
     runsBegun += 1;
     current = run;
     lastRows = new Map();
-    void run.start();
+    // v4: once the run first rests, the page's wall is looked at again (frame/wall).
+    void run.start().then(() => lookForWall());
     return run;
+  }
+
+  /** v4: how many times a paused run of this document carried on by itself (MAX_AUTO_CONTINUES). */
+  let autoContinues = 0;
+
+  /** v4 (D10): TailorIT's Settings › Autofill in a new tab, inside the person's click on a toast's Open. */
+  function openSignInSettings(): void {
+    try {
+      view?.open(`${__TAILORIT_ORIGIN__}/settings/autofill`, '_blank', 'noopener,noreferrer');
+    } catch {
+      // A page that took window.open away: nothing opens.
+    }
   }
 
   /** run/continue, or the launcher's Continue: a fresh run after a pause. It never answers the policy card: Continue
@@ -848,8 +888,10 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     const state = current.runState;
     const carry = current.carryOut(true);
     const { dryRun } = current.request;
-    startRun(state === null ? { trigger, dryRun, carry }
-      : { trigger, dryRun, from: { state, event: continueEventOf(state) }, carry });
+    // v4: Sign up & Autofill holds for the run's Continue too.
+    const signIn = current.request.signIn === true ? { signIn: true } : {};
+    startRun(state === null ? { trigger, dryRun, carry, ...signIn }
+      : { trigger, dryRun, from: { state, event: continueEventOf(state) }, carry, ...signIn });
   }
 
   /** v3 Phase 5: the auto-apply agent's run (run/start {agent}): from the tab's stored RunState when it holds one for
@@ -909,13 +951,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     return { outcome: 'blocked', block: outcome === 'failed' ? 'sign-in-failed' : 'sign-in' };
   }
 
-  /** run/policyDecision: the side panel's policy card, for this frame. Answers whether a run here waited at the card. */
-  function decidePolicy(decision: PolicyDecision): boolean {
-    if (current === null || !current.atPolicyCard) return false;
-    return decision === 'fill' ? current.accept() : current.decline();
-  }
-
-  /** run/cancel: Cancel at the policy card, stop a run that writes, or stop a paused one for good (C-S6). */
+  /** run/cancel: stop a run that writes, or stop a paused one for good (C-S6). */
   function cancelRun(): void {
     if (current === null) return;
     if (current.ended === null || current.watching) {
@@ -1092,6 +1128,17 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       ui?.anchorTo(page?.root ?? null);
       return;
     }
+    makeUi(page.root);
+  }
+
+  /** v4: the page UI with no form to anchor to (a wall's toasts: atWall), made once. */
+  function wallUi(): PageUi | null {
+    if (ui === null) makeUi(null);
+    return ui;
+  }
+
+  /** Mounts the page UI, anchored to `root` (none: only the toasts show, the launcher's tab stays hidden). */
+  function makeUi(root: Element | null): void {
     try {
       ui = mountPageUi(doc, {
         onLauncher(action) {
@@ -1106,10 +1153,6 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           if (!channel.valid() || current === null) return Promise.resolve(PAGE_COPY.aiEdit.outcomes.refused);
           return current.rewrite(key as FieldKey, instruction).then((outcome) => (outcome === 'rewritten' ? null
             : PAGE_COPY.aiEdit.outcomes[outcome]), () => PAGE_COPY.aiEdit.outcomes.failed);
-        },
-        onPolicyChoice(choice) {
-          if (choice === 'accepted') current?.accept();
-          else current?.decline();
         },
         // The form root the launcher stands on left the page (it drew its whole form again): it is found again.
         rootGone: () => void pageNow(),
@@ -1136,7 +1179,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
           press: (target, confirmed) => pressFor(target, confirmed),
         },
       });
-      ui.anchorTo(page.root);
+      ui.anchorTo(root);
       ui.setLauncher({ state: 'idle', action: 'fill' });
       ui.setLauncherPrefs(launcherPrefs);
       ui.setSidePanel(sideOpen);
@@ -1145,6 +1188,145 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       // its launcher is seen there, so it fills nothing (FillRun's frame check, S1).
       ui = null;
     }
+  }
+
+  // ── v4: the page's account wall, and Sign up & Autofill at a wall with no form (module header) ──────────────────
+
+  /** What this frame last told the worker of its wall (undefined: nothing yet). */
+  let wallTold: { wall: SignInWall | null; choice: boolean } | undefined;
+  /** The toast a wall with no form shows (atWall), while its cause stands; null: none. */
+  let wallToast: 'sign-in' | 'no-sign-in' | 'challenge' | null = null;
+  /** A look at the page for its wall waits for its time (lookForWall). */
+  let wallLooking = false;
+
+  /** The account wall the page shows now (a sign-in, an account's creation, an email gate: the pause detection with
+   *  the page's adapter, or the address's own where there is no form), and whether it shows a choice of how to apply
+   *  its adapter answers with a declared entry. Only the tab's top frame, or the frame that claims its application. */
+  function wallNow(): { wall: SignInWall | null; choice: boolean; challenge: boolean } {
+    const none = { wall: null, choice: false, challenge: false };
+    if (stopped || (!isTop && !claimed) || app === null) return none;
+    const at = urlOf(readHref());
+    const adapter = page?.adapter ?? (at === null ? null : adapters(at)[0] ?? null);
+    let shown: ReturnType<typeof detectPause>;
+    try {
+      shown = detectPause(doc, page?.root ?? null, adapter, newScanCache());
+    } catch {
+      return none;
+    }
+    if (shown === null) return none;
+    const wall = (SIGN_IN_WALLS as readonly string[]).includes(shown.kind) ? shown.kind as SignInWall : null;
+    return { wall, choice: shown.kind === 'entry-choice' && adapter?.entryControl !== undefined,
+      challenge: shown.kind === 'captcha' || shown.kind === 'email-code' };
+  }
+
+  /** Tells the worker the wall the page shows now (frame/wall), when it changed since it was last told; never while a
+   *  run of this frame works (its own pause says it, and its writes change the page all along). */
+  function tellWall(): void {
+    if (stopped || told === null || frameId === null || !channel.valid()) return;
+    if (current !== null && current.ended === null) return;
+    const now = wallNow();
+    // A wall with no form keeps its toast while its cause stands: a check its sign-in brought, or the wall itself.
+    if (wallToast !== null && page === null) {
+      const next = now.challenge ? 'challenge' : now.wall !== null && wallToast !== 'challenge' ? wallToast : null;
+      if (next !== wallToast) {
+        wallToast = next;
+        if (next === 'challenge') wallUi()?.setToasts([{ kind: 'challenge', text: PAGE_COPY.toasts.challenge }]);
+        else if (next === null) ui?.setToasts([]);
+      }
+    }
+    if (wallTold !== undefined && wallTold.wall === now.wall && wallTold.choice === now.choice) return;
+    // A first word of "no wall" is the registry's own default: nothing to say.
+    if (wallTold === undefined && now.wall === null && !now.choice) {
+      wallTold = now;
+      return;
+    }
+    wallTold = { wall: now.wall, choice: now.choice };
+    log('content.wall', { shown: now.wall !== null, choice: now.choice });
+    void channel.request({ v: 1, type: 'frame/wall', wall: now.wall, ...(now.choice ? { choice: true as const } : {}) })
+      .catch(() => undefined);
+  }
+
+  /** A look at the page for its wall, WALL_LOOK_MS from now: the changes of a moment are read once. */
+  function lookForWall(): void {
+    if (wallLooking || stopped) return;
+    wallLooking = true;
+    void deadline(WALL_LOOK_MS, lifetime.signal).then(() => {
+      wallLooking = false;
+      tellWall();
+    });
+  }
+
+  /** The page's wall, watched for the document's life: a look at each DOM change, coalesced (lookForWall). */
+  function watchWall(): void {
+    if (view === null || stopped || (!isTop && !claimed)) return;
+    const observer = new view.MutationObserver(() => lookForWall());
+    observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'type'] });
+    lifetime.signal.addEventListener('abort', () => observer.disconnect(), { once: true });
+    lookForWall();
+  }
+
+  /** A toast of the wall's (no run holds it): what is left for the person there (D10), until its cause goes
+   *  (tellWall). */
+  function showWallToast(said: 'sign-in' | 'failed' | 'unavailable' | 'challenge'): void {
+    const words = PAGE_COPY.toasts;
+    const toast: ToastSpec = said === 'challenge' ? { kind: 'challenge', text: words.challenge }
+      : said === 'unavailable'
+        ? { kind: 'no-sign-in', text: words.noSignIn, action: { label: words.open, run: () => openSignInSettings() } }
+        : { kind: 'sign-in', text: said === 'failed' ? words.signInFailed : words.signIn };
+    wallToast = toast.kind === 'challenge' ? 'challenge' : toast.kind === 'no-sign-in' ? 'no-sign-in' : 'sign-in';
+    wallUi()?.setToasts([toast]);
+  }
+
+  /**
+   * v4: run/start at a page with no form (module header). Only the tab's top frame, or the frame that claims its
+   * application, and never in a dry run. A choice of how to apply is answered with the adapter's declared entry (its
+   * Apply Manually: press.ts pressEntry, the agent's door, every guard held); a wall is signed in to under Sign up &
+   * Autofill (`signUp`) or Sign-in mode Auto (sign-in.ts: the worker answers the credential for this tab alone), else its
+   * toast says to sign in here or use Sign up & Autofill. With no job-site sign-in to use, the toast says to add one.
+   * A page that shows a form after it fills as usual: this document's (formAfterWall), or the next one's (the worker
+   * starts its run).
+   */
+  async function atWall(signUp: boolean, dryRun: boolean): Promise<void> {
+    const at = urlOf(readHref());
+    if (stopped || page !== null || at === null || (!isTop && !claimed) || dryRun) return;
+    const own = adapters(at);
+    if (own.length === 0) return;
+    const shown = detectPause(doc, null, own[0]!);
+    if (shown?.kind === 'entry-choice') {
+      const entered = await pressEntry(doc, own, lifetime.signal, entryWaitOf(own));
+      log('content.entry-choice', { pressed: entered.outcome === 'pressed' });
+      if (entered.outcome === 'pressed') formAfterWall();
+      return;
+    }
+    if (shown === null || !(SIGN_IN_WALLS as readonly string[]).includes(shown.kind)) return;
+    if (!signUp && signInMode !== 'auto') {
+      showWallToast('sign-in');
+      return;
+    }
+    const outcome = await signIn({ doc, adapter: own[0]!, channel, href: readHref, isTop, claimed,
+      signal: lifetime.signal });
+    log('content.sign-up', { taken: outcome === 'continue' || outcome === 'left' });
+    if (stopped || outcome === 'left') return;
+    if (outcome === 'continue') {
+      // A check the press brought (an email code, a CAPTCHA) is the person's: its toast, until it goes.
+      if (wallNow().challenge) showWallToast('challenge');
+      else {
+        wallToast = null;
+        ui?.setToasts([]);
+      }
+      formAfterWall();
+      return;
+    }
+    showWallToast(outcome === 'failed' ? 'failed' : 'unavailable');
+  }
+
+  /** After a wall or a choice was passed in this document: the form it shows now, else one drawn late. */
+  function formAfterWall(): void {
+    if (stopped || page !== null) return;
+    resolvePage(readHref());
+    if (page !== null) formFound();
+    else watchLateForm();
   }
 
   async function readPosting(): Promise<void> {
@@ -1200,8 +1382,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       lastRows = new Map();
       drafts.clear();
       answers.clear();
-      ui?.setNotices([]);
-      ui?.hidePolicyCard();
+      ui?.setToasts([]);
       ui?.setLauncher({ state: 'idle', action: 'fill' });
     }
     if (page === null) ui?.anchorTo(null);
@@ -1261,7 +1442,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
     // The page may come back from the back/forward cache: the run is dropped, the launcher offers Fill again.
     if (current !== null && (current.ended === null || current.watching)) {
       current.abort();
-      ui?.hidePolicyCard();
+      ui?.setToasts([]);
       ui?.setLauncher({ state: 'idle', action: 'fill' });
     }
   }, { signal: lifetime.signal });
@@ -1299,6 +1480,8 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       await readPosting();
       if (view !== null) watchLocation(view, readHref, onAddress, lifetime.signal);
       watchLateForm();
+      // v4: the page's account wall, told to the worker as it changes (module header).
+      watchWall();
       await resumeStored();
       // The platform's page after submitting (v3 Phase 4): the worker takes it only after a Submit this tab armed.
       if (onConfirmationPage()) await detected('confirmation-page');

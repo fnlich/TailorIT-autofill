@@ -530,6 +530,8 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
       case 'panel/open':
       case 'panel/shown':
       case 'runstate/clear':
+      case 'frame/wall':
+        // v4: frame/wall, the page's account wall told as it changes, is answered as these are.
         return { ok: true, data: {} };
       case 'answer/save':
         return { ok: true, data: { outcome: 'saved' } };

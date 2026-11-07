@@ -687,8 +687,8 @@ describe('the job card’s cover-letter row (panel/letter)', () => {
     expect(await row(dry)).toEqual({ ok: true, data: { outcome: 'none' } });
   });
 
-  it('leaves Write it now to the person under "Ask me each time", and writes under "Use AI anyway"', async () => {
-    for (const whenForbidden of ['ask', 'use-ai'] as const) {
+  it('writes under "Use AI anyway" (v4, D6: "Ask me each time" is gone)', async () => {
+    for (const whenForbidden of ['use-ai'] as const) {
       const worker = await withForm({ text: POSTING, canaries: [], policy: true });
       await worker.deliver({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
         llm: { ...DEFAULT_SETTINGS.llm, whenForbidden } } }, pageSender());

@@ -406,6 +406,14 @@ const contentMessages = [
    *  the document away ends it before agent/enter is answered. The worker takes it from the agent's tab's top frame,
    *  for a document it asked to enter, as the job begun. Nothing else. */
   z.strictObject({ v, type: z.literal('agent/entered') }),
+  // ── v4 run (docs/_v4/run.md) ──
+  /** v4: the frame's account wall (a sign-in, a create-account page, an email gate) as it shows now, or null once it
+   *  went; sent by a tab's top frame or the frame that claims its application, at each change (content/runtime.ts). The
+   *  worker keeps it on the frame's registry entry, for PageState.wall (the side panel's "Sign up & Autofill"). */
+  z.strictObject({ v, type: z.literal('frame/wall'), wall: z.enum(SIGN_IN_WALLS).nullable(),
+    /** The page shows a choice of how to apply that its adapter answers with a declared entry (Workday's "Start Your
+     *  Application": Apply Manually): Autofill there presses it (D7). */
+    choice: z.literal(true).optional() }),
   /** v3 Phase 8: the sentinel recognised its top frame (src/sentinel): why, from a closed list. The worker checks the
    *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
    *  into that one document. The only message a company's own page sends before then. */
@@ -619,7 +627,10 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   z.strictObject({ v, type: z.literal('run/start'), dryRun: z.boolean(),
     /** v3 Phase 5: the auto-apply agent's run (taken from the worker's own script alone): Next and Submit on Auto, the
      *  person's skip rules. `retry`: its one retry after the page refused its Submit. */
-    agent: z.literal(true).optional(), retry: z.literal(true).optional() }),
+    agent: z.literal(true).optional(), retry: z.literal(true).optional(),
+    /** v4: "Sign up & Autofill" (panel/fill {signIn: true}): this run signs in or creates the account at the account
+     *  wall as Sign-in mode Auto would; a frame that shows the wall with no form signs in there first. */
+    signIn: z.literal(true).optional() }),
   /** v3 Phase 5: the agent's tab shows a posting, not its form: press the adapter's declared entry control (Greenhouse's
    *  and Lever's Apply, Ashby's Application tab), that one element and nothing else. The worker's own script alone. */
   z.strictObject({ v, type: z.literal('agent/enter') }),
@@ -1096,6 +1107,7 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'submit/detected': DoneAnswerSchema,
   'signin/credential': SignInCredentialAnswerSchema,
   'agent/entered': DoneAnswerSchema,
+  'frame/wall': DoneAnswerSchema,
   'page/recognised': PageRecognisedAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 

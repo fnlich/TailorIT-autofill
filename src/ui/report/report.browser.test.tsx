@@ -54,8 +54,11 @@ describe('the report', () => {
     expect(school.textContent).toBe(`${COPY.report.rowStates.filled}School`);
     const phone = root.querySelector<HTMLElement>('li[data-field-key="lever|main|phone|none|0"]')!;
     expect(phone.textContent).toBe(`${COPY.report.rowStates.none}Phone`);
+    // (A status chip's words that are also a row state's, said to a screen reader, are the row state's: v4 run renamed
+    // flagged "Not filled".)
+    const rowStates: readonly string[] = Object.values(COPY.report.rowStates);
     for (const text of [COPY.statuses.flagged, COPY.provenances['llm-pick'], COPY.stages.llm, '75%',
-      COPY.reasons['llm-pick-needs-review'], COPY.report.noSource]) {
+      COPY.reasons['llm-pick-needs-review'], COPY.report.noSource].filter((each) => !rowStates.includes(each))) {
       expect(root.textContent).not.toContain(text);
     }
     // The progress: one required field, filled.

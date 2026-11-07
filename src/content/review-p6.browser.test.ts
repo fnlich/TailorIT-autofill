@@ -107,7 +107,7 @@ describe('E3: a page’s own editing command is no edit of the person’s', () =
     expect(trusted).toEqual([true]);
   });
 
-  it('leaves an unconfirmed draft the page re-inserts unconfirmed, dashed, with Confirm draft', async () => {
+  it('leaves an accepted draft the page re-inserts as it was (v4, D6: drafts are accepted as written)', async () => {
     const started = await start(FORM(), 'r6-e3-draft', { settings: DRAFTS_ON });
     expect(await started.runtime.fill()).toBe('review');
     const before = started.worker.reports.length;
@@ -118,8 +118,8 @@ describe('E3: a page’s own editing command is no edit of the person’s', () =
     pageInserts(started.fixture, 'why', FAKE_DRAFT);
     await deadline(150);
     expect(started.worker.reports.length).toBe(before);
-    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ provenance: 'llm-draft', status: 'flagged',
-      reason: 'llm-draft-needs-confirmation', needsUserAction: true });
+    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ provenance: 'llm-draft', status: 'verified',
+      reason: 'llm-draft-written', needsUserAction: false });
     expect(drawnOverFields(started.runtime)).toEqual([]);
   });
 
@@ -138,29 +138,24 @@ describe('E3: a page’s own editing command is no edit of the person’s', () =
 });
 
 describe('E4: a draft is known across the runs of its document, and after a reload', () => {
-  it('rows a draft a second run finds in place as an unconfirmed draft, dashed, which Confirm draft confirms', async () => {
+  it('rows a draft a second run finds in place as the accepted draft it is (v4, D6), never one to confirm', async () => {
     const started = await start(FORM(), 'r6-e4', { settings: DRAFTS_ON });
     expect(await started.runtime.fill()).toBe('review');
     expect(byId<HTMLTextAreaElement>(started.fixture, 'why').value).toBe(FAKE_DRAFT);
     // Fill again: a new run over the same page.
     expect(await started.runtime.fill()).toBe('review');
     const row = rowOf(lastReport(started.worker), WHY);
-    expect(row).toMatchObject({ provenance: 'llm-draft', status: 'flagged', reason: 'llm-draft-needs-confirmation',
-      wrote: true, needsUserAction: true });
+    expect(row).toMatchObject({ provenance: 'llm-draft', status: 'verified', reason: 'llm-draft-written',
+      wrote: true, needsUserAction: false });
     expect(drawnOverFields(started.runtime)).toEqual([]);
     // Its RunState names it, by key only.
     expect(started.worker.runStates.at(-1)?.drafts).toEqual([storedBaseKey(baseKeyOf(row.key as FieldKey))]);
+    // Nothing to confirm.
     expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: row.key }))
-      .toEqual({ ok: true, data: {} });
-    await vi.waitFor(() => expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ status: 'verified',
-      needsUserAction: false }));
-    // Confirmed, it is the person's: the next run asks nothing more of it, and RunState forgets it.
-    expect(await started.runtime.fill()).toBe('review');
-    expect(rowOf(lastReport(started.worker), WHY).provenance).not.toBe('llm-draft');
-    expect(started.worker.runStates.at(-1)?.drafts ?? []).toEqual([]);
+      .toEqual({ ok: false, error: 'expired' });
   });
 
-  it('rows text a reload restored where an unconfirmed draft was as an unconfirmed draft', async () => {
+  it('rows text a reload restored where a draft was as that draft, accepted (v4, D6)', async () => {
     const first = await start(FORM(), 'r6-e4-reload', { settings: DRAFTS_ON });
     expect(await first.runtime.fill()).toBe('review');
     const stored = first.worker.runStates.at(-1)!;
@@ -174,14 +169,15 @@ describe('E4: a draft is known across the runs of its document, and after a relo
     await vi.waitFor(() => expect(again.worker.reports.some((report) => report.fields.some((row) => row.label === WHY)))
       .toBe(true), { timeout: 5000 });
     await vi.waitFor(() => expect(again.runtime.run?.ended).not.toBeNull());
+    // v4 (D6): the accepted draft it was.
     expect(rowOf(lastReport(again.worker), WHY)).toMatchObject({ provenance: 'llm-draft',
-      reason: 'llm-draft-needs-confirmation', needsUserAction: true });
+      reason: 'llm-draft-written', needsUserAction: false });
     expect(byId<HTMLTextAreaElement>(again.fixture, 'why').value).toBe(FAKE_DRAFT);
   });
 });
 
-describe('E6: Confirm draft reads the field back', () => {
-  it('refuses a draft whose text the page replaced since: changed-by-you, never verified', async () => {
+describe('E6, v4 (D6): no draft waits for Confirm draft', () => {
+  it('answers draft/confirm expired whatever the field holds, and confirms nothing', async () => {
     const started = await start(trap08, '08-r6-e6', { settings: DRAFTS_ON,
       ai: { draft: (item) => ({ key: item.key, text: 'I like your APIs and your docs.', taskId: FAKE_TASK_ID }) } });
     expect(await started.runtime.fill()).toBe('review');
@@ -190,13 +186,11 @@ describe('E6: Confirm draft reads the field back', () => {
     const key = rowOf(lastReport(started.worker), 'Why this company?').key;
     // The page, untrusted: its own text, with the canary its hidden paragraph planted.
     why.value = 'I like pineapple.';
-    const before = started.worker.reports.length;
     expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: key }))
       .toEqual({ ok: false, error: 'expired' });
-    await vi.waitFor(() => expect(started.worker.reports.length).toBeGreaterThan(before));
-    const row = rowOf(lastReport(started.worker), 'Why this company?');
-    expect(row).toMatchObject({ status: 'flagged', reason: 'changed-by-you', provenance: null, needsUserAction: true });
-    expect(row.verification).not.toBe('verified');
+    // Nothing was confirmed: the row is the accepted draft the run wrote, never "the person's".
+    expect(rowOf(lastReport(started.worker), 'Why this company?')).toMatchObject({ provenance: 'llm-draft',
+      reason: 'llm-draft-written' });
   });
 });
 

@@ -3,9 +3,10 @@ import { userEvent } from 'vitest/browser';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
 import { isInOwnUi } from '../../dom/own-ui';
 import { deadline, monotonicNow } from '../../dom/time';
+import { COPY } from '../../shared/copy';
 import type { LauncherAction } from './launcher';
-import type { PolicyChoice } from './notices';
 import { mountPageUi, type PageUi } from './page-ui';
+import type { ToastSpec } from './toasts';
 import { CONTAINED_EVENTS } from './shadow';
 import { clickTimes, ready, uncoveredAsThePointerComes } from './ui.testkit';
 import { CONTROL_SEEN_MS } from './visible';
@@ -36,11 +37,15 @@ function formRoot(): HTMLElement {
 const mounted: PageUi[] = [];
 function mount(doc: Document = document) {
   const actions: LauncherAction[] = [];
-  const choices: PolicyChoice[] = [];
-  const ui = mountPageUi(doc, { onLauncher: (action) => actions.push(action), onPolicyChoice: (choice) => choices.push(choice) });
+  const choices: string[] = [];
+  const ui = mountPageUi(doc, { onLauncher: (action) => actions.push(action) });
   mounted.push(ui);
   return { ui, actions, choices };
 }
+
+/** v4 (D10): the no-sign-in toast, whose Open records its click in `choices`. */
+const withOpen = (choices: string[]): ToastSpec => ({ kind: 'no-sign-in', text: COPY.toasts.noSignIn,
+  action: { label: COPY.toasts.open, run: () => choices.push('open') } });
 
 describe('the in-page UI', () => {
   afterEach(() => {
@@ -99,46 +104,77 @@ describe('the in-page UI', () => {
     expect(bubbled).toEqual([]);
   });
 
-  it('takes the policy card’s Fill anyway and Cancel from trusted clicks only', async () => {
+  it('v4 (D10): takes a toast’s action from trusted clicks only, once the button was seen for CONTROL_SEEN_MS', async () => {
     const root = formRoot();
     const { ui, choices } = mount();
     ui.anchorTo(root);
-    ui.showPolicyCard({ fromStoredCopy: true });
-    expect(ui.notices.cardShown).toBe(true);
-    const [cancel, fill] = Array.from(ui.shadow.querySelectorAll<HTMLButtonElement>('.card button'));
-    expect([cancel!.textContent, fill!.textContent]).toEqual(['Cancel', 'Fill anyway']);
-    fill!.click();
-    cancel!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    ui.setToasts([withOpen(choices)]);
+    expect(ui.toasts.shown).toEqual(['no-sign-in']);
+    const open = ui.toasts.button('no-sign-in', 'action')!;
+    expect(open.textContent).toBe(COPY.toasts.open);
+    open.click();
+    open.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(choices).toEqual([]);
     // Clicked as soon as the watch sees it: refused, and never counted later (the audit of 2026-11-06, S-1).
-    await seen(ui, fill!);
-    await trustedClick(ui, fill!);
+    await seen(ui, open);
+    await trustedClick(ui, open);
     await deadline(CONTROL_SEEN_MS + 200);
     expect(choices).toEqual([]);
     // Seen for CONTROL_SEEN_MS without a break, the person's click counts.
-    await ready(ui, fill!);
-    await trustedClick(ui, fill!);
-    expect(choices).toEqual(['accepted']);
-    expect(ui.shadow.querySelector('.card')!.textContent)
-      .toContain('This posting says AI-assisted applications are not allowed. Filling is your decision.');
+    await ready(ui, open);
+    await trustedClick(ui, open);
+    expect(choices).toEqual(['open']);
   });
 
-  it('shows notices in the plan’s words, and a dismissed one only leaves the stack', async () => {
+  it('v4 (D10): brands every toast with TailorIT’s mark and name, one per kind, its sentence exactly; a dismissed one leaves until its cause changes', async () => {
     const root = formRoot();
     const { ui } = mount();
     ui.anchorTo(root);
-    ui.setNotices(['tripwire', 'policy-unreadable']);
-    // A notice's whole text is its sentence: its icon and the dismiss button's cross are drawings with no text.
-    const texts = () => Array.from(ui.shadow.querySelectorAll('.notice'), (notice) => notice.textContent);
-    expect(texts()).toEqual(['This page contains text addressed to AI tools. It was ignored.',
-      "I couldn't read this posting to check whether it allows AI tools. Check it before you submit."]);
-    const close = ui.shadow.querySelector<HTMLButtonElement>('.notice[data-code="tripwire"] .dismiss')!;
+    ui.setToasts([{ kind: 'challenge', text: COPY.toasts.challenge }, { kind: 'tripwire', text: COPY.notices.tripwire },
+      { kind: 'challenge', text: 'a second of one kind' }]);
+    expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+    const toasts = Array.from(ui.shadow.querySelectorAll<HTMLElement>('.toast'));
+    for (const toast of toasts) {
+      // The brand line: the mark (a drawing with no text) and "TailorIT", so it is never taken for the site's own UI.
+      expect(toast.querySelector('.toast__brand svg.mark')).not.toBeNull();
+      expect(toast.querySelector('.toast__brand .name')!.textContent).toBe('TailorIT');
+    }
+    // A toast's sentence is its notice: exactly its words.
+    expect(Array.from(ui.shadow.querySelectorAll('.toast .notice'), (each) => each.textContent))
+      .toEqual([COPY.toasts.challenge, COPY.notices.tripwire]);
+    const close = ui.toasts.button('tripwire', 'close')!;
     close.click();
-    expect(ui.notices.shown).toEqual(['tripwire', 'policy-unreadable']);
+    expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+    await ready(ui, close);
     await trustedClick(ui, close);
-    expect(ui.notices.shown).toEqual(['policy-unreadable']);
-    ui.resetNotices();
-    expect(ui.notices.shown).toEqual(['tripwire', 'policy-unreadable']);
+    expect(ui.toasts.shown).toEqual(['challenge']);
+    // Given again with the same sentence while it stands: still dismissed; gone and back: shown again.
+    ui.setToasts([{ kind: 'challenge', text: COPY.toasts.challenge }, { kind: 'tripwire', text: COPY.notices.tripwire }]);
+    expect(ui.toasts.shown).toEqual(['challenge']);
+    ui.setToasts([{ kind: 'challenge', text: COPY.toasts.challenge }]);
+    ui.setToasts([{ kind: 'challenge', text: COPY.toasts.challenge }, { kind: 'tripwire', text: COPY.notices.tripwire }]);
+    expect(ui.toasts.shown).toEqual(['challenge', 'tripwire']);
+    // Its cause gone: it leaves.
+    ui.setToasts([]);
+    expect(ui.toasts.shown).toEqual([]);
+    expect(ui.shadow.querySelector('.toasts')!.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('v4 (D10): sits fixed at the viewport’s top-right in the top frame, clear of the launcher’s tab', async () => {
+    const ui = mountPageUi(document, { onLauncher: () => undefined, edge: { placed: () => undefined,
+      hidden: () => undefined } });
+    mounted.push(ui);
+    ui.anchorTo(formRoot());
+    ui.setToasts([{ kind: 'challenge', text: COPY.toasts.challenge }]);
+    await vi.waitFor(() => {
+      const layer = ui.shadow.querySelector<HTMLElement>('.toasts')!;
+      expect(layer.classList.contains('toasts--fixed')).toBe(true);
+      expect(getComputedStyle(layer).position).toBe('fixed');
+      const box = layer.getBoundingClientRect();
+      expect(box.top).toBeLessThanOrEqual(24);
+      const tab = ui.edge!.el.getBoundingClientRect();
+      expect(box.right).toBeLessThanOrEqual(tab.left);
+    });
   });
 
   it('falls back to a <style> element when the page’s realm refuses adoptedStyleSheets', async () => {
@@ -227,14 +263,14 @@ describe('the in-page UI’s own controls, as a person can see them (Intersectio
     expect(actions).toEqual(['fill']);
   });
 
-  it('voids a trusted click on the policy card while a page layer is drawn over it (S5)', async () => {
+  it('voids a trusted click on a toast while a page layer is drawn over it (S5)', async () => {
     const root = formRoot();
     const { ui, choices } = mount();
     ui.anchorTo(root);
-    ui.showPolicyCard({ fromStoredCopy: false });
-    const fill = ui.shadow.querySelector<HTMLButtonElement>('.card button.action:not(.secondary)')!;
+    ui.setToasts([withOpen(choices)]);
+    const fill = ui.toasts.button('no-sign-in', 'action')!;
     await seen(ui, fill);
-    decoyOver(ui.shadow.querySelector('.card')!.getBoundingClientRect());
+    decoyOver(ui.shadow.querySelector('.toast')!.getBoundingClientRect());
     await vi.waitFor(() => expect(ui.visibleNow(fill)).toBe(false));
     await trustedClick(ui, fill);
     // Give a deferred choice every chance to arrive: none does.
@@ -266,12 +302,12 @@ describe('the in-page UI’s own controls, as a person can see them (Intersectio
       expect(actions).toEqual(['fill']);
     });
 
-  it('refuses the policy card’s click when the page uncovered it a moment before (S-1)', async () => {
+  it('refuses a toast’s click when the page uncovered it a moment before (S-1)', async () => {
     const root = formRoot();
     const { ui, choices } = mount();
     ui.anchorTo(root);
-    ui.showPolicyCard({ fromStoredCopy: false });
-    const fill = ui.shadow.querySelector<HTMLButtonElement>('.card button.action:not(.secondary)')!;
+    ui.setToasts([withOpen(choices)]);
+    const fill = ui.toasts.button('no-sign-in', 'action')!;
     await ready(ui, fill);
     const clicks = clickTimes(ui);
     const gone = await uncoveredAsThePointerComes(ui, fill);
@@ -282,7 +318,7 @@ describe('the in-page UI’s own controls, as a person can see them (Intersectio
     expect(choices).toEqual([]);
     await ready(ui, fill);
     await trustedClick(ui, fill);
-    expect(choices).toEqual(['accepted']);
+    expect(choices).toEqual(['open']);
   });
 
   it('starts the time again whenever a control is covered: seen 600 ms in all, but not without a break, is not enough (S-1)',

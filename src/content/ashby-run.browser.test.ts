@@ -101,7 +101,6 @@ async function until(ready: () => boolean, timeout = 8_000): Promise<void> {
   await vi.waitFor(() => expect(ready()).toBe(true), { timeout, interval: 50 });
 }
 
-const withLlm = (llm: Partial<Settings['llm']>): Settings => ({ ...DEFAULT_SETTINGS, llm: { ...DEFAULT_SETTINGS.llm, ...llm } });
 /** Consent boxes: Required only: an optional agreement is ticked only when pre-approved. */
 const REQUIRED_ONLY: Settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } };
 
@@ -143,61 +142,27 @@ describe('the resume on Ashby, as the page shows its upload', () => {
 });
 
 describe('AI drafts on a page that saves as it is filled', () => {
-  it('holds a draft back while drafts wait for the person: nothing written or saved until Confirm draft writes it', async () => {
-    const started = await start(await open(), { settings: withLlm({ confirmDrafts: true }) });
-    expect(await started.runtime.fill()).toBe('review');
-    const why = started.fixture.doc.getElementById(PATHS.why) as HTMLTextAreaElement;
-    const held = rowOf(lastReport(started.worker), WHY);
-    expect(held).toMatchObject({ provenance: 'llm-draft', status: 'flagged', reason: 'llm-draft-held', wrote: false,
-      needsUserAction: true });
-    expect(why.value).toBe('');
-    expect(started.log.saves.filter((save) => save.path === PATHS.why)).toEqual([]);
-    expect(started.log.values[PATHS.why]).toBeUndefined();
-
-    const reports = started.worker.reports.length;
-    expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: held.key }))
-      .toEqual({ ok: true, data: {} });
-    expect(why.value).toBe(FAKE_DRAFT);
-    await until(() => started.worker.reports.length > reports);
-    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ provenance: 'llm-draft', status: 'verified',
-      wrote: true, needsUserAction: false });
-    await until(() => started.log.values[PATHS.why] === FAKE_DRAFT);
-    // Only once.
-    expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: held.key }))
-      .toMatchObject({ ok: false });
-  });
-
-  it('writes the draft at once by default (drafts accepted), as it does on any page', async () => {
+  it('writes the draft at once (v4, D6: no draft is held back for the person\'s confirmation any more), as it does on any page', async () => {
     const started = await start(await open());
     expect(await started.runtime.fill()).toBe('review');
-    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ provenance: 'llm-draft', wrote: true });
+    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ provenance: 'llm-draft', wrote: true,
+      reason: 'llm-draft-written', needsUserAction: false });
     expect((started.fixture.doc.getElementById(PATHS.why) as HTMLTextAreaElement).value).toBe(FAKE_DRAFT);
-  });
-
-  it('never writes a held draft over what the person typed meanwhile', async () => {
-    const started = await start(await open(), { settings: withLlm({ confirmDrafts: true }) });
-    expect(await started.runtime.fill()).toBe('review');
-    const key = rowOf(lastReport(started.worker), WHY).key;
-    const why = started.fixture.doc.getElementById(PATHS.why) as HTMLTextAreaElement;
-    // The person's own words, as React holds them (the native setter and an input event, as typing does).
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(why, 'My own words.');
-    why.dispatchEvent(new Event('input', { bubbles: true }));
-    const reports = started.worker.reports.length;
-    expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm', fieldKey: key })).toMatchObject({ ok: false });
-    expect(why.value).toBe('My own words.');
-    await until(() => started.worker.reports.length > reports);
-    expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ reason: 'changed-by-you', wrote: false });
+    // Nothing waits: the draft row has nothing to confirm.
+    expect(await started.worker.platform.deliver({ v: 1, type: 'draft/confirm',
+      fieldKey: rowOf(lastReport(started.worker), WHY).key })).toMatchObject({ ok: false });
   });
 });
 
 describe("Ashby's posting, for the policy notices", () => {
-  it("shows the couldn't-read notice on the Application tab: its left pane of facts is no posting", async () => {
+  it("reads the Application tab's left pane of facts as no posting (v4, D9: the couldn't-read notice is no longer raised)", async () => {
     const opened = await open();
     // The left pane is as long as a live one: more than enough to pass for a posting.
     expect(opened.fixture.doc.querySelector('.ashby-job-posting-left-pane')!.textContent!.length).toBeGreaterThan(1_500);
     const started = await start(opened, { policy: { postingPage: 'unseen', storedCopy: 'unavailable' } });
     expect(await started.runtime.fill()).toBe('review');
-    expect(lastReport(started.worker).notices.map((notice) => notice.code)).toContain('policy-unreadable');
+    expect(lastReport(started.worker).notices.map((notice) => notice.code)).not.toContain('policy-unreadable');
+    expect(lastReport(started.worker).notices.map((notice) => notice.code)).not.toContain('policy-profile-only');
   });
 
   it('reads the overview once Ashby draws it, and finds its statement', async () => {

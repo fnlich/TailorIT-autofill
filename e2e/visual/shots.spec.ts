@@ -42,7 +42,6 @@ import { routesFile } from '../routes.ts';
 const OUT = resolve(import.meta.dirname, '..', 'artifacts', 'shots');
 const PANEL_VIEWPORT = { width: 400, height: 860 } as const;
 const SNAPSHOT = 'lever/spotify-ny';
-const STORED_COPY_APPLY = 'https://jobs.lever.co/tailorit-fixture/00000000-0000-4000-8000-0000000a0f01/apply';
 
 /** The pictures taken, in order, with what each shows. */
 const taken: Array<{ file: string; title: string }> = [];
@@ -163,32 +162,24 @@ test("the side panel: a trap's review, nothing flagged", async ({ extContext, co
   await expect.poll(async () => (await ui.launcher())?.attributes['data-state']).toBe('review');
   await shoot(page, '05b-launcher-review.png', 'Launcher at review, its count in the badge',
     { clip: await around(page, ui, ['button.launcher'], 44) });
-  await shoot(page, '08-page-notices.png', 'The page’s notices under the launcher',
-    { clip: await around(page, ui, ['button.launcher', '.notice']) });
+  await shoot(page, '08-page-notices.png', 'The page’s toasts (v4)',
+    { clip: await around(page, ui, ['button.launcher', '.toast']) });
   await ui.close();
 });
 
-test('the policy card on the page (v4 ui: the side panel mirrors none)', async ({ extContext, connected: ext, routeLog, tailorit }) => {
-  // The card is the "Ask me" choice for a posting that forbids AI (the default fills from the profile only).
-  await ext.data({ v: 1, type: 'settings/save', settings: { ...DEFAULT_SETTINGS,
-    llm: { ...DEFAULT_SETTINGS.llm, whenForbidden: 'ask' } } });
-  try {
-    await tailorit.scenario('lookup-posting-text');
-    routeLog.serve({ [STORED_COPY_APPLY]: 'fixtures/synthetic/policy-apply.html' });
-    const page = await extContext.newPage();
-    await page.goto(STORED_COPY_APPLY);
-    const tabId = await ext.fill(page);
-    expect((await ext.settled(tabId)).status).toBe('policy-notice');
-    const ui = await PageUi.of(page);
-    await still(page);
-    await page.bringToFront();
-    await expect.poll(async () => ui.policyCardShown()).toBe(true);
-    await shoot(page, '08b-page-policy-card.png', 'The page’s policy card under the launcher',
-      { clip: await around(page, ui, ['button.launcher', '[role="alertdialog"]']) });
-    await ui.close();
-  } finally {
-    await ext.data({ v: 1, type: 'settings/save', settings: DEFAULT_SETTINGS });
-  }
+test('v4: a branded toast on the page (the tripwire’s, the hard rules’ one notice)', async ({ extContext, connected: ext, routeLog }) => {
+  const served = trap('01');
+  routeLog.serve({ [served.url]: served.file });
+  const page = await extContext.newPage();
+  await page.goto(served.url);
+  const tabId = await ext.fill(page);
+  await ext.settled(tabId);
+  const ui = await PageUi.of(page);
+  await still(page);
+  await page.bringToFront();
+  await expect.poll(async () => (await ui.noticeTexts()).length).toBeGreaterThan(0);
+  await shoot(page, '08b-page-toast.png', 'A TailorIT toast on the page', { clip: await around(page, ui, ['.toast']) });
+  await ui.close();
 });
 
 test('the in-page panel, and the launcher at rest', async ({ extContext, connected: ext, routeLog }) => {

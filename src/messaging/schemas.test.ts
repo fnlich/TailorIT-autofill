@@ -91,8 +91,8 @@ describe('the page channel\'s additions', () => {
       modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
         submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
         signIn: DEFAULT_SETTINGS.modes.signIn },
-      llm: { tiebreak: true, classify: true, drafts: false, answers: true, confirmDrafts: false,
-        whenForbidden: 'profile-only' }, offerToSaveAnswers: true } };
+      llm: { tiebreak: true, classify: true, drafts: false, answers: true, whenForbidden: 'profile-only' },
+      offerToSaveAnswers: true } };
     expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);
     // Never the rest of the settings, never anything else.
     expect(WorkerToContentSchema.safeParse({ ...changed, settings: { ...changed.settings, preapprovedConsent: [] } }).success)

@@ -5,7 +5,8 @@
  * (migrateSettings), a version 2 value takes version 3's new switch at its default (migrateSettingsV2, §11), and a
  * version 3 value takes the modes (migrateSettingsV3, §12: auto-advance is the Next mode, the `all` answers the AI
  * answers mode), and a version 4 value takes "Résumé already on the page" at its default, Keep it (migrateSettingsV4,
- * the behaviour review of 2026-11-06); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
+ * the behaviour review of 2026-11-06), and a version 5 value loses "Ask me each time" (Profile only) and the draft
+ * confirmation (migrateSettingsV5, v4: the run never asks the person); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
  * switches, the offer to save answers) with frame/hello and run/begin, and again with settings/changed whenever the
  * person saves them (pushSettings: every registered frame with a form, so a run in progress reads the Next mode as it
  * is now: the Phase 5 review, C-S2), each frame the settings as they act for it (contentSettingsFor: the agent's tab's
@@ -15,12 +16,15 @@
  * side panel's gear changed meanwhile.
  */
 import {
-  DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, type Settings,
+  DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, migrateSettingsV5,
+  type Settings,
 } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
-import { SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema } from '../shared/settings-stored';
+import {
+  SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema, SettingsV5Schema,
+} from '../shared/settings-stored';
 import { frameTarget, type FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
 
@@ -44,13 +48,14 @@ export interface ContentHolds {
   agent?: boolean;
   /** The agent's job's Submit was pressed in another document of its tab: Submit stays on Manual in this one. */
   agentSubmitHeld?: boolean;
+  /** v4: the tab holds a Sign up & Autofill grant (background/sign-up.ts): Sign-in acts as Auto there, unless held. */
+  signUp?: boolean;
 }
 
 /** What a content script may know of the settings. In the agent's window Next and Submit are Auto (Submit on Manual in
  *  any document but the one the job's Submit was pressed in, once it was) and every new page fills as it appears, with
- *  the person's own skip rules and Sign-in mode; a posting that forbids AI under "Ask me each
- *  time" is filled from the profile only there (nobody is there to answer its card), so the agent's "the posting forbids
- *  AI" skip rule decides at the Submit. */
+ *  the person's own skip rules and Sign-in mode (v4: no setting asks the person any more, so nothing else changes
+ *  there). */
 export function contentSettingsOf(settings: Settings, options: ContentHolds = {}): ContentSettings {
   const agent = options.agent === true;
   return { panel: settings.panel, modes: {
@@ -59,8 +64,8 @@ export function contentSettingsOf(settings: Settings, options: ContentHolds = {}
     submit: agent ? (options.agentSubmitHeld === true ? 'manual' : 'auto')
       : options.holdSubmit === true ? 'manual' : settings.modes.submit,
     agentSkip: { ...settings.modes.agentSkip },
-    signIn: options.holdSignIn === true ? 'manual' : settings.modes.signIn },
-    llm: { ...settings.llm, ...(agent && settings.llm.whenForbidden === 'ask' ? { whenForbidden: 'profile-only' as const } : {}) },
+    signIn: options.holdSignIn === true ? 'manual' : options.signUp === true ? 'auto' : settings.modes.signIn },
+    llm: { ...settings.llm },
     offerToSaveAnswers: settings.offerToSaveAnswers };
 }
 
@@ -111,12 +116,17 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
         cached = withShippedModes(parsed.data);
         return cached;
       }
-      const v4 = SettingsV4Schema.safeParse(stored);
-      const v3 = v4.success ? null : SettingsV3Schema.safeParse(stored);
-      const v2 = v4.success || v3?.success === true ? null : SettingsV2Schema.safeParse(stored);
-      const v1 = v4.success || v3?.success === true || v2?.success === true ? null : SettingsV1Schema.safeParse(stored);
-      let from: 1 | 2 | 3 | 4;
-      if (v4.success) {
+      const v5 = SettingsV5Schema.safeParse(stored);
+      const v4 = v5.success ? null : SettingsV4Schema.safeParse(stored);
+      const v3 = v5.success || v4?.success === true ? null : SettingsV3Schema.safeParse(stored);
+      const v2 = v5.success || v4?.success === true || v3?.success === true ? null : SettingsV2Schema.safeParse(stored);
+      const v1 = v5.success || v4?.success === true || v3?.success === true || v2?.success === true ? null
+        : SettingsV1Schema.safeParse(stored);
+      let from: 1 | 2 | 3 | 4 | 5;
+      if (v5.success) {
+        from = 5;
+        cached = migrateSettingsV5(v5.data);
+      } else if (v4?.success === true) {
         from = 4;
         cached = migrateSettingsV4(v4.data);
       } else if (v3?.success === true) {
@@ -135,10 +145,10 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       }
       try {
         await local.set({ [SETTINGS_KEY]: cached });
-        log('settings.migrated', { from, to: 5 });
+        log('settings.migrated', { from, to: 6 });
       } catch {
         // Kept in memory only: the next start migrates the stored value again.
-        log('settings.migrated', { from, to: 5, stored: false });
+        log('settings.migrated', { from, to: 6, stored: false });
       }
       return cached;
     },

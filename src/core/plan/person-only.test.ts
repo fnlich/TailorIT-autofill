@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asksHowApplicationMade, attestsNoAiUse, namesBindingWaiver } from '../resolver/labelRules';
+import { asksHowApplicationMade, asksToAgree, attestsNoAiUse, namesBindingWaiver } from '../resolver/labelRules';
 import { normalizeLabel } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import { DEFAULT_SETTINGS } from '../types/settings';
@@ -149,15 +149,26 @@ describe('S-4: how the application was made is the person’s to say', () => {
   });
 });
 
-describe('S-5: a consent asked as Yes/No is a question; binding waivers are the person’s', () => {
+// v4 (D5, the owner's word of 2026-11-07: "Never flag to the user, just determine with your own"): a consent asked as a
+// Yes/No question, a binding waiver among them, is decided by the Consents mode (All: agreed; Required only: agreed only
+// when the form requires it), never left for the person; never by an AI. A binding commitment asked as a fact ("Are you
+// subject to a non-compete?") is never answered: its Yes would state one.
+/** The Yes a consent decision chose (option 0 of Yes, No), with nothing asked of any AI. */
+const agreed = (out: ReturnType<typeof planOf>, spec: FieldSpec) => {
+  askedNothing(out);
+  expect(fieldOf(out, spec).write?.value, spec.label).toMatchObject({ kind: 'option', index: 0 });
+};
+
+describe('S-5, v4 (D5): a consent asked as Yes/No and a binding waiver follow the Consents mode, never an AI', () => {
   it.each([
     'I agree to forfeit my final paycheck if I resign within a year',
     'Will you agree to a drug test?',
-  ])('%j (required, Yes/No): consent.required never picks Yes', (label) => {
+  ])('%j (required, Yes/No): consent.required picks its Yes', (label) => {
     const radio = specOf(label, 'radio', { optionLabels: ['Yes', 'No'], required: true });
-    const out = planOf([radio], { profile });
-    askedNothing(out);
-    leftForPerson(out, radio, 'consent-requires-user');
+    agreed(planOf([radio], { profile }), radio);
+    // Under Required only too: the form requires it.
+    agreed(planOf([radio], { profile, settings: settingsWith({ modes: { ...DEFAULT_SETTINGS.modes,
+      consents: 'required' } }) }), radio);
   });
 
   it.each([
@@ -167,16 +178,34 @@ describe('S-5: a consent asked as Yes/No is a question; binding waivers are the 
     ['Are you willing to sign a non-solicitation agreement?', 'radio'],
     ['Do you waive your right to bring a class action?', 'radio'],
     ['Are you willing to relinquish ownership of all inventions you create?', 'radio'],
-    // Whether one binds the person now (Amazon's Greenhouse form, fixtures/greenhouse/twitch-job): theirs to say.
-    ['Are you subject to a non-competition agreement or other agreement that would preclude or restrict your employment at Amazon?', 'select'],
-  ] as const)('%j (%s): the person’s, required or not, never classified or answered by an AI', (label, kind) => {
+  ] as const)('%j (%s): agreed under Consents All, required or not; under Required only when required', (label, kind) => {
+    const required = settingsWith({ modes: { ...DEFAULT_SETTINGS.modes, consents: 'required' } });
+    for (const isRequired of [true, false]) {
+      const list = specOf(label, kind, { optionLabels: ['Yes', 'No'], required: isRequired });
+      for (const out of [planOf([list], { profile }), planOf([list], { profile, ai: unclassified(list) })]) {
+        agreed(out, list);
+      }
+      const cautious = planOf([list], { profile, settings: required });
+      askedNothing(cautious);
+      if (isRequired) agreed(cautious, list);
+      else expect(fieldOf(cautious, list).row).toMatchObject({ reason: 'consent-optional-unticked', wrote: false });
+      expect(fieldOf(cautious, list).row.reason).not.toBe('consent-requires-user');
+    }
+  });
+
+  it('never answers whether a commitment binds the person now: its Yes would state a fact', () => {
+    // Amazon's Greenhouse form (fixtures/greenhouse/twitch-job).
+    const label = 'Are you subject to a non-competition agreement or other agreement that would preclude or restrict your employment at Amazon?';
     for (const required of [true, false]) {
-      const list = specOf(label, kind, { optionLabels: ['Yes', 'No'], required });
+      const list = specOf(label, 'select', { optionLabels: ['Yes', 'No'], required });
       for (const out of [planOf([list], { profile }), planOf([list], { profile, ai: unclassified(list) })]) {
         askedNothing(out);
         leftForPerson(out, list, 'consent-requires-user');
       }
     }
+    expect(asksToAgree(normalizeLabel(label))).toBe(false);
+    expect(asksToAgree(normalizeLabel('Have you signed a non-compete agreement with your current employer?'))).toBe(false);
+    expect(asksToAgree(normalizeLabel('Do you agree to sign a non-compete agreement?'))).toBe(true);
   });
 
   it('a required lone box still follows the Consents mode, binding or not: the person cannot apply without it', () => {
@@ -267,15 +296,14 @@ describe('the review of S-4 and S-5: ordinary screening questions stay ordinary'
     expect(fieldOf(planOf([box], { profile, noAi: true }), box).write?.value).toEqual({ kind: 'check' });
   });
 
-  it('“I agree to waive my right to a jury trial” stays a binding waiver: the person’s on a list', () => {
+  it('“I agree to waive my right to a jury trial” stays a binding waiver, which a list now decides by its Consents mode (v4, D5)', () => {
     const label = 'I agree to waive my right to a jury trial';
     expect(namesBindingWaiver(normalizeLabel(label))).toBe(true);
     // Its waiver alone, without the jury, still binds: a right given up.
     expect(namesBindingWaiver(normalizeLabel('I agree to waive my right to bring claims in court'))).toBe(true);
     const radio = specOf(label, 'radio', { optionLabels: ['Yes', 'No'], required: true });
     const out = planOf([radio], { profile, ai: unclassified(radio) });
-    askedNothing(out);
-    leftForPerson(out, radio, 'consent-requires-user');
+    agreed(out, radio);
   });
 });
 

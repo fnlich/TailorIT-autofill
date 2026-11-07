@@ -2085,10 +2085,14 @@ describe('the committed SmartRecruiters fixtures (the snapshot build of 2026-11-
 });
 
 // ── snapshot build 2026-11-06 (core pass Z1, item 38): every committed fixture against the token checks ──
-/** Every committed fixture's page, frame and route map (fixtures/<platform>/...), by its path under fixtures/. */
+/** Every committed fixture's page, frame and route map (fixtures/<platform>/...), by its path under fixtures/. The
+ *  git-ignored folders (.gitignore: fixtures/_incoming/, a checkout's raw captures before conversion, and
+ *  fixtures/.generated/) are never committed, so they are not walked. */
+const IGNORED_FIXTURE_DIRS: readonly string[] = ['_incoming', '.generated'];
 function committedFixtureFiles(dir = join(ROOT, 'fixtures'), under = ''): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory()
-    ? committedFixtureFiles(join(dir, entry.name), `${under}${entry.name}/`)
+    ? under === '' && IGNORED_FIXTURE_DIRS.includes(entry.name) ? []
+      : committedFixtureFiles(join(dir, entry.name), `${under}${entry.name}/`)
     : /\.(?:html|routes\.json)$/.test(entry.name) ? [`${under}${entry.name}`] : []));
 }
 

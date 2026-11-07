@@ -14,7 +14,7 @@ import type { PlanAi } from './types';
 
 const WHY = specOf('Why do you want to work here?', 'textarea');
 const DRAFTS_ON = settingsWith({ llm: { ...DEFAULT_SETTINGS.llm, tiebreak: true, classify: true, drafts: true,
-  answers: false, confirmDrafts: true } });
+  answers: false } });
 const TASK = 'b2d4f6a8-1c3e-4a5b-9d7f-0e2c4a6b8d10';
 const TEXT = 'I have built ordering platforms for four years, and I would like to bring that here.';
 
@@ -77,14 +77,14 @@ describe('planFrame and drafts', () => {
     expect(planOf([sensitive], { settings: DRAFTS_ON }).ask?.drafts ?? []).toEqual([]);
   });
 
-  it('writes the run’s draft as an llm-draft, flagged for confirmation, and the frame-side Guard passes it', () => {
+  it('writes the run’s draft as an llm-draft, accepted as written (v4, D6: no draft waits for confirmation), and the frame-side Guard passes it', () => {
     const out = planOf([WHY], { settings: DRAFTS_ON, ai: withDraft(drafted(WHY.key)) });
     expect(out.awaiting).toEqual([]);
     const { write, row } = fieldOf(out, WHY);
     expect(write).toMatchObject({ value: { kind: 'text', text: TEXT },
       origin: { provenance: 'llm-draft', taskId: TASK, confirmedByUser: false } });
-    expect(row).toMatchObject({ status: 'flagged', provenance: 'llm-draft', matcherStage: 'not-applicable',
-      confidence: LLM_DRAFT, reason: 'llm-draft-needs-confirmation', wrote: false, needsUserAction: true });
+    expect(row).toMatchObject({ status: 'verified', provenance: 'llm-draft', matcherStage: 'not-applicable',
+      confidence: LLM_DRAFT, reason: 'llm-draft-written', wrote: false, needsUserAction: false });
     expect(guardWriteInFrame(write!, WHY, [])).toEqual({ ok: true });
   });
 

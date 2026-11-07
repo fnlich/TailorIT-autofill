@@ -1,21 +1,25 @@
 /*
  * The settings schema and where they are kept. The worker reads and writes them; content scripts receive the part
- * they need with run/begin and never touch storage. Version 5 ("Résumé already on the page", the behaviour review of
- * 2026-11-06) is stored under the same key; a version 1, 2, 3 or 4 value read there is migrated
- * (core/types/settings.ts migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4) and stored again.
+ * they need with run/begin and never touch storage. Version 6 (v4, "decide, don't flag": no "Ask me each time", no draft
+ * confirmation) is stored under the same key; a version 1 to 5 value read there is migrated (core/types/settings.ts
+ * migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, migrateSettingsV5) and stored again.
  * The older versions' schemas, which only the worker reads, are in ./settings-stored.ts (the behaviour review of
  * 2026-11-06: kept out of the content script's bundle, and its budget).
  */
 import { z } from 'zod';
 import { CONSENT_CATEGORIES } from '../core/enums';
-import { AI_FORBIDDEN_MODES, MODE_CHOICES, PANEL_VIEWS, type Settings } from '../core/types/settings';
+import { AI_FORBIDDEN_MODES, AI_FORBIDDEN_MODES_V5, MODE_CHOICES, PANEL_VIEWS, type Settings } from '../core/types/settings';
 
 export const SETTINGS_KEY = 'settings:v1';
 
 export const Consents = z.array(z.enum(CONSENT_CATEGORIES)).max(CONSENT_CATEGORIES.length);
 
 export const Llm = z.strictObject({ tiebreak: z.boolean(), classify: z.boolean(), drafts: z.boolean(), answers: z.boolean(),
-  confirmDrafts: z.boolean(), whenForbidden: z.enum(AI_FORBIDDEN_MODES) });
+  whenForbidden: z.enum(AI_FORBIDDEN_MODES) });
+
+/** Versions 2 to 5's AI switches (read only to migrate them): the draft confirmation, and "Ask me each time". */
+export const LlmV5 = z.strictObject({ tiebreak: z.boolean(), classify: z.boolean(), drafts: z.boolean(),
+  answers: z.boolean(), confirmDrafts: z.boolean(), whenForbidden: z.enum(AI_FORBIDDEN_MODES_V5) });
 
 export const Interpretations = z.strictObject({ postingCountryForLegal: z.boolean(), twoOrMoreRaces: z.boolean(),
   eeoDeclineByDefault: z.boolean() });
@@ -37,7 +41,7 @@ export const ModesV4Schema = z.strictObject({
 export const ModesSchema = ModesV4Schema.extend({ resumeOnPage: z.enum(MODE_CHOICES.resumeOnPage) });
 
 export const SettingsSchema = z.strictObject({
-  version: z.literal(5),
+  version: z.literal(6),
   panel: z.enum(['side', 'in-page']),
   view: z.enum(PANEL_VIEWS),
   modes: ModesSchema,

@@ -15,7 +15,8 @@ afterEach(() => unmountAll());
 
 describe('the report rows (Phase F1 review, owner amendments)', () => {
   it('forgets the closest options of a flagged row once it is verified and folds into a line', async () => {
-    const flagged = row('school', { status: 'flagged', provenance: null, reason: 'ambiguous-options', needsUserAction: true,
+    // v4 (D1): only a hard-rule stop is a card the person acts on.
+    const flagged = row('school', { status: 'flagged', provenance: null, reason: 'bot-check', needsUserAction: true, wrote: false,
       detail: { suggestions: [{ index: 1, score: 0.8 }] } });
     const describeField = async () => [{ index: 1, label: 'Bachelor of Science' }];
     const container = document.createElement('div');

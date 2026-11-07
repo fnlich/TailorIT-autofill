@@ -13,6 +13,11 @@
  * it (src/content/press.ts). Never to a frame whose report does not offer it: a report the run sent at rest says what
  * its step offers (FrameReport.buttons). The frame's answer (its outcome) passes through.
  *
+ * v4 (docs/_v4/run.md): panel/fill {signIn: true} is "Sign up & Autofill": the tab is granted Sign-in Auto for one run
+ * (background/sign-up.ts, PanelDeps.signUp) before its frames hear run/start {signIn: true}. Where no frame of the tab
+ * has a form but its application frame shows an account wall or a choice of how to apply (frames.ts wallFrameOf), that
+ * frame hears run/start (it signs in there, or presses the adapter's declared entry), and the tab's next form is
+ * started once it says hello. A plain panel/fill ends any grant the tab held.
  * The policy card's decision has its own message, addressed to one frame: panel/policyDecision becomes
  * run/policyDecision for that frame only, and only while its report says its run waits at policy-notice. Continue
  * never stands in for Fill anyway: with one frame at the policy card and another at a CAPTCHA pause, the toolbar's
@@ -24,7 +29,8 @@ import {
 } from '../messaging/schemas';
 import type { WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
-import { framesOfTab, type FrameEntry } from './frames';
+import { framesOfTab, wallFrameOf, type FrameEntry } from './frames';
+import type { Grant } from './sign-up';
 import type { Reports } from './reports';
 
 type Of<T extends PageMessage['type']> = Extract<PageMessage, { type: T }>;
@@ -37,6 +43,9 @@ export interface PanelDeps {
   connected(): Promise<boolean>;
   /** Checks, in the background, that the tab's frames are still there; what it removes reaches the panel port. */
   check?(tabId: number): void;
+  /** v4: grants the tab Sign up & Autofill and/or the start of its next form (sign-up.ts), its frames told the settings
+   *  as they act then; a grant of nothing ends the tab's grant. */
+  signUp?(tabId: number, grant: Grant): Promise<void>;
 }
 
 const targetOf = (frame: FrameEntry) =>
@@ -95,8 +104,16 @@ export function createPanelHandlers(deps: PanelDeps) {
     // and the check is what tells the panel its strip is stale.
     async fill(message: Of<'panel/fill'>): Promise<Answer<{ frames: number }>> {
       if (!(await deps.connected())) return refuse('not_connected');
-      const frames = (await framesOfTab(platform.storage.session, message.tabId)).filter((frame) => frame.hasForm);
-      const reached = await sendTo(message.tabId, frames, { v: 1, type: 'run/start', dryRun: message.dryRun });
+      const all = await framesOfTab(platform.storage.session, message.tabId);
+      const forms = all.filter((frame) => frame.hasForm);
+      // v4: a page with no form whose application frame shows a wall or a choice of how to apply: that frame alone, and
+      // the tab's next form is started once it shows (module header).
+      const wall = forms.length === 0 ? wallFrameOf(all) : null;
+      const atWall = wall !== null && (wall.wall !== undefined || wall.choice === true);
+      const signIn = message.signIn === true && !message.dryRun;
+      await deps.signUp?.(message.tabId, { signIn, fill: atWall && !message.dryRun });
+      const reached = await sendTo(message.tabId, atWall ? [wall] : forms, { v: 1, type: 'run/start',
+        dryRun: message.dryRun, ...(signIn ? { signIn: true as const } : {}) });
       deps.check?.(message.tabId);
       return ok({ frames: reached });
     },

@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import { FIELD_KINDS, FILL_STATUSES, MATCHER_STAGES, PLATFORMS, PROVENANCES } from '../core/enums';
-import { REASON_CODES } from '../core/types/fill';
+import { PERSON_ONLY_REASONS, REASON_CODES, type ReasonCode } from '../core/types/fill';
 import { FIELD_CATEGORIES } from '../core/types/intent';
 import { PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES, STEP_FINALITIES } from '../core/types/run';
 
@@ -41,7 +41,10 @@ export const FillResultSchema = z.strictObject({
     .optional(),
 });
 
-/** Notices the panel shows above the rows. */
+/** The run's notices. v4 (the owner, 2026-11-07: "Never flag to the user"): no panel or page draws them any more; they
+ *  are the facts the worker reads of a run (the auto-apply agent's verdict, the posting's AI rule, the counters), and
+ *  the content script raises only those (content/orchestrator.ts). What the person must act on is a branded toast on
+ *  the page (content/ui/toasts.ts). The codes stay, so a stored or older report still parses. */
 export const NOTICE_CODES = ['tripwire', 'policy', 'policy-unreadable', 'attention-check', 'page-busy', 'auth', 'captcha',
   'validation', 'needs-click', 'posting-outside-frame', 'deferred-fields', 'step-retry-limit',
   // The Phase 2 review: policy text only hidden text holds (S6), and a form its page hides (S1).
@@ -150,51 +153,75 @@ export function latestReport<T extends Pick<FrameReport, 'updatedAt'>>(reports: 
     : latest), null);
 }
 
-/**
- * Whether a row needs the person: it asks for them (an AI draft to confirm, a question left for them), or the run left
- * it blocked, or flagged without writing it. A flagged row whose value was written (a low-confidence fill, a posting
- * country's answer) only says "check it" and is done (SPEC-AMENDMENTS §11). One rule for the review's count
- * (src/ui/report/model.ts) and the launcher's (the content orchestrator), so the two never disagree about a row: a
- * blocked row can come without `needsUserAction`.
- */
-export function needsPerson(row: Pick<FrameReport['fields'][number], 'needsUserAction' | 'status' | 'wrote'>): boolean {
-  return row.needsUserAction || row.status === 'blocked' || (row.status === 'flagged' && !row.wrote);
-}
+// ── v4 run: "Never flag to the user, just determine with your own" (the owner, 2026-11-07; docs/_v4/run.md) ──
 
 /** A report row. */
 type Row = FrameReport['fields'][number];
 
-/** Whether a row is done for the person: written (verified or filled, or flagged with its value written: it only says
- *  "check it", SPEC-AMENDMENTS §11), or a question that already held its answer or needed none (an end date for a job
- *  they still hold). A row that needs the person never is. */
-export function isReady(row: Pick<Row, 'needsUserAction' | 'status' | 'wrote' | 'reason'>): boolean {
-  if (needsPerson(row)) return false;
-  return row.status === 'verified' || row.status === 'filled' || row.wrote || row.reason === 'already-correct'
-    || row.reason === 'end-date-not-applicable';
+/** The reasons of a row that stays the person's whatever the run decides (the hard rules): a bot check or CAPTCHA asked
+ *  as a question (the audit of 2026-11-06, S-2, S-3), never answered, ticked or sent to an AI; while one is left, Next,
+ *  Submit mode Auto and the agent hold as at a CAPTCHA, and the page's toast says to solve it. The only row that does. */
+export const HARD_STOP_REASONS: ReadonlySet<ReasonCode> = PERSON_ONLY_REASONS;
+
+/** The reasons of a row left out of the person's counts and lists, besides every guard refusal (status 'blocked'): a
+ *  field hidden from people, one no visible label names, one whose label addresses AI tools (D8). Never filled. */
+const LEFT_OUT_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['honeypot', 'not-user-visible',
+  'no-visible-label', 'tripwire-in-label']);
+
+/**
+ * Whether a row stops for the person (D1): only a hard-rule stop (HARD_STOP_REASONS) not answered yet. The run decides
+ * every other field itself: one it could not or would not fill is simply not filled (notFilled), never "needs you".
+ * One rule for the review, the launcher and the step's holds, so none of them disagrees about a row.
+ */
+export function needsPerson(row: Pick<Row, 'status' | 'wrote' | 'reason'>): boolean {
+  return !row.wrote && row.status !== 'blocked' && HARD_STOP_REASONS.has(row.reason);
 }
 
-/** Whether the person filled a field the run left for them, with their own input since (v3 Phase 3): it counts as filled
- *  in the progress and is no longer left for them, though its card stays open (Save my answer may be offered on it). */
+/** Whether a row is left out of the person's counts and lists (D8): a guard refusal (a honeypot, a canary, a trap), or a
+ *  field hidden from people, named by no visible label, or whose label addresses AI tools. */
+export function leftOut(row: Pick<Row, 'status' | 'reason'>): boolean {
+  return row.status === 'blocked' || LEFT_OUT_REASONS.has(row.reason);
+}
+
+/** Whether a row is done (D3, D4): written (verified or filled, a low-confidence fill or a posting country's answer
+ *  among them: no "check it" any more), or a question that already held its answer, needed none (an end date for a job
+ *  they still hold), or keeps the page's own text (prefill-kept). A hard-rule stop or a row left out never is. */
+export function isReady(row: Pick<Row, 'status' | 'wrote' | 'reason'>): boolean {
+  if (needsPerson(row) || leftOut(row)) return false;
+  return row.status === 'verified' || row.status === 'filled' || row.wrote || row.reason === 'already-correct'
+    || row.reason === 'end-date-not-applicable' || row.reason === 'prefill-kept';
+}
+
+/** Whether a row is a question the run did not fill and the person still may (D1: an empty circle in the lists, never
+ *  "Needs you"): not done, not filled by the person since, not left out, and not a question left alone on purpose
+ *  (skipped: optional, disabled, or needing nothing). A hard-rule stop not answered yet is one. */
+export function notFilled(row: Pick<Row, 'status' | 'wrote' | 'reason' | 'detail'>): boolean {
+  return !isReady(row) && !filledByPerson(row) && !leftOut(row) && row.status !== 'skipped';
+}
+
+/** Whether the person filled a field the run did not, with their own input since (v3 Phase 3): it counts as filled in
+ *  the progress. */
 export function filledByPerson(row: Pick<Row, 'detail'>): boolean {
   return row.detail?.filledByYou === true;
 }
 
-/** Whether a row is still left for the person: it needs them (needsPerson) and they have not filled it since. One rule
- *  for the review's count and the launcher's. */
-export function leftForPerson(row: Pick<Row, 'needsUserAction' | 'status' | 'wrote' | 'detail'>): boolean {
+/** Whether a hard-rule stop is still left for the person: it needs them (needsPerson) and they have not answered it
+ *  since. */
+export function leftForPerson(row: Pick<Row, 'status' | 'wrote' | 'reason' | 'detail'>): boolean {
   return needsPerson(row) && !filledByPerson(row);
 }
 
-/** A row in the field lists (v3 Phase 3, Jobright's three icons): 'filled' (isReady), 'missing' (it needs the person),
- *  'working' (a write still to come in the run that fills now, or the one being written: `current`), or 'none' (a
- *  question that needed nothing, left alone: no icon of either kind, and the progress leaves it out). */
+/** A row in the field lists (v3 Phase 3, Jobright's three icons): 'filled' (isReady, or filled by the person since),
+ *  'missing' (v4, D1: not filled, notFilled: an empty circle, never "needs you"), 'working' (a write still to come in the
+ *  run that fills now, or the one being written: `current`), or 'none' (a question left alone on purpose, or a row left
+ *  out (D8): no icon of either kind, and the progress leaves it out). */
 export type RowProgress = 'filled' | 'missing' | 'working' | 'none';
 
 /** A row's place in the progress, by its frame's live progress (`filling`) when its run fills now. */
 export function rowProgressOf(row: Row, filling?: ProgressInput['filling']): RowProgress {
   if (filling !== undefined && (filling.current === row.key || filling.pending.includes(row.key))) return 'working';
-  if (isReady(row) || filledByPerson(row)) return 'filled';
-  if (needsPerson(row)) return 'missing';
+  if (isReady(row) || (filledByPerson(row) && !leftOut(row))) return 'filled';
+  if (notFilled(row)) return 'missing';
   return 'none';
 }
 

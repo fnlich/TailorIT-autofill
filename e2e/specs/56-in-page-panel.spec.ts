@@ -56,8 +56,8 @@ test('the in-page panel opens in the frame from the launcher, receives the tabâ€
     expect(workerSaid(logs(), 'panel.updated')).toBeGreaterThanOrEqual(1);
     // The side panel was not asked for.
     expect(workerSaid(logs(), 'panel.opened') + workerSaid(logs(), 'panel.open-failed')).toBe(0);
-    // While the panel shows the notices, the page's own stack keeps only what has buttons.
-    expect(await ui.noticeTexts()).toEqual([]);
+    // v4 (D10): the page's branded toasts stay while the panel is open, in its column above it.
+    expect(await ui.noticeTexts()).toContain(COPY.notices.tripwire);
 
     await ui.clickButton(COPY.inPage.close);
     await expect.poll(async () => (await ui.elements('[data-panel="in-page"]'))[0]?.shown).toBe(false);

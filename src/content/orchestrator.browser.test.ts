@@ -19,15 +19,18 @@ import type { Adapter } from '../adapters/types';
 import type { PlanOutput } from '../core/plan/types';
 import type { FieldSpec } from '../core/types/field';
 import type { FillResult, PlannedWrite } from '../core/types/fill';
+import { CAUTIOUS_SETTINGS } from '../core/plan/settings.testkit';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { logEvents, loadFixture, removeFixtures, untrustedViolations, watchHoneypots, withoutPointerBoundary,
   type EventLog, type Fixture } from '../dom/fixture.testkit';
+import { deadline } from '../dom/time';
+import { COPY } from '../shared/copy';
 import type { FrameReport } from '../shared/report';
 import {
   createFakeWorker, FAKE_TASK_ID, fakePdf, PAGE_TEXT_SENTINELS, sentinelsIn, testVocab, trapUrl, VALUE_SENTINELS,
   type FakeWorker, type FakeWorkerOptions,
 } from './content.testkit';
-import type { RunEnd } from './orchestrator';
+import { PAUSE_LOOK_MS, PAUSE_WATCH_MS, type RunEnd } from './orchestrator';
 import { POSTING_READ_MIN } from './policy';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
@@ -143,7 +146,8 @@ describe('a whole pass over the trap fixtures, planned from the golden profile',
     expect(ran.value('why')).toBe('');
     expect(ran.events.on('why')).toEqual([]);
     expect(ran.report.notices.filter((notice) => notice.code === 'tripwire')).toHaveLength(1);
-    expect(ran.runtime.ui!.notices.shown).toContain('tripwire');
+    // The hard rule's one notice on the page: a branded toast (v4, D10).
+    expect(ran.runtime.ui!.toasts.shown).toContain('tripwire');
     const request = ran.worker.of('plan/request')[0]!;
     expect(request.canaries).toContain('i am llm');
     expect(ran.worker.runStates.at(-1)).toMatchObject({ status: 'review', tripwire: { triggered: true } });
@@ -217,7 +221,8 @@ describe('a whole pass over the trap fixtures, planned from the golden profile',
     expect(ran.checked('q2')).toEqual([]);
     expect((ran.fixture.doc.getElementById('scale') as HTMLSelectElement).value).toBe('');
     for (const id of ['human', 'scale']) expect(ran.events.on(id), id).toEqual([]);
-    expect(ran.report.notices.map((notice) => notice.code)).toContain('attention-check');
+    // v4 (D9): no attention-check notice: the rows are simply not filled.
+    expect(ran.report.notices.map((notice) => notice.code)).not.toContain('attention-check');
   });
 
   it('trap 07: chooses Bachelor’s and LinkedIn, never the options that tell AI tools to pick them', async () => {
@@ -417,125 +422,54 @@ describe('trap 08: a canary in an LLM draft', () => {
 describe('the policy gate, before anything is filled', () => {
   const plain = trap11.replace(/<script>[\s\S]*<\/script>/, '');
 
-  it('stops at the card on a posting-page hit, reports policy-notice, and fills only after Fill anyway', async () => {
+  // v4 (D6, the owner's word of 2026-11-07: "Never flag to the user, just determine with your own"): the policy card is
+  // gone. A posting that forbids AI is filled from the profile only (the default) or with the AI ("Use AI anyway"),
+  // with nothing on the page and nothing waiting; the report keeps the fact for the worker.
+  it('fills from the profile only on a posting-page hit: no card, no toast, nothing waits, the fact in the report', async () => {
     const started = await start(plain, 'policy-a', { worker: { policy: { postingPage: 'hit', storedCopy: 'clear' } } });
-    const running = started.runtime.fill()!;
-    await vi.waitFor(() => expect(started.worker.reports.at(-1)?.status).toBe('policy-notice'));
-    expect(started.runtime.ui!.notices.cardShown).toBe(true);
-    expect(started.runtime.ui!.launcher.view).toMatchObject({ state: 'needs-you', reason: 'policy' });
-    expect(started.worker.of('plan/request')).toEqual([]);
-    expect(started.events.events.filter((event) => event.type === 'input')).toEqual([]);
-    // A click from the page's own script on the card is not the person's: nothing happens.
-    started.runtime.ui!.shadow.querySelector<HTMLButtonElement>('.card button.action:not(.secondary)')!.click();
-    expect(started.runtime.run!.atPolicyCard).toBe(true);
-    // The toolbar's Continue (meant for a pause, maybe another frame's) is not Fill anyway: the card still waits.
-    expect(await started.worker.platform.deliver({ v: 1, type: 'run/continue' })).toEqual({ ok: true, data: {} });
-    expect(started.runtime.run!.atPolicyCard).toBe(true);
-    expect(started.runtime.ui!.notices.cardShown).toBe(true);
-    expect(started.worker.of('plan/request')).toEqual([]);
-    expect(started.worker.of('run/begin')).toHaveLength(1);
-    // The side panel card's Fill anyway, addressed to this frame, is.
-    expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
-      .toEqual({ ok: true, data: {} });
-    const ran = ranOf(started, await running);
+    const ran = ranOf(started, await started.runtime.fill()!);
     expectInvariants(ran);
+    expect(ran.end).toBe('review');
+    expect(ran.worker.reports.map((report) => report.status)).not.toContain('policy-notice');
     expect(ran.row('First name')).toMatchObject({ status: 'verified' });
-    expect(ran.report.notices.map((notice) => notice.code)).toContain('policy');
-    expect(ran.worker.runStates.at(-1)!.policyDecision).toBe('accepted');
-    expect(started.runtime.ui!.notices.cardShown).toBe(false);
-  });
-
-  it('reports policy-notice, with the policy notice, before it waits, so the side panel’s choice can reach it',
-    async () => {
-      // The worker sends the side panel card's decision only to a frame whose report is at policy-notice.
-      const waitingAtReport: Array<boolean | undefined> = [];
-      const started = await start(plain, 'policy-report', { worker: {
-        policy: { postingPage: 'hit', storedCopy: 'unavailable' },
-        onMessage: (message) => {
-          if (message.type === 'report/put') waitingAtReport.push(started.runtime.run?.atPolicyCard);
-        },
-      } });
-      const running = started.runtime.fill()!;
-      await vi.waitFor(() => expect(started.worker.reports).toHaveLength(1));
-      expect(waitingAtReport).toEqual([true]);
-      expect(started.worker.reports[0]).toMatchObject({ status: 'policy-notice', fields: [],
-        notices: [{ code: 'policy' }] });
-      expect(started.worker.of('plan/request')).toEqual([]);
-      // The side panel card's Cancel, as the worker sends it to this frame.
-      expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'cancel' }))
-        .toEqual({ ok: true, data: {} });
-      expect(await running).toBe('stopped');
-      expect(withoutPointerBoundary(started.events.events)).toEqual([]);
-      expect(started.worker.runStates.at(-1)).toMatchObject({ status: 'stopped', policyDecision: 'declined' });
-      // Once nothing waits at the card, a decision is answered expired and changes nothing.
-      expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
-        .toEqual({ ok: false, error: 'expired' });
-      expect(started.worker.of('run/begin')).toHaveLength(1);
-      expect(started.worker.of('plan/request')).toEqual([]);
-    });
-
-  it('answers a decision with expired when no run waits at the card: a paused run is not started by it', async () => {
-    const page = plain.replace('<button type="submit">', '<label for="pw">Password</label><input id="pw" type="password">'
-      + '<button type="submit">');
-    const started = await start(page, 'policy-paused');
+    expect(ran.report.notices.map((notice) => notice.code)).toContain('policy-profile-only');
+    expect(ran.worker.of('plan/request').every((message) => message.noAi === true)).toBe(true);
+    expect(started.runtime.ui!.toasts.shown).toEqual([]);
+    expect(started.runtime.run!.atPolicyCard).toBe(false);
+    // The side panel's old card decision reaches nothing: answered expired.
     expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
       .toEqual({ ok: false, error: 'expired' });
-    expect(await started.runtime.fill()).toBe('paused');
-    expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
-      .toEqual({ ok: false, error: 'expired' });
-    expect(started.worker.of('run/begin')).toHaveLength(1);
-    // Continue is what resumes a pause.
-    await started.worker.platform.deliver({ v: 1, type: 'run/continue' });
-    await vi.waitFor(() => expect(started.worker.of('run/begin')).toHaveLength(2));
   });
 
-  it('writes nothing after Cancel', async () => {
-    const started = await start(plain, 'policy-b', { worker: { policy: { postingPage: 'clear', storedCopy: 'hit' } } });
-    const running = started.runtime.fill()!;
-    await vi.waitFor(() => expect(started.runtime.run!.atPolicyCard).toBe(true));
-    await started.worker.platform.deliver({ v: 1, type: 'run/cancel' });
-    expect(await running).toBe('stopped');
-    expect(started.worker.of('plan/request')).toEqual([]);
-    expect(withoutPointerBoundary(started.events.events)).toEqual([]);
-    expect(formValues(started.fixture.doc)).toEqual(['', '', '']);
-    expect(started.worker.reports.at(-1)).toMatchObject({ status: 'stopped', fields: [] });
-    expect(started.worker.runStates.at(-1)).toMatchObject({ status: 'stopped', policyDecision: 'declined' });
-    expect(started.runtime.ui!.launcher.view.state).toBe('idle');
+  it('fills with the AI under "Use AI anyway", the posting fact in the report, never a card', async () => {
+    const ran = await fillTrap(plain, 'policy-use', { worker: { policy: { postingPage: 'clear', storedCopy: 'hit' },
+      settings: { ...CAUTIOUS_SETTINGS, llm: { ...CAUTIOUS_SETTINGS.llm, whenForbidden: 'use-ai' } } } });
+    expectInvariants(ran);
+    expect(ran.end).toBe('review');
+    expect(ran.report.notices.map((notice) => notice.code)).toEqual(expect.arrayContaining(['policy',
+      'policy-stored-copy']));
+    expect(ran.worker.of('plan/request').some((message) => message.noAi === true)).toBe(false);
+    expect(ran.runtime.ui!.toasts.shown).toEqual([]);
   });
 
-  it('stops on the frame’s own visible text, and says so when only TailorIT’s stored copy did', async () => {
-    const page = plain.replace('VISIBLE-MARKER-11', 'Please do not use AI tools to apply. VISIBLE-MARKER-11');
-    const own = await start(page, 'policy-c', { worker: { policy: { postingPage: 'clear', storedCopy: 'clear' } } });
-    void own.runtime.fill();
-    await vi.waitFor(() => expect(own.runtime.run!.atPolicyCard).toBe(true));
-    expect(own.runtime.ui!.shadow.querySelector<HTMLElement>('.card .source')!.hidden).toBe(true);
-    own.runtime.run!.decline();
-
-    const stored = await start(plain, 'policy-d', { worker: { policy: { postingPage: 'unseen', storedCopy: 'hit' } } });
-    void stored.runtime.fill();
-    await vi.waitFor(() => expect(stored.runtime.run!.atPolicyCard).toBe(true));
-    expect(stored.runtime.ui!.shadow.querySelector<HTMLElement>('.card .source')!.hidden).toBe(false);
-    stored.runtime.run!.decline();
-  });
-
-  it('says so, without stopping, when only text a person cannot see yet says AI tools are not allowed (S6)', async () => {
+  it('fills on, silently, when only text a person cannot see yet says AI tools are not allowed (S6; v4, D9)', async () => {
     const page = plain.replace('<form', `<details><summary>Show full description</summary>
       <p>Please do not use AI tools to apply.</p></details><div style="display:none"><p>AI-generated applications will
       be rejected.</p></div><form`);
     const ran = await fillTrap(page, 'policy-hidden', { worker: { policy: { postingPage: 'clear', storedCopy: 'clear' } } });
     expectInvariants(ran);
     const codes = ran.report.notices.map((notice) => notice.code);
-    expect(codes).toContain('policy-hidden-text');
+    expect(codes).not.toContain('policy-hidden-text');
     expect(codes).not.toContain('policy');
-    expect(ran.runtime.ui!.notices.shown).toContain('policy-hidden-text');
+    expect(ran.runtime.ui!.toasts.shown).toEqual([]);
     expect(ran.row('Email')).toMatchObject({ status: 'verified' });
   });
 
-  it('shows the couldn’t-read notice when nothing could be read, and fills anyway', async () => {
+  it('fills on, silently, when nothing could be read of the posting (v4, D9: no couldn’t-read notice)', async () => {
     const ran = await fillTrap(plain, 'policy-e', { worker: { policy: { postingPage: 'unseen', storedCopy: 'unavailable' } } });
     expectInvariants(ran);
-    expect(ran.report.notices.map((notice) => notice.code)).toContain('policy-unreadable');
-    expect(ran.runtime.ui!.notices.shown).toContain('policy-unreadable');
+    expect(ran.report.notices.map((notice) => notice.code)).not.toContain('policy-unreadable');
+    expect(ran.runtime.ui!.toasts.shown).toEqual([]);
     expect(ran.row('Email')).toMatchObject({ status: 'verified' });
   });
 
@@ -553,7 +487,7 @@ describe('the policy gate, before anything is filled', () => {
     expect(POSTING_READ_MIN).toBeGreaterThan('Security Engineer Find the holes before anyone else does.'.length * 4);
   });
 
-  it('adds posting-outside-frame in a frame whose top page runs none of our scripts', async () => {
+  it('fills a frame whose top page runs none of our scripts, silently (v4, D9: no posting-outside-frame notice)', async () => {
     const fixture = await loadFixture(document, plain);
     const worker = createFakeWorker();
     const runtime = await startContentRuntime(worker.platform, fixture.doc, { href: () => trapUrl('policy-f'),
@@ -561,7 +495,7 @@ describe('the policy gate, before anything is filled', () => {
     runtimes.push(runtime);
     expect(await runtime.fill()).toBe('review');
     expect(worker.of('frame/hello')[0]).toMatchObject({ isTop: false, hasForm: true });
-    expect(worker.reports.at(-1)!.notices.map((notice) => notice.code)).toContain('posting-outside-frame');
+    expect(worker.reports.at(-1)!.notices.map((notice) => notice.code)).not.toContain('posting-outside-frame');
   });
 });
 
@@ -903,7 +837,7 @@ describe('what a write reveals is checked before the next pass writes (L-S2)', (
   const changes = (events: EventLog, id: string) => events.on(id).filter((event) => !event.trusted
     && event.type === 'change').length;
 
-  it('pauses on a CAPTCHA a write revealed: nothing more is written, and Continue starts afresh', async () => {
+  it('pauses on a CAPTCHA a write revealed: nothing more is written, the branded toast says to solve it, and once it is gone the run carries on by itself (v4, D10)', async () => {
     const started = await start(revealing('<div class="g-recaptcha" data-sitekey="6Lc_test"></div>'), 'reveal-captcha');
     const ran = ranOf(started, await started.runtime.fill());
     expect(ran.end).toBe('paused');
@@ -915,6 +849,27 @@ describe('what a write reveals is checked before the next pass writes (L-S2)', (
     expect(ran.worker.of('plan/request')).toHaveLength(1);
     expect(ran.runtime.ui!.launcher.view).toMatchObject({ state: 'needs-you', action: 'continue', reason: 'pause' });
     expect(ran.worker.runStates.at(-1)).toMatchObject({ status: 'handoff', pauseReason: 'captcha' });
+    // The page's own toast, TailorIT's: what is left for the person, and that Autofill carries on.
+    expect(ran.runtime.ui!.toasts.shown).toEqual(['challenge']);
+    expect(ran.runtime.ui!.shadow.querySelector('.toast[data-kind="challenge"] .notice')?.textContent)
+      .toBe(COPY.toasts.challenge);
+    // Nothing is done to the widget: the person solves it (here, it goes), and the run goes on with no Continue.
+    expect(ran.worker.of('run/begin')).toHaveLength(1);
+    ran.fixture.doc.querySelector('.g-recaptcha')!.remove();
+    await vi.waitFor(() => expect(ran.worker.of('run/begin')).toHaveLength(2), { timeout: 5_000 });
+    await vi.waitFor(() => expect(ran.value('email')).toBe('alex.rivera.f7q2@example.com'), { timeout: 10_000 });
+    expect(started.runtime.ui!.toasts.shown).not.toContain('challenge');
+  });
+
+  it('watches a CAPTCHA pause for a bounded time only, and never resumes a run the person cancelled', async () => {
+    const started = await start(revealing('<div class="g-recaptcha" data-sitekey="6Lc_test"></div>'), 'reveal-captcha-x');
+    expect(await started.runtime.fill()).toBe('paused');
+    expect(PAUSE_WATCH_MS).toBeLessThanOrEqual(30 * 60 * 1000);
+    await started.worker.platform.deliver({ v: 1, type: 'run/cancel' });
+    started.fixture.doc.querySelector('.g-recaptcha')!.remove();
+    await deadline(PAUSE_LOOK_MS * 3);
+    expect(started.worker.of('run/begin')).toHaveLength(1);
+    expect(started.runtime.ui!.toasts.shown).toEqual([]);
   });
 
   it('pauses on an email-code box a write revealed, found by its label', async () => {
@@ -942,46 +897,21 @@ describe('what a write reveals is checked before the next pass writes (L-S2)', (
     expect(ran.value('city')).toBe('');
     expect(ran.row('City')).toMatchObject({ status: 'blocked', wrote: false });
     expect(ran.value('email')).toBe('alex.rivera.f7q2@example.com');
-    expect(ran.runtime.ui!.notices.shown).toContain('tripwire');
+    expect(ran.runtime.ui!.toasts.shown).toContain('tripwire');
   });
 
-  it('stops at the policy card for a "do not use AI" statement a write revealed; Fill anyway fills afresh', async () => {
+  it('v4 (D6): makes the rest of the fill profile-only for a "do not use AI" statement a write revealed, never a card', async () => {
     const started = await start(revealing('<p>Applications completed with AI tools are not allowed. Do not use AI to '
       + 'fill in this form.</p>'), 'reveal-policy', { worker: { policy: { postingPage: 'clear', storedCopy: 'clear' } } });
-    const running = started.runtime.fill()!;
-    await vi.waitFor(() => expect(started.worker.reports.at(-1)?.status).toBe('policy-notice'), { timeout: 10_000 });
-    expect(started.runtime.run!.atPolicyCard).toBe(true);
-    expect(started.runtime.ui!.notices.cardShown).toBe(true);
-    const atCard = started.worker.reports.at(-1)!;
-    expect(atCard.notices.map((notice) => notice.code)).toContain('policy');
-    expect(atCard.fields.find((row) => row.label === 'Email')).toMatchObject({ status: 'flagged',
-      reason: 'policy-notice', wrote: false });
-    expect(changes(started.events, 'email')).toBe(0);
-    expect(started.worker.of('plan/request')).toHaveLength(1);
-    // Fill anyway: a fresh run, whose gate sees the statement and takes the person's decision without asking again.
-    expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'fill' }))
-      .toEqual({ ok: true, data: {} });
-    await running;
-    await vi.waitFor(() => expect(started.runtime.run?.ended).toBe('review'), { timeout: 10_000 });
-    expect(started.worker.of('run/begin')).toHaveLength(2);
+    const ran = ranOf(started, await started.runtime.fill()!);
+    expect(ran.end).toBe('review');
+    expect(started.worker.reports.map((report) => report.status)).not.toContain('policy-notice');
+    expect(started.runtime.run!.atPolicyCard).toBe(false);
+    expect(ran.report.notices.map((notice) => notice.code)).toContain('policy-profile-only');
+    // The later passes asked nothing of the AI; the profile's own answers went in.
+    expect(started.worker.of('plan/request').slice(1).every((message) => message.noAi === true)).toBe(true);
     expect((started.fixture.doc.getElementById('email') as HTMLInputElement).value).toBe('alex.rivera.f7q2@example.com');
-    expect(started.worker.runStates.at(-1)!.policyDecision).toBe('accepted');
-    expect(started.worker.reports.at(-1)!.notices.map((notice) => notice.code)).toContain('policy');
-    expect(started.runtime.ui!.notices.cardShown).toBe(false);
-  });
-
-  it('cancels at the policy card a write revealed: nothing more is written, and the run ends stopped', async () => {
-    const started = await start(revealing('<p>Applications completed with AI tools are not allowed. Do not use AI to '
-      + 'fill in this form.</p>'), 'reveal-policy-cancel', { worker: { policy: { postingPage: 'clear',
-      storedCopy: 'clear' } } });
-    const running = started.runtime.fill()!;
-    await vi.waitFor(() => expect(started.runtime.run?.atPolicyCard).toBe(true), { timeout: 10_000 });
-    expect(await started.worker.platform.deliver({ v: 1, type: 'run/policyDecision', decision: 'cancel' }))
-      .toEqual({ ok: true, data: {} });
-    expect(await running).toBe('stopped');
-    expect(started.worker.reports.at(-1)).toMatchObject({ status: 'stopped' });
-    expect(started.worker.runStates.at(-1)).toMatchObject({ status: 'stopped', policyDecision: 'declined' });
     expect(started.worker.of('run/begin')).toHaveLength(1);
-    expect(changes(started.events, 'email')).toBe(0);
+    expect(started.runtime.ui!.toasts.shown).toEqual([]);
   });
 });

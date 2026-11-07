@@ -142,18 +142,22 @@ describe('Skip and the live progress (v3 Phase 3)', () => {
     const { fixture, worker, runtime } = await start('skip-later', true, { settle: { quietMs: 60, capMs: 800 } });
     const ending = runtime.fill()!;
     const cvKey = await currentKey(worker, 'Resume/CV');
-    // The page turns busy at the Skip and stays so: the pass ends at the settle's cap, paused page-busy.
-    const busy = fixture.doc.createElement('div');
-    busy.setAttribute('aria-busy', 'true');
-    busy.setAttribute('role', 'progressbar');
-    busy.textContent = 'Saving...';
-    fixture.doc.querySelector('form')!.append(busy);
+    // An email code box shows at the Skip (v4: a page still busy no longer pauses, D7): the pass stops, paused there.
+    const code = fixture.doc.createElement('div');
+    const label = fixture.doc.createElement('label');
+    label.htmlFor = 'vcode';
+    label.textContent = 'Verification code';
+    const box = fixture.doc.createElement('input');
+    box.id = 'vcode';
+    box.name = 'vcode';
+    code.append(label, box);
+    fixture.doc.querySelector('form')!.append(code);
     expect(await worker.platform.deliver({ v: 1, type: 'run/skip', fieldKey: cvKey })).toEqual({ ok: true, data: {} });
     expect(await ending).toBe('paused');
-    busy.remove();
-    // The person's Continue: the same step again, from the books the first attempt left.
-    await worker.platform.deliver({ v: 1, type: 'run/continue' });
-    await vi.waitFor(() => expect(worker.of('run/begin')).toHaveLength(2));
+    // The code entered, its box goes: the run carries on by itself (v4, D10), the same step again from the books the
+    // first attempt left.
+    code.remove();
+    await vi.waitFor(() => expect(worker.of('run/begin')).toHaveLength(2), { timeout: 5_000 });
     await vi.waitFor(() => expect(worker.reports.at(-1)!.status).toBe('review'), { timeout: 8_000 });
     const report = worker.reports.at(-1)!;
     expect(report.fields.find((row) => row.label === 'Resume/CV')).toMatchObject({ reason: 'skipped-by-you',
