@@ -20,7 +20,8 @@
  */
 import { AUTOFILL_COVER_LETTER_MAX_BYTES, AUTOFILL_FILE_MIME_TYPES, AUTOFILL_RESUME_MAX_BYTES } from '../contract/tailorit';
 import { uploadName } from '../core/profile/canonicalize';
-import { PreviewPortMessageSchema, RESUME_CHUNK_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
+import { RESUME_CHUNK_BYTES, ResumePortMessageSchema } from '../messaging/schemas';
+import { PreviewPortMessageSchema } from '../messaging/page-schemas';
 import type { PortLike } from '../platform/types';
 import { log } from '../shared/log';
 import { PDF_SIGNATURE, startsWith, toBase64, ZIP_SIGNATURE } from './bytes';

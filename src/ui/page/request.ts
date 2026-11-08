@@ -4,7 +4,8 @@
  * an answer of the wrong shape. Pages talk to the worker through messaging only; the platform is passed in.
  */
 import { answerSchema, type Answer } from '../../messaging/envelope';
-import { PAGE_ANSWER_SCHEMAS, type PageMessage } from '../../messaging/schemas';
+import { type PageMessage } from '../../messaging/schemas';
+import { PAGE_ANSWER_SCHEMAS } from '../../messaging/page-schemas';
 import type { PagePlatform } from '../../platform/types';
 
 /** What the worker answers a page message of type T, once checked. */

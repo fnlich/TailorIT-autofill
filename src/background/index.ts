@@ -12,7 +12,8 @@ import { planFrame } from '../core/plan/frame';
 import { attachResume, canonicalizeProfile } from '../core/profile/canonicalize';
 import type { RunState } from '../core/types/run';
 import { ok, refuse } from '../messaging/envelope';
-import { ExternalMessageSchema, type ContentMessage } from '../messaging/schemas';
+import { type ContentMessage } from '../messaging/schemas';
+import { ExternalMessageSchema } from '../messaging/page-schemas';
 import { createWorkerPlatform } from '../platform/chrome';
 import type { PortLike, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
@@ -32,6 +33,7 @@ import { createChains } from './chain';
 import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
 import { createLauncherStore, LAUNCHER_LIMIT } from './launcher';
 import { createLearnedListStore, LEARNED_LISTS_LIMIT } from './learned-lists';
+import { storedListsOf } from './stored-lists';
 import { createKeyedQueue, createRateLimit } from './locks';
 import { createAcceptBook, createMatchCache } from './match-cache';
 import { createPanelHandlers, openSidePanel } from './panel';
@@ -203,7 +205,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   const launchers = createLauncherStore(local);
   const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
   // s2 lists: the option lists a host's dropdowns showed a run (learned-lists.ts): storage.local, hashed keys only.
-  const learnedLists = createLearnedListStore(local, now);
+  const learnedLists = createLearnedListStore(local);
   const listsLimit = createRateLimit(LEARNED_LISTS_LIMIT.count, LEARNED_LISTS_LIMIT.windowMs, now);
   /** "Hide until next visit" for a tab's page (v3 Phase 3 review), in storage.session: the top frame's document it was
    *  chosen in, so the side panel can offer it back; a later page of the tab never reads as hidden. */
@@ -757,11 +759,14 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // waits on what the press brings (agent.ts entered).
         // v3 Phase 8: the sentinel's one message (sites.ts).
         'page/recognised': (message, from) => sites.recognised(message, from),
-        // s2 lists: the sending frame's host's learned lists, and one learned (learned-lists.ts), by Chrome's address.
-        'lists/known': async (_message, from) => {
+        // s2 lists: the sending frame's host's learned lists, and one learned (learned-lists.ts), by Chrome's address;
+        // with them the stored lists its adapter names (stored-lists.ts: the content script carries none of them).
+        'lists/known': async (message, from) => {
           const retry = listsLimit.take(`${from.tabId}/`);
           if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
-          return ok({ lists: await learnedLists.known(from.url) });
+          const stored = message.stored === undefined || message.stored.length === 0 ? {}
+            : { stored: storedListsOf(message.stored) };
+          return ok({ lists: await learnedLists.known(from.url), ...stored });
         },
         'lists/learn': async (message, from) => {
           const retry = listsLimit.take(`${from.tabId}/`);

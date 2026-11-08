@@ -16,7 +16,8 @@
  */
 import { useId, useState } from 'react';
 import type { Answer } from '../../messaging/envelope';
-import { ASK_LENGTHS, MAX_CUSTOM_QUESTION, type AskLength, type PanelAskAnswer } from '../../messaging/schemas';
+import { type AskLength, type PanelAskAnswer } from '../../messaging/schemas';
+import { ASK_LENGTHS, MAX_CUSTOM_QUESTION } from '../../messaging/page-schemas';
 import { COPY } from '../../shared/copy';
 import { Icon } from '../brand/Icon';
 

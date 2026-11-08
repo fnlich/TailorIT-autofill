@@ -7,6 +7,7 @@
 import type { FieldFormat, Platform } from '../core/enums';
 import type { ShownBlock } from '../core/steps/blocks';
 import type { QueryKey, WidgetKey } from '../dom/fillers/events';
+import type { StoredListId } from '../shared/learned-lists';
 
 export type AdapterId = Platform | 'generic';
 
@@ -91,12 +92,20 @@ export interface WidgetDecl {
    *  on a keydown and never on the input event (Lever's location search: any key but its arrows and Enter starts it). */
   queryKey?: QueryKey;
   // ── s2 lists (snapshot round 2, decision 1: stored lists, chosen at once) ──
-  /** A combobox's whole list as its adapter stored it from the snapshots, every option's label as a whole read takes it
-   *  (Workday's "Select One" first included), in the list's order: the field's reading at scan time, so the planner
+  /** The id of the combobox's whole list as the extension stores it from the snapshots (shared/learned-lists.ts
+   *  STORED_LIST_IDS; the labels live in the worker, background/stored-lists.ts, never in the content script): every
+   *  option's label as a whole read takes it (Workday's "Select One" first included), in the list's order, served by
+   *  lists/known before a step's loop (ScanOptions.storedLists). It is the field's reading at scan time, so the planner
    *  plans it on its first pass and its list is never opened to be read. Its choice opens the list once, finds the
    *  planned option by its label at its place, clicks it and reads it back; a list the page shows otherwise is read
-   *  whole as before (options-changed), and that read is the field's reading from then on. */
-  knownOptions?: readonly string[];
+   *  whole as before (options-changed), and that read is the field's reading from then on. A scan without the list
+   *  (none served) reads the widget as lazy, as before. */
+  storedList?: StoredListId;
+  /** The review of round 2, L2: the value of the field this dropdown's list depends on, as the page shows it now
+   *  (Workday's State: the country its Country shows), where it has one: a list learned for it is kept and offered
+   *  under its label with this value, so another country's States are never offered for it. Page text, hashed into
+   *  the key (dom/widgets/known.ts learnedListKey). */
+  learnContext?: string;
   /** The page draws the widget's whole list at once, every option in the DOM (Workday's dropdowns: 250 country rows in
    *  a box 200 px high), never a part at a time: a read of it scrolls through it without waiting for rows to be drawn,
    *  each view read at once, and an option is shown again the same way. */

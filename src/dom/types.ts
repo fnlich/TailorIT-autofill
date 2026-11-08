@@ -8,6 +8,7 @@
  * the scanner recognises (WidgetTarget) and what opening one read (WidgetReading).
  */
 import type { BaseKey, FieldDescriptor, FieldKey, OptionSetHash, ReasonCode, SectionRef } from '../core/types';
+import type { StoredListId } from '../shared/learned-lists';
 import type { QueryKey, WidgetKey } from './fillers/events';
 
 /** How a visually hidden native control qualified to be filled (the proxy rule): through its tied visible label, or
@@ -180,6 +181,12 @@ export interface WidgetTarget {
    *  host before: ScanOptions.learnedLists), set only while the field's options are that list, which no reading of the
    *  run has replaced. Its choice is made at once (widgets/fill.ts chooseKnown). */
   readonly knownOptions?: readonly string[];
+  /** The id of the stored list its adapter declared (WidgetDecl.storedList), whether or not the scan was given it:
+   *  the content script asks the worker for the lists its scans declare (lists/known). */
+  readonly storedList?: StoredListId;
+  /** The value of the field its list depends on, as its adapter reads it (WidgetDecl.learnContext): part of the key
+   *  its learned list is kept under. */
+  readonly learnContext?: string;
   /** Where that list came from: the adapter's declaration, or a list learned on this host. */
   readonly knownFrom?: 'adapter' | 'learned';
   /** The page draws its whole list at once (WidgetDecl.drawnWhole): read and shown again without waiting to draw. */

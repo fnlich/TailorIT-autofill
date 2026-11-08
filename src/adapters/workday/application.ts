@@ -92,7 +92,7 @@ import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import type { Adapter, DatePartsDecl, UploadState, WidgetDecl } from '../types';
-import { storedListOf } from './lists';
+import { learnContextOf, storedListOf } from './lists';
 
 /** The owner's snapshots the step hooks were written from, as converted (fixtures/workday/). */
 export const WORKDAY_STEP_SNAPSHOTS = ['fixtures/workday/cisive-autofill-resume.html',
@@ -429,8 +429,10 @@ export function widgetFor(control: Element): WidgetDecl | null {
     // s2 lists (decision 1): every dropdown's list is drawn whole (all 250 country rows and all 61 state rows are in
     // the DOM: snapshot1's exelixis captures), and Country and State carry their stored lists (lists.ts storedListOf).
     const stored = storedListOf(button);
+    const context = stored === null ? learnContextOf(button) : null;
     return { kind: 'combobox', opener: button, expanded: button, shownAnswer: dropdownAnswer(button),
-      drawnWhole: true, ...(stored === null ? {} : { knownOptions: stored }),
+      drawnWhole: true, ...(stored === null ? {} : { storedList: stored }),
+      ...(context === null ? {} : { learnContext: context }),
       snapshot: 'fixtures/workday/resolvetech-source-open.html' };
   }
   const container = control.localName === 'input' ? control.closest('[data-automation-id="multiSelectContainer"]') : null;

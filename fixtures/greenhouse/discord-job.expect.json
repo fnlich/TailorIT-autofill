@@ -42,7 +42,7 @@
       "required": true,
       "section": "Apply for this job",
       "fillable": true,
-      "options": 244,
+      "options": "lazy",
       "control": "#country",
       "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country."
     },
@@ -307,7 +307,7 @@
       "required": true,
       "section": "Voluntary Self-Identification",
       "fillable": true,
-      "options": 3,
+      "options": "lazy",
       "control": "#gender"
     },
     {
@@ -326,7 +326,7 @@
       "required": true,
       "section": "Voluntary Self-Identification",
       "fillable": true,
-      "options": 3,
+      "options": "lazy",
       "control": "#hispanic_ethnicity",
       "note": "No race question is rendered in this capture."
     },
@@ -346,7 +346,7 @@
       "required": true,
       "section": "Voluntary Self-Identification",
       "fillable": true,
-      "options": 3,
+      "options": "lazy",
       "control": "#veteran_status"
     },
     {

@@ -36,7 +36,7 @@
       "section": "Apply for this job",
       "fillable": true,
       "control": "#country",
-      "options": 244,
+      "options": "lazy",
       "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country, chosen (its chosen value redacted), so react-select draws no required shim beside it."
     },
     {
@@ -146,7 +146,7 @@
       "section": "Voluntary Self-Identification",
       "fillable": true,
       "control": "#gender",
-      "options": 3
+      "options": "lazy"
     },
     {
       "label": "Are you Hispanic/Latino?",
@@ -155,7 +155,7 @@
       "section": "Voluntary Self-Identification",
       "fillable": true,
       "control": "#hispanic_ethnicity",
-      "options": 3
+      "options": "lazy"
     },
     {
       "label": "Veteran Status",
@@ -164,7 +164,7 @@
       "section": "Voluntary Self-Identification",
       "fillable": true,
       "control": "#veteran_status",
-      "options": 3
+      "options": "lazy"
     },
     {
       "label": "",

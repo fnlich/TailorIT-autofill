@@ -27,7 +27,7 @@
       "required": true,
       "section": "my-information",
       "fillable": true,
-      "options": 250,
+      "options": "lazy",
       "control": "button[id=\"country--country\"]"
     },
     {

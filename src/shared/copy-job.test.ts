@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { AUTOFILL_FILE_KINDS, RESUME_CHOICE_REASONS, WORK_ARRANGEMENTS } from '../contract/tailorit';
-import { ADD_JOB_OUTCOMES, ASK_LENGTHS, ASK_REFUSALS } from '../messaging/schemas';
+import { ADD_JOB_OUTCOMES, ASK_LENGTHS, ASK_REFUSALS } from '../messaging/page-schemas';
 import { COPY } from './copy';
 
 /** A sentence a person reads: it starts with a capital or a quote, ends with a full stop. */

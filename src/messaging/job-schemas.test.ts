@@ -3,10 +3,8 @@
  * carries, and that an answer carries nothing more than its schema names.
  */
 import { describe, expect, it } from 'vitest';
-import {
-  AddJobAnswerSchema, ContentMessageSchema, FRAME_ANSWER_SCHEMAS, JobCardSchema, PAGE_ANSWER_SCHEMAS, PageMessageSchema,
-  PanelAskAnswerSchema, PanelJobAnswerSchema, PanelPortMessageSchema, TabReportsAnswerSchema, WorkerToContentSchema,
-} from './schemas';
+import { ContentMessageSchema, FRAME_ANSWER_SCHEMAS, WorkerToContentSchema } from './schemas';
+import { AddJobAnswerSchema, JobCardSchema, PAGE_ANSWER_SCHEMAS, PageMessageSchema, PanelAskAnswerSchema, PanelJobAnswerSchema, PanelPortMessageSchema, TabReportsAnswerSchema } from './page-schemas';
 
 const CARD = {
   state: 'answered',

@@ -34,7 +34,7 @@
       "required": true,
       "section": "Apply for this job",
       "fillable": true,
-      "options": 244,
+      "options": "lazy",
       "control": "#country",
       "note": "react-select inside the Phone fieldset, whose legend (Phone) is visually hidden: the phone number's country, 244 options starting with \"United States +1\". Its text box is drawn 3.97 px wide on the live page (react-select sizes an empty one to a space of the page's Roboto at 16 px), under the scanner's 4 px, inside its visible .select__control: the box the adapter declares (WidgetDecl.box). This fixture has no web font, so its fallback font draws the box 4.45 px wide; the DOM test pins the live width."
     },

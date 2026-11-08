@@ -7,13 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { answerSchema } from '../messaging/envelope';
-import {
-  CONTENT_ANSWER_SCHEMAS,
-  ContentMessageSchema,
-  EXTERNAL_ANSWER_SCHEMAS,
-  PAGE_ANSWER_SCHEMAS,
-  PageMessageSchema,
-} from '../messaging/schemas';
+import { CONTENT_ANSWER_SCHEMAS, ContentMessageSchema } from '../messaging/schemas';
+import { EXTERNAL_ANSWER_SCHEMAS, PAGE_ANSWER_SCHEMAS, PageMessageSchema } from '../messaging/page-schemas';
 import {
   askingCore,
   beginRun,
@@ -66,7 +61,7 @@ describe('every answer parses with the schema its receiver uses', () => {
       async () => ({ type: 'panel/open' }),
       // s2 lists: a host's learned list kept, then its lists answered.
       async () => ({ type: 'lists/learn', key: '0123456789abcdef', labels: ['Select One', 'Mr.', 'Ms.'] }),
-      async () => ({ type: 'lists/known' }),
+      async () => ({ type: 'lists/known', stored: ['greenhouse.phone-countries', 'workday.countries'] }),
     ];
     for (const build of messages) {
       const message = await build();

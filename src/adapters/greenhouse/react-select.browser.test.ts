@@ -151,7 +151,7 @@ afterEach(() => {
 });
 
 describe("Greenhouse's react-selects, as the adapter declares them", () => {
-  it('scans each select as its declared kind, its options lazy (a stored list whole); the required shim and the hidden country search are no fields', async () => {
+  it('scans each select as its declared kind, its options lazy (a stored list whole once the worker serves it); the required shim and the hidden country search are no fields', async () => {
     const page = await open();
     const fields = page.scanned().fields;
     const kindOf = (id: string) => fields.find((field) => field.idAttr === id);
@@ -159,12 +159,13 @@ describe("Greenhouse's react-selects, as the adapter declares them", () => {
       const found = kindOf(id)?.options;
       return found === undefined || found === 'lazy' ? found : found.length;
     };
-    // s2 lists: the phone's country and the EEOC Gender hold their stored lists (adapters/greenhouse/lists.ts).
+    // s2 lists: the phone's country and the EEOC Gender hold their stored lists once the worker serves them
+    // (lists/known, background/stored-lists.ts): a scan given none reads them lazy.
     expect(['country', 'candidate-location', 'school--0', 'degree--0', AUTHORIZED, SKILLS, RESIDENCE, 'gender']
       .map((id) => [id, kindOf(id)?.kind, options(id)])).toEqual([
-      ['country', 'combobox', 244], ['candidate-location', 'typeahead-remote', 'lazy'],
+      ['country', 'combobox', 'lazy'], ['candidate-location', 'typeahead-remote', 'lazy'],
       ['school--0', 'typeahead-remote', 'lazy'], ['degree--0', 'combobox', 'lazy'], [AUTHORIZED, 'combobox', 'lazy'],
-      [SKILLS, 'multiselect', 'lazy'], [RESIDENCE, 'combobox', 'lazy'], ['gender', 'combobox', 3]]);
+      [SKILLS, 'multiselect', 'lazy'], [RESIDENCE, 'combobox', 'lazy'], ['gender', 'combobox', 'lazy']]);
     expect(kindOf('question_9003[]')).toMatchObject({ kind: 'checkbox-group', required: true,
       label: 'How did you hear about this opportunity? (select all that apply)' });
     expect(fields.some((field) => field.idAttr === 'iti-0__search-input' || field.label === 'Search')).toBe(false);
@@ -194,9 +195,10 @@ describe("Greenhouse's react-selects, as the adapter declares them", () => {
     const hispanic = page.target('hispanic_ethnicity');
     await fillWidget(hispanic, optionOf(hispanic, 'No'), page.ctx());
     const race = (pageExpect as unknown as { states: Array<{ fields: unknown[] }> }).states[0]!.fields;
-    // Read, Hispanic/Latino's options are its three, as its stored list held them (s2 lists).
+    // Read, Hispanic/Latino's options are its three, no longer 'lazy'.
     expect(compareWithExpectation(page.fixture.doc, page.scanned(), readExpectation({ ...expectation,
-      fields: [...expectation.fields, ...race] }))).toEqual([]);
+      fields: [...expectation.fields, ...race] }))).toEqual([{ control: '#hispanic_ethnicity', property: 'options',
+      expected: 'lazy', actual: '3' }]);
   });
 
   it('opens a Yes/No with one bubbling mouseup, reads it, closes it with focusout and blur, then chooses with click()', async () => {

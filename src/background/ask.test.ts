@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { AUTOFILL_CUSTOM_QUESTION_LENGTHS, AUTOFILL_AI_LIMITS, AUTOFILL_AI_POLL_MS } from '../contract/tailorit';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
-import { MAX_CUSTOM_QUESTION } from '../messaging/schemas';
+import { MAX_CUSTOM_QUESTION } from '../messaging/page-schemas';
 import { ASK_LIMIT, screenQuestion } from './ask';
 import {
   beginRun,

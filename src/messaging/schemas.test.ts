@@ -2,26 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { MAX_STEPS } from '../core/types/run';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { answerSchema } from './envelope';
-import {
-  AuthStatusSchema,
-  ContentMessageSchema,
-  DoneAnswerSchema,
-  FieldDescribeAnswerSchema,
-  FRAME_ANSWER_SCHEMAS,
-  PAGE_ANSWER_SCHEMAS,
-  PageMessageSchema,
-  PanelPortMessageSchema,
-  PanelSentAnswerSchema,
-  RUN_STATE_RECORD_CAPS,
-  RunsClearAnswerSchema,
-  RunStateGetAnswerSchema,
-  RunStatePutAnswerSchema,
-  SettingsAnswerSchema,
-  StartPairingAnswerSchema,
-  TabReportsAnswerSchema,
-  WorkerToContentSchema,
-  WriteValueSchema,
-} from './schemas';
+import { ContentMessageSchema, DoneAnswerSchema, FieldDescribeAnswerSchema, FRAME_ANSWER_SCHEMAS, RUN_STATE_RECORD_CAPS, RunStateGetAnswerSchema, RunStatePutAnswerSchema, WorkerToContentSchema, WriteValueSchema } from './schemas';
+import { AuthStatusSchema, PAGE_ANSWER_SCHEMAS, PageMessageSchema, PanelPortMessageSchema, PanelSentAnswerSchema, RunsClearAnswerSchema, SettingsAnswerSchema, StartPairingAnswerSchema, TabReportsAnswerSchema } from './page-schemas';
 
 const STATUS = {
   connection: 'connected',
