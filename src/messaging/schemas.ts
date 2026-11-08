@@ -27,6 +27,7 @@ import { ANSWER_BASES, FILE_REFS, RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from
   '../core/types/run';
+import { LEARNED_KEY, MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS, MAX_LEARNED_PER_HOST } from '../shared/learned-lists';
 import { RECOGNITION_REASONS } from '../shared/recognition';
 import { FrameReportSchema } from '../shared/report';
 import { ContentSettingsSchema, SettingsSchema } from '../shared/settings';
@@ -427,6 +428,15 @@ const contentMessages = [
    *  frame's address again itself (Chrome's, never a payload's), limits the asks per tab and injects the content script
    *  into that one document. The only message a company's own page sends before then. */
   z.strictObject({ v, type: z.literal('page/recognised'), reason: z.enum(RECOGNITION_REASONS) }),
+  // ── s2 lists (snapshot round 2, decision 1: learned lists) ──
+  /** The lists the sending frame's host showed before (background/learned-lists.ts), asked once per run where the scan
+   *  holds a learnable dropdown (dom/widgets/known.ts). The worker reads the host from Chrome's sender address, never
+   *  a payload. Answered LearnedListsAnswerSchema. */
+  z.strictObject({ v, type: z.literal('lists/known') }),
+  /** A learnable dropdown's complete whole read: its label's key (the first 16 hex digits of its slug's SHA-256) and
+   *  its option labels (page text, never a value), kept for the sender's host. Nothing is kept from a private tab. */
+  z.strictObject({ v, type: z.literal('lists/learn'), key: z.string().regex(LEARNED_KEY),
+    labels: z.array(z.string().min(1).max(MAX_LEARNED_LABEL)).min(1).max(MAX_LEARNED_OPTIONS) }),
 ] as const;
 
 /** Only the e2e build compiles this in: the content script reports that storage.local refused it. */
@@ -905,6 +915,14 @@ export const ADD_JOB_OUTCOMES = ['added', 'saved', 'closed', 'unsupported', 'not
 export type AddJobOutcome = (typeof ADD_JOB_OUTCOMES)[number];
 export const AddJobAnswerSchema = z.strictObject({ outcome: z.enum(ADD_JOB_OUTCOMES) });
 
+/** s2 lists: lists/known's answer: the host's learned lists, the most recently learned of each key (at most
+ *  MAX_LEARNED_PER_HOST). Option labels only. */
+export const LearnedListsAnswerSchema = z.strictObject({ lists: z.array(z.strictObject({
+  key: z.string().regex(LEARNED_KEY),
+  labels: z.array(z.string().min(1).max(MAX_LEARNED_LABEL)).min(1).max(MAX_LEARNED_OPTIONS),
+})).max(MAX_LEARNED_PER_HOST) });
+export type LearnedListsAnswer = z.infer<typeof LearnedListsAnswerSchema>;
+
 /** v3 Phase 8: page/recognised's answer: the content script was injected into the frame (or was there already). */
 export const PageRecognisedAnswerSchema = z.strictObject({ injected: z.boolean() });
 /** v3 Phase 8: Options › "Where Autofill works" › Company career sites: turned on by the person, and Chrome holding its
@@ -1122,6 +1140,9 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'agent/entered': DoneAnswerSchema,
   'frame/wall': DoneAnswerSchema,
   'page/recognised': PageRecognisedAnswerSchema,
+  // s2 lists
+  'lists/known': LearnedListsAnswerSchema,
+  'lists/learn': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
 /** The data schema of the worker's answer to each page message. */

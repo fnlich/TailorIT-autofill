@@ -2,15 +2,14 @@
  * The phone's country on Greenhouse's form (2026-11-01), on the real react-select v5 in Greenhouse's wrapper
  * (fixtures/synthetic/greenhouse-widgets, its 'phone' form: the names, the email and the phone, served at .../9104 and
  * .../9105, the first with its phone and country answering each other): the content runtime fills it with the fake
- * worker planning each pass with the real planFrame and three people besides the golden one. The phone's country lists
- * the live form's 244 countries, so the profile's country is searched for by its name ("Canada"), typed into the
- * select's own text box after its one mouseup, and the one result that is it clicked; it reads back by its flag. With
- * the phone and its country answering each other as on the live form (MountOptions.phonePicks): a number typed with a
- * dial code picks the country by itself, which stands only when it is the profile's (the United Kingdom for "+44 ..."),
- * never when it is another country of that code (the United States for a Canadian's "+1 512 ..."); and a country
- * chosen from the list draws the number in its national form ("(512) 555-0188"), which still holds the profile's
- * number: it is never typed again with its code, which the country already shows. Every event on a control is
- * untrusted, the fillers' or the declared mouseup, and nothing is submitted.
+ * worker planning each pass with the real planFrame and four people besides the golden one. Snapshot round 2
+ * (decisions 1 and 2): the phone's country is the phone's ("Country code", contact.phoneCountry: the phone's own
+ * country, never the address's), its 244 countries are its stored list, so it is planned on the first pass with the
+ * number and chosen before it; its country is searched for by its name ("Canada"), typed into the select's own text
+ * box after its one mouseup, and the one result that is it clicked (the bridge, which chooses it by its label, is the
+ * e2e's); it reads back by its flag. The number is then typed without its dial code, which the country shows, so it
+ * never picks a country of its own. Every event on a control is untrusted, the fillers' or the declared mouseup, and
+ * nothing is submitted.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import pageExpect from '../../fixtures/synthetic/greenhouse-widgets/phone.expect.json';
@@ -61,8 +60,10 @@ function personWith(phone: Partial<Contact['phone']>, address: Partial<Contact['
     testVocab(), NOW).profile, GOLDEN_RESUME, 48_213);
 }
 
-/** The three people (e2e/mock-server's profile-phone-no-code, profile-canada and profile-uk). */
+/** The three people (e2e/mock-server's profile-phone-no-code, profile-canada and profile-uk), and (snapshot round 2) a
+ *  phone of India's beside a home in the United States: the case the owner's snapshots chose "+1" for. */
 const NO_CODE = () => personWith({ number: '512 555 0147', country: 'US' });
+const INDIAN_PHONE = () => personWith({ number: '+91 98765 43210', country: 'IN' });
 const CANADIAN = () => personWith({ number: '+1 512 555 0188', country: 'CA' },
   { city: 'Toronto', region: 'ON', postalCode: 'M5V 2T6', country: 'CA' });
 const BRITON = () => personWith({ number: '+44 20 7946 0958', country: 'GB' },
@@ -77,18 +78,18 @@ interface Page {
 }
 
 /** The phone form (the page's own module script left out: the test mounts the app). */
-async function open(phonePicks: boolean): Promise<{ fixture: Fixture; log: GreenhouseLog }> {
+async function open(phonePicks: boolean, phoneClearsMs?: number): Promise<{ fixture: Fixture; log: GreenhouseLog }> {
   const fixture = await loadFixture(document, pageHtml.replace(/<script[^>]*><\/script>/, ''), { width: 1280, height: 1600 });
   const log = newLog();
   mountHeaderButton(fixture.doc.getElementById('autofill-host')!, log);
   mounted.push(mountGreenhouseForm(fixture.doc.getElementById('gh-root')!, { styles: fixture.doc.head, log, form: 'phone',
-    phonePicks }).unmount);
+    phonePicks, ...(phoneClearsMs === undefined ? {} : { phoneClearsMs }) }).unmount);
   return { fixture, log };
 }
 
 /** The phone form, as its hand-written expectations say, filled once for `profile`. */
-async function filled(profile: Profile, phonePicks: boolean): Promise<Page> {
-  const { fixture, log } = await open(phonePicks);
+async function filled(profile: Profile, phonePicks: boolean, phoneClearsMs?: number): Promise<Page> {
+  const { fixture, log } = await open(phonePicks, phoneClearsMs);
   const root = greenhouseAdapter.detect(fixture.doc)!.formRoot;
   expect(compareWithExpectation(fixture.doc, scan(root, greenhouseAdapter, { platform: 'greenhouse' }),
     readExpectation(pageExpect))).toEqual([]);
@@ -121,53 +122,76 @@ function expectInvariants(page: Page, digits: string): void {
   expect(sentinelsIn(JSON.stringify(logs.mock.calls), sentinels)).toEqual([]);
 }
 
-describe("the phone's country, searched for by its name", () => {
-  it('a phone with no country code: the United States typed and chosen, the number drawn nationally still its own', async () => {
+describe("the phone's country, chosen first, then the number typed without its code", () => {
+  it('scans the phone country as "Country code" holding its stored 244 countries, planned on the first pass', async () => {
     const page = await filled(NO_CODE(), true);
-    expect(row(page, 'Country')).toMatchObject({ ...VERIFIED, kind: 'combobox', provenance: 'profile' });
+    const first = page.worker.of('plan/request')[0]!;
+    const specs = first.specs as Array<{ idAttr: string; label: string; options: unknown[] | 'lazy' }>;
+    const country = specs.find((spec) => spec.idAttr === 'country')!;
+    expect(country.label).toBe('Country code');
+    expect(Array.isArray(country.options) ? country.options.length : country.options).toBe(244);
+    // Planned on the first pass with the number: the country first.
+    const order = page.report.fields.map((field) => field.label);
+    expect(order.indexOf('Country code')).toBeLessThan(order.indexOf('Phone'));
+    expect(row(page, 'Country code')).toMatchObject({ category: 'contact.phoneCountry' });
+  });
+
+  it('a phone with no country code: the United States typed and chosen, then the number as the profile writes it', async () => {
+    const page = await filled(NO_CODE(), true);
+    expect(row(page, 'Country code')).toMatchObject({ ...VERIFIED, kind: 'combobox', provenance: 'profile',
+      category: 'contact.phoneCountry' });
     expect(page.log.values.country).toBe('us');
     expect(flagOf(page)).toBe('iti__flag iti__us');
     expect(page.log.typed.country).toEqual(['United States']);
-    // Typed as the profile writes it; the country, once chosen, draws it "(512) 555-0147": the same digits.
     expect(row(page, 'Phone')).toMatchObject({ ...VERIFIED, category: 'contact.phone' });
-    expect(phoneBox(page).value).toBe('(512) 555-0147');
+    expect(phoneBox(page).value).toBe('512 555 0147');
     expectInvariants(page, '5125550147');
   });
 
-  it("a Canadian's \"+1 512 ...\": the United States the number picked is replaced by Canada, typed, and the number drawn nationally holds the profile's", async () => {
+  it("a Canadian's \"+1 512 ...\": Canada chosen before the number, which is typed without its \"+1\" and picks nothing", async () => {
     const page = await filled(CANADIAN(), true);
-    // The page's own pick (the United States) was in the field: the profile's country replaced it, flagged for a look.
-    expect(row(page, 'Country')).toMatchObject({ kind: 'combobox', provenance: 'profile', wrote: true,
-      verification: 'verified', status: 'flagged', reason: 'prefill-conflict' });
+    expect(row(page, 'Country code')).toMatchObject({ ...VERIFIED, kind: 'combobox', provenance: 'profile' });
     expect(page.log.values.country).toBe('ca');
     expect(flagOf(page)).toBe('iti__flag iti__ca');
     expect(page.log.typed.country).toEqual(['Canada']);
-    // "+1 512 555 0188" as the profile writes it, then "(512) 555-0188" once Canada is chosen: never typed again with
-    // its "+1", which Canada shows already.
     expect(row(page, 'Phone')).toMatchObject({ ...VERIFIED, category: 'contact.phone' });
-    expect(phoneBox(page).value).toBe('(512) 555-0188');
-    expect(page.log.values.phone).toBe('(512) 555-0188');
+    expect(phoneBox(page).value).toBe('512 555 0188');
+    expect(page.log.values.phone).toBe('512 555 0188');
     expectInvariants(page, '15125550188');
   });
 
-  it("a Briton's \"+44 20 ...\": the United Kingdom typed where the number picks nothing, and kept, never typed, where it picked it", async () => {
-    const typed = await filled(BRITON(), false);
-    expect(row(typed, 'Country')).toMatchObject({ ...VERIFIED, kind: 'combobox', provenance: 'profile' });
-    expect(typed.log.values.country).toBe('gb');
-    expect(flagOf(typed)).toBe('iti__flag iti__gb');
-    expect(typed.log.typed.country).toEqual(['United Kingdom']);
-    expect(row(typed, 'Phone')).toMatchObject(VERIFIED);
-    expect(phoneBox(typed).value).toBe('+44 20 7946 0958');
-    expectInvariants(typed, '442079460958');
-    removeFixtures(document);
+  it("a Briton's \"+44 20 ...\": the United Kingdom typed and chosen, the number typed nationally, on both pages", async () => {
+    for (const phonePicks of [false, true]) {
+      const page = await filled(BRITON(), phonePicks);
+      expect(row(page, 'Country code')).toMatchObject({ ...VERIFIED, kind: 'combobox', provenance: 'profile' });
+      expect(page.log.values.country).toBe('gb');
+      expect(flagOf(page)).toBe('iti__flag iti__gb');
+      expect(page.log.typed.country).toEqual(['United Kingdom']);
+      expect(row(page, 'Phone')).toMatchObject(VERIFIED);
+      expect(phoneBox(page).value).toBe('20 7946 0958');
+      expectInvariants(page, '442079460958');
+      removeFixtures(document);
+    }
+  });
 
-    const picked = await filled(BRITON(), true);
-    expect(row(picked, 'Country')).toMatchObject({ status: 'skipped', reason: 'already-correct', wrote: false });
-    expect(picked.log.values.country).toBe('gb');
-    expect(flagOf(picked)).toBe('iti__flag iti__gb');
-    expect(picked.log.typed.country).toBeUndefined();
-    expect(row(picked, 'Phone')).toMatchObject(VERIFIED);
-    expect(phoneBox(picked).value).toBe('+44 20 7946 0958');
-    expectInvariants(picked, '442079460958');
+  it('a number the page empties after the country is chosen is typed again, and holds', async () => {
+    const page = await filled(NO_CODE(), false, 300);
+    expect(row(page, 'Country code')).toMatchObject({ ...VERIFIED, category: 'contact.phoneCountry' });
+    expect(row(page, 'Phone')).toMatchObject({ ...VERIFIED, category: 'contact.phone' });
+    expect(phoneBox(page).value).toBe('512 555 0147');
+    // Typed once, emptied by the page, typed once more: never more.
+    const typed = page.events.events.filter((event) => event.type === 'input' && !event.trusted && event.target === 'phone');
+    expect(typed).toHaveLength(2);
+    expectInvariants(page, '5125550147');
+  });
+
+  it("a phone of India's beside a home in the United States: India chosen, never the address's \"+1\"", async () => {
+    const page = await filled(INDIAN_PHONE(), true);
+    expect(row(page, 'Country code')).toMatchObject({ ...VERIFIED, category: 'contact.phoneCountry' });
+    expect(page.log.values.country).toBe('in');
+    expect(flagOf(page)).toBe('iti__flag iti__in');
+    expect(row(page, 'Phone')).toMatchObject({ ...VERIFIED, category: 'contact.phone' });
+    expect(phoneBox(page).value).toBe('98765 43210');
+    expectInvariants(page, '919876543210');
   });
 });

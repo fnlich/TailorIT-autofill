@@ -31,7 +31,7 @@ import { isUsableOption } from '../option-hash';
 import { OPTIONS_CAP_MS, WIDGET_EMPTY_AFTER_MS } from '../thresholds';
 import type { FieldTarget, FillOutcome, WidgetReading } from '../types';
 import { filtersAsTyped, isActionable, isMultiselectable } from './aria';
-import { addOptions, chooseOption, keepReading, pressMember, type WidgetFillContext } from './fill';
+import { addOptions, chooseOption, keepReading, learnRead, pressMember, type WidgetFillContext } from './fill';
 import { awaitList, closeList, openList } from './interact';
 import { readList, type ListRead } from './options';
 
@@ -40,9 +40,10 @@ export {
   WIDGET_ROOT_SELECTOR,
 } from './aria';
 export { chooseThroughBridge, keepReading, remember, type BridgeAttempt, type WidgetFillContext } from './fill';
+export { learnable, learnedListKey, MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS, type LearnList } from './known';
 export { widgetHolds } from './hold';
 export {
-  afterAction, afterBridge, bridgeChoose, closeList, expandedState, newBridgeRun, newReadiness, openList,
+  afterAction, afterBridge, awaitPageReady, bridgeChoose, closeList, expandedState, newBridgeRun, newReadiness, openList,
   pressDeclaredKey, type BridgeChoice, type BridgeRun, type WidgetContext, type WidgetReadiness,
 } from './interact';
 export { chosenLabels, hashOfRead, memberLabel, readList, readShownList, shownOptions, widgetCurrentValue } from './options';
@@ -85,9 +86,13 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
     ctx.readings?.set(target.field.baseKey, reading);
     return { status: 'read', reading };
   };
-  const keepOptions = (read: ListRead, multiselectable: boolean): WidgetReadResult => ({ status: 'read',
-    reading: keepReading(ctx.readings, target.field.baseKey, widget, read.options.map((option) => ({ label: option.label,
-      disabled: option.disabled })), multiselectable, read.complete) });
+  const keepOptions = (read: ListRead, multiselectable: boolean): WidgetReadResult => {
+    const reading = keepReading(ctx.readings, target.field.baseKey, widget, read.options.map((option) => ({
+      label: option.label, disabled: option.disabled })), multiselectable, read.complete);
+    // s2 lists: a learnable dropdown's complete read is kept for its host too.
+    if (reading.kind === 'options') learnRead(ctx, target, widget, reading.options, read.complete);
+    return { status: 'read', reading };
+  };
   // A search its adapter declared has nothing to read before something is typed: it is one, unopened.
   if (widget.declared && widget.kind === 'typeahead-remote' && widget.input !== null) return keep({ kind: 'remote' });
   // A text box that filters what it suggests, and shows nothing before something is typed, is a remote search; a
@@ -103,8 +108,8 @@ export async function readWidget(target: FieldTarget, ctx: WidgetFillContext): P
   }
   const wait = await awaitList(widget, ctx, { prevHash: null, capMs: OPTIONS_CAP_MS, emptyAfterMs: WIDGET_EMPTY_AFTER_MS });
   if (wait.status === 'aborted') return { status: 'aborted' };
-  const read = wait.status === 'ready' ? await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel })
-    : null;
+  const read = wait.status === 'ready' ? await readList(opened.listbox, { signal: ctx.signal, labelOf: widget.optionLabel,
+    drawnWhole: widget.drawnWhole === true }) : null;
   const multiselectable = isMultiselectable(opened.listbox);
   await closeList(widget, ctx, opened);
   if (ctx.signal?.aborted) return { status: 'aborted' };

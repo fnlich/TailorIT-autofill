@@ -31,6 +31,7 @@ import {
 import { createChains } from './chain';
 import { createJobCards, JOB_RELAY_LIMIT, LOOKUP_ON_LOAD_LIMIT, type JobCards } from './job-cards';
 import { createLauncherStore, LAUNCHER_LIMIT } from './launcher';
+import { createLearnedListStore, LEARNED_LISTS_LIMIT } from './learned-lists';
 import { createKeyedQueue, createRateLimit } from './locks';
 import { createAcceptBook, createMatchCache } from './match-cache';
 import { createPanelHandlers, openSidePanel } from './panel';
@@ -201,6 +202,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // The launcher's place and hiding per site (v3 Phase 3): storage.local, a hash of the host only.
   const launchers = createLauncherStore(local);
   const launcherLimit = createRateLimit(LAUNCHER_LIMIT.count, LAUNCHER_LIMIT.windowMs, now);
+  // s2 lists: the option lists a host's dropdowns showed a run (learned-lists.ts): storage.local, hashed keys only.
+  const learnedLists = createLearnedListStore(local, now);
+  const listsLimit = createRateLimit(LEARNED_LISTS_LIMIT.count, LEARNED_LISTS_LIMIT.windowMs, now);
   /** "Hide until next visit" for a tab's page (v3 Phase 3 review), in storage.session: the top frame's document it was
    *  chosen in, so the side panel can offer it back; a later page of the tab never reads as hidden. */
   const visitKey = (tabId: number) => `launcher-visit:${tabId}`;
@@ -753,6 +757,23 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         // waits on what the press brings (agent.ts entered).
         // v3 Phase 8: the sentinel's one message (sites.ts).
         'page/recognised': (message, from) => sites.recognised(message, from),
+        // s2 lists: the sending frame's host's learned lists, and one learned (learned-lists.ts), by Chrome's address.
+        'lists/known': async (_message, from) => {
+          const retry = listsLimit.take(`${from.tabId}/`);
+          if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          return ok({ lists: await learnedLists.known(from.url) });
+        },
+        'lists/learn': async (message, from) => {
+          const retry = listsLimit.take(`${from.tabId}/`);
+          if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+          // The audit's S-6: nothing of a private session is written to storage.local.
+          if (from.incognito === true) {
+            log('lists.private');
+            return ok({});
+          }
+          await learnedLists.learn(from.url, message.key, message.labels);
+          return ok({});
+        },
         // v4: the account wall a tab's top or claim frame shows now (content/runtime.ts tellWall), for PageState.wall.
         'frame/wall': async (message, from) => {
           const entry = await lockTab(from.tabId, () => setWall(session, from.tabId, from.frameId,

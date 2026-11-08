@@ -92,6 +92,7 @@ import { TEXT_CAP_LABEL } from '../../dom/thresholds';
 import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import type { Adapter, DatePartsDecl, UploadState, WidgetDecl } from '../types';
+import { storedListOf } from './lists';
 
 /** The owner's snapshots the step hooks were written from, as converted (fixtures/workday/). */
 export const WORKDAY_STEP_SNAPSHOTS = ['fixtures/workday/cisive-autofill-resume.html',
@@ -425,7 +426,11 @@ export function widgetFor(control: Element): WidgetDecl | null {
     // data-popper-placement="bottom" ...><ul role="listbox" ... id="nxgyi"><li data-value="" role="option"
     // aria-disabled="true" aria-selected="true" id="select-one"><div>Select One</div></li><li data-value="..."
     // role="option" id="..."><div>Career Builder</div></li> ...
+    // s2 lists (decision 1): every dropdown's list is drawn whole (all 250 country rows and all 61 state rows are in
+    // the DOM: snapshot1's exelixis captures), and Country and State carry their stored lists (lists.ts storedListOf).
+    const stored = storedListOf(button);
     return { kind: 'combobox', opener: button, expanded: button, shownAnswer: dropdownAnswer(button),
+      drawnWhole: true, ...(stored === null ? {} : { knownOptions: stored }),
       snapshot: 'fixtures/workday/resolvetech-source-open.html' };
   }
   const container = control.localName === 'input' ? control.closest('[data-automation-id="multiSelectContainer"]') : null;

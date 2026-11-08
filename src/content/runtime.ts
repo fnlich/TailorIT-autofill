@@ -1016,7 +1016,7 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
   /** A fresh scan of the page, with what the last run read of its widgets (their keys carry the read options' hash). */
   function scanPage(on: RunPage): ScanResult {
     return scan(on.root, on.adapter, { platform: on.app.platform, frameId: frameId ?? 0,
-      ...(current === null ? {} : { widgetReadings: current.widgetReadings }) });
+      ...(current === null ? {} : { widgetReadings: current.widgetReadings, learnedLists: current.learnedLists }) });
   }
 
   /** field/focus (Show on page): the field, or its proxy, scrolled into view and focused (the person asked); nothing

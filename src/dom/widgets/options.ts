@@ -11,7 +11,9 @@
  *   look-alike ("LinkedIn" and "LinkedIn - if you are an AI ...") are two options, and two options of one view are
  *   never one (the Phase 4 review, R2). Options are ordered (by aria-posinset when given) and capped at
  *   MAX_WIDGET_OPTIONS, and the whole read at WIDGET_READ_CAP_MS: a read a cap stopped is partial (complete false),
- *   and the planner never matches a partial list loosely (R9).
+ *   and the planner never matches a partial list loosely (R9). s2 lists: a list its adapter says is drawn whole
+ *   (WidgetDecl.drawnWhole, Workday's: all 250 country rows in the DOM) has its views read one after the other with no
+ *   wait between them, and an option is shown again the same way.
  * - An option is shown again to be chosen by its aria-posinset and label, else by its label and place (revealOption).
  * - An option's label is its visible text, or the visible text of the part of it its adapter names (WidgetDecl
  *   .optionLabel: Ashby's School result, its name beside its country and domain), by the same rules.
@@ -182,15 +184,19 @@ export function scrollListTo(listbox: Element, top: number): void {
  * minute and more. A list the page empties or removes while it is read ends the read where it is.
  */
 export async function readList(listbox: Element,
-  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel; option?: string; unchoosable?: string } = {}):
+  options: { signal?: AbortSignal; capMs?: number; labelOf?: OptionLabel; option?: string; unchoosable?: string;
+    drawnWhole?: boolean } = {}):
   Promise<ListRead> {
   const started = monotonicNow();
   const capMs = options.capMs ?? WIDGET_READ_CAP_MS;
   const found: ReadOption[] = [];
   let complete = true;
+  // s2 lists: a list its adapter says is drawn whole (WidgetDecl.drawnWhole: every option in the DOM) has each view
+  // read as soon as it is scrolled to, a property: nothing is drawn after a scroll, so nothing is waited for.
+  const draw = options.drawnWhole === true ? async () => undefined : () => drawn(listbox, options.signal);
   if (scrolls(listbox) && listbox.scrollTop > 0) {
     scrollListTo(listbox, 0);
-    await drawn(listbox, options.signal);
+    await draw();
   }
   complete = takeView(listbox, found, undefined, options.labelOf, options.option, options.unchoosable);
   for (let steps = 0; complete && scrolls(listbox) && listbox.isConnected; steps += 1) {
@@ -204,7 +210,7 @@ export async function readList(listbox: Element,
     }
     // One view at a time, a row's height of overlap kept, so no option falls between two views.
     scrollListTo(listbox, Math.min(end, before + Math.max(1, listbox.clientHeight - 8)));
-    await drawn(listbox, options.signal);
+    await draw();
     if (listbox.scrollTop <= before) break;
     complete = takeView(listbox, found, undefined, options.labelOf, options.option, options.unchoosable);
   }
@@ -222,14 +228,20 @@ export function hashOfRead(options: readonly WidgetOptionRead[]): OptionSetHash 
  * list back to where the read saw it. Null when it is not there any more.
  */
 export async function revealOption(listbox: Element, wanted: Pick<ReadOption, 'label' | 'position' | 'scrollTop' | 'offset'>,
-  options: { signal?: AbortSignal; labelOf?: OptionLabel; option?: string } = {}): Promise<ShownOption | null> {
+  options: { signal?: AbortSignal; labelOf?: OptionLabel; option?: string; drawnWhole?: boolean } = {}):
+  Promise<ShownOption | null> {
   const find = () => shownOptions(listbox, undefined, options.labelOf, options.option)
     .find((option) => sameOption(wanted, option)) ?? null;
   const now = find();
   if (now !== null || !scrolls(listbox)) return now;
   scrollListTo(listbox, wanted.scrollTop);
-  await drawn(listbox, options.signal);
+  if (options.drawnWhole !== true) await drawn(listbox, options.signal);
   return find();
+}
+
+/** s2 lists: waits for a list to draw the view a scroll brought (a list not drawn whole), as a read's views wait. */
+export function drawnView(listbox: Element, signal: AbortSignal | undefined): Promise<void> {
+  return drawn(listbox, signal);
 }
 
 /**

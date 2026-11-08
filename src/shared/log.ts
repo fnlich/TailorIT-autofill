@@ -261,6 +261,9 @@ export const LOG_CODES = [
   'job.choices-unstored',
   'runstate.private',
   'launcher.private',
+  // s2 lists: a host's dropdown list learned (its option count, the lists kept), or one from a private tab not kept.
+  'lists.learned',
+  'lists.private',
 ] as const;
 export type LogCode = (typeof LOG_CODES)[number];
 

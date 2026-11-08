@@ -136,6 +136,16 @@ describe('the Greenhouse adapter on the captures of 2026-11-06', () => {
     }
   });
 
+  // Snapshot round 2, decision 17: the owner's capture kept five chips' "Remove <answer>" labels in clear (the
+  // converter read the chip's words, not its remove button's label): scrubbed by hand, and held so here.
+  it("seatgeek: no chip's remove button names its answer", async () => {
+    const sending = await loadGreenhouse(seatgeekFrameHtml);
+    const labels = Array.from(sending.doc.querySelectorAll('.select__multi-value [aria-label^="Remove " i]'))
+      .map((el) => el.getAttribute('aria-label'));
+    expect(labels.length).toBeGreaterThanOrEqual(5);
+    expect(labels.filter((label) => label !== 'Remove REDACTED' && label !== 'Remove selection')).toEqual([]);
+  });
+
   it('reads a required answer missing after Submit by the control marked invalid, its error text beside it', async () => {
     const gh = await loadGreenhouse(abclegalFrameHtml);
     const errors = greenhouseAdapter.errors!(gh.root).map((error) => error.el);
@@ -159,7 +169,9 @@ describe('the Greenhouse adapter on the captures of 2026-11-06', () => {
     expect(listbox.querySelectorAll('[role="option"]')).toHaveLength(244);
     const result = scan(gh.root, greenhouseAdapter, { platform: 'greenhouse' });
     const field = result.fields.find((each) => each.idAttr === 'country')!;
-    expect(field).toMatchObject({ kind: 'combobox', label: 'Country' });
+    // s2 lists: the phone's country, "Country code" (its own label and the adapter's "code"), its stored 244 countries.
+    expect(field).toMatchObject({ kind: 'combobox', label: 'Country code' });
+    expect(Array.isArray(field.options) ? field.options.length : field.options).toBe(244);
     const log = logEvents(gh.doc);
     const read = await readWidget(result.target(field.key)!, { adapter: greenhouseAdapter, root: gh.root });
     expect(read.status).toBe('read');
