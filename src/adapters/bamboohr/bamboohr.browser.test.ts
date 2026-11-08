@@ -110,10 +110,11 @@ describe('the BambooHR adapter: each rule, and the page read without it', () => 
     });
 
   // The behaviour review of 2026-11-06 (M6, the owner's decision): a checkbox widget holds every press, never the fill.
-  it('fills beside the reCAPTCHA, whose solving is the person’s, and holds the Submit until it is solved', async () => {
+  // v5 p1-rules (PLAN decision 9, like Jobright): the unticked checkbox no longer holds the Submit: BambooHR decides.
+  it('fills beside the reCAPTCHA, whose solving is the person’s, and presses the Submit beside it', async () => {
     const page = await open();
     expect(detectPause(page.doc, page.root, bambooHrAdapter)).toBeNull();
-    expect(pageChallenged(page.doc)).toBe(true);
+    expect(pageChallenged(page.doc)).toBe(false);
     const submit = bambooHrAdapter.submitButton!(page.root)!;
     let clicks = 0;
     submit.addEventListener('click', (event) => {
@@ -123,14 +124,14 @@ describe('the BambooHR adapter: each rule, and the page read without it', () => 
     }, true);
     const press = { doc: page.doc, adapter: bambooHrAdapter, root: page.root,
       scan: () => scan(page.root, bambooHrAdapter, { platform: 'bamboohr' }) };
-    expect(pressStep(press, 'submit', { confirmed: true })).toEqual({ outcome: 'blocked' });
-    expect(clicks).toBe(0);
+    expect(pressStep(press, 'submit', { confirmed: true })).toEqual({ outcome: 'pressed' });
+    expect(clicks).toBe(1);
     expect(scan(page.root, bambooHrAdapter, { platform: 'bamboohr' }).fields
       .some((field) => field.nameAttr === 'g-recaptcha-response')).toBe(false);
-    // Once the person solved it (its token in the vendor's field), the press goes through.
+    // Solved by the person (its token in the vendor's field): pressed as well; the widget is never touched.
     q<HTMLTextAreaElement>(page.doc, 'textarea[name="g-recaptcha-response"]').value = '03AFcWeA-token';
     expect(pageChallenged(page.doc)).toBe(false);
     expect(pressStep(press, 'submit', { confirmed: true })).toEqual({ outcome: 'pressed' });
-    expect(clicks).toBe(1);
+    expect(clicks).toBe(2);
   });
 });

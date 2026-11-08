@@ -134,14 +134,45 @@ describe('the transition table', () => {
     });
 
     it('PAUSE and AUTH are ignored where the extension is not working (review, the policy card, a sign-in wall)', () => {
-      for (const status of ['review', 'policy-notice', 'auth-needed'] as const) {
+      for (const status of ['policy-notice', 'auth-needed'] as const) {
         const state = at(status);
         expect(reduceRun(state, { type: 'PAUSE', reason: 'captcha' }, OFF)).toEqual({ state, effects: [] });
+      }
+      // v5 p1-rules (PLAN decision 9): at review only a CAPTCHA is taken (below); every other pause is ignored there.
+      for (const reason of ['email-code', 'bot-check', 'page-busy', 'needs-click', 'entry-choice'] as const) {
+        const state = at('review');
+        expect(reduceRun(state, { type: 'PAUSE', reason }, OFF), reason).toEqual({ state, effects: [] });
       }
       for (const status of ['review', 'policy-notice', 'auth-needed'] as const) {
         const state = at(status);
         expect(reduceRun(state, { type: 'AUTH', wall: 'sign-in' }, OFF)).toEqual({ state, effects: [] });
       }
+    });
+
+    // v5 p1-rules (PLAN decision 9, like Jobright): a Submit pressed at review that the page refused for its unticked
+    // checkbox CAPTCHA rests the run at a CAPTCHA pause, and the run scans again once the person solved it (CONTINUE).
+    it('takes a CAPTCHA at review: handoff, its notice, and CONTINUE scans the step again', () => {
+      const step = reduceRun(at('review'), { type: 'PAUSE', reason: 'captcha' }, OFF);
+      expect(step.state).toMatchObject({ status: 'handoff', pauseReason: 'captcha', resumeStatus: 'review' });
+      expect(step.effects).toEqual([{ type: 'persist' }, { type: 'report' }, { type: 'pause', kind: 'handoff' },
+        { type: 'notify', notice: 'captcha' }]);
+      expect(reduceRun(step.state, { type: 'CONTINUE' }, OFF).state).toMatchObject({ status: 'scan-step', pauseReason: null });
+    });
+
+    it('gives the step back the attempt a press refused for its unticked check used, and only for that refusal', () => {
+      // After our Next left the step as it was (lastFill cleared), at its second attempt.
+      const refused = reduceRun(at('validate', { lastFill: null }, 2), { type: 'PAUSE', reason: 'captcha', refused: true }, OFF);
+      expect(refused.state).toMatchObject({ status: 'handoff', pauseReason: 'captcha', stepAttempts: { [S1]: 1 } });
+      // The person ticked the box: the step is scanned and filled once more, and Next may be pressed again.
+      const again = reduceRun(reduceRun(refused.state, { type: 'CONTINUE' }, OFF).state, scanned(S1), OFF);
+      expect(again.state).toMatchObject({ status: 'fill-step', stepAttempts: { [S1]: 2 } });
+      expect(reduceRun(at('review', {}, 1), { type: 'PAUSE', reason: 'captcha', refused: true }, OFF).state.stepAttempts)
+        .toEqual({ [S1]: 0 });
+      // Any other pause, a CAPTCHA the page shows itself among them, keeps the count (never a loop of attempts).
+      expect(reduceRun(at('validate', { lastFill: null }, 2), { type: 'PAUSE', reason: 'captcha' }, OFF).state.stepAttempts)
+        .toEqual({ [S1]: 2 });
+      expect(reduceRun(at('validate', {}, 2), { type: 'PAUSE', reason: 'email-code', refused: true }, OFF).state.stepAttempts)
+        .toEqual({ [S1]: 2 });
     });
 
     it('AUTH while handed off: auth-needed, keeping where the handoff came from', () => {

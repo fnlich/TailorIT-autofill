@@ -3,9 +3,11 @@
  * "Company career sites"). LinkedIn is deferred to v5 by the owner (2026-11-06): nothing here ever reaches it, nor an
  * employee HR system (shared/hosts.ts isCompanySiteUrl).
  * - The person's choice (Options › "Where Autofill works" › Company career sites) is kept in storage.local
- *   (`sites:v1`, one flag). The options page asks Chrome for the optional host permission (every https page) on the
- *   person's click; the place acts only while both the flag and Chrome's permission hold (`active`). Turning it off
- *   gives the permission back.
+ *   (`sites:v1`, one flag). The place acts only while both the flag and Chrome's permission hold (`active`).
+ *   v5 p1-rules (PLAN decision 10, like Jobright): every https and http page is a required host permission, granted at
+ *   install, so the place is on unless the person turned it off (no flag stored reads as on), and turning it off no
+ *   longer gives a permission back (Chrome keeps a required one; the person may still withhold site access in Chrome's
+ *   own settings, which turns the place off as before).
  * - The sentinel's registration (shared/hosts.ts registrationsFor) is reconciled to what acts: at the worker's start,
  *   at install, whenever Chrome's permissions change (onAdded, onRemoved: the person may take it back in Chrome's own
  *   settings) and after a choice. One reconcile at a time; a registration that differs is replaced.
@@ -101,17 +103,19 @@ export function createSites(deps: SitesDeps): Sites {
   /** Whether the career sites act, as the last reconcile found (undefined before the first). */
   let acting: boolean | undefined;
 
+  /** The person's choice: on unless they turned it off (v5 p1-rules, PLAN decision 10: on by default). */
   async function chosen(): Promise<boolean> {
-    return ((await deps.local.get(SITES_KEY)) as { sites?: unknown } | undefined)?.sites === true;
+    return ((await deps.local.get(SITES_KEY)) as { sites?: unknown } | undefined)?.sites !== false;
   }
 
   async function granted(): Promise<boolean> {
     return deps.permissions.contains([SITES_MATCH]).catch(() => false);
   }
 
-  /** Whether the career sites act: the person's choice, while Chrome holds its permission. */
+  /** Whether the career sites act: the person's choice, while Chrome holds its permission (read first: v5 p1-rules made
+   *  the choice on by default, and a worker Chrome gave no site access reads no more than before). */
   async function active(): Promise<boolean> {
-    return (await chosen()) && (await granted());
+    return (await granted()) && (await chosen());
   }
 
   /** Everything injected stops (the module header): the records forgotten, every tab's top frame told. */
@@ -183,8 +187,8 @@ export function createSites(deps: SitesDeps): Sites {
     active,
     async set(on) {
       await deps.local.set({ [SITES_KEY]: { sites: on } });
-      // Turned off: Chrome's permission goes back too.
-      if (!on) await deps.permissions.remove([SITES_MATCH]).catch(() => false);
+      // v5 p1-rules (PLAN decision 10): the permission is the install's own (a required host), so turning the place off
+      // gives nothing back: the registration goes (reconcile) and what was injected stops.
       await reconcile();
       return state();
     },

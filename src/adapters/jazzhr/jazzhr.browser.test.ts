@@ -18,8 +18,8 @@ import syntheticExpect from '../../../fixtures/synthetic/jazzhr/index.expect.jso
 import syntheticHtml from '../../../fixtures/synthetic/jazzhr/index.html?raw';
 import trapHtml from '../../../fixtures/traps/01-white-on-white.html?raw';
 import { loadFixture, removeFixtures } from '../../dom/fixture.testkit';
-import { detectPause, pageChallenged } from '../../dom/pause-detect';
-import { pressStep } from '../../content/press';
+import { captchaRefusalShown, detectPause, pageChallenged, withoutSolvedCaptchaErrors } from '../../dom/pause-detect';
+import { pressStep, refusalNow } from '../../content/press';
 import { fill } from '../../dom/fillers';
 import { verifyAfterSettle } from '../../dom/fillers/verify';
 import { scan, toFieldSpec } from '../../dom/scan';
@@ -164,14 +164,16 @@ describe('the JazzHR adapter: each rule, and the page read without it', () => {
     expect(jazzhrAdapter.entryControl?.(page.doc)).toBeNull();
   });
 
-  // The behaviour review of 2026-11-06 (M6, the owner's decision): a checkbox widget holds every press, never the fill.
+  // The behaviour review of 2026-11-06 (M6, the owner's decision): a checkbox widget never holds the fill. v5 p1-rules
+  // (PLAN decision 9, like Jobright): nor the Submit: it is pressed beside the unticked "Human Check" and JazzHR decides;
+  // JazzHR's own error for it (#recaptcha-required-error, as Jobright reads it) is the check's refusal, stale once solved.
   it.each([['panoptimization-form', panoptHtml], ['invaluable-form', invaluableHtml], ['nucleussecurity-form', nucleusHtml],
   ])('%s: fills beside the reCAPTCHA "Human Check", whose solving is the '
-    + 'person’s, and holds the Submit until it is solved', async (_name, html) => {
+    + 'person’s, and presses the Submit beside it: JazzHR decides', async (_name, html) => {
     const page = await open(html);
     expect(detectPause(page.doc, page.root, jazzhrAdapter)).toBeNull();
-    expect(pageChallenged(page.doc)).toBe(true);
-    // The person-confirmed Submit is blocked; the widget's response field is no field of the step.
+    expect(pageChallenged(page.doc)).toBe(false);
+    // The person-confirmed Submit is pressed; the widget's response field is no field of the step.
     const submit = jazzhrAdapter.submitButton!(page.root)!;
     let clicks = 0;
     submit.addEventListener('click', (event) => {
@@ -180,21 +182,32 @@ describe('the JazzHR adapter: each rule, and the page read without it', () => {
     });
     const press = { doc: page.doc, adapter: jazzhrAdapter, root: page.root,
       scan: () => scan(page.root, jazzhrAdapter, { platform: 'jazzhr' }) };
-    expect(pressStep(press, 'submit', { confirmed: true })).toEqual({ outcome: 'blocked' });
-    expect(clicks).toBe(0);
-    expect(scan(page.root, jazzhrAdapter, { platform: 'jazzhr' }).fields
-      .some((field) => field.label.includes('recaptcha') || field.nameAttr === 'g-recaptcha-response')).toBe(false);
-    // Once the person solved it (its token in the vendor's field), the press goes through.
-    q<HTMLTextAreaElement>(page.doc, 'textarea[name="g-recaptcha-response"]').value = '03AFcWeA-token';
-    expect(pageChallenged(page.doc)).toBe(false);
     expect(pressStep(press, 'submit', { confirmed: true })).toEqual({ outcome: 'pressed' });
     expect(clicks).toBe(1);
+    expect(scan(page.root, jazzhrAdapter, { platform: 'jazzhr' }).fields
+      .some((field) => field.label.includes('recaptcha') || field.nameAttr === 'g-recaptcha-response')).toBe(false);
+    // JazzHR refuses it with its own error beside the widget (Jobright 1.25.2's reading; not in a snapshot): an error of
+    // the form, read as the check's refusal.
+    const error = page.doc.createElement('div');
+    error.id = 'recaptcha-required-error';
+    error.className = 'dv_error';
+    error.textContent = 'Please complete the reCAPTCHA.';
+    q(page.doc, '#resumator-recaptcha-field').append(error);
+    expect(refusalNow(press)).toBe(1);
+    expect(captchaRefusalShown(page.doc, page.root, jazzhrAdapter, { afterPress: false })).toBe(true);
+    // Once the person solved it (its token in the vendor's field), that error is stale: no refusal, no field's error.
+    q<HTMLTextAreaElement>(page.doc, 'textarea[name="g-recaptcha-response"]').value = '03AFcWeA-token';
+    expect(captchaRefusalShown(page.doc, page.root, jazzhrAdapter, { afterPress: true })).toBe(false);
+    expect(refusalNow(press)).toBe(0);
+    expect(withoutSolvedCaptchaErrors(jazzhrAdapter.errors!(page.root), page.doc)).toEqual([]);
+    expect(pressStep(press, 'submit', { confirmed: true })).toEqual({ outcome: 'pressed' });
+    expect(clicks).toBe(2);
   });
 
-  it('wellhive-submitting: the page while it sends, its widget still shown, holds every press but no fill', async () => {
+  it('wellhive-submitting: the page while it sends, its widget still shown, holds no fill and (v5) no press', async () => {
     const page = await open(wellhiveHtml);
     expect(detectPause(page.doc, page.root, jazzhrAdapter)).toBeNull();
-    expect(pageChallenged(page.doc)).toBe(true);
+    expect(pageChallenged(page.doc)).toBe(false);
   });
 
   it('keeps the start date as free text: no layout is in the snapshot', async () => {

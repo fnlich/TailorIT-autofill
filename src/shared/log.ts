@@ -184,6 +184,8 @@ export const LOG_CODES = [
   'content.entry-choice',
   'content.wall',
   'content.sign-up',
+  // v5 p1-rules (PLAN decision 9): the page refused a press for its unticked check; the run rests at a CAPTCHA pause.
+  'content.captcha-refused',
   'launcher.placed',
   'launcher.hidden',
   'launcher.shown',

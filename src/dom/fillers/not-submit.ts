@@ -44,7 +44,7 @@
  * input). A refused option is not sent: its click, on the events' path, goes through assertNotSubmit as before.
  */
 import type { Adapter, SignInWall } from '../../adapters/types';
-import { challengeLikeFramesShown, unsolvedCaptchas, vendorFramesShown } from '../pause-detect';
+import { pageChallenged, vendorFramesShown } from '../pause-detect';
 import { flatContains } from '../scan-cache';
 import { signInContainerOf, signInFormOf, signInRefusal } from '../sign-in-form';
 import { isUserVisible } from '../visibility';
@@ -274,13 +274,13 @@ function nearNeverPressed(el: Element, adapter: Adapter, doc: Document, composed
  * never-pressed controls anywhere on the page (the social sign-ins), never one a person cannot see or press. Answers
  * the element clicked, or null. Only src/content/sign-in.ts may call it (eslint.config.mjs), before it reads the form.
  * The v4 review (L5): never while the page shows a challenge not known solved, a vendor's frame or a frame that reads
- * like one (sign-in.ts's own rule, read again here: a checkbox CAPTCHA is no pause for detectPause, but holds every
- * press of Sign-in Auto).
+ * like one (sign-in.ts's own rule, read again here). v5 (PLAN decision 9, like Jobright): a checkbox CAPTCHA, ticked or
+ * not, holds it no more than any other press: the site decides (pageChallenged and vendorFramesShown leave it out).
  */
 export function clickAdapterSignInPrelude(adapter: Adapter, doc: Document, wall: SignInWall, address: URL):
   HTMLElement | null {
   if (address.protocol !== 'https:') return null;
-  if (unsolvedCaptchas(doc, null) > 0 || vendorFramesShown(doc) > 0 || challengeLikeFramesShown(doc) > 0) return null;
+  if (pageChallenged(doc) || vendorFramesShown(doc) > 0) return null;
   let control: HTMLElement | null = null;
   try {
     if (signInFormOf(adapter, doc, wall) !== null) return null;

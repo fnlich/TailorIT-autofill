@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'wxt';
-import { ATS_MATCHES, CONTENT_SCRIPT_FILE, OPTIONAL_HOST_PERMISSIONS } from './src/shared/hosts';
+import { ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CONTENT_SCRIPT_FILE } from './src/shared/hosts';
 import { CAPTURE_PAGE, captureCommands } from './src/background/capture';
 import { CAPTURE_COPY } from './src/shared/copy';
 
@@ -42,13 +42,14 @@ export default defineConfig({
     // looks at its running job and the queue after the browser stopped an idle worker. No install warning.
     // scripting (v3 Phase 8, docs/PRIVACY.md): the sentinel's registration for the company career sites
     // (chrome.scripting.registerContentScripts), and the content script injected into a frame the sentinel recognised
-    // (executeScript, that document alone). No install warning: it reaches only the hosts the extension holds.
+    // (executeScript, that document alone). No install warning of its own: it reaches only the hosts the extension holds.
     permissions: ['storage', 'sidePanel', 'activeTab', 'alarms', 'scripting',
       ...(mode === 'development' ? ['pageCapture'] : [])],
-    host_permissions: [...ATS_MATCHES, `${TAILORIT_ORIGIN}/*`],
-    // v3 Phase 8: asked for only on the person's click in Options (every https page, for the company career sites), and
-    // given back when they turn it off. Never <all_urls>, never a required host.
-    optional_host_permissions: [...OPTIONAL_HOST_PERMISSIONS],
+    // v5 p1-rules (PLAN decision 10, like Jobright): every https and http page at install, beside TailorIT's own origin
+    // (which http://*/* covers; named for the build's check). The ATS hosts are among them; the company career sites
+    // need no click in Options any more, and the v3 Phase 8 optional permission is gone. Never <all_urls> (no file,
+    // ftp or websocket pages).
+    host_permissions: [...ALL_SITES_HOST_PERMISSIONS, `${TAILORIT_ORIGIN}/*`],
     externally_connectable: { matches: [`${TAILORIT_ORIGIN}/*`] },
     // TailorIT's mark (apps/web/public/logo-mark.svg), rendered by scripts/icons.mjs; check-build checks each size.
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },

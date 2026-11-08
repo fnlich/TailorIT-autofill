@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MatchPattern } from 'wxt/utils/match-patterns';
 import {
-  ATS_MATCHES, careerSiteOf, HR_HOST_MATCHES, isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, OPTIONAL_HOST_PERMISSIONS,
-  platformOfUrl, registrationsFor, SITES_MATCH,
+  ALL_SITES_HOST_PERMISSIONS, ATS_MATCHES, CAPTCHA_VENDOR_MATCHES, careerSiteOf, HR_HOST_MATCHES, isCaptchaVendorUrl,
+  isCompanySiteUrl, isHrHost, isLinkedInHost, onAtsMatch, platformOfUrl, registrationsFor, SITES_MATCH,
 } from './hosts';
 
 describe('the ATS host list', () => {
@@ -171,14 +171,48 @@ describe('the ATS host list', () => {
   // ── end New ATSs ──
 });
 
+/** v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' own frames, as the pages that draw them load them. */
+const VENDOR_FRAMES = ['https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=normal',
+  'https://www.google.com/recaptcha/api2/bframe?hl=en&k=x', 'https://www.google.com/recaptcha/enterprise/anchor?k=x',
+  'https://recaptcha.google.com/recaptcha/api2/anchor?k=x', 'https://www.recaptcha.net/recaptcha/api2/anchor?k=x',
+  'https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox', 'https://hcaptcha.com/',
+  'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2/av0/rcv0/0/x/light/normal',
+  'https://client-api.arkoselabs.com/fc/gc/?token=x', 'https://acme-api.arkoselabs.com/v2/x/enforcement.html',
+  'https://client-api.funcaptcha.com/fc/gc/?token=x', 'https://geo.captcha-delivery.com/captcha/?initialCid=x',
+  'https://li.protechts.net/index.html', 'https://static.geetest.com/static/js/gt.0.4.9.js'];
+
+describe('the CAPTCHA and anti-bot vendors (v5 p1-rules, PLAN decision 9)', () => {
+  it("names each vendor's frames, and no page of anyone else's", () => {
+    for (const url of VENDOR_FRAMES) {
+      expect(isCaptchaVendorUrl(new URL(url)), url).toBe(true);
+      expect(CAPTCHA_VENDOR_MATCHES.some((pattern) => new MatchPattern(pattern).includes(url)), url).toBe(true);
+      expect(isCompanySiteUrl(url), url).toBe(false);
+    }
+    for (const url of ['https://www.google.com/about/careers/applications/jobs/results/1', 'https://www.google.com/search?q=recaptcha',
+      'https://nothcaptcha.com/', 'https://hcaptcha.com.example/', 'https://cloudflare.com/', 'https://dash.cloudflare.com/',
+      'https://careers.acme.example/recaptcha/', 'https://geetest.com.example/']) {
+      expect(isCaptchaVendorUrl(new URL(url)), url).toBe(false);
+      expect(CAPTCHA_VENDOR_MATCHES.some((pattern) => new MatchPattern(pattern).includes(url)), url).toBe(false);
+    }
+  });
+
+  it('keeps the static content scripts off every vendor frame (the ATS hosts are none of them)', () => {
+    for (const url of VENDOR_FRAMES) {
+      expect(ATS_MATCHES.some((pattern) => new MatchPattern(pattern).includes(url)), url).toBe(false);
+      expect(onAtsMatch(url), url).toBe(false);
+    }
+  });
+});
+
 describe('the company career sites (v3 Phase 8)', () => {
   /** Whether a registration reaches an address, as Chrome reads its matches and exclusions. */
   const reaches = (registration: { matches: string[]; excludeMatches?: string[] }, url: string) =>
     registration.matches.some((pattern) => new MatchPattern(pattern).includes(url))
     && !(registration.excludeMatches ?? []).some((pattern) => new MatchPattern(pattern).includes(url));
 
-  it("registers the sentinel while on alone, in the top frame only, inside the optional host permission", () => {
-    expect(OPTIONAL_HOST_PERMISSIONS).toEqual(['https://*/*']);
+  it("registers the sentinel while on alone, in the top frame only, inside the host permissions", () => {
+    // v5 p1-rules (PLAN decision 10): every https and http page at install; the sentinel on the https ones.
+    expect(ALL_SITES_HOST_PERMISSIONS).toEqual(['https://*/*', 'http://*/*']);
     expect(registrationsFor({ sites: false })).toEqual([]);
     expect(registrationsFor({ sites: true })).toEqual([{ id: 'tailorit-sites', js: ['sentinel.js'], matches: [SITES_MATCH],
       excludeMatches: [...ATS_MATCHES, 'https://*.linkedin.com/*', 'https://*.linkedin.cn/*', 'https://*.lnkd.in/*',
@@ -192,7 +226,11 @@ describe('the company career sites (v3 Phase 8)', () => {
         // ── The security fix of 2026-11-06 (S5) ──
         'https://*.dayforcehcm.com/*', 'https://*.ultipro.com/*', 'https://*.ukg.net/*', 'https://*.paylocity.com/*',
         'https://*.paycor.com/*', 'https://*.rippling.com/*', 'https://*.hibob.com/*', 'https://*.adp.com/*',
-        'https://app.careerplug.com/*'], allFrames: false, runAt: 'document_idle', persistAcrossSessions: true,
+        'https://app.careerplug.com/*',
+        // ── v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' own pages ──
+        '*://*.google.com/recaptcha/*', '*://*.recaptcha.net/*', '*://*.hcaptcha.com/*', '*://challenges.cloudflare.com/*',
+        '*://*.arkoselabs.com/*', '*://*.funcaptcha.com/*', '*://*.captcha-delivery.com/*', '*://*.protechts.net/*',
+        '*://*.geetest.com/*'], allFrames: false, runAt: 'document_idle', persistAcrossSessions: true,
       world: 'ISOLATED' }]);
     expect(HR_HOST_MATCHES).toHaveLength(18);
   });
@@ -225,13 +263,17 @@ describe('the company career sites (v3 Phase 8)', () => {
     'https://app.careerplug.com/login', 'https://jobs.dayforcehcm.com/en-US/acme/candidateportal/jobs/1',
     'https://recruiting.ultipro.com/ACME/JobBoard/abc/OpportunityDetail?opportunityId=1',
     'https://recruiting.paylocity.com/Recruiting/Jobs/Apply/1', 'https://ats.rippling.com/acme/jobs/1',
-    'https://acme.careers.hibob.com/jobs/1', 'https://acme.careerplug.com/jobs/1/apps/new'];
+    'https://acme.careers.hibob.com/jobs/1', 'https://acme.careerplug.com/jobs/1/apps/new',
+    // ── v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' frames, never reached; Google's careers pages
+    // are company pages still ──
+    ...VENDOR_FRAMES, 'https://www.google.com/about/careers/applications/jobs/results/123-engineer'];
 
   it('reaches a company page, and never LinkedIn (deferred to v5), an employee HR system, an ATS host or an http page', () => {
     const [sites] = registrationsFor({ sites: true });
     const reached = addresses.filter((url) => reaches(sites!, url));
     expect(reached).toEqual(['https://careers.acme.example/jobs/1', 'https://www.amazon.jobs/en/jobs/1/x',
-      'https://acme.applytojob.com/', 'https://jobs.dfinsolutions.com/job/x/1/']);
+      'https://acme.applytojob.com/', 'https://jobs.dfinsolutions.com/job/x/1/',
+      'https://www.google.com/about/careers/applications/jobs/results/123-engineer']);
     for (const url of addresses) expect(isCompanySiteUrl(url), url).toBe(reached.includes(url));
   });
 

@@ -24,10 +24,20 @@
  * errors, the controls the form marked invalid, Ashby's failure message. The runtime ends a Submit's wait with it, and
  * the run answers a Next the page did not take.
  *
+ * v5 (PLAN decision 9, the owner's "implement like jobright extension", 2026-11-08): a checkbox CAPTCHA not yet ticked
+ * (reCAPTCHA v2's, hCaptcha's) holds no press here any more: Next, Submit and the agent's entry press the site's own
+ * control beside it, as Jobright does, and the site decides (pause-detect.ts pageChallenged leaves it out). A site's
+ * CAPTCHA-required error (JazzHR's, as Jobright reads it) counts in refusalNow like any error, so the runtime ends the
+ * Submit's wait; the run then reads that refusal as the check's (orchestrator.ts refusedForCheck: a CAPTCHA pause, the
+ * "solve the check" toast, carried on once solved). Once the person solved the check, that error is stale and no longer
+ * counted (withoutSolvedCaptchaErrors). A challenge popup, a vendor that is no checkbox and a frame that reads like one
+ * still block every press. Nothing here ever touches a check.
+ *
  * v3 Phase 5: pressEntry, the auto-apply agent's agent/enter (from the worker's own script alone: runtime.ts), presses
  * a posting page's declared entry control (Adapter.entryControl: Greenhouse's and Lever's Apply, Ashby's Application
  * tab) through not-submit.ts clickAdapterEntry, the third door this module alone may open: never while a form, a
- * CAPTCHA (anywhere on the page, or a frame that reads like one: S-7), a sign-in or a code shows, never anything but
+ * CAPTCHA (anywhere on the page, or a frame that reads like one: S-7; since v5 no checkbox widget), a sign-in or a code
+ * shows, never anything but
  * that one control. A page that draws it late is watched for it for ENTRY_WAIT_MS, or the adapter's own
  * quirks.entryWaitMs. v3 Phase 7b: a choice of how to apply blocks it only where
  * the adapter offers no control on it, and an adapter may allow a second press in the same document (Workday's Apply,
@@ -41,7 +51,7 @@ import type { FrameReport } from '../shared/report';
 import { accountLeft } from '../dom/account-section';
 import { clickIfAllowed } from '../dom/fillers';
 import { clickAdapterEntry, clickAdapterSubmit } from '../dom/fillers/not-submit';
-import { detectPause, pageChallenged, type PauseKind } from '../dom/pause-detect';
+import { detectPause, pageChallenged, type PauseKind, withoutSolvedCaptchaErrors } from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
 import { deadline } from '../dom/time';
 import type { ScanResult } from '../dom/types';
@@ -166,7 +176,8 @@ export function pressStep(page: PressPage, target: StepTarget, options: { confir
   if (detectPause(page.doc, page.root, page.adapter, cache, page.handed === undefined ? {} : { handed: page.handed })
     !== null) return { outcome: 'blocked' };
   // The audit of 2026-11-06 (S-7): a challenge not known solved anywhere on the page, or a frame that reads like one,
-  // holds Next and Submit alike, as it holds Sign-in Auto (a CAPTCHA the person was handed included).
+  // holds Next and Submit alike, as it holds Sign-in Auto (a CAPTCHA the person was handed included). v5 (PLAN decision
+  // 9): a checkbox widget not yet ticked is none: the press is made and the site decides.
   if (pageChallenged(page.doc, cache)) return { outcome: 'blocked' };
   const finality = finalityOf(page);
   if (finality !== (target === 'next' ? 'not-final' : 'final')) return { outcome: 'not-offered' };
@@ -186,13 +197,14 @@ export function pressStep(page: PressPage, target: StepTarget, options: { confir
 }
 
 /** How many problems the page shows on the step now: the adapter's visible errors, `invalid` fields it marked, or
- *  Ashby's failure message (one). 0: none. */
+ *  Ashby's failure message (one). 0: none. v5 (PLAN decision 9): a site's CAPTCHA-required error counts while its
+ *  check is not ticked, and no longer once the person solved it (withoutSolvedCaptchaErrors). */
 export function refusalNow(page: Pick<PressPage, 'doc' | 'adapter' | 'root'>, invalid = 0): number {
   const cache = newScanCache();
   let errors = 0;
   try {
-    errors = (page.adapter.errors?.(page.root) ?? []).filter((error) => error.el.isConnected
-      && isUserVisible(error.el, cache)).length;
+    errors = withoutSolvedCaptchaErrors(page.adapter.errors?.(page.root) ?? [], page.doc, cache)
+      .filter((error) => error.el.isConnected && isUserVisible(error.el, cache)).length;
   } catch {
     errors = 0;
   }

@@ -182,7 +182,9 @@ import { accountLeft } from '../dom/account-section';
 import { signInContainerOf } from '../dom/sign-in-form';
 import { clickIfAllowed } from '../dom/fillers';
 import { policyClassOf } from '../core/resolver/categories';
-import { captchaElements, detectPause, pageChallenged, type PauseSignal } from '../dom/pause-detect';
+import {
+  captchaElements, captchaRefusalShown, detectPause, pageChallenged, type PauseSignal, withoutSolvedCaptchaErrors,
+} from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
 import { isUsableOption } from '../dom/option-hash';
 import { newScanCache } from '../dom/scan-cache';
@@ -217,7 +219,7 @@ import {
 } from './report';
 import { postingNamesOf } from './job-relay';
 import { pressStep, refusalAfter, refusalNow, requiredLeftOf, stepButtonsOf, type PressPage } from './press';
-import { signInChallenged, type SignInOutcome } from './sign-in';
+import { signInChallenged, signInRefusalWaits, type SignInOutcome } from './sign-in';
 import type { PressSnapshot } from './submitted';
 import type { Heard, HeardType, TouchLog } from './touches';
 import { awaitTransition } from './transition';
@@ -578,6 +580,15 @@ export class FillRun {
   private submittedLate = false;
   /** Aborted when the platform's confirmation is seen while the run watches the step: the watch ends as SUBMITTED. */
   private readonly confirmed = new AbortController();
+  // ── v5 p1-rules: CAPTCHA like Jobright (PLAN decision 9) ──
+  /** The page refused a press for its check (pause-detect.ts captchaRefusalShown): this run rests at a CAPTCHA pause,
+   *  the "solve the check" toast shown, and carries on by itself once the check is solved (watchPauseGone). */
+  private refusedByCheck = false;
+  /** Such a refusal came while the run still worked: the pause is taken when it next rests. */
+  private refusedLate = false;
+  /** Aborted when such a refusal comes while the run watches the step: the watch ends as the CAPTCHA pause. */
+  private readonly checkRefused = new AbortController();
+  // ── end v5 p1-rules ──
   /** The machine's state (null until the run has begun). */
   private machine: RunState | null = null;
   /** Every canary this frame holds in memory (at most 1024, nearest their hit first): every write is scanned for them. */
@@ -1994,6 +2005,13 @@ export class FillRun {
         event = { type: 'SUBMITTED' };
         this.working();
       }
+      // v5 (PLAN decision 9): a refusal for the page's check that came while the run worked (refusedForCheck).
+      if (event === null && this.refusedLate && this.ended !== null && this.ended !== 'stopped'
+        && this.ended !== 'paused') {
+        this.refusedLate = false;
+        event = { type: 'PAUSE', reason: 'captcha', refused: true };
+        this.working();
+      }
       if (event === null) return;
     }
   }
@@ -2049,12 +2067,20 @@ export class FillRun {
     try {
       const outcome = await awaitTransition({ doc: this.env.doc, adapter: this.env.page.adapter,
         root: () => this.rootNow(), signature: () => this.signatureNow(), from, capMs,
-        signal: AbortSignal.any([this.controller.signal, this.stopping.signal, this.confirmed.signal]), watchNext,
+        signal: AbortSignal.any([this.controller.signal, this.stopping.signal, this.confirmed.signal,
+          this.checkRefused.signal]), watchNext,
         ...(this.env.options.settle ? { settle: this.env.options.settle } : {}) });
       this.alive();
       if (outcome.kind === 'aborted') {
         if (this.stopRequested) return { type: 'USER_STOPPED' };
-        return this.confirmed.signal.aborted && !this.controller.signal.aborted ? { type: 'SUBMITTED' } : null;
+        if (this.controller.signal.aborted) return null;
+        if (this.confirmed.signal.aborted) return { type: 'SUBMITTED' };
+        // v5 (PLAN decision 9): the page refused a press for its check (refusedForCheck): the CAPTCHA pause.
+        if (this.checkRefused.signal.aborted) {
+          this.refusedLate = false;
+          return { type: 'PAUSE', reason: 'captcha', refused: true };
+        }
+        return null;
       }
       this.working();
       if (outcome.kind === 'changed') {
@@ -2212,10 +2238,12 @@ export class FillRun {
     return { type: 'SCANNED', signature, policyHits, tripwireHits: hits, canaries: this.sent };
   }
 
-  /** The adapter's errors a person can see now, on the step's root. */
+  /** The adapter's errors a person can see now, on the step's root; v5 (PLAN decision 9): a site's CAPTCHA-required
+   *  error the person's solved check made stale is none (pause-detect.ts withoutSolvedCaptchaErrors). */
   private errorsNow(root: Element, cache = newScanCache()): Element[] {
     try {
-      return (this.env.page.adapter.errors?.(root) ?? []).map((error) => error.el).filter((el) => isUserVisible(el, cache));
+      return withoutSolvedCaptchaErrors(this.env.page.adapter.errors?.(root) ?? [], this.env.doc, cache)
+        .map((error) => error.el).filter((el) => isUserVisible(el, cache));
     } catch {
       return [];
     }
@@ -2434,6 +2462,15 @@ export class FillRun {
     const paused = this.pauseNow();
     if (paused !== null) return pauseEventOf(paused);
     const cache = newScanCache();
+    // v5 (PLAN decision 9): the page refused a Next for its unticked check (a Next, ours or the person's, that left the
+    // step as it was: lastFill cleared), or shows its CAPTCHA-required error beside it: the check is the person's, and
+    // the run carries on by itself once it is solved (refusedByCheck, watchPauseGone).
+    if (!this.request.dryRun && captchaRefusalShown(env.doc, root, adapter, { afterPress: this.state.lastFill === null },
+      cache)) {
+      this.refusedByCheck = true;
+      log('content.captcha-refused', { next: true });
+      return { type: 'PAUSE', reason: 'captcha', refused: true };
+    }
     const errors = this.errorsNow(root, cache);
     this.lastErrorEls = errors;
     let finality: StepFacts['finality'] = 'unknown';
@@ -2660,7 +2697,7 @@ export class FillRun {
     const watch = new AbortController();
     this.pauseWatch = watch;
     const signal = AbortSignal.any([watch.signal, this.controller.signal, this.cancelled.signal]);
-    const shown = this.pauseNow()?.kind ?? null;
+    const shown = this.pauseShownNow()?.kind ?? null;
     const kinds = this.restingKinds();
     // The machine's pause the page no longer shows: never equal to what the page shows, so the first look carries on.
     const from: PauseSignal['kind'] | null | 'gone' = kinds === null ? shown
@@ -2669,9 +2706,11 @@ export class FillRun {
     let gone = false;
     const look = () => {
       if (signal.aborted || this.ended !== 'paused' || this.signInDue) return;
-      const now = this.pauseNow()?.kind ?? null;
-      // A Sign-in Auto a challenge held back (the v4 review, M5) is tried again once the page shows none.
-      const cleared = this.signInSaid === 'challenged' && !signInChallenged(this.env.doc);
+      const now = this.pauseShownNow()?.kind ?? null;
+      // A Sign-in Auto a challenge held back (the v4 review, M5) is tried again once the page shows none; v5: one the
+      // site refused for its unticked check, once the person ticked it (sign-in.ts signInRefusalWaits).
+      const cleared = this.signInSaid === 'challenged' && !signInChallenged(this.env.doc)
+        && !signInRefusalWaits(this.env.doc);
       if (now === from && !cleared) return;
       gone = true;
       log('content.pause-gone', { other: now !== null, cleared });
@@ -2823,6 +2862,8 @@ export class FillRun {
       const count = await refusalAfter(page, this.controller.signal);
       const stayed = !this.controller.signal.aborted && from !== null && this.signatureNow() === from
         && page.root.isConnected;
+      // v5 (PLAN decision 9): a Next the page refused for its unticked check: the CAPTCHA pause (refusedForCheck).
+      if (stayed && this.refusedForCheck()) return { outcome: 'not-accepted', count: Math.max(1, count) };
       if (stayed && count > 0) return { outcome: 'not-accepted', count };
     }
     return answer;
@@ -2836,7 +2877,7 @@ export class FillRun {
   private async autoSubmit(): Promise<void> {
     if (this.stopRequested || this.request.dryRun || !this.autoSubmitOn) return;
     const pressed = this.env.autoPressed ?? this.autoPressedHere;
-    const stepKey = `${this.state.applicationKey}|${this.state.stepIndex}|${this.state.stepSignature ?? ''}`;
+    const stepKey = this.autoPressKey();
     if (pressed.has(stepKey)) return;
     const changed = await this.lookBeforeLeaving();
     this.alive();
@@ -2922,6 +2963,11 @@ export class FillRun {
   submitUnconfirmed(): void {
     if (!this.submitPending) return;
     this.submitPending = false;
+    // v5 (PLAN decision 9): nothing came of a Submit while the page's check is still unticked: the check's (below).
+    if (this.refusedForCheck()) {
+      this.rowsChanged();
+      return;
+    }
     this.notices.add('submit-unconfirmed');
     this.rowsChanged();
   }
@@ -2932,10 +2978,65 @@ export class FillRun {
     const waited = this.submitPending;
     this.submitPending = false;
     this.notices.forget(['submit-unconfirmed']);
-    this.notices.add('submit-errors', Math.max(1, count));
-    this.drawToasts();
+    // v5 (PLAN decision 9): a Submit the page refused for its unticked check (its CAPTCHA-required error, or any refusal
+    // while the box is unticked) is the check's: a CAPTCHA pause, never submit-errors (refusedForCheck).
+    if (!this.refusedForCheck()) {
+      this.notices.add('submit-errors', Math.max(1, count));
+      this.drawToasts();
+    }
     if (waited || this.ended !== null) this.rowsChanged();
   }
+
+  // ── v5 p1-rules: CAPTCHA like Jobright (PLAN decision 9) ──
+  /** Submit mode Auto's once-per-step mark for the step the run is on (RunEnv.autoPressed). */
+  private autoPressKey(): string {
+    return `${this.state.applicationKey}|${this.state.stepIndex}|${this.state.stepSignature ?? ''}`;
+  }
+
+  /**
+   * A press of the run's step the page refused (a Submit's refusal or silence, the panel's Next it did not take) while
+   * it shows a checkbox CAPTCHA still unticked (pause-detect.ts captchaRefusalShown): the check is the person's. No
+   * submit-errors, no unconfirmed Submit: the run rests at a CAPTCHA pause (the "solve the check" toast), and carries on
+   * by itself once the check is solved (watchPauseGone), where Submit mode Auto may press the step once more (its
+   * once-per-step mark released here: the person solved the check the site asked for, and each further press needs
+   * them to solve it again). Nothing touches the check. Answers whether the refusal was the check's.
+   */
+  private refusedForCheck(): boolean {
+    if (this.refusedByCheck) return this.ended !== 'stopped';
+    if (this.machine === null || this.request.dryRun || this.controller.signal.aborted || this.ended === 'paused'
+      || this.ended === 'stopped') return false;
+    if (!captchaRefusalShown(this.env.doc, this.rootNow(), this.env.page.adapter, { afterPress: true })) return false;
+    log('content.captcha-refused', { next: false });
+    this.refusedByCheck = true;
+    (this.env.autoPressed ?? this.autoPressedHere).delete(this.autoPressKey());
+    if (this.watchingNow || this.ended === null) {
+      // The watch ends with it (watchStep), or the run takes it as it next rests (drive).
+      this.refusedLate = this.ended === null && !this.watchingNow;
+      this.checkRefused.abort();
+      return true;
+    }
+    void this.pauseAtRest().catch(() => undefined);
+    return true;
+  }
+
+  /** The CAPTCHA pause a refusal brought while the run rested with no watch: the machine takes it, and the run rests
+   *  at it (rest: the toast, then watchPauseGone). */
+  private async pauseAtRest(): Promise<void> {
+    this.working();
+    await this.step({ type: 'PAUSE', reason: 'captcha', refused: true });
+    await this.flushReport();
+    await this.rest();
+  }
+
+  /** What a resting run's pause watch reads (watchPauseGone): the page's pause (pauseNow), else, after a refusal for the
+   *  page's check (refusedByCheck), the CAPTCHA that refusal stands for while the box is still unticked. */
+  private pauseShownNow(): PauseSignal | null {
+    const shown = this.pauseNow();
+    if (shown !== null || !this.refusedByCheck) return shown;
+    return captchaRefusalShown(this.env.doc, this.root, this.env.page.adapter, { afterPress: true })
+      ? { kind: 'captcha', evidence: 'captcha-container' } : null;
+  }
+  // ── end v5 p1-rules ──
 
   /** A Submit's watch ended without a confirmation and without a word to say (the person's own Submit, or one
    *  replaced by a newer press): the report no longer says it waits. */

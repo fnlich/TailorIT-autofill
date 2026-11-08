@@ -6,7 +6,10 @@
  * the page-world bridge (world MAIN, the same matches, from document_start, one file and no CSS, within its own
  * budget: docs/SPEC-AMENDMENTS.md §12), whose bundle is one anonymous function that names no extension API and no
  * window messaging, adds no global and listens for its command alone, and no web-accessible resource; and every
- * build ships its four icons as PNGs of their sizes. The script runs as it is, copied with what it reads (proc.mjs, the host list, the public key) into a
+ * build ships its four icons as PNGs of their sizes. v5 p1-rules (PLAN decisions 9 and 10): the host permissions are
+ * exactly every https and http page plus TailorIT, with no optional ones, and neither the sentinel's registration nor
+ * a static content script reaches a CAPTCHA or anti-bot vendor's frame.
+ * The script runs as it is, copied with what it reads (proc.mjs, the host list, the public key) into a
  * temporary folder that holds three fixture builds, and each case breaks the builds in one way.
  */
 import { spawnSync } from 'node:child_process';
@@ -47,8 +50,8 @@ function manifest(origin: string): Record<string, unknown> {
     key: KEY,
     minimum_chrome_version: '144',
     permissions: ['storage', 'sidePanel', 'activeTab', 'alarms', 'scripting'],
-    host_permissions: [...ATS_MATCHES, `${origin}/*`],
-    optional_host_permissions: ['https://*/*'],
+    // v5 p1-rules (PLAN decision 10): every https and http page at install, beside TailorIT; no optional ones.
+    host_permissions: ['https://*/*', 'http://*/*', `${origin}/*`],
     externally_connectable: { matches: [`${origin}/*`] },
     icons: { ...ICONS },
     action: { default_title: 'TailorIT Autofill', default_icon: { 16: ICONS[16], 32: ICONS[32] } },
@@ -175,8 +178,9 @@ const contentScript = (changed: Record<string, unknown>) => (changed.content_scr
 /** The page-world bridge's entry in a manifest. */
 const bridgeScript = (changed: Record<string, unknown>) => (changed.content_scripts as Array<Record<string, unknown>>)[1]!;
 
-/** A script just past the content script's budget (scripts/check-build.mjs's CONTENT_SCRIPT_BUDGET, 1 MiB). */
-const OVER_BUDGET = `var big="${'a'.repeat(1024 * 1024)}";`;
+/** A script just past the content script's budget (scripts/check-build.mjs's CONTENT_SCRIPT_BUDGET, 1 MiB and 4 KiB
+ *  since v5 p1-rules). */
+const OVER_BUDGET = `var big="${'a'.repeat(1028 * 1024)}";`;
 
 describe("check-build's manifest and bundle assertions", () => {
   afterEach(() => {
@@ -192,7 +196,7 @@ describe("check-build's manifest and bundle assertions", () => {
       for (const dir of Object.values(BUILDS)) write(`${dir}/content-scripts/panel.js`, OVER_BUDGET);
     }));
     expect(output).toContain('.output/chrome-mv3: the content script is');
-    expect(output).toContain('over the 1048576-byte budget');
+    expect(output).toContain('over the 1052672-byte budget');
     expect(status).toBe(1);
   });
 
@@ -416,7 +420,7 @@ describe("check-build's two content scripts: ours and the page-world bridge", ()
   });
 });
 
-describe("check-build's v3 Phase 8 assertions: the optional hosts, the sentinel and its registrations", () => {
+describe("check-build's v3 Phase 8 and v5 assertions: the hosts, the sentinel and its registrations", () => {
   afterEach(() => {
     for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
   });
@@ -432,23 +436,33 @@ describe("check-build's v3 Phase 8 assertions: the optional hosts, the sentinel 
     }
   });
 
-  it('fail optional host permissions other than every https page, and none', () => {
-    for (const optional of [undefined, ['<all_urls>'], ['https://*/*', 'http://*/*'], ['https://careers.example.com/*']]) {
+  // v5 p1-rules (PLAN decision 10): every https and http page is required at install, so no host is optional any more.
+  it('fail any optional host permission, the v3 Phase 8 one included', () => {
+    for (const optional of [['https://*/*'], ['<all_urls>'], []]) {
       const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
-        if (optional === undefined) delete changed.optional_host_permissions;
-        else changed.optional_host_permissions = optional;
+        changed.optional_host_permissions = optional;
       })));
-      expect(output, JSON.stringify(optional)).toContain(`.output/chrome-mv3: optional_host_permissions are ${JSON.stringify(optional)}`);
+      expect(output, JSON.stringify(optional)).toContain('.output/chrome-mv3: optional_host_permissions must be absent');
       expect(status).toBe(1);
     }
   });
 
-  it('fail a broad required host permission, and optional permissions', () => {
-    for (const broad of ['<all_urls>', 'https://*/*', '*://*/*', 'http://*/*']) {
-      const { output } = checkBuild(project((write) => everyManifest(write, (changed) => {
-        changed.host_permissions = [...(changed.host_permissions as string[]), broad];
+  it('fail host permissions other than every https and http page plus TailorIT, never <all_urls>, and optional permissions', () => {
+    const cases: Array<[string[], string]> = [
+      [['https://*/*', 'http://localhost:3100/*'], 'host_permissions are ["https://*/*","http://localhost:3100/*"]'],
+      [[...ATS_MATCHES, 'http://localhost:3100/*'],
+        `host_permissions are ${JSON.stringify([...ATS_MATCHES, 'http://localhost:3100/*'])}, not every https and http page`],
+      [['<all_urls>', 'http://localhost:3100/*'], 'the host permission <all_urls> reaches more than web pages'],
+      [['https://*/*', 'http://*/*', 'file:///*', 'http://localhost:3100/*'], 'the host permission file:///* reaches more than web pages'],
+      [['https://*/*', 'http://*/*', 'ws://*/*', 'http://localhost:3100/*'], 'the host permission ws://*/* reaches more than web pages'],
+      [['https://*/*', 'http://*/*'], 'host_permissions are ["https://*/*","http://*/*"]'],
+    ];
+    for (const [hosts, message] of cases) {
+      const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
+        changed.host_permissions = hosts;
       })));
-      expect(output, broad).toContain(`.output/chrome-mv3: the required host permission ${broad} is broad`);
+      expect(output, message).toContain(`.output/chrome-mv3: ${message}`);
+      expect(status, message).toBe(1);
     }
     const { status, output } = checkBuild(project((write) => everyManifest(write, (changed) => {
       changed.optional_permissions = ['tabs'];
@@ -457,9 +471,28 @@ describe("check-build's v3 Phase 8 assertions: the optional hosts, the sentinel 
     expect(status).toBe(1);
   });
 
+  // v5 p1-rules (PLAN decision 9): no static content script runs in a CAPTCHA or anti-bot vendor's frame.
+  it("fail a static content script that would run in a CAPTCHA vendor's frame", () => {
+    for (const [pattern, address] of [['https://challenges.cloudflare.com/*',
+      'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2/av0/rcv0/0/x/light/normal'],
+    ['https://*.hcaptcha.com/*', 'https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox']]) {
+      const { status, output } = checkBuild(project((write) => {
+        const hosts = readFileSync(join(ROOT, 'src', 'shared', 'hosts.ts'), 'utf8');
+        write('src/shared/hosts.ts', hosts.replace("export const ATS_MATCHES = [\n", `export const ATS_MATCHES = [\n  '${pattern}',\n`));
+        everyManifest(write, (changed) => {
+          contentScript(changed).matches = [pattern, ...ATS_MATCHES];
+          bridgeScript(changed).matches = [pattern, ...ATS_MATCHES];
+        });
+      }));
+      expect(output, pattern).toContain(`.output/chrome-mv3: the content script runs in a CAPTCHA vendor's frame at ${address}`);
+      expect(output, pattern).toContain(`.output/chrome-mv3: the page-world bridge runs in a CAPTCHA vendor's frame at ${address}`);
+      expect(status, pattern).toBe(1);
+    }
+  });
+
   it('fail a sentinel that is missing, listed in the manifest, over its budget, or that names React, zod or a DOM write', () => {
     const cases: Array<[string, string]> = [
-      [`var big="${'a'.repeat(17 * 1024)}";`, 'the sentinel is 17419 bytes, over the 17408-byte budget'],
+      [`var big="${'a'.repeat(18 * 1024)}";`, 'the sentinel is 18443 bytes, over the 18432-byte budget'],
       ['(function(){document.body.appendChild(document.createElement("div"))})();', 'the sentinel names "createElement"'],
       ['(function(){e.innerHTML="x"})();', 'the sentinel names "innerHTML"'],
       ['(function(){e.setAttribute("x","y")})();', 'the sentinel names "setAttribute"'],
@@ -516,6 +549,16 @@ describe("check-build's v3 Phase 8 assertions: the optional hosts, the sentinel 
         'registrationsFor: tailorit-sites does not exclude https://*.oraclecloud.com/*'],
       [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES]"),
         'registrationsFor: tailorit-sites reaches an HR system at https://wd5.myworkday.com/acme/d/home.htmld'],
+      // v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' own pages are excluded too.
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites does not exclude *://*.google.com/recaptcha/*'],
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES]"),
+        'registrationsFor: tailorit-sites reaches a CAPTCHA vendor at https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=normal'],
+      [registering("allFrames: false, matches: [SITES_MATCH], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES, ...CAPTCHA_VENDOR_MATCHES.filter((each) => !each.includes('hcaptcha'))]"),
+        'registrationsFor: tailorit-sites reaches a CAPTCHA vendor at https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox'],
+      // The registration stays on https pages: http forms would send the answers unencrypted.
+      [registering("allFrames: false, matches: ['https://*/*', 'http://*/*'], excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES, ...CAPTCHA_VENDOR_MATCHES]"),
+        'registrationsFor: tailorit-sites matches http://*/*'],
     ];
     for (const [body, message] of cases) {
       const { status, output } = changed(body);
