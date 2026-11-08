@@ -9,6 +9,10 @@
  * and again when the panel asks (after the editor saved). It keeps only which of the five are missing: never a value,
  * and the profile itself is dropped the moment the gaps are worked out. A read refused or failed counts as unreadable:
  * the panel then shows its main view rather than lock the person out (the fill reads the profile itself).
+ *
+ * v5 p1-panel (PLAN decision 6, Jobright's resume check): the same read also says whether the profile holds no work
+ * experience or no education (`history`, the kinds missing: counts only), so the main view's Autofill can say so in a
+ * modal before it fills, as Jobright's "missing key info" popup does.
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { AutofillProfile } from '../../contract/tailorit';
@@ -21,6 +25,16 @@ export type ProfileGap = (typeof PROFILE_GAPS)[number];
 
 /** What is missing from `profile` (none: complete). `accountEmail` is the account's sign-in address, which an empty
  *  email stands for (TailorIT's rule); null when not known. */
+// v5 p1-panel: the history Autofill checks before it fills (PLAN decision 6).
+export const HISTORY_KINDS = ['experience', 'education'] as const;
+export type HistoryGap = (typeof HISTORY_KINDS)[number];
+
+/** The kinds of history `profile` holds no entry of (none: both are there). Entries are counted, never read. */
+export function historyGaps(profile: Pick<AutofillProfile, HistoryGap>): HistoryGap[] {
+  return HISTORY_KINDS.filter((kind) => profile[kind].length === 0);
+}
+// end v5 p1-panel
+
 export function profileGaps(profile: AutofillProfile, accountEmail: string | null): ProfileGap[] {
   const has = (text: string | null | undefined) => (text ?? '').trim() !== '';
   const { address } = profile.contact;
@@ -38,7 +52,7 @@ export function profileGaps(profile: AutofillProfile, accountEmail: string | nul
 export type ProfileCheck =
   | { state: 'idle' }
   | { state: 'reading' }
-  | { state: 'read'; gaps: readonly ProfileGap[] }
+  | { state: 'read'; gaps: readonly ProfileGap[]; history: readonly HistoryGap[] }
   | { state: 'unreadable' };
 
 /**
@@ -57,8 +71,8 @@ export function useProfileCheck(platform: PagePlatform, key: string | null, acco
     void request(platform, { v: 1, type: 'panel/profile', sensitive: false }).then((reply) => {
       if (!live) return;
       // Only the gaps are kept: the profile goes with this closure.
-      const check: ProfileCheck = reply.ok ? { state: 'read', gaps: profileGaps(reply.data.profile, accountEmail) }
-        : { state: 'unreadable' };
+      const check: ProfileCheck = reply.ok ? { state: 'read', gaps: profileGaps(reply.data.profile, accountEmail),
+        history: historyGaps(reply.data.profile) } : { state: 'unreadable' };
       setAnswer({ key, reads, check });
     });
     return () => {

@@ -101,8 +101,8 @@ describe('the report in TailorIT’s look', () => {
     expect(fill.getBoundingClientRect().width / bar.getBoundingClientRect().width).toBeCloseTo(0.5, 2);
     // v4 ui (D1): nothing says what is left: the list shows it.
     expect(block.querySelector('[data-needs]')).toBeNull();
-    // Jobright's words: "7/7 required fields filled".
-    expect(COPY.report.progressFilled(7, 7, true)).toBe('7/7 required fields filled');
+    // Jobright's words: "7/7 required fields filled"; v5 p1-panel: in Title Case (PLAN decisions 3 and 4).
+    expect(COPY.report.progressFilled(7, 7, true)).toBe('7/7 Required Fields Filled');
     // No required field: every counted row, "fields filled".
     const optional = await mount(<Report reports={[frameReport(0, { fields: [filled, skipped] })]} />);
     expect(optional.querySelector('.tia-progress-line__title')?.textContent).toBe(COPY.report.progressFilled(1, 1, false));
@@ -199,13 +199,15 @@ describe('the report in TailorIT’s look', () => {
     expect(expanded.querySelector('button[data-action="toggle-fields"]')?.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('shows a repeatable section as a row of its own: "Education · 2 of 3 added"', async () => {
+  // v5 p1-panel: a section with no row of its own (its entries' rows are listed under it: sheet.browser.test.tsx) is a
+  // line with its count chip, "Education 2/3 Added".
+  it('shows a repeatable section as a row of its own: "Education 2/3 Added"', async () => {
     const root = await mount(<Report reports={[frameReport(0, { fields: [verified],
       repeatables: [{ kind: 'education', added: 2, of: 3 }, { kind: 'experience', added: 1, of: 1 }] })]} />);
     expect([...root.querySelectorAll<HTMLElement>('[data-section-kind]')].map((each) => [each.dataset.sectionKind,
       each.dataset.progress, each.textContent])).toEqual([
-      ['education', 'missing', `${COPY.report.rowStates.missing}${COPY.report.sectionAdded('Education', 2, 3)}`],
-      ['experience', 'filled', `${COPY.report.rowStates.filled}${COPY.report.sectionAdded('Work experience', 1, 1)}`],
+      ['education', 'missing', `${COPY.report.rowStates.missing}Education${COPY.report.partial(2, 3)}`],
+      ['experience', 'filled', `${COPY.report.rowStates.filled}Work Experience${COPY.report.partial(1, 1)}`],
     ]);
   });
 

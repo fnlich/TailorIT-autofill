@@ -96,16 +96,17 @@ describe('the copy', () => {
       'Cancel']);
     // Jobright's progress line: "Autofilling… 78%", then (v4 ui, the owner's screenshot 4) "7/7 required fields filled
     // | 100%".
-    expect(COPY.report.progressFilled(9, 12, true)).toBe('9/12 required fields filled');
-    expect(COPY.report.progressFilled(2, 3, false)).toBe('2/3 fields filled');
-    expect(COPY.report.progressDryRun(3, 4, true)).toBe('3/4 required fields would be filled');
+    // v5 p1-panel: the sheet's header in Title Case (PLAN decisions 3 and 4: "7/9 Required Fields Filled | 77%").
+    expect(COPY.report.progressFilled(9, 12, true)).toBe('9/12 Required Fields Filled');
+    expect(COPY.report.progressFilled(2, 3, false)).toBe('2/3 Fields Filled');
+    expect(COPY.report.progressDryRun(3, 4, true)).toBe('3/4 Required Fields Would Be Filled');
     expect(COPY.report.percent(75)).toBe('75%');
     expect(COPY.report.progressText(9, 12, true, 75)).toBe('9 of 12 required fields filled, 75%');
     // While it fills, "required" only when the form has required fields (v3 Phase 3 review).
     expect(COPY.report.progressWorking(75, true)).toBe('Autofilling, 75% of the required fields filled');
     expect(COPY.report.progressWorking(66, false)).toBe('Autofilling, 66% of the fields filled');
     expect([COPY.report.scanning, COPY.report.autofilling, COPY.report.requiredGroup, COPY.report.optionalGroup])
-      .toEqual(['Scanning the page', 'Autofilling', 'Required', 'Optional']);
+      .toEqual(['Scanning The Page', 'Autofilling', 'Required', 'Optional']);
     expect(COPY.report.sectionAdded(COPY.report.repeatables.education, 2, 3)).toBe('Education · 2 of 3 added');
     expect(COPY.launcherFilling(78)).toBe('Autofilling, 78%');
     expect([COPY.report.needsYou(1), COPY.report.needsYou(3)]).toEqual(['1 field is left for you', '3 fields are left for you']);

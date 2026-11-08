@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { COPY } from '../../shared/copy';
-import { AI_EDIT_PX } from './ai-edits';
+import { AI_EDIT_MIN_BOX_PX, AI_EDIT_PX } from './ai-edits';
 import { mountPageUi, type PageUi } from './page-ui';
 import { clickTimes, ready, uncoveredAsThePointerComes } from './ui.testkit';
 import { CONTROL_SEEN_MS } from './visible';
@@ -20,12 +20,12 @@ afterEach(() => {
   for (const el of [...document.querySelectorAll('[data-test-root]')]) el.remove();
 });
 
-function setUp() {
+function setUp(place: { top?: number; height?: number } = {}) {
   const form = document.createElement('form');
   form.dataset.testRoot = '';
-  form.style.cssText = 'display:block;width:600px;margin:40px;';
+  form.style.cssText = `display:block;width:600px;margin:${place.top ?? 40}px 40px 40px;`;
   const box = document.createElement('textarea');
-  box.style.cssText = 'display:block;width:400px;height:120px;';
+  box.style.cssText = `display:block;width:400px;height:${place.height ?? 120}px;box-sizing:border-box;`;
   form.append(box);
   document.body.append(form);
   const edits: string[] = [];
@@ -118,7 +118,7 @@ describe('the Edit with AI layer', () => {
 });
 
 describe('Edit with AI’s instruction box (v3 Phase 3b)', () => {
-  it('sends what the person typed, says a refusal, and keeps the words from the page’s bubbling listeners', async () => {
+  it('sends what the person typed, says a refusal on a red button, and keeps the words from the page’s bubbling listeners', async () => {
     const { ui, edits, instructions, say } = setUp();
     const heard: string[] = [];
     const listen = (event: Event) => heard.push(event.type);
@@ -136,17 +136,28 @@ describe('Edit with AI’s instruction box (v3 Phase 3b)', () => {
       expect(heard).toEqual([]);
       say(COPY.aiEdit.outcomes.sensitive);
       await ready(ui, prompt.generate);
-      // Enter generates; the refusal is said in the box, which stays open.
+      // Enter generates; v5 p1-panel (Jobright's): the box closes at once, nothing it held kept.
       await userEvent.keyboard('{Enter}');
       await vi.waitFor(() => expect(edits).toEqual(['why']));
       expect(instructions).toEqual(['Make it shorter']);
-      await vi.waitFor(() => expect(prompt.status.textContent).toBe(COPY.aiEdit.outcomes.sensitive));
-      expect(ui.aiPrompt).toBe(prompt);
-      // Escape closes it, and nothing it held is kept.
-      prompt.textarea.focus();
-      await userEvent.keyboard('{Escape}');
       expect(ui.aiPrompt).toBeNull();
       expect(prompt.textarea.value).toBe('');
+      // The refusal turns the button red, "Try Again", named with why.
+      const red = ui.aiEditButtons[0]!;
+      await vi.waitFor(() => expect(red.dataset.state).toBe('failed'));
+      expect([red.textContent, red.getAttribute('aria-label')])
+        .toEqual([COPY.aiEdit.retry, COPY.aiEdit.retryLabel(COPY.aiEdit.outcomes.sensitive)]);
+      // Its click opens the box again, which says why; Escape closes it, and nothing it held is kept.
+      await ready(ui, red);
+      await trustedClick(ui, red);
+      await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
+      const again = ui.aiPrompt!;
+      expect(again.status.textContent).toBe(COPY.aiEdit.outcomes.sensitive);
+      again.textarea.focus();
+      await userEvent.keyboard('Shorter');
+      await userEvent.keyboard('{Escape}');
+      expect(ui.aiPrompt).toBeNull();
+      expect(again.textarea.value).toBe('');
     } finally {
       for (const type of ['keydown', 'keyup', 'input']) document.removeEventListener(type, listen);
     }
@@ -225,5 +236,100 @@ describe('Edit with AI against a page that tricks the click or listens (the audi
       }
     }
     expect(heard).toEqual([]);
+  });
+});
+
+// v5 p1-panel (PLAN decision 7): Edit with AI like Jobright's.
+describe('Edit with AI like Jobright (v5)', () => {
+  it('opens its box above the button, or under it where the window has no room above', async () => {
+    const low = setUp({ top: 420 });
+    const button = low.ui.aiEditButtons[0]!;
+    await ready(low.ui, button);
+    await trustedClick(low.ui, button);
+    await vi.waitFor(() => expect(low.ui.aiPrompt).not.toBeNull());
+    low.ui.refresh();
+    const above = low.ui.aiPrompt!.el;
+    await vi.waitFor(() => expect(above.dataset.place).toBe('above'));
+    expect(above.getBoundingClientRect().bottom).toBeLessThanOrEqual(button.getBoundingClientRect().top);
+    expect(Math.abs(above.getBoundingClientRect().left - button.getBoundingClientRect().left)).toBeLessThan(1);
+    // While its box is open the button shows its words.
+    expect(button.dataset.state).toBe('open');
+    expect(getComputedStyle(button.querySelector('.ai-edit__label')!).display).not.toBe('none');
+    for (const ui of mounted.splice(0)) ui.destroy();
+    for (const el of [...document.querySelectorAll('[data-test-root]')]) el.remove();
+
+    const high = setUp({ top: 0 });
+    const top = high.ui.aiEditButtons[0]!;
+    await ready(high.ui, top);
+    await trustedClick(high.ui, top);
+    await vi.waitFor(() => expect(high.ui.aiPrompt).not.toBeNull());
+    high.ui.refresh();
+    const below = high.ui.aiPrompt!.el;
+    await vi.waitFor(() => expect(below.dataset.place).toBe('below'));
+    expect(below.getBoundingClientRect().top).toBeGreaterThanOrEqual(top.getBoundingClientRect().bottom);
+  });
+
+  it('closes the box on Generate, says "Generating…" while it works, and rests again once the box is rewritten', async () => {
+    let finish: (said: string | null) => void = () => undefined;
+    const form = document.createElement('form');
+    form.dataset.testRoot = '';
+    form.style.cssText = 'display:block;width:600px;margin:420px 40px 40px;';
+    const box = document.createElement('textarea');
+    box.style.cssText = 'display:block;width:400px;height:120px;';
+    form.append(box);
+    document.body.append(form);
+    const ui = mountPageUi(document, { onLauncher: () => undefined,
+      onAiEdit: () => new Promise<string | null>((done) => {
+        finish = done;
+      }) });
+    mounted.push(ui);
+    ui.anchorTo(form);
+    ui.setAiEdits([{ key: 'why', elements: [box] }]);
+    const button = ui.aiEditButtons[0]!;
+    await ready(ui, button);
+    await trustedClick(ui, button);
+    await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
+    const { generate } = ui.aiPrompt!;
+    await ready(ui, generate);
+    await trustedClick(ui, generate);
+    await vi.waitFor(() => expect(ui.aiPrompt).toBeNull());
+    expect([button.dataset.state, button.disabled, button.getAttribute('aria-busy'), button.textContent])
+      .toEqual(['busy', true, 'true', COPY.editingWithAi]);
+    expect(COPY.editingWithAi).toBe('Generating…');
+    finish(null);
+    await vi.waitFor(() => expect(button.dataset.state).toBe('idle'));
+    expect([button.disabled, button.getAttribute('aria-label')]).toEqual([false, COPY.editWithAi]);
+    // A failure turns it red (the danger tone, white words), and the next rewrite that comes takes the red away.
+    await ready(ui, button);
+    await trustedClick(ui, button);
+    await vi.waitFor(() => expect(ui.aiPrompt).not.toBeNull());
+    await ready(ui, ui.aiPrompt!.generate);
+    await trustedClick(ui, ui.aiPrompt!.generate);
+    await vi.waitFor(() => expect(button.dataset.state).toBe('busy'));
+    finish(COPY.aiEdit.outcomes.failed);
+    await vi.waitFor(() => expect(button.dataset.state).toBe('failed'));
+    const red = getComputedStyle(button);
+    expect([red.backgroundColor, red.color]).toEqual(['rgb(180, 38, 37)', 'rgb(255, 255, 255)']);
+    expect([red.transform, red.opacity, red.filter]).toEqual(['none', '1', 'none']);
+    await ready(ui, button);
+    await trustedClick(ui, button);
+    await vi.waitFor(() => expect(ui.aiPrompt?.status.textContent).toBe(COPY.aiEdit.outcomes.failed));
+    await ready(ui, ui.aiPrompt!.generate);
+    await trustedClick(ui, ui.aiPrompt!.generate);
+    await vi.waitFor(() => expect(button.dataset.state).toBe('busy'));
+    finish(null);
+    await vi.waitFor(() => expect(button.dataset.state).toBe('idle'));
+  });
+
+  it('draws the button only in a box at least AI_EDIT_MIN_BOX_PX tall', async () => {
+    const short = setUp({ height: AI_EDIT_MIN_BOX_PX - 4 });
+    short.ui.refresh();
+    expect(short.ui.aiEditButtons).toHaveLength(1);
+    // Drawn for the run, never shown in a one-line box.
+    await new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    expect(short.ui.aiEditButtons[0]!.hidden).toBe(true);
+    short.box.style.height = `${AI_EDIT_MIN_BOX_PX}px`;
+    short.ui.refresh();
+    await vi.waitFor(() => expect(short.ui.aiEditButtons[0]!.hidden).toBe(false));
   });
 });

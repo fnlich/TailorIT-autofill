@@ -169,6 +169,7 @@ import { claimsApplication, wrapperOf, wrapsApplication } from './chain-frame';
 import { createReportLimiter } from './report';
 import { showField } from './targets';
 import { TouchLog } from './touches';
+import { showApplied } from './ui/applied';
 import { mountPageUi, type PageUi } from './ui/page-ui';
 import type { ToastSpec } from './ui/toasts';
 import type { NotificationTime } from '../core/types/settings';
@@ -455,6 +456,13 @@ export async function startContentRuntime(platform: ContentPlatform, doc: Docume
       case 'panel/side':
         sideOpen = msg.open;
         ui?.setSidePanel(sideOpen);
+        return ok({});
+      case 'applied/popup':
+        // v5 p1-panel (PLAN decision 5): the worker's alone, once TailorIT recorded the tab's application: the top frame
+        // shows "Application Submitted!" over the page while the tab is visible (ui/applied.ts).
+        if (!fromWorker(sender)) return refuse('bad_sender');
+        if (!isTop || stopped) return refuse('expired');
+        showApplied(doc, { trackerUrl: `${__TAILORIT_ORIGIN__}/tracker` });
         return ok({});
       case 'run/press':
         // The worker's alone (the review): an extension page's message never presses the page's Next or Submit; the

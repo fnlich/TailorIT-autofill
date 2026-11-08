@@ -30,6 +30,10 @@
  * - Both messages are counted (SUBMIT_MESSAGE_LIMIT a minute per tab), and the application key must fit the frame.
  * - A token change drops every arm and every page state with them (the audit's m4): what was armed for one connection
  *   is never recorded, or offered again, under the next.
+ * - v5 p1-panel (PLAN decision 5): once TailorIT recorded the application (its POST /applied answered, a Try again's
+ *   included), the tab's top frame is told (`applied`: applied/popup), once per recorded submission, and shows
+ *   "Application Submitted!" over the page. Never for the auto-apply agent's own tab (its job's result records it), nor
+ *   for one not recorded.
  * No log line names the job, the address or the person; storage holds ids, keys and times, and an arm's posting address
  * in storage.session only, never in storage.local.
  */
@@ -83,6 +87,9 @@ export interface SubmissionsDeps {
    *  other tab, or another posting's sign, which is recorded the normal way), and says whether TailorIT took its
    *  result. */
   agentSubmitted?(tabId: number, applicationKey: string): Promise<'not-ours' | 'recorded' | 'not-recorded'>;
+  /** v5 p1-panel: TailorIT recorded the tab's application: its top frame shows "Application Submitted!" (module
+   *  header). */
+  applied?(tabId: number): void;
 }
 
 /** A Submit armed, as storage.session keeps it: ids, keys and times only. */
@@ -185,6 +192,7 @@ export function createSubmissions(deps: SubmissionsDeps) {
       deps.jobs.remember(from, answer.value, { generation, epoch, chosen: deps.jobs.chosen(tabId),
         job: deps.jobs.chosenJob(tabId, applicationKey) });
       await set(tabId, { state: 'recorded', docKey, applicationKey });
+      deps.applied?.(tabId); // v5 p1-panel
       return;
     }
     // Refused for good: the arm goes. Offline or a failure on TailorIT's side: it stays for Try again.

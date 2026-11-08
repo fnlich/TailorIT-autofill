@@ -259,7 +259,7 @@ describe('the job card states (v2)', () => {
     expect(addable.querySelector('.tia-job__company')?.textContent).toBe(COPY.job.notFound);
     const pill = addable.querySelector<HTMLButtonElement>('button.tia-addpill')!;
     expect([pill.textContent, pill.dataset.jobAction]).toEqual([COPY.mainView.addJob, 'add']);
-    expect(COPY.mainView.addJob).toBe('Add this job in one click');
+    expect(COPY.mainView.addJob).toBe('Add This Job In One Click'); // v5 p1-panel: Title Case (PLAN decision 3)
     // A mint pill with a plus and a sparkle on its corner (screenshot 2).
     const style = getComputedStyle(pill);
     expect([style.backgroundColor, style.borderTopLeftRadius]).toEqual(['rgb(204, 246, 255)', '999px']);

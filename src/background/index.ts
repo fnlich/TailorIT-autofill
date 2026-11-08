@@ -270,7 +270,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     disclosed: () => auth.disclosed(),
     changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined),
     // v3 Phase 5: the agent's own tab's sign finishes its job (its result records Applied).
-    agentSubmitted: (tabId, applicationKey) => agent.submitted(tabId, applicationKey) });
+    agentSubmitted: (tabId, applicationKey) => agent.submitted(tabId, applicationKey),
+    // v5 p1-panel (PLAN decision 5): the page's "Application Submitted!" window, in the tab's top frame.
+    applied: (tabId) => void tellTopFrame(tabId, { v: 1, type: 'applied/popup' }) });
   submissions = submitted;
   /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
    *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
