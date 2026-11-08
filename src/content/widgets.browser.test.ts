@@ -162,9 +162,9 @@ describe('the widgets page', () => {
 
 describe('the remote typeahead', () => {
   interface Logged { query: string; typedAt: number; answeredAt: number | null }
-  // v4 (drop): the school's candidate answers (core/matcher/candidates.ts), six at most.
-  const QUERIES = ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
-    'University of Texas', 'Texas Austin'];
+  // s2 core-wd: the school's candidate answers (core/matcher/candidates.ts), one of each of three styles: its full name
+  // without "The", a short form, its name without its campus; then the list's own "Other" (settings.modes.noMatch).
+  const QUERIES = ['University of Texas at Austin', 'UT Austin', 'University of Texas'];
 
   it('searches in the spec\'s order, one query at a time, and chooses Austin, never Dallas', async () => {
     const ran = await fill(typeaheadHtml, 'remote-typeahead');
@@ -174,8 +174,8 @@ describe('the remote typeahead', () => {
     expect((ran.fixture.doc.getElementById('school') as HTMLInputElement).value).toBe('University of Texas at Austin');
     expect(ran.counter<string[]>('__resultClicks')).toEqual(['University of Texas at Austin']);
     const queries = ran.counter<Logged[]>('__queries');
-    expect(queries.map((entry) => entry.query)).toEqual(QUERIES.slice(0, 2));
-    expect(queries[1]!.typedAt).toBeGreaterThanOrEqual(queries[0]!.answeredAt!);
+    // The full name without "The" finds Austin among its results at once (Dallas listed first, never chosen).
+    expect(queries.map((entry) => entry.query)).toEqual(QUERIES.slice(0, 1));
     // The worker matched the results of each query that found any, the field alone, with the results as its options.
     const asked = ran.worker.of('plan/request').map((message) => message.specs as FieldSpec[])
       .filter((specs) => specs.length === 1 && specs[0]!.label === 'School' && Array.isArray(specs[0]!.options)
@@ -188,21 +188,21 @@ describe('the remote typeahead', () => {
       .toEqual([[0, 'combobox'], [1, 'typeahead-remote'], [1, 'typeahead-remote']]);
   });
 
-  it('flags the field after six queries that find nothing (v4), and leaves the box empty', async () => {
+  it('flags the field after three styles and "Other" find nothing (s2 core-wd), and leaves the box empty', async () => {
     const ran = await fill(typeaheadHtml, 'remote-typeahead', { variant: 'none' });
     expectInvariants(ran);
     expect(ran.row('School')).toMatchObject({ status: 'flagged', reason: 'no-match', wrote: false, provenance: null });
-    expect(ran.counter<Logged[]>('__queries').map((entry) => entry.query)).toEqual(QUERIES);
+    expect(ran.counter<Logged[]>('__queries').map((entry) => entry.query)).toEqual([...QUERIES, 'Other']);
     expect((ran.fixture.doc.getElementById('school') as HTMLInputElement).value).toBe('');
     expect(ran.counter<string[]>('__resultClicks')).toEqual([]);
   });
 
-  it('never chooses the injected result: the clean Austin comes from the third query', async () => {
+  it('never chooses the injected result: the clean Austin comes from the second query', async () => {
     const ran = await fill(typeaheadHtml, 'remote-typeahead', { variant: 'injected' });
     expectInvariants(ran);
     expect(ran.row('School')).toMatchObject({ status: 'verified', wrote: true, provenance: 'profile' });
     expect(ran.counter<string[]>('__resultClicks')).toEqual(['University of Texas at Austin']);
-    expect(ran.counter<Logged[]>('__queries').map((entry) => entry.query)).toEqual(QUERIES.slice(0, 3));
+    expect(ran.counter<Logged[]>('__queries').map((entry) => entry.query)).toEqual(QUERIES.slice(0, 2));
   });
 });
 

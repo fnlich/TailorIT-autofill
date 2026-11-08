@@ -2,14 +2,14 @@
  * A remote typeahead end to end (Phase 4; docs/SPEC.md Requirement A.5; docs/design/core.md §4.11;
  * docs/design/runtime.md §11.e). fixtures/synthetic/remote-typeahead/index.html says what its fake server answers in
  * each variant; each is served at its own address, so each test has an application of its own. The golden profile's
- * school, The University of Texas at Austin, gives six queries (v4, drop: its candidate answers, core/matcher/
- * candidates.ts). Each test checks the page's own query log:
- * - by default: University of Texas at Austin is chosen from the second query's results, never Dallas (listed first);
- *   two queries, in order, never overlapping (each typed after the one before was answered);
- * - none: six queries that find nothing, in order, and no more; the field blank and flagged no-match, its box left as
- *   it was;
- * - injected: the only Austin among the second query's results carries injected text, and is never chosen; the clean
- *   one comes from the third query;
+ * school, The University of Texas at Austin, gives three queries, one of each style (s2 core-wd: its full name without
+ * "The", a short form, its name without its campus; core/matcher/candidates.ts), then the list's own "Other"
+ * (settings.modes.noMatch 'other', the default). Each test checks the page's own query log:
+ * - by default: University of Texas at Austin is chosen from the first query's results, never Dallas (listed first);
+ * - none: the three styles and "Other" find nothing, in order, and no more; the field blank and flagged no-match, its
+ *   box left as it was;
+ * - injected: the only Austin among the first query's results carries injected text, and is never chosen; the clean
+ *   one comes from the second query, typed after the first was answered (never two at once);
  * - then assertTrapInvariants.
  */
 import { expect, test } from '../fixtures.ts';
@@ -18,8 +18,7 @@ import { assertTrapInvariants } from '../helpers/invariants.ts';
 import { pageValue, syntheticLabels, TYPEAHEAD, type TypeaheadVariant } from '../helpers/reactive.ts';
 
 const LABELS = syntheticLabels(TYPEAHEAD.expectations);
-const QUERIES = ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
-  'University of Texas', 'Texas Austin'];
+const QUERIES = ['University of Texas at Austin', 'UT Austin', 'University of Texas', 'Other'];
 const AUSTIN = 'University of Texas at Austin';
 
 interface Logged { query: string; typedAt: number; answeredAt: number | null }
@@ -36,9 +35,9 @@ async function queriesOf(page: Parameters<typeof pageValue>[0]): Promise<string[
 
 test.describe('a remote typeahead', () => {
   const cases: Array<{ variant: TypeaheadVariant; title: string }> = [
-    { variant: 'default', title: 'chooses Austin, never Dallas, after two queries in the spec\'s order' },
-    { variant: 'none', title: 'stops after six queries that find nothing: blank and flagged' },
-    { variant: 'injected', title: 'never chooses the injected result, and finds the clean one with the third query' },
+    { variant: 'default', title: 'chooses Austin, never Dallas, with the first query' },
+    { variant: 'none', title: 'stops after three styles and "Other" find nothing: blank and flagged' },
+    { variant: 'injected', title: 'never chooses the injected result, and finds the clean one with the second query' },
   ];
   for (const { variant, title } of cases) {
     test(title, async ({ extContext, connected: ext, routeLog, logs }) => {
@@ -61,13 +60,13 @@ test.describe('a remote typeahead', () => {
         await expect(page.locator('#school')).toHaveValue('');
         expect(clicked).toEqual([]);
       } else {
-        expect(queries).toEqual(QUERIES.slice(0, variant === 'default' ? 2 : 3));
+        expect(queries).toEqual(QUERIES.slice(0, variant === 'default' ? 1 : 2));
         expect(row(report, 'School')).toMatchObject({ category: 'education.school', kind: 'typeahead-remote',
           status: 'verified', wrote: true, provenance: 'profile' });
         await expect(page.locator('#school')).toHaveValue(AUSTIN);
         expect(clicked).toEqual([AUSTIN]);
       }
-      expect(queries.length).toBeLessThanOrEqual(6);
+      expect(queries.length).toBeLessThanOrEqual(4);
       await assertTrapInvariants({ page, ext, tabId, routeLog, console: logs(), markers: [], canaries: [], labels: LABELS,
         applicationKey: applicationKeyOf(url) });
     });

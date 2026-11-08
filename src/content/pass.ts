@@ -45,6 +45,7 @@ import type { BaseKey, CurrentValue, FieldKey, FieldSpec } from '../core/types/f
 import type { FillResult, PlannedWrite, ReasonCode } from '../core/types/fill';
 import type { FieldCategory, ValueOrigin, WriteValue } from '../core/types/intent';
 import { optionQuery } from '../core/matcher/listSearch';
+import { NO_MATCH_OTHER_QUERY } from '../core/matcher/searchLimits';
 import { accepts, acceptTokens, fill } from '../dom/fillers';
 import { fillDateParts } from '../dom/fillers/date-parts';
 import { mismatch } from '../dom/fillers/outcome';
@@ -53,7 +54,8 @@ import { sameOptionLabel } from '../dom/fillers/verify';
 import { domGuardBeforeWrite, type PlannedField } from '../dom/guard';
 import { hashOfOptions } from '../dom/option-hash';
 import { toFieldSpec } from '../dom/scan';
-import { TEXT_CAP_LABEL } from '../dom/thresholds';
+import { SEARCH_FIELD_BUDGET_MS, TEXT_CAP_LABEL } from '../dom/thresholds';
+import { monotonicNow } from '../dom/time';
 import type {
   FieldTarget, FillOutcome as DomFillOutcome, ReadBackRule, ScannedField, ScanResult, WidgetOptionRead, WidgetReading,
 } from '../dom/types';
@@ -454,12 +456,14 @@ async function writeWidget(env: PassEnv, last: ScanResult, field: ScannedField, 
  *  observed one), partial when their read was cut short, marked as a search's results (v4, drop: FieldSpec
  *  .searchResults, so one is chosen only in the fill band and never by the LLM), and nothing chosen yet (the box holds
  *  our query, which is no answer). */
-function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[], complete: boolean): FieldSpec {
+function resultsSpec(field: ScannedField, results: readonly WidgetOptionRead[], complete: boolean,
+  other = false): FieldSpec {
   const options = results.map((result, index) => ({ index, label: capCodePoints(result.label, TEXT_CAP_LABEL),
     disabled: result.disabled, selected: false }));
   const { optionsPartial: _, ...spec } = toFieldSpec(field);
   return { ...spec, options, optionSetHash: hashOfOptions(options.map((option) => option.label)),
-    current: { kind: 'empty' }, searchResults: true, ...(complete ? {} : { optionsPartial: true as const }) };
+    current: { kind: 'empty' }, searchResults: true, ...(complete ? {} : { optionsPartial: true as const }),
+    ...(other ? { searchOther: true as const } : {}) };
 }
 
 /** One typed query's Guard (a remote typeahead's, or a long list's search): a pause the page shows or the person's
@@ -482,6 +486,24 @@ function queryGuard(env: PassEnv, last: ScanResult, wanted: PlannedField, write:
     return { ok: true, target: again.target };
   };
 }
+
+// s2 core-wd: the list's own "Other", once three styles found nothing.
+
+/** Why a search ends before its "Other" query: the page did not answer typed text (or a click), the field went or
+ *  changed, the run or the person stopped it, or the widget cannot be searched. Any other end (no result was the value,
+ *  or none was sure enough) is "nothing found". */
+const OTHER_QUERY_STOPS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['needs-your-click', 'element-not-found',
+  'options-changed', 'internal-error', 'user-stopped', 'widget-unsupported']);
+
+/** Whether a search that chose nothing types the list's own "Other" next (searchField): the planner asked for it
+ *  (WriteValue query `other`), no Guard refused anything, it found nothing for a reason no stop names, and the run goes
+ *  on. */
+function otherQueryFollows(value: WriteValue, result: TypeaheadResult, env: PassEnv): boolean {
+  return value.kind === 'query' && value.other === true && result.chosen === null && !result.blocked
+    && !OTHER_QUERY_STOPS.has(result.reason) && !env.signal.aborted && !env.stopped() && !runOver(env);
+}
+
+// end s2 core-wd
 
 /** Why a long list's search may end with nothing chosen and its list still be chosen from whole: no result was the
  *  planned option, the page did not answer the typed query (or the click on a result), or what it listed changed. */
@@ -546,10 +568,10 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
   }
   const wanted = plannedFieldOf(field);
   let chosen: { row: FillResult; write: PlannedWrite } | null = null;
-  const hooks: TypeaheadHooks = {
+  const hooksFor = (other: boolean): TypeaheadHooks => ({
     guard: queryGuard(env, last, wanted, write),
     match: async (results, now, complete) => {
-      const spec = resultsSpec(now.field, results, complete);
+      const spec = resultsSpec(now.field, results, complete, other);
       // The worker's match may wait on the AI: the person's Skip ends that wait (its answer, when it comes, is unused).
       const answer = await untilAborted(widgets.plan([spec], [spec.key]), env.signal);
       if (runOver(env)) throw new RunAborted();
@@ -565,8 +587,23 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
       chosen = { row, write: pick };
       return { choose: { index: pick.value.index, cleanLabel: pick.value.cleanLabel } };
     },
-  };
-  const result = await searchTypeahead(target, write.value.queries, ctx, hooks);
+  });
+  const started = monotonicNow();
+  let searched = target;
+  let result = await searchTypeahead(target, write.value.queries, ctx, hooksFor(false));
+  // s2 core-wd: three styles found nothing, so the list's own "Other" is searched for once (the planner asked for it:
+  // settings.modes.noMatch 'other'), within the field's time budget; its results go to the worker marked
+  // FieldSpec.searchOther, which chooses that "Other" alone (plan/frame.ts planNoMatchOther).
+  // What nothing found keeps the styles' reason; a choice, or a Guard's refusal, is the "Other" query's.
+  if (otherQueryFollows(write.value, result, env) && monotonicNow() - started < SEARCH_FIELD_BUDGET_MS) {
+    const again = last.rescan().target(write.key) ?? target;
+    const other = await searchTypeahead(again, [NO_MATCH_OTHER_QUERY], ctx, hooksFor(true),
+      SEARCH_FIELD_BUDGET_MS - (monotonicNow() - started));
+    if (other.chosen !== null || other.blocked) {
+      result = other;
+      searched = again;
+    }
+  }
   afterWait(env, result.chosen !== null);
   const picked = chosen as { row: FillResult; write: PlannedWrite } | null;
   if (result.chosen === null || picked === null) {
@@ -575,7 +612,12 @@ async function searchField(env: PassEnv, last: ScanResult, field: ScannedField, 
   }
   const base = { ...picked.row, key: write.key };
   const row = result.verified ? settleRow(base, { kind: 'verified' }) : mismatchRow(base, 'verify-mismatch');
-  const now = last.rescan().target(write.key) ?? target;
+  // s2 core-wd: a choice whose box it reveals takes its free text ("Other", chosen once three styles found nothing) is
+  // read back from its own live elements while they stand, with no scan: a scan now would see the box before the loop
+  // records the write (content/attribution.ts), and the box would never be named its follow-up.
+  const followed = picked.write.value.kind === 'option' && picked.write.value.freeText !== undefined
+    && (searched.widget?.element ?? searched.control).isConnected;
+  const now = followed ? searched : last.rescan().target(write.key) ?? target;
   return { row, written: writtenWidget(wanted, { ...picked.write, key: write.key }, base, target.field, result.verified),
     readBack: readBack(now) };
 }

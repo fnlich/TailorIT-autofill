@@ -370,8 +370,10 @@ const WORK_AUTH_WIDE = /\bentitled\s+to\s+work\b|\b(?:eligible|authori[sz]ed|per
  *  "Which best describes your work authorization status?"): which status, never yes or no. */
 const WORK_AUTH_STATUS = /\bauthori[sz]ation\s+status\b|\bwork\s+(?:authori[sz]ation\s+)?status\b/;
 /** An experience block's own summary of the role, labelled with that one word (the Phase 7a review: Workable's
- *  Experience "Summary"); any longer wording ("Role description") is left to the LLM's classification, as before. */
-const EXPERIENCE_DESCRIPTION = /^(?:summary|description)$/;
+ *  Experience "Summary"). s2 core-wd: or the role's, the job's or the position's ("Role Description", Workday's
+ *  formField-roleDescription in fixtures/workday/s2-exelixis-my-experience; the wd study §4). Any longer wording is left
+ *  to the LLM's classification, as before. */
+const EXPERIENCE_DESCRIPTION = /^(?:(?:role|job|position)\s+)?(?:summary|description)$/;
 const EXPERIENCE_DESCRIPTION_RULE = { id: 'label.experience-description', strength: 'normal' } as const;
 const WORK_AUTH_STATUS_RULE = { id: 'label.work-auth-status', strength: 'strong' } as const;
 
@@ -727,12 +729,18 @@ const SENSITIVE_TOPIC = { id: 'label.sensitive-topic', category: 'screening.othe
 /** The review's refinements, by the design rule they change. */
 const REFINEMENTS: Readonly<Record<string, Refinement>> = {
   'label.preferred-name': { also: /name\s+you(?:d|\s+would)?\s+(?:prefer|like)\s+(?:us\s+)?to\s+(?:use|call\s+you)|\bname\s+you\s+prefer\b/ },
-  'label.phone-country': { unless: PHONE_WITH_CODE },
+  // s2 core-wd: Workday's "Country Phone Code" (formField-countryPhoneCode, fixtures/workday/s2-exelixis-state-open), and
+  // a "Phone country" alone.
+  'label.phone-country': { also: /\bcountry\s+phone\s+code\b|\bphone\s+country(?:\s+code)?\b/, unless: PHONE_WITH_CODE },
   'label.phone': { only: PHONE_NOUN, ask: true },
   'label.address2': { only: ADDRESS2_NOUN },
   'label.country': { also: /^(?:what\s+is\s+your\s+)?(?:current\s+)?country(?:\s+of\s+(?:current\s+)?residence)?$|^what\s+country\s+do\s+you\s+(?:currently\s+)?(?:live|reside)\s+in$/ },
-  // s2 core-gh: a residence asked as a question (RESIDENCE).
-  'label.location': { also: new RegExp(String.raw`^(?:what\s+is\s+)?your\s+(?:current\s+)?location$|` + RESIDENCE.source) },
+  // s2 core-gh: a residence asked as a question (RESIDENCE). s2 core-wd: "Location" inside a job's block is that job's
+  // place (Workday's formField-location in each Work Experience block, fixtures/workday/s2-exelixis-my-experience),
+  // never the person's current location.
+  'label.location': { also: new RegExp(String.raw`^(?:what\s+is\s+)?your\s+(?:current\s+)?location$|` + RESIDENCE.source),
+    category: (c) => (c.section === 'experience' && c.block !== undefined && !/\bcurrent\b/.test(c.label)
+      ? 'experience.location' : 'location.current') },
   'label.portfolio': { only: PORTFOLIO_NOUN, ask: true },
   // s2 core-gh: X by its own name (decision 9), a clearance by its levels.
   'label.twitter': { also: X_LINK },
@@ -824,6 +832,50 @@ export const PRE_RULES: ReadonlyArray<PreRule> = [
     readsQualifiers: true, category: 'screening.over18', strength: 'normal', needsUser: 'age' },
 ];
 
+// s2 core-wd: Workday's My Information and My Experience (the wd study §4-5), each from a snapshot.
+
+/** A label rule of snapshot round 2, read before §8.3's list (matchLabelRules): its own label, on a kind its category
+ *  holds. */
+interface InfoRule {
+  id: string;
+  re: RegExp;
+  category: FieldCategory;
+  strength: RuleStrength;
+}
+
+/** Workday's My Information fields no rule of §8.3 reads (fixtures/workday/s2-exelixis-state-open,
+ *  s2-verily-my-information): "Phone Device Type" (formField-phoneType, required), "Suffix" (formField-legalName--social),
+ *  "Phone Extension" (formField-extension) and "I have a preferred name" (formField-preferredCheck). Each is the
+ *  label's own noun: "Phone type" or "Type of phone" too, a name's suffix, an extension alone; never a question that
+ *  mentions one. */
+const WORKDAY_INFO_RULES: readonly InfoRule[] = [
+  { id: 'label.phone-type', re: /^(?:phone|telephone|mobile)\s+(?:device\s+|number\s+)?type$|^type\s+of\s+(?:phone|telephone)(?:\s+number)?$|^phone\s+device$/,
+    category: 'contact.phoneType', strength: 'strong' },
+  { id: 'label.suffix', re: /^(?:name\s+)?suffix$|^suffix\s+name$/, category: 'identity.suffix', strength: 'strong' },
+  { id: 'label.phone-extension', re: /^(?:phone\s+|telephone\s+)?(?:extension|ext)(?:\s+number)?$/,
+    category: 'contact.phoneExtension', strength: 'strong' },
+  { id: 'label.has-preferred-name', re: /^(?:i\s+have|do\s+you\s+have|i\s+use|do\s+you\s+use)\s+a\s+preferred\s+(?:first\s+)?name$/,
+    category: 'identity.hasPreferredName', strength: 'strong' },
+];
+
+/** "Overall Result (GPA)" (Workday's formField-gradeAverage, fixtures/workday/s2-verily-field-of-study-open): a result,
+ *  grade, score or average whose parenthetical is the GPA alone. */
+const GPA_QUALIFIER = /^(?:c?gpa|grade\s+point\s+average)$/;
+const RESULT_WORD = /\b(?:results?|grades?|score|average|marks?)\b/;
+const GPA_RULE = { id: 'label.gpa', strength: 'strong' } as const;
+
+/** Snapshot round 2's rules for Workday's My Information and a GPA asked in a parenthetical (see above), or null. */
+function workdayInfoHit(text: string, kind: FieldKind, qualifiers: string): LabelRuleHit | null {
+  for (const rule of WORKDAY_INFO_RULES) {
+    if (rule.re.test(text) && kindAllowed(rule.category, kind)) return hitOf(rule, rule.category);
+  }
+  if (GPA_QUALIFIER.test(qualifiers.trim()) && RESULT_WORD.test(text) && kindAllowed('education.gpa', kind)) {
+    return hitOf(GPA_RULE, 'education.gpa');
+  }
+  return null;
+}
+
+// end s2 core-wd
 
 /** The design's own rules for dates, which in a repeatable section the design does not name belong to the block. */
 const DATE_RULES = new Set(['label.start-date', 'label.end-date']);
@@ -1065,6 +1117,9 @@ export function matchLabelRules(text: string, section: SectionKind, kind: FieldK
     return consentVerdict([{ rule: { ...CHECK_CONSENT_RULE, re: CHECK_CONSENT, category: 'consent.other' },
       category: 'consent.other' }], kind);
   }
+  // s2 core-wd: Workday's My Information (WORKDAY_INFO_RULES).
+  const info = workdayInfoHit(text, kind, ctx.qualifiers);
+  if (info !== null) return info;
   for (const rule of LABEL_RULES) {
     if (DATE_RULES.has(rule.id) && section === 'other' && context.block !== undefined) continue;
     const verdict = refinedMatch(rule, text);

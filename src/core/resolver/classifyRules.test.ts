@@ -183,16 +183,55 @@ describe('classifyByRules: real-world labels (§8.3)', () => {
   });
 
   it.each<[string, FieldKind, Partial<FieldSpec>?]>([
-    // label.phone's (?!\s+type) keeps the phone number out; no rule names a phone type.
-    ['Phone type', 'select'],
-    // The name says phone, but a phone number cannot go in a select.
-    ['Phone type', 'select', { nameAttr: 'phone_type' }],
-    // An extension is not the number, whatever the attributes say.
-    ['Phone extension', 'text', { idAttr: 'phone-number--extension' }],
-    ['Extension', 'text', { idAttr: 'phoneExtension' }],
+    // label.phone's (?!\s+type) keeps the phone number out of a phone type, and an extension is not the number,
+    // whatever the attributes say: s2 core-wd reads both as their own (below).
+    ['Phone type', 'text'],
     ['', 'text'],
   ])('%j (%s) is unclassified', (label, kind, extra) => {
     expect(classifyByRules(field(label, kind, extra))).toBeNull();
+  });
+
+  // s2 core-wd: Workday's My Information (fixtures/workday/s2-exelixis-state-open, s2-verily-my-information).
+  it.each<[string, FieldKind, FieldCategory, string, Partial<FieldSpec>?]>([
+    ['Phone type', 'select', 'contact.phoneType', 'label.phone-type'],
+    ['Phone type', 'select', 'contact.phoneType', 'label.phone-type', { nameAttr: 'phone_type' }],
+    ['Phone Device Type', 'combobox', 'contact.phoneType', 'label.phone-type', { nameAttr: 'phoneType' }],
+    ['Type of phone', 'radio', 'contact.phoneType', 'label.phone-type'],
+    ['Phone extension', 'text', 'contact.phoneExtension', 'label.phone-extension',
+      { idAttr: 'phone-number--extension' }],
+    ['Extension', 'text', 'contact.phoneExtension', 'label.phone-extension', { idAttr: 'phoneExtension' }],
+    ['Suffix', 'combobox', 'identity.suffix', 'label.suffix', { nameAttr: 'legalName--social' }],
+    ['Name suffix', 'text', 'identity.suffix', 'label.suffix'],
+    ['I have a preferred name', 'checkbox', 'identity.hasPreferredName', 'label.has-preferred-name',
+      { nameAttr: 'preferredCheck' }],
+    ['Do you have a preferred name?', 'radio', 'identity.hasPreferredName', 'label.has-preferred-name'],
+    ['Country Phone Code', 'typeahead-remote', 'contact.phoneCountry', 'label.phone-country',
+      { idAttr: 'phoneNumber--countryPhoneCode' }],
+    ['Phone country', 'combobox', 'contact.phoneCountry', 'label.phone-country'],
+    ['How Did You Hear About Us?', 'typeahead-remote', 'referral.source', 'label.referral-source'],
+    ['Overall Result (GPA)', 'text', 'education.gpa', 'label.gpa', SCHOOL],
+    ['Location', 'text', 'experience.location', 'label.location', WORK],
+    ['Role Description', 'textarea', 'experience.description', 'label.experience-description', WORK],
+    ['X', 'text', 'links.twitter', 'name-id.twitter', { nameAttr: 'twitterAccount' }],
+  ])('s2 core-wd: %j (%s) is %s by %s', (label, kind, category, rule, extra) => {
+    expect(classifyByRules(field(label, kind, extra))).toMatchObject({ category, rule, reason: 'ok' });
+  });
+
+  it.each<[string, FieldKind, Partial<FieldSpec>?]>([
+    // s2 core-wd: a question that mentions a phone type, an extension or a suffix is none of them; the person's current
+    // location outside a job's block, or a current one inside it, stays location.current; a GPA rule needs the GPA
+    // parenthetical alone.
+    ['What type of phone interview do you prefer?', 'select'],
+    ['Do you need a deadline extension?', 'radio'],
+    ['Overall Result (out of 100)', 'text', SCHOOL],
+  ])('s2 core-wd: %j (%s) is none of the new categories', (label, kind, extra) => {
+    const found = classifyByRules(field(label, kind, extra))?.category;
+    expect(['contact.phoneType', 'contact.phoneExtension', 'identity.suffix', 'education.gpa']).not.toContain(found);
+  });
+
+  it('s2 core-wd: "Location" is the current location outside a job\'s block, and a current location within one', () => {
+    expect(classifyByRules(field('Location', 'text'))?.category).toBe('location.current');
+    expect(classifyByRules(field('Current location', 'text', WORK))?.category).toBe('location.current');
   });
 
   it.each<[string, FieldKind, FieldCategory, string, NeedsUserCause]>([
@@ -452,7 +491,8 @@ describe('classifyByRules: what no rule classifies', () => {
   });
 
   it('leaves a textarea in an employment or school block to LLM classification: likely the entry’s own text', () => {
-    expect(classifyByRules(field('Role description', 'textarea', WORK))).toBeNull();
+    // s2 core-wd: "Role description" is the role's own (Workday's formField-roleDescription), read by the rules.
+    expect(classifyByRules(field('Responsibilities and achievements', 'textarea', WORK))).toBeNull();
     expect(classifyByRules(field('Activities and societies', 'textarea', SCHOOL))).toBeNull();
     expect(classifyByRules(field('', 'textarea', WORK))?.rule).toBe('label.unlabelled-textarea');
   });

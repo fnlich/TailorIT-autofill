@@ -28,6 +28,11 @@ export interface Choice {
   /** For a place (the current location, a job's): its parts, so a list of places is read by them where no text stage
    *  matches (matcher/place.ts: "Austin, TX" chooses "Austin, Texas, United States"). */
   place?: PlaceParts;
+  /** s2 core-wd: a less precise answer, chosen only where no option is the value itself: the kind of source a referral
+   *  source is (the profile's referralSource.category, "Job board", for a source a list does not name; the wd study
+   *  §5, Workday's "How Did You Hear About Us?"). A search types it as its reduced style (matcher/candidates.ts
+   *  SearchExtras.kind). */
+  fallback?: Choice;
 }
 
 /** A value in every shape it has. */

@@ -2260,7 +2260,9 @@ describe('every committed fixture', () => {
         .map(({ label }) => `${file}: ${label}`);
     });
     expect(failing).toEqual([]);
-  });
+    // Every committed fixture read and checked in all its forms: well past vitest's 5 s default when the whole suite
+    // runs in parallel (snapshot round 2 brought it near 500 files).
+  }, 60_000);
 
   it("refuses a per-load token's percent-encoded padding left after REDACTED (greenhouse/asana-embed.html's canonical link)", () => {
     const perLoad = tokenNeedles().find(({ label }) => label === 'a per-load token')!.pattern;
@@ -2317,7 +2319,7 @@ describe('chosen marks (the security fix of 2026-11-06: S2, S3, S10)', () => {
       expect(captured, file).toBeDefined();
       expect(captured! < '2026-11-06', file).toBe(true);
     }
-  });
+  }, 60_000);
 
   it('reads each kind of chosen mark by its markup, and no tab, menu, link or default', () => {
     const kinds = (markup: string) => chosenMarksIn(`<!doctype html><html><body>${markup}</body></html>`);

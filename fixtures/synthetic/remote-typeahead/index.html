@@ -27,11 +27,11 @@
     at Austin and Austin Community College.
 
   With the golden "Alex Rivera" profile (fixtures/profiles: The University of Texas at Austin) the queries are, in
-  order, "The University of Texas at Austin", "University of Texas at Austin", "UT Austin", "UTexas", "University of
-  Texas" and "Texas Austin" (v4: its candidate answers, src/core/matcher/candidates.ts): by default University of Texas
-  at Austin is chosen from the second query's results, never Dallas; with the none variant all six find nothing, the
-  input is left as it was and the field is flagged; with the injected variant the tainted result is never chosen, and
-  the clean one is, from the third query's results.
+  order, "University of Texas at Austin", "UT Austin" and "University of Texas", one of each style, then "Other"
+  (snapshot round 2: its candidate answers, src/core/matcher/candidates.ts, and settings.modes.noMatch 'other'): by
+  default University of Texas at Austin is chosen from the first query's results, never Dallas; with the none variant
+  all four find nothing, the input is left as it was and the field is flagged; with the injected variant the tainted
+  result is never chosen, and the clean one is, from the second query's results.
 -->
 <html lang="en">
 <head>

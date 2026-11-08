@@ -95,6 +95,11 @@ export interface FieldSpec {
    *  its own text box filtered: content/pass.ts resultsSpec), never the field's whole list: one is chosen only in the
    *  fill band, never by the LLM, and when none is, the frame types its next query (plan/frame.ts planChoice). */
   searchResults?: true;
+  /** s2 core-wd: set only beside `searchResults`, when they are what the list's own "Other" query showed (searchLimits.ts
+   *  NO_MATCH_OTHER_QUERY), typed once three styles found nothing under settings.modes.noMatch 'other': only the
+   *  list's own "Other" is chosen from them (matcher/other.ts noMatchOtherMatch), and only where the planner allows it
+   *  (plan/frame.ts). */
+  searchOther?: true;
   optionSetHash: OptionSetHash;
   constraints: Constraints;
   /** autocomplete tokens, lower case, with section-, shipping and billing prefixes removed. */

@@ -26,6 +26,9 @@ export const NAME_ID_RULES: readonly NameIdRule[] = [
   { id: 'name-id.phone', pattern: 'phone|mobile|tel', category: 'contact.phone' },
   { id: 'name-id.linkedin', pattern: 'linkedin', category: 'links.linkedin' },
   { id: 'name-id.github', pattern: 'github', category: 'links.github' },
+  // s2 core-wd: Workday's "X" box, name="twitterAccount" (formField-twitterAccount in
+  // fixtures/workday/s2-verily-field-of-study-open), whose one-letter label no label rule reads.
+  { id: 'name-id.twitter', pattern: 'twitter', category: 'links.twitter' },
   { id: 'name-id.resume', pattern: 'resume|cv', category: (kind) => (kind === 'file' ? 'file.resume' : null) },
   { id: 'name-id.cover-letter', pattern: 'cover_?letter',
     category: (kind) => (kind === 'file' ? 'file.coverLetter' : 'freeText.coverLetter') },

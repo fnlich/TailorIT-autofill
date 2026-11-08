@@ -24,7 +24,7 @@ import { CLASSIFY_LLM, CLASSIFY_SAVED_EXACT, FILL_AT, FLAG_AT, LABEL_RULE_CONFID
 import { attentionHits, botCheckOf, namesConsentTopic } from '../guard/attention';
 import { cutInjected } from '../guard/injected';
 import { hasTripwire } from '../guard/tripwire';
-import { searchCandidates } from '../matcher/candidates';
+import { searchCandidates, type SearchExtras } from '../matcher/candidates';
 import { dialCodeOf } from '../matcher/dialCode';
 import { intendedText } from '../matcher/intended';
 import { SEARCH_LIST_MIN_OPTIONS } from '../matcher/searchLimits';
@@ -259,8 +259,28 @@ function listSearchFor(spec: FieldSpec, candidate: Candidate, choice: Choice, vo
   if (spec.optionsPartial !== true && spec.options.length < SEARCH_LIST_MIN_OPTIONS) return [];
   const dial = candidate.text?.trim() ?? '';
   const showsDialCodes = DIAL_CODE_TEXT.test(dial) && spec.options.some((option) => dialCodeOf(option.label) !== null);
-  return searchCandidates(choice.intended, vocab, choice.place, showsDialCodes ? { dialCode: dial } : {});
+  return searchCandidates(choice.intended, vocab, choice.place,
+    { ...(showsDialCodes ? { dialCode: dial } : {}), ...searchKind(choice) });
 }
+
+// s2 core-wd: what else a search types.
+
+/** A referral source's kind (Choice.fallback), which a search types as its reduced style (matcher/candidates.ts). */
+function searchKind(choice: Choice): SearchExtras {
+  const kind = choice.fallback?.intended;
+  return kind?.kind === 'entity' && kind.id !== null ? { kind: kind.id } : {};
+}
+
+/** What a remote search types besides the value's spellings: a referral source's kind, and a phone country's dial
+ *  code (Workday's Country Phone Code lists "United States of America (+1)": the wd study §1). */
+function remoteSearchExtras(spec: FieldSpec, candidate: Candidate, choice: Choice): SearchExtras {
+  const dial = candidate.text?.trim() ?? '';
+  const phoneCountry = choice.domain === 'country' && candidate.origin.provenance === 'profile'
+    && candidate.origin.path === 'contact.phone' && DIAL_CODE_TEXT.test(dial);
+  return { ...(phoneCountry && spec.kind === 'typeahead-remote' ? { dialCode: dial } : {}), ...searchKind(choice) };
+}
+
+// end s2 core-wd
 
 /** The value in the shape the field's kind takes (candidate.ts), and whether its layout was guessed; null when the
  *  value has no such shape. A date for a list of months or of years is its part (datePartChoice), and for a text box
@@ -299,7 +319,7 @@ export function shapeFor(spec: FieldSpec, candidate: Candidate, vocab: Vocab): {
       const choice = candidate.choice ?? (candidate.text !== undefined
         ? { intended: intendedText(candidate.text), domain: 'generic' as const } : undefined);
       if (!choice) return null;
-      const queries = typeaheadQueries(choice.intended, vocab, choice.place);
+      const queries = typeaheadQueries(choice.intended, vocab, choice.place, remoteSearchExtras(spec, candidate, choice));
       return queries.length === 0 ? null : plain({ shape: 'search', queries, choice });
     }
   }
