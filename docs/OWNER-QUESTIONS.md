@@ -361,6 +361,14 @@ Your requests after v4 (stored lists chosen at once, Workday dates typed, three 
 
 237. **Ask.** The git history purge waiting for your OK now also covers the earlier blobs of `fixtures/sites/seatgeek-greenhouse-embed.frame-1.html` (five chip labels naming self-identification answers), `fixtures/workday/resolvetech-source-open.html` and `web-my-experience.html` (a chosen answer's Workday id each) and `fixtures/greenhouse/s2-pie-cicd-open.html` (three chip labels). Each file is scrubbed now; its earlier version stays in history until you approve the rewrite. Default: wait for you.
 
+238. **Ask.** Degree on pureinsurance (snapshot5) stayed "Select One"; the extension reads and chooses that list for a
+   degree it offers. Which degree does your TailorIT profile hold (level and type)? A type the list does not offer
+   (B.Eng., M.Eng., A.S., BSN, or MD as "Medical Doctor (MD)", a vocabulary gap) still stays blank, unless its level has
+   a level-only option. What did the side panel's Degree row say?
+239. **Ask (live).** After the 2026-11-08 fix, please fill a Workday My Experience again: From/To should show no
+   "Invalid Date" alert. On a page that already shows the old alerts, Autofill again leaves each whole date once more,
+   which should clear them; "Errors Found" may stay until Save and Continue.
+
 **What round 2 needs you to do:** reload the extension in `chrome://extensions`; choose I understand on the disclosure when the side panel or the options page shows it again (version 9); restart TailorIT's dev server, whose `v1.2` now holds the profile fields and the review's P2 and P3 (TailorIT `978c205`, from `v1.2-p11`); and fill the new answers in TailorIT Settings › Autofill (phone type, X, Telegram, certifications, places, the referral source's kind, and the self-identification and screening answers) or in the side panel's "Your autofill information".
 
 ## Snapshots and owner-only inputs still needed

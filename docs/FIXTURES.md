@@ -491,6 +491,14 @@ Each with `.routes.json` and `.third-party-frame.html`, none with `.expect.json`
 - **Expectations and stored lists:** a widget whose adapter names a stored list reads as the scanner alone reads it, `"lazy"`: the lists live in the worker, which gives them to a run's scans by `lists/known` (docs/ARCHITECTURE.md "Snapshot round 2"). `979a3b3` had counted them (244, 3, 250) while the adapters held the lists; `2fb80f0` moved them to the worker and read them `"lazy"` again. The Greenhouse phone's country is labelled "Country code" (its own "Country" and the adapter's "code"), as Workable's is "Phone country code". Changed for it at `979a3b3` and again at `2fb80f0` (19 files): `greenhouse/{affirm-job, asana-embed, axle-attached, beyondtrust-job, discord-job, discord-ml-job, figma-legacy-host, gitlab-embed, gitlab-job, gusto-job, twilio-job, twitch-job}.expect.json`, `synthetic/greenhouse-widgets/{index, phone}.expect.json`, `workday/{resolvetech-source-open, s2-exelixis-country-open, s2-exelixis-state-open, s2-verily-my-information, s2-verily-source-open}.expect.json`.
 - **Other fixtures:** `synthetic/greenhouse-widgets` gains `MountOptions.phoneClearsMs` (the number emptied that long after a country is chosen; never by default); `synthetic/remote-typeahead/index.html`'s header names the new queries (below); `profiles/alex-rivera.profile.json` gains the new profile keys at their defaults ('' / null / []), so the contract's parse equals it and no trap or e2e behaviour changes.
 
+- **snapshot5 (2026-11-08):** `workday/s2-pureinsurance-my-experience-errors` (My Experience after a run: 4 jobs, 1
+  school, 7 dates, the old filler's "Invalid Date" alerts, Degree's "required", the "Errors Found" summary) and
+  `s2-pureinsurance-degree-open` (the Degree list open, 13 degrees), with `.expect.json`, in WORKDAY_STEP_SNAPSHOTS,
+  the workday-steps CASES and WORKDAY_STEP_FILES. Converter rules, each with a test: INJECTED_UI adds Jobright's
+  `.jr-edit-ai-host`; stripInjectedInPage drops a shadow host on `<html>` whose root is closed or holds no control and a
+  closed host on `<body>` (TailorIT's own page UI); redactWorkdayInPage redacts every run of digits in `inputAlert` and
+  `errorHeading` texts (they repeat the person's dates).
+
 ## Serving fixtures
 In e2e runs every request goes through `e2e/routes.ts`: a URL in the route map is answered from its fixture, the mock TailorIT and the extension's own files pass through, a form post to `/__submitted` is recorded (any hit fails the test), and everything else is aborted and recorded. Fixtures are served at their real ATS addresses: Phase 0 proved that Chromium injects the content script into such routed pages.
 - A converted case's `<case>.routes.json` is that map for its page and its frames (URL without fragment to repo-relative file), in the shape `installRoutes` takes.

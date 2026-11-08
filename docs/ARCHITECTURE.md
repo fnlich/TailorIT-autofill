@@ -503,6 +503,22 @@ What follows holds over every note above and below where they differ. Shared sha
 - **The write** (`fillDateParts`, awaited by `content/pass.ts` `writeField`): each part's own digits through the value setter with input, change, focusout and blur; one quiet window (`WIDGET_QUIET_MS`, capped at `WIDGET_CAP_MS`); read back from the displays and `aria-valuenow`; a part not taken gets its own value back, then its digits as declared keys (one keydown and keyup per digit, through `assertKeyTarget`, that part only), read back again. Verified, written not verified, or nothing taken (each part given back, `needs-your-click`). Never a made-up day (a month and year into three parts: `format-unsupported`); the calendar (`dateIcon`) never pressed. The DOM guard asks about the parts; readBack, `holds` and `markedInvalid` read them; `fill()` refuses a date-parts target. A current job's To stays unwritten (`planCurrentJob`; `content/repeatables.ts` reads a parts end date from its displays).
 - **Next** (`requiredDateEmpty`): withheld while a visible date has a required part whose display or `aria-valuenow` shows no digits, as a person reads it, not by the hidden input's value. This replaces "Dates" under "Workday's application steps" above.
 
+- **The fix of 2026-11-08 (the owner's snapshot5, pureinsurance.wd5 My Experience; supersedes the write above).**
+  `dom/fillers/date-parts.ts` writes every part (value setter, input, change) before the date is left; once the page has
+  drawn what it took (one quiet window), it leaves the date once: focusout and blur on each part in turn. A date
+  nothing was taken in is never left. The digit-key fallback is unchanged, the date left again once its digits show.
+  Before, each part's write ended with its own focusout/blur, so Workday validated the date after the month alone
+  ("Invalid Date: MM/" in the field's alert and the step's "Errors Found", though the parts then held the whole date).
+  `DatePartsDecl.alert` / `DatePartsTarget.alert`: Workday's `p[data-automation-id=inputAlert]` for the date; a date
+  that already holds the planned value but shows its alert is left once more, so Workday validates it whole.
+- **Field alerts are errors** (since 2026-11-08): Workday's `errors` include each field's visible
+  `p[data-automation-id=inputAlert]` (application.ts `fieldAlerts`), so a step whose fields show alerts is read as one
+  with errors (no blind Next). The "Errors Found" summary (`[data-automation-id=errorHeading]`) may stay until the next
+  Save and Continue.
+- **Degree** (`core/matcher/degree.ts`, 2026-11-08): on a list of degree types, a type the list does not offer takes the
+  level-only option of its level ("High School" for a high-school diploma on pureinsurance's list). The Degree
+  dropdown's read and choose work on that tenant (DOM test on the captured list).
+
 ### Workday: prompts and declared results lists (decision 4)
 - `widgetFor` declares each prompt (School, Field of Study, Skills, How Did You Hear About Us, Country Phone Code) with `results: {list: () => promptListOf(container), option: PROMPT_ROW, choose: 'label', unchoosable: UNCHOOSABLE_ROW}`, `optionLabel` its `promptOption`, `queryKey: 'Enter'`. `promptListOf` finds the `activeListContainer` of the `responsiveMonikerPrompt` whose `data-associated-widget` is the prompt container's id (drawn at the end of the body only while open). `UNCHOOSABLE_ROW`: a category (a chevron, no radio: `s2-verily-source-open`) and the list's own "No Items." row (`s2-verily-school-no-items`), read as unavailable results, never chosen. A result is chosen by `click()` on its `promptOption`. This replaces "the helpers never type into it" under "Workday's application steps" above.
 - **Widget results** (`dom/widgets`): `WidgetResults.list` may be a hook (`aria.ts` `widgetListOf`, found anew each time; one that throws finds none); `unchoosable` read as disabled by `options.ts` `shownOptions` and `readList`; `choose: 'label'` (`typeahead.ts` `pressTargetOf`: both the row and its part pass `assertNotSubmit`). `typeWatched` also sees an answer the page draws in the microtasks the input event queued (React), so a declared query key follows the first query on a React page too; still no key to a page that answers nothing.
