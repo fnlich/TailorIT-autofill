@@ -123,15 +123,16 @@ describe("DFIN's account creation (the owner's snapshot of 2026-11-06)", () => {
   });
 
   // The behaviour review of 2026-11-06 (M6, the owner's decision): its reCAPTCHA is a checkbox widget, which no longer
-  // pauses before the page's own reading; it still holds Sign-in Auto (a vendor's frame shown) and every press.
-  it('is the account page’s own pause; its required reCAPTCHA shows, so nothing is typed or pressed for the person',
+  // pauses before the page's own reading. v5 p1-rules (PLAN decision 9, like Jobright): nor holds Sign-in Auto or a
+  // press: the account's boxes are typed beside it (its button is the person's: SignInForm.personPresses).
+  it('is the account page’s own pause; its required reCAPTCHA holds no typing, and its button stays the person’s',
     async () => {
       const { html, address } = CASES[4];
       const fixture = await load(html, address);
       const root = successFactorsAdapter.detect(fixture.doc)!.formRoot;
       expect(detectPause(fixture.doc, root, successFactorsAdapter)?.kind).toBe('create-account');
-      expect(vendorFramesShown(fixture.doc)).toBe(1);
-      expect(pageChallenged(fixture.doc)).toBe(true);
+      expect(vendorFramesShown(fixture.doc)).toBe(0);
+      expect(pageChallenged(fixture.doc)).toBe(false);
     });
 });
 

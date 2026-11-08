@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
+import { SITES_MATCH } from '../shared/hosts';
 import { SIDEBAR_APP_FILE } from '../shared/sidebar';
 import { NOTES_KEY, SIDEBAR_LOAD_LIMIT } from './sidebar';
 import { contentSender, EXTENSION_ID, frameReport, LEVER_URL, NO_RECEIVER, pageSender, sentToFrames, startTestWorker,
@@ -16,6 +17,7 @@ import { contentSender, EXTENSION_ID, frameReport, LEVER_URL, NO_RECEIVER, pageS
 const TOP = contentSender();
 const SUBFRAME = contentSender({ frameId: 2, documentId: 'doc-2' });
 const OPTIONS = pageSender('options.html');
+const COMPANY = 'https://careers.northwind.example/jobs/42/apply';
 
 const hello = (worker: TestWorker, sender = TOP) =>
   worker.deliver({ v: 1, type: 'frame/hello', isTop: sender.frameId === 0, hasForm: true }, sender);
@@ -198,6 +200,9 @@ describe('the sidebar on the page (v5 p1-shell)', () => {
       await fakeBrowser.action.onClicked.trigger({ id: 9, url: 'chrome://extensions/' } as never);
       expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toEqual([{ method: 'open',
         args: { tabId: 9 } }]);
+      // The Chrome Web Store, which Chrome lets no extension script: inside the click too.
+      await fakeBrowser.action.onClicked.trigger({ id: 9, url: 'https://chromewebstore.google.com/detail/x/abc' } as never);
+      expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toHaveLength(2);
       expect(sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'sidebar/open')).toEqual([]);
       // A page of ours whose frame does not answer (it loaded before the extension): the side panel, as Chrome allows.
       worker.fakes.frameAnswers = () => {
@@ -205,7 +210,63 @@ describe('the sidebar on the page (v5 p1-shell)', () => {
       };
       await fakeBrowser.action.onClicked.trigger({ id: 7, url: LEVER_URL } as never);
       await vi.waitFor(() => expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open'))
-        .toHaveLength(2));
+        .toHaveLength(3));
+      expect(worker.fakes.injections).toEqual([]);
+    });
+
+    it("injects the content script into a company's own https page that runs none, then opens the sidebar there", async () => {
+      const worker = await startTestWorker({ before: (fakes) => {
+        fakes.granted.add(SITES_MATCH);
+      } });
+      let listening = false;
+      worker.fakes.frameAnswers = (sent) => {
+        if (typeOfSent(sent) !== 'sidebar/open') return { ok: true, data: {} };
+        if (!listening) throw new Error(NO_RECEIVER);
+        return { ok: true, data: { opening: true } };
+      };
+      worker.fakes.topDocument = () => ({ documentId: 'doc-co', url: COMPANY });
+      const asked = () => sentToFrames(worker).filter((sent) => typeOfSent(sent) === 'sidebar/open').length;
+      const waiting = worker.timers.pending;
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: COMPANY } as never);
+      // Asked before, and once the script ran; then again after a pause, once it listens.
+      await vi.waitFor(() => expect(worker.timers.pending).toBe(waiting + 1));
+      expect(asked()).toBe(2);
+      expect(worker.fakes.injections).toEqual([{ target: { tabId: 7, documentIds: ['doc-co'] },
+        files: ['content-script.js'] }]);
+      listening = true;
+      worker.timers.advance(150);
+      await vi.waitFor(() => expect(asked()).toBe(3));
+      expect(worker.fakes.sidePanelCalls.filter((call) => call.method === 'open')).toEqual([]);
+      // Its frame is the worker's now: the sidebar's messages are taken from it.
+      const injected = contentSender({ url: COMPANY, tab: { id: 7, url: COMPANY }, documentId: 'doc-co' });
+      expect(await worker.deliver({ v: 1, type: 'panel/launcher', tabId: 7 }, injected)).toMatchObject({ ok: true });
+      // Clicked again, the script answers at once: nothing injected twice.
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: COMPANY } as never);
+      await vi.waitFor(() => expect(asked()).toBe(4));
+      expect(worker.fakes.injections).toHaveLength(1);
+    });
+
+    it('injects nothing in a private tab, on an http page, where the frame moved on, or with the career sites off', async () => {
+      const worker = await startTestWorker({ before: (fakes) => {
+        fakes.granted.add(SITES_MATCH);
+      } });
+      worker.fakes.frameAnswers = () => {
+        throw new Error(NO_RECEIVER);
+      };
+      const opened = () => worker.fakes.sidePanelCalls.filter((call) => call.method === 'open').length;
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: COMPANY, incognito: true } as never);
+      await vi.waitFor(() => expect(opened()).toBe(1));
+      // An http page off the ATS hosts is not one the icon reaches: the side panel inside the click.
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: 'http://careers.northwind.example/jobs/42' } as never);
+      expect(opened()).toBe(2);
+      worker.fakes.topDocument = () => ({ documentId: 'doc-li', url: 'https://www.linkedin.com/jobs/view/1' });
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: COMPANY } as never);
+      await vi.waitFor(() => expect(opened()).toBe(3));
+      worker.fakes.topDocument = () => ({ documentId: 'doc-co', url: COMPANY });
+      await worker.deliver({ v: 1, type: 'sites/set', on: false }, OPTIONS);
+      await fakeBrowser.action.onClicked.trigger({ id: 7, url: COMPANY } as never);
+      await vi.waitFor(() => expect(opened()).toBe(4));
+      expect(worker.fakes.injections).toEqual([]);
     });
   });
 

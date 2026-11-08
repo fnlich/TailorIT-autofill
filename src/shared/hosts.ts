@@ -158,17 +158,41 @@ export function platformOfUrl(url: string): Platform | null {
 }
 
 // ── v3 Phase 8: company career sites (docs/SPEC-AMENDMENTS.md §12 Decision 13) ─────────────────────────────────────
-// Nothing below is a static match: the manifest asks for none of these hosts. The person turns "Company career sites"
-// on in Options, which asks Chrome for the optional host permission on their click; the worker then registers a
-// dormant sentinel (src/entrypoints/sentinel.ts) with chrome.scripting.registerContentScripts, in the top frame only,
-// and injects the content script into a frame the sentinel recognised, once it has checked the frame's address again
-// itself. LinkedIn is deferred to v5 by the owner (2026-11-06): nothing of the extension runs on any LinkedIn host,
-// even with every https page granted, nor on an employee HR system's (HR_HOST_MATCHES).
+// Nothing below is a static match. The worker registers a dormant sentinel (src/entrypoints/sentinel.ts) with
+// chrome.scripting.registerContentScripts, in the top frame only, and injects the content script into a frame the
+// sentinel recognised, once it has checked the frame's address again itself. LinkedIn is deferred to v5 by the owner
+// (2026-11-06): nothing of the extension runs on any LinkedIn host, nor on an employee HR system's (HR_HOST_MATCHES).
+// v5 p1-rules (PLAN decision 10, the owner's "Implement like jobright. I approved all", 2026-11-08): every site at
+// install, as Jobright asks: the manifest's required host permissions are every https and http page
+// (ALL_SITES_HOST_PERMISSIONS), so no click in Options asks Chrome for anything, and "Company career sites" is on unless
+// the person turns it off (background/sites.ts). The sentinel and a company page's fill stay on https pages: a company's
+// http form would send the person's answers unencrypted (the owner may widen it; docs: p1-rules). And (decision 9) no
+// script of the extension ever runs in a CAPTCHA or anti-bot vendor's own frame (CAPTCHA_VENDOR_MATCHES).
 
 /** Every https page: the company career sites' registration, the ATS hosts, LinkedIn and the HR systems excluded. */
 export const SITES_MATCH = 'https://*/*';
-/** The manifest's optional host permissions (never <all_urls>: http, file and TailorIT's own http origin stay out). */
-export const OPTIONAL_HOST_PERMISSIONS = [SITES_MATCH] as const;
+/** v5 p1-rules (PLAN decision 10): the manifest's required host permissions beside TailorIT's origin: every https and
+ *  every http page, at install (Chrome's prompt: "Read and change all your data on all websites"). Never <all_urls>:
+ *  file pages, ftp and websockets stay out. */
+export const ALL_SITES_HOST_PERMISSIONS = [SITES_MATCH, 'http://*/*'] as const;
+/** v5 p1-rules (PLAN decision 9, like Jobright's manifest): the CAPTCHA and anti-bot vendors' own frames, which no script
+ *  of the extension may run in: reCAPTCHA's (google.com and recaptcha.net), hCaptcha's, Cloudflare Turnstile's
+ *  challenges, Arkose Labs' (and FunCaptcha's legacy host), DataDome's, PerimeterX/HUMAN's and GeeTest's. As Chrome
+ *  match patterns of either scheme; the registration excludes them, and isCompanySiteUrl refuses them
+ *  (isCaptchaVendorUrl). The static content scripts' ATS hosts are none of them (scripts/check-build.mjs). */
+export const CAPTCHA_VENDOR_MATCHES = ['*://*.google.com/recaptcha/*', '*://*.recaptcha.net/*', '*://*.hcaptcha.com/*',
+  '*://challenges.cloudflare.com/*', '*://*.arkoselabs.com/*', '*://*.funcaptcha.com/*', '*://*.captcha-delivery.com/*',
+  '*://*.protechts.net/*', '*://*.geetest.com/*'] as const;
+/** The vendors' hosts of CAPTCHA_VENDOR_MATCHES whose every path is theirs. */
+const CAPTCHA_VENDOR_HOST = /(?:^|\.)(?:recaptcha\.net|hcaptcha\.com|arkoselabs\.com|funcaptcha\.com|captcha-delivery\.com|protechts\.net|geetest\.com)$|^challenges\.cloudflare\.com$/;
+
+/** Whether an address is a CAPTCHA or anti-bot vendor's own page (CAPTCHA_VENDOR_MATCHES): reCAPTCHA under google.com's
+ *  /recaptcha/ path, every page of the other vendors' hosts. */
+export function isCaptchaVendorUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+  if (host === 'google.com' || host.endsWith('.google.com')) return url.pathname.startsWith('/recaptcha/');
+  return CAPTCHA_VENDOR_HOST.test(host);
+}
 /** LinkedIn's hosts, which the career sites' registration excludes: linkedin.com and every host under it (`*.` covers
  *  linkedin.com itself), its China site and its short-link and static hosts. */
 export const LINKEDIN_HOST_MATCHES = ['https://*.linkedin.com/*', 'https://*.linkedin.cn/*', 'https://*.lnkd.in/*',
@@ -195,13 +219,13 @@ export interface SiteRegistration {
 
 /** The sentinel's registrations (pure: the worker reconciles Chrome's to these, and check-build holds them): none while
  *  the company career sites are off; while on, one, on every https page but the ATS hosts (whose own content script
- *  runs there), LinkedIn's and the employee HR systems', in the top frame only (never an ad's or an anti-bot frame),
- *  once the page is loaded. */
+ *  runs there), LinkedIn's, the employee HR systems' and (v5 p1-rules) the CAPTCHA and anti-bot vendors' own pages, in
+ *  the top frame only (never an ad's or an anti-bot frame), once the page is loaded. */
 export function registrationsFor(on: { sites: boolean }): SiteRegistration[] {
   if (!on.sites) return [];
   return [{ id: SITES_REGISTRATION_ID, js: [SENTINEL_FILE], matches: [SITES_MATCH],
-    excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES], allFrames: false, runAt: 'document_idle',
-    persistAcrossSessions: true, world: 'ISOLATED' }];
+    excludeMatches: [...ATS_MATCHES, ...LINKEDIN_HOST_MATCHES, ...HR_HOST_MATCHES, ...CAPTCHA_VENDOR_MATCHES],
+    allFrames: false, runAt: 'document_idle', persistAcrossSessions: true, world: 'ISOLATED' }];
 }
 
 /** Whether a host is `domain` or under it, in lower case and with trailing dots dropped. */
@@ -262,8 +286,9 @@ export function isHrHost(host: string): boolean {
 }
 
 /** A company's own page as the career sites reach it: https, where the static content script never runs (no ATS match:
- *  an ATS domain's other hosts stay dormant), and neither LinkedIn's nor an employee HR system's. The sentinel's
- *  recognition, the worker's check before it injects and the site adapter all read this one rule. */
+ *  an ATS domain's other hosts stay dormant), and neither LinkedIn's nor an employee HR system's, nor (v5 p1-rules) a
+ *  CAPTCHA or anti-bot vendor's own page. The sentinel's recognition, the worker's check before it injects and the site
+ *  adapter all read this one rule. */
 export function isCompanySiteUrl(url: string): boolean {
   let parsed: URL;
   try {
@@ -272,7 +297,7 @@ export function isCompanySiteUrl(url: string): boolean {
     return false;
   }
   return parsed.protocol === 'https:' && !onAtsMatch(parsed.href) && !isLinkedInHost(parsed.hostname)
-    && !isHrHost(parsed.hostname);
+    && !isHrHost(parsed.hostname) && !isCaptchaVendorUrl(parsed);
 }
 
 /** A company's own careers site, read by its host and the paths of its postings and application pages (the read-only

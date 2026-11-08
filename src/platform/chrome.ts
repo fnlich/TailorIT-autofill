@@ -277,8 +277,9 @@ function sitesScripting(): SitesScripting {
     getRegisteredContentScripts(filter: { ids: string[] }): Promise<Array<Parameters<typeof registrationOf>[0]>>;
     registerContentScripts(scripts: unknown[]): Promise<void>;
     unregisterContentScripts(filter: { ids: string[] }): Promise<void>;
-    executeScript(injection: { target: { tabId: number; frameIds?: number[]; documentIds?: string[] }; files: string[];
-      injectImmediately?: boolean }): Promise<unknown>;
+    executeScript(injection: { target: { tabId: number; frameIds?: number[]; documentIds?: string[] }; files?: string[];
+      func?: () => unknown; injectImmediately?: boolean }): Promise<Array<{ documentId?: string; frameId?: number;
+      result?: unknown }>>;
   };
   const scripting = () => (browser as unknown as { scripting: Scripting }).scripting;
   return {
@@ -295,6 +296,17 @@ function sitesScripting(): SitesScripting {
     async inject(tabId, target, file) {
       await scripting().executeScript({ target: target.documentId === undefined ? { tabId, frameIds: [target.frameId] }
         : { tabId, documentIds: [target.documentId] }, files: [file] });
+    },
+    // v5 p1-shell: a function in the top frame that reads its own address; Chrome's answer names its document.
+    async topDocument(tabId) {
+      try {
+        const [result] = await scripting().executeScript({ target: { tabId, frameIds: [0] },
+          func: () => location.href });
+        return typeof result?.documentId === 'string' && typeof result.result === 'string'
+          ? { documentId: result.documentId, url: result.result } : null;
+      } catch {
+        return null;
+      }
     },
   };
 }
@@ -392,7 +404,9 @@ export function createWorkerPlatform(): WorkerPlatform {
     // v5 p1-shell: the toolbar icon, while the panel shows on the page.
     action: {
       onClicked: (cb) => browser.action.onClicked.addListener((tab) => {
-        if (typeof tab.id === 'number') cb({ id: tab.id, ...(tab.url === undefined ? {} : { url: tab.url }) });
+        if (typeof tab.id === 'number') {
+          cb({ id: tab.id, ...(tab.url === undefined ? {} : { url: tab.url }), ...(tab.incognito ? { incognito: true } : {}) });
+        }
       }),
     },
     windows: agentWindows(),

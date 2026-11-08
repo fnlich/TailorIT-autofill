@@ -450,15 +450,17 @@ describe('the options page: Where Autofill works (v3 Phase 8)', () => {
     expect(root.textContent).toContain(TEXT.sites.refused);
   });
 
-  it('gives back what Chrome just granted when the choice could not be saved (the Phase 8 review, P8)', async () => {
+  // v5 p1-rules (PLAN decision 10): the permission is the install's own (every https and http page is a required host),
+  // so a choice that could not be saved gives nothing back (the Phase 8 review's P8 gave back an optional one).
+  it('gives nothing back when the choice could not be saved: the permission is the install’s', async () => {
     const worker = createFakeWorker();
-    worker.on('sites/get', () => ({ ok: true, data: { on: false, granted: false } }));
+    worker.on('sites/get', () => ({ ok: true, data: { on: false, granted: true } }));
     worker.on('sites/set', () => ({ ok: false, error: 'internal' }));
     const root = await open(worker);
     await click(setting(root, 'sites.on'));
     await settle();
     expect(worker.platform.hostRequests).toEqual([['https://*/*']]);
-    expect(worker.platform.hostRemovals).toEqual([['https://*/*']]);
+    expect(worker.platform.hostRemovals).toEqual([]);
     expect(setting(root, 'sites.on').checked).toBe(false);
     expect(root.textContent).toContain(TEXT.sites.failed);
   });

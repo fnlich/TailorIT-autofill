@@ -85,6 +85,9 @@ export interface HandFakes {
   /** What executeScript does with an injection: returning resolves it, a thrown error rejects it; a promise holds it
    *  until it settles. */
   injectAnswer: (injection: HandFakes['injections'][number]) => void | Promise<void>;
+  /** v5 p1-shell: a tab's top frame as executeScript names it for a function run there: its document id and the address
+   *  the function reads (null: Chrome refused). */
+  topDocument: (tabId: number) => { documentId: string; url: string } | null;
   /** v3 Phase 8: the optional host permissions Chrome holds (permissions.contains reads them; the every-https-page
    *  pattern covers every https origin). */
   granted: Set<string>;
@@ -183,6 +186,7 @@ export function installHandFakes(): HandFakes {
     registrations: new Map(),
     injections: [],
     injectAnswer: () => undefined,
+    topDocument: () => ({ documentId: 'doc-top', url: 'https://careers.example.com/jobs/1' }),
     granted: new Set(),
     grant(origins) {
       for (const origin of origins) fakes.granted.add(origin);
@@ -260,7 +264,14 @@ export function installHandFakes(): HandFakes {
         if (!fakes.registrations.delete(id)) throw new Error(`Nonexistent script ID '${id}'`);
       }
     },
-    executeScript: async (injection: HandFakes['injections'][number]) => {
+    executeScript: async (injection: HandFakes['injections'][number] & { func?: () => unknown }) => {
+      // v5 p1-shell: a function run in the top frame (topDocument) names its document and answers its address, and is
+      // no file's injection.
+      if (injection.func !== undefined) {
+        const top = fakes.topDocument(injection.target.tabId);
+        if (top === null) throw new Error('Cannot access contents of the page.');
+        return [{ frameId: 0, documentId: top.documentId, result: top.url }];
+      }
       const copy = JSON.parse(JSON.stringify(injection)) as HandFakes['injections'][number];
       fakes.injections.push(copy);
       await fakes.injectAnswer(copy);

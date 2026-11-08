@@ -577,6 +577,10 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
   /** v5 p1-shell (PLAN decision 2): the toolbar icon, under "Where the panel shows: On the page": the tab's top frame
    *  opens the sidebar (`reveal`: the person's click brings the launcher back where they hid it). The worker's alone. */
   z.strictObject({ v, type: z.literal('sidebar/open'), reveal: z.literal(true).optional() }),
+  // v5 p1-panel (PLAN decision 5): the tab's application was submitted, its platform confirmed it, and TailorIT's
+  // tracker recorded it: the worker's alone, to the tab's top frame, once per recorded submission. The page shows
+  // "Application Submitted!" over itself while the tab is visible (content/ui/applied.ts). Nothing names the job.
+  z.strictObject({ v, type: z.literal('applied/popup') }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -800,6 +804,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   'site/stop': DoneAnswerSchema,
   // v5 p1-shell
   'sidebar/open': SidebarOpenAnswerSchema,
+  'applied/popup': DoneAnswerSchema, // v5 p1-panel
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────

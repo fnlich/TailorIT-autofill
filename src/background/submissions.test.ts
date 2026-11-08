@@ -115,3 +115,46 @@ describe('a Submit after the worker was stopped, and a token change (the audit o
     expect(worker.tailorit.count('POST /api/autofill/applied')).toBe(sent);
   });
 });
+
+// v5 p1-panel (PLAN decision 5): the page's "Application Submitted!" window.
+describe('the applied popup: the tab’s top frame told once TailorIT recorded the application', () => {
+  const detected = (worker: TestWorker) => worker.deliver({ v: 1, type: 'submit/detected', applicationKey: KEY,
+    evidence: 'success-message' }, contentSender());
+  const popups = (worker: TestWorker) => worker.fakes.tabMessages.filter((sent) =>
+    (sent.message as { type?: string }).type === 'applied/popup');
+
+  it('tells the top frame once, when the tracker recorded it, and never again for the same sign', async () => {
+    const worker = await withForm();
+    worker.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
+    await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: KEY, by: 'page' }, contentSender());
+    await detected(worker);
+    await vi.waitFor(() => expect(popups(worker)).toHaveLength(1));
+    const [sent] = popups(worker);
+    expect(sent!.message).toEqual({ v: 1, type: 'applied/popup' });
+    expect([sent!.tabId, sent!.options?.frameId]).toEqual([7, 0]);
+    // A second sign of the same Submit records nothing more, and shows nothing more.
+    expect(await detected(worker)).toEqual({ ok: false, error: 'expired' });
+    expect(popups(worker)).toHaveLength(1);
+  });
+
+  it('says nothing while the tracker could not be told, and tells the top frame once Try again recorded it', async () => {
+    const worker = await withForm();
+    worker.tailorit.reply('POST /api/autofill/applied', { status: 503, json: { error: { code: 'unavailable',
+      message: 'x' } } }, { once: true });
+    await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: KEY, by: 'page' }, contentSender());
+    await detected(worker);
+    expect(popups(worker)).toEqual([]);
+    worker.tailorit.reply('POST /api/autofill/applied', { json: goldens.lookup });
+    expect(await page(worker, { type: 'panel/retryApplied', tabId: 7 })).toEqual({ ok: true, data: {} });
+    await vi.waitFor(() => expect(popups(worker)).toHaveLength(1));
+  });
+
+  it('says nothing when TailorIT refused it for good', async () => {
+    const worker = await withForm();
+    worker.tailorit.reply('POST /api/autofill/applied', { status: 403, json: { error: { code: 'forbidden',
+      message: 'x' } } });
+    await worker.deliver({ v: 1, type: 'submit/armed', applicationKey: KEY, by: 'page' }, contentSender());
+    await detected(worker);
+    expect(popups(worker)).toEqual([]);
+  });
+});

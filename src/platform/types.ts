@@ -141,8 +141,9 @@ export interface WorkerPlatform {
   sidePanel: { open(tabId: number): Promise<void>; openOnActionClick(on: boolean): Promise<void> };
   /** v5 p1-shell: the toolbar icon's click (action.onClicked), which Chrome fires only while it does not open the side
    *  panel itself (openOnActionClick false: "Where the panel shows: On the page"): the tab it was clicked on, and that
-   *  tab's address while the click's activeTab grant lets Chrome say. Registered synchronously at start-up. */
-  action: { onClicked(cb: (tab: { id: number; url?: string }) => void): void };
+   *  tab's address while the click's activeTab grant lets Chrome say, and whether it is a private one. Registered
+   *  synchronously at start-up. */
+  action: { onClicked(cb: (tab: { id: number; url?: string; incognito?: true }) => void): void };
   /** v3 Phase 5: the auto-apply agent's windows (chrome.windows, no permission needed). */
   windows: AgentWindows;
   /** v3 Phase 5: the auto-apply agent's wake-ups (chrome.alarms, the `alarms` permission: no install warning). */
@@ -187,6 +188,10 @@ export interface SitesScripting {
   /** Runs the extension's file `file` in one document of a tab (its frame, when Chrome gave no document id); rejects
    *  when Chrome refused (no host permission, the document gone). */
   inject(tabId: number, target: { frameId: number; documentId?: string }, file: string): Promise<void>;
+  /** v5 p1-shell: a tab's top frame now: its document id (Chrome's answer to a function run there names it), so an
+   *  injection can be recorded before its script runs, and its address as the frame itself reads it (location.href, in
+   *  the extension's isolated world: never the page's word); null where Chrome refused or named no document. */
+  topDocument(tabId: number): Promise<{ documentId: string; url: string } | null>;
 }
 
 /** v3 Phase 8: the optional host permissions, as Chrome holds them. Asking for one is an extension page's, on the

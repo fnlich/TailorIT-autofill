@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from './fixture.testkit';
 import {
-  captchaElements, challengeLikeFramesShown, detectPause, pageChallenged, unsolvedCaptchas, vendorFramesShown,
+  captchaElements, captchaErrorsShown, captchaRefusalShown, challengeLikeFramesShown, checkboxCaptchasUnsolved, detectPause,
+  isCaptchaError, pageChallenged, unsolvedCaptchas, vendorFramesShown, withoutSolvedCaptchaErrors,
 } from './pause-detect';
 import { scan } from './scan';
 
@@ -208,14 +209,16 @@ describe('detectPause', () => {
       frame.style.cssText = 'width:304px;height:78px;border:0';
       shadow.append(fixture.doc.createElement('div'));
       shadow.firstElementChild!.append(frame);
-      // No bound button: the frame and its host both count, and every press holds.
-      expect(pageChallenged(fixture.doc)).toBe(true);
+      // No bound button: the frame and its host both count as widgets not solved.
       expect(unsolvedCaptchas(fixture.doc, null)).toBeGreaterThan(0);
-      // The behaviour review of 2026-11-06 (M6): that frame is reCAPTCHA's checkbox, which holds every press but no
-      // longer pauses the fill; any other challenge frame drawn there still pauses it.
+      // The behaviour review of 2026-11-06 (M6): that frame is reCAPTCHA's checkbox, which no longer pauses the fill,
+      // and since v5 (PLAN decision 9) holds no press either; any other challenge frame drawn there pauses it and holds
+      // every press.
       expect(detectPause(fixture.doc, null, null)).toBeNull();
+      expect(pageChallenged(fixture.doc)).toBe(false);
       frame.setAttribute('src', 'https://www.google.com/recaptcha/api2/bframe?k=x');
       expect(detectPause(fixture.doc, null, null)?.kind).toBe('captcha');
+      expect(pageChallenged(fixture.doc)).toBe(true);
     });
 
     it('takes a named, button-sized host whose words are its own or those its aria-labelledby names as bound', async () => {
@@ -437,7 +440,7 @@ describe('the invisible reCAPTCHA badge holds no press (B1)', () => {
     });
 });
 
-describe('a checkbox widget holds every press but never the fill (M6, the owner’s decision of 2026-11-06)', () => {
+describe('a checkbox widget never holds the fill (M6, the owner’s decision of 2026-11-06), nor since v5 a press', () => {
   afterEach(() => removeFixtures(document));
 
   /** reCAPTCHA v2's checkbox as fixtures/jazzhr/invaluable-form.html draws it: .g-recaptcha > div 304 x 78 > div >
@@ -465,30 +468,32 @@ describe('a checkbox widget holds every press but never the fill (M6, the owner�
     const form = fixture.doc.querySelector('form');
     const found = { pause: detectPause(fixture.doc, form, adapter)?.kind ?? null,
       unsolved: unsolvedCaptchas(fixture.doc, form), challenged: pageChallenged(fixture.doc),
-      handed: captchaElements(fixture.doc, form).length };
+      handed: captchaElements(fixture.doc, form).length, checkbox: checkboxCaptchasUnsolved(fixture.doc) };
     removeFixtures(document);
     return found;
   };
 
-  it('fills a step whose only challenge is reCAPTCHA’s checkbox, holding every press until it is solved', async () => {
-    // Its anchor frame and its container: two widgets not known solved; no pause.
-    expect(await read(FORM(RECAPTCHA()))).toEqual({ pause: null, unsolved: 2, challenged: true, handed: 2 });
-    expect(await read(FORM(EXPLICIT()))).toEqual({ pause: null, unsolved: 2, challenged: true, handed: 2 });
-    // Solved (its token there): nothing holds, its frame included (its title still says reCAPTCHA).
+  it('fills a step whose only challenge is reCAPTCHA’s checkbox, and since v5 holds no press: the site decides', async () => {
+    // Its anchor frame and its container: two widgets not known solved, both checkbox widgets; no pause, and (v5, PLAN
+    // decision 9, like Jobright) no press held either.
+    expect(await read(FORM(RECAPTCHA()))).toEqual({ pause: null, unsolved: 2, challenged: false, handed: 2, checkbox: 2 });
+    expect(await read(FORM(EXPLICIT()))).toEqual({ pause: null, unsolved: 2, challenged: false, handed: 2, checkbox: 2 });
+    // Solved (its token there): nothing counts, its frame included (its title still says reCAPTCHA).
     expect(await read(FORM(RECAPTCHA('03AFcWeA-token')))).toEqual({ pause: null, unsolved: 0, challenged: false,
-      handed: 0 });
+      handed: 0, checkbox: 0 });
     expect(await read(FORM(EXPLICIT('03AFcWeA-token')))).toEqual({ pause: null, unsolved: 0, challenged: false,
-      handed: 0 });
+      handed: 0, checkbox: 0 });
   });
 
-  it('fills beside hCaptcha’s checkbox too, and pauses once its challenge frame shows', async () => {
-    expect(await read(FORM(HCAPTCHA('checkbox')))).toEqual({ pause: null, unsolved: 2, challenged: true, handed: 2 });
-    expect((await read(FORM(HCAPTCHA('challenge')))).pause).toBe('captcha');
+  it('fills beside hCaptcha’s checkbox too, holding no press, and pauses once its challenge frame shows', async () => {
+    expect(await read(FORM(HCAPTCHA('checkbox')))).toEqual({ pause: null, unsolved: 2, challenged: false, handed: 2,
+      checkbox: 2 });
+    expect(await read(FORM(HCAPTCHA('challenge')))).toMatchObject({ pause: 'captcha', challenged: true, checkbox: 0 });
   });
 
   it('pauses everything once the challenge popup shows, the checkbox beside it or not (adversarial)', async () => {
-    expect((await read(`${FORM(RECAPTCHA())}${POPUP}`)).pause).toBe('captcha');
-    expect((await read(`${FORM('')}${POPUP}`)).pause).toBe('captcha');
+    expect(await read(`${FORM(RECAPTCHA())}${POPUP}`)).toMatchObject({ pause: 'captcha', challenged: true });
+    expect(await read(`${FORM('')}${POPUP}`)).toMatchObject({ pause: 'captcha', challenged: true });
   });
 
   it('pauses for every widget not known to be a checkbox (adversarial)', async () => {
@@ -507,14 +512,30 @@ describe('a checkbox widget holds every press but never the fill (M6, the owner�
       </div>`))).pause).toBe('captcha');
     expect((await read(FORM(`${RECAPTCHA()}<iframe srcdoc="" src="https://client-api.arkoselabs.com/fc/gc/?token=x"
       style="width:300px;height:200px"></iframe>`))).pause).toBe('captcha');
+    // v5 (PLAN decision 9): each of them holds every press, as before.
+    expect((await read(FORM(RECAPTCHA('', 'compact')))).challenged).toBe(true);
+    expect((await read(FORM('<div class="g-recaptcha" data-sitekey="x" style="width:304px;height:78px"></div>')))
+      .challenged).toBe(true);
+    expect((await read(FORM(`${RECAPTCHA()}<div class="cf-turnstile" data-sitekey="x" style="width:300px;height:65px">
+      </div>`))).challenged).toBe(true);
   });
 
-  it('leaves an account page the adapter names its own pause, with Sign-in Auto’s challenge frames still shown', async () => {
+  it('leaves an account page the adapter names its own pause, Sign-in Auto no longer held by its checkbox (v5)', async () => {
     const fixture = await loadFixture(document, `<!doctype html><body>${FORM(RECAPTCHA())}</body>`);
     const adapter = { authState: () => 'create-account' } as unknown as Adapter;
     expect(detectPause(fixture.doc, fixture.doc.querySelector('form'), adapter)).toEqual({ kind: 'create-account',
       evidence: 'adapter' });
-    // What Sign-in Auto reads (content/sign-in.ts challenged): it types nothing while these show.
+    // What Sign-in Auto reads (content/sign-in.ts challenged): since v5 (PLAN decision 9) a checkbox widget's own frame
+    // is no challenge frame there: it types and presses beside it, and the site decides.
+    expect(vendorFramesShown(fixture.doc)).toBe(0);
+    expect(pageChallenged(fixture.doc)).toBe(false);
+    // Its challenge popup, once shown, is one.
+    const popup = fixture.doc.createElement('iframe');
+    popup.setAttribute('srcdoc', '');
+    popup.title = 'recaptcha challenge expires in two minutes';
+    popup.style.cssText = 'width:400px;height:580px';
+    popup.setAttribute('src', 'https://www.google.com/recaptcha/api2/bframe?hl=en&k=x');
+    fixture.doc.body.append(popup);
     expect(vendorFramesShown(fixture.doc)).toBe(1);
     expect(pageChallenged(fixture.doc)).toBe(true);
   });
@@ -533,5 +554,61 @@ describe('a checkbox widget holds every press but never the fill (M6, the owner�
       const fields = scan(form, null, { platform: 'greenhouse' }).fields;
       expect(fields.map((each) => each.label)).toEqual(['Full name']);
     });
+
+  // ── v5 p1-rules: CAPTCHA like Jobright (PLAN decision 9) ──
+  /** JazzHR's own "complete the reCAPTCHA" error as Jobright 1.25.2 reads it (#recaptcha-required-error.dv_error). */
+  const JAZZ_ERROR = '<div id="recaptcha-required-error" class="dv_error">Please complete the reCAPTCHA.</div>';
+  /** An adapter whose errors are the form's .dv_error and [role=alert] elements. */
+  const ERRORS = { errors: (root: Element) => Array.from(root.querySelectorAll('.dv_error, [role="alert"]'))
+    .map((el) => ({ el })) } as unknown as Adapter;
+
+  it('reads a site’s CAPTCHA-required error by its own words, never another error', () => {
+    const el = (attributes: Record<string, string>, text: string) => {
+      const made = document.createElement('div');
+      for (const [name, value] of Object.entries(attributes)) made.setAttribute(name, value);
+      made.textContent = text;
+      return made;
+    };
+    expect(isCaptchaError(el({ id: 'recaptcha-required-error', class: 'dv_error' }, 'This field is required.'))).toBe(true);
+    expect(isCaptchaError(el({ class: 'field-error' }, 'Please verify you are not a robot'))).toBe(true);
+    expect(isCaptchaError(el({ role: 'alert' }, 'Please confirm that you are human.'))).toBe(true);
+    expect(isCaptchaError(el({ class: 'error' }, 'This field is required.'))).toBe(false);
+    expect(isCaptchaError(el({ class: 'error' }, 'Contact Human Resources for help.'))).toBe(false);
+    expect(isCaptchaError(el({ class: 'error' }, 'The robotics team needs a portfolio.'))).toBe(false);
+  });
+
+  it('reads a refusal for the unticked checkbox: its error, or a press the page did not take, never once it is solved',
+    async () => {
+      const refusal = async (body: string, afterPress: boolean) => {
+        const fixture = await loadFixture(document, `<!doctype html><body>${body}</body>`);
+        const form = fixture.doc.querySelector('form');
+        const found = captchaRefusalShown(fixture.doc, form, ERRORS, { afterPress });
+        removeFixtures(document);
+        return found;
+      };
+      // The widget alone: no refusal before a press (the site decides), one after a press it did not take.
+      expect(await refusal(FORM(RECAPTCHA()), false)).toBe(false);
+      expect(await refusal(FORM(RECAPTCHA()), true)).toBe(true);
+      // The site's own CAPTCHA error beside it is the refusal, press or not.
+      expect(await refusal(FORM(`${RECAPTCHA()}${JAZZ_ERROR}`), false)).toBe(true);
+      // Solved: none, whatever the page still shows.
+      expect(await refusal(FORM(`${RECAPTCHA('03AFcWeA-token')}${JAZZ_ERROR}`), true)).toBe(false);
+      // No checkbox widget (an invisible one, a popup, none): no refusal of this kind; another error is no refusal.
+      expect(await refusal(FORM(JAZZ_ERROR), true)).toBe(false);
+      expect(await refusal(FORM(`${RECAPTCHA()}<div class="dv_error">Phone is required.</div>`), false)).toBe(false);
+      expect(await refusal(`${FORM(RECAPTCHA())}${POPUP}`, false)).toBe(false);
+    });
+
+  it('drops a CAPTCHA error the person’s solved check made stale, and keeps every other error', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>${FORM(`${RECAPTCHA()}${JAZZ_ERROR}
+      <div class="dv_error">Phone is required.</div>`)}</body>`);
+    const form = fixture.doc.querySelector('form')!;
+    const errors = ERRORS.errors!(form);
+    expect(captchaErrorsShown(fixture.doc, form, ERRORS)).toHaveLength(1);
+    expect(withoutSolvedCaptchaErrors(errors, fixture.doc)).toHaveLength(2);
+    (fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value = '03AFcWeA-token';
+    expect(withoutSolvedCaptchaErrors(errors, fixture.doc).map((error) => error.el.textContent)).toEqual(['Phone is required.']);
+  });
+  // ── end v5 p1-rules ──
 });
 // ── end of the behaviour review's block ──

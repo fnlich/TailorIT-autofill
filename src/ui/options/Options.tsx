@@ -423,10 +423,11 @@ function AutoApply({ platform, auth }: { platform: PagePlatform; auth: AuthState
 
 // ── Where Autofill works (v3 Phase 8) ─────────────────────────────────────────────────────────────────────────────
 
-/** The company career sites: turning them on asks Chrome for every https page on the person's own click (requestHosts,
- *  called inside the click, before anything is awaited), and turning them off gives the permission back (the worker).
- *  They act only while the person turned them on and Chrome holds the permission. A choice to turn them on that could
- *  not be saved gives back what Chrome just granted (the Phase 8 review, P8). */
+/** The company career sites: they act only while the person has them on and Chrome holds the permission. v5 p1-rules
+ *  (PLAN decision 10, like Jobright): every https and http page is granted at install and the place is on by default;
+ *  turning it on still asks Chrome on the person's own click (requestHosts, inside the click, before anything is
+ *  awaited), which Chrome answers at once unless the person withheld the extension's site access in Chrome's own
+ *  settings. Turning it off, or a choice that could not be saved, gives nothing back: the permission is the install's. */
 function WhereItWorks({ platform }: { platform: PagePlatform }) {
   const words = TEXT.sites;
   const [state, setState] = useState<SitesState | null>(null);
@@ -461,7 +462,6 @@ function WhereItWorks({ platform }: { platform: PagePlatform }) {
       }
       const answer = await request(platform, { v: 1, type: 'sites/set', on })
         .catch(() => ({ ok: false as const, error: 'unavailable' as const }));
-      if (!answer.ok && on) await platform.removeHosts([SITES_MATCH]).catch(() => false);
       setWorking(false);
       if (answer.ok) setState(answer.data);
       else setMessage(words.failed);

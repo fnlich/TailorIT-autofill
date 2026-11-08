@@ -11,6 +11,9 @@
  *   reading its fields;
  * - an ordinary site: the sentinel says nothing, and nothing of the extension shows or listens there;
  * - LinkedIn: nothing of the extension runs there, even with every https page granted and an application form shown.
+ * v5 p1-rules (PLAN decisions 9 and 10, like Jobright): every https and http page is granted at install and the career
+ * sites are on by default, so the registration is there before any click; turning them off keeps Chrome's permission
+ * (a required host now), and the registration excludes the CAPTCHA and anti-bot vendors' own pages.
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import { COPY } from '../../src/shared/copy';
@@ -158,6 +161,8 @@ test.describe('company career sites', () => {
   });
   test('Options turns them on and off, the worker registering the sentinel for every https page but the ATS hosts, LinkedIn and '
     + "the HR systems, and turning them off ends every page it injected (P1/B8)", async ({ extContext, connected: ext, routeLog }) => {
+      // v5 p1-rules (PLAN decision 10): on by default, registered with nothing chosen in Options.
+      await expect.poll(async () => (await registrations(ext)).map((each) => each.id)).toEqual(['tailorit-sites']);
       await turnOn(ext);
       // A company page the worker injected, its launcher shown.
       const page = await open(extContext, routeLog, APPLY);
@@ -169,15 +174,17 @@ test.describe('company career sites', () => {
       const [sites] = await registrations(ext);
       expect(sites).toMatchObject({ matches: ['https://*/*'], allFrames: false, js: ['sentinel.js'] });
       expect(sites!.excludeMatches).toEqual(expect.arrayContaining(['https://*.linkedin.com/*', 'https://job-boards.greenhouse.io/*',
-        'https://*.myworkdayjobs.com/*', 'https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*']));
-      // Off: the registration goes, and Chrome's permission with it, which only Chrome's own dialog gives again: this test
-      // comes last (the seeded profile grants it again at the next launch).
+        'https://*.myworkdayjobs.com/*', 'https://*.oraclecloud.com/*', 'https://*.myworkday.com/*', 'https://*.sapsf.com/*',
+        // v5 p1-rules (PLAN decision 9): the CAPTCHA and anti-bot vendors' own pages.
+        '*://*.google.com/recaptcha/*', '*://*.hcaptcha.com/*', '*://challenges.cloudflare.com/*']));
+      // Off: the registration goes; Chrome's permission stays, the install's own (v5 p1-rules, PLAN decision 10). This
+      // test comes last all the same.
       const options = await ext.page();
       await options.locator('input[data-setting="sites.on"]').click();
       await expect.poll(async () => (await registrations(ext)).map((each) => each.id)).toEqual([]);
       expect(await options.evaluate(() => (globalThis as unknown as { chrome: { permissions: {
-        contains(query: { origins: string[] }): Promise<boolean> } } }).chrome.permissions.contains({ origins: ['https://*/*'] })))
-        .toBe(false);
+        contains(query: { origins: string[] }): Promise<boolean> } } }).chrome.permissions.contains({ origins: ['https://*/*',
+        'http://*/*'] }))).toBe(true);
       // The page it injected: its UI gone, its document forgotten by the worker.
       await expect.poll(() => ui.mounted()).toBe(false);
       await ui.close();

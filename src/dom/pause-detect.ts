@@ -26,17 +26,25 @@
  *   (Arkose's, DataDome's, PerimeterX's, GeeTest's) is never known solved.
  *   The behaviour review of 2026-11-06 (M6, the owner's decision; docs/SPEC-AMENDMENTS.md §12): a checkbox widget not
  *   yet solved (reCAPTCHA v2's and hCaptcha's checkbox, as the snapshots show them: checkboxFrame) does not pause the
- *   fill. It still counts in unsolvedCaptchas and pageChallenged, so every press (Next, Submit, the entry, a sign-in,
- *   the agent's) holds until the person solves it; the run never touches it. A token lasts about two minutes, so the
- *   person solves it last, after the fill. Its challenge popup (reCAPTCHA's bframe, hCaptcha's challenge frame) is no
+ *   fill; the run never touches it. Its challenge popup (reCAPTCHA's bframe, hCaptcha's challenge frame) is no
  *   checkbox: once shown, it pauses as every challenge does.
+ *   v5 (PLAN decision 9, the owner's "implement like jobright extension", 2026-11-08): such a widget no longer holds a
+ *   press either. Next, Submit, the agent's entry and Sign-in Auto press the site's own control beside it, and the site
+ *   decides (pageChallenged and vendorFramesShown leave checkbox widgets out; unsolvedCaptchas still counts them). A
+ *   site that refuses the press for it (its own "complete the CAPTCHA" error, an adapter's error or an alert that reads
+ *   like one: isCaptchaError, captchaErrorsShown; or a Next or Submit it did not take while the widget is still unticked) is read by
+ *   captchaRefusalShown: the run then rests at a CAPTCHA pause with the "solve the check" toast, and carries on by
+ *   itself once the widget holds its token (content/orchestrator.ts). Such an error, once the widget is solved, is
+ *   stale (withoutSolvedCaptchaErrors): no field's error and no refusal. Nothing here solves, ticks or bypasses a check.
  * - vendorFramesShown: every visible frame on a vendor's challenge host, solved or not (the invisible reCAPTCHA badge
- *   aside): Sign-in Auto types nothing while one shows (round 2, E10). challengeLikeFramesShown (round 3, X9): every
+ *   aside, and since v5 a checkbox widget's own frame): Sign-in Auto types nothing while one shows (round 2, E10).
+ *   challengeLikeFramesShown (round 3, X9): every
  *   visible frame of another origin whose address, title, name or label reads like a challenge (CHALLENGE_WORDS: a
  *   vendor this module does not know, a site's own), the badge aside too (the behaviour review of 2026-11-06, B1), which
  *   Sign-in Auto also waits out; a fill does not pause for one.
  * - pageChallenged (the audit of 2026-11-06, S-7): a challenge not known solved anywhere on the page, or a frame that
- *   reads like one; every Next, Submit and entry press holds while one shows (orchestrator.ts, press.ts).
+ *   reads like one; every Next, Submit and entry press holds while one shows (orchestrator.ts, press.ts). Since v5 a
+ *   checkbox widget is no such challenge (above).
  * - Workday's entry choice is the adapter's to declare, and so are (v3 Phase 7b) an email gate (an email-first identity
  *   step: Oracle's and iCIMS's, no password) and a password reset (Workday's Forgot Password, Taleo's and SuccessFactors'
  *   password help), whose email box is never filled.
@@ -47,8 +55,8 @@
  *   the extension's own UI never is.
  * - PauseOptions.handed: the CAPTCHA frames and containers the person was already handed on this step (their trusted
  *   Continue at its pause: captchaElements). Those do not pause again; a sign-in, an email code or another widget does.
- *   They still count in unsolvedCaptchas, which keeps auto-advance from pressing Next on the step until the widget is
- *   known solved (its token there; an Arkose widget, which holds none, never is).
+ *   They still count in unsolvedCaptchas and (no checkbox widget) pageChallenged, which keeps auto-advance from pressing
+ *   Next on the step until the widget is known solved (its token there; an Arkose widget, which holds none, never is).
  * Detection never touches the challenge: it only reads where it is.
  */
 import type { Adapter } from '../adapters/types';
@@ -102,7 +110,7 @@ export function detectPause(doc: Document, root: Element | null, adapter: Adapte
   // review, S1): nothing is typed or pressed while one shows.
   const scopes = scopesOf(doc);
   // The behaviour review of 2026-11-06 (M6): a checkbox widget not yet solved, with no challenge popup shown, is no
-  // pause: the step fills, and every press holds until the person solves it (pageChallenged, unsolvedCaptchas).
+  // pause: the step fills. Since v5 (PLAN decision 9) it holds no press either: the site decides (captchaRefusalShown).
   const captcha = shownCaptchas(scopes, root, cache)
     .find((shown) => !shown.checkbox && !isHanded(shown.el, options.handed));
   if (captcha !== undefined) return { kind: 'captcha', evidence: captcha.evidence };
@@ -144,11 +152,75 @@ export function captchaElements(doc: Document, root: Element | null, cache: Scan
 }
 
 /** How many CAPTCHA frames and containers the step shows that are not known solved: a token-bearing widget whose
- *  response token is empty, and every Arkose frame, handed to the person or not. Auto-advance never presses Next on a
- *  step that shows one (the Phase 5 review, X-S4 tightened by the coordinator): the person presses it. */
+ *  response token is empty, and every Arkose frame, handed to the person or not, checkbox widgets included. Since v5
+ *  (PLAN decision 9) a press holds only for those that are no checkbox widget (pageChallenged). */
 export function unsolvedCaptchas(doc: Document, root: Element | null, cache: ScanCache = newScanCache()): number {
   return shownCaptchas(scopesOf(doc), root, cache).length;
 }
+
+// ── v5 p1-rules: CAPTCHA like Jobright (PLAN decision 9) ──
+/** How many checkbox widgets (reCAPTCHA v2's, hCaptcha's: checkboxFrame, checkboxWidget) the page shows, anywhere, that
+ *  are not known solved. They pause nothing and hold no press: the site decides (module header). */
+export function checkboxCaptchasUnsolved(doc: Document, cache: ScanCache = newScanCache()): number {
+  return shownCaptchas(scopesOf(doc), null, cache).filter((shown) => shown.checkbox).length;
+}
+
+/** The words a site's own "complete the CAPTCHA" error says, in its id, class or name, or in its text (JazzHR's
+ *  #recaptcha-required-error, as Jobright 1.25.2's submission rules read it; "Please verify you are not a robot"). */
+const CAPTCHA_ERROR_WORDS = /captcha|\bnot an? (?:ro)?bot\b|\b(?:are|be) (?:an? )?human\b|\bhuman (?:check|verification)\b/i;
+/** The most of an error's own text read for those words. */
+const CAPTCHA_ERROR_TEXT = 300;
+
+/** Whether an error the page shows (an adapter's `errors`) is a site's CAPTCHA-required error: its id, class or name,
+ *  or the first characters of its text, read like one (CAPTCHA_ERROR_WORDS). Read for that alone: never kept or sent. */
+export function isCaptchaError(el: Element): boolean {
+  const names = [el.id, el.getAttribute('class') ?? '', el.getAttribute('name') ?? ''];
+  if (names.some((name) => CAPTCHA_ERROR_WORDS.test(name))) return true;
+  return CAPTCHA_ERROR_WORDS.test((el.textContent ?? '').slice(0, CAPTCHA_ERROR_TEXT));
+}
+
+/**
+ * The errors still standing among `errors` (an adapter's, as `errors` gives them): a site's CAPTCHA-required error
+ * (isCaptchaError) stands only while a checkbox widget still shows unticked; once none does (the person solved it), it
+ * is the error the site drew before, which it clears only at the next press, and is left out. Every other error stands.
+ * Validation (orchestrator.ts errorsNow) and a press's refusal (press.ts refusalNow) read these.
+ */
+export function withoutSolvedCaptchaErrors<T extends { el: Element }>(errors: readonly T[], doc: Document,
+  cache: ScanCache = newScanCache()): T[] {
+  if (!errors.some((error) => isCaptchaError(error.el)) || checkboxCaptchasUnsolved(doc, cache) > 0) return [...errors];
+  return errors.filter((error) => !isCaptchaError(error.el));
+}
+
+/** The site's CAPTCHA-required errors a person can see now: the adapter's errors, and the alerts (role=alert,
+ *  aria-live=assertive), on `root` (the document's body when there is none) that read like one. */
+export function captchaErrorsShown(doc: Document, root: Element | null, adapter: Adapter | null,
+  cache: ScanCache = newScanCache()): Element[] {
+  const scope = root ?? doc.body;
+  if (scope === null) return [];
+  let errors: Element[] = [];
+  try {
+    errors = (adapter?.errors?.(scope) ?? []).map((error) => error.el);
+  } catch {
+    errors = [];
+  }
+  errors.push(...Array.from(scope.querySelectorAll('[role="alert" i], [aria-live="assertive" i]')));
+  return [...new Set(errors)].filter((el) => el.isConnected && !isInOwnUi(el) && isCaptchaError(el)
+    && isUserVisible(el, cache));
+}
+
+/**
+ * v5 (PLAN decision 9): whether the page refused a press for its check, the way the run reads it: a checkbox widget
+ * still unticked shows anywhere on the page, and either the site shows its CAPTCHA-required error (captchaErrorsShown)
+ * or `afterPress` (a Next that left the step as it was, a Submit the page refused or never confirmed). Once the widget
+ * holds its token, it reads false: the run carries on. A check this module cannot see ticked (none shown, an invisible
+ * one the site's score refused) reads false too: the site's error is then a plain error the person reads.
+ */
+export function captchaRefusalShown(doc: Document, root: Element | null, adapter: Adapter | null,
+  options: { afterPress: boolean }, cache: ScanCache = newScanCache()): boolean {
+  if (checkboxCaptchasUnsolved(doc, cache) === 0) return false;
+  return options.afterPress || captchaErrorsShown(doc, root, adapter, cache).length > 0;
+}
+// ── end v5 p1-rules ──
 
 /** A place challenges are looked for: the document, an open shadow root in it, or the document of a frame of its own
  *  origin inside it, with the frame element of `doc` it is drawn in (null for `doc`'s own scopes). */
@@ -318,18 +390,20 @@ function buttonSized(el: Element): boolean {
  * a vendor's widget whose response token is empty, or one whose vendor holds none) or a frame of another origin that
  * reads like one (challengeLikeFramesShown). Every Next, Submit and entry press holds while one shows, as Sign-in Auto
  * does. A vendor's widget the person solved (its token there) holds no press, unlike Sign-in Auto, which waits out
- * every vendor frame: a press types nothing.
+ * every vendor frame: a press types nothing. v5 (PLAN decision 9): a checkbox widget not yet solved holds none either
+ * (module header): the site decides, and a refusal is read after the press (captchaRefusalShown).
  */
 export function pageChallenged(doc: Document, cache: ScanCache = newScanCache()): boolean {
-  return unsolvedCaptchas(doc, null, cache) > 0 || challengeLikeFramesShown(doc, cache) > 0;
+  return shownCaptchas(scopesOf(doc), null, cache).some((shown) => !shown.checkbox)
+    || challengeLikeFramesShown(doc, cache) > 0;
 }
 
 /** How many visible frames on a vendor's challenge host the page shows, solved or not, in the document, its open shadow
- *  roots and the frames of its own origin (the invisible reCAPTCHA badge aside): Sign-in Auto types nothing while one
- *  shows (module header). */
+ *  roots and the frames of its own origin (the invisible reCAPTCHA badge aside, and since v5 a checkbox widget's own
+ *  frame: checkboxFrame): Sign-in Auto types nothing while one shows (module header). */
 export function vendorFramesShown(doc: Document, cache: ScanCache = newScanCache()): number {
   return all<HTMLIFrameElement>(scopesOf(doc), 'iframe').filter(({ el, frame }) => el.closest('.grecaptcha-badge') === null
-    && challengeHost(el.src, viewOf(el.ownerDocument)) && showsAt(el, frame, null, cache)).length;
+    && challengeHost(el.src, viewOf(el.ownerDocument)) && !checkboxFrame(el) && showsAt(el, frame, null, cache)).length;
 }
 
 /** Words a challenge frame's address, title, name or label carries (round 3, X9); "bot" as a word of its own. */

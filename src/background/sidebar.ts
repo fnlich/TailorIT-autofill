@@ -126,11 +126,18 @@ export function scopedPort(port: PortLike, tabId: number): PortLike {
   };
 }
 
+/** The Chrome Web Store's pages, which Chrome lets no extension script: the side panel opens there, inside the click. */
+const WEB_STORE = /^https:\/\/(?:chromewebstore\.google\.com\/|chrome\.google\.com\/webstore(?:[/?#]|$))/i;
+
 /** Whether a page at `url` (the click's tab, as its activeTab grant lets Chrome say) is one a content script of ours may
- *  draw the sidebar on: an applicant-tracking host's, or (v3 Phase 8, with the career sites) a company's own https page;
- *  never a browser page, LinkedIn's or an employee HR system's (shared/hosts.ts). Unknown (no address): try the page. */
+ *  draw the sidebar on: an applicant-tracking host's, or (v3 Phase 8, with the career sites) any company's own https
+ *  page, where the worker injects the content script on the click when none runs yet (sites.ts injectTop); never a
+ *  browser page, LinkedIn's, an employee HR system's, a CAPTCHA vendor's or an http page off the ATS hosts, where no
+ *  script of ours runs (shared/hosts.ts isCompanySiteUrl), nor the Chrome Web Store's, where Chrome runs none. Unknown
+ *  (no address): try the page. */
 export function iconReachesPage(url: string | undefined): boolean {
   if (url === undefined) return true;
   if (platformOfUrl(url) !== null) return true;
+  if (WEB_STORE.test(url)) return false;
   return isCompanySiteUrl(url) || (__E2E__ && /^http:\/\/127\.0\.0\.1:\d+\//.test(url));
 }

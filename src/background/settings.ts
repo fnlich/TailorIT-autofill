@@ -7,12 +7,13 @@
  * answers mode), and a version 4 value takes "Résumé already on the page" at its default, Keep it (migrateSettingsV4,
  * the behaviour review of 2026-11-06), and a version 5 value loses "Ask me each time" (Profile only) and the draft
  * confirmation (migrateSettingsV5, v4: the run never asks the person), and a version 6 value takes snapshot round 2's
- * two modes at their defaults, Other and Until closed (migrateSettingsV6), and a version 7 value's 'in-page' becomes
- * the sidebar on the page, 'side' staying (migrateSettingsV7, v5); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
- * switches, the offer to save answers) with frame/hello and run/begin, and again with settings/changed whenever the
- * person saves them (pushSettings: every registered frame with a form, so a run in progress reads the Next mode as it
- * is now: the Phase 5 review, C-S2), each frame the settings as they act for it (contentSettingsFor: the agent's tab's
- * documents their own, the audit's m1); they never read storage.
+ * two modes at their defaults, Other and Until closed (migrateSettingsV6), and every version 7 value shows the panel on
+ * the page, its in-page card and its side panel alike (migrateSettingsV7, v5: the owner's word); each is stored again.
+ * Content scripts get only the part they need (panel placement, the modes, the AI switches, the offer to save answers)
+ * with frame/hello and run/begin, and again with settings/changed whenever the person saves them (pushSettings: every
+ * registered frame with a form, so a run in progress reads the Next mode as it is now: the Phase 5 review, C-S2), each
+ * frame the settings as they act for it (contentSettingsFor: the agent's tab's documents their own, the audit's m1);
+ * they never read storage.
  * The audit of 2026-11-06 (M4): a page's save names the settings it last read (`base`), and only what it changed from
  * them is applied to the settings stored now (mergeSettings), so the options page left open never puts back a mode the
  * side panel's gear changed meanwhile.

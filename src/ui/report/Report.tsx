@@ -42,6 +42,20 @@
  * might carry. The one page text beyond labels and progress lines is a row's suggested options, asked for when the
  * in-page panel's drawer is opened (describeField) and held in the open row's state only, never stored or logged: a
  * row that folds forgets them.
+ *
+ * v5 p1-panel (PLAN decisions 3 and 4, Jobright's progress sheet):
+ * - The words are Title Case ("7/9 Required Fields Filled | 77%", "Scanning The Page").
+ * - In the panel's sheet (`sheet`, ui/panel/Sheet.tsx) the header is the sheet's: it folds the sheet at rest (the
+ *   panel's SheetControl) and has no fold while a run works; the bar, the scanning block, where each form stands and
+ *   the lists scroll under it. The in-page panel's inline report is as before.
+ * - The lists (model.ts sheetListsOf): Education and Work Experience fields in blocks of their sections are entries
+ *   under their section's heading ("Education 1", "Education 2"), each with Go To (its first field shown on the page)
+ *   and its fields as rows; the section's heading carries the run's count as a chip ("2/3 Added", Jobright's partial
+ *   toggle, folding the entries) and the profile's entries the form shows no block for read "Not Added". Then the
+ *   repeatable sections no entry lists ("Languages 1/2 Added"), then Required and Optional as before. The progress still
+ *   counts every row.
+ * - A run at its sign-in pause shows the account step (model.ts accountStepOf): "Signing In" or "Creating Account"
+ *   (the tab's wall, `wall`), a spinner while Sign-in Auto signs in for it, when the header says so too.
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { PAGE_COPY } from '../../shared/copy';
@@ -51,9 +65,9 @@ import type { FrameReport } from '../../shared/report';
 import { Icon } from '../brand/Icon';
 import { afterFrames, animationFrames, type FrameScheduler } from '../page/frames';
 import {
-  awaitsDraftConfirmation, combinedNotices, fieldListsOf, framesAtPolicyCard, needsPerson, overallStatus, percent,
-  policyFromStoredCopy, progressOf, progressStateOf, repeatablesOf, shownReports, stepText, stripToneOf, tallyOf,
-  type ListRow, type ReportRow, type RowProgress,
+  accountStepOf, awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, needsPerson, overallStatus, percent,
+  policyFromStoredCopy, progressOf, progressStateOf, sheetListsOf, shownReports, stepText, stripToneOf, tallyOf,
+  type EntryGroup, type ListRow, type ReportRow, type RowProgress,
 } from './model';
 import { StepDock, type PressAction } from './StepDock';
 import { adoptReportStyles } from './styles';
@@ -146,6 +160,15 @@ export interface ReportActions {
   saysWaits?: boolean;
 }
 
+/** v5 p1-panel: the progress sheet (PLAN decision 4): the panel's sheet holds the report's header and its lists, and
+ *  folds them itself. */
+export interface SheetControl {
+  /** Whether the sheet is up (its lists shown) or folded to its header's strip. */
+  open: boolean;
+  /** The header's click at rest: up or folded (absent: the header does not fold it, as while a run works). */
+  onToggle?(): void;
+}
+
 export interface ReportProps extends ReportActions {
   /** The tab's reports, one per frame. */
   reports: readonly FrameReport[];
@@ -154,22 +177,28 @@ export interface ReportProps extends ReportActions {
   notices?: boolean;
   /** The field lists folded at first, the progress line alone in view (the person's default view: Minimized). */
   minimized?: boolean;
+  /** v5 p1-panel: drawn in the panel's progress sheet: the header is the sheet's own (it folds the sheet, not the lists),
+   *  and what is under it scrolls inside the sheet. Absent: the in-page panel's inline report, as before. */
+  sheet?: SheetControl;
+  /** v5 p1-panel: the account wall the tab's page shows (PageState.wall), so a run signing in there reads "Signing In"
+   *  or "Creating Account" (Jobright's step rows). */
+  wall?: 'sign-in' | 'create-account' | 'email-gate' | null;
 }
 
 /** The whole report: notices, the progress, then the field lists. */
-export function Report({ reports, notices = true, minimized = false, ...actions }: ReportProps) {
+export function Report({ reports, notices = true, minimized = false, sheet, wall = null, ...actions }: ReportProps) {
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (root.current) adoptReportStyles(root.current.getRootNode());
   }, []);
   const frames = [...reports].sort((a, b) => a.frameId - b.frameId);
   return (
-    <div className="tia-report" ref={root}>
+    <div className={sheet === undefined ? 'tia-report' : 'tia-report tia-report--sheet'} ref={root}>
       {notices && <ReportNotices reports={frames} onPolicyDecision={actions.onPolicyDecision} busy={actions.busy ?? false} />}
       {frames.length === 0 ? (
         <p className="tia-empty">{PAGE_COPY.panelEmpty}</p>
       ) : (
-        <Progress reports={frames} actions={actions} minimized={minimized} />
+        <Progress reports={frames} actions={actions} minimized={minimized} sheet={sheet} wall={wall} />
       )}
       {actions.onPress !== undefined && (
         <StepDock reports={frames} onPress={actions.onPress} submitted={actions.submitted === true}
@@ -275,37 +304,50 @@ const TELLING_STATUSES: ReadonlySet<FrameReport['status']> = new Set<FrameReport
  * lists, which the line folds. Blocked rows are neither counted nor listed (v4 ui, D8). Nothing under the lists: no
  * "fields left for you", no AI count, no "Nothing needs you", no hidden-field note (v4 ui, D1, D6, D8).
  */
-function Progress({ reports, actions, minimized }: { reports: readonly FrameReport[]; actions: ReportActions;
-  minimized: boolean }) {
+function Progress({ reports, actions, minimized, sheet, wall }: { reports: readonly FrameReport[];
+  actions: ReportActions; minimized: boolean; sheet: SheetControl | undefined; wall: ReportProps['wall'] }) {
   const titleId = useId();
   const listsId = useId();
-  const [open, setOpen] = useState(!minimized);
+  const [openHere, setOpenHere] = useState(!minimized);
   // The view chosen in the settings applies at once, with no new report (the report is never mounted again for it).
   const lastView = useRef(minimized);
   useEffect(() => {
     if (lastView.current === minimized) return;
     lastView.current = minimized;
-    setOpen(!minimized);
+    setOpenHere(!minimized);
   }, [minimized]);
+  // v5 p1-panel: in the panel's sheet, the sheet is what folds (SheetControl), not the lists inside it.
+  const open = sheet === undefined ? openHere : sheet.open;
+  const fold = sheet === undefined ? () => setOpenHere((was) => !was) : sheet.onToggle;
   const shown = shownReports(reports);
   const state = progressStateOf(shown);
   const progress = progressOf(shown);
   const dryRun = reports.every((report) => report.mode === 'dry-run');
-  const working = state === 'scanning' || state === 'filling';
   const words = PAGE_COPY.report;
-  const lists = fieldListsOf(reports);
-  const sections = repeatablesOf(reports);
-  const hasRows = lists.required.length + lists.optional.length + sections.length > 0;
-  const title = state === 'scanning' ? words.scanning : state === 'filling' ? words.autofilling
-    : dryRun ? words.progressDryRun(progress.filled, progress.of, progress.requiredOnly)
-      : words.progressFilled(progress.filled, progress.of, progress.requiredOnly);
+  // v5 p1-panel: the sheet's lists: the sections of entries, then the Required and Optional rows (model.ts sheetListsOf),
+  // and the account step of a run at its sign-in (accountStepOf).
+  const lists = sheetListsOf(reports);
+  const account = accountStepOf(reports, wall);
+  const signing = account !== null && account.progress === 'working';
+  const working = state === 'scanning' || state === 'filling' || signing;
+  const hasRows = lists.required.length + lists.optional.length + lists.groups.length + lists.counts.length > 0
+    || account !== null;
+  const status = overallStatus(reports);
+  // A run at rest with nothing counted and no row (a new step it has not read, after a page turn) says no "0/0 · 0%": only
+  // where each form stands; the sheet's header then says where the run stands.
+  const counted = state !== 'rest' || progress.of > 0 || hasRows;
+  const title = signing ? (account.kind === 'create-account' ? words.creatingAccount : words.signingIn)
+    : state === 'scanning' ? words.scanning : state === 'filling' ? words.autofilling
+      : !counted && status !== null ? PAGE_COPY.runStatuses[status]
+        : dryRun ? words.progressDryRun(progress.filled, progress.of, progress.requiredOnly)
+          : words.progressFilled(progress.filled, progress.of, progress.requiredOnly);
   const head = (
     <>
       <span className="tia-progress-line__title" id={titleId}>
         {title}
         {working && <span className="tia-dots" aria-hidden="true"><span /><span /><span /></span>}
       </span>
-      {state !== 'scanning' && (
+      {state !== 'scanning' && !signing && counted && (
         <>
           <span className="tia-progress-line__rule" aria-hidden="true" />
           <span className="tia-progress-line__percent" data-percent={progress.percent}>{words.percent(progress.percent)}</span>
@@ -314,72 +356,193 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
     </>
   );
   const named = reports.length > 1 || reports.some((report) => report.frameId !== 0);
-  // A run at rest with nothing counted and no row (a new step it has not read, after a page turn) says no "0/0 · 0%": only
-  // where each form stands.
-  const counted = state !== 'rest' || progress.of > 0 || hasRows;
+  // The header folds: the inline report's lists (when it has rows), or the sheet (at rest, when the panel lets it).
+  const folds = sheet === undefined ? hasRows : fold !== undefined;
+  const line = (counted || sheet !== undefined) && (
+    <div className="tia-progress-line">
+      {folds ? (
+        <button type="button" className="tia-progress-line__toggle" aria-expanded={open}
+          aria-controls={sheet === undefined ? listsId : `${listsId}-body`}
+          data-action={sheet === undefined ? 'toggle-fields' : 'toggle-sheet'}
+          title={sheet === undefined ? (open ? words.hideFields : words.showFields) : open ? words.hideSheet : words.showSheet}
+          onClick={() => fold?.()}>
+          {head}
+          <Icon name={open ? (sheet === undefined ? 'chevron-up' : 'chevron-down') : (sheet === undefined ? 'chevron-down'
+            : 'chevron-up')} size={18} className="tia-icon tia-progress-line__chevron" />
+        </button>
+      ) : (
+        <p className="tia-progress-line__toggle tia-progress-line__static">{head}</p>
+      )}
+      {working && actions.onCancel && (
+        <button type="button" className="tia-linkbutton" data-action="cancel" onClick={actions.onCancel}>
+          {PAGE_COPY.panel.cancel}
+        </button>
+      )}
+    </div>
+  );
+  const bar = counted && (
+    <div className="tia-progress" role="progressbar" aria-labelledby={titleId} aria-valuemin={0} aria-valuemax={100}
+      data-indeterminate={state === 'scanning' ? '' : undefined}
+      {...(state === 'scanning' ? {} : { 'aria-valuenow': progress.percent,
+        'aria-valuetext': working ? words.progressWorking(progress.percent, progress.requiredOnly)
+          : words.progressText(progress.filled, progress.of, progress.requiredOnly, progress.percent) })}>
+      {/* The width goes through the CSSOM (React's style property), which a page's style-src does not govern. */}
+      <div className="tia-progress__fill" style={state === 'scanning' ? undefined : { width: `${progress.percent}%` }} />
+    </div>
+  );
+  const scanning = state === 'scanning' && (
+    <div className="tia-scanning">
+      <Icon name="sparkle" size={28} className="tia-icon tia-scanning__icon" />
+      <p className="tia-scanning__title">{words.scanningTitle}</p>
+      <p className="tia-scanning__help">{words.scanningHelp}</p>
+    </div>
+  );
+  const listed = hasRows && open && (
+    <div className="tia-lists" id={listsId}>
+      {account !== null && <AccountStep kind={account.kind} progress={account.progress} />}
+      {lists.groups.map((group) => (
+        <EntryGroupView key={`${group.frameId}:${group.kind}`} group={group}
+          actions={actions.actionsFrameId === undefined || actions.actionsFrameId === group.frameId ? actions : NO_ACTIONS} />
+      ))}
+      {lists.counts.length > 0 && (
+        <ul className="tia-rows tia-rows--sections">
+          {lists.counts.map((section) => {
+            const done = section.added >= section.of ? 'filled' : 'missing';
+            return (
+              <li key={`${section.frameId}:${section.kind}`} className="tia-row tia-row--section"
+                data-section-kind={section.kind} data-progress={done}>
+                <div className="tia-row__line">
+                  <StateIcon progress={done} />
+                  <span className="tia-row__go tia-row__go--static">{words.repeatables[section.kind]}</span>
+                  <span className="tia-entries__count">{words.partial(section.added, section.of)}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <FieldGroup name={words.requiredGroup} group="required" rows={lists.required} actions={actions} />
+      <FieldGroup name={words.optionalGroup} group="optional" rows={lists.optional} actions={actions} />
+    </div>
+  );
+  const blockProps = {
+    'data-progress': state, 'data-filled': progress.filled, 'data-of': progress.of,
+    ...(counted || sheet !== undefined ? { 'aria-labelledby': titleId } : { 'aria-label': words.progressLabel }),
+  };
+  if (sheet !== undefined) {
+    // v5 p1-panel (PLAN decision 4): the header stays at the sheet's top, its strip all that shows while folded; the bar,
+    // the scanning block, where each form stands and the lists scroll under it while it is up.
+    return (
+      <section className="tia-progress-block tia-progress-block--sheet" data-open={open ? '' : undefined} {...blockProps}>
+        {line}
+        {open && (
+          <div className="tia-sheet__body" id={`${listsId}-body`}>
+            {bar}
+            {scanning}
+            <FrameLines reports={reports} named={named} saysWaits={actions.saysWaits === true} />
+            {listed}
+          </div>
+        )}
+      </section>
+    );
+  }
   return (
-    <section className="tia-progress-block" data-progress={state} data-filled={progress.filled} data-of={progress.of}
-      {...(counted ? { 'aria-labelledby': titleId } : { 'aria-label': words.progressLabel })}>
-      {counted && (
-        <>
-          <div className="tia-progress-line">
-            {hasRows ? (
-              <button type="button" className="tia-progress-line__toggle" aria-expanded={open} aria-controls={listsId}
-                data-action="toggle-fields" title={open ? words.hideFields : words.showFields}
-                onClick={() => setOpen((was) => !was)}>
-                {head}
-                <Icon name={open ? 'chevron-up' : 'chevron-down'} size={18} className="tia-icon tia-progress-line__chevron" />
-              </button>
-            ) : (
-              <p className="tia-progress-line__toggle tia-progress-line__static">{head}</p>
-            )}
-            {working && actions.onCancel && (
-              <button type="button" className="tia-linkbutton" data-action="cancel" onClick={actions.onCancel}>
-                {PAGE_COPY.panel.cancel}
-              </button>
-            )}
-          </div>
-          <div className="tia-progress" role="progressbar" aria-labelledby={titleId} aria-valuemin={0} aria-valuemax={100}
-            data-indeterminate={state === 'scanning' ? '' : undefined}
-            {...(state === 'scanning' ? {} : { 'aria-valuenow': progress.percent,
-              'aria-valuetext': working ? words.progressWorking(progress.percent, progress.requiredOnly)
-                : words.progressText(progress.filled, progress.of, progress.requiredOnly, progress.percent) })}>
-            {/* The width goes through the CSSOM (React's style property), which a page's style-src does not govern. */}
-            <div className="tia-progress__fill" style={state === 'scanning' ? undefined : { width: `${progress.percent}%` }} />
-          </div>
-        </>
-      )}
-      {state === 'scanning' && (
-        <div className="tia-scanning">
-          <Icon name="sparkle" size={28} className="tia-icon tia-scanning__icon" />
-          <p className="tia-scanning__title">{words.scanningTitle}</p>
-          <p className="tia-scanning__help">{words.scanningHelp}</p>
-        </div>
-      )}
+    <section className="tia-progress-block" {...blockProps}>
+      {counted && line}
+      {bar}
+      {scanning}
       <FrameLines reports={reports} named={named} saysWaits={actions.saysWaits === true} />
-      {hasRows && open && (
-        <div className="tia-lists" id={listsId}>
-          {sections.length > 0 && (
-            <ul className="tia-rows tia-rows--sections">
-              {sections.map((section) => {
-                const done = section.added >= section.of ? 'filled' : 'missing';
-                return (
-                  <li key={`${section.frameId}:${section.kind}`} className="tia-row tia-row--section"
-                    data-section-kind={section.kind} data-progress={done}>
-                    <div className="tia-row__line">
-                      <StateIcon progress={done} />
-                      <span className="tia-row__go tia-row__go--static">
-                        {words.sectionAdded(words.repeatables[section.kind], section.added, section.of)}
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <FieldGroup name={words.requiredGroup} group="required" rows={lists.required} actions={actions} />
-          <FieldGroup name={words.optionalGroup} group="optional" rows={lists.optional} actions={actions} />
+      {listed}
+    </section>
+  );
+}
+
+/** v5 p1-panel: the account step of a run at its sign-in pause (model.ts accountStepOf; Jobright's "Signing in" and
+ *  "Creating account" rows): a spinner while Sign-in Auto signs in for the run, an empty circle while the page waits
+ *  for the person (its toast says what). */
+function AccountStep({ kind, progress }: { kind: 'sign-in' | 'create-account'; progress: RowProgress }) {
+  const words = PAGE_COPY.report;
+  return (
+    <ul className="tia-rows tia-rows--steps">
+      <li className="tia-row tia-row--step" data-account-step={kind} data-progress={progress}>
+        <div className="tia-row__line">
+          <StateIcon progress={progress} />
+          <span className="tia-row__go tia-row__go--static">
+            <span className="tia-row__label">{kind === 'create-account' ? words.creatingAccount : words.signingIn}</span>
+          </span>
         </div>
+      </li>
+    </ul>
+  );
+}
+
+/**
+ * v5 p1-panel: a section of entries (model.ts EntryGroup; Jobright's Education and Employment results): its heading
+ * with its state, the run's count as a chip ("2/3 Added", Jobright's partial toggle) and a chevron, unfolded at first;
+ * then each entry ("Education 1") with Go To, which shows its first field on the page, and its fields as rows; then the
+ * profile's entries the form shows no block for, "Not Added". Labels and counts only: an entry is named by its place,
+ * never by what it holds.
+ */
+function EntryGroupView({ group, actions }: { group: EntryGroup; actions: ReportActions }) {
+  const [open, setOpen] = useState(true);
+  const listId = useId();
+  const words = PAGE_COPY.report;
+  const name = words.repeatables[group.kind];
+  const { onShowField } = actions;
+  return (
+    <section className="tia-entries" data-section-kind={group.kind} data-progress={group.progress}
+      aria-label={name}>
+      <div className="tia-entries__head">
+        <StateIcon progress={group.progress === 'none' ? 'missing' : group.progress} />
+        <span className="tia-entries__name">{name}</span>
+        <button type="button" className="tia-entries__toggle" aria-expanded={open} aria-controls={listId}
+          data-action="toggle-entries" aria-label={group.count === null ? words.sectionToggle(name)
+            : words.partialLabel(name, group.count.added, group.count.of)} onClick={() => setOpen((was) => !was)}>
+          {group.count !== null && (
+            <span className="tia-entries__count" data-added={group.count.added} data-of={group.count.of}>
+              {words.partial(group.count.added, group.count.of)}
+            </span>
+          )}
+          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} className="tia-icon" />
+        </button>
+      </div>
+      {open && (
+        <ol className="tia-entries__list" id={listId}>
+          {group.entries.map((entry) => {
+            const entryName = words.entry(name, entry.place);
+            const first = entry.rows[0];
+            return (
+              <li key={entry.block} className="tia-entry" data-entry-place={entry.place} data-progress={entry.progress}>
+                <div className="tia-entry__head">
+                  <StateIcon progress={entry.progress === 'none' ? 'missing' : entry.progress} />
+                  <span className="tia-entry__name">{entryName}</span>
+                  {onShowField && first !== undefined && (
+                    <button type="button" className="tia-entry__go" data-action="go-to-entry"
+                      aria-label={words.goToEntry(entryName)} onClick={() => onShowField(first.frameId, first.row.key)}>
+                      {words.goToButton}
+                    </button>
+                  )}
+                </div>
+                <ul className="tia-rows tia-entry__rows">
+                  {entry.rows.map((each) => (
+                    <Row key={`${each.frameId}:${each.row.key}:${needsPerson(each.row) ? 'open' : 'done'}`} entry={each}
+                      actions={actions} />
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
+          {group.notAdded.map((place) => (
+            <li key={`not-${place}`} className="tia-entry tia-entry--not-added" data-entry-place={place}
+              data-progress="missing" data-not-added="">
+              <div className="tia-entry__head">
+                <StateIcon progress="missing" />
+                <span className="tia-entry__name">{words.entry(name, place)}</span>
+                <span className="tia-entry__note">{words.notAdded}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
       )}
     </section>
   );

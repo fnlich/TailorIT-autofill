@@ -3,9 +3,11 @@
  * "Company career sites"). LinkedIn is deferred to v5 by the owner (2026-11-06): nothing here ever reaches it, nor an
  * employee HR system (shared/hosts.ts isCompanySiteUrl).
  * - The person's choice (Options › "Where Autofill works" › Company career sites) is kept in storage.local
- *   (`sites:v1`, one flag). The options page asks Chrome for the optional host permission (every https page) on the
- *   person's click; the place acts only while both the flag and Chrome's permission hold (`active`). Turning it off
- *   gives the permission back.
+ *   (`sites:v1`, one flag). The place acts only while both the flag and Chrome's permission hold (`active`).
+ *   v5 p1-rules (PLAN decision 10, like Jobright): every https and http page is a required host permission, granted at
+ *   install, so the place is on unless the person turned it off (no flag stored reads as on), and turning it off no
+ *   longer gives a permission back (Chrome keeps a required one; the person may still withhold site access in Chrome's
+ *   own settings, which turns the place off as before).
  * - The sentinel's registration (shared/hosts.ts registrationsFor) is reconciled to what acts: at the worker's start,
  *   at install, whenever Chrome's permissions change (onAdded, onRemoved: the person may take it back in Chrome's own
  *   settings) and after a choice. One reconcile at a time; a registration that differs is replaced.
@@ -21,6 +23,11 @@
  *   recorded first, in storage.session (`injected:<tab>:<document id>`, its frame; never an address) and in memory, so
  *   the router takes its content messages (senders.ts) as soon as the script sends one. A tab keeps the records of its
  *   last TAB_DOCUMENTS documents (B7: a page the back/forward cache brings back is still known).
+ * - v5 p1-shell (PLAN decisions 1 and 2, with p1-rules' every page): the toolbar icon on a company's own https page whose
+ *   top frame runs no script of ours (the sentinel recognised no form there) injects the content script into that top
+ *   document the same way (injectTop), so the sidebar draws there: the person's click, never in a private tab, while the
+ *   career sites act, its address checked again as the frame reads it (isCompanySiteUrl: never LinkedIn, an HR system,
+ *   a CAPTCHA vendor's frame or an http page). The script fills only what it fills on such a page anyway.
  * Nothing here requests a page, and nothing is sent to TailorIT.
  */
 import { ok, refuse, type Answer } from '../messaging/envelope';
@@ -74,6 +81,11 @@ export interface Sites {
   state(): Promise<SitesState>;
   set(on: boolean): Promise<SitesState>;
   recognised(message: Extract<ContentMessage, { type: 'page/recognised' }>, from: ContentChannel): Promise<Answer<{ injected: boolean }>>;
+  /** v5 p1-shell: the toolbar icon's click on tab `tabId` (its address and privacy as the click's tab says): the content
+   *  script injected into the tab's top document (the module header), recorded first. True when the script runs there
+   *  now (injected, or recorded before); false off a company's own https page, in a private tab, while the career sites
+   *  do not act, or where Chrome refused. */
+  injectTop(tabId: number, url: string | undefined, incognito: boolean): Promise<boolean>;
   /** The router's reading of a frame off the ATS hosts (senders.ts InjectedOf): null unless the career sites act. */
   injected: InjectedOf;
   /** Whether the career sites act now (the side panel's reload hint). */
@@ -101,17 +113,19 @@ export function createSites(deps: SitesDeps): Sites {
   /** Whether the career sites act, as the last reconcile found (undefined before the first). */
   let acting: boolean | undefined;
 
+  /** The person's choice: on unless they turned it off (v5 p1-rules, PLAN decision 10: on by default). */
   async function chosen(): Promise<boolean> {
-    return ((await deps.local.get(SITES_KEY)) as { sites?: unknown } | undefined)?.sites === true;
+    return ((await deps.local.get(SITES_KEY)) as { sites?: unknown } | undefined)?.sites !== false;
   }
 
   async function granted(): Promise<boolean> {
     return deps.permissions.contains([SITES_MATCH]).catch(() => false);
   }
 
-  /** Whether the career sites act: the person's choice, while Chrome holds its permission. */
+  /** Whether the career sites act: the person's choice, while Chrome holds its permission (read first: v5 p1-rules made
+   *  the choice on by default, and a worker Chrome gave no site access reads no more than before). */
   async function active(): Promise<boolean> {
-    return (await chosen()) && (await granted());
+    return (await granted()) && (await chosen());
   }
 
   /** Everything injected stops (the module header): the records forgotten, every tab's top frame told. */
@@ -183,8 +197,8 @@ export function createSites(deps: SitesDeps): Sites {
     active,
     async set(on) {
       await deps.local.set({ [SITES_KEY]: { sites: on } });
-      // Turned off: Chrome's permission goes back too.
-      if (!on) await deps.permissions.remove([SITES_MATCH]).catch(() => false);
+      // v5 p1-rules (PLAN decision 10): the permission is the install's own (a required host), so turning the place off
+      // gives nothing back: the registration goes (reconcile) and what was injected stops.
       await reconcile();
       return state();
     },
@@ -229,6 +243,32 @@ export function createSites(deps: SitesDeps): Sites {
       log('sites.injected');
       await deps.note?.({ type: 'page-recognised', reason: message.reason, tabId: from.tabId, injected: true });
       return injected;
+    },
+    async injectTop(tabId, url, incognito) {
+      if (incognito || url === undefined || !siteAddress(url) || !(await active())) return false;
+      // The frame's own document and address now (the tab may have moved on since the click).
+      const top = await deps.scripting.topDocument(tabId);
+      if (top === null || !siteAddress(top.url)) return false;
+      if (kindIn(await entryOf(tabId, top.documentId), 0) !== null) return true;
+      const key = keyOf(tabId, top.documentId);
+      // As recognised() does: recorded before the script runs, one at a time with the reconcile.
+      return queue.run('reconcile', async () => {
+        if (!(await active())) return false;
+        const entry: InjectedEntry = { frameId: 0, kind: 'site', at: deps.now() };
+        memory.set(key, entry);
+        await deps.session.set({ [key]: entry });
+        await bound(tabId);
+        try {
+          await deps.scripting.inject(tabId, { frameId: 0, documentId: top.documentId }, CONTENT_SCRIPT_FILE);
+        } catch {
+          memory.delete(key);
+          await deps.session.remove([key]);
+          log('sites.inject-failed');
+          return false;
+        }
+        log('sites.injected', { icon: true });
+        return true;
+      });
     },
     injected: {
       // From memory: undefined until both the records and the first reconcile are in (a worker that restarted), null

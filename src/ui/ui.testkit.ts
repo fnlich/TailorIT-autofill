@@ -93,6 +93,12 @@ export function completeProfile(overrides: Partial<AutofillProfile> = {}): Autof
     contact: { ...EMPTY_AUTOFILL_PROFILE.contact, email: 'morgan@example.test',
       phone: { ...EMPTY_AUTOFILL_PROFILE.contact.phone, number: '+1 555 0100' },
       address: { ...EMPTY_AUTOFILL_PROFILE.contact.address, city: 'Austin', country: 'US' } },
+    // v5 p1-panel: an education and a work experience, so Autofill's history check (Modals.tsx) lets it fill at once.
+    education: [{ id: 'edu-1', institution: { canonicalName: 'Northwind State University', aliases: [] },
+      degree: { level: 'bachelor', type: 'BS', field: 'Computer Science' }, minor: '', startDate: null, endDate: null,
+      current: false, gpa: null, location: { city: '', region: '', country: null } }],
+    experience: [{ id: 'exp-1', company: 'Contoso', title: 'Engineer', location: { city: '', region: '', country: null },
+      startDate: null, endDate: null, current: true, description: '' }],
     ...overrides,
   };
 }

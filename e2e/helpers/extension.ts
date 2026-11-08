@@ -161,11 +161,24 @@ export class Extension {
       return tabId;
     }
     const panel = await this.reportPage(tabId);
+    // v5 p1-panel (PLAN decision 4): after a run the progress sheet stays up over the main button; the person folds it
+    // from its header first.
+    await this.foldSheet(panel);
     const button = panel.locator('button.tia-cta:is([data-main-action="fill"], [data-main-action="sign-up"])');
     await expect(button).toBeEnabled();
     await button.click();
     await target.bringToFront();
     return tabId;
+  }
+
+  /** v5 p1-panel: folds the panel's progress sheet where it is up at rest (its header's fold), so what it lies over (the
+   *  main button, the custom question, the résumé line) takes the person's click; nothing while none is up. */
+  async foldSheet(panel: Page): Promise<void> {
+    const fold = panel.locator('button[data-action="toggle-sheet"][aria-expanded="true"]');
+    if (await fold.count() > 0) {
+      await fold.click();
+      await expect(panel.locator('section.tia-sheet[data-open]')).toHaveCount(0);
+    }
   }
 
   /**

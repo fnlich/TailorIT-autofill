@@ -59,20 +59,34 @@ test.describe('the side panel’s v3 Phase 3b', () => {
     await expect(card.locator('[data-job-chosen]')).toHaveCount(0);
   });
 
-  test('Ask TailorIT to support this site: no host without the toolbar icon’s grant, so nothing is sent', async ({ extContext, connected: ext }) => {
-    const page = await extContext.newPage();
-    await page.goto('https://example.com/');
-    // Chrome names no address for a tab outside the extension's hosts: the newest tab with none is this one.
-    const tabId = await (await ext.page()).evaluate(async () => {
-      const tabs = await (globalThis as unknown as { chrome: { tabs: { query(info: object): Promise<Array<{ id?: number;
-        url?: string }>> } } }).chrome.tabs.query({});
-      return Math.max(...tabs.filter((tab) => tab.url === undefined && tab.id !== undefined).map((tab) => tab.id!));
-    });
-    const panel = await ext.reportPage(tabId);
-    await expect(panel.locator('section[data-unsupported]')).toBeVisible();
-    await panel.locator('button[data-action="site-request"]').click();
-    await expect(panel.locator('[data-site-request="no-host"]')).toContainText(COPY.panel.siteRequest.outcomes['no-host']);
-    expect(await mock.requestsTo('POST /api/autofill/site-requests')).toEqual([]);
+  // v5 p1-rules (PLAN decision 10, like Jobright): every https and http page is granted at install, so the worker knows
+  // a tab's host without the toolbar icon's grant. With Company career sites off (on by default it shows its reload
+  // hint on a company's page instead), the panel's "Ask TailorIT to support this site" sends that host alone, on the
+  // person's click.
+  test('Ask TailorIT to support this site: the tab’s host alone, on the person’s click', async ({ extContext, connected: ext }) => {
+    const options = await ext.page();
+    await options.reload();
+    const toggle = options.locator('input[data-setting="sites.on"]');
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    try {
+      const page = await extContext.newPage();
+      await page.goto('https://example.com/');
+      const tabId = await ext.tabIdOf(page);
+      const panel = await ext.reportPage(tabId);
+      await expect(panel.locator('section[data-unsupported=""]')).toBeVisible();
+      await panel.locator('button[data-action="site-request"]').click();
+      await expect(panel.locator('[data-site-request="sent"]')).toContainText(COPY.panel.siteRequest.outcomes.sent);
+      const sent = (await mock.requestsTo('POST /api/autofill/site-requests')).map((request) => JSON.parse(request.body) as
+        Record<string, unknown>);
+      expect(sent.at(-1)).toEqual({ host: 'example.com' });
+      await page.close();
+    } finally {
+      await options.reload();
+      await options.locator('input[data-setting="sites.on"]').click();
+      await expect(options.locator('input[data-setting="sites.on"]')).toBeChecked();
+    }
   });
 
   test('Your autofill information: read, saved from its revision, its flagged lines named, and the next fill reads it', async ({ extContext, connected: ext, routeLog }) => {

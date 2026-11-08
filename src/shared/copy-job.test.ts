@@ -51,7 +51,8 @@ describe('the v2 copy', () => {
     const [, lookups] = COPY.options.connection.disclosure;
     // v3 Phase 3: as an application page loads, not only while the side panel shows it; v3 Phase 3b: a posting too.
     expect(lookups).toContain('When an application page or a job posting on those sites loads');
-    expect(lookups).toContain('side panel shows one');
+    // v5 p1-rules (disclosure version 10): the panel, on the page or in Chrome's side panel.
+    expect(lookups).toContain('while its panel shows one');
     // v4: no Dry run to choose (disclosure version 8).
     expect(lookups).toContain('when you choose Autofill, add the job');
     expect(lookups).not.toContain('Dry run');

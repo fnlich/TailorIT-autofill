@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { FrameReport } from '../../shared/report';
 import {
-  awaitsDraftConfirmation, combinedNotices, framesAtPolicyCard, isReady, needsPerson, offersSave, overallStatus, percent,
-  policyFromStoredCopy, progressOf, rowIconOf, sectionsOf, shownReports, fieldListsOf, stepText, stripToneOf, tallyOf,
-  type ReportRow,
+  accountStepOf, awaitsDraftConfirmation, blockOf, combinedNotices, entryKindOf, framesAtPolicyCard, isReady, needsPerson,
+  offersSave, overallStatus, percent, policyFromStoredCopy, progressOf, rowIconOf, sectionsOf, sheetListsOf, shownReports,
+  fieldListsOf, stepText, stripToneOf, tallyOf, type ReportRow,
 } from './model';
 
 function row(key: string, section: string): ReportRow {
@@ -166,5 +166,54 @@ describe('the report model (v4 ui, D8)', () => {
       expect([...lists.required, ...lists.optional].map((entry) => entry.row.key), each.key).toEqual(['name']);
       expect(progressOf(reports), each.key).toMatchObject({ filled: 1, of: lists.required.length });
     }
+  });
+});
+
+// v5 p1-panel (PLAN decision 4): the progress sheet's groups.
+describe('the progress sheet’s groups (v5)', () => {
+  const filled = (key: string, section: string, category: ReportRow['category'], required = false): ReportRow =>
+    ({ ...row(key, section), category, status: 'verified', wrote: true, required, provenance: 'profile', reason: 'ok' });
+
+  it('reads a block from a section key, and an entry kind from a block’s education or work experience row', () => {
+    expect([blockOf('education[0]'), blockOf('experience[12]'), blockOf('Education'), blockOf('education[x]')])
+      .toEqual([0, 12, null, null]);
+    expect(entryKindOf({ category: 'education.school', section: 'education[1]' })).toBe('education');
+    expect(entryKindOf({ category: 'experience.title', section: 'work[0]' })).toBe('experience');
+    // Outside a block, or another family: not an entry.
+    expect(entryKindOf({ category: 'education.highestLevel', section: 'Education' })).toBeNull();
+    expect(entryKindOf({ category: 'contact.email', section: 'contact[0]' })).toBeNull();
+  });
+
+  it('groups each frame’s blocks into numbered entries, counts the profile’s entries not added, keeps the rest listed', () => {
+    const reports = [report(0, {
+      fields: [filled('name', 'Contact', 'unknown', true), filled('school-1', 'education[1]', 'education.school'),
+        { ...row('school-0', 'education[0]'), category: 'education.school', status: 'flagged', required: true },
+        filled('title-0', 'experience[0]', 'experience.title')],
+      repeatables: [{ kind: 'education', added: 2, of: 4 }, { kind: 'language', added: 0, of: 1 }],
+    }), report(2, { fields: [filled('school-0', 'education[0]', 'education.school')] })];
+    const lists = sheetListsOf(reports);
+    expect(lists.groups.map((group) => [group.frameId, group.kind, group.progress, group.count, group.notAdded,
+      group.entries.map((entry) => [entry.block, entry.place, entry.progress, entry.rows.map((each) => each.row.key)])]))
+      .toEqual([
+        [0, 'education', 'missing', { added: 2, of: 4 }, [3, 4], [[0, 1, 'missing', ['school-0']], [1, 2, 'filled', ['school-1']]]],
+        [0, 'experience', 'filled', null, [], [[0, 1, 'filled', ['title-0']]]],
+        [2, 'education', 'filled', null, [], [[0, 1, 'filled', ['school-0']]]],
+      ]);
+    // The counts of sections no group lists stay as lines; the rows in no entry stay in the lists.
+    expect(lists.counts).toEqual([{ kind: 'language', added: 0, of: 1, frameId: 0 }]);
+    expect(lists.required.map((entry) => entry.row.key)).toEqual(['name']);
+    expect(lists.optional).toEqual([]);
+    // The progress still counts every row: the grouping moves rows, never drops them.
+    expect(progressOf(reports)).toMatchObject({ filled: 1, of: 2, requiredOnly: true });
+  });
+
+  it('says the account step of a run at its sign-in: working while Sign-in Auto signs in, else waiting', () => {
+    const at = (notices: FrameReport['notices']) => [report(0, { status: 'auth-needed', notices })];
+    expect(accountStepOf(at([{ code: 'sign-in-auto' }]), 'sign-in')).toEqual({ kind: 'sign-in', progress: 'working' });
+    expect(accountStepOf(at([{ code: 'sign-in-auto' }]), 'create-account')).toEqual({ kind: 'create-account',
+      progress: 'working' });
+    expect(accountStepOf(at([{ code: 'sign-in-failed' }]), 'sign-in')).toEqual({ kind: 'sign-in', progress: 'missing' });
+    expect(accountStepOf(at([]))).toEqual({ kind: 'sign-in', progress: 'missing' });
+    expect(accountStepOf([report(0, { status: 'review' })], 'sign-in')).toBeNull();
   });
 });

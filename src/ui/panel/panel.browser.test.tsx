@@ -321,8 +321,10 @@ describe('the review panel', () => {
     await click(main);
     // A plain Autofill: the run resting after the page turn takes it as going on there (the worker's run/start).
     expect(actions(worker)).toEqual([{ v: 1, type: 'panel/fill', tabId: 5, dryRun: false }]);
-    // No "0/0 fields filled · 0%" for a step nothing was read on.
-    expect(root.querySelector('.tia-progress-line')).toBeNull();
+    // No "0/0 fields filled · 0%" for a step nothing was read on: v5 p1-panel, the sheet's header says where the run
+    // stands instead.
+    expect(root.querySelector('.tia-progress-line__title')?.textContent).toBe(COPY.runStatuses.review);
+    expect(root.querySelector('.tia-progress-line__percent')).toBeNull();
     expect(root.textContent).not.toContain('0%');
   });
   it('reconnects when the port drops, as a worker restart does, and watches its tab again', async () => {

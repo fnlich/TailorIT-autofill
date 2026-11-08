@@ -94,6 +94,9 @@ const CORE: CoreFunctions = { planFrame, canonicalizeProfile, attachResume, pers
 
 /** The e2e build only: how long the agent's new window rests on its empty page (agent.ts windowSettleMs). */
 const AGENT_E2E_SETTLE_MS = 750;
+/** v5 p1-shell: the toolbar icon's sidebar/open, asked again while a content script it injected starts (about 1.2 s). */
+const ICON_OPEN_TRIES = 8;
+const ICON_OPEN_GAP_MS = 150;
 
 /** The audit of 2026-11-06 (m6): how long after a Submit pressed in a document an address no parser reads (its
  *  confirmation drawn in place) still counts as that document's application: the confirmation page's own window. Past
@@ -271,7 +274,9 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
     disclosed: () => auth.disclosed(),
     changed: (tabId) => void reports.pageChanged(tabId).catch(() => undefined),
     // v3 Phase 5: the agent's own tab's sign finishes its job (its result records Applied).
-    agentSubmitted: (tabId, applicationKey) => agent.submitted(tabId, applicationKey) });
+    agentSubmitted: (tabId, applicationKey) => agent.submitted(tabId, applicationKey),
+    // v5 p1-panel (PLAN decision 5): the page's "Application Submitted!" window, in the tab's top frame.
+    applied: (tabId) => void tellTopFrame(tabId, { v: 1, type: 'applied/popup' }) });
   submissions = submitted;
   /** The resume a fill of the tab would attach, for the side panel's preview (v3 Phase 3b): the person's choice, else
    *  the card's; read from the account's list, for its file kind and name. None while the tab applies without one. */
@@ -1035,8 +1040,18 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
 
   // v5 p1-shell (PLAN decision 2): the toolbar icon, while the panel shows on the page (Chrome opens the side panel by
   // itself otherwise). A page a frame of ours may draw on hears sidebar/open, and its launcher comes back where the
-  // person hid it; any other page (a browser page, LinkedIn, an HR system) gets the side panel, asked for inside the
-  // click, before anything is awaited.
+  // person hid it; a company's own https page whose top frame runs no script of ours yet gets the content script first
+  // (sites.ts injectTop), and hears it once the script listens; any other page (a browser page, LinkedIn, an HR system,
+  // an http page off the ATS hosts) gets the side panel, asked for inside the click, before anything is awaited.
+  const askSidebarOpen = async (tabId: number): Promise<boolean> => {
+    try {
+      const answer = await platform.tabs.sendToFrame(tabId, { v: 1, type: 'sidebar/open', reveal: true }, { frameId: 0 });
+      // The content script's answer alone (the sentinel, alone in a frame, answers nothing).
+      return (answer as { ok?: unknown } | undefined)?.ok === true;
+    } catch {
+      return false;
+    }
+  };
   platform.action.onClicked((tab) => {
     if (!iconReachesPage(tab.url)) {
       log('action.clicked', { page: false });
@@ -1050,14 +1065,18 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
       if (site !== null) await launchers.show(site);
       await session.remove([visitKey(tab.id)]);
       await tellLauncherPrefs(tab.id, true);
-      try {
-        await platform.tabs.sendToFrame(tab.id, { v: 1, type: 'sidebar/open', reveal: true }, { frameId: 0 });
-      } catch {
-        // No frame of ours draws this page (it loaded before the extension, or the site is not reached): the side panel,
-        // where Chrome still takes it after the click.
-        log('action.clicked', { page: true, unreached: true });
-        await openSidePanel(platform, tab.id);
+      if (await askSidebarOpen(tab.id)) return;
+      if (await sites.injectTop(tab.id, tab.url, tab.incognito === true)) {
+        // The injected script listens once its start-up has run: asked again a few times meanwhile.
+        for (let attempt = 0; attempt < ICON_OPEN_TRIES; attempt += 1) {
+          if (await askSidebarOpen(tab.id)) return;
+          await new Promise<void>((resolve) => timers.after(ICON_OPEN_GAP_MS, resolve));
+        }
       }
+      // No frame of ours draws this page (it loaded before the extension, or the site is not reached): the side panel,
+      // where Chrome still takes it after the click.
+      log('action.clicked', { page: true, unreached: true });
+      await openSidePanel(platform, tab.id);
     })().catch(() => undefined);
   });
 

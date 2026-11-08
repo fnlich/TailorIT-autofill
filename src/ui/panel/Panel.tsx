@@ -55,6 +55,16 @@
  * (page/workday-note.tsx) until the person closes it. "Default view" no longer folds the review (settings version 8:
  * it says whether the sidebar opens by itself).
  *
+ * v5 p1-panel (PLAN decisions 4 and 6; the views work in the side panel and in the on-page sidebar alike, at 384 px):
+ * - The main view fills its host's height (v5-styles.ts): the head, then the stage, whose content scrolls by itself,
+ *   with the progress sheet over its bottom (Sheet.tsx: the report's header and lists; up while a run works and after,
+ *   folded to a strip by its header at rest), then the step dock under it. The Minimized view no longer folds the lists
+ *   (since v5 the view setting says whether the sidebar opens by itself).
+ * - What stopped a fill is a modal over the view (Modals.tsx): no application form, the page's form not reachable now,
+ *   a failure, or the extension updated (Refresh Page, where the host passes `refreshPage`: the sidebar), with Try
+ *   Again or Refresh Page; and before a fill, the autofill information's check: no work experience or no education
+ *   holds the fill in a modal (Edit Autofill Information, Autofill Anyway).
+ *
  * It never shows or receives a field value: reports hold none. The job card draws only what TailorIT's lookup said, the
  * resume's title among it (which may be the person's name: it is shown on purpose, as the resume the fill attaches);
  * the custom question's answer is the person's own request; the profile check keeps which items are missing, never a
@@ -77,21 +87,25 @@ import { WorkdayNote } from '../page/workday-note';
 import { HelpTip } from '../page/HelpTip';
 import { request } from '../page/request';
 import { useAuthStatus, type AuthState } from '../page/use-auth';
-import { isWorking, type ReportRow } from '../report/model';
+import { accountStepOf, isWorking, type ReportRow } from '../report/model';
 import { Report, type PreviewKind } from '../report/Report';
+import { StepDock } from '../report/StepDock';
 import { AskQuestion } from './Ask';
 import { useTabJob } from './job';
 import { JobCard, ResumeLine, ResumePicker } from './JobCard';
 import { useTabLetter } from './letter';
 import { receivePreview } from './preview';
+import { PanelModal, type PanelModalState, type StopReason } from './Modals';
 import { ProfileEditor } from './Profile';
 import { ResumePreview } from './ResumePreview';
 import { useTabReports, type LinkState } from './reports';
 import { SettingsView } from './SettingsView';
+import { ProgressSheet, useSheetTop } from './Sheet';
 import { SetupView } from './Setup';
 import { useProfileCheck } from './profile-check';
 import { BROWSER_SEEN_CLOCK, useShownFor, type SeenClock } from './seen';
 import { useFollowedTab } from './tab';
+import { adoptPanelV5Styles } from './v5-styles';
 
 export interface PanelProps {
   platform: PagePlatform;
@@ -103,6 +117,9 @@ export interface PanelProps {
   copyText?: (text: string) => Promise<boolean>;
   /** The clock the main button's CONTROL_SEEN_MS is timed on (seen.ts); the browser's by default. */
   seenClock?: SeenClock;
+  /** v5 p1-panel: reloads the page the panel is drawn on, for the "extension updated" modal's Refresh Page: the on-page
+   *  sidebar's host passes it; the side panel has none (its own strip says to open it again). */
+  refreshPage?: () => void;
   /** v5 p1-shell: the sidebar on the page's own controls (none in Chrome's side panel and the report page). */
   shell?: PanelShell;
 }
@@ -164,6 +181,23 @@ function refusalOf(error: Exclude<Answer<unknown>, { ok: true }>['error']): stri
   return COPY.panel.failed;
 }
 
+/** v5 p1-panel (PLAN decision 6): what stopped a fill or a Continue, said in a modal (Modals.tsx), or null when the
+ *  answer says nothing the modal would (it started, the person is not connected or asked too often: the line under the
+ *  button says those, as before). A Cancel never opens one. `formShown`: the tab's page shows a form of ours, so a fill
+ *  no frame took is a form not reachable now, not a page without one; `gone`: the extension's runtime is gone (updated
+ *  or removed), which only a host that can reload its page says in a modal. */
+function stopOf(message: RunMessage, answer: Answer<{ frames: number }>, formShown: boolean, gone: boolean):
+  StopReason | null {
+  if (message.type === 'panel/cancel') return null;
+  if (answer.ok) {
+    if (answer.data.frames > 0 || message.type !== 'panel/fill') return null;
+    return formShown ? 'unavailable' : 'no-form';
+  }
+  if (answer.error === 'not_connected' || answer.error === 'rate_limited') return null;
+  return gone ? 'updated' : 'failed';
+}
+// end v5 p1-panel
+
 /** What a button's answer means to the person. */
 function feedbackOf(message: RunMessage, answer: Answer<{ frames: number }>): string {
   if (answer.ok) {
@@ -182,12 +216,27 @@ function asksForLetter(page: PageState | null, reports: readonly FrameReport[]):
 
 /** The views under the head: the main view, the Settings view, or the profile editor (and where its Back goes). The
  *  set-up view is the gate's (`gate`), before the main view. */
-type View = { name: 'main' } | { name: 'settings' } | { name: 'editor'; back: 'setup' | 'settings' };
+type View = { name: 'main' } | { name: 'settings' } | { name: 'editor'; back: 'setup' | 'settings' | 'main' };
 
 export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipboardCopy,
-  seenClock = BROWSER_SEEN_CLOCK, shell }: PanelProps) {
+  seenClock = BROWSER_SEEN_CLOCK, shell, refreshPage }: PanelProps) {
   const root = useRef<HTMLElement>(null);
   const dashboardId = useId();
+  // v5 p1-panel: the main view's stage, its scrolling content and the anchor under the job card the sheet rises to.
+  const stage = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  /** v5 p1-panel: the modal shown over the main view, for the tab it was raised on, with the fill it holds back (the
+   *  history check's) or the message its Try Again sends again. */
+  const [modal, setModal] = useState<{ tabId: number; state: PanelModalState; message: RunMessage | null } | null>(null);
+  /** v5 p1-panel: the person closed the "extension updated" modal (it is not raised again in this panel's life). */
+  const [goneSeen, setGoneSeen] = useState(false);
+  const sheetTop = useSheetTop(stage, anchor, scroller, true);
+  /** The main view's element: the hooks' root, and where the v5 stylesheet is adopted (its document or shadow root). */
+  const mainRef = useCallback((node: HTMLElement | null) => {
+    root.current = node;
+    if (node !== null) adoptPanelV5Styles(node);
+  }, []);
   const tabId = useFollowedTab(platform, pinnedTabId);
   const { reports, page, link, reconnect, changes, relinked } = useTabReports(platform, tabId, now,
     { side: pinnedTabId === null });
@@ -299,8 +348,29 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     setBusy(true);
     const answer = await request(platform, message);
     setBusy(false);
+    // v5 p1-panel (PLAN decision 6): what stopped it is a modal (Modals.tsx), with Try Again; an update says Refresh
+    // Page only where the host can reload its page.
+    const stop = stopOf(message, answer, page?.support === 'form',
+      refreshPage !== undefined && !answer.ok && !platform.runtime.isValid());
+    if (stop !== null) {
+      setFeedback(null);
+      setModal({ tabId: message.tabId, state: { kind: 'error', reason: stop }, message });
+      return;
+    }
     setFeedback({ tabId: message.tabId, text: feedbackOf(message, answer), newest });
     if (!answer.ok && answer.error === 'not_connected') refresh();
+  };
+
+  /** v5 p1-panel: the main button's click. A fill (not a Continue) first checks the autofill information for work
+   *  experience and education (Jobright's resume check): either missing opens the history modal, which holds the fill
+   *  until the person chooses Autofill Anyway or edits the information. */
+  const start = (message: RunMessage) => {
+    const missing = message.type === 'panel/fill' && profile.state === 'read' ? profile.history : [];
+    if (missing.length > 0) {
+      setModal({ tabId: message.tabId, state: { kind: 'history', missing }, message });
+      return;
+    }
+    void run(message);
   };
 
   /** Add this job to TailorIT: what came of it, then the card read again. */
@@ -487,116 +557,153 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
     return attached || letter.view.outcome === 'yours' || letter.view.outcome === 'written' ? 'coverLetter' : null;
   };
 
+  // v5 p1-panel (PLAN decision 4): the progress sheet over the stage's bottom, up while a run works (or signs in for
+  // it), and the step dock under the stage; (decision 6) the modal over the view, for the tab it was raised on.
+  const sheetShown = tabId !== null && reports.length > 0 && settingsRead;
+  const sheetWorking = working || accountStepOf(reports)?.progress === 'working';
+  const shownModal: PanelModalState | null = modal !== null && modal.tabId === tabId ? modal.state
+    : link === 'gone' && refreshPage !== undefined && !goneSeen ? { kind: 'error', reason: 'updated' } : null;
+  const closeModal = () => {
+    if (modal === null && shownModal !== null) setGoneSeen(true);
+    setModal(null);
+  };
+
   return (
-    <main className="tia-page tia-panel" ref={root} data-tab-id={tabId ?? undefined} data-view="main">
+    <main className="tia-page tia-panel" ref={mainRef} data-tab-id={tabId ?? undefined} data-view="main">
       {head(true)}
-      {problems}
-      {auth.status.connection === 'connected' && auth.status.disclosure === 'changed' && (
-        <DisclosureChanged onUnderstand={acknowledge} />
-      )}
-      {(agent.status?.on === true || agent.status?.pending === true || agent.status?.paused != null)
-        && <AgentStatusLine platform={platform} agent={agent} />}
-      {tabId !== null && hidden !== 'none' && (
-        <div className="tia-strip tia-launcher-hidden" data-tone="neutral" data-launcher-hidden={hidden}>
-          <span>{COPY.panel.launcherHidden[hidden]}</span>{' '}
-          <button type="button" className="tia-button" data-action="show-launcher" onClick={() => showLauncher(tabId)}>
-            {COPY.panel.showLauncher}
-          </button>
+      <div className="tia-stage" ref={stage} data-sheet={sheetShown ? '' : undefined}>
+        <div className="tia-stage__scroll" ref={scroller}>
+          {problems}
+          {auth.status.connection === 'connected' && auth.status.disclosure === 'changed' && (
+            <DisclosureChanged onUnderstand={acknowledge} />
+          )}
+          {(agent.status?.on === true || agent.status?.pending === true || agent.status?.paused != null)
+            && <AgentStatusLine platform={platform} agent={agent} />}
+          {tabId !== null && hidden !== 'none' && (
+            <div className="tia-strip tia-launcher-hidden" data-tone="neutral" data-launcher-hidden={hidden}>
+              <span>{COPY.panel.launcherHidden[hidden]}</span>{' '}
+              <button type="button" className="tia-button" data-action="show-launcher" onClick={() => showLauncher(tabId)}>
+                {COPY.panel.showLauncher}
+              </button>
+            </div>
+          )}
+          {launcherShown !== null && launcherShown === tabId && hidden === 'none' && (
+            <p className="tia-feedback" role="status">
+              {pinnedTabId === null ? COPY.panel.launcherShownAfterPanel : COPY.panel.launcherShown}
+            </p>
+          )}
+          {tabId === null ? (
+            <p className="tia-strip" data-strip="no-tab" data-tone="neutral">{COPY.panel.noTab}</p>
+          ) : page?.support === 'none' && reports.length === 0 ? (
+            <Unsupported reload={page.reload !== true ? null : page.site === true ? 'site' : 'ats'}
+              ask={() => request(platform, { v: 1, type: 'panel/siteRequest', tabId })} />
+          ) : reports.length === 0 && job.view.state === 'hidden' ? (
+            <PageStrip page={page} />
+          ) : null}
+          {tabId !== null && page?.submitted !== undefined && (
+            <Submitted state={page.submitted} job={cardJob} onRetry={() => retryApplied(tabId)} />
+          )}
+          {tabId !== null && page?.support !== 'none' && (
+            <JobCard view={job.view} adding={adding} outcome={added !== null && added.view === viewKey ? added.outcome : null}
+              now={now()} working={working} onAdd={() => void addJob(tabId)}
+              searchJobs={async (query) => {
+                const answer = await request(platform, { v: 1, type: 'panel/jobSearch', tabId, query });
+                return answer.ok ? answer.data : null;
+              }}
+              chooseJob={(ref) => chooseJob(tabId, ref)} />
+          )}
+          {/* v5 p1-panel: where the sheet's top goes while it is up (Sheet.tsx): just under the job card. */}
+          <div className="tia-sheet-anchor" ref={anchor} aria-hidden="true" />
+          {tabId !== null && postingOnly && page?.confirmation !== true && (
+            <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
+          )}
+          {tabId !== null && pageWaits !== null && (
+            <p className="tia-strip" data-strip="page-waits" data-page-waits={pageWaits} data-tone="warning" role="status">
+              {PAGE_WAITS[pageWaits]}
+            </p>
+          )}
+          {offersFill && tabId !== null && (
+            <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock} onRun={start} />
+          )}
+          {tabId !== null && page?.support !== 'none' && (
+            <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
+              connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
+              noResume={answered !== null && answered.resume === null} policy={policy} />
+          )}
+          {tabId !== null && answered !== null && !submitted && !resumeRow && (
+            <ResumeLine card={answered} loadResumes={loadResumes}
+              chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
+              setWithout={(without) => setWithout(tabId, without)} loadPreview={loadResumePreview} />
+          )}
+          {shownFeedback !== null && <p className="tia-feedback" role="status">{shownFeedback.text}</p>}
         </div>
-      )}
-      {launcherShown !== null && launcherShown === tabId && hidden === 'none' && (
-        <p className="tia-feedback" role="status">
-          {pinnedTabId === null ? COPY.panel.launcherShownAfterPanel : COPY.panel.launcherShown}
-        </p>
-      )}
-      {tabId === null ? (
-        <p className="tia-strip" data-strip="no-tab" data-tone="neutral">{COPY.panel.noTab}</p>
-      ) : page?.support === 'none' && reports.length === 0 ? (
-        <Unsupported reload={page.reload !== true ? null : page.site === true ? 'site' : 'ats'}
-          ask={() => request(platform, { v: 1, type: 'panel/siteRequest', tabId })} />
-      ) : reports.length === 0 && job.view.state === 'hidden' ? (
-        <PageStrip page={page} />
-      ) : null}
-      {tabId !== null && page?.submitted !== undefined && (
-        <Submitted state={page.submitted} job={cardJob} onRetry={() => retryApplied(tabId)} />
-      )}
-      {tabId !== null && page?.support !== 'none' && (
-        <JobCard view={job.view} adding={adding} outcome={added !== null && added.view === viewKey ? added.outcome : null}
-          now={now()} working={working} onAdd={() => void addJob(tabId)}
-          searchJobs={async (query) => {
-            const answer = await request(platform, { v: 1, type: 'panel/jobSearch', tabId, query });
-            return answer.ok ? answer.data : null;
-          }}
-          chooseJob={(ref) => chooseJob(tabId, ref)} />
-      )}
-      {tabId !== null && postingOnly && page?.confirmation !== true && (
-        <p className="tia-strip" data-strip="no-form" data-tone="neutral">{COPY.strip.noForm}</p>
-      )}
-      {tabId !== null && pageWaits !== null && (
-        <p className="tia-strip" data-strip="page-waits" data-page-waits={pageWaits} data-tone="warning" role="status">
-          {PAGE_WAITS[pageWaits]}
-        </p>
-      )}
-      {offersFill && tabId !== null && (
-        <MainButton tabId={tabId} meaning={meaning} working={busy || working} clock={seenClock}
-          onRun={(message) => void run(message)} />
-      )}
-      {tabId !== null && page?.support !== 'none' && (
-        <AskQuestion key={viewKey} ask={(question, length) => ask(tabId, question, length)} copy={copyText}
-          connected={connection !== undefined && connection !== null} aiOff={aiOff === true}
-          noResume={answered !== null && answered.resume === null} policy={policy} />
-      )}
-      {tabId !== null && answered !== null && !submitted && !resumeRow && (
-        <ResumeLine card={answered} loadResumes={loadResumes}
-          chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
-          setWithout={(without) => setWithout(tabId, without)} loadPreview={loadResumePreview} />
-      )}
-      {shownFeedback !== null && <p className="tia-feedback" role="status">{shownFeedback.text}</p>}
-      {tabId !== null && reports.length > 0 && settingsRead && (
-        <section className="tia-dashboard" aria-labelledby={dashboardId}>
-          <h2 className="tia-visually-hidden" id={dashboardId}>{COPY.panelTitle}</h2>
-          <Report
-            reports={reports}
-            notices={false}
-            busy={busy}
-            // v5 p1-shell (settings version 8): Default view says whether the sidebar opens by itself, not how the
-            // review is folded.
-            minimized={false}
-            // s2 profile (P1): with the page's notifications not shown until closed, a paused run's line says what it
-            // waits for.
-            saysWaits={toastsMayGo}
-            submitted={submitted}
-            {...(submitted ? {} : {
-              onCancel: () => void run({ v: 1, type: 'panel/cancel', tabId }),
-              // Whether the run took it: one it did not ('expired') offers Skip again (the audit of 2026-11-06, m5).
-              onSkip: (frameId: number, fieldKey: string) =>
-                request(platform, { v: 1, type: 'panel/skip', tabId, frameId, fieldKey }).then((answer) => answer.ok),
-            })}
-            onShowField={(frameId, fieldKey) => {
-              void request(platform, { v: 1, type: 'panel/focus', tabId, frameId, fieldKey }).then((answer) => {
-                if (!answer.ok) setFeedback({ tabId, text: COPY.panel.focusFailed, newest: Number.POSITIVE_INFINITY });
-              });
-            }}
-            onPress={async (frameId, target, confirmed) => {
-              const answer = await request(platform, { v: 1, type: 'panel/press', tabId, frameId, target, confirmed });
-              return answer.ok ? answer.data : null;
-            }}
-            previewOf={previewOf}
-            // After a run the résumé's choice lives on its row (the owner): Change, as the résumé line's.
-            rowTool={(each) => (each.category !== 'file.resume' || answered === null || submitted ? null : {
-              label: COPY.job.change, action: 'change',
-              render: (close) => (
-                <ResumePicker card={answered} loadResumes={loadResumes} onClose={close}
-                  chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
-                  setWithout={(without) => setWithout(tabId, without)} />
-              ),
-            })}
-            renderPreview={(kind, label, close) => (
-              <ResumePreview kind={kind} load={kind === 'resume' ? loadResumePreview : loadLetterPreview}
-                label={kind === 'resume' ? answered?.resume?.label ?? label : label} onClose={close} />
+        {sheetShown && tabId !== null && (
+          <ProgressSheet working={sheetWorking} top={sheetTop} labelledBy={dashboardId}>
+            {(control) => (
+              <Report
+                reports={reports}
+                notices={false}
+                busy={busy}
+                sheet={control}
+                wall={page?.wall ?? null}
+                // s2 profile (P1): with the page's notifications not shown until closed, a paused run's line says what
+                // it waits for.
+                saysWaits={toastsMayGo}
+                submitted={submitted}
+                {...(submitted ? {} : {
+                  onCancel: () => void run({ v: 1, type: 'panel/cancel', tabId }),
+                  // Whether the run took it: one it did not ('expired') offers Skip again (the audit of 2026-11-06, m5).
+                  onSkip: (frameId: number, fieldKey: string) =>
+                    request(platform, { v: 1, type: 'panel/skip', tabId, frameId, fieldKey }).then((answer) => answer.ok),
+                })}
+                onShowField={(frameId, fieldKey) => {
+                  void request(platform, { v: 1, type: 'panel/focus', tabId, frameId, fieldKey }).then((answer) => {
+                    if (!answer.ok) setFeedback({ tabId, text: COPY.panel.focusFailed, newest: Number.POSITIVE_INFINITY });
+                  });
+                }}
+                previewOf={previewOf}
+                // After a run the résumé's choice lives on its row (the owner): Change, as the résumé line's.
+                rowTool={(each) => (each.category !== 'file.resume' || answered === null || submitted ? null : {
+                  label: COPY.job.change, action: 'change',
+                  render: (close) => (
+                    <ResumePicker card={answered} loadResumes={loadResumes} onClose={close}
+                      chooseResume={(resumeId) => chooseResume(tabId, resumeId)}
+                      setWithout={(without) => setWithout(tabId, without)} />
+                  ),
+                })}
+                renderPreview={(kind, label, close) => (
+                  <ResumePreview kind={kind} load={kind === 'resume' ? loadResumePreview : loadLetterPreview}
+                    label={kind === 'resume' ? answered?.resume?.label ?? label : label} onClose={close} />
+                )}
+              />
             )}
-          />
-        </section>
+          </ProgressSheet>
+        )}
+      </div>
+      {/* v5 p1-panel: the dock's "Continue To The Next Page" and "Submit Application" stay under the sheet (Jobright's). */}
+      {sheetShown && tabId !== null && (
+        <StepDock reports={reports} submitted={submitted} onPress={async (frameId, target, confirmed) => {
+          const answer = await request(platform, { v: 1, type: 'panel/press', tabId, frameId, target, confirmed });
+          return answer.ok ? answer.data : null;
+        }} />
+      )}
+      {shownModal !== null && (
+        <PanelModal modal={shownModal} clock={seenClock} onClose={closeModal}
+          {...(refreshPage === undefined ? {} : { onRefresh: refreshPage })}
+          onRetry={() => {
+            const again = modal?.message ?? null;
+            setModal(null);
+            if (again !== null) void run(again);
+          }}
+          onEdit={() => {
+            setModal(null);
+            setView({ name: 'editor', back: 'main' });
+          }}
+          onAnyway={() => {
+            const held = modal?.message ?? null;
+            setModal(null);
+            if (held !== null) void run(held);
+          }} />
       )}
     </main>
   );

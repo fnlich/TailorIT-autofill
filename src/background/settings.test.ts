@@ -14,8 +14,10 @@ const CHOSEN_CONTENT = { panel: 'side', view: 'minimized', modes: { next: CHOSEN
   submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip, signIn: CHOSEN.modes.signIn,
   noMatch: CHOSEN.modes.noMatch, notifications: CHOSEN.modes.notifications }, llm: CHOSEN.llm,
   offerToSaveAnswers: false };
-/** v5 p1-shell: CHOSEN as versions 1 to 7 stored it: its place 'side', which version 8 keeps. */
+/** v5 p1-shell: CHOSEN as versions 1 to 7 stored it, Chrome's side panel; and where every version 8 migration puts
+ *  the panel, the page (the owner, 2026-11-08: the Jobright-like sidebar for everyone). */
 const OLD_PANEL = { panel: 'side' as const };
+const ON_PAGE = { panel: 'page' as const };
 /** CHOSEN's modes as version 6 stored them, before "When a list has no match" and the notifications' time. */
 const { noMatch: _noMatch, notifications: _notifications, ...CHOSEN_MODES_V6 } = CHOSEN.modes;
 
@@ -116,8 +118,8 @@ describe('settings', () => {
     const worker = await startTestWorker({
       before: async () => fakeBrowser.storage.local.set({ 'settings:v1': V1_DEFAULTS }),
     });
-    // v5 p1-shell: its place, Chrome's side panel, is kept (version 8's default, the page, is for a new install).
-    const expected = { ...DEFAULT_SETTINGS, panel: 'side' };
+    // v5 p1-shell: its place, Chrome's side panel, moves to the page (the owner's word), as every migrated install's.
+    const expected = { ...DEFAULT_SETTINGS, panel: 'page' };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: expected } });
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
   });
@@ -147,7 +149,7 @@ describe('settings', () => {
     const v2 = { ...rest, ...OLD_PANEL, version: 2, autoAdvance: true, llm: { ...CHOSEN.llm, answers: false, confirmDrafts: true,
       whenForbidden: 'ask' } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v2 }) });
-    const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes, next: 'auto', ai: 'all' },
+    const expected = { ...CHOSEN, ...ON_PAGE, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes, next: 'auto', ai: 'all' },
       llm: { ...CHOSEN.llm, answers: false, whenForbidden: 'profile-only' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
       data: { settings: expected } });
@@ -160,7 +162,7 @@ describe('settings', () => {
       const v3 = { ...rest, ...OLD_PANEL, version: 3, autoAdvance, llm: { ...CHOSEN.llm, confirmDrafts: false, answerAll } };
       const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v3 }) });
       // Every other choice kept; the consents take the owner's default (All); the view its default (Expanded).
-      const expected = { ...CHOSEN, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes,
+      const expected = { ...CHOSEN, ...ON_PAGE, view: 'expanded', modes: { ...DEFAULT_SETTINGS.modes,
         next: autoAdvance ? 'auto' : 'manual', ai: answerAll ? 'all' : 'profile' } };
       expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
         data: { settings: expected } });
@@ -177,7 +179,7 @@ describe('settings', () => {
     const v4 = { ...CHOSEN, ...OLD_PANEL, version: 4, modes: { ...v4modes, recordOwn: 'off', submit: 'auto' },
       llm: { ...CHOSEN.llm, confirmDrafts: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v4 }) });
-    const expected = { ...CHOSEN, modes: { ...CHOSEN.modes, recordOwn: 'off', submit: 'auto', resumeOnPage: 'keep' } };
+    const expected = { ...CHOSEN, ...ON_PAGE, modes: { ...CHOSEN.modes, recordOwn: 'off', submit: 'auto', resumeOnPage: 'keep' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
       data: { settings: expected } });
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
@@ -193,7 +195,7 @@ describe('settings', () => {
     const v5 = { ...CHOSEN, ...OLD_PANEL, version: 5, modes: CHOSEN_MODES_V6,
       llm: { ...CHOSEN.llm, confirmDrafts: true, whenForbidden: 'ask' } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v5 }) });
-    const expected = { ...CHOSEN, llm: { ...CHOSEN.llm, whenForbidden: 'profile-only' } };
+    const expected = { ...CHOSEN, ...ON_PAGE, llm: { ...CHOSEN.llm, whenForbidden: 'profile-only' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
       data: { settings: expected } });
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
@@ -208,15 +210,15 @@ describe('settings', () => {
   it('migrates version 6 settings to version 8’s, every choice kept, Other and Until closed, and stores them', async () => {
     const v6 = { ...CHOSEN, ...OLD_PANEL, version: 6, modes: CHOSEN_MODES_V6 };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v6 }) });
-    const expected = { ...CHOSEN, modes: { ...CHOSEN.modes, noMatch: 'other', notifications: 'until-closed' } };
+    const expected = { ...CHOSEN, ...ON_PAGE, modes: { ...CHOSEN.modes, noMatch: 'other', notifications: 'until-closed' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
       data: { settings: expected } });
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
   });
 
   // v5 p1-shell (settings version 8): "Where the panel shows".
-  it('migrates version 7 settings to version 8’s: the small in-page card is the sidebar on the page, the side panel stays, every other choice kept, and stores them', async () => {
-    for (const [stored, read] of [['in-page', 'page'], ['side', 'side']] as const) {
+  it('migrates version 7 settings to version 8’s: the panel on the page for every install, its in-page card and its side panel alike, every other choice kept, and stores them', async () => {
+    for (const [stored, read] of [['in-page', 'page'], ['side', 'page']] as const) {
       const v7 = { ...CHOSEN, version: 7, panel: stored };
       const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v7 }) });
       const expected = { ...CHOSEN, panel: read };

@@ -18,8 +18,8 @@ import {
 const { modes: _modes, view: _view, version: _version, panel: _panel, llm, ...rest } = DEFAULT_SETTINGS;
 /** Versions 1 to 7's default place: Chrome's side panel, which version 8 keeps (v5 p1-shell). */
 const shared = { ...rest, panel: 'side' as const };
-/** What versions 1 to 7's defaults read as in version 8: every default, the side panel kept. */
-const DEFAULTS_FROM_OLD = { ...DEFAULT_SETTINGS, panel: 'side' as const };
+/** What versions 1 to 7's defaults read as in version 8: every default, the panel on the page (the owner's word). */
+const DEFAULTS_FROM_OLD = { ...DEFAULT_SETTINGS, panel: 'page' as const };
 /** Version 5's AI switches at their defaults (the draft confirmation off). */
 const llmV5 = { ...llm, confirmDrafts: false };
 const V3: SettingsV3 = { ...shared, version: 3, autoAdvance: false, llm: { ...llmV5, answerAll: true } };
@@ -38,13 +38,13 @@ describe('settings version 8', () => {
     expect(PANEL_PLACES).toEqual(['page', 'side']);
   });
 
-  it('migrates version 7: the small in-page card becomes the sidebar on the page, the side panel stays, every other choice kept', () => {
+  it('migrates version 7: the panel on the page for every install, its in-page card and its side panel alike (the owner, 2026-11-08), every other choice kept', () => {
     const v7: SettingsV7 = { ...DEFAULT_SETTINGS, version: 7, panel: 'in-page', view: 'minimized',
       modes: { ...DEFAULT_MODES, next: 'auto', agentSkip: { requiredEmpty: false, noAi: true, legalGuess: true } },
       llm: { ...llm, drafts: false }, telemetry: { optIn: true } };
     const migrated = migrateSettingsV7(v7);
     expect(migrated).toEqual({ ...v7, version: 8, panel: 'page' });
-    expect(migrateSettingsV7({ ...v7, panel: 'side' }).panel).toBe('side');
+    expect(migrateSettingsV7({ ...v7, panel: 'side' }).panel).toBe('page');
     // Nothing of the old object is shared.
     expect(migrated.modes).not.toBe(v7.modes);
     expect(migrated.modes.agentSkip).not.toBe(v7.modes.agentSkip);

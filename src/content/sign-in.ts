@@ -32,6 +32,13 @@
  * at for a challenge once more after a prelude, before anything is asked (E4). A challenge
  * shown and not solved comes before every account page (dom/pause-detect.ts), so nothing is asked, typed or pressed
  * while one shows, and the page is looked at for one again right before the typing and right before the press.
+ * v5 (PLAN decision 9, the owner's "implement like jobright extension", 2026-11-08): a checkbox CAPTCHA (reCAPTCHA
+ * v2's, hCaptcha's), ticked or not, is no such challenge: the sign-in is typed and its button pressed beside it, and the
+ * site decides. A press the site then refuses (an error, or nothing within the wait) while the box is still unticked
+ * is 'challenged': the boxes keep what was typed, the page's toast says to solve the check, and the next press is the
+ * person's, as Jobright leaves Sign In to the person: they tick the box and press the site's button, and the run carries
+ * on once the page moves on (signInRefusalWaits: the run's pause watch never signs in again on that document's wall,
+ * since the worker answers a tab once per wall). The box is never touched: the person ticks it.
  * v3 Phase 7b (the public capture of 2026-11-04/05; docs/SPEC-AMENDMENTS.md §12):
  * - A wall whose form the page shows only after a first choice (Workday's landing: Apple, Google, "Sign in with email"):
  *   before 1, the adapter's declared prelude control is pressed once through not-submit.ts clickAdapterSignInPrelude
@@ -55,11 +62,11 @@
  *   the run then pausing at the page, where the person answers the rest and presses its button.
  * - A password reset ('forgot-password') is never a wall here: it pauses for the person, and nothing is typed there.
  * The v4 review:
- * - L5: a challenge the page shows comes before the prelude too: with one shown and not solved (a checkbox CAPTCHA,
- *   which detectPause takes for no pause, beside Workday's landing), nothing is pressed, not even the prelude, and the
- *   sign-in answers 'challenged'.
+ * - L5: a challenge the page shows comes before the prelude too: with one shown and not solved (since v5 never a
+ *   checkbox CAPTCHA: PLAN decision 9), nothing is pressed, not even the prelude, and the sign-in answers 'challenged'.
  * - M5: what came of it says why the sign-in is the person's: 'none-saved' (the worker holds no job-site sign-in for
- *   the page: its `not_found`), 'challenged' (a challenge shows: nothing asked, typed or pressed while it does),
+ *   the page: its `not_found`), 'challenged' (a challenge shows: nothing asked, typed or pressed while it does; since
+ *   v5 also a press the site refused while a checkbox CAPTCHA was unticked, whose next press is the person's),
  *   'unavailable' (Sign-in Auto not allowed now, TailorIT not reached, a form refused, none read), 'failed' (the site
  *   refused it, or the tab was answered already). The page's toast follows it (orchestrator.ts toastsNow, runtime.ts
  *   showWallToast): the one to add a sign-in in TailorIT for 'none-saved' alone, the check to solve for 'challenged',
@@ -86,7 +93,9 @@ import { clickIfAllowed } from '../dom/fillers';
 import { fireChange, fireInput, fireLeave, setValue } from '../dom/fillers/events';
 import { accountFormOf } from '../dom/account-section';
 import { clickAdapterSignIn, clickAdapterSignInPrelude } from '../dom/fillers/not-submit';
-import { challengeLikeFramesShown, detectPause, unsolvedCaptchas, vendorFramesShown } from '../dom/pause-detect';
+import {
+  captchaErrorsShown, checkboxCaptchasUnsolved, detectPause, pageChallenged, vendorFramesShown,
+} from '../dom/pause-detect';
 import { newScanCache } from '../dom/scan-cache';
 import {
   anchorOf, guardSubmission, passwordBoxIn, SIGN_IN_REFUSALS, signInContainerOf, signInFormOf, signInRefusal,
@@ -177,11 +186,25 @@ function hostFits(credential: Pick<SignInCredential, 'host'>, host: string, path
   return credential.host === host || (credential.host === '*' && signInHostCovered(host, path));
 }
 
+// ── v5 p1-rules: CAPTCHA like Jobright (PLAN decision 9) ──
+/** The documents whose sign-in press the site refused for its unticked check (module header). */
+const refusedFor = new WeakSet<Document>();
+
+/** Whether this document's sign-in press was refused for the page's unticked check (module header): its next press is
+ *  the person's, so the run's pause watch never tries the sign-in again on this document's wall (orchestrator.ts
+ *  watchPauseGone); it carries on once the page moves on. */
+export function signInRefusalWaits(doc: Document): boolean {
+  return refusedFor.has(doc);
+}
+// ── end v5 p1-rules ──
+
 /** Whether the page shows a challenge not known solved now, anywhere (module header): a vendor's, solved or not, or a
  *  frame of another origin that reads like one (round 3, X9). The run reads it too (the v4 review, M5: a sign-in that
- *  answered 'challenged' is tried again once it no longer shows one). */
+ *  answered 'challenged' is tried again once it no longer shows one). v5 (PLAN decision 9, like Jobright): a checkbox
+ *  widget, ticked or not, is no such challenge (pageChallenged, vendorFramesShown): the sign-in is typed and pressed
+ *  beside it, and the site decides; a refusal for it is 'challenged', the next press the person's (outcomeAfter). */
 export function signInChallenged(doc: Document): boolean {
-  return unsolvedCaptchas(doc, null) > 0 || vendorFramesShown(doc) > 0 || challengeLikeFramesShown(doc) > 0;
+  return pageChallenged(doc) || vendorFramesShown(doc) > 0;
 }
 
 const challenged = (ctx: SignInContext): boolean => signInChallenged(ctx.doc);
@@ -351,8 +374,11 @@ async function outcomeAfter(ctx: SignInContext, form: SignInForm): Promise<SignI
     if (anchor === null || !anchor.isConnected || !isUserVisible(anchor)) return 'continue';
     const pause = detectPause(ctx.doc, null, ctx.adapter);
     if (pause?.kind === 'email-code' || pause?.kind === 'captcha') return 'continue';
-    if (errorShown(ctx, form)) return 'failed';
-    if (monotonicNow() >= until) return 'failed';
+    // v5 (PLAN decision 9): refused while a checkbox CAPTCHA is still unticked (an error in the form, the site's own
+    // CAPTCHA error anywhere on the page, or nothing within the wait): the check's (module header).
+    if (errorShown(ctx, form) || captchaErrorsShown(ctx.doc, null, ctx.adapter).length > 0 || monotonicNow() >= until) {
+      return checkboxCaptchasUnsolved(ctx.doc) > 0 ? 'challenged' : 'failed';
+    }
   }
 }
 
@@ -444,6 +470,7 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
   const stopGuard = guardSubmission(form, asked, AbortSignal.any([watching.signal, ctx.signal]));
   const secret: HTMLInputElement[] = [];
   let outcome: SignInOutcome = 'failed';
+  let kept = false;
   try {
     // The answer is held in this frame only for the writes below (module header, 2).
     const typed = fill(ctx, wall, asked, form, answer.data as SignInCredential, secret);
@@ -456,11 +483,18 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
     const pressed = typed === 'typed' ? await press(ctx, wall, asked, form) : typed;
     log('content.sign-in', { pressed: pressed === 'pressed' });
     outcome = pressed === 'pressed' ? await outcomeAfter(ctx, form) : pressed;
+    // v5 (PLAN decision 9): refused for the page's unticked check: the boxes keep what was typed, for the person's own
+    // press once they ticked it (module header).
+    if (pressed === 'pressed' && outcome === 'challenged' && !ctx.signal.aborted) {
+      refusedFor.add(ctx.doc);
+      log('content.captcha-refused', { signIn: true });
+      kept = true;
+    }
     return outcome;
   } finally {
     // 'left' covers the run's own end too (the person's Stop, a route away), not only the document's: the boxes still
     // in the page are written empty again then as well (round 2, E3).
-    if (outcome !== 'continue') clearSecret(secret);
+    if (outcome !== 'continue' && !kept) clearSecret(secret);
     stopGuard();
     watching.abort();
   }

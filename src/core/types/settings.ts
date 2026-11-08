@@ -32,9 +32,10 @@
  * (migrateSettingsV6).
  * Version 8 (v5, Jobright parity, the owner's "Implement like jobright. I approved all", 2026-11-08): "Where the panel
  * shows" (`panel`) is On the page ('page', the default: the sidebar docked at the page's right edge) or Chrome's side
- * panel ('side'); version 7's 'in-page' (the small in-page review card) becomes 'page', and 'side' stays. "Default view"
- * (`view`) keeps its two choices with a new meaning: Expanded opens the sidebar by itself on a supported page, Minimized
- * shows only the launcher (migrateSettingsV7).
+ * panel ('side'); every version 7 value moves to the page, its 'in-page' (the small in-page review card) and its 'side'
+ * alike (the owner, 2026-11-08: the Jobright-like sidebar for everyone; Chrome's side panel can be chosen again in
+ * Settings). "Default view" (`view`) keeps its two choices with a new meaning: Expanded opens the sidebar by itself on a
+ * supported page, Minimized shows only the launcher (migrateSettingsV7).
  */
 import type { ConsentCategory } from '../enums';
 
@@ -268,12 +269,13 @@ export interface SettingsV2 extends Omit<SettingsV3, 'version' | 'llm'> {
 }
 
 /**
- * Version 7's settings as version 8's (v5, Jobright parity): every choice is kept; the small in-page review card
- * ('in-page') becomes the sidebar on the page ('page'), and Chrome's side panel ('side') stays (the coordinator's field
- * names of 2026-11-08). "Default view" keeps its choice, read with its new meaning.
+ * Version 7's settings as version 8's (v5, Jobright parity): every choice is kept but where the panel shows, which is
+ * the sidebar on the page for every install, version 7's in-page card and its side panel alike (the owner, 2026-11-08:
+ * the Jobright-like sidebar for everyone; the person may choose Chrome's side panel again in Settings). "Default view"
+ * keeps its choice, read with its new meaning.
  */
 export function migrateSettingsV7(old: SettingsV7): Settings {
-  return { ...old, version: 8, panel: old.panel === 'in-page' ? 'page' : 'side',
+  return { ...old, version: 8, panel: 'page',
     modes: { ...old.modes, agentSkip: { ...old.modes.agentSkip } }, preapprovedConsent: [...old.preapprovedConsent],
     llm: { ...old.llm }, telemetry: { ...old.telemetry }, interpretations: { ...old.interpretations } };
 }

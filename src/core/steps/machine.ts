@@ -40,7 +40,9 @@
  * - Validation errors are fixed in one more pass where the plan can (and the step has an attempt left), then surfaced
  *   at review; a run never pauses on them.
  * - Pauses: sign-in and account creation are auth-needed; a CAPTCHA, an email code, a bot check, Workday's entry
- *   choice and a password reset are handoff with that pauseReason. Nothing of them is automated: CONTINUE (the
+ *   choice and a password reset are handoff with that pauseReason. v5 (PLAN decision 9, like Jobright): a checkbox
+ *   CAPTCHA holds no press (captchaUnsolved leaves it out), and a press the site refused for it is a CAPTCHA pause, at
+ *   review too (a Submit the page refused while the run rests there: resumeStatus review). Nothing of them is automated: CONTINUE (the
  *   person's, or v4's own once the page no longer shows the pause: content/orchestrator.ts) leaves them, to scan the
  *   step again. resumeStatus records where the pause came from. v4 (the owner's word of 2026-11-07, "just determine
  *   with your own", D7): a page still busy after our click on Next and a click the page did not take are no hand-off
@@ -97,8 +99,10 @@ export interface StepFacts {
   settled: boolean;
   /** Drafts on the step the person has not confirmed. */
   unconfirmedDrafts: number;
-  /** The step shows a CAPTCHA widget not known to be solved (dom/pause-detect.ts unsolvedCaptchas): a token-bearing
-   *  one whose token is empty, or one whose vendor holds none (Arkose). Next is then the person's. */
+  /** The step shows a CAPTCHA widget not known to be solved (dom/pause-detect.ts pageChallenged): a token-bearing
+   *  one whose token is empty, or one whose vendor holds none (Arkose), or a frame that reads like one, or a bot check
+   *  asked as a question left for the person. Next is then the person's. v5 (PLAN decision 9, like Jobright): a
+   *  checkbox widget (reCAPTCHA v2's, hCaptcha's) is none: Next and Submit are pressed beside it and the site decides. */
   captchaUnsolved: boolean;
   /** v3 Phase 4, for Submit mode Auto: the adapter's Submit is there, visible and enabled (absent: no). */
   submitVisible?: boolean;
@@ -130,8 +134,10 @@ export type RunEvent =
   /** A sign-in or account-creation wall: the person must act (auth-needed). */
   | { type: 'AUTH'; wall: AuthWall }
   /** Anything else that needs the person (handoff): a CAPTCHA, an email code, a bot check, Workday's entry choice, a
-   *  page still busy at the settle cap, a click the site needs (the Next click refused or ignored). */
-  | { type: 'PAUSE'; reason: PauseReason }
+   *  page still busy at the settle cap, a click the site needs (the Next click refused or ignored). v5 (PLAN decision
+   *  9): `refused`, a CAPTCHA the site asked for by refusing a press while its checkbox was unticked: that press used no
+   *  attempt of the step, so the run carries on (CONTINUE) with the attempt it had. */
+  | { type: 'PAUSE'; reason: PauseReason; refused?: true }
   /** The person's trusted Continue on a paused run. */
   | { type: 'CONTINUE' }
   /** The step was scanned: its signature (stepSignature), the policy statements and tripwire hits found on it, and its
@@ -470,7 +476,7 @@ function transition(state: RunState, event: RunEvent, ctx: RunContext): Outcome 
     case 'AUTH':
       return auth(state);
     case 'PAUSE':
-      return pause(state, event.reason);
+      return pause(state, event.reason, event.refused === true);
     case 'CONTINUE':
       return status === 'auth-needed' || status === 'handoff' ? rescan(state) : null;
     case 'SCANNED':
@@ -527,14 +533,20 @@ function auth(state: RunState): Outcome | null {
 }
 
 /** A pause that hands the run to the person: handoff with the reason. A run already handed off takes the newer
- *  reason and keeps where it came from. */
-function pause(state: RunState, reason: PauseReason): Outcome | null {
+ *  reason and keeps where it came from. v5 (PLAN decision 9): a CAPTCHA at review is taken too: the page refused a
+ *  Submit pressed there for its unticked check, and the run carries on (CONTINUE) once the person solved it. */
+function pause(state: RunState, reason: PauseReason, refused = false): Outcome | null {
   if (state.status === 'handoff') {
     if (state.pauseReason === reason) return null;
     return move({ ...state, pauseReason: reason }, [{ type: 'pause', kind: 'handoff' }, notify(noticeOfPause(reason))]);
   }
-  if (!WORKING.has(state.status)) return null;
-  return move(enter(state, 'handoff', { resumeStatus: state.status, pauseReason: reason }),
+  if (!WORKING.has(state.status) && !(state.status === 'review' && reason === 'captcha')) return null;
+  // v5 (PLAN decision 9): a press the site refused for its unticked check gives the step its attempt back (each such
+  // press waits for the person to tick the box, so this never loops by itself).
+  const signature = state.stepSignature;
+  const back = refused && reason === 'captcha' && signature !== null && (state.stepAttempts[signature] ?? 0) > 0
+    ? { stepAttempts: { ...state.stepAttempts, [signature]: state.stepAttempts[signature]! - 1 } } : {};
+  return move(enter(state, 'handoff', { resumeStatus: state.status, pauseReason: reason, ...back }),
     [{ type: 'pause', kind: 'handoff' }, notify(noticeOfPause(reason))]);
 }
 

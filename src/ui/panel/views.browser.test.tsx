@@ -222,7 +222,8 @@ describe('the Settings view (v4 ui)', () => {
     expect(sent[0]!.settings).toMatchObject({ view: 'minimized', modes: { afterPageTurn: 'manual' } });
     expect(root.querySelector('.tia-settings__note')?.textContent).toBe(COPY.settingsView.saved);
     expect(save().disabled).toBe(true);
-    // The main view follows what was saved; Minimized (v5 p1-shell: whether the sidebar opens by itself) folds nothing.
+    // v5 p1-panel: the view setting no longer folds the lists (it is whether the on-page sidebar opens by itself); the
+    // progress sheet folds itself (Sheet.tsx).
     await click(root.querySelector('button[data-action="close-settings"]'));
     expect(root.querySelector('li[data-field-key="a"]')).not.toBeNull();
   });
