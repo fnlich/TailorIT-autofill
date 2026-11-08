@@ -9,9 +9,9 @@ import type { FieldSpec, FillResult, PlannedWrite, RunState } from '../core/type
 import type { Settings } from '../core/types/settings';
 import type { TelemetryCount } from '../core/types/telemetry';
 import type { FillResultSchema } from '../shared/report';
+import type { TelemetryCountSchema } from './page-schemas';
 import type {
-  ContentMessageSchema, FieldSpecSchema, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema, TelemetryCountSchema,
-  WorkerToContentSchema,
+  ContentMessageSchema, FieldSpecSchema, PlanAnswerSchema, PlannedWriteSchema, RunStateSchema, WorkerToContentSchema,
 } from './schemas';
 
 type Unbrand<T> = T extends string

@@ -169,9 +169,9 @@ describe('the Greenhouse adapter on the captures of 2026-11-06', () => {
     expect(listbox.querySelectorAll('[role="option"]')).toHaveLength(244);
     const result = scan(gh.root, greenhouseAdapter, { platform: 'greenhouse' });
     const field = result.fields.find((each) => each.idAttr === 'country')!;
-    // s2 lists: the phone's country, "Country code" (its own label and the adapter's "code"), its stored 244 countries.
-    expect(field).toMatchObject({ kind: 'combobox', label: 'Country code' });
-    expect(Array.isArray(field.options) ? field.options.length : field.options).toBe(244);
+    // s2 lists: the phone's country, "Country code" (its own label and the adapter's "code"); its stored 244 countries
+    // are the worker's (lists/known), so a scan given none reads it as before.
+    expect(field).toMatchObject({ kind: 'combobox', label: 'Country code', options: 'lazy' });
     const log = logEvents(gh.doc);
     const read = await readWidget(result.target(field.key)!, { adapter: greenhouseAdapter, root: gh.root });
     expect(read.status).toBe('read');

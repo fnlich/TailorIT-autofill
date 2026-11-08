@@ -13,6 +13,7 @@
  * stored list on the host's next run (ScanOptions.learnedLists, by that key); the open-and-check keeps them honest. A list a person types into, a search, or a list read only in part is never learned.
  * Nothing here dispatches an event but the scroll a read sets as a property; nothing is logged.
  */
+import { labelSlug } from '../../core/text/keys';
 import { learnedKeyOf, MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS } from '../../shared/learned-lists';
 import type { FieldTarget, WidgetTarget } from '../types';
 import { optionElementsOf } from './aria';
@@ -20,18 +21,40 @@ import { scrollListTo, scrolls, shownIdentity, shownOptions, type ShownOption } 
 
 export { MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS };
 
-/** The key a learned list is kept and offered under for a field's label slug (core/text/keys.ts labelSlug): the first
- *  16 hex digits of its SHA-256, so the worker never stores a question's words (a label may name the employer). The
- *  worker keys it by the sender's host as Chrome reports it, hashed the same way. */
-export function learnedListKey(slug: string): string {
-  return learnedKeyOf(slug);
+/** The key a learned list is kept and offered under for a field's label slug (core/text/keys.ts labelSlug), with the
+ *  value of the field its list depends on where its adapter names one (WidgetDecl.learnContext: Workday's State, by
+ *  the country its Country shows; the review of round 2, L2): the first 16 hex digits of their SHA-256, so the worker
+ *  never stores a question's words or an answer (a label may name the employer). The worker keys it by the sender's
+ *  site (background/learned-lists.ts). */
+export function learnedListKey(slug: string, context?: string): string {
+  return learnedKeyOf(context === undefined ? slug : `${slug}\u001f${context}`);
+}
+
+/**
+ * The learned lists a plan found stale (the review of round 2, L2): a field planned from a list learned on this site
+ * (WidgetTarget.knownFrom 'learned') that the planner found no option of the value in (its row no-match, or a search
+ * of the list in place of a choice) may show another list now; its learned key is answered, so the run drops it once
+ * and the field's next scan reads it lazy, read whole by the waiting path and learned again.
+ */
+export function staleLearned(answer: { results: ReadonlyArray<{ key: string; reason: string }>;
+  writes: ReadonlyArray<{ key: string; value: { kind: string } }> }, target: (key: string) => FieldTarget | null):
+  string[] {
+  const missed = new Set([...answer.results.filter((row) => row.reason === 'no-match').map((row) => row.key),
+    ...answer.writes.filter((write) => write.value.kind === 'query').map((write) => write.key)]);
+  return [...missed].flatMap((key) => {
+    const found = target(key);
+    const widget = found?.widget;
+    if (found === null || widget?.knownFrom !== 'learned') return [];
+    return [learnedListKey(labelSlug(found.field), widget.learnContext)];
+  });
 }
 
 /** Whether a widget's whole read may be learned for its host (see the header): a select-only dropdown its adapter
- *  declares drawn whole and stores no list for. */
-export function learnable(widget: Pick<WidgetTarget, 'declared' | 'kind' | 'input' | 'drawnWhole' | 'knownFrom'>): boolean {
+ *  declares drawn whole and names no stored list for. */
+export function learnable(widget: Pick<WidgetTarget, 'declared' | 'kind' | 'input' | 'drawnWhole' | 'knownFrom'
+  | 'storedList'>): boolean {
   return widget.declared && widget.kind === 'combobox' && widget.input === null && widget.drawnWhole === true
-    && widget.knownFrom !== 'adapter';
+    && widget.knownFrom !== 'adapter' && widget.storedList === undefined;
 }
 
 /** The labels of a whole read worth learning: at least one usable option, none past the caps; null otherwise. */

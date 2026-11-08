@@ -76,7 +76,8 @@ import { visibleText } from '../../dom/visible-text';
 import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, UploadState, WidgetDecl } from '../types';
-import { EEOC_LISTS, GREENHOUSE_PHONE_COUNTRIES } from './lists';
+import type { StoredListId } from '../../shared/learned-lists';
+import { EEOC_LISTS, PHONE_COUNTRY_LIST } from './lists';
 import { canonicalApplicationUrl, matchesUrl } from './url';
 
 /** The snapshots the Greenhouse hooks were read from. */
@@ -226,15 +227,15 @@ function widgetFor(control: Element): WidgetDecl | null {
   return { kind, opener: control as HTMLElement, activation: [...GREENHOUSE_ACTIVATION], bridge: 'react-select',
     expanded: control, box, busy: BUSY_SIGNS, shownAnswer: answerOf(box, control),
     // s2 lists: a stored list, whose react-select draws its whole menu at once (rushdown-country-open: all 244 options).
-    ...(stored === null ? {} : { knownOptions: stored, drawnWhole: true as const }),
+    ...(stored === null ? {} : { storedList: stored, drawnWhole: true as const }),
     snapshot: GREENHOUSE_WIDGET_SNAPSHOTS[0] };
 }
 
-/** s2 lists (decisions 1 and 2): the stored list of a react-select (lists.ts), or null: the phone's country, and the
- *  EEOC block's Gender, Hispanic/Latino and Veteran Status (div.eeoc__container, by their ids: s2-pie-eeo-6, -7, -8:
- *  <input class="select__input" ... id="gender" ... role="combobox" ...>). */
-function storedListOf(control: Element): readonly string[] | null {
-  if (isPhoneCountry(control)) return GREENHOUSE_PHONE_COUNTRIES;
+/** s2 lists (decisions 1 and 2): the id of a react-select's stored list (lists.ts; its labels live in the worker), or
+ *  null: the phone's country, and the EEOC block's Gender, Hispanic/Latino and Veteran Status (div.eeoc__container, by
+ *  their ids: s2-pie-eeo-6, -7, -8: <input class="select__input" ... id="gender" ... role="combobox" ...>). */
+function storedListOf(control: Element): StoredListId | null {
+  if (isPhoneCountry(control)) return PHONE_COUNTRY_LIST;
   if (control.closest('div.eeoc__container') === null || !Object.hasOwn(EEOC_LISTS, control.id)) return null;
   return EEOC_LISTS[control.id] ?? null;
 }

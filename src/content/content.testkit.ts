@@ -9,6 +9,8 @@
  * tests only; the content script never does.
  */
 import type { AutofillProfile, AutofillSensitive } from '../contract/tailorit';
+import { storedListsOf } from '../background/stored-lists';
+import type { StoredListId } from '../shared/learned-lists';
 import { DOCX_MIME } from '../dom/fillers';
 import { planFrame } from '../core/plan/frame';
 import type { TiebreakItem, TiebreakVerdict } from '../core/matcher/types';
@@ -293,8 +295,10 @@ export interface FakeWorkerOptions {
   /** Phase G: the run's cover letter, as the next plan/poll after a plan asked for it settles it (`state`), and the
    *  file the resume port sends for it (`file`; none: the port refuses). Without it a cover-letter upload waits on. */
   letter?: { state: CoverLetterState; file?: FakeResume };
-  /** s2 lists: the lists lists/known answers (the host's learned lists; none by default). lists/learn is answered {}. */
+  /** s2 lists: the lists lists/known answers (the host's learned lists; none by default). lists/learn is answered {}.
+   *  The stored lists it asks for are the worker's own (background/stored-lists.ts), unless `storedLists` is false. */
   learnedLists?: Array<{ key: string; labels: string[] }>;
+  storedLists?: false;
 }
 
 /** The fake worker's draft for a free-text question, when a test scripts none (Phase 6). */
@@ -538,8 +542,11 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
         // v4: frame/wall, the page's account wall told as it changes, is answered as these are.
         return { ok: true, data: {} };
       // s2 lists: the host's learned lists, and one learned (recorded in `messages`).
-      case 'lists/known':
-        return { ok: true, data: { lists: options.learnedLists ?? [] } };
+      case 'lists/known': {
+        const ids = (message.stored as StoredListId[] | undefined) ?? [];
+        return { ok: true, data: { lists: options.learnedLists ?? [],
+          ...(ids.length > 0 && options.storedLists !== false ? { stored: storedListsOf(ids) } : {}) } };
+      }
       case 'lists/learn':
         return { ok: true, data: {} };
       case 'answer/save':

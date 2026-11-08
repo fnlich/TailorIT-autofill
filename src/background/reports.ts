@@ -27,7 +27,8 @@
  * else in it: the panel reads them again itself, and drops a card it read with the old connection.
  */
 import { ok, refuse, type Answer } from '../messaging/envelope';
-import { PanelPortMessageSchema, type ContentMessage, type PageState, type PANEL_CHANGES } from '../messaging/schemas';
+import { type ContentMessage, type PageState } from '../messaging/schemas';
+import { PanelPortMessageSchema, type PANEL_CHANGES } from '../messaging/page-schemas';
 import type { PortLike, StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { FrameReportSchema, type FrameReport } from '../shared/report';

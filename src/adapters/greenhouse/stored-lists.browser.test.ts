@@ -1,5 +1,6 @@
 /*
- * Greenhouse's stored lists (snapshot round 2, decisions 1 and 2; adapters/greenhouse/lists.ts): the phone's 244
+ * Greenhouse's stored lists (snapshot round 2, decisions 1 and 2; the worker's background/stored-lists.ts, named by id
+ * in adapters/greenhouse/lists.ts and served to a run's scans by lists/known: here, as it serves them): the phone's 244
  * countries and the EEOC block's three fixed questions are the captures' own lists, as a whole read takes them; the
  * phone's country (fieldset.phone-input's "Country") is read as the phone's ("Country code", contact.phoneCountry), with
  * its stored list, so it is planned on the first pass, from the phone's own country (snapshot3's Lightning AI and
@@ -25,7 +26,14 @@ import { scan, toFieldSpec } from '../../dom/scan';
 import { readList } from '../../dom/widgets';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
 import { greenhouseAdapter } from './index';
-import { EEOC_GENDER, EEOC_HISPANIC, EEOC_VETERAN, GREENHOUSE_PHONE_COUNTRIES } from './lists';
+import {
+  EEOC_GENDER, EEOC_HISPANIC, EEOC_VETERAN, GREENHOUSE_PHONE_COUNTRIES, STORED_LISTS,
+} from '../../background/stored-lists';
+import type { StoredListId } from '../../shared/learned-lists';
+
+/** The stored lists as the worker serves a run (lists/known): every scan of the run gets them. */
+const SERVED: ReadonlyMap<StoredListId, readonly string[]> =
+  new Map(Object.entries(STORED_LISTS) as Array<[StoredListId, readonly string[]]>);
 
 afterEach(() => removeFixtures(document));
 
@@ -73,7 +81,7 @@ describe("Greenhouse's stored lists are the captures' own", () => {
 describe("the phone's country, read as the phone's, planned from its stored list", () => {
   it('scans "Country code", required, its 244 countries whole; EEOC Gender, Hispanic/Latino and Veteran with their lists', async () => {
     const page = await load(lightningHtml);
-    const result = scan(page.root, greenhouseAdapter, { platform: 'greenhouse' });
+    const result = scan(page.root, greenhouseAdapter, { platform: 'greenhouse', storedLists: SERVED });
     const country = result.fields.find((field) => field.idAttr === 'country')!;
     expect(country).toMatchObject({ kind: 'combobox', label: 'Country code', labelSource: 'adapter', required: true });
     expect(country.options === 'lazy' ? 'lazy' : country.options.map((option) => option.label)).toEqual(GREENHOUSE_PHONE_COUNTRIES);
@@ -84,13 +92,18 @@ describe("the phone's country, read as the phone's, planned from its stored list
       const field = result.fields.find((each) => each.idAttr === id)!;
       expect(field.options === 'lazy' ? 'lazy' : field.options.map((option) => option.label), id).toEqual(stored);
     }
+    // The adapter names the lists by id; a scan the worker served none reads them lazy, as before.
+    expect(result.target(country.key)!.widget?.storedList).toBe('greenhouse.phone-countries');
+    const unserved = scan(page.root, greenhouseAdapter, { platform: 'greenhouse' });
+    expect(unserved.fields.filter((field) => ['country', 'gender', 'hispanic_ethnicity', 'veteran_status']
+      .includes(field.idAttr)).map((field) => field.options)).toEqual(['lazy', 'lazy', 'lazy', 'lazy']);
     // Any other react-select is lazy until read, as before.
     expect(result.fields.filter((field) => field.kind === 'combobox' && field.options === 'lazy').length).toBeGreaterThan(0);
   });
 
   it('chooses the phone\'s own country, India for a +91 phone beside a home in the United States, and the number without its code', async () => {
     const page = await load(lightningHtml);
-    const specs = scan(page.root, greenhouseAdapter, { platform: 'greenhouse' }).fields.map(toFieldSpec);
+    const specs = scan(page.root, greenhouseAdapter, { platform: 'greenhouse', storedLists: SERVED }).fields.map(toFieldSpec);
     const keyOf = (id: string) => specs.find((spec) => spec.idAttr === id)!.key;
     for (const [phone, wanted, number] of [
       [{ number: '+91 98765 43210', country: 'IN' }, 'India +91', '98765 43210'],

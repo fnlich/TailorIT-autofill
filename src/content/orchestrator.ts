@@ -191,7 +191,8 @@ import { deadline, monotonicNow } from '../dom/time';
 import type { FieldTarget, ScannedField, ScanResult, WidgetReading } from '../dom/types';
 import { visibleTextWithout } from '../dom/visible-text';
 import { isUserVisible } from '../dom/visibility';
-import { learnable, learnedListKey } from '../dom/widgets';
+import { learnable, learnedListKey, staleLearned } from '../dom/widgets';
+import { storedListsWanted, type StoredListId } from '../shared/learned-lists';
 import type { ErrorCode } from '../messaging/envelope';
 import {
   MAX_EDIT_INSTRUCTION, MAX_POSTING_TEXT, type AnswerReadAnswerSchema, type PressAnswer, type RunTrigger, type StepTarget,
@@ -597,6 +598,12 @@ export class FillRun {
    *  every scan of the run reads them (ScanOptions.learnedLists). Option labels only (page text), in memory. */
   readonly learnedLists = new Map<string, readonly string[]>();
   private learnedAsked = false;
+  /** The learned lists this run dropped as stale after a plan found no option in them (staleLearned), each once. */
+  private readonly relearned = new Set<string>();
+  /** s2 lists: the stored lists the worker served the run (lists/known's `stored`: background/stored-lists.ts), by
+   *  id, which every scan of the run reads (ScanOptions.storedLists), and the ids asked for already. In memory. */
+  readonly storedLists = new Map<StoredListId, readonly string[]>();
+  private readonly storedAsked = new Set<StoredListId>();
   /** The lists this run told the worker of (label key and options), each once. */
   private readonly learnedSent = new Set<string>();
   private hitPassages: RawPassage[] = [];
@@ -1665,9 +1672,23 @@ export class FillRun {
     if ('failed' in answer) throw new RunFailure(answer.failed);
     this.noteSavable(answer);
     this.noteAiAnswer(answer);
+    this.dropStaleLearned(answer);
     for (const canary of answer.persistableCanaries) this.checked.add(canary);
     if (!kept) for (const section of answer.repeatables ?? []) this.answers.set(section.kind, section);
     return answer;
+  }
+
+  /** s2 lists (the review of round 2, L2): a learned list the plan found no option of the value in is dropped for the
+   *  rest of the run, once per key (dom/widgets' staleLearned): the field's next scan reads it lazy, so the waiting
+   *  path reads its list whole and learns it again. */
+  private dropStaleLearned(answer: PlanAnswer): void {
+    if (this.learnedLists.size === 0) return;
+    const scanned = this.scanNow();
+    for (const key of staleLearned(answer, (fieldKey) => scanned.target(fieldKey as FieldKey))) {
+      if (this.relearned.has(key)) continue;
+      this.relearned.add(key);
+      this.learnedLists.delete(key);
+    }
   }
 
   /** What a plan answer says of its rows' fields for the AI (the owner's amendments): which the page may offer Edit
@@ -2398,7 +2419,7 @@ export class FillRun {
   private scanNow(): ScanResult {
     const { page } = this.env;
     return scan(this.rootNow(), page.adapter, { platform: page.app.platform, frameId: this.frameId,
-      widgetReadings: this.widgetReadings, learnedLists: this.learnedLists });
+      widgetReadings: this.widgetReadings, learnedLists: this.learnedLists, storedLists: this.storedLists });
   }
 
   /** validate: the step's errors and facts (module header, 6). */
@@ -3013,27 +3034,33 @@ export class FillRun {
     }
   }
 
-  /** s2 lists: asks the worker once for the lists this host's dropdowns showed before (lists/known), when the step's
-   *  scan holds a learnable dropdown (dom/widgets' learnable): every later scan of the run gives each its list. An
-   *  answer that does not come, or a refusal, leaves none: each is read when it opens, as before. */
-  private async askLearnedLists(): Promise<void> {
-    if (this.learnedAsked) return;
+  /** s2 lists: asks the worker (lists/known), before a step's loop, for the lists this host's dropdowns showed before,
+   *  once a step's scan holds a learnable dropdown (dom/widgets' learnable), and for the stored lists the scan's
+   *  adapter names (WidgetTarget.storedList, with their companions: shared/learned-lists.ts storedListsWanted) that it
+   *  has not asked for yet: every later scan of the run gives each widget its list. An answer that does not come, or a
+   *  refusal, leaves none: each is read when it opens, as before. */
+  private async askLists(): Promise<void> {
     const held = this.scanNow();
-    if (!held.fields.some((field) => {
-      const widget = held.target(field.key)?.widget;
-      return widget !== undefined && learnable(widget);
-    })) return;
-    this.learnedAsked = true;
-    const answer = await this.env.channel.request<'lists/known'>({ v: 1, type: 'lists/known' });
+    const widgets = held.fields.map((field) => held.target(field.key)?.widget)
+      .filter((widget): widget is NonNullable<typeof widget> => widget !== undefined);
+    const stored = storedListsWanted(widgets.flatMap((widget) => (widget.storedList === undefined ? [] : [widget.storedList])))
+      .filter((id) => !this.storedAsked.has(id));
+    const learned = !this.learnedAsked && widgets.some(learnable);
+    if (stored.length === 0 && !learned) return;
+    if (learned) this.learnedAsked = true;
+    for (const id of stored) this.storedAsked.add(id);
+    const answer = await this.env.channel.request<'lists/known'>({ v: 1, type: 'lists/known',
+      ...(stored.length > 0 ? { stored } : {}) });
     this.alive();
     if (!answer.ok) return;
     for (const list of answer.data.lists) if (!this.learnedLists.has(list.key)) this.learnedLists.set(list.key, list.labels);
+    for (const list of answer.data.stored ?? []) this.storedLists.set(list.id, list.labels);
   }
 
   /** s2 lists: a learnable dropdown's complete whole read (dom/widgets' LearnList): kept for the rest of the run under
    *  its label's key (another block's dropdown of the same label then plans from it), and told to the worker once. */
   private learnList(target: FieldTarget, labels: readonly string[]): void {
-    const key = learnedListKey(labelSlug(target.field));
+    const key = learnedListKey(labelSlug(target.field), target.widget?.learnContext);
     this.learnedLists.set(key, labels);
     const sent = `${key}\u001f${labels.join('\u001f')}`;
     if (this.learnedSent.has(sent)) return;
@@ -3051,7 +3078,7 @@ export class FillRun {
     const rootNow = () => this.rootNow();
     const hasher = await this.valueHasher();
     this.alive();
-    await this.askLearnedLists();
+    await this.askLists();
     return runLoop({
       content: env.content,
       adapter: env.page.adapter,
@@ -3101,6 +3128,7 @@ export class FillRun {
       widgetReadings: this.widgetReadings,
       // s2 lists: what this host's dropdowns showed before, and each learnable dropdown's whole read told.
       learnedLists: this.learnedLists,
+      storedLists: this.storedLists,
       learn: (target, labels) => this.learnList(target, labels),
       runId: () => this.runId,
       ...(env.options.resume ? { resume: env.options.resume } : {}),

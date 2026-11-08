@@ -8,29 +8,24 @@
  * draft/confirm, panel/saveAnswer, answer/save and answer/read.
  */
 import { z } from 'zod';
-import { EXTENSION_SCOPES } from '../contract/tailorit/connect';
-import { RESUME_CHOICE_REASONS } from '../contract/tailorit/lookup';
 import { AUTOFILL_AI_LIMITS } from '../contract/tailorit/ai';
-import { AutofillProfileSchema, AutofillSensitiveSchema, WORK_ARRANGEMENTS } from '../contract/tailorit/profile';
-import { AUTOFILL_JOB_SEARCH_MAX, AUTOFILL_JOB_SEARCH_QUERY_MAX } from '../contract/tailorit/tracker';
-import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from '../contract/tailorit/resumes';
-import { AUTOFILL_AGENT_FINISHED_STATES, AUTOFILL_AGENT_REASONS } from '../contract/tailorit/agent';
 import { AutofillSignInHostSchema, AUTOFILL_SIGN_IN_LIMITS } from '../contract/tailorit/credentials';
 import { FIELD_FORMATS, FIELD_KINDS, FIELD_VISIBILITIES, LABEL_SOURCES, MATCHER_STAGES,
   PLATFORMS } from '../core/enums';
 import { MAX_REVEAL_EDGES } from '../core/loop/bookkeeping';
 import { MAX_SEARCH_QUERIES } from '../core/matcher/searchLimits';
 import { SHOWN_CATEGORIES } from '../core/steps/blocks';
-import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
 import { REASON_CODES } from '../core/types/fill';
 import { ANSWER_BASES, FILE_REFS, RULE_IDS } from '../core/types/intent';
 import { MATCH_FLAGS, MATCH_RULES } from '../core/types/match';
 import { MAX_REPEATABLE_BLOCKS, MAX_RUN_STATE_DRAFTS, MAX_STEPS, PAUSE_REASONS, REPEATABLE_KINDS, RUN_STATUSES } from
   '../core/types/run';
-import { LEARNED_KEY, MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS, MAX_LEARNED_PER_HOST } from '../shared/learned-lists';
+import {
+  LEARNED_KEY, MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS, MAX_LEARNED_PER_HOST, STORED_LIST_IDS,
+} from '../shared/learned-lists';
 import { RECOGNITION_REASONS } from '../shared/recognition';
 import { FrameReportSchema } from '../shared/report';
-import { ContentSettingsSchema, SettingsSchema } from '../shared/settings';
+import { ContentSettingsSchema } from '../shared/settings';
 import { MESSAGE_VERSION } from './envelope';
 
 const Text = (max: number) => z.string().max(max);
@@ -437,10 +432,13 @@ const contentMessages = [
    *  into that one document. The only message a company's own page sends before then. */
   z.strictObject({ v, type: z.literal('page/recognised'), reason: z.enum(RECOGNITION_REASONS) }),
   // ── s2 lists (snapshot round 2, decision 1: learned lists) ──
-  /** The lists the sending frame's host showed before (background/learned-lists.ts), asked once per run where the scan
-   *  holds a learnable dropdown (dom/widgets/known.ts). The worker reads the host from Chrome's sender address, never
-   *  a payload. Answered LearnedListsAnswerSchema. */
-  z.strictObject({ v, type: z.literal('lists/known') }),
+  /** The lists the sending frame's host showed before (background/learned-lists.ts), and the stored lists of the ids
+   *  its scan's adapter names (`stored`: background/stored-lists.ts, the lists the content script never carries),
+   *  asked before a step's loop where the scan holds a learnable dropdown or a stored list not served yet
+   *  (dom/widgets/known.ts). The worker reads the host from Chrome's sender address, never a payload. Answered
+   *  LearnedListsAnswerSchema. */
+  z.strictObject({ v, type: z.literal('lists/known'),
+    stored: z.array(z.enum(STORED_LIST_IDS)).max(STORED_LIST_IDS.length).optional() }),
   /** A learnable dropdown's complete whole read: its label's key (the first 16 hex digits of its slug's SHA-256) and
    *  its option labels (page text, never a value), kept for the sender's host. Nothing is kept from a private tab. */
   z.strictObject({ v, type: z.literal('lists/learn'), key: z.string().regex(LEARNED_KEY),
@@ -457,131 +455,13 @@ const e2eContentMessages = __E2E__
 export const ContentMessageSchema = z.discriminatedUnion('type', [...contentMessages, ...e2eContentMessages]);
 export type ContentMessage = z.infer<typeof ContentMessageSchema>;
 
-// ── Extension pages (side panel, options) → worker ────────────────────────────────────────────────────────────────
-
-const TabId = Count;
-const FrameRef = { tabId: TabId, frameId: Count, fieldKey: Key };
-
 /** The person's choice at a policy card: 'fill' is Fill anyway, 'cancel' is Cancel. */
 export const POLICY_DECISIONS = ['fill', 'cancel'] as const;
 export type PolicyDecision = (typeof POLICY_DECISIONS)[number];
 
-/** The longest custom question (v2): TailorIT's cap on a draft's question (AUTOFILL_AI_LIMITS.draft.question). */
-export const MAX_CUSTOM_QUESTION = 1000;
-/** A custom question's answer length: Short, Medium or Long (AUTOFILL_CUSTOM_QUESTION_LENGTHS: 600, 1500, 3000). */
-export const ASK_LENGTHS = ['short', 'medium', 'long'] as const;
-export type AskLength = (typeof ASK_LENGTHS)[number];
-
 /** What the worker asks the form frame to relay for the job card (v2): its lookup, or Add/Save to tracker. */
 export const JOB_RELAY_ACTIONS = ['lookup', 'add'] as const;
 export type JobRelayAction = (typeof JOB_RELAY_ACTIONS)[number];
-
-/** A job of the tab's last "Autofill for another job" search, as the panel names it (v3 Phase 3b): its place in that
- *  search, never TailorIT's id. */
-export const JobRefSchema = z.string().regex(/^j[0-9]$/);
-
-export const PageMessageSchema = z.discriminatedUnion('type', [
-  z.strictObject({ v, type: z.literal('ping') }),
-  z.strictObject({ v, type: z.literal('panel/fill'), tabId: TabId, dryRun: z.boolean(),
-    /** v4: "Sign up & Autofill": this run signs in, or creates the account, at the tab's next account wall once, as
-     *  Sign-in mode Auto would (the same rules: credentials:read, the disclosure acknowledged, a password never kept),
-     *  whatever the mode says. */
-    signIn: z.literal(true).optional() }),
-  /** The toolbar's Continue and Cancel, for every frame that reported. Continue only resumes a pause; it never
-   *  answers a policy card. */
-  z.strictObject({ v, type: z.literal('panel/continue'), tabId: TabId }),
-  z.strictObject({ v, type: z.literal('panel/cancel'), tabId: TabId }),
-  /** The side panel's policy card: the decision for the one frame whose run waits at policy-notice. */
-  z.strictObject({ v, type: z.literal('panel/policyDecision'), tabId: TabId, frameId: Count,
-    decision: z.enum(POLICY_DECISIONS) }),
-  z.strictObject({ v, type: z.literal('panel/focus'), ...FrameRef }),
-  z.strictObject({ v, type: z.literal('panel/describe'), ...FrameRef }),
-  z.strictObject({ v, type: z.literal('panel/confirmDraft'), ...FrameRef }),
-  z.strictObject({ v, type: z.literal('panel/saveAnswer'), ...FrameRef }),
-  z.strictObject({ v, type: z.literal('settings/get') }),
-  /** The audit of 2026-11-06 (M4): `base`, the settings the page last read; the worker then applies only what the page
-   *  changed from them onto the settings stored now, so a mode changed meanwhile elsewhere (the side panel's gear, the
-   *  options page in another window) is kept. Without it, the settings sent are stored whole. */
-  z.strictObject({ v, type: z.literal('settings/save'), settings: SettingsSchema, base: SettingsSchema.optional() }),
-  z.strictObject({ v, type: z.literal('auth/status') }),
-  z.strictObject({ v, type: z.literal('auth/startPairing') }),
-  z.strictObject({ v, type: z.literal('auth/redeemCode'), code: z.string().regex(/^[0-9A-Za-z -]{16,24}$/) }),
-  z.strictObject({ v, type: z.literal('auth/disconnect') }),
-  /** v3 Phase 4 review: the person read the updated disclosure (AuthStatus.disclosure 'changed') and chose I
-   *  understand: its version is kept with the connection. */
-  z.strictObject({ v, type: z.literal('auth/acknowledgeDisclosure') }),
-  z.strictObject({ v, type: z.literal('runs/clear') }),
-  /** Phase 6: the anonymous counters, read and cleared by the options page. */
-  z.strictObject({ v, type: z.literal('telemetry/get') }),
-  z.strictObject({ v, type: z.literal('telemetry/clear') }),
-  /** One read of a tab's reports; the `panel` port follows them (below). */
-  z.strictObject({ v, type: z.literal('panel/reports'), tabId: TabId }),
-  /** The side panel's job card (v2): what TailorIT knows of the job in the tab's form frame, from the worker's memory,
-   *  or looked up through that frame (job/refresh) when the memory has none. */
-  z.strictObject({ v, type: z.literal('panel/job'), tabId: TabId }),
-  /** "Add this job to TailorIT" and "Save to tracker" (v2): the posting of the tab's form frame goes to TailorIT's jobs
-   *  and the person's tracker (job/refresh {action: 'add'}). */
-  z.strictObject({ v, type: z.literal('panel/addJob'), tabId: TabId }),
-  /** The resume picker behind the card's Change (v2): the account's resumes, the one the card attaches marked. */
-  z.strictObject({ v, type: z.literal('panel/resumes'), tabId: TabId }),
-  /** The person chose the resume to attach in this tab (null: TailorIT's suggestion again). Kept in the worker's memory;
-   *  the card is looked up again with it, and the tab's next fill attaches it. */
-  z.strictObject({ v, type: z.literal('panel/setResume'), tabId: TabId, resumeId: Id.nullable() }),
-  /** "Ask a custom question" (v2): the person's own question, answered by TailorIT's AI from the tab's active resume. */
-  z.strictObject({ v, type: z.literal('panel/ask'), tabId: TabId, question: z.string().min(1).max(MAX_CUSTOM_QUESTION),
-    length: z.enum(ASK_LENGTHS) }),
-  /** The job card's cover letter (Phase G): whether the person has a letter for the tab's job (`write` false: TailorIT
-   *  writes nothing), or Write it now (`write` true: TailorIT's AI writes one when there is none). States only. */
-  z.strictObject({ v, type: z.literal('panel/letter'), tabId: TabId, write: z.boolean() }),
-  /** v3 Phase 3: Skip on the field the run in that frame writes now (the side panel's, after 2 s on it). The frame gives
-   *  that one write up and goes on; a key, never a value, and never a guard. */
-  z.strictObject({ v, type: z.literal('panel/skip'), ...FrameRef }),
-  /** v3 Phase 3: whether the launcher is hidden on the tab's site, or everywhere (the panel offers to show it again). */
-  z.strictObject({ v, type: z.literal('panel/launcher'), tabId: TabId }),
-  /** v3 Phase 3: "Show the TailorIT button again": the site's and the everywhere flag cleared, the tab's frames told. */
-  z.strictObject({ v, type: z.literal('panel/showLauncher'), tabId: TabId }),
-  /** v3 Phase 3b, "Autofill for another job": the person's tracked jobs whose title or company holds the words typed
-   *  (GET /api/autofill/jobs/search). Answered with references to the search, never TailorIT's ids. */
-  z.strictObject({ v, type: z.literal('panel/jobSearch'), tabId: TabId, query: Text(AUTOFILL_JOB_SEARCH_QUERY_MAX) }),
-  /** v3 Phase 3b: the job the person chose from the tab's last search (`ref`), which the card, the match, the resume
-   *  and the fill use for this page from now on (the lookup's `jobId`); null: the page's own match again. */
-  z.strictObject({ v, type: z.literal('panel/chooseJob'), tabId: TabId, ref: JobRefSchema.nullable() }),
-  /** v3 Phase 3b, "Ask TailorIT to support this site": the tab's host name, alone, to TailorIT. */
-  z.strictObject({ v, type: z.literal('panel/siteRequest'), tabId: TabId }),
-  /** v3 Phase 3b, "Your autofill information": the profile as TailorIT holds it, for the side panel's editor. v4 ui:
-   *  `sensitive: false` (the side panel's check that the profile is complete) leaves the sensitive part unread. */
-  z.strictObject({ v, type: z.literal('panel/profile'), sensitive: z.literal(false).optional() }),
-  /** v3 Phase 3b: the editor's save, from the revision it loaded; `sensitive` only where the connection may read and
-   *  write it. Sent straight to TailorIT, never kept or logged. */
-  z.strictObject({ v, type: z.literal('panel/saveProfile'), revision: Count, profile: AutofillProfileSchema,
-    sensitive: AutofillSensitiveSchema.optional() }),
-  /** v3 Phase 3b: Change's "Apply without resume" for this tab (`without` true: a fill attaches none, and the resume
-   *  field is left to the person), or not (TailorIT's choice, or the resume chosen, again). */
-  z.strictObject({ v, type: z.literal('panel/withoutResume'), tabId: TabId, without: z.boolean() }),
-  /** v3 Phase 4: the panel's "Continue to the next page" or "Submit application", on the person's click in the side
-   *  panel, for the frame whose report offers it. `confirmed`: the person confirmed a Submit with required fields
-   *  still empty. */
-  z.strictObject({ v, type: z.literal('panel/press'), tabId: TabId, frameId: Count, target: z.enum(STEP_TARGETS),
-    confirmed: z.boolean() }),
-  /** v3 Phase 4 review: Try again, when TailorIT's tracker could not be told of a submitted application (offline, or a
-   *  server failure): the worker asks once more for the same submission. */
-  z.strictObject({ v, type: z.literal('panel/retryApplied'), tabId: TabId }),
-  /** v3 Phase 5: the auto-apply agent, as the options page and the side panel show it (value-free). */
-  z.strictObject({ v, type: z.literal('agent/status') }),
-  /** v3 Phase 8: Options › "Where Autofill works" › Company career sites: on only while the person turned it on and
-   *  Chrome holds its permission. */
-  z.strictObject({ v, type: z.literal('sites/get') }),
-  /** v3 Phase 8: turns it on (the page asked Chrome for its permission on the person's click first) or off (the worker
-   *  gives the permission back); the worker registers the sentinel while it is on. */
-  z.strictObject({ v, type: z.literal('sites/set'), on: z.boolean() }),
-  /** Options › "Run auto-apply": on or off. Turning it on needs the person's one-time confirmation (`confirmed`, once:
-   *  the worker keeps it), a connection with agent:run and the disclosure acknowledged. */
-  z.strictObject({ v, type: z.literal('agent/set'), on: z.boolean(), confirmed: z.literal(true).optional() }),
-  /** The status's Stop: the job running now is left for the person (needs-you, cancelled), its window closed, and
-   *  Run auto-apply turned off. */
-  z.strictObject({ v, type: z.literal('agent/stop') }),
-]);
-export type PageMessage = z.infer<typeof PageMessageSchema>;
 
 // ── The review panel's port (`panel`, extension pages only) ───────────────────────────────────────────────────────
 
@@ -626,34 +506,6 @@ export const PageStateSchema = z.strictObject({
   waits: z.enum(WALL_WAITS).optional(),
 });
 export type PageState = z.infer<typeof PageStateSchema>;
-
-/** A tab's reports, one per frame that reported, by frame id. They hold labels and statuses, never a value. `page` is
- *  the tab's page state (v2; absent from an older worker). */
-const TabReportsShape = { tabId: TabId, reports: z.array(FrameReportSchema).max(20), page: PageStateSchema.optional() };
-
-/** What changed for every side panel (v2): the connection (a token stored or dropped, perhaps from another window) or
- *  the settings. */
-export const PANEL_CHANGES = ['connection', 'settings', 'agent'] as const;
-
-export const PanelPortMessageSchema = z.discriminatedUnion('type', [
-  /** Page → worker: follow this tab (the side panel sends it again when the active tab changes). `side` (v3 Phase 3):
-   *  the browser's side panel, not the report page, so the tab's launcher hides while it is open. */
-  z.strictObject({ v, type: z.literal('panel/watch'), tabId: TabId, side: z.literal(true).optional() }),
-  /** Worker → page: the watched tab's reports, once at the watch and again on every change. */
-  z.strictObject({ v, type: z.literal('panel/update'), ...TabReportsShape }),
-  /** Worker → page (v2): the connection or the settings changed. The panel reads them again, and drops a job card it
-   *  read with the old connection at once. Nothing else: no token, no account, no setting. */
-  z.strictObject({ v, type: z.literal('panel/changed'), what: z.enum(PANEL_CHANGES) }),
-]);
-export type PanelPortMessage = z.infer<typeof PanelPortMessageSchema>;
-
-// ── TailorIT's connect page → worker (externally_connectable) ─────────────────────────────────────────────────────
-
-export const ExternalMessageSchema = z.discriminatedUnion('type', [
-  z.strictObject({ v, type: z.literal('pair/complete'), state: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-    code: z.string().regex(/^[0-9A-Za-z -]{16,24}$/) }),
-]);
-export type ExternalMessage = z.infer<typeof ExternalMessageSchema>;
 
 // ── Worker → content script ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -829,215 +681,20 @@ export const JobPostingTextAnswerSchema = z.strictObject({
   attestation: z.literal(true).optional(),
 });
 
-// ── Answers to extension pages ────────────────────────────────────────────────────────────────────────────────────
-
-/** settings/get and settings/save: the settings as stored. */
-export const SettingsAnswerSchema = z.strictObject({ settings: SettingsSchema });
-
-/** auth/status, and the answer to auth/redeemCode and auth/disconnect: the connection as the options page shows it.
- *  The token itself is never in it, nor in any other answer. */
-export const AuthStatusSchema = z.strictObject({
-  /** 'connected': a token is held. The other three hold none: 'expired' and 'revoked' (TailorIT answered 401) say why
-   *  the last one went, until the worker restarts. */
-  connection: z.enum(['connected', 'not-connected', 'expired', 'revoked']),
-  /** The account's name and email, read from TailorIT's session into memory; null when not connected or not read. */
-  account: z.strictObject({ name: Text(200), email: Text(254) }).nullable(),
-  scopes: z.array(z.enum(EXTENSION_SCOPES)).max(EXTENSION_SCOPES.length),
-  /** When the token expires, in ms since the epoch; null when not connected. */
-  expiresAt: Count.nullable(),
-  /** Whether Chrome agreed to keep storage.local away from content scripts. 'refused' blocks filling. */
-  storageAccess: z.enum(['pending', 'restricted', 'refused']),
-  /** TailorIT answered with another API version: nothing is filled until one side is updated. */
-  versionMismatch: z.boolean(),
-  /** A pairing started here and not completed yet: when it lapses, in ms since the epoch. */
-  pairingExpiresAt: Count.nullable(),
-  /** v3 Phase 4 review: while connected, whether the person has acknowledged the disclosure as it reads now
-   *  ('current'), or it changed since they connected or last chose I understand ('changed': the side panel and the
-   *  options page show it again; Submit mode Auto, recording Applied and the lookup as a page loads wait for it). */
-  disclosure: z.enum(['current', 'changed']).optional(),
-});
-export type AuthStatus = z.infer<typeof AuthStatusSchema>;
-
-/** auth/startPairing: TailorIT's connect page was opened; the pairing lapses at `expiresAt` (ms since the epoch). */
-export const StartPairingAnswerSchema = z.strictObject({ expiresAt: Count });
-
-/** panel/fill, panel/continue and panel/cancel: how many frames of the tab the message reached. */
-export const PanelSentAnswerSchema = z.strictObject({ frames: Count });
-
-/** panel/reports: the tab's reports (the same shape the panel port pushes). */
-export const TabReportsAnswerSchema = z.strictObject(TabReportsShape);
-export type TabReports = z.infer<typeof TabReportsAnswerSchema>;
-
-/** The job card's match (v2): the attached resume's keywords found in the job ("9 of 12 keywords", 75%), or why there
- *  is no number: the posting names no keywords, or the resume's text could not be read. */
-export const JobCardMatchSchema = z.discriminatedUnion('state', [
-  z.strictObject({ state: z.literal('ok'), matchedCount: Count, total: z.number().int().positive(),
-    percentage: z.number().int().min(0).max(100) })
-    .refine((match) => match.matchedCount <= match.total, { message: 'more keywords found than the job names' }),
-  z.strictObject({ state: z.literal('no-keywords') }),
-  z.strictObject({ state: z.literal('unreadable') }),
-]);
-export type JobCardMatch = z.infer<typeof JobCardMatchSchema>;
-
-/**
- * What the side panel's job card shows (v2): 'unavailable' when TailorIT could not say (it failed, or the frame did not
- * relay); else the job (null: not in the person's TailorIT jobs), their tracker entry, the resume a fill attaches (its
- * title, which may be the person's name, its file kind and why it was chosen), its match, and whether "Add this job to
- * TailorIT" can work from this page's address (Greenhouse's and Lever's own pages). Never an id, an address, the posting
- * text, a file name or the ATS reading; the date it was posted only as a time (ms), to say "2 days ago".
- */
-export const JobCardSchema = z.discriminatedUnion('state', [
-  z.strictObject({ state: z.literal('unavailable') }),
-  z.strictObject({
-    state: z.literal('answered'),
-    job: z.strictObject({ title: Text(300), company: Text(200), location: Text(300), closed: z.boolean(),
-      postedAt: Count.nullable(), salary: Text(120).nullable(), workArrangement: z.enum(WORK_ARRANGEMENTS).nullable(),
-      /** v4: the industry as TailorIT's Jobs page names it ("Finance"), under the company on the card; absent or null
-       *  when TailorIT does not say. */
-      industry: Text(120).nullable().optional() })
-      .nullable(),
-    tracked: z.strictObject({ status: z.number().int(), archived: z.boolean() }).nullable(),
-    resume: z.strictObject({ label: Text(200), fileKind: z.enum(AUTOFILL_FILE_KINDS), reason: z.enum(RESUME_CHOICE_REASONS) })
-      .nullable(),
-    match: JobCardMatchSchema.nullable(),
-    addable: z.boolean(),
-    /** v3 Phase 3b: the person chose "Apply without resume" for the tab: a fill attaches none. */
-    withoutResume: z.literal(true).optional(),
-    /** v3 Phase 3b: the job is the one the person chose with "Autofill for another job" (the lookup's `chosen`). */
-    chosen: z.literal(true).optional(),
-  }),
-]);
-export type JobCard = z.infer<typeof JobCardSchema>;
-
-/** panel/job: the card of the tab's form frame; null when the tab shows no form of ours or the extension is not
- *  connected. */
-export const PanelJobAnswerSchema = z.strictObject({ tabId: TabId, card: JobCardSchema.nullable() });
-export type PanelJobAnswer = z.infer<typeof PanelJobAnswerSchema>;
-
-/**
- * What came of Add this job to TailorIT or Save to tracker (v2), which the panel says: 'added' (new to TailorIT, now in
- * the tracker as Saved), 'saved' (TailorIT had it: it is in the tracker now), 'closed' (the ATS has no such posting any
- * more), 'unsupported' (TailorIT cannot add from this address), 'not-allowed' (this connection was made before adding
- * jobs existed: connect again), 'rate-limited', 'not-connected', 'unavailable' (TailorIT or the ATS could not be reached,
- * or the page did not answer). The card itself is read again with panel/job.
- */
-export const ADD_JOB_OUTCOMES = ['added', 'saved', 'closed', 'unsupported', 'not-allowed', 'rate-limited', 'not-connected',
-  'unavailable'] as const;
-export type AddJobOutcome = (typeof ADD_JOB_OUTCOMES)[number];
-export const AddJobAnswerSchema = z.strictObject({ outcome: z.enum(ADD_JOB_OUTCOMES) });
-
 /** s2 lists: lists/known's answer: the host's learned lists, the most recently learned of each key (at most
- *  MAX_LEARNED_PER_HOST). Option labels only. */
+ *  MAX_LEARNED_PER_HOST), and the stored lists asked for. Option labels only. */
 export const LearnedListsAnswerSchema = z.strictObject({ lists: z.array(z.strictObject({
   key: z.string().regex(LEARNED_KEY),
   labels: z.array(z.string().min(1).max(MAX_LEARNED_LABEL)).min(1).max(MAX_LEARNED_OPTIONS),
-})).max(MAX_LEARNED_PER_HOST) });
+})).max(MAX_LEARNED_PER_HOST),
+  /** The stored lists asked for (lists/known's `stored`), each by its id, as a whole read takes it. */
+  stored: z.array(z.strictObject({ id: z.enum(STORED_LIST_IDS),
+    labels: z.array(z.string().min(1).max(MAX_LEARNED_LABEL)).min(1).max(MAX_LEARNED_OPTIONS) }))
+    .max(STORED_LIST_IDS.length).optional() });
 export type LearnedListsAnswer = z.infer<typeof LearnedListsAnswerSchema>;
 
 /** v3 Phase 8: page/recognised's answer: the content script was injected into the frame (or was there already). */
 export const PageRecognisedAnswerSchema = z.strictObject({ injected: z.boolean() });
-/** v3 Phase 8: Options › "Where Autofill works" › Company career sites: turned on by the person, and Chrome holding its
- *  permission (it acts only with both). */
-export const SitesStateSchema = z.strictObject({ on: z.boolean(), granted: z.boolean() });
-export type SitesState = z.infer<typeof SitesStateSchema>;
-
-/** panel/resumes: the account's resumes as the picker lists them (title, file kind, built or uploaded), the one the
- *  tab's card attaches marked `current`. Never a file name. */
-export const ResumeListAnswerSchema = z.strictObject({
-  items: z.array(z.strictObject({ id: Id, label: Text(200), fileKind: z.enum(AUTOFILL_FILE_KINDS),
-    kind: z.enum(AUTOFILL_RESUME_KINDS), current: z.boolean() })).max(200),
-});
-export type ResumeListAnswer = z.infer<typeof ResumeListAnswerSchema>;
-
-/**
- * What came of a custom question (v2): the answer and the title of the resume it was written from; or why there is
- * none: 'no-resume' (the account has no resume to write from), 'sensitive' (a self-identification, legal, pay or consent
- * question, or an attention check: never sent to the AI, by the extension's own screen or TailorIT's), 'unusable' (the
- * AI's answer failed a check: a canary, talk of being an AI, a foreign link), 'rate-limited', 'not-connected',
- * 'unavailable' (TailorIT's AI could not answer just now), 'ai-off' (AI-written answers, the drafts setting, are turned
- * off: nothing is sent). An answer says whether the posting says AI-assisted applications are not allowed (`policy`:
- * the form frame's visible text, or a notice a run of the tab raised), so the panel shows that notice with it. Kept in
- * the side panel's memory only.
- */
-export const ASK_REFUSALS = ['no-resume', 'sensitive', 'unusable', 'rate-limited', 'not-connected', 'unavailable',
-  'ai-off'] as const;
-export const ASK_OUTCOMES = ['answered', ...ASK_REFUSALS] as const;
-export type AskOutcome = (typeof ASK_OUTCOMES)[number];
-export const PanelAskAnswerSchema = z.discriminatedUnion('outcome', [
-  z.strictObject({ outcome: z.literal('answered'), text: Text(3000).min(1), resumeLabel: Text(200), policy: z.boolean() }),
-  z.strictObject({ outcome: z.enum(ASK_REFUSALS) }),
-]);
-export type PanelAskAnswer = z.infer<typeof PanelAskAnswerSchema>;
-
-/**
- * What the job card's cover-letter row says (Phase G; panel/letter), states only: 'yours' (a finished letter of the
- * person's for this job), 'written' (TailorIT's AI has just written it: Write it now), 'none' (no letter for this job:
- * one is written when the form asks for one), 'failed' (TailorIT could not write one, or the person's own is not
- * finished), 'ai-off' (AI-written answers are off, or the posting forbids AI: nothing is written), 'not-allowed' (this
- * connection was made before cover letters: connect again), 'rate-limited', 'not-connected', 'unavailable' (TailorIT
- * could not be asked: no job facts, no resume, or it failed). Never a letter's id or a word of it.
- */
-export const LETTER_OUTCOMES = ['yours', 'written', 'none', 'failed', 'ai-off', 'not-allowed', 'rate-limited',
-  'not-connected', 'unavailable'] as const;
-export type LetterOutcome = (typeof LETTER_OUTCOMES)[number];
-export const PanelLetterAnswerSchema = z.strictObject({ outcome: z.enum(LETTER_OUTCOMES) });
-export type PanelLetterAnswer = z.infer<typeof PanelLetterAnswerSchema>;
-
-/** panel/launcher (v3 Phase 3): where the person hid the launcher of the tab's site: nowhere, on that site, or on every
- *  site. */
-export const PanelLauncherAnswerSchema = z.strictObject({ hidden: z.enum(['none', 'visit', 'site', 'everywhere']) });
-export type PanelLauncherAnswer = z.infer<typeof PanelLauncherAnswerSchema>;
-
-/** panel/jobSearch (v3 Phase 3b): the jobs found, each with the reference panel/chooseJob takes, its title, company and
- *  where it is; or why there are none ('not-allowed': a connection made before version 3; 'not-connected';
- *  'rate-limited'; 'unavailable'). Never TailorIT's id. */
-export const JOB_SEARCH_REFUSALS = ['not-allowed', 'not-connected', 'rate-limited', 'unavailable'] as const;
-export type JobSearchRefusal = (typeof JOB_SEARCH_REFUSALS)[number];
-export const PanelJobSearchAnswerSchema = z.discriminatedUnion('outcome', [
-  z.strictObject({ outcome: z.literal('found'), items: z.array(z.strictObject({ ref: JobRefSchema, title: Text(300),
-    company: Text(200), location: Text(300) })).max(AUTOFILL_JOB_SEARCH_MAX) }),
-  z.strictObject({ outcome: z.enum(JOB_SEARCH_REFUSALS) }),
-]);
-export type PanelJobSearchAnswer = z.infer<typeof PanelJobSearchAnswerSchema>;
-
-/** panel/siteRequest (v3 Phase 3b): 'sent'; 'no-host' (the browser did not say which site the tab shows: the toolbar
- *  icon lets the extension read the tab's address for that tab, while it stays on the same origin); 'not-allowed',
- *  'not-connected', 'rate-limited', 'unavailable'. */
-export const SITE_REQUEST_OUTCOMES = ['sent', 'no-host', 'not-allowed', 'not-connected', 'rate-limited',
-  'unavailable'] as const;
-export type SiteRequestOutcome = (typeof SITE_REQUEST_OUTCOMES)[number];
-export const PanelSiteRequestAnswerSchema = z.strictObject({ outcome: z.enum(SITE_REQUEST_OUTCOMES) });
-
-/** panel/profile (v3 Phase 3b): the profile as TailorIT holds it (the person's own data, for their editor), its
- *  revision, the note's lines TailorIT keeps from the AI (`flaggedLines`), whether this connection may save it
- *  (profile:write) and the sensitive part when it may read it (profile:sensitive). Shown in the side panel only, kept
- *  in its memory while the editor is open, never stored or logged. */
-export const ProfileViewSchema = z.strictObject({
-  revision: Count,
-  profile: AutofillProfileSchema,
-  flaggedLines: z.array(Count).max(500),
-  canWrite: z.boolean(),
-  sensitive: z.discriminatedUnion('state', [
-    z.strictObject({ state: z.literal('shared'), value: AutofillSensitiveSchema }),
-    z.strictObject({ state: z.literal('not-shared') }),
-    z.strictObject({ state: z.literal('unavailable') }),
-  ]),
-});
-export type ProfileView = z.infer<typeof ProfileViewSchema>;
-
-/** panel/saveProfile (v3 Phase 3b): 'saved', with the new revision and the note's lines TailorIT keeps from the AI;
- *  else 'conflict' (it changed elsewhere since it was loaded: load it again), 'invalid' (TailorIT refused a value),
- *  'not-allowed' (this connection may not change the profile: connect again), 'not-connected', 'rate-limited',
- *  'unavailable'. */
-export const PROFILE_SAVE_REFUSALS = ['conflict', 'invalid', 'not-allowed', 'not-connected', 'rate-limited',
-  'unavailable'] as const;
-export type ProfileSaveRefusal = (typeof PROFILE_SAVE_REFUSALS)[number];
-export const PanelSaveProfileAnswerSchema = z.discriminatedUnion('outcome', [
-  z.strictObject({ outcome: z.literal('saved'), revision: Count, flaggedLines: z.array(Count).max(500) }),
-  z.strictObject({ outcome: z.enum(PROFILE_SAVE_REFUSALS) }),
-]);
-export type PanelSaveProfileAnswer = z.infer<typeof PanelSaveProfileAnswerSchema>;
-
 /** panel/press and run/press (v3 Phase 4): 'pressed' (the page's own Next or Submit was clicked); 'required-empty' (a
  *  Submit with required fields still empty, `count` of them, that the person did not confirm); 'not-offered' (the step
  *  no longer offers that button: another step, a step not final, a button hidden or disabled); 'blocked' (a CAPTCHA,
@@ -1064,62 +721,6 @@ export const SignInCredentialAnswerSchema = z.strictObject({
   password: z.string().min(1).max(AUTOFILL_SIGN_IN_LIMITS.password).regex(/^[^\r\n]*$/).optional(),
 });
 export type SignInCredential = z.infer<typeof SignInCredentialAnswerSchema>;
-
-/** Why the auto-apply agent cannot run now (v3 Phase 5): not connected, a connection without agent:run (made before
- *  version 3), the disclosure not acknowledged as it reads now, no browser window of the person's open, or (the audit
- *  of 2026-11-06, M5) the browser offline, so no job is taken. */
-export const AGENT_BLOCKS = ['not-connected', 'no-scope', 'disclosure', 'no-window', 'offline'] as const;
-export type AgentBlock = (typeof AGENT_BLOCKS)[number];
-/** Why the agent paused itself, Run auto-apply off until the person turns it on again (the audit of 2026-11-06): the
- *  browser opened no window for a job, jobs in a row whose pages did not load (M5), or the person closed its window,
- *  which is their Stop (m14). */
-export const AGENT_PAUSES = ['no-window', 'page-errors', 'window-closed'] as const;
-export type AgentPause = (typeof AGENT_PAUSES)[number];
-/** Where the agent stands: off; on and waiting for a job (the queue empty, or its next look); on and running one; on
- *  but blocked (AGENT_BLOCKS). */
-export const AGENT_PHASES = ['off', 'waiting', 'running', 'blocked'] as const;
-export type AgentPhase = (typeof AGENT_PHASES)[number];
-
-/** agent/status, agent/set and agent/stop's answer (v3 Phase 5): value-free. `job` is the queued job's company and
- *  title as TailorIT named them; `doneToday` the jobs it finished today (this browser's day); `last` the latest result's
- *  state and reason. */
-export const AgentStatusSchema = z.strictObject({
-  on: z.boolean(),
-  /** The person confirmed, once, that applications will be submitted unattended with AI-guessed answers. */
-  confirmed: z.boolean(),
-  phase: z.enum(AGENT_PHASES),
-  blocked: z.enum(AGENT_BLOCKS).nullable(),
-  /** While off: why the agent paused itself (AGENT_PAUSES); null or absent when the person turned it off. */
-  paused: z.enum(AGENT_PAUSES).nullable().optional(),
-  /** Run auto-apply may be turned on now: connected with agent:run, the disclosure acknowledged. */
-  allowed: z.boolean(),
-  /** A result is kept that TailorIT has not taken yet (offline, its failure): it is sent again (the review). */
-  pending: z.boolean(),
-  job: z.strictObject({ company: Text(200), title: Text(300) }).nullable(),
-  doneToday: Count,
-  last: z.strictObject({ state: z.enum(AUTOFILL_AGENT_FINISHED_STATES), reason: z.enum(AUTOFILL_AGENT_REASONS).nullable() })
-    .nullable(),
-});
-export type AgentStatus = z.infer<typeof AgentStatusSchema>;
-
-/** runs/clear: how many stored runs were removed. */
-export const RunsClearAnswerSchema = z.strictObject({ cleared: Count });
-
-/** One anonymous count: the spec's five fields (closed lists and a boolean) and how many times they were counted.
- *  Nothing else: no key, label, address, account, time or version (core/telemetry/events.ts). */
-export const TelemetryCountSchema = z.strictObject({
-  platform: z.enum(PLATFORMS),
-  fieldKind: z.enum(FIELD_KINDS),
-  matcherStage: z.enum(MATCHER_STAGES),
-  outcome: z.enum(TELEMETRY_OUTCOMES),
-  tripwireTriggered: z.boolean(),
-  count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-});
-
-/** telemetry/get and telemetry/clear: the counts as storage.local holds them (none after a clear, or before the
- *  person opted in), one per combination of the five fields. */
-export const TelemetryAnswerSchema = z.strictObject({ counts: z.array(TelemetryCountSchema).max(MAX_TELEMETRY_COUNTS) });
-export type TelemetryAnswer = z.infer<typeof TelemetryAnswerSchema>;
 
 // ── Which answer goes with which message ──────────────────────────────────────────────────────────────────────────
 
@@ -1156,52 +757,6 @@ export const CONTENT_ANSWER_SCHEMAS = {
   'lists/learn': DoneAnswerSchema,
 } as const satisfies Record<Exclude<ContentMessage['type'], 'e2e/probe'>, z.ZodType>;
 
-/** The data schema of the worker's answer to each page message. */
-export const PAGE_ANSWER_SCHEMAS = {
-  ping: PingAnswerSchema,
-  'panel/fill': PanelSentAnswerSchema,
-  'panel/continue': PanelSentAnswerSchema,
-  'panel/cancel': PanelSentAnswerSchema,
-  'panel/policyDecision': DoneAnswerSchema,
-  'panel/focus': DoneAnswerSchema,
-  'panel/describe': FieldDescribeAnswerSchema,
-  'panel/confirmDraft': DoneAnswerSchema,
-  'panel/saveAnswer': SaveAnswerAnswerSchema,
-  'panel/reports': TabReportsAnswerSchema,
-  'panel/job': PanelJobAnswerSchema,
-  'panel/addJob': AddJobAnswerSchema,
-  'panel/resumes': ResumeListAnswerSchema,
-  'panel/setResume': DoneAnswerSchema,
-  'panel/ask': PanelAskAnswerSchema,
-  'panel/letter': PanelLetterAnswerSchema,
-  'panel/skip': DoneAnswerSchema,
-  'panel/launcher': PanelLauncherAnswerSchema,
-  'panel/showLauncher': DoneAnswerSchema,
-  'panel/jobSearch': PanelJobSearchAnswerSchema,
-  'panel/chooseJob': DoneAnswerSchema,
-  'panel/siteRequest': PanelSiteRequestAnswerSchema,
-  'panel/profile': ProfileViewSchema,
-  'panel/saveProfile': PanelSaveProfileAnswerSchema,
-  'panel/withoutResume': DoneAnswerSchema,
-  'panel/retryApplied': DoneAnswerSchema,
-  'panel/press': PressAnswerSchema,
-  'settings/get': SettingsAnswerSchema,
-  'settings/save': SettingsAnswerSchema,
-  'auth/status': AuthStatusSchema,
-  'auth/startPairing': StartPairingAnswerSchema,
-  'auth/redeemCode': AuthStatusSchema,
-  'auth/disconnect': AuthStatusSchema,
-  'auth/acknowledgeDisclosure': AuthStatusSchema,
-  'runs/clear': RunsClearAnswerSchema,
-  'telemetry/get': TelemetryAnswerSchema,
-  'telemetry/clear': TelemetryAnswerSchema,
-  'agent/status': AgentStatusSchema,
-  'agent/set': AgentStatusSchema,
-  'agent/stop': AgentStatusSchema,
-  'sites/get': SitesStateSchema,
-  'sites/set': SitesStateSchema,
-} as const satisfies Record<PageMessage['type'], z.ZodType>;
-
 /** The data schema of a frame's answer to each message the worker sends it. */
 export const FRAME_ANSWER_SCHEMAS = {
   'run/start': DoneAnswerSchema,
@@ -1224,9 +779,6 @@ export const FRAME_ANSWER_SCHEMAS = {
   'agent/enter': EntryAnswerSchema,
   'site/stop': DoneAnswerSchema,
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
-
-/** pair/complete's answer: {} once the code is redeemed (TailorIT's page reads only `ok`). */
-export const EXTERNAL_ANSWER_SCHEMAS = { 'pair/complete': DoneAnswerSchema } as const satisfies Record<ExternalMessage['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1254,13 +806,12 @@ export const ResumePortMessageSchema = z.discriminatedUnion('type', [
   ...TRANSFER_MESSAGES,
 ]);
 
-/** The `preview` port (v3 Phase 3b): the side panel's PDF preview of the resume a fill of the tab attaches. The panel
- *  posts preview/request {tabId}; the worker answers as the resume port does (resume/header, resume/chunk, each
- *  acknowledged with resume/ack, resume/end, then the panel's resume/done; resume/error), from the same checked fetch,
- *  a PDF only. Extension pages only: the bytes never reach a page's process. */
-export const PreviewPortMessageSchema = z.discriminatedUnion('type', [
-  z.strictObject({ v, type: z.literal('preview/request'), tabId: TabId,
-    /** v4: which file of the tab's fill: the resume (the default) or the cover letter it attached or would attach. */
-    kind: z.enum(['resume', 'coverLetter']).optional() }),
-  ...TRANSFER_MESSAGES,
-]);
+// ── The content budget (snapshot round 2): what an extension page's schemas build with ──
+/** The helpers messaging/page-schemas.ts builds the extension pages' schemas with. Those schemas live apart, so the
+ *  content script, which never reads them, never carries them (nor the contract schemas only they name). */
+export { Count, Id, Key, Text, TRANSFER_MESSAGES, v };
+/** The extension pages' types, from messaging/page-schemas.ts (types only: nothing of that module reaches the content
+ *  script through here). */
+export type {
+  AddJobOutcome, AgentBlock, AgentPause, AgentPhase, AgentStatus, AskLength, AskOutcome, AuthStatus, ExternalMessage, JobCard, JobCardMatch, JobSearchRefusal, LetterOutcome, PageMessage, PanelAskAnswer, PanelJobAnswer, PanelJobSearchAnswer, PanelLauncherAnswer, PanelLetterAnswer, PanelPortMessage, PanelSaveProfileAnswer, ProfileSaveRefusal, ProfileView, ResumeListAnswer, SiteRequestOutcome, SitesState, TabReports, TelemetryAnswer,
+} from './page-schemas';

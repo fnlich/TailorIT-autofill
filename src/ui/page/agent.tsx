@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { AgentStatus } from '../../messaging/schemas';
-import { PanelPortMessageSchema } from '../../messaging/schemas';
+import { PanelPortMessageSchema } from '../../messaging/page-schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { request } from './request';

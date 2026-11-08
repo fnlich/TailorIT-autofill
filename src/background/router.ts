@@ -5,7 +5,8 @@
  */
 import type { z } from 'zod';
 import { refuse, type Answer } from '../messaging/envelope';
-import { ContentMessageSchema, PageMessageSchema, type ContentMessage, type PageMessage } from '../messaging/schemas';
+import { ContentMessageSchema, type ContentMessage, type PageMessage } from '../messaging/schemas';
+import { PageMessageSchema } from '../messaging/page-schemas';
 import type { Handler, Sender } from '../platform/types';
 import { log } from '../shared/log';
 import { allowedOn, channelOf, offAtsChannelOf, offAtsSenderOf, type Channel, type InjectedOf } from './senders';

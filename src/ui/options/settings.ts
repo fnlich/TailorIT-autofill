@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Settings } from '../../core/types/settings';
-import { PanelPortMessageSchema } from '../../messaging/schemas';
+import { PanelPortMessageSchema } from '../../messaging/page-schemas';
 import type { PagePlatform } from '../../platform/types';
 import { COPY } from '../../shared/copy';
 import { request } from '../page/request';

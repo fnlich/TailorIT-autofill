@@ -92,6 +92,7 @@ import {
   BUSY_SIGNS, type BusySign, type ScannedField, type ScanResult, type SettleResult, type WidgetReading,
 } from '../dom/types';
 import { newBridgeRun, newReadiness, readWidget, type LearnList } from '../dom/widgets';
+import type { StoredListId } from '../shared/learned-lists';
 import { log } from '../shared/log';
 import { Attribution } from './attribution';
 import { followUpWrite, type FollowUpSource, type QueuedWrite } from './follow-up';
@@ -187,6 +188,8 @@ export interface LoopEnv extends PassEnv {
   /** s2 lists: the lists this host's dropdowns showed before (ScanOptions.learnedLists), and where a learnable
    *  dropdown's complete whole read is told (the orchestrator keeps it and sends it to the worker). */
   learnedLists?: ReadonlyMap<string, readonly string[]>;
+  /** s2 lists: the stored lists the worker served the run (ScanOptions.storedLists). */
+  storedLists?: ReadonlyMap<StoredListId, readonly string[]>;
   learn?: LearnList;
   settle?: SettleTimings;
   options?: OptionsTimings;
@@ -438,7 +441,8 @@ class ReactiveLoop {
     const { env } = this;
     return this.seen(scan(env.root, env.adapter, { platform: env.platform, frameId: env.frameId,
       heldPlaceholders: this.held, widgetReadings: this.readings,
-      ...(env.learnedLists === undefined ? {} : { learnedLists: env.learnedLists }) }));
+      ...(env.learnedLists === undefined ? {} : { learnedLists: env.learnedLists }),
+      ...(env.storedLists === undefined ? {} : { storedLists: env.storedLists }) }));
   }
 
   /** A scan the attribution has seen; its rescans scan the form root found then, never the one it was made from. */

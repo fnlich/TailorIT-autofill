@@ -40,7 +40,9 @@ export {
   WIDGET_ROOT_SELECTOR,
 } from './aria';
 export { chooseThroughBridge, keepReading, remember, type BridgeAttempt, type WidgetFillContext } from './fill';
-export { learnable, learnedListKey, MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS, type LearnList } from './known';
+export {
+  learnable, learnedListKey, MAX_LEARNED_LABEL, MAX_LEARNED_OPTIONS, staleLearned, type LearnList,
+} from './known';
 export { widgetHolds } from './hold';
 export {
   afterAction, afterBridge, awaitPageReady, bridgeChoose, closeList, expandedState, newBridgeRun, newReadiness, openList,

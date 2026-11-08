@@ -21,7 +21,8 @@
  * card again: a worker Chrome stopped while idle answers it from the choices it kept in storage.session.
  */
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
-import { PanelPortMessageSchema, type PageState } from '../../messaging/schemas';
+import { type PageState } from '../../messaging/schemas';
+import { PanelPortMessageSchema } from '../../messaging/page-schemas';
 import type { PagePlatform, PortLike } from '../../platform/types';
 import type { FrameReport } from '../../shared/report';
 import { request } from '../page/request';

@@ -67,9 +67,8 @@ import {
   type AutofillAgentFinishedState, type AutofillAgentReason,
 } from '../contract/tailorit';
 import { ok, type Answer } from '../messaging/envelope';
-import {
-  AGENT_PAUSES, type AgentBlock, type AgentPause, type AgentStatus, type EntryAnswer, type EntryBlock,
-} from '../messaging/schemas';
+import { type AgentBlock, type AgentPause, type AgentStatus, type EntryAnswer, type EntryBlock } from '../messaging/schemas';
+import { AGENT_PAUSES } from '../messaging/page-schemas';
 import type { AgentAlarms, AgentWindows, AtsPage, StorageArea } from '../platform/types';
 import { platformOfUrl } from '../shared/hosts';
 import { log } from '../shared/log';

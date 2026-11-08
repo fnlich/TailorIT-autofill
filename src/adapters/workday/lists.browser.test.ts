@@ -4,9 +4,11 @@
  * s2-exelixis-state-open.html, snapshot1's exelixis "(1)": 61 rows drawn whole), with Workday's script stood in for as
  * workday-steps.browser.test.ts does (a click on a dropdown's button draws the snapshot's own list and names it, a click
  * on one of its options writes it on the button and closes it):
- * - the stored lists are the captures' own (adapters/workday/lists.ts);
+ * - the stored lists are the captures' own (background/stored-lists.ts, the worker's: the adapter names them by id,
+ *   adapters/workday/lists.ts, and a run's scans get them from the worker, lists/known: here, as it serves them);
  * - Country, and State while the country shown is the United States, are planned on the first pass from their stored
- *   lists, no list opened; any other dropdown is read when it opens, its list drawn whole read without a wait;
+ *   lists, no list opened; any other dropdown is read when it opens, its list drawn whole read without a wait; a scan
+ *   the worker served no list reads them lazy, as before;
  * - the planned option is chosen with one opening of its list, found at its place by its label, clicked and read back;
  *   a list the page shows otherwise is read whole (options-changed), and that read is the field's from then on;
  * - a dropdown with no stored list tells the run its whole read (learned), and a list learned before is its stored list.
@@ -23,8 +25,16 @@ import { scan, toFieldSpec } from '../../dom/scan';
 import type { ScannedField, WidgetReading } from '../../dom/types';
 import { fillWidget, learnedListKey, readList, readWidget } from '../../dom/widgets';
 import { SNAPSHOT_VIEWPORT } from '../test/expectations.testkit';
+import { STORED_LISTS, WORKDAY_COUNTRIES, WORKDAY_US_STATES } from '../../background/stored-lists';
+import type { StoredListId } from '../../shared/learned-lists';
 import { workdayAdapter } from './index';
-import { asDropdownList, WORKDAY_COUNTRIES, WORKDAY_SELECT_ONE, WORKDAY_US, WORKDAY_US_STATES } from './lists';
+import { WORKDAY_SELECT_ONE, WORKDAY_US } from './lists';
+
+/** A dropdown's whole list as a read takes it: Workday's "Select One" row, then the stored options. */
+const asDropdownList = (options: readonly string[]): readonly string[] => [WORKDAY_SELECT_ONE, ...options];
+/** The stored lists as the worker serves a run (lists/known): every scan of the run gets them. */
+const SERVED: ReadonlyMap<StoredListId, readonly string[]> =
+  new Map(Object.entries(STORED_LISTS) as Array<[StoredListId, readonly string[]]>);
 
 /** The Country list open, once the converter can drop its active option (the wd builder's s2-exelixis-country-open):
  *  checked against the stored list when it is there. */
@@ -119,7 +129,8 @@ async function standIn(country: string | null, labelsFor: Record<string, readonl
   return { fixture, doc, root, events, popup, list };
 }
 
-function fieldOf(page: Page, selector: string, options: Parameters<typeof scan>[2] = { platform: 'workday' }):
+function fieldOf(page: Page, selector: string,
+  options: Parameters<typeof scan>[2] = { platform: 'workday', storedLists: SERVED }):
   { field: ScannedField; result: ReturnType<typeof scan> } {
   const control = page.doc.querySelector(selector)!;
   const result = scan(page.root, workdayAdapter, options);
@@ -141,6 +152,9 @@ describe("Workday's stored lists are the snapshots' own", () => {
     expect(WORKDAY_COUNTRIES).toHaveLength(249);
     expect(new Set(WORKDAY_COUNTRIES).size).toBe(249);
     expect(WORKDAY_COUNTRIES).toContain(WORKDAY_US);
+    // The worker serves them whole, as a read takes them: "Select One" first.
+    expect(STORED_LISTS['workday.countries']).toEqual(asDropdownList(WORKDAY_COUNTRIES));
+    expect(STORED_LISTS['workday.us-states']).toEqual(asDropdownList(WORKDAY_US_STATES));
   });
 
   it.skipIf(Object.keys(COUNTRY_OPEN).length === 0)('the Country list: the 249 countries s2-exelixis-country-open shows open',
@@ -174,16 +188,30 @@ describe("Workday's Country and State planned from their stored lists on the fir
   it('declares every dropdown drawn whole, Country with its countries, State with the states only for the United States', async () => {
     const us = await standIn(WORKDAY_US);
     const declared = (page: Page, selector: string) => workdayAdapter.widgetFor!(page.doc.querySelector(selector)!)!;
-    expect(declared(us, COUNTRY)).toMatchObject({ kind: 'combobox', drawnWhole: true,
-      knownOptions: asDropdownList(WORKDAY_COUNTRIES) });
-    expect(declared(us, STATE)).toMatchObject({ drawnWhole: true, knownOptions: asDropdownList(WORKDAY_US_STATES) });
+    // The ids alone: the labels are the worker's.
+    expect(declared(us, COUNTRY)).toMatchObject({ kind: 'combobox', drawnWhole: true, storedList: 'workday.countries' });
+    expect(declared(us, STATE)).toMatchObject({ drawnWhole: true, storedList: 'workday.us-states' });
     expect(declared(us, PREFIX)).toMatchObject({ drawnWhole: true });
-    expect(declared(us, PREFIX).knownOptions).toBeUndefined();
+    expect(declared(us, PREFIX).storedList).toBeUndefined();
+    expect([declared(us, PREFIX).learnContext, declared(us, STATE).learnContext]).toEqual([undefined, undefined]);
     removeFixtures(document);
     for (const country of [null, 'Canada']) {
       const other = await standIn(country);
-      expect(declared(other, STATE).knownOptions, String(country)).toBeUndefined();
+      expect(declared(other, STATE).storedList, String(country)).toBeUndefined();
+      // The review of round 2 (L2): its list depends on the country shown, which keys a list learned for it.
+      expect(declared(other, STATE).learnContext, String(country)).toBe(country ?? '');
       removeFixtures(document);
+    }
+  });
+
+  it('reads Country and State lazy, as before, in a scan the worker served no list', async () => {
+    const us = await standIn(WORKDAY_US);
+    for (const selector of [COUNTRY, STATE]) {
+      const { field, result } = fieldOf(us, selector, { platform: 'workday' });
+      expect(field.options, selector).toBe('lazy');
+      expect(result.target(field.key)!.widget).toMatchObject({ storedList: selector === COUNTRY ? 'workday.countries'
+        : 'workday.us-states' });
+      expect(result.target(field.key)!.widget?.knownOptions).toBeUndefined();
     }
   });
 
@@ -271,10 +299,12 @@ describe('a list learned for its host', () => {
       readings: new Map(), learn });
     expect(read.status).toBe('read');
     expect(learned).toEqual([{ slug: labelSlug(field), labels: [WORKDAY_SELECT_ONE, ...PREFIXES] }]);
-    // A stored list's dropdown (Country) read whole is never learned.
-    const country = fieldOf(page, COUNTRY);
-    await readWidget(country.result.target(country.field.key)!, { adapter: workdayAdapter, root: page.root,
-      readings: new Map(), learn });
+    // A stored list's dropdown (Country) read whole is never learned, whether the worker served its list or not.
+    for (const options of [{ platform: 'workday' as const, storedLists: SERVED }, { platform: 'workday' as const }]) {
+      const country = fieldOf(page, COUNTRY, options);
+      await readWidget(country.result.target(country.field.key)!, { adapter: workdayAdapter, root: page.root,
+        readings: new Map(), learn });
+    }
     expect(learned).toHaveLength(1);
   });
 
@@ -286,7 +316,7 @@ describe('a list learned for its host', () => {
     expect(labelsOf(field)).toEqual([WORKDAY_SELECT_ONE, ...PREFIXES]);
     expect(result.target(field.key)!.widget?.knownFrom).toBe('learned');
     // The learned list never stands for a dropdown with a stored list of its own.
-    const country = fieldOf(page, COUNTRY, { platform: 'workday',
+    const country = fieldOf(page, COUNTRY, { platform: 'workday', storedLists: SERVED,
       learnedLists: new Map([[learnedListKey(labelSlug(fieldOf(page, COUNTRY).field)), ['Select One', 'Narnia']]]) });
     expect(labelsOf(country.field)).toEqual(asDropdownList(WORKDAY_COUNTRIES));
     const outcome = await fillWidget(result.target(field.key)!, { kind: 'option', index: 4, cleanLabel: 'Ms.' },
