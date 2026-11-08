@@ -316,6 +316,49 @@ ${STATUS_RULES}
 .tia-row__file:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
 .tia-row__preview { margin: 2px 0 8px 26px; }
 
+/* v5 p1-panel: the progress sheet (PLAN decision 4; Report's sheet layout): the header stays at the sheet's top and is
+   the strip a folded sheet shows; the rest scrolls inside the sheet. */
+.tia-report--sheet { flex: 1 1 auto; min-height: 0; gap: 0; }
+.tia-progress-block--sheet { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 0; }
+.tia-progress-block--sheet > .tia-progress-line { flex: none; min-height: 32px; }
+.tia-progress-block--sheet .tia-progress-line__toggle { font-size: 15px; }
+.tia-sheet__body {
+  display: grid; flex: 1 1 auto; align-content: start; gap: 12px; min-height: 0; margin: 0 -16px; padding: 10px 16px 16px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+/* The account step (Jobright's "Signing in" row) and the sections of entries, above Required and Optional. */
+.tia-rows--steps { padding-bottom: 10px; border-bottom: 1px solid var(--tia-line); }
+.tia-row--step .tia-row__label { font-weight: 600; }
+.tia-entries { display: grid; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--tia-line); }
+.tia-entries__head { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.tia-entries__name { flex: 1 1 auto; min-width: 0; font: 700 14px/1.35 var(--tia-font); overflow-wrap: anywhere; }
+.tia-entries__toggle {
+  display: inline-flex; flex: none; align-items: center; gap: 4px; min-height: 26px; margin: 0; padding: 0 6px 0 8px;
+  border: 0; border-radius: 999px; background: transparent; color: var(--tia-fg); font: 600 12px/1.2 var(--tia-font);
+  cursor: pointer;
+}
+.tia-entries__toggle:hover { background: var(--tia-hover); }
+.tia-entries__toggle:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-entries__count {
+  display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--tia-chip);
+  color: var(--tia-fg); font: 600 12px/1.5 var(--tia-font); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tia-entries__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tia-entry { display: grid; gap: 0; margin: 0 0 0 10px; padding: 6px 8px 4px 10px; border-left: 2px solid var(--tia-line);
+  border-radius: 0 var(--tia-r-control) var(--tia-r-control) 0; background: var(--tia-subtle); }
+.tia-entry__head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.tia-entry__name { flex: 1 1 auto; min-width: 0; font: 600 13px/1.35 var(--tia-font); overflow-wrap: anywhere; }
+.tia-entry__go {
+  flex: none; min-height: 26px; margin: 0; padding: 0 10px; border: 1px solid var(--tia-control); border-radius: 999px;
+  background: var(--tia-bg); color: var(--tia-ink); font: 600 12px/1.2 var(--tia-font); cursor: pointer;
+}
+.tia-entry__go:hover { background: var(--tia-brand-wash); }
+.tia-entry__go:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 1px; }
+.tia-entry__note { flex: none; color: var(--tia-muted); font: 600 12px/1.4 var(--tia-font); }
+.tia-entry__rows .tia-row__go { font-size: 13px; }
+.tia-row--section .tia-entries__count { margin-left: auto; }
+/* end v5 p1-panel */
+
 @media (prefers-reduced-motion: reduce) {
   .tia-strip[data-tone="working"]::before, .tia-spin, .tia-dots span { animation: none; }
   .tia-progress[data-indeterminate] .tia-progress__fill { width: 100%; margin-left: 0; animation: none; }

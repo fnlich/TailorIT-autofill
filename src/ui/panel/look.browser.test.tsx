@@ -6,14 +6,16 @@
  * progress line while a run works), a page Autofill does not work on (its explanations in a "?"), the launcher brought
  * back, and the set-up view's step cards. The extension's page reads as TailorIT's: light only, on its canvas.
  */
+import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
 import { adoptPageStyles } from '../page/styles';
 import {
-  authStatus, button, click, createFakeWorker, formPage, frameReport, mount, row, SEEN_AT_ONCE, settle, unmountAll,
+  authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, mount, row, SEEN_AT_ONCE, settle, unmountAll,
   type FakeWorker,
 } from '../ui.testkit';
 import { Panel } from './Panel';
+import { SHEET_STRIP_PX } from './v5-styles';
 
 async function open(worker: FakeWorker, pinnedTabId: number | null): Promise<HTMLElement> {
   adoptPageStyles(document);
@@ -170,25 +172,65 @@ describe('the side panel in TailorIT’s look', () => {
     expect(review.querySelector('[data-group="required"] li[data-field-key="first"]')).not.toBeNull();
     expect([before(cta, ask), before(ask, review)]).toEqual([true, true]);
   });
-  it('folds the lists with the Minimized view the person chose', async () => {
+  // v5 p1-panel (PLAN decision 4): the progress sheet. The view setting no longer folds the lists (since v5 it says
+  // whether the on-page sidebar opens by itself).
+  it('raises the progress sheet while a run works, keeps it up at rest, and folds it to its strip from its header', async () => {
+    // Positions without the slide (the sheet's 0.35 s), so they can be read at once.
+    const still = document.createElement('style');
+    still.textContent = '* { transition: none !important; }';
+    document.head.append(still);
     const worker = createFakeWorker();
     worker.script.settings = { ...worker.script.settings, view: 'minimized' };
-    worker.script.reports.set(5, [frameReport(0, { fields: [row('first', { required: true })] })]);
-    // The settings answer after the report came: the review waits for them, so the lists never show first, folded
-    // only once the settings come (v3 Phase 3 review).
-    let answer: (value: unknown) => void = () => undefined;
-    worker.on('settings/get', () => new Promise((done) => {
-      answer = done;
-    }));
+    worker.script.pages.set(5, formPage());
+    worker.script.cards.set(5, jobCard());
+    const fields = [row('first', { required: true })];
+    worker.script.reports.set(5, [frameReport(0, { status: 'fill-step', fields, filling: { current: 'first', pending: [] } })]);
     const root = await open(worker, 5);
-    expect(root.querySelector('li[data-field-key="first"]')).toBeNull();
-    answer({ ok: true, data: { settings: worker.script.settings } });
-    await settle();
-    expect(root.querySelector('button[data-action="toggle-fields"]')?.getAttribute('aria-expanded')).toBe('false');
-    expect(root.querySelector('li[data-field-key="first"]')).toBeNull();
-    expect(root.querySelector('.tia-progress-line__percent')?.textContent).toBe('100%');
-    await click(root.querySelector<HTMLButtonElement>('button[data-action="toggle-fields"]'));
+    const sheet = () => root.querySelector<HTMLElement>('section.tia-sheet')!;
+    const stage = root.querySelector<HTMLElement>('.tia-stage')!;
+    const anchor = root.querySelector<HTMLElement>('.tia-sheet-anchor')!;
+    const push = async (status: 'fill-step' | 'review') => {
+      await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { status, fields,
+        ...(status === 'fill-step' ? { filling: { current: 'first', pending: [] } } : {}), updatedAt: Date.now() })] }));
+      await settle();
+    };
+    // Up while the run works, from just under the job card's place (the anchor), its header no fold.
+    expect(sheet().hasAttribute('data-open')).toBe(true);
+    expect(root.querySelector('button[data-action="toggle-sheet"]')).toBeNull();
     expect(root.querySelector('li[data-field-key="first"]')).not.toBeNull();
+    const top = Number.parseFloat(sheet().style.getPropertyValue('--tia-sheet-top'));
+    expect(top).toBe(Math.max(0, Math.round(anchor.getBoundingClientRect().top - stage.getBoundingClientRect().top)));
+    // Just under the job card: the card shows whole above it, the main button under it.
+    const card = root.querySelector<HTMLElement>('section[data-job-card]')!;
+    expect(top).toBeGreaterThan(0);
+    expect(sheet().getBoundingClientRect().top).toBeGreaterThanOrEqual(card.getBoundingClientRect().bottom);
+    expect(sheet().getBoundingClientRect().top - card.getBoundingClientRect().bottom).toBeLessThan(12);
+    expect(Math.abs(sheet().getBoundingClientRect().top - stage.getBoundingClientRect().top - top)).toBeLessThan(1);
+    expect(Math.abs(sheet().getBoundingClientRect().bottom - stage.getBoundingClientRect().bottom)).toBeLessThan(1);
+    // The run comes to rest: the sheet stays up, and its header now folds it.
+    await push('review');
+    expect(sheet().hasAttribute('data-open')).toBe(true);
+    const toggle = root.querySelector<HTMLButtonElement>('button[data-action="toggle-sheet"]')!;
+    expect([toggle.getAttribute('aria-expanded'), toggle.title]).toEqual(['true', COPY.report.hideSheet]);
+    await click(toggle);
+    // Folded: a strip at the stage's bottom that says the count and the percent; the lists go.
+    expect(sheet().hasAttribute('data-open')).toBe(false);
+    expect(root.querySelector('li[data-field-key="first"]')).toBeNull();
+    expect(Math.abs(sheet().getBoundingClientRect().top - (stage.getBoundingClientRect().bottom - SHEET_STRIP_PX)))
+      .toBeLessThan(1);
+    expect([root.querySelector('.tia-progress-line__title')?.textContent,
+      root.querySelector('.tia-progress-line__percent')?.textContent]).toEqual([COPY.report.progressFilled(1, 1, true), '100%']);
+    expect(root.querySelector('button[data-action="toggle-sheet"]')?.getAttribute('aria-expanded')).toBe('false');
+    // Up again from the strip; and a run that starts again brings a folded sheet up, which stays up once it rests.
+    await click(root.querySelector('button[data-action="toggle-sheet"]'));
+    expect(sheet().hasAttribute('data-open')).toBe(true);
+    await click(root.querySelector('button[data-action="toggle-sheet"]'));
+    expect(sheet().hasAttribute('data-open')).toBe(false);
+    await push('fill-step');
+    expect(sheet().hasAttribute('data-open')).toBe(true);
+    await push('review');
+    expect(sheet().hasAttribute('data-open')).toBe(true);
+    still.remove();
   });
 
   it('offers the TailorIT button again where the person hid it, on this site or everywhere', async () => {

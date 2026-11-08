@@ -29,7 +29,7 @@ const FORM = `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
     <label for="office">Which of our offices would you visit first? *</label><input id="office" name="office" required>
     <label for="team">Which team would you like to meet? *</label>
     <select id="team" name="team" required><option value="">Select...</option><option>Platform</option><option>Data</option></select>
-    <label for="why">Why do you want to work here?</label><textarea id="why" name="why"></textarea>
+    <label for="why">Why do you want to work here?</label><textarea id="why" name="why" rows="4"></textarea>
     <label for="email">Email</label><input id="email" name="email" type="email">
     <button type="submit">Submit application</button>
   </form></main></body></html>`;
@@ -80,10 +80,13 @@ function drawnOverFields(runtime: ContentRuntime): Element[] {
   return [...runtime.ui!.shadow.querySelectorAll('.highlights, .hl, .chip')];
 }
 
-/** The Edit with AI buttons, waiting until the page UI's watch says a person can see them. */
-async function editButtons(runtime: ContentRuntime, count: number): Promise<HTMLButtonElement[]> {
+/** The Edit with AI buttons, waiting until the page UI's watch says a person can see them. v5 p1-panel (PLAN decision
+ *  7): the run offers `count` boxes, and only those at least AI_EDIT_MIN_BOX_PX tall show their button (`shown`): the
+ *  one-line office answer keeps its own hidden. */
+async function editButtons(runtime: ContentRuntime, count: number, shown = count): Promise<HTMLButtonElement[]> {
   await vi.waitFor(() => expect(runtime.ui!.aiEditButtons).toHaveLength(count));
-  const buttons = [...runtime.ui!.aiEditButtons];
+  await vi.waitFor(() => expect(runtime.ui!.aiEditButtons.filter((button) => !button.hidden)).toHaveLength(shown));
+  const buttons = runtime.ui!.aiEditButtons.filter((button) => !button.hidden);
   // A click counts once each has been seen for CONTROL_SEEN_MS (the audit of 2026-11-06, S-1).
   for (const button of buttons) await vi.waitFor(() => expect(runtime.ui!.readyNow(button)).toBe(true), { timeout: 3_000 });
   return buttons;
@@ -226,8 +229,8 @@ describe('Edit with AI', () => {
   it('offers one button in each open text box at rest, and rewrites the box on the person’s visible click', async () => {
     const started = await start(FORM, 'fa-edit', rewriting);
     await started.runtime.fill();
-    // The office answer and the draft: never the email, nor the name.
-    const buttons = await editButtons(started.runtime, 2);
+    // The office answer and the draft: never the email, nor the name; v5: only the draft's tall box shows it.
+    const buttons = await editButtons(started.runtime, 2, 1);
     expect(buttons.every((button) => button.getAttribute('aria-label') === COPY.editWithAi)).toBe(true);
     const why = byId<HTMLTextAreaElement>(started.fixture, 'why');
     // The button sits inside the box's bottom-left corner.
@@ -259,7 +262,7 @@ describe('Edit with AI', () => {
     expect(rowOf(lastReport(started.worker), WHY)).toMatchObject({ status: 'verified', provenance: 'llm-draft',
       reason: 'llm-draft-written', wrote: true });
     const box = why.getBoundingClientRect();
-    const mine = (await editButtons(started.runtime, 2)).find((button) => {
+    const mine = (await editButtons(started.runtime, 2, 1)).find((button) => {
       const at = button.getBoundingClientRect();
       return at.left >= box.left && at.right <= box.right && at.top >= box.top && at.bottom <= box.bottom;
     })!;
@@ -282,7 +285,7 @@ describe('Edit with AI', () => {
     const started = await start(page, 'fa-edit-hidden', rewriting);
     await started.runtime.fill();
     // The office answer and the draft only: never the honeypot, nor the hidden box.
-    const buttons = await editButtons(started.runtime, 2);
+    const buttons = await editButtons(started.runtime, 2, 1);
     const hp = byId<HTMLTextAreaElement>(started.fixture, 'hp').getBoundingClientRect();
     expect(buttons.every((button) => button.getBoundingClientRect().left > hp.right)).toBe(true);
     // The draft's box hidden, then moved off the page, since it was offered: refused, nothing sent.
@@ -301,7 +304,7 @@ describe('Edit with AI', () => {
   it('takes the buttons away when AI-written answers are turned off at rest, and refuses a click (MINOR 8)', async () => {
     const started = await start(FORM, 'fa-edit-off', rewriting);
     await started.runtime.fill();
-    await editButtons(started.runtime, 2);
+    await editButtons(started.runtime, 2, 1);
     await started.worker.platform.deliver({ v: 1, type: 'settings/changed', settings: { panel: 'side',
       modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn, submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip, signIn: DEFAULT_SETTINGS.modes.signIn },
       llm: { ...DEFAULT_SETTINGS.llm, drafts: false }, offerToSaveAnswers: true } });

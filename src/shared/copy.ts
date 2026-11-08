@@ -86,6 +86,14 @@ const NOTICES = {
   'errors-on-load': 'The page showed these errors before anything was filled in (an entry of your profile on this site, for example). Fix them yourself, then continue.',
 } as const satisfies Record<NoticeCode, string>;
 
+// v5 p1-panel: words two blocks share, named once, so neither block reads the other's member at load: a bundler keeps
+// a member read (it may run a getter), and with it the whole block it reads, in a bundle that needs neither (the
+// content script's: OPTIONS read REASONS, PROFILE read JOB).
+/** The plan's exact sentence (module header). */
+const SENSITIVE_NOT_SHARED = "This browser may not read your work authorization and self-identification answers. To allow it, connect the extension again from TailorIT's Settings › Autofill with that box ticked.";
+const ARRANGEMENTS = { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' } as const satisfies Record<WorkArrangement, string>;
+// end v5 p1-panel
+
 /** Why a field ended as it did: one sentence per reason code, shown on its row. v4 run (the owner, 2026-11-07: "Never
  *  flag to the user"): each says what happened, never what the person should do. */
 const REASONS = {
@@ -122,7 +130,7 @@ const REASONS = {
   'llm-pick-rejected': 'The AI picked an option that failed a safety check, so nothing was chosen.',
   'saved-answer-not-allowed-for-category': 'Saved answers are never used for this kind of question, so it was not filled.',
   'end-date-not-applicable': 'You still work here, so the end date was left empty.',
-  'sensitive-not-shared': "This browser may not read your work authorization and self-identification answers. To allow it, connect the extension again from TailorIT's Settings › Autofill with that box ticked.",
+  'sensitive-not-shared': SENSITIVE_NOT_SHARED, // v5 p1-panel: the same words, named once
   'sensitive-unavailable': 'Your work authorization and self-identification answers could not be read from TailorIT just now, so this was not filled.',
   'statement-not-affirmative': "This box isn't worded as a plain yes, so it was not ticked.",
   'criminal-not-covered': "Your answer about criminal convictions doesn't settle this question, so it was not filled.",
@@ -386,16 +394,18 @@ const REPORT = {
   // the form is read, "Autofilling… 78%" while it fills, then "9 of 12 required fields filled · 75%". The percent is of
   // the required fields filled (shared/report.ts progressOf), of every field when none is required. Drafts for the
   // owner's review.
-  scanning: 'Scanning the page',
-  scanningTitle: 'Reading the form',
+  // v5 p1-panel: Title Case headings (PLAN decision 3): the progress sheet's header and its scanning block.
+  scanning: 'Scanning The Page',
+  scanningTitle: 'Reading The Form',
   scanningHelp: 'TailorIT is checking this page for what the application asks.',
   autofilling: 'Autofilling',
   percent: (value: number) => `${value}%`,
-  // v4 ui: Jobright's "7/7 required fields filled" (the owner's screenshot 4).
+  // v4 ui: Jobright's "7/7 required fields filled" (the owner's screenshot 4); v5 p1-panel: in Title Case.
   progressFilled: (filled: number, of: number, requiredOnly: boolean) =>
-    `${filled}/${of} ${requiredOnly ? 'required fields' : 'fields'} filled`,
+    `${filled}/${of} ${requiredOnly ? 'Required Fields' : 'Fields'} Filled`,
   progressDryRun: (filled: number, of: number, requiredOnly: boolean) =>
-    `${filled}/${of} ${requiredOnly ? 'required fields' : 'fields'} would be filled`,
+    `${filled}/${of} ${requiredOnly ? 'Required Fields' : 'Fields'} Would Be Filled`,
+  // end v5 p1-panel
   progressLabel: 'Progress',
   progressText: (filled: number, of: number, requiredOnly: boolean, percent: number) =>
     `${filled} of ${of} ${requiredOnly ? 'required fields' : 'fields'} filled, ${percent}%`,
@@ -420,7 +430,28 @@ const REPORT = {
   skipLabel: (label: string) => `Skip "${label}"`,
   /** A repeatable section's row: "Education · 2 of 3 added". */
   sectionAdded: (name: string, added: number, of: number) => `${name} · ${added} of ${of} added`,
-  repeatables: { experience: 'Work experience', education: 'Education', language: 'Languages' },
+  // v5 p1-panel: Title Case section names (they head the sheet's entry groups).
+  repeatables: { experience: 'Work Experience', education: 'Education', language: 'Languages' },
+  // ── v5 p1-panel: the progress sheet (PLAN decision 4, Jobright's sheet in our own words). Drafts for the owner. ──
+  /** The sheet's header while Sign-in Auto (or Sign up & Autofill) signs in, or creates the account, for the run. */
+  signingIn: 'Signing In',
+  creatingAccount: 'Creating Account',
+  /** A section's count chip: of the entries the profile has, those the form shows a block for. */
+  partial: (added: number, of: number) => `${added}/${of} Added`,
+  partialLabel: (name: string, added: number, of: number) => `${name}: ${added} of ${of} added. Show or hide the entries`,
+  /** A section with no count: its entries shown or folded. */
+  sectionToggle: (name: string) => `Show or hide the ${name} entries`,
+  /** One entry of a section, by its place (from 1): "Education 2". */
+  entry: (name: string, place: number) => `${name} ${place}`,
+  /** An entry's button that shows its first field on the page. */
+  goToButton: 'Go To',
+  goToEntry: (entry: string) => `Go to ${entry} on the page`,
+  /** An entry of the profile the form shows no block for. */
+  notAdded: 'Not Added',
+  /** The sheet's header folds it down to its strip, or brings it up. */
+  showSheet: 'Show the autofill progress',
+  hideSheet: 'Hide the autofill progress',
+  // ── end v5 p1-panel ──
   /** Worded apart from the launcher's "Review: N fields need you", which also counts the Add buttons left. */
   needsYou: (count: number) => (count === 1 ? '1 field is left for you' : `${count} fields are left for you`),
   needsYouDryRun: (count: number) => (count === 1 ? '1 field would be left for you' : `${count} fields would be left for you`),
@@ -482,7 +513,8 @@ const PANEL = {
   launcherShownAfterPanel: 'The TailorIT button shows on the page again once you close this panel.',
   /** A page Autofill does not work on (v3 Phase 3). Drafts for the owner's review. */
   unsupported: {
-    heading: "Autofill isn't supported on this page",
+    // v5 p1-panel: Title Case headings.
+    heading: "Autofill Isn't Supported On This Page",
     intro: 'TailorIT Autofill fills job applications on these sites:',
     // v3 Phases 6 and 7b: Workday, iCIMS, Taleo, SuccessFactors and Oracle Recruiting Cloud, their sign-in and posting
     // pages known. The owner's snapshots of 2026-11-06 showed the application forms of Workday, iCIMS and Oracle (each
@@ -522,15 +554,15 @@ const PANEL = {
     /** v3 Phase 8 review (B10): the company career sites, off or not reaching this page. */
     companySites: "On employers' own careers sites, it works once you turn on Company career sites in its settings (Where Autofill works). It never works on LinkedIn or on an employer's HR system.",
     /** A page on one of those sites that opened before the extension could read it (installed or updated since). */
-    reloadHeading: 'Reload this page to use Autofill',
+    reloadHeading: 'Reload This Page To Use Autofill', // v5 p1-panel
     reloadIntro: 'This page opened before TailorIT Autofill could read it. Reload it, and Autofill works here.',
     /** v3 Phase 8 review (B10): a company's own page while Company career sites is on, with no frame of ours on it. */
-    reloadSiteHeading: 'No application form found here yet',
+    reloadSiteHeading: 'No Application Form Found Here Yet', // v5 p1-panel
     reloadSiteIntro: "Company career sites is on. Autofill reads an employer's careers page as it loads, so if this page shows a job application and opened before you turned it on, reload it.",
   },
   /** v3 Phase 3b: "Ask TailorIT to support this site", on a page Autofill does not work on. Drafts for the owner. */
   siteRequest: {
-    ask: 'Ask TailorIT to support this site',
+    ask: 'Ask TailorIT To Support This Site', // v5 p1-panel
     asking: 'Sending…',
     help: 'Only the site\'s name (like careers.example.com) goes to your TailorIT, which lists it in Settings › Autofill.',
     outcomes: {
@@ -544,13 +576,14 @@ const PANEL = {
   },
   /** v3 Phase 4: the panel's buttons for the page's own Next and Submit, and what came of a press. Drafts. */
   step: {
-    next: 'Continue to the next page',
-    submit: 'Submit application',
+    // v5 p1-panel: Title Case buttons.
+    next: 'Continue To The Next Page',
+    submit: 'Submit Application',
     submitting: 'Submitting…',
     confirmEmpty: (count: number) => (count === 1 ? '1 required field is still empty. Submit anyway?'
       : `${count} required fields are still empty. Submit anyway?`),
-    submitAnyway: 'Submit anyway',
-    keepEditing: 'Not yet',
+    submitAnyway: 'Submit Anyway', // v5 p1-panel
+    keepEditing: 'Not Yet', // v5 p1-panel
     outcomes: {
       pressed: 'Pressed on the page.',
       'required-empty': 'Required fields are still empty.',
@@ -565,11 +598,11 @@ const PANEL = {
     notAccepted: (count: number) => (count === 1 ? "The page didn't accept it: 1 field shows an error. Fix it, then try again."
       : `The page didn't accept it: ${count} fields show an error. Fix them, then try again.`),
     /** The review (Jobright's "Submitted!"): the dock's button once the platform confirmed the application. */
-    submitted: 'Submitted',
+    submitted: 'Submitted!', // v5 p1-panel: Jobright's dock word
   },
   /** v3 Phase 4: after the platform confirmed the application. Drafts for the owner's review. */
   submitted: {
-    title: 'Application submitted',
+    title: 'Application Submitted', // v5 p1-panel
     openTracker: 'Open Job Tracker',
     /** The job the application was for, when the card names it. */
     job: (title: string, company: string) => (company === '' ? title : title === '' ? company : `${title} at ${company}`),
@@ -579,7 +612,7 @@ const PANEL = {
       'not-recorded': "Your Job Tracker couldn't be told. Try again, or mark it Applied in TailorIT.",
       'not-allowed': "This connection can't change your Job Tracker. Connect the extension again from TailorIT's Settings › Autofill.",
     } satisfies Record<SubmittedState, string>,
-    tryAgain: 'Try again',
+    tryAgain: 'Try Again', // v5 p1-panel
   },
   /** The v3 Phase 4 review: the disclosure changed since the person connected. Drafts for the owner's review. */
   disclosureChanged: {
@@ -635,8 +668,9 @@ const JOB = {
   notFound: 'Not in your TailorIT jobs',
   notFoundHelp: 'Autofill still works. Add the job to TailorIT to track it and see your match.',
   cannotAdd: "TailorIT can't add jobs from this site yet. Autofill still works.",
-  add: 'Add this job to TailorIT',
-  save: 'Save to tracker',
+  // v5 p1-panel: Title Case buttons.
+  add: 'Add This Job To TailorIT',
+  save: 'Save To Tracker',
   adding: 'Adding…',
   addOutcomes: {
     added: 'Added to your TailorIT jobs, and to your tracker as Saved.',
@@ -675,7 +709,7 @@ const JOB = {
   posted,
   alreadyApplied: (status: string | null) => (status === null ? 'Already in your tracker. Check before you apply again.'
     : `Already in your tracker as ${status}. Check before you apply again.`),
-  arrangements: { remote: 'Remote', hybrid: 'Hybrid', onsite: 'On-site' } satisfies Record<WorkArrangement, string>,
+  arrangements: ARRANGEMENTS, // v5 p1-panel: named once
   resumeReasons: {
     chosen: 'Chosen by you',
     application: 'Linked to this job',
@@ -697,7 +731,7 @@ const JOB = {
     aiOff: 'AI-written answers are off, so only a letter you wrote is attached.',
     failed: "Your letter for this job isn't finished. Finish it in TailorIT's Cover Letters.",
     notAllowed: "This connection can't attach cover letters. Connect it again from TailorIT's Settings › Autofill.",
-    write: 'Write it now',
+    write: 'Write It Now', // v5 p1-panel
     writing: 'Writing…',
     ready: 'Ready',
     couldNot: "Couldn't write it",
@@ -715,15 +749,16 @@ const JOB = {
   },
   /** v3 Phase 3b: "Autofill for another job". Drafts for the owner's review. */
   another: {
-    open: 'Autofill for another job',
-    heading: 'Autofill for another job',
+    // v5 p1-panel: Title Case button and heading.
+    open: 'Autofill For Another Job',
+    heading: 'Autofill For Another Job',
     help: 'Fill this form for a job in your TailorIT tracker: its match, its resume and its details are used.',
     label: 'Search your tracked jobs',
     placeholder: 'Job title or company',
     searching: 'Searching…',
     none: 'No job in your tracker matches.',
-    use: 'Use this job',
-    pageJob: "Use this page's own job",
+    use: 'Use This Job', // v5 p1-panel
+    pageJob: "Use This Page's Own Job", // v5 p1-panel
     close: 'Close',
     chosen: 'Chosen by you for this page',
     /** The review: the choice could not be kept (the page changed, or the search is gone). */
@@ -736,7 +771,7 @@ const JOB = {
     } satisfies Record<JobSearchRefusal, string>,
   },
   /** v3 Phase 3b: Change's "Apply without resume" and the resume's preview. Drafts for the owner's review. */
-  withoutResume: 'Apply without resume',
+  withoutResume: 'Apply Without Resume', // v5 p1-panel
   withoutResumeHelp: 'No resume will be uploaded. Autofill uses your autofill information.',
   withoutResumeOn: 'No resume will be attached',
   /** The review: Apply without resume could not be kept (no form or posting of ours in the tab now). */
@@ -748,15 +783,15 @@ const JOB = {
     loading: 'Loading the resume…',
     unavailable: "This resume's preview couldn't be shown.",
     notPdf: 'Only a PDF resume has a preview.',
-    openTab: 'Open it larger',
+    openTab: 'Open It Larger', // v5 p1-panel
   },
   picker: {
-    heading: 'Choose the resume to attach',
+    heading: 'Choose The Resume To Attach', // v5 p1-panel
     loading: 'Reading your resumes…',
     failed: "Your resumes couldn't be read. Try again.",
     empty: 'You have no resume to attach. Add one in TailorIT.',
     current: 'Attached now',
-    suggested: "Use TailorIT's choice",
+    suggested: "Use TailorIT's Choice", // v5 p1-panel
     cancel: 'Cancel',
     kinds: { built: 'Built in TailorIT', uploaded: 'Uploaded' },
   },
@@ -764,12 +799,12 @@ const JOB = {
 
 /** The side panel's "Ask a custom question" (v2, src/ui/panel/Ask.tsx). Drafts for the owner's review. */
 const ASK = {
-  heading: 'Ask a custom question',
+  heading: 'Ask A Custom Question', // v5 p1-panel
   label: 'Your question',
   placeholder: 'e.g. Why do you want to work at Northwind?',
   length: 'Length',
   lengths: { short: 'Short', medium: 'Medium', long: 'Long' } satisfies Record<AskLength, string>,
-  submit: 'Get answer',
+  submit: 'Get Answer', // v5 p1-panel
   working: 'Writing your answer…',
   writtenFrom: (label: string) => `Written from your resume: ${label}`,
   copy: 'Copy',
@@ -792,7 +827,7 @@ const ASK = {
 /** The side panel's "Your autofill information" editor (v3 Phase 3b, src/ui/panel/Profile.tsx). Drafts for the
  *  owner's review. */
 const PROFILE = {
-  heading: 'Your autofill information',
+  heading: 'Your Autofill Information', // v5 p1-panel
   intro: 'What TailorIT fills applications with. Your changes are saved to your TailorIT.',
   back: 'Back',
   loading: 'Loading your autofill information…',
@@ -802,16 +837,16 @@ const PROFILE = {
     rateLimited: 'Too many reads in a minute. Wait a little, then try again.',
     unavailable: "Your autofill information couldn't be read just now.",
   },
-  retry: 'Try again',
+  retry: 'Try Again', // v5 p1-panel
   readOnly: "This connection can read your autofill information but not change it. To edit it here, connect the extension again from TailorIT's Settings › Autofill.",
-  openInTailorit: 'Open in TailorIT',
+  openInTailorit: 'Open In TailorIT', // v5 p1-panel
   save: 'Save',
   saving: 'Saving…',
   saved: 'Saved.',
   fixFirst: (count: number) => (count === 1 ? 'Fix 1 thing before saving:' : `Fix ${count} things before saving:`),
   conflict: 'Your autofill information changed elsewhere since you opened it.',
   conflictHelp: 'Load the latest to see it. Your changes here are kept on it, for you to check before you save.',
-  loadLatest: 'Load the latest',
+  loadLatest: 'Load The Latest', // v5 p1-panel
   loadingLatest: 'Loading the latest…',
   /** Load the latest kept the person's edits on what TailorIT holds now (the review of v3 Phase 3b). */
   merged: 'Loaded the latest from TailorIT, with your changes kept on it. Check them, then save.',
@@ -829,26 +864,28 @@ const PROFILE = {
     personal: 'Personal',
     links: 'Links',
     education: 'Education',
-    experience: 'Work experience',
+    // v5 p1-panel: Title Case section headings.
+    experience: 'Work Experience',
     skills: 'Skills',
     preferences: 'Preferences',
-    anythingElse: 'Anything else we should know?',
-    sensitive: 'Work authorization and self-identification',
+    anythingElse: 'Anything Else We Should Know?',
+    sensitive: 'Work Authorization And Self-Identification',
     // s2 profile (snapshot round 2)
     certifications: 'Certifications',
   },
   /** An entry of a list, by its place (from 1). */
   entry: {
     education: (place: number) => `Education ${place}`,
-    experience: (place: number) => `Work experience ${place}`,
+    experience: (place: number) => `Work Experience ${place}`, // v5 p1-panel
     workAuthorization: (place: number) => `Country ${place}`,
     // s2 profile (snapshot round 2)
     certification: (place: number) => `Certification ${place}`,
   },
-  add: { education: 'Add education', experience: 'Add work experience', workAuthorization: 'Add a country',
+  // v5 p1-panel: Title Case buttons.
+  add: { education: 'Add Education', experience: 'Add Work Experience', workAuthorization: 'Add A Country',
     // s2 profile (snapshot round 2)
-    certification: 'Add a certification', place: 'Add a place', relative: 'Add a company',
-    citizenship: 'Add a citizenship' },
+    certification: 'Add A Certification', place: 'Add A Place', relative: 'Add A Company',
+    citizenship: 'Add A Citizenship' },
   remove: (name: string) => `Remove ${name}`,
   removeShort: 'Remove',
   fields: {
@@ -984,7 +1021,7 @@ const PROFILE = {
   } satisfies Record<RaceCategory, string>,
   veteran: { none: 'Not a veteran', veteran: 'Veteran', protected: 'Protected veteran' },
   periods: { year: 'Year', month: 'Month', hour: 'Hour' } satisfies Record<ExpectedSalaryPeriod, string>,
-  arrangements: JOB.arrangements,
+  arrangements: ARRANGEMENTS, // v5 p1-panel: named once, not read off JOB
   // ── s2 profile (snapshot round 2, 2026-11-07): the new values' choices and help. Drafts for the owner's review ──
   phoneTypes: { mobile: 'Mobile', home: 'Home', work: 'Work' } satisfies Record<PhoneDeviceType, string>,
   referralCategories: {
@@ -1053,7 +1090,7 @@ const OPTIONS = {
     connectedAs: (name: string, email: string) => `Connected as ${name} (${email}).`,
     connectedNoAccount: 'Connected to TailorIT.',
     sensitiveShared: 'This browser may read your work authorization and self-identification answers.',
-    sensitiveNotShared: REASONS['sensitive-not-shared'],
+    sensitiveNotShared: SENSITIVE_NOT_SHARED, // v5 p1-panel: named once, not read off REASONS
     lastsUntil: (date: string) => `The connection lasts until ${date}.`,
     disconnect: 'Disconnect',
     disconnected: "Disconnected. TailorIT was asked to revoke this browser's connection too.",
@@ -1411,8 +1448,9 @@ export const PAGE_COPY = {
   aiGuessChip: 'AI guess',
   /** The button in a text box that asks the AI to rewrite what it holds (its accessible name), and its state while the
    *  rewrite is on its way. */
-  editWithAi: 'Edit with AI',
-  editingWithAi: 'Rewriting…',
+  // v5 p1-panel: Title Case, and Jobright's word while it works (PLAN decision 7).
+  editWithAi: 'Edit With AI',
+  editingWithAi: 'Generating…',
   /** v3 Phase 3b: Edit with AI's instruction box, and what came of a rewrite. Drafts for the owner's review. */
   aiEdit: {
     label: 'What should change? (optional)',
@@ -1420,6 +1458,11 @@ export const PAGE_COPY = {
     count: (length: number) => `${length}/750`,
     cancel: 'Cancel',
     generate: 'Generate',
+    // v5 p1-panel: the button's red state when a rewrite did not come (Jobright's "click to retry", our words): its
+    // visible word, and its name with why; a click opens the box again, which says why too.
+    retry: 'Try Again',
+    retryLabel: (why: string) => `Edit with AI didn't rewrite this box. ${why} Choose to try again.`,
+    // end v5 p1-panel
     outcomes: {
       sensitive: "Not rewritten: questions and instructions about self-identification, work authorization, pay, contact details or consent never go to the AI. Reword it, or write this one yourself.",
       unchanged: 'The AI wrote the same text this box holds already.',
@@ -1427,11 +1470,17 @@ export const PAGE_COPY = {
       refused: "This box can't be rewritten now: the page changed, or something on it needs you first.",
     },
   },
-  /** One sentence per reason code. */
-  reasons: REASONS,
-  statuses: STATUSES,
-  provenances: PROVENANCES,
-  stages: STAGES,
+  // ── v5 p1-panel: the page's "Application Submitted!" window after a confirmed submission (PLAN decision 5; content/
+  // ui/applied.ts). Drafts for the owner's review. ──
+  applied: {
+    title: 'Application Submitted!',
+    body: 'This job was added to your TailorIT tracker.',
+    tracker: 'Go To Application Tracker',
+    close: 'Close the Application Submitted window',
+  },
+  // ── end v5 p1-panel ──
+  // v5 p1-panel: the reason, status, provenance and stage words moved to COPY (below): no page UI draws them since v4
+  // (D1), and the content script's bundle stays within its budget with the v5 sheet and the applied window in it.
   runStatuses: RUN_STATUSES,
   pauseReasons: PAUSE_REASONS,
   platforms: PLATFORM_NAMES,
@@ -1466,17 +1515,17 @@ const PROFILE_GAP_WORDS = {
 
 /** The set-up view (Setup.tsx): shown while the extension is not connected, or the profile is not complete. */
 const SETUP = {
-  heading: 'Autofill with TailorIT',
+  heading: 'Autofill With TailorIT', // v5 p1-panel
   intro: 'Complete your setup to start autofilling applications in one click.',
   steps: 'Setup steps',
-  account: 'Set up your TailorIT account',
+  account: 'Set Up Your TailorIT Account', // v5 p1-panel
   accountHelp: 'Opens TailorIT, where you sign in, or sign up if you are new, and connect this browser. Your autofill information and resumes come from there.',
   /** Why step 1 shows GO again (its tooltip), after the general help. */
   accountExpired: 'Your connection expired: connections last 90 days. Choose GO to connect again.',
   accountRevoked: "TailorIT stopped accepting this browser's connection. Choose GO to connect again.",
   accountDone: (name: string | null) => (name === null ? 'This browser is connected to TailorIT.'
     : `This browser is connected to TailorIT as ${name}.`),
-  profile: 'Complete your profile details',
+  profile: 'Complete Your Profile Details', // v5 p1-panel
   profileHelp: 'Autofill needs your first and last name, an email, a phone number, and a city or a country. Add them here; they are saved to your TailorIT.',
   profileMissing: (items: readonly string[]) => `Still missing: ${listed(items)}.`,
   gaps: PROFILE_GAP_WORDS,
@@ -1490,20 +1539,21 @@ const SETUP = {
   waitingLabel: (step: string) => `${step}: waiting for TailorIT`,
   waiting: 'Waiting…',
   typeCode: 'Have a connect code? Type it in the settings',
-  start: 'Start applying',
+  start: 'Start Applying', // v5 p1-panel
   /** Step 1's GO shows what connecting means before it connects (docs/PRIVACY.md "First-run disclosure"). */
-  notNow: 'Not now',
+  notNow: 'Not Now', // v5 p1-panel
 } as const;
 
 /** The main view's new parts (Panel.tsx, JobCard.tsx). */
 const MAIN_VIEW = {
   settings: 'Settings',
-  signUpFill: 'Sign up & Autofill',
+  signUpFill: 'Sign Up & Autofill', // v5 p1-panel
   signUpHelp: "This site asks you to sign in or create an account first. Sign up & Autofill does it with the job-site sign-in you saved in TailorIT's Settings › Autofill, then fills the application.",
-  ask: 'Ask custom question',
-  addJob: 'Add this job in one click',
+  // v5 p1-panel: Title Case buttons.
+  ask: 'Ask Custom Question',
+  addJob: 'Add This Job In One Click',
   addHelp: 'Adds this posting to your TailorIT jobs, and to your tracker as Saved, so you can follow it there.',
-  notThisJob: 'Not this job?',
+  notThisJob: 'Not This Job?', // v5 p1-panel
   resume: 'Résumé:',
   noResume: 'none',
   withoutResume: 'none, by your choice',
@@ -1534,10 +1584,39 @@ const SETTINGS_VIEW = {
   saved: 'Saved.',
   notSaved: 'Not saved: the extension did not accept the change. Try again.',
   loading: 'Loading…',
-  autofillInfo: 'Autofill information',
-  allSettings: 'All settings',
+  autofillInfo: 'Autofill Information', // v5 p1-panel
+  allSettings: 'All Settings', // v5 p1-panel
 } as const;
 // ── end v4 ui ──
+
+// ── v5 p1-panel: the panel's modals (PLAN decision 6, Jobright's error modals and its resume check in our own words).
+// Drafts for the owner's review. ──
+
+/** The parts of the autofill information Autofill checks before it fills (ui/panel/profile-check.ts HISTORY_KINDS). */
+const HISTORY_WORDS = { experience: 'work experience', education: 'education' } as const;
+
+/** The modals over the panel's main view (ui/panel/Modals.tsx): what stopped Autofill, and the autofill information's
+ *  check. */
+const MODALS = {
+  /** Why Autofill did not start, by what the worker answered (Jobright's four reasons). */
+  errors: {
+    'no-form': 'No application form was found on this page. Open the application itself, then try again.',
+    unavailable: "Autofill can't reach this page's form right now. Reload the page, then try again.",
+    failed: "Autofill didn't work this time. Try again in a moment.",
+    updated: 'TailorIT Autofill was updated. Refresh this page to use it again.',
+  },
+  tryAgain: 'Try Again',
+  refresh: 'Refresh Page',
+  cancel: 'Cancel',
+  /** The autofill information has no work experience, or no education (Jobright's resume check). */
+  history: {
+    text: (missing: ReadonlyArray<keyof typeof HISTORY_WORDS>) =>
+      `Your autofill information has no ${listed(missing.map((kind) => HISTORY_WORDS[kind])).replace(' and ', ' or ')}. Add ${missing.length === 1 ? 'it' : 'them'} before you autofill, so applications that ask for ${missing.length === 1 ? 'it' : 'them'} are filled.`,
+    edit: 'Edit Autofill Information',
+    anyway: 'Autofill Anyway',
+  },
+} as const;
+// ── end v5 p1-panel ──
 
 /** Every sentence: the in-page UI's (PAGE_COPY) and those only the options page and the side panel show. */
 export const COPY = {
@@ -1554,6 +1633,13 @@ export const COPY = {
   setup: SETUP,
   mainView: MAIN_VIEW,
   settingsView: SETTINGS_VIEW,
+  modals: MODALS, // v5 p1-panel
+  // v5 p1-panel: moved from PAGE_COPY (no page UI draws them since v4): one sentence per reason code, and the words of
+  // the statuses, the provenances and the matcher's stages (the options page's counters).
+  reasons: REASONS,
+  statuses: STATUSES,
+  provenances: PROVENANCES,
+  stages: STAGES,
 } as const;
 
 /**

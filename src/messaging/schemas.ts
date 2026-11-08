@@ -565,6 +565,10 @@ export const WorkerToContentSchema = z.discriminatedUnion('type', [
    *  worker's alone, to every tab's top frame. A page the worker injected ends its run and removes its UI; the sentinel
    *  stops (platform/sentinel.ts reads it without this schema); a page on an ATS host ignores it. */
   z.strictObject({ v, type: z.literal('site/stop') }),
+  // v5 p1-panel (PLAN decision 5): the tab's application was submitted, its platform confirmed it, and TailorIT's
+  // tracker recorded it: the worker's alone, to the tab's top frame, once per recorded submission. The page shows
+  // "Application Submitted!" over itself while the tab is visible (content/ui/applied.ts). Nothing names the job.
+  z.strictObject({ v, type: z.literal('applied/popup') }),
 ]);
 export type WorkerToContent = z.infer<typeof WorkerToContentSchema>;
 
@@ -778,6 +782,7 @@ export const FRAME_ANSWER_SCHEMAS = {
   'run/press': PressAnswerSchema,
   'agent/enter': EntryAnswerSchema,
   'site/stop': DoneAnswerSchema,
+  'applied/popup': DoneAnswerSchema, // v5 p1-panel
 } as const satisfies Record<WorkerToContent['type'], z.ZodType>;
 
 // ── The resume port ───────────────────────────────────────────────────────────────────────────────────────────────

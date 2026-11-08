@@ -219,3 +219,125 @@ export function repeatablesOf(reports: readonly FrameReport[]): Array<NonNullabl
   frameId: number }> {
   return reports.flatMap((report) => (report.repeatables ?? []).map((count) => ({ ...count, frameId: report.frameId })));
 }
+
+// ── v5 p1-panel: the progress sheet's groups (PLAN decision 4; Jobright's Education and Employment entries, its
+// partial "n/m" toggles and its account step rows, from what a report holds: labels, categories, section keys and
+// counts, never a value) ──
+
+/** The repeatable sections whose entries the sheet lists one by one, by their rows' categories. */
+export const ENTRY_KINDS = ['education', 'experience'] as const;
+export type EntryKind = (typeof ENTRY_KINDS)[number];
+
+/** A section key's block (core/text/keys.ts sectionKey: "education[1]" for a repeatable section's second block), or
+ *  null for a section that is not a block. */
+export function blockOf(section: string): number | null {
+  const match = /\[(\d{1,3})\]$/.exec(section);
+  return match === null ? null : Number(match[1]);
+}
+
+/** The entry kind a row belongs to: an education or work experience field in a block of its section; null for any
+ *  other row (it stays in the Required and Optional lists). */
+export function entryKindOf(row: Pick<ReportRow, 'category' | 'section'>): EntryKind | null {
+  if (blockOf(row.section) === null) return null;
+  const family = row.category.slice(0, row.category.indexOf('.'));
+  return (ENTRY_KINDS as readonly string[]).includes(family) ? family as EntryKind : null;
+}
+
+/** Where a set of rows stands as one: being written while any is, filled when every counted one is, not filled when
+ *  any is; 'none' when none counts. */
+export function progressOfRows(rows: readonly ListRow[]): RowProgress {
+  const counted = rows.filter((entry) => entry.progress !== 'none');
+  if (counted.length === 0) return 'none';
+  if (counted.some((entry) => entry.progress === 'working')) return 'working';
+  return counted.every((entry) => entry.progress === 'filled') ? 'filled' : 'missing';
+}
+
+/** One entry of a section on the form: its block, its place among the section's entries (from 1), its rows. */
+export interface SheetEntry {
+  block: number;
+  place: number;
+  rows: ListRow[];
+  progress: RowProgress;
+}
+
+/** A frame's section of entries (Education, Work Experience): its entries in block order, the run's count of the
+ *  profile's entries the form shows a block for (null when the run counted none), and the places of the profile's
+ *  entries the form shows no block for ("Not Added"). */
+export interface EntryGroup {
+  frameId: number;
+  kind: EntryKind;
+  entries: SheetEntry[];
+  count: { added: number; of: number } | null;
+  notAdded: number[];
+  progress: RowProgress;
+}
+
+/** What the sheet lists: the sections of entries, the counts of repeatable sections it has no rows for (Languages,
+ *  or a section whose blocks hold no row yet), then the Required and Optional rows not in an entry. */
+export interface SheetLists {
+  groups: EntryGroup[];
+  counts: ReturnType<typeof repeatablesOf>;
+  required: ListRow[];
+  optional: ListRow[];
+}
+
+/** The sheet's lists (SheetLists), from fieldListsOf's rows: the shown rows only (D8), each frame's in its report's
+ *  order. Every row stays counted by the progress as before; only where it is listed changes. */
+export function sheetListsOf(reports: readonly FrameReport[]): SheetLists {
+  const lists = fieldListsOf(reports);
+  const all = [...lists.required, ...lists.optional].sort((a, b) => a.frameId - b.frameId);
+  const counts = repeatablesOf(reports);
+  const groups: EntryGroup[] = [];
+  const inEntry = new Set<ListRow>();
+  for (const entry of all) {
+    const kind = entryKindOf(entry.row);
+    if (kind === null) continue;
+    let group = groups.find((each) => each.frameId === entry.frameId && each.kind === kind);
+    if (group === undefined) {
+      const counted = counts.find((count) => count.frameId === entry.frameId && count.kind === kind);
+      group = { frameId: entry.frameId, kind, entries: [], count: counted === undefined ? null
+        : { added: counted.added, of: counted.of }, notAdded: [], progress: 'none' };
+      groups.push(group);
+    }
+    const block = blockOf(entry.row.section)!;
+    let held = group.entries.find((each) => each.block === block);
+    if (held === undefined) {
+      held = { block, place: 0, rows: [], progress: 'none' };
+      group.entries.push(held);
+    }
+    held.rows.push(entry);
+    inEntry.add(entry);
+  }
+  for (const group of groups) {
+    // The form's order: blocks by their index, each numbered from 1 as the person reads them.
+    group.entries.sort((a, b) => a.block - b.block);
+    group.entries.forEach((entry, at) => {
+      entry.place = at + 1;
+      entry.progress = progressOfRows(entry.rows);
+    });
+    const shown = group.entries.length;
+    const of = group.count?.of ?? 0;
+    for (let place = Math.max(shown, group.count?.added ?? 0) + 1; place <= of; place += 1) group.notAdded.push(place);
+    group.progress = group.notAdded.length > 0 && progressOfRows(group.entries.flatMap((entry) => entry.rows)) !== 'working'
+      ? 'missing' : progressOfRows(group.entries.flatMap((entry) => entry.rows));
+  }
+  return {
+    groups,
+    counts: counts.filter((count) => !groups.some((group) => group.frameId === count.frameId && group.kind === count.kind)),
+    required: lists.required.filter((entry) => !inEntry.has(entry)),
+    optional: lists.optional.filter((entry) => !inEntry.has(entry)),
+  };
+}
+
+/** The account step of a run at its sign-in pause (Jobright's "Signing in" and "Creating account" rows): signing in
+ *  or creating the account for the run now (Sign-in Auto, or Sign up & Autofill: the 'sign-in-auto' notice), or
+ *  waiting for the person (the page's toast says what). `wall` is the tab's page state's (PageState.wall): a create-
+ *  account page reads "Creating Account". Null when no run rests at a sign-in. */
+export function accountStepOf(reports: readonly FrameReport[], wall?: 'sign-in' | 'create-account' | 'email-gate' | null):
+  { kind: 'sign-in' | 'create-account'; progress: RowProgress } | null {
+  const at = reports.filter((report) => report.status === 'auth-needed');
+  if (at.length === 0) return null;
+  const signing = at.some((report) => report.notices.some((notice) => notice.code === 'sign-in-auto'));
+  return { kind: wall === 'create-account' ? 'create-account' : 'sign-in', progress: signing ? 'working' : 'missing' };
+}
+// ── end v5 p1-panel ──
