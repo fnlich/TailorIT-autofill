@@ -59,8 +59,14 @@ import type { BaseKey, FieldKey, FieldSpec, OptionSetHash } from '../types/field
 import type { FillResult, ReasonCode } from '../types/fill';
 import type { ValueMac } from '../types/loop';
 
-/** At most this many passes plan and write; the scan after the last of them only observes. */
+/** At most this many passes plan and write; the scan after the last of them only observes (but MAX_AI_PASSES). */
 export const MAX_PASSES = 8;
+/** s2 core-gh (decision 14; the owner's live Greenhouse runs of 2026-11-07, where every react-select only TailorIT's AI
+ *  answers, and some drafts, ended max-passes-reached): while a field still waits for the AI, or for its list's read,
+ *  the loop goes on past MAX_PASSES, up to this many passes. The worker runs one AI task at a time (background/ai-tasks
+ *  createRunAi), so the answers come in one batch after another, each taking a pass. The loop's cap on a wait with no
+ *  answer coming in (content/loop.ts AI_WAIT_CAP_MS) still ends a wait. */
+export const MAX_AI_PASSES = 20;
 /** A field whose value flips more often than this is stopped for good (value-oscillated). */
 export const MAX_VALUE_FLIPS = 2;
 /** A list whose options change more often than this is stopped for good (options-oscillated). */
@@ -699,9 +705,14 @@ export function loopVerdict(state: LoopState, options: { cut?: ReasonCode } = {}
   const pending = presentWith(state.fields, 'pending');
   const waiting = presentWith(state.fields, 'waiting-options');
   const awaiting = presentWith(state.fields, 'awaiting-llm');
+  // s2 core-gh (decision 14): past MAX_PASSES the loop goes on, up to MAX_AI_PASSES, while a field waits for the AI or
+  // for its list to be read (a lazy list is read, then classified or answered with its options: one pass each).
+  const listRead = (field: TrackedField) => field.cause === 'options-changed'
+    && field.row?.reason === 'waiting-for-options';
+  const stillComing = awaiting.length > 0 || waiting.length > 0 || pending.some(listRead);
   const end: LoopEnd | null = options.cut !== undefined ? 'cut'
     : pending.length + waiting.length + awaiting.length === 0 ? 'nothing-pending'
-      : state.pass >= MAX_PASSES ? 'max-passes'
+      : state.pass >= MAX_PASSES && (!stillComing || state.pass >= MAX_AI_PASSES) ? 'max-passes'
         : state.stalled && awaiting.length === 0 ? 'stalled' : null;
   if (end === null) return { done: false, end, unresolved: [] };
   const reasonOf = (field: TrackedField): ReasonCode | null => {

@@ -100,8 +100,9 @@ import { parseSelectionHints, selectionLimits } from '../multiselect/hints';
 import { planMultiSelect, type MultiSelectValue } from '../multiselect/plan';
 import { NOTE_REASONS, type Choice } from '../resolver/candidate';
 import { phoneShownNationally } from '../resolver/format';
-import { classifiable, classifyItemOf, judgeClassification, SCREENED, screenForClassify, type ClassifyItem } from
-  '../resolver/classify';
+import { classifiable, classifyItemOf, judgeClassification, SCREENED, screenForClassify, type ClassifyItem,
+  type LlmClassification } from '../resolver/classify';
+import { namesAnotherPerson } from '../resolver/classifyRules';
 import { actionFor, classifyField, resolveField, type FieldClassification, type ResolvedField, type Shaped } from
   '../resolver/resolve';
 import { planRepeatables } from '../steps/blocks';
@@ -111,7 +112,8 @@ import { sha256Hex } from '../text/sha256';
 import { asUntrusted } from '../text/untrusted';
 import type { FieldKey, FieldSpec } from '../types/field';
 import type { FillResult, PlannedWrite, ReasonCode } from '../types/fill';
-import type { FieldCategory, PolicyClass, ValueOrigin, WriteValue } from '../types/intent';
+import type { FieldCategory, PolicyClass, ValueOrigin, VocabDomain, WriteValue } from '../types/intent';
+import { intendedDecline } from '../matcher/intended';
 import type { Match, MatchFlag, Resolution } from '../types/match';
 import type { UntrustedText, VisibleText } from '../types/text';
 import { CLASS_POLICIES, policyClassOf } from '../resolver/categories';
@@ -352,6 +354,30 @@ function matchChoice(input: MatchInput, ctx: FieldPlanContext): Matched {
     origin: { provenance: 'llm-pick', taskId, pickedCandidate: verdict.picked, labelHash: verdict.labelHash } };
 }
 
+// s2 core-gh (decision 12; the eeo study's §2A.3: s2-pie-eeo-6's Male / Female / Decline To Self Identify for a
+// non-binary person) ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Why a match found no option the value is: then an EEO answer may be one the list does not offer. */
+const NOT_OFFERED_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>(['no-match', 'distinctive-token-mismatch',
+  'partial-multi-select']);
+const NOT_OFFERED: ValueOrigin = { provenance: 'rule', ruleId: 'eeo.not-offered' };
+
+/** The list's own decline option for a self-identification answer it does not offer (the person's explicit answer, a
+ *  list read whole), as eeo.not-offered; null where there is none, or for any other field. */
+function declineInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx: FieldPlanContext):
+  { index: number; clean: string; match: Match } | null {
+  if (resolution.policy !== 'eeo' || resolution.origin?.provenance !== 'profile' || spec.options === 'lazy'
+    || spec.optionsPartial === true) return null;
+  const decline: Choice = { intended: intendedDecline(choice.domain as VocabDomain), domain: choice.domain };
+  const prepared = prepareOptions(spec.options, decline.domain, ctx.input.vocab);
+  const found = matchValue(matchInputOf(spec, resolution, decline, prepared), ctx);
+  if (found === 'waiting' || found.stage === 'none' || found.optionIndex === null) return null;
+  const option = prepared.list.find((candidate) => candidate.index === found.optionIndex);
+  return option === undefined || option.disabled ? null : { index: option.index, clean: option.clean, match: found };
+}
+
+// s2 core-gh end
+
 /** A row with nothing written, for the field being planned. */
 type Blank = (status: FillResult['status'], reason: ReasonCode, match?: Match) => FillResult;
 
@@ -437,6 +463,12 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
     return searchInstead(spec, resolution, choice, search, ctx, blank) ?? blank('flagged', 'options-incomplete');
   }
   if (match.stage === 'none' || match.optionIndex === null) {
+    // s2 core-gh (decision 12): a self-identification answer the list does not offer is declined.
+    const declined = NOT_OFFERED_REASONS.has(match.reason) ? declineInstead(spec, resolution, choice, ctx) : null;
+    if (declined !== null) {
+      return { value: { kind: 'option', index: declined.index, cleanLabel: declined.clean }, match: declined.match,
+        origin: NOT_OFFERED };
+    }
     return searchInstead(spec, resolution, choice, search, ctx, blank) ?? blank('flagged', match.reason, match);
   }
   // A search's result is chosen only in the fill band; anything less leaves it, and the frame types its next query.
@@ -560,10 +592,24 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
       // An EEO, legal or sensitive set is one answer: part of it states another (Asian alone for Asian and White), and
       // so does a set beside an option the page chose. It is written only when every value is selected and nothing
       // else is (the review, CORE-4).
-      if (WHOLE_ANSWER_CLASSES.includes(resolution.policy) && multi.reason !== 'ok' && multi.reason !== 'already-correct') {
+      // s2 core-gh (decision 12, the owner's word): a self-identification list that takes several gets every option the
+      // person's answers match, the rest left out ("Asian" on a list that splits it: the others kept), and the decline
+      // option when it offers none of them.
+      const eeoPart = resolution.policy === 'eeo' && multi.reason === 'partial-multi-select'
+        && multi.extraneous.length === 0 && multi.conflicts.length === 0 && multi.skippedByMax.length === 0;
+      if (eeoPart && multi.add.length === 0 && multi.keep.length === 0) {
+        const declined = declineInstead(spec, resolution, shaped.set[0]!, ctx);
+        if (declined !== null) return { value: { kind: 'options', indices: [declined.index], cleanLabels: [declined.clean] },
+          match: declined.match, origin: NOT_OFFERED,
+          multi: { profileSetSize: 1, kept: 0, exclusive: new Set(prepare(shaped.set[0]!).list
+            .filter((option) => option.exclusive).map((option) => option.index)) } };
+      }
+      if (WHOLE_ANSWER_CLASSES.includes(resolution.policy) && multi.reason !== 'ok' && multi.reason !== 'already-correct'
+        && !eeoPart) {
         return blank('flagged', multi.reason);
       }
-      if (multi.add.length === 0) return blank(multi.reason === 'already-correct' ? 'skipped' : 'flagged', multi.reason);
+      if (multi.add.length === 0) return blank(multi.reason === 'already-correct' || eeoPart ? 'skipped' : 'flagged',
+        eeoPart ? 'already-correct' : multi.reason);
       const added = multi.add.map((item) => values.find((candidate) => candidate.ref === item.ref)!.match);
       const weakest = added.reduce((low, match) => (STAGE_TRUST.indexOf(match.stage) < STAGE_TRUST.indexOf(low.stage)
         ? match : low));
@@ -577,7 +623,8 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         values.find((candidate) => candidate.ref === item.ref)!.match));
       return { value: { kind: 'options', indices: multi.add.map((item) => item.index),
         cleanLabels: multi.add.map((item) => cleanOf(item.index)) }, match,
-        ...(multi.reason !== 'ok' ? { flag: multi.reason } : partial ? { flag: 'options-incomplete' as const } : {}),
+        ...(multi.reason !== 'ok' && !eeoPart ? { flag: multi.reason } : partial ? { flag: 'options-incomplete' as const }
+          : {}),
         multi: { profileSetSize: shaped.set.length, kept: multi.keep.length, exclusive },
         ...(cache.length > 0 ? { cache } : {}) };
     }
@@ -778,6 +825,23 @@ function categoryOf(classification: FieldClassification): FieldCategory | null {
   return classification.by === 'rules' ? classification.rules.category ?? null : null;
 }
 
+/** s2 core-gh (decision 14): the single-choice lists read before they are classified. */
+const READ_FIRST_KINDS: ReadonlySet<FieldSpec['kind']> = new Set<FieldSpec['kind']>(['select', 'combobox']);
+
+// s2 core-gh (decision 13, the gh study's 3d): s2-onestream-related-open question_8152432009 ("If yes, please enter the
+// referring employee's full name") and Sand's "If you selected other, Sand Staff or Media, please specify" took the
+// profile's referral text once the LLM classified them as the referral source.
+/** An LLM classification as the plan takes it: an applicant's own detail (a profile category) is refused, as no
+ *  classification at all, on a field about someone else (classifyRules namesAnotherPerson) and on a follow-up to the
+ *  answer above ("If yes, …", "If you selected other, please specify": conditional.ts conditionOf), whose answer is
+ *  never the profile's own value. Any other verdict stands. */
+function withoutOwnDetail(spec: FieldSpec, judged: LlmClassification): LlmClassification {
+  if (judged.kind !== 'category' || policyClassOf(judged.category) !== 'profile') return judged;
+  return namesAnotherPerson(spec) || conditionOf(spec.label) !== null ? { kind: 'none', reason: 'unknown-field' }
+    : judged;
+}
+// s2 core-gh end
+
 /** The settings with every LLM step off: a run that fills from the profile only. */
 function withoutAi(settings: PlanInput['settings']): PlanInput['settings'] {
   return { ...settings, llm: { ...settings.llm, tiebreak: false, classify: false, drafts: false, answers: false } };
@@ -969,6 +1033,9 @@ export function planFrame(asked: PlanInput): PlanOutput {
   // a field no visible label names (checkHoneypot).
   const writable = (spec: FieldSpec) => checkHoneypot(spec).ok && !spec.disabled && !spec.readOnly;
   const classify: ClassifyItem[] = [];
+  /** s2 core-gh (decision 14): the lazy lists nothing classified, rowed waiting-for-options so the loop reads them
+   *  before they are classified. */
+  const readFirst = new Set<string>();
   // What classified each planned field in the end: the rules', or the LLM's once it answered (for a draft's, an
   // answer's and Edit with AI's checks).
   const decided: FieldClassification[] = chosen.map((field) => field.classification);
@@ -984,8 +1051,14 @@ export function planFrame(asked: PlanInput): PlanOutput {
     }
     const verdict = input.ai?.classifications.get(spec.key);
     if (verdict !== undefined) {
-      decided[at] = { by: 'llm', llm: judgeClassification(spec, verdict, input.vocab) };
+      decided[at] = { by: 'llm', llm: withoutOwnDetail(spec, judgeClassification(spec, verdict, input.vocab)) };
       return resolveWith(spec, decided[at]!);
+    }
+    // s2 core-gh (decision 14): a list not read yet is read first and classified once, with its options; classified
+    // while lazy, it was classified again under its read key (the key holds the option set): one AI task more.
+    if (spec.options === 'lazy' && READ_FIRST_KINDS.has(spec.kind)) {
+      readFirst.add(spec.key);
+      return first;
     }
     const item = classifyItemOf(spec);
     if (item !== null) classify.push(item);
@@ -1072,6 +1145,15 @@ export function planFrame(asked: PlanInput): PlanOutput {
       }
       return { spec, ...standing, row: rowWithout(spec, field.resolution.category,
         spec.required ? 'flagged' : 'skipped', 'conditional-question', standing.row.confidence) };
+    }
+    // s2 core-gh (decision 14): a lazy list nothing classified is read before it is classified.
+    if (readFirst.has(spec.key)) {
+      const standing = planField(spec, field, ctx);
+      if (standing.write !== undefined || standing.asked !== undefined || standing.row.status === 'blocked') {
+        return { spec, ...standing };
+      }
+      return { spec, ...standing, row: rowWithout(spec, field.resolution.category, 'flagged', 'waiting-for-options',
+        standing.row.confidence) };
     }
     const wouldDraft = drafting || (aiOff && wantedLlm.drafts && !input.dryRun);
     const item = wouldDraft ? draftItemOf(spec, classification, field.resolution, canWrite, draftContext) : null;

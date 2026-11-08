@@ -194,15 +194,23 @@ describe('S-5, v4 (D5): a consent asked as Yes/No and a binding waiver follow th
     }
   });
 
-  it('never answers whether a commitment binds the person now: its Yes would state a fact', () => {
-    // Amazon's Greenhouse form (fixtures/greenhouse/twitch-job).
+  it('never answers whether a commitment binds the person now but from their own answer: its Yes states a fact', () => {
+    // Amazon's Greenhouse form (fixtures/greenhouse/twitch-job). s2 core-gh: a restrictive agreement asked as a fact is
+    // the person's own answer from the sensitive part (screening.restrictiveAgreement), never a consent and never an
+    // AI's; without one it stays unanswered.
     const label = 'Are you subject to a non-competition agreement or other agreement that would preclude or restrict your employment at Amazon?';
+    const answered = { ...profile, screening: { ...profile.screening,
+      restrictiveAgreement: { kind: 'value' as const, value: false } } };
     for (const required of [true, false]) {
       const list = specOf(label, 'select', { optionLabels: ['Yes', 'No'], required });
       for (const out of [planOf([list], { profile }), planOf([list], { profile, ai: unclassified(list) })]) {
         askedNothing(out);
-        leftForPerson(out, list, 'consent-requires-user');
+        expect(fieldOf(out, list)).toMatchObject({ write: undefined,
+          row: { category: 'screening.restrictiveAgreement', reason: 'legal-not-in-profile', wrote: false } });
       }
+      const own = planOf([list], { profile: answered });
+      askedNothing(own);
+      expect(fieldOf(own, list).write?.value).toMatchObject({ kind: 'option', cleanLabel: 'No' });
     }
     expect(asksToAgree(normalizeLabel(label))).toBe(false);
     expect(asksToAgree(normalizeLabel('Have you signed a non-compete agreement with your current employer?'))).toBe(false);

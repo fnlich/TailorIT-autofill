@@ -9,7 +9,10 @@ import {
 /** §8.2's "Categories" column, read row by row; whatever no row names is profile. */
 const DESIGN_CLASS: Array<[PolicyClass, (category: FieldCategory) => boolean]> = [
   ['sensitive', (c) => c.startsWith('salary.') || c === 'identity.pronouns'],
-  ['legal', (c) => c.startsWith('workAuth.') || c === 'screening.over18' || c === 'screening.criminalHistory'],
+  // s2 core-gh: the screening answers of snapshot round 2 are the person's own, legal.
+  ['legal', (c) => c.startsWith('workAuth.') || c === 'screening.over18' || c === 'screening.criminalHistory'
+    || ['screening.restrictiveAgreement', 'screening.governmentService', 'screening.relatives',
+      'screening.essentialFunctions'].includes(c)],
   ['eeo', (c) => c.startsWith('eeo.')],
   ['consent', (c) => c.startsWith('consent.')],
   ['attention', (c) => c === 'attentionCheck'],
@@ -75,11 +78,18 @@ describe('CATEGORY_KINDS (§8.2)', () => {
   });
 
   it('never allows typed text for a self-identification or a yes/no legal question', () => {
-    const chosenOnly: FieldCategory[] = [...FIELD_CATEGORIES.filter((c) => c.startsWith('eeo.')), 'workAuth.authorized',
-      'workAuth.sponsorship', 'workAuth.sponsorshipNow', 'workAuth.sponsorshipFuture', 'workAuth.status',
-      'screening.over18'];
+    const chosenOnly: FieldCategory[] = [...FIELD_CATEGORIES.filter((c) => c.startsWith('eeo.')), 'workAuth.status',
+      'screening.over18', 'screening.restrictiveAgreement', 'screening.governmentService', 'screening.relatives',
+      'screening.essentialFunctions'];
     for (const category of chosenOnly) {
       expect(kindAllowed(category, 'text'), category).toBe(false);
+      expect(kindAllowed(category, 'textarea'), category).toBe(false);
+    }
+    // s2 core-gh (decision 11): authorization and sponsorship asked yes or no in a text box take "Yes" or "No"
+    // (labelRules YES_NO_QUESTION); never a box of prose.
+    for (const category of ['workAuth.authorized', 'workAuth.sponsorship', 'workAuth.sponsorshipNow',
+      'workAuth.sponsorshipFuture'] as const) {
+      expect(kindAllowed(category, 'text'), category).toBe(true);
       expect(kindAllowed(category, 'textarea'), category).toBe(false);
     }
   });

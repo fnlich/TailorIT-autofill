@@ -284,8 +284,10 @@ describe('planFrame: EEO, legal and consent', () => {
   });
 
   // CORE-4 (Phase 2 review): a race set on a checkbox group was written in part (Asian only; White without Middle
-  // Eastern or North African), which states a different answer than the person's.
-  it('writes an EEO set only when every value matched and the cap admits them all', () => {
+  // Eastern or North African), which states a different answer than the person's. s2 core-gh (decision 12, the
+  // owner's word of 2026-11-07): a self-identification list that takes several gets every option the answers match,
+  // the rest left out; a cap or the page's own choice still writes nothing.
+  it("writes an EEO set's matched values, but nothing past a cap or beside the page's own choice", () => {
     const profile = goldenProfile();
     const races = (value: Array<'asian' | 'white' | 'middle-eastern-north-african'>) => ({ ...profile,
       eeo: { ...profile.eeo, race: { kind: 'value' as const, value } } });
@@ -295,8 +297,8 @@ describe('planFrame: EEO, legal and consent', () => {
     expect(fieldOf(planOf([full], { profile: races(['asian', 'white']) }), full).write?.value)
       .toMatchObject({ kind: 'options', indices: [0, 1] });
     const noMena = group(['Asian', 'White', 'Black or African American']);
-    expect(fieldOf(planOf([noMena], { profile: races(['white', 'middle-eastern-north-african']) }), noMena))
-      .toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'partial-multi-select', wrote: false } });
+    expect(fieldOf(planOf([noMena], { profile: races(['white', 'middle-eastern-north-african']) }), noMena).write?.value)
+      .toMatchObject({ kind: 'options', indices: [1] });
     const capped = group(['Asian', 'White', 'Black or African American'], { constraints: { maxSelections: 1 } });
     expect(fieldOf(planOf([capped], { profile: races(['asian', 'white']) }), capped))
       .toMatchObject({ write: undefined, row: { status: 'flagged', reason: 'max-selections-reached' } });

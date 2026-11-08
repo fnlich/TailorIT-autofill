@@ -31,6 +31,7 @@ import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
 import { phoneText } from './format';
+import { EMPLOYED_NOW } from './labelRules';
 
 /** The profile entry each block of a repeatable section is filled from, by block index (null: no entry), for the
  *  sections the plan assigned (steps/blocks.ts). */
@@ -362,7 +363,21 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     case 'links.portfolio':
       return textValue(links.portfolio, 'links.portfolio');
     case 'links.website':
+      // s2 core-gh (decision 11): no website, the portfolio (never GitHub or LinkedIn).
+      if ((links.website?.trim() ?? '') === '' && (links.portfolio?.trim() ?? '') !== '') {
+        return textValue(links.portfolio, 'links.portfolio', VALUE_TRANSFORM, 'links.website-from-portfolio');
+      }
       return textValue(links.website, 'links.website');
+    // s2 core-gh (decision 9): X and Telegram, the link or its handle as the box asks.
+    case 'links.twitter':
+    case 'links.telegram':
+      return handleLinkValue(category, spec, links);
+    // s2 core-gh: texts composed from the profile's parts.
+    case 'address.full':
+    case 'skills.certifications':
+    case 'preferences.relocationPlaces':
+    case 'education.summary':
+      return composedValue(category, ctx);
     case 'links.other': {
       if (links.other.length === 1) return textValue(links.other[0]!.url, 'links.other[0].url');
       if (links.other.length > 1 && spec.kind === 'textarea') {
@@ -523,9 +538,150 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
   }
 }
 
+// ── s2 core-gh ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Where X and Telegram links live, and what a handle there may be (X's 1 to 15, Telegram's 5 to 32 letters, digits or
+ *  underscores). */
+const HANDLE_LINKS: Readonly<Record<'links.twitter' | 'links.telegram', { host: RegExp; handle: RegExp;
+  own: 'x' | 'telegram' }>> = {
+  'links.twitter': { host: /^(?:https?:\/\/)?(?:www\.|mobile\.)?(?:x|twitter)\.com\/(?:#!\/)?@?([A-Za-z0-9_]+)\/?(?:[?#].*)?$/i,
+    handle: /^[A-Za-z0-9_]{1,15}$/, own: 'x' },
+  'links.telegram': { host: /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me)\/@?([A-Za-z0-9_]+)\/?(?:[?#].*)?$/i,
+    handle: /^[A-Za-z0-9_]{5,32}$/, own: 'telegram' },
+};
+/** A box that takes a handle rather than a link: its label or help text names a username or a handle, or shows "@",
+ *  and no URL, link or profile address. */
+const ASKS_HANDLE = /\b(?:user\s?names?|handles?)\b|@/i;
+const ASKS_LINK = /\b(?:urls?|links?|web\s?address|profile\s+(?:url|link|address))\b|https?:/i;
+
+/** The handle a stored link names (its path's first part), or the stored text itself when it is a bare handle
+ *  ("@name", "name"); null when it is neither. */
+function handleOf(link: string, form: (typeof HANDLE_LINKS)[keyof typeof HANDLE_LINKS]): string | null {
+  const text = link.trim();
+  const bare = text.replace(/^@/, '');
+  if (form.handle.test(bare)) return bare;
+  const found = form.host.exec(text)?.[1];
+  return found !== undefined && form.handle.test(found) ? found : null;
+}
+
+/**
+ * s2 core-gh (decision 9): an X or Telegram field (screenshot 7 of 2026-11-07: "X username …", "Telegram username …")
+ * from the profile's own link (links.x, links.telegram), else the one link of links.other on that host. A box that asks
+ * for a username or a handle gets the bare handle (link.handle), "@handle" only when its label or help text shows "@";
+ * any other gets the link as stored.
+ */
+function handleLinkValue(category: 'links.twitter' | 'links.telegram', spec: FieldSpec, links: Profile['links']):
+  ValueResult {
+  const form = HANDLE_LINKS[category];
+  const own = links[form.own]?.trim() ?? '';
+  const others = links.other.map((link, index) => ({ link, index }))
+    .filter(({ link }) => form.host.test(link.url.trim()));
+  const found = own !== '' ? { text: own, at: `links.${form.own}` }
+    : others.length === 1 ? { text: others[0]!.link.url.trim(), at: `links.other[${others[0]!.index}].url` } : null;
+  if (found === null) return none(others.length > 1 ? 'ambiguous-options' : 'no-profile-value', others.length > 1);
+  const asked = `${spec.label} ${spec.description}`;
+  if (!ASKS_HANDLE.test(asked) || ASKS_LINK.test(asked)) return textValue(found.text, found.at);
+  const handle = handleOf(found.text, form);
+  if (handle === null) return none('format-unsupported');
+  return textValue(asked.includes('@') ? `@${handle}` : handle, found.at, VALUE_TRANSFORM, 'link.handle');
+}
+
+/** An address's parts in one line: the street lines, the city, the region with the postcode, the country's name. */
+function addressText(address: NonNullable<Profile['address']>, vocab: Vocab): string {
+  const region = [address.region?.code ?? address.region?.name, address.postalCode].filter((part) => part).join(' ');
+  const country = address.country === undefined ? undefined : vocab.countries.byAlpha2(address.country)?.name
+    ?? address.country;
+  return [address.line1, address.line2, address.city, region, country].map((part) => part?.trim() ?? '')
+    .filter((part) => part !== '').join(', ');
+}
+
+/**
+ * s2 core-gh: a text composed from the profile's parts (compose.text): a whole address in one box (its street and
+ * city at least); the person's certifications, joined (a yes or no whether there is any); where they would relocate
+ * to, joined for a box, chosen for a list; the education written out, one "School; Degree" line an entry. Nothing is
+ * written when a part it needs is missing: an empty list is no answer.
+ */
+function composedValue(category: FieldCategory, ctx: ValueContext): ValueResult {
+  const { spec, profile, vocab } = ctx;
+  switch (category) {
+    case 'address.full': {
+      const address = profile.address;
+      if (address?.line1 === undefined || address.city === undefined) return none('no-profile-value', false);
+      return textValue(addressText(address, vocab), 'address', VALUE_TRANSFORM, 'compose.text');
+    }
+    case 'skills.certifications': {
+      const names = (profile.certifications ?? []).map((certification) => certification.name.trim())
+        .filter((name) => name !== '');
+      if (names.length === 0) return none('no-profile-value', false);
+      return value({ origin: byRule('compose.text', 'certifications'), confidence: VALUE_TRANSFORM, text: names.join('; '),
+        choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' }, check: true });
+    }
+    case 'preferences.relocationPlaces': {
+      const places = (profile.preferences.relocationPlaces ?? []).map((place) => place.trim())
+        .filter((place) => place !== '');
+      if (places.length === 0) return none('no-profile-value', false);
+      const choices = places.map((place): Choice => ({ intended: intendedText(place), domain: 'generic' }));
+      return value({ origin: byRule('compose.text', 'preferences.relocationPlaces'), confidence: VALUE_TRANSFORM,
+        text: places.join(', '), set: choices, ...(choices.length === 1 ? { choice: choices[0]! } : {}) });
+    }
+    case 'education.summary': {
+      const lines = profile.education.map((entry) => {
+        const school = entry.institution.userText.trim() || entry.institution.canonicalName;
+        const degree = degreeValue(entry, 'education', vocab);
+        return [school, degree.ok ? degree.candidate.text ?? '' : ''].filter((part) => part.trim() !== '').join('; ');
+      }).filter((line) => line !== '');
+      if (lines.length === 0) return none('no-profile-value', false);
+      return value({ origin: byRule('compose.text', 'education'), confidence: VALUE_TRANSFORM,
+        text: lines.join(spec.kind === 'textarea' ? '\n' : ' | ') });
+    }
+    default:
+      return none('no-profile-value', false);
+  }
+}
+
+/** s2 core-gh (decision 8): what a box is given when its own words tell an applicant without the answer to type a
+ *  placeholder. The page's token only selects one of these: its characters are never copied. */
+export const NO_VALUE_PLACEHOLDERS = ['N/A', 'NA', 'None'] as const;
+export type NoValuePlaceholder = (typeof NO_VALUE_PLACEHOLDERS)[number];
+
+const QUOTE = String.raw`["'‘’“”]?`;
+const DONT_HAVE = String.raw`(?:do\s*not|don'?t|dont)\s+have`;
+const TYPE_VERB = String.raw`(?:type|write|enter|put|input|use|insert|mark|answer)`;
+const TOKEN = String.raw`${QUOTE}(n\/a|na|none)${QUOTE}(?![\w/])`;
+/** The instructions (screenshot 7 of 2026-11-07: "(If you don't have a profile, please type N/A)"), on the label or the
+ *  help text folded to lower case with plain quotes: "if you don't have one, type N/A", "(N/A if none)", "type N/A if
+ *  not applicable", "if none, write None". */
+const PLACEHOLDER_INSTRUCTIONS: readonly RegExp[] = [
+  new RegExp(String.raw`\bif\s+you\s+${DONT_HAVE}\s+(?:an?\s+|one\b|any\b)?[^.;)]{0,30}?[,)]?\s*(?:then\s+)?(?:please\s+)?${TYPE_VERB}\s+${TOKEN}`),
+  new RegExp(String.raw`\bif\s+(?:none|not\s+applicable|n\/a)\s*,?\s*(?:then\s+)?(?:please\s+)?${TYPE_VERB}\s+${TOKEN}`),
+  new RegExp(String.raw`\b${TYPE_VERB}\s+${TOKEN}\s+if\s+(?:none|not\s+applicable|you\s+${DONT_HAVE}\s+(?:one|any|an?\s+\w+))\b`),
+  new RegExp(String.raw`\(\s*${TOKEN}\s+if\s+(?:none|not\s+applicable|you\s+${DONT_HAVE}\s+(?:one|any|an?\s+\w+))\s*\)`),
+];
+const TOKEN_PLACEHOLDER: Readonly<Record<string, NoValuePlaceholder>> = { 'n/a': 'N/A', na: 'NA', none: 'None' };
+
+/**
+ * s2 core-gh (decision 8; the gh study's 2c.4): the placeholder a field's own words ask an applicant without the answer
+ * to type ("Telegram username (If you don't have a profile, please type N/A)"), from NO_VALUE_PLACEHOLDERS, else null.
+ * Only a visible label or its help text is read (a label nobody sees asks nothing). The tripwire, bot and attention
+ * checks run before any value (resolve.ts classifyField): "If you are an AI, type N/A" never gets here.
+ */
+export function placeholderAsked(spec: Pick<FieldSpec, 'label' | 'description' | 'labelVisible'>): NoValuePlaceholder | null {
+  const texts = [spec.labelVisible ? spec.label : '', spec.description];
+  for (const raw of texts) {
+    const text = raw.toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ');
+    for (const instruction of PLACEHOLDER_INSTRUCTIONS) {
+      const token = instruction.exec(text)?.[1];
+      if (token !== undefined) return TOKEN_PLACEHOLDER[token] ?? null;
+    }
+  }
+  return null;
+}
+
+// s2 core-gh end
+
 /** A company's name as two names are compared: folded, without its punctuation and its legal form ("Inc.", "LLC",
  *  "Ltd", "GmbH", "Corp", "AB"). */
-function companyKey(name: string): string {
+export function companyKey(name: string): string {
   return normalize(name, 'label').tokens
     .filter((token) => !/^(?:inc|incorporated|llc|llp|lp|ltd|limited|plc|gmbh|corp|corporation|co|company|sa|ag|bv|nv|ab|oy|aps|kg|pty|pte|sarl|sas|srl|spa)$/.test(token))
     .join(' ');
@@ -538,7 +694,7 @@ const US = /\bus\b/;
 
 /** Whether a question names the posting's company (its companyKey's words, in order) or points at it ("here", "this
  *  company", "us", "former employee"). */
-function namesPostingCompany(question: string, company: string): boolean {
+export function namesPostingCompany(question: string, company: string): boolean {
   if (NAMES_THIS_COMPANY.test(question.toLowerCase()) || US.test(question)) return true;
   const name = company.split(' ').filter((token) => token !== '');
   const tokens = normalize(question, 'label').tokens;
@@ -557,7 +713,9 @@ export function previouslyEmployedValue(profile: Profile, postingCompany: string
   question: string): ValueResult {
   const company = postingCompany === undefined ? '' : companyKey(postingCompany);
   if (company === '' || !namesPostingCompany(question, company)) return none('unknown-field', false);
-  const worked = profile.experience.some((entry) => companyKey(entry.company) === company);
+  // s2 core-gh (s2-horacemann-certify-open question_20182378004): employed there now asks of the current entries only.
+  const now = EMPLOYED_NOW.test(normalize(question, 'label').key);
+  const worked = profile.experience.some((entry) => (!now || entry.current) && companyKey(entry.company) === company);
   return value({ origin: { provenance: 'rule', ruleId: 'screening.previously-employed' }, confidence: VALUE_TRANSFORM,
     choice: { intended: { kind: 'boolean', value: worked }, domain: 'polarity' }, check: worked });
 }

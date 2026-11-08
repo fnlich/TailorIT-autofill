@@ -34,6 +34,15 @@ export const FIELD_CATEGORIES = [
   'freeText.whyCompany', 'freeText.whyRole', 'freeText.coverLetter', 'freeText.additionalInfo', 'freeText.other',
   'file.resume', 'file.coverLetter', 'file.other',
   'screening.previouslyEmployed', 'screening.other',
+  // s2 core-gh (snapshot round 2, the gh and eeo studies): a Telegram link; a whole address in one box ("What is your
+  // current address?", "Primary Residence Address"); the countries of citizenship ("Country of Origin"); a restrictive
+  // agreement (a non-compete), U.S. military or government service, a relative at the company, the role's essential
+  // functions, all from the sensitive part; the person's certifications, where they would relocate to, and their
+  // education written out ("College Name; Degree Obtained").
+  'links.telegram', 'address.full', 'workAuth.citizenship', 'screening.restrictiveAgreement',
+  'screening.governmentService', 'screening.relatives', 'screening.essentialFunctions', 'skills.certifications',
+  'preferences.relocationPlaces', 'education.summary',
+  // s2 core-gh end
   'unknown',
 ] as const;
 export type FieldCategory = (typeof FIELD_CATEGORIES)[number];
@@ -57,14 +66,23 @@ export const RULE_IDS = ['name.split', 'phone.format', 'date.format', 'location.
   'consent.preapproved',
   'consent.signature-preapproved', 'numeric.range-bucket', 'other.free-text', 'guard.revert', 'typeahead.query',
   'eeo.decline-default', 'screening.previously-employed', 'consent.required', 'consent.no-ai-attestation',
-  'legal.work-basis'] as const;
+  'legal.work-basis',
+  // s2 core-gh: the N/A an instruction asks for where the profile holds no value (decision 8); a handle taken from a
+  // link (decision 9); the portfolio for a website (decision 11); a Yes or No written as text (decision 11); the
+  // Hispanic or Latino option of a race list (decision 12); an answer a list does not offer, declined (decision 12);
+  // an address, a list of places or of certifications, or the education, written out from the profile's parts.
+  'placeholder.no-profile', 'link.handle', 'links.website-from-portfolio', 'legal.yes-no-text', 'eeo.hispanic-race',
+  'eeo.not-offered', 'compose.text',
+  // s2 core-gh end
+] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
 /** A profile location such as 'contact.email' or 'education[0].institution'. The worker checks that it resolves; the
  *  content script checks only its shape. */
 export type ProfilePath = string & { readonly __brand: 'ProfilePath' };
+// s2 core-gh: the profile's certifications (snapshot round 2) are a root of their own.
 export const PROFILE_PATH_PATTERN =
-  /^(identity|contact|address|location|links|workAuthorization|eeo|screening|education|experience|languages|skills|preferences|referralSource|resume|coverLetter)(\.[A-Za-z0-9]+|\[\d+\])*$/;
+  /^(identity|contact|address|location|links|workAuthorization|eeo|screening|education|experience|languages|skills|preferences|referralSource|resume|coverLetter|certifications)(\.[A-Za-z0-9]+|\[\d+\])*$/;
 
 /** Where a value came from. A value without one cannot exist: the Guard blocks it as a bug. */
 export type ValueOrigin =

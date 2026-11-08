@@ -189,6 +189,16 @@ export function ruleText(key: string): string {
   return key.replace(CLOSING_HASH, '');
 }
 
+/** s2 core-gh (decision 13): a label's text up to its last question mark, as the rules read it, when the label states
+ *  something after it ("Will you … require sponsorship …? You must be work authorized … without the need for employer
+ *  sponsorship."); undefined for a label with no question, or nothing after it. */
+export function questionsOf(label: string): string | undefined {
+  const last = label.lastIndexOf('?');
+  if (last < 0 || !/[\p{L}\p{N}]/u.test(label.slice(last + 1))) return undefined;
+  const asked = ruleText(normalizeLabel(label.slice(0, last + 1)));
+  return asked === '' ? undefined : asked;
+}
+
 /** The classes a category read from the help text alone may never be filled in: the closed ones and attention. */
 const CLOSED_FROM_DESCRIPTION: readonly PolicyClass[] = [...CLOSED_CLASSES, 'attention'];
 
@@ -222,7 +232,9 @@ function labelRuleVote(spec: FieldSpec, label: string, context: LabelContext): R
   if (onLabel !== null) return labelVote(withDescriptionConsent(onLabel, description, spec.kind), 'label');
   if (description === '') return null;
   const both = label === '' ? description : `${label} ${description}`;
-  const onBoth = matchLabelRules(both, section, spec.kind, context);
+  // The label's question sentences are the label's alone: the text with the description is read whole.
+  const { questions: _questions, ...withDescription } = context;
+  const onBoth = matchLabelRules(both, section, spec.kind, withDescription);
   if (onBoth === null) return null;
   const closed = CLOSED_FROM_DESCRIPTION.includes(policyClassOf(onBoth.category));
   return labelVote(closed && onBoth.needsUser === undefined ? { ...onBoth, needsUser: 'description-only' } : onBoth,
@@ -241,8 +253,11 @@ const GENERIC_TOKEN_CATEGORIES: Readonly<Record<string, readonly FieldCategory[]
 };
 
 /** A field about someone other than the applicant, named in the label: a referee, an emergency contact, a manager. A
- *  job's own reference ("Job reference", "Reference number") is not a person. */
-const OTHER_PERSON_LABEL = /\b(?:referr?ers?|referees?|reference\s+\d+|(?<!\b(?:job|requisition|posting|vacancy|role|position)\s)references?(?!\s+(?:number|no|num|code|id|letters?)\b)|emergency|next\s+of\s+kin|spouse|guardian|managers?|supervisors?|recruiters?|referral\s+(?:name|email|e\s?mail|phone|contact|first|last|full)|referring\s+(?:employee|person)|employee\s+referral)\b/;
+ *  job's own reference ("Job reference", "Reference number") is not a person. s2 core-gh (decision 13, the gh study's
+ *  3d: s2-onestream-related-open question_8152432009 "If yes, please enter the referring employee's full name", which
+ *  took the profile's referral text): normalization deletes the apostrophe, so a possessive reads "employees"; and a
+ *  relative named as a noun ("the name of your relative", question_8152428009) is another person too. */
+const OTHER_PERSON_LABEL = /\b(?:referr?ers?|referees?|reference\s+\d+|(?<!\b(?:job|requisition|posting|vacancy|role|position)\s)references?(?!\s+(?:number|no|num|code|id|letters?)\b)|emergency|next\s+of\s+kin|spouse|guardian|managers?|supervisors?|recruiters?|referral\s+(?:name|email|e\s?mail|phone|contact|first|last|full)|referring\s+(?:employees?|persons?|individuals?|friends?)|employee\s+referral|(?:your|the|a|my)\s+relatives?)\b/;
 /** The same in the name and id attributes, as nameIdText writes them ("referrer_email", "reference1_first_name"). */
 const OTHER_PERSON_ID = /(?:^|[_ ])(?<!(?:job|requisition|posting|vacancy)_)(?:referr?er\w*|referee\w*|references?\d*|emergency\w*|spouse\w*|guardian\w*|manager\w*|supervisor\w*|recruiter\w*)(?![_ ](?:number|no|num|code|id)(?:[_ ]|$))(?=[_ \d]|$)/;
 /** A section about other people ("references", "emergency-contact"). */
@@ -321,6 +336,8 @@ export function classifyByRules(spec: FieldSpec): RuleClassification | null {
   const context: LabelContext = { qualifiers: normalized.qualifiers.map((q) => q.tokens.join(' ')).join(' '),
     rawLabel: spec.label };
   if (spec.section.block !== undefined) context.block = spec.section.block;
+  const questions = questionsOf(spec.label);
+  if (questions !== undefined) context.questions = questions;
   const autocomplete = autocompleteRule(spec.autocomplete, spec.kind);
   const nameId = nameIdRule(spec.nameAttr, spec.idAttr, spec.kind);
   let votes = [
@@ -398,6 +415,17 @@ export function consentChoiceOption(spec: Pick<FieldSpec, 'kind' | 'options' | '
   return only.clean;
 }
 
+/** s2 core-gh (decision 10): a list read whole whose usable options are exactly a Yes and a No ("Yes", "No", "Yes, I
+ *  certify", "No"), none of them injected or disabled. */
+function offersYesAndNo(spec: Pick<FieldSpec, 'kind' | 'options' | 'optionsPartial'>, vocab: Vocab): boolean {
+  if (spec.options === 'lazy' || spec.optionsPartial === true) return false;
+  const list = prepareOptions(spec.options, 'generic', vocab).list;
+  if (list.some((option) => option.injected)) return false;
+  const usable = list.filter((option) => !option.unusable && !option.disabled).map((option) => normalizeLabel(option.clean));
+  return usable.length === 2 && usable.some((label) => /^yes\b/.test(label) && affirmativeOption(label))
+    && usable.some((label) => /^no$/.test(label));
+}
+
 /** Whether the rules leave a field to a consent read as a choice: they classify nothing, they hand a consent to the
  *  person only because its kind holds no box (kind-mismatch), or they hand it over for a sensitive topic that is only
  *  its consent wording ("Consent to processing"). A field the rules read as anything else keeps that reading. */
@@ -427,10 +455,21 @@ export function consentChoice(spec: FieldSpec, rules: RuleClassification | null,
     .join(' ').trim();
   if (label === '' || !opensToConsentChoice(spec, rules, label)) return null;
   const option = consentChoiceOption(spec, vocab);
-  if (option === null) return null;
+  // s2 core-gh (decision 10): a consent the rules read asked as a Yes and a No ("I certify that all information I have
+  // provided … is true and accurate." on s2-horacemann-certify-open, "I certify … I understand that false … may result
+  // in my release." on s2-onestream-related-open, the CLEAR ID check on s2-robotspencils-clear-id-open) is decided by
+  // the Consents mode like any consent: its Yes is chosen by polarity (policy.ts consentValue) where it is approved or
+  // required.
+  // While the list is not read, the rules' consent reading waits for it (consentValue: waiting-for-options).
+  const fromRules: RuleClassification | null = rules?.needsUser === 'kind-mismatch'
+    && policyClassOf(rules.asks) === 'consent'
+    ? { category: rules.asks, confidence: rules.confidence, classifiedBy: rules.classifiedBy, rule: rules.rule,
+      reason: 'ok', matchedOn: rules.matchedOn ?? 'label', consentKinds: rules.consentKinds ?? [rules.asks] }
+    : null;
+  if (option === null) return fromRules !== null && offersYesAndNo(spec, vocab) ? fromRules : null;
   const asked = option === 'pending' ? label : `${label} ${normalizeLabel(option)}`;
   const hit = consentChoiceHit(asked, ruleText(normalizeLabel(spec.description)));
-  if (hit === null) return null;
+  if (hit === null) return option === 'pending' ? fromRules : null;
   return { category: hit.category, confidence: hit.confidence, classifiedBy: 'label-rule', rule: hit.rule,
     reason: 'ok', matchedOn: 'label', consentKinds: hit.consentKinds! };
 }

@@ -101,7 +101,26 @@ export const RULE_SCOPES: Readonly<Record<RuleId, (category: FieldCategory) => b
   'typeahead.query': (category) => policyClassOf(category) === 'profile',
   'eeo.decline-default': (category) => policyClassOf(category) === 'eeo',
   'screening.previously-employed': (category) => category === 'screening.previouslyEmployed',
+  // s2 core-gh: the N/A an instruction asks for, in a profile category the profile holds no value for (decision 8); a
+  // link's handle (decision 9); the portfolio for a website and a Yes or No typed for a legal question (decision 11);
+  // the Hispanic or Latino option of a race list, and a self-identification answer the list does not offer, declined
+  // (decision 12); a text composed from the profile's parts.
+  'placeholder.no-profile': (category) => policyClassOf(category) === 'profile',
+  'link.handle': (category) => category === 'links.twitter' || category === 'links.telegram',
+  'links.website-from-portfolio': (category) => category === 'links.website',
+  'legal.yes-no-text': (category) => YES_NO_LEGAL.includes(category),
+  'eeo.hispanic-race': (category) => category === 'eeo.race',
+  'eeo.not-offered': (category) => policyClassOf(category) === 'eeo',
+  'compose.text': (category) => COMPOSED.includes(category),
+  // s2 core-gh end
 };
+
+/** s2 core-gh: the yes/no legal questions a text box may ask (legal.yes-no-text), and the texts composed from the
+ *  profile's parts (compose.text). */
+const YES_NO_LEGAL: readonly FieldCategory[] = ['workAuth.authorized', 'workAuth.sponsorship', 'workAuth.sponsorshipNow',
+  'workAuth.sponsorshipFuture'];
+const COMPOSED: readonly FieldCategory[] = ['address.full', 'preferences.relocationPlaces', 'skills.certifications',
+  'education.summary'];
 
 /** The value a profile path names ('contact.email', 'education[0].institution'), or undefined. Only the profile's own
  *  data is read (the review, CORE-16): a name is an own property of an object that is no list, an index an own entry
@@ -227,7 +246,7 @@ const CLASS_RULES: Readonly<Record<PolicyClass, readonly RuleId[] | 'any'>> = {
   profile: 'any',
   sensitive: ['guard.revert'],
   legal: ['legal.decline', 'guard.revert'],
-  eeo: ['eeo.decline', 'eeo.decline-default', 'guard.revert'],
+  eeo: ['eeo.decline', 'eeo.decline-default', 'eeo.not-offered', 'guard.revert'],
   consent: ['consent.preapproved', 'consent.signature-preapproved', 'consent.required', 'consent.no-ai-attestation',
     'guard.revert'],
   attention: [],
