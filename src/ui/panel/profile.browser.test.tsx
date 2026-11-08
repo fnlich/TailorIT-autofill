@@ -100,7 +100,8 @@ describe('Your autofill information (v3 Phase 3b)', () => {
     expect(control<HTMLTextAreaElement>(root, WORDS.fields.anythingElse).value).toBe(PROFILE.anythingElse);
     expect([...root.querySelectorAll('[data-profile-section] h3')].map((heading) => heading.textContent)).toEqual([
       WORDS.sections.personal, WORDS.sections.links, WORDS.sections.education, WORDS.sections.experience,
-      WORDS.sections.skills, WORDS.sections.preferences, WORDS.sections.anythingElse, WORDS.sections.sensitive]);
+      WORDS.sections.skills, WORDS.sections.certifications, WORDS.sections.preferences, WORDS.sections.anythingElse,
+      WORDS.sections.sensitive]);
     // The shared sensitive part: a yes, a no and a decline, as each answer's three states.
     expect(control<HTMLSelectElement>(root, WORDS.fields.authorized).value).toBe('yes');
     expect(control<HTMLSelectElement>(root, WORDS.fields.sponsorshipNow).value).toBe('no');
@@ -142,6 +143,60 @@ describe('Your autofill information (v3 Phase 3b)', () => {
     await typeInto(control(root, WORDS.fields.last), 'Leigh');
     await click(save());
     expect(saves(fake)[1]!.revision).toBe(8);
+  });
+
+  // s2 profile (snapshot round 2, 2026-11-07): TailorIT's new profile values, edited here too (decision 16).
+  it('edits the values snapshot round 2 added: a handle saved as its link, the phone type, places, a certification and the new sensitive answers', async () => {
+    const fake = worker();
+    const root = await open(fake);
+    await typeInto(control(root, WORDS.fields.x), '@morgan_lee');
+    await typeInto(control(root, WORDS.fields.telegram), 't.me/morgan_lee');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.phoneType), 'work');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.referralSourceCategory), 'event');
+    // Two places, one left empty: the empty one is not sent.
+    await click(button(root, WORDS.add.place)!);
+    await click(button(root, WORDS.add.place)!);
+    await typeInto(control(root, `${WORDS.fields.place} 1`), 'Denver, CO');
+    await click(button(root, WORDS.add.certification)!);
+    await typeInto(control(root, WORDS.fields.name), 'Certified Kubernetes Administrator');
+    await typeInto(control(root, WORDS.fields.year), '2024');
+    // The sensitive part: a clearance, a citizenship, a relative nowhere, transgender declined.
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.clearance), 'value');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.clearanceLevel), 'ts-sci');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.clearanceActive), 'yes');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.citizenships), 'value');
+    await choose(control<HTMLSelectElement>(root, WORDS.citizenship(1)), 'CA');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.relativesAt), 'value');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.transgender), 'declined');
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.restrictiveAgreement), 'no');
+    // The Asian subgroups show beside Asian alone.
+    const box = (words: string) => [...root.querySelectorAll<HTMLLabelElement>('label.tia-profile__check')]
+      .find((label) => label.textContent === words)?.querySelector('input') ?? null;
+    await choose(control<HTMLSelectElement>(root, WORDS.fields.races), 'value');
+    expect(box(WORDS.asianSubgroups['east-asian'])).toBeNull();
+    await click(box(WORDS.races.asian)!);
+    await click(box(WORDS.asianSubgroups['east-asian'])!);
+    await click(button(root, WORDS.save)!);
+    expect(root.querySelector('[data-profile-problems]')).toBeNull();
+    expect(saves(fake)).toHaveLength(1);
+    const body = saves(fake)[0]!;
+    const profile = body.profile as AutofillProfile;
+    expect(profile.links).toMatchObject({ x: 'https://x.com/morgan_lee', telegram: 'https://t.me/morgan_lee' });
+    expect(profile.contact.phone.type).toBe('work');
+    expect(profile.preferences).toMatchObject({ referralSourceCategory: 'event', relocationPlaces: ['Denver, CO'] });
+    expect(profile.certifications).toEqual([{ name: 'Certified Kubernetes Administrator', issuer: '', year: 2024 }]);
+    const sensitive = body.sensitive as AutofillSensitive;
+    expect(sensitive.legal).toMatchObject({
+      clearance: { state: 'value', value: { level: 'ts-sci', active: true, polygraph: null } },
+      citizenships: { state: 'value', value: ['CA'] },
+      relativesAt: { state: 'value', value: [] },
+      restrictiveAgreement: { state: 'value', value: false },
+    });
+    expect(sensitive.eeo).toMatchObject({ transgender: { state: 'declined' }, races: { state: 'value', value: ['asian'] },
+      raceSubgroups: ['east-asian'] });
+    // Asian unticked: its subgroups go with it.
+    await click(box(WORDS.races.asian)!);
+    expect(box(WORDS.asianSubgroups['east-asian'])).toBeNull();
   });
 
   it('never sends the sensitive part it could not read, and says so', async () => {

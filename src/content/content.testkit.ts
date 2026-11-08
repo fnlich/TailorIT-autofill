@@ -363,7 +363,9 @@ export function createFakeWorker(options: FakeWorkerOptions = {}): FakeWorker {
   let nextRun = 1;
   let transfers = 0;
   const planned = options.settings ?? CAUTIOUS_SETTINGS;
-  const settings = { panel: planned.panel, modes: { next: planned.modes.next, afterPageTurn: planned.modes.afterPageTurn, submit: planned.modes.submit, agentSkip: planned.modes.agentSkip, signIn: planned.modes.signIn },
+  const settings = { panel: planned.panel, modes: { next: planned.modes.next, afterPageTurn: planned.modes.afterPageTurn, submit: planned.modes.submit, agentSkip: planned.modes.agentSkip, signIn: planned.modes.signIn,
+    // s2 profile (settings version 7).
+    noMatch: planned.modes.noMatch, notifications: planned.modes.notifications },
     llm: { ...planned.llm }, offerToSaveAnswers: planned.offerToSaveAnswers };
 
   const scripted = (type: string): unknown => {

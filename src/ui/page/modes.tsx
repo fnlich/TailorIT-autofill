@@ -8,8 +8,9 @@
  * with TailorIT's teal. In the side panel's order: Autofill after page turn (Automatically / Manually), Default view
  * (Expanded / Minimized), Next page, Submit, Sign-in (Manual / Auto, since v3 Phase 5), Consent boxes (All agreements /
  * Required only), AI answers (All / Profile only), Résumé already on the page (Keep it / Upload mine again), Record
- * applications I submit myself (On / Off), and (v3 Phase 5) the skip rules Submit mode Auto and the auto-apply agent
- * read, each a box. Sign-in's Auto can be chosen only while it may act (signInAvailability: a connection holding
+ * applications I submit myself (On / Off), (snapshot round 2, settings version 7) When a list has no match (Choose its
+ * Other / Leave it empty) and TailorIT notifications on the page (Until I close them / 30, 10 or 5 seconds / Never
+ * show them), and (v3 Phase 5) the skip rules Submit mode Auto and the auto-apply agent read, each a box. Sign-in's Auto can be chosen only while it may act (signInAvailability: a connection holding
  * credentials:read, the disclosure acknowledged); otherwise its card is disabled and the group's "?" says why, and the
  * worker holds it Manual anyway.
  */
@@ -22,8 +23,8 @@ import { HelpTip } from './HelpTip';
 const WORDS = COPY.options.modes;
 
 /** The modes shown now, in the order they are drawn (the view is drawn second, after Autofill after page turn). */
-export const SHOWN_MODES = ['afterPageTurn', 'next', 'submit', 'signIn', 'consents', 'ai', 'resumeOnPage', 'recordOwn'] as
-  const satisfies ReadonlyArray<keyof Modes>;
+export const SHOWN_MODES = ['afterPageTurn', 'next', 'submit', 'signIn', 'consents', 'ai', 'resumeOnPage', 'recordOwn',
+  'noMatch', 'notifications'] as const satisfies ReadonlyArray<keyof Modes>;
 type ShownMode = (typeof SHOWN_MODES)[number];
 
 /** The skip rules, in the order they are drawn. */

@@ -59,6 +59,19 @@ describe('the review panel', () => {
     expect(keysShown(root)).toEqual(['on-four']);
   });
 
+  // s2 profile (settings version 7): Never show them on the page, so the panel says what a paused run waits for.
+  it('says what a paused run waits for under its line when the page shows no TailorIT notification', async () => {
+    const worker = createFakeWorker();
+    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'email-code' })]);
+    const shown = await open(worker, 5);
+    expect(shown.textContent).not.toContain(COPY.pauseReasons['email-code']);
+    unmountAll();
+    worker.script.settings = { ...worker.script.settings, modes: { ...worker.script.settings.modes,
+      notifications: 'off' } };
+    const off = await open(worker, 5);
+    expect(off.querySelector('.tia-frame__note--pause')?.textContent).toBe(COPY.pauseReasons['email-code']);
+  });
+
   it('keeps to the pinned tab whatever tab becomes active', async () => {
     const worker = createFakeWorker({ activeTabId: 3 });
     worker.script.reports.set(7, [frameReport(0, { fields: [row('pinned')] })]);

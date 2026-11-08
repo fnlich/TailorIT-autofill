@@ -34,7 +34,7 @@ const start = (root: ParentNode) => root.querySelector<HTMLButtonElement>('butto
 
 /** A profile with no phone and no city or country. */
 const incomplete = () => completeProfile({ contact: { ...completeProfile().contact, phone: { number: '', country: null,
-  extension: '' }, address: { ...completeProfile().contact.address, city: '', country: null } } });
+  extension: '', type: null }, address: { ...completeProfile().contact.address, city: '', country: null } } });
 
 describe('what makes the profile complete (v4 ui)', () => {
   it('needs a first and last name, an email (or the account’s), a phone, and a city or a country', () => {

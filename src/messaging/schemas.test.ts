@@ -90,7 +90,7 @@ describe('the page channel\'s additions', () => {
     const changed = { v: 1, type: 'settings/changed', settings: { panel: 'side',
       modes: { next: DEFAULT_SETTINGS.modes.next, afterPageTurn: DEFAULT_SETTINGS.modes.afterPageTurn,
         submit: DEFAULT_SETTINGS.modes.submit, agentSkip: DEFAULT_SETTINGS.modes.agentSkip,
-        signIn: DEFAULT_SETTINGS.modes.signIn },
+        signIn: DEFAULT_SETTINGS.modes.signIn, noMatch: 'other', notifications: 'until-closed' },
       llm: { tiebreak: true, classify: true, drafts: false, answers: true, whenForbidden: 'profile-only' },
       offerToSaveAnswers: true } };
     expect(WorkerToContentSchema.safeParse(changed).success).toBe(true);

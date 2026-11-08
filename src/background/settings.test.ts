@@ -11,8 +11,11 @@ const CHOSEN = { ...DEFAULT_SETTINGS, panel: 'in-page' as const, view: 'minimize
   offerToSaveAnswers: false };
 /** CHOSEN as a frame receives it: its content settings. */
 const CHOSEN_CONTENT = { panel: 'in-page', modes: { next: CHOSEN.modes.next, afterPageTurn: CHOSEN.modes.afterPageTurn,
-  submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip, signIn: CHOSEN.modes.signIn }, llm: CHOSEN.llm,
+  submit: CHOSEN.modes.submit, agentSkip: CHOSEN.modes.agentSkip, signIn: CHOSEN.modes.signIn,
+  noMatch: CHOSEN.modes.noMatch, notifications: CHOSEN.modes.notifications }, llm: CHOSEN.llm,
   offerToSaveAnswers: false };
+/** CHOSEN's modes as version 6 stored them, before "When a list has no match" and the notifications' time. */
+const { noMatch: _noMatch, notifications: _notifications, ...CHOSEN_MODES_V6 } = CHOSEN.modes;
 
 /** Version 1's settings as an install stored them before the owner's amendments, on its defaults. */
 const V1_DEFAULTS = { version: 1, panel: 'side', autoAdvance: false, preapprovedConsent: [],
@@ -121,7 +124,7 @@ describe('settings', () => {
       interpretations: { postingCountryForLegal: true, twoOrMoreRaces: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': chosen }) });
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true, data: { settings: {
-      version: 6, panel: 'in-page', view: 'expanded',
+      version: 7, panel: 'in-page', view: 'expanded',
       // Auto-advance became the Next mode; version 3's `all` answers took their default (All), and act only while
       // answers are on; the other modes take theirs.
       modes: { ...DEFAULT_SETTINGS.modes, next: 'auto' },
@@ -134,7 +137,7 @@ describe('settings', () => {
     } } });
   });
 
-  it('migrates version 2 settings to version 6’s, every choice kept, the `all` answers on (the owner’s decision of 2026-11-01) and "Ask me each time" Profile only (v4)', async () => {
+  it('migrates version 2 settings to version 7’s, every choice kept, the `all` answers on (the owner’s decision of 2026-11-01) and "Ask me each time" Profile only (v4)', async () => {
     const { modes: _modes, view: _view, version: _version, ...rest } = CHOSEN;
     const v2 = { ...rest, version: 2, autoAdvance: true, llm: { ...CHOSEN.llm, answers: false, confirmDrafts: true,
       whenForbidden: 'ask' } };
@@ -146,7 +149,7 @@ describe('settings', () => {
     expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
   });
 
-  it('migrates version 3 settings to version 6’s: auto-advance is the Next mode, the `all` answers the AI answers mode (v3 Phase 3)', async () => {
+  it('migrates version 3 settings to version 7’s: auto-advance is the Next mode, the `all` answers the AI answers mode (v3 Phase 3)', async () => {
     const { modes: _modes, view: _view, ...rest } = CHOSEN;
     for (const [autoAdvance, answerAll] of [[true, false], [false, true]] as const) {
       const v3 = { ...rest, version: 3, autoAdvance, llm: { ...CHOSEN.llm, confirmDrafts: false, answerAll } };
@@ -160,12 +163,12 @@ describe('settings', () => {
     }
     expect(DEFAULT_SETTINGS.modes).toEqual({ signIn: 'manual', next: 'manual', afterPageTurn: 'auto', submit: 'manual',
       recordOwn: 'on', consents: 'all', ai: 'all', resumeOnPage: 'keep',
-      agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false } });
+      agentSkip: { requiredEmpty: true, noAi: true, legalGuess: false }, noMatch: 'other', notifications: 'until-closed' });
     expect(DEFAULT_SETTINGS.view).toBe('expanded');
   });
 
-  it('migrates version 4 settings to version 6’s, every choice kept and "Résumé already on the page" Keep it, and stores them (the behaviour review of 2026-11-06)', async () => {
-    const { resumeOnPage: _added, ...v4modes } = CHOSEN.modes;
+  it('migrates version 4 settings to version 7’s, every choice kept and "Résumé already on the page" Keep it, and stores them (the behaviour review of 2026-11-06)', async () => {
+    const { resumeOnPage: _added, ...v4modes } = CHOSEN_MODES_V6;
     const v4 = { ...CHOSEN, version: 4, modes: { ...v4modes, recordOwn: 'off', submit: 'auto' },
       llm: { ...CHOSEN.llm, confirmDrafts: false } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v4 }) });
@@ -178,11 +181,12 @@ describe('settings', () => {
     const oldest = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1':
       { ...v4, modes: older } }) });
     expect(await oldest.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toMatchObject({ ok: true,
-      data: { settings: { version: 6, modes: { recordOwn: 'on', resumeOnPage: 'keep' } } } });
+      data: { settings: { version: 7, modes: { recordOwn: 'on', resumeOnPage: 'keep' } } } });
   });
 
-  it('migrates version 5 settings to version 6’s (v4, D6): "Ask me each time" Profile only, the draft confirmation gone, and stores them', async () => {
-    const v5 = { ...CHOSEN, version: 5, llm: { ...CHOSEN.llm, confirmDrafts: true, whenForbidden: 'ask' } };
+  it('migrates version 5 settings to version 7’s (v4, D6): "Ask me each time" Profile only, the draft confirmation gone, and stores them', async () => {
+    const v5 = { ...CHOSEN, version: 5, modes: CHOSEN_MODES_V6,
+      llm: { ...CHOSEN.llm, confirmDrafts: true, whenForbidden: 'ask' } };
     const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v5 }) });
     const expected = { ...CHOSEN, llm: { ...CHOSEN.llm, whenForbidden: 'profile-only' } };
     expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
@@ -193,6 +197,33 @@ describe('settings', () => {
       llm: { ...CHOSEN.llm, whenForbidden: 'ask' } } }, OPTIONS)).toEqual({ ok: false, error: 'bad_message' });
     expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN,
       llm: { ...CHOSEN.llm, confirmDrafts: false } } }, OPTIONS)).toEqual({ ok: false, error: 'bad_message' });
+  });
+
+  // s2 profile (snapshot round 2): "When a list has no match" and how long the page's notifications stay.
+  it('migrates version 6 settings to version 7’s, every choice kept, Other and Until closed, and stores them', async () => {
+    const v6 = { ...CHOSEN, version: 6, modes: CHOSEN_MODES_V6 };
+    const worker = await startTestWorker({ before: async () => fakeBrowser.storage.local.set({ 'settings:v1': v6 }) });
+    const expected = { ...CHOSEN, modes: { ...CHOSEN.modes, noMatch: 'other', notifications: 'until-closed' } };
+    expect(await worker.deliver({ v: 1, type: 'settings/get' }, OPTIONS)).toEqual({ ok: true,
+      data: { settings: expected } });
+    expect(await fakeBrowser.storage.local.get('settings:v1')).toEqual({ 'settings:v1': expected });
+  });
+
+  it('saves a list with no match left empty and each notification time, gives them to a frame, and refuses a choice it does not know or a version 7 value without them', async () => {
+    const worker = await startTestWorker();
+    for (const notifications of ['off', '5s', '10s', '30s', 'until-closed'] as const) {
+      const chosen = { ...CHOSEN, modes: { ...CHOSEN.modes, noMatch: 'leave' as const, notifications } };
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: chosen }, OPTIONS)).toEqual({ ok: true,
+        data: { settings: chosen } });
+      expect(contentSettingsOf(chosen).modes).toMatchObject({ noMatch: 'leave', notifications });
+      // The agent's window keeps the person's own.
+      expect(contentSettingsOf(chosen, { agent: true }).modes).toMatchObject({ noMatch: 'leave', notifications });
+    }
+    for (const modes of [{ ...CHOSEN.modes, noMatch: 'skip' }, { ...CHOSEN.modes, notifications: '60s' },
+      CHOSEN_MODES_V6]) {
+      expect(await worker.deliver({ v: 1, type: 'settings/save', settings: { ...CHOSEN, modes } }, OPTIONS))
+        .toEqual({ ok: false, error: 'bad_message' });
+    }
   });
 
   it('acts as Sign-in Auto for a tab Sign up & Autofill granted, unless Sign-in is held (v4)', () => {

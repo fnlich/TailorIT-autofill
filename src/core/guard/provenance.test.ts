@@ -71,6 +71,9 @@ describe('the structural check (the content script’s, §7.6)', () => {
   it('blocks a path outside PROFILE_PATH_PATTERN, an unknown rule and a malformed llm-pick', () => {
     expect(checkProvenanceShape(writeOf({ provenance: 'profile', path: path('password.hash') })))
       .toEqual({ ok: false, reason: 'missing-provenance' });
+    // s2 profile: the profile's certifications are a profile path like its skills.
+    expect(checkProvenanceShape(writeOf({ provenance: 'profile', path: path('certifications[0].name') })))
+      .toEqual({ ok: true });
     expect(checkProvenanceShape(writeOf({ provenance: 'profile', path: path('contact.email'),
       transform: 'made.up' as never }))).toEqual({ ok: false, reason: 'policy-violation' });
     expect(checkProvenanceShape(writeOf({ provenance: 'rule', ruleId: 'made.up' as never })))

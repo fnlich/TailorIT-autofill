@@ -51,6 +51,7 @@ import { createInPagePanel, type InPagePanel, type PanelActions } from './panel'
 import { createUiHost } from './shadow';
 import type { StyleMode } from './styles';
 import { createToasts, type ToastKind, type ToastSpec } from './toasts';
+import type { NotificationTime } from '../../core/types/settings';
 import { CONTROL_SEEN_MS, createVisibilityWatch } from './visible';
 
 /** The launcher's size, and its inset from the form root's corner. */
@@ -101,6 +102,8 @@ export interface PageUi {
   setLauncher(view: LauncherView): void;
   /** v4 (toasts.ts): the toasts the run gives now, one per kind; [] removes them all. */
   setToasts(list: readonly ToastSpec[]): void;
+  /** s2 profile (settings version 7, toasts.ts): how long the toasts stay, or that none is drawn ('off'). */
+  setNotificationTime(time: NotificationTime): void;
   /** The Edit with AI buttons (ai-edits.ts): one per item; [] removes them all. */
   setAiEdits(items: readonly AiEditItem[]): void;
   /** The Edit with AI buttons drawn now (for tests). */
@@ -398,6 +401,10 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
       toasts.set(list);
       schedule();
     },
+    setNotificationTime(time) {
+      toasts.setTime(time);
+      schedule();
+    },
     setAiEdits(items) {
       aiEdits.set(items);
       layout();
@@ -449,6 +456,7 @@ export function mountPageUi(doc: Document, handlers: PageUiHandlers): PageUi {
     refresh: schedule,
     destroy() {
       lifetime.abort();
+      toasts.destroy();
       edge?.destroy();
       panel?.destroy();
       visibility.disconnect();

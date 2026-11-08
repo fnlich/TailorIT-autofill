@@ -14,6 +14,9 @@ import type {
 } from '../contract/tailorit';
 import type { ConsentCategory, FieldKind, FillStatus, MatcherStage, Platform, Provenance } from '../core/enums';
 import type { ReasonCode } from '../core/types/fill';
+import type {
+  AsianSubgroup, ClearanceLevel, PhoneDeviceType, ReferralCategory, SexualOrientation,
+} from '../core/types/profile';
 import type { PauseReason, RunStatus } from '../core/types/run';
 import type {
   AddJobOutcome, AgentBlock, AgentPause, AgentStatus, AskLength, AskOutcome, JobSearchRefusal, LetterOutcome, PressOutcome,
@@ -831,14 +834,21 @@ const PROFILE = {
     preferences: 'Preferences',
     anythingElse: 'Anything else we should know?',
     sensitive: 'Work authorization and self-identification',
+    // s2 profile (snapshot round 2)
+    certifications: 'Certifications',
   },
   /** An entry of a list, by its place (from 1). */
   entry: {
     education: (place: number) => `Education ${place}`,
     experience: (place: number) => `Work experience ${place}`,
     workAuthorization: (place: number) => `Country ${place}`,
+    // s2 profile (snapshot round 2)
+    certification: (place: number) => `Certification ${place}`,
   },
-  add: { education: 'Add education', experience: 'Add work experience', workAuthorization: 'Add a country' },
+  add: { education: 'Add education', experience: 'Add work experience', workAuthorization: 'Add a country',
+    // s2 profile (snapshot round 2)
+    certification: 'Add a certification', place: 'Add a place', relative: 'Add a company',
+    citizenship: 'Add a citizenship' },
   remove: (name: string) => `Remove ${name}`,
   removeShort: 'Remove',
   fields: {
@@ -898,6 +908,35 @@ const PROFILE = {
     salaryMax: 'Maximum',
     currency: 'Currency',
     period: 'Per',
+    // ── s2 profile (snapshot round 2, 2026-11-07): TailorIT's new profile values ──
+    phoneType: 'Phone type',
+    x: 'X (Twitter)',
+    telegram: 'Telegram',
+    referralSourceCategory: 'What kind of source that is',
+    relocationPlaces: 'Places you would relocate to or work from',
+    place: 'Place',
+    name: 'Certification',
+    issuer: 'Issued by',
+    year: 'Year',
+    raceSubgroups: 'Asian: which apply',
+    raceSelfDescribed: 'Your race in your words',
+    activeDuty: 'I serve in the U.S. armed forces now (active duty)',
+    sexualOrientation: 'Sexual orientation',
+    transgender: 'Identify as transgender',
+    restrictiveAgreement: 'Bound by a non-compete or similar agreement',
+    essentialFunctions: "Can perform a role's essential functions",
+    governmentService: 'U.S. armed forces or government service',
+    military: 'I served in the U.S. armed forces',
+    militaryEndYear: 'Year your service ended',
+    government: 'I worked for a U.S. federal, state or local government',
+    governmentEndYear: 'Year that work ended',
+    relativesAt: 'Companies where a relative of yours works',
+    relative: 'Company',
+    clearance: 'Security clearance',
+    clearanceLevel: 'Clearance level',
+    clearanceActive: 'Clearance status',
+    polygraph: 'Polygraph',
+    citizenships: 'Citizenship',
   },
   placeholders: { month: 'YYYY-MM', country: 'US', currency: 'USD', skills: 'TypeScript, PostgreSQL, Leadership' },
   monthHelp: 'As YYYY-MM.',
@@ -946,6 +985,33 @@ const PROFILE = {
   veteran: { none: 'Not a veteran', veteran: 'Veteran', protected: 'Protected veteran' },
   periods: { year: 'Year', month: 'Month', hour: 'Hour' } satisfies Record<ExpectedSalaryPeriod, string>,
   arrangements: JOB.arrangements,
+  // ── s2 profile (snapshot round 2, 2026-11-07): the new values' choices and help. Drafts for the owner's review ──
+  phoneTypes: { mobile: 'Mobile', home: 'Home', work: 'Work' } satisfies Record<PhoneDeviceType, string>,
+  referralCategories: {
+    'job-board': 'A job board or job site', 'company-website': "The company's website",
+    'employee-referral': 'An employee referral', recruiter: 'A recruiter', 'social-media': 'Social media',
+    event: 'An event or job fair', other: 'Something else',
+  } satisfies Record<ReferralCategory, string>,
+  asianSubgroups: {
+    'east-asian': 'East Asian', 'south-asian': 'South Asian', 'southeast-asian': 'Southeast Asian',
+  } satisfies Record<AsianSubgroup, string>,
+  orientations: {
+    asexual: 'Asexual', 'bisexual-pansexual': 'Bisexual or pansexual', gay: 'Gay', heterosexual: 'Heterosexual',
+    lesbian: 'Lesbian', queer: 'Queer', 'self-describe': 'In my own words',
+  } satisfies Record<SexualOrientation, string>,
+  clearanceLevels: {
+    none: 'None', 'public-trust': 'Public Trust', confidential: 'Confidential', secret: 'Secret',
+    'top-secret': 'Top Secret', 'ts-sci': 'Top Secret / SCI',
+  } satisfies Record<ClearanceLevel, string>,
+  polygraphs: { none: 'No polygraph', ci: 'Counterintelligence polygraph', 'full-scope': 'Full-scope polygraph' },
+  clearanceActive: { yes: 'Active now', no: 'Not active' },
+  /** A citizenship's select, by its place (from 1): the first is a "Country of Origin". */
+  citizenship: (place: number) => (place === 1 ? 'Citizenship (your country of origin)' : 'Another citizenship'),
+  socialHelp: 'The address, or your @handle.',
+  relocationHelp: 'For "Where would you relocate?" and "Which of these locations could you work from?"',
+  relativesHelp: "None listed: no relative of yours works at a company you apply to. No relative's name is kept.",
+  serviceYearHelp: 'Empty: you serve now.',
+  raceSelfDescribedHelp: 'For a form\'s "I prefer to self-describe". Empty: that choice is never taken.',
 } as const;
 
 /** The in-page review panel (src/content/ui/panel.tsx): the same report, in the page's closed root. */
@@ -1086,6 +1152,22 @@ const OPTIONS = {
       expanded: 'Expanded',
       minimized: 'Minimized',
       help: 'Expanded lists every field after Autofill; Minimized folds the list to its progress line, which opens it.',
+    },
+    // ── s2 profile (snapshot round 2, settings version 7): drafts for the owner's review ──
+    noMatch: {
+      name: 'When a list has no match',
+      other: 'Choose its Other',
+      leave: 'Leave it empty',
+      help: "When a list you search (a school, a field of study, a place, how you heard about the job) shows no match after three differently written answers: Choose its Other picks the list's own \"Other\" or \"Not listed\". Leave it empty leaves the field to you. Never for self-identification, legal, consent or yes-or-no questions.",
+    },
+    notifications: {
+      name: 'TailorIT notifications on the page',
+      'until-closed': 'Until I close them',
+      '30s': '30 seconds',
+      '10s': '10 seconds',
+      '5s': '5 seconds',
+      off: 'Never show them',
+      help: "How long TailorIT's notifications stay on the application page (a check to solve, a sign-in, Submit held back, the end of a run). Each still goes once its cause is gone. With Never show them, Autofill still waits and carries on by itself, and the side panel says what it waits for. The notice that a page holds text addressed to AI tools always shows.",
     },
   },
   /** v3 Phase 5: Options › Auto-apply. Drafts for the owner's review. */

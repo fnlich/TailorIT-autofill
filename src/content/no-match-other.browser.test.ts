@@ -128,12 +128,12 @@ describe('s2 core-wd: three styles, then the list\'s own "Other"', () => {
   });
 
   it('is the default: a setting that does not name it reads as \'other\'', async () => {
-    const modes = { ...CAUTIOUS_SETTINGS.modes };
-    delete modes.noMatch;
-    const ran = await fill(OTHER_LISTED, { ...CAUTIOUS_SETTINGS, modes });
+    // A worker's message from before settings version 7 names no noMatch: the content schema's default reads 'other'.
+    const { noMatch: _unnamed, ...modes } = CAUTIOUS_SETTINGS.modes;
+    const ran = await fill(OTHER_LISTED, { ...CAUTIOUS_SETTINGS, modes } as unknown as typeof CAUTIOUS_SETTINGS);
     expect(ran.counter<string[]>('__queries')).toEqual([...STYLES, 'Other']);
     expect(ran.row('School')).toMatchObject({ wrote: true, matcherStage: 'other' });
-    expect(DEFAULT_SETTINGS.modes.noMatch ?? 'other').toBe('other');
+    expect(DEFAULT_SETTINGS.modes.noMatch).toBe('other');
   });
 
   it('types three styles and nothing more under \'leave\': the field stays empty', async () => {

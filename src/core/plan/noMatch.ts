@@ -1,8 +1,8 @@
 /*
  * s2 core-wd: "When a list has no match" (the owner, 2026-11-07: "if there is no matched thing, write the other one.
  * there is no matched after with 3 different style value, last will be other or don't write (user can set on setting
- * it)"; docs/ARCHITECTURE.md, snapshot round 2). settings.modes.noMatch, read as `?? 'other'` until the settings version
- * that stores it:
+ * it)"; docs/ARCHITECTURE.md, snapshot round 2). settings.modes.noMatch, stored since settings
+ * version 7:
  * - 'other' (the default): a search for an entity of the profile's (a school, a field of study, an employer, a place,
  *   how the person heard of the job, a phone country by its name) that found nothing with its three styles
  *   (core/matcher/candidates.ts) types "Other" once more, and the list's own "Other" among what it lists is chosen
@@ -21,7 +21,8 @@ export const NO_MATCH_OTHER_CATEGORIES: ReadonlySet<FieldCategory> = new Set<Fie
   'education.field', 'experience.company', 'experience.currentCompany', 'location.current', 'experience.location',
   'referral.source', 'contact.phoneCountry']);
 
-/** The person's setting, as it is read until the settings version that stores it: 'other' by default. */
+/** The person's setting (stored since settings version 7; 'other' by default). A settings object that names none (one
+ *  built before version 7, or a test's) reads as the default too. */
 export function noMatchMode(settings: Settings): 'other' | 'leave' {
   return settings.modes.noMatch ?? 'other';
 }

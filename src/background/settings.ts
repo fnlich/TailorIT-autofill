@@ -6,7 +6,8 @@
  * version 3 value takes the modes (migrateSettingsV3, §12: auto-advance is the Next mode, the `all` answers the AI
  * answers mode), and a version 4 value takes "Résumé already on the page" at its default, Keep it (migrateSettingsV4,
  * the behaviour review of 2026-11-06), and a version 5 value loses "Ask me each time" (Profile only) and the draft
- * confirmation (migrateSettingsV5, v4: the run never asks the person); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
+ * confirmation (migrateSettingsV5, v4: the run never asks the person), and a version 6 value takes snapshot round 2's
+ * two modes at their defaults, Other and Until closed (migrateSettingsV6); each is stored again. Content scripts get only the part they need (panel placement, the modes, the AI
  * switches, the offer to save answers) with frame/hello and run/begin, and again with settings/changed whenever the
  * person saves them (pushSettings: every registered frame with a form, so a run in progress reads the Next mode as it
  * is now: the Phase 5 review, C-S2), each frame the settings as they act for it (contentSettingsFor: the agent's tab's
@@ -17,13 +18,13 @@
  */
 import {
   DEFAULT_SETTINGS, migrateSettings, migrateSettingsV2, migrateSettingsV3, migrateSettingsV4, migrateSettingsV5,
-  type Settings,
+  migrateSettingsV6, type Settings,
 } from '../core/types/settings';
 import type { StorageArea, WorkerPlatform } from '../platform/types';
 import { log } from '../shared/log';
 import { SETTINGS_KEY, SettingsSchema, type ContentSettings } from '../shared/settings';
 import {
-  SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema, SettingsV5Schema,
+  SettingsV1Schema, SettingsV2Schema, SettingsV3Schema, SettingsV4Schema, SettingsV5Schema, SettingsV6Schema,
 } from '../shared/settings-stored';
 import { frameTarget, type FrameEntry } from './frames';
 import { createKeyedQueue } from './locks';
@@ -64,7 +65,9 @@ export function contentSettingsOf(settings: Settings, options: ContentHolds = {}
     submit: agent ? (options.agentSubmitHeld === true ? 'manual' : 'auto')
       : options.holdSubmit === true ? 'manual' : settings.modes.submit,
     agentSkip: { ...settings.modes.agentSkip },
-    signIn: options.holdSignIn === true ? 'manual' : options.signUp === true ? 'auto' : settings.modes.signIn },
+    signIn: options.holdSignIn === true ? 'manual' : options.signUp === true ? 'auto' : settings.modes.signIn,
+    // Version 7 (s2 profile): the person's own, everywhere (the agent's window too).
+    noMatch: settings.modes.noMatch, notifications: settings.modes.notifications },
     llm: { ...settings.llm },
     offerToSaveAnswers: settings.offerToSaveAnswers };
 }
@@ -116,14 +119,19 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
         cached = withShippedModes(parsed.data);
         return cached;
       }
-      const v5 = SettingsV5Schema.safeParse(stored);
-      const v4 = v5.success ? null : SettingsV4Schema.safeParse(stored);
-      const v3 = v5.success || v4?.success === true ? null : SettingsV3Schema.safeParse(stored);
-      const v2 = v5.success || v4?.success === true || v3?.success === true ? null : SettingsV2Schema.safeParse(stored);
-      const v1 = v5.success || v4?.success === true || v3?.success === true || v2?.success === true ? null
+      const v6 = SettingsV6Schema.safeParse(stored);
+      const v5 = v6.success ? null : SettingsV5Schema.safeParse(stored);
+      const v4 = v6.success || v5?.success === true ? null : SettingsV4Schema.safeParse(stored);
+      const newer = v6.success || v5?.success === true;
+      const v3 = newer || v4?.success === true ? null : SettingsV3Schema.safeParse(stored);
+      const v2 = newer || v4?.success === true || v3?.success === true ? null : SettingsV2Schema.safeParse(stored);
+      const v1 = newer || v4?.success === true || v3?.success === true || v2?.success === true ? null
         : SettingsV1Schema.safeParse(stored);
-      let from: 1 | 2 | 3 | 4 | 5;
-      if (v5.success) {
+      let from: 1 | 2 | 3 | 4 | 5 | 6;
+      if (v6.success) {
+        from = 6;
+        cached = migrateSettingsV6(v6.data);
+      } else if (v5?.success === true) {
         from = 5;
         cached = migrateSettingsV5(v5.data);
       } else if (v4?.success === true) {
@@ -145,10 +153,10 @@ export function createSettingsStore(local: StorageArea): SettingsStore {
       }
       try {
         await local.set({ [SETTINGS_KEY]: cached });
-        log('settings.migrated', { from, to: 6 });
+        log('settings.migrated', { from, to: 7 });
       } catch {
         // Kept in memory only: the next start migrates the stored value again.
-        log('settings.migrated', { from, to: 6, stored: false });
+        log('settings.migrated', { from, to: 7, stored: false });
       }
       return cached;
     },

@@ -11,7 +11,7 @@
     "credentials.ts": "c09ae7e8fd46ce7f16d136a90b85b76ed99817cf68d543d572ec0851950d699d",
     "index.ts": "3c146f82768d342ca37d974da6943ad98c4faa1830b4b0401c0bfeca3598028c",
     "lookup.ts": "5df4d24096b46b608622768f76935703135daca1e06941b0b354822f115f9896",
-    "profile.ts": "182052d28bfd0729a3fbbe32f9523c57bbcf43bb45c515fecb3681f913689eb3",
+    "profile.ts": "83e3ea000d2a84c049e4e0b1e78ac87ff71000414818011b217599204dc89d11",
     "registry.ts": "a094035377492c9b1a43029d18cc86a0e37c94bf00e644cf6a69f1d64220e6ef",
     "resumes.ts": "c8a24403aced811f67daff035dffe6af00c1d266fb9cc861d1c5a623902fcc61",
     "sites.ts": "8277ea2ad73f9b4253f89c460af91c4635d3aee2b6f29b94024e5482e3abf3ef",
@@ -247,9 +247,11 @@
     "AutofillProfile/invalid/school-without-name.json": "7ee29b8c651aeaae8eb7a2695d2148bd619c4d9f0ebfb79557152d641e6b1ba2",
     "AutofillProfile/invalid/script-link.json": "f42b1ed355af753b10de61b55f6f9010669e55bd658f9cc6c663e55b25d9d565",
     "AutofillProfile/invalid/unknown-degree-level.json": "4d5cbbeb19f56bdcd20cb3c7c0b9a5d8c93d0cd2d1a4be5e42a51599b8d88f53",
+    "AutofillProfile/invalid/unknown-phone-type.json": "b4062f2418aa043fc2d77044a32728774c769c330bed33ece8eded888bd5c909",
     "AutofillProfile/invalid/unknown-proficiency.json": "2999e644da0235073072355b40c9224422bd41e1ae41bc50807f134b1b9bb2c8",
     "AutofillProfile/valid/empty.json": "e06ce8cdb23b6ddae85c0e94216798a07576f3189dcd71088346bce49a08b19b",
     "AutofillProfile/valid/golden.json": "c143bf44d73be5c3dc1e74c1a12c9c58f0a369476ab6b6eeefafcd1282a3b8ae",
+    "AutofillProfile/valid/snapshot-round-two.json": "0e0d534993a8b9e90fe9781ed8c935666a9005019da2af1de25865a1fb093909",
     "AutofillProfileEnvelope/invalid/missing-profile.json": "f7c798d4ade7c16e6417a563b96ceb9c084c020e6c14a91cd60343f49088ca92",
     "AutofillProfileEnvelope/invalid/negative-revision.json": "259ba93e15afb2176f6be0fe73780c40732eed40746b10f5590eb13cbf3a7dd8",
     "AutofillProfileEnvelope/valid/golden.json": "1046339c26a4bc5d64e6b5c4c96a0a20818980084379651ea07fd8a9f471864b",
@@ -298,6 +300,7 @@
     "AutofillSensitive/invalid/no-race.json": "3f3723b82036638da4defa8988ede672720225144f38138e526c6332d2a9db82",
     "AutofillSensitive/invalid/one-sponsorship-answer.json": "fc8f2036155fb640c8161130c49029f4e9d984e3e809b3edda2e71a5369f2535",
     "AutofillSensitive/invalid/two-or-more-races.json": "86ae6d43c6c45e18e43478b4e528055aa9a5ebd489011f935dd6a5728af80fb6",
+    "AutofillSensitive/invalid/unknown-clearance-level.json": "698b480b8a79b18f361ad13862ad18ede191b8b2f6aa8763d5763e3066805f45",
     "AutofillSensitive/invalid/unknown-state.json": "66fc9b77e41d550b7d4539407cf37c17c6b60261578a83cece72e4149c2c6a28",
     "AutofillSensitive/invalid/unknown-work-status.json": "32ec8cac69640de28415f887a4ea3805aa9f441b1c465f1f32792dfde4faa4ee",
     "AutofillSensitive/invalid/value-without-value.json": "61614601ed46db751f34002dab81ca711761896940af2e79e224ab12d15f96ce",
@@ -305,6 +308,7 @@
     "AutofillSensitive/valid/empty.json": "9659039a133b715fbbb379f8d9b9bdd7e6fa3fc1078986a1d49778f195240282",
     "AutofillSensitive/valid/golden.json": "7bff58d137abf0a73df69f4ed6d01512e7523a46a3fcffdbc889f4a37bd2e850",
     "AutofillSensitive/valid/self-described.json": "d75fa6a314928b404d930a32779fa7b28e2d8eb23d256f3753ab35868107fa2a",
+    "AutofillSensitive/valid/snapshot-round-two.json": "abe429e58c977966efcd751e665ae513bcb22de67b7ec06829d116a7cf3fb896",
     "AutofillSensitiveEnvelope/invalid/local-time.json": "df56cec161a03ca5b284528900a4d6571f672593db928e83a7119f1b36e9c213",
     "AutofillSensitiveEnvelope/valid/golden.json": "bd63eeb3e802041b55e7ae232ed59dd58ee253ffa5c9f76a9de5c72df7b53a5b",
     "AutofillSensitiveEnvelope/valid/no-row.json": "1a76dcd54bdbfdc20ad1045354f0b98e12c1e6ce9a01ee9a14bba135c0003b6e",
@@ -845,12 +849,29 @@
                   "type": "string",
                   "maxLength": 8,
                   "pattern": "^\\d*$"
+                },
+                "type": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "mobile",
+                        "home",
+                        "work"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
                 "number",
                 "country",
-                "extension"
+                "extension",
+                "type"
               ],
               "additionalProperties": false
             },
@@ -962,6 +983,34 @@
                 }
               ]
             },
+            "x": {
+              "default": "",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "pattern": "^https?:\\/\\/\\S+$"
+                }
+              ]
+            },
+            "telegram": {
+              "default": "",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": ""
+                },
+                {
+                  "type": "string",
+                  "maxLength": 300,
+                  "pattern": "^https?:\\/\\/\\S+$"
+                }
+              ]
+            },
             "other": {
               "maxItems": 10,
               "type": "array",
@@ -999,6 +1048,8 @@
             "github",
             "portfolio",
             "website",
+            "x",
+            "telegram",
             "other"
           ],
           "additionalProperties": false
@@ -1390,6 +1441,36 @@
             "referralSource": {
               "type": "string",
               "maxLength": 100
+            },
+            "referralSourceCategory": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "job-board",
+                    "company-website",
+                    "employee-referral",
+                    "recruiter",
+                    "social-media",
+                    "event",
+                    "other"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "relocationPlaces": {
+              "default": [],
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
             }
           },
           "required": [
@@ -1398,9 +1479,48 @@
             "willingToRelocate",
             "workArrangements",
             "travelPercent",
-            "referralSource"
+            "referralSource",
+            "referralSourceCategory",
+            "relocationPlaces"
           ],
           "additionalProperties": false
+        },
+        "certifications": {
+          "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 150
+              },
+              "issuer": {
+                "type": "string",
+                "maxLength": 150
+              },
+              "year": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1950,
+                    "maximum": 2100
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "issuer",
+              "year"
+            ],
+            "additionalProperties": false
+          }
         },
         "documents": {
           "type": "object",
@@ -1437,6 +1557,7 @@
         "languages",
         "skills",
         "preferences",
+        "certifications",
         "documents",
         "anythingElse"
       ],
@@ -1839,6 +1960,24 @@
                 }
               ]
             },
+            "raceSubgroups": {
+              "default": [],
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "east-asian",
+                  "south-asian",
+                  "southeast-asian"
+                ]
+              }
+            },
+            "raceSelfDescribed": {
+              "default": "",
+              "type": "string",
+              "maxLength": 100
+            },
             "veteran": {
               "oneOf": [
                 {
@@ -1882,11 +2021,16 @@
                         },
                         "isProtectedVeteran": {
                           "type": "boolean"
+                        },
+                        "isActiveDuty": {
+                          "default": false,
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "isVeteran",
-                        "isProtectedVeteran"
+                        "isProtectedVeteran",
+                        "isActiveDuty"
                       ],
                       "additionalProperties": false
                     }
@@ -1994,15 +2138,147 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "sexualOrientation": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "values": {
+                          "minItems": 1,
+                          "maxItems": 7,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "asexual",
+                              "bisexual-pansexual",
+                              "gay",
+                              "heterosexual",
+                              "lesbian",
+                              "queer",
+                              "self-describe"
+                            ]
+                          }
+                        },
+                        "selfDescribed": {
+                          "type": "string",
+                          "maxLength": 100
+                        }
+                      },
+                      "required": [
+                        "values",
+                        "selfDescribed"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "transgender": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "required": [
             "gender",
             "hispanicOrLatino",
             "races",
+            "raceSubgroups",
+            "raceSelfDescribed",
             "veteran",
             "disability",
-            "pronouns"
+            "pronouns",
+            "sexualOrientation",
+            "transgender"
           ],
           "additionalProperties": false
         },
@@ -2105,11 +2381,408 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "restrictiveAgreement": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "governmentService": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "military": {
+                          "type": "boolean"
+                        },
+                        "militaryEndYear": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 1940,
+                              "maximum": 2100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "government": {
+                          "type": "boolean"
+                        },
+                        "governmentEndYear": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": 1940,
+                              "maximum": 2100
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "military",
+                        "militaryEndYear",
+                        "government",
+                        "governmentEndYear"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "relativesAt": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "essentialFunctions": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "clearance": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "level": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "public-trust",
+                            "confidential",
+                            "secret",
+                            "top-secret",
+                            "ts-sci"
+                          ]
+                        },
+                        "active": {
+                          "type": [
+                            "boolean",
+                            "null"
+                          ]
+                        },
+                        "polygraph": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "ci",
+                                "full-scope"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "active",
+                        "polygraph"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "citizenships": {
+              "default": {
+                "state": "not_provided"
+              },
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "not_provided"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "declined"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "const": "value"
+                    },
+                    "value": {
+                      "minItems": 1,
+                      "maxItems": 3,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[A-Z]{2}$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "required": [
             "atLeast18",
-            "criminalRecord"
+            "criminalRecord",
+            "restrictiveAgreement",
+            "governmentService",
+            "relativesAt",
+            "essentialFunctions",
+            "clearance",
+            "citizenships"
           ],
           "additionalProperties": false
         },
@@ -2318,12 +2991,29 @@
                       "type": "string",
                       "maxLength": 8,
                       "pattern": "^\\d*$"
+                    },
+                    "type": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mobile",
+                            "home",
+                            "work"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "number",
                     "country",
-                    "extension"
+                    "extension",
+                    "type"
                   ],
                   "additionalProperties": false
                 },
@@ -2435,6 +3125,34 @@
                     }
                   ]
                 },
+                "x": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
+                "telegram": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
                 "other": {
                   "maxItems": 10,
                   "type": "array",
@@ -2472,6 +3190,8 @@
                 "github",
                 "portfolio",
                 "website",
+                "x",
+                "telegram",
                 "other"
               ],
               "additionalProperties": false
@@ -2863,6 +3583,36 @@
                 "referralSource": {
                   "type": "string",
                   "maxLength": 100
+                },
+                "referralSourceCategory": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "job-board",
+                        "company-website",
+                        "employee-referral",
+                        "recruiter",
+                        "social-media",
+                        "event",
+                        "other"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "relocationPlaces": {
+                  "default": [],
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
                 }
               },
               "required": [
@@ -2871,9 +3621,48 @@
                 "willingToRelocate",
                 "workArrangements",
                 "travelPercent",
-                "referralSource"
+                "referralSource",
+                "referralSourceCategory",
+                "relocationPlaces"
               ],
               "additionalProperties": false
+            },
+            "certifications": {
+              "default": [],
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 150
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1950,
+                        "maximum": 2100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "issuer",
+                  "year"
+                ],
+                "additionalProperties": false
+              }
             },
             "documents": {
               "type": "object",
@@ -2910,6 +3699,7 @@
             "languages",
             "skills",
             "preferences",
+            "certifications",
             "documents",
             "anythingElse"
           ],
@@ -3355,6 +4145,24 @@
                     }
                   ]
                 },
+                "raceSubgroups": {
+                  "default": [],
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "east-asian",
+                      "south-asian",
+                      "southeast-asian"
+                    ]
+                  }
+                },
+                "raceSelfDescribed": {
+                  "default": "",
+                  "type": "string",
+                  "maxLength": 100
+                },
                 "veteran": {
                   "oneOf": [
                     {
@@ -3398,11 +4206,16 @@
                             },
                             "isProtectedVeteran": {
                               "type": "boolean"
+                            },
+                            "isActiveDuty": {
+                              "default": false,
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "isVeteran",
-                            "isProtectedVeteran"
+                            "isProtectedVeteran",
+                            "isActiveDuty"
                           ],
                           "additionalProperties": false
                         }
@@ -3510,15 +4323,147 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "sexualOrientation": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "values": {
+                              "minItems": 1,
+                              "maxItems": 7,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "asexual",
+                                  "bisexual-pansexual",
+                                  "gay",
+                                  "heterosexual",
+                                  "lesbian",
+                                  "queer",
+                                  "self-describe"
+                                ]
+                              }
+                            },
+                            "selfDescribed": {
+                              "type": "string",
+                              "maxLength": 100
+                            }
+                          },
+                          "required": [
+                            "values",
+                            "selfDescribed"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "transgender": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
                 "gender",
                 "hispanicOrLatino",
                 "races",
+                "raceSubgroups",
+                "raceSelfDescribed",
                 "veteran",
                 "disability",
-                "pronouns"
+                "pronouns",
+                "sexualOrientation",
+                "transgender"
               ],
               "additionalProperties": false
             },
@@ -3621,11 +4566,408 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "restrictiveAgreement": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "governmentService": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "military": {
+                              "type": "boolean"
+                            },
+                            "militaryEndYear": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1940,
+                                  "maximum": 2100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "government": {
+                              "type": "boolean"
+                            },
+                            "governmentEndYear": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1940,
+                                  "maximum": 2100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "military",
+                            "militaryEndYear",
+                            "government",
+                            "governmentEndYear"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "relativesAt": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "essentialFunctions": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "clearance": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "level": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "public-trust",
+                                "confidential",
+                                "secret",
+                                "top-secret",
+                                "ts-sci"
+                              ]
+                            },
+                            "active": {
+                              "type": [
+                                "boolean",
+                                "null"
+                              ]
+                            },
+                            "polygraph": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "ci",
+                                    "full-scope"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "level",
+                            "active",
+                            "polygraph"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "citizenships": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "minItems": 1,
+                          "maxItems": 3,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
                 "atLeast18",
-                "criminalRecord"
+                "criminalRecord",
+                "restrictiveAgreement",
+                "governmentService",
+                "relativesAt",
+                "essentialFunctions",
+                "clearance",
+                "citizenships"
               ],
               "additionalProperties": false
             },
@@ -3826,12 +5168,29 @@
                       "type": "string",
                       "maxLength": 8,
                       "pattern": "^\\d*$"
+                    },
+                    "type": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mobile",
+                            "home",
+                            "work"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "number",
                     "country",
-                    "extension"
+                    "extension",
+                    "type"
                   ],
                   "additionalProperties": false
                 },
@@ -3943,6 +5302,34 @@
                     }
                   ]
                 },
+                "x": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
+                "telegram": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
                 "other": {
                   "maxItems": 10,
                   "type": "array",
@@ -3980,6 +5367,8 @@
                 "github",
                 "portfolio",
                 "website",
+                "x",
+                "telegram",
                 "other"
               ],
               "additionalProperties": false
@@ -4371,6 +5760,36 @@
                 "referralSource": {
                   "type": "string",
                   "maxLength": 100
+                },
+                "referralSourceCategory": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "job-board",
+                        "company-website",
+                        "employee-referral",
+                        "recruiter",
+                        "social-media",
+                        "event",
+                        "other"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "relocationPlaces": {
+                  "default": [],
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
                 }
               },
               "required": [
@@ -4379,9 +5798,48 @@
                 "willingToRelocate",
                 "workArrangements",
                 "travelPercent",
-                "referralSource"
+                "referralSource",
+                "referralSourceCategory",
+                "relocationPlaces"
               ],
               "additionalProperties": false
+            },
+            "certifications": {
+              "default": [],
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 150
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1950,
+                        "maximum": 2100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "issuer",
+                  "year"
+                ],
+                "additionalProperties": false
+              }
             },
             "documents": {
               "type": "object",
@@ -4418,6 +5876,7 @@
             "languages",
             "skills",
             "preferences",
+            "certifications",
             "documents",
             "anythingElse"
           ],
@@ -4819,6 +6278,24 @@
                     }
                   ]
                 },
+                "raceSubgroups": {
+                  "default": [],
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "east-asian",
+                      "south-asian",
+                      "southeast-asian"
+                    ]
+                  }
+                },
+                "raceSelfDescribed": {
+                  "default": "",
+                  "type": "string",
+                  "maxLength": 100
+                },
                 "veteran": {
                   "oneOf": [
                     {
@@ -4862,11 +6339,16 @@
                             },
                             "isProtectedVeteran": {
                               "type": "boolean"
+                            },
+                            "isActiveDuty": {
+                              "default": false,
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "isVeteran",
-                            "isProtectedVeteran"
+                            "isProtectedVeteran",
+                            "isActiveDuty"
                           ],
                           "additionalProperties": false
                         }
@@ -4974,15 +6456,147 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "sexualOrientation": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "values": {
+                              "minItems": 1,
+                              "maxItems": 7,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "asexual",
+                                  "bisexual-pansexual",
+                                  "gay",
+                                  "heterosexual",
+                                  "lesbian",
+                                  "queer",
+                                  "self-describe"
+                                ]
+                              }
+                            },
+                            "selfDescribed": {
+                              "type": "string",
+                              "maxLength": 100
+                            }
+                          },
+                          "required": [
+                            "values",
+                            "selfDescribed"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "transgender": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
                 "gender",
                 "hispanicOrLatino",
                 "races",
+                "raceSubgroups",
+                "raceSelfDescribed",
                 "veteran",
                 "disability",
-                "pronouns"
+                "pronouns",
+                "sexualOrientation",
+                "transgender"
               ],
               "additionalProperties": false
             },
@@ -5085,11 +6699,408 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "restrictiveAgreement": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "governmentService": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "military": {
+                              "type": "boolean"
+                            },
+                            "militaryEndYear": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1940,
+                                  "maximum": 2100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "government": {
+                              "type": "boolean"
+                            },
+                            "governmentEndYear": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1940,
+                                  "maximum": 2100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "military",
+                            "militaryEndYear",
+                            "government",
+                            "governmentEndYear"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "relativesAt": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "essentialFunctions": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "clearance": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "level": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "public-trust",
+                                "confidential",
+                                "secret",
+                                "top-secret",
+                                "ts-sci"
+                              ]
+                            },
+                            "active": {
+                              "type": [
+                                "boolean",
+                                "null"
+                              ]
+                            },
+                            "polygraph": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "ci",
+                                    "full-scope"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "level",
+                            "active",
+                            "polygraph"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "citizenships": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "minItems": 1,
+                          "maxItems": 3,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
                 "atLeast18",
-                "criminalRecord"
+                "criminalRecord",
+                "restrictiveAgreement",
+                "governmentService",
+                "relativesAt",
+                "essentialFunctions",
+                "clearance",
+                "citizenships"
               ],
               "additionalProperties": false
             },
@@ -5293,12 +7304,29 @@
                       "type": "string",
                       "maxLength": 8,
                       "pattern": "^\\d*$"
+                    },
+                    "type": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mobile",
+                            "home",
+                            "work"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "number",
                     "country",
-                    "extension"
+                    "extension",
+                    "type"
                   ],
                   "additionalProperties": false
                 },
@@ -5410,6 +7438,34 @@
                     }
                   ]
                 },
+                "x": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
+                "telegram": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
                 "other": {
                   "maxItems": 10,
                   "type": "array",
@@ -5447,6 +7503,8 @@
                 "github",
                 "portfolio",
                 "website",
+                "x",
+                "telegram",
                 "other"
               ],
               "additionalProperties": false
@@ -5838,6 +7896,36 @@
                 "referralSource": {
                   "type": "string",
                   "maxLength": 100
+                },
+                "referralSourceCategory": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "job-board",
+                        "company-website",
+                        "employee-referral",
+                        "recruiter",
+                        "social-media",
+                        "event",
+                        "other"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "relocationPlaces": {
+                  "default": [],
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
                 }
               },
               "required": [
@@ -5846,9 +7934,48 @@
                 "willingToRelocate",
                 "workArrangements",
                 "travelPercent",
-                "referralSource"
+                "referralSource",
+                "referralSourceCategory",
+                "relocationPlaces"
               ],
               "additionalProperties": false
+            },
+            "certifications": {
+              "default": [],
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 150
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1950,
+                        "maximum": 2100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "issuer",
+                  "year"
+                ],
+                "additionalProperties": false
+              }
             },
             "documents": {
               "type": "object",
@@ -5885,6 +8012,7 @@
             "languages",
             "skills",
             "preferences",
+            "certifications",
             "documents",
             "anythingElse"
           ],
@@ -6286,6 +8414,24 @@
                     }
                   ]
                 },
+                "raceSubgroups": {
+                  "default": [],
+                  "maxItems": 3,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "east-asian",
+                      "south-asian",
+                      "southeast-asian"
+                    ]
+                  }
+                },
+                "raceSelfDescribed": {
+                  "default": "",
+                  "type": "string",
+                  "maxLength": 100
+                },
                 "veteran": {
                   "oneOf": [
                     {
@@ -6329,11 +8475,16 @@
                             },
                             "isProtectedVeteran": {
                               "type": "boolean"
+                            },
+                            "isActiveDuty": {
+                              "default": false,
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "isVeteran",
-                            "isProtectedVeteran"
+                            "isProtectedVeteran",
+                            "isActiveDuty"
                           ],
                           "additionalProperties": false
                         }
@@ -6441,15 +8592,147 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "sexualOrientation": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "values": {
+                              "minItems": 1,
+                              "maxItems": 7,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "asexual",
+                                  "bisexual-pansexual",
+                                  "gay",
+                                  "heterosexual",
+                                  "lesbian",
+                                  "queer",
+                                  "self-describe"
+                                ]
+                              }
+                            },
+                            "selfDescribed": {
+                              "type": "string",
+                              "maxLength": 100
+                            }
+                          },
+                          "required": [
+                            "values",
+                            "selfDescribed"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "transgender": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
                 "gender",
                 "hispanicOrLatino",
                 "races",
+                "raceSubgroups",
+                "raceSelfDescribed",
                 "veteran",
                 "disability",
-                "pronouns"
+                "pronouns",
+                "sexualOrientation",
+                "transgender"
               ],
               "additionalProperties": false
             },
@@ -6552,11 +8835,408 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "restrictiveAgreement": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "governmentService": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "military": {
+                              "type": "boolean"
+                            },
+                            "militaryEndYear": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1940,
+                                  "maximum": 2100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "government": {
+                              "type": "boolean"
+                            },
+                            "governmentEndYear": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 1940,
+                                  "maximum": 2100
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "military",
+                            "militaryEndYear",
+                            "government",
+                            "governmentEndYear"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "relativesAt": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "essentialFunctions": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "clearance": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "level": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "public-trust",
+                                "confidential",
+                                "secret",
+                                "top-secret",
+                                "ts-sci"
+                              ]
+                            },
+                            "active": {
+                              "type": [
+                                "boolean",
+                                "null"
+                              ]
+                            },
+                            "polygraph": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "none",
+                                    "ci",
+                                    "full-scope"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "level",
+                            "active",
+                            "polygraph"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "citizenships": {
+                  "default": {
+                    "state": "not_provided"
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "not_provided"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "declined"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "const": "value"
+                        },
+                        "value": {
+                          "minItems": 1,
+                          "maxItems": 3,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z]{2}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "required": [
                 "atLeast18",
-                "criminalRecord"
+                "criminalRecord",
+                "restrictiveAgreement",
+                "governmentService",
+                "relativesAt",
+                "essentialFunctions",
+                "clearance",
+                "citizenships"
               ],
               "additionalProperties": false
             },
@@ -6803,12 +9483,29 @@
                       "type": "string",
                       "maxLength": 8,
                       "pattern": "^\\d*$"
+                    },
+                    "type": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mobile",
+                            "home",
+                            "work"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
                     "number",
                     "country",
-                    "extension"
+                    "extension",
+                    "type"
                   ],
                   "additionalProperties": false
                 },
@@ -6920,6 +9617,34 @@
                     }
                   ]
                 },
+                "x": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
+                "telegram": {
+                  "default": "",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "const": ""
+                    },
+                    {
+                      "type": "string",
+                      "maxLength": 300,
+                      "pattern": "^https?:\\/\\/\\S+$"
+                    }
+                  ]
+                },
                 "other": {
                   "maxItems": 10,
                   "type": "array",
@@ -6957,6 +9682,8 @@
                 "github",
                 "portfolio",
                 "website",
+                "x",
+                "telegram",
                 "other"
               ],
               "additionalProperties": false
@@ -7348,6 +10075,36 @@
                 "referralSource": {
                   "type": "string",
                   "maxLength": 100
+                },
+                "referralSourceCategory": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "job-board",
+                        "company-website",
+                        "employee-referral",
+                        "recruiter",
+                        "social-media",
+                        "event",
+                        "other"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "relocationPlaces": {
+                  "default": [],
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
                 }
               },
               "required": [
@@ -7356,9 +10113,48 @@
                 "willingToRelocate",
                 "workArrangements",
                 "travelPercent",
-                "referralSource"
+                "referralSource",
+                "referralSourceCategory",
+                "relocationPlaces"
               ],
               "additionalProperties": false
+            },
+            "certifications": {
+              "default": [],
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 150
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1950,
+                        "maximum": 2100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name",
+                  "issuer",
+                  "year"
+                ],
+                "additionalProperties": false
+              }
             },
             "documents": {
               "type": "object",
@@ -7395,6 +10191,7 @@
             "languages",
             "skills",
             "preferences",
+            "certifications",
             "documents",
             "anythingElse"
           ],

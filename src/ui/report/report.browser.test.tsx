@@ -201,6 +201,23 @@ describe('the report', () => {
     expect(root.querySelector('[data-progress-details]')).toBeNull();
   });
 
+  // s2 profile (settings version 7): with the page's notifications off, the panel says what a paused run waits for.
+  it('says what a paused frame waits for when the page draws no notification, once, and only then', async () => {
+    const paused = (pauseReason: 'email-code' | 'captcha' | 'page-busy') => [frameReport(0, { status: 'handoff',
+      pauseReason, step: { index: 0, of: 3 } })];
+    const waits = await mount(<Report reports={paused('email-code')} saysWaits />);
+    expect(waits.querySelector('.tia-frame__note--pause')?.textContent).toBe(COPY.pauseReasons['email-code']);
+    unmountAll();
+    // A check on the page: the status already says it, so it is not said twice.
+    const check = await mount(<Report reports={paused('captcha')} saysWaits />);
+    expect(check.querySelector('.tia-frame__note--pause')).toBeNull();
+    expect(check.textContent).toContain(COPY.runStatuses.handoff);
+    unmountAll();
+    // Notifications on: the page says it (D10), not the panel.
+    const quiet = await mount(<Report reports={paused('page-busy')} />);
+    expect(quiet.textContent).not.toContain(COPY.pauseReasons['page-busy']);
+  });
+
   it('offers Preview and Show on the résumé and cover-letter rows: the preview under its row, Show the field (v4 ui)', async () => {
     const shown: Array<[number, string]> = [];
     const opened: string[] = [];

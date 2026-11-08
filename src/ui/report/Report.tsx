@@ -140,6 +140,9 @@ export interface ReportActions {
   /** v4 ui: a résumé or cover-letter row's own tool beside Preview and Show (the side panel's résumé Change after a
    *  run): its button's words, its data-action, and what it unfolds under the row; null for none. */
   rowTool?(row: ReportRow): { label: string; action: string; render(close: () => void): ReactNode } | null;
+  /** s2 profile (settings version 7): the page draws no TailorIT notification (`modes.notifications` 'off'), so the
+   *  line of a frame whose run paused says what it waits for (its pause reason), as the page's toast would have. */
+  saysWaits?: boolean;
 }
 
 export interface ReportProps extends ReportActions {
@@ -352,7 +355,7 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
           <p className="tia-scanning__help">{words.scanningHelp}</p>
         </div>
       )}
-      <FrameLines reports={reports} named={named} />
+      <FrameLines reports={reports} named={named} saysWaits={actions.saysWaits === true} />
       {hasRows && open && (
         <div className="tia-lists" id={listsId}>
           {sections.length > 0 && (
@@ -383,12 +386,20 @@ function Progress({ reports, actions, minimized }: { reports: readonly FrameRepo
 
 /** Where each form stands, when that says more than the progress: a decision, a sign-in, a pause, a stop, a step; that
  *  a dry run wrote nothing. With several forms, or one embedded in its page, each names its form, its own run status
- *  beside it. What a paused run waits for is said on the page (v4 ui, D10), not here. */
-function FrameLines({ reports, named }: { reports: readonly FrameReport[]; named: boolean }) {
+ *  beside it. What a paused run waits for is said on the page (v4 ui, D10), not here, unless the page draws no
+ *  notification (`saysWaits`, s2 profile): then its pause reason is said under its line. */
+function FrameLines({ reports, named, saysWaits }: { reports: readonly FrameReport[]; named: boolean;
+  saysWaits: boolean }) {
   const lines = reports.map((report) => {
     const status = `${PAGE_COPY.runStatuses[report.status]}${report.step ? ` · ${stepText(report.step)}` : ''}`;
     const notes: Array<{ key: string; text: string; tone: string }> = [];
     if (report.mode === 'dry-run') notes.push({ key: 'dry-run', text: PAGE_COPY.report.dryRun, tone: 'dry-run' });
+    const waits = report.status === 'handoff' && report.pauseReason !== null
+      ? PAGE_COPY.pauseReasons[report.pauseReason] : null;
+    // Said once: a check on the page is the status's own words already.
+    if (saysWaits && waits !== null && waits.replace(/\.$/, '') !== PAGE_COPY.runStatuses[report.status]) {
+      notes.push({ key: 'pause', text: waits, tone: 'pause' });
+    }
     return { report, status, notes, telling: TELLING_STATUSES.has(report.status) || report.step !== undefined };
   }).filter((line) => named || line.telling || line.notes.length > 0);
   if (lines.length === 0) return null;

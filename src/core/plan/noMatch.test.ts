@@ -22,9 +22,8 @@ const otherResults = (label: string, labels: readonly string[], extra: Partial<F
 
 describe('s2 core-wd: three styles, then the list\'s own "Other"', () => {
   it('asks for the "Other" query by default (the setting unset is read as \'other\'), and not under \'leave\'', () => {
-    const unset: Settings = { ...DEFAULT_SETTINGS, modes: { ...DEFAULT_SETTINGS.modes } };
-    delete unset.modes.noMatch;
-    for (const settings of [unset, other]) {
+    // Settings version 7 stores the mode; its default is 'other'.
+    for (const settings of [DEFAULT_SETTINGS, other]) {
       expect(fieldOf(planOf([SCHOOL_SEARCH], { settings }), SCHOOL_SEARCH).write?.value)
         .toEqual({ kind: 'query', queries: ['University of Texas at Austin', 'UT Austin', 'University of Texas'],
           other: true });
