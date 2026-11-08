@@ -117,6 +117,8 @@ export interface DatePartsTarget {
   /** The adapter declares the digits for its parts: typed one key per digit where the value setter's write is not
    *  taken. */
   readonly digits: boolean;
+  /** The fix of 2026-11-08: the alert the page shows for the date now (DatePartsDecl.alert), or null. */
+  readonly alert?: () => Element | null;
 }
 // ── end s2 wd ──
 

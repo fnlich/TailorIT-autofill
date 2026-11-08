@@ -36,6 +36,7 @@ import {
   redactNewAtsAddress,
   redactSignInTokens,
   stripJrId,
+  stripInjectedInPage,
   CHOSEN_PLACES,
   // ── snapshot build 2026-11-06 (core pass Z1, item 36) ──
   CHOSEN_MARKS,
@@ -1341,7 +1342,8 @@ describe('mhtml-to-fixture, snapshot build: boards', () => {
     expect(withoutInjectedParams('https://x.example/a?utm_source=SimplifyJobs')).toBe('https://x.example/a?utm_source=SimplifyJobs');
     expect(withoutInjectedParams('https://x.example/a?utm_source=LinkedIn')).toBe('https://x.example/a?utm_source=LinkedIn');
     expect(INJECTED_PARAMS).toEqual(['jr_id', 'utm_source=Simplify']);
-    expect(INJECTED_UI).toEqual(['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root']);
+    // The fix of 2026-11-08: Jobright's Edit with AI hosts too (snapshot5).
+    expect(INJECTED_UI).toEqual(['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root', '.jr-edit-ai-host']);
     expect(PER_LOAD_PARAMS).toEqual(['validityToken', 'bft', 'hsutk', '__hstc', '__hssc', '__hsfp']);
     // Greenhouse's, Ashby's and Workable's (boards), Workday's upload preview and the new ATSs' eleven (the generic
     // applicant-text pass, redactApplicantTextInPage).
@@ -1787,7 +1789,9 @@ const WORKDAY_STEP_FILES = ['cisive-autofill-resume', 'resolvetech-source-open',
   's2-exelixis-country-open', 's2-exelixis-state-open', 's2-exelixis-my-experience', 's2-verily-create-account',
   's2-verily-source-open', 's2-verily-my-information', 's2-verily-field-of-study-open',
   // s2 wd, snapshot4: the owner's four captures of the evening.
-  's2-verily-school-no-items', 's2-verily-degree-open', 's2-verily-school-results', 's2-verily-field-of-study-after-add']
+  's2-verily-school-no-items', 's2-verily-degree-open', 's2-verily-school-results', 's2-verily-field-of-study-after-add',
+  // The fix of 2026-11-08: snapshot5's two pureinsurance captures.
+  's2-pureinsurance-my-experience-errors', 's2-pureinsurance-degree-open']
   .map((name) => `workday/${name}`);
 
 describe("Workday's application steps: the converter's redaction (docs/OWNER-QUESTIONS.md 93)", () => {
@@ -2050,6 +2054,49 @@ describe("Workday's application steps: the converter's redaction (docs/OWNER-QUE
       expect(html).toContain('Search Results');
       await context.close();
     }, 30_000);
+});
+
+// The fix of 2026-11-08 (snapshot5, [pureinsurance.wd5.myworkdayjobs.com] Senior Security Analyst – Cloud Security.mht):
+// what Jobright and TailorIT drew into the page, and the digits Workday's errors repeat.
+describe("snapshot5: other extensions' hosts, TailorIT's own, and Workday's errors (the fix of 2026-11-08)", () => {
+  it("takes out Jobright's Edit with AI hosts and a closed shadow host on <body> or <html>, a page's own kept", async () => {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    await page.setContent(`<!doctype html><html><body><main><form><label for="why">Why?</label><textarea id="why"></textarea>
+      <div class="jr-edit-ai-host" id="jr"></div><div id="page-host"></div></form></main>
+      <div id="closed-on-body" ${CLOSED_ROOT_MARK}=""></div><div id="open-on-body"></div></body></html>`);
+    await page.evaluate((mark) => {
+      document.getElementById('jr')!.attachShadow({ mode: 'open' }).innerHTML = '<button>Edit with AI</button>';
+      document.getElementById('page-host')!.attachShadow({ mode: 'open' }).innerHTML = '<input id="inner">';
+      document.getElementById('open-on-body')!.attachShadow({ mode: 'open' }).innerHTML = '<input id="inner2">';
+      // TailorIT's own UI host: a closed root, appended to <html> (content/ui/shadow.ts).
+      const own = document.createElement('div');
+      own.id = 'own';
+      own.setAttribute(mark, '');
+      document.documentElement.append(own);
+    }, CLOSED_ROOT_MARK);
+    const counts = await page.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: 'x^', dropOverlays: true,
+      redacted: 'REDACTED', closedMark: CLOSED_ROOT_MARK });
+    expect(await page.evaluate(() => ['jr', 'page-host', 'closed-on-body', 'open-on-body', 'own']
+      .map((id) => document.getElementById(id) !== null))).toEqual([false, true, false, true, false]);
+    expect(counts).toMatchObject({ injected: 1, shadowOverlays: 2 });
+    await context.close();
+  }, 30_000);
+
+  it("redacts the digits Workday's field alerts and its errors summary repeat, and keeps their words", async () => {
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    const page = await context.newPage();
+    // snapshot5's markup, digits made up.
+    await page.setContent(`<!doctype html><html><body><div data-automation-id="errorHeading"><ol><li value="1"><div><button
+      aria-describedby="hint1"><span>Error</span><div aria-hidden="true">-</div>From</button><div id="hint1">Invalid Date:
+      07/</div></div></li></ol></div><div data-automation-id="formField-startDate"><fieldset><p id="error1-w--startDate"
+      data-automation-id="inputAlert"><span>Error: </span>Invalid Date: 07/</p></fieldset></div></body></html>`);
+    await page.evaluate(redactWorkdayInPage, { redacted: 'REDACTED' });
+    const text = await page.evaluate(() => document.body.textContent!.replace(/\s+/g, ' ').trim());
+    expect(text).not.toMatch(/\d/);
+    expect(text).toBe('Error-FromInvalid Date: REDACTED/Error: Invalid Date: REDACTED/');
+    await context.close();
+  }, 30_000);
 });
 
 // s2 wd: the eeo study's converter findings (snapshot round 2): the answers react-select and Lever show besides a chip.

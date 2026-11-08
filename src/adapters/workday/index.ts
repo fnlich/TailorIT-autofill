@@ -51,7 +51,7 @@ import { isUserVisible } from '../../dom/visibility';
 import { genericAdapter } from '../generic';
 import type { Adapter, SignInForm, SignInWall } from '../types';
 import {
-  accountErrors, dateFor, descriptionFor, isBusy, isFinalStep, labelFor, neverPressedOnSteps, nextButton, repeatables,
+  accountErrors, dateFor, descriptionFor, fieldAlerts, isBusy, isFinalStep, labelFor, neverPressedOnSteps, nextButton, repeatables,
   requiredFor, sections, stepSignature, submitButton, uploadHeld, uploadHeldNames, uploadState, uploadWidgets, widgetFor,
   widgetRoots,
 } from './application';
@@ -249,7 +249,9 @@ export const workdayAdapter: Adapter = {
   signInPrelude,
   neverPress,
   // The generic aria-invalid errors, and on the account view the sign-in's error above its form (./application.ts).
-  errors: (root) => [...(genericAdapter.errors?.(root) ?? []), ...accountErrors(root).map((el) => ({ el }))],
+  errors: (root) => [...(genericAdapter.errors?.(root) ?? []), ...accountErrors(root).map((el) => ({ el })),
+    // The fix of 2026-11-08 (snapshot5): a field's alert under it ("Error: Invalid Date: ...").
+    ...fieldAlerts(root).map((el) => ({ el }))],
   // The application's steps (./application.ts).
   stepSignature,
   isFinalStep,

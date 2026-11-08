@@ -144,6 +144,10 @@ export interface DatePartsDecl {
   parts: ReadonlyArray<{ part: 'month' | 'day' | 'year'; input: HTMLInputElement; display: Element | null }>;
   /** The digits are typed, one key each, into a part whose value setter's write the page did not take. */
   keys?: 'digits';
+  /** The fix of 2026-11-08: the alert the page shows for this date when it judged it wrong, or null while it shows
+   *  none (Workday's field alert under the date, snapshot5): a date that holds the planned value but shows its alert
+   *  (left before it was whole) is left once more, so the page validates it again. */
+  alert?: () => Element | null;
   /** The snapshot this declaration was written from. */
   snapshot: string;
 }

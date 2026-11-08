@@ -62,6 +62,17 @@
  *   part (the value setter, else the digits typed) and reads it back from the displays, never through the calendar
  *   (dateIcon, never pressed). Next is withheld while a required part shows no digits (nextButton): a part's display or
  *   aria-valuenow, as a person reads it. How the live page takes our events is unknown until the owner's live run.
+ *   The fix of 2026-11-08 (snapshot5: fixtures/workday/s2-pureinsurance-my-experience-errors.html, pureinsurance's My
+ *   Experience after a fill): every date written showed "Error: Invalid Date: MM/" under it and in the step's "Errors
+ *   Found", its parts whole: Workday validates a date when a part is left, and the filler had left the month before the
+ *   year was in. It now leaves the date once, every part written and drawn; and a whole date that shows its alert
+ *   (dateFor's `alert`, the field's p[data-automation-id=inputAlert]) is left once more so Workday validates it again.
+ * - Errors (fieldAlerts, index.ts errors; the fix of 2026-11-08): a field's alert under it, <p id="error1-<field id>"
+ *   data-automation-id="inputAlert"><span>Error: </span>...</p> (snapshot5's dates and Degree's "The field Degree is
+ *   required and must have a value."), is one of the page's errors: a step that shows one is never pressed on blindly.
+ *   The step's "Errors Found" summary (a button "Errors Found" over [data-automation-id=errorHeading], an ordered list
+ *   of "Error - <label>" buttons each with its hint) lists the same alerts; no capture shows whether Workday redraws it
+ *   before the next Save and Continue.
  * - Radios and checkboxes are native inputs with label[for] (previous worker, "I currently work here", the terms box,
  *   the SMS and WhatsApp opt-ins, the ethnicity and disability groups), filled by the standard fillers.
  * - Uploads (uploadWidgets, uploadState): a drop zone, [data-automation-id=file-upload-drop-zone], holds
@@ -111,7 +122,10 @@ export const WORKDAY_STEP_SNAPSHOTS = ['fixtures/workday/cisive-autofill-resume.
   // s2 wd, snapshot4 (2026-11-07 evening): School opened with nothing typed ("No Items."), the Degree list open, the
   // School's search results (their words redacted) with a typed From, and Field of Study after a Work Experience Add.
   'fixtures/workday/s2-verily-school-no-items.html', 'fixtures/workday/s2-verily-degree-open.html',
-  'fixtures/workday/s2-verily-school-results.html', 'fixtures/workday/s2-verily-field-of-study-after-add.html'] as const;
+  'fixtures/workday/s2-verily-school-results.html', 'fixtures/workday/s2-verily-field-of-study-after-add.html',
+  // The fix of 2026-11-08, snapshot5: pureinsurance's My Experience after a fill, its dates' "Invalid Date" alerts and
+  // the "Errors Found" summary, and its Degree list open.
+  'fixtures/workday/s2-pureinsurance-my-experience-errors.html', 'fixtures/workday/s2-pureinsurance-degree-open.html'] as const;
 
 /**
  * The step pages before Review, by their data-automation-id, each from the snapshots of a whole flow (the progress
@@ -246,7 +260,14 @@ export function dateFor(control: Element): DatePartsDecl | null {
       const part = (DATE_PARTS as Record<string, 'month' | 'day' | 'year'>)[id];
       return part === undefined ? [] : [{ part, input, display: byId(control, `${id}-display`) }];
     });
-  return parts.length === 0 ? null : { parts, keys: 'digits', snapshot: 'fixtures/workday/s2-exelixis-my-experience.html' };
+  // The fix of 2026-11-08: the date's own alert, fieldAlerts' (snapshot5's "Error: Invalid Date: MM/" under it).
+  const alert = () => {
+    const field = fieldOf(control);
+    return field === null ? null : Array.from(field.querySelectorAll('[data-automation-id="inputAlert"]'))
+      .find((each) => fieldOf(each) === field && isUserVisible(each)) ?? null;
+  };
+  return parts.length === 0 ? null : { parts, keys: 'digits', alert,
+    snapshot: 'fixtures/workday/s2-exelixis-my-experience.html' };
 }
 
 /** s2 wd: whether a part of Workday's date input shows nothing: its display shows no digits (its placeholder, "MM") and
@@ -647,6 +668,18 @@ export function accountErrors(root: Element): Element[] {
   const cache = newScanCache();
   return allById(account, 'errorMessage').filter((error) => error.matches('[role="alert" i]') && wordsOf(error) !== ''
     && isUserVisible(error, cache));
+}
+
+/** The fix of 2026-11-08: the errors a step's fields show, each a field's alert under it a person can see
+ *  (fixtures/workday/s2-pureinsurance-my-experience-errors.html, My Experience after a fill: <div
+ *  data-automation-id="formField-startDate" ...><fieldset> ... <p id="error1-workExperience-5--startDate"
+ *  data-automation-id="inputAlert"><span>Error: </span>Invalid Date: REDACTED/</p>, and Degree's "The field Degree is
+ *  required and must have a value."; the step's "Errors Found" summary above lists the same). The run reads them as the
+ *  page's errors (Adapter.errors): a step that shows one is not pressed on blindly, and the review says so. */
+export function fieldAlerts(root: Element): Element[] {
+  const cache = newScanCache();
+  return Array.from(root.querySelectorAll('[data-automation-id="inputAlert"]'))
+    .filter((alert) => fieldOf(alert) !== null && wordsOf(alert) !== '' && isUserVisible(alert, cache));
 }
 
 /** Workday's loading panel, while a person can see it (module header). */

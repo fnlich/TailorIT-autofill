@@ -9,13 +9,21 @@
  *   its parts ("2025-04" for month and year), none is empty, anything else the words it shows ("04/YYYY");
  * - the layout (formatOfParts): a year alone is 'year', month and year 'month-year', month, day and year 'date';
  * - the write (fillDateParts): each part's own digits ("04", "2025"), never a part the date lacks: a day is never made up,
- *   so a month and year go into no month/day/year input (format-unsupported). First as the text filler writes, the value
- *   setter, then input, change, focusout and blur on each part; the page's answer is awaited (one quiet window, capped:
- *   never a fixed sleep), then read back from the displays. A part the page did not take gets its own value back and,
- *   where its adapter declares the digits (`keys: 'digits'`), one untrusted keydown and keyup per digit, as a person's
- *   typing would send (events.ts DIGIT_KEYS, to that part only, through assertKeyTarget), and is read back again. The
- *   calendar is never used. Read back as planned: verified; some part shows another value: written, not verified; nothing
- *   taken: each part gets its own value back, and the person writes it (needs-your-click).
+ *   so a month and year go into no month/day/year input (format-unsupported). First the value setter, input and change
+ *   on every part, and no focusout or blur between them: the page's answer is awaited (one quiet window, capped: never a
+ *   fixed sleep), and only once the parts show what was taken is the date left, focusout and blur on each part in turn
+ *   (leaveDate). The fix of 2026-11-08 (snapshot5, [pureinsurance.wd5.myworkdayjobs.com] Senior Security Analyst – Cloud
+ *   Security.mht, My Experience after a fill): a blur after the month alone, before the year was written and drawn, had
+ *   Workday validate the date then, and every date written so showed "Error: Invalid Date: 09/" under it and in the
+ *   step's "Errors Found" though both parts then held their digits (its field alert, [data-automation-id=inputAlert],
+ *   stays until the date is left again). A part the page did not take gets its own value back and, where its adapter
+ *   declares the digits (`keys: 'digits'`), one untrusted keydown and keyup per digit, as a person's typing would send
+ *   (events.ts DIGIT_KEYS, to that part only, through assertKeyTarget), the date left again once they show, and read back
+ *   again. A date nothing was taken in is never left (the page would validate what it held: a required one, empty).
+ *   A date that already holds the planned value but shows its page's alert (DatePartsTarget.alert: one left before it
+ *   was whole, by this filler before the fix) is left once more, so the page validates it whole again.
+ *   The calendar is never used. Read back as planned: verified; some part shows another value: written, not verified;
+ *   nothing taken: each part gets its own value back, and the person writes it (needs-your-click).
  * Values stay in memory: nothing here logs or sends one.
  */
 import type { CurrentValue } from '../../core/types/field';
@@ -102,12 +110,28 @@ export interface DatePartsContext extends NotSubmitContext {
   signal?: AbortSignal;
 }
 
-/** The value setter's write of one part, with the text filler's events (input, change, focusout and blur). */
+/** The value setter's write of one part, with input and change: never focusout or blur, which leave the date (the fix of
+ *  2026-11-08, see the header; leaveDate). */
 function writePart(input: HTMLInputElement, text: string): void {
   setValue(input, text);
   fireInput(input, 'text');
   fireChange(input);
-  fireLeave(input);
+}
+
+/** The alert the page shows for a date now (DatePartsTarget.alert), or null; a hook that fails shows none. */
+function alertOf(target: DatePartsTarget): Element | null {
+  try {
+    return target.alert?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Leaves the date once its parts show what was taken: focusout and blur on each part in turn (the page validates the
+ *  whole date then, every part drawn), and its answer awaited. False when the run's signal ended the wait. */
+async function leaveDate(parts: readonly DatePart[], ctx: DatePartsContext): Promise<boolean> {
+  for (const part of parts) fireLeave(part.input);
+  return answered(ctx);
 }
 
 /** The page's answer to what was just sent: one quiet window on the form root, at most WIDGET_CAP_MS (React draws a
@@ -129,12 +153,19 @@ export async function fillDateParts(target: FieldTarget, iso: string, ctx: DateP
   const wanted = partValuesFor(parts, iso);
   if (wanted === null) return refused('format-unsupported');
   const shownBefore = parts.map(partShown);
-  if (parts.every((_, index) => shownBefore[index] === wanted[index])) return done(false, 'already-correct');
+  if (parts.every((_, index) => shownBefore[index] === wanted[index])) {
+    // The fix of 2026-11-08: a date that holds the planned value but shows its page's alert (left before it was whole,
+    // as this filler did before: snapshot5) is left once more, so the page validates it whole.
+    if (alertOf(dated) !== null) await leaveDate(parts, ctx);
+    return done(false, 'already-correct');
+  }
   const valuesBefore = parts.map((part) => part.input.value);
   const texts = wanted.map((value, index) => pad(value, WIDTH[parts[index]!.part]));
   const pending = () => parts.flatMap((part, index) => (partShown(part) === wanted[index] ? [] : [index]));
 
-  // The value setter first, each part the date does not show yet.
+  // Whether the page took something since the write began: a part shows another value than before it.
+  const taken = () => parts.some((part, index) => partShown(part) !== shownBefore[index]);
+  // The value setter first, each part the date does not show yet, every part before the date is left.
   for (const index of pending()) writePart(parts[index]!.input, texts[index]!);
   const outcome = (): FillOutcome => {
     const left = pending();
@@ -149,7 +180,11 @@ export async function fillDateParts(target: FieldTarget, iso: string, ctx: DateP
     const changed = parts.some((part, index) => partShown(part) !== shownBefore[index]);
     return changed ? mismatch('verify-mismatch') : refused('needs-your-click');
   };
-  if (!await answered(ctx) || pending().length === 0 || !dated.digits) return outcome();
+  if (!await answered(ctx)) return outcome();
+  // The parts are drawn: the date is left once, now, where the page took something (a date it took nothing in is not
+  // validated by us).
+  if (taken() && !await leaveDate(parts, ctx)) return outcome();
+  if (pending().length === 0 || !dated.digits) return outcome();
 
   // The digits its adapter declares, typed into each part the setter's write did not reach, that part's own value
   // given back first, so the page's state and the part agree before the keys.
@@ -159,6 +194,6 @@ export async function fillDateParts(target: FieldTarget, iso: string, ctx: DateP
     if (input.value !== valuesBefore[index]) writePart(input, valuesBefore[index]!);
     for (const digit of texts[index]!) fireKey(input, digit as DigitKey);
   }
-  await answered(ctx);
+  if (await answered(ctx) && taken()) await leaveDate(parts, ctx);
   return outcome();
 }

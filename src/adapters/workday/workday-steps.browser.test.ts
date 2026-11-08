@@ -52,6 +52,10 @@ import schoolResultsExpect from '../../../fixtures/workday/s2-verily-school-resu
 import schoolResultsHtml from '../../../fixtures/workday/s2-verily-school-results.html?raw';
 import afterAddExpect from '../../../fixtures/workday/s2-verily-field-of-study-after-add.expect.json';
 import afterAddHtml from '../../../fixtures/workday/s2-verily-field-of-study-after-add.html?raw';
+import pureErrorsExpect from '../../../fixtures/workday/s2-pureinsurance-my-experience-errors.expect.json';
+import pureErrorsHtml from '../../../fixtures/workday/s2-pureinsurance-my-experience-errors.html?raw';
+import pureDegreeExpect from '../../../fixtures/workday/s2-pureinsurance-degree-open.expect.json';
+import pureDegreeHtml from '../../../fixtures/workday/s2-pureinsurance-degree-open.html?raw';
 import syntheticHtml from '../../../fixtures/synthetic/workday/steps.html?raw';
 import { classifyByRules } from '../../core/resolver/classifyRules';
 import { scan, toFieldSpec } from '../../dom/scan';
@@ -96,6 +100,8 @@ const CASES = [
   { name: 's2-verily-degree-open', html: degreeOpenHtml, json: degreeOpenExpect },
   { name: 's2-verily-school-results', html: schoolResultsHtml, json: schoolResultsExpect },
   { name: 's2-verily-field-of-study-after-add', html: afterAddHtml, json: afterAddExpect },
+  { name: 's2-pureinsurance-my-experience-errors', html: pureErrorsHtml, json: pureErrorsExpect },
+  { name: 's2-pureinsurance-degree-open', html: pureDegreeHtml, json: pureDegreeExpect },
 ] as const;
 
 async function load(html: string): Promise<Fixture> {

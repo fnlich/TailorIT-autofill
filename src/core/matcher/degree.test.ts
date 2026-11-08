@@ -66,6 +66,22 @@ describe('degree matching by granularity (§4.9)', () => {
       .toMatchObject({ optionIndex: 2, rule: 'degree-qualifier-types', confidence: 0.97 });
   });
 
+  // The fix of 2026-11-08 (snapshot5: Workday's Degree list on pureinsurance, fixtures/workday/s2-pureinsurance-degree-
+  // open.html, its options exactly).
+  it('on a list of types, takes for a type it does not offer the level-only option of its level', () => {
+    const labels = ['Bachelor of Business Administration (BBA)', 'Registered Nurse (RN)', 'Medical Doctor (MD)',
+      'Associates of Arts (A.A)', 'Bachelor of Arts (B.A)', 'Bachelor of Science (B.S)', 'Doctor of Philosophy (Ph.D)',
+      'Juris Doctor (J.D)', 'Master of Business Administration (MBA)', 'Master of Science (M.S)', 'Master of Arts (M.A)',
+      'GED', 'High School'];
+    expect(detectDegreeGranularity(prepared(labels, 'degree').list)).toBe('types');
+    expect(match('High School Diploma', labels)).toMatchObject({ optionIndex: 12, rule: 'degree-level' });
+    // The types it offers are taken as before.
+    expect(match('Bachelor of Science', labels)).toMatchObject({ optionIndex: 5 });
+    expect(match('GED', labels)).toMatchObject({ optionIndex: 11 });
+    // A type of a level the list has no level-only option of stays blank (BEng: no "Bachelor's" here).
+    expect(match('BEng', labels).optionIndex).toBeNull();
+  });
+
   it('on a mixed list, takes the type first, else a level-only option of the same level', () => {
     const labels = ['B.S.', 'M.S.', "Bachelor's", "Master's", 'Some college'];
     expect(match('Bachelor of Science', labels)).toMatchObject({ optionIndex: 0, rule: 'degree-type' });

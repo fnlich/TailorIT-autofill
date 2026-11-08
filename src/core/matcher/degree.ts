@@ -157,7 +157,13 @@ export function degreeHits(intent: DegreeIntent, options: PreparedOptions, vocab
     case 'combined':
       return byType(intent, list, vocab).filter((hit) => sameField(hit.option.degree?.field, field, vocab));
     case 'types': {
-      if (intent.type !== null) return byType(intent, list, vocab);
+      if (intent.type !== null) {
+        // The fix of 2026-11-08 (snapshot5, Workday's Degree list on pureinsurance: "High School" among "Bachelor of
+        // Science (B.S)", "GED", ...): a type the list does not offer takes a level-only option of its level, as on a
+        // mixed list.
+        const typed = byType(intent, list, vocab);
+        return typed.length > 0 ? typed : byLevel(intent.level, true);
+      }
       // A level-only profile maps onto a list of types only when exactly one option is of that level.
       const same = ofLevel(intent.level);
       if (same.length !== 1) return [];

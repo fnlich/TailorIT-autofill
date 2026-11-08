@@ -20,6 +20,14 @@ import noItemsHtml from '../../../fixtures/workday/s2-verily-school-no-items.htm
 import schoolResultsHtml from '../../../fixtures/workday/s2-verily-school-results.html?raw';
 import afterAddHtml from '../../../fixtures/workday/s2-verily-field-of-study-after-add.html?raw';
 import resolveExpHtml from '../../../fixtures/workday/resolvetech-my-experience.html?raw';
+import pureErrorsHtml from '../../../fixtures/workday/s2-pureinsurance-my-experience-errors.html?raw';
+import pureDegreeHtml from '../../../fixtures/workday/s2-pureinsurance-degree-open.html?raw';
+import { goldenProfile, NOW, testVocab } from '../../content/content.testkit';
+import { planFrame } from '../../core/plan/frame';
+import { DEFAULT_SETTINGS } from '../../core/types/settings';
+import { toFieldSpec } from '../../dom/scan';
+import { fillWidget, readWidget } from '../../dom/widgets';
+import { fieldAlerts } from './application';
 import selfIdHtml from '../../../fixtures/workday/danafarber-self-identify.html?raw';
 import { plannedFieldOf } from '../../content/pass';
 import { addBlocks, currentJobRows, sectionsOf } from '../../content/repeatables';
@@ -185,8 +193,11 @@ describe('Workday’s date input: one date field, written part by part (s2 wd, d
   it('gives each part its own value back where the page took nothing, and leaves the date to the person', async () => {
     const { page, keys } = await withDates('none');
     const target = fieldAt(page.scan(), page.doc.getElementById(FROM)!);
+    const log = logEvents(page.doc);
     expect(await fillDateParts(target, '2025-04', { adapter: workdayAdapter, root: page.root }))
       .toEqual({ wrote: false, verification: 'not-checked', reason: 'needs-your-click', needsUserAction: true });
+    // The fix of 2026-11-08: a date the page took nothing in is never left (the page would validate what it held).
+    expect(log.events.filter((event) => event.type === 'focusout' || event.type === 'blur')).toEqual([]);
     expect(Array.from(page.doc.getElementById(FROM)!.querySelectorAll<HTMLInputElement>('input'))
       .map((input) => input.value)).toEqual(['', '']);
     expect(page.doc.getElementById(`${FROM}-dateSectionMonth-display`)!.textContent).toBe('MM');
@@ -512,5 +523,165 @@ describe('Workday’s My Experience: every job added, a section drawn anew read 
     for (const block of sections[0]!.blocks()) block.remove();
     const [second] = await addBlocks(env(page, earlier).env, sections);
     expect(second).toMatchObject({ clicks: 0, stop: 'add-cap' });
+  });
+});
+
+// ── The fix of 2026-11-08 (snapshot5) ───────────────────────────────────────────────────────────────────────────────
+
+describe('snapshot5: Workday’s dates left only once written, its field alerts, and its Degree (the fix of 2026-11-08)', () => {
+  const PURE_FROM = 'workExperience-5--startDate';
+
+  /** s2-pureinsurance-my-experience-errors, its alerts and its "Errors Found" summary taken away (the page before the
+   *  fill), with Workday's date script stood in for as snapshot5 shows it behaves: a part draws its digits as its input
+   *  event comes; leaving a part (its focusout) validates the date its parts show then, and a date shown in part
+   *  ("09" and "YYYY") gets the field's alert, "Error: Invalid Date: MM/", which that part's own next leave with the
+   *  whole date drawn takes away (the capture: every date written showed its month-only alert though its year was in). */
+  async function withValidation() {
+    const page = await load(pureErrorsHtml);
+    const doc = page.doc;
+    for (const alert of Array.from(doc.querySelectorAll('[data-automation-id="inputAlert"]'))) alert.parentElement!.remove();
+    doc.querySelector('[data-automation-id="errorHeading"]')!.closest('div[id]')!.remove();
+    const alerts = new Map<string, Element>();
+    const events: string[] = [];
+    doc.addEventListener('input', (event) => {
+      const input = event.target as HTMLInputElement;
+      if (!input.matches('input[role="spinbutton"]') || !/^\d+$/.test(input.value)) return;
+      events.push(`input:${input.getAttribute('aria-label')}`);
+      doc.getElementById(input.id.replace(/-input$/, '-display'))!.textContent = input.value;
+      input.setAttribute('aria-valuenow', String(Number(input.value)));
+    });
+    doc.addEventListener('focusout', (event) => {
+      const input = event.target as HTMLInputElement;
+      if (!input.matches('input[role="spinbutton"]')) return;
+      events.push(`leave:${input.getAttribute('aria-label')}`);
+      const wrapper = input.closest('[data-automation-id="dateInputWrapper"]')!;
+      const shown = Array.from(wrapper.querySelectorAll('[data-automation-id$="-display"]'), (display) => display.textContent ?? '');
+      const digits = shown.filter((text) => /^\d+$/.test(text)).length;
+      if (digits === shown.length) {
+        alerts.get(input.id)?.remove();
+        alerts.delete(input.id);
+      } else if (digits > 0 && !alerts.has(input.id)) {
+        // snapshot5: <p id="error1-<field>" data-automation-id="inputAlert"><span>Error: </span>Invalid Date: MM/</p>.
+        const alert = doc.createElement('p');
+        alert.setAttribute('data-automation-id', 'inputAlert');
+        alert.textContent = `Error: Invalid Date: ${shown[0]}/`;
+        wrapper.closest('fieldset')!.append(alert);
+        alerts.set(input.id, alert);
+      }
+    });
+    return { page, events };
+  }
+
+  it('writes every part before leaving the date, so Workday validates it whole and shows no "Invalid Date"', async () => {
+    const { page, events } = await withValidation();
+    const target = fieldAt(page.scan(), page.doc.getElementById(PURE_FROM)!);
+    expect(await fillDateParts(target, '2023-09', { adapter: workdayAdapter, root: page.root }))
+      .toMatchObject({ wrote: true, verification: 'verified', reason: 'ok' });
+    // Both parts written, then the date left: never a leave between the month and the year.
+    expect(events).toEqual(['input:Month', 'input:Year', 'leave:Month', 'leave:Year']);
+    expect(fieldAlerts(page.root)).toEqual([]);
+    expect(fieldAt(page.scan(), page.doc.getElementById(PURE_FROM)!).field.current).toEqual({ kind: 'text', text: '2023-09' });
+  });
+
+  it('leaves once more a date that holds the planned value but shows its alert, so Workday validates it whole', async () => {
+    // The owner's page as snapshot5 shows it: the date whole (here made up), its month-only alert still under it.
+    const page = await load(pureErrorsHtml);
+    const doc = page.doc;
+    for (const [part, digits] of [['Month', '09'], ['Year', '2023']] as const) {
+      doc.getElementById(`${PURE_FROM}-dateSection${part}-display`)!.textContent = digits;
+      doc.getElementById(`${PURE_FROM}-dateSection${part}-input`)!.setAttribute('aria-valuenow', String(Number(digits)));
+    }
+    const field = doc.getElementById(PURE_FROM)!.closest('[data-automation-id^="formField-"]')!;
+    const leaves: string[] = [];
+    // Workday's validation stood in for: leaving a part of a whole date takes its field's alert away.
+    doc.addEventListener('focusout', (event) => {
+      const input = event.target as Element;
+      if (!field.contains(input)) return;
+      leaves.push(input.getAttribute('aria-label') ?? '');
+      field.querySelector('[data-automation-id="inputAlert"]')?.remove();
+    });
+    const target = fieldAt(page.scan(), doc.getElementById(PURE_FROM)!);
+    expect(target.dateParts?.alert?.()).not.toBeNull();
+    expect(await fillDateParts(target, '2023-09', { adapter: workdayAdapter, root: page.root }))
+      .toMatchObject({ wrote: false, verification: 'verified', reason: 'already-correct' });
+    expect(leaves).toEqual(['Month', 'Year']);
+    expect(target.dateParts?.alert?.()).toBeNull();
+    // A whole date with no alert is not touched.
+    leaves.length = 0;
+    await fillDateParts(fieldAt(page.scan(), doc.getElementById(PURE_FROM)!), '2023-09',
+      { adapter: workdayAdapter, root: page.root });
+    expect(leaves).toEqual([]);
+  });
+
+  it('reads each field’s alert as the page’s errors, its digits never kept', async () => {
+    const page = await load(pureErrorsHtml);
+    // The capture: six dates' "Invalid Date" alerts and Degree's "required", listed in the "Errors Found" summary too.
+    const alerts = fieldAlerts(page.root);
+    expect(alerts.map((alert) => [alert.closest('[data-automation-id^="formField-"]')!.getAttribute('data-automation-id'),
+      alert.textContent!.replace(/\s+/g, ' ').trim()])).toEqual([
+      ...Array.from({ length: 3 }, () => [['formField-startDate', 'Error: Invalid Date: REDACTED/'],
+        ['formField-endDate', 'Error: Invalid Date: REDACTED/']]).flat(),
+      ['formField-degree', 'Error: The field Degree is required and must have a value.']]);
+    const errors = workdayAdapter.errors!(page.root).map((error) => error.el);
+    for (const alert of alerts) expect(errors).toContain(alert);
+    // A field's alert a person cannot see is none.
+    (alerts[0] as HTMLElement).style.display = 'none';
+    expect(fieldAlerts(page.root)).toHaveLength(alerts.length - 1);
+  });
+
+  it('reads the Degree list pureinsurance shows and chooses the profile’s degree there by its click', async () => {
+    // s2-pureinsurance-degree-open: the Degree dropdown open, 13 degrees after "Select One"; Workday's script stood in
+    // for: the button's click opens and closes the list, an option's click chooses it and takes the field's alert away.
+    const page = await load(pureDegreeHtml);
+    const doc = page.doc;
+    const button = doc.getElementById('education-65--degree')!;
+    const list = doc.querySelector('ul[role="listbox"]#sy8s1d')!;
+    const popup = list.closest('[data-popper-placement]')!;
+    const close = () => {
+      popup.remove();
+      button.removeAttribute('aria-expanded');
+      button.removeAttribute('aria-controls');
+    };
+    close();
+    const clicks: string[] = [];
+    doc.addEventListener('click', (event) => {
+      const option = (event.target as Element).closest('[role="option"]');
+      if (option !== null && list.contains(option)) {
+        clicks.push(`option:${option.textContent!.trim()}`);
+        button.textContent = option.textContent!.trim();
+        button.setAttribute('value', option.getAttribute('data-value')!);
+        button.removeAttribute('aria-invalid');
+        button.closest('[data-automation-id="formField-degree"]')!.querySelector('[data-automation-id="inputAlert"]')?.remove();
+        close();
+        return;
+      }
+      if ((event.target as Element).closest('#education-65--degree') === null) return;
+      clicks.push('button');
+      if (popup.isConnected) close();
+      else {
+        doc.body.append(popup);
+        button.setAttribute('aria-expanded', 'true');
+        button.setAttribute('aria-controls', 'sy8s1d');
+      }
+    });
+    const readings = new Map();
+    const degreeOf = (result: ScanResult) => fieldAt(result, button);
+    const read = await readWidget(degreeOf(page.scan()), { adapter: workdayAdapter, root: page.root, readings });
+    expect(read).toMatchObject({ status: 'read', reading: { kind: 'options', complete: true } });
+    const result = scan(page.root, workdayAdapter, { platform: 'workday', widgetReadings: readings });
+    const specs = result.fields.map(toFieldSpec);
+    // The golden profile's degree, a B.S. (its school 2015-2019).
+    const output = planFrame({ specs, canaries: [], profile: goldenProfile(), sensitiveState: 'loaded', savedAnswers: [],
+      settings: DEFAULT_SETTINGS, vocab: testVocab(), dryRun: false, now: NOW,
+      repeatables: [{ kind: 'experience', entries: null }, { kind: 'education', entries: null }] });
+    const degree = degreeOf(result);
+    const write = output.writes.find((each) => each.key === degree.field.key)!;
+    expect(write.value).toMatchObject({ kind: 'option', cleanLabel: 'Bachelor of Science (B.S)' });
+    const outcome = await fillWidget(degree, write.value, { adapter: workdayAdapter, root: page.root, readings },
+      write.origin);
+    expect(outcome).toMatchObject({ wrote: true, verification: 'verified' });
+    expect(clicks.at(-1)).toBe('option:Bachelor of Science (B.S)');
+    expect(degreeOf(scan(page.root, workdayAdapter, { platform: 'workday', widgetReadings: readings })).field.current)
+      .toEqual({ kind: 'selected', labels: ['Bachelor of Science (B.S)'] });
   });
 });

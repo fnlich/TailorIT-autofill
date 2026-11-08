@@ -625,7 +625,7 @@ function datePartsOf(el: Element, adapter: Adapter | null): DatePartsTarget | nu
     && (part.display === null || holdsComposed(el, part.display)));
   if (parts.length !== declared.parts.length || formatOfParts(parts) === undefined) return null;
   return { parts: parts.map((part) => ({ part: part.part, input: part.input, display: part.display })),
-    digits: declared.keys === 'digits' };
+    digits: declared.keys === 'digits', ...(declared.alert === undefined ? {} : { alert: declared.alert }) };
 }
 
 // ── Widgets (Phase 4) ────────────────────────────────────────────────────────────────────────────────────────────

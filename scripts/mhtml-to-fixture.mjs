@@ -197,7 +197,11 @@ export const keepsShadowRoots = (platform) => SHADOW_ROOT_PLATFORMS.includes(pla
  *  <plasmo-csui id="jobright-helper-plugin"> and Swooped's <div id="swooped-extension-root">, both shadow hosts on
  *  <body> ([jobs.ashbyhq.com] Security Engineer @ Blueberry Pediatrics.mht). Removed before anything is measured or
  *  serialized (stripInjectedInPage), so a fixture holds the site's page alone and none of their markup. */
-export const INJECTED_UI = ['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root'];
+export const INJECTED_UI = ['plasmo-csui#jobright-helper-plugin', '#swooped-extension-root',
+  // s2 wd (snapshot5, [pureinsurance.wd5.myworkdayjobs.com] Senior Security Analyst – Cloud Security.mht): Jobright's
+  // "Edit with AI" hosts, <div class="jr-edit-ai-host"> each with its open shadow root, drawn beside the page's text
+  // areas inside the form.
+  '.jr-edit-ai-host'];
 /** Query parameters an extension added to a page's address and its links: Jobright's jr_id (a per-person tracking
  *  value; [job-boards.greenhouse.io] ... Cloud Administrator at Nuvem.mht holds it in the page's own address and in
  *  its links, [jobs.ashbyhq.com] Security Operations Engineer @ Critical Loop.mht likewise; Workday's links repeat it,
@@ -1075,10 +1079,15 @@ export function redactSources(strings) {
  *   serializer would lose (an accessibility widget, [abclegal.com] ABC Legal - Job Openings.mht's four
  *   <access-widget-ui>; a cookie banner, [seatgeek.com] ...SeatGeek.mht's <aside class="dg-consent-banner">; a route
  *   announcer, [weka.io] ...WEKA.mht's <next-route-announcer>). Any other shadow root is still refused there;
+ * - s2 wd, on every platform: a shadow host that is a child of <html> beside <head> and <body> (no page draws one
+ *   there) whose shadow tree is closed (`closedMark`: markClosedShadowHosts's mark) or holds no form control: an
+ *   extension's own UI, TailorIT's included (content/ui/shadow.ts mounts its closed root on <html>: snapshot5's
+ *   [pureinsurance.wd5.myworkdayjobs.com] captures); and, where overlays go (`dropOverlays`), a closed shadow host on
+ *   <body>, where the HTML parser puts what was drawn after it;
  * - the PER_LOAD_PARAMS' values (REDACTED) in every attribute that holds them (`perLoad`: PER_LOAD_SOURCE).
  * Another extension's parameters (INJECTED_PARAMS) go from the frame's written text by the one rule, stripInjectedParams.
  * Returns how many of each it took (never what they held).
- * @param {{ selectors: string[]; perLoad: string; dropOverlays: boolean; redacted: string }} input
+ * @param {{ selectors: string[]; perLoad: string; dropOverlays: boolean; redacted: string; closedMark?: string }} input
  * @returns {{ injected: number; shadowOverlays: number; injectedParams: number }}
  */
 export function stripInjectedInPage(input) {
@@ -1088,7 +1097,24 @@ export function stripInjectedInPage(input) {
     element.remove();
     counts.injected += 1;
   }
+  // s2 wd: an extension's own UI host on <html>, beside <head> and <body> (see the header).
+  for (const host of [...(doc.documentElement?.children ?? [])]) {
+    if (host.localName === 'head' || host.localName === 'body') continue;
+    const closed = input.closedMark !== undefined && host.hasAttribute(input.closedMark);
+    const open = host.shadowRoot !== null
+      && host.shadowRoot.querySelector('input, select, textarea, form, iframe, frame, object, embed') === null;
+    if (!closed && !open) continue;
+    host.remove();
+    counts.shadowOverlays += 1;
+  }
   for (const host of input.dropOverlays ? [...(doc.body?.children ?? [])] : []) {
+    // s2 wd: a closed shadow host on <body> (markClosedShadowHosts's mark): no page code reads it, and no control of the
+    // form is in it (the HTML parser puts what TailorIT draws after <body> into <body>: snapshot5).
+    if (input.closedMark !== undefined && host.hasAttribute(input.closedMark)) {
+      host.remove();
+      counts.shadowOverlays += 1;
+      continue;
+    }
     const shadow = host.shadowRoot;
     if (!shadow || shadow.querySelector('input, select, textarea, form, iframe, frame, object, embed')
       || [...shadow.querySelectorAll('*')].some((element) => element.shadowRoot)) continue;
@@ -1451,7 +1477,11 @@ export function measureInPage() {
  *   cursor "default"), those boxes enabled and their labels "pointer" again, as Workday draws the group before an
  *   answer (a radio's or checkbox's aria-checked="true" is the generic pass's, clearChoicesInPage);
  * - a date input's parts: each display's digits, each spin button's aria-valuetext and aria-valuenow, and the hidden help
- *   "current value is 11/6/2026", back to the placeholders (MM, DD, YYYY) Workday draws while it holds nothing.
+ *   "current value is 11/6/2026", back to the placeholders (MM, DD, YYYY) Workday draws while it holds nothing;
+ * - s2 wd (snapshot5, [pureinsurance.wd5.myworkdayjobs.com] Senior Security Analyst – Cloud Security.mht): an error's
+ *   words that repeat what a field held, a field's alert (div[data-automation-id=inputAlert] "Error: Invalid Date: 09/")
+ *   and the "Errors Found" summary's entries ([data-automation-id=errorHeading] ... <div id="hint618">Invalid Date: 09/
+ *   </div>): every run of digits in them becomes REDACTED ("Invalid Date: REDACTED/"), their other words kept.
  * Returns counts, never values.
  * @param {{ redacted: string }} input
  */
@@ -1648,6 +1678,16 @@ export function redactWorkdayInPage(input) {
     for (const disabled of group.querySelectorAll('input[disabled], div[disabled]')) disabled.removeAttribute('disabled');
     for (const label of group.querySelectorAll('label[cursor]')) label.setAttribute('cursor', 'pointer');
     counts.choices += 1;
+  }
+  // s2 wd (snapshot5): an error's digits, which repeat what a field held (see the header).
+  for (const place of doc.querySelectorAll('[data-automation-id="inputAlert"], [data-automation-id="errorHeading"]')) {
+    const walker = doc.createTreeWalker(place, 4 /* NodeFilter.SHOW_TEXT */);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = (node.nodeValue ?? '').replace(/\d+/g, redacted);
+      if (text === node.nodeValue) continue;
+      node.nodeValue = text;
+      counts.dates += 1;
+    }
   }
   for (const wrapper of doc.querySelectorAll('[data-automation-id="dateInputWrapper"]')) {
     /** @type {string[]} */
@@ -2709,7 +2749,8 @@ export async function convertMhtml({ file, platform, caseName, redact = [], outD
     for (const { frame } of converted) {
       if (deep) await frame.evaluate(deepenInPage);
       stripped.push({ ...await frame.evaluate(stripInjectedInPage, { selectors: INJECTED_UI, perLoad: PER_LOAD_SOURCE,
-        dropOverlays: !deep, redacted: REDACTED }), ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
+        dropOverlays: !deep, redacted: REDACTED, closedMark: CLOSED_ROOT_MARK }),
+        ...await frame.evaluate(clearChoicesInPage, { redacted: REDACTED,
         marks: CHOSEN_MARKS }) });
     }
     for (const { frame } of converted) before.push(await frame.evaluate(measureInPage));
