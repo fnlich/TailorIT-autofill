@@ -95,6 +95,7 @@ import { matchPlace } from '../matcher/place';
 import { completeTiebreak } from '../matcher/tiebreak';
 import { dialCodeOf } from '../matcher/dialCode';
 import { prepareOptions } from '../matcher/prepare';
+import { noMatchOtherMatch } from '../matcher/other';
 import type { MatchInput, PreparedOptions, TiebreakItem } from '../matcher/types';
 import { parseSelectionHints, selectionLimits } from '../multiselect/hints';
 import { planMultiSelect, type MultiSelectValue } from '../multiselect/plan';
@@ -120,6 +121,7 @@ import { RESUME_MIME_TYPES, uploadName, withCoverLetter } from '../profile/canon
 import { answerItemOf, answerRefusal, answerText, answerWaitsForOptions, type AnswerItem, type AnswerVerdict }
   from './answers';
 import { holdsNoAiAttestation } from './attestation';
+import { noMatchMode, noMatchOtherAllowed } from './noMatch';
 import { answerWords, antecedentOf, conditionHolds, conditionOf } from './conditional';
 import {
   aiEditableField, draftItemOf, draftRefusal, rewriteItemOf, type DraftContext, type DraftItem, type DraftVerdict,
@@ -389,7 +391,7 @@ function searchInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, 
   ctx: FieldPlanContext, blank: Blank): Planned | FillResult | null {
   if (search.length === 0 || spec.kind !== 'combobox' || spec.searchResults === true) return null;
   if (actionFor(round(resolution.confidence), false) !== 'fill') return null;
-  const planned: Planned = { value: { kind: 'query', queries: [...search] }, match: NOT_APPLICABLE };
+  const planned: Planned = { value: queryValue(search, resolution, ctx), match: NOT_APPLICABLE };
   const current = spec.current;
   const shown = current.kind === 'text' ? [current.text] : current.kind === 'selected' ? current.labels : [];
   if (shown.every((text) => text.trim() === '')) return planned;
@@ -405,6 +407,36 @@ function searchInstead(spec: FieldSpec, resolution: Resolution, choice: Choice, 
 
 // ── end v4 (drop) ──
 
+// ── s2 core-wd: three styles, then the list's own "Other" or nothing (plan/noMatch.ts) ──
+
+/** A search's query write: its candidate answers (three styles at most, core/matcher/candidates.ts), and, where the
+ *  person's setting and the field allow it (noMatchOtherAllowed), the list's own "Other" searched for once they find
+ *  nothing (content/pass.ts searchField). */
+function queryValue(queries: readonly string[], resolution: Resolution, ctx: FieldPlanContext): WriteValue {
+  return { kind: 'query', queries: [...queries],
+    ...(noMatchOtherAllowed(resolution, ctx.input.settings) ? { other: true as const } : {}) };
+}
+
+/** What the list's own "Other" query showed (FieldSpec.searchOther): its one "Other" chosen, the person's own text
+ *  kept for the box it may reveal (stage e's way), or nothing (no-match). Only where the planner would have asked for it
+ *  (noMatchOtherAllowed: the frame's word is never taken alone), and only for a value whose own confidence reaches the
+ *  fill band, as any search's. */
+function planNoMatchOther(spec: FieldSpec, resolution: Resolution, choice: Choice, prepared: PreparedOptions,
+  ctx: FieldPlanContext, blank: Blank): Planned | FillResult {
+  if (!noMatchOtherAllowed(resolution, ctx.input.settings) || actionFor(round(resolution.confidence), false) !== 'fill') {
+    return blank('flagged', 'no-match');
+  }
+  const display = choice.intended.kind === 'entity' ? choice.intended.display
+    : choice.intended.kind === 'text' ? choice.intended.text : '';
+  const match = noMatchOtherMatch(prepared, choice.freeText ?? display);
+  if (match === null || match.optionIndex === null) return blank('flagged', 'no-match');
+  const option = prepared.list.find((candidate) => candidate.index === match.optionIndex)!;
+  return { value: { kind: 'option', index: option.index, cleanLabel: option.clean,
+    ...(match.freeText !== undefined ? { freeText: match.freeText } : {}) }, match };
+}
+
+// ── end s2 core-wd ──
+
 /** One answer chosen among a field's options (a select, a radio group, a combobox, a typeahead's results), or the row
  *  it gets instead. With `llm`, a tie may go to the LLM tiebreak: the field then waits for it (Asked). With `search`
  *  (v4, drop: a long list's candidate answers), a list with no option that is the value is searched instead
@@ -417,6 +449,8 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   const input = matchInputOf(spec, resolution, choice, prepared);
   const partial = spec.optionsPartial === true;
   const searched = spec.searchResults === true;
+  // s2 core-wd: the list's own "Other" query's results are read for that "Other" alone.
+  if (searched && spec.searchOther === true) return planNoMatchOther(spec, resolution, choice, prepared, ctx, blank);
   let matched: Matched;
   // A list read only in part never goes to the LLM, nor does a search's results.
   if (llm && !partial && !searched) {
@@ -427,6 +461,18 @@ function planChoice(spec: FieldSpec, resolution: Resolution, choice: Choice, ctx
   }
   if (matched.kind === 'waiting') return blank('flagged', 'waiting-for-options');
   if (matched.kind === 'match') matched = { ...matched, match: orPlace(matched.match, choice, prepared, ctx) };
+  // s2 core-wd: "When a list has no match: leave it empty" (settings.modes.noMatch 'leave') leaves stage e's "Other"
+  // unchosen too.
+  if (matched.kind === 'match' && matched.match.stage === 'other' && noMatchMode(ctx.input.settings) === 'leave') {
+    matched = { ...matched, match: noMatch('no-match', matched.match.suggestions) };
+  }
+  // s2 core-wd: a less precise answer of the profile's (Choice.fallback: a referral source's kind, "Job board") where
+  // no option is the value itself, on a list read whole or among a search's results, before any LLM tiebreak.
+  if (choice.fallback !== undefined && !partial && (matched.kind === 'ask'
+    || matched.match.stage === 'none' || matched.match.stage === 'other')) {
+    const kind = planChoice(spec, resolution, choice.fallback, ctx, blank);
+    if ('value' in kind && kind.match.stage !== 'other') return kind;
+  }
   if (matched.kind === 'ask') {
     // Until the LLM answers, the field stands as the cascade left it, blank and flagged.
     return { asked: matched.item, row: blank('flagged', matched.fallback.stage === 'none' ? matched.fallback.reason
@@ -508,7 +554,7 @@ function plan(spec: FieldSpec, resolution: Resolution, shaped: Shaped, ctx: Fiel
         const chosen = planChoice(spec, resolution, shaped.choice, ctx, blank);
         return 'asked' in chosen ? chosen.row : chosen;
       }
-      const search: Planned = { value: { kind: 'query', queries: shaped.queries }, match: NOT_APPLICABLE };
+      const search: Planned = { value: queryValue(shaped.queries, resolution, ctx), match: NOT_APPLICABLE };
       const shown = current.kind === 'text' ? [current.text] : current.kind === 'selected' ? current.labels : [];
       if (shown.length === 0 || shown.every((text) => text.trim() === '')) return search;
       // What the widget shows already: our earlier choice, or the page's own answer, which the profile replaces,
@@ -728,7 +774,10 @@ function planField(spec: FieldSpec, resolved: ResolvedField, ctx: FieldPlanConte
   // the search). A weaker match, or one always flagged (an injected label's clean part), is left unchosen with its
   // reason, and the frame types its next query: blank beats wrong. v4: kept as it is, a decision of its own (the
   // search goes on to a clean result, and never takes one a page aimed at AI tools: docs/SPEC-AMENDMENTS.md §13, D2).
-  if (spec.kind === 'typeahead-remote' && planned.value.kind === 'option' && action !== 'fill') {
+  // s2 core-wd: the list's own "Other", chosen once three styles found nothing (planNoMatchOther), is the person's
+  // setting's decision, in the flag band by design (MATCH_NO_MATCH_OTHER).
+  if (spec.kind === 'typeahead-remote' && planned.value.kind === 'option' && action !== 'fill'
+    && spec.searchOther !== true) {
     return { row: rowWithout(spec, resolution.category, 'flagged', flag ?? 'low-confidence', confidence, planned.match) };
   }
   const write: PlannedWrite = { key: spec.key, value: planned.value,

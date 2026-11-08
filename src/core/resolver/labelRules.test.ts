@@ -824,7 +824,8 @@ describe('self-identification questions', () => {
 
 describe('an entity rule needs the label’s own noun, not a word in a question', () => {
   it.each<[string, FieldKind]>([
-    ['Phone extension', 'text'],
+    // s2 core-wd: "Phone extension" is the phone's extension now (contact.phoneExtension), never the number.
+    ['Phone extension number to call for an interview', 'text'],
     ['How many years of mobile development experience do you have?', 'select'],
     ['What is your availability for a phone interview?', 'textarea'],
     ['What size portfolio have you managed?', 'text'],

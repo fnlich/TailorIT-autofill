@@ -100,6 +100,10 @@ export const MATCH_CACHE_ACCEPTED = 0.97;
 export const MATCH_LLM_PICK = 0.75;
 /** The form's "Other" option plus free text, always flagged. */
 export const MATCH_OTHER = 0.7;
+/** s2 core-wd: the list's own "Other", chosen once a search's three styles found nothing (matcher/other.ts
+ *  noMatchOtherMatch, settings.modes.noMatch 'other'): in the flag band for any value of the fill band (0.85 × 0.75 is
+ *  0.6375), never in the fill band (a decision, not the person's answer). */
+export const MATCH_NO_MATCH_OTHER = 0.75;
 /** The most an option whose label had injected text cut can score, so it is always flagged. */
 export const INJECTED_LABEL_CAP = 0.84;
 
@@ -178,7 +182,8 @@ export const CLASSIFY_MAX_OPTIONS = 20;
 export const MAX_SUGGESTIONS = 3;
 /** The match cache keeps at most this many entries (least recently used goes first). */
 export const MATCH_CACHE_MAX_ENTRIES = 5000;
-/* A remote typeahead's query cap is MAX_SEARCH_QUERIES (core/matcher/searchLimits.ts, v4: 6). */
+/* A remote typeahead's query cap is MAX_SEARCH_QUERIES (core/matcher/searchLimits.ts; snapshot round 2: 4, three
+ * styles and the list's own "Other"). */
 /** Each typeahead query has at least this many characters. */
 export const TYPEAHEAD_MIN_QUERY_LENGTH = 3;
 /** The fourth typeahead query uses the first two tokens of at least this weight. */

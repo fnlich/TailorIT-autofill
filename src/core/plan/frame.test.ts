@@ -481,10 +481,10 @@ describe('planFrame: uploads and searches', () => {
 
   it('types queries into a remote search, each a profile value with the typeahead.query transform', () => {
     const search = specOf('School', 'typeahead-remote', { options: [] });
-    // v4 (drop): the school's candidate answers (core/matcher/candidates.ts), six at most.
+    // s2 core-wd: the school's candidate answers (core/matcher/candidates.ts), one of each style: its full name without
+    // "The", a short form, a reduced form; then the list's own "Other" (settings.modes.noMatch 'other', the default).
     expect(fieldOf(planOf([search]), search).write).toMatchObject({ value: { kind: 'query',
-      queries: ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
-        'University of Texas', 'Texas Austin'] },
+      queries: ['University of Texas at Austin', 'UT Austin', 'University of Texas'], other: true },
     origin: { provenance: 'profile', path: 'education[0].institution', transform: 'typeahead.query' } });
   });
 
@@ -511,11 +511,11 @@ describe('planFrame: uploads and searches', () => {
   it("chooses the person's place among a location search's results by its parts (matcher/place.ts)", () => {
     const results = (labels: string[]) => specOf('Location (City)', 'typeahead-remote', { optionLabels: labels });
     const queries = specOf('Location (City)', 'typeahead-remote', { options: [] });
-    // As the profile writes it, then with its region's name, its country's (v4), then the city alone: Greenhouse's
-    // Location lists only the results whose label holds the typed text, and its geocoder spells Texas out (the live
-    // BeyondTrust form).
+    // As the profile writes it, then with its region's name, then the city alone (s2 core-wd: one of each style):
+    // Greenhouse's Location lists only the results whose label holds the typed text, and its geocoder spells Texas out
+    // (the live BeyondTrust form).
     expect(fieldOf(planOf([queries]), queries).write).toMatchObject({
-      value: { kind: 'query', queries: ['Austin, TX', 'Austin, Texas', 'Austin, United States', 'Austin'] },
+      value: { kind: 'query', queries: ['Austin, TX', 'Austin, Texas', 'Austin'], other: true },
       origin: { provenance: 'profile', path: 'address', transform: 'typeahead.query' } });
     // Greenhouse's geocoder for "Austin, TX": Texas, never Minnesota.
     const geocoded = results(['Austin, Minnesota, United States', 'Austin, Texas, United States',

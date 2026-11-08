@@ -34,6 +34,9 @@ export const FIELD_CATEGORIES = [
   'freeText.whyCompany', 'freeText.whyRole', 'freeText.coverLetter', 'freeText.additionalInfo', 'freeText.other',
   'file.resume', 'file.coverLetter', 'file.other',
   'screening.previouslyEmployed', 'screening.other',
+  // s2 core-wd: Workday's My Information (the wd study §5): a name's suffix, the phone's extension, and whether the
+  // person goes by a preferred name ("I have a preferred name").
+  'identity.suffix', 'contact.phoneExtension', 'identity.hasPreferredName',
   'unknown',
 ] as const;
 export type FieldCategory = (typeof FIELD_CATEGORIES)[number];
@@ -136,8 +139,10 @@ export type WriteValue =
   | { kind: 'option'; index: number; cleanLabel: string; freeText?: string }
   /** cleanLabels[i] is the clean label of the option at indices[i]: the same length and order. */
   | { kind: 'options'; indices: number[]; cleanLabels: string[] }
-  /** Typeahead queries, typed one at a time; each is itself a guarded write. */
-  | { kind: 'query'; queries: string[] }
+  /** Typeahead queries, typed one at a time; each is itself a guarded write. s2 core-wd: `other`, once they find
+   *  nothing, the list's own "Other" is searched for (core/matcher/searchLimits.ts NO_MATCH_OTHER_QUERY) and chosen
+   *  (settings.modes.noMatch 'other'; plan/frame.ts noMatchOtherAllowed). */
+  | { kind: 'query'; queries: string[]; other?: true }
   | { kind: 'check' }
   /** The run's resume, or its cover letter (Phase G), which the frame receives over the resume port when it writes. */
   | { kind: 'file'; ref: FileRef }

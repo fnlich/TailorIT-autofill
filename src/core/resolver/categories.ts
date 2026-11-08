@@ -43,6 +43,8 @@ export const CATEGORY_CLASS: Readonly<Record<FieldCategory, PolicyClass>> = {
   'freeText.additionalInfo': 'free-text', 'freeText.other': 'free-text',
   'file.resume': 'file', 'file.coverLetter': 'file', 'file.other': 'file',
   'screening.previouslyEmployed': 'unknown', 'screening.other': 'unknown',
+  // s2 core-wd
+  'identity.suffix': 'profile', 'contact.phoneExtension': 'profile', 'identity.hasPreferredName': 'profile',
   unknown: 'unknown',
 };
 
@@ -90,7 +92,9 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'identity.fullName': LINE, 'identity.firstName': LINE, 'identity.middleName': LINE, 'identity.lastName': LINE,
   'identity.preferredName': LINE,
   'identity.pronouns': ['text', 'select', 'radio', 'combobox', 'checkbox-group', 'multiselect'],
-  'contact.email': LINE, 'contact.phone': LINE, 'contact.phoneCountry': ['text', 'select', 'combobox'],
+  // s2 core-wd: Workday's Country Phone Code is a prompt (a remote search: the wd study §5).
+  'contact.email': LINE, 'contact.phone': LINE,
+  'contact.phoneCountry': ['text', 'select', 'combobox', 'typeahead-remote'],
   'contact.phoneType': CHOICE,
   'address.line1': ['text', 'textarea', 'typeahead-remote'], 'address.line2': LINE, 'address.city': LOOKUP,
   'address.region': LOOKUP, 'address.postalCode': LINE, 'address.country': LOOKUP, 'location.current': LOOKUP,
@@ -118,7 +122,9 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'preferences.relocation': YES_NO, 'preferences.workArrangement': [...YES_NO, 'checkbox-group', 'multiselect'],
   // A text box takes the profile's travel share (docs/SPEC-AMENDMENTS.md §8; the Phase E review, MINOR 6).
   'preferences.travel': [...YES_NO, 'text'],
-  'referral.source': ['text', ...CHOICE, 'checkbox-group', 'multiselect'], 'referral.referrerName': LINE,
+  // s2 core-wd: Workday's "How Did You Hear About Us?" is a prompt on some tenants (verily, exelixis: the wd study §5).
+  'referral.source': ['text', ...CHOICE, 'typeahead-remote', 'checkbox-group', 'multiselect'],
+  'referral.referrerName': LINE,
   'consent.privacy': CONSENT, 'consent.terms': CONSENT, 'consent.certify': CONSENT, 'consent.dataRetention': CONSENT,
   'consent.marketing': CONSENT, 'consent.sms': CONSENT, 'consent.backgroundCheck': CONSENT,
   'consent.signature': LINE, 'consent.aiAttestation': CONSENT, 'consent.other': CONSENT,
@@ -127,6 +133,9 @@ export const CATEGORY_KINDS: Readonly<Record<FieldCategory, readonly FieldKind[]
   'freeText.additionalInfo': PROSE, 'freeText.other': PROSE,
   'file.resume': ['file'], 'file.coverLetter': ['file'], 'file.other': ['file'],
   'screening.previouslyEmployed': ANY_ANSWER, 'screening.other': ANY_ANSWER,
+  // s2 core-wd: a suffix typed or chosen from a list (Workday's Suffix); an extension typed; "I have a preferred name"
+  // ticked, or answered yes or no.
+  'identity.suffix': ['text', ...CHOICE], 'contact.phoneExtension': LINE, 'identity.hasPreferredName': YES_NO,
   unknown: ANY,
 };
 

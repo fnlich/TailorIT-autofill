@@ -103,6 +103,8 @@ export const FieldSpecSchema = z.strictObject({
   optionsPartial: z.literal(true).optional(),
   /** v4 (drop): the options are what one typed query showed, not the field's list: chosen from in the fill band only. */
   searchResults: z.literal(true).optional(),
+  /** s2 core-wd: the options are what the list's own "Other" query showed: only that "Other" is chosen from them. */
+  searchOther: z.literal(true).optional(),
   optionSetHash: Hash,
   constraints: ConstraintsSchema,
   autocomplete: z.array(Text(60)).max(10),
@@ -125,7 +127,9 @@ export const WriteValueSchema = z.discriminatedUnion('kind', [
     .refine((value) => value.cleanLabels.length === value.indices.length),
   /** v4 (drop): a search's candidate answers, typed one at a time (core/matcher/candidates.ts), MAX_SEARCH_QUERIES at
    *  most. */
-  z.strictObject({ kind: z.literal('query'), queries: z.array(Text(300)).max(MAX_SEARCH_QUERIES) }),
+  z.strictObject({ kind: z.literal('query'), queries: z.array(Text(300)).max(MAX_SEARCH_QUERIES),
+    /** s2 core-wd: once the queries find nothing, the list's own "Other" is searched for (NO_MATCH_OTHER_QUERY). */
+    other: z.literal(true).optional() }),
   z.strictObject({ kind: z.literal('check') }),
   /** The run's resume or its cover letter (Phase G), received over the resume port when it is written. */
   z.strictObject({ kind: z.literal('file'), ref: z.enum(FILE_REFS) }),

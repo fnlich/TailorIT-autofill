@@ -149,7 +149,8 @@ test.describe("Ashby's application form", () => {
     // boxes; its month and year lists from the entry's dates, each month before its year.
     expect(row(report, 'School')).toMatchObject({ ...verified, kind: 'typeahead-remote', category: 'education.school' });
     expect(log.values['_systemfield_education_history[0].school']).toBe('The University of Texas at Austin');
-    expect(log.schools[0]).toBe('The University of Texas at Austin');
+    // s2 core-wd: the first query is the school's full name without its leading "The" (core/matcher/candidates.ts).
+    expect(log.schools[0]).toBe('University of Texas at Austin');
     expect(row(report, 'Degree')).toMatchObject({ ...verified, category: 'education.degree' });
     expect(row(report, 'Field of Study')).toMatchObject({ ...verified, category: 'education.field' });
     for (const label of ['Start Date month', 'Start Date year', 'End Date month', 'End Date year']) {

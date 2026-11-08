@@ -12,6 +12,8 @@ describe('NAME_ID_RULES (§8.3)', () => {
       ['name-id.phone', 'phone|mobile|tel'],
       ['name-id.linkedin', 'linkedin'],
       ['name-id.github', 'github'],
+      // s2 core-wd: Workday's name="twitterAccount", the "X" box (fixtures/workday/s2-verily-field-of-study-open).
+      ['name-id.twitter', 'twitter'],
       ['name-id.resume', 'resume|cv'],
       ['name-id.cover-letter', 'cover_?letter'],
     ]);

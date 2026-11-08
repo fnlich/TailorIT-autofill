@@ -273,7 +273,7 @@ describe('searchTypeahead', () => {
       },
     };
   }
-  // v4 (drop): the school's candidate answers (core/matcher/candidates.ts), six at most.
+  // The v4 candidate answers of the school, six: the cap is now four (s2 core-wd: MAX_SEARCH_QUERIES).
   const QUERIES = ['The University of Texas at Austin', 'University of Texas at Austin', 'UT Austin', 'UTexas',
     'University of Texas', 'Texas Austin'];
   interface Logged { query: string; typedAt: number; answeredAt: number | null }
@@ -300,12 +300,12 @@ describe('searchTypeahead', () => {
     expectOurEventsOnly(page.events);
   });
 
-  it('stops after six queries that find nothing (v4: MAX_SEARCH_QUERIES), and leaves the box as it was', async () => {
+  it('stops after four queries that find nothing (s2 core-wd: MAX_SEARCH_QUERIES, three styles and "Other"), and leaves the box as it was', async () => {
     const page = await open(typeaheadHtml, 'none');
     await readWidget(page.target('School'), page.ctx());
     const result = await searchTypeahead(page.target('School'), [...QUERIES, 'A seventh query'], page.ctx(), hooks(page));
-    expect(result).toMatchObject({ chosen: null, reason: 'no-match', blocked: false, typed: 6 });
-    expect(page.counter<Logged[]>('__queries').map((entry) => entry.query)).toEqual(QUERIES);
+    expect(result).toMatchObject({ chosen: null, reason: 'no-match', blocked: false, typed: 4 });
+    expect(page.counter<Logged[]>('__queries').map((entry) => entry.query)).toEqual(QUERIES.slice(0, 4));
     expect((page.fixture.doc.getElementById('school') as HTMLInputElement).value).toBe('');
     expectOurEventsOnly(page.events);
   });

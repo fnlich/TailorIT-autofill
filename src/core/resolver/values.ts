@@ -26,7 +26,7 @@ import { placeText } from '../profile/canonicalize';
 import { normalize } from '../text/normalize';
 import type { FieldSpec } from '../types/field';
 import { COVER_LETTER_TEXT_PATH, type FieldCategory, type ProfilePath, type RuleId, type ValueOrigin } from '../types/intent';
-import type { EducationEntry, ExperienceEntry, Profile, YearMonth, Ymd } from '../types/profile';
+import type { EducationEntry, ExperienceEntry, PhoneDeviceType, Profile, YearMonth, Ymd } from '../types/profile';
 import type { RepeatableKind } from '../types/run';
 import type { Vocab } from '../vocab/types';
 import { none, value, type Choice, type ValueResult } from './candidate';
@@ -329,6 +329,16 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
         ...(phone.countryCallingCode !== undefined ? { text: `+${phone.countryCallingCode}` } : {}),
         ...(choice ? { choice } : {}) });
     }
+    // s2 core-wd: Workday's My Information (the wd study §5).
+    case 'contact.phoneType':
+      return phoneTypeValue(contact.phone, vocab);
+    case 'contact.phoneExtension':
+      return textValue(contact.phone?.extension, 'contact.phone.extension');
+    case 'identity.suffix':
+      return suffixValue(identity.suffix, vocab);
+    case 'identity.hasPreferredName':
+      return hasPreferredNameValue(identity);
+    // end s2 core-wd
     case 'address.line1':
       return textValue(address?.line1, 'address.line1');
     case 'address.line2':
@@ -492,16 +502,20 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
     case 'referral.source': {
       const source = profile.referralSource;
       if (source === undefined) return none('no-profile-value', false);
+      // s2 core-wd: the kind of source it is (the profile's category, else the vocabulary's first parent), chosen where
+      // a list names no source of its own ("Job board" for Indeed) and typed as a search's reduced style.
+      const kind = referralKind(source.category, source.id, vocab);
       if (source.id === 'other') {
         const text = source.otherText ?? '';
         return text === '' ? none('no-profile-value', false) : value({ origin: fromProfile('referralSource'),
           confidence: VALUE_EXPLICIT, text, choice: { intended: intendedUnknown('referral', text, [], vocab),
-            domain: 'referral' } });
+            domain: 'referral', ...(kind ? { fallback: kind } : {}) } });
       }
       const entity = vocab.entity(`ref:${source.id}`);
       if (!entity) return none('no-profile-value', false);
       return value({ origin: fromProfile('referralSource'), confidence: VALUE_EXPLICIT, text: entity.name,
-        choice: { intended: intendedEntity(vocab, 'referral', entity), domain: 'referral' } });
+        choice: { intended: intendedEntity(vocab, 'referral', entity), domain: 'referral',
+          ...(kind ? { fallback: kind } : {}) } });
     }
     case 'file.resume':
       return profile.resume === undefined ? none('resume-unavailable')
@@ -522,6 +536,70 @@ export function profileValue(category: FieldCategory, ctx: ValueContext): ValueR
       return none('no-profile-value', false);
   }
 }
+
+// s2 core-wd: a referral source's kind.
+
+/** A referral source's kind as a choice of its own (Choice.fallback): the profile's referralSource.category (a
+ *  referral-vocabulary id: 'job-board', 'social-media', ...), else the source's first parent in the vocabulary
+ *  (LinkedIn: a job board); none for 'other', for the source itself, or for an id the vocabulary does not hold. */
+function referralKind(category: string | undefined, sourceId: string, vocab: Vocab): Choice | undefined {
+  const own = vocab.entity(`ref:${sourceId}`);
+  const id = category !== undefined && category !== 'other' ? `ref:${category}`
+    : own?.kind === 'referral' ? own.parents[0] : undefined;
+  if (id === undefined || id === `ref:${sourceId}`) return undefined;
+  const entity = vocab.entity(id);
+  return entity?.kind === 'referral' ? { intended: intendedEntity(vocab, 'referral', entity), domain: 'referral' }
+    : undefined;
+}
+
+/** A phone device type's words as lists write them (Workday's required "Phone Device Type", formField-phoneType in
+ *  fixtures/workday/s2-exelixis-state-open; its options were never seen open, so the usual spellings), the first the
+ *  one a text box takes. */
+const PHONE_TYPE_WORDS: Readonly<Record<PhoneDeviceType, readonly [string, ...string[]]>> = {
+  mobile: ['Mobile', 'Cell', 'Cellular', 'Mobile Phone', 'Cell Phone', 'Cellphone', 'Mobile/Cell', 'Personal Mobile'],
+  home: ['Home', 'Landline', 'Land Line', 'Home Phone', 'Residence'],
+  work: ['Work', 'Business', 'Office', 'Work Phone', 'Business Phone', 'Office Phone'],
+};
+
+/** The phone's device type (contact.phone.type); a phone without one is a mobile, decided (VALUE_DERIVED: filled and
+ *  marked), since the question is required where it is asked and nearly every applicant gives a mobile. None without a
+ *  phone. */
+function phoneTypeValue(phone: Profile['contact']['phone'], vocab: Vocab): ValueResult {
+  if (phone === undefined) return none('no-profile-value', false);
+  const [first, ...rest] = PHONE_TYPE_WORDS[phone.type ?? 'mobile'];
+  return value({ origin: fromProfile(phone.type === undefined ? 'contact.phone' : 'contact.phone.type'),
+    confidence: phone.type === undefined ? VALUE_DERIVED : VALUE_EXPLICIT, text: first,
+    choice: { intended: intendedUnknown('generic', first, rest, vocab), domain: 'generic' } });
+}
+
+/** A name's suffix (identity.suffix: "Jr.", "III"), typed as the person wrote it, or chosen from a list by it and its
+ *  other spellings ("Jr" and "Junior" for "Jr."). */
+function suffixValue(suffix: string | undefined, vocab: Vocab): ValueResult {
+  const text = suffix?.trim() ?? '';
+  if (text === '') return none('no-profile-value', false);
+  const bare = text.replace(/\.$/, '');
+  const spelled = SUFFIX_WORDS[bare.toLowerCase()] ?? [];
+  return value({ origin: fromProfile('identity.suffix'), confidence: VALUE_EXPLICIT, text,
+    choice: { intended: intendedUnknown('generic', text, [bare, `${bare}.`, ...spelled], vocab), domain: 'generic' } });
+}
+
+/** The spelled-out forms of the common suffixes. */
+const SUFFIX_WORDS: Readonly<Record<string, readonly string[]>> = {
+  jr: ['Junior'], sr: ['Senior'], ii: ['2nd', 'The Second'], iii: ['3rd', 'The Third'], iv: ['4th', 'The Fourth'],
+};
+
+/** "I have a preferred name" (Workday's formField-preferredCheck): ticked, or answered yes, only when the person's
+ *  preferred name is set and is not their first name; otherwise nothing is written (the box stays as it is). */
+function hasPreferredNameValue(identity: Profile['identity']): ValueResult {
+  const preferred = identity.preferredName?.trim() ?? '';
+  if (preferred === '' || preferred.toLowerCase() === identity.firstName.trim().toLowerCase()) {
+    return none('no-profile-value', false);
+  }
+  return value({ origin: fromProfile('identity.preferredName'), confidence: VALUE_EXPLICIT, check: true,
+    choice: { intended: { kind: 'boolean', value: true }, domain: 'polarity' } });
+}
+
+// end s2 core-wd
 
 /** A company's name as two names are compared: folded, without its punctuation and its legal form ("Inc.", "LLC",
  *  "Ltd", "GmbH", "Corp", "AB"). */
