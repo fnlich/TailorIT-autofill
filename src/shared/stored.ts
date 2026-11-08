@@ -40,9 +40,12 @@ export const DISCLOSURE_KEY = 'disclosure';
  *  tab's page before it, kept per tab in session storage; a form filled beside an unticked checkbox CAPTCHA, every press
  *  waiting for the person); 8, v4 (the owner's request of 2026-11-07: every field it can answer filled without asking
  *  and the rest listed as left empty, the AI's best guess no longer marked, Sign up & Autofill using the saved job-site
- *  sign-in for one run, a run carrying on by itself once the person ticks a checkbox CAPTCHA, and no Dry run to choose).
- *  Raise it whenever the disclosure's substance changes. */
-export const DISCLOSURE_VERSION = 8;
+ *  sign-in for one run, a run carrying on by itself once the person ticks a checkbox CAPTCHA, and no Dry run to choose);
+ *  9, snapshot round 2 (2026-11-07 evening: the options of some sites' dropdown lists kept in this browser to choose at
+ *  once next time; government service among the questions the AI may guess; the new sensitive answers, sexual
+ *  orientation, citizenship, clearance, non-compete, government service, relatives and essential functions, named
+ *  among those that never go to the AI). Raise it whenever the disclosure's substance changes. */
+export const DISCLOSURE_VERSION = 9;
 export const DisclosureRecordSchema = z.strictObject({ version: z.number().int().positive() });
 
 /** storage.session `pairing`: the single-use state a pairing waits for, 32 random bytes in base64url. */
