@@ -170,10 +170,12 @@ export async function fillDateParts(target: FieldTarget, iso: string, ctx: DateP
   const outcome = (): FillOutcome => {
     const left = pending();
     if (left.length === 0) return done(true, 'ok');
-    // A part the page did not take gets its own value back: what it shows and what it holds agree again.
+    // A part the page did not take gets its own value back: what it shows and what it holds agree again. v5 review
+    // (T1): only while it still holds what this filler wrote; a value typed meanwhile (the person's) is never erased.
     for (const index of left) {
       const input = parts[index]!.input;
-      if (partShown(parts[index]!) === shownBefore[index] && input.value !== valuesBefore[index]) {
+      if (partShown(parts[index]!) === shownBefore[index] && input.value !== valuesBefore[index]
+        && input.value === texts[index]) {
         writePart(input, valuesBefore[index]!);
       }
     }
@@ -191,6 +193,9 @@ export async function fillDateParts(target: FieldTarget, iso: string, ctx: DateP
   for (const index of pending()) {
     const input = parts[index]!.input;
     if (!assertKeyTarget(input, ctx).ok) continue;
+    // v5 review (T1): a part holding neither its own value nor what this filler wrote was typed into meanwhile: the
+    // person's, never given back nor typed over.
+    if (input.value !== valuesBefore[index] && input.value !== texts[index]) continue;
     if (input.value !== valuesBefore[index]) writePart(input, valuesBefore[index]!);
     for (const digit of texts[index]!) fireKey(input, digit as DigitKey);
   }

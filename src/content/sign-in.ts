@@ -38,7 +38,11 @@
  * is 'challenged': the boxes keep what was typed, the page's toast says to solve the check, and the next press is the
  * person's, as Jobright leaves Sign In to the person: they tick the box and press the site's button, and the run carries
  * on once the page moves on (signInRefusalWaits: the run's pause watch never signs in again on that document's wall,
- * since the worker answers a tab once per wall). The box is never touched: the person ticks it.
+ * since the worker answers a tab once per wall). The box is never touched: the person ticks it. v5 review (S8): what
+ * was typed is kept SIGN_IN_KEPT_MS at most, then written empty again (the password boxes), and at once when the run
+ * stops or ends or the document goes (the sign-in's signal); a box the person typed into since is theirs and left as it
+ * is. v5 review (F8): only a checkbox widget over or inside the sign-in's own form counts, never one elsewhere on the
+ * page.
  * v3 Phase 7b (the public capture of 2026-11-04/05; docs/SPEC-AMENDMENTS.md §12):
  * - A wall whose form the page shows only after a first choice (Workday's landing: Apple, Google, "Sign in with email"):
  *   before 1, the adapter's declared prelude control is pressed once through not-submit.ts clickAdapterSignInPrelude
@@ -100,7 +104,7 @@ import { newScanCache } from '../dom/scan-cache';
 import {
   anchorOf, guardSubmission, passwordBoxIn, SIGN_IN_REFUSALS, signInContainerOf, signInFormOf, signInRefusal,
 } from '../dom/sign-in-form';
-import { deadline, monotonicNow } from '../dom/time';
+import { deadline, monotonicNow, startDeadline } from '../dom/time';
 import { isUserVisible } from '../dom/visibility';
 import type { SignInCredential, SignInWall } from '../messaging/schemas';
 import { log } from '../shared/log';
@@ -117,6 +121,9 @@ export const SIGN_IN_PRELUDE_MS = 10_000;
 export const SIGN_IN_ENABLE_MS = 3_000;
 /** How often the page is looked at meanwhile. */
 const LOOK_MS = 250;
+/** v5 review (S8): how long the sign-in typed into a form the site refused for its unticked check stays there for the
+ *  person's own press (a reCAPTCHA token lasts about two minutes): then the password boxes are written empty again. */
+export const SIGN_IN_KEPT_MS = 180_000;
 /** How often a button that is still disabled is looked at. */
 const ENABLE_LOOK_MS = 100;
 
@@ -151,6 +158,8 @@ export interface SignInContext {
   settleMs?: number;
   /** v3 Phase 7b: how long a prelude's form is waited for (SIGN_IN_PRELUDE_MS by default). */
   preludeMs?: number;
+  /** v5 review (S8): how long a refused sign-in stays typed for the person (SIGN_IN_KEPT_MS by default). */
+  keptMs?: number;
 }
 
 function urlOf(href: string): URL | null {
@@ -195,6 +204,34 @@ const refusedFor = new WeakSet<Document>();
  *  watchPauseGone); it carries on once the page moves on. */
 export function signInRefusalWaits(doc: Document): boolean {
   return refusedFor.has(doc);
+}
+
+/** v5 review (S8): keeps the password boxes typed into for the person's own press, then writes them empty again: after
+ *  `keptMs`, or at once when the sign-in's signal ends (the run stopped or ended, the document gone). A box the person
+ *  typed into since (a trusted input) is theirs: never written. Nothing is read or kept but the elements. */
+function keepForPerson(ctx: SignInContext, secret: readonly HTMLInputElement[]): void {
+  const boxes = secret.filter((box) => box.isConnected);
+  const theirs = new Set<EventTarget>();
+  const onInput = (event: Event) => {
+    if (event.isTrusted && event.currentTarget !== null) theirs.add(event.currentTarget);
+  };
+  for (const box of boxes) box.addEventListener('input', onInput, true);
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    for (const box of boxes) box.removeEventListener('input', onInput, true);
+    clearSecret(boxes.filter((box) => !theirs.has(box)));
+  };
+  if (ctx.signal.aborted) {
+    finish();
+    return;
+  }
+  ctx.signal.addEventListener('abort', finish, { once: true });
+  startDeadline(ctx.keptMs ?? SIGN_IN_KEPT_MS, () => {
+    ctx.signal.removeEventListener('abort', finish);
+    finish();
+  });
 }
 // ── end v5 p1-rules ──
 
@@ -375,9 +412,11 @@ async function outcomeAfter(ctx: SignInContext, form: SignInForm): Promise<SignI
     const pause = detectPause(ctx.doc, null, ctx.adapter);
     if (pause?.kind === 'email-code' || pause?.kind === 'captcha') return 'continue';
     // v5 (PLAN decision 9): refused while a checkbox CAPTCHA is still unticked (an error in the form, the site's own
-    // CAPTCHA error anywhere on the page, or nothing within the wait): the check's (module header).
+    // CAPTCHA error anywhere on the page, or nothing within the wait): the check's (module header); v5 review (F8): a
+    // checkbox over or inside the sign-in's own form, never one elsewhere on the page.
     if (errorShown(ctx, form) || captchaErrorsShown(ctx.doc, null, ctx.adapter).length > 0 || monotonicNow() >= until) {
-      return checkboxCaptchasUnsolved(ctx.doc) > 0 ? 'challenged' : 'failed';
+      const own = anchorOf(form)?.form ?? form.container ?? null;
+      return checkboxCaptchasUnsolved(ctx.doc, own) > 0 ? 'challenged' : 'failed';
     }
   }
 }
@@ -489,6 +528,7 @@ export async function signIn(ctx: SignInContext): Promise<SignInOutcome> {
       refusedFor.add(ctx.doc);
       log('content.captcha-refused', { signIn: true });
       kept = true;
+      keepForPerson(ctx, secret);
     }
     return outcome;
   } finally {

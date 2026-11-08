@@ -159,10 +159,27 @@ export function unsolvedCaptchas(doc: Document, root: Element | null, cache: Sca
 }
 
 // ── v5 p1-rules: CAPTCHA like Jobright (PLAN decision 9) ──
-/** How many checkbox widgets (reCAPTCHA v2's, hCaptcha's: checkboxFrame, checkboxWidget) the page shows, anywhere, that
- *  are not known solved. They pause nothing and hold no press: the site decides (module header). */
-export function checkboxCaptchasUnsolved(doc: Document, cache: ScanCache = newScanCache()): number {
-  return shownCaptchas(scopesOf(doc), null, cache).filter((shown) => shown.checkbox).length;
+/** How many checkbox widgets (reCAPTCHA v2's, hCaptcha's: checkboxFrame, checkboxWidget) the page shows that are not
+ *  known solved: over or inside `root` (the step's form, a sign-in's form), anywhere when it is null. They pause nothing
+ *  and hold no press: the site decides (module header). v5 review (F8): a refusal reads those of the pressed step's
+ *  container alone, never a footer newsletter's. */
+export function checkboxCaptchasUnsolved(doc: Document, root: Element | null = null, cache: ScanCache = newScanCache()):
+  number {
+  return shownCaptchas(scopesOf(doc), root, cache).filter((shown) => shown.checkbox).length;
+}
+
+/** v5 review (F3): how many checkbox widgets the page shows, anywhere, that hold their response token: checks the person
+ *  solved. A page with no checkbox widget (an invisible or a score-based reCAPTCHA) has none. */
+export function checkboxCaptchasSolved(doc: Document, cache: ScanCache = newScanCache()): number {
+  const scopes = scopesOf(doc);
+  const solvedShown = (el: Element, frame: Element | null) => drawnWidget(el) && solved(el)
+    && showsAt(el, frame, null, cache) && checkboxWidget(el, cache);
+  const containers = all(scopes, CAPTCHA_CONTAINERS).filter(({ el, frame }) => solvedShown(el, frame));
+  const parents = all<HTMLTextAreaElement | HTMLInputElement>(scopes, RESPONSE_FIELDS).flatMap(({ el: field, frame }) => {
+    const parent = field.parentElement;
+    return parent === null || parent.closest(CAPTCHA_CONTAINERS) !== null || !solvedShown(parent, frame) ? [] : [parent];
+  });
+  return new Set([...containers.map(({ el }) => el), ...parents]).size;
 }
 
 /** The words a site's own "complete the CAPTCHA" error says, in its id, class or name, or in its text (JazzHR's
@@ -181,13 +198,15 @@ export function isCaptchaError(el: Element): boolean {
 
 /**
  * The errors still standing among `errors` (an adapter's, as `errors` gives them): a site's CAPTCHA-required error
- * (isCaptchaError) stands only while a checkbox widget still shows unticked; once none does (the person solved it), it
- * is the error the site drew before, which it clears only at the next press, and is left out. Every other error stands.
- * Validation (orchestrator.ts errorsNow) and a press's refusal (press.ts refusalNow) read these.
+ * (isCaptchaError) is left out only once the page shows its checkbox solved: at least one checkbox widget holding its
+ * token and none still unticked. It is then the error the site drew before, which it clears only at the next press.
+ * v5 review (F3): on a page that shows no checkbox widget (an invisible or a score-based reCAPTCHA) it stands, as every
+ * other error does. Validation (orchestrator.ts errorsNow) and a press's refusal (press.ts refusalNow) read these.
  */
 export function withoutSolvedCaptchaErrors<T extends { el: Element }>(errors: readonly T[], doc: Document,
   cache: ScanCache = newScanCache()): T[] {
-  if (!errors.some((error) => isCaptchaError(error.el)) || checkboxCaptchasUnsolved(doc, cache) > 0) return [...errors];
+  if (!errors.some((error) => isCaptchaError(error.el)) || checkboxCaptchasUnsolved(doc, null, cache) > 0
+    || checkboxCaptchasSolved(doc, cache) === 0) return [...errors];
   return errors.filter((error) => !isCaptchaError(error.el));
 }
 
@@ -210,14 +229,15 @@ export function captchaErrorsShown(doc: Document, root: Element | null, adapter:
 
 /**
  * v5 (PLAN decision 9): whether the page refused a press for its check, the way the run reads it: a checkbox widget
- * still unticked shows anywhere on the page, and either the site shows its CAPTCHA-required error (captchaErrorsShown)
- * or `afterPress` (a Next that left the step as it was, a Submit the page refused or never confirmed). Once the widget
- * holds its token, it reads false: the run carries on. A check this module cannot see ticked (none shown, an invisible
- * one the site's score refused) reads false too: the site's error is then a plain error the person reads.
+ * still unticked shows over or inside `root` (the pressed step's form; anywhere when null: v5 review, F8), and either the
+ * site shows its CAPTCHA-required error (captchaErrorsShown) or `afterPress` (a Next that left the step as it was, a
+ * Submit the page refused or never confirmed). Once the widget holds its token, it reads false: the run carries on. A
+ * check this module cannot see ticked (none shown, an invisible one the site's score refused) reads false too: the
+ * site's error is then a plain error the person reads.
  */
 export function captchaRefusalShown(doc: Document, root: Element | null, adapter: Adapter | null,
   options: { afterPress: boolean }, cache: ScanCache = newScanCache()): boolean {
-  if (checkboxCaptchasUnsolved(doc, cache) === 0) return false;
+  if (checkboxCaptchasUnsolved(doc, root, cache) === 0) return false;
   return options.afterPress || captchaErrorsShown(doc, root, adapter, cache).length > 0;
 }
 // ── end v5 p1-rules ──

@@ -705,6 +705,35 @@ describe('the v4 review: each sign-in the run could not make says why (behaviour
     expect((fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value).toBe('');
   });
 
+  // v5 review (S8): what a refused sign-in typed is not left in the page for good.
+  it('writes the kept password empty again after a while, at once when the run ends, never a box the person typed in',
+    async () => {
+      const keptAttempt = (fixture: Fixture, signal: AbortSignal) => signIn({ doc: fixture.doc, adapter: genericAdapter,
+        channel: channelAnswering({ ok: true, data: CREDENTIAL }), href: () => HREF, isTop: true, signal, settleMs: 300,
+        keptMs: 600 });
+      const password = (fixture: Fixture) => fixture.doc.getElementById('password') as HTMLInputElement;
+      // After the time it is kept.
+      const timed = await loadFixture(document, signInPage({ before: CHECKBOX, needsTick: true }));
+      expect(await keptAttempt(timed, new AbortController().signal)).toBe('challenged');
+      expect(password(timed).value).toBe(CREDENTIAL.password);
+      await vi.waitFor(() => expect(password(timed).value).toBe(''), { timeout: 3_000 });
+      removeFixtures(document);
+      // At once when the run stops or ends (its signal).
+      const stopped = await loadFixture(document, signInPage({ before: CHECKBOX, needsTick: true }));
+      const run = new AbortController();
+      expect(await keptAttempt(stopped, run.signal)).toBe('challenged');
+      expect(password(stopped).value).toBe(CREDENTIAL.password);
+      run.abort();
+      expect(password(stopped).value).toBe('');
+      removeFixtures(document);
+      // A page's own input event is no person's typing: the box is written empty all the same. (A person's trusted
+      // typing, which makes the box theirs, cannot be sent into the fixture's frame from here.)
+      const forged = await loadFixture(document, signInPage({ before: CHECKBOX, needsTick: true }));
+      expect(await keptAttempt(forged, new AbortController().signal)).toBe('challenged');
+      password(forged).dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.waitFor(() => expect(password(forged).value).toBe(''), { timeout: 3_000 });
+    });
+
   it('a refusal while the box is ticked is the sign-in’s own failure: the password is written empty again', async () => {
     const fixture = await loadFixture(document, signInPage({ before: CHECKBOX, wrong: true }));
     (fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value = '03AFcWeA-token';

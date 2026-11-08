@@ -183,7 +183,8 @@ import { signInContainerOf } from '../dom/sign-in-form';
 import { clickIfAllowed } from '../dom/fillers';
 import { policyClassOf } from '../core/resolver/categories';
 import {
-  captchaElements, captchaRefusalShown, detectPause, pageChallenged, type PauseSignal, withoutSolvedCaptchaErrors,
+  captchaElements, captchaErrorsShown, captchaRefusalShown, checkboxCaptchasUnsolved, detectPause, pageChallenged,
+  type PauseSignal, withoutSolvedCaptchaErrors,
 } from '../dom/pause-detect';
 import { rawScan, type RawPassage } from '../dom/raw-scan';
 import { isUsableOption } from '../dom/option-hash';
@@ -588,6 +589,8 @@ export class FillRun {
   private refusedLate = false;
   /** Aborted when such a refusal comes while the run watches the step: the watch ends as the CAPTCHA pause. */
   private readonly checkRefused = new AbortController();
+  /** v5 review (F2): whether the step's form showed a checkbox CAPTCHA unticked as this run's last Submit was pressed. */
+  private untickedAtSubmit = false;
   // ── end v5 p1-rules ──
   /** The machine's state (null until the run has begun). */
   private machine: RunState | null = null;
@@ -2852,6 +2855,7 @@ export class FillRun {
     // From here to the click nothing is awaited: what is checked is what is clicked.
     const page = this.pressPage();
     const before = target === 'submit' ? this.env.beforePress?.() : undefined;
+    if (target === 'submit') this.noteCheckAtSubmit(page.root);
     const answer = pressStep(page, target, { confirmed });
     log(answer.outcome === 'pressed' ? 'content.step-pressed' : 'content.step-press-refused',
       { submit: target === 'submit', confirmed });
@@ -2863,7 +2867,7 @@ export class FillRun {
       const stayed = !this.controller.signal.aborted && from !== null && this.signatureNow() === from
         && page.root.isConnected;
       // v5 (PLAN decision 9): a Next the page refused for its unticked check: the CAPTCHA pause (refusedForCheck).
-      if (stayed && this.refusedForCheck()) return { outcome: 'not-accepted', count: Math.max(1, count) };
+      if (stayed && this.refusedForCheck('next')) return { outcome: 'not-accepted', count: Math.max(1, count) };
       if (stayed && count > 0) return { outcome: 'not-accepted', count };
     }
     return answer;
@@ -2903,7 +2907,9 @@ export class FillRun {
     }
     pressed.add(stepKey);
     const before = this.env.beforePress?.();
-    const answer = pressStep(this.pressPage(), 'submit', { confirmed: !this.skipRules.requiredEmpty });
+    const page = this.pressPage();
+    this.noteCheckAtSubmit(page.root);
+    const answer = pressStep(page, 'submit', { confirmed: !this.skipRules.requiredEmpty });
     log(answer.outcome === 'pressed' ? 'content.step-pressed' : 'content.step-press-refused', { submit: true, auto: true });
     if (answer.outcome === 'pressed') {
       this.submitWasPressed('auto', before);
@@ -2963,8 +2969,9 @@ export class FillRun {
   submitUnconfirmed(): void {
     if (!this.submitPending) return;
     this.submitPending = false;
-    // v5 (PLAN decision 9): nothing came of a Submit while the page's check is still unticked: the check's (below).
-    if (this.refusedForCheck()) {
+    // v5 (PLAN decision 9): nothing came of a Submit while the page's check is still unticked: the check's (below), only
+    // when it was unticked as the Submit was pressed or the site says so (v5 review, F2).
+    if (this.refusedForCheck('unconfirmed')) {
       this.rowsChanged();
       return;
     }
@@ -2980,7 +2987,7 @@ export class FillRun {
     this.notices.forget(['submit-unconfirmed']);
     // v5 (PLAN decision 9): a Submit the page refused for its unticked check (its CAPTCHA-required error, or any refusal
     // while the box is unticked) is the check's: a CAPTCHA pause, never submit-errors (refusedForCheck).
-    if (!this.refusedForCheck()) {
+    if (!this.refusedForCheck('refused')) {
       this.notices.add('submit-errors', Math.max(1, count));
       this.drawToasts();
     }
@@ -2993,20 +3000,36 @@ export class FillRun {
     return `${this.state.applicationKey}|${this.state.stepIndex}|${this.state.stepSignature ?? ''}`;
   }
 
+  /** v5 review (F2): what an unconfirmed Submit is read against: whether its step's form showed a checkbox CAPTCHA
+   *  unticked as it was pressed (read right before the press, with nothing awaited between). */
+  private noteCheckAtSubmit(root: Element): void {
+    this.untickedAtSubmit = checkboxCaptchasUnsolved(this.env.doc, root) > 0;
+  }
+
   /**
    * A press of the run's step the page refused (a Submit's refusal or silence, the panel's Next it did not take) while
-   * it shows a checkbox CAPTCHA still unticked (pause-detect.ts captchaRefusalShown): the check is the person's. No
-   * submit-errors, no unconfirmed Submit: the run rests at a CAPTCHA pause (the "solve the check" toast), and carries on
-   * by itself once the check is solved (watchPauseGone), where Submit mode Auto may press the step once more (its
-   * once-per-step mark released here: the person solved the check the site asked for, and each further press needs
-   * them to solve it again). Nothing touches the check. Answers whether the refusal was the check's.
+   * the pressed step's form shows a checkbox CAPTCHA still unticked (pause-detect.ts captchaRefusalShown, over or inside
+   * the step's root: v5 review, F8): the check is the person's. A Submit nothing confirmed (`unconfirmed`) is the
+   * check's only when the box was unticked as it was pressed, or the site shows its CAPTCHA error (v5 review, F2: an
+   * AJAX Submit that went through and then reset its widget is never pressed twice). No submit-errors, no unconfirmed
+   * Submit: the run rests at a CAPTCHA pause (the "solve the check" toast), and carries on by itself once the check is
+   * solved (watchPauseGone), where Submit mode Auto may press the step once more (its once-per-step mark released here:
+   * the person solved the check the site asked for, and each further press needs them to solve it again). Nothing
+   * touches the check. Answers whether the refusal was the check's, read from the page each time (F8: never sticky).
    */
-  private refusedForCheck(): boolean {
-    if (this.refusedByCheck) return this.ended !== 'stopped';
-    if (this.machine === null || this.request.dryRun || this.controller.signal.aborted || this.ended === 'paused'
-      || this.ended === 'stopped') return false;
-    if (!captchaRefusalShown(this.env.doc, this.rootNow(), this.env.page.adapter, { afterPress: true })) return false;
-    log('content.captcha-refused', { next: false });
+  private refusedForCheck(kind: 'refused' | 'unconfirmed' | 'next'): boolean {
+    if (this.machine === null || this.request.dryRun || this.controller.signal.aborted || this.ended === 'stopped'
+      || (this.ended === 'paused' && !this.refusedByCheck)) return false;
+    const { doc } = this.env;
+    const { adapter } = this.env.page;
+    const root = this.rootNow();
+    if (!captchaRefusalShown(doc, root, adapter, { afterPress: true })) return false;
+    if (kind === 'unconfirmed' && !this.untickedAtSubmit && captchaErrorsShown(doc, root, adapter).length === 0) {
+      return false;
+    }
+    // Already resting at that pause: the page still shows it.
+    if (this.refusedByCheck) return true;
+    log('content.captcha-refused', { next: kind === 'next' });
     this.refusedByCheck = true;
     (this.env.autoPressed ?? this.autoPressedHere).delete(this.autoPressKey());
     if (this.watchingNow || this.ended === null) {

@@ -11,6 +11,7 @@ import stepsHtml from '../../fixtures/synthetic/workday/steps.html?raw';
 import { workdayAdapter } from '../adapters/workday';
 import { DEFAULT_SETTINGS } from '../core/types/settings';
 import { loadFixture, removeFixtures } from '../dom/fixture.testkit';
+import { deadline } from '../dom/time';
 import { createFakeWorker, testVocab } from './content.testkit';
 import { startContentRuntime, type ContentRuntime } from './runtime';
 
@@ -85,5 +86,24 @@ describe('Workday’s dates written by a run (s2 wd)', () => {
     expect(rows.map((row) => [row.reason, row.needsUserAction])).toEqual([['needs-your-click', true],
       ['needs-your-click', true]]);
     expect(workdayAdapter.nextButton!(workdayAdapter.detect(doc)!.formRoot)).toBeNull();
+  });
+
+  // v5 review (T1): a part the page did not take is given back only while it still holds what the run wrote.
+  it('never erases nor types over a part the person typed into while the run waited for the page', async () => {
+    const { doc, runtime } = await atMyExperience(false);
+    const month = doc.querySelector<HTMLInputElement>('input[role="spinbutton"]')!;
+    let typed = false;
+    month.addEventListener('input', () => {
+      if (typed || month.value !== '06') return;
+      typed = true;
+      // The person's own month, typed a moment after the run's write, before the run reads the part back.
+      void deadline(10).then(() => {
+        month.value = '09';
+      });
+    });
+    await runtime.fill();
+    await vi.waitFor(() => expect(runtime.run?.ended).toBeDefined(), { timeout: 30_000 });
+    expect(typed).toBe(true);
+    expect(month.value).toBe('09');
   });
 });

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Adapter } from '../adapters/types';
 import { loadFixture, removeFixtures } from './fixture.testkit';
 import {
-  captchaElements, captchaErrorsShown, captchaRefusalShown, challengeLikeFramesShown, checkboxCaptchasUnsolved, detectPause,
+  captchaElements, captchaErrorsShown, captchaRefusalShown, challengeLikeFramesShown, checkboxCaptchasSolved,
+  checkboxCaptchasUnsolved, detectPause,
   isCaptchaError, pageChallenged, unsolvedCaptchas, vendorFramesShown, withoutSolvedCaptchaErrors,
 } from './pause-detect';
 import { scan } from './scan';
@@ -608,6 +609,28 @@ describe('a checkbox widget never holds the fill (M6, the owner’s decision of 
     expect(withoutSolvedCaptchaErrors(errors, fixture.doc)).toHaveLength(2);
     (fixture.doc.querySelector('textarea[name="g-recaptcha-response"]') as HTMLTextAreaElement).value = '03AFcWeA-token';
     expect(withoutSolvedCaptchaErrors(errors, fixture.doc).map((error) => error.el.textContent)).toEqual(['Phone is required.']);
+  });
+
+  // v5 review (F3): with no checkbox widget shown (an invisible or a score-based reCAPTCHA), the site's CAPTCHA error is
+  // the person's to read: it stands.
+  it('keeps a CAPTCHA error on a page that shows no checkbox widget', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>${FORM(`${JAZZ_ERROR}
+      <div class="dv_error">Phone is required.</div>`)}</body>`);
+    const errors = ERRORS.errors!(fixture.doc.querySelector('form')!);
+    expect(checkboxCaptchasSolved(fixture.doc)).toBe(0);
+    expect(withoutSolvedCaptchaErrors(errors, fixture.doc)).toHaveLength(2);
+  });
+
+  // v5 review (F8): a refusal reads the checkbox of the pressed step's form alone, never one elsewhere on the page.
+  it('reads a refusal from a checkbox over or inside the step’s form, never one in a footer form', async () => {
+    const fixture = await loadFixture(document, `<!doctype html><body>${FORM('')}
+      <footer style="margin-top:600px"><form id="newsletter"><input type="email">${RECAPTCHA()}</form></footer></body>`);
+    const step = fixture.doc.querySelector('form')!;
+    expect(checkboxCaptchasUnsolved(fixture.doc)).toBe(2);
+    expect(checkboxCaptchasUnsolved(fixture.doc, step)).toBe(0);
+    expect(captchaRefusalShown(fixture.doc, step, ERRORS, { afterPress: true })).toBe(false);
+    expect(captchaRefusalShown(fixture.doc, fixture.doc.getElementById('newsletter'), ERRORS, { afterPress: true }))
+      .toBe(true);
   });
   // ── end v5 p1-rules ──
 });

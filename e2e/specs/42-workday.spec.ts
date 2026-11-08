@@ -28,6 +28,7 @@ import { expect, test } from '../fixtures.ts';
 import type { Extension } from '../helpers/extension.ts';
 import { mock } from '../helpers/mock.ts';
 import { pairThroughConnectPage } from '../helpers/pairing.ts';
+import { runAt } from '../helpers/wizard.ts';
 
 const ACCOUNT_PAGE = 'fixtures/synthetic/workday/account.html';
 const HOST = 'tailoritfixture.wd5.myworkdayjobs.com';
@@ -160,8 +161,11 @@ test.describe('the Workday application steps (the owner’s snapshots of 2026-11
       'name--legalName--firstName': 'Alex', 'name--legalName--lastName': 'Rivera', 'address--city': 'Austin',
       'address--postalCode': '78701' });
 
-    // My Experience: both positions, the run's own Add once, and its Next left to the person (the date is empty).
-    await expect.poll(async () => (await ext.runState(key))?.status, { timeout: 45_000 }).toBe('wait-transition');
+    // My Experience: both positions, the run's own Add once, and its Next left to the person (the date is empty). v5
+    // review (T1): the run rests there for the person's Next, its step filled; never the brief wait-transition of its own
+    // Next on My Information, which passed while My Experience was still being filled.
+    await runAt(ext, tabId, key, { statuses: ['wait-transition'],
+      until: (state) => state.stepIndex === 1 && state.lastFill !== null });
     await expect.poll(async () => page.locator('input[id="workExperience-62--companyName"]').inputValue(), { timeout: 30_000 })
       .not.toBe('');
     expect(await page.locator('input[id="workExperience-61--jobTitle"]').inputValue()).toBe('Senior Software Engineer');
