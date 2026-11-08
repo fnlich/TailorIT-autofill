@@ -1,0 +1,5 @@
+{
+  "https://job-boards.greenhouse.io/embed/job_app?for=pieinsurance&token=6220010004": "fixtures/greenhouse/s2-pie-eeo-1.html",
+  "https://www.recaptcha.net/recaptcha/enterprise/anchor?ar=1&k=6LfmcbcpAAAAAChNTbhUShzUOAMj_wY9LQIvLFX0&co=aHR0cHM6Ly9qb2ItYm9hcmRzLmdyZWVuaG91c2UuaW86NDQz&hl=en&v=bSuJ2xBC8cFy7pM4Z3Hu9boH&size=invisible&anchor-ms=20000&execute-ms=30000&cb=hqnut6mm4rys": "fixtures/greenhouse/s2-pie-eeo-1.third-party-frame.html",
+  "https://content.googleapis.com/static/proxy.html?usegapi=1&jsh=m%3B%2F_%2Fscs%2Fabc-static%2F_%2Fjs%2Fk%3Dgapi.lb.en.etOqPKhAhvg.O%2Fd%3D1%2Frs%3DAHpOoo-l5JrVgGKVELwC844E6riBHX86-w%2Fm%3D__features__": "fixtures/greenhouse/s2-pie-eeo-1.third-party-frame.html"
+}
