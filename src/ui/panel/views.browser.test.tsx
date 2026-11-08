@@ -101,8 +101,10 @@ describe('the set-up view (v4 ui)', () => {
     const worker = createFakeWorker();
     const root = await open(worker);
     expect(viewOf(root)).toBe('main');
-    // The profile alone is read for the check: never the sensitive part.
-    expect(worker.sentOfType('panel/profile')).toEqual([{ v: 1, type: 'panel/profile', sensitive: false }]);
+    // The Phase 1 review (S6): the worker checks the profile; the panel asks for the names of what is missing alone, and
+    // never reads the profile for it (nor its sensitive part).
+    expect(worker.sentOfType('panel/profileCheck')).toEqual([{ v: 1, type: 'panel/profileCheck' }]);
+    expect(worker.sentOfType('panel/profile')).toEqual([]);
     expect(root.querySelector('button[data-panel-settings]')).not.toBeNull();
     expect(root.querySelector('[data-setup]')).toBeNull();
     worker.script.auth = authStatus({ connection: 'expired', account: null });
@@ -166,7 +168,8 @@ describe('the set-up view (v4 ui)', () => {
     worker.script.auth = authStatus();
     await act(async () => worker.push({ v: 1, type: 'panel/changed', what: 'connection' }));
     await settle();
-    expect(worker.sentOfType('panel/profile')).toEqual([{ v: 1, type: 'panel/profile', sensitive: false }]);
+    // The Phase 1 review (S6): the worker's check, by name only.
+    expect(worker.sentOfType('panel/profileCheck')).toEqual([{ v: 1, type: 'panel/profileCheck' }]);
     // The view stays, step 1 ticked; step 2 a GO whose "?" says the profile could not be read; Start applying opens.
     expect(viewOf(root)).toBe('setup');
     expect(stepsOf(root)).toEqual([['account', 'done'], ['profile', 'go']]);

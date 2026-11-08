@@ -70,6 +70,7 @@ import {
   type EntryGroup, type ListRow, type ReportRow, type RowProgress,
 } from './model';
 import { StepDock, type PressAction } from './StepDock';
+import { useShownFor } from '../panel/seen';
 import { adoptReportStyles } from './styles';
 
 /** Brings a row into view where the report is drawn: on an extension page of its own (the side panel), as the page
@@ -129,6 +130,10 @@ export interface ReportActions {
   onPolicyDecision?(frameId: number, decision: PolicyCardDecision): void;
   /** Cancel on the progress line while a run works (the side panel sends panel/cancel). */
   onCancel?(): void;
+  /** v5 p1-panel (the Phase 1 review, F4): Continue on the progress line while the run waits for the person's word (a
+   *  hand-off, a sign-in: the container passes it only then), since the sheet lies over the main button that sends it.
+   *  It takes no click until shown CONTROL_SEEN_MS on `clock`, as the main button. */
+  onContinue?(): void;
   /** Skip on the field being written, after SKIP_AFTER_MS on it (the side panel sends panel/skip). It may answer
    *  whether the run took it: false (the frame no longer writes that field, 'expired') offers the button again (the
    *  audit of 2026-11-06, m5). */
@@ -202,6 +207,7 @@ export function Report({ reports, notices = true, minimized = false, sheet, wall
       )}
       {actions.onPress !== undefined && (
         <StepDock reports={frames} onPress={actions.onPress} submitted={actions.submitted === true}
+          clock={actions.clock ?? BROWSER_CLOCK}
           {...(actions.actionsFrameId === undefined ? {} : { actionsFrameId: actions.actionsFrameId })} />
       )}
     </div>
@@ -377,6 +383,9 @@ function Progress({ reports, actions, minimized, sheet, wall }: { reports: reado
         <button type="button" className="tia-linkbutton" data-action="cancel" onClick={actions.onCancel}>
           {PAGE_COPY.panel.cancel}
         </button>
+      )}
+      {!working && actions.onContinue !== undefined && (
+        <ContinueButton onContinue={actions.onContinue} clock={actions.clock ?? BROWSER_CLOCK} />
       )}
     </div>
   );
@@ -804,6 +813,20 @@ function Row({ entry, actions }: { entry: ListRow; actions: ReportActions }) {
       )}
       {drawer && open && body}
     </li>
+  );
+}
+
+/** v5 p1-panel (F4): Continue on the progress line (ReportActions.onContinue), disabled until shown CONTROL_SEEN_MS
+ *  (a control newly drawn: ui/panel/seen.ts, as the main button). */
+function ContinueButton({ onContinue, clock }: { onContinue(): void; clock: NonNullable<ReportActions['clock']> }) {
+  const seen = useShownFor('continue', clock);
+  return (
+    <button type="button" className="tia-progress-line__continue" data-action="continue" disabled={!seen}
+      onClick={() => {
+        if (seen) onContinue();
+      }}>
+      {PAGE_COPY.panel.continue}
+    </button>
   );
 }
 

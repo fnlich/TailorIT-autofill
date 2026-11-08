@@ -11,10 +11,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { COPY } from '../../shared/copy';
 import { adoptPageStyles } from '../page/styles';
 import {
-  authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, mount, row, SEEN_AT_ONCE, settle, unmountAll,
+  authStatus, button, click, createFakeWorker, formPage, frameReport, jobCard, manualClock, mount, row, SEEN_AT_ONCE, settle,
+  unmountAll,
   type FakeWorker,
 } from '../ui.testkit';
 import { Panel } from './Panel';
+import { CONTROL_SEEN_MS } from './seen';
 import { SHEET_STRIP_PX } from './v5-styles';
 
 async function open(worker: FakeWorker, pinnedTabId: number | null): Promise<HTMLElement> {
@@ -231,6 +233,69 @@ describe('the side panel in TailorIT’s look', () => {
     await push('review');
     expect(sheet().hasAttribute('data-open')).toBe(true);
     still.remove();
+  });
+
+  // The Phase 1 review (F4): at a pause the main button reads Autofill and sends panel/continue, under the sheet: the
+  // sheet's header offers Continue, in reach, and what the run waits for stays in view under it.
+  it('offers Continue on the sheet’s header while the run waits for the person, in reach, sending panel/continue', async () => {
+    const still = document.createElement('style');
+    still.textContent = '* { transition: none !important; }';
+    document.head.append(still);
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, formPage());
+    worker.script.cards.set(5, jobCard());
+    const fields = [row('first', { required: true })];
+    worker.script.reports.set(5, [frameReport(0, { status: 'fill-step', fields, filling: { current: 'first', pending: [] } })]);
+    const root = await open(worker, 5);
+    const push = async (status: 'fill-step' | 'handoff' | 'auth-needed' | 'review', signing = false) => {
+      await act(async () => worker.push({ v: 1, type: 'panel/update', tabId: 5, reports: [frameReport(0, { status, fields,
+        ...(status === 'fill-step' ? { filling: { current: 'first', pending: [] } } : {}),
+        ...(status === 'handoff' ? { pauseReason: 'captcha' as const } : {}),
+        ...(signing ? { notices: [{ code: 'sign-in-auto' as const }] } : {}), updatedAt: Date.now() })] }));
+      await settle();
+    };
+    const go = () => root.querySelector<HTMLButtonElement>('.tia-progress-line button[data-action="continue"]');
+    // While the run fills: no Continue.
+    expect(go()).toBeNull();
+    // A hand-off: the sheet stays up, its header offers Continue, which a person's pointer reaches.
+    await push('handoff');
+    expect(root.querySelector('button.tia-cta')?.getAttribute('data-main-action')).toBe('continue');
+    expect(root.querySelector('section.tia-sheet')?.hasAttribute('data-open')).toBe(true);
+    const button = go()!;
+    expect([button.textContent, button.disabled]).toEqual([COPY.panel.continue, false]);
+    const box = button.getBoundingClientRect();
+    expect(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)).toBe(button);
+    await click(button);
+    expect(worker.sentOfType('panel/continue')).toEqual([{ v: 1, type: 'panel/continue', tabId: 5 }]);
+    // While Sign-in Auto signs in for the run there is nothing to continue; once it rests at the sign-in, there is.
+    await push('auth-needed', true);
+    expect(go()).toBeNull();
+    await push('auth-needed');
+    expect(go()).not.toBeNull();
+    // At rest after the run: no Continue.
+    await push('review');
+    expect(go()).toBeNull();
+    still.remove();
+  });
+
+  it('takes no click on the header’s Continue until it has been shown CONTROL_SEEN_MS', async () => {
+    const clock = manualClock();
+    const worker = createFakeWorker();
+    worker.script.pages.set(5, formPage());
+    worker.script.reports.set(5, [frameReport(0, { status: 'handoff', pauseReason: 'captcha',
+      fields: [row('first', { required: true })] })]);
+    adoptPageStyles(document);
+    const root = await mount(<Panel platform={worker.platform} pinnedTabId={5} seenClock={clock} />);
+    await settle();
+    const go = () => root.querySelector<HTMLButtonElement>('.tia-progress-line button[data-action="continue"]')!;
+    expect(go().disabled).toBe(true);
+    await click(go());
+    expect(worker.sentOfType('panel/continue')).toEqual([]);
+    clock.at += CONTROL_SEEN_MS;
+    await clock.flush();
+    expect(go().disabled).toBe(false);
+    await click(go());
+    expect(worker.sentOfType('panel/continue')).toHaveLength(1);
   });
 
   it('offers the TailorIT button again where the person hid it, on this site or everywhere', async () => {

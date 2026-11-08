@@ -17,6 +17,7 @@ import type {
 } from '../messaging/schemas';
 import { createMemoryPagePlatform, type MemoryPagePlatform } from '../platform/memory';
 import type { PortLike } from '../platform/types';
+import { historyGaps, profileGaps } from '../shared/profile-gaps';
 import type { FrameReport } from '../shared/report';
 
 /** Values from the golden profile: none may ever appear in what the panel or the options page draws. */
@@ -223,6 +224,9 @@ export function createFakeWorker(options: { activeTabId?: number | null; answerW
       script.agent = { ...script.agent, on: false, phase: 'off', job: null };
       return ok(script.agent);
     },
+    // v5 p1-panel (S6): the worker's check, by name only, from the scripted profile and account.
+    'panel/profileCheck': () => (script.profile === null ? { ok: false, error: 'unavailable' }
+      : ok({ gaps: profileGaps(script.profile, script.auth.account?.email ?? null), history: historyGaps(script.profile) })),
     'panel/profile': () => (script.profile === null ? { ok: false, error: 'unavailable' }
       : ok({ revision: 1, profile: script.profile, flaggedLines: [], canWrite: true, sensitive: { state: 'not-shared' } })),
     'auth/startPairing': () => {

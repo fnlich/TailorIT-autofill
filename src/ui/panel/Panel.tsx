@@ -280,9 +280,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
   const aiOff = settings === null ? null : !settings.llm.drafts;
 
   // v4 ui: whether the autofill information is complete (profile-check.ts), read while connected.
-  const accountEmail = auth.status?.connection === 'connected' ? auth.status.account?.email ?? null : null;
-  const { check: profile, recheck } = useProfileCheck(platform, typeof connection === 'string' ? connection : null,
-    accountEmail);
+  const { check: profile, recheck } = useProfileCheck(platform, typeof connection === 'string' ? connection : null);
   /** Whether the set-up view is needed; null while that is not known yet. A profile that could not be read never
    *  locks the person out: the fill reads it itself. */
   const needsSetup = auth.status === null ? null : auth.status.connection !== 'connected' ? true
@@ -650,6 +648,10 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
                 // it waits for.
                 saysWaits={toastsMayGo}
                 submitted={submitted}
+                // The Phase 1 review (F4): while the run waits for the person's Continue the main button (which sends
+                // it) lies under the sheet: the sheet's header offers Continue too, held as the main button is.
+                {...(offersFill && meaning === 'continue' && !busy && !sheetWorking ? {
+                  onContinue: () => void run({ v: 1, type: 'panel/continue', tabId }), clock: seenClock } : {})}
                 {...(submitted ? {} : {
                   onCancel: () => void run({ v: 1, type: 'panel/cancel', tabId }),
                   // Whether the run took it: one it did not ('expired') offers Skip again (the audit of 2026-11-06, m5).
@@ -682,7 +684,7 @@ export function Panel({ platform, pinnedTabId, now = Date.now, copyText = clipbo
       </div>
       {/* v5 p1-panel: the dock's "Continue To The Next Page" and "Submit Application" stay under the sheet (Jobright's). */}
       {sheetShown && tabId !== null && (
-        <StepDock reports={reports} submitted={submitted} onPress={async (frameId, target, confirmed) => {
+        <StepDock reports={reports} submitted={submitted} clock={seenClock} onPress={async (frameId, target, confirmed) => {
           const answer = await request(platform, { v: 1, type: 'panel/press', tabId, frameId, target, confirmed });
           return answer.ok ? answer.data : null;
         }} />

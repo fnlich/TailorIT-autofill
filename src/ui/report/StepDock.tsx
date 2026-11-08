@@ -11,12 +11,19 @@
  * the platform confirmed the application (`submitted`, the tab's page state), the button reads "Submitted" and presses
  * nothing more (Jobright's "Submitted!"). The dock stays at the bottom of the panel's view (sticky). Nothing here is a
  * page's: a page can neither draw nor press it.
+ *
+ * v5 p1-panel (the Phase 1 review, S2): what the dock's button means follows the page (Continue on a step not final,
+ * Submit on the last, "Submit Anyway" once the frame said required fields are empty), so whenever that meaning changes
+ * (its frame, its target, or the question) its button is disabled until the new words have been shown CONTROL_SEEN_MS
+ * (ui/panel/seen.ts, as the main button): a click aimed at Continue never presses a Submit drawn under the pointer, and
+ * a double-click on Submit never answers the question it raised with Submit Anyway. Time is the container's clock.
  */
 import { useId, useState } from 'react';
 import type { PressAnswer, StepTarget } from '../../messaging/schemas';
 import { PAGE_COPY } from '../../shared/copy';
 import type { FrameReport } from '../../shared/report';
 import { Icon } from '../brand/Icon';
+import { BROWSER_SEEN_CLOCK, useShownFor, type SeenClock } from '../panel/seen';
 import { isWorking } from './model';
 
 /** The press the container makes for a frame: the frame's answer, or null when it could not be asked. */
@@ -39,14 +46,21 @@ export function dockOf(reports: readonly FrameReport[], actionsFrameId?: number)
   return null;
 }
 
-export function StepDock({ reports, onPress, actionsFrameId, submitted = false }: { reports: readonly FrameReport[];
-  onPress: PressAction; actionsFrameId?: number; submitted?: boolean }) {
+export function StepDock({ reports, onPress, actionsFrameId, submitted = false, clock = BROWSER_SEEN_CLOCK }: {
+  reports: readonly FrameReport[]; onPress: PressAction; actionsFrameId?: number; submitted?: boolean;
+  /** v5 p1-panel: the clock the hold is timed on (the container's; the browser's by default). */
+  clock?: SeenClock }) {
   const dock = dockOf(reports, actionsFrameId);
   const questionId = useId();
   const [busy, setBusy] = useState(false);
   /** The required fields still empty, when the frame asked for the person's word (null: not asked). */
   const [confirming, setConfirming] = useState<{ frameId: number; count: number } | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  // v5 p1-panel (module header, S2): what the dock's button means now, held CONTROL_SEEN_MS before it takes a click.
+  const askingNow = dock !== null && confirming !== null && confirming.frameId === dock.frameId && dock.target === 'submit'
+    && !dock.pressed;
+  const seen = useShownFor(dock === null || submitted ? 'none'
+    : `${dock.frameId}|${dock.target}|${askingNow ? 'confirm' : 'press'}`, clock);
   if (submitted) {
     return (
       <section className="tia-dock" data-step-dock="submitted" aria-label={PAGE_COPY.panel.step.submitted}>
@@ -60,6 +74,8 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false }
   if (dock === null) return null;
 
   const press = async (confirmed: boolean) => {
+    // Decided at the click, on what this render shows: a meaning not shown long enough is never acted on.
+    if (!seen) return;
     setBusy(true);
     setSaid(null);
     const answer = await onPress(dock.frameId, dock.target, confirmed);
@@ -79,21 +95,21 @@ export function StepDock({ reports, onPress, actionsFrameId, submitted = false }
 
   const submit = dock.target === 'submit';
   const waiting = submit && dock.pressed;
-  const asking = confirming !== null && confirming.frameId === dock.frameId && submit && !waiting;
+  const asking = askingNow;
   return (
     <section className="tia-dock" data-step-dock={dock.target} aria-label={submit ? PAGE_COPY.panel.step.submit : PAGE_COPY.panel.step.next}>
       {asking ? (
         <div className="tia-dock__confirm" role="alertdialog" aria-labelledby={questionId} data-step-confirm="">
           <p className="tia-dock__question" id={questionId}>{PAGE_COPY.panel.step.confirmEmpty(confirming.count)}</p>
           <div className="tia-dock__actions">
-            <button type="button" className="tia-button tia-button--primary" disabled={busy} data-step-action="confirm"
-              onClick={() => void press(true)}>{PAGE_COPY.panel.step.submitAnyway}</button>
+            <button type="button" className="tia-button tia-button--primary" disabled={busy || !seen}
+              data-step-action="confirm" onClick={() => void press(true)}>{PAGE_COPY.panel.step.submitAnyway}</button>
             <button type="button" className="tia-button tia-button--quiet" disabled={busy}
               onClick={() => setConfirming(null)}>{PAGE_COPY.panel.step.keepEditing}</button>
           </div>
         </div>
       ) : (
-        <button type="button" className="tia-dock__button" disabled={busy || waiting}
+        <button type="button" className="tia-dock__button" disabled={busy || waiting || !seen}
           data-step-action={dock.target} aria-busy={busy || waiting ? 'true' : undefined} onClick={() => void press(false)}>
           {(busy || waiting) && <Icon name="spinner" size={18} className="tia-icon tia-spin" />}
           {waiting ? PAGE_COPY.panel.step.submitting : submit ? PAGE_COPY.panel.step.submit : PAGE_COPY.panel.step.next}

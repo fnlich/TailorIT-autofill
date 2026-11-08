@@ -7,7 +7,10 @@
  * - when the run comes to rest the sheet stays up; its header then folds it down to a strip at the panel's bottom
  *   ("7/9 Required Fields Filled | 77%" and a chevron), and brings it up again;
  * - a panel that opens on a run at rest shows it up too (the run's results first; Jobright's sidebar, there through the
- *   fill, starts it folded); a run that starts again brings it up.
+ *   fill, starts it folded); a run that starts again brings it up;
+ * - the Phase 1 review (F4): a run that rests waiting for the person's Continue (a hand-off, a sign-in) keeps the
+ *   sheet up, where its header offers Continue (Report's `onContinue`), since the main button that sends it lies under
+ *   the sheet; what the run waits for stays in view under the header.
  * Where "just under the job card" is: the anchor the main view puts after the card, measured against the stage the
  * sheet lies on whenever either changes size or the stage scrolls (ResizeObserver and the scroll event: no timer), so
  * it follows the card in the side panel and in the 384 px sidebar alike. The sheet never leaves less than

@@ -16,13 +16,19 @@
  *   worker's own profile cache, so the next plan reads the profile as saved; a run in progress reads it at its next
  *   plan. A 409 drops it too: the profile changed elsewhere, so the copy the worker holds is no longer TailorIT's.
  *   Nothing else is cached.
- * - At most PROFILE_EDIT_LIMIT reads and saves a minute (one key: the side panel is one person's).
+ * - v5 p1-panel (the Phase 1 review, S6): panel/profileCheck reads the profile (never its sensitive part) and answers
+ *   only the names of what it lacks (shared/profile-gaps.ts: the set-up view's items, and no work experience or no
+ *   education), so the profile never reaches a page's process for the panel's check (the on-page sidebar).
+ * - At most PROFILE_EDIT_LIMIT reads and saves a minute (one key: the side panel is one person's); the check has its
+ *   own key under the same limit.
  * No value is ever logged: statuses and counts only.
  */
 import { AutofillProfileSaveSchema, AutofillSensitiveSaveSchema, type ExtensionScope } from '../contract/tailorit';
 import { ok, refuse, type Answer } from '../messaging/envelope';
 import type { PageMessage, PanelSaveProfileAnswer, ProfileView } from '../messaging/schemas';
+import type { ProfileCheckAnswer } from '../messaging/page-schemas';
 import { log } from '../shared/log';
+import { historyGaps, profileGaps } from '../shared/profile-gaps';
 import type { createRateLimit } from './locks';
 import type { ProfileCache } from './profile-cache';
 import type { ServerClient } from './server-client';
@@ -41,6 +47,8 @@ export interface ProfileEditorDeps {
   /** The connection's scopes (the token record's). */
   scopes(): Promise<readonly ExtensionScope[]>;
   limit: ReturnType<typeof createRateLimit>;
+  /** v5 p1-panel (S6): the account's sign-in address, which an empty profile email stands for; null when not known. */
+  accountEmail?(): Promise<string | null>;
 }
 
 /** The side panel's "Your autofill information". */
@@ -70,6 +78,21 @@ export function createProfileEditor(deps: ProfileEditorDeps) {
       return ok({ revision: answer.value.revision, profile: answer.value.profile,
         flaggedLines: answer.value.anythingElseFlaggedLines.slice(0, 500), canWrite: scopes.includes('profile:write'),
         sensitive });
+    },
+
+    /** v5 p1-panel (S6): panel/profileCheck: what the profile lacks, by name only (module header). */
+    async check(): Promise<Answer<ProfileCheckAnswer>> {
+      const retry = deps.limit.take('check');
+      if (retry !== null) return { ok: false, error: 'rate_limited', retryAfterSeconds: retry };
+      if (!(await deps.connected())) return refuse('not_connected');
+      const answer = await deps.server.profile();
+      if (!answer.ok) {
+        log('profile.editor-read', { status: answer.status ?? 0 });
+        return refuse(answer.failure === 'not-connected' || answer.failure === 'unauthorized' ? 'not_connected'
+          : answer.failure === 'rate-limited' ? 'rate_limited' : 'unavailable');
+      }
+      const email = (await deps.accountEmail?.()) ?? null;
+      return ok({ gaps: profileGaps(answer.value.profile, email), history: historyGaps(answer.value.profile) });
     },
 
     /** panel/saveProfile: the editor's save (module header). */

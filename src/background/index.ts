@@ -263,6 +263,8 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
   // v3 Phase 3b: the side panel's "Your autofill information" and "Ask TailorIT to support this site".
   const profileEditor = createProfileEditor({ server, profiles: profileCache, connected: () => auth.connected(),
     scopes: async () => (await keeper.current())?.scopes ?? [],
+    // v5 p1-panel (S6): the account's address, for the profile check worked out here.
+    accountEmail: async () => (await auth.status()).account?.email ?? null,
     limit: createRateLimit(PROFILE_EDIT_LIMIT.count, PROFILE_EDIT_LIMIT.windowMs, now) });
   const siteRequests = createSiteRequests({ server, tabs: platform.tabs, connected: () => auth.connected(),
     limit: createRateLimit(SITE_REQUEST_LIMIT.count, SITE_REQUEST_LIMIT.windowMs, now) });
@@ -894,6 +896,7 @@ export function startWorker(options: WorkerOptions = {}): WorkerState {
         'panel/chooseJob': (message) => jobs.chooseJob(message),
         'panel/siteRequest': (message) => siteRequests(message),
         'panel/profile': (message) => profileEditor.read(message),
+        'panel/profileCheck': () => profileEditor.check(), // v5 p1-panel
         'panel/saveProfile': (message) => profileEditor.save(message),
         'panel/withoutResume': (message) => jobs.setWithout(message),
         'panel/press': (message) => panel.press(message),

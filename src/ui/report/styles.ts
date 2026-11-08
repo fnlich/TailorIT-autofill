@@ -357,6 +357,15 @@ ${STATUS_RULES}
 .tia-entry__note { flex: none; color: var(--tia-muted); font: 600 12px/1.4 var(--tia-font); }
 .tia-entry__rows .tia-row__go { font-size: 13px; }
 .tia-row--section .tia-entries__count { margin-left: auto; }
+/* The Phase 1 review (F4): Continue on the header while the run waits for the person's word. */
+.tia-progress-line__continue {
+  flex: none; min-height: 30px; margin: 0; padding: 0 14px; border: 0; border-radius: 999px; background: var(--tia-ink);
+  color: var(--tia-on-ink); font: 700 13px/1.2 var(--tia-font); cursor: pointer;
+}
+.tia-progress-line__continue:hover { background: var(--tia-ink-hover); }
+.tia-progress-line__continue:focus-visible { outline: 2px solid var(--tia-focus); outline-offset: 2px; }
+.tia-progress-line__continue:disabled, .tia-progress-line__continue:disabled:hover { background: var(--tia-track);
+  color: var(--tia-muted); cursor: default; }
 /* end v5 p1-panel */
 
 @media (prefers-reduced-motion: reduce) {

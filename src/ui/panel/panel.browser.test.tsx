@@ -12,7 +12,8 @@ import { pinnedTabOf } from './tab';
 const keysShown = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('li[data-field-key]')].map((each) => each.dataset.fieldKey);
 /** What the page sent other than its reads: the messages its buttons sent. */
 const actions = (worker: FakeWorker) => worker.platform.sent.filter((message) =>
-  !['panel/reports', 'auth/status', 'settings/get', 'agent/status', 'panel/profile'].includes(String((message as { type?: unknown }).type)));
+  !['panel/reports', 'auth/status', 'settings/get', 'agent/status', 'panel/profile', 'panel/profileCheck']
+    .includes(String((message as { type?: unknown }).type)));
 const watches = (worker: FakeWorker) => worker.posted.filter((message) => (message as { type?: unknown }).type === 'panel/watch');
 
 async function open(worker: FakeWorker, pinnedTabId: number | null, now?: () => number,

@@ -154,6 +154,8 @@ export const SIDEBAR_PAGE_MESSAGES: ReadonlySet<string> = new Set([
   'panel/fill', 'panel/continue', 'panel/cancel', 'panel/focus', 'panel/reports', 'panel/job', 'panel/addJob',
   'panel/resumes', 'panel/setResume', 'panel/ask', 'panel/letter', 'panel/skip', 'panel/launcher', 'panel/showLauncher',
   'panel/jobSearch', 'panel/chooseJob', 'panel/siteRequest', 'panel/profile', 'panel/saveProfile', 'panel/withoutResume',
+  // v5 p1-panel (the Phase 1 review, S6): the profile check, answered by name only.
+  'panel/profileCheck',
   'panel/press', 'panel/retryApplied', 'panel/notes', 'panel/closeNote', 'settings/get', 'settings/save', 'auth/status',
   'auth/startPairing', 'auth/acknowledgeDisclosure', 'agent/status', 'agent/stop',
 ]);

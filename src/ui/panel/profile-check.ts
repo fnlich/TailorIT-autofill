@@ -3,50 +3,25 @@
  * main view, as data. Complete: a first name, a last name, an email (the profile's, or the account's sign-in address an
  * empty one stands for), a phone number, and a city or a country. The set-up view's second step lists what is missing.
  *
- * It reads panel/profile {sensitive: false} (the editor's read without the sensitive part: the person's own profile,
- * from their TailorIT, through the worker) while
- * the extension is connected, once per connection key (every new token, every connection change the worker announced)
- * and again when the panel asks (after the editor saved). It keeps only which of the five are missing: never a value,
- * and the profile itself is dropped the moment the gaps are worked out. A read refused or failed counts as unreadable:
- * the panel then shows its main view rather than lock the person out (the fill reads the profile itself).
+ * v5 p1-panel (PLAN decision 6, Jobright's resume check): the same check says whether the profile holds no work
+ * experience or no education (`history`, the kinds missing), so the main view's Autofill can say so in a modal before it
+ * fills, as Jobright's "missing key info" popup does.
  *
- * v5 p1-panel (PLAN decision 6, Jobright's resume check): the same read also says whether the profile holds no work
- * experience or no education (`history`, the kinds missing: counts only), so the main view's Autofill can say so in a
- * modal before it fills, as Jobright's "missing key info" popup does.
+ * The Phase 1 review (S6): the panel runs in the page's process too (the on-page sidebar), so the profile never comes
+ * here for the check: panel/profileCheck asks the worker, which reads the profile (never its sensitive part), works the
+ * check out there (shared/profile-gaps.ts) and answers the names of what is missing alone. It is asked while the
+ * extension is connected, once per connection key (every new token, every connection change the worker announced) and
+ * again when the panel asks (after the editor saved). A check refused or failed counts as unreadable: the panel then
+ * shows its main view rather than lock the person out (the fill reads the profile itself).
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { AutofillProfile } from '../../contract/tailorit';
 import type { PagePlatform } from '../../platform/types';
+import {
+  HISTORY_KINDS, historyGaps, PROFILE_GAPS, profileGaps, type HistoryGap, type ProfileGap,
+} from '../../shared/profile-gaps';
 import { request } from '../page/request';
 
-/** What a complete profile holds, in the order the set-up view names what is missing. */
-export const PROFILE_GAPS = ['first', 'last', 'email', 'phone', 'place'] as const;
-export type ProfileGap = (typeof PROFILE_GAPS)[number];
-
-/** What is missing from `profile` (none: complete). `accountEmail` is the account's sign-in address, which an empty
- *  email stands for (TailorIT's rule); null when not known. */
-// v5 p1-panel: the history Autofill checks before it fills (PLAN decision 6).
-export const HISTORY_KINDS = ['experience', 'education'] as const;
-export type HistoryGap = (typeof HISTORY_KINDS)[number];
-
-/** The kinds of history `profile` holds no entry of (none: both are there). Entries are counted, never read. */
-export function historyGaps(profile: Pick<AutofillProfile, HistoryGap>): HistoryGap[] {
-  return HISTORY_KINDS.filter((kind) => profile[kind].length === 0);
-}
-// end v5 p1-panel
-
-export function profileGaps(profile: AutofillProfile, accountEmail: string | null): ProfileGap[] {
-  const has = (text: string | null | undefined) => (text ?? '').trim() !== '';
-  const { address } = profile.contact;
-  const present: Record<ProfileGap, boolean> = {
-    first: has(profile.name.first),
-    last: has(profile.name.last),
-    email: has(profile.contact.email) || has(accountEmail),
-    phone: has(profile.contact.phone.number),
-    place: has(address.city) || address.country !== null,
-  };
-  return PROFILE_GAPS.filter((gap) => !present[gap]);
-}
+export { HISTORY_KINDS, historyGaps, PROFILE_GAPS, profileGaps, type HistoryGap, type ProfileGap };
 
 /** Where the profile check stands: not asked (not connected), being read, read (its gaps), or unreadable. */
 export type ProfileCheck =
@@ -56,29 +31,27 @@ export type ProfileCheck =
   | { state: 'unreadable' };
 
 /**
- * The profile check for the panel (module header). `key` is null while not connected (nothing is read), and otherwise
- * changes with the connection; `accountEmail` the account's sign-in address. `recheck()` reads it again.
+ * The profile check for the panel (module header). `key` is null while not connected (nothing is asked), and otherwise
+ * changes with the connection. `recheck()` asks again.
  */
-export function useProfileCheck(platform: PagePlatform, key: string | null, accountEmail: string | null):
-  { check: ProfileCheck; recheck(): void } {
+export function useProfileCheck(platform: PagePlatform, key: string | null): { check: ProfileCheck; recheck(): void } {
   const [reads, setReads] = useState(0);
   const [answer, setAnswer] = useState<{ key: string; reads: number; check: ProfileCheck } | null>(null);
 
   useEffect(() => {
     if (key === null) return undefined;
     let live = true;
-    // The profile alone: the sensitive part has nothing the check needs, so it is never read for it.
-    void request(platform, { v: 1, type: 'panel/profile', sensitive: false }).then((reply) => {
+    // The worker's check: names of what is missing, never the profile (S6).
+    void request(platform, { v: 1, type: 'panel/profileCheck' }).then((reply) => {
       if (!live) return;
-      // Only the gaps are kept: the profile goes with this closure.
-      const check: ProfileCheck = reply.ok ? { state: 'read', gaps: profileGaps(reply.data.profile, accountEmail),
-        history: historyGaps(reply.data.profile) } : { state: 'unreadable' };
+      const check: ProfileCheck = reply.ok ? { state: 'read', gaps: reply.data.gaps, history: reply.data.history }
+        : { state: 'unreadable' };
       setAnswer({ key, reads, check });
     });
     return () => {
       live = false;
     };
-  }, [platform, key, reads, accountEmail]);
+  }, [platform, key, reads]);
 
   const recheck = useCallback(() => setReads((count) => count + 1), []);
   if (key === null) return { check: { state: 'idle' }, recheck };

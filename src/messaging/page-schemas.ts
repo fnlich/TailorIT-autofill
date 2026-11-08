@@ -14,6 +14,7 @@ import { AUTOFILL_FILE_KINDS, AUTOFILL_RESUME_KINDS } from '../contract/tailorit
 import { AUTOFILL_JOB_SEARCH_MAX, AUTOFILL_JOB_SEARCH_QUERY_MAX } from '../contract/tailorit/tracker';
 import { FIELD_KINDS, MATCHER_STAGES, PLATFORMS } from '../core/enums';
 import { MAX_TELEMETRY_COUNTS, TELEMETRY_OUTCOMES } from '../core/telemetry/events';
+import { HISTORY_KINDS, PROFILE_GAPS } from '../shared/profile-gaps';
 import { FrameReportSchema } from '../shared/report';
 import { SettingsSchema } from '../shared/settings';
 import {
@@ -111,6 +112,9 @@ export const PageMessageSchema = z.discriminatedUnion('type', [
   /** v3 Phase 3b, "Your autofill information": the profile as TailorIT holds it, for the side panel's editor. v4 ui:
    *  `sensitive: false` (the side panel's check that the profile is complete) leaves the sensitive part unread. */
   z.strictObject({ v, type: z.literal('panel/profile'), sensitive: z.literal(false).optional() }),
+  /** v5 p1-panel (the Phase 1 review, S6): whether the profile is complete for the panel, worked out in the worker:
+   *  the names of what is missing (shared/profile-gaps.ts), never the profile, which stays out of a page's process. */
+  z.strictObject({ v, type: z.literal('panel/profileCheck') }),
   /** v3 Phase 3b: the editor's save, from the revision it loaded; `sensitive` only where the connection may read and
    *  write it. Sent straight to TailorIT, never kept or logged. */
   z.strictObject({ v, type: z.literal('panel/saveProfile'), revision: Count, profile: AutofillProfileSchema,
@@ -349,6 +353,14 @@ export const PanelSiteRequestAnswerSchema = z.strictObject({ outcome: z.enum(SIT
  *  revision, the note's lines TailorIT keeps from the AI (`flaggedLines`), whether this connection may save it
  *  (profile:write) and the sensitive part when it may read it (profile:sensitive). Shown in the side panel only, kept
  *  in its memory while the editor is open, never stored or logged. */
+/** v5 p1-panel (S6): panel/profileCheck's answer: the names of what the profile lacks, from closed lists, and nothing
+ *  else. */
+export const ProfileCheckAnswerSchema = z.strictObject({
+  gaps: z.array(z.enum(PROFILE_GAPS)).max(PROFILE_GAPS.length),
+  history: z.array(z.enum(HISTORY_KINDS)).max(HISTORY_KINDS.length),
+});
+export type ProfileCheckAnswer = z.infer<typeof ProfileCheckAnswerSchema>;
+
 export const ProfileViewSchema = z.strictObject({
   revision: Count,
   profile: AutofillProfileSchema,
@@ -459,6 +471,7 @@ export const PAGE_ANSWER_SCHEMAS = {
   'panel/chooseJob': DoneAnswerSchema,
   'panel/siteRequest': PanelSiteRequestAnswerSchema,
   'panel/profile': ProfileViewSchema,
+  'panel/profileCheck': ProfileCheckAnswerSchema, // v5 p1-panel
   'panel/saveProfile': PanelSaveProfileAnswerSchema,
   'panel/withoutResume': DoneAnswerSchema,
   'panel/retryApplied': DoneAnswerSchema,
